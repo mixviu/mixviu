@@ -522,6 +522,8 @@ impl Host {
 }
 impl eframe::App for Host {
     fn logic(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("viu-paste-trace-app"), self.service.clone()));
+        self.selection.app.clone_from(&self.service);
         if self.framed
             && self.model["window_close"] != true
             && ctx.input(|i| i.viewport().close_requested())
@@ -679,6 +681,11 @@ impl Host {
         }
         self.facilities.prepare(ctx, &self.bus);
         for request in self.platform.take() {
+            if request["kind"] != "copy" {
+                tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %self.service,
+                    id = %request["id"], primary = (request["body"]["primary"] == true),
+                    native = self.native_selection, "platform.read.received");
+            }
             if !self.native_selection {
                 if request["kind"] == "copy" {
                     ctx.copy_text(request["body"]["text"].as_str().unwrap_or("").into());
@@ -703,6 +710,9 @@ impl Host {
                     self.selection_sequence,
                     SelectionWait::Platform(request["id"].as_str().unwrap_or("").into()),
                 );
+                tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %self.service,
+                    id = %request["id"], sequence = self.selection_sequence,
+                    primary = (request["body"]["primary"] == true), "platform.read.queued");
                 self.selection
                     .read(self.selection_sequence, request["body"]["primary"] == true);
             }
@@ -728,6 +738,8 @@ impl Host {
                     self.selection.write(ctx, text, primary)
                 }
                 WindowClipboardRequest::Read { primary, reply } => {
+                    tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %self.service,
+                        primary, "terminal.osc52.read.received");
                     self.selection_sequence = self
                         .selection_sequence
                         .checked_add(1)
@@ -739,6 +751,9 @@ impl Host {
             }
         }
         for (sequence, result) in self.selection.take() {
+            tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %self.service,
+                sequence, owned = self.selection_waits.contains_key(&sequence),
+                result = %crate::terminal::clipboard::trace_result(&result), "platform.read.answer");
             if let Some(owner) = self.selection_waits.remove(&sequence) {
                 match owner {
                     SelectionWait::Platform(id) => self.platform_results.push_back(match result {
@@ -769,6 +784,10 @@ impl Host {
             {
                 break;
             }
+            tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %self.service,
+                id = %result["id"], bytes = result["text"].as_str().map(str::len),
+                error = result["reason"].as_str().map(|r| r.split(['(', ':']).next().unwrap_or("Failed")),
+                "platform.completed.handed-to-app");
             self.platform_results.pop_front();
         }
         for token in self.calls.cancelled() {

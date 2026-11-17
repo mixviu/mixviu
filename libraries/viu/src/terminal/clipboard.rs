@@ -17,7 +17,26 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 /// A finished read: the pane it was for and its text, or why there is none.
 pub type Pasted = (u64, Result<String, ReadError>);
 
+pub(crate) fn trace_app(ctx: &egui::Context) -> String {
+    ctx.data(|d| d.get_temp::<String>(egui::Id::new("viu-paste-trace-app")))
+        .unwrap_or_else(|| "unknown".into())
+}
+
+/// Deliberately excludes error details, which may contain private data.
+pub(crate) fn trace_result(result: &Result<String, ReadError>) -> String {
+    match result {
+        Ok(text) => format!("Ok(bytes={})", text.len()),
+        Err(ReadError::Busy) => "Busy".into(),
+        Err(ReadError::TooLarge) => "TooLarge".into(),
+        Err(ReadError::TimedOut) => "TimedOut".into(),
+        Err(ReadError::Empty) => "Empty".into(),
+        Err(ReadError::NoFocus) => "NoFocus".into(),
+        Err(ReadError::Failed(_)) => "Failed".into(),
+    }
+}
+
 pub struct Clipboard {
+    pub(crate) app: String,
     worker: Option<sctk::reexports::calloop::channel::Sender<Request>>,
     rx: Receiver<Answer>,
     wake: Arc<dyn Fn() + Send + Sync>,
@@ -53,6 +72,7 @@ impl Clipboard {
             _ => None,
         };
         Self {
+            app: "unknown".into(),
             worker,
             rx,
             wake,
@@ -98,26 +118,33 @@ impl Clipboard {
     pub fn read(&mut self, pane: u64, primary: bool) {
         self.next += 1;
         let id = self.next;
+        tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %self.app,
+            id, sequence = pane, primary, "selection.read.received");
         if self.pending.is_some() {
-            self.refuse(pane, Err(ReadError::Busy));
+            self.refuse(id, pane, Err(ReadError::Busy));
             return;
         }
         let Some(worker) = &self.worker else {
-            self.refuse(pane, Err(ReadError::Empty));
+            self.refuse(id, pane, Err(ReadError::Empty));
             return;
         };
         if worker.send(Request::Read { id, primary }).is_err() {
             self.refuse(
+                id,
                 pane,
                 Err(ReadError::Failed("the clipboard worker stopped".into())),
             );
             return;
         }
+        tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %self.app,
+            id, sequence = pane, primary, "selection.read.sent");
         self.pending = Some((id, pane));
     }
 
     /// Answer a read for `pane` here, without the worker.
-    fn refuse(&mut self, pane: u64, result: Result<String, ReadError>) {
+    fn refuse(&mut self, id: u64, pane: u64, result: Result<String, ReadError>) {
+        tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %self.app,
+            id, sequence = pane, result = %trace_result(&result), "selection.read.refused");
         self.refused.push((pane, result));
         (self.wake)();
     }
@@ -126,6 +153,9 @@ impl Clipboard {
     pub fn take(&mut self) -> Vec<Pasted> {
         let mut out = std::mem::take(&mut self.refused);
         while let Ok(answer) = self.rx.try_recv() {
+            tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %self.app,
+                id = answer.id, pending = ?self.pending, result = %trace_result(&answer.result),
+                "selection.answer");
             // A refused copy: not a read, so it ends no pending one.
             if answer.id == WRITE_ANSWER {
                 out.push((WRITE_ANSWER, answer.result));

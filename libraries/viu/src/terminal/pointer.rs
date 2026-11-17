@@ -59,13 +59,14 @@ pub(super) enum Effect {
 }
 #[derive(Default)]
 pub(super) struct Mouse {
+    pub app: String,
     pressed: Option<Press>,
     clicks: Option<(Hit, Instant, u8)>,
     hover: Option<Hit>,
     position: Option<Pos2>,
     modifiers: egui::Modifiers,
 }
-fn code(button: PointerButton) -> Option<u8> {
+pub(super) fn code(button: PointerButton) -> Option<u8> {
     match button {
         PointerButton::Primary => Some(0),
         PointerButton::Middle => Some(1),
@@ -164,6 +165,11 @@ impl Mouse {
         now: Instant,
     ) -> Vec<Effect> {
         let mut out = Vec::new();
+        if !focused {
+            for event in events {
+                self.trace_press(placements, sessions, event, focused);
+            }
+        }
         if !focused
             || self.pressed.as_ref().is_some_and(|p| {
                 !placements.iter().any(|v| v.handle == p.last.handle)
@@ -176,6 +182,34 @@ impl Mouse {
             return out;
         }
         for event in events {
+            self.trace_press(placements, sessions, event, focused);
+            self.event(placements, sessions, event, copy_on_select, now, &mut out);
+        }
+        out
+    }
+    fn trace_press(&self, placements: &[Placement], sessions: &Sessions, event: &Event, focused: bool) {
+            if let Event::PointerButton { pos, button, pressed: true, modifiers } = event {
+                let mapped = code(*button);
+                let target = hit(placements, *pos, None);
+                let reporting = target.as_ref().and_then(|h| sessions.get(&h.handle).ok())
+                    .map(|t| t.lock().unwrap().mouse_reporting());
+                let effect = if !focused { "nothing:unfocused-or-disabled" }
+                    else if mapped.is_none() { "nothing:unsupported-button" }
+                    else if target.is_none() { "nothing:no-hit" }
+                    else if reporting.is_none() { "nothing:missing-session" }
+                    else if !modifiers.shift && reporting == Some(true) { "reported-to-application" }
+                    else if mapped == Some(0) { "local-selection-start" }
+                    else if mapped == Some(1) { "Read{primary:true}" }
+                    else { "nothing:local-secondary" };
+                tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %self.app,
+                    raw = ?button, code = ?mapped, accepted = mapped.is_some(),
+                    pane = ?target.as_ref().map(|h| h.handle.as_str()), mouse_reporting = ?reporting,
+                    shift = modifiers.shift, cancelled_pending = self.pressed.is_some(), effect,
+                    "terminal.press");
+            }
+    }
+    fn event(&mut self, placements: &[Placement], sessions: &Sessions, event: &Event,
+        copy_on_select: bool, now: Instant, out: &mut Vec<Effect>) {
             match event {
                 Event::ModifiersChanged(value) => self.modifiers = *value,
                 Event::PointerMoved(position) => {
@@ -192,7 +226,7 @@ impl Mouse {
                             *position,
                             false,
                             copy_on_select,
-                            &mut out,
+                            out,
                         );
                     }
                 }
@@ -210,13 +244,13 @@ impl Mouse {
                         }
                         self.hover = hit(placements, *pos, None);
                         let Some(button) = code(*button) else {
-                            continue;
+                            return;
                         };
                         let Some(hit) = self.hover.clone() else {
-                            continue;
+                            return;
                         };
                         let Ok(terminal) = sessions.get(&hit.handle) else {
-                            continue;
+                            return;
                         };
                         sessions.activity();
                         out.push(Effect::Focus(hit.handle.clone()));
@@ -257,7 +291,7 @@ impl Mouse {
                     } else if code(*button).is_some_and(|button| {
                         self.pressed.as_ref().is_some_and(|p| p.button == button)
                     }) {
-                        self.moved(placements, sessions, *pos, true, copy_on_select, &mut out);
+                        self.moved(placements, sessions, *pos, true, copy_on_select, out);
                     }
                 }
                 Event::MouseWheel {
@@ -284,8 +318,6 @@ impl Mouse {
                 }
                 _ => {}
             }
-        }
-        out
     }
     fn moved(
         &mut self,
@@ -360,6 +392,39 @@ impl Drop for Mouse {
 mod tests {
     use super::*;
     use rio_vt::{corcovado::channel, event::Msg};
+    #[test]
+    fn middle_press_emits_focus_primary_read_and_one_log_record() {
+        #[derive(Clone)]
+        struct Capture(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        let capture = Capture(Arc::new(Mutex::new(Vec::new())));
+        let writer = capture.clone();
+        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
+            .with_max_level(tracing::Level::INFO).with_writer(move || writer.clone()).finish();
+        let (sessions, places, receiver) = setup(false);
+        let mut mouse = Mouse { app: "term".into(), ..Default::default() };
+        let effects = tracing::subscriber::with_default(subscriber, || mouse.update(
+            &places, &sessions, &[button_event(PointerButton::Middle, true)],
+            true, false, Instant::now(),
+        ));
+        assert!(matches!(&effects[..], [Effect::Focus(focus), Effect::Read { handle, primary: true }]
+            if focus == "vt-1" && handle == "vt-1"));
+        assert!(bytes(&receiver).is_empty());
+        let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
+        assert_eq!(log.lines().count(), 1, "{log}");
+        for field in ["terminal.press", "app=term", "raw=Middle", "code=Some(1)",
+            "accepted=true", "vt-1", "mouse_reporting=Some(false)", "shift=false",
+            "cancelled_pending=false", "Read{primary:true}"] {
+            assert!(log.contains(field), "missing {field}: {log}");
+        }
+        assert!(log.contains(&format!("pid={}", std::process::id())));
+    }
     fn setup(reporting: bool) -> (Sessions, Vec<Placement>, channel::Receiver<Msg>) {
         let sessions = Sessions::fixture();
         sessions.fixture_pane(

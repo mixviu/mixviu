@@ -1132,6 +1132,7 @@ impl Views {
             .iter()
             .any(|(id, mouse)| id != &widget.id && mouse.grabbed());
         let mut mouse = self.mice.remove(&widget.id).unwrap_or_default();
+        mouse.app = super::clipboard::trace_app(ui.ctx());
         let raw = ui.input(|i| i.events.clone());
         let accepting = ui.is_enabled() && ui.input(|i| i.focused);
         let now = Instant::now();
@@ -1162,6 +1163,13 @@ impl Views {
                             .is_some_and(|layer| layer != ui.layer_id())
                     });
                 if blocked {
+                    if let egui::Event::PointerButton { button, pressed: true, modifiers, pos } = event {
+                        tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %mouse.app,
+                            raw = ?button, code = ?super::pointer::code(*button),
+                            shift = modifiers.shift, cancelled_pending = mouse.grabbed(),
+                            position = ?pos, layer = ?ui.layer_id(), covering_layer = ?ui.ctx().layer_id_at(*pos),
+                            effect = "PointerGone:other-layer", "terminal.press.swallowed");
+                    }
                     mouse.cancel();
                     delivered = egui::Event::PointerGone;
                 }
@@ -1192,6 +1200,11 @@ impl Views {
                     );
                     for effect in effects {
                         self.pointer_effect(ui, widget, sessions, events, effect);
+                    }
+                } else if let egui::Event::PointerButton { button, pressed: true, .. } = event {
+                    if !blocked {
+                        tracing::info!(target: "viu::paste_trace", pid = std::process::id(), app = %mouse.app,
+                            raw = ?button, effect = "nothing:another-widget-grab", "terminal.press.swallowed");
                     }
                 }
             }
