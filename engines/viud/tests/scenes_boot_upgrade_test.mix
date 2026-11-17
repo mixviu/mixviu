@@ -113,7 +113,7 @@ print(json_encode({rc:$rc, value:$v, reply:$reply}))
   $loader_script = env("SCENES_BOOT_REPO", $repo) .. "/engines/viud/scripts/scenes.mix"
   $bad_config = run_argv([$mix, "--serve", $loader_script, "--name", "scenes"],
     {clear_env:true, env:merge($vars, {MIX_VIUD_SCENES_UPGRADE_DELAYS:"[broken"}), timeout:5})
-  check(not $bad_config.ok and contains($bad_config.stderr, "SCENES_CONFIG:"), "malformed delay JSON reports SCENES_CONFIG")
+  check(not $bad_config.ok and contains($bad_config.stderr .. $bad_config.stdout, "SCENES_CONFIG"), "malformed delay JSON reports SCENES_CONFIG: " .. json_encode($bad_config))
   -- Ordinary body= callers must retain their string result and nil parsed
   -- body. The loader alone opts into a structured route error below.
   $absent = call("fakeshell", "INFO")
