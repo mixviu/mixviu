@@ -365,14 +365,28 @@ mod tests {
         let fd = linux::socket(2).unwrap();
         let mut actual: libc::c_int = 0;
         let mut len = size_of_val(&actual) as libc::socklen_t;
-        assert_eq!(unsafe {
-            libc::getsockopt(fd.as_raw_fd(), libc::SOL_SOCKET, libc::SO_RCVBUF,
-                (&mut actual as *mut libc::c_int).cast(), &mut len)
-        }, 0);
+        assert_eq!(
+            unsafe {
+                libc::getsockopt(
+                    fd.as_raw_fd(),
+                    libc::SOL_SOCKET,
+                    libc::SO_RCVBUF,
+                    (&mut actual as *mut libc::c_int).cast(),
+                    &mut len,
+                )
+            },
+            0
+        );
         let max: i32 = std::fs::read_to_string("/proc/sys/net/core/rmem_max")
-            .unwrap().trim().parse().unwrap();
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
         // Linux doubles the requested accounting size. FORCE can exceed max;
         // without CAP_NET_ADMIN the fallback is clamped to max, not the default.
-        assert!(actual >= 2 * max.min(128 * 1024 * 1024), "SO_RCVBUF={actual}, rmem_max={max}");
+        assert!(
+            actual >= 2 * max.min(128 * 1024 * 1024),
+            "SO_RCVBUF={actual}, rmem_max={max}"
+        );
     }
 }

@@ -141,7 +141,10 @@ async fn plain_native_pump_outlives_a_closed_bus_without_spinning() {
     // about 1.2 CPU seconds, whereas an idle readiness wait uses almost none.
     let cpu_time = || {
         let mut t: libc::timespec = unsafe { std::mem::zeroed() };
-        assert_eq!(unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut t) }, 0);
+        assert_eq!(
+            unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut t) },
+            0
+        );
         Duration::new(t.tv_sec as u64, t.tv_nsec as u32)
     };
     let started = cpu_time();
@@ -150,7 +153,10 @@ async fn plain_native_pump_outlives_a_closed_bus_without_spinning() {
         .unwrap()
         .unwrap();
     assert_eq!(e.get_global("ticks"), Some(Value::Number(2.0)));
-    assert!(cpu_time() - started < Duration::from_millis(200), "idle pump consumed CPU instead of parking");
+    assert!(
+        cpu_time() - started < Duration::from_millis(200),
+        "idle pump consumed CPU instead of parking"
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]

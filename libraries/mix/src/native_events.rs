@@ -1699,9 +1699,13 @@ mod tests {
         }
         // ENOBUFS is signalled independently of bounded-queue drops. It must
         // survive the private envelope and reach the handler's $event.args.
-        q.source("uevent:1", vec![("loss".into(), serde_json::json!({"drop":"ENOBUFS"}))], true);
+        q.source(
+            "uevent:1",
+            vec![("loss".into(), serde_json::json!({"drop":"ENOBUFS"}))],
+            true,
+        );
         let ev = q.next(None).await.unwrap();
-        let Value::Map(value) = crate::evaluator::incoming_event_to_mix_value(&ev) else {
+        let Value::Map(ref value) = crate::evaluator::incoming_event_to_mix_value(&ev) else {
             panic!("event map")
         };
         let Value::Map(args) = &value["args"] else {
