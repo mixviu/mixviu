@@ -186,7 +186,9 @@ fn cancel(keep: impl Fn(&Request) -> bool, reason: &str) {
     let mut cancelled = take(&keep);
     READS.with_borrow_mut(|reads| {
         for read in reads.iter_mut() {
-            let (taken, rest) = std::mem::take(&mut read.requests).into_iter().partition(&keep);
+            let (taken, rest) = std::mem::take(&mut read.requests)
+                .into_iter()
+                .partition(&keep);
             cancelled.extend(taken);
             read.requests = rest;
         }
@@ -206,7 +208,10 @@ pub fn fail_output(output: &Output, reason: &str) {
 }
 
 pub fn fail_output_capture(output: &Output, reason: &str) {
-    cancel(|request| request.output == output.name() && request.spec.window.is_none(), reason);
+    cancel(
+        |request| request.output == output.name() && request.spec.window.is_none(),
+        reason,
+    );
 }
 
 pub fn fail_all(reason: &str) {
@@ -396,10 +401,7 @@ pub(crate) fn read_pixels<R: ExportMem>(
     renderer: &mut R,
     source: Source<'_, '_, R>,
 ) -> Result<std::sync::Arc<Vec<u8>>, String> {
-    let Readback {
-        size,
-        origin_bottom_left,
-    } = source.readback;
+    let size = source.readback.size;
     if size.w <= 0 || size.h <= 0 {
         return Err("capture has no usable size".to_owned());
     }
@@ -672,9 +674,9 @@ fn rgb_into(
 unsafe fn pack_rgb_ssse3(input: &[u8], output: &mut [u8], rgba: bool) -> usize {
     use std::arch::x86_64::*;
     let mask = if rgba {
-        _mm_setr_epi8(0,1,2,4,5,6,8,9,10,12,13,14,-1,-1,-1,-1)
+        _mm_setr_epi8(0, 1, 2, 4, 5, 6, 8, 9, 10, 12, 13, 14, -1, -1, -1, -1)
     } else {
-        _mm_setr_epi8(2,1,0,6,5,4,10,9,8,14,13,12,-1,-1,-1,-1)
+        _mm_setr_epi8(2, 1, 0, 6, 5, 4, 10, 9, 8, 14, 13, 12, -1, -1, -1, -1)
     };
     let groups = (input.len() / 64).min(output.len() / 48);
     for i in 0..groups {
@@ -688,8 +690,14 @@ unsafe fn pack_rgb_ssse3(input: &[u8], output: &mut [u8], rgba: bool) -> usize {
             let c = _mm_shuffle_epi8(_mm_loadu_si128(src.add(32).cast()), mask);
             let d = _mm_shuffle_epi8(_mm_loadu_si128(src.add(48).cast()), mask);
             _mm_storeu_si128(dst.cast(), _mm_or_si128(a, _mm_slli_si128::<12>(b)));
-            _mm_storeu_si128(dst.add(16).cast(), _mm_or_si128(_mm_srli_si128::<4>(b), _mm_slli_si128::<8>(c)));
-            _mm_storeu_si128(dst.add(32).cast(), _mm_or_si128(_mm_srli_si128::<8>(c), _mm_slli_si128::<4>(d)));
+            _mm_storeu_si128(
+                dst.add(16).cast(),
+                _mm_or_si128(_mm_srli_si128::<4>(b), _mm_slli_si128::<8>(c)),
+            );
+            _mm_storeu_si128(
+                dst.add(32).cast(),
+                _mm_or_si128(_mm_srli_si128::<8>(c), _mm_slli_si128::<4>(d)),
+            );
         }
     }
     groups * 16
@@ -804,11 +812,18 @@ mod tests {
             let bytes: Vec<u8> = (0..width * 3 * 4).map(|i| i as u8).collect();
             for rgba in [false, true] {
                 for flipped in [false, true] {
-                    let expected: Vec<u8> = (0..3).flat_map(|y| {
-                        let at = source_row(y, 3, flipped) * width * 4;
-                        bytes[at..at + width * 4].chunks_exact(4).flat_map(|px|
-                            if rgba { [px[0], px[1], px[2]] } else { [px[2], px[1], px[0]] })
-                    }).collect();
+                    let expected: Vec<u8> = (0..3)
+                        .flat_map(|y| {
+                            let at = source_row(y, 3, flipped) * width * 4;
+                            bytes[at..at + width * 4].chunks_exact(4).flat_map(|px| {
+                                if rgba {
+                                    [px[0], px[1], px[2]]
+                                } else {
+                                    [px[2], px[1], px[0]]
+                                }
+                            })
+                        })
+                        .collect();
                     assert_eq!(rgb(&bytes, width, 3, rgba, flipped).unwrap(), expected);
                 }
             }

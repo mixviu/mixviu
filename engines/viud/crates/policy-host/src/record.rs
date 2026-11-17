@@ -490,7 +490,9 @@ fn stop_stream(s: &mut Session, discard: bool) -> bool {
     // fence callback deliver it before sealing, without blocking the Bus or
     // compositor. A failed/stalled backend still has a bounded escape path.
     if s.pending && !discard && s.failed.is_none() {
-        let until = *s.drain_until.get_or_insert_with(|| Instant::now() + Duration::from_secs(1));
+        let until = *s
+            .drain_until
+            .get_or_insert_with(|| Instant::now() + Duration::from_secs(1));
         if Instant::now() < until {
             return true;
         }
