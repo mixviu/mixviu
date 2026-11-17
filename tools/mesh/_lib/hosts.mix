@@ -103,11 +103,10 @@ end
 -- One-time migration only. Default layout is an explicit operator assertion
 -- for roster hosts absent from the old node settings; never probe a host.
 fn import_facts($hub, $default_layout)
-  $d = require("deploy_lib.mix")
-  $project = $d.project()
-  $_default = layout($default_layout,$project)
   $roster = load_data(paths($hub).roster).fleet_roster
   $targets = load_data(paths($hub).targets)
+  $project = $targets.project
+  $_default = layout($default_layout,$project)
   $nodes = load_data(paths($hub).nodes).nodes
   $hosts = []
   for $name in concat($roster.mesh,$roster.foreign)

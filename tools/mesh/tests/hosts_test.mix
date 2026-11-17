@@ -59,6 +59,17 @@ try
     write_file($paths[$key],$bytes[$key])
   end
   check($h.check($root),"clean projections")
+  $old_nodes = load_data($paths.nodes)
+  $old_nodes.nodes.retired = $legacy
+  -- Hosts without old settings need the explicit migration default.
+  $old_nodes.nodes = {anchor:$gold,relay:$legacy,"desk-a":$gold,retired:$legacy,local:$gold}
+  write_file($paths.nodes,data_encode($old_nodes))
+  $imported = $h.import_facts($root,"gold")
+  $migrated = $h.derive($imported,$inv,"anchor")
+  write_file($root .. "/migrated.mix",$migrated.nodes)
+  write_file($root .. "/expected.mix",$bytes.nodes)
+  check(deep_eq(load_data($root .. "/migrated.mix").nodes,load_data($root .. "/expected.mix").nodes),"migration drops retired settings, keeps legacy and adds default gold hosts")
+  write_file($paths.nodes,$bytes.nodes)
   for $key in ["roster","targets","nodes"]
     write_file($paths[$key],$bytes[$key] .. "-- drift\n")
     $refused = false
