@@ -805,7 +805,17 @@ fn record_idle_output_lifecycle_and_clock() {
             assert_eq!(reply[key], row[key]);
         }
     }
+    let mut bounded_pattern = Pattern::new(connect(&mut process));
+    bounded_pattern.wait_callback(0);
     let next=bus.call("comp.record.start",json!({"request_id":"bounded","target":{"output":"headless-0"},"path":process.root.join("bounded.vfl"),"max_seconds":1}));
+    let mut submitted_commits = 0;
+    for colour in [0xff103050, 0xff507090, 0xff90b0d0] {
+        bounded_pattern.solid_buffer(colour);
+        let previous = bounded_pattern.state.callbacks;
+        bounded_pattern.commit(true);
+        bounded_pattern.wait_callback(previous);
+        submitted_commits += 1;
+    }
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let status = bus.call("comp.record.status", json!({"session":next["session"]}));
@@ -822,7 +832,7 @@ fn record_idle_output_lifecycle_and_clock() {
     let (_, records) = vfl_first(std::path::Path::new(next["path"].as_str().unwrap()));
     assert_eq!(Some(records), bounded["frames"].as_u64());
     assert_eq!(bounded["dropped"], 0);
-    assert!(records >= 1, "the bounded take must retain its submitted initial scene");
+    assert!(records >= submitted_commits, "bounded take lost submitted slots: commits={submitted_commits} {bounded}");
     assert_eq!(start, bus.call("comp.record.start", args));
     let discard_path = process.root.join("discard.vfl");
     let discard = bus.call("comp.record.start", json!({"request_id":"discard", "target":{"output":"headless-0"},"path":discard_path,"max_seconds":1}));

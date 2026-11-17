@@ -250,6 +250,7 @@ pub struct Recording {
     encoder: Option<VideoEncoder>,
     finishing: Option<Receiver<FinaliseResult>>,
     finishing_since: Option<std::time::Instant>,
+    finalise_cancel: Arc<std::sync::atomic::AtomicBool>,
     stop_discard: Option<bool>,
     finaliser: Option<std::thread::JoinHandle<()>>,
 }
@@ -320,6 +321,7 @@ impl Recording {
             encoder: Some(encoder),
             finishing: None,
             finishing_since: None,
+            finalise_cancel: Default::default(),
             stop_discard: None,
             finaliser: None,
         })
@@ -422,13 +424,16 @@ impl Recording {
         let (tx, rx) = channel();
         self.finishing = Some(rx);
         self.finishing_since = Some(std::time::Instant::now());
+        let cancelled = self.finalise_cancel.clone();
         self.finaliser = Some(std::thread::spawn(move || {
             let mut published = false;
             let result = match failure {
                 Some(error) => encoder.finish_failed(error),
                 None => encoder.finish_result(),
             };
-            let result = if discard {
+            let result = if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+                Err("encoder finaliser timed out; staged VFL retained for recovery".into())
+            } else if discard {
                 let cleanup = files.cleanup();
                 result.map(|_| ()).and(cleanup)
             } else if failed {
@@ -466,6 +471,7 @@ impl Recording {
                 }
                 // The filesystem owns the blocked worker. Detach it; never join
                 // it on the compositor, including when this take is dropped.
+                self.finalise_cancel.store(true, std::sync::atomic::Ordering::Release);
                 self.finaliser.take();
                 (Err("encoder finaliser timed out after 30 seconds".into()), Some(self.files.video.clone()))
             }

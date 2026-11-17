@@ -302,7 +302,7 @@ pub fn command(
                 tick(&tick_session, || capture_tick(lp, &tick_session));
                 let s = tick_session.borrow();
                 if s.failed.is_some() && s.recording.is_none()
-                    || s.recording.as_ref().is_some_and(|r| r.terminal.is_some())
+                    || s.recording.as_ref().is_some_and(|r| !r.is_recording())
                 {
                     TimeoutAction::Drop
                 } else {
