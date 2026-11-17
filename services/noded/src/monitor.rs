@@ -129,7 +129,7 @@ fn gather_processes(limit: usize) -> Vec<ProcessInfo> {
 
 pub async fn run(noded_url: &str) -> Result<()> {
     let started_instant = Instant::now();
-    let started_at_iso = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let started_at_iso = datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Secs, true);
 
     let client = bus::native_client::NodedClient::connect("mon", noded_url).await?;
     let client = Arc::new(client);

@@ -6,7 +6,7 @@
 resolver = "3"
 exclude = ["vendor/tungstenite-0.26.2","vendor/tungstenite-0.29.0","vendor/pipewire","vendor", "vendor/smithay", "vendor/eframe", "vendor/egui-wgpu", "vendor/calloop", "vendor/input"]
 # libs/* includes maildoc and every other shared library component.
-members = ["libraries/media/vfl","libraries/media/av1","libraries/media/frame","services/portald","libraries/maildoc","engines/viud/crates/*","libraries/ui","engines/viu","engines/viud","libraries/viu","libraries/theme","libraries/toolkit","libraries/thumbs","libraries/action","libraries/icons","libraries/editor","libraries/editor-model","libraries/macros","libraries/syntax","libraries/inputd-core","libraries/inputd-schema","libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","libraries/mix-shell","engines/mix","engines/mixd","services/noded","libraries/design","libraries/settings","libraries/edit","services/settingsd","services/editd","libraries/mds","services/monitord","services/dnsd","services/dnsd/crates/dns-core","services/blobd","services/hostd","services/mixtrayd","libraries/assets","libraries/daemon","libraries/davproto","libraries/files","services/maild","services/maild/crates/maild-auth","services/maild/crates/maild-bayesian","services/maild/crates/maild-rules","services/webd","services/indexd","services/inputd","services/mix-mcp"]
+members = ["libraries/datetime","libraries/media/vfl","libraries/media/av1","libraries/media/frame","services/portald","libraries/maildoc","engines/viud/crates/*","libraries/ui","engines/viu","engines/viud","libraries/viu","libraries/theme","libraries/toolkit","libraries/thumbs","libraries/action","libraries/icons","libraries/editor","libraries/editor-model","libraries/macros","libraries/syntax","libraries/inputd-core","libraries/inputd-schema","libraries/expr","libraries/scene","libraries/strict","libraries/mix","libraries/bus","libraries/props","libraries/logging","libraries/config","libraries/buildinfo","libraries/paths","libraries/mimedb","libraries/test-broker","libraries/mesh","libraries/mesh-trust","libraries/mix-shell","engines/mix","engines/mixd","services/noded","libraries/design","libraries/settings","libraries/edit","services/settingsd","services/editd","libraries/mds","services/monitord","services/dnsd","services/dnsd/crates/dns-core","services/blobd","services/hostd","services/mixtrayd","libraries/assets","libraries/daemon","libraries/davproto","libraries/files","services/maild","services/maild/crates/maild-auth","services/maild/crates/maild-bayesian","services/maild/crates/maild-rules","services/webd","services/indexd","services/inputd","services/mix-mcp"]
 
 [workspace.package]
 version = "0.1.2"
@@ -102,7 +102,8 @@ base64 = "0.22"
 # `pure`: Rust SIMD only, no C or assembly (tools/foreign.conf.mix). Same
 # hashes; only the AVX-512 path is lost.
 blake3 = { version = "1", features = ["pure"] }
-chrono = { version = "0.4", features = ["serde"] }
+datetime = { path = "libraries/datetime" }
+time = { version = "0.3", features = ["formatting", "parsing", "large-dates", "local-offset", "macros"] }
 clap = { version = "4", features = ["derive"] }
 ed25519-dalek = { version = "2", features = ["std", "rand_core"] }
 # hostd: WireGuard public keys (X25519); already in the lock through ed25519-dalek.

@@ -19,7 +19,7 @@ mod_module_files = "deny"
 
 [dependencies]
 serde_json.workspace = true
-chrono.workspace = true
+datetime.workspace = true
 anyhow.workspace = true
 icalendar = "0.16"
 blake3.workspace = true

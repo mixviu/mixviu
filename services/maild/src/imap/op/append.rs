@@ -144,12 +144,12 @@ fn parse_flag_list(s: &str) -> Result<(Flags, Tags), String> {
 
 /// Parse an IMAP `date-time` — `"DD-Mmm-YYYY HH:MM:SS +ZZZZ"` — into
 /// unix milliseconds. Returns `Err` on any structural deviation;
-/// callers map to `BAD`. Mirrors the `chrono::DateTime::parse_from_str`
+/// callers map to `BAD`. Mirrors the `datetime::DateTime::parse_from_str`
 /// shape used elsewhere in the crate.
 fn parse_internaldate(s: &str) -> Result<i64, String> {
     // `%d-%b-%Y %H:%M:%S %z` accepts e.g. `01-Jan-2026 10:00:00 +0000`.
     // chrono is case-insensitive on month names.
-    let dt = chrono::DateTime::parse_from_str(s, "%d-%b-%Y %H:%M:%S %z")
+    let dt = datetime::DateTime::parse_from_str(s, "%d-%b-%Y %H:%M:%S %z")
         .map_err(|e| format!("APPEND: invalid date-time {s:?}: {e}"))?;
     Ok(dt.timestamp_millis())
 }
@@ -224,7 +224,7 @@ pub async fn handle_many(
             req.flags,
             req.tags,
             req.received_at_ms
-                .unwrap_or_else(|| chrono::Utc::now().timestamp_millis()),
+                .unwrap_or_else(|| datetime::Utc::now().timestamp_millis()),
         ));
     }
     let Some(mailbox) = mailbox else {
@@ -402,6 +402,40 @@ mod tests {
     fn parse_args_with_date_time() {
         let r = parse_args(r#"INBOX "01-Jan-2026 10:00:00 +0000""#).unwrap();
         assert!(r.received_at_ms.is_some());
+    }
+
+    #[test]
+    fn append_date_parse_corpus_keeps_padding_and_whitespace() {
+        for text in [
+            " 7-Jan-2023 12:34:56 +0000",
+            "7-Jan-2023 12:34:56 +0000",
+            "07-jAn-2023 12:34:56 +0000",
+            "7-JAN-2023\t12:34:56\n+00:00",
+        ] {
+            let request = format!("INBOX \"{text}\"");
+            let args = parse_args(&request).unwrap();
+            assert_eq!(args.received_at_ms, Some(1_673_094_896_000), "{text:?}");
+        }
+        assert_eq!(
+            parse_args("INBOX \"7-jAn-2023 1:2:3 +1000\"")
+                .unwrap()
+                .received_at_ms,
+            Some(1_673_017_323_000)
+        );
+    }
+
+    #[test]
+    fn append_extended_years_return_bad_without_panicking() {
+        for text in [
+            "31-Dec-+999999 23:59:59 -0100",
+            "01-Jan--999999 00:00:00 +0100",
+        ] {
+            let request = format!("INBOX \"{text}\"");
+            let result = std::panic::catch_unwind(|| parse_args(&request));
+            assert!(result.is_ok(), "panic: {text}");
+            let error = result.unwrap().unwrap_err();
+            assert!(error.contains("invalid date-time"), "{error}");
+        }
     }
 
     #[test]

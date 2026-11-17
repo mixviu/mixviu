@@ -912,7 +912,7 @@ async fn serve(
     });
 
     let started = Instant::now();
-    let started_at = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let started_at = datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Secs, true);
     let log_level = std::env::var("RUST_LOG").unwrap_or_else(|_| "mixos_noded=info".to_string());
 
     let spec_dir_arc = spec_dir.map(Arc::new);
@@ -4086,7 +4086,7 @@ async fn handle_noded_command(
                 pid: prov.pid,
                 started_at: prov.started_at,
                 registered_at: Some(
-                    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+                    datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Secs, true),
                 ),
                 schema_version: bus::SCHEMA_VERSION,
                 meta: prov.meta,
@@ -5843,7 +5843,7 @@ mod tests {
             broker: broker.clone(),
             bind: format!("127.0.0.1:{listener_port}"),
             log_level: "info".into(),
-            started_at: chrono::Utc::now().to_rfc3339(),
+            started_at: datetime::Utc::now().to_rfc3339(),
             started,
             spec_dir: None,
             spec_release: None,

@@ -359,9 +359,9 @@ fn via_w(via: &Via) -> ViaW {
 }
 
 fn rfc3339_ms(ms: u64) -> String {
-    chrono::DateTime::<chrono::Utc>::from_timestamp_millis(ms as i64)
+    datetime::DateTime::<datetime::Utc>::from_timestamp_millis(ms as i64)
         .unwrap_or_default()
-        .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+        .to_rfc3339_opts(datetime::SecondsFormat::Millis, true)
 }
 
 fn internal_via() -> Via {

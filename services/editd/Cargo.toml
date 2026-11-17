@@ -26,7 +26,7 @@ props = { workspace = true, features = ["bus"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "signal"] }
 notify.workspace = true
 blake3.workspace = true
-chrono.workspace = true
+datetime.workspace = true
 rand.workspace = true
 libc.workspace = true
 clap.workspace = true

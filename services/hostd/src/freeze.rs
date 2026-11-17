@@ -37,7 +37,7 @@ pub fn freeze(dir: &Path, by: &Origin, reason: Option<&str>) -> anyhow::Result<V
         Err(_) => {}
     }
     let record = json!({
-        "since": chrono::Utc::now().to_rfc3339(),
+        "since": datetime::Utc::now().to_rfc3339(),
         "by": by,
         "reason": reason,
     });

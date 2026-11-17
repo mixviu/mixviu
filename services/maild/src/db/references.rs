@@ -101,7 +101,7 @@ pub fn save(db: &Db, key: &Key<'_>, reference: &Reference) -> Result<Reference, 
     reference.validate()?;
     let size = i64::try_from(reference.size).map_err(error)?;
     let conn = db.conn.lock().map_err(error)?;
-    let now = chrono::Utc::now().timestamp();
+    let now = datetime::Utc::now().timestamp();
     if let Some(part) = key.part {
         conn.execute("INSERT INTO attachment_refs (account_id,item_id,message_hash,part,blob,size,mime,name,origin,created_at) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10) ON CONFLICT(account_id,item_id,message_hash,part) DO NOTHING",
             params![key.account, key.item, key.message_hash, part, reference.blob, size, reference.mime, reference.name, reference.origin, now])

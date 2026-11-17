@@ -1037,7 +1037,7 @@ pub(crate) fn project_records_changed(
         "version": event.version.0,
         "audit_epoch": event.audit_epoch.0,
         "actor": event.actor.as_str(),
-        "ts": event.at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "ts": event.at.to_rfc3339_opts(datetime::SecondsFormat::Millis, true),
     });
     if let Json::Object(map) = &mut body {
         // `fields_changed` is non-secret names only; the
@@ -1112,7 +1112,7 @@ pub(crate) fn project_audit_row(
         "nseq": event.nseq.0,
         "audit_epoch": event.audit_epoch.0,
         "actor": event.actor.as_str(),
-        "at": event.at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        "at": event.at.to_rfc3339_opts(datetime::SecondsFormat::Millis, true),
         "audit_digest": event.audit_digest,
     });
     if let Json::Object(map) = &mut body {

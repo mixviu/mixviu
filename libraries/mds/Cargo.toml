@@ -48,7 +48,7 @@ blake3.workspace = true
 parking_lot = { version = "0.12", features = ["arc_lock"] }
 tracing.workspace = true
 tar = "0.4"
-chrono.workspace = true
+datetime.workspace = true
 libc.workspace = true
 
 [dev-dependencies]

@@ -10,6 +10,31 @@ use uuid::Uuid;
 use super::types::*;
 use crate::db::{self, Db};
 
+#[cfg(test)]
+#[path = "calendar_compat_tests.rs"]
+mod compat_tests;
+
+fn event_date(value: Option<&serde_json::Value>) -> Option<datetime::DateTime<datetime::Utc>> {
+    // Dates are optional index metadata; preserve the supplied JSCalendar data
+    // even when a blank, local or malformed date cannot populate that index.
+    value.and_then(|v| v.as_str()).and_then(|s| s.parse().ok())
+}
+
+#[cfg(test)]
+#[test]
+fn calendar_date_fields_preserve_relaxed_parse() {
+    for text in [
+        "2024-1-5T9:5:0UTC",
+        " 2024-01-05 09:05:00 +0000 ",
+        "2024-01-05t09:05:00z",
+    ] {
+        let value = serde_json::json!(text);
+        assert_eq!(event_date(Some(&value)).unwrap().timestamp(), 1_704_445_500);
+    }
+    assert!(event_date(None).is_none());
+    assert!(event_date(Some(&serde_json::Value::Null)).is_none());
+}
+
 /// Calendar/get
 pub async fn get(db: &Db, account_id: i32, args: serde_json::Value) -> Result<serde_json::Value> {
     let acct = account_id.to_string();
@@ -221,14 +246,8 @@ pub async fn event_query(
         .and_then(|f| f.get("calendarId"))
         .and_then(|v| v.as_str())
         .and_then(|s| s.parse::<Uuid>().ok());
-    let after = filter
-        .and_then(|f| f.get("after"))
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok());
-    let before = filter
-        .and_then(|f| f.get("before"))
-        .and_then(|v| v.as_str())
-        .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok());
+    let after = event_date(filter.and_then(|f| f.get("after")));
+    let before = event_date(filter.and_then(|f| f.get("before")));
     let position = args.get("position").and_then(|v| v.as_u64()).unwrap_or(0) as i64;
     let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as i64;
 
@@ -284,14 +303,8 @@ pub async fn event_set(
                 .unwrap_or(&Uuid::new_v4().to_string())
                 .to_string();
             let title = obj.get("title").and_then(|v| v.as_str());
-            let start_dt = obj
-                .get("start")
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok());
-            let end_dt = obj
-                .get("end")
-                .and_then(|v| v.as_str())
-                .and_then(|s| s.parse::<chrono::DateTime<chrono::Utc>>().ok());
+            let start_dt = event_date(obj.get("start"));
+            let end_dt = event_date(obj.get("end"));
 
             // The full JSCalendar object is the data
             match db::calendar::create_event(
@@ -329,9 +342,9 @@ pub async fn event_set(
             };
             // Values this patch actually names (None = "not changed").
             let parse_rfc = |s: &str| {
-                chrono::DateTime::parse_from_rfc3339(s)
+                datetime::DateTime::parse_from_rfc3339(s)
                     .ok()
-                    .map(|d| d.with_timezone(&chrono::Utc))
+                    .map(|d| d.with_timezone(&datetime::Utc))
             };
             let patch_title = patch.get("title").and_then(|v| v.as_str());
             let patch_start = patch

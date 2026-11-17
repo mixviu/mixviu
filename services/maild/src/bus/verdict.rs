@@ -109,7 +109,7 @@ pub fn render_peer_ip(ip: IpAddr) -> String {
 
 /// RFC3339 millisecond timestamp at call time.
 pub fn now_iso8601() -> String {
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Millis, true)
 }
 
 /// Build the inner Bus message that sits inside the `topic.publish`

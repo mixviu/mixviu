@@ -13,10 +13,6 @@ yanked = "warn"
 # shrinks: each fix PR removes its lines. A NEW advisory fails CI.
 ignore = [
   { id = "RUSTSEC-2023-0071", reason = "rsa 0.9 Marvin timing (no fixed release); inherited debt" },
-  # Added 2026-11-17 by Mark's ruling: chrono is unmaintained (not a known
-  # vulnerability) and a direct dependency of 17 crates, mix included. Exit:
-  # the workspace migration off chrono removes this line.
-  { id = "RUSTSEC-2026-0543", reason = "chrono unmaintained; workspace migration to follow, then remove" },
   { id = "RUSTSEC-2026-0367", reason = "zip SUID preservation on extract; inherited debt" },
   { id = "RUSTSEC-2026-0368", reason = "zip symlink escape on extract; inherited debt" },
   { id = "RUSTSEC-2026-0369", reason = "zip permissions through symlinks; inherited debt" },

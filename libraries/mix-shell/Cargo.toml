@@ -39,7 +39,7 @@ buildinfo.workspace = true
 # daemons. The substrate-shaped `props` (storage,
 # audit, SPEC 12 mutation router) lives in cos and is NOT pulled
 # here. The `bus` feature on props pulls
-# bus + chrono (for SPEC 07 §3/§4 wire builders).
+# bus + datetime (for SPEC 07 §3/§4 wire builders).
 props = { workspace = true, features = ["bus"] }
 # Shared logging core (bus). `mix --serve` initialises journald-primary
 # logging through `logging::init` (the serve preset). Pure core only
@@ -68,8 +68,8 @@ tracing = "0.1"
 # stack rather than adding another client.
 ureq = "2"
 # RFC3339 `lifecycle.started_at` (SPEC 18 WS4), matching the indexd
-# reference's chrono-formatted start timestamp.
-chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# reference's datetime-formatted start timestamp.
+datetime.workspace = true
 rusqlite.workspace = true
 blake3 = "1"
 ed25519-dalek = { version = "2", features = ["zeroize"] }

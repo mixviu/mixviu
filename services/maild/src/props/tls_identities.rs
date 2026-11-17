@@ -277,8 +277,8 @@ fn asn1time_to_rfc3339(t: &x509_parser::time::ASN1Time) -> String {
     // 3339 is the substrate-side convention (matches engine_config
     // timestamps and JMAP-side ISO strings).
     let secs = t.timestamp();
-    chrono::DateTime::<chrono::Utc>::from_timestamp(secs, 0)
-        .map(|dt| dt.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+    datetime::DateTime::<datetime::Utc>::from_timestamp(secs, 0)
+        .map(|dt| dt.to_rfc3339_opts(datetime::SecondsFormat::Secs, true))
         .unwrap_or_else(|| "INVALID".into())
 }
 

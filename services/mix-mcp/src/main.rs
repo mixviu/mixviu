@@ -60,7 +60,7 @@ const RESULT_SUMMARY_CAP: usize = 400;
 
 struct CallRecord {
     tool: String,
-    at: chrono::DateTime<chrono::Utc>,
+    at: datetime::DateTime<datetime::Utc>,
     ms: u64,
     ok: bool,
 }
@@ -74,7 +74,7 @@ struct MetricsInner {
 }
 
 struct Metrics {
-    started: chrono::DateTime<chrono::Utc>,
+    started: datetime::DateTime<datetime::Utc>,
     started_at: std::time::Instant,
     inner: std::sync::Mutex<MetricsInner>,
 }
@@ -82,7 +82,7 @@ struct Metrics {
 impl Metrics {
     fn new() -> Self {
         Self {
-            started: chrono::Utc::now(),
+            started: datetime::Utc::now(),
             started_at: std::time::Instant::now(),
             inner: std::sync::Mutex::new(MetricsInner::default()),
         }
@@ -98,7 +98,7 @@ impl Metrics {
         *g.counts.entry(tool.to_string()).or_insert(0) += 1;
         g.recent.push_back(CallRecord {
             tool: tool.to_string(),
-            at: chrono::Utc::now(),
+            at: datetime::Utc::now(),
             ms,
             ok,
         });
@@ -1267,10 +1267,10 @@ impl MixMcp {
         // Search journals (domain-filtered, then cross-domain), with temporal decay
         let mut journal_results =
             search_source(&mut indexd, &p.query, "journal", domain.as_deref(), limit).await;
-        let today = chrono::Local::now().date_naive();
+        let today = datetime::Local::now().date_naive();
         journal_results.retain_mut(|hit| {
             let date_str = hit.get("date").and_then(|v| v.as_str()).unwrap_or("");
-            let days_old = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+            let days_old = datetime::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
                 .map(|d| (today - d).num_days().max(0))
                 .unwrap_or(0);
             if k.journal_max_age_days > 0 && days_old as u32 > k.journal_max_age_days {
@@ -1295,7 +1295,7 @@ impl MixMcp {
             search_source(&mut indexd, &p.query, "memory", domain.as_deref(), limit).await;
         memory_results.retain_mut(|hit| {
             let date_str = hit.get("date").and_then(|v| v.as_str()).unwrap_or("");
-            let days_old = chrono::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+            let days_old = datetime::NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
                 .map(|d| (today - d).num_days().max(0))
                 .unwrap_or(0);
             if k.journal_max_age_days > 0 && days_old as u32 > k.journal_max_age_days {
