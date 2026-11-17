@@ -2,7 +2,7 @@
 //! Stable timestamp wire conventions over `time`.
 //!
 //! This is the bounded compatibility surface used by MixViu, not a calendar
-//! implementation. `time` owns date validation, arithmetic, parsing and local
+//! implementation. `time` owns date validation, arithmetic, RFC parsing and local
 //! offsets. This module owns historical precision, suffixes, range limits and
 //! strftime extensions, including representation of a parsed leap second.
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -104,7 +104,12 @@ impl<Z: Zone> DateTime<Z> {
             + if self.leap { 1_000_000 } else { 0 }
     }
     pub fn with_timezone<T: Zone>(&self, _: &T) -> DateTime<T> {
-        DateTime::new(self.inner.checked_to_offset(T::offset(self.inner)).unwrap_or(self.inner), self.leap)
+        DateTime::new(
+            self.inner
+                .checked_to_offset(T::offset(self.inner))
+                .unwrap_or(self.inner),
+            self.leap,
+        )
     }
     pub fn date_naive(&self) -> NaiveDate {
         NaiveDate(self.inner.date())
@@ -251,7 +256,9 @@ impl<Z: Zone> FromStr for DateTime<Z> {
     type Err = ParseError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let (t, leap) = parse::relaxed(s)?.zoned()?;
-        let inner = t.checked_to_offset(Z::offset(t)).ok_or_else(|| invalid("local datetime outside supported range"))?;
+        let inner = t
+            .checked_to_offset(Z::offset(t))
+            .ok_or_else(|| invalid("local datetime outside supported range"))?;
         Ok(Self::new(inner, leap))
     }
 }
@@ -550,7 +557,9 @@ fn format_value(
             "f" => out.push_str(&format!("{:09}", t.nanosecond())),
             ".f" => out.push_str(&fraction(t.nanosecond(), SecondsFormat::AutoSi)),
             "S" if leap => out.push_str("60"),
-            "w" | "-w" | "_w" | "0w" => out.push_str(&t.weekday().number_days_from_sunday().to_string()),
+            "w" | "-w" | "_w" | "0w" => {
+                out.push_str(&t.weekday().number_days_from_sunday().to_string())
+            }
             "C" => {
                 // Retain the historical two-column century representation,
                 // including extended/negative years, in the Mix formatter.

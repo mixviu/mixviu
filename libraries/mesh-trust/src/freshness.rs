@@ -105,8 +105,20 @@ mod tests {
             let text = format!("2024-01-05{separator}09:05:00Z");
             assert_eq!(parse_rfc3339(&text).unwrap().timestamp(), 1_704_445_500);
         }
-        for text in ["2024-01-05u09:05:00Z", "2024-01-05_09:05:00Z", "2024-1-5T9:5:0Z", "2024-01-05T09:05:00UTC", "2024-01-05T09:05:00+0000"] {
-            assert!(matches!(parse_rfc3339(text), Err(FreshnessError::InvalidTimestamp(_))), "{text:?}");
+        for text in [
+            "2024-01-05u09:05:00Z",
+            "2024-01-05_09:05:00Z",
+            "2024-1-5T9:5:0Z",
+            "2024-01-05T09:05:00UTC",
+            "2024-01-05T09:05:00+0000",
+        ] {
+            assert!(
+                matches!(
+                    parse_rfc3339(text),
+                    Err(FreshnessError::InvalidTimestamp(_))
+                ),
+                "{text:?}"
+            );
         }
     }
 

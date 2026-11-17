@@ -6,8 +6,13 @@ fn main() {
     for (tz, expected) in [("UTC0", "+0000"), ("AEST-10", "+1000"), ("UTC0", "+0000")] {
         // SAFETY: this executable never creates any other thread or invokes
         // third-party code that creates threads. Environment reads are serial.
-        unsafe { std::env::set_var("TZ", tz); }
-        assert_eq!(instant.with_timezone(&Local).format("%z").to_string(), expected);
+        unsafe {
+            std::env::set_var("TZ", tz);
+        }
+        assert_eq!(
+            instant.with_timezone(&Local).format("%z").to_string(),
+            expected
+        );
     }
     println!("timezone_refresh_within_single_threaded_process: passed");
 }

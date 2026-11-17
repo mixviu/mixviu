@@ -11,15 +11,23 @@ use super::types::*;
 use crate::db::{self, Db};
 
 fn invalid_date(field: &str) -> JmapMethodError {
-    JmapMethodError { error_type: "invalidArguments".into(), description: Some(format!("{field} must be a valid date-time string")) }
+    JmapMethodError {
+        error_type: "invalidArguments".into(),
+        description: Some(format!("{field} must be a valid date-time string")),
+    }
 }
 
 fn event_date_text(text: &str, field: &str) -> Result<datetime::DateTime<datetime::Utc>> {
     text.parse().map_err(|_| invalid_date(field).into())
 }
 
-fn event_date(value: Option<&serde_json::Value>, field: &str) -> Result<Option<datetime::DateTime<datetime::Utc>>> {
-    let Some(value) = value.filter(|v| !v.is_null()) else { return Ok(None) };
+fn event_date(
+    value: Option<&serde_json::Value>,
+    field: &str,
+) -> Result<Option<datetime::DateTime<datetime::Utc>>> {
+    let Some(value) = value.filter(|v| !v.is_null()) else {
+        return Ok(None);
+    };
     let text = value.as_str().ok_or_else(|| invalid_date(field))?;
     Ok(Some(event_date_text(text, field)?))
 }
@@ -357,8 +365,22 @@ pub async fn event_set(
                 continue; // no such event → nothing to update
             };
             let title = patch_title.or(cur.title.as_deref());
-            let start_dt = match patch_start { Some(date) => Some(date), None => cur.start_dt.as_deref().map(|s| event_date_text(s, "stored start")).transpose()? };
-            let end_dt = match patch_end { Some(date) => Some(date), None => cur.end_dt.as_deref().map(|s| event_date_text(s, "stored end")).transpose()? };
+            let start_dt = match patch_start {
+                Some(date) => Some(date),
+                None => cur
+                    .start_dt
+                    .as_deref()
+                    .map(|s| event_date_text(s, "stored start"))
+                    .transpose()?,
+            };
+            let end_dt = match patch_end {
+                Some(date) => Some(date),
+                None => cur
+                    .end_dt
+                    .as_deref()
+                    .map(|s| event_date_text(s, "stored end"))
+                    .transpose()?,
+            };
 
             let mut data = cur.data.clone();
             if let Some(t) = patch_title {
@@ -460,34 +482,60 @@ mod parse_tests {
     #[test]
     fn calendar_date_fields_preserve_relaxed_parse() {
         for field in ["after", "before", "start", "end"] {
-            for text in ["2024-1-5T9:5:0UTC", " 2024-01-05 09:05:00 +0000 ", "2024-01-05t09:05:00z"] {
+            for text in [
+                "2024-1-5T9:5:0UTC",
+                " 2024-01-05 09:05:00 +0000 ",
+                "2024-01-05t09:05:00z",
+            ] {
                 let value = json!(text);
                 let parsed = event_date(Some(&value), field).unwrap().unwrap();
                 assert_eq!(parsed.timestamp(), 1_704_445_500, "{field}: {text}");
             }
         }
         assert!(event_date(None, "start").unwrap().is_none());
-        assert!(event_date(Some(&serde_json::Value::Null), "start").unwrap().is_none());
+        assert!(
+            event_date(Some(&serde_json::Value::Null), "start")
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
     async fn calendar_methods_reject_malformed_dates_before_database_access() {
         let dir = tempfile::tempdir().unwrap();
-        let db = Db::connect(dir.path().join("mail.sqlite").to_str().unwrap(), dir.path().join("blobs").to_str().unwrap()).await.unwrap();
+        let db = Db::connect(
+            dir.path().join("mail.sqlite").to_str().unwrap(),
+            dir.path().join("blobs").to_str().unwrap(),
+        )
+        .await
+        .unwrap();
         // Intentionally no schema: date validation must precede queries/writes.
-        for value in [json!("not a date"), json!(42), json!("+999999-12-31T23:59:59-01:00"), json!("-999999-01-01T00:00:00+01:00")] {
+        for value in [
+            json!("not a date"),
+            json!(42),
+            json!("+999999-12-31T23:59:59-01:00"),
+            json!("-999999-01-01T00:00:00+01:00"),
+        ] {
             for field in ["after", "before"] {
                 let mut args = json!({"filter":{}});
                 args["filter"][field] = value.clone();
                 let error = event_query(&db, 1, args).await.unwrap_err();
-                assert_eq!(error.downcast_ref::<JmapMethodError>().unwrap().error_type, "invalidArguments");
+                assert_eq!(
+                    error.downcast_ref::<JmapMethodError>().unwrap().error_type,
+                    "invalidArguments"
+                );
             }
             for operation in ["create", "update"] {
                 for field in ["start", "end"] {
-                    let mut object = json!({}); object[field] = value.clone();
-                    let mut args = json!({}); args[operation] = json!({"c":object});
+                    let mut object = json!({});
+                    object[field] = value.clone();
+                    let mut args = json!({});
+                    args[operation] = json!({"c":object});
                     let error = event_set(&db, 1, args).await.unwrap_err();
-                    assert_eq!(error.downcast_ref::<JmapMethodError>().unwrap().error_type, "invalidArguments");
+                    assert_eq!(
+                        error.downcast_ref::<JmapMethodError>().unwrap().error_type,
+                        "invalidArguments"
+                    );
                 }
             }
         }

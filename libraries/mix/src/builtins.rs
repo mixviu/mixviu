@@ -41262,14 +41262,29 @@ mod loud_numeric_argument_tests {
             ("2024-1-5\t9:5:0", 1704445500.0),
             ("2024- 1- 5 \n 9: 5: 0", 1704445500.0),
         ] {
-            assert_eq!(call_builtin("date_parse", vec![Value::String(text.into())]).unwrap().unwrap(), Value::Number(expected), "{text:?}");
+            assert_eq!(
+                call_builtin("date_parse", vec![Value::String(text.into())])
+                    .unwrap()
+                    .unwrap(),
+                Value::Number(expected),
+                "{text:?}"
+            );
         }
     }
 
     #[cfg(feature = "datetime")]
     #[test]
     fn date_format_weekday_padding_flags_keep_sunday_zero() {
-        let result = call_builtin("date_format", vec![Value::Number(1700000000.0), Value::String("%w %-w %_w %0w".into()), utc_opts(Value::Bool(true))]).unwrap().unwrap();
+        let result = call_builtin(
+            "date_format",
+            vec![
+                Value::Number(1700000000.0),
+                Value::String("%w %-w %_w %0w".into()),
+                utc_opts(Value::Bool(true)),
+            ],
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(result, Value::String("2 2 2 2".into()));
     }
 
