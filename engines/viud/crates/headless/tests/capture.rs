@@ -993,10 +993,13 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
     assert_eq!(bus.call("comp.session.get", json!({}))["active"], true);
     let (_, _, owned_active) = ppm(&bus, &process, "owned-active", None);
     let expected_active = owned_active.clone();
-    let recording = bus.call("comp.record.start", json!({
-        "request_id":"pause-resume", "target":{"output":"headless-0"},
-        "path":process.root.join("pause-resume.vfl"), "max_seconds":30
-    }));
+    let recording = bus.call(
+        "comp.record.start",
+        json!({
+            "request_id":"pause-resume", "target":{"output":"headless-0"},
+            "path":process.root.join("pause-resume.vfl"), "max_seconds":30
+        }),
+    );
     for index in 0..3 {
         edge(b'P');
         assert_eq!(bus.call("comp.session.get", json!({}))["active"], false);
