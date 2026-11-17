@@ -209,21 +209,31 @@ mod tests {
         use std::{os::fd::AsRawFd, process::{Command, Stdio}, time::Duration};
         assert_eq!(unsafe { libc::geteuid() }, 0, "root required");
         let listener = linux::socket(2).unwrap();
+        let device = std::fs::read_dir("/sys/class/input").unwrap().filter_map(Result::ok).find(|e| e.file_name().to_string_lossy().starts_with("event")).map(|e| e.path()).expect("worker input device for real oracle");
+        let trigger = Command::new("udevadm").args(["trigger", "--action=change"]).arg(&device).output().unwrap();
+        eprintln!("oracle trigger: {:?}: {}", trigger.status, String::from_utf8_lossy(&trigger.stderr));
+        assert!(trigger.status.success(), "cannot capture real oracle");
+        let mut poll = libc::pollfd {fd: listener.as_raw_fd(), events:libc::POLLIN, revents:0};
+        assert!(unsafe {libc::poll(&mut poll,1,3000)} > 0, "no real host udev event");
+        let mut wire = vec![0;256*1024];
+        let (n,uid) = linux::receive(&listener,&mut wire).unwrap();
+        wire.truncate(n);
+        let props = properties(&wire,2).unwrap();
+        eprintln!("real oracle accepted: uid={uid} action={} subsystem={} bytes={n}",props["ACTION"], props["SUBSYSTEM"]);
         let mut ns = Command::new("unshare").args(["-n", "sleep", "30"]).spawn().unwrap();
         // This is a bounded discovery probe; the child owns its ephemeral ns.
         std::thread::sleep(Duration::from_millis(300));
         let path = format!("/proc/{}/ns/net", ns.id());
         let sender = linux::sender(path).unwrap();
-        let monitor = Command::new("timeout").args(["3", "nsenter", "-t", &ns.id().to_string(), "-n", "udevadm", "monitor", "--udev", "--property"])
+        let monitor = Command::new("timeout").env("SYSTEMD_LOG_LEVEL", "debug").args(["3", "nsenter", "-t", &ns.id().to_string(), "-n", "udevadm", "monitor", "--udev", "--property"])
             .stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
         std::thread::sleep(Duration::from_millis(300));
-        let wire = fixture();
         let sent = linux::send(&sender, 2, &wire);
         let output = monitor.wait_with_output().unwrap();
         let _ = ns.kill(); let _ = ns.wait();
         eprintln!("namespace send: {sent:?}; monitor stdout: {}; stderr: {}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
         sent.unwrap();
-        assert!(String::from_utf8_lossy(&output.stdout).contains("SEQNUM=42"), "libudev must accept copied datagram");
+        assert!(String::from_utf8_lossy(&output.stdout).contains(&format!("SEQNUM={}",props["SEQNUM"])), "libudev must accept copied datagram");
         // A real processed event is the next oracle, if the worker runs udevd
         // and offers a writable input trigger. Never silently use a fake one.
         let trigger = Command::new("udevadm").args(["trigger", "--action=change", "/sys/class/input/event0"]).output().unwrap();
