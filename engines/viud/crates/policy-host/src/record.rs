@@ -1161,9 +1161,15 @@ mod tests {
         }
         let s = drain_fixture("discard", &root);
         install_stop_waker(&s, events.handle());
+        let (_probe_tx, probe_rx) = std::sync::mpsc::channel();
+        s.borrow_mut().probe = Some(probe_rx);
         screencopy::file::session_paused(true);
+        tick(&s, || panic!("a preflight pause must not need a capture tick"));
         let fence = screencopy::file::testing::stall_next_read();
         submit(&s, &mut renderer, &outputs[0]);
+        std::thread::sleep(Duration::from_millis(1100));
+        screencopy::file::poll(&mut renderer, &outputs[1]);
+        assert_eq!(screencopy::file::testing::read_count(), 1, "reads admitted during a preflight pause inherit the paused clock");
         let reply = stop(&s, true);
         assert_eq!(
             screencopy::file::testing::read_count(),
