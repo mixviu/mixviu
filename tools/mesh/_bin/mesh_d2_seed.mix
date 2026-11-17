@@ -22,6 +22,8 @@
 -- they are never looked up in the mesh inventory.
 
 $d = require("../_lib/deploy_lib.mix")
+$hosts = require("../_lib/hosts.mix")
+$hosts.check($d.hub_root())
 $m = require("../_lib/mesh_lib.mix")
 $desk = require("../_lib/desk_ops.mix")
 $DESK_PROGRAM = $desk.worker_program(dirname(dirname(realpath($0))) .. "/_lib/desk_worker.mix")
@@ -281,23 +283,18 @@ $vi = $m.verified_inventory($SIGNED, {
   baseline: $BASELINE
 })
 $mesh = $vi["inventory"]
-$active = []
-for each $member in $mesh["members"]
-  if $member["status"] == "active" then
-    push($active, $member["name"])
-  end
-end
-$d.die_if(not same_strings($ROSTER["mesh"], $active),
-  "fleet roster mesh nodes must exactly match the verified active inventory")
+$citizens = $hosts.citizens($mesh)
+$selected = filter($selected, fn($n) = contains($citizens,$n))
 $hubs = $d.mesh_hubs()
 $d.die_if(not same_strings($hubs, $mesh["hub"]),
   "authored and verified inventories disagree on hub membership")
 
+if not has_str($hubs,$LOCAL) then push($hubs,$LOCAL) end
 $canonical = $d.rollout_order($ROSTER)
 $seen_rollout = []
 $hub_tail = false
 for each $node in $canonical
-  $d.die_if(not has_str($ROSTER["mesh"], $node),
+  $d.die_if(not has_str($ROSTER["all"], $node),
     "rollout_order contains non-mesh node '" .. $node .. "'")
   $d.die_if(has_str($seen_rollout, $node),
     "rollout_order repeats node '" .. $node .. "'")
@@ -309,7 +306,7 @@ for each $node in $canonical
   end
   push($seen_rollout, $node)
 end
-$d.die_if(not same_strings($seen_rollout, $ROSTER["mesh"]),
+$d.die_if(not same_strings($seen_rollout, $ROSTER["all"]),
   "rollout_order must contain every rostered mesh node exactly once")
 
 $nodes = []
@@ -319,7 +316,7 @@ for each $candidate in $canonical
   end
 end
 for each $node in $selected
-  if $d.is_foreign($ROSTER, $node) then
+  if $d.is_foreign($ROSTER, $node) and not has_str($canonical,$node) then
     push($nodes, $node)
   end
 end
@@ -331,6 +328,7 @@ end
 $d.die_if(len($nodes) != len($selected),
   "one or more selected mesh nodes are absent from rollout_order")
 
+if len($nodes) == 0 then print("no citizen seeds selected"); exit(0) end
 if not is_file($DB) then
   print("  ERROR: secrets database not found: " .. $DB)
   exit(2)

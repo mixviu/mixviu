@@ -3,7 +3,7 @@
 -- proposal for a later deliberate rollout.
 --
 --   mix _bin/mesh_join.mix <node> <wg-pubkey> <inventory.mix> \
---     [--secrets-db DB] [--no-sign] [--no-gen]
+--     [--secrets-db DB] [--no-sign] [--no-gen] [--transport-only]
 --
 -- The inventory argument is mandatory: a bare run cannot mutate the canonical
 -- trust root. The node supplies its own WireGuard public key; this script never
@@ -12,6 +12,8 @@
 -- proposal. Distribution and shared artefact generation remain separate steps.
 
 $d = require("../_lib/deploy_lib.mix")
+$hosts = require("../_lib/hosts.mix")
+$hosts.check($d.hub_root())
 
 $CONF_PATH = $d.hub_root() .. "/_etc/mesh_join.conf.mix"
 if not is_file($CONF_PATH) then
@@ -55,6 +57,7 @@ $node = ""
 $wgpub = ""
 $INVENTORY = ""
 $DB = $DEFAULT_DB
+$transport_only = false
 $do_sign = true
 $do_gen = true
 $prod_ok = false
@@ -63,6 +66,11 @@ $i = 0
 $argv = args()
 while $i < len($argv)
   $arg = $argv[$i]
+  if $arg == "--transport-only" then
+    $transport_only = true
+    $i = $i + 1
+    continue
+  end
   if $arg == "--secrets-db" then
     if $i + 1 >= len($argv) then
       print("  ERROR: --secrets-db needs a path")
@@ -88,7 +96,7 @@ while $i < len($argv)
   $i = $i + 1
 end
 if len($pos) != 3 then
-  print("  ERROR: usage: mix mesh_join.mix <node> <wg-pubkey> <inventory.mix> [--secrets-db DB] [--no-sign] [--no-gen]")
+  print("  ERROR: usage: mix mesh_join.mix <node> <wg-pubkey> <inventory.mix> [--secrets-db DB] [--no-sign] [--no-gen] [--transport-only]")
   exit(2)
 end
 $node = $pos[0]
@@ -303,6 +311,8 @@ print("[join] node=" .. $node .. " mesh=" .. $mesh .. " wg_ip=" .. $ip ..
 $m.assert_same_file($INVENTORY, $INV_ID, "inventory")
 assert_db_pin()
 $ms_args = [$MS, "mesh", "--secrets-db", $DB, "--mesh", $mesh]
+$d2pub = ""
+if not $transport_only then
 $generated = run_argv(concat($ms_args, ["d2-gen", $node]), {timeout: 60})
 $d.die_if($generated["exit_code"] != 0,
   "d2-gen failed: " .. trim($generated["stderr"]))
@@ -314,11 +324,12 @@ $d2pub = trim($published["stdout"])
 $d.die_if(not $m.is_valid_b64key($d2pub),
   "minted d2 pubkey is not a 44-char base64 key: '" .. $d2pub .. "'")
 print("[join] d2 minted: " .. $d2pub)
+end
 
 -- Insert the member first and bump only indented inventory keys, preserving the
 -- hand-authored comments and formatting around the strict-data map.
-$member_text = "    {\n      name: \"" .. $node .. "\",\n      mesh_ip: \"" .. $ip .. "\",\n      bus: true,\n      status: \"active\",\n      credentials: [\n        { kind: \"wg\", pubkey: \"" .. $wgpub .. "\", from_epoch: " .. ("" .. $new_epoch) .. ", until_epoch: nil },\n        { kind: \"d2\", pubkey: \"" .. $d2pub .. "\", from_epoch: " .. ("" .. $new_epoch) .. ", until_epoch: nil }\n      ],\n      last_touched_epoch: " .. ("" .. $new_epoch) .. "\n    },"
-
+$join = require("../_lib/join_member.mix")
+$member_text = "    " .. data_encode($join.member($node,$ip,$wgpub,$new_epoch,if $transport_only then nil else $d2pub end)) .. ","
 $source = read_file($INVENTORY)
 $output = []
 $inserted_member = false
@@ -400,4 +411,9 @@ print("  1. distribute the signed inventory, trust anchor and d2 seed with mesh_
 print("  2. seal shared artefacts with mesh_gen.mix seal after rollout")
 print("  3. deploy the sealed WireGuard and DNS state")
 print("  4. provision the joining node with its signed inventory, trust material and WG state")
-print("  the node's d2 seed is in " .. $DB .. " under vnode='" .. $node .. "'")
+if not $transport_only then
+  print("  D2 seed stored for citizen " .. $node)
+else
+  print("  transport-only: WG only; no D2 key, seed or broker rollout")
+end
+print("  run mesh_hosts.mix gen then check before rollout")

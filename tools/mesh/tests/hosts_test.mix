@@ -1,0 +1,108 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$h = require("../_lib/hosts.mix")
+fn check($ok,$message)
+  if not $ok then raise("TEST",$message) end
+end
+$header = "-- GENERATED from _etc/mesh/hosts.conf.mix + _etc/mesh/inventory.mix + mesh_sync.local_node; do not edit\n"
+$facts = {schema_version:1,project:"example",hosts:[
+  {name:"anchor",login:"mix",layout:"gold",target:{host:"anchor",kind:"system"}},
+  {name:"relay",login:"bash",layout:"legacy",target:{host:"relay",kind:"system"}},
+  {name:"desk-a",login:"mix",layout:"gold",target:{host:"host-a",kind:"desk",transport:"pct",ct:101,session:4,account:"user",profile:"/opt/mix/var/lib/example/desk-a",admission:"enforce"}},
+  {name:"worker",login:"bash",layout:"gold",target:{host:"worker",kind:"system"}},
+  {name:"external",login:"bash",layout:"gold",target:{host:"external",kind:"system"}}]}
+$inv = {schema_version:1,mesh:"example.org",subnet:"192.0.2.0/24",epoch:1,hub:["relay"],members:[]}
+for $name in ["anchor","relay","desk-a","worker"]
+  $inv.members = push($inv.members,{name:$name,status:"active",bus:$name != "worker",mesh_ip:"192.0.2." .. to_string(len($inv.members) + 1),credentials:[{kind:"wg",pubkey:base64_encode("01234567890123456789012345678901"),from_epoch:1,until_epoch:nil}]})
+end
+$bytes = $h.derive($facts,$inv,"anchor")
+check($bytes.roster == $header .. data_encode({fleet_roster:{schema_version:1,mesh:["anchor","desk-a"],foreign:["external","relay","worker"],rollout_order:["desk-a","external","worker","relay","anchor"]}}) .. "\n","roster exact bytes")
+$expected_targets = []
+for $host in $facts.hosts
+  $target = $host.target
+  $target.node = $host.name
+  push($expected_targets,$target)
+end
+check($bytes.targets == $header .. data_encode({schema_version:1,project:"example",targets:$expected_targets}) .. "\n","targets exact bytes")
+$gold = {mix_bin:"/opt/mix/bin/mix",roots:{prefix:"/opt/mix",etc:"/opt/mix/etc",var:"/opt/mix/var"}}
+$legacy = {mix_bin:"/opt/example/bin/mix",legacy_defaults:true,roots:{prefix:"/opt/example",etc:"/etc/example",var:"/var/lib/example",cache:"/var/cache/example",run:"/run/example",share:"/opt/example/share"}}
+check($bytes.nodes == $header .. data_encode({nodes:{anchor:$gold,relay:$legacy,"desk-a":$gold,worker:$gold,external:$gold,local:$gold}}) .. "\n","settings exact bytes")
+for $case in ["missing-facts","missing-member","tombstone","roots","interpreter","duplicate","class","hub"]
+  $f = $facts
+  $i = $inv
+  $hub = "anchor"
+  if $case == "missing-facts" then $f.hosts = slice($f.hosts,1) end
+  if $case == "missing-member" then $i.members = slice($i.members,1) end
+  if $case == "tombstone" then $i.members[2].status = "tombstoned" end
+  if $case == "roots" then $f.hosts[0].roots = {prefix:"/wrong"} end
+  if $case == "interpreter" then $f.hosts[0].mix_bin = "/wrong/mix" end
+  if $case == "duplicate" then $f.hosts = push($f.hosts,$f.hosts[0]) end
+  if $case == "class" then $f.hosts[0].bus = true end
+  if $case == "hub" then $hub = "worker" end
+  $refused = false
+  try
+    $h.derive($f,$i,$hub)
+  catch $error
+    $refused = true
+  end
+  check($refused,"refuse " .. $case)
+end
+$root = trim(run_argv_must(["mktemp","-d"]))
+$saved_nodes = read_file($h.paths($root).nodes)
+try
+  mkdir($root .. "/_etc/mesh",{parents:true})
+  write_file($root .. "/_etc/mesh/hosts.conf.mix",data_encode({mesh_hosts:$facts}))
+  write_file($root .. "/_etc/mesh/inventory.mix",data_encode({inventory:$inv}))
+  write_file($root .. "/_etc/mesh_sync.conf.mix",data_encode({mesh_sync:{local_node:"anchor"}}))
+  -- Explicit nodes path keeps all fixtures independent of the suite's hub.
+  $paths = $h.paths($root)
+  for $key in ["roster","targets","nodes"]
+    write_file($paths[$key],$bytes[$key])
+  end
+  check($h.check($root),"clean projections")
+  $old_nodes = load_data($paths.nodes)
+  $old_nodes.nodes.retired = $legacy
+  -- Hosts without old settings need the explicit migration default.
+  $old_nodes.nodes = {anchor:$gold,relay:$legacy,"desk-a":$gold,retired:$legacy,local:$gold}
+  write_file($paths.nodes,data_encode($old_nodes))
+  $imported = $h.import_facts($root,"gold")
+  $migrated = $h.derive($imported,$inv,"anchor")
+  write_file($root .. "/migrated.mix",$migrated.nodes)
+  write_file($root .. "/expected.mix",$bytes.nodes)
+  check(deep_eq(load_data($root .. "/migrated.mix").nodes,load_data($root .. "/expected.mix").nodes),"migration drops retired settings, keeps legacy and adds default gold hosts")
+  write_file($paths.nodes,$bytes.nodes)
+  for $key in ["roster","targets","nodes"]
+    write_file($paths[$key],$bytes[$key] .. "-- drift\n")
+    $refused = false
+    try
+      $h.check($root)
+    catch $error
+      $refused = contains($error,$key)
+    end
+    check($refused,"drift caught: " .. $key)
+    write_file($paths[$key],$bytes[$key])
+  end
+  check(deep_eq($h.citizens($inv),["anchor","relay","desk-a"]),"route-free worker excluded from seed/restart selection")
+  $exe = realpath("/proc/self/exe")
+  -- Real CLI, with temporary files only; --no-sign exercises no key tooling.
+  write_file($root .. "/_etc/mesh_join.conf.mix",data_encode({mesh_join:{schema_version:1,default_secrets_db:$root .. "/canonical.db",expected_mesh:"example.org"}}))
+  $lab = $root .. "/lab.mix"
+  $lab_text = "inventory: {\n  epoch: 1,\n  schema_version: 1, mesh: \"example.org\", subnet: \"192.0.2.0/24\", hub: [\"anchor\"],\n  members: [\n    " .. data_encode($inv.members[0]) .. "\n  ]\n}\n"
+  write_file($lab,$lab_text)
+  $r = run_argv([$exe,dirname($0) .. "/../_bin/mesh_join.mix","new-worker",base64_encode("abcdefghijklmnopqrstuvwxyz123456"),$lab,"--transport-only","--no-sign","--secrets-db",$root .. "/lab.db"],{env:{MESH_HUB:$root,MESH_PROJECT:"example"}})
+  check($r.ok,"transport join executes: " .. $r.stdout .. $r.stderr)
+  $joined = load_data($lab).inventory
+  check($joined.epoch == 2 and $joined.members[0].bus == false and len($joined.members[0].credentials) == 1,"transport join is WG-only")
+  check(not is_file($root .. "/lab.db"),"transport join never mints a D2 seed")
+  check(not contains($h.citizens($joined),"new-worker"),"joined transport never enters seed/restart list")
+  -- Every public mutator must refuse drift before even reading its tool config.
+  for $tool in ["mesh_join","mesh_d2_seed","mesh_sync"]
+    write_file($paths.roster,$bytes.roster .. "-- drift\n")
+    $r = run_argv([$exe,dirname($0) .. "/../_bin/" .. $tool .. ".mix"],{env:{MESH_HUB:$root}})
+    check(not $r.ok and contains($r.stderr .. $r.stdout,"generated roster differs"),"preflight before mutation: " .. $tool .. $r.stdout .. $r.stderr)
+    write_file($paths.roster,$bytes.roster)
+  end
+finally
+  write_file($h.paths($root).nodes,$saved_nodes)
+  run_argv_must(["rm","-rf",$root])
+end
+print("PASS host projections, refusals, drift and route-free selection")

@@ -11,6 +11,8 @@
 -- the canonical fleet cache.
 
 $d = require("../_lib/deploy_lib.mix")
+$hosts = require("../_lib/hosts.mix")
+$hosts.check($d.hub_root())
 $desk = require("../_lib/desk_ops.mix")
 $verify_policy = require("../_lib/sync_verify.mix")
 $DESK_PROGRAM = $desk.worker_program(dirname(dirname(realpath($0))) .. "/_lib/desk_worker.mix")
@@ -294,7 +296,7 @@ end
 $ROSTER = $d.roster()
 $DESKS = $desk.load_targets($d.hub_root() .. "/_etc/mesh_targets.conf.mix",$d.project(),$ROSTER.all)
 $MESH_ROSTER = {
-  mesh: $ROSTER["mesh"], foreign: [], all: $ROSTER["mesh"], order: $ROSTER["order"]
+  mesh: $ROSTER["mesh"], foreign: $ROSTER["foreign"], all: $ROSTER["all"], order: $ROSTER["order"]
 }
 $d.assert_node($MESH_ROSTER, $LOCAL)
 
@@ -389,12 +391,7 @@ $d.die_if(hash_file($SNAP, "sha256") != $before,
 $planned = load_data($SNAP)["inventory"]
 $m.validate_inventory($planned)
 $epoch = $planned["epoch"]
-$bus_active = []
-for each $member in $planned["members"]
-  if $member["bus"] == true and $member["status"] == "active" then
-    push($bus_active, $member["name"])
-  end
-end
+$bus_active = $hosts.citizens($planned)
 
 -- Validate the private rollout as a complete, duplicate-free, hubs-last order.
 $rollout = $d.rollout_order($ROSTER)
@@ -405,8 +402,9 @@ $live_hubs = $d.mesh_hubs()
 $d.die_if(not same_strings($live_hubs, $planned["hub"]),
   "located authored inventory changed while its frozen snapshot was being planned")
 $hubs = $planned["hub"]
+if not has_str($hubs,$LOCAL) then push($hubs,$LOCAL) end
 for each $node in $rollout
-  $d.die_if(not has_str($ROSTER["mesh"], $node),
+  $d.die_if(not has_str($ROSTER["all"], $node),
     "rollout_order contains non-mesh node '" .. $node .. "'")
   $d.die_if(has_str($seen, $node), "rollout_order repeats node '" .. $node .. "'")
   if has_str($hubs, $node) then
@@ -419,7 +417,7 @@ for each $node in $rollout
     push($ordered, $node)
   end
 end
-$d.die_if(not same_strings($seen, $ROSTER["mesh"]),
+$d.die_if(not same_strings($seen, $ROSTER["all"]),
   "rollout_order must contain every rostered mesh node exactly once")
 $d.die_if(not same_strings($ordered, $bus_active),
   "fleet roster/rollout bus nodes must exactly match the authored bus+active inventory")

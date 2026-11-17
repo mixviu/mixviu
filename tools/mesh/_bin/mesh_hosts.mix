@@ -1,0 +1,23 @@
+#!/usr/bin/env mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$h = require("../_lib/hosts.mix")
+$d = require("../_lib/deploy_lib.mix")
+$hub = $d.hub_root()
+if len(args()) == 2 and args()[0] == "import" then
+  $facts = $h.import_facts($hub,args()[1])
+  write_new($hub .. "/_etc/mesh/hosts.conf.mix",data_encode({mesh_hosts:$facts}) .. "\n",0o644)
+  print("mesh_hosts: imported facts; review before gen")
+  exit(0)
+end
+if len(args()) != 1 or not contains(["gen","check"],args()[0]) then raise("MESH_HOSTS","usage: mesh_hosts.mix gen|check|import gold|legacy") end
+if args()[0] == "check" then
+  $h.check($hub)
+else
+  -- Validate the entire input before writing any derived file.
+  $bytes = $h.expected($hub)
+  $paths = $h.paths($hub)
+  for $key in ["roster","targets","nodes"]
+    write_file($paths[$key],$bytes[$key])
+  end
+end
+print("mesh_hosts: " .. args()[0] .. " OK")
