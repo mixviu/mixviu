@@ -49,7 +49,7 @@ on post-start and pre-stop. It also does so on post-stop: pre-stop runs while
 the CT init may still exist, so that first reconciliation can reattach it;
 post-stop reconciles after init exits, leaving stopped CTs without a socket.
 Startup enumerates configured CT init PIDs with `lxc-info`; it checks each PID
-again after creating its socket. No polling or interprocess transport.
+again after creating its socket. No lifecycle polling or custom transport.
 Each restart closes all old sockets and reopens the running CT namespaces.
 It can lose events during the restart, normally about a second while a CT is
 starting or stopping, including events for other running CTs. Slow startup or
