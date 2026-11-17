@@ -449,9 +449,9 @@ fn compose(
             true,
         );
     }
-    // finish() and file::service above synchronously map their readbacks;
-    // GLES map_texture blocks on each copy (including file::read_pixels).
-    // All reads complete before targets rotate or the cached cursor is reused.
+    // Protocol copies and screenshots map synchronously. Recording PBO copies
+    // precede subsequent texture writes in GL command order, so their fences
+    // can complete after targets rotate or the cached cursor is reused.
     captures.finish(renderer);
     ctx.next ^= 1;
     // A capture of unchanged content is not a new presentation.

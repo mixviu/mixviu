@@ -222,10 +222,10 @@ pub fn fail_windows(reason: &str) {
     cancel(|request| request.spec.window.is_some(), reason);
 }
 
-/// Read once for all callers, normalise to top-down RGB, then encode. Mapping
-/// may change the current GL target; nested restores its EGL surface afterwards.
-/// read_pixels maps synchronously, blocking on the copy before this returns;
-/// the backend may then rotate or reuse the source texture.
+/// Share one snapshot between callers. Raw recording requests retain the PBO
+/// behind an EGL fence; screenshots still map synchronously. GL ordering makes
+/// the PBO independent of subsequent source texture reuse. Mapping may change
+/// the current GL target; nested restores its EGL surface afterwards.
 pub fn service(
     renderer: &mut GlesRenderer,
     source: Source<'_, '_, GlesRenderer>,
