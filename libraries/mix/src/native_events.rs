@@ -162,6 +162,7 @@ impl Families {
     fn source(self, command: &str) -> bool {
         match command {
             "net.changed" => self.net,
+            "uevent.received" => self.net,
             "audio.changed" => self.audio,
             _ => false,
         }
@@ -595,6 +596,17 @@ impl Queue {
         if !s.ready() {
             return None;
         }
+        if s.command == "uevent.received" {
+            let mut body = s.changes.pop_first().map(|(_, v)| v).unwrap_or_else(|| serde_json::json!({}));
+            body["watch"] = handle.into();
+            body["overflow"] = std::mem::take(&mut s.overflow).into();
+            if s.changes.is_empty() && let Some(closed) = s.closed.take() {
+                body["closed"] = closed;
+            }
+            let mut ev = event(s.command, body);
+            ev.headers.insert("native-uevent".into(), "1".into());
+            return Some(ev);
+        }
         let changes: Vec<_> = std::mem::take(&mut s.changes).into_values().collect();
         let overflow = std::mem::take(&mut s.overflow);
         let mut body =
@@ -813,6 +825,8 @@ pub(crate) fn json_value(v: serde_json::Value) -> Value {
 static NEXT_OWNER_ID: AtomicU64 = AtomicU64::new(1);
 
 pub(crate) struct NativeEvents {
+    #[cfg(target_os = "linux")]
+    uevent_senders: BTreeMap<String, std::os::fd::OwnedFd>,
     timers: BTreeMap<String, crate::timers::Source>,
     next_timer: u64,
     processes: BTreeMap<String, crate::child_events::ProcessWatch>,
@@ -837,6 +851,8 @@ pub(crate) struct NativeEvents {
 impl Default for NativeEvents {
     fn default() -> Self {
         NativeEvents {
+            #[cfg(target_os = "linux")]
+            uevent_senders: BTreeMap::new(),
             timers: BTreeMap::new(),
             next_timer: 0,
             processes: BTreeMap::new(),
@@ -1098,6 +1114,63 @@ impl NativeEvents {
             crate::desktop_events::NetSource::new(queue, h, groups)
                 .map(crate::desktop_events::Source::Net)
         })
+    }
+
+    pub(crate) fn uevent_call(&mut self, name: &str, args: Vec<Value>) -> MixResult<Value> {
+        #[cfg(not(target_os = "linux"))]
+        { let _ = (name, args); Err(refusal("UEVENT_UNSUPPORTED", "uevent requires Linux")) }
+        #[cfg(target_os = "linux")]
+        {
+            self.ensure_open()?;
+            if name == "uevent_watch" {
+                let mut group = 2;
+                let mut subsystems = Vec::new();
+                if let Some(opts) = args.first() {
+                    let Value::Map(opts) = opts else { return Err(refusal("UEVENT_OPTIONS", "options must be a map")); };
+                    for (key, value) in opts.iter() {
+                        match (key.as_str(), value) {
+                            ("group", Value::Number(n)) if *n == 1.0 || *n == 2.0 => group = *n as u32,
+                            ("subsystems", Value::List(list)) => {
+                                for value in list.iter() {
+                                    let Value::String(s) = value else { return Err(refusal("UEVENT_OPTIONS", "subsystems must be strings")); };
+                                    if s.is_empty() { return Err(refusal("UEVENT_OPTIONS", "empty subsystem")); }
+                                    subsystems.push(s.clone());
+                                }
+                            }
+                            _ => return Err(refusal("UEVENT_OPTIONS", format!("invalid option: {key}"))),
+                        }
+                    }
+                }
+                return self.source_watch("uevent", "uevent.received", move |queue, h| {
+                    crate::uevent::linux::Watch::new(queue, h, group, subsystems).map(crate::desktop_events::Source::Uevent)
+                }).map(Value::String);
+            }
+            let Some(Value::String(h)) = args.first() else { return Err(refusal("UEVENT_HANDLE", "path/handle must be a string")); };
+            if name == "uevent_unwatch" {
+                self.source_unwatch("uevent", h)?;
+                return Ok(Value::Nil);
+            }
+            if name == "uevent_sender" {
+                if self.uevent_senders.len() >= 128 { return Err(refusal("UEVENT_LIMIT", "maximum 128 senders")); }
+                let fd = crate::uevent::linux::sender(h.clone())?;
+                let handle = format!("uevent-send:{}", NEXT_HANDLE.fetch_add(1, Ordering::Relaxed));
+                self.uevent_senders.insert(handle.clone(), fd);
+                return Ok(Value::String(handle));
+            }
+            if name == "uevent_close" {
+                if self.uevent_senders.remove(h).is_none() { return Err(refusal("UEVENT_HANDLE", "unknown sender")); }
+                return Ok(Value::Nil);
+            }
+            let group = match args.get(1) { Some(Value::Number(n)) if *n == 1.0 || *n == 2.0 => *n as u32, _ => return Err(refusal("UEVENT_GROUP", "group must be 1 or 2")) };
+            let bytes = match args.get(2) {
+                Some(Value::Bytes(b)) => b.as_ref().clone(),
+                Some(Value::Buffer(b)) => b.borrow().clone(),
+                _ => return Err(refusal("UEVENT_BYTES", "data must be bytes or buffer")),
+            };
+            let fd = self.uevent_senders.get(h).ok_or_else(|| refusal("UEVENT_HANDLE", "unknown sender"))?;
+            crate::uevent::linux::send(fd, group, &bytes)?;
+            Ok(Value::Nil)
+        }
     }
 
     /// `audio_watch`: one managed `pactl subscribe` child per handle.
@@ -1493,6 +1566,8 @@ impl NativeEvents {
         }
         self.processes.clear();
         self.desktop.clear();
+        #[cfg(target_os = "linux")]
+        self.uevent_senders.clear();
         #[cfg(feature = "ws")]
         {
             self.sockets.clear(); // each Drop cancels + joins its reader
