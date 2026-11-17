@@ -1,4 +1,4 @@
-#!/opt/mix/bin/mix
+#!/usr/local/bin/mix
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.2.0
 -- Proxmox invokes hookscript VMID PHASE. post-stop reconciles after init exits.

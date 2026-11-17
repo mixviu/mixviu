@@ -4,7 +4,7 @@
 $config = require("config.mix")
 $argv = args()
 if len($argv) > 1 then die("usage: mix forwarder.mix [config.conf.mix]") end
-$cfg_path = if len($argv) == 1 then $argv[0] else "/opt/mix/etc/udev-forwarder.conf.mix" end
+$cfg_path = if len($argv) == 1 then $argv[0] else mix_path("etc", "udev-forwarder.conf.mix", {tier:"system"}) end
 $cfg = $config.load($cfg_path)
 $senders = {}
 

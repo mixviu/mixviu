@@ -4,18 +4,24 @@
 $argv = args()
 if len($argv) > 1 or (len($argv) == 1 and $argv[0] != "--check") then die("usage: mix install.mix [--check]") end
 $check = contains($argv, "--check")
+$roots = {}
+for $name in ["prefix", "share", "lib", "etc", "var", "run", "cache"]
+  $roots[$name] = mix_path($name, "", {tier:"system"})
+end
+$mix_bin = $roots.prefix .. "/bin/mix"
+$renderer = require("../../../share/layout/render.mix")
 for $name in ["uevent_watch", "uevent_unwatch", "uevent_sender", "uevent_send", "uevent_close"]
-  $probe = run_argv(["/opt/mix/bin/mix", "builtins", $name])
-  if not $probe.ok then die("installed /opt/mix/bin/mix lacks " .. $name .. "; install a gold containing the udev builtins and brokerless native pump fix first") end
+  $probe = run_argv([$mix_bin, "builtins", $name])
+  if not $probe.ok then die("installed " .. $mix_bin .. " lacks " .. $name .. "; install a gold containing the udev builtins and brokerless native pump fix first") end
 end
 -- Builtins alone do not identify an older binary with the broken plain pump.
 -- Stdin avoids a temporary file, keeping --check read-only.
 $pump_probe = "$clock = timer_once(0.1, \"preflight\")\non timer.tick\n  print(\"native-pump-ready\")\n  exit(0)\nend\n"
-$pump = run_argv(["/opt/mix/bin/mix", "-"], {stdin:$pump_probe, env:{MIX_NODED_URL:"ws://127.0.0.1:1/ws"}, timeout:5})
-if not $pump.ok or trim($pump.stdout) != "native-pump-ready" then die("installed /opt/mix/bin/mix cannot keep the native event pump alive without a broker; install a gold containing the brokerless pump fix first") end
+$pump = run_argv([$mix_bin, "-"], {stdin:$pump_probe, env:{MIX_NODED_URL:"ws://127.0.0.1:1/ws"}, timeout:5})
+if not $pump.ok or trim($pump.stdout) != "native-pump-ready" then die("installed " .. $mix_bin .. " cannot keep the native event pump alive without a broker; install a gold containing the brokerless pump fix first") end
 $base = dirname(dirname(script_path()))
 $config = require("config.mix")
-$cfg_path = "/opt/mix/etc/udev-forwarder.conf.mix"
+$cfg_path = $roots.etc .. "/udev-forwarder.conf.mix"
 $cfg_source = if exists($cfg_path) then $cfg_path else $base .. "/udev-forwarder.conf.mix" end
 $cfg = $config.load($cfg_source)
 $hook_ref = "local:snippets/mix-udev-forwarder.mix"
@@ -50,10 +56,10 @@ end
 
 $files = {}
 for $name in ["config.mix", "forwarder.mix"]
-  $files["/opt/mix/lib/udev-forwarder/" .. $name] = read_file($base .. "/scripts/" .. $name)
+  $files[$roots.lib .. "/udev-forwarder/" .. $name] = read_file($base .. "/scripts/" .. $name)
 end
 $files[$hook_path] = read_file($base .. "/scripts/hook.mix")
-$files["/etc/systemd/system/udev-forwarder.service"] = read_file($base .. "/units/udev-forwarder.service")
+$files["/etc/systemd/system/udev-forwarder.service"] = $renderer.external(read_file($base .. "/units/udev-forwarder.service"), $roots, "unit")
 if not exists($cfg_path) then $files[$cfg_path] = read_file($cfg_source) end
 for $path in keys($ct_updates)
   $files[$path] = $ct_updates[$path]

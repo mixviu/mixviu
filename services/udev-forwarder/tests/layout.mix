@@ -1,0 +1,14 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.3.0
+$render = require("../../../share/layout/render.mix")
+$layout = require("../../../share/layout/files.mix")
+$base = dirname(dirname(script_path()))
+$source = $base .. "/units/udev-forwarder.service"
+$entries = filter($layout.entries(dirname($base) .. "/../share/layout"), fn($e) = ends_with($e.source, "/udev-forwarder/units/udev-forwarder.service"))
+if len($entries) != 1 or $entries[0].target != "@{prefix}/share/udev-forwarder/units/udev-forwarder.service" then die("forwarder unit missing or duplicated in layout") end
+$roots = {prefix:"/srv/example prefix", lib:"/srv/example lib", etc:"/srv/example etc"}
+$unit = $render.external(read_file($source), $roots, "unit")
+$expected = 'ExecStart="/srv/example prefix/bin/mix" "/srv/example lib/udev-forwarder/forwarder.mix" "/srv/example etc/udev-forwarder.conf.mix"'
+if not contains($unit, $expected .. "\n") then die("relocated roots are not rendered as separate quoted arguments") end
+if contains($unit, "/opt/mix") or contains($unit, "@{") then die("unit kept an unresolved or hardwired root") end
+print("PASS: registered forwarder unit renders relocated prefix/lib/etc with correct quoting")

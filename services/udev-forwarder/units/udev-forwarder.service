@@ -6,7 +6,7 @@ Wants=systemd-udevd.service
 [Service]
 Type=simple
 User=root
-ExecStart=/opt/mix/bin/mix /opt/mix/lib/udev-forwarder/forwarder.mix /opt/mix/etc/udev-forwarder.conf.mix
+ExecStart=@{prefix}/bin/mix @{lib}/udev-forwarder/forwarder.mix @{etc}/udev-forwarder.conf.mix
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=10

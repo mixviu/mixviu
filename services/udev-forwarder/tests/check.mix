@@ -12,6 +12,12 @@ try
   write_file($lab .. "/test.conf.mix", 'cts: ["999999"]' .. "\n" .. 'subsystems: ["input"]' .. "\n")
   $child_env = {PATH:$lab, MIX_NODED_URL:"ws://127.0.0.1:1/ws", MIX_BUS_SOCKET:$lab .. "/absent.sock"}
   print(run_argv_must([which("unshare"), "-n", $lab .. "/mix", dirname(script_path()) .. "/brokerless.mix", $lab], {env:$child_env, timeout:15}))
+  -- A relocated etc root (including a space) must also work without an argv
+  -- config path. This exercises the actual forwarder's mix_path default.
+  $child_env.MIX_ETC = $lab .. "/relocated etc"
+  mkdir($child_env.MIX_ETC)
+  copy($lab .. "/test.conf.mix", $child_env.MIX_ETC .. "/udev-forwarder.conf.mix")
+  print(run_argv_must([which("unshare"), "-n", $lab .. "/mix", dirname(script_path()) .. "/brokerless.mix", $lab, "default-config"], {env:$child_env, timeout:15}))
 
   -- Hook tests use a stand-in systemctl; they never operate the worker's unit.
   write_file($lab .. "/systemctl", "#!" .. $lab .. "/mix\nwrite_file(env(\"HOOK_TEST_LOG\"), json_encode(args()))\n")

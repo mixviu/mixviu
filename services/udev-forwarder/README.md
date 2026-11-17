@@ -5,8 +5,8 @@ configured privileged LXC network namespaces. This lives under `services/`,
 following the existing services' `scripts/` and `units/` convention.
 There is no second daemon, transport, udev database reader or wire encoder.
 Run `mix scripts/forwarder.mix [config.conf.mix]`; there is no `--serve`,
-mixd or broker dependency. Config defaults to
-`/opt/mix/etc/udev-forwarder.conf.mix`. An explicit path lets a lab copy run
+mixd or broker dependency. Config defaults to the system `mix_path("etc")`
+root's `udev-forwarder.conf.mix`. An explicit path lets a lab copy run
 without editing source or installing configuration.
 
 Plain Mix enters the native event pump after script initialisation when `on`
@@ -59,7 +59,7 @@ service restart. No-listener drops retain the socket so a compositor starting
 later can receive future events. A socket pins its namespace: an empty multicast
 group alone cannot establish that a CT has died.
 
-Prerequisites: a PVE host with the new Mix binary at `/opt/mix/bin/mix`, the
+Prerequisites: a PVE host with the new Mix binary at `<prefix>/bin/mix`, the
 new brokerless native-pump fix, `local` snippets storage at
 `/var/lib/vz/snippets`, configured privileged CTs with separate net namespaces,
 and the host `/run/udev` plus relevant device nodes mounted into them. libudev
@@ -69,18 +69,28 @@ devtmpfs; forwarding cannot repair a monitor that never subscribed.
 Run `mix services/udev-forwarder/scripts/install.mix` from this source bundle
 on the authorised PVE node. `--check` writes nothing and verifies installed
 files, executable hook, enabled/active unit, storage path and CT hook settings.
-An existing `/opt/mix/etc/udev-forwarder.conf.mix` is preserved and validated;
+An existing `<etc>/udev-forwarder.conf.mix` is preserved and validated;
 otherwise the bundle default selects CTs 102, 103, 104 and input/hidraw/sound.
-The installer checks all five uevent builtins in `/opt/mix/bin/mix`, probes
+The installer checks all five uevent builtins in `<prefix>/bin/mix`, probes
 the plain native pump against an unavailable broker using stdin (no temporary
 file), preflights all CTs and refuses to replace another hookscript. Missing
 builtins or a failed pump probe are refused before any writes, with an
 instruction to install a suitable gold.
 Snapshot sections are preserved. It installs scripts under
-`/opt/mix/lib/udev-forwarder`, the unit under `/etc/systemd/system`, and
+`<lib>/udev-forwarder`, the unit under `/etc/systemd/system`, and
 `local:snippets/mix-udev-forwarder.mix`, then enables/restarts the service.
 It never starts or restarts CTs. Re-running a converged install does not
 restart the service. When changing only config, restart the service explicitly.
+
+Roots come from `mix_path(..., {tier:"system"})`, respecting the host's
+registered overrides and layout. The unit is registered in
+`share/layout/templates.mx` (loaded by `share/layout/files.mix`), and the
+installer uses the release installer's `share/layout/render.mix` to expand
+`@{prefix}`, `@{lib}` and `@{etc}`, including systemd argument quoting for
+relocated roots. Run the installer from the source bundle with `share/layout`
+present. The executable hook uses the managed `/usr/local/bin/mix` entrance,
+which follows the installed prefix; it embeds no prefix. No runtime directory
+is created, so no runtime-leaf stop cleanup is needed.
 
 Host edge programs: lxc-info (service); mkdir/chmod/test/systemctl/pvesm
 (installer); systemctl (hook). Logs contain event action,
@@ -98,6 +108,10 @@ synthetic netlink fixture with no broker. It also exercises the real hook with
 a stand-in systemctl; it never restarts a worker service or contacts a CT.
 This checks the plain native event path, not real libudev acceptance. Library
 regressions cover native progress after Bus closure and unchanged serve closure.
+The same harness also runs the forwarder with no config argument and a relocated
+etc root containing a space. `tests/layout.mix` checks layout registration and
+relocated prefix/lib/etc quoting with the shared renderer; the repository-wide
+`tools/host_roots_test.mix` checks the complete shipped template set.
 `mix services/udev-forwarder/tests/namespace.mix` is the root-only CBC proof:
 it subscribes in namespace A, creates B with `run_argv`/managed spawn, triggers
 a real input change through udevd, then copies those exact bytes into B.

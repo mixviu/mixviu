@@ -9,7 +9,9 @@ $props = "ACTION=change\0DEVPATH=/devices/example\0SUBSYSTEM=input\0SEQNUM=42\0D
 -- Synthetic fixture for native event dispatch, not libudev acceptance proof.
 $wire = buffer(["libudev",0,254,237,202,254,40,0,0,0,40,0,0,0,len($props),0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,$props])
 $sender = uevent_sender("/proc/self/ns/net")
-$child = process_watch([$bin, $source, $lab .. "/test.conf.mix"], {stderr:"lines"})
+$command = [$bin, $source]
+if len($argv) < 2 or $argv[1] != "default-config" then push($command, $lab .. "/test.conf.mix") end
+$child = process_watch($command, {stderr:"lines"})
 $deadline = timer_once(5, "deadline")
 $send_timer = nil
 on proc.line
