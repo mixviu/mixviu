@@ -59,18 +59,18 @@ pub fn event_to_ics(
     let dtstamp = updated
         .or(start)
         .unwrap_or_else(|| DateTime::<Utc>::from_timestamp(0, 0).expect("epoch is valid"));
-    ev.add_property(icalendar::Property::new("DTSTAMP", &dtstamp.format("%Y%m%dT%H%M%SZ").to_string()).done());
+    ev.add_property("DTSTAMP", &dtstamp.format("%Y%m%dT%H%M%SZ").to_string());
     if let Some(t) = title {
         ev.summary(t);
     }
     if let Some(s) = start {
-        ev.add_property(icalendar::Property::new("DTSTART", &s.format("%Y%m%dT%H%M%SZ").to_string()).done());
+        ev.add_property("DTSTART", &s.format("%Y%m%dT%H%M%SZ").to_string());
     }
     if let Some(e) = end {
-        ev.add_property(icalendar::Property::new("DTEND", &e.format("%Y%m%dT%H%M%SZ").to_string()).done());
+        ev.add_property("DTEND", &e.format("%Y%m%dT%H%M%SZ").to_string());
     }
     if let Some(u) = updated {
-        ev.add_property(icalendar::Property::new("LAST-MODIFIED", &u.format("%Y%m%dT%H%M%SZ").to_string()).done());
+        ev.add_property("LAST-MODIFIED", &u.format("%Y%m%dT%H%M%SZ").to_string());
     }
     if let Some(d) = data.get("description").and_then(|v| v.as_str()) {
         ev.description(d);

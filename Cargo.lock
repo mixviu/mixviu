@@ -1964,12 +1964,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "datetime"
+version = "0.1.2"
+dependencies = [
+ "serde",
+ "serde_json",
+ "time",
+]
+
+[[package]]
 name = "davproto"
 version = "0.1.2"
 dependencies = [
  "anyhow",
  "blake3",
- "chrono",
+ "datetime",
  "icalendar",
  "serde_json",
 ]
@@ -2410,9 +2419,9 @@ dependencies = [
  "blake3",
  "buildinfo",
  "bus",
- "chrono",
  "clap",
  "config",
+ "datetime",
  "edit",
  "libc",
  "notify",
@@ -3935,9 +3944,9 @@ dependencies = [
  "blake3",
  "buildinfo",
  "bus",
- "chrono",
  "clap",
  "curve25519-dalek",
+ "datetime",
  "futures-util",
  "libc",
  "serde",
@@ -4860,8 +4869,8 @@ dependencies = [
  "base64 0.22.1",
  "bcrypt",
  "blake3",
- "chrono",
  "datastar",
+ "datetime",
  "flate2",
  "futures-util",
  "hickory-proto",
@@ -4919,9 +4928,9 @@ dependencies = [
  "blake3",
  "buildinfo",
  "bus",
- "chrono",
  "config",
  "cosmic-text",
+ "datetime",
  "design",
  "ed25519-dalek",
  "edit",
@@ -5202,9 +5211,9 @@ name = "logging"
 version = "0.1.2"
 dependencies = [
  "bus",
- "chrono",
  "clap",
  "config",
+ "datetime",
  "libc",
  "log",
  "metrics",
@@ -5339,9 +5348,9 @@ dependencies = [
  "blake3",
  "buildinfo",
  "bus",
- "chrono",
  "clap",
  "config",
+ "datetime",
  "davproto",
  "directories",
  "hex",
@@ -5500,7 +5509,7 @@ name = "mds"
 version = "0.1.2"
 dependencies = [
  "blake3",
- "chrono",
+ "datetime",
  "libc",
  "parking_lot",
  "proptest",
@@ -5587,7 +5596,7 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "bus",
- "chrono",
+ "datetime",
  "ed25519-dalek",
  "hex",
  "rand 0.8.8",
@@ -5762,9 +5771,9 @@ dependencies = [
  "base64 0.22.1",
  "buildinfo",
  "bus",
- "chrono",
  "clap",
  "curve25519-dalek",
+ "datetime",
  "ed25519-dalek",
  "lib-mix",
  "libc",
@@ -5794,8 +5803,8 @@ dependencies = [
  "anyhow",
  "buildinfo",
  "bus",
- "chrono",
  "config",
+ "datetime",
  "directories",
  "glob",
  "lib-mix",
@@ -5820,8 +5829,8 @@ dependencies = [
  "blake3",
  "buildinfo",
  "bus",
- "chrono",
  "config",
+ "datetime",
  "dirs",
  "ed25519-dalek",
  "glob",
@@ -6190,9 +6199,9 @@ dependencies = [
  "blake3",
  "buildinfo",
  "bus",
- "chrono",
  "clap",
  "config",
+ "datetime",
  "ed25519-dalek",
  "futures-util",
  "libc",
@@ -6425,6 +6434,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "num_threads"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c7398b9c8b70908f6371f47ed36737907c87c52af34c268fed0bf0ceb92ead9"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
@@ -7473,7 +7491,7 @@ version = "0.1.2"
 dependencies = [
  "anyhow",
  "bus",
- "chrono",
+ "datetime",
  "hex",
  "hmac",
  "rand 0.8.8",
@@ -8891,9 +8909,9 @@ dependencies = [
  "base64 0.22.1",
  "buildinfo",
  "bus",
- "chrono",
  "clap",
  "config",
+ "datetime",
  "design",
  "ed25519-dalek",
  "libc",
@@ -9685,8 +9703,8 @@ dependencies = [
  "blake3",
  "buildinfo",
  "bus",
- "chrono",
  "config",
+ "datetime",
  "ed25519-dalek",
  "futures-util",
  "libc",
@@ -9824,7 +9842,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb87b95ec50ddfa440816d227a17b2ccbdda963a316a727fda0fc4334f7d134"
 dependencies = [
  "deranged",
+ "libc",
  "num-conv",
+ "num_threads",
  "powerfmt",
  "serde_core",
  "time-core",
