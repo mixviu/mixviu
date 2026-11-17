@@ -49,7 +49,9 @@ impl Zone for Local {
             .unwrap_or(0);
         let previous = LAST_REFRESH.load(Ordering::Relaxed);
         if previous != now
-            && LAST_REFRESH.compare_exchange(previous, now, Ordering::Relaxed, Ordering::Relaxed).is_ok()
+            && LAST_REFRESH
+                .compare_exchange(previous, now, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
         {
             let _ = time::util::refresh_tz();
         }

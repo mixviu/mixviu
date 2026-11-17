@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 
 #[test]
 fn offset_without_pattern_space_accepts_input_whitespace() {
+    // Chrono 0.4.45 oracle: CBC job 20261118-000811-c9c89f11-a1.
     let t = DateTime::parse_from_str("2023-01-07 12:34:56 +0000", "%Y-%m-%d %H:%M:%S%z").unwrap();
     assert_eq!(t.timestamp(), 1_673_094_896);
 }

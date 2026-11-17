@@ -10,9 +10,15 @@ fn main() {
         let started = Instant::now();
         for _ in 0..100_000 {
             let now = Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
-            black_box(format!("[{now}] source → destination  command  wire={}B\n", black_box(128)));
+            black_box(format!(
+                "[{now}] source → destination  command  wire={}B\n",
+                black_box(128)
+            ));
         }
-        println!("LOGGER_TIMESTAMP_SAMPLE={sample} iterations=100000 elapsed_ns={}", started.elapsed().as_nanos());
+        println!(
+            "LOGGER_TIMESTAMP_SAMPLE={sample} iterations=100000 elapsed_ns={}",
+            started.elapsed().as_nanos()
+        );
     }
     release.send(()).unwrap();
     other.join().unwrap();

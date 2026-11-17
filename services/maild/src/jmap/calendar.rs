@@ -20,6 +20,21 @@ fn event_date(value: Option<&serde_json::Value>) -> Option<datetime::DateTime<da
     value.and_then(|v| v.as_str()).and_then(|s| s.parse().ok())
 }
 
+#[cfg(test)]
+#[test]
+fn calendar_date_fields_preserve_relaxed_parse() {
+    for text in [
+        "2024-1-5T9:5:0UTC",
+        " 2024-01-05 09:05:00 +0000 ",
+        "2024-01-05t09:05:00z",
+    ] {
+        let value = serde_json::json!(text);
+        assert_eq!(event_date(Some(&value)).unwrap().timestamp(), 1_704_445_500);
+    }
+    assert!(event_date(None).is_none());
+    assert!(event_date(Some(&serde_json::Value::Null)).is_none());
+}
+
 /// Calendar/get
 pub async fn get(db: &Db, account_id: i32, args: serde_json::Value) -> Result<serde_json::Value> {
     let acct = account_id.to_string();
@@ -327,11 +342,19 @@ pub async fn event_set(
             };
             // Values this patch actually names (None = "not changed").
             let parse_rfc = |s: &str| {
-                datetime::DateTime::parse_from_rfc3339(s).ok().map(|d| d.with_timezone(&datetime::Utc))
+                datetime::DateTime::parse_from_rfc3339(s)
+                    .ok()
+                    .map(|d| d.with_timezone(&datetime::Utc))
             };
             let patch_title = patch.get("title").and_then(|v| v.as_str());
-            let patch_start = patch.get("start").and_then(|v| v.as_str()).and_then(parse_rfc);
-            let patch_end = patch.get("end").and_then(|v| v.as_str()).and_then(parse_rfc);
+            let patch_start = patch
+                .get("start")
+                .and_then(|v| v.as_str())
+                .and_then(parse_rfc);
+            let patch_end = patch
+                .get("end")
+                .and_then(|v| v.as_str())
+                .and_then(parse_rfc);
 
             // MERGE, don't replace (see Contact/set update): keep unspecified
             // indexed columns AND the verbatim iCal (RRULE/VALARM/X-props).
