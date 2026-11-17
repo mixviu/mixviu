@@ -10,7 +10,7 @@ try
   -- Only these stand-ins are on PATH: there is no mixd or broker executable.
   run_argv_must(["ln", "-s", "/usr/bin/false", $lab .. "/lxc-info"])
   write_file($lab .. "/test.conf.mix", 'cts: ["999999"]' .. "\n" .. 'subsystems: ["input"]' .. "\n")
-  $child_env = {PATH:$lab, MIX_NODED_URL:"ws://127.0.0.1:1/ws", MIX_NODE_SOCKET:$lab .. "/absent.sock"}
+  $child_env = {PATH:$lab, MIX_NODED_URL:"ws://127.0.0.1:1/ws", MIX_BUS_SOCKET:$lab .. "/absent.sock"}
   print(run_argv_must([which("unshare"), "-n", $lab .. "/mix", dirname(script_path()) .. "/brokerless.mix", $lab], {env:$child_env, timeout:15}))
 
   -- Hook tests use a stand-in systemctl; they never operate the worker's unit.
