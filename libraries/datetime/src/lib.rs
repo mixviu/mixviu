@@ -233,14 +233,19 @@ impl<Z: Zone> FromStr for DateTime<Z> {
         let t = DateTime::parse_from_rfc3339(s).or_else(|error| {
             // Serde/FromStr historically allow signed extended years even
             // though the strict RFC 3339 entry point has a four-digit year.
-            if !s.starts_with(['+', '-']) { return Err(error); }
+            if !s.starts_with(['+', '-']) {
+                return Err(error);
+            }
             let end = s[1..].find('-').map(|i| i + 1).ok_or(error)?;
             let year: i32 = s[..end].parse().map_err(invalid)?;
             let surrogate = format!("2000{}", &s[end..]);
             let mut t = DateTime::parse_from_rfc3339(&surrogate)?;
-            let date = time::Date::from_calendar_date(year, t.inner.month(), t.inner.day()).map_err(invalid)?;
+            let date = time::Date::from_calendar_date(year, t.inner.month(), t.inner.day())
+                .map_err(invalid)?;
             t.inner = t.inner.replace_date(date);
-            if !bounded(t.inner) { return Err(invalid("timestamp outside supported range")); }
+            if !bounded(t.inner) {
+                return Err(invalid("timestamp outside supported range"));
+            }
             Ok(t)
         })?;
         Ok(Self::new(t.inner.to_offset(Z::offset(t.inner)), t.leap))
@@ -408,8 +413,12 @@ impl NaiveDateTime {
             "%Y%m%dT%H%M%SZ" => Some(13..15),
             _ => None,
         };
-        let leap = seconds.as_ref().is_some_and(|r| input.as_bytes().get(r.clone()) == Some(b"60"));
-        if leap { input.replace_range(seconds.expect("seconds field"), "59"); }
+        let leap = seconds
+            .as_ref()
+            .is_some_and(|r| input.as_bytes().get(r.clone()) == Some(b"60"));
+        if leap {
+            input.replace_range(seconds.expect("seconds field"), "59");
+        }
         let t = PrimitiveDateTime::parse(&input, &desc).map_err(invalid)?;
         if !bounded(t.assume_utc()) {
             return Err(invalid("datetime outside supported range"));
@@ -464,8 +473,16 @@ fn offset_text(offset: UtcOffset, colons: usize) -> String {
     let (h, m, s) = (n / 3600, n / 60 % 60, n % 60);
     let rounded_minutes = (n + 30) / 60;
     match colons {
-        0 => format!("{sign}{:02}{:02}", rounded_minutes / 60, rounded_minutes % 60),
-        1 => format!("{sign}{:02}:{:02}", rounded_minutes / 60, rounded_minutes % 60),
+        0 => format!(
+            "{sign}{:02}{:02}",
+            rounded_minutes / 60,
+            rounded_minutes % 60
+        ),
+        1 => format!(
+            "{sign}{:02}:{:02}",
+            rounded_minutes / 60,
+            rounded_minutes % 60
+        ),
         2 => format!("{sign}{h:02}:{m:02}:{s:02}"),
         _ => format!("{sign}{h:02}"),
     }
@@ -514,7 +531,14 @@ fn format_value(
             "Z" => out.push_str(&if utc {
                 "UTC".into()
             } else {
-                    offset_text(t.offset(), if t.offset().seconds_past_minute() == 0 { 1 } else { 2 })
+                offset_text(
+                    t.offset(),
+                    if t.offset().seconds_past_minute() == 0 {
+                        1
+                    } else {
+                        2
+                    },
+                )
             }),
             "z" => out.push_str(&offset_text(t.offset(), 0)),
             ":z" => out.push_str(&offset_text(t.offset(), 1)),
@@ -524,6 +548,15 @@ fn format_value(
             ".f" => out.push_str(&fraction(t.nanosecond(), SecondsFormat::AutoSi)),
             "S" if leap => out.push_str("60"),
             "w" => out.push_str(&t.weekday().number_days_from_sunday().to_string()),
+            "C" => {
+                // Retain the historical two-column century representation,
+                // including extended/negative years, in the Mix formatter.
+                let century = t.year().div_euclid(100) as u8;
+                out.push(char::from(b'0' + century / 10));
+                out.push(char::from(b'0' + century % 10));
+            }
+            "y" => out.push_str(&format!("{:02}", t.year().rem_euclid(100))),
+            "g" => out.push_str(&format!("{:02}", t.to_iso_week_date().0.rem_euclid(100))),
             "Y" => {
                 let y = t.year();
                 if (0..=9999).contains(&y) {
@@ -573,8 +606,17 @@ mod tests {
         assert_eq!(serde_json::to_string(&t).unwrap(), text);
         let offset = UtcOffset::from_hms(0, 17, 30).unwrap();
         let t = DateTime::<FixedOffset>::new(OffsetDateTime::UNIX_EPOCH.to_offset(offset), false);
-        assert_eq!(t.format("%z %:z %::z %:::z %Z").to_string(), "+0018 +00:18 +00:17:30 +00 +00:17:30");
-        assert_eq!(NaiveDateTime::parse_from_str("2016-12-31 23:59:60", "%Y-%m-%d %H:%M:%S").unwrap().and_utc().timestamp(), 1_483_228_799);
+        assert_eq!(
+            t.format("%z %:z %::z %:::z %Z").to_string(),
+            "+0018 +00:18 +00:17:30 +00 +00:17:30"
+        );
+        assert_eq!(
+            NaiveDateTime::parse_from_str("2016-12-31 23:59:60", "%Y-%m-%d %H:%M:%S")
+                .unwrap()
+                .and_utc()
+                .timestamp(),
+            1_483_228_799
+        );
     }
     #[test]
     fn serde_utc_suffix_and_fraction_groups_are_stable() {
