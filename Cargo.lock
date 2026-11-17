@@ -5410,7 +5410,6 @@ dependencies = [
  "async-trait",
  "buildinfo",
  "bus",
- "chrono",
  "maild-rules",
  "rusqlite",
  "serde",
