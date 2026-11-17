@@ -66,6 +66,7 @@ impl DateTime<Utc> {
     }
     pub fn from_timestamp_millis(ms: i64) -> Option<Self> { Self::from_timestamp(ms.div_euclid(1000), ms.rem_euclid(1000) as u32 * 1_000_000) }
 }
+impl Default for DateTime<Utc> { fn default() -> Self { Self::new(OffsetDateTime::UNIX_EPOCH, false) } }
 impl DateTime<FixedOffset> {
     pub fn parse_from_rfc3339(text: &str) -> Result<Self, ParseError> {
         // Preserve second 60 rather than time's RFC parser's leap-second clamp.
@@ -163,8 +164,8 @@ fn format_value(t:OffsetDateTime,leap:bool,utc:bool,pattern:&str)->Result<String
     let mut out=String::new(); let mut iter=pattern.char_indices().peekable();
     while let Some((start,c))=iter.next() {
         if c!='%' { out.push(c); continue; }
-        let mut end=start+1; let mut spec=String::new();
-        loop { let (i,c)=iter.next().ok_or_else(||invalid("incomplete strftime conversion"))?; spec.push(c); end=i+c.len_utf8(); if c.is_ascii_alphabetic() || c=='%' || c=='+' { break; } }
+        let mut spec=String::new();
+        let end=loop { let (i,c)=iter.next().ok_or_else(||invalid("incomplete strftime conversion"))?; spec.push(c); if c.is_ascii_alphabetic() || c=='%' || c=='+' { break i+c.len_utf8(); } };
         let token=&pattern[start..end];
         match spec.as_str() {
             "%"=>out.push('%'),
@@ -180,9 +181,41 @@ fn format_value(t:OffsetDateTime,leap:bool,utc:bool,pattern:&str)->Result<String
             "w"=>out.push_str(&t.weekday().number_days_from_sunday().to_string()),
             "Y"=>{ let y=t.year(); if (0..=9999).contains(&y) {out.push_str(&format!("{y:04}"));} else if y<0 {out.push_str(&format!("-{:04}",y.unsigned_abs()));} else {out.push_str(&format!("+{y}"));} },
             "F"=>out.push_str(&format_value(t,leap,utc,"%Y-%m-%d")?),
+            "v"=>out.push_str(&format_value(t,leap,utc,"%e-%b-%Y")?),
+            "q"=>out.push_str(&((t.month() as u8-1)/3+1).to_string()),
             _ if spec.ends_with('f')=>{ let dot=spec.starts_with('.'); let n=spec.trim_start_matches('.').trim_end_matches('f').parse::<usize>().map_err(invalid)?; if ![3,6,9].contains(&n) {return Err(invalid("invalid fractional precision"));} if dot {out.push('.');} out.push_str(&format!("{:09}",t.nanosecond())[..n]); },
             _=>{ let desc=time::format_description::parse_strftime_borrowed(token).map_err(invalid)?; out.push_str(&t.format(&desc).map_err(invalid)?); }
         }
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn serde_utc_suffix_and_fraction_groups_are_stable() {
+        for (nanos, fraction) in [(0,""),(1_000_000,".001"),(123_456_000,".123456"),(123_456_789,".123456789")] {
+            let t=DateTime::from_timestamp(0,nanos).unwrap();
+            let json=format!("\"1970-01-01T00:00:00{fraction}Z\"");
+            assert_eq!(serde_json::to_string(&t).unwrap(),json);
+            assert_eq!(serde_json::from_str::<DateTime<Utc>>(&json).unwrap(),t);
+        }
+    }
+    #[test]
+    fn checked_expiry_and_fractional_freshness() {
+        let t=Utc::now();
+        assert!(Duration::try_seconds(i64::MAX).is_none());
+        assert!(DateTime::<Utc>::MAX_UTC.checked_add_signed(Duration::seconds(1)).is_none());
+        assert!(((t+Duration::milliseconds(300_001))-t).abs()>Duration::seconds(300));
+        assert_eq!(NaiveDate::from_ymd_opt(1,1,1).unwrap().num_days_from_ce(),1);
+    }
+    #[test]
+    fn leap_second_spelling_and_epoch_values() {
+        let t=DateTime::parse_from_rfc3339("2016-12-31T23:59:60.123Z").unwrap();
+        assert_eq!(t.timestamp(),1_483_228_799);
+        assert_eq!(t.timestamp_millis(),1_483_228_800_123);
+        assert_eq!(t.to_rfc3339(),"2016-12-31T23:59:60.123+00:00");
+        assert_eq!(t.format("%S %.3f").to_string(),"60 .123");
+    }
 }
