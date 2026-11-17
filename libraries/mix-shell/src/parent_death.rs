@@ -27,15 +27,6 @@ pub(super) fn capture() -> Result<(), String> {
     // evaluator starts. This one-hop marker must not reach unrelated children.
     unsafe { env::remove_var(mix::builtins::EXPECTED_PARENT_ENV) };
     let actual = unsafe { libc::getppid() };
-    let parent = match marker.as_ref() {
-        Some(value) => value
-            .to_str()
-            .and_then(|s| s.parse::<libc::pid_t>().ok())
-            .filter(|pid| *pid > 0)
-            .ok_or_else(|| "die_with_parent: invalid expected parent PID".to_string())?,
-        None => actual,
-    };
-    check_parent(parent, actual)?;
     let mut signal = 0;
     // SAFETY: PR_GET_PDEATHSIG writes an int to the live local.
     let signal = if unsafe { libc::prctl(libc::PR_GET_PDEATHSIG, &mut signal) } == -1 {
@@ -43,13 +34,33 @@ pub(super) fn capture() -> Result<(), String> {
     } else {
         Ok(signal)
     };
-    // A refused prctl never prevents an ordinary shell/script from running.
+    let parent = scoped_parent(marker.as_deref(), &signal, actual)?;
+    // A marker is ambient data until the kernel confirms this task is armed.
+    // fork clears PDEATHSIG, so intermediaries' grandchildren ignore it too.
     let _ = INHERITED.set(Inherited {
         parent,
-        requested: marker.is_some(),
+        requested: matches!(signal, Ok(value) if value != 0),
         signal,
     });
     Ok(())
+}
+
+fn scoped_parent(
+    marker: Option<&std::ffi::OsStr>,
+    signal: &Result<libc::c_int, String>,
+    actual: libc::pid_t,
+) -> Result<libc::pid_t, String> {
+    if !matches!(signal, Ok(value) if *value != 0) {
+        return Ok(actual);
+    }
+    let parent = match marker {
+        Some(value) => value.to_str().and_then(|s| s.parse::<libc::pid_t>().ok())
+            .filter(|pid| *pid > 0)
+            .ok_or_else(|| "die_with_parent: invalid expected parent PID".to_string())?,
+        None => actual,
+    };
+    check_parent(parent, actual)?;
+    Ok(parent)
 }
 
 fn restore(
@@ -100,6 +111,15 @@ pub(super) fn handoff() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ambient_marker_is_inert_unless_kernel_confirms_armed_task() {
+        for marker in ["1", "not-a-pid"] {
+            assert_eq!(scoped_parent(Some(marker.as_ref()), &Ok(0), 42).unwrap(), 42);
+            assert_eq!(scoped_parent(Some(marker.as_ref()), &Err("injected EPERM".into()), 42).unwrap(), 42);
+            assert!(scoped_parent(Some(marker.as_ref()), &Ok(libc::SIGKILL), 42).is_err());
+        }
+    }
 
     #[test]
     fn refused_read_is_silent_without_a_request_and_warns_only_at_handoff() {

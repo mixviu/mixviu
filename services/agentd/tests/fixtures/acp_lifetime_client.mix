@@ -33,7 +33,9 @@ if args()[0] == "control" then
 end
 
 $watch = process_watch([env("MIX_TEST_MIX_EXE"), env("ACP_TEST_ADAPTER")],
-  {stdin: "pipe", stderr: "inherit", overflow: "block"})
+  -- Startup deliberately does not pump handlers: discard excess output,
+  -- while the native watch continues draining the adapter's stdout pipe.
+  {stdin: "pipe", stderr: "inherit", overflow: "drop"})
 $sent = process_write($watch, json_encode({jsonrpc: "2.0", id: 1, method: "initialize", params: {protocolVersion: 1}}) .. "\n")
 -- Keep the client alive until the independent controller observes a worker
 -- after its real engine handoff and INFO response, in EVERY exit mode.
@@ -51,7 +53,7 @@ for $attempt = 1 to 100
     $name = $argv[index_of($argv, "--name") + 1]
     send $name INFO timeout=0.2
     if $rc == 0 then
-      write_file($ready, json_encode({client: pid(), worker: to_number(basename(dirname($path)))}))
+      write_atomic($ready, json_encode({client: pid(), worker: to_number(basename(dirname($path)))}))
       $found = true
       break
     end
