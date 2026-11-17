@@ -1237,15 +1237,22 @@ mod tests {
         let root = std::env::temp_dir().join(recorder::bus::private_token().unwrap());
         std::fs::create_dir(&root).unwrap();
         let session = drain_fixture("failed-drain", &root);
+        let mut events = smithay::reexports::calloop::EventLoop::<()>::try_new().unwrap();
+        install_stop_waker(&session, events.handle());
         session.borrow_mut().pending = true;
-        session.borrow_mut().drain_until = Some(Instant::now());
+        let until = Instant::now() + Duration::from_millis(1);
+        session.borrow_mut().drain_until = Some(until);
+        assert!(schedule_stop(&mut session.borrow_mut(), until));
         fail(&session, "capture failure during drain");
         assert!(!session.borrow().pending);
         assert!(session.borrow().drain_until.is_none());
         assert_eq!(session.borrow().last_state.get(), "failed");
-        while !finish_recording(&mut session.borrow_mut()) {
-            std::thread::sleep(Duration::from_millis(5));
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while session.borrow().recording.as_ref().unwrap().terminal.is_none() {
+            assert!(Instant::now() < deadline);
+            events.dispatch(Some(Duration::from_millis(10)), &mut ()).unwrap();
         }
+        assert_eq!(session.borrow().last_state.get(), "failed");
         drop(session);
         std::fs::remove_dir_all(root).unwrap();
     }

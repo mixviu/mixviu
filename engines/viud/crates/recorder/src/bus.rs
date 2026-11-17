@@ -526,10 +526,17 @@ mod file_tests {
         r.frame(Some((2, 2, Arc::new(vec![0; 12]), 0))).unwrap();
         r.stop(false);
         r.finaliser.take().unwrap().join().unwrap();
+        let (release, blocked) = channel::<()>();
+        r.finaliser = Some(std::thread::spawn(move || {
+            let _ = blocked.recv_timeout(std::time::Duration::from_secs(2));
+        }));
         let (_tx, rx) = channel();
         r.finishing = Some(rx);
         r.finishing_since = Some(std::time::Instant::now() - std::time::Duration::from_secs(31));
+        let began = std::time::Instant::now();
         assert!(r.poll());
+        assert!(began.elapsed() < std::time::Duration::from_secs(1));
+        drop(release);
         assert!(
             r.error
                 .as_ref()
