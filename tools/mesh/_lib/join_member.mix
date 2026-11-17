@@ -1,0 +1,6 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+fn member($name,$ip,$wg,$epoch,$d2 = nil)
+  $credentials = [{kind:"wg",pubkey:$wg,from_epoch:$epoch,until_epoch:nil}]
+  if $d2 != nil then push($credentials,{kind:"d2",pubkey:$d2,from_epoch:$epoch,until_epoch:nil}) end
+  return {name:$name,mesh_ip:$ip,bus:$d2 != nil,status:"active",credentials:$credentials,last_touched_epoch:$epoch}
+end

@@ -1,0 +1,146 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Host facts contain deployment facts only. Membership remains in inventory.
+$t = require("targets.mix")
+
+fn fail($message)
+  raise("MESH_HOSTS", $message)
+end
+
+fn layout($kind, $project)
+  if $kind == "gold" then
+    return {mix_bin:"/opt/mix/bin/mix",roots:{prefix:"/opt/mix",etc:"/opt/mix/etc",var:"/opt/mix/var"}}
+  end
+  if $kind != "legacy" then fail("layout must be gold or legacy") end
+  $prefix = "/opt/" .. $project
+  return {mix_bin:$prefix .. "/bin/mix",legacy_defaults:true,roots:{prefix:$prefix,etc:"/etc/" .. $project,var:"/var/lib/" .. $project,cache:"/var/cache/" .. $project,run:"/run/" .. $project,share:$prefix .. "/share"}}
+end
+
+fn citizens($inventory)
+  $out = []
+  for $member in $inventory.members
+    if $member.status == "active" and $member.bus == true then push($out,$member.name) end
+  end
+  return $out
+end
+
+fn derive($facts, $inventory, $bus_hub)
+  $t.exact_keys($facts,["schema_version","project","hosts"],"host facts")
+  if $facts.schema_version != 1 or type($facts.hosts) != "list" or len($facts.hosts) == 0 then fail("host facts require schema_version 1 and nonempty hosts") end
+  $project = $t.plain_label($facts.project,"project")
+  $members = {}
+  for $member in $inventory.members
+    if has_key($members,$member.name) then fail("duplicate inventory member " .. $member.name) end
+    $members[$member.name] = $member
+  end
+  if not contains(citizens($inventory),$bus_hub) then fail("Bus hub must be an active citizen: " .. $bus_hub) end
+  $names = []
+  $mesh = []
+  $foreign = []
+  $targets = []
+  $settings = {}
+  $by_name = {}
+  for $host in $facts.hosts
+    $t.exact_keys($host,["name","login","target","layout","mix_bin","roots"],"host")
+    $name = $t.plain_label($host.name,"host name")
+    if $name == "local" or contains($names,$name) then fail("duplicate or reserved host " .. $name) end
+    push($names,$name)
+    if not contains(["mix","bash"],$host.login) then fail("login must be mix or bash: " .. $name) end
+    if $host.login == "mix" then
+      if not has_key($members,$name) then fail("Mix-login member missing from inventory: " .. $name) end
+      push($mesh,$name)
+    else
+      push($foreign,$name)
+    end
+    if has_key($members,$name) and $members[$name].status != "active" then fail("tombstoned member still has live host facts: " .. $name) end
+    $expected = layout($host.layout,$project)
+    if has_key($host,"mix_bin") and $host.mix_bin != $expected.mix_bin then fail("interpreter disagrees with layout: " .. $name) end
+    if has_key($host,"roots") and not deep_eq($host.roots,$expected.roots) then fail("roots disagree with layout: " .. $name) end
+    $settings[$name] = $expected
+    $target = $host.target
+    if type($target) != "map" or has_key($target,"node") then fail("target node is derived from host name") end
+    $target.node = $name
+    if $target.kind == "system" and $target.host != $name then fail("system target host must equal node: " .. $name) end
+    if $target.transport == "pct" and $host.layout != "gold" then fail("CT requires gold layout: " .. $name) end
+    push($targets,$target)
+    $by_name[$name] = $target
+  end
+  for $member in $inventory.members
+    if $member.status == "active" and not contains($names,$member.name) then fail("active inventory member has no host facts: " .. $member.name) end
+  end
+  for $hub in $inventory.hub
+    if not contains($names,$hub) then fail("inventory hub has no live facts: " .. $hub) end
+  end
+  $document = {schema_version:1,project:$project,targets:$targets}
+  $_parsed = $t.parse_targets($document)
+  $order = []
+  -- Deterministic by name within each tier; the Bus anchor is always last.
+  for $tier in ["desk","system","hub"]
+    for $name in sort($names)
+      if $name != $bus_hub then
+        $kind = if contains($inventory.hub,$name) then "hub" else $by_name[$name].kind end
+        if $kind == $tier then push($order,$name) end
+      end
+    end
+  end
+  push($order,$bus_hub)
+  $settings.local = $settings[$bus_hub]
+  $header = "-- GENERATED from _etc/mesh/hosts.conf.mix + _etc/mesh/inventory.mix + mesh_sync.local_node; do not edit\n"
+  return {roster:$header .. data_encode({fleet_roster:{schema_version:1,mesh:sort($mesh),foreign:sort($foreign),rollout_order:$order}}) .. "\n",
+    targets:$header .. data_encode($document) .. "\n",nodes:$header .. data_encode({nodes:$settings}) .. "\n"}
+end
+
+fn paths($hub)
+  return {roster:$hub .. "/_etc/fleet-roster.conf.mix",targets:$hub .. "/_etc/mesh_targets.conf.mix",nodes:env("MESH_NODES_CONFIG",$hub .. "/_etc/mesh/nodes.conf.mix")}
+end
+
+fn expected($hub)
+  $facts = load_data($hub .. "/_etc/mesh/hosts.conf.mix").mesh_hosts
+  $inventory = load_data($hub .. "/_etc/mesh/inventory.mix").inventory
+  $bus_hub = load_data($hub .. "/_etc/mesh_sync.conf.mix").mesh_sync.local_node
+  return derive($facts,$inventory,$bus_hub)
+end
+
+-- One-time migration only. Default layout is an explicit operator assertion
+-- for roster hosts absent from the old node settings; never probe a host.
+fn import_facts($hub, $default_layout)
+  $d = require("deploy_lib.mix")
+  $project = $d.project()
+  $_default = layout($default_layout,$project)
+  $roster = load_data(paths($hub).roster).fleet_roster
+  $targets = load_data(paths($hub).targets)
+  $nodes = load_data(paths($hub).nodes).nodes
+  $hosts = []
+  for $name in concat($roster.mesh,$roster.foreign)
+    $target = nil
+    for $entry in $targets.targets
+      if $entry.node == $name then
+        if $target != nil then fail("duplicate migration target: " .. $name) end
+        $target = $entry
+      end
+    end
+    if $target == nil then fail("missing migration target: " .. $name) end
+    $raw = {}
+    for $key in keys($target)
+      if $key != "node" then $raw[$key] = $target[$key] end
+    end
+    $kind = $default_layout
+    if has_key($nodes,$name) then
+      $kind = if $nodes[$name].legacy_defaults == true then "legacy" else "gold" end
+      $expected = layout($kind,$project)
+      if $nodes[$name].mix_bin != $expected.mix_bin or not deep_eq($nodes[$name].roots,$expected.roots) then fail("migration settings need explicit correction: " .. $name) end
+    end
+    push($hosts,{name:$name,login:if contains($roster.mesh,$name) then "mix" else "bash" end,target:$raw,layout:$kind})
+  end
+  $facts = {schema_version:1,project:$project,hosts:$hosts}
+  $_validated = derive($facts,load_data($hub .. "/_etc/mesh/inventory.mix").inventory,load_data($hub .. "/_etc/mesh_sync.conf.mix").mesh_sync.local_node)
+  return $facts
+end
+
+fn check($hub)
+  $bytes = expected($hub)
+  $paths = paths($hub)
+  for $key in ["roster","targets","nodes"]
+    if not is_file($paths[$key]) or read_file($paths[$key]) != $bytes[$key] then fail("generated " .. $key .. " differs: " .. $paths[$key] .. "; run mesh_hosts.mix gen, review, then check") end
+  end
+  return true
+end

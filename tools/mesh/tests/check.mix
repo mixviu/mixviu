@@ -1,0 +1,7 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC entry point: hermetic suites, site-name gate and existing lint baseline.
+$exe = realpath("/proc/self/exe")
+for $argv in [[$exe,"tools/mesh/tests/all.mix"],[$exe,"tools/mesh/_bin/name_gate.mix"],[$exe,"tools/ci.mix","mix-lint","--mix",$exe]]
+  $r = run_argv($argv,{stdout:"inherit",stderr:"inherit",timeout:600})
+  if not $r.ok then exit($r.exit_code) end
+end

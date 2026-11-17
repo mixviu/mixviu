@@ -1,5 +1,60 @@
 # Mesh tooling
 
+## Host facts: one source and regeneration
+
+`$MESH_HUB/_etc/mesh/hosts.conf.mix` is strict data, headed by `mesh_hosts`:
+
+```mix
+mesh_hosts: {schema_version: 1, project: "example", hosts: [
+  {name: "node-a", login: "mix", layout: "gold",
+   target: {host: "node-a", kind: "system"}},
+  {name: "worker-a", login: "bash", layout: "gold",
+   target: {host: "worker-a", kind: "system"}}
+]}
+```
+
+Use one host entry for every machine carrying Mix. `login` means login shell,
+not mesh membership. `layout` is `gold` (`/opt/mix`, including etc and var) or
+`legacy` (project prefix, `/etc/<project>`, `/var/lib/<project>` and legacy
+cache/run/share). Optional `mix_bin` and `roots` assertions must exactly match
+that layout; normally omit them. Desk targets use the existing target schema,
+without `node` (derived from `name`), including pct CT, session, account, profile
+and admission. No membership or `bus` field is allowed in facts.
+
+The authored inventory alone owns membership, status and class. Every active
+member needs facts; tombstones cannot have live facts. Mix-login hosts must be
+members; bash-login hosts may be nonmembers or either active class. Removing a
+bash-login member means deliberately removing or retaining its deployment facts;
+there is no second membership flag to reconcile.
+
+Run `mix tools/mesh/_bin/mesh_hosts.mix gen`, review the diff, then run the same
+command with `check`. It generates the existing fleet roster, targets and node
+settings formats, with warning headers. `MESH_NODES_CONFIG` selects the settings
+destination; otherwise it is `_etc/mesh/nodes.conf.mix`. The `local` settings
+alias is derived from `mesh_sync.local_node`, the Bus hub identity, which must
+be an active citizen. Roster lists are sorted by name within login class.
+Rollout order covers every host: desks, system spokes, inventory `hub[]`
+members, then the Bus hub, each tier sorted by name. Inventory hubs are WG
+relays and may be transport-only. Seed and sync filter this order to active
+citizens, independently of login shell. All three mutators check projections
+before acquiring a lock, minting a key or contacting a target.
+
+For one-time migration, `mesh_hosts.mix import gold` creates the facts file
+exclusively (refuses overwrite) from the old roster, targets and settings and
+validates against inventory. `gold` is an explicit operator assertion for hosts
+missing old settings; use `legacy` if appropriate, or correct individual facts
+before generation. Existing settings determine their own layout. Only rostered
+hosts are imported, dropping stale settings and deriving the local alias.
+This command never contacts a host. After a join, add its facts and regenerate
+before seed or sync; preflight at join checks the state before authoring.
+
+A **citizen** is an active `bus: true` member with a broker and D2 admission
+identity. A **transport-only** member is active with `bus: false`, has WG/IP
+reach and no Bus routes. `mesh_join --transport-only` authors only its WG
+credential; it mints no D2 key and requires no seed. Seed and sync omit these
+members from placement, restart and verification; WG distribution remains a
+separate deliberate step.
+
 Generators, signers and deploy scripts for a WireGuard mesh with a Bus broker
 on each node. Nothing here names a project or a site: every name comes from
 configuration, so a fork can relabel the whole tree.
