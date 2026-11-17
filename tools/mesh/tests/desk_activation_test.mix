@@ -41,6 +41,7 @@ fn activation_rename($from,$to)
   activation_event(if ends_with($to,".parked") then "park" else "activate" end)
 end
 fn activation_command($argv,$options)
+  if len($argv)==3 and $argv[0]=="systemctl" and $argv[1]=="reset-failed" and $options.timeout==5 then activation_event("reset_failed"); return "" end
   if not deep_eq($argv,["systemctl","daemon-reload"]) or $options.timeout!=5 then raise("FIXTURE","unexpected service command") end
   activation_event("reload")
   return ""
@@ -53,6 +54,7 @@ fn activation_namespace_context($request)
 end
 fn activation_restart_session($ctx,$request,$profile)
   if $ctx.binding.active != $profile then raise("FIXTURE","restart selected wrong environment") end
+  if not $profile and len(sqlexec($fixture_db,"SELECT operation FROM events WHERE operation=?",["reset_failed"]))==0 then raise("FIXTURE","release restart did not clear start limit") end
   activation_event(if $profile then "restart_profile" else "restart_release" end)
   return {pid:42}
 end
@@ -91,7 +93,7 @@ end
       end
       check($refused,"activation failure escaped owning recovery refusal")
       $events=$w.activation_events()
-      check(deep_eq(take($events,-4),["park","reload","release_binding","restart_release"]),"release recovery order differs")
+      check(deep_eq(take($events,-5),["park","reload","release_binding","reset_failed","restart_release"]),"release recovery order differs")
       check(not $w.fixture_exists($paths.active) and $w.fixture_read_file($paths.parked)==$bytes,"failure left profile armed or changed parked bytes")
     end
   end

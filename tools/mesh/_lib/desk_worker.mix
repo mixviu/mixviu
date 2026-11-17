@@ -488,6 +488,7 @@ fn activate_profile($ctx,$request)
       run_argv_must(["systemctl","daemon-reload"],{timeout:5})
       $release = namespace_context($request)
       if $release.binding.active then refuse("release environment did not become effective") end
+      run_argv_must(["systemctl","reset-failed",$ctx.target.unit],{timeout:5})
       restart_session($release,$request,false)
     catch $recovery_failure
       refuse("activation failed; release broker recovery also failed; inspect service and parked drop-in")

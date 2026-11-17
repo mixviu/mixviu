@@ -231,7 +231,7 @@ native binaries are mandatory.
 
 The namespace-local `noded@N.service` must retain one native `Type=simple` start,
 `KillMode=control-group`, its session runtime directory, and the declared account.
-Its **last mandatory** EnvironmentFile is the root-owned0640
+After guarded activation its **last mandatory** EnvironmentFile is the root-owned0640
 `<profile>/etc/noded/service.env`, containing only these literal assignments:
 
 ```text
@@ -267,9 +267,16 @@ if no concurrent update occurred; once inventory was published, recovery require
 a higher signed epoch. The existing single-writer proposal, hubs-last order and
 canonical-cache rules remain with the owning distributors.
 
-Desk restart waits on native filesystem events for its new broker socket, with
-a whole-operation deadline, not polling. A fresh session-account interpreter
-checks local node/WG identity and verified mesh/epoch/hash. This is local rollout
+Before activation, effective EnvironmentFiles must contain only the release's
+session environment. The worker requires complete seed, genesis, roster and
+inventory placement before activating the parked drop-in. It reloads, restarts
+and checks local node/WG identity and verified mesh/epoch/hash in the same
+guarded operation, using a fresh session-account interpreter. Socket readiness
+uses a native filesystem-event child with a bounded deadline, not polling.
+Failure parks the drop-in first, reloads systemd, validates release-only
+environment, clears the unit's failed/start-limit state and restarts the
+release broker. Accepted inventory and its baseline are retained. Recovery
+failure is reported explicitly rather than claimed successful. This is local rollout
 verification; production acceptance still requires addressed cross-node ABP and
 the separately reviewed WG, service/client environment, canary and rollback plan.
 
@@ -307,14 +314,19 @@ pct exec 123 -- systemctl enable --now wg-quick@wg1.service
 Preparation creates root:session-group0750 profile/etc/etc-noded/var and
 account:session-group0700 var/noded; existing directories must already match.
 It writes root:session-group0640 service.env, node.conf.mix and a per-instance
-`zzzz-mesh-profile.conf` drop-in, then reloads and validates the effective unit.
+`zzzz-mesh-profile.conf.parked` drop-in. It validates the release-only effective
+unit and does not reload systemd. An identical already-parked file is retained;
+no second copy or active `.conf` is created. An existing active drop-in refuses
+preparation, because service activation belongs to guarded sync.
 No seed, genesis, baseline or inventory is created or reset. Existing files
 must match exactly, making completed preparation idempotent and conflicting
 state an explicit refusal. It does not restart noded or start WireGuard.
 
 Reuse the release's `noded@N` to preserve User, PartOf, native argv and session
 cleanup. A second unit would compete for the same socket and lifetime. The
-drop-in adds the profile environment last; later overrides cause refusal.
+drop-in adds the profile environment last only when guarded sync activates it;
+later overrides cause refusal. Until then a reboot or broker restart continues
+to use the release's own session environment.
 Unlike nspawn's draft contract, this release creates its absolute runtime path
 through ExecStartPre and RequiresMountsFor, leaving RuntimeDirectory empty.
 
