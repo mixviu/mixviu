@@ -36,7 +36,7 @@ try
       ACP_LIFETIME_READY: $ready, ACP_LIFETIME_EXIT: $mode, MIX_STATS: "off"})
     $fixture = $here .. "/fixtures/acp_lifetime_client.mix"
     $results = run_parallel([
-      {argv: [$mix, "--serve", $fixture, "client", "--name", "lifetime-client"], env: $env},
+      {argv: [$mix, "--serve", $fixture, "--name", "lifetime-client"], env: $env},
       {argv: [$mix, $fixture, "control"], env: $env}], {timeout: 25})
     $r = $results[0]
     print($r.stdout .. $r.stderr .. $results[1].stdout .. $results[1].stderr)
