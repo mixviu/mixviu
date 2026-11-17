@@ -210,7 +210,9 @@ fn changing_4k(strict: bool) {
     let mut process = process::spawn_4k("record-changing", &bus.url);
     process.extend_watchdog(Duration::from_secs(180));
     let seconds: u64 = std::env::var("MIX_TEST_CAPTURE_SECONDS")
-        .ok().and_then(|s| s.parse().ok()).unwrap_or(10);
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(10);
     let mut p = Pattern::new(connect(&mut process));
     p.wait_callback(0);
     bus.ready();
@@ -266,20 +268,36 @@ fn changing_4k(strict: bool) {
             .collect();
         assert!(!times.is_empty());
         times.sort_unstable();
-        for stage in ["capture_base_render_wait", "capture_cursor_render_wait", "capture_offscreen_render", "capture_copy_submit", "capture_map_wait", "capture_rgb_copy", "capture_file_service"] {
-            let mut samples: Vec<u64> = trace.lines()
+        for stage in [
+            "capture_base_render_wait",
+            "capture_cursor_render_wait",
+            "capture_offscreen_render",
+            "capture_copy_submit",
+            "capture_map_wait",
+            "capture_map_latency",
+            "capture_rgb_copy",
+            "capture_file_service",
+        ] {
+            let mut samples: Vec<u64> = trace
+                .lines()
                 .filter(|line| line.contains(&format!("stage={stage} ")))
                 .filter(|line| (begin_us..end_us).contains(&field(line, "start_us=")))
-                .map(|line| field(line, "duration_us=")).collect();
+                .map(|line| field(line, "duration_us="))
+                .collect();
             samples.sort_unstable();
             if !samples.is_empty() {
-                println!("READBACK stage={stage} n={} median_us={} p95_us={}", samples.len(), samples[samples.len()/2], samples[samples.len()*95/100]);
+                println!(
+                    "READBACK stage={stage} n={} median_us={} p95_us={}",
+                    samples.len(),
+                    samples[samples.len() / 2],
+                    samples[samples.len() * 95 / 100]
+                );
             }
         }
         println!(
             "CHANGING_4K30 recording={recording} commits={commits} compositor_frames={} median_us={} p95_us={} max_us={} recording_stats={stop:?}",
             times.len(),
-            times[times.len()/2],
+            times[times.len() / 2],
             times[times.len() * 95 / 100],
             times.last().unwrap()
         );
@@ -296,7 +314,7 @@ fn changing_4k(strict: bool) {
             // release throughput is measured separately.
             assert!(stop["readbacks"].as_u64().unwrap() > 1);
             assert!(
-                (seconds*30-10..=seconds*30+20).contains(&stop["frames"].as_u64().unwrap()),
+                (seconds * 30 - 10..=seconds * 30 + 20).contains(&stop["frames"].as_u64().unwrap()),
                 "{stop}"
             );
         }
