@@ -164,6 +164,9 @@ fn validate_unit($target,$properties,$native,$active)
   if type($starts) != "list" or len($starts) != 1 then refuse("unit must contain one mandatory native start command") end
   $start = $starts[0]
   if $start.ignore_errors != false or $start.path != $native.prefix .. "/bin/noded" or not deep_eq($start.argv,[$start.path,"serve","--no-monitor","--no-log"]) then refuse("unit command overrides profile identity or endpoint") end
+  for $suffix in ["_ETC","_VAR","_NODE_CONFIG","_RUN","_BROKER_ACCOUNT","_NODED_URL"]
+    if contains($properties.UnsetEnvironment,$native.environment_prefix .. $suffix) then refuse("unit unsets required profile environment") end
+  end
   return {environment_prefix:$native.environment_prefix,active:$active,command:"{ path=" .. $start.path .. " ; argv[]=" .. join($start.argv," ") .. " ; ignore_errors=no"}
 end
 
@@ -186,9 +189,6 @@ fn validate_service($target, $gid, $s, $properties, $text, $native, $active = tr
     $actual[$fields[0]] = $fields[1]
   end
   if not deep_eq($expected,$actual) then refuse("service environment differs from target plan") end
-  for $key in keys($expected)
-    if contains($properties.UnsetEnvironment,$key) then refuse("unit unsets required profile environment") end
-  end
   -- ExecStart also carries runtime pid/timestamp/status fields. They change on
   -- restart and are not part of the immutable executable/argv configuration.
   $binding.environment = $s

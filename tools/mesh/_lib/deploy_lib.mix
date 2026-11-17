@@ -122,7 +122,7 @@ end
 
 fn node_environment($node)
   $targets = require("targets.mix")
-  $target = $targets.parse_targets({schema_version:1,project:project(),targets:[{node:$node,host:$node,kind:"system"}]}).targets[0]
+  $target = nil
   $path = hub_root() .. "/_etc/mesh_targets.conf.mix"
   if exists($path,{follow_symlinks:false}) then
     $parsed = _snapshot("targets")
@@ -133,6 +133,8 @@ fn node_environment($node)
       if $entry.node == $node then $target = $entry end
     end
     if $target == nil then raise("MESH_LAYOUT","node missing from configured targets: " .. $node) end
+  else
+    $target = $targets.parse_targets({schema_version:1,project:project(),targets:[{node:$node,host:$node,kind:"system"}]}).targets[0]
   end
   $settings = node_settings($node)
   $roots = if $target.transport == "pct" then checked_roots($settings.roots,$node) else remote_roots($node,$target.host) end

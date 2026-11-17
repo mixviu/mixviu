@@ -27,7 +27,7 @@ end
 fn activation_event($phase)
   fixture_event($phase,"")
   if len(sqlexec($fixture_db,"SELECT phase FROM fault WHERE phase=?",[$phase]))>0 then
-    $_clear=sqlexec($fixture_db,"DELETE FROM fault")
+    $_clear=sqlexec($fixture_db,"DELETE FROM fault WHERE phase=?",[$phase])
     raise("INJECTED",$phase)
   end
 end
