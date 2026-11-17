@@ -153,7 +153,15 @@ fn assert_recorded_colours(path: &Path, expected: &[u32]) -> u64 {
     let height = manifest["height"].as_u64().unwrap() as usize;
     let at = ((height * 3 / 4) * width + width * 3 / 4) * 4;
     let mut found = 0;
+    let mut frame = 0;
+    let mut last = None;
     let (_, records) = vfl_visit(path, |pixels| {
+        let colour = u32::from_le_bytes(pixels[at..at + 4].try_into().unwrap());
+        if last != Some(colour) {
+            println!("VFL_COLOUR frame={frame} colour={colour:08x}");
+            last = Some(colour);
+        }
+        frame += 1;
         if found < expected.len() && pixels[at..at + 4] == expected[found].to_le_bytes() {
             found += 1;
         }
@@ -852,6 +860,7 @@ fn record_idle_output_lifecycle_and_clock() {
             break;
         }
         bounded_pattern.solid_buffer(colour);
+        println!("BOUNDED_COMMIT colour={colour:08x} before={before}");
         let previous = bounded_pattern.state.callbacks;
         bounded_pattern.commit(true);
         bounded_pattern.wait_callback(previous);
@@ -860,6 +869,7 @@ fn record_idle_output_lifecycle_and_clock() {
             bounded_pattern.pump();
             let status = bus.call("comp.record.status", json!({"session":next["session"]}));
             if status["readbacks"].as_u64().unwrap() > before["readbacks"].as_u64().unwrap() {
+                println!("BOUNDED_ACK colour={colour:08x} status={status}");
                 admitted_colours.push(colour);
                 break;
             }
@@ -888,6 +898,7 @@ fn record_idle_output_lifecycle_and_clock() {
         thread::sleep(Duration::from_millis(20));
     }
     let bounded = bus.call("comp.record.stop", json!({"session":next["session"]}));
+    println!("BOUNDED_TRACE {}", fs::read_to_string(process.root.join("viud.log")).unwrap());
     let records = assert_recorded_colours(
         std::path::Path::new(next["path"].as_str().unwrap()),
         &admitted_colours,
