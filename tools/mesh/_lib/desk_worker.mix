@@ -40,9 +40,18 @@ fn native_binary($path, $prefix, $component)
   if type($prefix) != "string" or not starts_with($prefix,"/") or $prefix == "/" or ends_with($prefix,"/") or not contains(["mix","noded"],$component) then refuse("invalid configured native install") end
   $expected = $prefix .. "/bin/" .. $component
   if $path != $expected then refuse("native binary must equal the configured prefix/bin component") end
-  no_links($path)
+  -- Ancestors stay physical. Only the release's noded personality link is
+  -- allowed at the leaf; do not relax no_links for authority/profile paths.
+  no_links(dirname($path))
+  $leaf = stat($path,{follow_symlinks:false})
+  if $leaf.is_symlink then
+    if $component != "noded" or $leaf.uid != 0 or read_link($path) != "mixd" then refuse("only the root-owned noded -> mixd personality link is permitted") end
+    $expected = $prefix .. "/bin/mixd"
+  end
+  no_links($expected)
   $resolved = realpath($path)
-  if $resolved == nil or $resolved != $expected then refuse("native binary must resolve to the configured prefix/bin component") end
+  if $resolved == nil or $resolved != $expected then refuse("native binary must resolve to the configured native component") end
+  if not stat($resolved,{follow_symlinks:false}).is_file then refuse("native binary must be a regular file") end
   $cursor = $resolved
   while $cursor != "/"
     $s = stat($cursor,{follow_symlinks:false})

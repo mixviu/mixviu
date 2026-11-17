@@ -52,9 +52,13 @@ A MixViu hub and peer can instead use their own configured system roots:
 Only a wholly absent `local.roots` queries the running interpreter's system
 roots. Remote entries are keyed by admitted node name. Their interpreter is
 explicit, and native jobs require the exact configured `<prefix>/bin/mix`.
-Native worker binaries must resolve to `<prefix>/bin/mix` or
-`<prefix>/bin/noded` as appropriate, with no symlink components and with
-root-controlled ancestors. Use physical, normalized installation paths.
+Native worker binaries use physical, normalized installation paths with
+root-controlled ancestors and regular root-owned files that are not writable
+by group or others. The sole permitted symlink is the root-owned
+`<prefix>/bin/noded -> mixd` (literal relative target), resolving directly to
+the regular `<prefix>/bin/mixd`: releases ship noded as a personality of that
+multi-call binary. Its resolved mixd file supplies the binary hash. Chains,
+other targets, symlinked ancestors and a symlinked mix remain refused.
 An absent entry refuses rather than guessing another installation.
 
 `_etc/mesh/project.mix` is the hub's copy of the project name:
