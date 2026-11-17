@@ -26,6 +26,21 @@ use std::rc::Rc;
 use world::state::Loop;
 use world::state::StatusSession;
 
+// Lifecycle events still own bookkeeping while the session drops human input.
+fn drop_paused_event(paused: bool, lifecycle: bool) -> bool {
+    paused && !lifecycle
+}
+
+fn remember_device<T: PartialEq>(devices: &mut Vec<T>, device: T) {
+    if !devices.contains(&device) {
+        devices.push(device);
+    }
+}
+
+fn forget_device<T: PartialEq>(devices: &mut Vec<T>, device: &T) {
+    devices.retain(|d| d != device);
+}
+
 /// Drive the external `zwp_tablet_pad_v2` senders from a libinput pad event
 /// (delivered via smithay's `SpecialEvent`; see the local smithay patch). Pads are
 /// keyed by device sysname, matching `add_pad`.
@@ -189,7 +204,8 @@ pub fn register(
     event_loop
         .insert_source(libinput_source, move |event, _, state| {
             inventory::observe(&event);
-            if let StatusSession::Paused = state.inner.status_session {
+            let lifecycle = matches!(&event, InputEvent::DeviceAdded { .. } | InputEvent::DeviceRemoved { .. });
+            if drop_paused_event(matches!(state.inner.status_session, StatusSession::Paused), lifecycle) {
                 return;
             }
             let cursor_before = (
@@ -230,7 +246,7 @@ pub fn register(
                         if let Some(keyboard) = state.state.seat.seat.get_keyboard() {
                             device.led_update(keyboard.led_state().into());
                         }
-                        state.state.seat.keyboards.push(device.clone());
+                        remember_device(&mut state.state.seat.keyboards, device.clone());
                     }
                     // NOT `else if`: a single evdev node can advertise both Keyboard and
                     // Touch (some touch panels expose keyboard-ish keys for their bezel
@@ -238,13 +254,13 @@ pub fn register(
                     // claim list — it would then never appear in the settings UI and
                     // could not be mapped to an output.
                     if device.has_capability(DeviceCapability::Touch) {
-                        state.state.seat.touch_devices.push(device);
+                        remember_device(&mut state.state.seat.touch_devices, device);
                         crate::wire::input::map::write_touch_snapshot(state);
                     }
                 }
                 InputEvent::DeviceRemoved { device } => {
-                    state.state.seat.keyboards.retain(|d| d != device);
-                    state.state.seat.touch_devices.retain(|d| d != device);
+                    forget_device(&mut state.state.seat.keyboards, device);
+                    forget_device(&mut state.state.seat.touch_devices, device);
                     if device.has_capability(DeviceCapability::TabletTool) {
                         state
                             .state
@@ -266,6 +282,9 @@ pub fn register(
                     return;
                 }
                 _ => {}
+            }
+            if lifecycle {
+                return;
             }
             // A touch must land on the touch device's OWN display: resolve its
             // output via libinput `output_name`, pin the cursor there, else discard.
@@ -352,6 +371,28 @@ pub(super) fn release_held(state: &mut world::state::Loop) {
 mod pad_blank_tests {
     use super::pad_button_edge;
     use world::comp::blank::{BlankPolicy, Edge};
+
+    #[test]
+    fn paused_removals_then_resumed_additions_keep_each_device_once() {
+        let mut keyboards = vec![1, 2];
+        let mut touch = vec![2];
+        for device in [1, 2] {
+            assert!(!super::drop_paused_event(true, true));
+            super::forget_device(&mut keyboards, &device);
+            super::forget_device(&mut touch, &device);
+        }
+        assert!(keyboards.is_empty() && touch.is_empty());
+        assert!(super::drop_paused_event(true, false));
+        for _ in 0..2 {
+            for device in [1, 2] {
+                assert!(!super::drop_paused_event(false, true));
+                super::remember_device(&mut keyboards, device);
+                if device == 2 { super::remember_device(&mut touch, device); }
+            }
+        }
+        assert_eq!(keyboards, [1, 2]);
+        assert_eq!(touch, [2]);
+    }
 
     #[test]
     fn waking_pad_button_and_its_release_do_not_pass_to_bindings() {

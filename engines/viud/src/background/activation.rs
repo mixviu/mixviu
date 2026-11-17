@@ -42,6 +42,9 @@ enum Notice {
 #[derive(Default)]
 pub(super) struct Backoff(Duration);
 impl Backoff {
+    fn reset(&mut self) {
+        self.0 = Duration::ZERO;
+    }
     pub(super) fn next(&mut self) -> Duration {
         self.0 = (self.0 * 2).clamp(Duration::from_millis(250), Duration::from_secs(5));
         self.0
@@ -154,6 +157,7 @@ fn attempt(shared: &Rc<RefCell<Activation>>, state: &mut Loop) {
         activation.handle.remove(timer);
     }
     attached();
+    activation.retry.reset();
 }
 
 pub fn install(
@@ -191,6 +195,7 @@ pub fn install(
         match notice {
             Notice::Ready => {
                 WATCH_FAILED.store(false, Ordering::Relaxed);
+                callback.borrow_mut().retry.reset();
             }
             Notice::Active => {
                 attempt(&callback, state);
@@ -229,5 +234,7 @@ mod tests {
             assert!(retry.next() <= Duration::from_secs(5));
         }
         assert_eq!(retry.next(), Duration::from_secs(5));
+        retry.reset();
+        assert_eq!(retry.next(), Duration::from_millis(250));
     }
 }
