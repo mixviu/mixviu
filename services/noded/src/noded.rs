@@ -3807,12 +3807,8 @@ async fn route_local(
                     Some(ref bid) => pending_responses.take(bid).await.map(|p| p.caller_id),
                     None => None,
                 };
-                let mut err = unavailable_service_reply(
-                    msg,
-                    service,
-                    "SERVICE_DISCONNECTED",
-                    "disconnected",
-                );
+                let mut err =
+                    unavailable_service_reply(msg, service, "SERVICE_DISCONNECTED", "disconnected");
                 if let Some(id) = caller_id {
                     err.set("id", &id);
                 }
