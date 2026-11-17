@@ -387,7 +387,7 @@ $DESTINATIONS = {}
 $reach_token = uuid()
 for each $node in $nodes
   if has_key($DESKS,$node) then
-    $base = $desk.request($DESKS[$node],$mesh,trim(read_file($m.MESH_GENESIS_PUB)),$d.remote_mix($node),$d.remote_roots($node,$DESKS[$node].host).prefix)
+    $base = $desk.request($DESKS[$node],$mesh,trim(read_file($m.MESH_GENESIS_PUB)),$d.remote_mix($node),$desk.node_prefix($DESKS[$node],$d),$d.node_settings($node).legacy_defaults == true)
     $probe = $desk.preflight($base,$DESK_PROGRAM,nil)
     $d.die_if(word($probe.binary.version,1) != "noded" or not $m.noded_supports_signed_endpoint(word($probe.binary.version,2)),"desk native noded lacks signed endpoint support")
     $DESK_BASE[$node] = $base
@@ -451,7 +451,7 @@ if exists($dest, {follow_symlinks: false}) then
 end
 $ready = $state == $expected and $uid == 0 and $gid == to_number($gid_text) and $perm == 0o640
 print(json_encode({token: $token, gid: $gid_text, state: $state, ready: $ready}))
-', {mix_bin:$d.remote_mix($node),bindings: {group_name:$d.group_name("noded"),dest: $DESTINATIONS[$node], expected: $HASHES[$node], token: $reach_token}, decode: "json",
+', {mix_bin:$d.remote_mix($node),env:$d.node_environment($node),bindings: {group_name:$d.group_name("noded"),dest: $DESTINATIONS[$node], expected: $HASHES[$node], token: $reach_token}, decode: "json",
         connect_timeout: 8, timeout: 15})
     $d.die_if(not $probe["ok"] or $probe["value"]["token"] != $reach_token,
       $node .. " preflight failed: " .. trim($probe["stdout"]) .. " " .. trim($probe["stderr"]))
@@ -510,7 +510,7 @@ for each $node in $nodes
       cleanup_local_dir($work)
       if $scp["exit_code"] != 0 then
         $_wipe_partial = ssh_mix($REMOTE[$node], 'remove($staged)', {
-          mix_bin:$d.remote_mix($node),bindings: {staged: $staged}, connect_timeout: 8, timeout: 10})
+          mix_bin:$d.remote_mix($node),env:$d.node_environment($node),bindings: {staged: $staged}, connect_timeout: 8, timeout: 10})
         $d.die_if(true, "scp D2 seed to " .. $node .. ": " .. trim($scp["stderr"]))
       end
 
@@ -575,12 +575,12 @@ if hash_file($dest, "sha256") != $expected or $info["uid"] != 0 or $info["gid"] 
 end
 print(json_encode({token: $token, hash: hash_file($dest, "sha256"),
   gid: $gid_text, perm: $info["perm"]}))
-', {mix_bin:$d.remote_mix($node),bindings: {group_name:$d.group_name("noded"),staged: $staged, dest: $DESTINATIONS[$node], expected: $expected,
+', {mix_bin:$d.remote_mix($node),env:$d.node_environment($node),bindings: {group_name:$d.group_name("noded"),staged: $staged, dest: $DESTINATIONS[$node], expected: $expected,
           before: $BEFORE[$node], token: $deploy_token}, decode: "json",
           connect_timeout: 8, timeout: 30})
       if not $installed["ok"] or $installed["value"]["token"] != $deploy_token then
         $_wipe_failed = ssh_mix($REMOTE[$node], 'remove($staged)', {
-          mix_bin:$d.remote_mix($node),bindings: {staged: $staged}, connect_timeout: 8, timeout: 10})
+          mix_bin:$d.remote_mix($node),env:$d.node_environment($node),bindings: {staged: $staged}, connect_timeout: 8, timeout: 10})
         $d.die_if(true, $node .. " D2 seed install failed: " ..
           trim($installed["stdout"]) .. " " .. trim($installed["stderr"]))
       end
@@ -594,7 +594,7 @@ print(json_encode({token: $token, hash: hash_file($dest, "sha256"),
 $info = stat($dest, {follow_symlinks: false})
 print(json_encode({hash: hash_file($dest, "sha256"), uid: $info["uid"],
   gid: $info["gid"], perm: $info["perm"]}))
-', {mix_bin:$d.remote_mix($node),bindings: {dest: $DESTINATIONS[$node]}, decode: "json", connect_timeout: 8, timeout: 15})
+', {mix_bin:$d.remote_mix($node),env:$d.node_environment($node),bindings: {dest: $DESTINATIONS[$node]}, decode: "json", connect_timeout: 8, timeout: 15})
     $d.die_if(not $verified["ok"],
       $node .. " post-install seed verification failed: " ..
       trim($verified["stdout"]) .. " " .. trim($verified["stderr"]))

@@ -25,7 +25,7 @@ fn parse_targets($document)
   $seen = []
   $normal = []
   for $item in $document.targets
-    exact_keys($item, ["node", "host", "kind", "machine", "profile", "session", "account", "client_account", "broker_account", "admission"], "target")
+    exact_keys($item, ["node", "host", "kind", "transport", "ct", "machine", "profile", "session", "account", "client_account", "broker_account", "admission"], "target")
     $node = plain_label($item.node, "node")
     $host = plain_label($item.host, "host")
     if contains($seen, $node) then fail("duplicate node " .. $node) end
@@ -33,13 +33,22 @@ fn parse_targets($document)
     $kind = $item.kind
     if $kind != "system" and $kind != "desk" then fail("kind must be system or desk") end
     if $kind == "system" then
-      for $key in ["machine", "profile", "session", "account", "client_account", "broker_account", "admission"]
+      for $key in ["transport", "ct", "machine", "profile", "session", "account", "client_account", "broker_account", "admission"]
         if has_key($item, $key) then fail("system target cannot carry " .. $key) end
       end
       push($normal, {project:$project, node:$node, host:$host, kind:$kind, profile:nil, etc:"/etc/" .. $project, var:"/var/lib/" .. $project,
         unit:"noded.service", account:"root", machine:nil, session:nil, run:nil})
     else
-      $machine = plain_label($item.machine, "machine")
+      $transport = $item.transport ?? "nspawn"
+      if not contains(["nspawn","pct"],$transport) then fail("unknown desk transport") end
+      $machine = nil
+      if $transport == "pct" then
+        if has_key($item,"machine") or type($item.ct) != "number" or floor($item.ct) != $item.ct or $item.ct < 100 or $item.ct > 999999999 then fail("pct requires an integer CT id and no machine") end
+        $machine = "ct-" .. to_string($item.ct)
+      else
+        if has_key($item,"ct") then fail("nspawn cannot carry ct") end
+        $machine = plain_label($item.machine, "machine")
+      end
       $account = nil
       $broker = nil
       if $document.schema_version == 1 then
@@ -55,12 +64,18 @@ fn parse_targets($document)
       $session = $item.session
       if type($session) != "number" or $session < 1 or $session > 6 or floor($session) != $session then fail("session must be an integer from 1 to 6") end
       $profile = $item.profile
-      if type($profile) != "string" or not re_match($profile, "^/var/lib/" .. $project .. "/[a-z][a-z0-9-]{0,31}$") then fail("profile must be one direct project state child") end
+      $state = if $transport == "pct" then "/opt/mix/var/lib/" else "/var/lib/" end
+      if type($profile) != "string" or not re_match($profile, "^" .. $state .. $project .. "/[a-z][a-z0-9-]{0,31}$") then fail("profile must be one direct project state child") end
       $admission = $item.admission ?? nil
       if $admission != nil and not contains(["off","observe","enforce"],$admission) then fail("invalid admission posture") end
       $entry = {project:$project, node:$node, host:$host, kind:$kind, profile:$profile, etc:$profile .. "/etc", var:$profile .. "/var",
         unit:"noded@" .. to_string($session) .. ".service", account:$account, machine:$machine, session:$session,
         run:"/run/" .. $project .. "/session/" .. to_string($session),admission:$admission}
+      if $transport == "pct" then
+        $entry.transport = "pct"
+        $entry.ct = $item.ct
+        $entry.run = "/opt/mix/run/session/" .. to_string($session)
+      end
       if $broker != nil then
         $entry.identity_schema = 2
         $entry.client_account = $account
@@ -97,7 +112,12 @@ end
 fn checked_target($target)
   $raw = {node:$target.node,host:$target.host,kind:$target.kind}
   if $target.kind == "desk" then
-    $raw.machine = $target.machine
+    if $target.transport == "pct" then
+      $raw.transport = "pct"
+      $raw.ct = $target.ct
+    else
+      $raw.machine = $target.machine
+    end
     $raw.profile = $target.profile
     $raw.session = $target.session
     if $target.identity_schema == 2 then
@@ -127,6 +147,10 @@ fn plan($target)
     $out.client_config = $target.client_config
     $out.identity_boundary = "separate-principal-preview"
   end
+  if $target.transport == "pct" then
+    $out.transport = "pct"
+    $out.ct = $target.ct
+  end
   return $out
 end
 
@@ -147,7 +171,31 @@ fn checked_native($target, $native)
   $prefix = $native.prefix
   if type($prefix) != "string" or not starts_with($prefix,"/") or $prefix == "/" or ends_with($prefix,"/") or contains($prefix,"/../") or contains($prefix,"/./") or contains($prefix,"//") or ends_with($prefix,"/..") or ends_with($prefix,"/.") then fail("native prefix must be an absolute normalized install path") end
   if $native.mix_bin != $prefix .. "/bin/mix" then fail("configured interpreter must be the node prefix/bin/mix") end
+  if $target.transport == "pct" and $prefix != "/opt/mix" then fail("CT native install must use /opt/mix") end
+  $native.environment_prefix = environment_prefix($target,$native)
   return $native
+end
+
+fn environment_prefix($target,$native)
+  if $target.transport == "pct" or ($native.prefix == "/opt/mix" and $native.legacy_defaults != true) then return "MIX" end
+  return upper($target.project)
+end
+
+fn node_native($target,$deployment)
+  $settings = $deployment.node_settings($target.node)
+  $roots = if $target.transport == "pct" then $deployment.checked_roots($settings.roots,$target.node) else $deployment.remote_roots($target.node,$target.host) end
+  return checked_native($target,{node:$target.node,mix_bin:$deployment.remote_mix($target.node),prefix:$roots.prefix,roots:$roots,legacy_defaults:$settings.legacy_defaults == true})
+end
+
+-- A CT's layout is not its PVE host's layout. Refuse missing explicit roots
+-- before any host query, including for read-only probes.
+fn node_prefix($target,$deployment)
+  if $target.transport == "pct" then
+    $roots = $deployment.checked_roots($deployment.node_settings($target.node).roots,$target.node)
+    if $roots.prefix != "/opt/mix" then fail("CT native prefix must be /opt/mix") end
+    return $roots.prefix
+  end
+  return $deployment.remote_roots($target.node,$target.host).prefix
 end
 
 fn stdin_job($target, $program, $bindings, $role, $mix_bin, $native)
@@ -163,25 +211,48 @@ fn stdin_job($target, $program, $bindings, $role, $mix_bin, $native)
     $body = $body .. "$" .. $key .. " = " .. data_encode($bindings[$key]) .. "\n"
   end
   $body = $body .. $program
-  $prefix = upper($target.project)
-  $environment = {}
-  $environment[$prefix .. "_ETC"] = $target.etc
-  -- Citizen queries must not inherit the broker's private state directory.
-  if $target.identity_schema != 2 or $role == "admin" then $environment[$prefix .. "_VAR"] = $target.var end
-  $environment[$prefix .. "_NODE_CONFIG"] = if $target.identity_schema == 2 and $role == "citizen" then $target.client_config else $target.etc .. "/node.conf.mix" end
-  -- Never inherit another desk or host broker URL. Empty selects the explicit
-  -- profile node config in the native client locator.
-  $environment[$prefix .. "_NODED_URL"] = ""
+  $environment = job_environment($target,$role,$native)
   if $target.kind == "system" then
     return {host:$target.host, argv:[$mix_bin,"-"], stdin:$body, env:$environment}
   end
-  $environment[$prefix .. "_RUN"] = $target.run
-  $environment[$prefix .. "_BROKER_ACCOUNT"] = $target.broker_account ?? $target.account
   $account = if $role == "admin" then "root" else $target.account end
   -- Native namespace execution uses a pipe, not a terminal or source argv.
   -- The outer native Mix sets the profile env for the inner stdin process.
   $wrapper = "$r = run_argv([" .. json_encode($mix_bin) .. ", \"-\"], {stdin: " .. data_encode($body) .. ", env: " .. data_encode($environment) .. ", timeout: 120}); print($r.stdout); if not $r.ok then raise(\"MESH_TARGET_JOB\", \"namespace job failed\") end\n"
+  if $target.transport == "pct" then
+    $argv = ["pct","exec",to_string($target.ct),"--","systemd-run","--pipe","--wait","--collect","--quiet",
+      "--property=RuntimeMaxSec=135s","--property=TimeoutStopSec=5s","--property=KillMode=control-group"]
+    if $role == "citizen" then $argv = concat($argv,["runuser","-u",$account,"--"]) end
+    return {host:$target.host,argv:concat($argv,[$mix_bin,"-"]),stdin:$wrapper,env:{}}
+  end
   return {host:$target.host, argv:["sudo","-n","systemd-run","--machine=" .. $target.machine,
     "--pipe","--wait","--collect","--quiet","--property=RuntimeMaxSec=135s","--property=TimeoutStopSec=5s",
     "--property=KillMode=control-group","--uid=" .. $account,$mix_bin,"-"], stdin:$wrapper, env:{}}
+end
+
+-- Shared by stdin wrappers and deployment helpers; preserve the real target's
+-- transport when selecting a prefix, including legacy-labelled CT settings.
+fn job_environment($target,$role,$native)
+  $prefix = $native.environment_prefix
+  $etc = $target.etc
+  $var = $target.var
+  if $target.kind == "system" then
+    $roots = $native.roots ?? {}
+    $etc = $roots.etc ?? (if $native.prefix == "/opt/mix" and $native.legacy_defaults != true then "/opt/mix/etc" else $etc end)
+    $var = $roots.var ?? (if $native.prefix == "/opt/mix" and $native.legacy_defaults != true then "/opt/mix/var" else $var end)
+  end
+  $environment = {}
+  $environment[$prefix .. "_ETC"] = $etc
+  -- Citizen queries must not inherit the broker's private state directory.
+  if $target.identity_schema != 2 or $role == "admin" then $environment[$prefix .. "_VAR"] = $var end
+  $environment[$prefix .. "_NODE_CONFIG"] = if $target.identity_schema == 2 and $role == "citizen" then $target.client_config else $etc .. "/node.conf.mix" end
+  -- Never inherit another desk or host broker URL. Empty selects the explicit
+  -- profile node config in the native client locator.
+  $environment[$prefix .. "_NODED_URL"] = ""
+  if $target.kind == "system" then
+    return $environment
+  end
+  $environment[$prefix .. "_RUN"] = $target.run
+  $environment[$prefix .. "_BROKER_ACCOUNT"] = $target.broker_account ?? $target.account
+  return $environment
 end

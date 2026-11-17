@@ -1,0 +1,132 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Explicit preparation only. Never called by sync or seed placement.
+$w = require("desk_worker.mix")
+$targets = require("targets.mix")
+
+fn program($lib)
+  $source = read_file($lib .. "/desk_prepare.mix")
+  $source = replace($source,'$w = require("desk_worker.mix")',"")
+  $source = replace($source,'$targets = require("targets.mix")',"")
+  $source = replace(replace($source,"$w.",""),"$targets.","")
+  return read_file($lib .. "/targets.mix") .. chr(10) .. read_file($lib .. "/desk_worker.mix") .. chr(10) .. $source
+end
+
+fn service_text($target,$native = {})
+  $out = ""
+  $prefix = $targets.environment_prefix($target,$native)
+  for $pair in [["_ETC",$target.etc],["_VAR",$target.var],["_NODE_CONFIG",$target.etc .. "/node.conf.mix"],["_RUN",$target.run],["_BROKER_ACCOUNT",$target.account],["_NODED_URL",""]]
+    $out = $out .. $prefix .. $pair[0] .. "=" .. $pair[1] .. chr(10)
+  end
+  return $out
+end
+
+fn files($request)
+  $t = $targets.checked_target($request.target)
+  if $t.transport != "pct" or $t.identity_schema == 2 or $t.admission == nil then $w.refuse("preparation requires an explicit single-account CT target") end
+  if not valid_endpoint_address($request.endpoint) or not re_match($request.hub_key,"^[A-Za-z0-9+/]{43}=$") or not valid_ipv4($request.ip) or not valid_subnet($request.subnet) then $w.refuse("invalid WireGuard preparation plan") end
+  $endpoint_port = split($request.endpoint,":")[1]
+  if not re_match($endpoint_port,"^[1-9][0-9]{0,4}$") or not valid_port(to_number($endpoint_port)) or not valid_port($request.port) then $w.refuse("endpoint and broker ports must be integers from 1 to 65535") end
+  $config = {node:$t.node,mesh:$request.mesh,wg_ip:$request.ip,noded:{port:$request.port,mesh_config:$t.etc .. "/noded/config.conf.mix",unix_socket:$t.run .. "/noded/bus.sock",admission:$t.admission}}
+  return [{path:$t.etc .. "/noded/service.env",bytes:service_text($t,$request.native ?? {})},
+    {path:$t.etc .. "/node.conf.mix",bytes:data_encode($config)},
+    {path:"/etc/systemd/system/" .. $t.unit .. ".d/zzzz-mesh-profile.conf.parked",bytes:"[Service]\nEnvironmentFile=" .. $t.etc .. "/noded/service.env\n"}]
+end
+
+fn valid_port($value)
+  return type($value) == "number" and floor($value) == $value and $value >= 1 and $value <= 65535
+end
+
+fn valid_ipv4($value)
+  if type($value) != "string" or not re_match($value,"^[0-9]{1,3}(\\.[0-9]{1,3}){3}$") then return false end
+  for $octet in split($value,".")
+    if (len($octet) > 1 and starts_with($octet,"0")) or to_number($octet) > 255 then return false end
+  end
+  return true
+end
+
+fn valid_subnet($value)
+  if type($value) != "string" then return false end
+  $parts = split($value,"/")
+  return len($parts) == 2 and valid_ipv4($parts[0]) and re_match($parts[1],"^(0|[1-9][0-9]?)$") and to_number($parts[1]) <= 32
+end
+
+fn valid_endpoint_address($value)
+  if type($value) != "string" or not re_match($value,"^[A-Za-z0-9.-]+:[0-9]{1,5}$") then return false end
+  $host = split($value,":")[0]
+  return not re_match($host,"^[0-9.]+$") or valid_ipv4($host)
+end
+
+-- Existing objects must already match. Never adopt/reset an old profile,
+-- witness, key or interface. Re-running a completed preparation is harmless.
+fn ensure_dir($path,$uid,$gid,$mode)
+  $w.no_links($path)
+  if not exists($path,{follow_symlinks:false}) then
+    mkdir($path)
+    chown($path,$uid,$gid)
+    chmod($path,$mode)
+  end
+  return $w.directory($path,$uid,$gid,$mode)
+end
+
+fn ensure_file($path,$bytes,$gid,$mode)
+  $s = $w.file_state($path)
+  if $s.present then
+    if $s.uid != 0 or $s.gid != $gid or $s.perm != $mode or $s.sha256 != hash_sha256($bytes) then $w.refuse("existing preparation file differs; inspect before retry") end
+  else
+    write_new($path,$bytes,$mode)
+    chown($path,0,$gid)
+  end
+end
+
+fn wireguard_text($request,$key,$public)
+  files($request)
+  if type($request.wg_keys) != "list" or not contains($request.wg_keys,$public) then $w.refuse("local WireGuard key differs from signed inventory") end
+  if not re_match($key,"^[A-Za-z0-9+/]{43}=$") then $w.refuse("invalid local WireGuard key") end
+  return "[Interface]\nAddress = " .. $request.ip .. "/32\nPrivateKey = " .. $key .. "\n\n[Peer]\nPublicKey = " .. $request.hub_key .. "\nEndpoint = " .. $request.endpoint .. "\nAllowedIPs = " .. $request.subnet .. "\nPersistentKeepalive = 25\n"
+end
+
+fn apply($request)
+  $t = $targets.checked_target($request.target)
+  $native = $targets.checked_native($t,$request.native)
+  if $request.mix_bin != $native.mix_bin then $w.refuse("preparation interpreter differs from native plan") end
+  $planned = files($request)
+  if $w.file_state("/etc/systemd/system/" .. $t.unit .. ".d/zzzz-mesh-profile.conf").present then $w.refuse("preparation requires the profile drop-in to be parked") end
+  if trim(run_argv_must(["id","-u"])) != "0" then $w.refuse("preparation requires CT root") end
+  $uid = to_number(trim(run_argv_must(["id","-u",$t.account])))
+  $gid = to_number(trim(run_argv_must(["id","-g",$t.account])))
+  if $uid == 0 or $gid == 0 then $w.refuse("unprivileged session ids required") end
+  $w.native_binary($native.mix_bin,$native.prefix,"mix")
+  $w.native_binary($native.prefix .. "/bin/noded",$native.prefix,"noded")
+  -- The release owns /opt/mix and its state ancestors. Do not chmod them.
+  $ancestor = dirname($t.profile)
+  for $parent in ["/opt/mix/var","/opt/mix/var/lib",$ancestor]
+    $w.no_links($parent)
+    if not exists($parent,{follow_symlinks:false}) then ensure_dir($parent,0,0,0o755) end
+    $s = stat($parent,{follow_symlinks:false})
+    if not $s.is_dir or $s.uid != 0 or floor($s.perm / 16) % 2 != 0 or floor($s.perm / 2) % 2 != 0 then $w.refuse("unprotected preparation parent") end
+  end
+  $cursor = $ancestor
+  while $cursor != "/"
+    $w.no_links($cursor)
+    $s = stat($cursor,{follow_symlinks:false})
+    if not $s.is_dir or $s.uid != 0 or floor($s.perm / 16) % 2 != 0 or floor($s.perm / 2) % 2 != 0 then $w.refuse("unprotected preparation ancestor") end
+    $cursor = dirname($cursor)
+  end
+  for $path in [$t.profile,$t.etc,$t.etc .. "/noded",$t.var]
+    ensure_dir($path,0,$gid,0o750)
+  end
+  ensure_dir($t.var .. "/noded",$uid,$gid,0o700)
+  ensure_dir("/etc/systemd/system/" .. $t.unit .. ".d",0,0,0o755)
+  for $entry in $planned
+    ensure_file($entry.path,$entry.bytes,$gid,0o640)
+  end
+  $key_path = "/etc/wireguard/wg1.key"
+  $key_stat = $w.file_state($key_path)
+  if not $key_stat.present or $key_stat.uid != 0 or $key_stat.perm != 0o600 then $w.refuse("wg1 key must already be root-owned 0600") end
+  $key = trim(read_file($key_path))
+  $pub = trim(run_argv_must(["wg","pubkey"],{stdin:$key .. chr(10),timeout:10}))
+  $wg = wireguard_text($request,$key,$pub)
+  ensure_file("/etc/wireguard/wg1.conf",$wg,0,0o600)
+  $w.service_binding($t,$gid,$native,false)
+  return {prepared:$t.node,unit:$t.unit,wireguard:"/etc/wireguard/wg1.conf",started:false}
+end

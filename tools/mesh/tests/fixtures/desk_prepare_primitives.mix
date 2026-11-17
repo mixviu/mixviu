@@ -1,0 +1,110 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Virtual CT root. Only SQLite memory is mutated; no privileged operation.
+$fixture_db = sqlopen(":memory:","rw")
+$_fixture_schema = sqlexec($fixture_db,"CREATE TABLE objects (path TEXT PRIMARY KEY, document TEXT NOT NULL)")
+$_fixture_events = sqlexec($fixture_db,"CREATE TABLE events (operation TEXT, path TEXT)")
+
+fn fixture_refuse($message)
+  raise("DESK_FIXTURE",$message)
+end
+fn fixture_get($path)
+  $rows = sqlexec($fixture_db,"SELECT document FROM objects WHERE path=?",[$path])
+  if len($rows)==0 then return nil end
+  return json_parse($rows[0].document)
+end
+fn fixture_put($path,$value)
+  $_saved = sqlexec($fixture_db,"INSERT OR REPLACE INTO objects VALUES (?,?)",[$path,json_encode($value)])
+end
+fn fixture_event($operation,$path)
+  $_saved = sqlexec($fixture_db,"INSERT INTO events VALUES (?,?)",[$operation,$path])
+end
+fn fixture_exists($path,$options = {})
+  return fixture_get($path) != nil
+end
+fn fixture_stat($path,$options = {})
+  $value = fixture_get($path)
+  if $value == nil then fixture_refuse("stat missing " .. $path) end
+  return $value
+end
+fn fixture_mkdir($path)
+  if fixture_exists($path) or not fixture_stat(dirname($path)).is_dir then fixture_refuse("mkdir collision or missing parent") end
+  fixture_put($path,{is_dir:true,uid:0,gid:0,perm:0o755})
+  fixture_event("mkdir",$path)
+end
+fn fixture_chown($path,$uid,$gid)
+  $value = fixture_stat($path)
+  $value.uid = $uid
+  $value.gid = $gid
+  fixture_put($path,$value)
+  fixture_event("chown",$path)
+end
+fn fixture_chmod($path,$mode)
+  $value = fixture_stat($path)
+  $value.perm = $mode
+  fixture_put($path,$value)
+  fixture_event("chmod",$path)
+end
+fn fixture_write_new($path,$bytes,$mode)
+  if fixture_exists($path) or not fixture_stat(dirname($path)).is_dir then fixture_refuse("write collision or missing parent") end
+  fixture_put($path,{is_dir:false,uid:0,gid:0,perm:$mode,bytes:$bytes})
+  fixture_event("write",$path)
+end
+fn fixture_read_file($path)
+  return fixture_stat($path).bytes
+end
+fn fixture_no_links($path)
+  -- Fixture has no symlinks. Real no_links is tested in desk_ops_test.
+  return nil
+end
+fn fixture_directory($path,$uid,$gid,$mode)
+  $s = fixture_stat($path)
+  if not $s.is_dir or $s.uid != $uid or $s.gid != $gid or $s.perm != $mode then fixture_refuse("directory differs") end
+  return $s
+end
+fn fixture_file_state($path)
+  if not fixture_exists($path) then return {present:false} end
+  $s = fixture_stat($path)
+  if $s.is_dir then fixture_refuse("not a file") end
+  return {present:true,uid:$s.uid,gid:$s.gid,perm:$s.perm,sha256:hash_sha256($s.bytes)}
+end
+fn fixture_native_binary($path,$prefix,$component)
+  if $path != "/opt/mix/bin/" .. $component or $prefix != "/opt/mix" then fixture_refuse("native binary differs") end
+  return "fixture-native-hash"
+end
+fn fixture_service_binding($target,$gid,$native,$active = true)
+  if $active then fixture_refuse("preparation armed the profile") end
+  if $native.prefix != "/opt/mix" or $native.environment_prefix != "MIX" then fixture_refuse("preparation omitted native layout") end
+  $t = $targets.checked_target($target)
+  if fixture_exists("/etc/systemd/system/" .. $t.unit .. ".d/zzzz-mesh-profile.conf") then fixture_refuse("active drop-in exists") end
+  $env = fixture_file_state($t.etc .. "/noded/service.env")
+  if $env.uid != 0 or $env.gid != $gid or $env.perm != 0o640 then fixture_refuse("service env ownership") end
+  if fixture_read_file("/etc/systemd/system/" .. $t.unit .. ".d/zzzz-mesh-profile.conf.parked") != "[Service]\nEnvironmentFile=" .. $t.etc .. "/noded/service.env\n" then fixture_refuse("drop-in differs") end
+  fixture_event("service_binding",$t.unit)
+end
+fn fixture_run_argv_must($argv,$options = {})
+  if deep_eq($argv,["id","-u"]) then return "0\n" end
+  if deep_eq($argv,["id","-u","desktop"]) or deep_eq($argv,["id","-g","desktop"]) then return "1000\n" end
+  if deep_eq($argv,["wg","pubkey"]) then
+    if $options.stdin != "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n" then fixture_refuse("key stdin differs") end
+    return "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"
+  end
+  if deep_eq($argv,["systemctl","daemon-reload"]) then fixture_event("reload",""); return "" end
+  fixture_refuse("unexpected command")
+end
+fn fixture_reset()
+  $_cleared = sqlexec($fixture_db,"DELETE FROM objects")
+  $_cleared = sqlexec($fixture_db,"DELETE FROM events")
+  for $path in ["/","/opt","/opt/mix","/etc","/etc/systemd","/etc/systemd/system","/etc/wireguard"]
+    fixture_put($path,{is_dir:true,uid:0,gid:0,perm:0o755})
+  end
+  fixture_put("/etc/wireguard/wg1.key",{is_dir:false,uid:0,gid:0,perm:0o600,bytes:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"})
+end
+fn fixture_snapshot()
+  return sqlexec($fixture_db,"SELECT path,document FROM objects ORDER BY path")
+end
+fn fixture_remove($path)
+  $_removed = sqlexec($fixture_db,"DELETE FROM objects WHERE path=?",[$path])
+end
+fn fixture_mutations()
+  return sqlexec($fixture_db,"SELECT operation,path FROM events WHERE operation NOT IN ('reload','service_binding')")
+end

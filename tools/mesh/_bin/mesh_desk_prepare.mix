@@ -1,0 +1,48 @@
+#!/usr/bin/env mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Hub: --plan SIGNED NODE HUB-ENDPOINT OUT; PVE root: --apply PLAN.
+-- Plans contain public data only. No network access in either mode.
+$argv = args()
+$lib = dirname(dirname(realpath($0))) .. "/_lib"
+$targets = require("../_lib/targets.mix")
+if len($argv) == 5 and $argv[0] == "--plan" then
+  $d = require("../_lib/deploy_lib.mix")
+  $m = require("../_lib/mesh_lib.mix")
+  $ops = require("../_lib/desk_ops.mix")
+  $conf = load_data($d.hub_root() .. "/_etc/mesh_gen.conf.mix").mesh_gen
+  $vi = $m.verified_inventory($argv[1],{mesh:$conf.expected_mesh,against_authored:$d.hub_root() .. "/_etc/mesh/inventory.mix"})
+  $inventory = $vi.inventory
+  $document = $targets.parse_targets(load_data($d.hub_root() .. "/_etc/mesh_targets.conf.mix"))
+  $target = nil
+  for $entry in $document.targets
+    if $entry.node == $argv[2] then $target = $entry end
+  end
+  if $target == nil or $target.transport != "pct" then raise("DESK_PREPARE","explicit CT target required") end
+  -- No SSH root query: a preparation plan requires explicit CT native roots.
+  $prefix = $targets.node_prefix($target,$d)
+  $request = $ops.request($target,$inventory,trim(read_file($m.MESH_GENESIS_PUB)),$d.remote_mix($target.node),$prefix,$d.node_settings($target.node).legacy_defaults == true)
+  $hub = $ops.member_named($inventory,$inventory.hub[0])
+  $pubs = $m.wg_current_pubkeys($hub,$inventory.epoch)
+  if len($pubs) != 1 then raise("DESK_PREPARE","one current hub WG key required") end
+  $request.hub_key = $pubs[0]
+  $request.wg_keys = $m.wg_current_pubkeys($ops.member_named($inventory,$target.node),$inventory.epoch)
+  $request.endpoint = $argv[3]
+  $request.subnet = $inventory.subnet
+  $prepare = require("../_lib/desk_prepare.mix")
+  $prepare.files($request)
+  write_new($argv[4],data_encode($request),0o600)
+  print("public preparation plan: " .. $argv[4])
+elif len($argv) == 2 and $argv[0] == "--apply" then
+  $request = load_data($argv[1])
+  $target = $targets.checked_target($request.target)
+  if $target.transport != "pct" then raise("DESK_PREPARE","CT target required") end
+  $prepare = require("../_lib/desk_prepare.mix")
+  $source = $prepare.program($lib) .. chr(10) .. "print(json_encode(apply($request)))"
+  $job = $targets.stdin_job($target,$source,{request:$request},"admin",$request.mix_bin,$request.native)
+  $result = run_argv($job.argv,{stdin:$job.stdin,timeout:145})
+  print($result.stdout)
+  if not $result.ok then eprint($result.stderr); exit(1) end
+else
+  eprint("usage: mesh_desk_prepare.mix --plan SIGNED NODE HUB-ENDPOINT OUT | --apply PLAN (on PVE root)")
+  exit(2)
+end

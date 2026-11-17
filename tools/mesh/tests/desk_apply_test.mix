@@ -1,0 +1,97 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Execute the real apply body against a virtual root filesystem and argv stubs.
+$targets = require("../_lib/targets.mix")
+$root = trim(run_argv_must(["mktemp","-d"]))
+fn check($ok,$message)
+  if not $ok then raise("DESK_APPLY_TEST",$message) end
+end
+fn refused($action,$code,$expected)
+  try
+    $action()
+    return false
+  catch $message,$detail
+    return $detail.code == $code and $message == $expected
+  end
+end
+try
+  $lib = dirname(dirname(realpath($0))) .. "/_lib"
+  $source = read_file($lib .. "/desk_prepare.mix")
+  $source = replace($source,'$w = require("desk_worker.mix")',"")
+  $source = replace($source,'$targets = require("targets.mix")',"$targets = require(" .. data_encode($lib .. "/targets.mix") .. ")")
+  $source = replace($source,"$w.","fixture_")
+  for $name in ["run_argv_must","exists","stat","mkdir","chown","chmod","write_new","read_file"]
+    $source = replace($source,$name .. "(","fixture_" .. $name .. "(")
+  end
+  -- Prefixing applies only to production builtin calls, not worker stubs.
+  $source = replace($source,"fixture_fixture_","fixture_")
+  $path = $root .. "/virtual-root.mix"
+  write_file($path,read_file(dirname(realpath($0)) .. "/fixtures/desk_prepare_primitives.mix") .. chr(10) .. $source)
+  $prep = require($path)
+  $target = $targets.parse_targets({schema_version:1,project:"example",targets:[{node:"desk",host:"pve-host",kind:"desk",transport:"pct",ct:123,session:5,account:"desktop",profile:"/opt/mix/var/lib/example/desk-bus",admission:"enforce"}]}).targets[0]
+  $pub = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  $request = {target:$target,native:{node:"desk",prefix:"/opt/mix",mix_bin:"/opt/mix/bin/mix"},mix_bin:"/opt/mix/bin/mix",ip:"192.0.2.2",port:4200,endpoint:"192.0.2.1:51822",subnet:"192.0.2.0/24",hub_key:$pub,wg_keys:[$pub],mesh:"example.org"}
+  for $changes in [{etc:"/opt/evil"},{var:"/opt/evilvar"},{unit:"zzz"},{etc:nil},{unit:nil}]
+    $prep.fixture_reset()
+    $before = $prep.fixture_snapshot()
+    $bad = $request
+    for $key in keys($changes) $bad.target[$key] = $changes[$key] end
+    check(refused(fn()=$prep.apply($bad),"MESH_TARGET","target must be the unchanged parsed description"),"forged derived target did not produce the expected refusal")
+    check(deep_eq($before,$prep.fixture_snapshot()) and len($prep.fixture_mutations())==0,"refused plan created state")
+  end
+  for $changes in [{ip:"1.2"},{ip:"256.2.3.4"},{ip:"1.2.3.4.5"},{ip:"01.2.3.4"},{subnet:"300.1.2.3/99"},{subnet:"1.2.3/24"},{subnet:"1.2.3.4.5/8"},{subnet:"01.2.3.4/24"},{subnet:"1.2.3.4/33"},{subnet:"1.2.3.4/08"},{subnet:"1.2.3.4/-1"},{endpoint:"01.2.3.4:42"},{endpoint:"hub.example:0"},{endpoint:"hub.example:65536"},{endpoint:"host:0042"},{port:0},{port:65536},{port:42.5},{port:"4200"},{port:"0042"}]
+    $prep.fixture_reset()
+    $before = $prep.fixture_snapshot()
+    $bad = $request
+    for $key in keys($changes) $bad[$key] = $changes[$key] end
+    $message = if has_key($changes,"ip") or has_key($changes,"subnet") or $changes.endpoint == "01.2.3.4:42" then "invalid WireGuard preparation plan" else "endpoint and broker ports must be integers from 1 to 65535" end
+    check(refused(fn()=$prep.apply($bad),"DESK_FIXTURE",$message),"invalid address or port did not produce the expected refusal")
+    check(deep_eq($before,$prep.fixture_snapshot()),"invalid plan mutated state")
+  end
+  for $case in [
+    {changes:{native:{node:"other",prefix:"/opt/mix",mix_bin:"/opt/mix/bin/mix"}},code:"MESH_TARGET",message:"native configuration must belong to the target node"},
+    {changes:{native:{node:"desk",prefix:"/opt/other",mix_bin:"/opt/other/bin/mix"}},code:"MESH_TARGET",message:"CT native install must use /opt/mix"},
+    {changes:{native:{node:"desk",prefix:"/opt/mix",mix_bin:"/opt/evil/bin/mix"}},code:"MESH_TARGET",message:"configured interpreter must be the node prefix/bin/mix"},
+    {changes:{mix_bin:"/opt/evil/bin/mix"},code:"DESK_FIXTURE",message:"preparation interpreter differs from native plan"}
+  ]
+    $prep.fixture_reset()
+    $before = $prep.fixture_snapshot()
+    $bad = $request
+    for $key in keys($case.changes) $bad[$key] = $case.changes[$key] end
+    check(refused(fn()=$prep.apply($bad),$case.code,$case.message),"forged native plan did not produce the expected refusal")
+    check(deep_eq($before,$prep.fixture_snapshot()) and len($prep.fixture_mutations())==0,"forged native plan mutated state")
+  end
+  $prep.fixture_reset()
+  $dropin_dir = "/etc/systemd/system/" .. $target.unit .. ".d"
+  $parked = $dropin_dir .. "/zzzz-mesh-profile.conf.parked"
+  $prep.fixture_put($dropin_dir,{is_dir:true,uid:0,gid:0,perm:0o755})
+  $prep.fixture_put($parked,{is_dir:false,uid:0,gid:1000,perm:0o640,bytes:$prep.files($request)[2].bytes})
+  $parked_before = $prep.fixture_stat($parked)
+  check($prep.apply($request).started==false,"apply started a service")
+  check(deep_eq($parked_before,$prep.fixture_stat($parked)),"apply changed the already parked drop-in")
+  check(not $prep.fixture_exists($dropin_dir .. "/zzzz-mesh-profile.conf"),"apply created an effective drop-in")
+  check(len(sqlexec($prep.fixture_db,"SELECT operation FROM events WHERE operation='reload'"))==0,"apply reloaded the effective unit")
+  check($prep.fixture_stat($target.var .. "/noded").uid==1000,"broker state owner differs")
+  for $entry in $prep.files($request)
+    check($prep.fixture_read_file($entry.path)==$entry.bytes,"apply file bytes differ")
+  end
+  check($prep.fixture_stat("/etc/wireguard/wg1.conf").perm==0o600,"WG config is not private")
+  $before = $prep.fixture_snapshot()
+  $mutations = $prep.fixture_mutations()
+  $prep.apply($request)
+  check(deep_eq($before,$prep.fixture_snapshot()) and deep_eq($mutations,$prep.fixture_mutations()),"second apply changed prepared state")
+  $env_path = $target.etc .. "/noded/service.env"
+  $old = $prep.fixture_stat($env_path)
+  $old.bytes = replace($old.bytes,"MIX_","EXAMPLE_")
+  $prep.fixture_put($env_path,$old)
+  $old_snapshot = $prep.fixture_snapshot()
+  check(refused(fn()=$prep.apply($request),"DESK_FIXTURE","existing preparation file differs; inspect before retry"),"apply accepted an existing old-prefix service environment")
+  check(deep_eq($old_snapshot,$prep.fixture_snapshot()),"old-prefix refusal changed prepared files")
+  $prep.fixture_remove($env_path)
+  $prep.apply($request)
+  check(deep_eq($before,$prep.fixture_snapshot()),"removing only old service.env did not restore the exact new-prefix preparation")
+  check($prep.valid_ipv4("0.255.1.2") and $prep.valid_port(1) and $prep.valid_port(65535),"valid address/port boundary refused")
+  check($prep.valid_subnet("0.0.0.0/0") and $prep.valid_subnet("255.255.255.255/32"),"valid subnet prefix boundary refused")
+finally
+  run_argv_must(["rm","-rf",$root])
+end
+print("PASS root-mode apply: success, idempotence, forged target and address/port refusals without mutation")

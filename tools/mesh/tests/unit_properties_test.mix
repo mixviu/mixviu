@@ -1,0 +1,100 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Raw systemctl show property-text fixtures, including an omitted sequence.
+$w = require("../_lib/desk_worker.mix")
+$targets = require("../_lib/targets.mix")
+$prep = require("../_lib/desk_prepare.mix")
+$root = trim(run_argv_must(["mktemp","-d"]))
+fn check($ok,$message)
+  if not $ok then raise("UNIT_PROPERTIES_TEST",$message) end
+end
+fn refused($action)
+  try
+    $action()
+    return false
+  catch $failure
+    return true
+  end
+end
+try
+  $fixtures = dirname(realpath($0)) .. "/fixtures"
+  $nspawn = read_file($fixtures .. "/nspawn-unit-show.txt")
+  $pct = read_file($fixtures .. "/pct-unit-show.txt")
+  check(not contains($nspawn,"ExecStartPre="),"nspawn fixture must omit unset sequence")
+  for $transport in ["nspawn","pct"]
+    $text = if $transport=="pct" then $pct else $nspawn end
+    $names = ["User","EnvironmentFiles","UnsetEnvironment","ExecStart","Type","KillMode","RuntimeDirectory"]
+    if $transport=="pct" then $names=concat($names,["RequiresMountsFor","ExecStartPre"]) end
+    $argv = ["systemctl","show","noded@5.service"]
+    for $name in $names push($argv,"--property=" .. $name) end
+    push($argv,"--no-pager")
+    $source = '$fixture_text = ' .. data_encode($text) .. chr(10) .. '$fixture_argv = ' .. data_encode($argv) .. chr(10) .. 'fn fixture_command($argv,$options)
+  if not deep_eq($argv,$fixture_argv) or $options.timeout != 10 then raise("UNIT_FIXTURE","unexpected systemctl query") end
+  return $fixture_text
+end
+'
+    $source = $source .. replace(read_file(dirname(dirname(realpath($0))) .. "/_lib/desk_worker.mix"),"run_argv_must(","fixture_command(")
+    $file = $root .. "/" .. $transport .. ".mix"
+    write_file($file,$source)
+    $worker = require($file)
+    $omitted_refused = false
+    try
+      $worker.unit_properties("noded@5.service")
+    catch $message
+      $omitted_refused = contains($message,"expected 2 argument(s), got 1")
+    end
+    check($omitted_refused,"omitted transport did not produce the expected arity refusal")
+    $properties = $worker.unit_properties("noded@5.service",$transport)
+    check(len(keys($properties))==len($names),"transport property count differs")
+    $raw = {node:"desk",host:"host",kind:"desk",session:5,account:"desktop",admission:"enforce"}
+    if $transport=="pct" then
+      $raw.transport="pct"
+      $raw.ct=123
+      $raw.profile="/opt/mix/var/lib/example/desk-bus"
+    else
+      $raw.machine="desk"
+      $raw.profile="/var/lib/example/desk-bus"
+    end
+    $target = $targets.parse_targets({schema_version:1,project:"example",targets:[$raw]}).targets[0]
+    $native = {prefix:"/opt/mix",environment_prefix:if $transport=="pct" then "MIX" else "EXAMPLE" end}
+    $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target),$native)
+  end
+  check(refused(fn()=$w.parse_unit_properties($nspawn,"pct")),"CT accepted missing required sequence properties")
+  check(refused(fn()=$w.parse_unit_properties($pct,"nspawn")),"nspawn accepted unsolicited CT properties")
+  check(refused(fn()=$w.parse_unit_properties($nspawn .. "User=other\n","nspawn")),"duplicate property accepted")
+  check(refused(fn()=$w.parse_unit_properties($pct .. "User=other\n","pct")),"CT duplicate scalar accepted")
+  check(refused(fn()=$w.parse_unit_properties($pct .. "Unexpected=value\n","pct")),"unexpected property accepted")
+  $properties = $w.parse_unit_properties($pct,"pct")
+  $release = $properties
+  $release.EnvironmentFiles = take($release.EnvironmentFiles,1)
+  $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$release,$prep.service_text($target),$native,false)
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target),$native,false)),"inactive validation accepted an armed profile")
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$release,$prep.service_text($target),$native)),"active validation accepted release-only environment")
+  check(len($properties.ExecStartPre)==2 and len($properties.ExecStart)==1 and len($properties.EnvironmentFiles)==2,"repeated exec/environment entries were lost")
+  check(deep_eq($properties.RuntimeDirectory,[]),"empty runtime directory was not retained as an empty sequence")
+  $properties.EnvironmentFiles = reverse($properties.EnvironmentFiles)
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target),$native)),"profile environment accepted before session environment")
+  $properties = $w.parse_unit_properties($pct,"pct")
+  $properties.EnvironmentFiles[1].ignore_errors = true
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target),$native)),"optional profile environment accepted")
+  $properties = $w.parse_unit_properties($pct,"pct")
+  $properties.ExecStart = concat($properties.ExecStart,$properties.ExecStart)
+  check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target),$native)),"two start commands accepted")
+  $properties = $w.parse_unit_properties($pct,"pct")
+  $properties.ExecStart = [$w.parse_exec_property("{ path=/tmp/bin/noded ; argv[]=/tmp/bin/noded serve --no-monitor --no-log ; ignore_errors=no }")]
+  $pinned = false
+  try $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($target),$native) catch $message,$detail
+    $pinned = $detail.code=="DESK_DISTRIBUTOR" and $message=="unit command overrides profile identity or endpoint"
+  end
+  check($pinned,"foreign ExecStart did not produce the native-path refusal")
+  -- Gold nspawn layout uses MIX and the release env below the native prefix.
+  $gold_target = $targets.parse_targets({schema_version:1,project:"example",targets:[{node:"desk",host:"host",kind:"desk",machine:"desk",session:5,account:"desktop",profile:"/var/lib/example/desk-bus",admission:"enforce"}]}).targets[0]
+  $gold = {prefix:"/opt/mix",environment_prefix:"MIX"}
+  $properties = $w.parse_unit_properties($nspawn,"nspawn")
+  $properties.EnvironmentFiles = [{path:"/opt/mix/etc/session/5.env",ignore_errors:false}]
+  $w.validate_service($gold_target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($gold_target,$gold),$gold,false)
+  $properties.EnvironmentFiles = [{path:"/etc/example/session/5.env",ignore_errors:false}]
+  check(refused(fn()=$w.validate_service($gold_target,1000,{present:true,uid:0,gid:1000,perm:0o640},$properties,$prep.service_text($gold_target,$gold),$gold,false)),"gold nspawn accepted the legacy release path")
+finally
+  run_argv_must(["rm","-rf",$root])
+end
+print("PASS transport-specific systemctl show text, query argv, native binding and incomplete/duplicate refusals")

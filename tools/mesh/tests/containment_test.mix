@@ -9,6 +9,9 @@ end
 fn refuses($action)
   try $action(); return false catch $failure return true end
 end
+fn native_refuses($action)
+  try $action(); return false catch $failure,$detail return $detail.code == "DESK_DISTRIBUTOR" end
+end
 $target = $t.parse_targets({schema_version:1,project:"example",targets:[{node:"node-a",host:"host-a",kind:"system"}]}).targets[0]
 $native = {node:"node-a",prefix:"/srv/example",mix_bin:"/srv/example/bin/mix"}
 check($t.stdin_job($target,"print(1)",{},"admin",$native.mix_bin,$native).argv[0] == $native.mix_bin,"configured interpreter refused")
@@ -43,7 +46,45 @@ try
     chmod($prefix .. "/bin",0o777)
     check(refuses(fn()=$w.native_binary($prefix .. "/bin/mix",$prefix,"mix")),"writable native ancestor accepted")
     chmod($prefix .. "/bin",0o755)
-    print("PASS configured native components, exact interpreter, no symlinks and root-controlled ownership")
+    $noded = $prefix .. "/bin/noded"
+    $mixd = $prefix .. "/bin/mixd"
+    write_new($mixd,"synthetic-multicall-native",0o755)
+    remove($noded)
+    symlink("mixd",$noded)
+    check($w.native_binary($noded,$prefix,"noded") == hash_file($mixd,"sha256"),"release personality link must hash resolved mixd")
+    check(native_refuses(fn()=$w.no_links($noded)),"generic profile path check accepted personality link")
+    for $link_target in [$mixd,"../mixd","other"]
+      remove($noded)
+      symlink($link_target,$noded)
+      check(native_refuses(fn()=$w.native_binary($noded,$prefix,"noded")),"nonliteral personality target accepted")
+    end
+    remove($noded)
+    symlink("mixd",$noded)
+    rename($mixd,$prefix .. "/bin/real-mixd")
+    symlink("real-mixd",$mixd)
+    check(native_refuses(fn()=$w.native_binary($noded,$prefix,"noded")),"two-link chain accepted")
+    remove($mixd)
+    rename($prefix .. "/bin/real-mixd",$mixd)
+    for $mode in [0o775,0o757]
+      chmod($mixd,$mode)
+      check(native_refuses(fn()=$w.native_binary($noded,$prefix,"noded")),"writable mixd accepted")
+    end
+    chmod($mixd,0o755)
+    chown($mixd,1000,1000)
+    check(native_refuses(fn()=$w.native_binary($noded,$prefix,"noded")),"non-root mixd accepted")
+    chown($mixd,0,0)
+    run_argv_must(["chown","-h","1000:1000",$noded])
+    check(native_refuses(fn()=$w.native_binary($noded,$prefix,"noded")),"non-root personality link accepted")
+    run_argv_must(["chown","-h","0:0",$noded])
+    rename($prefix .. "/bin",$prefix .. "/physical-bin")
+    symlink("physical-bin",$prefix .. "/bin")
+    check(native_refuses(fn()=$w.native_binary($noded,$prefix,"noded")),"symlinked bin accepted")
+    remove($prefix .. "/bin")
+    rename($prefix .. "/physical-bin",$prefix .. "/bin")
+    remove($prefix .. "/bin/mix")
+    symlink("mixd",$prefix .. "/bin/mix")
+    check(native_refuses(fn()=$w.native_binary($prefix .. "/bin/mix",$prefix,"mix")),"mix interpreter symlink accepted")
+    print("PASS native confinement: exact noded -> mixd hash; other links, chains, ownership and writable binary/ancestor refusals")
   else
     check(refuses(fn()=$w.native_binary($prefix .. "/bin/mix",$prefix,"mix")),"user-controlled native install accepted")
     print("PASS native confinement and user-owned refusal; root-owned success checked on root CBC")

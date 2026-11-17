@@ -33,6 +33,17 @@ if len($arguments) > 0 then
     check(deep_eq($d.node_settings("alpha"),$original),"node settings changed after config mutation")
     check($d.remote_mix("alpha") == $original.mix_bin,"remote interpreter escaped config snapshot")
     check($d.local_roots().prefix == "/srv/original","local roots escaped config snapshot")
+  elif $mode == "mixed-environment" then
+    $legacy = $d.node_environment("alpha")
+    $gold = $d.node_environment("beta")
+    check($legacy.EXAMPLE_ETC=="/etc/example" and $legacy.EXAMPLE_VAR=="/var/lib/example","legacy deployment environment differs")
+    check($gold.MIX_ETC=="/opt/mix/etc" and $gold.MIX_VAR=="/opt/mix/var" and $gold.MIX_NODE_CONFIG=="/opt/mix/etc/node.conf.mix","gold deployment environment ignored settings")
+    check(not has_key($gold,"EXAMPLE_ETC") and not has_key($legacy,"MIX_ETC"),"mixed deployment environment leaked another node prefix")
+  elif $mode == "desk-environment" then
+    $desk = $d.node_environment("desk")
+    check($desk.MIX_ETC=="/opt/mix/var/lib/example/desk-bus/etc" and $desk.MIX_NODED_URL=="","legacy-labelled CT lost its native profile environment")
+    check(not has_key($desk,"EXAMPLE_ETC"),"CT deployment helper used artifact prefix")
+    check(read_file(env("MESH_FIXTURE_COUNT"))=="0","CT helper queried the host layout")
   elif $mode == "remote-cache" then
     $first = $d.remote_roots("alpha")
     check(read_file(env("MESH_FIXTURE_COUNT")) == "1", "first remote root query did not run exactly once")
@@ -81,11 +92,17 @@ if not $r.ok then eprint($r.stderr); exit(1) end
   push($cases,{mode:"legacy",nodes:{unreachable:{legacy_defaults:true,roots:{prefix:"/srv/original",etc:"/srv/original/etc",var:"/srv/original/var"}}}})
   push($cases,{mode:"snapshot",nodes:{local:{roots:{prefix:"/srv/original",etc:"/srv/original/etc",var:"/srv/original/var"}},alpha:{mix_bin:"/srv/original/bin/mix"}}})
   push($cases,{mode:"remote-cache",nodes:{alpha:{mix_bin:$exe},beta:{mix_bin:$exe}}})
+  push($cases,{mode:"mixed-environment",nodes:{alpha:{mix_bin:"/srv/legacy/bin/mix",legacy_defaults:true,roots:{prefix:"/srv/legacy",etc:"/etc/example",var:"/var/lib/example"}},beta:{mix_bin:"/opt/mix/bin/mix",roots:{prefix:"/opt/mix",etc:"/opt/mix/etc",var:"/opt/mix/var"}}}})
+  push($cases,{mode:"desk-environment",nodes:{desk:{mix_bin:"/opt/mix/bin/mix",legacy_defaults:true,roots:{prefix:"/opt/mix",etc:"/opt/mix/etc",var:"/opt/mix/var"}}}})
   for $case in $cases
     write_file($counter,"0")
     $config = $scratch .. "/nodes.conf.mix"
     write_file($config,data_encode({nodes:$case.nodes}))
-    $child = run_argv([$exe,realpath($0),$case.mode,$case.key ?? ""],{env:{MESH_HUB:$scratch,MESH_NODES_CONFIG:$config,MESH_FIXTURE_COUNT:$counter,PATH:$scratch .. "/bin:" .. env("PATH")},timeout:30})
+    if $case.mode == "desk-environment" then
+      mkdir($scratch .. "/_etc")
+      write_file($scratch .. "/_etc/mesh_targets.conf.mix",data_encode({schema_version:1,project:"example",targets:[{node:"desk",host:"host",kind:"desk",transport:"pct",ct:123,session:5,account:"desktop",profile:"/opt/mix/var/lib/example/desk-bus",admission:"enforce"}]}))
+    end
+    $child = run_argv([$exe,realpath($0),$case.mode,$case.key ?? ""],{env:{MESH_HUB:$scratch,MESH_PROJECT:"example",MESH_NODES_CONFIG:$config,MESH_FIXTURE_COUNT:$counter,PATH:$scratch .. "/bin:" .. env("PATH")},timeout:30})
     check($child.ok,"fixture " .. $case.mode .. " failed: " .. $child.stdout .. $child.stderr)
   end
   print("PASS complete layout validation, actual system roots, zero-SSH legacy roots and immutable per-node query snapshots")

@@ -77,6 +77,17 @@ $bad_json = fn($job)={ok:true,stdout:"banner, not JSON",stdout_truncated:false,s
 check(refused(fn()=$ops.preflight($base,"unused fixture source",$bad_json)),"malformed remote evidence must refuse")
 $truncated = fn($job)={ok:true,stdout:"{}",stdout_truncated:true,stderr_truncated:false}
 check(refused(fn()=$ops.preflight($base,"unused fixture source",$truncated)),"truncated remote evidence must refuse")
+$prep = require("../_lib/desk_prepare.mix")
+$prep.ensure_dir($root .. "/prepared",$uid,$gid,0o750)
+$prep.ensure_dir($root .. "/prepared",$uid,$gid,0o750)
+check(refused(fn()=$prep.ensure_dir($root .. "/prepared",$uid,$gid,0o700)),"preparation must not chmod existing state")
+check(refused(fn()=$prep.ensure_dir($root .. "/link",$uid,$gid,0o750)),"preparation symlink accepted")
+check(refused(fn()=$prep.ensure_file($collision,"replacement",$gid,0o640)),"preparation overwrote existing file")
+check(read_file($collision)=="unrelated-owned-fixture","preparation changed collision")
+check(refused(fn()=$prep.files($base)),"nspawn preparation must refuse")
+if not $ops.ROLLOUT_READY then
+  check(refused(fn()=$ops.preflight($base,"unused",nil)),"guard allowed live preflight")
+end
 print("PASS hermetic desk transaction: secret stdin, collision, partial publication, restore, concurrent change and monotonic authority")
 -- Remove only this test-created private root, after all assertions succeed.
 run_argv_must(["rm","-rf",$root])

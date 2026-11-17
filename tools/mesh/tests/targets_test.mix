@@ -83,4 +83,22 @@ check(contains($citizen.stdin, "/var/lib/example/profile-a/etc"), "profile envir
 check(contains($citizen.stdin, "/run/example/session/3"), "session runtime follows namespace")
 $system_job = $targets.stdin_job($parsed.targets[0], "print(uid())", {}, "admin", "/srv/example/bin/mix", {node:$parsed.targets[0].node,mix_bin:"/srv/example/bin/mix",prefix:"/srv/example"})
 check(deep_eq($system_job.argv, ["/srv/example/bin/mix","-"]), "system dispatch stays direct native stdin")
+$ct = {node:"desk-ct",host:"pve-host",kind:"desk",transport:"pct",ct:123,profile:"/opt/mix/var/lib/example/desk-bus",session:5,account:"desktop",admission:"enforce"}
+$ctdoc = {schema_version:1,project:"example",targets:[$ct]}
+$cttarget = $targets.parse_targets($ctdoc).targets[0]
+check($cttarget.run == "/opt/mix/run/session/5","CT runtime follows release prefix")
+$layout = {checked_roots:fn($roots,$node)=$roots,node_settings:fn($node)={roots:{prefix:"/opt/mix",etc:"/opt/mix/etc",var:"/opt/mix/var"}},remote_roots:fn($node,$host)=raise("TEST","CT layout queried PVE host")}
+check($targets.node_prefix($cttarget,$layout)=="/opt/mix","CT layout must not query PVE host")
+for $role in ["admin","citizen"]
+  $job = $targets.stdin_job($cttarget,"print(1)",{secret:$marker},$role,"/opt/mix/bin/mix",{node:"desk-ct",mix_bin:"/opt/mix/bin/mix",prefix:"/opt/mix"})
+  check(deep_eq(take($job.argv,4),["pct","exec","123","--"]),"CT namespace argv")
+  check(contains($job.argv,"runuser") == ($role == "citizen"),"CT citizen identity")
+  check(contains($job.argv,"--property=KillMode=control-group") and contains($job.argv,"--property=RuntimeMaxSec=135s") and contains($job.argv,"--property=TimeoutStopSec=5s"),"CT timeout and group kill")
+  check(not contains(json_encode($job.argv),$marker) and contains($job.stdin,$marker),"CT private stdin")
+end
+for $changes in [{ct:99},{ct:123.5},{ct:"123"},{machine:"other"},{transport:"ssh"},{profile:"/var/lib/example/wrong"}]
+  $bad = $ctdoc
+  for $key in keys($changes) $bad.targets[0][$key] = $changes[$key] end
+  check(refuses($bad),"invalid CT target accepted")
+end
 print("PASS native mesh target model: paths, identity boundaries and desk mutation refusal")

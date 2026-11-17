@@ -120,6 +120,28 @@ fn remote_bin($node, $name)
   return remote_roots($node).prefix .. "/bin/" .. $name
 end
 
+fn node_environment($node)
+  $targets = require("targets.mix")
+  $target = nil
+  $path = hub_root() .. "/_etc/mesh_targets.conf.mix"
+  if exists($path,{follow_symlinks:false}) then
+    $parsed = _snapshot("targets")
+    if $parsed == nil then $parsed = _keep_snapshot("targets",$targets.parse_targets(load_data($path))) end
+    if $parsed.project != project() then raise("MESH_LAYOUT","target project differs from deployment") end
+    $target = nil
+    for $entry in $parsed.targets
+      if $entry.node == $node then $target = $entry end
+    end
+    if $target == nil then raise("MESH_LAYOUT","node missing from configured targets: " .. $node) end
+  else
+    $target = $targets.parse_targets({schema_version:1,project:project(),targets:[{node:$node,host:$node,kind:"system"}]}).targets[0]
+  end
+  $settings = node_settings($node)
+  $roots = if $target.transport == "pct" then checked_roots($settings.roots,$node) else remote_roots($node,$target.host) end
+  $native = $targets.checked_native($target,{node:$node,mix_bin:remote_mix($node),prefix:$roots.prefix,roots:$roots,legacy_defaults:$settings.legacy_defaults == true})
+  return $targets.job_environment($target,"admin",$native)
+end
+
 fn etc_root()
   return local_roots().etc
 end

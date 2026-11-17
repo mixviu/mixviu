@@ -40,9 +40,18 @@ fn native_binary($path, $prefix, $component)
   if type($prefix) != "string" or not starts_with($prefix,"/") or $prefix == "/" or ends_with($prefix,"/") or not contains(["mix","noded"],$component) then refuse("invalid configured native install") end
   $expected = $prefix .. "/bin/" .. $component
   if $path != $expected then refuse("native binary must equal the configured prefix/bin component") end
-  no_links($path)
+  -- Ancestors stay physical. Only the release's noded personality link is
+  -- allowed at the leaf; do not relax no_links for authority/profile paths.
+  no_links(dirname($path))
+  $leaf = stat($path,{follow_symlinks:false})
+  if $leaf.is_symlink then
+    if $component != "noded" or $leaf.uid != 0 or read_link($path) != "mixd" then refuse("only the root-owned noded -> mixd personality link is permitted") end
+    $expected = $prefix .. "/bin/mixd"
+  end
+  no_links($expected)
   $resolved = realpath($path)
-  if $resolved == nil or $resolved != $expected then refuse("native binary must resolve to the configured prefix/bin component") end
+  if $resolved == nil or $resolved != $expected then refuse("native binary must resolve to the configured native component") end
+  if not stat($resolved,{follow_symlinks:false}).is_file then refuse("native binary must be a regular file") end
   $cursor = $resolved
   while $cursor != "/"
     $s = stat($cursor,{follow_symlinks:false})
@@ -56,16 +65,74 @@ fn property($unit, $name)
   return trim(run_argv_must(["systemctl","show",$unit,"--property=" .. $name,"--value"],{timeout:10}))
 end
 
-fn unit_properties($unit)
-  $text = run_argv_must(["systemctl","show",$unit,"--property=User","--property=EnvironmentFiles","--property=UnsetEnvironment","--property=ExecStart","--property=Type","--property=KillMode","--property=RuntimeDirectory","--no-pager"],{timeout:10})
+fn unit_property_names($transport)
+  $names = ["User","EnvironmentFiles","UnsetEnvironment","ExecStart","Type","KillMode","RuntimeDirectory"]
+  if $transport == "pct" then $names = concat($names,["RequiresMountsFor","ExecStartPre"]) end
+  return $names
+end
+
+fn parse_unit_properties($text,$transport)
+  $names = unit_property_names($transport)
   $out = {}
   for $line in lines($text)
     $key = split($line,"=")[0]
-    if not contains(["User","EnvironmentFiles","UnsetEnvironment","ExecStart","Type","KillMode","RuntimeDirectory"],$key) or has_key($out,$key) then refuse("unexpected or duplicate unit property") end
-    $out[$key] = substr($line,len($key)+1)
+    if not contains($names,$key) then refuse("unexpected unit property") end
+    $value = substr($line,len($key)+1)
+    if contains(["ExecStartPre","ExecStart","EnvironmentFiles","UnsetEnvironment","RuntimeDirectory","RequiresMountsFor"],$key) then
+      $entries = $out[$key] ?? []
+      if $value != "" then
+        if contains(["ExecStartPre","ExecStart"],$key) then
+          push($entries,parse_exec_property($value))
+        elif $key == "EnvironmentFiles" then
+          push($entries,parse_environment_file($value))
+        else
+          $entries = concat($entries,split($value," "))
+        end
+      end
+      $out[$key] = $entries
+    else
+      if has_key($out,$key) then refuse("duplicate scalar unit property") end
+      $out[$key] = $value
+    end
   end
-  if len(keys($out)) != 7 then refuse("unit property reply incomplete") end
+  if len(keys($out)) != len($names) then refuse("unit property reply incomplete") end
   return $out
+end
+
+fn parse_environment_file($text)
+  for $flag in ["yes","no"]
+    $suffix = " (ignore_errors=" .. $flag .. ")"
+    if ends_with($text,$suffix) then
+      $path = substr($text,0,len($text)-len($suffix))
+      if not re_match($path,"^/[A-Za-z0-9_./-]+$") then refuse("invalid unit environment file path") end
+      return {path:$path,ignore_errors:$flag == "yes"}
+    end
+  end
+  refuse("invalid unit environment file entry")
+end
+
+fn parse_exec_property($text)
+  if not starts_with($text,"{ path=") or not ends_with($text," }") then refuse("invalid unit exec entry") end
+  $parts = split(substr($text,2,len($text)-4)," ; ")
+  if len($parts)<3 or not starts_with($parts[1],"argv[]=") or not contains(["ignore_errors=yes","ignore_errors=no"],$parts[2]) then refuse("invalid unit exec fields") end
+  for $part in slice($parts,3)
+    if not re_match($part,"^(start_time|stop_time|pid|code|status)=.*$") then refuse("unexpected unit exec field") end
+  end
+  $path = substr($parts[0],5)
+  $argv = split(substr($parts[1],7)," ")
+  for $word in concat([$path],$argv)
+    if not re_match($word,"^[A-Za-z0-9_./=-]+$") then refuse("unsupported unit exec argument encoding") end
+  end
+  return {path:$path,argv:$argv,ignore_errors:$parts[2] == "ignore_errors=yes"}
+end
+
+fn unit_properties($unit,$transport)
+  $argv = ["systemctl","show",$unit]
+  for $name in unit_property_names($transport)
+    push($argv,"--property=" .. $name)
+  end
+  push($argv,"--no-pager")
+  return parse_unit_properties(run_argv_must($argv,{timeout:10}),$transport)
 end
 
 fn stable_text($path,$state)
@@ -76,14 +143,37 @@ end
 
 -- A final, mandatory, root-owned environment file makes the service binding
 -- explicit. The bounded format is literal KEY=value, not arbitrary shell.
-fn validate_service($target, $gid, $s, $properties, $text)
+fn validate_unit($target,$properties,$native,$active)
   $path = $target.etc .. "/noded/service.env"
-  if not $s.present or $s.uid != 0 or $s.gid != $gid or $s.perm != 0o640 then refuse("dedicated service environment is not root-owned 0640") end
   if $properties.User != $target.account then refuse("session unit account mismatch") end
-  if $properties.Type != "simple" or $properties.KillMode != "control-group" or $properties.RuntimeDirectory != $target.project .. "/session/" .. to_string($target.session) .. "/noded" then refuse("unit lifecycle or runtime directory differs from native session contract") end
-  $final_file = $path .. " (ignore_errors=no)"
-  if $properties.EnvironmentFiles != $final_file and not ends_with($properties.EnvironmentFiles," " .. $final_file) then refuse("dedicated environment must be the final mandatory unit environment file") end
-  $prefix = upper($target.project)
+  $runtime = if $target.transport == "pct" then [] else [$target.project .. "/session/" .. to_string($target.session) .. "/noded"] end
+  if $properties.Type != "simple" or $properties.KillMode != "control-group" or not deep_eq($properties.RuntimeDirectory,$runtime) then refuse("unit lifecycle or runtime directory differs from native session contract") end
+  if $target.transport == "pct" then
+    $dir = $target.run .. "/noded"
+    $install = {path:"/usr/bin/install",argv:["/usr/bin/install","-d","-m","0711",$dir],ignore_errors:false}
+    if not contains($properties.RequiresMountsFor ?? [],$dir) or not contains(map($properties.ExecStartPre ?? [],fn($entry)=json_encode($entry)),json_encode($install)) then refuse("CT release must create the declared absolute session runtime") end
+  end
+  $files = $properties.EnvironmentFiles
+  if $active then
+    if type($files) != "list" or len($files)==0 or not deep_eq($files[len($files)-1],{path:$path,ignore_errors:false}) then refuse("dedicated environment must be the final mandatory unit environment file") end
+  else
+    $release = if $native.prefix == "/opt/mix" then $native.prefix .. "/etc" else "/etc/" .. $target.project end
+    if not deep_eq($files,[{path:$release .. "/session/" .. to_string($target.session) .. ".env",ignore_errors:false}]) then refuse("inactive profile requires only the release session environment") end
+  end
+  $starts = $properties.ExecStart
+  if type($starts) != "list" or len($starts) != 1 then refuse("unit must contain one mandatory native start command") end
+  $start = $starts[0]
+  if $start.ignore_errors != false or $start.path != $native.prefix .. "/bin/noded" or not deep_eq($start.argv,[$start.path,"serve","--no-monitor","--no-log"]) then refuse("unit command overrides profile identity or endpoint") end
+  for $suffix in ["_ETC","_VAR","_NODE_CONFIG","_RUN","_BROKER_ACCOUNT","_NODED_URL"]
+    if contains($properties.UnsetEnvironment,$native.environment_prefix .. $suffix) then refuse("unit unsets required profile environment") end
+  end
+  return {environment_prefix:$native.environment_prefix,active:$active,command:"{ path=" .. $start.path .. " ; argv[]=" .. join($start.argv," ") .. " ; ignore_errors=no"}
+end
+
+fn validate_service($target, $gid, $s, $properties, $text, $native, $active = true)
+  if not $s.present or $s.uid != 0 or $s.gid != $gid or $s.perm != 0o640 then refuse("dedicated service environment is not root-owned 0640") end
+  $binding = validate_unit($target,$properties,$native,$active)
+  $prefix = $native.environment_prefix
   $expected = {}
   $expected[$prefix .. "_ETC"] = $target.etc
   $expected[$prefix .. "_VAR"] = $target.var
@@ -99,22 +189,33 @@ fn validate_service($target, $gid, $s, $properties, $text)
     $actual[$fields[0]] = $fields[1]
   end
   if not deep_eq($expected,$actual) then refuse("service environment differs from target plan") end
-  for $key in keys($expected)
-    if contains($properties.UnsetEnvironment,$key) then refuse("unit unsets required profile environment") end
-  end
-  $start = $properties.ExecStart
-  if contains($start,"--node") or contains($start,"--listen") or contains($start,"--mesh-config") then refuse("unit command overrides profile identity or endpoint") end
-  $parts = split($start," ; ")
-  if len($parts) < 4 or not starts_with($parts[0],"{ path=") or not starts_with($parts[1],"argv[]=") or $parts[2] != "ignore_errors=no" or len(split($start,"{ path=")) != 2 then refuse("unit must contain one mandatory native start command") end
   -- ExecStart also carries runtime pid/timestamp/status fields. They change on
   -- restart and are not part of the immutable executable/argv configuration.
-  return {environment:$s,command:$parts[0] .. " ; " .. $parts[1] .. " ; " .. $parts[2]}
+  $binding.environment = $s
+  return $binding
 end
 
-fn service_binding($target,$gid)
+fn service_binding($target,$gid,$native,$active = true)
   $path = $target.etc .. "/noded/service.env"
   $state = file_state($path)
-  return validate_service($target,$gid,$state,unit_properties($target.unit),stable_text($path,$state))
+  return validate_service($target,$gid,$state,unit_properties($target.unit,$target.transport),stable_text($path,$state),$native,$active)
+end
+
+fn dropin_paths($target)
+  $active = "/etc/systemd/system/" .. $target.unit .. ".d/zzzz-mesh-profile.conf"
+  return {active:$active,parked:$active .. ".parked"}
+end
+
+fn checked_dropin($target,$gid)
+  $paths = dropin_paths($target)
+  directory(dirname($paths.active),0,0,0o755)
+  $active = file_state($paths.active)
+  $parked = file_state($paths.parked)
+  if $active.present == $parked.present then refuse("exactly one active or parked profile drop-in is required") end
+  $path = if $active.present then $paths.active else $paths.parked end
+  $s = if $active.present then $active else $parked end
+  if $s.uid != 0 or $s.gid != $gid or $s.perm != 0o640 or stable_text($path,$s) != "[Service]\nEnvironmentFile=" .. $target.etc .. "/noded/service.env\n" then refuse("profile drop-in ownership or bytes differ") end
+  return {active:$active.present,path:$path,state:$s}
 end
 
 fn namespace_context($request)
@@ -125,8 +226,10 @@ fn namespace_context($request)
   if $t.identity_schema == 2 then refuse("separate-principal transactions are not implemented; target preview only") end
   if type($t) != "map" or $t.kind != "desk" or not plain($t.project) or not plain($t.node) or not plain($t.account) or $t.account == "root" then refuse("invalid desk identity") end
   if type($t.session) != "number" or floor($t.session) != $t.session or $t.session < 1 or $t.session > 6 then refuse("invalid session") end
-  if not re_match($t.profile,"^/var/lib/" .. $t.project .. "/[a-z][a-z0-9-]{0,31}$") then refuse("invalid profile") end
-  if $t.etc != $t.profile .. "/etc" or $t.var != $t.profile .. "/var" or $t.run != "/run/" .. $t.project .. "/session/" .. to_string($t.session) or $t.unit != "noded@" .. to_string($t.session) .. ".service" then refuse("inconsistent desk paths") end
+  $state = if $t.transport == "pct" then "/opt/mix/var/lib/" else "/var/lib/" end
+  $runtime = if $t.transport == "pct" then "/opt/mix/run/session/" else "/run/" .. $t.project .. "/session/" end
+  if not re_match($t.profile,"^" .. $state .. $t.project .. "/[a-z][a-z0-9-]{0,31}$") then refuse("invalid profile") end
+  if $t.etc != $t.profile .. "/etc" or $t.var != $t.profile .. "/var" or $t.run != $runtime .. to_string($t.session) or $t.unit != "noded@" .. to_string($t.session) .. ".service" then refuse("inconsistent desk paths") end
   if trim(run_argv_must(["id","-u"])) != "0" then refuse("admin operation requires namespace root") end
   $uid = to_number(trim(run_argv_must(["id","-u",$t.account])))
   $gid = to_number(trim(run_argv_must(["id","-g",$t.account])))
@@ -145,7 +248,9 @@ fn namespace_context($request)
     $dirs[$path] = directory($path,0,$gid,0o750)
   end
   $dirs[$t.var .. "/noded"] = directory($t.var .. "/noded",$uid,$gid,0o700)
-  $binding = service_binding($t,$gid)
+  $dropin = checked_dropin($t,$gid)
+  $binding = service_binding($t,$gid,$native,$dropin.active)
+  $binding.dropin = $dropin
   $mix_hash = native_binary($request.mix_bin,$native.prefix,"mix")
   $builtins = lines(run_argv_must([$request.mix_bin,"builtins","--names"],{timeout:10}))
   for $needed in ["fs_watch","fs_wait","fs_unwatch","flock","write_new","stat","hash_sha256","data_encode","run_argv"]
@@ -313,41 +418,117 @@ fn live_process($ctx)
       $environment[$pair[0]] = $pair[1]
     end
   end
-  $prefix = upper($ctx.target.project)
+  $prefix = $ctx.binding.environment_prefix
   for $pair in [["_ETC",$ctx.target.etc],["_VAR",$ctx.target.var],["_NODE_CONFIG",$ctx.target.etc .. "/node.conf.mix"],["_RUN",$ctx.target.run],["_BROKER_ACCOUNT",$ctx.target.account],["_NODED_URL",""]]
     if $environment[$prefix .. $pair[0]] != $pair[1] then refuse("live daemon profile environment mismatch") end
   end
   return {pid:$pid,sha256:$ctx.binary.sha256,uid:$ctx.uid}
 end
 
+fn restart_session($ctx,$request,$profile)
+  $old_pid = property($ctx.target.unit,"MainPID")
+  run_argv_must(["systemctl","restart",$ctx.target.unit],{timeout:20})
+  -- Bound the event wait in a child so timeout raises here, while this root
+  -- process is still alive to park/reload/restart the release service.
+  $source = '$watch=fs_watch($directory,{recursive:true,events:["created","moved","modified","deleted"]})
+try
+  while not exists($socket,{follow_symlinks:false})
+    $_batch=fs_wait($watch)
+  end
+finally
+  fs_unwatch($watch)
+end
+'
+  $source = "$directory=" .. data_encode($ctx.target.run) .. chr(10) .. "$socket=" .. data_encode($ctx.target.run .. "/noded/bus.sock") .. chr(10) .. $source
+  run_argv_must([$request.mix_bin,"-"],{stdin:$source,timeout:10})
+  $socket = stat($ctx.target.run .. "/noded/bus.sock",{follow_symlinks:false})
+  if floor($socket.mode / 4096) % 16 != 12 or $socket.is_symlink or $socket.uid != $ctx.uid then refuse("new broker socket type or ownership mismatch") end
+  if $profile then
+    $live = live_process($ctx)
+  else
+    $pid = property($ctx.target.unit,"MainPID")
+    if not re_match($pid,"^[1-9][0-9]*$") or stat("/proc/" .. $pid).uid != $ctx.uid or hash_file("/proc/" .. $pid .. "/exe","sha256") != $ctx.binary.sha256 then refuse("release broker did not recover") end
+    $live = {pid:$pid,uid:$ctx.uid,sha256:$ctx.binary.sha256}
+  end
+  if $live.pid == $old_pid then refuse("restart did not create a fresh service process") end
+  return $live
+end
+
+fn verify_profile_authority($ctx,$request)
+  $prefix = $ctx.binding.environment_prefix
+  $env = {}
+  for $pair in [["_ETC",$ctx.target.etc],["_VAR",$ctx.target.var],["_NODE_CONFIG",$ctx.target.etc .. "/node.conf.mix"],["_RUN",$ctx.target.run],["_BROKER_ACCOUNT",$ctx.target.account],["_NODED_URL",""]]
+    $env[$prefix .. $pair[0]] = $pair[1]
+  end
+  $source = 'send noded noded.info timeout=5
+$info={rc:$rc,value:$result}
+send noded noded.inventory timeout=5
+print(json_encode({info:$info,inventory:{rc:$rc,value:$result}}))
+'
+  $reply = json_parse(run_argv_must(["runuser","-u",$ctx.target.account,"--",$request.mix_bin,"-"],{stdin:$source,env:$env,timeout:15}))
+  if $reply.info.rc != 0 or $reply.inventory.rc != 0 or $reply.info.value.node != $ctx.target.node or $reply.info.value.wg_ip != $request.ip or $reply.inventory.value.posture != "verified" or $reply.inventory.value.mesh != $request.mesh or $reply.inventory.value.epoch != $request.epoch or $reply.inventory.value.hash != $request.hash then refuse("activated broker authority differs from signed rollout") end
+  return {verified:true,node:$ctx.target.node,mesh:$request.mesh,epoch:$request.epoch,hash:$request.hash}
+end
+
+fn activate_profile($ctx,$request)
+  for $kind in ["seed","seed_receipt","genesis","roster","inventory"]
+    if $ctx.states[$kind].present != true then refuse("activation requires complete placed authority") end
+  end
+  if type($request.epoch) != "number" or type($request.hash) != "string" then refuse("activation requires the signed epoch and hash") end
+  $paths = dropin_paths($ctx.target)
+  $dropin = checked_dropin($ctx.target,$ctx.gid)
+  $stage = "activate drop-in"
+  try
+    if not $dropin.active then rename($paths.parked,$paths.active) end
+    $stage = "reload profile unit"
+    run_argv_must(["systemctl","daemon-reload"],{timeout:5})
+    $stage = "validate profile"
+    $active = namespace_context($request)
+    if not $active.binding.active then refuse("profile did not become effective") end
+    $stage = "restart profile broker"
+    $live = restart_session($active,$request,true)
+    $stage = "verify profile authority"
+    $authority = verify_profile_authority($active,$request)
+    return {restarted:$ctx.target.unit,live:$live,authority:$authority}
+  catch $failure
+    $original = $stage .. ": " .. $failure
+    -- Never roll back accepted inventory or its monotonic witness. Restore
+    -- only service selection, then load it, validate it, and restart it.
+    $recovery_stage = "park profile drop-in"
+    try
+      $current = checked_dropin($ctx.target,$ctx.gid)
+      if $current.active then rename($paths.active,$paths.parked) end
+      $recovery_stage = "reload release unit"
+      run_argv_must(["systemctl","daemon-reload"],{timeout:5})
+      -- Reuse the already checked account/binary identity. A damaged profile
+      -- must not prevent recovery of the independent release session broker.
+      $recovery_stage = "validate release unit"
+      $release = $ctx
+      $release.binding = validate_unit($ctx.target,unit_properties($ctx.target.unit,$ctx.target.transport),$request.native,false)
+      $recovery_stage = "reset release failure"
+      run_argv_must(["systemctl","reset-failed",$ctx.target.unit],{timeout:5})
+      $recovery_stage = "restart release broker"
+      restart_session($release,$request,false)
+    catch $recovery_failure
+      refuse("activation failed [" .. $original .. "]; release broker recovery also failed [" .. $recovery_stage .. ": " .. $recovery_failure .. "]")
+    end
+    refuse("activation failed [" .. $original .. "]; profile parked and release broker restarted")
+  end
+end
+
 fn dispatch($request)
-  if not contains(["preflight","seed","sync","restart","restore","live"],$request.operation) then refuse("unknown operation") end
+  if not contains(["preflight","seed","sync","activate","restore","live"],$request.operation) then refuse("unknown operation") end
   $ctx = namespace_context($request)
   if $request.operation == "preflight" then return $ctx end
   if not deep_eq($ctx,$request.before) then refuse("namespace, service or target preimage changed") end
   if $request.operation == "restore" then return restore_files($ctx,$request.token) end
   if $request.operation == "live" then return live_process($ctx) end
-  if $request.operation == "restart" then
+  if $request.operation == "activate" then
     $lock_root = $ctx.target.profile .. "/.mesh-rollout"
     directory($lock_root,0,$ctx.gid,0o700)
     if not flock($lock_root .. "/writer.lock",{wait:0,create:false}) then refuse("desk writer lock contended during restart") end
     if not deep_eq(namespace_context($request),$request.before) then refuse("target preimage changed before restart") end
-    $old_pid = property($ctx.target.unit,"MainPID")
-    $socket = $ctx.target.run .. "/noded/bus.sock"
-    $watch = fs_watch($ctx.target.run,{recursive:true,events:["created","moved","modified","deleted"]})
-    try
-      run_argv_must(["systemctl","restart",$ctx.target.unit],{timeout:30})
-      while not exists($socket,{follow_symlinks:false})
-        $_batch = fs_wait($watch)
-      end
-      $socket_state = stat($socket,{follow_symlinks:false})
-      if floor($socket_state.mode / 4096) % 16 != 12 or $socket_state.is_symlink or $socket_state.uid != $ctx.uid then refuse("new broker socket type or ownership mismatch") end
-    finally
-      fs_unwatch($watch)
-    end
-    $live = live_process($ctx)
-    if $live.pid == $old_pid then refuse("restart did not create a fresh service process") end
-    return {restarted:$ctx.target.unit,live:$live}
+    return activate_profile($ctx,$request)
   end
   if $request.operation == "seed" then
     if len($request.payloads) != 2 or $request.payloads[0].kind != "seed" or $request.payloads[1].kind != "seed_receipt" then refuse("seed operation requires seed and provenance receipt only") end
