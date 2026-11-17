@@ -42,7 +42,7 @@ impl Zone for FixedOffset {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct DateTime<Z = Utc> {
     inner: OffsetDateTime,
     leap: bool,
@@ -109,9 +109,14 @@ impl<Z: Zone> DateTime<Z> {
         if self.leap {
             let fraction = i128::from(self.inner.nanosecond()) + delta.whole_nanoseconds();
             if (0..1_000_000_000).contains(&fraction) {
-                return Some(Self::new(self.inner.replace_nanosecond(fraction as u32).ok()?, true));
+                return Some(Self::new(
+                    self.inner.replace_nanosecond(fraction as u32).ok()?,
+                    true,
+                ));
             }
-            if fraction < 0 { delta += time::Duration::SECOND; }
+            if fraction < 0 {
+                delta += time::Duration::SECOND;
+            }
         }
         let t = self.inner.checked_add(delta)?;
         bounded(t).then(|| Self::new(t, false))
@@ -264,7 +269,13 @@ impl<Z: Zone> FromStr for DateTime<Z> {
 }
 impl<Z: Zone> fmt::Display for DateTime<Z> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.to_rfc3339())
+        self.format("%Y-%m-%d %H:%M:%S%.f %Z").fmt(f)
+    }
+}
+impl<Z: Zone> fmt::Debug for DateTime<Z> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}{}", self.format("%Y-%m-%dT%H:%M:%S%.f"),
+            if Z::UTC { "Z".into() } else { offset_text(self.inner.offset(), if self.inner.offset().seconds_past_minute() == 0 { 1 } else { 2 }) })
     }
 }
 impl<Z: Zone> PartialEq for DateTime<Z> {
@@ -319,7 +330,10 @@ impl<Z: Zone> Sub for DateTime<Z> {
         // plus an extra billion fractional nanoseconds. Preserve that model
         // when comparing signed envelope freshness, including same-second
         // comparisons and crossing midnight.
-        let order = self.timestamp().rem_euclid(86_400).cmp(&b.timestamp().rem_euclid(86_400));
+        let order = self
+            .timestamp()
+            .rem_euclid(86_400)
+            .cmp(&b.timestamp().rem_euclid(86_400));
         let correction = match (self.leap, b.leap, order) {
             (_, true, std::cmp::Ordering::Greater) => 1,
             (true, _, std::cmp::Ordering::Less) => -1,
@@ -657,6 +671,8 @@ mod tests {
             let json = format!("\"1970-01-01T00:00:00{fraction}Z\"");
             assert_eq!(serde_json::to_string(&t).unwrap(), json);
             assert_eq!(serde_json::from_str::<DateTime<Utc>>(&json).unwrap(), t);
+            assert_eq!(t.to_string(), format!("1970-01-01 00:00:00{fraction} UTC"));
+            assert_eq!(format!("{t:?}"), format!("1970-01-01T00:00:00{fraction}Z"));
         }
     }
     #[test]
@@ -684,8 +700,17 @@ mod tests {
         let regular = DateTime::parse_from_rfc3339("2016-12-31T23:59:59.123Z").unwrap();
         assert_eq!(t - regular, Duration::seconds(1));
         assert_eq!((t + Duration::zero()).to_rfc3339(), t.to_rfc3339());
-        assert_eq!((t - Duration::seconds(1)).to_rfc3339(), regular.to_rfc3339());
-        assert_eq!((t + Duration::milliseconds(1)).to_rfc3339(), "2016-12-31T23:59:60.124+00:00");
-        assert_eq!((t + Duration::seconds(1)).to_rfc3339(), "2017-01-01T00:00:00.123+00:00");
+        assert_eq!(
+            (t - Duration::seconds(1)).to_rfc3339(),
+            regular.to_rfc3339()
+        );
+        assert_eq!(
+            (t + Duration::milliseconds(1)).to_rfc3339(),
+            "2016-12-31T23:59:60.124+00:00"
+        );
+        assert_eq!(
+            (t + Duration::seconds(1)).to_rfc3339(),
+            "2017-01-01T00:00:00.123+00:00"
+        );
     }
 }
