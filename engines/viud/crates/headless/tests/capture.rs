@@ -993,9 +993,14 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
     assert_eq!(bus.call("comp.session.get", json!({}))["active"], true);
     let (_, _, owned_active) = ppm(&bus, &process, "owned-active", None);
     let expected_active = owned_active.clone();
+    let recording = bus.call("comp.record.start", json!({
+        "request_id":"pause-resume", "target":{"output":"headless-0"},
+        "path":process.root.join("pause-resume.vfl"), "max_seconds":30
+    }));
     for index in 0..3 {
         edge(b'P');
         assert_eq!(bus.call("comp.session.get", json!({}))["active"], false);
+        thread::sleep(Duration::from_millis(1100));
         ppm(&bus, &process, &format!("paused-{index}"), None);
         ppm(
             &bus,
@@ -1008,6 +1013,11 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
         ppm(&bus, &process, &format!("active-{index}"), None);
         assert_eq!(bus.window()["id"], window["id"]);
     }
+    let stopped = bus.call("comp.record.stop", json!({"session":recording["session"]}));
+    assert_eq!(stopped["error"], Value::Null, "{stopped}");
+    let (_, records) = vfl_first(&process.root.join("pause-resume.vfl"));
+    assert_eq!(Some(records), stopped["frames"].as_u64());
+    assert!(records > 0);
     edge(b'P');
     edge(b'D'); // a temporarily missing binding must back off, not panic
     let restore = control.try_clone().unwrap();
