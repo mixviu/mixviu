@@ -306,6 +306,17 @@ fn clear_idle_pool() {
     }
 }
 
+/// Touch the bounded RGB ring before acknowledging the first recording frame.
+/// Otherwise the next two captures fault in fresh full-output allocations while
+/// the writer still owns the first image, spending the live sampling budget.
+pub fn prepare_raw_pool(first: &std::sync::Arc<Vec<u8>>) {
+    PIXEL_POOL.with_borrow_mut(|pool| {
+        while pool.len() < 3 {
+            pool.push(std::sync::Arc::new(first.as_ref().clone()));
+        }
+    });
+}
+
 /// Retire one recording's private raw tokens without invoking its callbacks.
 /// This is safe while its Session is borrowed during discard/timeout/seal.
 pub fn release_raw(prefix: &str) {
@@ -1014,6 +1025,8 @@ mod tests {
         PIXEL_POOL.with_borrow_mut(Vec::clear);
         let first = pooled_rgb(&[3, 2, 1, 255], 1, 1, false, false).unwrap();
         let address = first.as_ptr();
+        prepare_raw_pool(&first);
+        assert_eq!(PIXEL_POOL.with_borrow(Vec::len), 3);
         let second = pooled_rgb(&[6, 5, 4, 255], 1, 1, false, false).unwrap();
         assert_eq!(&**first, &[1, 2, 3]);
         assert_eq!(&**second, &[4, 5, 6]);

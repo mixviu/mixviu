@@ -846,6 +846,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 return;
             }
             if s.recording.is_none() {
+                screencopy::file::prepare_raw_pool(&pixels);
                 match Recording::new_bounded(
                     s.id.clone(),
                     s.path.clone(),
