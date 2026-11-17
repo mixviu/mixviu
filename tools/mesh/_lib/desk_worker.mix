@@ -82,9 +82,9 @@ fn parse_unit_properties($text,$transport)
       $entries = $out[$key] ?? []
       if $value != "" then
         if contains(["ExecStartPre","ExecStart"],$key) then
-          $entries = push($entries,parse_exec_property($value))
+          push($entries,parse_exec_property($value))
         elif $key == "EnvironmentFiles" then
-          $entries = push($entries,parse_environment_file($value))
+          push($entries,parse_environment_file($value))
         else
           $entries = concat($entries,split($value," "))
         end
