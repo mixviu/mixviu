@@ -41180,20 +41180,38 @@ mod loud_numeric_argument_tests {
     #[test]
     fn date_format_migration_contract() {
         for (ts, pattern, expected) in [
-            (0.0, "%Y-%m-%d %H:%M:%S %z %:z %Z", "1970-01-01 00:00:00 +0000 +00:00 UTC"),
-            (1700000000.0, "%A %a %B %b %j %I:%M %p %s %%", "Tuesday Tue November Nov 318 10:13 PM 1700000000 %"),
+            (
+                0.0,
+                "%Y-%m-%d %H:%M:%S %z %:z %Z",
+                "1970-01-01 00:00:00 +0000 +00:00 UTC",
+            ),
+            (
+                1700000000.0,
+                "%A %a %B %b %j %I:%M %p %s %%",
+                "Tuesday Tue November Nov 318 10:13 PM 1700000000 %",
+            ),
             (1609459200.0, "%G-%V-%u %U %W %w", "2020-53-5 00 00 5"),
-            (0.9, "%S %f %.f %.3f %.6f %.9f", "00 000000000  .000 .000000 .000000000"),
+            (
+                0.9,
+                "%S %f %.f %.3f %.6f %.9f",
+                "00 000000000  .000 .000000 .000000000",
+            ),
             (-1.9, "%Y-%m-%dT%H:%M:%SZ", "1969-12-31T23:59:59Z"),
             // Chrono's range extends beyond four-digit years. Do not silently
             // narrow the builtin's accepted domain to a replacement's default.
             (253402300800.0, "%Y-%m-%d", "+10000-01-01"),
         ] {
             assert_eq!(
-                call_builtin("date_format", vec![
-                    Value::Number(ts), Value::String(pattern.into()),
-                    utc_opts(Value::Bool(true)),
-                ]).unwrap().unwrap(),
+                call_builtin(
+                    "date_format",
+                    vec![
+                        Value::Number(ts),
+                        Value::String(pattern.into()),
+                        utc_opts(Value::Bool(true)),
+                    ]
+                )
+                .unwrap()
+                .unwrap(),
                 Value::String(expected.into()),
                 "timestamp {ts}, pattern {pattern}",
             );
@@ -41213,12 +41231,23 @@ mod loud_numeric_argument_tests {
             ("+10000-01-01", 253402300800.0),
         ] {
             assert_eq!(
-                call_builtin("date_parse", vec![Value::String(text.into())]).unwrap().unwrap(),
-                Value::Number(expected), "input {text}",
+                call_builtin("date_parse", vec![Value::String(text.into())])
+                    .unwrap()
+                    .unwrap(),
+                Value::Number(expected),
+                "input {text}",
             );
         }
-        for text in ["2023-02-29", "2024-02-30", "2024-01-01T00:00:00", "not a date"] {
-            assert!(call_builtin("date_parse", vec![Value::String(text.into())]).is_err(), "input {text}");
+        for text in [
+            "2023-02-29",
+            "2024-02-30",
+            "2024-01-01T00:00:00",
+            "not a date",
+        ] {
+            assert!(
+                call_builtin("date_parse", vec![Value::String(text.into())]).is_err(),
+                "input {text}"
+            );
         }
     }
 
