@@ -84,28 +84,6 @@ pub fn try_create() -> Option<(LibSeatSession, LibSeatSessionNotifier)> {
     Some((session, notifier))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn distinct_libseat_errors_are_not_deduped() {
-        let mut last = None;
-        assert!(remember_failure(
-            &mut last,
-            "permission denied; creation failed".into()
-        ));
-        assert!(!remember_failure(
-            &mut last,
-            "permission denied; creation failed".into()
-        ));
-        assert!(remember_failure(
-            &mut last,
-            "connection refused; creation failed".into()
-        ));
-        assert!(last.unwrap().contains("connection refused"));
-    }
-}
-
 pub fn create() -> (LibSeatSession, LibSeatSessionNotifier) {
     let own_vt = crate::seat::session::vt_wait::own_vt();
     loop {
@@ -133,5 +111,27 @@ pub fn create() -> (LibSeatSession, LibSeatSessionNotifier) {
             session.is_active()
         );
         return (session, notifier);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn distinct_libseat_errors_are_not_deduped() {
+        let mut last = None;
+        assert!(remember_failure(
+            &mut last,
+            "permission denied; creation failed".into()
+        ));
+        assert!(!remember_failure(
+            &mut last,
+            "permission denied; creation failed".into()
+        ));
+        assert!(remember_failure(
+            &mut last,
+            "connection refused; creation failed".into()
+        ));
+        assert!(last.unwrap().contains("connection refused"));
     }
 }
