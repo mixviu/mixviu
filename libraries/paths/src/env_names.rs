@@ -23,6 +23,7 @@ pub const AGENT_CLI_EXE: &str = "MIX_AGENT_CLI_EXE";
 pub const APP_HOME: &str = "MIX_APP_HOME";
 pub const APPS_HOME: &str = "MIX_APPS_HOME";
 pub const BIN: &str = "MIX_BIN";
+pub const VIUD_SCENES_UPGRADE_DELAYS: &str = "MIX_VIUD_SCENES_UPGRADE_DELAYS";
 pub const BROKER_ACCOUNT: &str = "MIX_BROKER_ACCOUNT";
 pub const BUS_SOCKET: &str = "MIX_BUS_SOCKET";
 pub const CACHE: &str = "MIX_CACHE";

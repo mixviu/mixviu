@@ -27,6 +27,17 @@ $ROOT = $state.root
 $state.handover_delay = 1
 $state.handover_armed = false
 $state.upgrade_armed = false
+$state.upgrade_delay = 1
+$state.upgrade_seq = 0
+$state.upgrade_delays = json_parse(env("MIX_VIUD_SCENES_UPGRADE_DELAYS", "[1,2,4,8,16,32,64]"))
+if type($state.upgrade_delays) != "list" or len($state.upgrade_delays) != 7 then
+  raise("SCENES_CONFIG", "upgrade delays must contain seven positive seconds")
+end
+for $delay in $state.upgrade_delays
+  if type($delay) != "number" or not ($delay > 0 and $delay <= 64) then
+    raise("SCENES_CONFIG", "upgrade delays must be positive seconds at most 64")
+  end
+end
 $state.editor_diagnostics_armed = false
 $state.editor_activation_armed = false
 $state.editor_activation_seq = 0
@@ -113,7 +124,14 @@ fn schedule_upgrade($s)
     return $s
   end
   $s.upgrade_armed = true
-  task_start("scenes.upgrade.retry", json_encode({delay:$s.upgrade_delay}))
+  $s.upgrade_seq = $s.upgrade_seq + 1
+  $rung = 0
+  $delay = $s.upgrade_delay
+  while $delay > 1
+    $rung = $rung + 1
+    $delay = $delay / 2
+  end
+  task_start("scenes.upgrade.retry", json_encode({delay:$s.upgrade_delays[$rung], seq:$s.upgrade_seq}))
   $s.upgrade_delay = $s.upgrade_delay * 2
   return $s
 end
@@ -124,7 +142,7 @@ on scenes.upgrade.retry async
 end
 
 on scenes.upgrade.retry
-  if len(keys($event.headers)) != 0 then return end
+  if len(keys($event.headers)) != 0 or $event.args.seq != $state.upgrade_seq then return end
   $state.upgrade_armed = false
   try
     $state = $loader.upgrade($state, true)
@@ -140,7 +158,7 @@ on scenes.upgrade.retry
     -- with no task behind them. A manual upgrade can retry after repair.
     $state = $loader.prune_upgrades($state)
     for $name in $loader.upgrade_pending($state)
-      $state = $loader.upgrade_failure($state, $name, $message, $error.code, $error.details)
+      $state.upgrades[$name].retryable = false
     end
   end
   $state = schedule_upgrade($state)
@@ -386,6 +404,10 @@ on scenes.reset desc "Restore recorded template defaults {name}; retain recovery
 end
 
 on scenes.upgrade desc "Refresh unedited template copies; flag edited copies for review"
+  -- Retire the old waiter before the manual pass, even if that pass fails.
+  -- Its completion must neither clear the new arm nor spend its budget.
+  $state.upgrade_seq = $state.upgrade_seq + 1
+  $state.upgrade_armed = false
   $state = $loader.request($state, "upgrade", $event.args ?? {})
   $state = schedule_upgrade($state)
   reply($state.rc, json_encode($state.response))
