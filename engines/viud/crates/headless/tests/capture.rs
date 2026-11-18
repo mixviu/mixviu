@@ -48,7 +48,11 @@ impl Bus {
                 return row.clone();
             }
             if Instant::now() >= deadline {
-                eprintln!("WINDOW_TIMEOUT broker={} record={}", self.url, fs::read_to_string(self.root.join("bus.json")).unwrap());
+                eprintln!(
+                    "WINDOW_TIMEOUT broker={} record={}",
+                    self.url,
+                    fs::read_to_string(self.root.join("bus.json")).unwrap()
+                );
                 for (command, args) in [
                     ("comp.info", json!({})),
                     ("comp.props.get", json!({"path":"info"})),
@@ -110,7 +114,11 @@ impl Bus {
             "headless Bus readiness: {}",
             String::from_utf8_lossy(&output.stderr)
         );
-        eprintln!("BUS_READY broker={} instance={}", self.url, self.call("comp.info", json!({})));
+        eprintln!(
+            "BUS_READY broker={} instance={}",
+            self.url,
+            self.call("comp.props.get", json!({"path":"info"}))
+        );
     }
     fn window(&self, pattern: &mut Pattern) -> Value {
         self.window_for("headless-pattern", &mut [pattern])
@@ -130,12 +138,19 @@ fn mapped_window_survives_render_before_protocol_drain() {
     // compositor children through process-global environment mutation.
     if std::env::var_os("MIX_TEST_PRE_DRAIN_FRAME").is_none() {
         let output = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "mapped_window_survives_render_before_protocol_drain"])
+            .args([
+                "--exact",
+                "mapped_window_survives_render_before_protocol_drain",
+            ])
             .env("MIX_TEST_PRE_DRAIN_FRAME", "1")
             .output()
             .unwrap();
-        assert!(output.status.success(), "pre-drain frame: {} {}",
-            String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "pre-drain frame: {} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
         return;
     }
     let bus = Bus::start("pre-drain-map");
@@ -2033,8 +2048,24 @@ fn connect(process: &mut process::Process) -> UnixStream {
             use std::os::fd::AsRawFd;
             let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
             let mut len = std::mem::size_of_val(&cred) as libc::socklen_t;
-            assert_eq!(unsafe { libc::getsockopt(stream.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, (&mut cred as *mut libc::ucred).cast(), &mut len) }, 0);
-            eprintln!("WAYLAND_PEER expected={} actual={} root={}", process.child.id(), cred.pid, process.root.display());
+            assert_eq!(
+                unsafe {
+                    libc::getsockopt(
+                        stream.as_raw_fd(),
+                        libc::SOL_SOCKET,
+                        libc::SO_PEERCRED,
+                        (&mut cred as *mut libc::ucred).cast(),
+                        &mut len,
+                    )
+                },
+                0
+            );
+            eprintln!(
+                "WAYLAND_PEER expected={} actual={} root={}",
+                process.child.id(),
+                cred.pid,
+                process.root.display()
+            );
             assert_eq!(cred.pid as u32, process.child.id());
             return stream;
         }

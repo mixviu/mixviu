@@ -264,11 +264,7 @@ fn arm_readbacks(state: &mut Loop, context: &Rc<RefCell<Context>>) {
     }
 }
 
-pub(crate) fn fixture_draw(state: &mut Loop, ctx: &mut Context) {
-    draw(state, ctx);
-}
-
-fn draw(state: &mut Loop, ctx: &mut Context) {
+pub(crate) fn draw(state: &mut Loop, ctx: &mut Context) {
     if route(
         ctx.vt_session,
         !matches!(

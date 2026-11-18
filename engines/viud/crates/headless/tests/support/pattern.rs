@@ -211,7 +211,10 @@ impl Pattern {
             _top: top,
         };
         client.commit(true);
-        eprintln!("PATTERN initial buffer attached, committed and flushed app_id={name} size={:?}", client.state.size);
+        eprintln!(
+            "PATTERN initial buffer attached, committed and flushed app_id={name} size={:?}",
+            client.state.size
+        );
         client
     }
 

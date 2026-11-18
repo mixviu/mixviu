@@ -309,13 +309,13 @@ pub fn available() -> bool {
     FALLBACK.with(|slot| slot.borrow().is_some())
 }
 
-/// Diagnostic control: reproduce an already-ready frame source running after
+/// Test control: reproduce an already-ready frame source running after
 /// Wayland dispatch but before the loop's protocol drain.
 #[doc(hidden)]
 pub fn fixture_pre_drain_frame(state: &mut Loop) {
     FALLBACK.with(|slot| {
         if let Some(context) = slot.borrow().as_ref() {
-            crate::frame::fixture_draw(state, &mut context.borrow_mut());
+            crate::frame::draw(state, &mut context.borrow_mut());
         }
     });
 }

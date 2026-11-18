@@ -398,7 +398,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // source, and two sources that each drain make the order a frame's
                 // events are applied in a function of which fd calloop polled first.
                 //
-                // Nothing is lost by deferring it. calloop's `run` is
+                // A frame source must drain pending work before consuming its redraw
+                // epoch (headless::frame::draw), including timers already due in
+                // this batch. Otherwise the render can precede world-side placement.
+                // calloop's `run` is
                 // `while !stop { dispatch(); cb(); }`, so the drain follows every
                 // dispatch in the SAME iteration — this callback cannot run without one
                 // behind it. `dispatch_clients` appears nowhere else in the tree, and

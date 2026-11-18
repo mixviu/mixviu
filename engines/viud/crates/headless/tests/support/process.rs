@@ -45,7 +45,10 @@ pub struct Process {
 impl Drop for Process {
     fn drop(&mut self) {
         if thread::panicking() {
-            eprintln!("frame trace: {}", fs::read_to_string(self.root.join("frames.log")).unwrap_or_default());
+            eprintln!(
+                "frame trace: {}",
+                fs::read_to_string(self.root.join("frames.log")).unwrap_or_default()
+            );
             eprintln!(
                 "viud log: {}",
                 fs::read_to_string(self.root.join("viud.log")).unwrap_or_default()

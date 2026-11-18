@@ -359,7 +359,15 @@ impl Bus {
         };
         let noded_url = identity.noded_url.clone();
         let (wiring, starter) = comp_service::prepare(identity, waker)?;
-        model::trace!("BUS_IDENTITY pid={} instance={} service={} url={} socket={:?} config={:?}", std::process::id(), wiring.context.instance, wiring.context.service, noded_url, std::env::var_os("MIX_BUS_SOCKET"), std::env::var_os("MIX_NODE_CONFIG"));
+        model::trace!(
+            "BUS_IDENTITY pid={} instance={} service={} url={} socket={:?} config={:?}",
+            std::process::id(),
+            wiring.context.instance,
+            wiring.context.service,
+            noded_url,
+            std::env::var_os("MIX_BUS_SOCKET"),
+            std::env::var_os("MIX_NODE_CONFIG")
+        );
         comp_service::chrome::install_emitters(wiring.fires.clone());
         let pending = Rc::new(Cell::new(false));
         let flag = Rc::clone(&pending);
