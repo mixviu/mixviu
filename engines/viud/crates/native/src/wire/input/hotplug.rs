@@ -550,31 +550,33 @@ mod tests {
     #[test]
     fn repeated_device_added_stat_failure_does_not_reset_admitted_input() {
         for remembered in [false, true] {
-        let root = TempDir::new();
-        let path = root.0.join("event0");
-        KNOWN.with_borrow_mut(|known| known.clear());
-        if remembered {
-            KNOWN.with_borrow_mut(|known| { known.insert(path.clone(), (1, 1)); });
-        }
-        observed_path(path.clone(), true);
-        // The node exists in the scan, but the lifecycle stat keeps failing.
-        let scanned = Nodes::from([(path.clone(), (1, 2))]);
-        let mut retry = Retry::default();
-        for _ in 0..12 {
+            let root = TempDir::new();
+            let path = root.0.join("event0");
+            KNOWN.with_borrow_mut(|known| known.clear());
+            if remembered {
+                KNOWN.with_borrow_mut(|known| {
+                    known.insert(path.clone(), (1, 1));
+                });
+            }
+            observed_path(path.clone(), true);
+            // The node exists in the scan, but the lifecycle stat keeps failing.
+            let scanned = Nodes::from([(path.clone(), (1, 2))]);
+            let mut retry = Retry::default();
+            for _ in 0..12 {
+                assert_eq!(
+                    reconcile(scanned.clone(), &mut retry, || panic!("already admitted")),
+                    None
+                );
+            }
+            std::fs::write(&path, []).unwrap();
             assert_eq!(
-                reconcile(scanned.clone(), &mut retry, || panic!("already admitted")),
+                reconcile(nodes_at(&root.0).unwrap(), &mut retry, || panic!(
+                    "stat recovered"
+                )),
                 None
             );
-        }
-        std::fs::write(&path, []).unwrap();
-        assert_eq!(
-            reconcile(nodes_at(&root.0).unwrap(), &mut retry, || panic!(
-                "stat recovered"
-            )),
-            None
-        );
-        assert!(METADATA_RETRY.with_borrow(|pending| pending.is_empty()));
-        KNOWN.with_borrow_mut(|known| known.clear());
+            assert!(METADATA_RETRY.with_borrow(|pending| pending.is_empty()));
+            KNOWN.with_borrow_mut(|known| known.clear());
         }
     }
 
