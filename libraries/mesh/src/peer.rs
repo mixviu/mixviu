@@ -166,6 +166,10 @@ fn build_admit_response(
         "channel_binding_hash": b64.encode([0u8; 32]),
     })
     .to_string();
+    resp.originate_mesh(node_name);
+    // Bootstrap carries the bridge registration label, not an application
+    // from-address. The receiver consumes it before the all-frame gate.
+    resp.set("from", &format!("bridge-{node_name}"));
     Some(resp.to_wire())
 }
 
@@ -506,6 +510,9 @@ impl MeshPeers {
 
         // Send the message with the id
         let mut msg = msg;
+        msg.originate_mesh(&self.config.node_name);
+        let caller_request_id = msg.get("request_id").map(str::to_owned);
+        msg.forward_mesh().map_err(anyhow::Error::msg)?;
         msg.set("id", &msg_id);
         let class = msg.command_name().unwrap_or("unknown").to_string();
         let (resp_tx, resp_rx) = oneshot::channel();
@@ -522,6 +529,9 @@ impl MeshPeers {
         // Wait for response with timeout
         match tokio::time::timeout(RESPONSE_TIMEOUT, resp_rx).await {
             Ok(Ok(Ok(mut resp))) => {
+                if let Some(request_id) = caller_request_id {
+                    resp.set("request_id", &request_id);
+                }
                 if let Some(caller_id) = caller_id {
                     resp.set("id", &caller_id);
                 } else {
@@ -543,6 +553,9 @@ impl MeshPeers {
 
     /// Send a fire-and-forget message to a remote node.
     pub async fn send(&self, peer: PeerConfig, msg: BusMessage) -> Result<()> {
+        let mut msg = msg;
+        msg.originate_mesh(&self.config.node_name);
+        msg.forward_mesh().map_err(anyhow::Error::msg)?;
         let node_name = peer.name.clone();
         let connection = self.ensure_connected(&peer).await?;
         let state = self.state.read().await;
@@ -880,10 +893,12 @@ async fn connect_and_publish(
         cancel: connection_cancel,
     });
 
-    let register_msg = BusMessage::new()
+    let mut register_msg = BusMessage::new()
         .with_header("command", "noded.register")
         .with_header("from", &format!("bridge-{node_name}"))
         .with_header("to", "noded");
+    register_msg.originate_mesh(&node_name);
+    register_msg.set("from", &format!("bridge-{node_name}"));
     tokio::select! {
         biased;
         changed = attempt_cancel.changed() => {
@@ -933,6 +948,7 @@ async fn connect_and_publish(
     }
 
     let connected_send = connected.clone();
+    let writer_node = node_name.clone();
     tokio::spawn(async move {
         let mut cancelled = false;
         loop {
@@ -945,6 +961,10 @@ async fn connect_and_publish(
                 }
                 next = rx.recv() => {
                     let Some(message) = next else { break };
+                    let message = if let Ok(mut frame) = bus::parse(&message) {
+                        frame.originate_mesh(&writer_node);
+                        frame.to_wire()
+                    } else { message };
                     // The flush itself must also be cancellable: §7.7 says
                     // nothing is written to a retired endpoint after
                     // `routing.reload_applied`, and a backpressured peer can
@@ -1733,6 +1753,9 @@ mod tests {
             let second = next_bus_frame(&mut websocket).await;
             assert_ne!(first.get("id"), second.get("id"));
             for request in [second, first] {
+                assert_eq!(request.get("hop_limit"), Some("0"));
+                assert!(request.get("deadline").is_some());
+                assert!(request.get("request_id").is_some());
                 let response = BusMessage::new()
                     .with_header("type", "response")
                     .with_header("id", request.get("id").unwrap())
@@ -1748,6 +1771,7 @@ mod tests {
                 .with_header("type", "request")
                 .with_header("id", "1")
                 .with_header("command", command)
+                .with_header("request_id", command)
         };
         let calls = async {
             tokio::join!(
@@ -1761,6 +1785,7 @@ mod tests {
         for (reply, expected) in [(first.unwrap(), "first"), (second.unwrap(), "second")] {
             assert_eq!(reply.get("id"), Some("1"));
             assert_eq!(reply.body, expected);
+            assert_eq!(reply.get("request_id"), Some(expected));
         }
         server.await.unwrap();
     }

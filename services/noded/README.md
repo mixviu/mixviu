@@ -4,6 +4,33 @@ The native ABP broker: service discovery, routing, subscriptions and authenticat
 
 Documentation: <https://mixos.dev/noded/> — source the component manual (not included in this source tree).
 
+## Inter-node frame policy rollout
+
+Set `noded.frame_policy` in the node's `node.conf.mix` (normally
+`/opt/mix/etc/node.conf.mix`, or the path selected by `MIX_NODE_CONFIG`):
+
+```mix
+noded: {
+  admission: "enforce"
+  frame_policy: "observe"
+}
+```
+
+`MIX_NODED_FRAME_POLICY=off|observe|enforce` in the broker service environment
+overrides the file. Invalid values refuse startup. The default is `observe`,
+independently of `noded.admission`; both settings are read at startup, so a
+change requires restarting the broker. D2 admission remains unchanged.
+
+Install this build on all six citizens with frame policy at `observe`. Watch
+`frame.refused` for registration, source-node, wrong-node and relay violations:
+observe logs those violations while retaining legacy delivery. Once all six
+citizens run this build and normal traffic is clean, set frame policy to
+`enforce` per node and restart that broker. Old brokers' bare or absent source
+addresses are the main mixed-version risk; do not enable enforcement early.
+`off` disables frame-policy checks. Explicit malformed or zero forwarding hop
+limits remain refused in all postures. Same-node classification and dialled
+peer authentication are separate follow-up work.
+
 ## Offline broker principal preparation
 
 `scripts/broker_profile.mix` is an opt-in module for a fresh, explicitly marked

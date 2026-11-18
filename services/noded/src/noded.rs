@@ -43,6 +43,98 @@ use crate::observe::{
 };
 use crate::protection::TrafficClass;
 
+#[path = "frame_policy.rs"]
+mod frame_policy;
+
+static FRAME_REFUSALS: std::sync::LazyLock<std::sync::Mutex<HashMap<&'static str, (u64, u64)>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// Startup-only operator policy; independent of D2 admission. Noded owns this
+/// key in NodedConfig's extension map so older config readers retain it.
+pub fn frame_policy_config(
+    config: &config::node::NodedConfig,
+    env: Option<&str>,
+) -> Result<AdmissionMode> {
+    let value = env
+        .map(|value| serde_json::Value::String(value.to_owned()))
+        .or_else(|| config.extra.get("frame_policy").cloned());
+    value
+        .map(serde_json::from_value)
+        .transpose()
+        .map(|mode| mode.unwrap_or(AdmissionMode::Observe))
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "noded.frame_policy / MIX_NODED_FRAME_POLICY must be off, observe or enforce"
+            )
+        })
+}
+
+/// Shared by unsolicited mesh ingress and solicited replies. Off preserves
+/// legacy delivery; observe reports every violation without dropping traffic.
+fn mesh_frame_allowed(
+    msg: &BusMessage,
+    peer: &str,
+    own: &str,
+    address: &str,
+    mode: AdmissionMode,
+) -> bool {
+    if mode == AdmissionMode::Off || msg.is_empty_message() {
+        return true;
+    }
+    let reason = if frame_policy::wrong_node(msg, own) {
+        Some("wrong-node-ingress")
+    } else if !frame_policy::from_peer(msg, peer) {
+        Some("from-node-mismatch")
+    } else {
+        None
+    };
+    if let Some(reason) = reason {
+        frame_refused(reason, peer, address, mode);
+        return mode != AdmissionMode::Enforce;
+    }
+    true
+}
+
+/// Every violation has a structured audit event; human-facing logs coalesce.
+fn frame_refused(reason: &'static str, peer: &str, address: &str, posture: AdmissionMode) {
+    tracing::debug!(
+        event = "frame.refused",
+        reason,
+        peer,
+        peer_address = address,
+        posture = admission_mode_str(posture),
+        "Inter-node frame policy"
+    );
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let count = {
+        let mut reasons = FRAME_REFUSALS
+            .lock()
+            .expect("frame refusal counters poisoned");
+        let (previous, count) = reasons.entry(reason).or_default();
+        *count += 1;
+        if now.saturating_sub(*previous) >= WARN_COALESCE_MS {
+            *previous = now;
+            Some(std::mem::take(count))
+        } else {
+            None
+        }
+    };
+    if let Some(count) = count {
+        tracing::info!(
+            event = "frame.refused",
+            reason,
+            peer,
+            peer_address = address,
+            posture = admission_mode_str(posture),
+            count,
+            "Inter-node frame refusals (coalesced)"
+        );
+    }
+}
+
 #[cfg(test)]
 #[path = "native_session_tests.rs"]
 mod native_session_tests;
@@ -151,6 +243,7 @@ struct PendingResponse {
     /// Exact recipient connection; a reused service name is not reply authority.
     responder_tx: mpsc::Sender<String>,
     caller_id: String,
+    caller_request_id: Option<String>,
     /// Original caller correlation captured before the broker rewrites `id`.
     /// Kept as an explicit observation field so a future correlation surface
     /// can diverge from the transport reply id without mining rewritten wire.
@@ -250,6 +343,7 @@ impl PendingResponseTable {
                 responder_tx: responder_tx.clone(),
                 observer_correlation_id: caller_id.clone(),
                 caller_id,
+                caller_request_id: msg.get("request_id").map(str::to_owned),
                 caller_service: caller_service.map(ToString::to_string),
                 class,
             },
@@ -410,6 +504,7 @@ struct AppState {
     /// (default) sends no challenge — behaviour-neutral. `observe` challenges +
     /// verdicts + logs but never refuses. Start-immutable.
     admission_mode: AdmissionMode,
+    frame_policy: AdmissionMode,
     /// SPEC 13 §9a B1 self-check (2-c-2b) — is the listener bound to this node's
     /// own WG/mesh IP? Start-immutable (the bind never changes at runtime). A
     /// fail-closed input to the enforce gate: a non-WG bind cannot hold the WG
@@ -514,6 +609,7 @@ pub struct RunConfig {
     pub mesh_config_path: Option<String>,
     pub spec_dir: Option<PathBuf>,
     pub admission_mode: AdmissionMode,
+    pub frame_policy: AdmissionMode,
 }
 
 pub async fn run(config: RunConfig, ready_tx: oneshot::Sender<()>) -> Result<()> {
@@ -549,6 +645,226 @@ pub async fn run_on(
     serve(config, Some(listener), ready_tx).await
 }
 
+async fn mesh_incoming_loop(
+    mut mesh_incoming_rx: mpsc::UnboundedReceiver<MeshInbound>,
+    mesh_for_incoming: Arc<MeshPeers>,
+    authority_for_mesh: Arc<ArcSwap<crate::routing::RoutingAuthority>>,
+    registry_for_mesh: Registry,
+    observe_for_mesh: Arc<ObserveManager>,
+    node_for_mesh: String,
+    frame_policy: AdmissionMode,
+) {
+    while let Some(inbound) = mesh_incoming_rx.recv().await {
+        if !mesh_for_incoming
+            .inbound_generation_is_current(&inbound.peer, inbound.connection_generation)
+            .await
+        {
+            tracing::debug!(
+                peer = %inbound.peer,
+                connection_generation = %inbound.connection_generation,
+                "Dropping inbound frame from retired mesh connection"
+            );
+            continue;
+        }
+        let peer = inbound.peer;
+        let connection_generation = inbound.connection_generation;
+        let mut msg = inbound.message;
+        let peer_address = authority_for_mesh
+            .load()
+            .routes
+            .resolve(&peer)
+            .map(|target| target.into_peer().noded_addr().to_string())
+            .unwrap_or_default();
+        if msg.is_empty_message() {
+            continue;
+        }
+        if !mesh_frame_allowed(&msg, &peer, &node_for_mesh, &peer_address, frame_policy) {
+            continue;
+        }
+        strip_principal(&mut msg);
+        if broker_only_session_event(&msg) {
+            continue;
+        }
+        // Load once before any observation-only allocation. When false,
+        // mesh ingress still canonicalises and serialises exactly what
+        // delivery requires, but retains no correlation string or second
+        // wire copy for observation.
+        let observing = observe_for_mesh.is_active();
+        let target = msg.to_addr().unwrap_or("").to_string();
+        let correlation_id = if observing {
+            msg.get("id").map(ToString::to_string)
+        } else {
+            None
+        };
+        // Mesh ingress has no authenticated remote-service identity yet.
+        // Canonicalise before route classification so both accepted and
+        // route-rejected observations describe the broker-owned envelope.
+        msg.headers.remove("from");
+        let connection = msg.get("broker_connection").map(str::to_owned);
+        let protected = msg.get("broker_protected") == Some("true");
+        stamp_mesh_connection(&mut msg, &peer, connection.as_deref());
+        let observe_for_mesh = observe_for_mesh.for_class(if protected {
+            TrafficClass::NativeSession
+        } else {
+            TrafficClass::Legacy
+        });
+        // SPEC 01 §4 cross-mesh routing is reserved-but-refused at the
+        // parser until federation transport exists; if a remote hub
+        // attempts to relay a `to: <local>@<fqdn>` address through this
+        // node, drop it here rather than dispatching the local half.
+        let parsed = BusTarget::parse(&target);
+        if matches!(parsed, Some(BusTarget::CrossMesh { .. })) {
+            tracing::warn!(
+                target = %target,
+                "Mesh ingress refused: cross-mesh routing not implemented"
+            );
+            if observing {
+                observe_for_mesh.observe(
+                    Observation::canonical(
+                        ObserveDirection::MeshIn,
+                        ObserveOutcome::Rejected,
+                        &msg,
+                        correlation_id.as_deref(),
+                    )
+                    .with_peer(&peer),
+                );
+            }
+            continue;
+        }
+        let service = match parsed {
+            // `<node>.bus` is the broker form per SPEC 01 §4.1 — the
+            // service is implicit `noded`. Without this default the
+            // dispatch would try to deliver to a local service named
+            // after the node, which is never registered.
+            Some(BusTarget::Local(addr)) => {
+                addr.service.clone().unwrap_or_else(|| "noded".to_string())
+            }
+            None => {
+                // Mirror the egress malformed-address logic: a parser
+                // rejection on a target that *looks* like an Bus
+                // address (contains `.` or `@`) must not fall through
+                // to local-service lookup — otherwise a remote (or
+                // older) broker relaying a SPEC-01-removed shape like
+                // `a.b.c.d.bus` or `maild@delta` could deliver to a
+                // locally-registered service with that literal name.
+                // We drop/log on ingress rather than synthesizing an
+                // error reply because the message originated on a
+                // remote noded — the local service isn't the right
+                // entity to send error responses back to that remote
+                // and there is no authenticated remote-service
+                // identity for one yet (SPEC 10 territory).
+                if target.contains('.') || target.contains('@') {
+                    tracing::warn!(
+                        target = %target,
+                        "Mesh ingress refused: malformed Bus target"
+                    );
+                    if observing {
+                        observe_for_mesh.observe(
+                            Observation::canonical(
+                                ObserveDirection::MeshIn,
+                                ObserveOutcome::Rejected,
+                                &msg,
+                                correlation_id.as_deref(),
+                            )
+                            .with_peer(&peer),
+                        );
+                    }
+                    continue;
+                }
+                target.clone()
+            }
+            // `BusTarget::CrossMesh` is already drained by the
+            // earlier `matches!` above; this arm is unreachable but
+            // satisfies the matcher exhaustiveness check.
+            Some(BusTarget::CrossMesh { .. }) => {
+                unreachable!("cross-mesh ingress already short-circuited above")
+            }
+        };
+
+        let (target_tx, target_class) = {
+            let registry = registry_for_mesh.read().await;
+            (
+                registry.get(&service).map(|entry| entry.tx.clone()),
+                registry
+                    .get(&service)
+                    .map(|entry| entry.traffic_class)
+                    .unwrap_or_default(),
+            )
+        };
+        let target_class = if protected {
+            TrafficClass::NativeSession
+        } else {
+            target_class
+        };
+        let observe_for_mesh = observe_for_mesh.for_class(target_class);
+        let mut observed_wire = None;
+        let outcome = if let Some(target_tx) = target_tx {
+            let canonical_wire = msg.to_wire();
+            let delivery_wire = if observing {
+                observed_wire = Some(canonical_wire.clone());
+                canonical_wire
+            } else {
+                canonical_wire
+            };
+            let Some(_inbound_fence) = mesh_for_incoming
+                .validate_inbound(&peer, connection_generation)
+                .await
+            else {
+                tracing::debug!(
+                    peer = %peer,
+                    connection_generation = %connection_generation,
+                    "Dropping inbound frame retired before final delivery"
+                );
+                continue;
+            };
+            match target_tx.try_send(delivery_wire) {
+                Ok(()) => ObserveOutcome::Delivered,
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    tracing::warn!(
+                        target = %service,
+                        "Mesh→local delivery dropped: peer outbound full"
+                    );
+                    ObserveOutcome::Dropped
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => {
+                    tracing::debug!(
+                        target = %service,
+                        "Mesh→local delivery failed: peer disconnected"
+                    );
+                    ObserveOutcome::Rejected
+                }
+            }
+        } else {
+            tracing::debug!(target = %service, "No local service for incoming mesh message");
+            ObserveOutcome::Rejected
+        };
+        if observing {
+            if let Some(canonical_wire) = observed_wire.as_deref() {
+                observe_for_mesh.observe(
+                    Observation::from_message(
+                        ObserveDirection::MeshIn,
+                        outcome,
+                        &msg,
+                        canonical_wire,
+                        correlation_id.as_deref(),
+                    )
+                    .with_peer(&peer),
+                );
+            } else {
+                observe_for_mesh.observe(
+                    Observation::canonical(
+                        ObserveDirection::MeshIn,
+                        outcome,
+                        &msg,
+                        correlation_id.as_deref(),
+                    )
+                    .with_peer(&peer),
+                );
+            }
+        }
+    }
+}
+
 async fn serve(
     config: RunConfig,
     bound: Option<tokio::net::TcpListener>,
@@ -565,7 +881,14 @@ async fn serve(
         mesh_config_path,
         spec_dir,
         admission_mode,
+        frame_policy,
     } = config;
+    tracing::info!(
+        event = "frame.policy",
+        posture = admission_mode_str(frame_policy),
+        admission = admission_mode_str(admission_mode),
+        "Inter-node frame policy (startup configuration)"
+    );
     anyhow::ensure!(
         pending_grants_per_parent <= 32,
         "noded.pending_grants_per_parent must be at most 32"
@@ -656,7 +979,7 @@ async fn serve(
         false,
     );
 
-    let (mesh_incoming_tx, mut mesh_incoming_rx) = mpsc::unbounded_channel::<MeshInbound>();
+    let (mesh_incoming_tx, mesh_incoming_rx) = mpsc::unbounded_channel::<MeshInbound>();
     let mesh = Arc::new(MeshPeers::new(mesh_config, mesh_incoming_tx));
     mesh.reconcile_endpoints(
         initial_authority.routes.desired_endpoints(),
@@ -683,209 +1006,15 @@ async fn serve(
     let observe = ObserveManager::new();
     observe.spawn_drainer();
 
-    // Deliver messages from remote hubs to local services
-    let registry_for_mesh = registry.clone();
-    let observe_for_mesh = observe.clone();
-    let mesh_for_incoming = mesh.clone();
-    tokio::spawn(async move {
-        while let Some(inbound) = mesh_incoming_rx.recv().await {
-            if !mesh_for_incoming
-                .inbound_generation_is_current(&inbound.peer, inbound.connection_generation)
-                .await
-            {
-                tracing::debug!(
-                    peer = %inbound.peer,
-                    connection_generation = %inbound.connection_generation,
-                    "Dropping inbound frame from retired mesh connection"
-                );
-                continue;
-            }
-            let peer = inbound.peer;
-            let connection_generation = inbound.connection_generation;
-            let mut msg = inbound.message;
-            strip_principal(&mut msg);
-            if broker_only_session_event(&msg) {
-                continue;
-            }
-            // Load once before any observation-only allocation. When false,
-            // mesh ingress still canonicalises and serialises exactly what
-            // delivery requires, but retains no correlation string or second
-            // wire copy for observation.
-            let observing = observe_for_mesh.is_active();
-            let target = msg.to_addr().unwrap_or("").to_string();
-            let correlation_id = if observing {
-                msg.get("id").map(ToString::to_string)
-            } else {
-                None
-            };
-            // Mesh ingress has no authenticated remote-service identity yet.
-            // Canonicalise before route classification so both accepted and
-            // route-rejected observations describe the broker-owned envelope.
-            msg.headers.remove("from");
-            let connection = msg.get("broker_connection").map(str::to_owned);
-            let protected = msg.get("broker_protected") == Some("true");
-            stamp_mesh_connection(&mut msg, &peer, connection.as_deref());
-            let observe_for_mesh = observe_for_mesh.for_class(if protected {
-                TrafficClass::NativeSession
-            } else {
-                TrafficClass::Legacy
-            });
-            // SPEC 01 §4 cross-mesh routing is reserved-but-refused at the
-            // parser until federation transport exists; if a remote hub
-            // attempts to relay a `to: <local>@<fqdn>` address through this
-            // node, drop it here rather than dispatching the local half.
-            let parsed = BusTarget::parse(&target);
-            if matches!(parsed, Some(BusTarget::CrossMesh { .. })) {
-                tracing::warn!(
-                    target = %target,
-                    "Mesh ingress refused: cross-mesh routing not implemented"
-                );
-                if observing {
-                    observe_for_mesh.observe(
-                        Observation::canonical(
-                            ObserveDirection::MeshIn,
-                            ObserveOutcome::Rejected,
-                            &msg,
-                            correlation_id.as_deref(),
-                        )
-                        .with_peer(&peer),
-                    );
-                }
-                continue;
-            }
-            let service = match parsed {
-                // `<node>.bus` is the broker form per SPEC 01 §4.1 — the
-                // service is implicit `noded`. Without this default the
-                // dispatch would try to deliver to a local service named
-                // after the node, which is never registered.
-                Some(BusTarget::Local(addr)) => {
-                    addr.service.clone().unwrap_or_else(|| "noded".to_string())
-                }
-                None => {
-                    // Mirror the egress malformed-address logic: a parser
-                    // rejection on a target that *looks* like an Bus
-                    // address (contains `.` or `@`) must not fall through
-                    // to local-service lookup — otherwise a remote (or
-                    // older) broker relaying a SPEC-01-removed shape like
-                    // `a.b.c.d.bus` or `maild@delta` could deliver to a
-                    // locally-registered service with that literal name.
-                    // We drop/log on ingress rather than synthesizing an
-                    // error reply because the message originated on a
-                    // remote noded — the local service isn't the right
-                    // entity to send error responses back to that remote
-                    // and there is no authenticated remote-service
-                    // identity for one yet (SPEC 10 territory).
-                    if target.contains('.') || target.contains('@') {
-                        tracing::warn!(
-                            target = %target,
-                            "Mesh ingress refused: malformed Bus target"
-                        );
-                        if observing {
-                            observe_for_mesh.observe(
-                                Observation::canonical(
-                                    ObserveDirection::MeshIn,
-                                    ObserveOutcome::Rejected,
-                                    &msg,
-                                    correlation_id.as_deref(),
-                                )
-                                .with_peer(&peer),
-                            );
-                        }
-                        continue;
-                    }
-                    target.clone()
-                }
-                // `BusTarget::CrossMesh` is already drained by the
-                // earlier `matches!` above; this arm is unreachable but
-                // satisfies the matcher exhaustiveness check.
-                Some(BusTarget::CrossMesh { .. }) => {
-                    unreachable!("cross-mesh ingress already short-circuited above")
-                }
-            };
-
-            let (target_tx, target_class) = {
-                let registry = registry_for_mesh.read().await;
-                (
-                    registry.get(&service).map(|entry| entry.tx.clone()),
-                    registry
-                        .get(&service)
-                        .map(|entry| entry.traffic_class)
-                        .unwrap_or_default(),
-                )
-            };
-            let target_class = if protected {
-                TrafficClass::NativeSession
-            } else {
-                target_class
-            };
-            let observe_for_mesh = observe_for_mesh.for_class(target_class);
-            let mut observed_wire = None;
-            let outcome = if let Some(target_tx) = target_tx {
-                let canonical_wire = msg.to_wire();
-                let delivery_wire = if observing {
-                    observed_wire = Some(canonical_wire.clone());
-                    canonical_wire
-                } else {
-                    canonical_wire
-                };
-                let Some(_inbound_fence) = mesh_for_incoming
-                    .validate_inbound(&peer, connection_generation)
-                    .await
-                else {
-                    tracing::debug!(
-                        peer = %peer,
-                        connection_generation = %connection_generation,
-                        "Dropping inbound frame retired before final delivery"
-                    );
-                    continue;
-                };
-                match target_tx.try_send(delivery_wire) {
-                    Ok(()) => ObserveOutcome::Delivered,
-                    Err(mpsc::error::TrySendError::Full(_)) => {
-                        tracing::warn!(
-                            target = %service,
-                            "Mesh→local delivery dropped: peer outbound full"
-                        );
-                        ObserveOutcome::Dropped
-                    }
-                    Err(mpsc::error::TrySendError::Closed(_)) => {
-                        tracing::debug!(
-                            target = %service,
-                            "Mesh→local delivery failed: peer disconnected"
-                        );
-                        ObserveOutcome::Rejected
-                    }
-                }
-            } else {
-                tracing::debug!(target = %service, "No local service for incoming mesh message");
-                ObserveOutcome::Rejected
-            };
-            if observing {
-                if let Some(canonical_wire) = observed_wire.as_deref() {
-                    observe_for_mesh.observe(
-                        Observation::from_message(
-                            ObserveDirection::MeshIn,
-                            outcome,
-                            &msg,
-                            canonical_wire,
-                            correlation_id.as_deref(),
-                        )
-                        .with_peer(&peer),
-                    );
-                } else {
-                    observe_for_mesh.observe(
-                        Observation::canonical(
-                            ObserveDirection::MeshIn,
-                            outcome,
-                            &msg,
-                            correlation_id.as_deref(),
-                        )
-                        .with_peer(&peer),
-                    );
-                }
-            }
-        }
-    });
+    tokio::spawn(mesh_incoming_loop(
+        mesh_incoming_rx,
+        mesh.clone(),
+        authority.clone(),
+        registry.clone(),
+        observe.clone(),
+        node.clone(),
+        frame_policy,
+    ));
 
     let pending_responses: PendingResponses = Arc::new(PendingResponseTable::new());
     let tap_subscribers: TapSubscribers = Arc::new(RwLock::new(Vec::new()));
@@ -950,6 +1079,7 @@ async fn serve(
         listener_port,
         listener_endpoint_diverged,
         admission_mode,
+        frame_policy,
         wg_bound,
         challenge_table: Arc::new(crate::admission::ChallengeTable::new()),
         live_sessions: Arc::new(RwLock::new(HashMap::new())),
@@ -2105,6 +2235,8 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         .open_outbox(channel_id, &tx, notice_wake.clone());
     let writer_sessions = state.sessions.clone();
     let writer_epoch = state.broker_epoch;
+    let remote_writer = !is_same_node_origin(source_ip, &state.bind);
+    let writer_node = state.node_name.clone();
     let send_task = tokio::spawn(async move {
         loop {
             let msg = tokio::select! {
@@ -2121,6 +2253,16 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     continue;
                 },
                 msg = rx.recv() => match msg { Some(msg) => msg, None => break },
+            };
+            let msg = if remote_writer {
+                if let Ok(mut frame) = bus::parse(&msg) {
+                    frame.originate_mesh(&writer_node);
+                    frame.to_wire()
+                } else {
+                    msg
+                }
+            } else {
+                msg
             };
             if ws_sink.send(Message::Text(msg.into())).await.is_err() {
                 break;
@@ -2239,6 +2381,44 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             }
         };
 
+        if bus_msg.is_empty_message() {
+            continue;
+        }
+        let admission_bootstrap = bus_msg.command_name() == Some("noded.admit.response")
+            && service_name.is_none()
+            && !state.session_admission.response_seen
+            && state.session_admission.admitted_node.is_none();
+
+        // Gate before native commands, response correlation, subscriptions or
+        // any other delivery side effect. Only the admission proof itself is
+        // permitted before registration (it is consumed below).
+        if !is_same_node_origin(source_ip, &state.bind)
+            && state.frame_policy != AdmissionMode::Off
+            && !admission_bootstrap
+        {
+            let peer = if state.admission_mode == AdmissionMode::Enforce {
+                state.session_admission.admitted_node.clone()
+            } else {
+                admitted_delivery_peer(&state, source_ip)
+            };
+            if let Some(reason) =
+                frame_policy::session_refusal(&bus_msg, peer.as_deref(), service_name.as_deref())
+                    .or_else(|| {
+                        frame_policy::wrong_node(&bus_msg, &state.node_name)
+                            .then_some("wrong-node-ingress")
+                    })
+            {
+                frame_refused(
+                    reason,
+                    peer.as_deref().unwrap_or(""),
+                    &source_ip_str,
+                    state.frame_policy,
+                );
+                if state.frame_policy == AdmissionMode::Enforce {
+                    break;
+                }
+            }
+        }
         strip_principal(&mut bus_msg);
         let response_class = if bus_msg.message_type() == Some("response") {
             if let Some(id) = bus_msg.get("id") {
@@ -2366,6 +2546,17 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         // `type:response`, so it MUST be intercepted by command HERE, before the
         // pending-response orphan path below would `take()`-and-drop it.
         if bus_msg.command_name() == Some("noded.admit.response") {
+            // A late proof is never allowed to reset established admission.
+            if !admission_bootstrap {
+                canonicalize_connection_from(&mut bus_msg, service_name.as_deref());
+                state.observe.observe(Observation::canonical(
+                    ObserveDirection::Local,
+                    ObserveOutcome::Rejected,
+                    &bus_msg,
+                    bus_msg.get("id"),
+                ));
+                continue;
+            }
             let outcome = process_admit_response(
                 &state,
                 &bus_msg,
@@ -2434,6 +2625,9 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     } else {
                         None
                     };
+                    if let Some(request_id) = &pending.caller_request_id {
+                        bus_msg.set("request_id", request_id);
+                    }
                     let wire = canonicalize_correlated_response(
                         &mut bus_msg,
                         &pending.caller_id,
@@ -2887,6 +3081,28 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 }
             }
             Route::RemoteMesh { target } => {
+                if !is_same_node_origin(source_ip, &state.bind)
+                    && state.frame_policy != AdmissionMode::Off
+                {
+                    frame_refused(
+                        "remote-origin-relay",
+                        state
+                            .session_admission
+                            .admitted_node
+                            .as_deref()
+                            .unwrap_or(""),
+                        &source_ip_str,
+                        state.frame_policy,
+                    );
+                    if state.frame_policy == AdmissionMode::Enforce {
+                        break;
+                    }
+                }
+                // Check only; MeshPeers::call/send owns the single decrement.
+                if let Err(reason) = bus_msg.check_mesh_forward() {
+                    frame_refused(reason, target.name(), &source_ip_str, state.frame_policy);
+                    continue;
+                }
                 canonicalize_routed_from_in_place(&mut bus_msg, service_name.as_deref());
                 bus_msg.set("broker_connection", &broker_connection);
                 if state.observe.traffic_class().protected()
@@ -2926,10 +3142,23 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 let tx_clone = tx.clone();
                 let mesh = state.mesh.clone();
                 let peer = target.into_peer();
+                let response_peer = peer.name.clone();
+                let response_address = peer.noded_addr().to_string();
+                let response_mode = state.frame_policy;
+                let response_node = state.node_name.clone();
                 let msg_id = bus_msg.get("id").map(|s| s.to_string());
                 tokio::spawn(async move {
                     match mesh.call(peer, bus_msg).await {
                         Ok(mut resp) => {
+                            if !mesh_frame_allowed(
+                                &resp,
+                                &response_peer,
+                                &response_node,
+                                &response_address,
+                                response_mode,
+                            ) {
+                                return;
+                            }
                             if let Some(observation) = pending_observation.as_ref() {
                                 observation.manager.observe(
                                     Observation::from_message(
@@ -4003,6 +4232,9 @@ async fn handle_noded_command(
             .with_header("rc", rc);
         if let Some(id) = msg_id {
             resp.set("id", id);
+        }
+        if let Some(request_id) = msg.get("request_id") {
+            resp.set("request_id", request_id);
         }
         resp
     };
@@ -5121,6 +5353,7 @@ mod tests {
     //! broadcast_tap to skip the same Sender) and remaining drops are
     //! coalesced to ≤1 WARN per second per axis.
 
+    include!("frame_policy_tests.rs");
     use std::collections::HashMap;
     use std::net::{Ipv4Addr, TcpListener};
     use std::sync::Arc;
@@ -5130,8 +5363,8 @@ mod tests {
 
     use arc_swap::ArcSwap;
     use config::node::AdmissionMode;
-    use mesh::{DEFAULT_NODED_PORT, MeshConfig, MeshPeers, PeerConfig};
-    use tokio::sync::{RwLock, mpsc};
+    use mesh::{DEFAULT_NODED_PORT, MeshConfig, MeshInbound, MeshPeers, PeerConfig};
+    use tokio::sync::{RwLock, mpsc, oneshot};
     use tracing_subscriber::Layer;
     use tracing_subscriber::layer::{Context, SubscriberExt};
     use tracing_subscriber::util::SubscriberInitExt;
@@ -5855,6 +6088,7 @@ mod tests {
             listener_port,
             listener_endpoint_diverged: Arc::new(AtomicBool::new(false)),
             admission_mode: AdmissionMode::Off,
+            frame_policy: config::node::AdmissionMode::Observe,
             wg_bound: true,
             challenge_table: Arc::new(crate::admission::ChallengeTable::new()),
             live_sessions: Arc::new(RwLock::new(HashMap::new())),
@@ -6160,6 +6394,7 @@ mod tests {
             mesh_config_path: None,
             spec_dir: None,
             admission_mode: config::node::AdmissionMode::Off,
+            frame_policy: config::node::AdmissionMode::Observe,
         };
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
         let error = super::run_on(config(format!("127.0.0.1:{other}")), listener, ready_tx)
@@ -6207,6 +6442,7 @@ mod tests {
                     mesh_config_path: None,
                     spec_dir: None,
                     admission_mode: config::node::AdmissionMode::Off,
+                    frame_policy: config::node::AdmissionMode::Observe,
                 },
                 listener,
                 ready_tx,
@@ -6295,6 +6531,7 @@ mod tests {
                     mesh_config_path: None,
                     spec_dir: None,
                     admission_mode: config::node::AdmissionMode::Observe,
+                    frame_policy: config::node::AdmissionMode::Observe,
                 },
                 listener,
                 ready_tx,
@@ -6444,6 +6681,7 @@ mod tests {
                     mesh_config_path: None,
                     spec_dir: None,
                     admission_mode: config::node::AdmissionMode::Off,
+                    frame_policy: config::node::AdmissionMode::Observe,
                 },
                 listener,
                 ready_tx,
@@ -7538,6 +7776,190 @@ mod tests {
             last_detail: None,
         };
         state
+    }
+
+    #[tokio::test]
+    async fn inter_node_wire_postures_gate_before_dispatch() {
+        use tracing::instrument::WithSubscriber;
+        #[derive(Clone)]
+        struct Audit(Arc<std::sync::Mutex<Vec<u8>>>);
+        impl std::io::Write for Audit {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        for (mode, register, from, refused) in [
+            (AdmissionMode::Enforce, false, "hostd.beta.bus", true),
+            (AdmissionMode::Observe, false, "hostd.beta.bus", false),
+            (AdmissionMode::Off, false, "hostd.beta.bus", false),
+            (AdmissionMode::Enforce, true, "hostd.gamma.bus", true),
+            (AdmissionMode::Observe, true, "hostd.gamma.bus", false),
+            (AdmissionMode::Off, true, "hostd.gamma.bus", false),
+            (AdmissionMode::Enforce, true, "hostd.beta.bus", false),
+            (AdmissionMode::Observe, true, "hostd", false),
+            (AdmissionMode::Enforce, true, "hostd", true),
+            (AdmissionMode::Enforce, true, "late", true),
+            (AdmissionMode::Observe, true, "late", false),
+            (AdmissionMode::Enforce, true, "wrong-node", true),
+            (AdmissionMode::Observe, true, "wrong-node", false),
+        ] {
+            let mut state = mesh_delivery_test_state().await;
+            let mut posture = state.authority.load().posture.clone();
+            if let crate::authority::Posture::Verified(accepted) = &mut posture {
+                accepted.routing_view.push(active_route(
+                    "alpha",
+                    "127.0.0.1".parse().unwrap(),
+                    DEFAULT_NODED_PORT,
+                ));
+            }
+            state
+                .authority
+                .store(Arc::new(crate::routing::RoutingAuthority::new(
+                    posture,
+                    "alpha",
+                    "127.0.0.1",
+                    DEFAULT_NODED_PORT,
+                    &[],
+                )));
+            state.frame_policy = mode;
+            let audit = Audit(Arc::new(std::sync::Mutex::new(Vec::new())));
+            let output = audit.0.clone();
+            let subscriber = tracing_subscriber::fmt()
+                .without_time()
+                .with_ansi(false)
+                .with_max_level(tracing::Level::DEBUG)
+                .with_writer(move || audit.clone())
+                .finish();
+            let dispatch = tracing::Dispatch::new(subscriber);
+            let app = axum::Router::new().route(
+                "/ws",
+                axum::routing::get(move |upgrade: axum::extract::ws::WebSocketUpgrade| {
+                    let state = state.clone();
+                    let dispatch = dispatch.clone();
+                    async move {
+                        upgrade.on_upgrade(move |socket| {
+                            super::handle_socket(
+                                socket,
+                                state,
+                                bus::native_session::TransportIdentity::Mesh {
+                                    source_ip: "192.0.2.2".parse().unwrap(),
+                                    admission: bus::native_session::MeshAdmission {
+                                        admitted_node: Some("beta".into()),
+                                        response_seen: true,
+                                        last_detail: None,
+                                    },
+                                },
+                            )
+                            .with_subscriber(dispatch)
+                        })
+                    }
+                }),
+            );
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("ws://{}/ws", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
+            let (mut sink, mut stream) = raw_connect(&url).await;
+            if register {
+                raw_register(&mut sink, &mut stream, "bridge-beta").await;
+            }
+            // Empty frames are no-ops even after registration. A correctly
+            // sourced late proof is ignored without resetting admission.
+            if register {
+                sink.send(WsMessage::Text(bus::wire::EMPTY_MESSAGE.into()))
+                    .await
+                    .unwrap();
+                let late = BusMessage::new()
+                    .with_header("to", "noded")
+                    .with_header("from", "hostd.beta.bus")
+                    .with_header("command", "noded.admit.response");
+                sink.send(WsMessage::Text(late.to_wire().into()))
+                    .await
+                    .unwrap();
+            }
+            let mut request = BusMessage::new()
+                .with_header("type", "request")
+                .with_header(
+                    "command",
+                    if from == "late" {
+                        "noded.admit.response"
+                    } else {
+                        "noded.ping"
+                    },
+                )
+                .with_header(
+                    "to",
+                    if from == "wrong-node" {
+                        "noded.gamma.bus"
+                    } else {
+                        "noded"
+                    },
+                )
+                .with_header("id", "policy-probe")
+                .with_header("request_id", "policy-request")
+                .with_header(
+                    "from",
+                    match from {
+                        "late" => "hostd.gamma.bus",
+                        "wrong-node" => "hostd.beta.bus",
+                        _ => from,
+                    },
+                );
+            if refused {
+                sink.send(WsMessage::Text(request.to_wire().into()))
+                    .await
+                    .unwrap();
+                tokio::time::timeout(Duration::from_secs(2), async {
+                    while let Some(Ok(frame)) = stream.next().await {
+                        if let WsMessage::Text(text) = frame {
+                            assert_ne!(
+                                bus_mod::parse(&text).unwrap().get("id"),
+                                Some("policy-probe")
+                            );
+                        }
+                    }
+                })
+                .await
+                .expect("enforce must close the refused connection");
+            } else {
+                if from == "late" {
+                    sink.send(WsMessage::Text(request.to_wire().into()))
+                        .await
+                        .unwrap();
+                    request.set("command", "noded.ping");
+                    request.set("from", "hostd.beta.bus");
+                }
+                let response = raw_call(&mut sink, &mut stream, request, "policy-probe").await;
+                assert_eq!(
+                    response.rc(),
+                    Some(if from == "wrong-node" { 10 } else { 0 })
+                );
+                if from != "wrong-node" {
+                    assert_eq!(response.get("request_id"), Some("policy-request"));
+                }
+                assert!(super::frame_policy::from_peer(&response, "alpha"));
+            }
+            let logs = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+            let violation = !register || from != "hostd.beta.bus";
+            assert_eq!(
+                logs.contains("event=\"frame.refused\""),
+                violation && mode != AdmissionMode::Off,
+                "{logs}"
+            );
+            if from == "wrong-node" {
+                assert!(logs.contains("wrong-node-ingress"), "{logs}");
+            }
+            if violation && mode == AdmissionMode::Observe {
+                assert!(logs.contains("posture=\"observe\""), "{logs}");
+                assert!(logs.contains("192.0.2.2"), "{logs}");
+            }
+            server.abort();
+        }
     }
 
     #[tokio::test]
