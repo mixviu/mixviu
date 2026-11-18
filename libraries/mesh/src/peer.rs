@@ -506,6 +506,8 @@ impl MeshPeers {
 
         // Send the message with the id
         let mut msg = msg;
+        msg.originate_mesh(&self.config.node_name);
+        msg.forward_mesh().map_err(anyhow::Error::msg)?;
         msg.set("id", &msg_id);
         let class = msg.command_name().unwrap_or("unknown").to_string();
         let (resp_tx, resp_rx) = oneshot::channel();
@@ -543,6 +545,9 @@ impl MeshPeers {
 
     /// Send a fire-and-forget message to a remote node.
     pub async fn send(&self, peer: PeerConfig, msg: BusMessage) -> Result<()> {
+        let mut msg = msg;
+        msg.originate_mesh(&self.config.node_name);
+        msg.forward_mesh().map_err(anyhow::Error::msg)?;
         let node_name = peer.name.clone();
         let connection = self.ensure_connected(&peer).await?;
         let state = self.state.read().await;
@@ -933,6 +938,7 @@ async fn connect_and_publish(
     }
 
     let connected_send = connected.clone();
+    let writer_node = node_name.clone();
     tokio::spawn(async move {
         let mut cancelled = false;
         loop {
@@ -945,6 +951,10 @@ async fn connect_and_publish(
                 }
                 next = rx.recv() => {
                     let Some(message) = next else { break };
+                    let message = if let Ok(mut frame) = bus::parse(&message) {
+                        frame.originate_mesh(&writer_node);
+                        frame.to_wire()
+                    } else { message };
                     // The flush itself must also be cancellable: §7.7 says
                     // nothing is written to a retired endpoint after
                     // `routing.reload_applied`, and a backpressured peer can

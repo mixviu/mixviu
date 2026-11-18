@@ -52,6 +52,42 @@ pub struct BusMessage {
 }
 
 impl BusMessage {
+    /// Stamp a broker-originated mesh envelope. Unknown headers are retained
+    /// by the original map decoder and ignored by old routing consumers.
+    /// `deadline` is Unix milliseconds; it is advisory in this policy slice.
+    pub fn originate_mesh(&mut self, node: &str) {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+        if self.get("request_id").is_none() {
+            self.set("request_id", &format!("{node}-{now}-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
+        }
+        if self.get("deadline").is_none() {
+            self.set("deadline", &(now + 30_000).to_string());
+        }
+        if self.get("hop_limit").is_none() {
+            self.set("hop_limit", "1");
+        }
+        // Only broker-owned traffic may call this: caller identity has already
+        // been canonicalised. Never qualify an untrusted remote address here.
+        let from = self.from_addr().unwrap_or("noded");
+        if BusTarget::parse(from).is_none() {
+            self.set("from", &format!("{from}.{node}.bus"));
+        }
+    }
+
+    /// Consume a forwarding hop. Legacy absence remains unlimited; malformed
+    /// explicit limits fail closed rather than turning into legacy absence.
+    pub fn forward_mesh(&mut self) -> Result<(), &'static str> {
+        if let Some(raw) = self.get("hop_limit") {
+            let hops = raw.parse::<u32>().map_err(|_| "invalid-hop-limit")?;
+            if hops == 0 { return Err("hop-limit-exhausted"); }
+            self.set("hop_limit", &(hops - 1).to_string());
+        }
+        Ok(())
+    }
+
     /// An empty message.
     pub fn new() -> Self {
         Self::default()
@@ -383,6 +419,28 @@ pub fn parse(raw: &str) -> Result<BusMessage, ParseError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn additive_mesh_envelope_uses_original_decoder() {
+        let legacy = parse("---\nfrom: hostd\ncommand: status\n---\n").unwrap();
+        assert_eq!(legacy.get("hop_limit"), None);
+        assert!(legacy.clone().forward_mesh().is_ok());
+        let mut new = legacy.clone();
+        new.originate_mesh("alpha");
+        let request_id = new.get("request_id").unwrap().to_owned();
+        assert!(new.get("deadline").unwrap().parse::<u128>().is_ok());
+        assert_eq!(new.from_addr(), Some("hostd.alpha.bus"));
+        new.forward_mesh().unwrap();
+        // Both pre-existing decode paths accept and retain arbitrary headers;
+        // old callers only read their known keys (no schema/version switch).
+        for decoded in [parse(&new.to_wire()).unwrap(), parse_strict(&new.to_wire()).unwrap()] {
+            assert_eq!(decoded.command_name(), legacy.command_name());
+            assert_eq!(decoded.get("hop_limit"), Some("0"));
+            assert_eq!(decoded.get("request_id"), Some(request_id.as_str()));
+            assert_eq!(decoded.clone().forward_mesh(), Err("hop-limit-exhausted"));
+        }
+        assert_eq!(new.with_header("hop_limit", "invalid").forward_mesh(), Err("invalid-hop-limit"));
+    }
 
     #[test]
     fn round_trip_with_body() {
