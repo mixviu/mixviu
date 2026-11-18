@@ -1096,7 +1096,7 @@ async fn serve(
         let unix_app = Router::new()
             .route("/ws", axum::routing::get(unix_ws_handler))
             .with_state(state);
-        tokio::try_join!(async { tcp_server.await }, async {
+        tokio::try_join!(tcp_server, async {
             axum::serve(
                 listener,
                 unix_app.into_make_service_with_connect_info::<crate::native_ingress::UnixPeer>(),
@@ -4716,7 +4716,7 @@ async fn handle_noded_command(
                     body_ref,
                     &peer_id,
                     tx.clone(),
-                    session_origin(&state, source_ip),
+                    session_origin(state, source_ip),
                     retain,
                     state.principal.as_ref(),
                     msg.get("broker_connection"),
