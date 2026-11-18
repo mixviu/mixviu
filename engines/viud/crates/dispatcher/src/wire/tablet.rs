@@ -584,12 +584,11 @@ impl TabletState {
             .filter(|(_, t)| t.focus.as_ref().is_some_and(&matches))
             .map(|(d, _)| d.clone())
             .collect();
-        if self.stroke_surface.as_ref().is_some_and(&matches) {
-            if let Some(owner) = self.stroke_owner.clone() {
-                if !tools.contains(&owner) {
-                    tools.push(owner);
-                }
-            }
+        if self.stroke_surface.as_ref().is_some_and(&matches)
+            && let Some(owner) = self.stroke_owner.clone()
+            && !tools.contains(&owner)
+        {
+            tools.push(owner);
         }
         for tool in tools {
             self.tool_proximity_out(&tool, time);
@@ -1315,9 +1314,11 @@ mod blank_contact_tests {
 
     #[test]
     fn cancellation_revokes_a_stroke_even_when_its_tool_resource_has_disappeared() {
-        let mut tablet = TabletState::default();
-        tablet.stroke_owner = Some(descriptor());
-        tablet.stroke = Stroke::Pointer;
+        let mut tablet = TabletState {
+            stroke_owner: Some(descriptor()),
+            stroke: Stroke::Pointer,
+            ..Default::default()
+        };
         assert!(tablet.cancel_input(0).0);
         assert!(tablet.stroke_owner.is_none());
         assert_eq!(tablet.take_revoked_buttons(), [0x110]);

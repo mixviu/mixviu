@@ -139,7 +139,10 @@ pub(super) fn connector_color_plan(
         .collect()
 }
 
-fn prepare(surface: &impl Surface) -> Result<(u32, u64, Vec<(u32, u64)>), String> {
+type PropertyValues = Vec<(u32, u64)>;
+type PreparedBlank = (u32, u64, PropertyValues);
+
+fn prepare(surface: &impl Surface) -> Result<PreparedBlank, String> {
     let (handle, plan) = selection(surface).ok_or("no CTM or usable GAMMA_LUT")?;
     // drm_color_ctm: nine u64 coefficients. drm_color_lut: RGB + reserved,
     // four u16 values per advertised entry. All-zero bytes encode both exactly.
@@ -447,8 +450,8 @@ pub fn install(state: &mut Loop, ctx: &Rc<RefCell<NativeRenderContext>>) {
     let weak = Rc::downgrade(ctx);
     state.inner.comp.blank.backend = Some(Rc::new(move |on| {
         let ctx = weak.upgrade().ok_or("native display stopped")?;
-        let result = apply(&mut ctx.borrow_mut(), on);
-        result
+
+        apply(&mut ctx.borrow_mut(), on)
     }));
 }
 

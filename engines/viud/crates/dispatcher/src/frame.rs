@@ -19,7 +19,7 @@
 pub mod uniforms;
 
 use smithay::backend::renderer::gles::{
-    GlesFrame, GlesPixelProgram, GlesRenderer, GlesTexProgram, GlesTexture, Uniform, UniformName,
+    GlesFrame, GlesPixelProgram, GlesRenderer, GlesTexture, Uniform, UniformName,
 };
 use smithay::backend::renderer::{Renderer, RendererSuper};
 use smithay::utils::{Buffer as BufferCoord, Physical, Rectangle, Size};
