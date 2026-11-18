@@ -140,6 +140,7 @@ impl Pattern {
     }
 
     pub fn named(stream: UnixStream, name: &str, fullscreen: bool) -> Self {
+        eprintln!("PATTERN start app_id={name} socket={stream:?}");
         stream.set_nonblocking(true).unwrap();
         let conn = Connection::from_socket(stream).unwrap();
         let mut queue = conn.new_event_queue::<State>();
@@ -166,7 +167,9 @@ impl Pattern {
         let surface = compositor.create_surface(&qh, ());
         let xdg = shell.get_xdg_surface(&surface, &qh, ());
         let top = xdg.get_toplevel(&qh, ());
+        eprintln!("PATTERN get_toplevel app_id={name}");
         top.set_app_id(name.into());
+        eprintln!("PATTERN set_app_id={name}");
         if fullscreen {
             top.set_fullscreen(None);
         } else {
@@ -177,6 +180,7 @@ impl Pattern {
             let _: WlSeat = registry.bind(*n, (*v).min(7), &qh, ());
         }
         surface.commit();
+        eprintln!("PATTERN initial empty commit app_id={name}");
         let deadline = Instant::now() + Duration::from_secs(10);
         while !state.configured {
             queue.roundtrip(&mut state).unwrap();
@@ -207,6 +211,7 @@ impl Pattern {
             _top: top,
         };
         client.commit(true);
+        eprintln!("PATTERN initial buffer submitted app_id={name}");
         client
     }
 
@@ -225,6 +230,7 @@ impl Pattern {
     }
 
     pub fn commit(&mut self, damage: bool) {
+        eprintln!("PATTERN commit damage={damage} configured={} size={:?} callbacks={}", self.state.configured, self.state.size, self.state.callbacks);
         if damage {
             self.surface.attach(Some(&self.buffer), 0, 0);
             self.surface
@@ -235,6 +241,7 @@ impl Pattern {
             .feedback(&self.surface, &self.queue.handle(), ());
         self.surface.commit();
         self.conn.flush().unwrap();
+        eprintln!("PATTERN commit flushed");
     }
 
     pub fn wait_callback(&mut self, previous: u64) {
@@ -381,7 +388,9 @@ impl Dispatch<XdgSurface, ()> for State {
         _: &QueueHandle<Self>,
     ) {
         if let xdg_surface::Event::Configure { serial } = event {
+            eprintln!("PATTERN xdg_surface.configure serial={serial}");
             surface.ack_configure(serial);
+            eprintln!("PATTERN ack_configure serial={serial}");
             state.configured = true;
         }
     }
@@ -396,6 +405,7 @@ impl Dispatch<XdgToplevel, ()> for State {
         _: &QueueHandle<Self>,
     ) {
         if let xdg_toplevel::Event::Configure { width, height, .. } = event {
+            eprintln!("PATTERN xdg_toplevel.configure size={width}x{height}");
             state.size = (width, height);
         }
     }

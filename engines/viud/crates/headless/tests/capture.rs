@@ -47,10 +47,18 @@ impl Bus {
             if let Some(row) = reply["windows"].as_array().unwrap().first() {
                 return row.clone();
             }
-            assert!(
-                Instant::now() < deadline,
-                "timed out after 10 s waiting for mapped window app_id={name}: {reply}"
-            );
+            if Instant::now() >= deadline {
+                eprintln!("WINDOW_TIMEOUT broker={} record={}", self.url, fs::read_to_string(self.root.join("bus.json")).unwrap());
+                for (command, args) in [
+                    ("comp.info", json!({})),
+                    ("comp.windows.list", json!({})),
+                    ("comp.props.get", json!({"path":"surfaces"})),
+                    ("viud.truth", json!({})),
+                ] {
+                    eprintln!("WINDOW_TIMEOUT {command}: {}", self.call(command, args));
+                }
+                panic!("timed out after 10 s waiting for mapped window app_id={name}: {reply}");
+            }
             thread::sleep(Duration::from_millis(20));
         }
     }
@@ -101,6 +109,7 @@ impl Bus {
             "headless Bus readiness: {}",
             String::from_utf8_lossy(&output.stderr)
         );
+        eprintln!("BUS_READY broker={} instance={}", self.url, self.call("comp.info", json!({})));
     }
     fn window(&self, pattern: &mut Pattern) -> Value {
         self.window_for("headless-pattern", &mut [pattern])
@@ -1993,6 +2002,12 @@ fn connect(process: &mut process::Process) -> UnixStream {
     let deadline = Instant::now() + Duration::from_secs(25);
     loop {
         if let Ok(stream) = UnixStream::connect(process.root.join("wayland-headless-test")) {
+            use std::os::fd::AsRawFd;
+            let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
+            let mut len = std::mem::size_of_val(&cred) as libc::socklen_t;
+            assert_eq!(unsafe { libc::getsockopt(stream.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PEERCRED, (&mut cred as *mut libc::ucred).cast(), &mut len) }, 0);
+            eprintln!("WAYLAND_PEER expected={} actual={} root={}", process.child.id(), cred.pid, process.root.display());
+            assert_eq!(cred.pid as u32, process.child.id());
             return stream;
         }
         assert!(
