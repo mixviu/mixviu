@@ -5178,6 +5178,7 @@ fn escape_json_string(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    include!("mtls_lab.rs");
     //! Regression test for the 2026-04-28 noded log-feedback meltdown.
     //!
     //! Reproduces the failure shape: a peer that is **registered as a

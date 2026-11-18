@@ -383,6 +383,11 @@ impl MeshPeers {
                         },
                     );
                 }
+                Some(_) if self.tls.is_some() && revision != state.revision => {
+                    // Lab simplification: reauthenticate all outbound links on
+                    // any accepted revision, including a same-endpoint key expiry.
+                    reasons.insert(name.clone(), ConnectionRetireReason::Removed);
+                }
                 Some(_) => {}
             }
         }
