@@ -135,6 +135,7 @@ pub fn drain_lifecycle(_loop: &mut Loop) {
             _loop.inner.space_state(),
             &waiting,
         ) {
+            trace!("INITIAL_MAP_DEFERRED");
             // A missing buffer or a switch away from the owning world cannot
             // consume its only candidate: WindowPlacedMarker still prevents a
             // second one. Keep its per-window tail; unrelated work proceeds.

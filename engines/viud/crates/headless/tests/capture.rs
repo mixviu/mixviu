@@ -51,6 +51,7 @@ impl Bus {
                 eprintln!("WINDOW_TIMEOUT broker={} record={}", self.url, fs::read_to_string(self.root.join("bus.json")).unwrap());
                 for (command, args) in [
                     ("comp.info", json!({})),
+                    ("comp.props.get", json!({"path":"info"})),
                     ("comp.windows.list", json!({})),
                     ("comp.props.get", json!({"path":"surfaces"})),
                     ("viud.truth", json!({})),

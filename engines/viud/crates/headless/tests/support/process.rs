@@ -181,6 +181,9 @@ fn spawn_with_seat_size(
     fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
     let node = render_node();
     let mut config = model::environment::config::base::default_settings();
+    if std::env::var_os("MIX_TEST_MAPPING_TRACE").is_some() {
+        config.log_level = "info,warn,error,trace,debug".into();
+    }
     // Default priority is realtime: headless must override the startup policy.
     assert_eq!(config.priority, "realtime");
     config.render_node = if explicit_node.is_some() {
