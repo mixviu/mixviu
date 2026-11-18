@@ -95,10 +95,12 @@ end
 -- Every unit template the engines, their personalities, the Mix services and
 -- the apps carry (desk-specific drop-ins and session targets are the desk image's).
 -- sysusers/tmpfiles snippets are prefixed with their owner when not already.
+$layout = require("../share/layout/files.mix")
 for $f in tracked(".")
   $unit = re_match($f, "\\.(service|socket|target|slice|timer|path)$")
   $snippet = contains($f, "/units/") and ends_with($f, ".conf")
   if ($unit or $snippet) and (starts_with($f, "engines/") or starts_with($f, "services/") or starts_with($f, "apps/")) and not contains($f, "/tests/") then
+    if not $layout.desk_unit(read_file($f)) then continue end
     $owner = split($f, "/")[1]
     $name = basename($f)
     if $snippet and not starts_with($name, $owner .. ".") then $name = $owner .. "." .. $name end
@@ -111,7 +113,6 @@ for $dir in ["share/layout", "share/daylight"]
     place($stage, $f, $f)
   end
 end
-$layout = require("../share/layout/files.mix")
 $layout.bundle("share/layout", $stage .. "/share/layout")
 
 -- Icons and brand marks, through their own offline installers.
