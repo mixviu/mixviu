@@ -167,6 +167,7 @@ fn spawn_options(options: Options<'_>) -> Process {
         seat,
         size,
     } = options;
+    assert!(!label.is_empty(), "headless process label must be non-empty");
     let binary = std::env::var_os("MIX_TEST_VIUD_EXE")
         .map(PathBuf::from)
         .unwrap_or_else(|| {

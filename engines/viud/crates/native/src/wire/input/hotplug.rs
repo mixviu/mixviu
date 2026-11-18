@@ -15,7 +15,12 @@ use std::{
 use world::state::{Loop, StatusSession};
 
 type Nodes = BTreeMap<PathBuf, (u64, u64)>;
+const MAX_GRACE_RESTARTS: u32 = 8;
+const FLAP_RETRY_MIN: Duration = Duration::from_secs(5);
+const FLAP_RETRY_MAX: Duration = Duration::from_secs(60);
 thread_local! {
+    // A scan includes declined nodes too; KNOWN contains only admitted nodes.
+    static LAST_SCAN: std::cell::RefCell<Nodes> = const { std::cell::RefCell::new(BTreeMap::new()) };
     static KNOWN: std::cell::RefCell<Nodes> = const { std::cell::RefCell::new(BTreeMap::new()) };
     static METADATA_RETRY: std::cell::RefCell<std::collections::BTreeSet<PathBuf>> = const { std::cell::RefCell::new(std::collections::BTreeSet::new()) };
     static METADATA_WARNING: std::cell::Cell<Option<std::time::Instant>> = const { std::cell::Cell::new(None) };
@@ -84,6 +89,9 @@ struct Retry {
     declined: BTreeMap<PathBuf, Declined>,
     probed: Option<Nodes>,
     grace_restarts: u32,
+    flap_warned: bool,
+    flap_retry_at: Option<Instant>,
+    flap_delay: Duration,
 }
 struct Declined {
     identity: (u64, u64),
@@ -107,29 +115,45 @@ impl Retry {
     }
 }
 
-fn needs_reconcile(current: &Nodes, known: &Nodes, retry: &mut Retry) -> bool {
+fn needs_reconcile<'a>(
+    current: &Nodes,
+    known: impl Iterator<Item = (&'a PathBuf, &'a (u64, u64))> + Clone,
+    retry: &mut Retry,
+    now: Instant,
+) -> bool {
     // A failed resume must retry even if the nodes have since converged.
     if retry.failures != 0 {
         return true;
     }
-    if current == known {
+    if current.iter().eq(known.clone()) {
         retry.pending = None;
         retry.grace_restarts = 0;
         return false;
     }
     // The scan can precede a queued libinput lifecycle event. Give it one
     // full tick to arrive, and restart the grace period if either map changes.
-    let disagreement = (current.clone(), known.clone());
+    let disagreement = (current.clone(), known.map(|(p, id)| (p.clone(), *id)).collect());
     let confirmed = retry.pending.as_ref() == Some(&disagreement);
     if !confirmed && retry.pending.is_some() {
         retry.grace_restarts = retry.grace_restarts.saturating_add(1);
-        if retry.grace_restarts == 8 {
-            warn!("input nodes keep changing; reconciliation grace restarted eight times");
+        if retry.grace_restarts >= MAX_GRACE_RESTARTS && !retry.flap_warned {
+            retry.flap_warned = true;
+            warn!("input nodes keep changing; reconciliation grace exhausted; forced resets will back off to 60s");
         }
     }
     retry.pending = Some(disagreement);
     // Bound grace even when a broken node is replaced on every scan.
-    confirmed || retry.grace_restarts >= 8
+    if confirmed {
+        return true;
+    }
+    if retry.grace_restarts < MAX_GRACE_RESTARTS
+        || retry.flap_retry_at.is_some_and(|at| now < at)
+    {
+        return false;
+    }
+    retry.flap_delay = (retry.flap_delay * 2).clamp(FLAP_RETRY_MIN, FLAP_RETRY_MAX);
+    retry.flap_retry_at = Some(now + retry.flap_delay);
+    true
 }
 
 fn reconcile(current: Nodes, retry: &mut Retry, reset: impl FnOnce() -> bool) -> Option<Duration> {
@@ -142,13 +166,24 @@ fn reconcile_at(
     now: Instant,
     reset: impl FnOnce() -> bool,
 ) -> Option<Duration> {
+    reconcile_with_metadata(current, retry, now, reset, |path| std::fs::metadata(path))
+}
+
+fn reconcile_with_metadata(
+    current: Nodes,
+    retry: &mut Retry,
+    now: Instant,
+    reset: impl FnOnce() -> bool,
+    metadata: impl Fn(&std::path::Path) -> std::io::Result<std::fs::Metadata>,
+) -> Option<Duration> {
     // Retry failed DeviceAdded stats before starting disagreement grace.
     let pending = METADATA_RETRY.with_borrow_mut(std::mem::take);
     for path in pending {
-        match std::fs::metadata(&path) {
+        match metadata(&path) {
             Ok(meta) => KNOWN.with_borrow_mut(|known| {
                 known.insert(path, (meta.rdev(), meta.ino()));
             }),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => {
                 // A lifecycle event already admitted this device. Keep its
                 // metadata pending so a transient stat cannot cause a reset.
@@ -164,7 +199,8 @@ fn reconcile_at(
     if let Some(probed) = retry.probed.take() {
         KNOWN.with_borrow(|known| {
             for (path, identity) in probed {
-                if current.get(&path) == Some(&identity) && known.get(&path) != Some(&identity) {
+                if current.get(&path) == Some(&identity) && known.get(&path) != Some(&identity)
+                    && !METADATA_RETRY.with_borrow(|pending| pending.contains(&path)) {
                     retry.declined.entry(path).or_insert_with_key(|path| {
                         info!("libinput declined {}; one retry in 5s", path.display());
                         Declined {
@@ -201,9 +237,9 @@ fn reconcile_at(
         .map(|(path, id)| (path.clone(), *id))
         .collect();
     let disagreement = KNOWN.with_borrow(|known| {
-        let mut comparable = known.clone();
-        METADATA_RETRY.with_borrow(|pending| comparable.retain(|path, _| !pending.contains(path)));
-        needs_reconcile(&admitted, &comparable, retry)
+        METADATA_RETRY.with_borrow(|pending| {
+            needs_reconcile(&admitted, known.iter().filter(|(path, _)| !pending.contains(*path)), retry, now)
+        })
     });
     if !retry_declined && !disagreement {
         return None;
@@ -232,10 +268,15 @@ fn nodes_at_with(
 ) -> std::io::Result<Nodes> {
     let entries = match std::fs::read_dir(root) {
         Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(BTreeMap::new()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            LAST_SCAN.with_borrow_mut(|previous| previous.clear());
+            METADATA_RETRY.with_borrow_mut(|pending| pending.retain(|path| !path.starts_with(root)));
+            return Ok(BTreeMap::new());
+        }
         Err(error) => return Err(error),
     };
-    entries
+    let mut listed = std::collections::BTreeSet::new();
+    let scanned: Nodes = entries
         .filter_map(|entry| {
             let entry = match entry {
                 Ok(entry) => entry,
@@ -244,20 +285,28 @@ fn nodes_at_with(
             if !entry.file_name().to_string_lossy().starts_with("event") {
                 return None;
             }
+            listed.insert(entry.path());
             let meta = match metadata(&entry) {
                 Ok(meta) => meta,
                 Err(error) => {
                     metadata_failed(&entry.path(), error);
+                    if error.kind() == std::io::ErrorKind::NotFound {
+                        listed.remove(&entry.path());
+                        return None;
+                    }
                     // Preserve this node's last identity; continue scanning
                     // other nodes so one failed stat cannot stall hotplug.
-                    return KNOWN
-                        .with_borrow(|known| known.get(&entry.path()).copied())
+                    return LAST_SCAN.with_borrow(|previous| previous.get(&entry.path()).copied())
+                        .or_else(|| KNOWN.with_borrow(|known| known.get(&entry.path()).copied()))
                         .map(|identity| Ok((entry.path(), identity)));
                 }
             };
             Some(Ok((entry.path(), (meta.rdev(), meta.ino()))))
         })
-        .collect()
+        .collect::<std::io::Result<_>>()?;
+    LAST_SCAN.with_borrow_mut(|previous| *previous = scanned.clone());
+    METADATA_RETRY.with_borrow_mut(|pending| pending.retain(|path| !path.starts_with(root) || listed.contains(path)));
+    Ok(scanned)
 }
 
 fn scanned(result: std::io::Result<Nodes>) -> Option<Nodes> {
@@ -424,6 +473,56 @@ mod tests {
     }
 
     #[test]
+    fn failed_scan_stat_keeps_a_declined_nodes_spent_retry() {
+        let root = TempDir::new();
+        let path = root.0.join("event0");
+        std::fs::write(&path, []).unwrap();
+        KNOWN.with_borrow_mut(|known| known.clear());
+        let nodes = nodes_at(&root.0).unwrap();
+        let now = Instant::now();
+        let mut retry = Retry { probed: Some(nodes.clone()), ..Default::default() };
+        assert_eq!(reconcile_at(nodes.clone(), &mut retry, now, || panic!("grace")), None);
+        assert!(reconcile_at(nodes.clone(), &mut retry, now + Duration::from_secs(5), || true).is_some());
+        let failed = nodes_at_with(&root.0, |_| Err(std::io::Error::from_raw_os_error(libc::EACCES))).unwrap();
+        assert_eq!(failed, nodes);
+        assert_eq!(reconcile_at(failed, &mut retry, now + Duration::from_secs(6), || panic!("failed stat must not reset")), None);
+        assert!(retry.declined[&path].retry_at.is_none());
+        for seconds in [7, 12, 30] {
+            assert_eq!(reconcile_at(nodes_at(&root.0).unwrap(), &mut retry, now + Duration::from_secs(seconds), || panic!("spent retry must survive")), None);
+        }
+    }
+
+    #[test]
+    fn missing_pending_metadata_is_pruned_without_a_removed_event() {
+        for missing_root in [false, true] {
+            let root = TempDir::new();
+            let path = root.0.join("event0");
+            std::fs::write(&path, []).unwrap();
+            let nodes = nodes_at(&root.0).unwrap();
+            KNOWN.with_borrow_mut(|known| *known = nodes);
+            METADATA_RETRY.with_borrow_mut(|pending| { pending.insert(path.clone()); });
+            std::fs::remove_file(&path).unwrap();
+            if missing_root { std::fs::remove_dir(&root.0).unwrap(); }
+            let current = nodes_at(&root.0).unwrap();
+            assert!(METADATA_RETRY.with_borrow(|pending| !pending.contains(&path)));
+            let mut retry = Retry::default();
+            assert_eq!(reconcile(current.clone(), &mut retry, || panic!("grace")), None);
+            assert!(reconcile(current, &mut retry, || true).is_some());
+            assert!(KNOWN.with_borrow(|known| known.is_empty()));
+        }
+    }
+
+    #[test]
+    fn enoent_during_pending_retry_drops_the_pending_path() {
+        let root = TempDir::new();
+        let path = root.0.join("event0");
+        METADATA_RETRY.with_borrow_mut(|pending| { pending.insert(path.clone()); });
+        KNOWN.with_borrow_mut(|known| known.clear());
+        assert_eq!(reconcile(Nodes::new(), &mut Retry::default(), || panic!("no nodes")), None);
+        assert!(METADATA_RETRY.with_borrow(|pending| !pending.contains(&path)));
+    }
+
+    #[test]
     fn quiet_scan_slows_and_change_or_resume_restores_fast_interval() {
         let now = Instant::now();
         let mut cadence = Cadence {
@@ -534,17 +633,24 @@ mod tests {
 
     #[test]
     fn flapping_nodes_reconcile_at_the_once_only_warning_threshold() {
+        KNOWN.with_borrow_mut(|known| known.clear());
         let mut retry = Retry::default();
-        for inode in 0..20 {
-            let nodes = Nodes::from([(PathBuf::from("event0"), (1, inode))]);
-            assert_eq!(
-                needs_reconcile(&nodes, &Nodes::new(), &mut retry),
-                inode >= 8
-            );
+        let start = Instant::now();
+        let mut resets = Vec::new();
+        for tick in 0..800 {
+            let now = start + Duration::from_millis(tick * 250);
+            let nodes = Nodes::from([(PathBuf::from("event0"), (1, tick))]);
+            reconcile_at(nodes, &mut retry, now, || { resets.push(now); true });
+            if !resets.is_empty() {
+                assert!(retry.flap_warned, "successful resets must retain the log latch");
+            }
         }
-        assert_eq!(retry.grace_restarts, 19);
-        assert!(!needs_reconcile(&Nodes::new(), &Nodes::new(), &mut retry));
+        let intervals: Vec<_> = resets.windows(2).map(|pair| pair[1] - pair[0]).collect();
+        assert_eq!(intervals, [5, 10, 20, 40, 60, 60].map(Duration::from_secs));
+        assert_eq!(resets[0] - start, Duration::from_millis(u64::from(MAX_GRACE_RESTARTS) * 250));
+        assert!(reconcile_at(Nodes::new(), &mut retry, start + Duration::from_secs(201), || true).is_none());
         assert_eq!(retry.grace_restarts, 0);
+        assert!(retry.flap_warned);
     }
 
     #[test]
@@ -561,12 +667,13 @@ mod tests {
             observed_path(path.clone(), true);
             // The node exists in the scan, but the lifecycle stat keeps failing.
             let scanned = Nodes::from([(path.clone(), (1, 2))]);
-            let mut retry = Retry::default();
+            let mut retry = Retry { probed: Some(scanned.clone()), ..Default::default() };
             for _ in 0..12 {
                 assert_eq!(
-                    reconcile(scanned.clone(), &mut retry, || panic!("already admitted")),
+                    reconcile_with_metadata(scanned.clone(), &mut retry, Instant::now(), || panic!("already admitted"), |_| Err(std::io::Error::from_raw_os_error(libc::EACCES))),
                     None
                 );
+                assert!(retry.declined.is_empty(), "pending lifecycle stats are not declines");
             }
             std::fs::write(&path, []).unwrap();
             assert_eq!(
@@ -652,9 +759,10 @@ mod tests {
         let first = Nodes::from([(PathBuf::from("/dev/input/event0"), (1, 2))]);
         let replacement = Nodes::from([(PathBuf::from("/dev/input/event0"), (1, 5))]);
         let mut retry = Retry::default();
-        assert!(!needs_reconcile(&first, &Nodes::new(), &mut retry));
-        assert!(!needs_reconcile(&replacement, &Nodes::new(), &mut retry));
-        assert!(needs_reconcile(&replacement, &Nodes::new(), &mut retry));
+        let now = Instant::now();
+        assert!(!needs_reconcile(&first, Nodes::new().iter(), &mut retry, now));
+        assert!(!needs_reconcile(&replacement, Nodes::new().iter(), &mut retry, now));
+        assert!(needs_reconcile(&replacement, Nodes::new().iter(), &mut retry, now));
     }
     #[test]
     fn handled_hotplug_is_noop_and_missed_hotplug_reconciles_once() {

@@ -54,6 +54,7 @@ struct Activation {
     handle: LoopHandle<'static, Loop>,
     tx: Sender<Notice>,
     watcher_alive: bool,
+    watcher_warned: bool,
     retry: Backoff,
     timer: Option<RegistrationToken>,
     stop: std::sync::Arc<AtomicBool>,
@@ -111,9 +112,9 @@ fn notice(
     notice: Notice,
     failed: &AtomicBool,
     attempt: impl FnOnce(),
-) {
+) -> bool {
     if shared.borrow().handles.borrow().is_some() {
-        return;
+        return false;
     }
     match notice {
         // Readiness proves the watcher recovered, but must not reset seat or
@@ -121,13 +122,20 @@ fn notice(
         Notice::Ready => failed.store(false, Ordering::Relaxed),
         Notice::Active => attempt(),
         Notice::Stopped(error) => {
-            shared.borrow_mut().watcher_alive = false;
-            if !failed.swap(true, Ordering::Relaxed) {
+            failed.store(true, Ordering::Relaxed);
+            let warn = {
+                let mut activation = shared.borrow_mut();
+                activation.watcher_alive = false;
+                !std::mem::replace(&mut activation.watcher_warned, true)
+            };
+            if warn {
                 warn!("VT watcher stopped; offscreen desk will re-arm it: {error}");
             }
             arm(shared);
+            return warn;
         }
     }
+    false
 }
 
 fn arm(shared: &Rc<RefCell<Activation>>) {
@@ -224,6 +232,7 @@ pub fn install(
         handle: handle.clone(),
         tx,
         watcher_alive: false,
+        watcher_warned: false,
         retry: Backoff::default(),
         timer: None,
         stop: Default::default(),
@@ -277,27 +286,30 @@ mod tests {
                 handle: event_loop.handle(),
                 tx,
                 watcher_alive: true,
+                watcher_warned: false,
                 retry: Backoff::default(),
                 timer: None,
                 stop: Default::default(),
             }));
-            for expected in [250, 500, 1000, 2000, 4000, 5000] {
+            let mut warnings = 0;
+            for expected in [250, 500, 1000, 2000, 4000, 5000, 5000, 5000] {
                 notice(&activation, Notice::Ready, &failed, || panic!("not active"));
                 assert!(!failed.load(Ordering::Relaxed));
                 if seat_failure {
                     notice(&activation, Notice::Active, &failed, || arm(&activation));
                 }
-                notice(
+                warnings += usize::from(notice(
                     &activation,
                     Notice::Stopped("test failure".into()),
                     &failed,
                     || panic!("not active"),
-                );
+                ));
                 assert_eq!(activation.borrow().retry.0, Duration::from_millis(expected));
                 let mut activation = activation.borrow_mut();
                 let token = activation.timer.take().unwrap();
                 activation.handle.remove(token);
             }
+            assert_eq!(warnings, 1, "readiness clears status, not the warning latch");
             activation.borrow_mut().watcher_alive = true;
             arm(&activation);
             // Run the actual attach attempt with only the hardware transaction
