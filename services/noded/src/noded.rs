@@ -59,12 +59,24 @@ fn frame_refused(reason: &str, peer: &str, address: &str, posture: AdmissionMode
         posture = admission_mode_str(posture),
         "Inter-node frame policy"
     );
-    warn_drop(&FRAME_REFUSAL_LAST_MS, &FRAME_REFUSAL_COUNT, |count| {
-        format!(
-            "frame.refused reason={reason} peer={peer} peer_address={address} posture={} count={count}",
-            admission_mode_str(posture)
-        )
-    });
+    FRAME_REFUSAL_COUNT.fetch_add(1, Ordering::Relaxed);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let previous = FRAME_REFUSAL_LAST_MS.load(Ordering::Relaxed);
+    if now.saturating_sub(previous) >= WARN_COALESCE_MS
+        && FRAME_REFUSAL_LAST_MS
+            .compare_exchange(previous, now, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    {
+        let count = FRAME_REFUSAL_COUNT.swap(0, Ordering::Relaxed);
+        tracing::info!(
+            event = "frame.refused", reason, peer, peer_address = address,
+            posture = admission_mode_str(posture), count,
+            "Inter-node frame refusals (coalesced)"
+        );
+    }
 }
 
 #[cfg(test)]
