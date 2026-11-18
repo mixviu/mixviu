@@ -409,6 +409,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn recording_path_error_names_the_fault() {
+        for (path, fault) in [
+            ("relative.vfl", "relative path"),
+            ("/tmp/take.mp4", "path without .vfl extension"),
+        ] {
+            let args = json!({"request_id":"take", "path":path});
+            let error = parse_record("comp.record.start", &args).unwrap_err();
+            assert!(format!("{error:?}").contains(fault), "{error:?}");
+        }
+    }
+
+    #[test]
     fn recording_validation_and_read_only_classification() {
         let args = json!({"request_id":"take","target":{"windows":[{"id":1,"generation":2},{"id":3,"generation":4}]},"path":"/tmp/take.vfl","max_seconds":60});
         let RecordCommand::Start {
