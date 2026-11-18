@@ -21,22 +21,57 @@ impl rustls::client::ResolvesClientCert for LabNoCert {
 #[derive(Debug)]
 struct LabCopiedCert(Arc<rustls::sign::CertifiedKey>);
 impl rustls::client::ResolvesClientCert for LabCopiedCert {
-    fn resolve(&self, _: &[&[u8]], _: &[rustls::SignatureScheme]) -> Option<Arc<rustls::sign::CertifiedKey>> { Some(self.0.clone()) }
-    fn has_certs(&self) -> bool { true }
+    fn resolve(
+        &self,
+        _: &[&[u8]],
+        _: &[rustls::SignatureScheme],
+    ) -> Option<Arc<rustls::sign::CertifiedKey>> {
+        Some(self.0.clone())
+    }
+    fn has_certs(&self) -> bool {
+        true
+    }
 }
 
-async fn lab_replay_public_only(addr:std::net::SocketAddr, hostile:&mesh::tls::Material, copied_cert:rustls::pki_types::CertificateDer<'static>, copied_proof:Vec<u8>) {
+async fn lab_replay_public_only(
+    addr: std::net::SocketAddr,
+    hostile: &mesh::tls::Material,
+    copied_cert: rustls::pki_types::CertificateDer<'static>,
+    copied_proof: Vec<u8>,
+) {
     use base64::Engine;
     use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-    let mut config=(*hostile.client("alpha".into()).unwrap()).clone();
-    let signer=config.client_auth_cert_resolver.resolve(&[],&[rustls::SignatureScheme::ED25519]).unwrap().key.clone();
+    let mut config = (*hostile.client("alpha".into()).unwrap()).clone();
+    let signer = config
+        .client_auth_cert_resolver
+        .resolve(&[], &[rustls::SignatureScheme::ED25519])
+        .unwrap()
+        .key
+        .clone();
     // Deliberately bypass the safe configuration's key-match check. The peer
     // sees a real member SPKI but a CertificateVerify made with an alien key.
-    config.client_auth_cert_resolver=Arc::new(LabCopiedCert(Arc::new(rustls::sign::CertifiedKey::new(vec![copied_cert],signer))));
-    let mut request=format!("wss://{addr}/ws").into_client_request().unwrap();
-    request.headers_mut().insert("x-lab-copied-d2-proof",base64::engine::general_purpose::STANDARD.encode(copied_proof).parse().unwrap());
-    let result=tokio_tungstenite::connect_async_tls_with_config(request,None,true,Some(tokio_tungstenite::Connector::Rustls(Arc::new(config)))).await;
-    assert!(result.is_err(),"copied public key and valid old proof cannot forge TLS possession");
+    config.client_auth_cert_resolver = Arc::new(LabCopiedCert(Arc::new(
+        rustls::sign::CertifiedKey::new(vec![copied_cert], signer),
+    )));
+    let mut request = format!("wss://{addr}/ws").into_client_request().unwrap();
+    request.headers_mut().insert(
+        "x-lab-copied-d2-proof",
+        base64::engine::general_purpose::STANDARD
+            .encode(copied_proof)
+            .parse()
+            .unwrap(),
+    );
+    let result = tokio_tungstenite::connect_async_tls_with_config(
+        request,
+        None,
+        true,
+        Some(tokio_tungstenite::Connector::Rustls(Arc::new(config))),
+    )
+    .await;
+    assert!(
+        result.is_err(),
+        "copied public key and valid old proof cannot forge TLS possession"
+    );
 }
 
 fn lab_inventory(epoch: u64, tombstone: bool) -> crate::authority::Posture {
@@ -352,9 +387,21 @@ async fn mtls_lab_security() {
     // The fixture records a genuine D2 signature. The hostile helper receives
     // only that public proof and the public certificate, never the member seed.
     use ed25519_dalek::Signer;
-    let transcript=mesh_trust::admission::AdmissionTranscript {mesh_fqdn:"example.internal".into(),claimed_source_node:"beta".into(),verifying_broker_node:"alpha".into(),inventory_epoch:1,session_id:vec![1;16],server_nonce:vec![2;32],client_ephemeral:vec![0;32],channel_binding_hash:vec![0;32]};
-    let recorded=ed25519_dalek::SigningKey::from_bytes(&[22;32]).sign(&transcript.canonical_bytes()).to_bytes().to_vec();
-    lab_replay_public_only(aa,&hostile,mb.cert.clone(),recorded).await;
+    let transcript = mesh_trust::admission::AdmissionTranscript {
+        mesh_fqdn: "example.internal".into(),
+        claimed_source_node: "beta".into(),
+        verifying_broker_node: "alpha".into(),
+        inventory_epoch: 1,
+        session_id: vec![1; 16],
+        server_nonce: vec![2; 32],
+        client_ephemeral: vec![0; 32],
+        channel_binding_hash: vec![0; 32],
+    };
+    let recorded = ed25519_dalek::SigningKey::from_bytes(&[22; 32])
+        .sign(&transcript.canonical_bytes())
+        .to_bytes()
+        .to_vec();
+    lab_replay_public_only(aa, &hostile, mb.cert.clone(), recorded).await;
     // The normal builder also refuses the mismatched pair before connecting.
     let mut copied = hostile.clone();
     copied.cert = mb.cert.clone();
