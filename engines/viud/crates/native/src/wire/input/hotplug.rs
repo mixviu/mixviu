@@ -35,7 +35,7 @@ fn metadata_failed(path: &std::path::Path, error: std::io::Error) {
     METADATA_WARNING.with(|last| {
         let mut time = last.get();
         if metadata_warning_due(&mut time, std::time::Instant::now()) {
-            warn!("input DeviceAdded metadata failed for {}: {error} (warnings limited to one per 30s)", path.display());
+            warn!("input node metadata failed for {}: {error} (warnings limited to one per 30s)", path.display());
         }
         last.set(time);
     });
@@ -139,7 +139,7 @@ fn reconcile_at(
     now: Instant,
     reset: impl FnOnce() -> bool,
 ) -> Option<Duration> {
-    // Retry a failed DeviceAdded stat once, before starting disagreement grace.
+    // Retry failed DeviceAdded stats before starting disagreement grace.
     let pending = METADATA_RETRY.with_borrow_mut(std::mem::take);
     for path in pending {
         match std::fs::metadata(&path) {
@@ -525,7 +525,7 @@ mod tests {
     }
 
     #[test]
-    fn flapping_nodes_reach_the_once_only_warning_threshold() {
+    fn flapping_nodes_reconcile_at_the_once_only_warning_threshold() {
         let mut retry = Retry::default();
         for inode in 0..20 {
             let nodes = Nodes::from([(PathBuf::from("event0"), (1, inode))]);
@@ -537,6 +537,24 @@ mod tests {
         assert_eq!(retry.grace_restarts, 19);
         assert!(!needs_reconcile(&Nodes::new(), &Nodes::new(), &mut retry));
         assert_eq!(retry.grace_restarts, 0);
+    }
+
+    #[test]
+    fn repeated_device_added_stat_failure_does_not_reset_admitted_input() {
+        let root = TempDir::new();
+        let path = root.0.join("event0");
+        KNOWN.with_borrow_mut(|known| known.clear());
+        observed_path(path.clone(), true);
+        // The node exists in the scan, but the lifecycle stat keeps failing.
+        let scanned = Nodes::from([(path.clone(), (1, 2))]);
+        let mut retry = Retry::default();
+        for _ in 0..12 {
+            assert_eq!(reconcile(scanned.clone(), &mut retry, || panic!("already admitted")), None);
+        }
+        std::fs::write(&path, []).unwrap();
+        assert_eq!(reconcile(nodes_at(&root.0).unwrap(), &mut retry, || panic!("stat recovered")), None);
+        assert!(METADATA_RETRY.with_borrow(|pending| pending.is_empty()));
+        KNOWN.with_borrow_mut(|known| known.clear());
     }
 
     #[test]
