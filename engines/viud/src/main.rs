@@ -409,6 +409,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // The marker is what keeps that callback from draining on wakes with no
                 // protocol traffic behind them — see `Dispatch::protocol_pending`.
                 state.state.protocol_pending = true;
+                #[cfg(feature = "backend-headless")]
+                if std::env::var_os("MIX_TEST_PRE_DRAIN_FRAME").is_some() {
+                    headless::wire::fixture_pre_drain_frame(state);
+                }
                 Ok(PostAction::Continue)
             },
         )

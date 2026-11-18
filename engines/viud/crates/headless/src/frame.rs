@@ -264,6 +264,11 @@ fn arm_readbacks(state: &mut Loop, context: &Rc<RefCell<Context>>) {
     }
 }
 
+pub(crate) fn fixture_draw(state: &mut Loop, ctx: &mut Context) {
+    eprintln!("PRE_DRAIN_FRAME pending={} lifecycle={}", state.state.protocol_pending, state.inner.window_lifecycle_mut().incoming.len());
+    draw(state, ctx);
+}
+
 fn draw(state: &mut Loop, ctx: &mut Context) {
     trace!("HEADLESS_DRAW protocol_pending={} lifecycle={}", state.state.protocol_pending, state.inner.window_lifecycle_mut().incoming.len());
     if route(
