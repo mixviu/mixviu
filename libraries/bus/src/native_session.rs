@@ -25,6 +25,8 @@ use std::net::IpAddr;
 /// Kernel/mesh context, never deserialised from caller-supplied metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransportIdentity {
+    /// Mutual TLS key matched against the accepted signed inventory.
+    MeshTls { node: String, key: [u8; 32] },
     /// SO_PEERCRED snapshot. PID is diagnostic only, including after setuid.
     LocalUnix {
         uid: u32,

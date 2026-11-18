@@ -21,6 +21,7 @@ mod logger;
 mod mon_props;
 mod monitor;
 mod native_ingress;
+mod tls_ingress;
 mod noded;
 mod observe;
 mod props;

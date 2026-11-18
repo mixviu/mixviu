@@ -367,6 +367,7 @@ struct AppState {
     broker_epoch: HexBytes<16>,
     principal: Option<BrokerPrincipal>,
     session_admission: SessionAdmission,
+    tls_peer: Option<(String, [u8; 32])>,
     registry: Registry,
     pending_responses: PendingResponses,
     tap_subscribers: TapSubscribers,
@@ -442,6 +443,7 @@ struct GatedSession {
     /// The cryptographically-proven member name established at admission — the
     /// key re-checked against the new inventory snapshot on reload.
     claimed_source_node: String,
+    tls_key: Option<[u8; 32]>,
     /// The peer's source address, for the §17 `admission.refused{reload:true}`
     /// correlator on teardown (the watcher has no per-session socket).
     source_ip: String,
@@ -657,14 +659,27 @@ async fn serve(
     );
 
     let (mesh_incoming_tx, mut mesh_incoming_rx) = mpsc::unbounded_channel::<MeshInbound>();
-    let mesh = Arc::new(MeshPeers::new(mesh_config, mesh_incoming_tx));
+    let authority = Arc::new(ArcSwap::from_pointee(initial_authority));
+    let tls = if std::env::var("MIX_BUS_ENFORCE_TLS").as_deref() == Ok("1") {
+        anyhow::ensure!(admit_verified, "TLS lab requires a verified signed inventory");
+        let seed = mesh_config.d2_seed.ok_or_else(|| anyhow::anyhow!("TLS lab requires d2.seed"))?;
+        let authority = authority.clone();
+        let lookup: mesh::tls::Lookup = Arc::new(move |key| {
+            let a = authority.load();
+            let crate::authority::Posture::Verified(a) = &a.posture else { return None; };
+            tls_member(a, key)
+        });
+        let material = mesh::tls::Material::new(seed, lookup)?;
+        let own_key = mesh::tls::public_key(&material.cert).ok_or_else(|| anyhow::anyhow!("invalid TLS key"))?;
+        anyhow::ensure!((material.lookup)(&own_key).as_deref() == Some(&node), "own TLS key is not active");
+        Some(material)
+    } else { None };
+    let mesh = Arc::new(MeshPeers::new(mesh_config, mesh_incoming_tx).with_tls(tls.clone()));
     mesh.reconcile_endpoints(
         initial_authority.routes.desired_endpoints(),
         initial_authority.revision(),
     )
     .await;
-    let authority = Arc::new(ArcSwap::from_pointee(initial_authority));
-
     // SPEC 13 §9a (slice 2-c-1a) — emit the D2 admission posture so the
     // configured mode, the fail-closed-bind self-check, the trust root, and the
     // prover-incapable flag (no d2 seed yet — ceremony Part B) are observable
@@ -759,6 +774,7 @@ async fn serve(
                 // dispatch would try to deliver to a local service named
                 // after the node, which is never registered.
                 Some(BusTarget::Local(addr)) => {
+                    if !addr.is_for_node(mesh_for_incoming.node_name()) { continue; }
                     addr.service.clone().unwrap_or_else(|| "noded".to_string())
                 }
                 None => {
@@ -920,6 +936,7 @@ async fn serve(
 
     let state = AppState {
         session_admission: SessionAdmission::default(),
+        tls_peer: None,
         sessions: Arc::new(tokio::sync::Mutex::new(
             session::Sessions::with_grant_limit(pending_grants_per_parent),
         )),
@@ -1020,15 +1037,20 @@ async fn serve(
     // (2-c-2b) uses — never the proof, only the local-vs-network boundary.
     // Nagle off on every accepted socket: a reply or delivery written in two
     // parts otherwise waits on the peer's delayed ACK (40 ms on Linux).
-    let listener = axum::serve::ListenerExt::tap_io(listener, |tcp| {
+    let tls_state = state.clone();
+    let raw_listener = listener;
+    let tcp_server = async move {
+    if let Some(material) = tls {
+        let tls_app = Router::new().route("/ws", axum::routing::get(tls_ws_handler)).with_state(tls_state);
+        return axum::serve(crate::tls_ingress::TlsListener::new(raw_listener, material)?, tls_app.into_make_service_with_connect_info::<crate::tls_ingress::TlsPeer>()).await;
+    }
+    let listener = axum::serve::ListenerExt::tap_io(raw_listener, |tcp| {
         if let Err(error) = tcp.set_nodelay(true) {
             tracing::debug!(%error, "TCP_NODELAY not set on an accepted socket");
         }
     });
-    let tcp_server = axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-    );
+    axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await
+    };
     if let Some((listener, _socket_guard)) = unix_listener {
         let unix_app = Router::new()
             .route("/ws", axum::routing::get(unix_ws_handler))
@@ -1812,7 +1834,7 @@ async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture
             .expect("delivery fence poisoned");
         state.authority.store(next.clone());
     }
-    if state.admission_mode == AdmissionMode::Enforce
+    if (state.admission_mode == AdmissionMode::Enforce || std::env::var("MIX_BUS_ENFORCE_TLS").as_deref() == Ok("1"))
         && let crate::authority::Posture::Verified(accepted) = &next.posture
     {
         reload_revocation_teardown(state, accepted).await;
@@ -1924,7 +1946,7 @@ async fn reload_revocation_teardown(state: &AppState, a: &crate::authority::Acce
         let live = state.live_sessions.read().await;
         live.iter()
             .filter_map(|(sid, s)| {
-                reload_revoke_detail(a.members_full.get(&s.claimed_source_node), a.epoch)
+                s.tls_key.map_or_else(|| reload_revoke_detail(a.members_full.get(&s.claimed_source_node), a.epoch), |key| (tls_member(a, &key).as_ref() != Some(&s.claimed_source_node)).then_some("tls-key-revoked"))
                     .map(|detail| (sid.clone(), s.clone(), detail))
             })
             .collect()
@@ -1981,6 +2003,35 @@ async fn ws_handler(
         .on_upgrade(move |socket| {
             handle_socket(socket, state, TransportIdentity::LegacyTcp { source_ip })
         })
+}
+
+async fn tls_ws_handler(
+    ws: WebSocketUpgrade,
+    ConnectInfo(peer): ConnectInfo<crate::tls_ingress::TlsPeer>,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    ws.max_message_size(WS_MAX_MESSAGE_BYTES)
+        .max_frame_size(bus::WS_MAX_FRAME_BYTES)
+        .on_upgrade(move |socket| handle_socket(socket, state, peer.0))
+}
+
+fn tls_member(a: &crate::authority::Accepted, key: &[u8; 32]) -> Option<String> {
+    let mut found = None;
+    for (name, m) in &a.members_full {
+        if reload_revoke_detail(Some(m), a.epoch).is_none()
+            && mesh_trust::admission::select_d2_pubkeys(m, a.epoch).iter().any(|k| k.as_slice() == key)
+        {
+            // Ambiguous keys cannot establish a node name.
+            if found.is_some() { return None; }
+            found = Some(name.clone());
+        }
+    }
+    found
+}
+
+fn session_origin(state: &AppState, source_ip: std::net::IpAddr) -> BrokerOrigin {
+    if state.tls_peer.is_some() { BrokerOrigin::Mesh }
+    else { broker_origin_for_delivery(source_ip, &state.bind) }
 }
 
 async fn unix_ws_handler(
@@ -2083,8 +2134,9 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         TransportIdentity::LegacyTcp { source_ip } | TransportIdentity::Mesh { source_ip, .. } => {
             *source_ip
         }
-        TransportIdentity::LocalUnix { .. } => std::net::Ipv4Addr::LOCALHOST.into(),
+        TransportIdentity::LocalUnix { .. } | TransportIdentity::MeshTls { .. } => std::net::Ipv4Addr::LOCALHOST.into(),
     };
+    if let TransportIdentity::MeshTls { node, key } = &transport { state.tls_peer = Some((node.clone(), *key)); }
     let (mut ws_sink, mut ws_stream) = socket.split();
     // The source address as a string for §17 event fields (2-c-2a) — the
     // trustworthy correlator on a would-refuse and the same-node classifier
@@ -2167,7 +2219,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     // rides the per-session `tx`, so it serialises ahead of any later reply.
     // `challenge_id` is held only to reap the entry on socket close.
     let mut challenge_id: Option<String> = None;
-    if state.admission_mode != AdmissionMode::Off && state.principal.is_none() {
+    if state.tls_peer.is_none() && state.admission_mode != AdmissionMode::Off && state.principal.is_none() {
         // Snapshot the epoch + mesh, then DROP the authority guard before the
         // awaited `issue()` (don't pin the Arc across the await).
         let inputs = match &state.authority.load().posture {
@@ -2191,6 +2243,9 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         }
     }
 
+    if let Some((node, key)) = &state.tls_peer {
+        state.live_sessions.write().await.insert(anon_id.clone(), GatedSession { claimed_source_node: node.clone(), tls_key: Some(*key), source_ip: "tls".into(), tx: tx.clone(), close: close_signal.clone() });
+    }
     let connection_observe = state.observe.clone();
     loop {
         // SPEC 13 §9a (2-c-2c) — read the next frame OR honour a reload-teardown
@@ -2239,6 +2294,15 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             }
         };
 
+        if let Some((peer, key)) = &state.tls_peer {
+            let authority = state.authority.load();
+            let valid = matches!(&authority.posture, crate::authority::Posture::Verified(a) if tls_member(a, key).as_ref() == Some(peer));
+            if !valid { break; }
+            let registering = bus_msg.command_name() == Some("noded.register");
+            if registering {
+                if bus_msg.from_addr() != Some(format!("bridge-{peer}").as_str()) { break; }
+            } else if service_name.is_none() { break; }
+        }
         strip_principal(&mut bus_msg);
         let response_class = if bus_msg.message_type() == Some("response") {
             if let Some(id) = bus_msg.get("id") {
@@ -2439,7 +2503,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                         &pending.caller_id,
                         service_name.as_deref(),
                         pending.caller_service.as_deref(),
-                        broker_origin_for_delivery(source_ip, &state.bind),
+                        session_origin(&state, source_ip),
                         principal.as_ref().filter(|_| pending.caller_verified),
                     );
                     if observe.is_active() {
@@ -2637,7 +2701,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 // citizens are ungated; an inter-node bridge must have proved
                 // the member it now registers as.
                 let mut refused = false;
-                if state.admission_mode == AdmissionMode::Enforce
+                if state.tls_peer.is_none() && state.admission_mode == AdmissionMode::Enforce
                     && bus_msg.command_name() == Some("noded.register")
                 {
                     let from = bus_msg.from_addr().unwrap_or("").to_string();
@@ -2668,6 +2732,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                             state.live_sessions.write().await.insert(
                                 anon_id.clone(),
                                 GatedSession {
+                                    tls_key: None,
                                     claimed_source_node: node,
                                     source_ip: source_ip_str.clone(),
                                     tx: tx.clone(),
@@ -2780,7 +2845,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     };
                     stamp_broker_origin(
                         &mut bus_msg,
-                        broker_origin_for_delivery(source_ip, &state.bind),
+                        session_origin(&state, source_ip),
                     );
                     bus_msg.set("broker_connection", &broker_connection);
                     if let Some(peer) = admitted_peer {
@@ -2837,7 +2902,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     None
                 };
                 canonicalize_routed_from_in_place(&mut bus_msg, service_name.as_deref());
-                let origin = broker_origin_for_delivery(source_ip, &state.bind);
+                let origin = session_origin(&state, source_ip);
                 stamp_broker_origin(&mut bus_msg, origin);
                 bus_msg.set("broker_connection", &broker_connection);
                 let canonical_text = bus_msg.to_wire();
@@ -2887,6 +2952,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 }
             }
             Route::RemoteMesh { target } => {
+                if state.tls_peer.is_some() { break; }
                 canonicalize_routed_from_in_place(&mut bus_msg, service_name.as_deref());
                 bus_msg.set("broker_connection", &broker_connection);
                 if state.observe.traffic_class().protected()
@@ -2896,7 +2962,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 }
                 // Only a local registered source acquires a direct-hop service
                 // assertion. A relay cannot borrow this node's clipboard grant.
-                if is_same_node_origin(source_ip, &state.bind)
+                if state.tls_peer.is_none() && is_same_node_origin(source_ip, &state.bind)
                     && let Some(service) = service_name.as_deref()
                     && valid_service_name(service)
                     && state
@@ -3359,6 +3425,10 @@ fn broker_origin_for_delivery(source_ip: std::net::IpAddr, bind: &str) -> Broker
 /// Caller holds delivery_fence through enqueue and the registry read lock
 /// proving that the registered bridge still belongs to this connection.
 fn admitted_delivery_peer(state: &AppState, source_ip: std::net::IpAddr) -> Option<String> {
+    if let Some((node, key)) = &state.tls_peer {
+        let a = state.authority.load();
+        return match &a.posture { crate::authority::Posture::Verified(a) => tls_member(a, key).filter(|n| n == node), _ => None };
+    }
     let authority = state.authority.load();
     let crate::authority::Posture::Verified(accepted) = &authority.posture else {
         return None;
@@ -4542,7 +4612,7 @@ async fn handle_noded_command(
                     body_ref,
                     &peer_id,
                     tx.clone(),
-                    broker_origin_for_delivery(source_ip, &state.bind),
+                    session_origin(&state, source_ip),
                     retain,
                     state.principal.as_ref(),
                     msg.get("broker_connection"),
@@ -5829,6 +5899,7 @@ mod tests {
         let started = Instant::now();
         AppState {
             session_admission: SessionAdmission::default(),
+        tls_peer: None,
             sessions: Default::default(),
             protected_responses: Default::default(),
             broker_epoch: super::HexBytes([1; 16]),

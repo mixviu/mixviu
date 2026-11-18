@@ -314,6 +314,7 @@ struct TransportState {
 /// Used by noded to bridge messages to remote nodes.
 pub struct MeshPeers {
     config: MeshConfig,
+    tls: Option<crate::tls::Material>,
     /// Desired endpoints, active connections and shared attempts have one
     /// linearisation point. Network I/O never runs while this lock is held.
     state: Arc<RwLock<TransportState>>,
@@ -335,6 +336,7 @@ impl MeshPeers {
             .map(|peer| (peer.name.clone(), peer.noded_addr()))
             .collect();
         Self {
+            tls: None,
             config,
             state: Arc::new(RwLock::new(TransportState {
                 desired,
@@ -346,6 +348,8 @@ impl MeshPeers {
             incoming_tx,
         }
     }
+
+    pub fn with_tls(mut self, tls: Option<crate::tls::Material>) -> Self { self.tls = tls; self }
 
     /// Get this node's name.
     pub fn node_name(&self) -> &str {
@@ -692,6 +696,7 @@ impl MeshPeers {
     ) {
         let node_name = self.config.node_name.clone();
         let d2_seed = self.config.d2_seed;
+        let tls = self.tls.clone();
         let state = self.state.clone();
         let pending = self.pending.clone();
         let incoming_tx = self.incoming_tx.clone();
@@ -702,6 +707,7 @@ impl MeshPeers {
                 cancel,
                 node_name,
                 d2_seed,
+                tls,
                 state.clone(),
                 pending,
                 incoming_tx,
@@ -758,19 +764,21 @@ async fn connect_and_publish(
     mut attempt_cancel: watch::Receiver<bool>,
     node_name: String,
     d2_seed: Option<[u8; 32]>,
+    tls: Option<crate::tls::Material>,
     state: Arc<RwLock<TransportState>>,
     pending: Arc<Mutex<HashMap<String, PendingCall>>>,
     incoming_tx: mpsc::UnboundedSender<MeshInbound>,
 ) -> Result<Arc<RemoteBroker>> {
     let target = peer.noded_addr();
-    let url = peer.noded_url();
+    let url = if tls.is_some() { format!("wss://{}/ws", peer.noded_addr()) } else { peer.noded_url() };
+    let connector = tls.as_ref().map(|m| m.client(peer.name.clone()).map(tokio_tungstenite::Connector::Rustls)).transpose()?;
     tracing::info!(peer = %peer.name, url = %url, "Connecting to remote broker");
 
     // Nagle off on this end too: TCP_NODELAY is per socket, so the remote
     // broker's accept hook cannot cover the side that dialled.
     let connect = tokio::time::timeout(
         CONNECT_TIMEOUT,
-        tokio_tungstenite::connect_async_with_config(&url, None, true),
+        tokio_tungstenite::connect_async_tls_with_config(&url, None, true, connector),
     );
     let (ws_stream, _) = tokio::select! {
         biased;
@@ -805,14 +813,14 @@ async fn connect_and_publish(
     // to the normal inbound path so it is not lost. A late challenge (after
     // the timeout) is handled harmlessly by the reader (delivered, ignored)
     // — the session just goes unproven (the broker logs `no-proof`).
-    let first_frame = tokio::select! {
+    let first_frame = if tls.is_some() { Err(tokio::time::timeout(std::time::Duration::ZERO, std::future::pending::<()>()).await.unwrap_err()) } else { tokio::select! {
         biased;
         changed = attempt_cancel.changed() => {
             let _ = changed;
             anyhow::bail!("Route to {} was revoked during admission", peer.name);
         }
         frame = tokio::time::timeout(ADMISSION_CHALLENGE_TIMEOUT, ws_stream_rx.next()) => frame,
-    };
+    } };
     match first_frame {
         // Timed out — a silent (pre-2c / `off`) broker. The connection is
         // alive; fall through and register-first (back-compat).
