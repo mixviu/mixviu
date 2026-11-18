@@ -883,6 +883,12 @@ async fn serve(
         admission_mode,
         frame_policy,
     } = config;
+    tracing::info!(
+        event = "frame.policy",
+        posture = admission_mode_str(frame_policy),
+        admission = admission_mode_str(admission_mode),
+        "Inter-node frame policy (startup configuration)"
+    );
     anyhow::ensure!(
         pending_grants_per_parent <= 32,
         "noded.pending_grants_per_parent must be at most 32"
@@ -2542,6 +2548,13 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         if bus_msg.command_name() == Some("noded.admit.response") {
             // A late proof is never allowed to reset established admission.
             if !admission_bootstrap {
+                canonicalize_connection_from(&mut bus_msg, service_name.as_deref());
+                state.observe.observe(Observation::canonical(
+                    ObserveDirection::Local,
+                    ObserveOutcome::Rejected,
+                    &bus_msg,
+                    bus_msg.get("id"),
+                ));
                 continue;
             }
             let outcome = process_admit_response(
