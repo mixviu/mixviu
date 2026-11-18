@@ -221,6 +221,7 @@ fn reconcile_with_metadata(
         retry.declined.retain(|path, declined| {
             current.get(path) == Some(&declined.identity)
                 && known.get(path) != Some(&declined.identity)
+                && !METADATA_RETRY.with_borrow(|pending| pending.contains(path))
         })
     });
     let mut retry_declined = false;
@@ -745,6 +746,13 @@ mod tests {
                 probed: Some(scanned.clone()),
                 ..Default::default()
             };
+            if remembered {
+                // A later DeviceAdded supersedes a prior decline even while
+                // its metadata is pending; cancel that decline's due retry.
+                retry.declined.insert(path.clone(), Declined {
+                    identity: (1, 2), retry_at: Some(Instant::now()),
+                });
+            }
             for _ in 0..12 {
                 assert_eq!(
                     reconcile_with_metadata(
