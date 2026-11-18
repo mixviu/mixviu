@@ -5,7 +5,7 @@ use graphics::capture::encode::VideoEncoder;
 use serde_json::{Value, json};
 use std::{
     fs::File,
-    io::{Read, Write},
+    io::Read,
     os::unix::fs::OpenOptionsExt,
     sync::Arc,
     sync::mpsc::{Receiver, channel},
@@ -158,14 +158,14 @@ impl TakeFiles {
             } else {
                 std::fs::remove_file(path)
             };
-            if let Err(error) = result {
-                if error.kind() != std::io::ErrorKind::NotFound {
+            if let Err(error) = result
+                && error.kind() != std::io::ErrorKind::NotFound {
                     return Err(format!("remove private take: {error}"));
-                }
             }
         }
         Ok(())
     }
+    #[cfg(test)]
     fn publish(&self) -> Result<(), String> {
         self.publish_tracked(&mut false)
     }
@@ -610,6 +610,7 @@ impl Drop for Recording {
 #[cfg(test)]
 mod file_tests {
     use super::*;
+    use std::io::Write;
     use std::os::unix::fs::{PermissionsExt, symlink};
     #[test]
     fn disconnected_finaliser_names_recovery_paths() {
@@ -720,7 +721,7 @@ mod file_tests {
             wait.recv().unwrap();
             assert!(outcome.timeout());
             release.send(()).unwrap();
-            worker.join().unwrap();
+            let _ = worker.join().unwrap();
             assert_eq!(
                 outcome.state.load(std::sync::atomic::Ordering::Acquire),
                 TIMED_OUT
@@ -728,7 +729,7 @@ mod file_tests {
             assert!(!std::path::Path::new(&files.path).exists());
             assert!(std::path::Path::new(&files.video).exists());
             // A late discard still removes its private files after timeout.
-            finalise_files(
+            let _ = finalise_files(
                 &files,
                 &FinaliseOutcome {
                     state: std::sync::atomic::AtomicU8::new(TIMED_OUT),
