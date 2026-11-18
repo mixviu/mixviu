@@ -35,6 +35,8 @@ backend-winit = ["dep:nested"]
 backend-headless = ["dep:headless"]
 # Test adapter only: an inherited wlcs control socket, on the headless backend.
 wlcs = ["backend-headless", "policy-host/wlcs"]
+# Integration fixture only; normal release builds leave source-order hooks out.
+test-support = ["backend-headless", "headless/test-support"]
 # Hardware video capture through libav (VA-API, NVENC). Off by default, so the
 # default binary links no ffmpeg; screenshots work either way.
 capture-ffmpeg = ["graphics/capture-ffmpeg"]

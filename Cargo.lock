@@ -3783,6 +3783,7 @@ dependencies = [
  "decor",
  "frames",
  "graphics",
+ "headless",
  "ledger",
  "libc",
  "lz4_flex",

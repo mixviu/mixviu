@@ -104,11 +104,21 @@ impl Probe {
 }
 
 fn window(bus: &Bus, service: &str, app: &str) -> Value {
-    let reply = bus.call(service, "comp.windows.list", json!({}));
-    let rows = reply["windows"].as_array().unwrap();
-    assert_eq!(rows.len(), 1, "{service}: {reply}");
-    assert_eq!(rows[0]["app_id"], app, "{reply}");
-    rows[0].clone()
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let reply = bus.call(service, "comp.windows.list", json!({}));
+        let rows = reply["windows"].as_array().unwrap();
+        if let Some(row) = rows.first() {
+            assert_eq!(rows.len(), 1, "{service}: {reply}");
+            assert_eq!(row["app_id"], app, "{service}: {reply}");
+            return row.clone();
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out after 10 s waiting for mapped window app_id={app} on {service}: {reply}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 fn target(row: &Value) -> Value {

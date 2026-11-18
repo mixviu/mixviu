@@ -398,7 +398,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // source, and two sources that each drain make the order a frame's
                 // events are applied in a function of which fd calloop polled first.
                 //
-                // Nothing is lost by deferring it. calloop's `run` is
+                // A frame source must drain pending work before consuming its redraw
+                // epoch (headless::frame::draw), including timers already due in
+                // this batch. Otherwise the render can precede world-side placement.
+                // calloop's `run` is
                 // `while !stop { dispatch(); cb(); }`, so the drain follows every
                 // dispatch in the SAME iteration — this callback cannot run without one
                 // behind it. `dispatch_clients` appears nowhere else in the tree, and
@@ -409,6 +412,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // The marker is what keeps that callback from draining on wakes with no
                 // protocol traffic behind them — see `Dispatch::protocol_pending`.
                 state.state.protocol_pending = true;
+                #[cfg(feature = "backend-headless")]
+                headless::wire::test_pre_drain_frame(state);
                 Ok(PostAction::Continue)
             },
         )
@@ -646,10 +651,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // which is the whole reason the outboxes are shared between the two rather than
         // split per shell (`find::Shell`).
         //
-        // Safe with respect to rendering, which also runs from sources: a redraw is
-        // requested by writing a calloop ping from inside a handler, and a ping written
-        // during this iteration is only readable on the next poll — so a render never
-        // observes state this drain has not yet applied.
+        // A newly written redraw ping waits for the next poll, but a paced
+        // headless frame timer may ALREADY be ready in this batch. Its draw
+        // drains pending protocol work before consuming the redraw epoch.
         //
         // Gated on the marker, so a wake with nothing behind it — a vblank, a timer —
         // does not pay for the drain's tail. `drain_protocol` consumes it. The rule is
