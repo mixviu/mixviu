@@ -1364,8 +1364,8 @@ impl NodedClient {
         Ok(())
     }
 
-    async fn reader_loop<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
-        mut stream: futures_util::stream::SplitStream<WebSocketStream<S>>,
+    async fn reader_loop<S: futures_util::Stream<Item = std::result::Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin>(
+        mut stream: S,
         pending: Arc<StdMutex<PendingMap>>,
         incoming_tx: NativeIncomingSender,
         connected: Arc<AtomicBool>,

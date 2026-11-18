@@ -17,6 +17,49 @@ pub struct KeyAuthority {
     members: HashMap<String, Vec<[u8; 32]>>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::Engine as _;
+    use crate::admission::sign_admission_transcript;
+
+    fn member(keys: &[[u8; 32]]) -> Value {
+        serde_json::json!({"status":"active", "bus":true, "credentials": keys.iter().map(|key|
+            serde_json::json!({"kind":"d2", "pubkey":base64::engine::general_purpose::STANDARD.encode(key), "from_epoch":1, "until_epoch":null})
+        ).collect::<Vec<_>>()})
+    }
+
+    #[test]
+    fn rotation_keeps_exact_overlap_and_refuses_session_reuse_after_old_key_closes() {
+        let old = ed25519_dalek::SigningKey::from_bytes(&[7;32]);
+        let new = ed25519_dalek::SigningKey::from_bytes(&[8;32]);
+        let old_key = old.verifying_key().to_bytes();
+        let new_key = new.verifying_key().to_bytes();
+        let transcript = AdmissionTranscript {
+            mesh_fqdn:"example.test".into(), claimed_source_node:"alpha".into(), verifying_broker_node:"beta".into(),
+            inventory_epoch:1, session_id:vec![1;16], server_nonce:vec![2;32], client_ephemeral:vec![0;32], channel_binding_hash:vec![0;32],
+        };
+        let proof = sign_admission_transcript(&old.to_bytes(), &transcript).unwrap();
+        let overlap = KeyAuthority::new(&BTreeMap::from([("alpha".into(),member(&[old_key,new_key]))]),1,0);
+        let identity = overlap.prove(&transcript,&proof).unwrap();
+        assert!(matches!(identity, PeerIdentity::MeshAdmitted { key, .. } if key == old_key));
+        let rotated = KeyAuthority::new(&BTreeMap::from([("alpha".into(),member(&[new_key]))]),2,0);
+        assert!(!rotated.contains("alpha",&old_key));
+        assert!(rotated.contains("alpha",&new_key));
+        assert!(rotated.prove(&transcript,&proof).is_none());
+        assert!(overlap.contains("alpha",&old_key)); // immutable in-flight snapshot
+    }
+
+    #[test]
+    fn shared_key_identifies_neither_member_and_bus_false_cannot_admit() {
+        let key = ed25519_dalek::SigningKey::from_bytes(&[7;32]).verifying_key().to_bytes();
+        let authority = KeyAuthority::new(&BTreeMap::from([("alpha".into(),member(&[key])),("beta".into(),member(&[key])),("gamma".into(),member(&[key]))]),1,0);
+        for node in ["alpha","beta","gamma"] { assert!(!authority.contains(node,&key)); }
+        let mut transport = member(&[key]); transport["bus"] = Value::Bool(false);
+        assert!(!KeyAuthority::new(&BTreeMap::from([("alpha".into(),transport)]),1,0).contains("alpha",&key));
+    }
+}
+
 impl KeyAuthority {
     pub fn epoch(&self) -> u64 { self.epoch }
 

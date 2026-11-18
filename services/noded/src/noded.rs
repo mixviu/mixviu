@@ -2122,8 +2122,9 @@ async fn reload_revocation_teardown(state: &AppState, a: &crate::authority::Acce
 async fn ws_handler(
     ws: WebSocketUpgrade,
     ConnectInfo(peer): ConnectInfo<std::net::SocketAddr>,
-    State(state): State<AppState>,
+    State(mut state): State<AppState>,
 ) -> impl IntoResponse {
+    state.peer_context.address = Some(peer);
     let source_ip = peer.ip();
     // Bound the per-message / per-frame size a mesh peer can send before
     // we buffer + parse it. axum's defaults (64 MiB message / 16 MiB
@@ -2231,6 +2232,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     state.protected_responses = Default::default();
     state.peer_context.identity = match &transport {
         TransportIdentity::LocalUnix { uid, peer_pid, .. } => bus::native_session::PeerIdentity::UnixPeer { uid: *uid, pid: *peer_pid },
+        TransportIdentity::Mesh { admission, .. } => admission.identity.clone(),
         _ => bus::native_session::PeerIdentity::Unauthenticated,
     };
     if matches!(&transport, TransportIdentity::LocalUnix { .. }) {
@@ -7791,6 +7793,7 @@ mod tests {
                 "from_epoch":1, "until_epoch":null}]
         }));
         let mut state = reload_test_state(posture, vec![]).await;
+        state.peer_context.identity = bus::native_session::PeerIdentity::MeshAdmitted { node: "beta".into(), key: [3;32], fingerprint: String::new(), epoch: 1, revision: 0 };
         state.admission_mode = AdmissionMode::Enforce;
         state.session_admission = super::SessionAdmission {
             admitted_node: Some("beta".into()),
@@ -7866,10 +7869,11 @@ mod tests {
                         upgrade.on_upgrade(move |socket| {
                             super::handle_socket(
                                 socket,
-                                state,
+                                state.clone(),
                                 bus::native_session::TransportIdentity::Mesh {
                                     source_ip: "192.0.2.2".parse().unwrap(),
                                     admission: bus::native_session::MeshAdmission {
+                                        identity: state.peer_context.identity.clone(),
                                         admitted_node: Some("beta".into()),
                                         response_seen: true,
                                         last_detail: None,

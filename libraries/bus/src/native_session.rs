@@ -85,6 +85,7 @@ pub enum TransportIdentity {
 /// Wire-layer representation of the existing broker's D2 admission state.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct MeshAdmission {
+    pub identity: PeerIdentity,
     pub admitted_node: Option<String>,
     pub last_detail: Option<&'static str>,
     pub response_seen: bool,

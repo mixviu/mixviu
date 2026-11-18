@@ -2,7 +2,7 @@
 -- Gold-compatible Prefs launch policy; the native host owns the connection.
 $nav=require("navigation.mix")
 $service="prefs";$comp=env("MIX_COMP_SERVICE","comp")
-$url=env("MIX_NODED_URL","ws://127.0.0.1:4200/ws")
+$url=env("MIX_NODED_URL","")
 $page=nil;$debug=[];$argv=args();$at=0
 if contains(["--version","-V"],$argv[0]) then print("prefs 0.1.2");exit(0) end
 if contains(["--help","-h"],$argv[0]) then
