@@ -12,8 +12,8 @@ pub struct TlsListener {
     material: Material,
 }
 impl TlsListener {
-    pub fn new(tcp: TcpListener, material: Material) -> anyhow::Result<Self> {
-        Ok(Self { tcp, acceptor: TlsAcceptor::from(material.server()?), material })
+    pub fn new(tcp: TcpListener, material: Material) -> std::io::Result<Self> {
+        Ok(Self { tcp, acceptor: TlsAcceptor::from(material.server().map_err(std::io::Error::other)?), material })
     }
 }
 impl Listener for TlsListener {

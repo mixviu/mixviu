@@ -93,6 +93,24 @@ fn lab_call(node:&str, size:usize) -> bus::BusMessage {
     msg
 }
 
+async fn lab_tap(target:std::net::SocketAddr) -> (std::net::SocketAddr,Arc<StdMutex<Vec<u8>>>,tokio::task::JoinHandle<()>) {
+    use tokio::io::{AsyncReadExt,AsyncWriteExt};
+    let listener=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr=listener.local_addr().unwrap();
+    let bytes=Arc::new(StdMutex::new(Vec::new())); let captured=bytes.clone();
+    let task=tokio::spawn(async move {
+        let (a,_)=listener.accept().await.unwrap();
+        let b=tokio::net::TcpStream::connect(target).await.unwrap();
+        a.set_nodelay(true).unwrap(); b.set_nodelay(true).unwrap();
+        let (mut ar,mut aw)=a.into_split();let (mut br,mut bw)=b.into_split();
+        let capture=captured.clone();
+        let forward=async move {let mut buf=[0;16384];loop {let n=ar.read(&mut buf).await.unwrap_or(0);if n==0 {break;}capture.lock().unwrap().extend_from_slice(&buf[..n]);if bw.write_all(&buf[..n]).await.is_err(){break;}}};
+        let backward=async move {let mut buf=[0;16384];loop {let n=br.read(&mut buf).await.unwrap_or(0);if n==0 {break;}captured.lock().unwrap().extend_from_slice(&buf[..n]);if aw.write_all(&buf[..n]).await.is_err(){break;}}};
+        tokio::join!(forward,backward);
+    });
+    (addr,bytes,task)
+}
+
 #[tokio::test]
 async fn mtls_lab_security() {
     let a = reload_test_state(lab_inventory(1,false),vec![]).await;
@@ -130,6 +148,18 @@ async fn mtls_lab_security() {
     lab_register(&mut relay,"bridge-beta").await;
     lab_send(&mut relay,lab_call("beta",16)).await;
     assert!(lab_recv(&mut relay).await.is_none());
+    let (tap,bytes,tap_task)=lab_tap(aa).await;
+    let mut sniffed=lab_connect(tap,Some(&mb),"alpha").await.unwrap();
+    lab_register(&mut sniffed,"bridge-beta").await;
+    lab_send(&mut sniffed,lab_call("alpha",128)).await;
+    assert!(lab_recv(&mut sniffed).await.is_some());
+    {
+        let bytes=bytes.lock().unwrap();assert!(bytes.len()>128);
+        for secret in [b"echo.secret-method".as_slice(),b"secret-payload".as_slice()] {
+            assert!(!bytes.windows(secret.len()).any(|w| w==secret),"plaintext on TLS socket");
+        }
+    }
+    tap_task.abort();
     let start=Instant::now();
     let crate::authority::Posture::Verified(revoked)=lab_inventory(2,true) else { unreachable!() };
     let next=crate::routing::RoutingAuthority::new(crate::authority::Posture::Verified(revoked.clone()),"alpha","127.0.0.1",4200,&[]);
