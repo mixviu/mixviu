@@ -203,7 +203,7 @@ fn spawn_with_seat_size(
     let log = root.join("viud.log");
     let stderr = fs::File::create(&log).unwrap();
     let mut command = Command::new(binary);
-    if std::env::var_os("MIX_TEST_PRE_DRAIN_CHILD").is_none() {
+    if std::env::var_os(paths::env::test::TEST_PRE_DRAIN_CHILD).is_none() {
         command.env_remove(paths::env::test::TEST_PRE_DRAIN_FRAME);
     }
     command

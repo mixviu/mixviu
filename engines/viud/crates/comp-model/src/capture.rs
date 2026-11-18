@@ -416,7 +416,11 @@ mod tests {
         ] {
             let args = json!({"request_id":"take", "path":path});
             let error = parse_record("comp.record.start", &args).unwrap_err();
-            assert!(format!("{error:?}").contains(fault), "{error:?}");
+            assert_eq!(error, ControlReply::Validation(crate::observation::SetValidationError::InvalidValue {
+                path: "path".into(),
+                expected: "absolute path to a VFL directory",
+                range: fault,
+            }));
         }
     }
 

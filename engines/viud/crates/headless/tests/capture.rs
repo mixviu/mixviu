@@ -136,15 +136,14 @@ fn mapped_window_survives_render_before_protocol_drain() {
     }
     // Re-exec so the forced source ordering cannot affect parallel tests'
     // compositor children through process-global environment mutation.
-    const CHILD: &str = "MIX_TEST_PRE_DRAIN_CHILD";
-    if std::env::var_os(CHILD).is_none() {
+    if std::env::var_os(paths::env::test::TEST_PRE_DRAIN_CHILD).is_none() {
         let output = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "mapped_window_survives_render_before_protocol_drain",
             ])
             .env(paths::env::test::TEST_PRE_DRAIN_FRAME, "1")
-            .env(CHILD, "1")
+            .env(paths::env::test::TEST_PRE_DRAIN_CHILD, "1")
             .output()
             .unwrap();
         assert!(
@@ -993,6 +992,21 @@ fn record_idle_output_lifecycle_and_clock() {
                     Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                     Err(error) => panic!("live VFL scan: {error}"),
                 }
+            }
+            if status["state"] == "idle" {
+                // Decide loss from the complete published take, never solely
+                // from a live scan that may have reached a partial record.
+                let mut frame = 0;
+                vfl_scan(
+                    Path::new(next["path"].as_str().unwrap()),
+                    |pixels| {
+                        if retained.is_none() && pixels[at..at + 4] == colour.to_le_bytes() {
+                            retained = Some(frame);
+                        }
+                        frame += 1;
+                    },
+                    true,
+                ).expect("sealed bounded VFL scan");
             }
             if let Some(frame) = retained {
                 println!(
@@ -2076,7 +2090,6 @@ fn connect(process: &mut process::Process) -> UnixStream {
     let deadline = Instant::now() + Duration::from_secs(25);
     loop {
         if let Ok(stream) = UnixStream::connect(process.root.join("wayland-headless-test")) {
-            if std::env::var_os(paths::env::test::TEST_MAPPING_TRACE).is_some() {
                 use std::os::fd::AsRawFd;
                 let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
                 let mut len = std::mem::size_of_val(&cred) as libc::socklen_t;
@@ -2092,14 +2105,15 @@ fn connect(process: &mut process::Process) -> UnixStream {
                     },
                     0
                 );
+            if std::env::var_os(paths::env::test::TEST_MAPPING_TRACE).is_some() {
                 eprintln!(
                     "WAYLAND_PEER expected={} actual={} root={}",
                     process.child.id(),
                     cred.pid,
                     process.root.display()
                 );
-                assert_eq!(cred.pid as u32, process.child.id());
             }
+            assert_eq!(cred.pid as u32, process.child.id());
             return stream;
         }
         assert!(
