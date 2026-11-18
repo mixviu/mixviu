@@ -36,12 +36,18 @@ struct Bus {
 }
 impl Bus {
     fn window_for(&self, name: &str) -> Value {
-        self.call("comp.windows.list", json!({"app_id":name}))["windows"]
-            .as_array()
-            .unwrap()
-            .first()
-            .expect("mapped named window")
-            .clone()
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let reply = self.call("comp.windows.list", json!({"app_id":name}));
+            if let Some(row) = reply["windows"].as_array().unwrap().first() {
+                return row.clone();
+            }
+            assert!(
+                Instant::now() < deadline,
+                "timed out after 10 s waiting for mapped window app_id={name}: {reply}"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
     }
     fn start(label: &str) -> Self {
         let root =
@@ -92,13 +98,7 @@ impl Bus {
         );
     }
     fn window(&self) -> Value {
-        let reply = self.call("comp.windows.list", json!({"app_id":"headless-pattern"}));
-        reply["windows"]
-            .as_array()
-            .unwrap()
-            .first()
-            .expect("mapped pattern window")
-            .clone()
+        self.window_for("headless-pattern")
     }
 }
 
