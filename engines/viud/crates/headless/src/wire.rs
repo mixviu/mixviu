@@ -316,7 +316,9 @@ pub fn available() -> bool {
 fn fixture_pre_drain_frame(state: &mut Loop) {
     FALLBACK.with(|slot| {
         let slot = slot.borrow();
-        let context = slot.as_ref().expect("pre-drain fixture needs a headless context");
+        let context = slot
+            .as_ref()
+            .expect("pre-drain fixture needs a headless context");
         crate::frame::draw(state, &mut context.borrow_mut());
         eprintln!("HEADLESS_TEST_PRE_DRAIN_FRAME fired");
     });
