@@ -35,7 +35,10 @@ fn metadata_failed(path: &std::path::Path, error: std::io::Error) {
     METADATA_WARNING.with(|last| {
         let mut time = last.get();
         if metadata_warning_due(&mut time, std::time::Instant::now()) {
-            warn!("input node metadata failed for {}: {error} (warnings limited to one per 30s)", path.display());
+            warn!(
+                "input node metadata failed for {}: {error} (warnings limited to one per 30s)",
+                path.display()
+            );
         }
         last.set(time);
     });
@@ -549,10 +552,18 @@ mod tests {
         let scanned = Nodes::from([(path.clone(), (1, 2))]);
         let mut retry = Retry::default();
         for _ in 0..12 {
-            assert_eq!(reconcile(scanned.clone(), &mut retry, || panic!("already admitted")), None);
+            assert_eq!(
+                reconcile(scanned.clone(), &mut retry, || panic!("already admitted")),
+                None
+            );
         }
         std::fs::write(&path, []).unwrap();
-        assert_eq!(reconcile(nodes_at(&root.0).unwrap(), &mut retry, || panic!("stat recovered")), None);
+        assert_eq!(
+            reconcile(nodes_at(&root.0).unwrap(), &mut retry, || panic!(
+                "stat recovered"
+            )),
+            None
+        );
         assert!(METADATA_RETRY.with_borrow(|pending| pending.is_empty()));
         KNOWN.with_borrow_mut(|known| known.clear());
     }
