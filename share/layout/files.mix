@@ -2,6 +2,12 @@
 -- N-1 compatible renderer and writer. Roots are explicit, never discovered here.
 $renderer = require("render.mix")
 
+-- Host-only units retain their service-specific templates for explicit host
+-- installation, but never enter the flat unit catalogue consumed by desks.
+fn desk_unit($text)
+  return not contains(lines($text), "# mixviu-install: host-only")
+end
+
 fn entries($here)
   $paths = sort(glob($here .. "/manifests/*.mx"))
   if is_file($here .. "/templates.mx") then push($paths, $here .. "/templates.mx") end

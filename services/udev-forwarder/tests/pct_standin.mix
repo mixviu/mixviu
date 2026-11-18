@@ -8,6 +8,8 @@ if $argv[0] == "list" then
 elif $argv[0] == "config" then
   print(read_file($lab .. "/" .. $argv[1] .. ".conf"))
 elif $argv[0] == "set" then
+  if len($argv) != 6 or $argv[4] != "--digest" or $argv[5] != substr(hash_sha256(read_file($lab .. "/" .. $argv[1] .. ".conf")), 0, 40) then die("config digest changed") end
+  if exists($lab .. "/fail-" .. $argv[1]) then die("injected CT update failure") end
   if read_file($lab .. "/hook.mix") != "test-hook\n" or not run_argv(["/usr/bin/test", "-x", $lab .. "/hook.mix"]).ok then die("pct called before executable hook published") end
   $entry = json_encode($argv) .. "\n"
   $log = $lab .. "/sets.log"
