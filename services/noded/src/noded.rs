@@ -72,8 +72,12 @@ fn frame_refused(reason: &str, peer: &str, address: &str, posture: AdmissionMode
     {
         let count = FRAME_REFUSAL_COUNT.swap(0, Ordering::Relaxed);
         tracing::info!(
-            event = "frame.refused", reason, peer, peer_address = address,
-            posture = admission_mode_str(posture), count,
+            event = "frame.refused",
+            reason,
+            peer,
+            peer_address = address,
+            posture = admission_mode_str(posture),
+            count,
             "Inter-node frame refusals (coalesced)"
         );
     }
@@ -7711,9 +7715,15 @@ mod tests {
                     DEFAULT_NODED_PORT,
                 ));
             }
-            state.authority.store(Arc::new(crate::routing::RoutingAuthority::new(
-                posture, "alpha", "127.0.0.1", DEFAULT_NODED_PORT, &[],
-            )));
+            state
+                .authority
+                .store(Arc::new(crate::routing::RoutingAuthority::new(
+                    posture,
+                    "alpha",
+                    "127.0.0.1",
+                    DEFAULT_NODED_PORT,
+                    &[],
+                )));
             state.admission_mode = mode;
             let audit = Audit(Arc::new(std::sync::Mutex::new(Vec::new())));
             let output = audit.0.clone();
