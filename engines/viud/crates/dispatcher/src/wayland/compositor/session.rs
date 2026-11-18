@@ -90,7 +90,6 @@ pub fn apply_commit(
         geometry.size = shell::configured_size(&window);
         let is_ready_to_place = geometry.size.w > 0 && geometry.size.h > 0;
         let has_been_placed = window.user_data().get::<WindowPlacedMarker>().is_some();
-        trace!("INITIAL_MAP_DECISION surface={surface:?} initial={initial} geometry={geometry:?} marker={has_been_placed} ready={is_ready_to_place}");
         if is_ready_to_place && !has_been_placed {
             window.user_data().insert_if_missing(|| WindowPlacedMarker);
             to_place = Some((window, geometry));

@@ -211,7 +211,7 @@ impl Pattern {
             _top: top,
         };
         client.commit(true);
-        eprintln!("PATTERN initial buffer submitted app_id={name}");
+        eprintln!("PATTERN initial buffer attached, committed and flushed app_id={name} size={:?}", client.state.size);
         client
     }
 
@@ -230,7 +230,6 @@ impl Pattern {
     }
 
     pub fn commit(&mut self, damage: bool) {
-        eprintln!("PATTERN commit damage={damage} configured={} size={:?} callbacks={}", self.state.configured, self.state.size, self.state.callbacks);
         if damage {
             self.surface.attach(Some(&self.buffer), 0, 0);
             self.surface
@@ -241,7 +240,6 @@ impl Pattern {
             .feedback(&self.surface, &self.queue.handle(), ());
         self.surface.commit();
         self.conn.flush().unwrap();
-        eprintln!("PATTERN commit flushed");
     }
 
     pub fn wait_callback(&mut self, previous: u64) {

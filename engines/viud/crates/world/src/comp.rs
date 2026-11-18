@@ -259,7 +259,6 @@ pub struct CompState {
 
 impl CompState {
     pub fn apply(&mut self, event: SurfaceEvent) {
-        logging::trace!(pid = std::process::id(), ?event, "SURFACE_EVENT");
         self.revision = self.revision.wrapping_add(1);
         match event {
             SurfaceEvent::RoleTaken {
@@ -327,7 +326,6 @@ impl CompState {
                     SurfaceRole::Dormant => return,
                     SurfaceRole::Toplevel | SurfaceRole::X11 { .. } => {
                         if attached && !self.placed.contains(&id) {
-                            logging::trace!(id = id.0, "SURFACE_BUFFER not mapped: not placed");
                             return;
                         }
                         attached

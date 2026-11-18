@@ -122,6 +122,33 @@ fn target(row: &Value) -> Value {
 }
 
 #[test]
+fn mapped_window_survives_render_before_protocol_drain() {
+    if !process::record_available() {
+        return;
+    }
+    // Re-exec so the forced source ordering cannot affect parallel tests'
+    // compositor children through process-global environment mutation.
+    if std::env::var_os("MIX_TEST_PRE_DRAIN_FRAME").is_none() {
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "mapped_window_survives_render_before_protocol_drain"])
+            .env("MIX_TEST_PRE_DRAIN_FRAME", "1")
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "pre-drain frame: {} {}",
+            String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        return;
+    }
+    let bus = Bus::start("pre-drain-map");
+    let mut process = process::spawn(1, None, "pre-drain-map", Some(&bus.url));
+    let mut pattern = Pattern::named(connect(&mut process), "headless-pattern", false);
+    pattern.wait_callback(0);
+    bus.ready();
+    let window = bus.window(&mut pattern);
+    assert_eq!(window["app_id"], "headless-pattern");
+    assert_eq!(window["pid"], std::process::id());
+}
+
+#[test]
 fn record_idle_content_clock_ignores_capture_repaints() {
     if !process::record_available() {
         return;

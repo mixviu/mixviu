@@ -265,12 +265,10 @@ fn arm_readbacks(state: &mut Loop, context: &Rc<RefCell<Context>>) {
 }
 
 pub(crate) fn fixture_draw(state: &mut Loop, ctx: &mut Context) {
-    eprintln!("PRE_DRAIN_FRAME pending={} lifecycle={}", state.state.protocol_pending, state.inner.window_lifecycle_mut().incoming.len());
     draw(state, ctx);
 }
 
 fn draw(state: &mut Loop, ctx: &mut Context) {
-    trace!("HEADLESS_DRAW protocol_pending={} lifecycle={}", state.state.protocol_pending, state.inner.window_lifecycle_mut().incoming.len());
     if route(
         ctx.vt_session,
         !matches!(
@@ -281,6 +279,13 @@ fn draw(state: &mut Loop, ctx: &mut Context) {
     {
         ctx.retire_timer(state);
         return;
+    }
+    // A paced timer can already be ready when the Wayland source dispatches
+    // a commit in this same calloop batch. Apply its world effects before
+    // consuming the redraw epoch: otherwise this frame can send a callback,
+    // then the tail drain queues InitialMap with no redraw left to service it.
+    if state.state.protocol_pending {
+        state.drain_protocol();
     }
     let key = world::state::output_key(&ctx.output);
     if !state.state.redraw.needs(&key) {
