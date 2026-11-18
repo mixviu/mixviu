@@ -7701,6 +7701,13 @@ mod tests {
             let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
             let (mut sink, mut stream) = raw_connect(&url).await;
             if register { raw_register(&mut sink, &mut stream, "bridge-beta").await; }
+            let relay_probe = register && !refused && mode == AdmissionMode::Enforce;
+            if relay_probe {
+                let relay = BusMessage::new().with_header("to", "hostd.beta.bus")
+                    .with_header("from", "hostd.beta.bus").with_header("command", "probe.relay")
+                    .with_header("id", "relay-probe");
+                sink.send(WsMessage::Text(relay.to_wire().into())).await.unwrap();
+            }
             let request = BusMessage::new().with_header("type", "request")
                 .with_header("command", "noded.ping").with_header("to", "noded")
                 .with_header("id", "policy-probe").with_header("from", from);
@@ -7714,11 +7721,14 @@ mod tests {
                     }
                 }).await.expect("enforce must close the refused connection");
             } else {
-                assert_eq!(raw_call(&mut sink, &mut stream, request, "policy-probe").await.rc(), Some(0));
+                let response = raw_call(&mut sink, &mut stream, request, "policy-probe").await;
+                assert_eq!(response.rc(), Some(0));
+                assert!(super::frame_policy::from_peer(&response, "alpha"));
             }
             let logs = String::from_utf8(output.lock().unwrap().clone()).unwrap();
             let violation = !register || from == "hostd.gamma.bus";
-            assert_eq!(logs.contains("event=\"frame.refused\""), violation && mode != AdmissionMode::Off, "{logs}");
+            assert_eq!(logs.contains("event=\"frame.refused\""), (violation && mode != AdmissionMode::Off) || relay_probe, "{logs}");
+            if relay_probe { assert!(logs.contains("remote-origin-relay"), "{logs}"); }
             if violation && mode == AdmissionMode::Observe {
                 assert!(logs.contains("posture=\"observe\""), "{logs}");
                 assert!(logs.contains("192.0.2.2"), "{logs}");

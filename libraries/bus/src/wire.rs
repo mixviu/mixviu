@@ -78,7 +78,14 @@ impl BusMessage {
         // been canonicalised. Never qualify an untrusted remote address here.
         let from = self.from_addr().unwrap_or("noded");
         if BusTarget::parse(from).is_none() {
-            self.set("from", &format!("{from}.{node}.bus"));
+            let qualified = format!("{from}.{node}.bus");
+            if matches!(BusTarget::parse(&qualified), Some(BusTarget::Local(addr)) if addr.node == node) {
+                self.set("from", &qualified);
+            } else {
+                self.set("from", &format!("noded.{node}.bus"));
+            }
+        } else if !matches!(BusTarget::parse(from), Some(BusTarget::Local(addr)) if addr.node == node) {
+            self.set("from", &format!("noded.{node}.bus"));
         }
     }
 
