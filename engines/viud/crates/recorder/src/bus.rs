@@ -542,7 +542,11 @@ impl Recording {
         let (result, recovery_path) = match rx.try_recv() {
             Ok(result) => result,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                (Err("encoder finaliser disconnected".into()), None)
+                self.finalise_outcome.timeout();
+                (
+                    Err("encoder finaliser disconnected; check recovery paths".into()),
+                    Some(self.files.video.clone()),
+                )
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
                 if self

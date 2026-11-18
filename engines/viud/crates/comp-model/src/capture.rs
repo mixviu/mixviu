@@ -117,7 +117,11 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                 return Err(invalid_argument(
                     "path",
                     "absolute path to a VFL directory",
-                    "absolute .vfl path",
+                    if !std::path::Path::new(&path).is_absolute() {
+                        "relative path"
+                    } else {
+                        "path without .vfl extension"
+                    },
                 ));
             }
             let fps = fields

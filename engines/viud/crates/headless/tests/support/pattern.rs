@@ -1,3 +1,4 @@
+macro_rules! mapping_trace { ($($arg:tt)*) => { if std::env::var_os(paths::env::test::TEST_MAPPING_TRACE).is_some() { eprintln!($($arg)*); } }; }
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shm test client: four opaque quadrants. Cursor tests use the agent arrow.
@@ -140,7 +141,7 @@ impl Pattern {
     }
 
     pub fn named(stream: UnixStream, name: &str, fullscreen: bool) -> Self {
-        eprintln!("PATTERN start app_id={name} socket={stream:?}");
+        mapping_trace!("PATTERN start app_id={name} socket={stream:?}");
         stream.set_nonblocking(true).unwrap();
         let conn = Connection::from_socket(stream).unwrap();
         let mut queue = conn.new_event_queue::<State>();
@@ -167,9 +168,9 @@ impl Pattern {
         let surface = compositor.create_surface(&qh, ());
         let xdg = shell.get_xdg_surface(&surface, &qh, ());
         let top = xdg.get_toplevel(&qh, ());
-        eprintln!("PATTERN get_toplevel app_id={name}");
+        mapping_trace!("PATTERN get_toplevel app_id={name}");
         top.set_app_id(name.into());
-        eprintln!("PATTERN set_app_id={name}");
+        mapping_trace!("PATTERN set_app_id={name}");
         if fullscreen {
             top.set_fullscreen(None);
         } else {
@@ -180,7 +181,7 @@ impl Pattern {
             let _: WlSeat = registry.bind(*n, (*v).min(7), &qh, ());
         }
         surface.commit();
-        eprintln!("PATTERN initial empty commit app_id={name}");
+        mapping_trace!("PATTERN initial empty commit app_id={name}");
         let deadline = Instant::now() + Duration::from_secs(10);
         while !state.configured {
             queue.roundtrip(&mut state).unwrap();
@@ -211,7 +212,7 @@ impl Pattern {
             _top: top,
         };
         client.commit(true);
-        eprintln!(
+        mapping_trace!(
             "PATTERN initial buffer attached, committed and flushed app_id={name} size={:?}",
             client.state.size
         );
@@ -389,9 +390,9 @@ impl Dispatch<XdgSurface, ()> for State {
         _: &QueueHandle<Self>,
     ) {
         if let xdg_surface::Event::Configure { serial } = event {
-            eprintln!("PATTERN xdg_surface.configure serial={serial}");
+            mapping_trace!("PATTERN xdg_surface.configure serial={serial}");
             surface.ack_configure(serial);
-            eprintln!("PATTERN ack_configure serial={serial}");
+            mapping_trace!("PATTERN ack_configure serial={serial}");
             state.configured = true;
         }
     }
@@ -406,7 +407,7 @@ impl Dispatch<XdgToplevel, ()> for State {
         _: &QueueHandle<Self>,
     ) {
         if let xdg_toplevel::Event::Configure { width, height, .. } = event {
-            eprintln!("PATTERN xdg_toplevel.configure size={width}x{height}");
+            mapping_trace!("PATTERN xdg_toplevel.configure size={width}x{height}");
             state.size = (width, height);
         }
     }

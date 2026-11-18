@@ -104,6 +104,9 @@ impl Probe {
 }
 
 fn window(bus: &Bus, service: &str, app: &str) -> Value {
+    // Probe owns the Wayland connection in another process and continuously
+    // dispatches it; there is no local event queue to pump here. Probe::start
+    // also waits for its first presentation before this Bus lookup.
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let reply = bus.call(service, "comp.windows.list", json!({}));

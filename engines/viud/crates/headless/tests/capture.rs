@@ -136,13 +136,15 @@ fn mapped_window_survives_render_before_protocol_drain() {
     }
     // Re-exec so the forced source ordering cannot affect parallel tests'
     // compositor children through process-global environment mutation.
-    if std::env::var_os("MIX_TEST_PRE_DRAIN_FRAME").is_none() {
+    const CHILD: &str = "MIX_TEST_PRE_DRAIN_CHILD";
+    if std::env::var_os(CHILD).is_none() {
         let output = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "mapped_window_survives_render_before_protocol_drain",
             ])
-            .env("MIX_TEST_PRE_DRAIN_FRAME", "1")
+            .env(paths::env::test::TEST_PRE_DRAIN_FRAME, "1")
+            .env(CHILD, "1")
             .output()
             .unwrap();
         assert!(
@@ -939,10 +941,10 @@ fn record_idle_output_lifecycle_and_clock() {
     bounded_pattern.commit(true);
     bounded_pattern.wait_callback(previous);
     let next=bus.call("comp.record.start",json!({"request_id":"bounded","target":{"output":"headless-0"},"path":process.root.join("bounded.vfl"),"max_seconds":1}));
-    let mut admitted_colours = vec![0xff103050];
-    let mut submitted_colours = admitted_colours.clone();
+    let mut admitted_colours = Vec::new();
+    let mut submitted_colours = Vec::new();
     let at = ((720 * 3 / 4) * 1280 + 1280 * 3 / 4) * 4;
-    'changes: for colour in [0xff507090, 0xff90b0d0, 0xffd0f010] {
+    'changes: for colour in [0xff103050, 0xff507090, 0xff90b0d0, 0xffd0f010] {
         let before = bus.call("comp.record.status", json!({"session":next["session"]}));
         if before["state"] != "recording" {
             break;
@@ -993,6 +995,12 @@ fn record_idle_output_lifecycle_and_clock() {
             // The one-second take may seal before sampling/retaining a late
             // commit. A readback counter alone cannot promise its pixels.
             if status["state"] == "idle" {
+                if status["readbacks"].as_u64().unwrap()
+                    > before["readbacks"].as_u64().unwrap()
+                {
+                    assert!(status["dropped"].as_u64().unwrap() >= 1,
+                        "read-back colour {colour:08x} lost without a drop: {status}");
+                }
                 println!("BOUNDED_SEALED colour={colour:08x} not_retained status={status}");
                 break 'changes;
             }
@@ -2058,6 +2066,7 @@ fn connect(process: &mut process::Process) -> UnixStream {
     let deadline = Instant::now() + Duration::from_secs(25);
     loop {
         if let Ok(stream) = UnixStream::connect(process.root.join("wayland-headless-test")) {
+            if std::env::var_os(paths::env::test::TEST_MAPPING_TRACE).is_some() {
             use std::os::fd::AsRawFd;
             let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
             let mut len = std::mem::size_of_val(&cred) as libc::socklen_t;
@@ -2080,6 +2089,7 @@ fn connect(process: &mut process::Process) -> UnixStream {
                 process.root.display()
             );
             assert_eq!(cred.pid as u32, process.child.id());
+            }
             return stream;
         }
         assert!(
