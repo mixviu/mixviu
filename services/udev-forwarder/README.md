@@ -155,4 +155,3 @@ The full bundled layout render check runs in `tests/mix_services_bundle_test.mix
 called by `tools/mix_services_test.mix` in CI's `mix-services` stage and the
 `test`/`all` gate. It covers the current host, desk CT and desk migration root
 maps, native layout roots and relocated roots, and rejects a missing `lib`.
-
