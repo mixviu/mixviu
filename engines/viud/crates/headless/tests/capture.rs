@@ -35,9 +35,14 @@ struct Bus {
     url: String,
 }
 impl Bus {
-    fn window_for(&self, name: &str) -> Value {
+    fn window_for(&self, name: &str, patterns: &mut [&mut Pattern]) -> Value {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
+            // Keep the in-process clients servicing configure and ping events
+            // while the compositor catches up with their first buffer.
+            for pattern in patterns.iter_mut() {
+                pattern.pump();
+            }
             let reply = self.call("comp.windows.list", json!({"app_id":name}));
             if let Some(row) = reply["windows"].as_array().unwrap().first() {
                 return row.clone();
@@ -97,8 +102,8 @@ impl Bus {
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    fn window(&self) -> Value {
-        self.window_for("headless-pattern")
+    fn window(&self, pattern: &mut Pattern) -> Value {
+        self.window_for("headless-pattern", &mut [pattern])
     }
 }
 
@@ -116,7 +121,7 @@ fn record_idle_content_clock_ignores_capture_repaints() {
     let mut pattern = Pattern::named(connect(&mut process), "headless-pattern", false);
     pattern.wait_callback(0);
     bus.ready();
-    let row = bus.window();
+    let row = bus.window(&mut pattern);
     let output = row["output"].as_str().unwrap();
     let start=bus.call("comp.record.start",json!({"request_id":"repaints","target":{"output":output},"path":process.root.join("idle.vfl"),"max_seconds":20}));
     let before = bus.call("comp.record.status", json!({"session":start["session"]}));
@@ -281,7 +286,7 @@ fn record_small_changes_zero_drops_and_crcs() {
     let mut p = Pattern::new(connect(&mut process));
     p.wait_callback(0);
     bus.ready();
-    let row = bus.window();
+    let row = bus.window(&mut p);
     bus.call(
         "comp.window.fullscreen",
         place_args(&row, json!({"output":"headless-0"})),
@@ -363,7 +368,7 @@ fn changing_4k(strict: bool) {
     let mut p = Pattern::new(connect(&mut process));
     p.wait_callback(0);
     bus.ready();
-    let row = bus.window();
+    let row = bus.window(&mut p);
     bus.call(
         "comp.window.fullscreen",
         place_args(&row, json!({"output":"headless-0"})),
@@ -495,8 +500,8 @@ fn record_windows_only_content_and_multiple_targets() {
     a.change_buffer();
     a.commit(true);
     pump_patterns(&mut [&mut a, &mut b]);
-    let ar = bus.window_for("record-window-a");
-    let br = bus.window_for("record-window-b");
+    let ar = bus.window_for("record-window-a", &mut [&mut a, &mut b]);
+    let br = bus.window_for("record-window-b", &mut [&mut a, &mut b]);
     for (row, z) in [(&br, 0), (&ar, 10)] {
         bus.call(
             "comp.window.place",
@@ -638,7 +643,7 @@ fn record_4k() {
     bus.ready();
     pump_patterns(&mut [&mut a, &mut b]);
     for (name, x) in [("record-a", 100), ("record-b", 600)] {
-        let row = bus.window_for(name);
+        let row = bus.window_for(name, &mut [&mut a, &mut b]);
         bus.call(
             "comp.window.place",
             place_args(&row, json!({"x":x,"y":100})),
@@ -858,7 +863,7 @@ fn record_idle_output_lifecycle_and_clock() {
     }
     let mut bounded_pattern = Pattern::new(connect(&mut process));
     bounded_pattern.wait_callback(0);
-    let row = bus.window();
+    let row = bus.window(&mut bounded_pattern);
     bus.call(
         "comp.window.fullscreen",
         place_args(&row, json!({"output":"headless-0"})),
@@ -1027,7 +1032,7 @@ fn record_window_target_gone_fails() {
     let mut pattern = Pattern::new(connect(&mut process));
     bus.ready();
     pattern.wait_callback(0);
-    let window = bus.window();
+    let window = bus.window(&mut pattern);
     let start=bus.call("comp.record.start",json!({"request_id":"gone","target":{"windows":[target(&window)]},"path":process.root.join("gone.vfl"),"max_seconds":10}));
     assert!(start["width"].as_u64().unwrap() > 0);
     drop(pattern);
@@ -1056,7 +1061,7 @@ fn inactive_seat_maps_clients_and_captures_output_and_window() {
     let mut pattern = Pattern::new(connect(&mut process));
     bus.ready();
     pattern.wait_callback(0);
-    let window = bus.window();
+    let window = bus.window(&mut pattern);
     let session = bus.call("comp.session.get", json!({}));
     assert_eq!(session["active"], false, "{session}");
     assert_eq!(session["render_state"], "offscreen", "{session}");
@@ -1108,7 +1113,7 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
     let mut pattern = Pattern::new(connect(&mut process));
     bus.ready();
     pattern.wait_callback(0);
-    let window = bus.window();
+    let window = bus.window(&mut pattern);
     let control = process.control.as_ref().unwrap().try_clone().unwrap();
     let edge = |command| {
         control.send(&[command]).unwrap();
@@ -1190,7 +1195,7 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
         edge(b'Q'); // activation with an offscreen frame timer queued
         assert_eq!(bus.call("comp.session.get", json!({}))["active"], true);
         ppm(&bus, &process, &format!("active-{index}"), None);
-        assert_eq!(bus.window()["id"], window["id"]);
+        assert_eq!(bus.window(&mut pattern)["id"], window["id"]);
     }
     let stopped = bus.call("comp.record.stop", json!({"session":recording["session"]}));
     assert_eq!(stopped["error"], Value::Null, "{stopped}");
@@ -1455,7 +1460,7 @@ fn blank_preserves_capture_callbacks_and_agent_input_and_watch_reports_both_edge
         pattern.commit(damage);
         pattern.wait_callback(callbacks);
     }
-    let row = bus.window();
+    let row = bus.window(&mut pattern);
     let keys = pattern.state.keys;
     bus.call(
         "comp.input.key",
@@ -1491,7 +1496,7 @@ fn continuous_agent_input_does_not_postpone_the_idle_blank_timer() {
     let mut pattern = Pattern::new(connect(&mut process));
     pattern.wait_callback(0);
     bus.ready();
-    let row = bus.window();
+    let row = bus.window(&mut pattern);
     bus.call(
         "comp.props.set",
         json!({"path":"power.screen_off_s","value":3}),
@@ -1615,7 +1620,7 @@ fn idle_inhibitor_visibility_lifecycle_watch_and_bus_blank() {
     wait_inhibited(&bus, false);
     let a = pattern.inhibit();
     wait_inhibited(&bus, true);
-    let row = bus.window();
+    let row = bus.window(&mut pattern);
     bus.call("comp.window.minimize", target(&row));
     wait_inhibited(&bus, false);
     bus.call("comp.window.restore", target(&row));
@@ -1701,8 +1706,8 @@ fn review_z_overlap_and_workspace_move_deliver_to_top_window() {
     let mut b = Pattern::named(connect(&mut process), "z-b", false);
     b.wait_callback(0);
     bus.ready();
-    let ar = bus.window_for("z-a");
-    let br = bus.window_for("z-b");
+    let ar = bus.window_for("z-a", &mut [&mut a, &mut b]);
+    let br = bus.window_for("z-b", &mut [&mut a, &mut b]);
     for (row, z) in [(&ar, 10), (&br, 20)] {
         bus.call(
             "comp.window.place",
@@ -1719,11 +1724,11 @@ fn review_z_overlap_and_workspace_move_deliver_to_top_window() {
                 "comp.window.send_to_workspace",
                 place_args(&ar, json!({"index":2,"follow":true})),
             );
-            assert_eq!(bus.window_for("z-b")["z"], 20);
+            assert_eq!(bus.window_for("z-b", &mut [&mut a, &mut b])["z"], 20);
         }
         bus.call("comp.window.raise", target(&ar));
         let (ac, bc) = (a.state.pointer_buttons, b.state.pointer_buttons);
-        let row = bus.window_for("z-a");
+        let row = bus.window_for("z-a", &mut [&mut a, &mut b]);
         bus.call("comp.input.pointer.move",json!({"output":"headless-0","x":row["window_x"].as_f64().unwrap()+40.0,"y":row["window_y"].as_f64().unwrap()+50.0}));
         bus.call(
             "comp.input.pointer.button",
@@ -1750,7 +1755,7 @@ fn review_popup_outside_parent_is_drawn_without_clip_in_both_capture_paths() {
     let mut p = Pattern::named(connect(&mut process), "popup-clip", false);
     p.wait_callback(0);
     bus.ready();
-    let row = bus.window_for("popup-clip");
+    let row = bus.window_for("popup-clip", &mut [&mut p]);
     bus.call(
         "comp.window.place",
         place_args(&row, json!({"x":100,"y":100})),
@@ -1797,7 +1802,7 @@ fn review_hidden_popup_keyboard_grab_receives_no_more_keys() {
     let mut p = Pattern::named(connect(&mut process), "hide-grab", false);
     p.wait_callback(0);
     bus.ready();
-    let row = bus.window_for("hide-grab");
+    let row = bus.window_for("hide-grab", &mut [&mut p]);
     bus.call("comp.input.key", json!({"window":target(&row),"key":"a"}));
     bus.call("comp.input.pointer.move",json!({"output":"headless-0","x":row["window_x"].as_f64().unwrap()+40.0,"y":row["window_y"].as_f64().unwrap()+50.0}));
     bus.call(
@@ -1847,7 +1852,7 @@ fn review_hidden_remap_does_not_focus_and_show_with_geometry_is_atomic() {
     let mut p = Pattern::named(connect(&mut process), "hide-remap", false);
     p.wait_callback(0);
     bus.ready();
-    let row = bus.window_for("hide-remap");
+    let row = bus.window_for("hide-remap", &mut [&mut p]);
     let reply = bus.call(
         "comp.window.place",
         place_args(&row, json!({"visible":false})),
@@ -1870,14 +1875,14 @@ fn review_hidden_remap_does_not_focus_and_show_with_geometry_is_atomic() {
     let enters = p.state.keyboard_enters;
     p.remap();
     pump_patterns(&mut [&mut p]);
-    let row = bus.window_for("hide-remap");
+    let row = bus.window_for("hide-remap", &mut [&mut p]);
     assert_eq!(row["requested_visible"], false);
     bus.call(
         "comp.window.place",
         place_args(&row, json!({"x":120,"y":160})),
     );
-    assert_eq!(bus.window_for("hide-remap")["window_x"], 120.0);
-    assert_eq!(bus.window_for("hide-remap")["requested_visible"], false);
+    assert_eq!(bus.window_for("hide-remap", &mut [&mut p])["window_x"], 120.0);
+    assert_eq!(bus.window_for("hide-remap", &mut [&mut p])["requested_visible"], false);
     bus.call(
         "comp.window.send_to_workspace",
         place_args(&row, json!({"index":2})),
@@ -1894,7 +1899,7 @@ fn review_hidden_remap_does_not_focus_and_show_with_geometry_is_atomic() {
         "comp.window.place",
         place_args(&row, json!({"visible":true,"x":140,"y":180})),
     );
-    let shown = bus.window_for("hide-remap");
+    let shown = bus.window_for("hide-remap", &mut [&mut p]);
     assert_eq!(shown["visible"], true);
     assert_eq!(shown["window_x"], 140.0);
     assert_eq!(shown["window_y"], 180.0);
@@ -1908,7 +1913,7 @@ fn review_visual_only_place_is_refused_by_session_lock_dispatch() {
     let mut p = Pattern::new(connect(&mut process));
     p.wait_callback(0);
     bus.ready();
-    let row = bus.window();
+    let row = bus.window(&mut p);
     let _lock = p.lock_session();
     let refusal = bus.call_rc(
         "comp.window.place",
@@ -1938,7 +1943,7 @@ fn moved_window_clip_is_local_to_surface_origin() {
     let mut p = Pattern::named(connect(&mut process), "moved-clip", false);
     p.wait_callback(0);
     bus.ready();
-    let row = bus.window_for("moved-clip");
+    let row = bus.window_for("moved-clip", &mut [&mut p]);
     bus.call(
         "comp.window.place",
         place_args(&row, json!({"x":200,"y":200})),
@@ -2153,14 +2158,14 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
         "four pattern points + negative control; screenshot; mixed cursor frame: {changed} changed pixels confined to [160,160,24,24], {amber} amber pixels"
     );
 
-    let before = bus.window()["presentation"]["presented"].as_u64().unwrap();
+    let before = bus.window(&mut pattern)["presentation"]["presented"].as_u64().unwrap();
     for _ in 0..12 {
         let previous = pattern.state.callbacks;
         pattern.commit(true);
         pattern.wait_callback(previous);
     }
     thread::sleep(Duration::from_millis(150));
-    let after = bus.window()["presentation"]["presented"].as_u64().unwrap();
+    let after = bus.window(&mut pattern)["presentation"]["presented"].as_u64().unwrap();
     assert!(
         after >= before + 10,
         "damage commits did not present: {before} -> {after}"
@@ -2171,7 +2176,7 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
         pattern.wait_callback(previous);
     }
     thread::sleep(Duration::from_millis(150));
-    let still = bus.window()["presentation"]["presented"].as_u64().unwrap();
+    let still = bus.window(&mut pattern)["presentation"]["presented"].as_u64().unwrap();
     assert_eq!(after, still, "callback-only commits must not present");
     // All callbacks have been consumed and the client stops committing. Count
     // both presented and empty draws through viud's existing frame ledger.
@@ -2190,7 +2195,7 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
     }
     assert_eq!(
         still,
-        bus.window()["presentation"]["presented"].as_u64().unwrap()
+        bus.window(&mut pattern)["presentation"]["presented"].as_u64().unwrap()
     );
     assert_eq!(pattern.state.clock, Some(libc::CLOCK_MONOTONIC as u32));
     assert!(pattern.state.presented >= 12);
@@ -2285,7 +2290,7 @@ fn placement_visuals_persist_capture_and_suppress_hidden_input() {
     let mut pattern = Pattern::new(connect(&mut process));
     bus.ready();
     pattern.wait_callback(0);
-    let window = bus.window();
+    let window = bus.window(&mut pattern);
     let place = |extra: Value| {
         let mut args = json!({"id":window["id"],"generation":window["generation"]});
         args.as_object_mut()
@@ -2312,7 +2317,7 @@ fn placement_visuals_persist_capture_and_suppress_hidden_input() {
     let original = capture("original");
     assert_eq!(at(&original, 320, 180), rgb(COLOURS[0]));
     place(json!({"opacity":0.5,"z":5,"clip":{"x":0,"y":0,"width":640,"height":360}}));
-    let row = bus.window();
+    let row = bus.window(&mut pattern);
     assert_eq!(row["opacity"], 0.5);
     assert_eq!(row["z"], 5);
     assert_eq!(row["clip"]["width"], 640.0);
@@ -2347,7 +2352,7 @@ fn placement_visuals_persist_capture_and_suppress_hidden_input() {
         "opacity retains pointer input"
     );
     place(json!({"visible":false}));
-    let hidden = bus.window();
+    let hidden = bus.window(&mut pattern);
     assert_eq!(hidden["requested_visible"], false);
     assert_eq!(hidden["visible"], false);
     let focused = bus.call(
@@ -2393,7 +2398,7 @@ fn placement_visuals_persist_capture_and_suppress_hidden_input() {
         "hidden callbacks must follow the one-second occlusion trickle"
     );
     place(json!({"opacity":null,"z":null,"visible":null,"clip":null}));
-    let reset = bus.window();
+    let reset = bus.window(&mut pattern);
     assert_eq!(reset["opacity"], 1.0);
     assert_eq!(reset["z"], 0);
     assert_eq!(reset["requested_visible"], true);
