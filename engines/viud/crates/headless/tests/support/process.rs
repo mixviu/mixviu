@@ -87,58 +87,75 @@ impl Process {
 
 #[allow(dead_code)] // The timing target uses spawn_measurement instead.
 pub fn spawn(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&str>) -> Process {
-    spawn_options(scale, explicit_node, label, bus, "60", None, true, true)
-}
-
-#[allow(dead_code)]
-pub fn spawn_service(label: &str, bus: &str, service: &str) -> Process {
-    spawn_options(1, None, label, Some(bus), "60", Some(service), true, true)
-}
-
-#[allow(dead_code)] // Used only by boot.rs; each integration target shares this module.
-pub fn spawn_at_refresh(refresh: &str) -> Process {
-    spawn_options(1, None, "refresh", None, refresh, None, true, true)
-}
-
-#[allow(dead_code)] // Only the timing integration target disables tracing.
-pub fn spawn_measurement() -> Process {
-    spawn_options(1, None, "presentation", None, "60", None, false, true)
-}
-
-fn spawn_options(
-    scale: i32,
-    explicit_node: Option<&str>,
-    label: &str,
-    bus: Option<&str>,
-    refresh: &str,
-    service: Option<&str>,
-    trace: bool,
-    agent: bool,
-) -> Process {
-    spawn_with_seat(
+    spawn_options(Options {
         scale,
         explicit_node,
         label,
         bus,
-        refresh,
-        service,
-        trace,
-        agent,
-        None,
-    )
+        ..Options::default()
+    })
 }
-fn spawn_with_seat(
+
+#[allow(dead_code)]
+pub fn spawn_service(label: &str, bus: &str, service: &str) -> Process {
+    spawn_options(Options {
+        label,
+        bus: Some(bus),
+        service: Some(service),
+        ..Options::default()
+    })
+}
+
+#[allow(dead_code)] // Used only by boot.rs; each integration target shares this module.
+pub fn spawn_at_refresh(refresh: &str) -> Process {
+    spawn_options(Options {
+        label: "refresh",
+        refresh,
+        ..Options::default()
+    })
+}
+
+#[allow(dead_code)] // Only the timing integration target disables tracing.
+pub fn spawn_measurement() -> Process {
+    spawn_options(Options {
+        label: "presentation",
+        trace: false,
+        ..Options::default()
+    })
+}
+
+struct Options<'a> {
     scale: i32,
-    explicit_node: Option<&str>,
-    label: &str,
-    bus: Option<&str>,
-    refresh: &str,
-    service: Option<&str>,
+    explicit_node: Option<&'a str>,
+    label: &'a str,
+    bus: Option<&'a str>,
+    refresh: &'a str,
+    service: Option<&'a str>,
     trace: bool,
     agent: bool,
-    seat: Option<&str>,
-) -> Process {
-    spawn_with_seat_size(
+    seat: Option<&'a str>,
+    size: &'a str,
+}
+
+impl Default for Options<'_> {
+    fn default() -> Self {
+        Self {
+            scale: 1,
+            explicit_node: None,
+            label: "",
+            bus: None,
+            refresh: "60",
+            service: None,
+            trace: true,
+            agent: true,
+            seat: None,
+            size: "1280x720",
+        }
+    }
+}
+
+fn spawn_options(options: Options<'_>) -> Process {
+    let Options {
         scale,
         explicit_node,
         label,
@@ -148,22 +165,12 @@ fn spawn_with_seat(
         trace,
         agent,
         seat,
-        "1280x720",
-    )
-}
-
-fn spawn_with_seat_size(
-    scale: i32,
-    explicit_node: Option<&str>,
-    label: &str,
-    bus: Option<&str>,
-    refresh: &str,
-    service: Option<&str>,
-    trace: bool,
-    agent: bool,
-    seat: Option<&str>,
-    size: &str,
-) -> Process {
+        size,
+    } = options;
+    assert!(
+        !label.is_empty(),
+        "headless process label must be non-empty"
+    );
     let binary = std::env::var_os("MIX_TEST_VIUD_EXE")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
@@ -301,37 +308,34 @@ fn spawn_with_seat_size(
 
 #[allow(dead_code)]
 pub fn spawn_denied(label: &str, bus: &str) -> Process {
-    spawn_options(1, None, label, Some(bus), "60", None, true, false)
+    spawn_options(Options {
+        label,
+        bus: Some(bus),
+        agent: false,
+        ..Options::default()
+    })
 }
 
 #[allow(dead_code)]
 pub fn spawn_inactive(label: &str, bus: &str) -> Process {
-    spawn_with_seat(
-        1,
-        None,
+    spawn_options(Options {
         label,
-        Some(bus),
-        "60",
-        None,
-        true,
-        false,
-        Some("1"),
-    )
+        bus: Some(bus),
+        agent: false,
+        seat: Some("1"),
+        ..Options::default()
+    })
 }
 
 #[allow(dead_code)]
 pub fn spawn_transitions(label: &str, bus: &str) -> Process {
-    spawn_with_seat(
-        1,
-        None,
+    spawn_options(Options {
         label,
-        Some(bus),
-        "60",
-        None,
-        true,
-        false,
-        Some("transitions"),
-    )
+        bus: Some(bus),
+        agent: false,
+        seat: Some("transitions"),
+        ..Options::default()
+    })
 }
 
 #[allow(dead_code)] // Used by capture.rs; this module is shared with other targets.
@@ -341,16 +345,10 @@ pub fn spawn_4k(label: &str, bus: &str) -> Process {
 
 #[allow(dead_code)]
 pub fn spawn_size(label: &str, bus: &str, size: &str) -> Process {
-    spawn_with_seat_size(
-        1,
-        None,
+    spawn_options(Options {
         label,
-        Some(bus),
-        "60",
-        None,
-        true,
-        true,
-        None,
+        bus: Some(bus),
         size,
-    )
+        ..Options::default()
+    })
 }

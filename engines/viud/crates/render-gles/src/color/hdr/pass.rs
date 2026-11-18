@@ -139,6 +139,8 @@ impl<E: RenderElement<GlesRenderer>> RenderElement<GlesRenderer> for Decoded<'_,
 /// `elements` wrapped for a direct SDR draw with tagged surfaces decoded (no
 /// intermediate, no re-damage): what a capture replay of the scene must draw so
 /// its colours match the composite's. `program` is [`HdrPass::decode_program`].
+// Id equality/hash use immutable identity (including namespace), not liveness.
+#[allow(clippy::mutable_key_type)]
 pub fn decoded_sdr<'a, E: Element>(
     elements: &'a [E],
     program: &GlesTexProgram,
@@ -236,6 +238,8 @@ impl HdrPass {
     /// Draw `elements` into the intermediate. Elements whose id is in
     /// `tagged` (and whose description is not already blending space) draw
     /// through the decode stage.
+    // Id equality/hash use immutable identity (including namespace), not liveness.
+    #[allow(clippy::mutable_key_type)]
     pub fn render<E: RenderElement<GlesRenderer>>(
         &mut self,
         renderer: &mut GlesRenderer,

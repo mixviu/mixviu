@@ -29,10 +29,6 @@ pub(super) fn fixture_watcher_failed(failed: bool) {
     WATCH_FAILED.store(failed, Ordering::Relaxed);
 }
 
-fn attached() {
-    WATCH_FAILED.store(false, Ordering::Relaxed);
-}
-
 enum Notice {
     Ready,
     Active,
@@ -58,6 +54,7 @@ struct Activation {
     handle: LoopHandle<'static, Loop>,
     tx: Sender<Notice>,
     watcher_alive: bool,
+    watcher_warned: bool,
     retry: Backoff,
     timer: Option<RegistrationToken>,
     stop: std::sync::Arc<AtomicBool>,
@@ -115,23 +112,30 @@ fn notice(
     notice: Notice,
     failed: &AtomicBool,
     attempt: impl FnOnce(),
-) {
+) -> bool {
     if shared.borrow().handles.borrow().is_some() {
-        return;
+        return false;
     }
     match notice {
-        // Readiness alone proves no progress: a source can fail immediately,
-        // and the no-own-VT source ends after its first activation notice.
-        Notice::Ready => {}
+        // Readiness proves the watcher recovered, but must not reset seat or
+        // watcher backoff: the source may still fail immediately afterwards.
+        Notice::Ready => failed.store(false, Ordering::Relaxed),
         Notice::Active => attempt(),
         Notice::Stopped(error) => {
-            shared.borrow_mut().watcher_alive = false;
-            if !failed.swap(true, Ordering::Relaxed) {
+            failed.store(true, Ordering::Relaxed);
+            let warn = {
+                let mut activation = shared.borrow_mut();
+                activation.watcher_alive = false;
+                !std::mem::replace(&mut activation.watcher_warned, true)
+            };
+            if warn {
                 warn!("VT watcher stopped; offscreen desk will re-arm it: {error}");
             }
             arm(shared);
+            return warn;
         }
     }
+    false
 }
 
 fn arm(shared: &Rc<RefCell<Activation>>) {
@@ -153,6 +157,33 @@ fn arm(shared: &Rc<RefCell<Activation>>) {
 }
 
 fn attempt(shared: &Rc<RefCell<Activation>>, state: &mut Loop) {
+    attempt_with(shared, &WATCH_FAILED, |activation| {
+        if !kms::seat::session::vt_wait::own_vt_active() {
+            return None;
+        }
+        let Some(session) = kms::seat::session::factory::try_create() else {
+            return Some(false);
+        };
+        let native = native::wire::entry::wire(
+            state,
+            activation.socket.clone(),
+            &activation.handle,
+            Some(activation.output.clone()),
+            session,
+        );
+        native::wire::session::activate(state, &native.ctx);
+        *activation.handles.borrow_mut() = Some(native);
+        Some(true)
+    });
+}
+
+// The seat transaction is injectable; retry, stop and status publication are
+// the production path even when the test has no VT, DRM device or libseat.
+fn attempt_with(
+    shared: &Rc<RefCell<Activation>>,
+    failed: &AtomicBool,
+    attach: impl FnOnce(&Activation) -> Option<bool>,
+) {
     let mut activation = shared.borrow_mut();
     if activation.handles.borrow().is_some() {
         return;
@@ -165,28 +196,19 @@ fn attempt(shared: &Rc<RefCell<Activation>>, state: &mut Loop) {
         arm(shared);
         return;
     }
-    if !kms::seat::session::vt_wait::own_vt_active() {
+    let Some(attached) = attach(&activation) else {
         return;
-    }
-    let Some(session) = kms::seat::session::factory::try_create() else {
+    };
+    if !attached {
         drop(activation);
         arm(shared);
         return;
-    };
-    let native = native::wire::entry::wire(
-        state,
-        activation.socket.clone(),
-        &activation.handle,
-        Some(activation.output.clone()),
-        session,
-    );
-    native::wire::session::activate(state, &native.ctx);
-    *activation.handles.borrow_mut() = Some(native);
+    }
     activation.stop.store(true, Ordering::Relaxed);
     if let Some(timer) = activation.timer.take() {
         activation.handle.remove(timer);
     }
-    attached();
+    failed.store(false, Ordering::Relaxed);
     activation.retry.reset();
 }
 
@@ -210,6 +232,7 @@ pub fn install(
         handle: handle.clone(),
         tx,
         watcher_alive: false,
+        watcher_warned: false,
         retry: Backoff::default(),
         timer: None,
         stop: Default::default(),
@@ -263,36 +286,49 @@ mod tests {
                 handle: event_loop.handle(),
                 tx,
                 watcher_alive: true,
+                watcher_warned: false,
                 retry: Backoff::default(),
                 timer: None,
                 stop: Default::default(),
             }));
-            for expected in [250, 500, 1000, 2000, 4000, 5000] {
+            let mut warnings = 0;
+            for expected in [250, 500, 1000, 2000, 4000, 5000, 5000, 5000] {
                 notice(&activation, Notice::Ready, &failed, || panic!("not active"));
-                assert!(failed.load(Ordering::Relaxed));
+                assert!(!failed.load(Ordering::Relaxed));
                 if seat_failure {
                     notice(&activation, Notice::Active, &failed, || arm(&activation));
                 }
-                notice(
+                warnings += usize::from(notice(
                     &activation,
                     Notice::Stopped("test failure".into()),
                     &failed,
                     || panic!("not active"),
-                );
+                ));
                 assert_eq!(activation.borrow().retry.0, Duration::from_millis(expected));
                 let mut activation = activation.borrow_mut();
                 let token = activation.timer.take().unwrap();
                 activation.handle.remove(token);
             }
+            assert_eq!(
+                warnings, 1,
+                "readiness clears status, not the warning latch"
+            );
+            activation.borrow_mut().watcher_alive = true;
+            arm(&activation);
+            // Run the actual attach attempt with only the hardware transaction
+            // replaced. A failure keeps status/backoff; success retires retry.
+            attempt_with(&activation, &failed, |_| Some(false));
+            assert!(failed.load(Ordering::Relaxed));
+            assert!(activation.borrow().timer.is_some());
+            attempt_with(&activation, &failed, |_| Some(true));
+            assert!(!failed.load(Ordering::Relaxed));
+            let activation = activation.borrow();
+            assert!(activation.stop.load(Ordering::Relaxed));
+            assert!(activation.timer.is_none());
+            assert_eq!(activation.retry.0, Duration::ZERO);
         }
     }
 
-    #[test]
-    fn successful_attach_clears_a_previous_watcher_failure() {
-        fixture_watcher_failed(true);
-        attached();
-        assert!(!watcher_failed());
-    }
     #[test]
     fn seat_and_watcher_retries_are_bounded_and_do_not_require_another_edge() {
         let mut retry = Backoff::default();

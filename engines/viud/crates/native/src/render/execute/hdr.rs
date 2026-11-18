@@ -131,6 +131,8 @@ pub fn compose(
         }
     }
     let pass = pipe.hdr_pass.as_mut()?;
+    // Smithay Id hashes immutable identity/namespace, not resource liveness.
+    #[allow(clippy::mutable_key_type)]
     let tagged = describe::surfaces();
     if let Err(e) = pass.render(renderer, elements, &tagged, &color) {
         if hdr {

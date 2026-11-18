@@ -289,6 +289,8 @@ const SURFACES_MAX: usize = 16384;
 
 /// Record (or, with `None`, forget) a surface's image description, keyed by
 /// the render element id smithay gives that surface.
+// Id hashes resource identity, never the resource's mutable liveness flag.
+#[allow(clippy::mutable_key_type)]
 pub fn set_surface(surface: &WlSurface, description: Option<Description>) {
     let id = Id::from_wayland_resource(surface);
     let generation = GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -320,6 +322,8 @@ pub fn set_surface(surface: &WlSurface, description: Option<Description>) {
 
 /// The live tagged surfaces, by render element id. Dead surfaces are dropped
 /// here, so the registry never outgrows the surfaces that exist.
+// Id hashes resource identity, never the resource's mutable liveness flag.
+#[allow(clippy::mutable_key_type)]
 pub fn surfaces() -> HashMap<Id, Tagged> {
     let mut guard = SURFACES.lock().unwrap_or_else(|e| e.into_inner());
     let Some(map) = guard.as_mut() else {
