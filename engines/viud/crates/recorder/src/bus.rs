@@ -539,9 +539,11 @@ impl Recording {
         let Some(rx) = &self.finishing else {
             return false;
         };
+        let mut disconnected = false;
         let (result, recovery_path) = match rx.try_recv() {
             Ok(result) => result,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                disconnected = true;
                 self.finalise_outcome.timeout();
                 (
                     Err("encoder finaliser disconnected; check recovery paths".into()),
@@ -582,7 +584,7 @@ impl Recording {
         self.terminal = Some(
             json!({"recovery_path":if self.error.is_some() {recovery_path} else {None},"path":self.path,"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"dropped_capture":self.dropped_capture,"dropped_queue":self.dropped-self.dropped_capture,"readback_deferred":self.readback_deferred,"pending_ticks":self.pending_ticks,"writer":self.writer_metrics.json(),"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
         );
-        if self
+        if disconnected || self
             .finalise_outcome
             .state
             .load(std::sync::atomic::Ordering::Acquire)
