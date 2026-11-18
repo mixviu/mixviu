@@ -1881,8 +1881,14 @@ fn review_hidden_remap_does_not_focus_and_show_with_geometry_is_atomic() {
         "comp.window.place",
         place_args(&row, json!({"x":120,"y":160})),
     );
-    assert_eq!(bus.window_for("hide-remap", &mut [&mut p])["window_x"], 120.0);
-    assert_eq!(bus.window_for("hide-remap", &mut [&mut p])["requested_visible"], false);
+    assert_eq!(
+        bus.window_for("hide-remap", &mut [&mut p])["window_x"],
+        120.0
+    );
+    assert_eq!(
+        bus.window_for("hide-remap", &mut [&mut p])["requested_visible"],
+        false
+    );
     bus.call(
         "comp.window.send_to_workspace",
         place_args(&row, json!({"index":2})),
@@ -2158,14 +2164,18 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
         "four pattern points + negative control; screenshot; mixed cursor frame: {changed} changed pixels confined to [160,160,24,24], {amber} amber pixels"
     );
 
-    let before = bus.window(&mut pattern)["presentation"]["presented"].as_u64().unwrap();
+    let before = bus.window(&mut pattern)["presentation"]["presented"]
+        .as_u64()
+        .unwrap();
     for _ in 0..12 {
         let previous = pattern.state.callbacks;
         pattern.commit(true);
         pattern.wait_callback(previous);
     }
     thread::sleep(Duration::from_millis(150));
-    let after = bus.window(&mut pattern)["presentation"]["presented"].as_u64().unwrap();
+    let after = bus.window(&mut pattern)["presentation"]["presented"]
+        .as_u64()
+        .unwrap();
     assert!(
         after >= before + 10,
         "damage commits did not present: {before} -> {after}"
@@ -2176,7 +2186,9 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
         pattern.wait_callback(previous);
     }
     thread::sleep(Duration::from_millis(150));
-    let still = bus.window(&mut pattern)["presentation"]["presented"].as_u64().unwrap();
+    let still = bus.window(&mut pattern)["presentation"]["presented"]
+        .as_u64()
+        .unwrap();
     assert_eq!(after, still, "callback-only commits must not present");
     // All callbacks have been consumed and the client stops committing. Count
     // both presented and empty draws through viud's existing frame ledger.
@@ -2195,7 +2207,9 @@ fn pattern_mixed_cursor_captures_and_presentation_ledger() {
     }
     assert_eq!(
         still,
-        bus.window(&mut pattern)["presentation"]["presented"].as_u64().unwrap()
+        bus.window(&mut pattern)["presentation"]["presented"]
+            .as_u64()
+            .unwrap()
     );
     assert_eq!(pattern.state.clock, Some(libc::CLOCK_MONOTONIC as u32));
     assert!(pattern.state.presented >= 12);
