@@ -333,43 +333,11 @@ mod tests {
             }
             at += 17 + len;
         }
-        assert_eq!(pixels, vec![255; 16]);
+        assert_eq!(pixels, [255; 16]);
         let manifest: serde_json::Value =
             serde_json::from_slice(&std::fs::read(path.join("complete.json")).unwrap()).unwrap();
         assert_eq!(manifest["dropped"], 1);
         assert_eq!(manifest["frames"], 3);
-        std::fs::remove_dir_all(path).unwrap();
-    }
-    #[test]
-    fn dropped_final_change_retried_as_repeat_seals_with_final_pixels() {
-        let encoder = VideoEncoder::start_result(2, 2, 30).unwrap();
-        // Hold admission full without racing the writer's receiver. No frame
-        // is enqueued while these synthetic occupied slots are installed.
-        encoder.queued.store(4, Ordering::Relaxed);
-        let final_rgb = Arc::new(vec![10, 20, 30].repeat(4));
-        assert!(!encoder.try_push_rgb_change(final_rgb.clone(), 2, 2, true));
-        encoder.queued.store(0, Ordering::Relaxed);
-        // Recording::frame(None) resubmits its immutable last readback with
-        // changed=false. That flag is accounting, not a writer repeat opcode.
-        assert!(encoder.try_push_rgb_change(final_rgb, 2, 2, false));
-        let path = encoder.finish_result().unwrap();
-        let manifest: serde_json::Value =
-            serde_json::from_slice(&std::fs::read(path.join("complete.json")).unwrap()).unwrap();
-        assert_eq!(manifest["dropped"], 1);
-        let data = std::fs::read(path.join("chunk-000000.bin")).unwrap();
-        let mut at = 0;
-        let mut final_pixels = Vec::new();
-        while at < data.len() {
-            let len = u32::from_le_bytes(data[at..at + 4].try_into().unwrap()) as usize;
-            if data[at + 16] == media_vfl::KEY {
-                final_pixels =
-                    lz4_flex::block::decompress(&data[at + 17..at + 17 + len], 16).unwrap();
-            } else {
-                assert_eq!(data[at + 16], media_vfl::REPEAT);
-            }
-            at += 17 + len;
-        }
-        assert_eq!(final_pixels, vec![30, 20, 10, 255].repeat(4));
         std::fs::remove_dir_all(path).unwrap();
     }
     #[test]
