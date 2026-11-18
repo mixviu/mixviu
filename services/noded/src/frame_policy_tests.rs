@@ -2,6 +2,10 @@
 
 #[test]
 fn frame_posture_defaults_observe_and_is_independent_of_admission() {
+    let node: config::node::NodeConfig = config::from_conf_mix_str(
+        "node: \"alpha\"\nnoded: { admission: \"enforce\", frame_policy: \"enforce\" }\n",
+    ).unwrap();
+    assert_eq!(super::frame_policy_config(&node.noded, None).unwrap(), AdmissionMode::Enforce);
     let mut config = config::node::NodedConfig::default();
     config.admission = AdmissionMode::Enforce;
     assert_eq!(super::frame_policy_config(&config, None).unwrap(), AdmissionMode::Observe);
@@ -16,7 +20,7 @@ fn frame_posture_defaults_observe_and_is_independent_of_admission() {
 
 async fn next_mesh_frame(socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) -> BusMessage {
     loop {
-        if let Some(Ok(WsMessage::Text(text))) = socket.next().await {
+        if let WsMessage::Text(text) = socket.next().await.expect("peer stayed connected").expect("valid frame") {
             return bus_mod::parse(&text).unwrap();
         }
     }
@@ -42,7 +46,7 @@ async fn policy_mesh_state(
 #[tokio::test]
 async fn serve_mesh_receiver_policy_delivers_observe_and_drops_enforce() {
     for mode in [AdmissionMode::Off, AdmissionMode::Observe, AdmissionMode::Enforce] {
-        for (from, to) in [("hostd.beta.bus", "recipient.gamma.bus"), ("hostd", "recipient.alpha.bus"), ("hostd.gamma.bus", "recipient.alpha.bus"), ("", "")] {
+        for (from, to) in [("hostd.beta.bus", "recipient.gamma.bus"), ("hostd", "recipient.alpha.bus"), ("absent", "recipient.alpha.bus"), ("hostd.gamma.bus", "recipient.alpha.bus"), ("", "")] {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let (state, incoming, peer) = policy_mesh_state(listener.local_addr().unwrap()).await;
             let (target, mut received) = mpsc::channel(8);
@@ -57,9 +61,10 @@ async fn serve_mesh_receiver_policy_delivers_observe_and_drops_enforce() {
                 socket.send(WsMessage::Ping(Vec::new().into())).await.unwrap();
                 assert_eq!(next_mesh_frame(&mut socket).await.command_name(), Some("noded.register"));
                 ready.await.unwrap();
-                let bad = if from.is_empty() { BusMessage::empty() } else {
+                let mut bad = if from.is_empty() { BusMessage::empty() } else {
                     BusMessage::new().with_header("from", from).with_header("to", to).with_header("id", "bad").with_header("type", "event")
                 };
+                if from == "absent" { bad.headers.remove("from"); }
                 let good = BusMessage::new().with_header("from", "hostd.beta.bus").with_header("to", "recipient.alpha.bus").with_header("id", "good").with_header("type", "event");
                 for frame in [bad, good] { socket.send(WsMessage::Text(frame.to_wire().into())).await.unwrap(); }
                 let _ = stopped.await;

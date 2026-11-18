@@ -153,7 +153,10 @@ async fn async_main() -> Result<()> {
     let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
     let noded_node = node.clone();
     let admission_mode = node_cfg.noded.admission;
-    let frame_policy = noded::frame_policy_config(&node_cfg.noded, std::env::var("MIX_NODED_FRAME_POLICY").ok().as_deref())?;
+    let frame_policy = noded::frame_policy_config(
+        &node_cfg.noded,
+        std::env::var("MIX_NODED_FRAME_POLICY").ok().as_deref(),
+    )?;
     let wg_ip = node_cfg.wg_ip.clone();
     let unix_socket = Some(node_cfg.noded.broker_unix_endpoint());
     let pending_grants_per_parent = node_cfg.noded.pending_grants_per_parent;
