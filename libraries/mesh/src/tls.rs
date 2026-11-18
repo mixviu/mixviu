@@ -40,7 +40,7 @@ impl Material {
             .with_single_cert(vec![self.cert.clone()], self.private_key())?;
         c.max_early_data_size = 0;
         c.send_tls13_tickets = 0;
-        c.session_storage = rustls::server::NoServerSessionStorage::new();
+        c.session_storage = Arc::new(rustls::server::NoServerSessionStorage {});
         Ok(Arc::new(c))
     }
     pub fn client(&self, expected: String) -> anyhow::Result<Arc<rustls::ClientConfig>> {
