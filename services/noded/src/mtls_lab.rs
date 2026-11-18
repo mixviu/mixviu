@@ -19,7 +19,7 @@ fn lab_inventory(epoch: u64, tombstone: bool) -> crate::authority::Posture {
     let members = serde_json::Value::Array([("alpha", 11u8), ("beta", 22u8)].into_iter().map(|(name, seed)| {
         serde_json::json!({"name":name,"status":if tombstone && name == "beta" {"tombstoned"} else {"active"},"bus":true,
             "mesh_ip":if name == "alpha" {"192.0.2.1"} else {"192.0.2.2"},
-            "credentials":[{"kind":"d2","pubkey":b64.encode(SigningKey::from_bytes(&[seed;32]).verifying_key().to_bytes()),"from_epoch":1,"until_epoch":null}]})
+            "credentials":[{"kind":"d2","pubkey":b64.encode(SigningKey::from_bytes(&[seed;32]).verifying_key().to_bytes()),"from_epoch":1,"until_epoch":if epoch >= 3 {Some(3)} else {None}}]})
     }).collect());
     let payload = InventoryPayload {
         schema_version: 1,
@@ -90,7 +90,10 @@ async fn lab_server(
     state: AppState,
     material: Option<mesh::tls::Material>,
 ) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
-    let tcp = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    lab_server_on(state, material, "127.0.0.1:0".parse().unwrap()).await
+}
+async fn lab_server_on(state:AppState, material:Option<mesh::tls::Material>, bind:std::net::SocketAddr) -> (std::net::SocketAddr,tokio::task::JoinHandle<()>) {
+    let tcp = tokio::net::TcpListener::bind(bind).await.unwrap();
     let addr = tcp.local_addr().unwrap();
     let task = tokio::spawn(async move {
         if let Some(m) = material {
@@ -190,6 +193,7 @@ fn lab_call(node: &str, size: usize) -> bus::BusMessage {
         .with_header("type", "request")
         .with_header("id", "call");
     msg.body = "secret-payload".repeat(size.div_ceil(14));
+    msg.body.truncate(size);
     msg
 }
 
@@ -255,6 +259,15 @@ async fn mtls_lab_security() {
     let (ab, sb) = lab_server(b.clone(), Some(mb.clone())).await;
     let ea = lab_echo(a.clone()).await;
     let eb = lab_echo(b.clone()).await;
+    for (name, target, material) in [("beta",aa,mb.clone()),("alpha",ab,ma.clone())] {
+        let destination=if name == "alpha" {"beta"} else {"alpha"};
+        let peer=PeerConfig {name:destination.into(),mesh_ip:target.ip(),noded_port:target.port()};
+        let (tx,_)=mpsc::unbounded_channel();
+        let peers=MeshPeers::new(MeshConfig {node_name:name.into(), peers:vec![peer.clone()], d2_seed:None},tx).with_tls(Some(material));
+        let reply=peers.call(peer,lab_call(destination,16)).await.unwrap();
+        assert_eq!(reply.body.len(),16);
+        peers.reconcile_endpoints(HashMap::new(),mesh::AuthorityRevision::default()).await;
+    }
     let mut ba = lab_connect(aa, Some(&mb), "alpha").await.unwrap();
     let mut ab_ws = lab_connect(ab, Some(&ma), "beta").await.unwrap();
     lab_register(&mut ba, "bridge-beta").await;
@@ -331,6 +344,11 @@ async fn mtls_lab_security() {
         lab_connect(aa, Some(&mb), "alpha").await.is_err(),
         "tombstone handshake refused"
     );
+    let crate::authority::Posture::Verified(expired)=lab_inventory(3,false) else {unreachable!()};
+    b.authority.store(Arc::new(crate::routing::RoutingAuthority::new(crate::authority::Posture::Verified(expired.clone()),"beta","127.0.0.1",4200,&[])));
+    super::reload_revocation_teardown(&b,&expired).await;
+    assert!(lab_recv(&mut ab_ws).await.is_none(),"expired live key dropped");
+    assert!(lab_connect(ab,Some(&ma),"beta").await.is_err(),"expired handshake refused");
     for task in [sa, sb, ea, eb] {
         task.abort();
     }

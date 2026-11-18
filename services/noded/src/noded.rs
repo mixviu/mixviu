@@ -2247,6 +2247,9 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     // SPEC 13 §9a (2-c-2b) — the per-session admission record, folded from each
     // admit response and consulted by the register-time enforce gate below.
     state.session_admission = match &transport {
+        TransportIdentity::MeshTls { node, .. } => SessionAdmission {
+            admitted_node: Some(node.clone()), last_detail: None, response_seen: true,
+        },
         TransportIdentity::Mesh { admission, .. } => SessionAdmission {
             admitted_node: admission.admitted_node.clone(),
             last_detail: admission.last_detail,
