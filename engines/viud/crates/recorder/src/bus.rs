@@ -159,8 +159,9 @@ impl TakeFiles {
                 std::fs::remove_file(path)
             };
             if let Err(error) = result
-                && error.kind() != std::io::ErrorKind::NotFound {
-                    return Err(format!("remove private take: {error}"));
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                return Err(format!("remove private take: {error}"));
             }
         }
         Ok(())
@@ -584,11 +585,12 @@ impl Recording {
         self.terminal = Some(
             json!({"recovery_path":if self.error.is_some() {recovery_path} else {None},"path":self.path,"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"dropped_capture":self.dropped_capture,"dropped_queue":self.dropped-self.dropped_capture,"readback_deferred":self.readback_deferred,"pending_ticks":self.pending_ticks,"writer":self.writer_metrics.json(),"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
         );
-        if disconnected || self
-            .finalise_outcome
-            .state
-            .load(std::sync::atomic::Ordering::Acquire)
-            == TIMED_OUT
+        if disconnected
+            || self
+                .finalise_outcome
+                .state
+                .load(std::sync::atomic::Ordering::Acquire)
+                == TIMED_OUT
         {
             let terminal = self.terminal.as_mut().unwrap();
             terminal["manual_cleanup_required"] = json!(true);
