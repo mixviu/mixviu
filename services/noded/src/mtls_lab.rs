@@ -354,15 +354,34 @@ async fn mtls_lab_security() {
     }
 }
 
+async fn lab_measure_broker(tls:bool, bind:std::net::SocketAddr) -> (std::net::SocketAddr,libc::clockid_t,tokio::sync::oneshot::Sender<()>,std::thread::JoinHandle<()>) {
+    let (ready_tx,ready_rx)=tokio::sync::oneshot::channel();
+    let (stop_tx,stop_rx)=tokio::sync::oneshot::channel();
+    let thread=std::thread::spawn(move || {
+        let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+        rt.block_on(async move {
+            let state=reload_test_state(lab_inventory(1,false),vec![]).await;
+            let material=lab_material(&state,11);
+            let (addr,_)=lab_server_on(state.clone(),tls.then_some(material),bind).await;
+            let _echo=lab_echo(state).await;
+            let mut clock=0;
+            // SAFETY: current pthread is live; clock points to writable storage.
+            assert_eq!(unsafe {libc::pthread_getcpuclockid(libc::pthread_self(),&mut clock)},0);
+            ready_tx.send((addr,clock)).unwrap();
+            let _=stop_rx.await;
+        });
+    });
+    let (addr,clock)=ready_rx.await.unwrap();
+    (addr,clock,stop_tx,thread)
+}
+
 #[tokio::test]
 #[ignore = "release CBC measurements"]
 async fn mtls_lab_measure() {
     for tls in [false, true] {
         let state = reload_test_state(lab_inventory(1, false), vec![]).await;
-        let server = lab_material(&state, 11);
         let client = lab_material(&state, 22);
-        let (addr, task) = lab_server(state.clone(), tls.then_some(server)).await;
-        let echo = lab_echo(state).await;
+        let (addr,clock,stop,thread)=lab_measure_broker(tls,"127.0.0.1:0".parse().unwrap()).await;
         let start = Instant::now();
         let mut ws = lab_connect(addr, tls.then_some(&client), "alpha")
             .await
@@ -383,7 +402,7 @@ async fn mtls_lab_measure() {
             assert!(lab_recv(&mut ws).await.is_some());
         }
         let mib_s = 32.0 / start.elapsed().as_secs_f64();
-        let cpu_start = lab_cpu();
+        let cpu_start = lab_cpu(clock);
         let start = Instant::now();
         for _ in 0..10000 {
             lab_send(&mut ws, lab_call("alpha", 16)).await;
@@ -393,18 +412,25 @@ async fn mtls_lab_measure() {
             "LAB_MEASURE tls={tls} handshake_us={handshake} p50_us={} p99_us={} duplex_mib_s={mib_s:.2} cpu_ms={:.2} wall_ms={:.2}",
             times[500],
             times[990],
-            (lab_cpu() - cpu_start) * 1000.0,
+            (lab_cpu(clock) - cpu_start) * 1000.0,
             start.elapsed().as_secs_f64() * 1000.0
         );
-        task.abort();
-        echo.abort();
+        let _=stop.send(());thread.join().unwrap();
+        let restart=Instant::now();
+        let (_,_,stop,thread)=lab_measure_broker(tls,addr).await;
+        let mut reconnected=lab_connect(addr,tls.then_some(&client),"alpha").await.unwrap();
+        lab_register(&mut reconnected,if tls {"bridge-beta"} else {"caller"}).await;
+        lab_send(&mut reconnected,lab_call("alpha",16)).await;
+        assert!(lab_recv(&mut reconnected).await.is_some());
+        println!("LAB_RECONNECT tls={tls} restart_to_call_us={}",restart.elapsed().as_micros());
+        let _=stop.send(());thread.join().unwrap();
     }
 }
-fn lab_cpu() -> f64 {
+fn lab_cpu(clock:libc::clockid_t) -> f64 {
     let mut time = std::mem::MaybeUninit::<libc::timespec>::uninit();
     // SAFETY: clock_gettime writes the live timespec on success.
     assert_eq!(
-        unsafe { libc::clock_gettime(libc::CLOCK_PROCESS_CPUTIME_ID, time.as_mut_ptr()) },
+        unsafe { libc::clock_gettime(clock, time.as_mut_ptr()) },
         0
     );
     let time = unsafe { time.assume_init() };
