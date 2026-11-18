@@ -2316,6 +2316,9 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 close: close_signal.clone(),
             },
         );
+        // Close the handshake-to-session-publication reload race, including an
+        // idle peer which sends no further frames after a concurrent reload.
+        if admitted_delivery_peer(&state, source_ip).is_none() { close_signal.notify_one(); }
     }
     let connection_observe = state.observe.clone();
     loop {

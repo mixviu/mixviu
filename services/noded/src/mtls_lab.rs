@@ -107,6 +107,7 @@ async fn lab_server_on(state:AppState, material:Option<mesh::tls::Material>, bin
             .await
             .unwrap();
         } else {
+            let tcp=axum::serve::ListenerExt::tap_io(tcp,|tcp| {tcp.set_nodelay(true).unwrap();});
             let app = axum::Router::new()
                 .route("/ws", axum::routing::get(super::ws_handler))
                 .with_state(state);
