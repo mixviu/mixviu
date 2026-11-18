@@ -21,7 +21,7 @@ mod_module_files = "deny"
 test-support = []
 
 [dependencies]
-paths.workspace = true
+paths = { path = "../../../../libraries/paths" }
 recorder.workspace = true
 comp-model.workspace = true
 ledger.workspace = true

@@ -610,6 +610,27 @@ mod file_tests {
     use super::*;
     use std::os::unix::fs::{PermissionsExt, symlink};
     #[test]
+    fn disconnected_finaliser_names_recovery_paths() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("disconnected.vfl").to_str().unwrap().to_owned();
+        let mut r = Recording::new("disconnected".into(), path, 2, 2, 30, "vfl".into()).unwrap();
+        r.frame(Some((2, 2, Arc::new(vec![0; 12]), 0))).unwrap();
+        r.stop(false);
+        r.finaliser.take().unwrap().join().unwrap();
+        r.finalise_outcome = Default::default();
+        let (tx, rx) = channel();
+        drop(tx);
+        r.finishing = Some(rx);
+        assert!(r.poll());
+        let terminal = r.terminal.as_ref().unwrap();
+        assert_eq!(terminal["manual_cleanup_required"], true);
+        assert_eq!(terminal["recovery_path"], r.files.video);
+        assert_eq!(terminal["recovery_paths"], json!([r.files.video, r.files.path]));
+        assert!(r.error.as_ref().unwrap().contains("disconnected"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn hung_finaliser_has_bounded_failure_without_joining() {
         let dir = std::env::temp_dir().join(private_token().unwrap());
         std::fs::create_dir(&dir).unwrap();

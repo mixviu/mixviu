@@ -1,7 +1,13 @@
-macro_rules! mapping_trace { ($($arg:tt)*) => { if std::env::var_os(paths::env::test::TEST_MAPPING_TRACE).is_some() { eprintln!($($arg)*); } }; }
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Shm test client: four opaque quadrants. Cursor tests use the agent arrow.
+macro_rules! mapping_trace {
+    ($($arg:tt)*) => {
+        if std::env::var_os(paths::env::test::TEST_MAPPING_TRACE).is_some() {
+            eprintln!($($arg)*);
+        }
+    };
+}
 use std::{
     fs::File,
     os::{
