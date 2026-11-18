@@ -349,7 +349,10 @@ impl MeshPeers {
         }
     }
 
-    pub fn with_tls(mut self, tls: Option<crate::tls::Material>) -> Self { self.tls = tls; self }
+    pub fn with_tls(mut self, tls: Option<crate::tls::Material>) -> Self {
+        self.tls = tls;
+        self
+    }
 
     /// Get this node's name.
     pub fn node_name(&self) -> &str {
@@ -775,8 +778,18 @@ async fn connect_and_publish(
     incoming_tx: mpsc::UnboundedSender<MeshInbound>,
 ) -> Result<Arc<RemoteBroker>> {
     let target = peer.noded_addr();
-    let url = if tls.is_some() { format!("wss://{}/ws", peer.noded_addr()) } else { peer.noded_url() };
-    let connector = tls.as_ref().map(|m| m.client(peer.name.clone()).map(tokio_tungstenite::Connector::Rustls)).transpose()?;
+    let url = if tls.is_some() {
+        format!("wss://{}/ws", peer.noded_addr())
+    } else {
+        peer.noded_url()
+    };
+    let connector = tls
+        .as_ref()
+        .map(|m| {
+            m.client(peer.name.clone())
+                .map(tokio_tungstenite::Connector::Rustls)
+        })
+        .transpose()?;
     tracing::info!(peer = %peer.name, url = %url, "Connecting to remote broker");
 
     // Nagle off on this end too: TCP_NODELAY is per socket, so the remote
@@ -818,14 +831,22 @@ async fn connect_and_publish(
     // to the normal inbound path so it is not lost. A late challenge (after
     // the timeout) is handled harmlessly by the reader (delivered, ignored)
     // — the session just goes unproven (the broker logs `no-proof`).
-    let first_frame = if tls.is_some() { Err(tokio::time::timeout(std::time::Duration::ZERO, std::future::pending::<()>()).await.unwrap_err()) } else { tokio::select! {
-        biased;
-        changed = attempt_cancel.changed() => {
-            let _ = changed;
-            anyhow::bail!("Route to {} was revoked during admission", peer.name);
+    let first_frame = if tls.is_some() {
+        Err(
+            tokio::time::timeout(std::time::Duration::ZERO, std::future::pending::<()>())
+                .await
+                .unwrap_err(),
+        )
+    } else {
+        tokio::select! {
+            biased;
+            changed = attempt_cancel.changed() => {
+                let _ = changed;
+                anyhow::bail!("Route to {} was revoked during admission", peer.name);
+            }
+            frame = tokio::time::timeout(ADMISSION_CHALLENGE_TIMEOUT, ws_stream_rx.next()) => frame,
         }
-        frame = tokio::time::timeout(ADMISSION_CHALLENGE_TIMEOUT, ws_stream_rx.next()) => frame,
-    } };
+    };
     match first_frame {
         // Timed out — a silent (pre-2c / `off`) broker. The connection is
         // alive; fall through and register-first (back-compat).

@@ -21,8 +21,6 @@ mod admission;
 mod authority;
 #[path = "../../../services/noded/src/native_ingress.rs"]
 mod native_ingress;
-#[path = "../../../services/noded/src/tls_ingress.rs"]
-mod tls_ingress;
 #[path = "../../../services/noded/src/noded.rs"]
 mod noded;
 #[path = "../../../services/noded/src/observe.rs"]
@@ -41,6 +39,8 @@ mod spec;
 mod spec_release;
 #[path = "../../../services/noded/src/subscription.rs"]
 mod subscription;
+#[path = "../../../services/noded/src/tls_ingress.rs"]
+mod tls_ingress;
 
 use std::path::PathBuf;
 use std::time::Duration;
