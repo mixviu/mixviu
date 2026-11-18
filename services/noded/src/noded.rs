@@ -51,10 +51,19 @@ static FRAME_REFUSAL_COUNT: AtomicU64 = AtomicU64::new(0);
 
 /// Every violation has a structured audit event; human-facing logs coalesce.
 fn frame_refused(reason: &str, peer: &str, address: &str, posture: AdmissionMode) {
-    tracing::debug!(event = "frame.refused", reason, peer, peer_address = address,
-        posture = admission_mode_str(posture), "Inter-node frame policy");
+    tracing::debug!(
+        event = "frame.refused",
+        reason,
+        peer,
+        peer_address = address,
+        posture = admission_mode_str(posture),
+        "Inter-node frame policy"
+    );
     warn_drop(&FRAME_REFUSAL_LAST_MS, &FRAME_REFUSAL_COUNT, |count| {
-        format!("frame.refused reason={reason} peer={peer} peer_address={address} posture={} count={count}", admission_mode_str(posture))
+        format!(
+            "frame.refused reason={reason} peer={peer} peer_address={address} posture={} count={count}",
+            admission_mode_str(posture)
+        )
     });
 }
 
@@ -720,13 +729,20 @@ async fn serve(
             let peer = inbound.peer;
             let connection_generation = inbound.connection_generation;
             let mut msg = inbound.message;
-            let peer_address = authority_for_mesh.load().routes.resolve(&peer)
-                .map(|target| target.into_peer().noded_addr().to_string()).unwrap_or_default();
+            let peer_address = authority_for_mesh
+                .load()
+                .routes
+                .resolve(&peer)
+                .map(|target| target.into_peer().noded_addr().to_string())
+                .unwrap_or_default();
             let refusal = if frame_policy::wrong_node(&msg, &node_for_mesh) {
                 Some("wrong-node-ingress")
-            } else if admission_mode != AdmissionMode::Off && !frame_policy::from_peer(&msg, &peer) {
+            } else if admission_mode != AdmissionMode::Off && !frame_policy::from_peer(&msg, &peer)
+            {
                 Some("from-node-mismatch")
-            } else { None };
+            } else {
+                None
+            };
             if let Some(reason) = refusal {
                 frame_refused(reason, &peer, &peer_address, admission_mode);
                 if admission_mode != AdmissionMode::Observe || reason == "wrong-node-ingress" {
@@ -2158,8 +2174,12 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 if let Ok(mut frame) = bus::parse(&msg) {
                     frame.originate_mesh(&writer_node);
                     frame.to_wire()
-                } else { msg }
-            } else { msg };
+                } else {
+                    msg
+                }
+            } else {
+                msg
+            };
             if ws_sink.send(Message::Text(msg.into())).await.is_err() {
                 break;
             }
@@ -2286,10 +2306,21 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         {
             let peer = if state.admission_mode == AdmissionMode::Enforce {
                 state.session_admission.admitted_node.clone()
-            } else { admitted_delivery_peer(&state, source_ip) };
-            if let Some(reason) = frame_policy::session_refusal(&bus_msg, peer.as_deref(), service_name.as_deref()) {
-                frame_refused(reason, peer.as_deref().unwrap_or(""), &source_ip_str, state.admission_mode);
-                if state.admission_mode == AdmissionMode::Enforce { break; }
+            } else {
+                admitted_delivery_peer(&state, source_ip)
+            };
+            if let Some(reason) =
+                frame_policy::session_refusal(&bus_msg, peer.as_deref(), service_name.as_deref())
+            {
+                frame_refused(
+                    reason,
+                    peer.as_deref().unwrap_or(""),
+                    &source_ip_str,
+                    state.admission_mode,
+                );
+                if state.admission_mode == AdmissionMode::Enforce {
+                    break;
+                }
             }
         }
         strip_principal(&mut bus_msg);
@@ -2941,7 +2972,16 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             }
             Route::RemoteMesh { target } => {
                 if !is_same_node_origin(source_ip, &state.bind) {
-                    frame_refused("remote-origin-relay", state.session_admission.admitted_node.as_deref().unwrap_or(""), &source_ip_str, state.admission_mode);
+                    frame_refused(
+                        "remote-origin-relay",
+                        state
+                            .session_admission
+                            .admitted_node
+                            .as_deref()
+                            .unwrap_or(""),
+                        &source_ip_str,
+                        state.admission_mode,
+                    );
                     continue;
                 }
                 if let Err(reason) = bus_msg.clone().forward_mesh() {
@@ -2987,10 +3027,23 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 let tx_clone = tx.clone();
                 let mesh = state.mesh.clone();
                 let peer = target.into_peer();
+                let response_peer = peer.name.clone();
+                let response_address = peer.noded_addr().to_string();
+                let response_mode = state.admission_mode;
+                let response_node = state.node_name.clone();
                 let msg_id = bus_msg.get("id").map(|s| s.to_string());
                 tokio::spawn(async move {
                     match mesh.call(peer, bus_msg).await {
                         Ok(mut resp) => {
+                            let reason = if frame_policy::wrong_node(&resp, &response_node) {
+                                Some("wrong-node-ingress")
+                            } else if response_mode != AdmissionMode::Off && !frame_policy::from_peer(&resp, &response_peer) {
+                                Some("from-node-mismatch")
+                            } else { None };
+                            if let Some(reason) = reason {
+                                frame_refused(reason, &response_peer, &response_address, response_mode);
+                                if response_mode != AdmissionMode::Observe || reason == "wrong-node-ingress" { return; }
+                            }
                             if let Some(observation) = pending_observation.as_ref() {
                                 observation.manager.observe(
                                     Observation::from_message(
@@ -7599,6 +7652,79 @@ mod tests {
             last_detail: None,
         };
         state
+    }
+
+    #[tokio::test]
+    async fn inter_node_wire_postures_gate_before_dispatch() {
+        use tracing::instrument::WithSubscriber;
+        #[derive(Clone)]
+        struct Audit(Arc<std::sync::Mutex<Vec<u8>>>);
+        impl std::io::Write for Audit {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        for (mode, register, from, refused) in [
+            (AdmissionMode::Enforce, false, "hostd.beta.bus", true),
+            (AdmissionMode::Observe, false, "hostd.beta.bus", false),
+            (AdmissionMode::Off, false, "hostd.beta.bus", false),
+            (AdmissionMode::Enforce, true, "hostd.gamma.bus", true),
+            (AdmissionMode::Observe, true, "hostd.gamma.bus", false),
+            (AdmissionMode::Off, true, "hostd.gamma.bus", false),
+            (AdmissionMode::Enforce, true, "hostd.beta.bus", false),
+        ] {
+            let mut state = mesh_delivery_test_state().await;
+            state.admission_mode = mode;
+            let audit = Audit(Arc::new(std::sync::Mutex::new(Vec::new())));
+            let output = audit.0.clone();
+            let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
+                .with_max_level(tracing::Level::DEBUG).with_writer(move || audit.clone()).finish();
+            let dispatch = tracing::Dispatch::new(subscriber);
+            let app = axum::Router::new().route("/ws", axum::routing::get(
+                move |upgrade: axum::extract::ws::WebSocketUpgrade| {
+                    let state = state.clone();
+                    let dispatch = dispatch.clone();
+                    async move {
+                        upgrade.on_upgrade(move |socket| super::handle_socket(socket, state,
+                            bus::native_session::TransportIdentity::Mesh {
+                                source_ip: "192.0.2.2".parse().unwrap(),
+                                admission: bus::native_session::MeshAdmission {
+                                    admitted_node: Some("beta".into()), response_seen: true, last_detail: None,
+                                },
+                            }).with_subscriber(dispatch))
+                    }
+                }));
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("ws://{}/ws", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
+            let (mut sink, mut stream) = raw_connect(&url).await;
+            if register { raw_register(&mut sink, &mut stream, "bridge-beta").await; }
+            let request = BusMessage::new().with_header("type", "request")
+                .with_header("command", "noded.ping").with_header("to", "noded")
+                .with_header("id", "policy-probe").with_header("from", from);
+            if refused {
+                sink.send(WsMessage::Text(request.to_wire().into())).await.unwrap();
+                tokio::time::timeout(Duration::from_secs(2), async {
+                    while let Some(Ok(frame)) = stream.next().await {
+                        if let WsMessage::Text(text) = frame {
+                            assert_ne!(bus_mod::parse(&text).unwrap().get("id"), Some("policy-probe"));
+                        }
+                    }
+                }).await.expect("enforce must close the refused connection");
+            } else {
+                assert_eq!(raw_call(&mut sink, &mut stream, request, "policy-probe").await.rc(), Some(0));
+            }
+            let logs = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+            let violation = !register || from == "hostd.gamma.bus";
+            assert_eq!(logs.contains("event=\"frame.refused\""), violation && mode != AdmissionMode::Off, "{logs}");
+            if violation && mode == AdmissionMode::Observe {
+                assert!(logs.contains("posture=\"observe\""), "{logs}");
+                assert!(logs.contains("192.0.2.2"), "{logs}");
+            }
+            server.abort();
+        }
     }
 
     #[tokio::test]

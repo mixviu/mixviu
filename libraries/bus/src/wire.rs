@@ -59,9 +59,14 @@ impl BusMessage {
         use std::sync::atomic::{AtomicU64, Ordering};
         static NEXT: AtomicU64 = AtomicU64::new(1);
         let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
         if self.get("request_id").is_none() {
-            self.set("request_id", &format!("{node}-{now}-{}", NEXT.fetch_add(1, Ordering::Relaxed)));
+            self.set(
+                "request_id",
+                &format!("{node}-{now}-{}", NEXT.fetch_add(1, Ordering::Relaxed)),
+            );
         }
         if self.get("deadline").is_none() {
             self.set("deadline", &(now + 30_000).to_string());
@@ -82,7 +87,9 @@ impl BusMessage {
     pub fn forward_mesh(&mut self) -> Result<(), &'static str> {
         if let Some(raw) = self.get("hop_limit") {
             let hops = raw.parse::<u32>().map_err(|_| "invalid-hop-limit")?;
-            if hops == 0 { return Err("hop-limit-exhausted"); }
+            if hops == 0 {
+                return Err("hop-limit-exhausted");
+            }
             self.set("hop_limit", &(hops - 1).to_string());
         }
         Ok(())
@@ -433,13 +440,19 @@ mod tests {
         new.forward_mesh().unwrap();
         // Both pre-existing decode paths accept and retain arbitrary headers;
         // old callers only read their known keys (no schema/version switch).
-        for decoded in [parse(&new.to_wire()).unwrap(), parse_strict(&new.to_wire()).unwrap()] {
+        for decoded in [
+            parse(&new.to_wire()).unwrap(),
+            parse_strict(&new.to_wire()).unwrap(),
+        ] {
             assert_eq!(decoded.command_name(), legacy.command_name());
             assert_eq!(decoded.get("hop_limit"), Some("0"));
             assert_eq!(decoded.get("request_id"), Some(request_id.as_str()));
             assert_eq!(decoded.clone().forward_mesh(), Err("hop-limit-exhausted"));
         }
-        assert_eq!(new.with_header("hop_limit", "invalid").forward_mesh(), Err("invalid-hop-limit"));
+        assert_eq!(
+            new.with_header("hop_limit", "invalid").forward_mesh(),
+            Err("invalid-hop-limit")
+        );
     }
 
     #[test]
