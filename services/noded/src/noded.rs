@@ -5178,7 +5178,6 @@ fn escape_json_string(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    include!("mtls_lab.rs");
     //! Regression test for the 2026-04-28 noded log-feedback meltdown.
     //!
     //! Reproduces the failure shape: a peer that is **registered as a
@@ -5192,6 +5191,7 @@ mod tests {
     //! broadcast_tap to skip the same Sender) and remaining drops are
     //! coalesced to ≤1 WARN per second per axis.
 
+    include!("mtls_lab.rs");
     use std::collections::HashMap;
     use std::net::{Ipv4Addr, TcpListener};
     use std::sync::Arc;
