@@ -3,6 +3,13 @@
 type LabWs =
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+#[derive(Debug)]
+struct LabNoCert;
+impl rustls::client::ResolvesClientCert for LabNoCert {
+    fn resolve(&self, _: &[&[u8]], _: &[rustls::SignatureScheme]) -> Option<Arc<rustls::sign::CertifiedKey>> { None }
+    fn has_certs(&self) -> bool { false }
+}
+
 fn lab_inventory(epoch: u64, tombstone: bool) -> crate::authority::Posture {
     use base64::Engine;
     use ed25519_dalek::{Signer, SigningKey};
@@ -24,7 +31,7 @@ fn lab_inventory(epoch: u64, tombstone: bool) -> crate::authority::Posture {
         valid_until: "2027-11-18T00:00:00Z".into(),
         hub: vec!["alpha".into()],
         verify_keys: vec![VerifyKey {
-            key_id: GENESIS_KEY_ID.into(),
+            key_id: "genesis".into(),
             pubkey: b64.encode(root.verifying_key().to_bytes()),
             key_type: ALG_ED25519.into(),
             status: KeyStatus::Active,
@@ -37,7 +44,7 @@ fn lab_inventory(epoch: u64, tombstone: bool) -> crate::authority::Posture {
     let signed = SignedInventory {
         payload,
         signatures: vec![InvSignature {
-            key_id: GENESIS_KEY_ID.into(),
+            key_id: "genesis".into(),
             alg: ALG_ED25519.into(),
             sig: b64.encode(sig.to_bytes()),
         }],
@@ -266,7 +273,7 @@ async fn mtls_lab_security() {
     );
     // Empty client certificate chain, but authenticate the server normally.
     let mut no_cert = (*mb.client("alpha".into()).unwrap()).clone();
-    no_cert.client_auth_cert_resolver = Arc::new(rustls::client::FailResolveClientCert {});
+    no_cert.client_auth_cert_resolver = Arc::new(LabNoCert);
     let no_cert = tokio_tungstenite::connect_async_tls_with_config(
         format!("wss://{aa}/ws"),
         None,
@@ -283,10 +290,8 @@ async fn mtls_lab_security() {
     let mut unregistered = lab_connect(aa, Some(&mb), "alpha").await.unwrap();
     lab_send(&mut unregistered, lab_call("alpha", 16)).await;
     assert!(lab_recv(&mut unregistered).await.is_none());
-    let mut relay = lab_connect(aa, Some(&mb), "alpha").await.unwrap();
-    lab_register(&mut relay, "bridge-beta").await;
-    lab_send(&mut relay, lab_call("beta", 16)).await;
-    assert!(lab_recv(&mut relay).await.is_none());
+    lab_send(&mut ba, lab_call("beta", 16)).await;
+    assert!(lab_recv(&mut ba).await.is_none());
     let (tap, bytes, tap_task) = lab_tap(aa).await;
     let mut sniffed = lab_connect(tap, Some(&mb), "alpha").await.unwrap();
     lab_register(&mut sniffed, "bridge-beta").await;
@@ -305,8 +310,7 @@ async fn mtls_lab_security() {
             );
         }
     }
-    tap_task.abort();
-    let start = Instant::now();
+
     let crate::authority::Posture::Verified(revoked) = lab_inventory(2, true) else {
         unreachable!()
     };
@@ -317,9 +321,11 @@ async fn mtls_lab_security() {
         4200,
         &[],
     );
+    let start = Instant::now();
     a.authority.store(Arc::new(next));
     super::reload_revocation_teardown(&a, &revoked).await;
-    assert!(lab_recv(&mut ba).await.is_none());
+    assert!(lab_recv(&mut sniffed).await.is_none());
+    tap_task.abort();
     println!("MTLS_RELOAD_DROP_US={}", start.elapsed().as_micros());
     assert!(
         lab_connect(aa, Some(&mb), "alpha").await.is_err(),

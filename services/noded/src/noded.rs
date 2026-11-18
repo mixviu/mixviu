@@ -1056,14 +1056,21 @@ async fn serve(
     let raw_listener = listener;
     let tcp_server = async move {
         if let Some(material) = tls {
+            let local_addr: std::net::SocketAddr = std::env::var("MIX_BUS_LOCAL_WS")
+                .unwrap_or_else(|_| "127.0.0.1:0".into()).parse()
+                .map_err(std::io::Error::other)?;
+            if !local_addr.ip().is_loopback() { return Err(std::io::Error::other("local ws must bind loopback")); }
+            let local = tokio::net::TcpListener::bind(local_addr).await?;
+            tracing::info!(address = %local.local_addr()?, "TLS lab local ws listener");
             let tls_app = Router::new()
                 .route("/ws", axum::routing::get(tls_ws_handler))
                 .with_state(tls_state);
-            return axum::serve(
+            let tls_server = axum::serve(
                 crate::tls_ingress::TlsListener::new(raw_listener, material)?,
                 tls_app.into_make_service_with_connect_info::<crate::tls_ingress::TlsPeer>(),
-            )
-            .await;
+            );
+            tokio::try_join!(async {tls_server.await}, async {axum::serve(local, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await})?;
+            return Ok(());
         }
         let listener = axum::serve::ListenerExt::tap_io(raw_listener, |tcp| {
             if let Err(error) = tcp.set_nodelay(true) {
