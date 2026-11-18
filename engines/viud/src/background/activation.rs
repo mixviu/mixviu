@@ -120,9 +120,9 @@ fn notice(
         return;
     }
     match notice {
-        // Readiness alone proves no progress: a source can fail immediately,
-        // and the no-own-VT source ends after its first activation notice.
-        Notice::Ready => {}
+        // Readiness proves the watcher recovered, but must not reset seat or
+        // watcher backoff: the source may still fail immediately afterwards.
+        Notice::Ready => failed.store(false, Ordering::Relaxed),
         Notice::Active => attempt(),
         Notice::Stopped(error) => {
             shared.borrow_mut().watcher_alive = false;
@@ -269,7 +269,7 @@ mod tests {
             }));
             for expected in [250, 500, 1000, 2000, 4000, 5000] {
                 notice(&activation, Notice::Ready, &failed, || panic!("not active"));
-                assert!(failed.load(Ordering::Relaxed));
+                assert!(!failed.load(Ordering::Relaxed));
                 if seat_failure {
                     notice(&activation, Notice::Active, &failed, || arm(&activation));
                 }

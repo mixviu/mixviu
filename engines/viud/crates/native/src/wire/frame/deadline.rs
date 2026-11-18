@@ -37,6 +37,18 @@ impl<D: 'static> GpuCompletion<D> {
         start: Instant,
         query: impl Fn(std::os::fd::BorrowedFd<'_>) -> Option<std::time::Duration> + 'static,
     ) -> Option<Self> {
+        Self::with_clock(handle, fd, start, query, || {
+            (Instant::now(), kms::scanout::timing::vblank::monotonic_now())
+        })
+    }
+
+    fn with_clock(
+        handle: &LoopHandle<'static, D>,
+        fd: std::os::fd::OwnedFd,
+        start: Instant,
+        query: impl Fn(std::os::fd::BorrowedFd<'_>) -> Option<std::time::Duration> + 'static,
+        clock: impl Fn() -> (Instant, Option<std::time::Duration>) + 'static,
+    ) -> Option<Self> {
         use smithay::reexports::calloop::{Interest, Mode, PostAction, generic::Generic};
         use std::os::fd::AsFd;
         let elapsed = Rc::new(Cell::new(None));
@@ -48,8 +60,7 @@ impl<D: 'static> GpuCompletion<D> {
                 Generic::new(fd, Interest::READ, Mode::Level),
                 move |_, fd, _| {
                     let signal = query(fd.as_fd());
-                    let observed = Instant::now();
-                    let now = kms::scanout::timing::vblank::monotonic_now();
+                    let (observed, now) = clock();
                     completed
                         .set(signal.and_then(|signal| elapsed_at(start, observed, now?, signal)));
                     // Remove unregisters the fd exactly once; Drop skips this token.
@@ -282,7 +293,7 @@ mod tests {
         let mut event_loop: EventLoop<'static, ()> = EventLoop::try_new().unwrap();
         let (reader, mut writer) = UnixStream::pair().unwrap();
         let observed = Instant::now();
-        let now = kms::scanout::timing::vblank::monotonic_now().unwrap();
+        let now = Duration::from_secs(10);
         let start = observed - Duration::from_millis(20);
         let signal = now - Duration::from_millis(17);
         // Model a 3 ms GPU completion whose callback is 17 ms late. Use the
@@ -290,10 +301,10 @@ mod tests {
         let queries = Rc::new(Cell::new(0));
         let calls = queries.clone();
         let sample =
-            GpuCompletion::with_query(&event_loop.handle(), reader.into(), start, move |_| {
+            GpuCompletion::with_clock(&event_loop.handle(), reader.into(), start, move |_| {
                 calls.set(calls.get() + 1);
                 Some(signal)
-            })
+            }, move || (observed, Some(now)))
             .unwrap();
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
         assert_eq!(sample.elapsed(), None);

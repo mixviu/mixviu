@@ -125,7 +125,8 @@ fn needs_reconcile(current: &Nodes, known: &Nodes, retry: &mut Retry) -> bool {
         }
     }
     retry.pending = Some(disagreement);
-    confirmed
+    // Bound grace even when a broken node is replaced on every scan.
+    confirmed || retry.grace_restarts >= 8
 }
 
 fn reconcile(current: Nodes, retry: &mut Retry, reset: impl FnOnce() -> bool) -> Option<Duration> {
@@ -145,7 +146,12 @@ fn reconcile_at(
             Ok(meta) => KNOWN.with_borrow_mut(|known| {
                 known.insert(path, (meta.rdev(), meta.ino()));
             }),
-            Err(error) => metadata_failed(&path, error),
+            Err(error) => {
+                // A lifecycle event already admitted this device. Keep its
+                // metadata pending so a transient stat cannot cause a reset.
+                METADATA_RETRY.with_borrow_mut(|pending| { pending.insert(path.clone()); });
+                metadata_failed(&path, error);
+            }
         }
     }
     // Resume queues lifecycle events. On the following tick dispatch has had
@@ -181,7 +187,7 @@ fn reconcile_at(
     let admitted = current
         .iter()
         .filter(|(path, id)| {
-            retry
+            !METADATA_RETRY.with_borrow(|pending| pending.contains(*path)) && retry
                 .declined
                 .get(*path)
                 .is_none_or(|declined| declined.identity != **id)
@@ -229,11 +235,12 @@ fn nodes_at_with(
             }
             let meta = match metadata(&entry) {
                 Ok(meta) => meta,
-                Err(error) => {
-                    return Some(Err(std::io::Error::new(
-                        error.kind(),
-                        format!("{}: {error}", entry.path().display()),
-                    )));
+            Err(error) => {
+                    metadata_failed(&entry.path(), error);
+                    // Preserve this node's last identity; continue scanning
+                    // other nodes so one failed stat cannot stall hotplug.
+                    return KNOWN.with_borrow(|known| known.get(&entry.path()).copied())
+                        .map(|identity| Ok((entry.path(), identity)));
                 }
             };
             Some(Ok((entry.path(), (meta.rdev(), meta.ino()))))
@@ -378,18 +385,23 @@ mod tests {
     }
 
     #[test]
-    fn scan_errors_keep_the_error_and_throttle_diagnostics() {
+    fn failed_stat_preserves_known_node_and_scans_other_nodes() {
         let root = TempDir::new();
         let path = root.0.join("event0");
         std::fs::write(&path, []).unwrap();
-        let error = nodes_at_with(&root.0, |_| {
-            Err(std::io::Error::from_raw_os_error(libc::EACCES))
-        })
-        .unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
-        assert!(error.to_string().contains("event0"));
+        let other = root.0.join("event1");
+        std::fs::write(&other, []).unwrap();
+        KNOWN.with_borrow_mut(|known| *known = Nodes::from([(path.clone(), (1, 2))]));
+        let nodes = nodes_at_with(&root.0, |entry| {
+            if entry.path() == path {
+                Err(std::io::Error::from_raw_os_error(libc::EACCES))
+            } else { entry.metadata() }
+        }).unwrap();
+        assert_eq!(nodes.get(&path), Some(&(1, 2)));
+        assert!(nodes.contains_key(&other));
+        KNOWN.with_borrow_mut(|known| known.clear());
         SCAN_WARNING.set(None);
-        assert!(scanned(Err(error)).is_none());
+        assert!(scanned(nodes_at(&path)).is_none());
         let first = SCAN_WARNING.get().unwrap();
         assert!(scanned(nodes_at(&path)).is_none()); // read_dir on a file fails too.
         assert_eq!(SCAN_WARNING.get(), Some(first));
@@ -510,7 +522,7 @@ mod tests {
         let mut retry = Retry::default();
         for inode in 0..20 {
             let nodes = Nodes::from([(PathBuf::from("event0"), (1, inode))]);
-            assert!(!needs_reconcile(&nodes, &Nodes::new(), &mut retry));
+            assert_eq!(needs_reconcile(&nodes, &Nodes::new(), &mut retry), inode >= 8);
         }
         assert_eq!(retry.grace_restarts, 19);
         assert!(!needs_reconcile(&Nodes::new(), &Nodes::new(), &mut retry));
