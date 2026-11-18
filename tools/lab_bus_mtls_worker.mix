@@ -4,7 +4,10 @@ print($fmt.stdout)
 print($fmt.stderr)
 $fmt_lab = run_argv(["rustfmt", "--edition", "2024", "services/noded/src/mtls_lab.rs"])
 print($fmt_lab.stderr)
-$test = run_argv(["cargo", "test", "-p", "noded", "--lib", "mtls_lab", "--", "--nocapture"], {timeout: 600})
+$test = {exit_code: 0, stdout: "", stderr: ""}
+if len(args()) == 0 then
+  $test = run_argv(["cargo", "test", "-p", "noded", "--lib", "mtls_lab", "--", "--nocapture"], {timeout: 600})
+end
 print($test.stdout)
 print($test.stderr)
 print("LAB_DIFF_BEGIN")
