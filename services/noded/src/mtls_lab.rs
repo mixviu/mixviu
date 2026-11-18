@@ -6,8 +6,16 @@ type LabWs =
 #[derive(Debug)]
 struct LabNoCert;
 impl rustls::client::ResolvesClientCert for LabNoCert {
-    fn resolve(&self, _: &[&[u8]], _: &[rustls::SignatureScheme]) -> Option<Arc<rustls::sign::CertifiedKey>> { None }
-    fn has_certs(&self) -> bool { false }
+    fn resolve(
+        &self,
+        _: &[&[u8]],
+        _: &[rustls::SignatureScheme],
+    ) -> Option<Arc<rustls::sign::CertifiedKey>> {
+        None
+    }
+    fn has_certs(&self) -> bool {
+        false
+    }
 }
 
 fn lab_inventory(epoch: u64, tombstone: bool) -> crate::authority::Posture {
@@ -92,7 +100,11 @@ async fn lab_server(
 ) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
     lab_server_on(state, material, "127.0.0.1:0".parse().unwrap()).await
 }
-async fn lab_server_on(state:AppState, material:Option<mesh::tls::Material>, bind:std::net::SocketAddr) -> (std::net::SocketAddr,tokio::task::JoinHandle<()>) {
+async fn lab_server_on(
+    state: AppState,
+    material: Option<mesh::tls::Material>,
+    bind: std::net::SocketAddr,
+) -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
     let tcp = tokio::net::TcpListener::bind(bind).await.unwrap();
     let addr = tcp.local_addr().unwrap();
     let task = tokio::spawn(async move {
@@ -107,7 +119,9 @@ async fn lab_server_on(state:AppState, material:Option<mesh::tls::Material>, bin
             .await
             .unwrap();
         } else {
-            let tcp=axum::serve::ListenerExt::tap_io(tcp,|tcp| {tcp.set_nodelay(true).unwrap();});
+            let tcp = axum::serve::ListenerExt::tap_io(tcp, |tcp| {
+                tcp.set_nodelay(true).unwrap();
+            });
             let app = axum::Router::new()
                 .route("/ws", axum::routing::get(super::ws_handler))
                 .with_state(state);
@@ -260,14 +274,28 @@ async fn mtls_lab_security() {
     let (ab, sb) = lab_server(b.clone(), Some(mb.clone())).await;
     let ea = lab_echo(a.clone()).await;
     let eb = lab_echo(b.clone()).await;
-    for (name, target, material) in [("beta",aa,mb.clone()),("alpha",ab,ma.clone())] {
-        let destination=if name == "alpha" {"beta"} else {"alpha"};
-        let peer=PeerConfig {name:destination.into(),mesh_ip:target.ip(),noded_port:target.port()};
-        let (tx,_)=mpsc::unbounded_channel();
-        let peers=MeshPeers::new(MeshConfig {node_name:name.into(), peers:vec![peer.clone()], d2_seed:None},tx).with_tls(Some(material));
-        let reply=peers.call(peer,lab_call(destination,16)).await.unwrap();
-        assert_eq!(reply.body.len(),16);
-        peers.reconcile_endpoints(HashMap::new(),mesh::AuthorityRevision::default()).await;
+    for (name, target, material) in [("beta", aa, mb.clone()), ("alpha", ab, ma.clone())] {
+        let destination = if name == "alpha" { "beta" } else { "alpha" };
+        let peer = PeerConfig {
+            name: destination.into(),
+            mesh_ip: target.ip(),
+            noded_port: target.port(),
+        };
+        let (tx, _) = mpsc::unbounded_channel();
+        let peers = MeshPeers::new(
+            MeshConfig {
+                node_name: name.into(),
+                peers: vec![peer.clone()],
+                d2_seed: None,
+            },
+            tx,
+        )
+        .with_tls(Some(material));
+        let reply = peers.call(peer, lab_call(destination, 16)).await.unwrap();
+        assert_eq!(reply.body.len(), 16);
+        peers
+            .reconcile_endpoints(HashMap::new(), mesh::AuthorityRevision::default())
+            .await;
     }
     let mut ba = lab_connect(aa, Some(&mb), "alpha").await.unwrap();
     let mut ab_ws = lab_connect(ab, Some(&ma), "beta").await.unwrap();
@@ -280,6 +308,7 @@ async fn mtls_lab_security() {
         assert_eq!(lab_recv(ws).await.unwrap().body, body);
     }
     let hostile = lab_material(&a, 33);
+    assert!(lab_connect(aa, Some(&mb), "beta").await.is_err(), "server must be the expected member");
     assert!(lab_connect(aa, Some(&hostile), "alpha").await.is_err());
     assert!(
         lab_connect(aa, None, "").await.is_err(),
@@ -345,35 +374,64 @@ async fn mtls_lab_security() {
         lab_connect(aa, Some(&mb), "alpha").await.is_err(),
         "tombstone handshake refused"
     );
-    let crate::authority::Posture::Verified(expired)=lab_inventory(3,false) else {unreachable!()};
-    b.authority.store(Arc::new(crate::routing::RoutingAuthority::new(crate::authority::Posture::Verified(expired.clone()),"beta","127.0.0.1",4200,&[])));
-    super::reload_revocation_teardown(&b,&expired).await;
-    assert!(lab_recv(&mut ab_ws).await.is_none(),"expired live key dropped");
-    assert!(lab_connect(ab,Some(&ma),"beta").await.is_err(),"expired handshake refused");
+    let crate::authority::Posture::Verified(expired) = lab_inventory(3, false) else {
+        unreachable!()
+    };
+    b.authority
+        .store(Arc::new(crate::routing::RoutingAuthority::new(
+            crate::authority::Posture::Verified(expired.clone()),
+            "beta",
+            "127.0.0.1",
+            4200,
+            &[],
+        )));
+    super::reload_revocation_teardown(&b, &expired).await;
+    assert!(
+        lab_recv(&mut ab_ws).await.is_none(),
+        "expired live key dropped"
+    );
+    assert!(
+        lab_connect(ab, Some(&ma), "beta").await.is_err(),
+        "expired handshake refused"
+    );
     for task in [sa, sb, ea, eb] {
         task.abort();
     }
 }
 
-async fn lab_measure_broker(tls:bool, bind:std::net::SocketAddr) -> (std::net::SocketAddr,libc::clockid_t,tokio::sync::oneshot::Sender<()>,std::thread::JoinHandle<()>) {
-    let (ready_tx,ready_rx)=tokio::sync::oneshot::channel();
-    let (stop_tx,stop_rx)=tokio::sync::oneshot::channel();
-    let thread=std::thread::spawn(move || {
-        let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+async fn lab_measure_broker(
+    tls: bool,
+    bind: std::net::SocketAddr,
+) -> (
+    std::net::SocketAddr,
+    libc::clockid_t,
+    tokio::sync::oneshot::Sender<()>,
+    std::thread::JoinHandle<()>,
+) {
+    let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
+    let thread = std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
         rt.block_on(async move {
-            let state=reload_test_state(lab_inventory(1,false),vec![]).await;
-            let material=lab_material(&state,11);
-            let (addr,_)=lab_server_on(state.clone(),tls.then_some(material),bind).await;
-            let _echo=lab_echo(state).await;
-            let mut clock=0;
+            let state = reload_test_state(lab_inventory(1, false), vec![]).await;
+            let material = lab_material(&state, 11);
+            let (addr, _) = lab_server_on(state.clone(), tls.then_some(material), bind).await;
+            let _echo = lab_echo(state).await;
+            let mut clock = 0;
             // SAFETY: current pthread is live; clock points to writable storage.
-            assert_eq!(unsafe {libc::pthread_getcpuclockid(libc::pthread_self(),&mut clock)},0);
-            ready_tx.send((addr,clock)).unwrap();
-            let _=stop_rx.await;
+            assert_eq!(
+                unsafe { libc::pthread_getcpuclockid(libc::pthread_self(), &mut clock) },
+                0
+            );
+            ready_tx.send((addr, clock)).unwrap();
+            let _ = stop_rx.await;
         });
     });
-    let (addr,clock)=ready_rx.await.unwrap();
-    (addr,clock,stop_tx,thread)
+    let (addr, clock) = ready_rx.await.unwrap();
+    (addr, clock, stop_tx, thread)
 }
 
 #[tokio::test]
@@ -382,7 +440,8 @@ async fn mtls_lab_measure() {
     for tls in [false, true] {
         let state = reload_test_state(lab_inventory(1, false), vec![]).await;
         let client = lab_material(&state, 22);
-        let (addr,clock,stop,thread)=lab_measure_broker(tls,"127.0.0.1:0".parse().unwrap()).await;
+        let (addr, clock, stop, thread) =
+            lab_measure_broker(tls, "127.0.0.1:0".parse().unwrap()).await;
         let start = Instant::now();
         let mut ws = lab_connect(addr, tls.then_some(&client), "alpha")
             .await
@@ -416,24 +475,28 @@ async fn mtls_lab_measure() {
             (lab_cpu(clock) - cpu_start) * 1000.0,
             start.elapsed().as_secs_f64() * 1000.0
         );
-        let _=stop.send(());thread.join().unwrap();
-        let restart=Instant::now();
-        let (_,_,stop,thread)=lab_measure_broker(tls,addr).await;
-        let mut reconnected=lab_connect(addr,tls.then_some(&client),"alpha").await.unwrap();
-        lab_register(&mut reconnected,if tls {"bridge-beta"} else {"caller"}).await;
-        lab_send(&mut reconnected,lab_call("alpha",16)).await;
+        let _ = stop.send(());
+        thread.join().unwrap();
+        let restart = Instant::now();
+        let (_, _, stop, thread) = lab_measure_broker(tls, addr).await;
+        let mut reconnected = lab_connect(addr, tls.then_some(&client), "alpha")
+            .await
+            .unwrap();
+        lab_register(&mut reconnected, if tls { "bridge-beta" } else { "caller" }).await;
+        lab_send(&mut reconnected, lab_call("alpha", 16)).await;
         assert!(lab_recv(&mut reconnected).await.is_some());
-        println!("LAB_RECONNECT tls={tls} restart_to_call_us={}",restart.elapsed().as_micros());
-        let _=stop.send(());thread.join().unwrap();
+        println!(
+            "LAB_RECONNECT tls={tls} restart_to_call_us={}",
+            restart.elapsed().as_micros()
+        );
+        let _ = stop.send(());
+        thread.join().unwrap();
     }
 }
-fn lab_cpu(clock:libc::clockid_t) -> f64 {
+fn lab_cpu(clock: libc::clockid_t) -> f64 {
     let mut time = std::mem::MaybeUninit::<libc::timespec>::uninit();
     // SAFETY: clock_gettime writes the live timespec on success.
-    assert_eq!(
-        unsafe { libc::clock_gettime(clock, time.as_mut_ptr()) },
-        0
-    );
+    assert_eq!(unsafe { libc::clock_gettime(clock, time.as_mut_ptr()) }, 0);
     let time = unsafe { time.assume_init() };
     time.tv_sec as f64 + time.tv_nsec as f64 / 1e9
 }

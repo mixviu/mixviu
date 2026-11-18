@@ -1057,9 +1057,12 @@ async fn serve(
     let tcp_server = async move {
         if let Some(material) = tls {
             let local_addr: std::net::SocketAddr = std::env::var("MIX_BUS_LOCAL_WS")
-                .unwrap_or_else(|_| "127.0.0.1:0".into()).parse()
+                .unwrap_or_else(|_| "127.0.0.1:0".into())
+                .parse()
                 .map_err(std::io::Error::other)?;
-            if !local_addr.ip().is_loopback() { return Err(std::io::Error::other("local ws must bind loopback")); }
+            if !local_addr.ip().is_loopback() {
+                return Err(std::io::Error::other("local ws must bind loopback"));
+            }
             let local = tokio::net::TcpListener::bind(local_addr).await?;
             tracing::info!(address = %local.local_addr()?, "TLS lab local ws listener");
             let tls_app = Router::new()
@@ -1069,7 +1072,13 @@ async fn serve(
                 crate::tls_ingress::TlsListener::new(raw_listener, material)?,
                 tls_app.into_make_service_with_connect_info::<crate::tls_ingress::TlsPeer>(),
             );
-            tokio::try_join!(async {tls_server.await}, async {axum::serve(local, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await})?;
+            tokio::try_join!(async { tls_server.await }, async {
+                axum::serve(
+                    local,
+                    app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                )
+                .await
+            })?;
             return Ok(());
         }
         let listener = axum::serve::ListenerExt::tap_io(raw_listener, |tcp| {
@@ -2248,7 +2257,9 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     // admit response and consulted by the register-time enforce gate below.
     state.session_admission = match &transport {
         TransportIdentity::MeshTls { node, .. } => SessionAdmission {
-            admitted_node: Some(node.clone()), last_detail: None, response_seen: true,
+            admitted_node: Some(node.clone()),
+            last_detail: None,
+            response_seen: true,
         },
         TransportIdentity::Mesh { admission, .. } => SessionAdmission {
             admitted_node: admission.admitted_node.clone(),
@@ -2318,7 +2329,9 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         );
         // Close the handshake-to-session-publication reload race, including an
         // idle peer which sends no further frames after a concurrent reload.
-        if admitted_delivery_peer(&state, source_ip).is_none() { close_signal.notify_one(); }
+        if admitted_delivery_peer(&state, source_ip).is_none() {
+            close_signal.notify_one();
+        }
     }
     let connection_observe = state.observe.clone();
     loop {
@@ -3795,6 +3808,13 @@ async fn route_local(
                 .delivery_fence
                 .read()
                 .expect("delivery fence poisoned");
+            if state.tls_peer.is_some() && admitted_delivery_peer(state, source_ip).is_none() {
+                return Err(bus::native_session::SessionError {
+                    error_code: bus::native_session::ErrorCode::Unavailable,
+                    message: "TLS identity revoked before delivery".into(),
+                    details: Default::default(),
+                });
+            }
             if !reg
                 .get(service)
                 .is_some_and(|entry| entry.same_channel(&target_tx))
