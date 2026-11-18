@@ -308,7 +308,10 @@ async fn mtls_lab_security() {
         assert_eq!(lab_recv(ws).await.unwrap().body, body);
     }
     let hostile = lab_material(&a, 33);
-    assert!(lab_connect(aa, Some(&mb), "beta").await.is_err(), "server must be the expected member");
+    assert!(
+        lab_connect(aa, Some(&mb), "beta").await.is_err(),
+        "server must be the expected member"
+    );
     assert!(lab_connect(aa, Some(&hostile), "alpha").await.is_err());
     assert!(
         lab_connect(aa, None, "").await.is_err(),
