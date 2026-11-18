@@ -321,7 +321,10 @@ mod tests {
             match data[at + 16] {
                 media_vfl::KEY => pixels = lz4_flex::block::decompress(payload, 16).unwrap(),
                 media_vfl::DELTA => {
-                    for (p, d) in pixels.iter_mut().zip(lz4_flex::block::decompress(payload, 16).unwrap()) {
+                    for (p, d) in pixels
+                        .iter_mut()
+                        .zip(lz4_flex::block::decompress(payload, 16).unwrap())
+                    {
                         *p ^= d;
                     }
                 }
@@ -331,8 +334,8 @@ mod tests {
             at += 17 + len;
         }
         assert_eq!(pixels, vec![255; 16]);
-        let manifest: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(path.join("complete.json")).unwrap()).unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path.join("complete.json")).unwrap()).unwrap();
         assert_eq!(manifest["dropped"], 1);
         assert_eq!(manifest["frames"], 3);
         std::fs::remove_dir_all(path).unwrap();
@@ -350,18 +353,19 @@ mod tests {
         // changed=false. That flag is accounting, not a writer repeat opcode.
         assert!(encoder.try_push_rgb_change(final_rgb, 2, 2, false));
         let path = encoder.finish_result().unwrap();
-        let manifest: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(path.join("complete.json")).unwrap()).unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path.join("complete.json")).unwrap()).unwrap();
         assert_eq!(manifest["dropped"], 1);
         let data = std::fs::read(path.join("chunk-000000.bin")).unwrap();
         let mut at = 0;
         let mut final_pixels = Vec::new();
         while at < data.len() {
-            let len = u32::from_le_bytes(data[at..at+4].try_into().unwrap()) as usize;
-            if data[at+16] == media_vfl::KEY {
-                final_pixels = lz4_flex::block::decompress(&data[at+17..at+17+len], 16).unwrap();
+            let len = u32::from_le_bytes(data[at..at + 4].try_into().unwrap()) as usize;
+            if data[at + 16] == media_vfl::KEY {
+                final_pixels =
+                    lz4_flex::block::decompress(&data[at + 17..at + 17 + len], 16).unwrap();
             } else {
-                assert_eq!(data[at+16], media_vfl::REPEAT);
+                assert_eq!(data[at + 16], media_vfl::REPEAT);
             }
             at += 17 + len;
         }

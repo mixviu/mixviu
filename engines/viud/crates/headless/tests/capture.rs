@@ -376,12 +376,16 @@ fn record_small_changes_zero_drops_and_crcs() {
             let status = bus.call("comp.record.status", json!({"session":start["session"]}));
             assert_eq!(status["error"], Value::Null, "{status}");
             let mut retained = false;
-            match vfl_scan(Path::new(start["recovery_path"].as_str().unwrap()), |pixels| {
-                let at = (90 * 320 + 160) * 4;
-                retained |= pixels[at..at + 4] == colour.to_le_bytes();
-            }, false) {
-                Ok(_) => {},
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+            match vfl_scan(
+                Path::new(start["recovery_path"].as_str().unwrap()),
+                |pixels| {
+                    let at = (90 * 320 + 160) * 4;
+                    retained |= pixels[at..at + 4] == colour.to_le_bytes();
+                },
+                false,
+            ) {
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => panic!("live small VFL scan: {error}"),
             }
             if retained {
@@ -1001,11 +1005,11 @@ fn record_idle_output_lifecycle_and_clock() {
             // The one-second take may seal before sampling/retaining a late
             // commit. A readback counter alone cannot promise its pixels.
             if status["state"] == "idle" {
-                if status["readbacks"].as_u64().unwrap()
-                    > before["readbacks"].as_u64().unwrap()
-                {
-                    assert!(status["dropped"].as_u64().unwrap() >= 1,
-                        "read-back colour {colour:08x} lost without a drop: {status}");
+                if status["readbacks"].as_u64().unwrap() > before["readbacks"].as_u64().unwrap() {
+                    assert!(
+                        status["dropped"].as_u64().unwrap() >= 1,
+                        "read-back colour {colour:08x} lost without a drop: {status}"
+                    );
                 }
                 println!("BOUNDED_SEALED colour={colour:08x} not_retained status={status}");
                 break 'changes;
@@ -2073,28 +2077,28 @@ fn connect(process: &mut process::Process) -> UnixStream {
     loop {
         if let Ok(stream) = UnixStream::connect(process.root.join("wayland-headless-test")) {
             if std::env::var_os(paths::env::test::TEST_MAPPING_TRACE).is_some() {
-            use std::os::fd::AsRawFd;
-            let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
-            let mut len = std::mem::size_of_val(&cred) as libc::socklen_t;
-            assert_eq!(
-                unsafe {
-                    libc::getsockopt(
-                        stream.as_raw_fd(),
-                        libc::SOL_SOCKET,
-                        libc::SO_PEERCRED,
-                        (&mut cred as *mut libc::ucred).cast(),
-                        &mut len,
-                    )
-                },
-                0
-            );
-            eprintln!(
-                "WAYLAND_PEER expected={} actual={} root={}",
-                process.child.id(),
-                cred.pid,
-                process.root.display()
-            );
-            assert_eq!(cred.pid as u32, process.child.id());
+                use std::os::fd::AsRawFd;
+                let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
+                let mut len = std::mem::size_of_val(&cred) as libc::socklen_t;
+                assert_eq!(
+                    unsafe {
+                        libc::getsockopt(
+                            stream.as_raw_fd(),
+                            libc::SOL_SOCKET,
+                            libc::SO_PEERCRED,
+                            (&mut cred as *mut libc::ucred).cast(),
+                            &mut len,
+                        )
+                    },
+                    0
+                );
+                eprintln!(
+                    "WAYLAND_PEER expected={} actual={} root={}",
+                    process.child.id(),
+                    cred.pid,
+                    process.root.display()
+                );
+                assert_eq!(cred.pid as u32, process.child.id());
             }
             return stream;
         }

@@ -626,7 +626,10 @@ mod file_tests {
         let terminal = r.terminal.as_ref().unwrap();
         assert_eq!(terminal["manual_cleanup_required"], true);
         assert_eq!(terminal["recovery_path"], r.files.video);
-        assert_eq!(terminal["recovery_paths"], json!([r.files.video, r.files.path]));
+        assert_eq!(
+            terminal["recovery_paths"],
+            json!([r.files.video, r.files.path])
+        );
         assert!(r.error.as_ref().unwrap().contains("disconnected"));
         std::fs::remove_dir_all(dir).unwrap();
     }
