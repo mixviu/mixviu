@@ -38,7 +38,10 @@ impl<D: 'static> GpuCompletion<D> {
         query: impl Fn(std::os::fd::BorrowedFd<'_>) -> Option<std::time::Duration> + 'static,
     ) -> Option<Self> {
         Self::with_clock(handle, fd, start, query, || {
-            (Instant::now(), kms::scanout::timing::vblank::monotonic_now())
+            (
+                Instant::now(),
+                kms::scanout::timing::vblank::monotonic_now(),
+            )
         })
     }
 
@@ -300,12 +303,17 @@ mod tests {
         // real calloop source with a controlled timestamp query, without a GPU.
         let queries = Rc::new(Cell::new(0));
         let calls = queries.clone();
-        let sample =
-            GpuCompletion::with_clock(&event_loop.handle(), reader.into(), start, move |_| {
+        let sample = GpuCompletion::with_clock(
+            &event_loop.handle(),
+            reader.into(),
+            start,
+            move |_| {
                 calls.set(calls.get() + 1);
                 Some(signal)
-            }, move || (observed, Some(now)))
-            .unwrap();
+            },
+            move || (observed, Some(now)),
+        )
+        .unwrap();
         event_loop.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
         assert_eq!(sample.elapsed(), None);
         writer.write_all(&[1]).unwrap();

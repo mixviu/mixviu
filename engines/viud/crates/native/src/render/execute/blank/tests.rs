@@ -10,7 +10,7 @@ use std::{
 struct Fake {
     properties: BTreeMap<&'static str, u32>,
     values: RefCell<BTreeMap<u32, u64>>,
-    commits: RefCell<Vec<(bool, Vec<(u32, u64)>)>>,
+    commits: RefCell<Vec<(bool, PropertyValues)>>,
     blobs: RefCell<Vec<Vec<u8>>>,
     destroyed: RefCell<Vec<u64>>,
     refuse: Cell<Option<bool>>,

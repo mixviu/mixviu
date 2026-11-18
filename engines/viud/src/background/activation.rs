@@ -29,10 +29,6 @@ pub(super) fn fixture_watcher_failed(failed: bool) {
     WATCH_FAILED.store(failed, Ordering::Relaxed);
 }
 
-fn attached() {
-    WATCH_FAILED.store(false, Ordering::Relaxed);
-}
-
 enum Notice {
     Ready,
     Active,
@@ -153,6 +149,33 @@ fn arm(shared: &Rc<RefCell<Activation>>) {
 }
 
 fn attempt(shared: &Rc<RefCell<Activation>>, state: &mut Loop) {
+    attempt_with(shared, &WATCH_FAILED, |activation| {
+        if !kms::seat::session::vt_wait::own_vt_active() {
+            return None;
+        }
+        let Some(session) = kms::seat::session::factory::try_create() else {
+            return Some(false);
+        };
+        let native = native::wire::entry::wire(
+            state,
+            activation.socket.clone(),
+            &activation.handle,
+            Some(activation.output.clone()),
+            session,
+        );
+        native::wire::session::activate(state, &native.ctx);
+        *activation.handles.borrow_mut() = Some(native);
+        Some(true)
+    });
+}
+
+// The seat transaction is injectable; retry, stop and status publication are
+// the production path even when the test has no VT, DRM device or libseat.
+fn attempt_with(
+    shared: &Rc<RefCell<Activation>>,
+    failed: &AtomicBool,
+    attach: impl FnOnce(&Activation) -> Option<bool>,
+) {
     let mut activation = shared.borrow_mut();
     if activation.handles.borrow().is_some() {
         return;
@@ -165,28 +188,17 @@ fn attempt(shared: &Rc<RefCell<Activation>>, state: &mut Loop) {
         arm(shared);
         return;
     }
-    if !kms::seat::session::vt_wait::own_vt_active() {
-        return;
-    }
-    let Some(session) = kms::seat::session::factory::try_create() else {
+    let Some(attached) = attach(&activation) else { return };
+    if !attached {
         drop(activation);
         arm(shared);
         return;
-    };
-    let native = native::wire::entry::wire(
-        state,
-        activation.socket.clone(),
-        &activation.handle,
-        Some(activation.output.clone()),
-        session,
-    );
-    native::wire::session::activate(state, &native.ctx);
-    *activation.handles.borrow_mut() = Some(native);
+    }
     activation.stop.store(true, Ordering::Relaxed);
     if let Some(timer) = activation.timer.take() {
         activation.handle.remove(timer);
     }
-    attached();
+    failed.store(false, Ordering::Relaxed);
     activation.retry.reset();
 }
 
@@ -284,15 +296,22 @@ mod tests {
                 let token = activation.timer.take().unwrap();
                 activation.handle.remove(token);
             }
+            activation.borrow_mut().watcher_alive = true;
+            arm(&activation);
+            // Run the actual attach attempt with only the hardware transaction
+            // replaced. A failure keeps status/backoff; success retires retry.
+            attempt_with(&activation, &failed, |_| Some(false));
+            assert!(failed.load(Ordering::Relaxed));
+            assert!(activation.borrow().timer.is_some());
+            attempt_with(&activation, &failed, |_| Some(true));
+            assert!(!failed.load(Ordering::Relaxed));
+            let activation = activation.borrow();
+            assert!(activation.stop.load(Ordering::Relaxed));
+            assert!(activation.timer.is_none());
+            assert_eq!(activation.retry.0, Duration::ZERO);
         }
     }
 
-    #[test]
-    fn successful_attach_clears_a_previous_watcher_failure() {
-        fixture_watcher_failed(true);
-        attached();
-        assert!(!watcher_failed());
-    }
     #[test]
     fn seat_and_watcher_retries_are_bounded_and_do_not_require_another_edge() {
         let mut retry = Backoff::default();

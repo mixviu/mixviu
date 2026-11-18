@@ -1248,6 +1248,8 @@ pub fn execute(
                                 return Ok(texture);
                             }
                             if !with_pointer && let Some(program) = &hdr_decode {
+                                // Id hashes identity/namespace, not mutable resource liveness.
+                                #[allow(clippy::mutable_key_type)]
                                 let tagged = render_gles::color::hdr::describe::surfaces();
                                 let decoded = render_gles::color::hdr::pass::decoded_sdr(
                                     &scene.elements,

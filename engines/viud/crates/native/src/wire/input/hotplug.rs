@@ -149,7 +149,9 @@ fn reconcile_at(
             Err(error) => {
                 // A lifecycle event already admitted this device. Keep its
                 // metadata pending so a transient stat cannot cause a reset.
-                METADATA_RETRY.with_borrow_mut(|pending| { pending.insert(path.clone()); });
+                METADATA_RETRY.with_borrow_mut(|pending| {
+                    pending.insert(path.clone());
+                });
                 metadata_failed(&path, error);
             }
         }
@@ -187,10 +189,11 @@ fn reconcile_at(
     let admitted = current
         .iter()
         .filter(|(path, id)| {
-            !METADATA_RETRY.with_borrow(|pending| pending.contains(*path)) && retry
-                .declined
-                .get(*path)
-                .is_none_or(|declined| declined.identity != **id)
+            !METADATA_RETRY.with_borrow(|pending| pending.contains(*path))
+                && retry
+                    .declined
+                    .get(*path)
+                    .is_none_or(|declined| declined.identity != **id)
         })
         .map(|(path, id)| (path.clone(), *id))
         .collect();
@@ -235,11 +238,12 @@ fn nodes_at_with(
             }
             let meta = match metadata(&entry) {
                 Ok(meta) => meta,
-            Err(error) => {
+                Err(error) => {
                     metadata_failed(&entry.path(), error);
                     // Preserve this node's last identity; continue scanning
                     // other nodes so one failed stat cannot stall hotplug.
-                    return KNOWN.with_borrow(|known| known.get(&entry.path()).copied())
+                    return KNOWN
+                        .with_borrow(|known| known.get(&entry.path()).copied())
                         .map(|identity| Ok((entry.path(), identity)));
                 }
             };
@@ -395,8 +399,11 @@ mod tests {
         let nodes = nodes_at_with(&root.0, |entry| {
             if entry.path() == path {
                 Err(std::io::Error::from_raw_os_error(libc::EACCES))
-            } else { entry.metadata() }
-        }).unwrap();
+            } else {
+                entry.metadata()
+            }
+        })
+        .unwrap();
         assert_eq!(nodes.get(&path), Some(&(1, 2)));
         assert!(nodes.contains_key(&other));
         KNOWN.with_borrow_mut(|known| known.clear());
@@ -522,7 +529,10 @@ mod tests {
         let mut retry = Retry::default();
         for inode in 0..20 {
             let nodes = Nodes::from([(PathBuf::from("event0"), (1, inode))]);
-            assert_eq!(needs_reconcile(&nodes, &Nodes::new(), &mut retry), inode >= 8);
+            assert_eq!(
+                needs_reconcile(&nodes, &Nodes::new(), &mut retry),
+                inode >= 8
+            );
         }
         assert_eq!(retry.grace_restarts, 19);
         assert!(!needs_reconcile(&Nodes::new(), &Nodes::new(), &mut retry));
