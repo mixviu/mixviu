@@ -1006,7 +1006,8 @@ fn record_idle_output_lifecycle_and_clock() {
                         frame += 1;
                     },
                     true,
-                ).expect("sealed bounded VFL scan");
+                )
+                .expect("sealed bounded VFL scan");
             }
             if let Some(frame) = retained {
                 println!(
@@ -2090,21 +2091,21 @@ fn connect(process: &mut process::Process) -> UnixStream {
     let deadline = Instant::now() + Duration::from_secs(25);
     loop {
         if let Ok(stream) = UnixStream::connect(process.root.join("wayland-headless-test")) {
-                use std::os::fd::AsRawFd;
-                let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
-                let mut len = std::mem::size_of_val(&cred) as libc::socklen_t;
-                assert_eq!(
-                    unsafe {
-                        libc::getsockopt(
-                            stream.as_raw_fd(),
-                            libc::SOL_SOCKET,
-                            libc::SO_PEERCRED,
-                            (&mut cred as *mut libc::ucred).cast(),
-                            &mut len,
-                        )
-                    },
-                    0
-                );
+            use std::os::fd::AsRawFd;
+            let mut cred: libc::ucred = unsafe { std::mem::zeroed() };
+            let mut len = std::mem::size_of_val(&cred) as libc::socklen_t;
+            assert_eq!(
+                unsafe {
+                    libc::getsockopt(
+                        stream.as_raw_fd(),
+                        libc::SOL_SOCKET,
+                        libc::SO_PEERCRED,
+                        (&mut cred as *mut libc::ucred).cast(),
+                        &mut len,
+                    )
+                },
+                0
+            );
             if std::env::var_os(paths::env::test::TEST_MAPPING_TRACE).is_some() {
                 eprintln!(
                     "WAYLAND_PEER expected={} actual={} root={}",
