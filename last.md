@@ -1,3 +1,238 @@
+# Bus transport security v2 — prototype A — 2026-11-18
+
+Lab branch: `lab/bus-mtls`, created from `origin/main`, pushed normally.
+Source head before this receipt: `946f1c69dd07532920cc5a18d5c2311a84048733`.
+The receipt commit follows that source; the final pushed head is reported in
+the session response. No PR, merge, install or live-host experiment.
+
+The hermetic specimen answers **yes**: native brokers on loopback authenticate
+by inventory key, reject outsiders and encrypt their traffic. The release
+sample adds 2 µs median small-call latency and about 7.3% broker-thread CPU.
+This is evidence for an independent survey, not a production security verdict.
+
+## Design and implementation map
+
+| Requirement | Implementation |
+|---|---|
+| TLS-only mesh listener, loopback included | `services/noded/src/tls_ingress.rs:18`; handshake concurrency and completed-connection queue each bounded at 64, handshake deadline 3 s; listener owns/aborts its accept driver and handshake tasks |
+| TLS 1.3 only, mandatory client cert, no early data/resumption | `libraries/mesh/src/tls.rs:41` and `:56`; explicit TLS13 protocol lists, Ed25519 CertificateVerify, no server tickets/session cache, no client resumption |
+| Self-signed identity material | `libraries/mesh/src/tls.rs:19`; rcgen Ed25519 cert from RFC 8410 PKCS#8 wrapping the existing 32-byte d2 seed |
+| Active epoch-windowed inventory membership | `services/noded/src/noded.rs:2072`; both verifiers call the live accepted authority lookup; active, bus-enabled, current d2 key required; ambiguous shared keys refused |
+| Pin actual SPKI, not certificate text | `libraries/mesh/src/tls.rs:97`; bounded structural DER walk reaches TBSCertificate SPKI, requires the exact Ed25519 algorithm identifier and 32-byte public key; chains refused |
+| Identity in transport context | `libraries/bus/src/native_session.rs:29`; `MeshTls { node, key }`, constructed after TLS authentication, never from wire metadata |
+| Lab posture and local ingress | `services/noded/src/noded.rs:663` and `:1059`; `MIX_BUS_ENFORCE_TLS=1` fails startup without accepted inventory, d2 seed and active own key; main listener becomes TLS; Unix ingress remains; separate loopback ws listener uses `MIX_BUS_LOCAL_WS` (default ephemeral, logged) |
+| Key-based origin and delivery | `services/noded/src/noded.rs:2090` and `:3522`; TLS origin always Mesh, including loopback; peer name from key match; legacy IP helper retained only for legacy connections |
+| Native wss dialler with expected-member pin | `libraries/mesh/src/peer.rs:781`; inventory match must also equal the requested destination name |
+| Registration and frame gates | `services/noded/src/noded.rs:2384`; every TLS frame rechecks current key membership, requires registration first, and binds registration to `bridge-<authenticated-node>` |
+| No remote-origin relay | `services/noded/src/noded.rs:3046`; a TLS-origin `Route::RemoteMesh` closes the connection; TLS cannot manufacture the local `MESH_FROM_HEADER` assertion |
+| Wrong destination node | `services/noded/src/noded.rs:789`; mesh ingress `Local(addr)` must name this node; session-side wrong-node requests cannot relay |
+| Revocation | `services/noded/src/noded.rs:1983`; all TLS sessions tracked before registration by authenticated name and exact key; reload checks that exact key, not merely any remaining member credential; closes idle links; recheck closes publication race |
+| Delivery/reload ordering | `services/noded/src/noded.rs:3811`; local delivery rechecks TLS identity under the delivery fence before enqueue |
+| Outbound reload | `libraries/mesh/src/peer.rs:389`; lab simplification retires every outbound TLS connection on each accepted authority revision, forcing a fresh handshake even for a same-address key expiry |
+
+**Key reuse:** the certificate key equals the existing d2 key, rather than
+deriving a different key or introducing `kind:"tls"`. This directly matches
+today's signed inventory and exercises enrolment/epoch windows without schema
+work. It couples compromise and rotation of D2 and TLS, and copies the seed
+into TLS material. A separate purpose-specific TLS credential is the cleaner
+production option if independent revocation/rotation matters; that is a survey
+decision, not an unreviewed schema change in this lab.
+
+**D2:** dropped on TLS links. TLS CertificateVerify proves possession of the
+inventory key and binds it to the fresh TLS transcript on both sides. A second
+origin-only D2 proof adds no authentication here, so no exporter hash is needed.
+Legacy ws D2 remains. The lab dialler skips its legacy challenge wait on TLS.
+
+**Dependencies:** no new packages or versions in Cargo.lock. Added existing
+workspace rustls/tokio-rustls/rcgen dependencies to mesh, and rustls/tokio-rustls
+to noded and its source-embedding test-broker. Enabled tokio-tungstenite
+0.26.2's `__rustls-tls` feature in workspace Cargo.toml. Its tungstenite
+0.26.2 dependency is vendored; no vendor source was changed. No root-store,
+hostname, CA or source-IP trust is involved. Certificate validity dates are not
+identity policy; accepted inventory status and epoch windows are.
+
+## Tests and limits
+
+`services/noded/src/mtls_lab.rs:323`, `mtls_lab_security`, passes in debug and
+release. Two real noded WebSocket handlers, registries, routers and local echo
+citizens run on loopback, using a deterministic fixture genesis, correctly
+signed inventories and test seeds (`:77`). No live inventory is used.
+
+- Native MeshPeers wss diallers connect/register/call the opposite service in
+  both directions; direct authenticated sessions do the same.
+- No client certificate: refused during network handshake/upgrade.
+- Unknown self-signed key: refused during network handshake/upgrade.
+- Wrong expected server member: refused despite that key being a valid member.
+- Copied member certificate/public key and a genuinely signed recorded D2
+  transcript, without that member's seed: a custom client resolver deliberately
+  bypasses local key matching and signs TLS CertificateVerify with an alien key.
+  The network handshake is refused before the prepared proof header can reach
+  WebSocket handling. The normal configuration builder also refuses the pair.
+- Tombstoned key: new handshake refused; connected member dropped on reload.
+- Expired epoch credential: connected member dropped and new handshake refused.
+- Plaintext ws to the TLS listener: refused.
+- Unregistered call: connection closes without a delivered response.
+- Wrong-node remote relay attempt: connection closes without service response.
+- Socket tap (`:271`): handshake plus successful service request/response
+  captured in both directions; neither method nor payload substring appears.
+
+Release revocation latency is **112 µs**, from accepted reload entry to
+observed socket drop, including traversal of the in-process TCP tap. This does
+not include signed-file replacement, watcher debounce or signature verification.
+The final security test calls `apply_inventory_reload`, the real accepted-inventory
+reload entry point, including transport reconciliation, publication and teardown.
+
+Focused regressions: Bus **117 passed**, mesh **25 passed**, noded **256 passed**,
+**3 ignored** (lab measurement, privileged UID fixture, subprocess-only fixture).
+No existing test source was adapted. One concurrent rerun hit the existing
+free-port/rebind race at `libraries/bus/src/native_port.rs:82`; the complete
+serial rerun passed. The original concurrent run also passed. Gap recorded in
+`_doc/TODO-bus-mtls.md`.
+
+Clippy completed with rc 0; its two suggestions in lab plumbing were fixed.
+Existing `AsyncFd::new` deprecation warnings remain. Worker fmt/lock diffs were
+printed, the worker's own generated changes restored in that same job, and
+the printed diffs applied locally. Name gate passed. Foreign gate passed: 19 foreign crates listed; strict lib-mix, mix-shell, mix and mixd clean.
+
+## Release measurements
+
+`mtls_lab_measure` (`services/noded/src/mtls_lab.rs:503`), CBC release profile,
+same executable and machine, ws then wss, no resumption or compression. Both
+paths use TCP_NODELAY. Warm registered link, sequential calls, 16-byte body;
+1,000 latency samples, sorted indices 500/990. Throughput is 16 round trips
+of exactly 1 MiB each, counting both directions (32 MiB / wall time).
+Dedicated single-thread broker runtime with local echo citizen; CPU uses its
+POSIX thread CPU clock, excludes the caller thread, includes the echo service.
+Restart destroys that runtime and its sockets, rebinds the same port, then
+explicitly reconnects/registers/calls. It measures restart-to-successful-call,
+not the native dialler's retry/backoff schedule.
+
+| Metric | ws baseline | mutual TLS |
+|---|---:|---:|
+| TCP + WebSocket establishment, TLS where applicable | 90 µs | 803 µs |
+| Small-call RTT p50, 1k calls | 16 µs | 18 µs |
+| Small-call RTT p99, 1k calls | 41 µs | 34 µs |
+| 1 MiB payload aggregate duplex throughput | 1494.29 MiB/s | 1230.11 MiB/s |
+| Broker thread CPU, 10k calls | 308.64 ms | 331.25 ms |
+| Wall time, 10k calls | 400.65 ms | 424.61 ms |
+| Restart to successful call | 1.914 ms | 2.330 ms |
+
+TLS costs about 7.3% more broker CPU and 17.7% throughput in this sample.
+The lower TLS p99 is noise, not evidence TLS improves tails. This is a single
+paired exploratory run, not a confidence interval or a routed-network claim.
+The earlier valid release sample is retained in its CBC log; the table uses
+the final security/fence version, before two non-behavioural clippy cleanups.
+
+## CBC receipts
+
+Reproduce focused suites with `cargo test -p bus -p mesh -p noded --lib -- --test-threads=1`,
+release samples with `cargo test --release -p noded --lib mtls_lab_measure -- --ignored --nocapture`,
+and the final security test with `cargo test --release -p noded --lib mtls_lab_security -- --nocapture`,
+always through CBC with a pinned permitted worker and the named source commit.
+
+Saved logs were read at each wrapper's `log:` path. IDs below identify those
+logs without embedding private operator paths. No local Rust compilation.
+
+| Job | BUILD_RC | Result |
+|---|---:|---|
+| 20261118-133202-5159eb19-a1 | 101 | rustls session storage constructor corrected |
+| 20261118-133238-89d4c163-a1 | 101 | test-broker source embedding updated |
+| 20261118-133442-6e73e965-a1 | 101 | include placement corrected |
+| 20261118-133520-30aa32d0-a1 | 101 | listener error type corrected |
+| 20261118-133600-d8548382-a1 | 101 | moved authority reference corrected; fmt/lock diff captured |
+| 20261118-133649-647f1e97-a1 | 101 | fixture constant and no-cert resolver corrected |
+| 20261118-133802-9551318e-a1 | 0 | first end-to-end security pass |
+| 20261118-134002-cb057e9e-a1 | 0 | native dialler and expiry pass |
+| 20261118-134043-22d6825d-a1 | 0 | concurrent Bus/mesh/noded suites |
+| 20261118-134043-40ba79ca-a1 | 143 | cancelled before sampling to correct baseline TCP_NODELAY |
+| 20261118-134148-a4db7a7a-a1 | 0 | first valid paired release measurement |
+| 20261118-134150-2ca11abc-a1 | 0 | auto scheduler chose an unpermitted worker; repeated below on permitted worker |
+| 20261118-134313-739993b4-a1 | 0 | pinned permitted-worker security/fmt pass |
+| 20261118-134425-f330f974-a1 | 0 | release security + measurement, table above |
+| 20261118-134425-aaf784bc-a1 | 0 | focused clippy; suggestions then fixed |
+| 20261118-134517-7c4d549f-a1 | 101 | existing Bus AddrInUse fixture race |
+| 20261118-134631-c2da575c-a1 | 0 | final source, complete serial focused suites |
+| 20261118-134712-aebbc550-a1 | 0 | standalone release noded binary built |
+| 20261118-134800-41627bf1-a1 | 0 | locked foreign dependency gate |
+| 20261118-135120-a55a0210-a1 | 0 | network copied-certificate + genuine recorded-D2-proof attack refused |
+| 20261118-135310-792e3a9e-a1 | 0 | final release security, real reload entry point, 112 µs drop |
+| 20261118-135333-3bd98e3d-a1 | 0 | final formatting, empty worker diff |
+
+The queued foreign check `20261118-134315-5e3766ae` ended with BUILD_RC=143, cancelled before
+execution and requeued on a free permitted worker. Cancellation control
+receipts returned rc 0; they are not test results. Pinning was used after the
+unexpected auto-dispatch; this deviation is retained rather than hidden.
+
+## Surprises and production derivation
+
+The existing dependency set was enough. The real work was policy: TLS loopback
+must stay remote, registration must bind to a proven name, idle sessions must
+be revocable before registration, and a still-active member's old key must
+not survive expiry just because another credential remains. noded's code is
+also embedded by test-broker, which must receive ingress modules/dependencies.
+TCP_NODELAY was essential to a fair baseline.
+
+After independent whole-specimen survey, derive separate production PRs:
+
+1. Small policy PR: all-frame registration gating, wrong-node ingress and
+   one-hop relay refusal, with existing transport tests.
+2. Medium identity PR: typed authenticated transport context and exact-key
+   revocation across inbound/outbound generations; race and rotation tests.
+3. Medium TLS PR: audited SPKI extraction/verifiers, typed listener config,
+   native wss dialler and purpose-specific key decision. Prefer an existing
+   audited DER facility over preserving the lab parser without review.
+4. Small/medium integration PR: Unix local monitor/logger ingress, discovery,
+   bounded hostile-handshake tests, filesystem reload timing, diagnostics and
+   exported CBC benchmark artifacts. Repeat A2 before rollout decisions.
+
+Drop the environment posture, fake zero-deadline D2-wait shortcut, generated
+test fixture duplication, include-based lab harness and worker helper. Replace
+retire-all-on-revision with exact authenticated-key generation reconciliation.
+Do not merge or cherry-pick this lab as production code.
+
+## Prototype A2: orchestrator requirements
+
+Provision two isolated lab CTs (`alpha`, `beta`) plus hostile CT on one plain
+bridge. No WG, gateway identity assumption or trusted source subnet. The
+orchestrator supplies actual disposable addresses privately; public examples
+are `192.0.2.1/24`, `192.0.2.2/24`, `192.0.2.3/24` and `example.internal`.
+
+Use the CBC-built release `noded` development binary from this lab source
+(or separately build `mixd` with its noded personality), plus existing `mix`
+and Mix echo/client scripts using each node's Unix Bus socket. No new daemon,
+CA, certificate files or certificate provisioning service is needed.
+
+For each legitimate CT isolate `MIX_ETC` and `MIX_VAR` (or `MIX_ROOT`). Supply
+`node.conf.mix` with matching `node`, `wg_ip` containing its ordinary routed
+address (legacy field name), `noded.port:4200`, and an absolute traversable
+`noded.unix_socket`, for example `/run/example/bus.sock`. Supply matching
+`mesh.conf.mix` node name and peer endpoints, `noded/genesis.pub` (base64 public
+genesis), `noded/d2.seed` (base64 32-byte private seed, restricted permissions),
+and `noded/inventory.signed` under the var root. Both inventories share a fresh
+disposable genesis and include active bus members/current d2 public keys and
+matching routed addresses/ports. Preserve the private baseline/lock files the
+broker creates in its var root. Do not copy real inventory or keys.
+
+Set `MIX_BUS_ENFORCE_TLS=1`, `MIX_BUS_LOCAL_WS=127.0.0.1:4201`; start
+`noded serve --listen 0.0.0.0:4200 --node alpha --no-monitor --no-log`
+(beta uses beta). Start local Mix echo citizens via Unix ingress; issue calls
+both ways through the real mesh router. Current built-in monitor/logger URL
+wiring is deliberately disabled for A2, as recorded in the TODO file.
+
+Hostile CT needs an adapted standalone build of the lab's client/tap probes
+(currently in-process tests): no-cert, unknown-key, copied-public-cert and
+plaintext attempts. Give it only public fixture inventory, never legitimate
+private seeds. Capture TLS port traffic at the bridge and search for the
+chosen unique method/payload. Publish a freshly signed higher-epoch tombstone
+inventory atomically to both legitimate var roots, timestamp file replacement
+and accepted reload, observe idle link closure, retry refusals, then restart
+one broker and measure native reconnect. Add a same-endpoint key expiry and
+overlapping rotation case. This branch has not run that experiment.
+
+---
+
+Earlier repository receipts are preserved below.
+
 > Current naming: Mix `term`, Rust reference `term-rs`. See [runtime and migration](docs/ports/term-runtime.md). The receipts below retain historical branch, job and installed-file names.
 
 # PR #24 refreshed settlement — 2026-11-10
