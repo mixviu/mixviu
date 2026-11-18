@@ -200,7 +200,12 @@ fn reconcile_at(
         })
         .map(|(path, id)| (path.clone(), *id))
         .collect();
-    if !retry_declined && !KNOWN.with_borrow(|known| needs_reconcile(&admitted, known, retry)) {
+    let disagreement = KNOWN.with_borrow(|known| {
+        let mut comparable = known.clone();
+        METADATA_RETRY.with_borrow(|pending| comparable.retain(|path, _| !pending.contains(path)));
+        needs_reconcile(&admitted, &comparable, retry)
+    });
+    if !retry_declined && !disagreement {
         return None;
     }
     let success = reset();
@@ -544,9 +549,13 @@ mod tests {
 
     #[test]
     fn repeated_device_added_stat_failure_does_not_reset_admitted_input() {
+        for remembered in [false, true] {
         let root = TempDir::new();
         let path = root.0.join("event0");
         KNOWN.with_borrow_mut(|known| known.clear());
+        if remembered {
+            KNOWN.with_borrow_mut(|known| { known.insert(path.clone(), (1, 1)); });
+        }
         observed_path(path.clone(), true);
         // The node exists in the scan, but the lifecycle stat keeps failing.
         let scanned = Nodes::from([(path.clone(), (1, 2))]);
@@ -566,6 +575,7 @@ mod tests {
         );
         assert!(METADATA_RETRY.with_borrow(|pending| pending.is_empty()));
         KNOWN.with_borrow_mut(|known| known.clear());
+        }
     }
 
     #[test]
