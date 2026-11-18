@@ -265,6 +265,7 @@ fn arm_readbacks(state: &mut Loop, context: &Rc<RefCell<Context>>) {
 }
 
 fn draw(state: &mut Loop, ctx: &mut Context) {
+    trace!("HEADLESS_DRAW protocol_pending={} lifecycle={}", state.state.protocol_pending, state.inner.window_lifecycle_mut().incoming.len());
     if route(
         ctx.vt_session,
         !matches!(
