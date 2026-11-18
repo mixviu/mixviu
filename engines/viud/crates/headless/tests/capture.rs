@@ -366,19 +366,25 @@ fn record_small_changes_zero_drops_and_crcs() {
     p.wait_callback(previous);
     let path = process.root.join("small.vfl");
     let start=bus.call("comp.record.start",json!({"request_id":"small","target":{"output":"headless-0"},"path":path,"fps":10,"cursor":false,"max_seconds":120}));
-    let mut reads = start["readbacks"].as_u64().unwrap_or(1);
     for i in 0..8 {
-        let before = bus.call("comp.record.status", json!({"session":start["session"]}));
-        reads = reads.max(before["readbacks"].as_u64().unwrap());
-        p.solid_buffer(0xffa03370 + i);
+        let colour: u32 = 0xffa03370 + i;
+        p.solid_buffer(colour);
         p.commit(true);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             p.pump();
             let status = bus.call("comp.record.status", json!({"session":start["session"]}));
             assert_eq!(status["error"], Value::Null, "{status}");
-            if status["readbacks"].as_u64().unwrap() > reads {
-                reads = status["readbacks"].as_u64().unwrap();
+            let mut retained = false;
+            match vfl_scan(Path::new(start["recovery_path"].as_str().unwrap()), |pixels| {
+                let at = (90 * 320 + 160) * 4;
+                retained |= pixels[at..at + 4] == colour.to_le_bytes();
+            }, false) {
+                Ok(_) => {},
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {},
+                Err(error) => panic!("live small VFL scan: {error}"),
+            }
+            if retained {
                 break;
             }
             assert!(
