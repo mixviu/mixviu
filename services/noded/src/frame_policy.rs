@@ -14,6 +14,7 @@ pub(super) fn session_refusal(
     peer: Option<&str>,
     registered: Option<&str>,
 ) -> Option<&'static str> {
+    if msg.is_empty_message() { return None; }
     let Some(peer) = peer else {
         return Some("peer-not-admitted");
     };

@@ -501,6 +501,7 @@ impl MeshPeers {
         // Client IDs are scoped to their own connections. Give this hop a
         // fresh correlation ID so two clients both using "1" cannot collide.
         let caller_id = msg.get("id").map(str::to_owned);
+        let caller_request_id = msg.get("request_id").map(str::to_owned);
         let msg_id = uuid::Uuid::new_v4().to_string();
         let _pending_guard = PendingGuard {
             pending: self.pending.clone(),
@@ -528,6 +529,9 @@ impl MeshPeers {
         // Wait for response with timeout
         match tokio::time::timeout(RESPONSE_TIMEOUT, resp_rx).await {
             Ok(Ok(Ok(mut resp))) => {
+                if let Some(request_id) = caller_request_id {
+                    resp.set("request_id", &request_id);
+                }
                 if let Some(caller_id) = caller_id {
                     resp.set("id", &caller_id);
                 } else {
@@ -1749,6 +1753,9 @@ mod tests {
             let second = next_bus_frame(&mut websocket).await;
             assert_ne!(first.get("id"), second.get("id"));
             for request in [second, first] {
+                assert_eq!(request.get("hop_limit"), Some("0"));
+                assert!(request.get("deadline").is_some());
+                assert!(request.get("request_id").is_some());
                 let response = BusMessage::new()
                     .with_header("type", "response")
                     .with_header("id", request.get("id").unwrap())
@@ -1764,6 +1771,7 @@ mod tests {
                 .with_header("type", "request")
                 .with_header("id", "1")
                 .with_header("command", command)
+                .with_header("request_id", command)
         };
         let calls = async {
             tokio::join!(
@@ -1777,6 +1785,7 @@ mod tests {
         for (reply, expected) in [(first.unwrap(), "first"), (second.unwrap(), "second")] {
             assert_eq!(reply.get("id"), Some("1"));
             assert_eq!(reply.body, expected);
+            assert_eq!(reply.get("request_id"), Some(expected));
         }
         server.await.unwrap();
     }

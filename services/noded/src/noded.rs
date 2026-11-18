@@ -46,11 +46,37 @@ use crate::protection::TrafficClass;
 #[path = "frame_policy.rs"]
 mod frame_policy;
 
-static FRAME_REFUSAL_LAST_MS: AtomicU64 = AtomicU64::new(0);
-static FRAME_REFUSAL_COUNT: AtomicU64 = AtomicU64::new(0);
+static FRAME_REFUSALS: std::sync::LazyLock<std::sync::Mutex<HashMap<&'static str, (u64, u64)>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// Startup-only operator policy; independent of D2 admission. Noded owns this
+/// key in NodedConfig's extension map so older config readers retain it.
+pub fn frame_policy_config(config: &config::node::NodedConfig, env: Option<&str>) -> Result<AdmissionMode> {
+    let value = env.map(|value| serde_json::Value::String(value.to_owned()))
+        .or_else(|| config.extra.get("frame_policy").cloned());
+    value.map(serde_json::from_value).transpose()
+        .map(|mode| mode.unwrap_or(AdmissionMode::Observe))
+        .map_err(|_| anyhow::anyhow!("noded.frame_policy / MIX_NODED_FRAME_POLICY must be off, observe or enforce"))
+}
+
+/// Shared by unsolicited mesh ingress and solicited replies. Off preserves
+/// legacy delivery; observe reports every violation without dropping traffic.
+fn mesh_frame_allowed(msg: &BusMessage, peer: &str, own: &str, address: &str, mode: AdmissionMode) -> bool {
+    if mode == AdmissionMode::Off || msg.is_empty_message() { return true; }
+    let reason = if frame_policy::wrong_node(msg, own) {
+        Some("wrong-node-ingress")
+    } else if !frame_policy::from_peer(msg, peer) {
+        Some("from-node-mismatch")
+    } else { None };
+    if let Some(reason) = reason {
+        frame_refused(reason, peer, address, mode);
+        return mode != AdmissionMode::Enforce;
+    }
+    true
+}
 
 /// Every violation has a structured audit event; human-facing logs coalesce.
-fn frame_refused(reason: &str, peer: &str, address: &str, posture: AdmissionMode) {
+fn frame_refused(reason: &'static str, peer: &str, address: &str, posture: AdmissionMode) {
     tracing::debug!(
         event = "frame.refused",
         reason,
@@ -59,18 +85,20 @@ fn frame_refused(reason: &str, peer: &str, address: &str, posture: AdmissionMode
         posture = admission_mode_str(posture),
         "Inter-node frame policy"
     );
-    FRAME_REFUSAL_COUNT.fetch_add(1, Ordering::Relaxed);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
-    let previous = FRAME_REFUSAL_LAST_MS.load(Ordering::Relaxed);
-    if now.saturating_sub(previous) >= WARN_COALESCE_MS
-        && FRAME_REFUSAL_LAST_MS
-            .compare_exchange(previous, now, Ordering::Relaxed, Ordering::Relaxed)
-            .is_ok()
-    {
-        let count = FRAME_REFUSAL_COUNT.swap(0, Ordering::Relaxed);
+    let count = {
+        let mut reasons = FRAME_REFUSALS.lock().expect("frame refusal counters poisoned");
+        let (previous, count) = reasons.entry(reason).or_default();
+        *count += 1;
+        if now.saturating_sub(*previous) >= WARN_COALESCE_MS {
+            *previous = now;
+            Some(std::mem::take(count))
+        } else { None }
+    };
+    if let Some(count) = count {
         tracing::info!(
             event = "frame.refused",
             reason,
@@ -191,6 +219,7 @@ struct PendingResponse {
     /// Exact recipient connection; a reused service name is not reply authority.
     responder_tx: mpsc::Sender<String>,
     caller_id: String,
+    caller_request_id: Option<String>,
     /// Original caller correlation captured before the broker rewrites `id`.
     /// Kept as an explicit observation field so a future correlation surface
     /// can diverge from the transport reply id without mining rewritten wire.
@@ -290,6 +319,7 @@ impl PendingResponseTable {
                 responder_tx: responder_tx.clone(),
                 observer_correlation_id: caller_id.clone(),
                 caller_id,
+                caller_request_id: msg.get("request_id").map(str::to_owned),
                 caller_service: caller_service.map(ToString::to_string),
                 class,
             },
@@ -450,6 +480,7 @@ struct AppState {
     /// (default) sends no challenge — behaviour-neutral. `observe` challenges +
     /// verdicts + logs but never refuses. Start-immutable.
     admission_mode: AdmissionMode,
+    frame_policy: AdmissionMode,
     /// SPEC 13 §9a B1 self-check (2-c-2b) — is the listener bound to this node's
     /// own WG/mesh IP? Start-immutable (the bind never changes at runtime). A
     /// fail-closed input to the enforce gate: a non-WG bind cannot hold the WG
@@ -554,6 +585,7 @@ pub struct RunConfig {
     pub mesh_config_path: Option<String>,
     pub spec_dir: Option<PathBuf>,
     pub admission_mode: AdmissionMode,
+    pub frame_policy: AdmissionMode,
 }
 
 pub async fn run(config: RunConfig, ready_tx: oneshot::Sender<()>) -> Result<()> {
@@ -589,147 +621,15 @@ pub async fn run_on(
     serve(config, Some(listener), ready_tx).await
 }
 
-async fn serve(
-    config: RunConfig,
-    bound: Option<tokio::net::TcpListener>,
-    ready_tx: oneshot::Sender<()>,
-) -> Result<()> {
-    let RunConfig {
-        #[cfg(test)]
-        session_probe,
-        unix_socket,
-        pending_grants_per_parent,
-        listen,
-        node,
-        wg_ip,
-        mesh_config_path,
-        spec_dir,
-        admission_mode,
-    } = config;
-    anyhow::ensure!(
-        pending_grants_per_parent <= 32,
-        "noded.pending_grants_per_parent must be at most 32"
-    );
-    // Validate before listener/readiness or background work. A configured but
-    // invalid public release must never fall back to legacy directory discovery.
-    let spec_release = crate::spec_release::SpecRelease::from_env()?.map(Arc::new);
-    let spec_dir = if spec_release.is_some() {
-        None
-    } else {
-        spec_dir
-    };
-    let mut mesh_config = if let Some(ref path) = mesh_config_path {
-        MeshConfig::load(path)?
-    } else {
-        MeshConfig::load_default(&node)
-    };
-    crate::routing::validate_node_name(&mesh_config.node_name, &node)?;
-    let etc_roster = Arc::new(mesh_config.peers.clone());
-    // SPEC 13 §9a (2-c-1c) — inject this node's d2 admission seed so the bridge
-    // prover can sign. `None` (no seed file yet — ceremony Part B) ⇒ the bridge
-    // registers without proving (the broker logs `unproven:no-proof`).
-    mesh_config.d2_seed = load_d2_seed(&d2_seed_path());
-
-    tracing::info!(
-        node = %mesh_config.node_name,
-        peers = mesh_config.peers.len(),
-        "Mesh config loaded"
-    );
-
-    // SPEC 13 1b-c/2-c-0b — load + verify the cached signed inventory against
-    // the provisioned genesis key (fail-closed). Emit the §17 authority-plane
-    // accept/reject event, then atomically pair the posture with its D1.4 route
-    // table so the §7.7 reload watcher can hot-swap one coherent snapshot.
-    let initial_posture =
-        crate::authority::load_and_verify(&crate::authority::AuthorityPaths::default());
-    emit_posture_event(&initial_posture, false, false);
-    let (admit_verified, admit_epoch) = match &initial_posture {
-        crate::authority::Posture::Verified(a) => (true, a.epoch),
-        crate::authority::Posture::Unverified { .. } => (false, 0),
-    };
-    // Same point in start-up either way: validation above runs first.
-    let listener = match bound {
-        Some(listener) => listener,
-        None => tokio::net::TcpListener::bind(&listen).await?,
-    };
-    let mut unix_listener = match unix_socket.as_deref() {
-        Some(path) => match crate::native_ingress::bind(path).await {
-            Ok(listener) => Some(listener),
-            Err(error) => {
-                tracing::error!(endpoint = %path.display(), error = %format!("{error:#}"), "native-session unavailable; continuing with TCP only");
-                None
-            }
-        },
-        None => None,
-    };
-    // The expiry timer is part of native profile readiness, not background
-    // best-effort work. Drop the socket/guard before advertising on failure.
-    let session_timer = if unix_listener.is_some() {
-        match session::deadline_timer() {
-            Ok(timer) => Some(timer),
-            Err(error) => {
-                tracing::error!(%error, "native-session expiry timer unavailable; continuing with TCP only");
-                unix_listener = None;
-                None
-            }
-        }
-    } else {
-        None
-    };
-    let listener_port = listener.local_addr()?.port();
-    // SPEC 13 §9a B1 self-check — is the listener bound to our own WG IP?
-    // Start-immutable; computed once and shared with the reload watcher.
-    let wg_bound = bind_is_wg(&listen, &wg_ip);
-    let initial_authority = crate::routing::RoutingAuthority::new(
-        initial_posture,
-        &node,
-        &wg_ip,
-        listener_port,
-        etc_roster.as_ref(),
-    );
-    let listener_endpoint_diverged = Arc::new(AtomicBool::new(false));
-    emit_listener_endpoint_state(
-        &initial_authority,
-        &node,
-        listener_port,
-        &listener_endpoint_diverged,
-        false,
-    );
-
-    let (mesh_incoming_tx, mut mesh_incoming_rx) = mpsc::unbounded_channel::<MeshInbound>();
-    let mesh = Arc::new(MeshPeers::new(mesh_config, mesh_incoming_tx));
-    mesh.reconcile_endpoints(
-        initial_authority.routes.desired_endpoints(),
-        initial_authority.revision(),
-    )
-    .await;
-    let authority = Arc::new(ArcSwap::from_pointee(initial_authority));
-
-    // SPEC 13 §9a (slice 2-c-1a) — emit the D2 admission posture so the
-    // configured mode, the fail-closed-bind self-check, the trust root, and the
-    // prover-incapable flag (no d2 seed yet — ceremony Part B) are observable
-    // before any challenge is wired. No wire change: 2-c-1a is behaviour-neutral.
-    emit_admission_posture_event(
-        admission_mode,
-        &listen,
-        wg_bound,
-        admit_verified,
-        load_d2_seed(&d2_seed_path()).is_none(),
-        admit_epoch,
-        false,
-    );
-
-    let registry: Registry = Arc::new(RwLock::new(HashMap::new()));
-    let observe = ObserveManager::new();
-    observe.spawn_drainer();
-
-    // Deliver messages from remote hubs to local services
-    let registry_for_mesh = registry.clone();
-    let observe_for_mesh = observe.clone();
-    let mesh_for_incoming = mesh.clone();
-    let node_for_mesh = node.clone();
-    let authority_for_mesh = authority.clone();
-    tokio::spawn(async move {
+async fn mesh_incoming_loop(
+    mut mesh_incoming_rx: mpsc::UnboundedReceiver<MeshInbound>,
+    mesh_for_incoming: Arc<MeshPeers>,
+    authority_for_mesh: Arc<ArcSwap<crate::routing::RoutingAuthority>>,
+    registry_for_mesh: Registry,
+    observe_for_mesh: Arc<ObserveManager>,
+    node_for_mesh: String,
+    frame_policy: AdmissionMode,
+) {
         while let Some(inbound) = mesh_incoming_rx.recv().await {
             if !mesh_for_incoming
                 .inbound_generation_is_current(&inbound.peer, inbound.connection_generation)
@@ -751,19 +651,9 @@ async fn serve(
                 .resolve(&peer)
                 .map(|target| target.into_peer().noded_addr().to_string())
                 .unwrap_or_default();
-            let refusal = if frame_policy::wrong_node(&msg, &node_for_mesh) {
-                Some("wrong-node-ingress")
-            } else if admission_mode != AdmissionMode::Off && !frame_policy::from_peer(&msg, &peer)
-            {
-                Some("from-node-mismatch")
-            } else {
-                None
-            };
-            if let Some(reason) = refusal {
-                frame_refused(reason, &peer, &peer_address, admission_mode);
-                if admission_mode != AdmissionMode::Observe || reason == "wrong-node-ingress" {
-                    continue;
-                }
+            if msg.is_empty_message() { continue; }
+            if !mesh_frame_allowed(&msg, &peer, &node_for_mesh, &peer_address, frame_policy) {
+                continue;
             }
             strip_principal(&mut msg);
             if broker_only_session_event(&msg) {
@@ -947,7 +837,147 @@ async fn serve(
                 }
             }
         }
-    });
+}
+
+async fn serve(
+    config: RunConfig,
+    bound: Option<tokio::net::TcpListener>,
+    ready_tx: oneshot::Sender<()>,
+) -> Result<()> {
+    let RunConfig {
+        #[cfg(test)]
+        session_probe,
+        unix_socket,
+        pending_grants_per_parent,
+        listen,
+        node,
+        wg_ip,
+        mesh_config_path,
+        spec_dir,
+        admission_mode,
+        frame_policy,
+    } = config;
+    anyhow::ensure!(
+        pending_grants_per_parent <= 32,
+        "noded.pending_grants_per_parent must be at most 32"
+    );
+    // Validate before listener/readiness or background work. A configured but
+    // invalid public release must never fall back to legacy directory discovery.
+    let spec_release = crate::spec_release::SpecRelease::from_env()?.map(Arc::new);
+    let spec_dir = if spec_release.is_some() {
+        None
+    } else {
+        spec_dir
+    };
+    let mut mesh_config = if let Some(ref path) = mesh_config_path {
+        MeshConfig::load(path)?
+    } else {
+        MeshConfig::load_default(&node)
+    };
+    crate::routing::validate_node_name(&mesh_config.node_name, &node)?;
+    let etc_roster = Arc::new(mesh_config.peers.clone());
+    // SPEC 13 §9a (2-c-1c) — inject this node's d2 admission seed so the bridge
+    // prover can sign. `None` (no seed file yet — ceremony Part B) ⇒ the bridge
+    // registers without proving (the broker logs `unproven:no-proof`).
+    mesh_config.d2_seed = load_d2_seed(&d2_seed_path());
+
+    tracing::info!(
+        node = %mesh_config.node_name,
+        peers = mesh_config.peers.len(),
+        "Mesh config loaded"
+    );
+
+    // SPEC 13 1b-c/2-c-0b — load + verify the cached signed inventory against
+    // the provisioned genesis key (fail-closed). Emit the §17 authority-plane
+    // accept/reject event, then atomically pair the posture with its D1.4 route
+    // table so the §7.7 reload watcher can hot-swap one coherent snapshot.
+    let initial_posture =
+        crate::authority::load_and_verify(&crate::authority::AuthorityPaths::default());
+    emit_posture_event(&initial_posture, false, false);
+    let (admit_verified, admit_epoch) = match &initial_posture {
+        crate::authority::Posture::Verified(a) => (true, a.epoch),
+        crate::authority::Posture::Unverified { .. } => (false, 0),
+    };
+    // Same point in start-up either way: validation above runs first.
+    let listener = match bound {
+        Some(listener) => listener,
+        None => tokio::net::TcpListener::bind(&listen).await?,
+    };
+    let mut unix_listener = match unix_socket.as_deref() {
+        Some(path) => match crate::native_ingress::bind(path).await {
+            Ok(listener) => Some(listener),
+            Err(error) => {
+                tracing::error!(endpoint = %path.display(), error = %format!("{error:#}"), "native-session unavailable; continuing with TCP only");
+                None
+            }
+        },
+        None => None,
+    };
+    // The expiry timer is part of native profile readiness, not background
+    // best-effort work. Drop the socket/guard before advertising on failure.
+    let session_timer = if unix_listener.is_some() {
+        match session::deadline_timer() {
+            Ok(timer) => Some(timer),
+            Err(error) => {
+                tracing::error!(%error, "native-session expiry timer unavailable; continuing with TCP only");
+                unix_listener = None;
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let listener_port = listener.local_addr()?.port();
+    // SPEC 13 §9a B1 self-check — is the listener bound to our own WG IP?
+    // Start-immutable; computed once and shared with the reload watcher.
+    let wg_bound = bind_is_wg(&listen, &wg_ip);
+    let initial_authority = crate::routing::RoutingAuthority::new(
+        initial_posture,
+        &node,
+        &wg_ip,
+        listener_port,
+        etc_roster.as_ref(),
+    );
+    let listener_endpoint_diverged = Arc::new(AtomicBool::new(false));
+    emit_listener_endpoint_state(
+        &initial_authority,
+        &node,
+        listener_port,
+        &listener_endpoint_diverged,
+        false,
+    );
+
+    let (mesh_incoming_tx, mesh_incoming_rx) = mpsc::unbounded_channel::<MeshInbound>();
+    let mesh = Arc::new(MeshPeers::new(mesh_config, mesh_incoming_tx));
+    mesh.reconcile_endpoints(
+        initial_authority.routes.desired_endpoints(),
+        initial_authority.revision(),
+    )
+    .await;
+    let authority = Arc::new(ArcSwap::from_pointee(initial_authority));
+
+    // SPEC 13 §9a (slice 2-c-1a) — emit the D2 admission posture so the
+    // configured mode, the fail-closed-bind self-check, the trust root, and the
+    // prover-incapable flag (no d2 seed yet — ceremony Part B) are observable
+    // before any challenge is wired. No wire change: 2-c-1a is behaviour-neutral.
+    emit_admission_posture_event(
+        admission_mode,
+        &listen,
+        wg_bound,
+        admit_verified,
+        load_d2_seed(&d2_seed_path()).is_none(),
+        admit_epoch,
+        false,
+    );
+
+    let registry: Registry = Arc::new(RwLock::new(HashMap::new()));
+    let observe = ObserveManager::new();
+    observe.spawn_drainer();
+
+    tokio::spawn(mesh_incoming_loop(
+        mesh_incoming_rx, mesh.clone(), authority.clone(), registry.clone(),
+        observe.clone(), node.clone(), frame_policy,
+    ));
 
     let pending_responses: PendingResponses = Arc::new(PendingResponseTable::new());
     let tap_subscribers: TapSubscribers = Arc::new(RwLock::new(Vec::new()));
@@ -1012,6 +1042,7 @@ async fn serve(
         listener_port,
         listener_endpoint_diverged,
         admission_mode,
+        frame_policy,
         wg_bound,
         challenge_table: Arc::new(crate::admission::ChallengeTable::new()),
         live_sessions: Arc::new(RwLock::new(HashMap::new())),
@@ -2313,12 +2344,18 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             }
         };
 
+        if bus_msg.is_empty_message() { continue; }
+        let admission_bootstrap = bus_msg.command_name() == Some("noded.admit.response")
+            && service_name.is_none()
+            && !state.session_admission.response_seen
+            && state.session_admission.admitted_node.is_none();
+
         // Gate before native commands, response correlation, subscriptions or
         // any other delivery side effect. Only the admission proof itself is
         // permitted before registration (it is consumed below).
         if !is_same_node_origin(source_ip, &state.bind)
-            && state.admission_mode != AdmissionMode::Off
-            && bus_msg.command_name() != Some("noded.admit.response")
+            && state.frame_policy != AdmissionMode::Off
+            && !admission_bootstrap
         {
             let peer = if state.admission_mode == AdmissionMode::Enforce {
                 state.session_admission.admitted_node.clone()
@@ -2327,14 +2364,15 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             };
             if let Some(reason) =
                 frame_policy::session_refusal(&bus_msg, peer.as_deref(), service_name.as_deref())
+                    .or_else(|| frame_policy::wrong_node(&bus_msg, &state.node_name).then_some("wrong-node-ingress"))
             {
                 frame_refused(
                     reason,
                     peer.as_deref().unwrap_or(""),
                     &source_ip_str,
-                    state.admission_mode,
+                    state.frame_policy,
                 );
-                if state.admission_mode == AdmissionMode::Enforce {
+                if state.frame_policy == AdmissionMode::Enforce {
                     break;
                 }
             }
@@ -2466,6 +2504,8 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         // `type:response`, so it MUST be intercepted by command HERE, before the
         // pending-response orphan path below would `take()`-and-drop it.
         if bus_msg.command_name() == Some("noded.admit.response") {
+            // A late proof is never allowed to reset established admission.
+            if !admission_bootstrap { continue; }
             let outcome = process_admit_response(
                 &state,
                 &bus_msg,
@@ -2534,6 +2574,9 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     } else {
                         None
                     };
+                    if let Some(request_id) = &pending.caller_request_id {
+                        bus_msg.set("request_id", request_id);
+                    }
                     let wire = canonicalize_correlated_response(
                         &mut bus_msg,
                         &pending.caller_id,
@@ -2987,7 +3030,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 }
             }
             Route::RemoteMesh { target } => {
-                if !is_same_node_origin(source_ip, &state.bind) {
+                if !is_same_node_origin(source_ip, &state.bind) && state.frame_policy != AdmissionMode::Off {
                     frame_refused(
                         "remote-origin-relay",
                         state
@@ -2996,12 +3039,13 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                             .as_deref()
                             .unwrap_or(""),
                         &source_ip_str,
-                        state.admission_mode,
+                        state.frame_policy,
                     );
-                    continue;
+                    if state.frame_policy == AdmissionMode::Enforce { break; }
                 }
-                if let Err(reason) = bus_msg.clone().forward_mesh() {
-                    frame_refused(reason, target.name(), &source_ip_str, state.admission_mode);
+                // Check only; MeshPeers::call/send owns the single decrement.
+                if let Err(reason) = bus_msg.check_mesh_forward() {
+                    frame_refused(reason, target.name(), &source_ip_str, state.frame_policy);
                     continue;
                 }
                 canonicalize_routed_from_in_place(&mut bus_msg, service_name.as_deref());
@@ -3045,34 +3089,13 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 let peer = target.into_peer();
                 let response_peer = peer.name.clone();
                 let response_address = peer.noded_addr().to_string();
-                let response_mode = state.admission_mode;
+                let response_mode = state.frame_policy;
                 let response_node = state.node_name.clone();
                 let msg_id = bus_msg.get("id").map(|s| s.to_string());
                 tokio::spawn(async move {
                     match mesh.call(peer, bus_msg).await {
                         Ok(mut resp) => {
-                            let reason = if frame_policy::wrong_node(&resp, &response_node) {
-                                Some("wrong-node-ingress")
-                            } else if response_mode != AdmissionMode::Off
-                                && !frame_policy::from_peer(&resp, &response_peer)
-                            {
-                                Some("from-node-mismatch")
-                            } else {
-                                None
-                            };
-                            if let Some(reason) = reason {
-                                frame_refused(
-                                    reason,
-                                    &response_peer,
-                                    &response_address,
-                                    response_mode,
-                                );
-                                if response_mode != AdmissionMode::Observe
-                                    || reason == "wrong-node-ingress"
-                                {
-                                    return;
-                                }
-                            }
+                            if !mesh_frame_allowed(&resp, &response_peer, &response_node, &response_address, response_mode) { return; }
                             if let Some(observation) = pending_observation.as_ref() {
                                 observation.manager.observe(
                                     Observation::from_message(
@@ -4146,6 +4169,9 @@ async fn handle_noded_command(
             .with_header("rc", rc);
         if let Some(id) = msg_id {
             resp.set("id", id);
+        }
+        if let Some(request_id) = msg.get("request_id") {
+            resp.set("request_id", request_id);
         }
         resp
     };
@@ -5264,6 +5290,7 @@ mod tests {
     //! broadcast_tap to skip the same Sender) and remaining drops are
     //! coalesced to ≤1 WARN per second per axis.
 
+    include!("frame_policy_tests.rs");
     use std::collections::HashMap;
     use std::net::{Ipv4Addr, TcpListener};
     use std::sync::Arc;
@@ -5273,8 +5300,8 @@ mod tests {
 
     use arc_swap::ArcSwap;
     use config::node::AdmissionMode;
-    use mesh::{DEFAULT_NODED_PORT, MeshConfig, MeshPeers, PeerConfig};
-    use tokio::sync::{RwLock, mpsc};
+    use mesh::{DEFAULT_NODED_PORT, MeshConfig, MeshInbound, MeshPeers, PeerConfig};
+    use tokio::sync::{RwLock, mpsc, oneshot};
     use tracing_subscriber::Layer;
     use tracing_subscriber::layer::{Context, SubscriberExt};
     use tracing_subscriber::util::SubscriberInitExt;
@@ -5997,7 +6024,8 @@ mod tests {
             wg_ip: "127.0.0.1".into(),
             listener_port,
             listener_endpoint_diverged: Arc::new(AtomicBool::new(false)),
-            admission_mode: AdmissionMode::Off,
+admission_mode: AdmissionMode::Off,
+frame_policy: config::node::AdmissionMode::Observe,
             wg_bound: true,
             challenge_table: Arc::new(crate::admission::ChallengeTable::new()),
             live_sessions: Arc::new(RwLock::new(HashMap::new())),
@@ -6302,7 +6330,8 @@ mod tests {
             wg_ip: "127.0.0.1".into(),
             mesh_config_path: None,
             spec_dir: None,
-            admission_mode: config::node::AdmissionMode::Off,
+admission_mode: config::node::AdmissionMode::Off,
+frame_policy: config::node::AdmissionMode::Observe,
         };
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
         let error = super::run_on(config(format!("127.0.0.1:{other}")), listener, ready_tx)
@@ -6349,7 +6378,8 @@ mod tests {
                     wg_ip: "127.0.0.1".into(),
                     mesh_config_path: None,
                     spec_dir: None,
-                    admission_mode: config::node::AdmissionMode::Off,
+admission_mode: config::node::AdmissionMode::Off,
+frame_policy: config::node::AdmissionMode::Observe,
                 },
                 listener,
                 ready_tx,
@@ -6437,7 +6467,8 @@ mod tests {
                     wg_ip: "127.0.0.1".into(),
                     mesh_config_path: None,
                     spec_dir: None,
-                    admission_mode: config::node::AdmissionMode::Observe,
+admission_mode: config::node::AdmissionMode::Observe,
+frame_policy: config::node::AdmissionMode::Observe,
                 },
                 listener,
                 ready_tx,
@@ -6586,7 +6617,8 @@ mod tests {
                     wg_ip: "127.0.0.1".into(),
                     mesh_config_path: None,
                     spec_dir: None,
-                    admission_mode: config::node::AdmissionMode::Off,
+admission_mode: config::node::AdmissionMode::Off,
+frame_policy: config::node::AdmissionMode::Observe,
                 },
                 listener,
                 ready_tx,
@@ -7705,6 +7737,12 @@ mod tests {
             (AdmissionMode::Observe, true, "hostd.gamma.bus", false),
             (AdmissionMode::Off, true, "hostd.gamma.bus", false),
             (AdmissionMode::Enforce, true, "hostd.beta.bus", false),
+            (AdmissionMode::Observe, true, "hostd", false),
+            (AdmissionMode::Enforce, true, "hostd", true),
+            (AdmissionMode::Enforce, true, "late", true),
+            (AdmissionMode::Observe, true, "late", false),
+            (AdmissionMode::Enforce, true, "wrong-node", true),
+            (AdmissionMode::Observe, true, "wrong-node", false),
         ] {
             let mut state = mesh_delivery_test_state().await;
             let mut posture = state.authority.load().posture.clone();
@@ -7724,7 +7762,7 @@ mod tests {
                     DEFAULT_NODED_PORT,
                     &[],
                 )));
-            state.admission_mode = mode;
+            state.frame_policy = mode;
             let audit = Audit(Arc::new(std::sync::Mutex::new(Vec::new())));
             let output = audit.0.clone();
             let subscriber = tracing_subscriber::fmt()
@@ -7767,23 +7805,23 @@ mod tests {
             if register {
                 raw_register(&mut sink, &mut stream, "bridge-beta").await;
             }
-            let relay_probe = register && !refused && mode == AdmissionMode::Enforce;
-            if relay_probe {
-                let relay = BusMessage::new()
-                    .with_header("to", "hostd.beta.bus")
+            // Empty frames are no-ops even after registration. A correctly
+            // sourced late proof is ignored without resetting admission.
+            if register {
+                sink.send(WsMessage::Text(bus::wire::EMPTY_MESSAGE.into())).await.unwrap();
+                let late = BusMessage::new()
+                    .with_header("to", "noded")
                     .with_header("from", "hostd.beta.bus")
-                    .with_header("command", "probe.relay")
-                    .with_header("id", "relay-probe");
-                sink.send(WsMessage::Text(relay.to_wire().into()))
-                    .await
-                    .unwrap();
+                    .with_header("command", "noded.admit.response");
+                sink.send(WsMessage::Text(late.to_wire().into())).await.unwrap();
             }
-            let request = BusMessage::new()
+            let mut request = BusMessage::new()
                 .with_header("type", "request")
-                .with_header("command", "noded.ping")
-                .with_header("to", "noded")
+                .with_header("command", if from == "late" { "noded.admit.response" } else { "noded.ping" })
+                .with_header("to", if from == "wrong-node" { "noded.gamma.bus" } else { "noded" })
                 .with_header("id", "policy-probe")
-                .with_header("from", from);
+                .with_header("request_id", "policy-request")
+                .with_header("from", match from { "late" => "hostd.gamma.bus", "wrong-node" => "hostd.beta.bus", _ => from });
             if refused {
                 sink.send(WsMessage::Text(request.to_wire().into()))
                     .await
@@ -7801,20 +7839,24 @@ mod tests {
                 .await
                 .expect("enforce must close the refused connection");
             } else {
+                if from == "late" {
+                    sink.send(WsMessage::Text(request.to_wire().into())).await.unwrap();
+                    request.set("command", "noded.ping");
+                    request.set("from", "hostd.beta.bus");
+                }
                 let response = raw_call(&mut sink, &mut stream, request, "policy-probe").await;
-                assert_eq!(response.rc(), Some(0));
+                assert_eq!(response.rc(), Some(if from == "wrong-node" { 10 } else { 0 }));
+                if from != "wrong-node" { assert_eq!(response.get("request_id"), Some("policy-request")); }
                 assert!(super::frame_policy::from_peer(&response, "alpha"));
             }
             let logs = String::from_utf8(output.lock().unwrap().clone()).unwrap();
-            let violation = !register || from == "hostd.gamma.bus";
+            let violation = !register || from != "hostd.beta.bus";
             assert_eq!(
                 logs.contains("event=\"frame.refused\""),
-                (violation && mode != AdmissionMode::Off) || relay_probe,
+                violation && mode != AdmissionMode::Off,
                 "{logs}"
             );
-            if relay_probe {
-                assert!(logs.contains("remote-origin-relay"), "{logs}");
-            }
+            if from == "wrong-node" { assert!(logs.contains("wrong-node-ingress"), "{logs}"); }
             if violation && mode == AdmissionMode::Observe {
                 assert!(logs.contains("posture=\"observe\""), "{logs}");
                 assert!(logs.contains("192.0.2.2"), "{logs}");

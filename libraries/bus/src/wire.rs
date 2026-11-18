@@ -94,14 +94,24 @@ impl BusMessage {
     /// Consume a forwarding hop. Legacy absence remains unlimited; malformed
     /// explicit limits fail closed rather than turning into legacy absence.
     pub fn forward_mesh(&mut self) -> Result<(), &'static str> {
+        self.check_mesh_forward()?;
         if let Some(raw) = self.get("hop_limit") {
             let hops = raw.parse::<u32>().map_err(|_| "invalid-hop-limit")?;
-            if hops == 0 {
-                return Err("hop-limit-exhausted");
-            }
             self.set("hop_limit", &(hops - 1).to_string());
         }
         Ok(())
+    }
+
+    /// Non-consuming forwarding check. The mesh transport owns decrementing.
+    pub fn check_mesh_forward(&self) -> Result<(), &'static str> {
+        match self.get("hop_limit") {
+            None => Ok(()),
+            Some(raw) => match raw.parse::<u32>() {
+                Ok(0) => Err("hop-limit-exhausted"),
+                Ok(_) => Ok(()),
+                Err(_) => Err("invalid-hop-limit"),
+            },
+        }
     }
 
     /// An empty message.
@@ -443,6 +453,9 @@ mod tests {
         assert!(legacy.clone().forward_mesh().is_ok());
         let mut new = legacy.clone();
         new.originate_mesh("alpha");
+        assert!(validate(&new).is_empty());
+        assert!(new.check_mesh_forward().is_ok());
+        assert_eq!(new.get("hop_limit"), Some("1"));
         let request_id = new.get("request_id").unwrap().to_owned();
         assert!(new.get("deadline").unwrap().parse::<u128>().is_ok());
         assert_eq!(new.from_addr(), Some("hostd.alpha.bus"));
@@ -1070,6 +1083,9 @@ pub const KNOWN_HEADERS: &[&str] = &[
     "bus",
     "type",
     "id",
+    "request_id",
+    "deadline",
+    "hop_limit",
     "from",
     "to",
     "command",
