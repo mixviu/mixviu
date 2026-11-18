@@ -218,6 +218,73 @@ fn read_clock(clock: libc::clockid_t) -> Result<u64, String> {
 
 type FinaliseResult = (Result<(), String>, Option<String>);
 
+const FINALISING: u8 = 0;
+const COMPLETE: u8 = 1;
+const TIMED_OUT: u8 = 2;
+
+#[derive(Default)]
+struct FinaliseOutcome {
+    state: std::sync::atomic::AtomicU8,
+    result: std::sync::OnceLock<FinaliseResult>,
+}
+impl FinaliseOutcome {
+    fn complete(&self, result: FinaliseResult) -> bool {
+        let _ = self.result.set(result);
+        self.state
+            .compare_exchange(
+                FINALISING,
+                COMPLETE,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire,
+            )
+            .is_ok()
+    }
+    fn timeout(&self) -> bool {
+        match self.state.compare_exchange(
+            FINALISING,
+            TIMED_OUT,
+            std::sync::atomic::Ordering::AcqRel,
+            std::sync::atomic::Ordering::Acquire,
+        ) {
+            Ok(_) => true,
+            Err(state) => state == TIMED_OUT,
+        }
+    }
+}
+
+fn finalise_files(
+    files: &TakeFiles,
+    outcome: &FinaliseOutcome,
+    discard: bool,
+    failed: bool,
+    result: Result<(), String>,
+    publish: impl FnOnce(&mut bool) -> Result<(), String>,
+) -> FinaliseResult {
+    let mut published = false;
+    let result = if discard {
+        // Discard is honoured even when encoding returned after the deadline.
+        let cleanup = files.cleanup();
+        result.and(cleanup)
+    } else if failed {
+        result.and(Err(
+            "recording failed; staged VFL retained for recovery".into()
+        ))
+    } else if outcome.state.load(std::sync::atomic::Ordering::Acquire) == TIMED_OUT {
+        Err("encoder finaliser timed out; staged VFL retained for recovery".into())
+    } else {
+        result.and_then(|_| publish(&mut published))
+    };
+    let reply = (result, files.retained_path(published));
+    if !outcome.complete(reply.clone()) && published {
+        // Timeout won while rename/sync was in flight. Restore the private
+        // staging name; never turn a timed-out take into a late publication.
+        // The timeout reply names both locations and requests manual cleanup
+        // because an in-flight syscall or this recovery rename can still fail.
+        let _ = rename_no_replace(&files.path, &files.video);
+    }
+    reply
+}
+
 pub struct Recording {
     pub session: String,
     pub fps: u32,
@@ -249,11 +316,31 @@ pub struct Recording {
     bytes: Arc<std::sync::atomic::AtomicU64>,
     encoder: Option<VideoEncoder>,
     finishing: Option<Receiver<FinaliseResult>>,
+    finishing_since: Option<std::time::Instant>,
+    finalise_outcome: Arc<FinaliseOutcome>,
     stop_discard: Option<bool>,
     finaliser: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Recording {
+    #[cfg(feature = "test-support")]
+    pub fn delay_finaliser_for_test(&mut self, delay: std::time::Duration) {
+        assert!(self.encoder.is_none());
+        if let Some(join) = self.finaliser.take() {
+            join.join().unwrap();
+        }
+        self.finalise_outcome = Default::default();
+        let outcome = self.finalise_outcome.clone();
+        let (tx, rx) = channel();
+        self.finishing = Some(rx);
+        self.finishing_since = Some(std::time::Instant::now());
+        self.finaliser = Some(std::thread::spawn(move || {
+            std::thread::sleep(delay);
+            let reply = (Ok(()), None);
+            outcome.complete(reply.clone());
+            let _ = tx.send(reply);
+        }));
+    }
     pub fn new(
         session: String,
         path: String,
@@ -318,6 +405,8 @@ impl Recording {
             readback_credit_us: (1_000_000 / u64::from(fps.max(1)) / 4).max(1),
             encoder: Some(encoder),
             finishing: None,
+            finishing_since: None,
+            finalise_outcome: Default::default(),
             stop_discard: None,
             finaliser: None,
         })
@@ -419,24 +508,22 @@ impl Recording {
         let failed = failure.is_some();
         let (tx, rx) = channel();
         self.finishing = Some(rx);
+        self.finishing_since = Some(std::time::Instant::now());
+        let outcome = self.finalise_outcome.clone();
         self.finaliser = Some(std::thread::spawn(move || {
-            let mut published = false;
             let result = match failure {
                 Some(error) => encoder.finish_failed(error),
                 None => encoder.finish_result(),
             };
-            let result = if discard {
-                let cleanup = files.cleanup();
-                result.map(|_| ()).and(cleanup)
-            } else if failed {
-                result.and(Err(
-                    "recording failed; staged VFL retained for recovery".into()
-                ))
-            } else {
-                result.and_then(|_| files.publish_tracked(&mut published))
-            };
-            let recovery = files.retained_path(published);
-            let _ = tx.send((result, recovery));
+            let reply = finalise_files(
+                &files,
+                &outcome,
+                discard,
+                failed,
+                result.map(|_| ()),
+                |published| files.publish_tracked(published),
+            );
+            let _ = tx.send(reply);
         }));
         true
     }
@@ -457,19 +544,51 @@ impl Recording {
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 (Err("encoder finaliser disconnected".into()), None)
             }
-            Err(std::sync::mpsc::TryRecvError::Empty) => return false,
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                if self
+                    .finishing_since
+                    .is_none_or(|at| at.elapsed() < std::time::Duration::from_secs(30))
+                {
+                    return false;
+                }
+                // The filesystem owns the blocked worker. Detach it; never join
+                // it on the compositor, including when this take is dropped.
+                self.finaliser.take();
+                if self.finalise_outcome.timeout() {
+                    (
+                        Err("encoder finaliser timed out after 30 seconds".into()),
+                        Some(self.files.video.clone()),
+                    )
+                } else {
+                    // Completion won even if its channel send has not run yet.
+                    self.finalise_outcome
+                        .result
+                        .get()
+                        .expect("completed outcome")
+                        .clone()
+                }
+            }
         };
         if let Err(error) = result {
             self.error.get_or_insert(error);
         }
         self.finishing = None;
-        if let Some(join) = self.finaliser.take() {
-            let _ = join.join();
-        }
+        self.finaliser.take();
         let kept = self.stop_discard == Some(false) && self.error.is_none();
         self.terminal = Some(
             json!({"recovery_path":if self.error.is_some() {recovery_path} else {None},"path":self.path,"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"dropped_capture":self.dropped_capture,"dropped_queue":self.dropped-self.dropped_capture,"readback_deferred":self.readback_deferred,"pending_ticks":self.pending_ticks,"writer":self.writer_metrics.json(),"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
         );
+        if self
+            .finalise_outcome
+            .state
+            .load(std::sync::atomic::Ordering::Acquire)
+            == TIMED_OUT
+        {
+            let terminal = self.terminal.as_mut().unwrap();
+            terminal["manual_cleanup_required"] = json!(true);
+            terminal["recovery_paths"] = json!([self.files.video, self.files.path]);
+            terminal["discard_requested"] = json!(self.stop_discard == Some(true));
+        }
         true
     }
 }
@@ -478,9 +597,7 @@ impl Drop for Recording {
     fn drop(&mut self) {
         // Closing admission leaves an interrupted VFL recoverable on disk.
         drop(self.encoder.take());
-        if let Some(join) = self.finaliser.take() {
-            let _ = join.join();
-        }
+        self.finaliser.take();
     }
 }
 
@@ -488,6 +605,120 @@ impl Drop for Recording {
 mod file_tests {
     use super::*;
     use std::os::unix::fs::{PermissionsExt, symlink};
+    #[test]
+    fn hung_finaliser_has_bounded_failure_without_joining() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let mut r = Recording::new(
+            "hung".into(),
+            dir.join("hung.vfl").to_str().unwrap().into(),
+            2,
+            2,
+            30,
+            "vfl".into(),
+        )
+        .unwrap();
+        r.frame(Some((2, 2, Arc::new(vec![0; 12]), 0))).unwrap();
+        r.stop(false);
+        r.finaliser.take().unwrap().join().unwrap();
+        r.finalise_outcome = Default::default();
+        let (release, blocked) = channel::<()>();
+        r.finaliser = Some(std::thread::spawn(move || {
+            let _ = blocked.recv_timeout(std::time::Duration::from_secs(2));
+        }));
+        let (_tx, rx) = channel();
+        r.finishing = Some(rx);
+        r.finishing_since = Some(std::time::Instant::now() - std::time::Duration::from_secs(31));
+        let began = std::time::Instant::now();
+        assert!(r.poll());
+        assert!(began.elapsed() < std::time::Duration::from_secs(1));
+        drop(release);
+        assert!(
+            r.error
+                .as_ref()
+                .unwrap()
+                .contains("timed out after 30 seconds")
+        );
+        assert!(r.finaliser.is_none());
+        assert_eq!(
+            r.terminal.as_ref().unwrap()["manual_cleanup_required"],
+            true
+        );
+        assert_eq!(
+            r.terminal.as_ref().unwrap()["recovery_paths"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn timeout_and_publication_have_one_winner_and_discard_survives_timeout() {
+        for stop_in_sync in [false, true] {
+            let dir = std::env::temp_dir().join(private_token().unwrap());
+            std::fs::create_dir(&dir).unwrap();
+            let files = TakeFiles::create(dir.join("race.vfl").to_str().unwrap()).unwrap();
+            std::fs::create_dir(&files.video).unwrap();
+            let outcome = Arc::new(FinaliseOutcome::default());
+            let (entered, wait) = channel();
+            let (release, blocked) = channel();
+            let worker_files = files.clone();
+            let worker_outcome = outcome.clone();
+            let worker = std::thread::spawn(move || {
+                finalise_files(
+                    &worker_files,
+                    &worker_outcome,
+                    false,
+                    false,
+                    Ok(()),
+                    |published| {
+                        if stop_in_sync {
+                            worker_files.publish_with(published, |_| {
+                                entered.send(()).unwrap();
+                                blocked.recv().unwrap();
+                                Ok(())
+                            })
+                        } else {
+                            entered.send(()).unwrap();
+                            blocked.recv().unwrap();
+                            worker_files.publish_tracked(published)
+                        }
+                    },
+                )
+            });
+            wait.recv().unwrap();
+            assert!(outcome.timeout());
+            release.send(()).unwrap();
+            worker.join().unwrap();
+            assert_eq!(
+                outcome.state.load(std::sync::atomic::Ordering::Acquire),
+                TIMED_OUT
+            );
+            assert!(!std::path::Path::new(&files.path).exists());
+            assert!(std::path::Path::new(&files.video).exists());
+            // A late discard still removes its private files after timeout.
+            finalise_files(
+                &files,
+                &FinaliseOutcome {
+                    state: std::sync::atomic::AtomicU8::new(TIMED_OUT),
+                    result: Default::default(),
+                },
+                true,
+                false,
+                Ok(()),
+                |_| panic!("discard must not publish"),
+            );
+            assert!(!std::path::Path::new(&files.video).exists());
+            // A durable result that wins before the channel send cannot be
+            // changed into a timeout by the compositor.
+            let completed = FinaliseOutcome::default();
+            assert!(completed.complete((Ok(()), None)));
+            assert!(!completed.timeout());
+            assert!(completed.result.get().unwrap().0.is_ok());
+            std::fs::remove_dir_all(dir).unwrap();
+        }
+    }
     #[test]
     fn readback_deferral_is_not_a_lost_change() {
         let dir = std::env::temp_dir().join(private_token().unwrap());

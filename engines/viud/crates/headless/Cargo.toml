@@ -34,6 +34,7 @@ decor = { workspace = true }
 screencopy = { workspace = true }
 
 [dev-dependencies]
+screencopy = { workspace = true, features = ["test-support"] }
 lz4_flex = { version = "=0.14.0", default-features = false, features = ["std", "safe-decode"] }
 crc32fast = "=1.5.4"
 wayland-client = { version = "=0.31.15" }

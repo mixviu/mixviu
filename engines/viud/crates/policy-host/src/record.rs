@@ -83,6 +83,7 @@ struct Session {
     drain_until: Option<Instant>,
     stop_wake: Option<Rc<dyn Fn(Instant) -> bool>>,
     stop_timer_at: Option<Instant>,
+    finalise_delay: Duration,
     signature: Vec<u64>,
     deferred_signature: Option<Vec<u64>>,
     failed: Option<String>,
@@ -283,6 +284,7 @@ pub fn command(
             drain_until: None,
             stop_wake: None,
             stop_timer_at: None,
+            finalise_delay: Duration::from_millis(5),
             signature: Vec::new(),
             deferred_signature: None,
             failed: None,
@@ -297,10 +299,10 @@ pub fn command(
         if lp
             .loop_handle
             .insert_source(Timer::immediate(), move |_, _, lp| {
-                tick(lp, &tick_session);
+                tick(&tick_session, || capture_tick(lp, &tick_session));
                 let s = tick_session.borrow();
                 if s.failed.is_some() && s.recording.is_none()
-                    || s.recording.as_ref().is_some_and(|r| r.terminal.is_some())
+                    || s.recording.as_ref().is_some_and(|r| !r.is_recording())
                 {
                     TimeoutAction::Drop
                 } else {
@@ -420,6 +422,7 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
     }
     let lost = u64::from(std::mem::take(&mut s.pending))
         + u64::from(s.deferred_signature.take().is_some());
+    s.drain_until = None;
     if let Some(r) = s.recording.as_mut() {
         r.error = Some(error.into());
         for _ in 0..lost {
@@ -559,7 +562,9 @@ fn install_stop_waker<D: 'static>(
                 if !finish_recording(&mut s)
                     && s.recording.as_ref().is_some_and(|r| !r.is_recording())
                 {
-                    schedule_stop(&mut s, Instant::now() + Duration::from_millis(5));
+                    let delay = s.finalise_delay;
+                    s.finalise_delay = (delay * 2).min(Duration::from_millis(100));
+                    schedule_stop(&mut s, Instant::now() + delay);
                 }
             }
             TimeoutAction::Drop
@@ -603,8 +608,7 @@ fn finish_recording(s: &mut Session) -> bool {
     true
 }
 
-fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
-    let clock = recorder::bus::monotonic_us();
+fn tick(session: &Rc<RefCell<Session>>, capture: impl FnOnce()) {
     {
         let s = session.borrow();
         if s.recording.is_none()
@@ -619,6 +623,11 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     if !preflight_ready(session) {
         return;
     }
+    capture();
+}
+
+fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
+    let clock = recorder::bus::monotonic_us();
     {
         let mut s = session.borrow_mut();
         if finish_recording(&mut s) {
@@ -831,6 +840,7 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 return;
             }
             if s.recording.is_none() {
+                screencopy::file::prepare_raw_pool(&pixels);
                 match Recording::new_bounded(
                     s.id.clone(),
                     s.path.clone(),
@@ -840,9 +850,8 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     s.encoder.clone(),
                     s.max_bytes,
                 ) {
-                    Ok(mut recording) => {
-                        recording.t0_us = captured_us;
-                        s.recording = Some(recording);
+                    Ok(recording) => {
+                        assign_first_capture(&mut s, recording, captured_us);
                     }
                     Err(error) => {
                         drop(s);
@@ -881,11 +890,16 @@ fn tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     }
 }
 
+fn assign_first_capture(s: &mut Session, mut recording: Recording, captured_us: u64) {
+    recording.t0_us = captured_us;
+    s.recording = Some(recording);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn drain_fixture(id: &str, root: &std::path::Path) -> Rc<RefCell<Session>> {
+    fn session_fixture(id: &str, root: &std::path::Path) -> Rc<RefCell<Session>> {
         let path = root
             .join(format!("{id}.vfl"))
             .to_string_lossy()
@@ -895,11 +909,8 @@ mod tests {
             &json!({"request_id":id,"path":path,"target":{},"max_seconds":60}),
         )
         .unwrap();
-        let mut recording =
+        let recording =
             Recording::new_bounded(id.into(), path.clone(), 2, 2, 30, "vfl".into(), None).unwrap();
-        recording
-            .frame(Some((2, 2, std::sync::Arc::new(vec![7; 12]), 0)))
-            .unwrap();
         Rc::new(RefCell::new(Session {
             frames_parked: |_| false,
             request_id: id.into(),
@@ -925,11 +936,24 @@ mod tests {
             drain_until: None,
             stop_wake: None,
             stop_timer_at: None,
+            finalise_delay: Duration::from_millis(5),
             signature: vec![],
             deferred_signature: None,
             failed: None,
             last_state: Cell::new("recording"),
         }))
+    }
+
+    fn drain_fixture(id: &str, root: &std::path::Path) -> Rc<RefCell<Session>> {
+        let session = session_fixture(id, root);
+        session
+            .borrow_mut()
+            .recording
+            .as_mut()
+            .unwrap()
+            .frame(Some((2, 2, std::sync::Arc::new(vec![7; 12]), 0)))
+            .unwrap();
+        session
     }
 
     #[test]
@@ -941,8 +965,7 @@ mod tests {
         use smithay::output::{Output, PhysicalProperties, Subpixel};
         use smithay::reexports::calloop::EventLoop;
         use std::sync::atomic::Ordering;
-        let node = std::env::var("MIX_TEST_VIUD_RENDER_NODE")
-            .unwrap_or_else(|_| "/dev/dri/renderD128".into());
+        let node = screencopy::file::testing::render_node();
         if !std::path::Path::new(&node).exists() {
             assert_ne!(
                 std::env::var("MIX_TEST_REQUIRE_RECORD").as_deref(),
@@ -1072,6 +1095,17 @@ mod tests {
         install_stop_waker(&old, events.handle());
         let fence = screencopy::file::testing::stall_next_read();
         submit(&old, &mut renderer, &outputs[0]);
+        let (_probe_tx, probe_rx) = std::sync::mpsc::channel();
+        old.borrow_mut().probe = Some(probe_rx);
+        tick(&old, || panic!("preflight is still pending"));
+        std::thread::sleep(Duration::from_millis(1100));
+        screencopy::file::poll(&mut renderer, &outputs[1]);
+        assert_eq!(
+            screencopy::file::testing::read_count(),
+            1,
+            "an unpolled output keeps its read beyond READ_TIMEOUT"
+        );
+        old.borrow_mut().probe = None;
         assert!(screencopy::file::pending(&outputs[0]));
         assert!(!screencopy::file::requested(&outputs[0]));
         assert!(!screencopy::file::pending_picture(&outputs[0], true));
@@ -1107,6 +1141,7 @@ mod tests {
             let s = drain_fixture(&format!("reuse-{index}"), &root);
             install_stop_waker(&s, events.handle());
             submit(&s, &mut renderer, output);
+            std::thread::sleep(Duration::from_millis(1100));
             let reply = stop(&s, false);
             let limit = Instant::now() + Duration::from_secs(2);
             while reply.borrow().is_none() && Instant::now() < limit {
@@ -1117,13 +1152,26 @@ mod tests {
             }
             assert!(reply.borrow().is_some());
             assert_eq!(reply.borrow().as_ref().unwrap()["dropped"], 0);
+            assert_eq!(reply.borrow().as_ref().unwrap()["error"], Value::Null);
             assert_eq!(screencopy::file::testing::read_count(), 0);
             assert_eq!(screencopy::file::testing::pool_count(), 0);
         }
         let s = drain_fixture("discard", &root);
         install_stop_waker(&s, events.handle());
+        let (_probe_tx, probe_rx) = std::sync::mpsc::channel();
+        s.borrow_mut().probe = Some(probe_rx);
+        tick(&s, || {
+            panic!("a preflight pause must not need a capture tick")
+        });
         let fence = screencopy::file::testing::stall_next_read();
         submit(&s, &mut renderer, &outputs[0]);
+        std::thread::sleep(Duration::from_millis(1100));
+        screencopy::file::poll(&mut renderer, &outputs[1]);
+        assert_eq!(
+            screencopy::file::testing::read_count(),
+            1,
+            "reads admitted during preflight keep their unpolled budget"
+        );
         let reply = stop(&s, true);
         assert_eq!(
             screencopy::file::testing::read_count(),
@@ -1138,12 +1186,23 @@ mod tests {
         let fence = screencopy::file::testing::stall_next_read();
         submit(&s, &mut renderer, &outputs[0]);
         assert!(screencopy::file::testing::take_wake());
-        screencopy::file::testing::age_reads();
+        // Polling another output must not consume this read's budget.
+        std::thread::sleep(Duration::from_millis(1100));
         screencopy::file::poll(&mut renderer, &outputs[1]);
+        assert_eq!(screencopy::file::testing::read_count(), 1);
+        let began = Instant::now();
+        while screencopy::file::testing::read_count() != 0 {
+            assert!(began.elapsed() < Duration::from_secs(2));
+            screencopy::file::testing::take_wake();
+            screencopy::file::poll(&mut renderer, &outputs[0]);
+            events
+                .dispatch(Some(Duration::from_millis(2)), &mut ())
+                .unwrap();
+        }
         assert_eq!(
             screencopy::file::testing::read_count(),
             0,
-            "expiry must apply across outputs"
+            "a serviced hung fence must expire"
         );
         assert_eq!(fence.load(Ordering::Relaxed), 1);
         assert!(
@@ -1185,6 +1244,117 @@ mod tests {
             assert!(status.as_object().unwrap().contains_key(key));
             assert_eq!(status[key], Value::Null);
         }
+    }
+    #[test]
+    fn slow_finaliser_stop_reply_is_observed_within_one_hundred_ms() {
+        let root = std::env::temp_dir().join(recorder::bus::private_token().unwrap());
+        std::fs::create_dir(&root).unwrap();
+        let session = drain_fixture("slow-finaliser", &root);
+        let mut events = smithay::reexports::calloop::EventLoop::<()>::try_new().unwrap();
+        install_stop_waker(&session, events.handle());
+        assert!(stop_stream(&mut session.borrow_mut(), false));
+        session
+            .borrow_mut()
+            .recording
+            .as_mut()
+            .unwrap()
+            .delay_finaliser_for_test(Duration::from_millis(650));
+        let began = Instant::now();
+        while session
+            .borrow()
+            .recording
+            .as_ref()
+            .unwrap()
+            .terminal
+            .is_none()
+        {
+            assert!(began.elapsed() < Duration::from_secs(2));
+            events
+                .dispatch(Some(Duration::from_millis(10)), &mut ())
+                .unwrap();
+        }
+        assert!(
+            began.elapsed() < Duration::from_millis(850),
+            "650ms finaliser reply took {:?}",
+            began.elapsed()
+        );
+        drop(session);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failure_during_drain_clears_capture_and_drain_state() {
+        let root = std::env::temp_dir().join(recorder::bus::private_token().unwrap());
+        std::fs::create_dir(&root).unwrap();
+        let session = drain_fixture("failed-drain", &root);
+        let mut events = smithay::reexports::calloop::EventLoop::<()>::try_new().unwrap();
+        install_stop_waker(&session, events.handle());
+        session.borrow_mut().pending = true;
+        let until = Instant::now() + Duration::from_millis(1);
+        session.borrow_mut().drain_until = Some(until);
+        assert!(schedule_stop(&mut session.borrow_mut(), until));
+        fail(&session, "capture failure during drain");
+        assert!(!session.borrow().pending);
+        assert!(session.borrow().drain_until.is_none());
+        assert_eq!(session.borrow().last_state.get(), "failed");
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while session
+            .borrow()
+            .recording
+            .as_ref()
+            .unwrap()
+            .terminal
+            .is_none()
+        {
+            assert!(Instant::now() < deadline);
+            events
+                .dispatch(Some(Duration::from_millis(10)), &mut ())
+                .unwrap();
+        }
+        assert_eq!(session.borrow().last_state.get(), "failed");
+        drop(session);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn host_assigns_origin_from_capture_completion() {
+        let root = std::env::temp_dir().join(recorder::bus::private_token().unwrap());
+        std::fs::create_dir(&root).unwrap();
+        let session = session_fixture("origin-host", &root);
+        let mut s = session.borrow_mut();
+        let recording = s.recording.take().unwrap();
+        let captured_us = recorder::bus::monotonic_us().unwrap();
+        assign_first_capture(&mut s, recording, captured_us);
+        s.recording
+            .as_mut()
+            .unwrap()
+            .frame(Some((2, 2, std::sync::Arc::new(vec![7; 12]), 0)))
+            .unwrap();
+        assert_eq!(
+            s.recording.as_ref().unwrap().started()["t0_us"],
+            captured_us
+        );
+        let marker = s
+            .recording
+            .as_mut()
+            .unwrap()
+            .marker("aligned".into(), Value::Null)
+            .unwrap();
+        assert!(
+            marker["t_us"].as_u64().unwrap()
+                <= recorder::bus::monotonic_us().unwrap() - captured_us
+        );
+        stop_stream(&mut s, false);
+        while !finish_recording(&mut s) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let origin: Value = serde_json::from_slice(
+            &std::fs::read(root.join("origin-host.vfl/origin.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(origin["t0_us"], captured_us);
+        drop(s);
+        drop(session);
+        std::fs::remove_dir_all(root).unwrap();
     }
     #[test]
     fn stable_deferred_content_is_not_dropped_every_tick() {
@@ -1246,6 +1416,7 @@ mod tests {
             drain_until: None,
             stop_wake: None,
             stop_timer_at: None,
+            finalise_delay: Duration::from_millis(5),
             signature: vec![],
             deferred_signature: None,
             failed: None,
@@ -1297,6 +1468,7 @@ mod tests {
         {
             let mut s = session.borrow_mut();
             s.failed = None;
+            s.admitted = Instant::now();
             s.pending = false;
             s.probe = Some(rx);
             let got = answered.clone();
@@ -1305,7 +1477,9 @@ mod tests {
                 got.set(true);
             }));
         }
-        assert!(!preflight_ready(&session));
+        tick(&session, || {
+            panic!("failed preflight must never schedule capture")
+        });
         assert!(answered.get());
         assert!(!session.borrow().pending);
         assert!(session.borrow().recording.is_none());

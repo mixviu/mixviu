@@ -47,4 +47,5 @@ smithay.workspace = true
 mod_module_files = "deny"
 
 [dev-dependencies]
+recorder = { workspace = true, features = ["test-support"] }
 screencopy = { workspace = true, features = ["test-support"] }

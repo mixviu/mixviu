@@ -28,3 +28,6 @@ model = { workspace = true }
 world = { workspace = true }
 smithay = { workspace = true }
 uuid = { workspace = true }
+
+[features]
+test-support = []

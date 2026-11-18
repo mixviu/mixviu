@@ -579,6 +579,113 @@ mod tests {
     use super::*;
 
     #[test]
+    fn paused_headless_poll_timer_expires_stalled_fence() {
+        use smithay::backend::{
+            egl::{EGLContext, EGLDevice, EGLDisplay},
+            renderer::ImportMem,
+        };
+        use smithay::output::{PhysicalProperties, Subpixel};
+        use smithay::reexports::calloop::EventLoop;
+        use std::sync::atomic::Ordering;
+        let node = screencopy::file::testing::render_node();
+        if !std::path::Path::new(&node).exists() {
+            assert_ne!(
+                std::env::var("MIX_TEST_REQUIRE_RECORD").as_deref(),
+                Ok("1"),
+                "render node required"
+            );
+            return;
+        }
+        let device = EGLDevice::enumerate()
+            .unwrap()
+            .find(|d| d.render_device_path().ok().as_deref() == Some(std::path::Path::new(&node)))
+            .unwrap();
+        // SAFETY: the display/context and renderer stay on this test thread.
+        let display = unsafe { EGLDisplay::new(device).unwrap() };
+        let context = EGLContext::new(&display).unwrap();
+        let mut renderer = unsafe { GlesRenderer::new(context).unwrap() };
+        let output = Output::new(
+            "parked-fence".into(),
+            PhysicalProperties {
+                size: (0, 0).into(),
+                subpixel: Subpixel::Unknown,
+                make: "test".into(),
+                model: "test".into(),
+                serial_number: "test".into(),
+            },
+        );
+        let result = Rc::new(RefCell::new(None));
+        let got = result.clone();
+        let token = "/parked-fence-test";
+        screencopy::file::raw_answer(token.into(), move |answer| *got.borrow_mut() = Some(answer));
+        let spec = comp_model::capture::parse(&serde_json::json!({"path":token})).unwrap();
+        screencopy::file::enqueue(&output, spec, |_| {});
+        let fence = screencopy::file::testing::stall_next_read();
+        let mut texture = renderer
+            .import_memory(
+                &[9; 16],
+                smithay::backend::allocator::Fourcc::Abgr8888,
+                (2, 2).into(),
+                false,
+            )
+            .unwrap();
+        let target = renderer.bind(&mut texture).unwrap();
+        let began = Instant::now();
+        screencopy::file::service(
+            &mut renderer,
+            screencopy::Source {
+                framebuffer: &target,
+                readback: screencopy::Readback {
+                    size: (2, 2).into(),
+                    origin_bottom_left: false,
+                },
+            },
+            &output,
+            screencopy::file::CaptureSource::Offscreen,
+            true,
+        );
+        drop(target);
+        let mut events =
+            EventLoop::<(GlesRenderer, Output, world::state::StatusSession)>::try_new().unwrap();
+        events
+            .handle()
+            .insert_source(Timer::immediate(), |_, _, (renderer, output, status)| {
+                // The same route gate as arm_readbacks: a parked VT is serviced
+                // offscreen even though session authority remains Paused.
+                assert!(matches!(status, world::state::StatusSession::Paused));
+                assert_eq!(
+                    route(true, !matches!(status, world::state::StatusSession::Paused)),
+                    Route::Offscreen
+                );
+                screencopy::file::testing::take_wake();
+                screencopy::file::poll(renderer, output);
+                TimeoutAction::ToDuration(Duration::from_millis(2))
+            })
+            .unwrap();
+        let mut state = (renderer, output, world::state::StatusSession::Paused);
+        while result.borrow().is_none() {
+            assert!(
+                began.elapsed() < Duration::from_secs(2),
+                "serviced paused fence never expired"
+            );
+            events
+                .dispatch(Some(Duration::from_millis(10)), &mut state)
+                .unwrap();
+        }
+        assert!(began.elapsed() >= Duration::from_secs(1));
+        let error = result.borrow_mut().take().unwrap().unwrap_err().into_wire();
+        assert!(error.1.contains("readback fence timed out"), "{error:?}");
+        assert_eq!(fence.load(Ordering::Relaxed), 1);
+        assert_eq!(screencopy::file::testing::read_count(), 0);
+        assert!(!screencopy::file::testing::take_wake());
+        screencopy::file::release_raw(token);
+        println!(
+            "PAUSED_STALLED_FENCE elapsed_ms={} bound_ms=2000",
+            began.elapsed().as_millis()
+        );
+    }
+
+    #[test]
     fn queued_timer_activation_race_cannot_starve_the_next_pause() {
         let mut timer = FrameTimer::default();
         let before_activation = timer.arm();

@@ -22,7 +22,15 @@ pub const CHUNK_BYTES: u64 = 64 * 1024 * 1024;
 pub const FREE_SPACE_FLOOR: u64 = 1024 * 1024 * 1024;
 
 pub fn check_free_space(path: &Path) -> io::Result<()> {
-    check_space(&File::open(path)?, 0)
+    use std::os::unix::ffi::OsStrExt;
+    let path = std::ffi::CString::new(path.as_os_str().as_bytes())?;
+    let mut stat = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+    // statvfs resolves a searchable path without opening it for reading.
+    if unsafe { libc::statvfs(path.as_ptr(), stat.as_mut_ptr()) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let stat = unsafe { stat.assume_init() };
+    check_available(stat.f_bavail.saturating_mul(stat.f_frsize), 0)
 }
 
 fn check_space(file: &File, incoming: u64) -> io::Result<()> {
@@ -48,6 +56,7 @@ fn check_available(available: u64, incoming: u64) -> io::Result<()> {
 #[derive(Clone)]
 struct Budget {
     written: std::rc::Rc<std::cell::Cell<u64>>,
+    space_checked_until: std::rc::Rc<std::cell::Cell<u64>>,
     max_bytes: Option<u64>,
 }
 struct BoundedFile {
@@ -71,7 +80,13 @@ impl Write for BoundedFile {
         if self.budget.max_bytes.is_some_and(|max| next > max) {
             return Err(io::Error::other("VFL max_bytes exceeded"));
         }
-        check_space(&self.file, buf.len() as u64)?;
+        if next > self.budget.space_checked_until.get() {
+            const INTERVAL: u64 = 8 * 1024 * 1024;
+            check_space(&self.file, buf.len() as u64 + INTERVAL)?;
+            self.budget
+                .space_checked_until
+                .set(next.saturating_add(INTERVAL));
+        }
         let n = self.file.write(buf)?;
         self.budget
             .written
@@ -376,6 +391,7 @@ impl Writer {
         check_free_space(parent)?;
         let budget = Budget {
             written: Default::default(),
+            space_checked_until: Default::default(),
             max_bytes,
         };
         std::fs::DirBuilder::new().mode(0o700).create(&path)?;
@@ -468,6 +484,31 @@ impl Writer {
 #[cfg(test)]
 mod disk_tests {
     use super::*;
+    #[test]
+    #[ignore = "filesystem syscall measurement on CBC"]
+    fn measure_space_check_cost() {
+        let file = File::open(std::env::temp_dir()).unwrap();
+        let start = Instant::now();
+        for _ in 0..100_000 {
+            check_space(&file, 0).unwrap();
+        }
+        println!(
+            "VFL_SPACE_CHECK calls=100000 total_us={} ns_per_call={}",
+            start.elapsed().as_micros(),
+            start.elapsed().as_nanos() / 100_000
+        );
+    }
+    #[test]
+    fn unreadable_parent_does_not_refuse_space_probe() {
+        use std::os::unix::fs::PermissionsExt;
+        let path = std::env::temp_dir().join(format!("vfl-parent-{}", std::process::id()));
+        std::fs::create_dir(&path).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o300)).unwrap();
+        let result = check_free_space(&path);
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::remove_dir(path).unwrap();
+        result.unwrap();
+    }
     #[test]
     fn free_space_floor_refuses_start_and_crossing_write() {
         assert!(

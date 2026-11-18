@@ -20,6 +20,7 @@ use std::io::Write;
 use std::time::{Duration, Instant};
 
 const READ_TIMEOUT: Duration = Duration::from_secs(1);
+const MAX_POLL_GAP: Duration = Duration::from_millis(50);
 
 type Answer = Box<dyn FnOnce(Result<Value, ControlReply>)>;
 pub type Pixels = (u32, u32, std::sync::Arc<Vec<u8>>, u64);
@@ -59,6 +60,31 @@ thread_local! {
     static NEXT_ID: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
+struct PollBudget {
+    previous: Instant,
+    spent: Duration,
+}
+
+impl PollBudget {
+    fn new(now: Instant) -> Self {
+        Self {
+            previous: now,
+            spent: Duration::ZERO,
+        }
+    }
+
+    /// Charge only serviced reads. A KMS/offscreen hand-over or a suspended
+    /// event loop can leave a long gap; it costs at most one polling interval.
+    /// Paused sessions still poll offscreen and must detect a real GPU hang.
+    fn unsignalled(&mut self, now: Instant) -> bool {
+        self.spent += now
+            .saturating_duration_since(self.previous)
+            .min(MAX_POLL_GAP);
+        self.previous = now;
+        self.spent >= READ_TIMEOUT
+    }
+}
+
 struct PendingRead {
     requests: Vec<Request>,
     mapping: GlesMapping,
@@ -69,7 +95,7 @@ struct PendingRead {
     kind: CaptureSource,
     copy_us: u64,
     latency: ledger::frame_trace::WaitSpan,
-    expires: Instant,
+    budget: PollBudget,
 }
 
 fn reads_pending(output: &Output, cursor: Option<bool>) -> bool {
@@ -96,6 +122,15 @@ pub mod testing {
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
+    pub fn render_node() -> String {
+        std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| {
+            smithay::backend::egl::EGLDevice::enumerate()
+                .ok()
+                .and_then(|mut devices| devices.find_map(|device| device.render_device_path().ok()))
+                .map(|path| path.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "/dev/dri/no-render-device".into())
+        })
+    }
     thread_local! {
         static STALL: RefCell<Option<Arc<AtomicUsize>>> = const { RefCell::new(None) };
     }
@@ -135,13 +170,6 @@ pub mod testing {
     }
     pub fn pool_count() -> usize {
         PIXEL_POOL.with_borrow(Vec::len)
-    }
-    pub fn age_reads() {
-        READS.with_borrow_mut(|reads| {
-            reads
-                .iter_mut()
-                .for_each(|read| read.expires = Instant::now())
-        });
     }
     pub fn take_wake() -> bool {
         graphics::bridge::publish::wake::take_capture_deadline().is_some()
@@ -278,6 +306,25 @@ fn clear_idle_pool() {
     }
 }
 
+/// Touch the bounded RGB ring before acknowledging the first recording frame.
+/// Otherwise the next two captures fault in fresh full-output allocations while
+/// the writer still owns the first image, spending the live sampling budget.
+pub fn prepare_raw_pool(first: &std::sync::Arc<Vec<u8>>) {
+    PIXEL_POOL.with_borrow_mut(|pool| {
+        // Stitched multi-target frames have their own allocation. Warming from
+        // one would copy bytes that this per-source conversion pool cannot use.
+        if !pool
+            .iter()
+            .any(|frame| std::sync::Arc::ptr_eq(frame, first))
+        {
+            return;
+        }
+        while pool.len() < 3 {
+            pool.push(std::sync::Arc::new(first.as_ref().clone()));
+        }
+    });
+}
+
 /// Retire one recording's private raw tokens without invoking its callbacks.
 /// This is safe while its Session is borrowed during discard/timeout/seal.
 pub fn release_raw(prefix: &str) {
@@ -295,29 +342,19 @@ pub fn release_raw(prefix: &str) {
     clear_idle_pool();
 }
 
-fn expire_reads(now: Instant) {
-    let expired = READS.with_borrow_mut(|reads| {
-        let (expired, live) = std::mem::take(reads)
-            .into_iter()
-            .partition::<Vec<_>, _>(|r| now >= r.expires);
-        *reads = live;
-        expired
-    });
-    for read in expired {
-        // Drop the mapping and fence before delivering an error which may
-        // synchronously seal the recorder and admit a new take.
-        let requests = read.requests;
-        drop(read.mapping);
-        drop(read.fence);
-        for request in requests {
-            raw_fail(
-                &request.spec.path,
-                capture_failed("readback fence timed out"),
-            );
-            (request.answer)(Err(capture_failed("readback fence timed out")));
-        }
+fn expire_read(read: PendingRead) {
+    // Drop the mapping and fence before delivering an error which may
+    // synchronously seal the recorder and admit a new take.
+    let requests = read.requests;
+    drop(read.mapping);
+    drop(read.fence);
+    for request in requests {
+        raw_fail(
+            &request.spec.path,
+            capture_failed("readback fence timed out"),
+        );
+        (request.answer)(Err(capture_failed("readback fence timed out")));
     }
-    clear_idle_pool();
 }
 
 pub fn fail(id: u64, reason: &str) {
@@ -354,7 +391,6 @@ pub fn service(
     kind: CaptureSource,
     cursor: bool,
 ) {
-    expire_reads(Instant::now());
     poll_reads(renderer, output, cursor);
     let requests = take(|request| {
         request.output == output.name()
@@ -404,7 +440,7 @@ pub fn service(
                             context: renderer.context_id().erased(),
                             copy_us: started.elapsed().as_micros() as u64,
                             latency,
-                            expires: Instant::now() + READ_TIMEOUT,
+                            budget: PollBudget::new(Instant::now()),
                         })
                     });
                     wake_readback();
@@ -445,7 +481,6 @@ pub fn service(
 }
 
 fn poll_reads(renderer: &mut GlesRenderer, output: &Output, cursor: bool) {
-    expire_reads(Instant::now());
     let reads = READS.with_borrow_mut(std::mem::take);
     let mut waiting = Vec::new();
     for mut read in reads {
@@ -469,6 +504,10 @@ fn poll_reads(renderer: &mut GlesRenderer, output: &Output, cursor: bool) {
             continue;
         }
         if !read.fence.is_reached() {
+            if read.budget.unsignalled(Instant::now()) {
+                expire_read(read);
+                continue;
+            }
             waiting.push(read);
             wake_readback();
             continue;
@@ -873,6 +912,19 @@ fn write(spec: &CaptureFrameSpec, width: u32, height: u32, pixels: &[u8]) -> Res
 mod tests {
     use super::*;
     #[test]
+    fn fence_budget_counts_serviced_time_and_caps_unpolled_gaps() {
+        let start = Instant::now();
+        let mut budget = PollBudget::new(start);
+        let resumed = start + Duration::from_secs(30);
+        assert!(!budget.unsignalled(resumed));
+        assert_eq!(budget.spent, MAX_POLL_GAP);
+        for ms in 1..950 {
+            assert!(!budget.unsignalled(resumed + Duration::from_millis(ms)));
+        }
+        assert!(budget.unsignalled(resumed + Duration::from_millis(950)));
+    }
+
+    #[test]
     fn fractional_regions_round_outwards_and_clip() {
         let spec = comp_model::capture::parse(&serde_json::json!({"path":"/tmp/a",
             "region":{"x":1,"y":1,"width":2,"height":1}}))
@@ -975,10 +1027,19 @@ mod tests {
     }
 
     #[test]
+    fn stitched_pixels_do_not_warm_the_source_pool() {
+        PIXEL_POOL.with_borrow_mut(Vec::clear);
+        prepare_raw_pool(&std::sync::Arc::new(vec![1; 24]));
+        assert_eq!(PIXEL_POOL.with_borrow(Vec::len), 0);
+    }
+
+    #[test]
     fn pooled_pixels_never_overwrite_a_live_writer_frame() {
         PIXEL_POOL.with_borrow_mut(Vec::clear);
         let first = pooled_rgb(&[3, 2, 1, 255], 1, 1, false, false).unwrap();
         let address = first.as_ptr();
+        prepare_raw_pool(&first);
+        assert_eq!(PIXEL_POOL.with_borrow(Vec::len), 3);
         let second = pooled_rgb(&[6, 5, 4, 255], 1, 1, false, false).unwrap();
         assert_eq!(&**first, &[1, 2, 3]);
         assert_eq!(&**second, &[4, 5, 6]);

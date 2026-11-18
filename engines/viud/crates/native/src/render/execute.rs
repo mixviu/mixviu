@@ -1488,7 +1488,9 @@ pub fn execute(
         let gles: &mut smithay::backend::renderer::gles::GlesRenderer = r.as_mut();
         let outputs: Vec<_> = state.inner.space_state().state.outputs().cloned().collect();
         for output in outputs {
-            screencopy::file::poll(gles, &output);
+            if screencopy::file::reading(&output) {
+                screencopy::file::poll(gles, &output);
+            }
         }
         for captures in screencopy.drain(..) {
             captures.finish(gles);

@@ -143,36 +143,109 @@ fn record_idle_content_clock_ignores_capture_repaints() {
 // Test-only container inspection, independent of the writer's counters. R2
 // owns a production reader. Retain only the first image so 4K tests stay bounded.
 fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
+    vfl_visit(path, |_| {})
+}
+
+fn assert_recorded_colours(path: &Path, expected: &[u32]) -> u64 {
     let manifest: Value =
         serde_json::from_slice(&fs::read(path.join("manifest.json")).unwrap()).unwrap();
+    let width = manifest["width"].as_u64().unwrap() as usize;
+    let height = manifest["height"].as_u64().unwrap() as usize;
+    let at = ((height * 3 / 4) * width + width * 3 / 4) * 4;
+    let mut found = 0;
+    let mut frame = 0;
+    let mut last = None;
+    let (_, records) = vfl_visit(path, |pixels| {
+        let colour = u32::from_le_bytes(pixels[at..at + 4].try_into().unwrap());
+        if last != Some(colour) {
+            println!("VFL_COLOUR frame={frame} colour={colour:08x}");
+            last = Some(colour);
+        }
+        frame += 1;
+        if found < expected.len() && pixels[at..at + 4] == expected[found].to_le_bytes() {
+            found += 1;
+        }
+    });
+    assert_eq!(found, expected.len(), "VFL lost an admitted colour change");
+    records
+}
+
+fn vfl_visit(path: &Path, visit: impl FnMut(&[u8])) -> (Vec<u8>, u64) {
+    vfl_scan(path, visit, true).unwrap()
+}
+
+/// A live scan acknowledges only complete, CRC-checked records. The active
+/// chunk may end in a partially written record; sealed scans remain strict.
+fn vfl_scan(
+    path: &Path,
+    mut visit: impl FnMut(&[u8]),
+    sealed: bool,
+) -> std::io::Result<(Vec<u8>, u64)> {
+    let manifest: Value = serde_json::from_slice(&fs::read(path.join("manifest.json"))?).unwrap();
     assert!([json!(1), json!(2)].contains(&manifest["version"]));
     let size = manifest["width"].as_u64().unwrap() as usize
         * manifest["height"].as_u64().unwrap() as usize
         * 4;
-    let mut chunks: Vec<_> = fs::read_dir(path)
-        .unwrap()
+    let mut chunks: Vec<_> = fs::read_dir(path)?
         .map(|e| e.unwrap().path())
         .filter(|p| p.extension().is_some_and(|e| e == "bin"))
         .collect();
     chunks.sort();
     let mut first = Vec::new();
     let mut count = 0;
+    let mut pixels = vec![0; size];
     for chunk in chunks {
-        let bytes = fs::read(chunk).unwrap();
+        let bytes = fs::read(chunk)?;
         let mut at = 0;
         while at < bytes.len() {
+            if !sealed && bytes.len() - at < 17 {
+                break;
+            }
             let h = &bytes[at..at + 17];
             let len = u32::from_le_bytes(h[..4].try_into().unwrap()) as usize;
+            if !sealed && bytes.len() - at - 17 < len {
+                break;
+            }
             let body = &bytes[at + 8..at + 17 + len];
             assert_eq!(
                 crc32fast::hash(body),
                 u32::from_le_bytes(h[4..8].try_into().unwrap())
             );
             assert_eq!(u64::from_le_bytes(h[8..16].try_into().unwrap()), count);
+            let payload = &body[9..];
+            match h[16] {
+                0 => pixels = lz4_flex::block::decompress(payload, size).unwrap(),
+                1 => {
+                    let delta = lz4_flex::block::decompress(payload, size).unwrap();
+                    for (p, d) in pixels.iter_mut().zip(delta) {
+                        *p ^= d;
+                    }
+                }
+                2 => assert!(payload.is_empty()),
+                3 => {
+                    let n =
+                        |at| u32::from_le_bytes(payload[at..at + 4].try_into().unwrap()) as usize;
+                    let (x, y, w, h) = (n(0), n(4), n(8), n(12));
+                    let width = manifest["width"].as_u64().unwrap() as usize;
+                    let height = manifest["height"].as_u64().unwrap() as usize;
+                    assert!(x + w <= width && y + h <= height);
+                    let delta = lz4_flex::block::decompress(&payload[16..], w * h * 4).unwrap();
+                    for row in 0..h {
+                        let at = ((y + row) * width + x) * 4;
+                        for (p, d) in pixels[at..at + w * 4]
+                            .iter_mut()
+                            .zip(&delta[row * w * 4..(row + 1) * w * 4])
+                        {
+                            *p ^= d;
+                        }
+                    }
+                }
+                kind => panic!("unknown VFL record kind {kind}"),
+            }
+            visit(&pixels);
             if count == 0 {
                 assert_eq!(h[16], 0);
-                let bgra = lz4_flex::block::decompress(&body[9..], size).unwrap();
-                first = bgra
+                first = pixels
                     .chunks_exact(4)
                     .flat_map(|p| [p[2], p[1], p[0]])
                     .collect();
@@ -181,11 +254,13 @@ fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
             at += 17 + len;
         }
     }
-    let complete: Value =
-        serde_json::from_slice(&fs::read(path.join("complete.json")).unwrap()).unwrap();
-    assert_eq!(complete["complete"], true);
-    assert_eq!(complete["frames"], count);
-    (first, count)
+    if sealed {
+        let complete: Value =
+            serde_json::from_slice(&fs::read(path.join("complete.json")).unwrap()).unwrap();
+        assert_eq!(complete["complete"], true);
+        assert_eq!(complete["frames"], count);
+    }
+    Ok((first, count))
 }
 
 #[test]
@@ -223,7 +298,7 @@ fn record_small_changes_zero_drops_and_crcs() {
     for i in 0..8 {
         let before = bus.call("comp.record.status", json!({"session":start["session"]}));
         reads = reads.max(before["readbacks"].as_u64().unwrap());
-        p.solid_buffer(if i % 2 == 0 { 0xffa03377 } else { 0xff20d040 });
+        p.solid_buffer(0xffa03370 + i);
         p.commit(true);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
@@ -248,6 +323,17 @@ fn record_small_changes_zero_drops_and_crcs() {
     assert_eq!(Some(records), stop["frames"].as_u64());
     assert!(stop["readbacks"].as_u64().unwrap() >= 9);
     assert!(stop["writer"]["delta_records"].as_u64().unwrap() > 0);
+    let mut expected = 0u8;
+    vfl_visit(&path, |pixels| {
+        let at = (90 * 320 + 160) * 4;
+        if expected < 8 && pixels[at..at + 4] == [0x70 + expected, 0x33, 0xa0, 0xff] {
+            expected += 1;
+        }
+    });
+    assert_eq!(
+        expected, 8,
+        "every committed colour must survive in the VFL, in order"
+    );
 }
 
 /// Throughput acceptance must run alone, with release runtime binaries.
@@ -770,7 +856,83 @@ fn record_idle_output_lifecycle_and_clock() {
             assert_eq!(reply[key], row[key]);
         }
     }
+    let mut bounded_pattern = Pattern::new(connect(&mut process));
+    bounded_pattern.wait_callback(0);
+    let row = bus.window();
+    bus.call(
+        "comp.window.fullscreen",
+        place_args(&row, json!({"output":"headless-0"})),
+    );
+    bounded_pattern.state.size = (1280, 720);
+    bounded_pattern.solid_buffer(0xff103050);
+    let previous = bounded_pattern.state.callbacks;
+    bounded_pattern.commit(true);
+    bounded_pattern.wait_callback(previous);
     let next=bus.call("comp.record.start",json!({"request_id":"bounded","target":{"output":"headless-0"},"path":process.root.join("bounded.vfl"),"max_seconds":1}));
+    let mut admitted_colours = vec![0xff103050];
+    let mut submitted_colours = admitted_colours.clone();
+    let at = ((720 * 3 / 4) * 1280 + 1280 * 3 / 4) * 4;
+    'changes: for colour in [0xff507090, 0xff90b0d0, 0xffd0f010] {
+        let before = bus.call("comp.record.status", json!({"session":next["session"]}));
+        if before["state"] != "recording" {
+            break;
+        }
+        bounded_pattern.solid_buffer(colour);
+        println!("BOUNDED_COMMIT colour={colour:08x} before={before}");
+        let previous = bounded_pattern.state.callbacks;
+        bounded_pattern.commit(true);
+        submitted_colours.push(colour);
+        bounded_pattern.wait_callback(previous);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            bounded_pattern.pump();
+            let status = bus.call("comp.record.status", json!({"session":next["session"]}));
+            assert_eq!(status["error"], Value::Null, "{status}");
+            let mut retained = None;
+            // A completed readback can still meet a full writer queue. Only
+            // decoded pixels acknowledge this particular commit. Scan both
+            // names because automatic seal can publish between Bus replies.
+            for path in [
+                Path::new(next["recovery_path"].as_str().unwrap()),
+                Path::new(next["path"].as_str().unwrap()),
+            ] {
+                let mut frame = 0;
+                match vfl_scan(
+                    path,
+                    |pixels| {
+                        if retained.is_none() && pixels[at..at + 4] == colour.to_le_bytes() {
+                            retained = Some(frame);
+                        }
+                        frame += 1;
+                    },
+                    false,
+                ) {
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => panic!("live VFL scan: {error}"),
+                }
+            }
+            if let Some(frame) = retained {
+                println!(
+                    "BOUNDED_RETAINED colour={colour:08x} frame={frame} readbacks={} dropped={}",
+                    status["readbacks"], status["dropped"]
+                );
+                admitted_colours.push(colour);
+                break;
+            }
+            // The one-second take may seal before sampling/retaining a late
+            // commit. A readback counter alone cannot promise its pixels.
+            if status["state"] == "idle" {
+                println!("BOUNDED_SEALED colour={colour:08x} not_retained status={status}");
+                break 'changes;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "bounded writer never retained colour {colour:08x}: {status}"
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+    }
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         let status = bus.call("comp.record.status", json!({"session":next["session"]}));
@@ -784,9 +946,36 @@ fn record_idle_output_lifecycle_and_clock() {
         thread::sleep(Duration::from_millis(20));
     }
     let bounded = bus.call("comp.record.stop", json!({"session":next["session"]}));
-    let (_, records) = vfl_first(std::path::Path::new(next["path"].as_str().unwrap()));
+    let records = assert_recorded_colours(
+        std::path::Path::new(next["path"].as_str().unwrap()),
+        &admitted_colours,
+    );
     assert_eq!(Some(records), bounded["frames"].as_u64());
-    assert_eq!(bounded["dropped"], 0);
+    assert_eq!(bounded["error"], Value::Null, "{bounded}");
+    // Bounded queue drops under parallel CI load are reported, not a promise
+    // that every submitted state is retained. Zero-drop throughput is tested
+    // separately by the isolated strict 4K30 acceptance.
+    assert_eq!(
+        bounded["dropped"].as_u64().unwrap(),
+        bounded["dropped_capture"].as_u64().unwrap() + bounded["dropped_queue"].as_u64().unwrap()
+    );
+    let mut previous = 0;
+    let mut final_colour = 0;
+    vfl_visit(Path::new(next["path"].as_str().unwrap()), |pixels| {
+        let colour = u32::from_le_bytes(pixels[at..at + 4].try_into().unwrap());
+        let index = submitted_colours
+            .iter()
+            .position(|c| *c == colour)
+            .expect("unknown recorded colour");
+        assert!(index >= previous, "recorded colours went backwards");
+        previous = index;
+        final_colour = colour;
+    });
+    assert_eq!(Some(&final_colour), admitted_colours.last());
+    assert!(
+        records >= admitted_colours.len() as u64,
+        "bounded take lost admitted slots: {bounded}"
+    );
     assert_eq!(start, bus.call("comp.record.start", args));
     let discard_path = process.root.join("discard.vfl");
     let discard = bus.call("comp.record.start", json!({"request_id":"discard", "target":{"output":"headless-0"},"path":discard_path,"max_seconds":1}));
@@ -895,8 +1084,7 @@ fn inactive_seat_maps_clients_and_captures_output_and_window() {
 }
 
 fn inactive_fixture_available() -> bool {
-    let node =
-        std::env::var("MIX_TEST_VIUD_RENDER_NODE").unwrap_or_else(|_| "/dev/dri/renderD128".into());
+    let node = process::render_node();
     let ready = Path::new(&node).exists()
         && binary("viud").is_file()
         && binary("noded").is_file()
@@ -916,6 +1104,7 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
     }
     let bus = Bus::start("inactive-transitions");
     let mut process = process::spawn_transitions("inactive-transitions", &bus.url);
+    process.extend_watchdog(Duration::from_secs(180));
     let mut pattern = Pattern::new(connect(&mut process));
     bus.ready();
     pattern.wait_callback(0);
@@ -933,9 +1122,42 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
     assert!(start.elapsed() >= Duration::from_millis(650));
     assert_eq!(bus.call("comp.session.get", json!({}))["active"], true);
     ppm(&bus, &process, "owned-active", None);
+    bus.call(
+        "comp.window.fullscreen",
+        place_args(&window, json!({"output":"headless-0"})),
+    );
+    pattern.state.size = (1280, 720);
+    pattern.solid_buffer(0xff103050);
+    let previous = pattern.state.callbacks;
+    pattern.commit(true);
+    pattern.wait_callback(previous);
+    let recording = bus.call(
+        "comp.record.start",
+        json!({
+            "request_id":"pause-resume", "target":{"output":"headless-0"},
+            "path":process.root.join("pause-resume.vfl"), "max_seconds":120, "cursor":false
+        }),
+    );
+    let mut colours = vec![0xff103050];
     for index in 0..3 {
+        let before = bus.call(
+            "comp.record.status",
+            json!({"session":recording["session"]}),
+        );
+        assert_eq!(
+            before["state"], "recording",
+            "pause take sealed before its explicit stop: {before}"
+        );
         edge(b'P');
         assert_eq!(bus.call("comp.session.get", json!({}))["active"], false);
+        thread::sleep(Duration::from_millis(1100));
+        let paused_before = bus.call(
+            "comp.record.status",
+            json!({"session":recording["session"]}),
+        );
+        let colour = 0xff507090 + index * 0x00101010;
+        pattern.solid_buffer(colour);
+        pattern.commit(true);
         ppm(&bus, &process, &format!("paused-{index}"), None);
         ppm(
             &bus,
@@ -943,11 +1165,41 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
             &format!("window-paused-{index}"),
             Some(target(&window)),
         );
+        let until = Instant::now() + Duration::from_secs(10);
+        loop {
+            let status = bus.call(
+                "comp.record.status",
+                json!({"session":recording["session"]}),
+            );
+            assert_eq!(
+                status["state"], "recording",
+                "pause take unexpectedly sealed: {status}"
+            );
+            if status["readbacks"].as_u64().unwrap() > paused_before["readbacks"].as_u64().unwrap()
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < until,
+                "paused change never sampled: {status}"
+            );
+            pattern.pump();
+            thread::sleep(Duration::from_millis(10));
+        }
+        colours.push(colour);
         edge(b'Q'); // activation with an offscreen frame timer queued
         assert_eq!(bus.call("comp.session.get", json!({}))["active"], true);
         ppm(&bus, &process, &format!("active-{index}"), None);
         assert_eq!(bus.window()["id"], window["id"]);
     }
+    let stopped = bus.call("comp.record.stop", json!({"session":recording["session"]}));
+    assert_eq!(stopped["error"], Value::Null, "{stopped}");
+    let records = assert_recorded_colours(&process.root.join("pause-resume.vfl"), &colours);
+    assert_eq!(Some(records), stopped["frames"].as_u64());
+    assert!(records > 0);
+    // Recording intentionally changed the scene. Freeze its final pixels
+    // before probing binding loss and explicit VT watcher recovery.
+    let before_recovery = ppm(&bus, &process, "before-watcher-recovery", None).2;
     edge(b'P');
     edge(b'D'); // a temporarily missing binding must back off, not panic
     let restore = control.try_clone().unwrap();
@@ -973,7 +1225,7 @@ fn inactive_seat_transitions_transfer_renderer_and_keep_captures_owned() {
     }
     ppm(&bus, &process, "after-watcher-recovery", None);
     assert_eq!(
-        before.2,
+        before_recovery,
         ppm(&bus, &process, "after-switch-loop", None).2,
         "the static scene survives all buffer reuse and transitions"
     );
