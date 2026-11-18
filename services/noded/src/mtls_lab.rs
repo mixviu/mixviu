@@ -321,7 +321,7 @@ async fn lab_tap(
 
 #[tokio::test]
 async fn mtls_lab_security() {
-    let a = reload_test_state(lab_inventory(1, false), vec![]).await;
+    let mut a = reload_test_state(lab_inventory(1, false), vec![]).await;
     let mut b = reload_test_state(lab_inventory(1, false), vec![]).await;
     b.node_name = "beta".into();
     let ma = lab_material(&a, 11);
@@ -433,16 +433,11 @@ async fn mtls_lab_security() {
     let crate::authority::Posture::Verified(revoked) = lab_inventory(2, true) else {
         unreachable!()
     };
-    let next = crate::routing::RoutingAuthority::new(
-        crate::authority::Posture::Verified(revoked.clone()),
-        "alpha",
-        "127.0.0.1",
-        4200,
-        &[],
-    );
+    // Use the real accepted-inventory reload entry point. The cloned listener
+    // state stays legacy-off; only this reload caller needs enforce teardown.
+    a.admission_mode = AdmissionMode::Enforce;
     let start = Instant::now();
-    a.authority.store(Arc::new(next));
-    super::reload_revocation_teardown(&a, &revoked).await;
+    super::apply_inventory_reload(&a, crate::authority::Posture::Verified(revoked)).await;
     assert!(lab_recv(&mut sniffed).await.is_none());
     tap_task.abort();
     println!("MTLS_RELOAD_DROP_US={}", start.elapsed().as_micros());
@@ -453,15 +448,8 @@ async fn mtls_lab_security() {
     let crate::authority::Posture::Verified(expired) = lab_inventory(3, false) else {
         unreachable!()
     };
-    b.authority
-        .store(Arc::new(crate::routing::RoutingAuthority::new(
-            crate::authority::Posture::Verified(expired.clone()),
-            "beta",
-            "127.0.0.1",
-            4200,
-            &[],
-        )));
-    super::reload_revocation_teardown(&b, &expired).await;
+    b.admission_mode = AdmissionMode::Enforce;
+    super::apply_inventory_reload(&b, crate::authority::Posture::Verified(expired)).await;
     assert!(
         lab_recv(&mut ab_ws).await.is_none(),
         "expired live key dropped"
