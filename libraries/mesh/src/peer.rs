@@ -501,7 +501,6 @@ impl MeshPeers {
         // Client IDs are scoped to their own connections. Give this hop a
         // fresh correlation ID so two clients both using "1" cannot collide.
         let caller_id = msg.get("id").map(str::to_owned);
-        let caller_request_id = msg.get("request_id").map(str::to_owned);
         let msg_id = uuid::Uuid::new_v4().to_string();
         let _pending_guard = PendingGuard {
             pending: self.pending.clone(),
@@ -512,6 +511,7 @@ impl MeshPeers {
         // Send the message with the id
         let mut msg = msg;
         msg.originate_mesh(&self.config.node_name);
+        let caller_request_id = msg.get("request_id").map(str::to_owned);
         msg.forward_mesh().map_err(anyhow::Error::msg)?;
         msg.set("id", &msg_id);
         let class = msg.command_name().unwrap_or("unknown").to_string();

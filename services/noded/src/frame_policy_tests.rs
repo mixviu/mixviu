@@ -10,8 +10,10 @@ fn frame_posture_defaults_observe_and_is_independent_of_admission() {
         super::frame_policy_config(&node.noded, None).unwrap(),
         AdmissionMode::Enforce
     );
-    let mut config = config::node::NodedConfig::default();
-    config.admission = AdmissionMode::Enforce;
+    let mut config = config::node::NodedConfig {
+        admission: AdmissionMode::Enforce,
+        ..Default::default()
+    };
     assert_eq!(
         super::frame_policy_config(&config, None).unwrap(),
         AdmissionMode::Observe
