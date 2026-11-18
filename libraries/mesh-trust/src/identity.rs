@@ -18,6 +18,25 @@ pub struct KeyAuthority {
 }
 
 impl KeyAuthority {
+    pub fn epoch(&self) -> u64 { self.epoch }
+
+    pub fn authenticate_response(&self, challenge: &Value, response: &Value, expected: &str) -> Option<PeerIdentity> {
+        use base64::Engine as _;
+        let b64 = base64::engine::general_purpose::STANDARD;
+        if response["claimed_source_node"].as_str()? != expected { return None; }
+        let transcript = AdmissionTranscript {
+            mesh_fqdn: challenge["mesh_fqdn"].as_str()?.to_owned(),
+            claimed_source_node: expected.to_owned(),
+            verifying_broker_node: challenge["verifying_broker_node"].as_str()?.to_owned(),
+            inventory_epoch: challenge["inventory_epoch"].as_u64()?,
+            session_id: b64.decode(challenge["session_id"].as_str()?).ok()?,
+            server_nonce: b64.decode(challenge["server_nonce"].as_str()?).ok()?,
+            client_ephemeral: vec![0; 32], channel_binding_hash: vec![0; 32],
+        };
+        if b64.decode(response["client_ephemeral"].as_str()?).ok()? != [0; 32]
+            || b64.decode(response["channel_binding_hash"].as_str()?).ok()? != [0; 32] { return None; }
+        self.prove(&transcript, &b64.decode(response["signature"].as_str()?).ok()?)
+    }
     pub fn new(members: &BTreeMap<String, Value>, epoch: u64, revision: u64) -> Self {
         let mut authority = Self { epoch, revision, ..Self::default() };
         for (node, member) in members {

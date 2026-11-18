@@ -132,7 +132,7 @@ impl MeshConfig {
 /// contract the broker's `reconstruct_proof` mirrors). Returns `None` if there
 /// is no d2 seed (prover-incapable) or the challenge is malformed — the caller
 /// then registers without proving (the broker logs `unproven:no-proof`).
-fn build_admit_response(
+pub fn build_admit_response(
     challenge: &BusMessage,
     node_name: &str,
     d2_seed: &Option<[u8; 32]>,
@@ -232,6 +232,7 @@ pub struct ReconcileReport {
 /// An unsolicited frame received from a particular transport generation.
 #[derive(Debug)]
 pub struct MeshInbound {
+    pub context: bus::native_session::PeerContext,
     pub peer: String,
     pub connection_generation: uuid::Uuid,
     pub message: BusMessage,
@@ -244,6 +245,7 @@ pub struct MeshInboundGuard<'a> {
 
 /// A connection to a remote broker with send/receive channels.
 struct RemoteBroker {
+    context: bus::native_session::PeerContext,
     /// The exact resolved transport target this connection owns. A later
     /// inventory epoch may retain the name while changing its mesh address;
     /// such a call must not reuse this connection.
@@ -307,6 +309,8 @@ struct ConnectAttempt {
 }
 
 struct TransportState {
+    frame_enforce: bool,
+    keys: Option<(mesh_trust::identity::KeyAuthority, String)>,
     desired: HashMap<String, SocketAddr>,
     revision: AuthorityRevision,
     connections: HashMap<String, Arc<RemoteBroker>>,
@@ -341,6 +345,8 @@ impl MeshPeers {
         Self {
             config,
             state: Arc::new(RwLock::new(TransportState {
+                frame_enforce: false,
+            keys: None,
                 desired,
                 revision: AuthorityRevision::default(),
                 connections: HashMap::new(),
@@ -352,6 +358,8 @@ impl MeshPeers {
     }
 
     /// Get this node's name.
+    pub async fn set_frame_enforce(&self, enforce: bool) { self.state.write().await.frame_enforce = enforce; }
+
     pub fn node_name(&self) -> &str {
         &self.config.node_name
     }
@@ -359,11 +367,19 @@ impl MeshPeers {
     /// Atomically install the route authority's desired endpoint projection.
     /// Established transports and in-progress attempts which no longer match
     /// are fenced before this method returns.
+    pub async fn reconcile_identity(&self, desired: HashMap<String, SocketAddr>, revision: AuthorityRevision, keys: mesh_trust::identity::KeyAuthority, mesh: String) -> ReconcileReport {
+        self.reconcile(desired, revision, Some((keys, mesh))).await
+    }
+
     pub async fn reconcile_endpoints(
         &self,
         desired: HashMap<String, SocketAddr>,
         revision: AuthorityRevision,
     ) -> ReconcileReport {
+        self.reconcile(desired, revision, None).await
+    }
+
+    async fn reconcile(&self, desired: HashMap<String, SocketAddr>, revision: AuthorityRevision, keys: Option<(mesh_trust::identity::KeyAuthority, String)>) -> ReconcileReport {
         let mut state = self.state.write().await;
         let mut report = ReconcileReport::default();
         let mut reasons = HashMap::new();
@@ -386,6 +402,17 @@ impl MeshPeers {
                 Some(_) => {}
             }
         }
+        if let Some((authority, _)) = &keys {
+            for (name, connection) in &state.connections {
+                if let Some((node, key)) = connection.context.mesh_peer() {
+                    if !authority.contains(node, key) { reasons.insert(name.clone(), ConnectionRetireReason::Removed); }
+                }
+            }
+            if state.revision != revision {
+                for (_, attempt) in state.attempts.drain() { attempt.cancel.send_replace(true); }
+            }
+        }
+        state.keys = keys;
         report.added = desired
             .keys()
             .filter(|name| !state.desired.contains_key(*name))
@@ -880,12 +907,43 @@ async fn connect_and_publish(
         Ok(Some(Ok(_))) => {}
     }
 
+    let mut context = bus::native_session::PeerContext { identity: Default::default(), address: Some(target) };
+    let authority = state.read().await.keys.clone();
+    if let Some((keys, mesh)) = authority {
+        let id = uuid::Uuid::new_v4().to_string();
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let mut nonce = uuid::Uuid::new_v4().as_bytes().to_vec();
+        nonce.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
+        let body = serde_json::json!({
+            "mesh_fqdn": mesh, "inventory_epoch": keys.epoch(),
+            "verifying_broker_node": node_name, "session_id": b64.encode(uuid::Uuid::new_v4().as_bytes()),
+            "server_nonce": b64.encode(nonce),
+        });
+        let challenge = BusMessage::new().with_header("command", "noded.identity.challenge").with_header("id", &id).with_body(&body.to_string());
+        let exchange = async {
+            ws_sink.send(tungstenite::Message::Text(challenge.to_wire().into())).await.ok()?;
+            loop {
+                let tungstenite::Message::Text(wire) = ws_stream_rx.next().await?.ok()? else { continue };
+                let response = bus::parse(&wire).ok()?;
+                if response.command_name() != Some("noded.identity.response") || response.get("id") != Some(id.as_str()) { continue; }
+                return keys.authenticate_response(&body, &serde_json::from_str(&response.body).ok()?, &peer.name);
+            }
+        };
+        tokio::select! {
+            biased;
+            _ = attempt_cancel.changed() => anyhow::bail!("Route revoked during peer proof"),
+            result = tokio::time::timeout(ADMISSION_CHALLENGE_TIMEOUT, exchange) => {
+                if let Ok(Some(identity)) = result { context.identity = identity; }
+            }
+        }
+    }
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
     let connected = Arc::new(AtomicBool::new(true));
     let generation = uuid::Uuid::new_v4();
     let (connection_cancel, mut writer_cancel) = watch::channel(false);
     let mut reader_cancel = connection_cancel.subscribe();
     let connection = Arc::new(RemoteBroker {
+        context: context.clone(),
         target,
         generation,
         tx,
@@ -922,6 +980,11 @@ async fn connect_and_publish(
 
     {
         let mut locked = state.write().await;
+        if let Some((keys, _)) = &locked.keys {
+            if let Some((node, key)) = context.mesh_peer() {
+                anyhow::ensure!(keys.contains(node, key), "Peer key revoked before connection publication");
+            }
+        }
         let still_current = locked.desired.get(&peer.name) == Some(&target)
             && locked
                 .attempts
@@ -941,6 +1004,7 @@ async fn connect_and_publish(
 
     if let Some(message) = early_inbound {
         let _ = incoming_tx.send(MeshInbound {
+            context: context.clone(),
             peer: peer.name.clone(),
             connection_generation: generation,
             message,
@@ -1079,6 +1143,16 @@ async fn connect_and_publish(
                 continue;
             }
 
+            if bus_msg.is_empty_message() { continue; }
+            let permitted = match context.mesh_peer() {
+                Some((node, _)) => matches!(bus_msg.from_addr().and_then(BusTarget::parse), Some(BusTarget::Local(addr)) if addr.node == node),
+                None => false,
+            };
+            if !permitted {
+                tracing::info!(peer = %peer_name, address = %target, "dialled peer frame lacks authenticated from identity");
+                if state_read.read().await.frame_enforce { continue; }
+            }
+
             // Only responses can satisfy a call. An event or inbound request
             // may legitimately carry an ID matching an unrelated request.
             if let Some(id) = bus_msg
@@ -1112,6 +1186,7 @@ async fn connect_and_publish(
             }
 
             let _ = incoming_tx.send(MeshInbound {
+                context: context.clone(),
                 peer: peer_name.clone(),
                 connection_generation: generation,
                 message: bus_msg,
@@ -1366,6 +1441,7 @@ mod tests {
         let (tx, _rx) = mpsc::unbounded_channel();
         let (cancel, _cancel_rx) = watch::channel(false);
         Arc::new(RemoteBroker {
+            context: Default::default(),
             target,
             generation: uuid::Uuid::new_v4(),
             tx,
@@ -1618,6 +1694,7 @@ mod tests {
             .connections
             .insert("beta".into(), connection.clone());
         let inbound = MeshInbound {
+            context: Default::default(),
             peer: "beta".into(),
             connection_generation: connection.generation,
             message: BusMessage::new(),
@@ -2072,6 +2149,8 @@ mod tests {
         let old = test_connection(target);
         let replacement = test_connection(target);
         let state = RwLock::new(TransportState {
+            frame_enforce: false,
+            keys: None,
             desired: HashMap::from([("beta".into(), target)]),
             revision: AuthorityRevision::default(),
             connections: HashMap::from([("beta".into(), replacement.clone())]),

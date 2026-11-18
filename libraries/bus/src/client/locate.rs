@@ -27,19 +27,22 @@ pub fn noded_url() -> String {
     {
         return url;
     }
+    if let Ok(path) = std::env::var(paths::env_names::BUS_SOCKET) {
+        if !path.is_empty() { return format!("unix://{path}"); }
+    }
     let (path, source) = match config::node::NodeConfigSearch::capture().read() {
         Ok(Some(source)) => source,
-        Ok(None) => return DEFAULT_NODED_URL.to_string(),
+        Ok(None) => return default_local_url(),
         Err(e) => {
             tracing::warn!(
                 error = %e,
                 "failed to read node config; using {DEFAULT_NODED_URL}"
             );
-            return DEFAULT_NODED_URL.to_string();
+            return default_local_url();
         }
     };
     match strict::parse(&source) {
-        Ok(config) => match url_from_node_value(&config) {
+        Ok(config) => match config.get("noded").and_then(|n| n.get("unix_socket")).and_then(Value::as_str).map(|path| format!("unix://{path}")) {
             Some(url) => {
                 tracing::debug!(source = %path.display(), url = %url, "broker URL from node config");
                 url
@@ -49,7 +52,7 @@ pub fn noded_url() -> String {
                     source = %path.display(),
                     "node config has no readable wg_ip/noded.port; using {DEFAULT_NODED_URL}"
                 );
-                DEFAULT_NODED_URL.to_string()
+                default_local_url()
             }
         },
         Err(e) => {
@@ -58,9 +61,13 @@ pub fn noded_url() -> String {
                 error = %e,
                 "node config is not valid strict data; using {DEFAULT_NODED_URL}"
             );
-            DEFAULT_NODED_URL.to_string()
+            default_local_url()
         }
     }
+}
+
+fn default_local_url() -> String {
+    format!("unix://{}", config::path(config::Dir::Run).join("noded/bus.sock").display())
 }
 
 /// The node configuration file to read, or `None` when no candidate exists.

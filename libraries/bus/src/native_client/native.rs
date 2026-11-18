@@ -32,6 +32,22 @@ use crate::native_client::bounded::{
 };
 use crate::native_client::types::IncomingCommand;
 
+type WsStream = std::pin::Pin<Box<dyn futures_util::Stream<Item = std::result::Result<Message, tokio_tungstenite::tungstenite::Error>> + Send>>;
+
+async fn connect_socket(url: &str) -> Result<(WsSink, WsStream)> {
+    if let Some(path) = url.strip_prefix("unix://") {
+        anyhow::ensure!(path.starts_with('/'), "Unix Bus endpoint must be absolute");
+        let socket = tokio::net::UnixStream::connect(path).await?;
+        let (ws, _) = tokio_tungstenite::client_async("ws://localhost/ws", socket).await?;
+        let (sink, stream) = ws.split();
+        return Ok((Box::pin(sink), Box::pin(stream)));
+    }
+    let (ws, _) = tokio_tungstenite::connect_async_with_config(url, None, true).await
+        .map_err(|error| crate::ClientError::Connect(Box::new(error)))?;
+    let (sink, stream) = ws.split();
+    Ok((Box::pin(sink), Box::pin(stream)))
+}
+
 type WsSink = std::pin::Pin<
     Box<dyn futures_util::Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Send>,
 >;
@@ -588,14 +604,8 @@ impl NodedClient {
         manifest: Option<Vec<crate::CommandDescriptor>>,
         refuse_rpc: bool,
     ) -> Result<Self> {
-        // Nagle off: a frame written in two parts otherwise waits on the
-        // broker's delayed ACK (40 ms per nested request on Linux).
-        let (ws_stream, _) = tokio_tungstenite::connect_async_with_config(noded_url, None, true)
-            .await
-            .map_err(|error| crate::ClientError::Connect(Box::new(error)))?;
-
-        let (sink, stream) = ws_stream.split();
-        let sink = Arc::new(Mutex::new(Box::pin(sink) as WsSink));
+        let (sink, stream) = connect_socket(noded_url).await?;
+        let sink = Arc::new(Mutex::new(sink));
         let pending: Arc<StdMutex<PendingMap>> = Arc::new(StdMutex::new(HashMap::new()));
         let connected = Arc::new(AtomicBool::new(true));
         let (incoming_tx, incoming_rx) = incoming_channel(bounded_capacity, refuse_rpc);
@@ -658,14 +668,8 @@ impl NodedClient {
     /// Useful for GUI clients that only make `call()` requests (e.g. WASM apps
     /// or desktop monitors that don't need to receive incoming commands).
     pub async fn connect_anonymous(noded_url: &str) -> Result<Self> {
-        // Nagle off: a frame written in two parts otherwise waits on the
-        // broker's delayed ACK (40 ms per nested request on Linux).
-        let (ws_stream, _) = tokio_tungstenite::connect_async_with_config(noded_url, None, true)
-            .await
-            .map_err(|error| crate::ClientError::Connect(Box::new(error)))?;
-
-        let (sink, stream) = ws_stream.split();
-        let sink = Arc::new(Mutex::new(Box::pin(sink) as WsSink));
+        let (sink, stream) = connect_socket(noded_url).await?;
+        let sink = Arc::new(Mutex::new(sink));
         let pending: Arc<StdMutex<PendingMap>> = Arc::new(StdMutex::new(HashMap::new()));
         let connected = Arc::new(AtomicBool::new(true));
         let (incoming_tx, incoming_rx) = incoming_channel(None, false);

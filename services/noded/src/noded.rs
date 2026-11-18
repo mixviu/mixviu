@@ -668,6 +668,11 @@ async fn mesh_incoming_loop(
             );
             continue;
         }
+        let authenticated_peer = inbound.context.mesh_peer().map(|(node, _)| node.to_owned());
+        if authenticated_peer.is_none() {
+            frame_refused("peer-not-admitted", "", &format!("{:?}", inbound.context.address), frame_policy);
+            if frame_policy == AdmissionMode::Enforce { continue; }
+        }
         let peer = inbound.peer;
         let connection_generation = inbound.connection_generation;
         let mut msg = inbound.message;
@@ -704,7 +709,12 @@ async fn mesh_incoming_loop(
         msg.headers.remove("from");
         let connection = msg.get("broker_connection").map(str::to_owned);
         let protected = msg.get("broker_protected") == Some("true");
-        stamp_mesh_connection(&mut msg, &peer, connection.as_deref());
+        if let Some(authenticated) = &authenticated_peer {
+            stamp_mesh_connection(&mut msg, authenticated, connection.as_deref());
+        } else {
+            stamp_broker_origin(&mut msg, BrokerOrigin::Mesh);
+            msg.headers.remove("broker_peer");
+        }
         let observe_for_mesh = observe_for_mesh.for_class(if protected {
             TrafficClass::NativeSession
         } else {
@@ -985,9 +995,10 @@ async fn serve(
 
     let (mesh_incoming_tx, mesh_incoming_rx) = mpsc::unbounded_channel::<MeshInbound>();
     let mesh = Arc::new(MeshPeers::new(mesh_config, mesh_incoming_tx));
-    mesh.reconcile_endpoints(
-        initial_authority.routes.desired_endpoints(),
-        initial_authority.revision(),
+    mesh.set_frame_enforce(frame_policy == AdmissionMode::Enforce).await;
+    mesh.reconcile_identity(
+        initial_authority.routes.desired_endpoints(), initial_authority.revision(), initial_authority.keys.clone(),
+        match &initial_authority.posture { crate::authority::Posture::Verified(a) => a.mesh.clone(), _ => String::new() },
     )
     .await;
     let authority = Arc::new(ArcSwap::from_pointee(initial_authority));
@@ -1942,7 +1953,8 @@ async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture
     // snapshot, then inbound session teardown, then observable applied events.
     let report = state
         .mesh
-        .reconcile_endpoints(next.routes.desired_endpoints(), next.revision())
+        .reconcile_identity(next.routes.desired_endpoints(), next.revision(), next.keys.clone(),
+            match &next.posture { crate::authority::Posture::Verified(a) => a.mesh.clone(), _ => String::new() })
         .await;
     {
         let _fence = state
@@ -2326,7 +2338,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     // rides the per-session `tx`, so it serialises ahead of any later reply.
     // `challenge_id` is held only to reap the entry on socket close.
     let mut challenge_id: Option<String> = None;
-    if state.admission_mode != AdmissionMode::Off && state.principal.is_none() {
+    if !state.peer_context.is_local() {
         // Snapshot the epoch + mesh, then DROP the authority guard before the
         // awaited `issue()` (don't pin the Arc across the await).
         let inputs = match &state.authority.load().posture {
@@ -2401,6 +2413,17 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         if bus_msg.is_empty_message() {
             continue;
         }
+        if bus_msg.command_name() == Some("noded.identity.challenge") {
+            if service_name.is_none() && state.peer_context.mesh_peer().is_some() {
+                if let Some(wire) = mesh::build_admit_response(&bus_msg, &state.node_name, &load_d2_seed(&d2_seed_path())) {
+                    if let Ok(mut response) = bus::parse(&wire) {
+                        response.set("command", "noded.identity.response");
+                        let _ = tx.try_send(response.to_wire());
+                    }
+                }
+            }
+            continue;
+        }
         let admission_bootstrap = bus_msg.command_name() == Some("noded.admit.response")
             && service_name.is_none()
             && !state.session_admission.response_seen
@@ -2414,6 +2437,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             && !admission_bootstrap
         {
             let peer = admitted_delivery_peer(&state, source_ip);
+            let no_source = !matches!(state.authority.load().posture, crate::authority::Posture::Verified(_));
             if let Some(reason) =
                 frame_policy::session_refusal(&bus_msg, peer.as_deref(), service_name.as_deref())
                     .or_else(|| {
@@ -2422,7 +2446,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     })
             {
                 frame_refused(
-                    reason,
+                    if no_source && peer.is_none() { "no-identity-source" } else { reason },
                     peer.as_deref().unwrap_or(""),
                     &source_ip_str,
                     state.frame_policy,
