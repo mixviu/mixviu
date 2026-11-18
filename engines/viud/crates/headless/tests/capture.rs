@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Real render-node compositor, Wayland clients and an owned private Bus.
-//! Build viud (backend-headless), noded and testkit binaries before running.
+//! Build viud (backend-headless,test-support), noded and testkit binaries first.
 #[path = "support/pattern.rs"]
 mod pattern;
 #[path = "support/process.rs"]
@@ -38,11 +38,6 @@ impl Bus {
     fn window_for(&self, name: &str, patterns: &mut [&mut Pattern]) -> Value {
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
-            // Keep the in-process clients servicing configure and ping events
-            // while the compositor catches up with their first buffer.
-            for pattern in patterns.iter_mut() {
-                pattern.pump();
-            }
             let reply = self.call("comp.windows.list", json!({"app_id":name}));
             if let Some(row) = reply["windows"].as_array().unwrap().first() {
                 return row.clone();
@@ -51,7 +46,7 @@ impl Bus {
                 eprintln!(
                     "WINDOW_TIMEOUT broker={} record={}",
                     self.url,
-                    fs::read_to_string(self.root.join("bus.json")).unwrap()
+                    fs::read_to_string(self.root.join("bus.json")).unwrap_or_default()
                 );
                 for (command, args) in [
                     ("comp.info", json!({})),
@@ -63,6 +58,11 @@ impl Bus {
                     eprintln!("WINDOW_TIMEOUT {command}: {}", self.call(command, args));
                 }
                 panic!("timed out after 10 s waiting for mapped window app_id={name}: {reply}");
+            }
+            // The fast path only observes the list. Dispatch client events
+            // when waiting for the compositor to map the first buffer.
+            for pattern in patterns.iter_mut() {
+                pattern.pump();
             }
             thread::sleep(Duration::from_millis(20));
         }
@@ -151,6 +151,13 @@ fn mapped_window_survives_render_before_protocol_drain() {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .contains("test result: ok. 1 passed; 0 failed;"),
+            "pre-drain child must run exactly one test: {} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
         return;
     }
     let bus = Bus::start("pre-drain-map");
@@ -161,6 +168,12 @@ fn mapped_window_survives_render_before_protocol_drain() {
     let window = bus.window(&mut pattern);
     assert_eq!(window["app_id"], "headless-pattern");
     assert_eq!(window["pid"], std::process::id());
+    assert!(
+        fs::read_to_string(process.root.join("viud.log"))
+            .unwrap()
+            .contains("HEADLESS_TEST_PRE_DRAIN_FRAME fired"),
+        "pre-drain fixture did not fire; build viud with --features test-support"
+    );
 }
 
 #[test]

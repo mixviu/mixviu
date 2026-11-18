@@ -108,8 +108,9 @@ fn window(bus: &Bus, service: &str, app: &str) -> Value {
     loop {
         let reply = bus.call(service, "comp.windows.list", json!({}));
         let rows = reply["windows"].as_array().unwrap();
-        if let Some(row) = rows.iter().find(|row| row["app_id"] == app) {
+        if let Some(row) = rows.first() {
             assert_eq!(rows.len(), 1, "{service}: {reply}");
+            assert_eq!(row["app_id"], app, "{service}: {reply}");
             return row.clone();
         }
         assert!(

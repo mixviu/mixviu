@@ -311,13 +311,27 @@ pub fn available() -> bool {
 
 /// Test control: reproduce an already-ready frame source running after
 /// Wayland dispatch but before the loop's protocol drain.
+#[cfg(feature = "test-support")]
 #[doc(hidden)]
-pub fn fixture_pre_drain_frame(state: &mut Loop) {
+fn fixture_pre_drain_frame(state: &mut Loop) {
     FALLBACK.with(|slot| {
-        if let Some(context) = slot.borrow().as_ref() {
-            crate::frame::draw(state, &mut context.borrow_mut());
-        }
+        let slot = slot.borrow();
+        let context = slot.as_ref().expect("pre-drain fixture needs a headless context");
+        crate::frame::draw(state, &mut context.borrow_mut());
+        eprintln!("HEADLESS_TEST_PRE_DRAIN_FRAME fired");
     });
+}
+
+/// Compiles to a no-op without the explicit test-support feature. Keeping the
+/// gate here lets Cargo's test feature unification enable the workspace fixture
+/// without putting an environment lookup in the shipped compositor.
+#[doc(hidden)]
+#[inline]
+pub fn test_pre_drain_frame(_state: &mut Loop) {
+    #[cfg(feature = "test-support")]
+    if std::env::var_os("MIX_TEST_PRE_DRAIN_FRAME").is_some() {
+        fixture_pre_drain_frame(_state);
+    }
 }
 
 /// Reserve the installed renderer for inactive VT frames only.
