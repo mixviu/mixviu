@@ -79,12 +79,14 @@ impl BusMessage {
         let from = self.from_addr().unwrap_or("noded");
         if BusTarget::parse(from).is_none() {
             let qualified = format!("{from}.{node}.bus");
-            if matches!(BusTarget::parse(&qualified), Some(BusTarget::Local(addr)) if addr.node == node) {
+            if matches!(BusTarget::parse(&qualified), Some(BusTarget::Local(addr)) if addr.node == node)
+            {
                 self.set("from", &qualified);
             } else {
                 self.set("from", &format!("noded.{node}.bus"));
             }
-        } else if !matches!(BusTarget::parse(from), Some(BusTarget::Local(addr)) if addr.node == node) {
+        } else if !matches!(BusTarget::parse(from), Some(BusTarget::Local(addr)) if addr.node == node)
+        {
             self.set("from", &format!("noded.{node}.bus"));
         }
     }

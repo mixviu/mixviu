@@ -3037,12 +3037,25 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                         Ok(mut resp) => {
                             let reason = if frame_policy::wrong_node(&resp, &response_node) {
                                 Some("wrong-node-ingress")
-                            } else if response_mode != AdmissionMode::Off && !frame_policy::from_peer(&resp, &response_peer) {
+                            } else if response_mode != AdmissionMode::Off
+                                && !frame_policy::from_peer(&resp, &response_peer)
+                            {
                                 Some("from-node-mismatch")
-                            } else { None };
+                            } else {
+                                None
+                            };
                             if let Some(reason) = reason {
-                                frame_refused(reason, &response_peer, &response_address, response_mode);
-                                if response_mode != AdmissionMode::Observe || reason == "wrong-node-ingress" { return; }
+                                frame_refused(
+                                    reason,
+                                    &response_peer,
+                                    &response_address,
+                                    response_mode,
+                                );
+                                if response_mode != AdmissionMode::Observe
+                                    || reason == "wrong-node-ingress"
+                                {
+                                    return;
+                                }
                             }
                             if let Some(observation) = pending_observation.as_ref() {
                                 observation.manager.observe(
@@ -7664,7 +7677,9 @@ mod tests {
                 self.0.lock().unwrap().extend_from_slice(bytes);
                 Ok(bytes.len())
             }
-            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
         }
         for (mode, register, from, refused) in [
             (AdmissionMode::Enforce, false, "hostd.beta.bus", true),
@@ -7679,47 +7694,79 @@ mod tests {
             state.admission_mode = mode;
             let audit = Audit(Arc::new(std::sync::Mutex::new(Vec::new())));
             let output = audit.0.clone();
-            let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
-                .with_max_level(tracing::Level::DEBUG).with_writer(move || audit.clone()).finish();
+            let subscriber = tracing_subscriber::fmt()
+                .without_time()
+                .with_ansi(false)
+                .with_max_level(tracing::Level::DEBUG)
+                .with_writer(move || audit.clone())
+                .finish();
             let dispatch = tracing::Dispatch::new(subscriber);
-            let app = axum::Router::new().route("/ws", axum::routing::get(
-                move |upgrade: axum::extract::ws::WebSocketUpgrade| {
+            let app = axum::Router::new().route(
+                "/ws",
+                axum::routing::get(move |upgrade: axum::extract::ws::WebSocketUpgrade| {
                     let state = state.clone();
                     let dispatch = dispatch.clone();
                     async move {
-                        upgrade.on_upgrade(move |socket| super::handle_socket(socket, state,
-                            bus::native_session::TransportIdentity::Mesh {
-                                source_ip: "192.0.2.2".parse().unwrap(),
-                                admission: bus::native_session::MeshAdmission {
-                                    admitted_node: Some("beta".into()), response_seen: true, last_detail: None,
+                        upgrade.on_upgrade(move |socket| {
+                            super::handle_socket(
+                                socket,
+                                state,
+                                bus::native_session::TransportIdentity::Mesh {
+                                    source_ip: "192.0.2.2".parse().unwrap(),
+                                    admission: bus::native_session::MeshAdmission {
+                                        admitted_node: Some("beta".into()),
+                                        response_seen: true,
+                                        last_detail: None,
+                                    },
                                 },
-                            }).with_subscriber(dispatch))
+                            )
+                            .with_subscriber(dispatch)
+                        })
                     }
-                }));
+                }),
+            );
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let url = format!("ws://{}/ws", listener.local_addr().unwrap());
-            let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap(); });
+            let server = tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
             let (mut sink, mut stream) = raw_connect(&url).await;
-            if register { raw_register(&mut sink, &mut stream, "bridge-beta").await; }
+            if register {
+                raw_register(&mut sink, &mut stream, "bridge-beta").await;
+            }
             let relay_probe = register && !refused && mode == AdmissionMode::Enforce;
             if relay_probe {
-                let relay = BusMessage::new().with_header("to", "hostd.beta.bus")
-                    .with_header("from", "hostd.beta.bus").with_header("command", "probe.relay")
+                let relay = BusMessage::new()
+                    .with_header("to", "hostd.beta.bus")
+                    .with_header("from", "hostd.beta.bus")
+                    .with_header("command", "probe.relay")
                     .with_header("id", "relay-probe");
-                sink.send(WsMessage::Text(relay.to_wire().into())).await.unwrap();
+                sink.send(WsMessage::Text(relay.to_wire().into()))
+                    .await
+                    .unwrap();
             }
-            let request = BusMessage::new().with_header("type", "request")
-                .with_header("command", "noded.ping").with_header("to", "noded")
-                .with_header("id", "policy-probe").with_header("from", from);
+            let request = BusMessage::new()
+                .with_header("type", "request")
+                .with_header("command", "noded.ping")
+                .with_header("to", "noded")
+                .with_header("id", "policy-probe")
+                .with_header("from", from);
             if refused {
-                sink.send(WsMessage::Text(request.to_wire().into())).await.unwrap();
+                sink.send(WsMessage::Text(request.to_wire().into()))
+                    .await
+                    .unwrap();
                 tokio::time::timeout(Duration::from_secs(2), async {
                     while let Some(Ok(frame)) = stream.next().await {
                         if let WsMessage::Text(text) = frame {
-                            assert_ne!(bus_mod::parse(&text).unwrap().get("id"), Some("policy-probe"));
+                            assert_ne!(
+                                bus_mod::parse(&text).unwrap().get("id"),
+                                Some("policy-probe")
+                            );
                         }
                     }
-                }).await.expect("enforce must close the refused connection");
+                })
+                .await
+                .expect("enforce must close the refused connection");
             } else {
                 let response = raw_call(&mut sink, &mut stream, request, "policy-probe").await;
                 assert_eq!(response.rc(), Some(0));
@@ -7727,8 +7774,14 @@ mod tests {
             }
             let logs = String::from_utf8(output.lock().unwrap().clone()).unwrap();
             let violation = !register || from == "hostd.gamma.bus";
-            assert_eq!(logs.contains("event=\"frame.refused\""), (violation && mode != AdmissionMode::Off) || relay_probe, "{logs}");
-            if relay_probe { assert!(logs.contains("remote-origin-relay"), "{logs}"); }
+            assert_eq!(
+                logs.contains("event=\"frame.refused\""),
+                (violation && mode != AdmissionMode::Off) || relay_probe,
+                "{logs}"
+            );
+            if relay_probe {
+                assert!(logs.contains("remote-origin-relay"), "{logs}");
+            }
             if violation && mode == AdmissionMode::Observe {
                 assert!(logs.contains("posture=\"observe\""), "{logs}");
                 assert!(logs.contains("192.0.2.2"), "{logs}");

@@ -166,6 +166,10 @@ fn build_admit_response(
         "channel_binding_hash": b64.encode([0u8; 32]),
     })
     .to_string();
+    resp.originate_mesh(node_name);
+    // Bootstrap carries the bridge registration label, not an application
+    // from-address. The receiver consumes it before the all-frame gate.
+    resp.set("from", &format!("bridge-{node_name}"));
     Some(resp.to_wire())
 }
 
@@ -885,10 +889,12 @@ async fn connect_and_publish(
         cancel: connection_cancel,
     });
 
-    let register_msg = BusMessage::new()
+    let mut register_msg = BusMessage::new()
         .with_header("command", "noded.register")
         .with_header("from", &format!("bridge-{node_name}"))
         .with_header("to", "noded");
+    register_msg.originate_mesh(&node_name);
+    register_msg.set("from", &format!("bridge-{node_name}"));
     tokio::select! {
         biased;
         changed = attempt_cancel.changed() => {
