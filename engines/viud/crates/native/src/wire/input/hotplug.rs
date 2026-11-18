@@ -749,9 +749,13 @@ mod tests {
             if remembered {
                 // A later DeviceAdded supersedes a prior decline even while
                 // its metadata is pending; cancel that decline's due retry.
-                retry.declined.insert(path.clone(), Declined {
-                    identity: (1, 2), retry_at: Some(Instant::now()),
-                });
+                retry.declined.insert(
+                    path.clone(),
+                    Declined {
+                        identity: (1, 2),
+                        retry_at: Some(Instant::now()),
+                    },
+                );
             }
             for _ in 0..12 {
                 assert_eq!(
