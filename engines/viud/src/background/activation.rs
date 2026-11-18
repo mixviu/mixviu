@@ -309,7 +309,10 @@ mod tests {
                 let token = activation.timer.take().unwrap();
                 activation.handle.remove(token);
             }
-            assert_eq!(warnings, 1, "readiness clears status, not the warning latch");
+            assert_eq!(
+                warnings, 1,
+                "readiness clears status, not the warning latch"
+            );
             activation.borrow_mut().watcher_alive = true;
             arm(&activation);
             // Run the actual attach attempt with only the hardware transaction

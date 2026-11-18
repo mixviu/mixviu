@@ -116,7 +116,7 @@ impl Retry {
 }
 
 fn needs_reconcile<'a>(
-    current: &Nodes,
+    current: &'a Nodes,
     known: impl Iterator<Item = (&'a PathBuf, &'a (u64, u64))> + Clone,
     retry: &mut Retry,
     now: Instant,
@@ -132,13 +132,18 @@ fn needs_reconcile<'a>(
     }
     // The scan can precede a queued libinput lifecycle event. Give it one
     // full tick to arrive, and restart the grace period if either map changes.
-    let disagreement = (current.clone(), known.map(|(p, id)| (p.clone(), *id)).collect());
+    let disagreement = (
+        current.clone(),
+        known.map(|(p, id)| (p.clone(), *id)).collect(),
+    );
     let confirmed = retry.pending.as_ref() == Some(&disagreement);
     if !confirmed && retry.pending.is_some() {
         retry.grace_restarts = retry.grace_restarts.saturating_add(1);
         if retry.grace_restarts >= MAX_GRACE_RESTARTS && !retry.flap_warned {
             retry.flap_warned = true;
-            warn!("input nodes keep changing; reconciliation grace exhausted; forced resets will back off to 60s");
+            warn!(
+                "input nodes keep changing; reconciliation grace exhausted; forced resets will back off to 60s"
+            );
         }
     }
     retry.pending = Some(disagreement);
@@ -146,9 +151,7 @@ fn needs_reconcile<'a>(
     if confirmed {
         return true;
     }
-    if retry.grace_restarts < MAX_GRACE_RESTARTS
-        || retry.flap_retry_at.is_some_and(|at| now < at)
-    {
+    if retry.grace_restarts < MAX_GRACE_RESTARTS || retry.flap_retry_at.is_some_and(|at| now < at) {
         return false;
     }
     retry.flap_delay = (retry.flap_delay * 2).clamp(FLAP_RETRY_MIN, FLAP_RETRY_MAX);
@@ -199,8 +202,10 @@ fn reconcile_with_metadata(
     if let Some(probed) = retry.probed.take() {
         KNOWN.with_borrow(|known| {
             for (path, identity) in probed {
-                if current.get(&path) == Some(&identity) && known.get(&path) != Some(&identity)
-                    && !METADATA_RETRY.with_borrow(|pending| pending.contains(&path)) {
+                if current.get(&path) == Some(&identity)
+                    && known.get(&path) != Some(&identity)
+                    && !METADATA_RETRY.with_borrow(|pending| pending.contains(&path))
+                {
                     retry.declined.entry(path).or_insert_with_key(|path| {
                         info!("libinput declined {}; one retry in 5s", path.display());
                         Declined {
@@ -238,7 +243,12 @@ fn reconcile_with_metadata(
         .collect();
     let disagreement = KNOWN.with_borrow(|known| {
         METADATA_RETRY.with_borrow(|pending| {
-            needs_reconcile(&admitted, known.iter().filter(|(path, _)| !pending.contains(*path)), retry, now)
+            needs_reconcile(
+                &admitted,
+                known.iter().filter(|(path, _)| !pending.contains(*path)),
+                retry,
+                now,
+            )
         })
     });
     if !retry_declined && !disagreement {
@@ -270,7 +280,8 @@ fn nodes_at_with(
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             LAST_SCAN.with_borrow_mut(|previous| previous.clear());
-            METADATA_RETRY.with_borrow_mut(|pending| pending.retain(|path| !path.starts_with(root)));
+            METADATA_RETRY
+                .with_borrow_mut(|pending| pending.retain(|path| !path.starts_with(root)));
             return Ok(BTreeMap::new());
         }
         Err(error) => return Err(error),
@@ -289,14 +300,16 @@ fn nodes_at_with(
             let meta = match metadata(&entry) {
                 Ok(meta) => meta,
                 Err(error) => {
+                    let missing = error.kind() == std::io::ErrorKind::NotFound;
                     metadata_failed(&entry.path(), error);
-                    if error.kind() == std::io::ErrorKind::NotFound {
+                    if missing {
                         listed.remove(&entry.path());
                         return None;
                     }
                     // Preserve this node's last identity; continue scanning
                     // other nodes so one failed stat cannot stall hotplug.
-                    return LAST_SCAN.with_borrow(|previous| previous.get(&entry.path()).copied())
+                    return LAST_SCAN
+                        .with_borrow(|previous| previous.get(&entry.path()).copied())
                         .or_else(|| KNOWN.with_borrow(|known| known.get(&entry.path()).copied()))
                         .map(|identity| Ok((entry.path(), identity)));
                 }
@@ -305,7 +318,9 @@ fn nodes_at_with(
         })
         .collect::<std::io::Result<_>>()?;
     LAST_SCAN.with_borrow_mut(|previous| *previous = scanned.clone());
-    METADATA_RETRY.with_borrow_mut(|pending| pending.retain(|path| !path.starts_with(root) || listed.contains(path)));
+    METADATA_RETRY.with_borrow_mut(|pending| {
+        pending.retain(|path| !path.starts_with(root) || listed.contains(path))
+    });
     Ok(scanned)
 }
 
@@ -480,15 +495,45 @@ mod tests {
         KNOWN.with_borrow_mut(|known| known.clear());
         let nodes = nodes_at(&root.0).unwrap();
         let now = Instant::now();
-        let mut retry = Retry { probed: Some(nodes.clone()), ..Default::default() };
-        assert_eq!(reconcile_at(nodes.clone(), &mut retry, now, || panic!("grace")), None);
-        assert!(reconcile_at(nodes.clone(), &mut retry, now + Duration::from_secs(5), || true).is_some());
-        let failed = nodes_at_with(&root.0, |_| Err(std::io::Error::from_raw_os_error(libc::EACCES))).unwrap();
+        let mut retry = Retry {
+            probed: Some(nodes.clone()),
+            ..Default::default()
+        };
+        assert_eq!(
+            reconcile_at(nodes.clone(), &mut retry, now, || panic!("grace")),
+            None
+        );
+        assert!(
+            reconcile_at(
+                nodes.clone(),
+                &mut retry,
+                now + Duration::from_secs(5),
+                || true
+            )
+            .is_some()
+        );
+        let failed = nodes_at_with(&root.0, |_| {
+            Err(std::io::Error::from_raw_os_error(libc::EACCES))
+        })
+        .unwrap();
         assert_eq!(failed, nodes);
-        assert_eq!(reconcile_at(failed, &mut retry, now + Duration::from_secs(6), || panic!("failed stat must not reset")), None);
+        assert_eq!(
+            reconcile_at(failed, &mut retry, now + Duration::from_secs(6), || panic!(
+                "failed stat must not reset"
+            )),
+            None
+        );
         assert!(retry.declined[&path].retry_at.is_none());
         for seconds in [7, 12, 30] {
-            assert_eq!(reconcile_at(nodes_at(&root.0).unwrap(), &mut retry, now + Duration::from_secs(seconds), || panic!("spent retry must survive")), None);
+            assert_eq!(
+                reconcile_at(
+                    nodes_at(&root.0).unwrap(),
+                    &mut retry,
+                    now + Duration::from_secs(seconds),
+                    || panic!("spent retry must survive")
+                ),
+                None
+            );
         }
     }
 
@@ -500,13 +545,20 @@ mod tests {
             std::fs::write(&path, []).unwrap();
             let nodes = nodes_at(&root.0).unwrap();
             KNOWN.with_borrow_mut(|known| *known = nodes);
-            METADATA_RETRY.with_borrow_mut(|pending| { pending.insert(path.clone()); });
+            METADATA_RETRY.with_borrow_mut(|pending| {
+                pending.insert(path.clone());
+            });
             std::fs::remove_file(&path).unwrap();
-            if missing_root { std::fs::remove_dir(&root.0).unwrap(); }
+            if missing_root {
+                std::fs::remove_dir(&root.0).unwrap();
+            }
             let current = nodes_at(&root.0).unwrap();
             assert!(METADATA_RETRY.with_borrow(|pending| !pending.contains(&path)));
             let mut retry = Retry::default();
-            assert_eq!(reconcile(current.clone(), &mut retry, || panic!("grace")), None);
+            assert_eq!(
+                reconcile(current.clone(), &mut retry, || panic!("grace")),
+                None
+            );
             assert!(reconcile(current, &mut retry, || true).is_some());
             assert!(KNOWN.with_borrow(|known| known.is_empty()));
         }
@@ -516,9 +568,14 @@ mod tests {
     fn enoent_during_pending_retry_drops_the_pending_path() {
         let root = TempDir::new();
         let path = root.0.join("event0");
-        METADATA_RETRY.with_borrow_mut(|pending| { pending.insert(path.clone()); });
+        METADATA_RETRY.with_borrow_mut(|pending| {
+            pending.insert(path.clone());
+        });
         KNOWN.with_borrow_mut(|known| known.clear());
-        assert_eq!(reconcile(Nodes::new(), &mut Retry::default(), || panic!("no nodes")), None);
+        assert_eq!(
+            reconcile(Nodes::new(), &mut Retry::default(), || panic!("no nodes")),
+            None
+        );
         assert!(METADATA_RETRY.with_borrow(|pending| !pending.contains(&path)));
     }
 
@@ -640,15 +697,32 @@ mod tests {
         for tick in 0..800 {
             let now = start + Duration::from_millis(tick * 250);
             let nodes = Nodes::from([(PathBuf::from("event0"), (1, tick))]);
-            reconcile_at(nodes, &mut retry, now, || { resets.push(now); true });
+            reconcile_at(nodes, &mut retry, now, || {
+                resets.push(now);
+                true
+            });
             if !resets.is_empty() {
-                assert!(retry.flap_warned, "successful resets must retain the log latch");
+                assert!(
+                    retry.flap_warned,
+                    "successful resets must retain the log latch"
+                );
             }
         }
         let intervals: Vec<_> = resets.windows(2).map(|pair| pair[1] - pair[0]).collect();
         assert_eq!(intervals, [5, 10, 20, 40, 60, 60].map(Duration::from_secs));
-        assert_eq!(resets[0] - start, Duration::from_millis(u64::from(MAX_GRACE_RESTARTS) * 250));
-        assert!(reconcile_at(Nodes::new(), &mut retry, start + Duration::from_secs(201), || true).is_none());
+        assert_eq!(
+            resets[0] - start,
+            Duration::from_millis(u64::from(MAX_GRACE_RESTARTS) * 250)
+        );
+        assert!(
+            reconcile_at(
+                Nodes::new(),
+                &mut retry,
+                start + Duration::from_secs(201),
+                || true
+            )
+            .is_none()
+        );
         assert_eq!(retry.grace_restarts, 0);
         assert!(retry.flap_warned);
     }
@@ -667,13 +741,25 @@ mod tests {
             observed_path(path.clone(), true);
             // The node exists in the scan, but the lifecycle stat keeps failing.
             let scanned = Nodes::from([(path.clone(), (1, 2))]);
-            let mut retry = Retry { probed: Some(scanned.clone()), ..Default::default() };
+            let mut retry = Retry {
+                probed: Some(scanned.clone()),
+                ..Default::default()
+            };
             for _ in 0..12 {
                 assert_eq!(
-                    reconcile_with_metadata(scanned.clone(), &mut retry, Instant::now(), || panic!("already admitted"), |_| Err(std::io::Error::from_raw_os_error(libc::EACCES))),
+                    reconcile_with_metadata(
+                        scanned.clone(),
+                        &mut retry,
+                        Instant::now(),
+                        || panic!("already admitted"),
+                        |_| Err(std::io::Error::from_raw_os_error(libc::EACCES))
+                    ),
                     None
                 );
-                assert!(retry.declined.is_empty(), "pending lifecycle stats are not declines");
+                assert!(
+                    retry.declined.is_empty(),
+                    "pending lifecycle stats are not declines"
+                );
             }
             std::fs::write(&path, []).unwrap();
             assert_eq!(
@@ -760,9 +846,24 @@ mod tests {
         let replacement = Nodes::from([(PathBuf::from("/dev/input/event0"), (1, 5))]);
         let mut retry = Retry::default();
         let now = Instant::now();
-        assert!(!needs_reconcile(&first, Nodes::new().iter(), &mut retry, now));
-        assert!(!needs_reconcile(&replacement, Nodes::new().iter(), &mut retry, now));
-        assert!(needs_reconcile(&replacement, Nodes::new().iter(), &mut retry, now));
+        assert!(!needs_reconcile(
+            &first,
+            Nodes::new().iter(),
+            &mut retry,
+            now
+        ));
+        assert!(!needs_reconcile(
+            &replacement,
+            Nodes::new().iter(),
+            &mut retry,
+            now
+        ));
+        assert!(needs_reconcile(
+            &replacement,
+            Nodes::new().iter(),
+            &mut retry,
+            now
+        ));
     }
     #[test]
     fn handled_hotplug_is_noop_and_missed_hotplug_reconciles_once() {
