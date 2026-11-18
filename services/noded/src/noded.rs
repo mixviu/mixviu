@@ -7691,6 +7691,17 @@ mod tests {
             (AdmissionMode::Enforce, true, "hostd.beta.bus", false),
         ] {
             let mut state = mesh_delivery_test_state().await;
+            let mut posture = state.authority.load().posture.clone();
+            if let crate::authority::Posture::Verified(accepted) = &mut posture {
+                accepted.routing_view.push(active_route(
+                    "alpha",
+                    "127.0.0.1".parse().unwrap(),
+                    DEFAULT_NODED_PORT,
+                ));
+            }
+            state.authority.store(Arc::new(crate::routing::RoutingAuthority::new(
+                posture, "alpha", "127.0.0.1", DEFAULT_NODED_PORT, &[],
+            )));
             state.admission_mode = mode;
             let audit = Audit(Arc::new(std::sync::Mutex::new(Vec::new())));
             let output = audit.0.clone();
