@@ -188,7 +188,9 @@ fn attempt_with(
         arm(shared);
         return;
     }
-    let Some(attached) = attach(&activation) else { return };
+    let Some(attached) = attach(&activation) else {
+        return;
+    };
     if !attached {
         drop(activation);
         arm(shared);
