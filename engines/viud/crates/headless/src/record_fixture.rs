@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Explicit test-support input fixture. No Bus command or production API.
-use smithay::input::pointer::{ButtonEvent, ButtonState, MotionEvent};
+use smithay::input::pointer::{ButtonEvent, MotionEvent};
+use smithay::backend::input::ButtonState;
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::seat::WaylandFocus;
 use world::state::Loop;
@@ -30,7 +31,7 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
         .comp
         .registry
         .surface_rows()
-        .find(|r| r.app_id().is_some_and(|s| s.as_str() == app))
+        .find(|r| r.app_id().is_some_and(|s| s == app))
     else {
         return;
     };

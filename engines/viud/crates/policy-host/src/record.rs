@@ -922,7 +922,10 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         let token = format!("{prefix}-{index}");
         target.path = token.clone();
         target.take_id = Some(session.borrow().id.clone());
-        target.force_capture = session.borrow().recording.is_none();
+        target.force_capture = {
+            let s = session.borrow();
+            s.recording.is_none() || s.membership_epoch != s.captured_membership
+        };
         let got = frames.clone();
         let session = session.clone();
         let request_session = session.clone();
