@@ -33,7 +33,7 @@ fn command_search_filters_runs_through_registry_and_dismisses() {
     registry
         .execute("view.search", &mut app, Origin::Bus)
         .unwrap();
-    let mut h = Harness::builder().build_ui_state(
+    let mut h = test_harness::configure(Harness::builder()).build_ui_state(
         move |ui, app: &mut App| {
             if let Some(chosen) =
                 toolkit::search::show(ui.ctx(), &registry, app, &strings, app.open)
@@ -61,3 +61,6 @@ fn command_search_filters_runs_through_registry_and_dismisses() {
     h.run();
     assert!(!h.state().open);
 }
+
+#[path = "support/harness.rs"]
+mod test_harness;

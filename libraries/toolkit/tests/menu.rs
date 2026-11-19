@@ -17,7 +17,7 @@ use fixture::Fixture;
 use toolkit::menu::{self, Current, Entry, Menu, Row};
 
 fn window() -> Harness<'static, Fixture> {
-    let builder = Harness::builder().with_size(egui::vec2(900.0, 500.0));
+    let builder = test_harness::configure(Harness::builder()).with_size(egui::vec2(900.0, 500.0));
     fixture::harness(builder, &fixture::theme(Scheme::Pro, Mode::Light))
 }
 
@@ -61,7 +61,7 @@ fn pointer(h: &Harness<'_, Fixture>, pos: Pos2, pressed: Option<bool>) {
 
 #[test]
 fn a_menu_covered_by_an_external_modal_stays_closed_after_dismissal() {
-    let mut h = Harness::builder()
+    let mut h = test_harness::configure(Harness::builder())
         .with_size(egui::vec2(800.0, 600.0))
         .build_ui_state(
             |ui, modal_open: &mut bool| {
@@ -280,7 +280,7 @@ fn a_press_outside_closes_the_menus() {
 
 #[test]
 fn an_outside_press_closes_the_bar_and_reaches_the_underlying_control() {
-    let mut h = Harness::builder()
+    let mut h = test_harness::configure(Harness::builder())
         .with_size(egui::vec2(800.0, 600.0))
         .build_ui_state(
             |ui, clicks: &mut usize| {
@@ -376,7 +376,7 @@ fn shortcuts_match_their_modifiers_exactly() {
 
 #[test]
 fn a_menu_taller_than_the_window_scrolls_its_highlight_into_view() {
-    let builder = Harness::builder().with_size(egui::vec2(900.0, 200.0));
+    let builder = test_harness::configure(Harness::builder()).with_size(egui::vec2(900.0, 200.0));
     let mut h = fixture::harness(builder, &fixture::theme(Scheme::Pro, Mode::Light));
     open_file(&mut h);
     assert!(
@@ -416,7 +416,7 @@ fn a_highlight_on_a_row_that_disappears_is_dropped() {
         title: "File".into(),
         entries: rows(3),
     }];
-    let mut h = Harness::builder()
+    let mut h = test_harness::configure(Harness::builder())
         .with_size(egui::vec2(400.0, 300.0))
         .build_ui_state(
             |ui, (menus, ran): &mut (Vec<Menu>, Vec<&'static str>)| {
@@ -443,7 +443,7 @@ fn a_highlight_on_a_row_that_disappears_is_dropped() {
 }
 
 fn short_window(scheme: Scheme) -> Harness<'static, Fixture> {
-    let builder = Harness::builder().with_size(egui::vec2(900.0, 170.0));
+    let builder = test_harness::configure(Harness::builder()).with_size(egui::vec2(900.0, 170.0));
     fixture::harness(builder, &fixture::theme(scheme, Mode::Light))
 }
 
@@ -501,7 +501,7 @@ fn the_keyboard_enters_a_submenu_scrolled_out_of_view() {
         title: "File".into(),
         entries,
     }];
-    let mut h = Harness::builder()
+    let mut h = test_harness::configure(Harness::builder())
         .with_size(egui::vec2(400.0, 170.0))
         .build_ui_state(
             |ui, (menus, ran): &mut (Vec<Menu>, Vec<&'static str>)| {
@@ -629,7 +629,7 @@ fn compact_help_keeps_search_and_empty_results_in_the_menu() {
         let theme =
             fixture::theme(Scheme::Pro, Mode::Light).with_menus(style, design::MenuSide::Left);
         let mut h = fixture::harness(
-            Harness::builder().with_size(egui::vec2(900.0, 500.0)),
+            test_harness::configure(Harness::builder()).with_size(egui::vec2(900.0, 500.0)),
             &theme,
         );
         menu::open_path(&h.ctx, &["Help".into()]).unwrap();
@@ -656,7 +656,7 @@ fn popup_anchors_and_bare_alt_work_with_collapsed_menus() {
         let theme =
             fixture::theme(Scheme::Pro, Mode::Light).with_menus(design::MenuStyle::Button, side);
         let mut h = fixture::harness(
-            Harness::builder().with_size(egui::vec2(900.0, 500.0)),
+            test_harness::configure(Harness::builder()).with_size(egui::vec2(900.0, 500.0)),
             &theme,
         );
         h.event(Event::ModifiersChanged(Modifiers::ALT));
@@ -698,7 +698,7 @@ fn alt_gestures_and_focus_loss_do_not_open_menus() {
             let theme =
                 fixture::theme(Scheme::Pro, Mode::Light).with_menus(style, design::MenuSide::Left);
             let mut h = fixture::harness(
-                Harness::builder().with_size(egui::vec2(900.0, 500.0)),
+                test_harness::configure(Harness::builder()).with_size(egui::vec2(900.0, 500.0)),
                 &theme,
             );
             let pos = egui::pos2(850.0, 450.0);
@@ -816,7 +816,7 @@ fn disabled_menus_open_and_empty_submenus_keep_their_bar_shape() {
             ],
         }];
         assert!(!menus[0].entries[1].row().unwrap().is_submenu());
-        let mut h = Harness::builder()
+        let mut h = test_harness::configure(Harness::builder())
             .with_size(egui::vec2(800.0, 500.0))
             .build_ui(move |ui| {
                 ui.horizontal(|ui| {
@@ -1114,3 +1114,6 @@ fn an_open_menu_holds_back_global_shortcuts() {
         "but not while a menu has the keyboard"
     );
 }
+
+#[path = "support/harness.rs"]
+mod test_harness;

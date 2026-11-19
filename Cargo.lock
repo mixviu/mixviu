@@ -4958,6 +4958,7 @@ dependencies = [
  "macros",
  "maildoc",
  "mimedb",
+ "motion",
  "paths",
  "png 0.18.1",
  "raw-window-handle",
@@ -5550,6 +5551,7 @@ dependencies = [
  "crc32fast",
  "libc",
  "lz4_flex",
+ "media-frame",
  "serde_json",
 ]
 
@@ -5881,6 +5883,8 @@ dependencies = [
  "hostd",
  "indexd",
  "maild",
+ "media-frame",
+ "media-vfl",
  "mimalloc",
  "mix-shell",
  "mixtrayd",
@@ -5978,6 +5982,11 @@ dependencies = [
 [[package]]
 name = "motion"
 version = "0.1.2"
+dependencies = [
+ "libm",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "moxcms"
@@ -8621,6 +8630,7 @@ version = "0.1.2"
 dependencies = [
  "expr",
  "indexmap",
+ "motion",
  "serde",
  "serde_json",
  "strict",
@@ -10168,6 +10178,7 @@ dependencies = [
  "logging",
  "macros",
  "mimedb",
+ "motion",
  "paths",
  "png 0.18.1",
  "pulldown-cmark",

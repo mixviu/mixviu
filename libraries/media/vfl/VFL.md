@@ -128,7 +128,58 @@ unknown, not zero. Do not trust a completion file until all checks pass.
 Incompatible layouts require a new version. Unknown JSON fields may be
 ignored. The writer core and constants live in `libraries/media/vfl/src/lib.rs`;
 this spec belongs to that same crate. R2 owns the
-production reader and verifier. No reader is shipped by this writer change.
+production reader and verifier in `src/reader.rs`.
+
+## Reading and exporting
+
+`mixd vfl verify TAKE` streams the whole take and prints
+`{ok,frames,dropped,markers,complete,errors}`. Its status is zero only when
+`ok` is true. An intact interrupted take can be valid (`ok:true`) while
+`complete:false`; its dropped count is unknown (`null`). A damaged take
+reports the valid prefix frame count and the first binary-chain error.
+Errors name the file, chunk (or null for metadata), byte offset and category.
+The reader stops at corruption and never resumes a delta chain past it.
+
+`mixd vfl markers TAKE` prints validated marker JSON lines.
+`mixd vfl export TAKE [--from FRAME] [--to FRAME] [--format bgra|y4m]
+[--fps N]` writes only pixels to stdout; diagnostics use stderr. Bounds are
+inclusive slot numbers. The default is raw BGRA at the manifest rate;
+`--fps` accepts integers 1–60 (the format range) and changes the declared
+y4m rate without adding or dropping slots.
+Raw BGRA has no header, so its dimensions and rate must be supplied to the
+consumer. Repeats and healed dropped slots remain explicit output frames.
+Y4M uses centred 4:2:0, BT.709 limited range via `media-frame`, including
+that library's replicated odd edges. Alpha is ignored during conversion.
+
+For a 3840×2160, 30 fps take:
+
+```text
+mixd vfl export video.vfl --format bgra | ffmpeg -f rawvideo -pixel_format bgra -video_size 3840x2160 -framerate 30 -i pipe:0 -an -c:v libsvtav1 -pix_fmt yuv420p video.webm
+```
+
+The Rust API borrows one current BGRA frame at a time. Compressed payloads
+and decode scratch are bounded by the manifest canvas; JSON files and each
+sidecar line are capped at 1 MiB. Regular input files are opened without
+following symlinks. `Reader::complete` describes the metadata's claim;
+only a full successful verification establishes completion.
+`Reader::seek` scans bounded headers and CRCs to locate the nearest earlier
+key, then decompresses forward. It does not retain a whole-take index or
+decompress the preceding delta chains. Verification remains the whole-take
+integrity check. Recovery tolerates missing or torn origin, final metadata
+and sidecar tails; a missing origin prevents marker clock alignment. Recovery
+ignores a malformed final JSON line only when it is unterminated and at EOF.
+Terminated malformed lines, oversized lines and malformed interior rows
+remain errors. Present frame rows must match the binary timeline, using the
+same rule for sequential read and seek. A malformed final chunk receipt can
+be ignored during recovery; a valid receipt with a CRC/count mismatch remains
+an error. Earlier malformed receipts and all complete-take sidecar errors are
+fatal. A torn binary tail stops recovery with an error after the valid prefix;
+it never turns the take into a successful verification.
+Advisory receipt handling skips only that receipt, never the frame-sidecar
+tail check. Chunk receipts contain no `dropped` field. Drop totals are trusted
+only after complete-take verification; interrupted totals are always unknown
+(`"dropped":null`), including when `interrupted.json` has a missing or invalid
+`dropped`. A complete take with a missing or non-u64 drop total fails.
 
 ## Scheduling
 

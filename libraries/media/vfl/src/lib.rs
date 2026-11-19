@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! VFL container and lossless writer, shared by viud and the future reader.
+//! VFL container, lossless writer, bounded reader and headless CLI.
 use serde_json::{Value, json};
 use std::{
     fs::{File, OpenOptions},
@@ -10,6 +10,9 @@ use std::{
     time::Instant,
 };
 pub const VERSION: u32 = 2;
+pub const COMPONENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub mod cli;
+pub mod reader;
 pub const LEGACY_VERSION: u32 = 1;
 pub const RECORD_HEADER_BYTES: usize = 17;
 pub const KEY: u8 = 0;

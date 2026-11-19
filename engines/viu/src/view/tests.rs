@@ -13,6 +13,109 @@ use ui::input::{Input, key};
 use super::*;
 use crate::templates::PreparedLists;
 
+#[test]
+fn furniture_static_offset_and_subtree_opacity_snap_when_disabled() {
+    for reduced in [false, true] {
+        let source = |offset, opacity| {
+            format!(
+                "---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\nroot: {{widget: \"column\", opacity: {opacity}, motion: {reduced}, offset: [{offset},0], children: [\"b\"]}}\nb: {{widget: \"button\", label: \"Offset\", on_click: \"activate\"}}\n```\n"
+            )
+        };
+        let mut scene = SceneUi::new(content(&source(20, 0.5), None, false));
+        let mut reference = SceneUi::new(content(&source(0, 1.), None, false));
+        let ctx = egui::Context::default();
+        let reference_ctx = egui::Context::default();
+        scene.setup(&ctx);
+        reference.setup(&reference_ctx);
+        if reduced {
+            ctx.global_style_mut(|s| s.animation_time = 0.);
+        }
+        let raw = |t| egui::RawInput {
+            time: Some(t),
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(300., 300.),
+            )),
+            ..Default::default()
+        };
+        ctx.run_ui(raw(0.), |ui| scene.show(ui, &mut Vec::new()))
+            .drop_without_applying_deltas();
+        reference_ctx
+            .run_ui(raw(0.), |ui| reference.show(ui, &mut Vec::new()))
+            .drop_without_applying_deltas();
+        assert!(
+            (scene.layout.nodes["b"].left() - reference.layout.nodes["b"].left() - 20.).abs()
+                < 0.01
+        );
+        let mut out = ctx.run_ui(raw(0.1), |ui| scene.show(ui, &mut Vec::new()));
+        assert!(out.shapes.iter().any(|s|matches!(&s.shape,egui::Shape::Text(t) if t.galley.job.text=="Offset" && t.fallback_color.a()<=128)));
+        out.textures_delta.clear();
+        let target = scene.layout.nodes["b"].center();
+        let mut emitted = Vec::new();
+        for pressed in [true, false] {
+            let mut raw = raw(0.2);
+            raw.events = vec![
+                egui::Event::PointerMoved(target),
+                egui::Event::PointerButton {
+                    pos: target,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                },
+            ];
+            ctx.run_ui(raw, |ui| scene.show(ui, &mut emitted))
+                .drop_without_applying_deltas();
+        }
+        assert!(emitted.iter().any(|m| matches!(m, SceneMessage::Click(_))));
+    }
+}
+
+#[test]
+fn furniture_up_takes_clicks_at_the_presented_rectangle() {
+    let source = "---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\nroot: {widget: \"button\", label: \"Motion\", enter: \"up\", exit: \"fade\", on_click: \"activate\"}\n```\n";
+    let mut scene = SceneUi::new(content(source, None, false));
+    let ctx = egui::Context::default();
+    scene.setup(&ctx);
+    let raw = |t| egui::RawInput {
+        time: Some(t),
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(200., 200.),
+        )),
+        ..Default::default()
+    };
+    for t in [0., 0.03] {
+        ctx.run_ui(raw(t), |ui| scene.show(ui, &mut Vec::new()))
+            .drop_without_applying_deltas();
+    }
+    let target = scene.layout.nodes["root"].center();
+    let mut emitted = Vec::new();
+    for pressed in [true, false] {
+        let mut raw = raw(0.03);
+        raw.events = vec![
+            egui::Event::PointerMoved(target),
+            egui::Event::PointerButton {
+                pos: target,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            },
+        ];
+        ctx.run_ui(raw, |ui| scene.show(ui, &mut emitted))
+            .drop_without_applying_deltas();
+    }
+    assert!(emitted.iter().any(|m| matches!(m, SceneMessage::Click(_))));
+    scene.update(SceneMessage::Replace(content(
+        &source.replace("label: \"Motion\"", "label: \"Motion\", hidden: true"),
+        None,
+        false,
+    )));
+    emitted.clear();
+    ctx.run_ui(raw(0.04), |ui| scene.show(ui, &mut emitted))
+        .drop_without_applying_deltas();
+    assert!(!emitted.iter().any(|m| matches!(m, SceneMessage::Click(_))));
+}
+
 pub(super) fn content(source: &str, frame: Option<Frame>, dialog: bool) -> Arc<Content> {
     let tree = scene::resolve(&scene::parse(source).unwrap()).unwrap();
     let lists = crate::templates::validate_templates(&tree).unwrap();

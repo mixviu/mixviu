@@ -1,0 +1,43 @@
+#!/usr/bin/env mix
+-- version: 0.1.0
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run on a Chrome host such as cos as an unprivileged user; no CBC chrome
+-- slot exists. See libraries/motion/oracle/README.md for capture provenance.
+$base = "libraries/motion/oracle/"
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/motion-oracle-XXXXXXXX"]))
+$css = read_file($base .. "reference/anim.css")
+$deck = read_file($base .. "reference/deck.js")
+$capture = read_file($base .. "capture.js")
+$nodes = ""
+for $name in ["up","down","left","right","pop","zoom","fade","wipe","drop","flip","spin"]
+  $nodes = $nodes .. '<div id="' .. $name .. '" data-b="0" data-anim="' .. $name .. '"></div>'
+end
+for $name in ["float","glow","shine","blink"]
+  $nodes = $nodes .. '<div id="' .. $name .. '" class="' .. $name .. '"></div>'
+end
+$nodes = $nodes .. '<img id="kb" class="kb"><svg width="100" height="100"><path id="draw" class="draw" d="M0,0 L100,100"/></svg><span id="under" class="underline-draw">underline</span>'
+$html = '<!doctype html><meta charset="utf-8"><style>' .. $css .. ' [id]{width:100px;height:100px}body{--panel:#123;--accent:#456;--accent2:#789;background-image:linear-gradient(red,blue),linear-gradient(blue,red)}.underline-draw::after{right:auto;width:100px}</style><body><section id="specimen">' .. $nodes .. '</section><script>history.replaceState(null,"","#s=specimen&t=0&beats=0");</script><script>' .. $deck .. '</script><script>' .. $capture .. '</script>'
+write_file($tmp .. "/specimen.html", $html)
+try
+  $version = trim(run_argv_must(["google-chrome-stable", "--version"]))
+  print("MOTION_ORACLE_BROWSER=" .. $version)
+  $result = run_argv(["google-chrome-stable", "--headless=new", "--disable-gpu", "--no-first-run", "--no-default-browser-check", "--allow-file-access-from-files", "--user-data-dir=" .. $tmp .. "/profile", "--dump-dom", "file://" .. $tmp .. "/specimen.html"], {timeout:120, max_output: 2000000})
+  if not $result.ok then raise("MOTION_ORACLE_CHROME", $result.stderr) end
+  $prefix = '<pre id="motion-oracle-result">'
+  $start = index_of($result.stdout, $prefix)
+  if $start < 0 then raise("MOTION_ORACLE_CAPTURE", "browser did not emit computed samples") end
+  $tail = slice($result.stdout, $start + len($prefix), len($result.stdout))
+  $stop = index_of($tail, "</pre>")
+  if $stop < 0 then raise("MOTION_ORACLE_CAPTURE", "truncated browser result") end
+  $json = replace(replace(replace(slice($tail,0,$stop), "&lt;", "<"), "&gt;", ">"), "&amp;", "&")
+  $fixture = json_parse($json)
+  if len($fixture.presets) != 19 then raise("MOTION_ORACLE_CAPTURE", "expected all 19 presets") end
+  for $preset in $fixture.presets
+    if len($preset.samples) != 21 then raise("MOTION_ORACLE_CAPTURE", "expected 21 times per preset") end
+  end
+  print("MOTION_ORACLE_JSON=" .. json_encode($fixture))
+catch $message
+  print(run_argv(["rm", "-rf", $tmp]))
+  raise("MOTION_ORACLE_FAILED", $message)
+end
+print(run_argv(["rm", "-rf", $tmp]))

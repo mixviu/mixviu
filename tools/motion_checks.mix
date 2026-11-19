@@ -1,0 +1,19 @@
+-- Scoped worker-only maintenance. Invoke through the native build queue.
+if args()[0] == "fmt" then
+  $r = run_argv(["cargo", "fmt", "-p", "motion"])
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then exit($r.exit_code) end
+  print(run_argv_must(["git", "diff", "--", "libraries/motion", "Cargo.lock"]))
+  print(run_argv_must(["git", "checkout", "-q", "--", "libraries/motion", "Cargo.lock"]))
+elif args()[0] == "foreign" then
+  $r = run_argv(["mix", "tools/foreign_gate.mix"], {timeout: 1800, max_output: 10000000})
+  print($r.stdout)
+  print($r.stderr)
+  print(run_argv_must(["git", "diff", "--", "Cargo.lock"]))
+  print(run_argv_must(["git", "checkout", "-q", "--", "Cargo.lock"]))
+  exit($r.exit_code)
+else
+  eprint("expected fmt or foreign")
+  exit(2)
+end
