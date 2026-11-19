@@ -68,6 +68,8 @@ authenticated mesh-service assertion; protected cross-node deliveries can
 therefore fail during a mixed-version upgrade. Keep enforcement disabled until
 both ends support mutual proof. D2 remains plaintext and origin-only; TLS and
 channel-bound authentication are the next PR.
+The D2 signing seed is loaded once at startup for both directions. Restart the
+broker after changing its seed file, before the old credential window closes.
 
 Accepted reloads retain connections only while their exact proven key remains
 current and uniquely assigned. Overlapping current keys coexist. Inbound

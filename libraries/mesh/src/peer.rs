@@ -319,6 +319,14 @@ struct TransportState {
     attempts: HashMap<String, Arc<ConnectAttempt>>,
 }
 
+impl TransportState {
+    fn authenticates(&self, context: &bus::native_session::PeerContext) -> bool {
+        context.mesh_peer().is_some_and(|(node, key)| {
+            self.keys.as_ref().is_some_and(|(keys, _)| keys.contains(node, key))
+        })
+    }
+}
+
 /// Manages connections to remote mesh peers.
 ///
 /// Used by noded to bridge messages to remote nodes.
@@ -982,7 +990,7 @@ async fn connect_and_publish(
     {
         let locked = state.read().await;
         anyhow::ensure!(
-            !locked.frame_enforce || context.mesh_peer().is_some(),
+            !locked.frame_enforce || locked.authenticates(&context),
             "Dialled peer did not prove its identity"
         );
     }
@@ -1030,7 +1038,7 @@ async fn connect_and_publish(
     {
         let mut locked = state.write().await;
         anyhow::ensure!(
-            !locked.frame_enforce || context.mesh_peer().is_some(),
+            !locked.frame_enforce || locked.authenticates(&context),
             "Unproven dialled peer cannot be published"
         );
         if let Some((keys, _)) = &locked.keys

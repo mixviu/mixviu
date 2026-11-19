@@ -1923,10 +1923,24 @@ fn spawn_inventory_reload_watcher(state: AppState) {
 /// transport fence precedes authority publication; inbound enforce teardown
 /// completes before the §17 applied events make the new state externally
 /// legible. A kept-last-good load returns before touching transport state.
-async fn reconcile_transport_authority(mesh: &MeshPeers, authority: &crate::routing::RoutingAuthority) -> ReconcileReport {
+async fn reconcile_transport_authority(
+    mesh: &MeshPeers,
+    authority: &crate::routing::RoutingAuthority,
+) -> ReconcileReport {
     match &authority.posture {
-        crate::authority::Posture::Verified(a) => mesh.reconcile_identity(authority.routes.desired_endpoints(), authority.revision(), authority.keys.clone(), a.mesh.clone()).await,
-        crate::authority::Posture::Unverified { .. } => mesh.reconcile_endpoints(authority.routes.desired_endpoints(), authority.revision()).await,
+        crate::authority::Posture::Verified(a) => {
+            mesh.reconcile_identity(
+                authority.routes.desired_endpoints(),
+                authority.revision(),
+                authority.keys.clone(),
+                a.mesh.clone(),
+            )
+            .await
+        }
+        crate::authority::Posture::Unverified { .. } => {
+            mesh.reconcile_endpoints(authority.routes.desired_endpoints(), authority.revision())
+                .await
+        }
     }
 }
 
@@ -2057,12 +2071,34 @@ fn reload_revoke_detail(
 }
 
 /// Recheck exact-key authority under the delivery fence at both tracking sites.
-async fn track_mesh_session(state: &AppState, id: &str, address: &str, tx: &mpsc::Sender<String>, close: &Arc<tokio::sync::Notify>) -> bool {
-    let Some((node, key)) = state.peer_context.mesh_peer() else { return true; };
+async fn track_mesh_session(
+    state: &AppState,
+    id: &str,
+    address: &str,
+    tx: &mpsc::Sender<String>,
+    close: &Arc<tokio::sync::Notify>,
+) -> bool {
+    let Some((node, key)) = state.peer_context.mesh_peer() else {
+        return true;
+    };
     let mut live = state.live_sessions.write().await;
-    let _fence = state.delivery_fence.read().expect("delivery fence poisoned");
-    if !state.authority.load().keys.contains(node, key) { return false; }
-    live.insert(id.to_owned(), GatedSession { identity: state.peer_context.identity.clone(), claimed_source_node: node.to_owned(), source_ip: address.to_owned(), tx: tx.clone(), close: close.clone() });
+    let _fence = state
+        .delivery_fence
+        .read()
+        .expect("delivery fence poisoned");
+    if !state.authority.load().keys.contains(node, key) {
+        return false;
+    }
+    live.insert(
+        id.to_owned(),
+        GatedSession {
+            identity: state.peer_context.identity.clone(),
+            claimed_source_node: node.to_owned(),
+            source_ip: address.to_owned(),
+            tx: tx.clone(),
+            close: close.clone(),
+        },
+    );
     true
 }
 
@@ -2235,16 +2271,28 @@ fn invalid_bootstrap_envelope(text: &str, command: &str) -> BusMessage {
     message
 }
 
-fn reverse_identity_answer(state: &AppState, message: &BusMessage, registered: bool, answered: &mut bool) -> Option<String> {
-    if *answered || registered { return None; }
+fn reverse_identity_answer(
+    state: &AppState,
+    message: &BusMessage,
+    registered: bool,
+    answered: &mut bool,
+) -> Option<String> {
+    if *answered || registered {
+        return None;
+    }
     let body: serde_json::Value = serde_json::from_str(&message.body).ok()?;
     let authority = state.authority.load_full();
-    let crate::authority::Posture::Verified(a) = &authority.posture else { return None; };
+    let crate::authority::Posture::Verified(a) = &authority.posture else {
+        return None;
+    };
     let (node, key) = state.peer_context.mesh_peer()?;
     if !authority.keys.contains(node, key)
         || body["verifying_broker_node"].as_str() != Some(node)
         || body["mesh_fqdn"].as_str() != Some(a.mesh.as_str())
-        || body["inventory_epoch"].as_u64() != Some(a.epoch) { return None; }
+        || body["inventory_epoch"].as_u64() != Some(a.epoch)
+    {
+        return None;
+    }
     let wire = mesh::build_admit_response(message, &state.node_name, &state.d2_seed)?;
     let mut response = bus::parse(&wire).ok()?;
     response.set("command", "noded.identity.response");
@@ -2252,7 +2300,11 @@ fn reverse_identity_answer(state: &AppState, message: &BusMessage, registered: b
     Some(response.to_wire())
 }
 
-async fn queue_identity_answer(tx: &mpsc::Sender<String>, wire: String, close: &tokio::sync::Notify) -> bool {
+async fn queue_identity_answer(
+    tx: &mpsc::Sender<String>,
+    wire: String,
+    close: &tokio::sync::Notify,
+) -> bool {
     tokio::select! {
         biased;
         _ = close.notified() => false,
@@ -2458,8 +2510,13 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             continue;
         }
         if bus_msg.command_name() == Some("noded.identity.challenge") {
-            if let Some(wire) = reverse_identity_answer(&state, &bus_msg, service_name.is_some(), &mut reverse_answered)
-                && !queue_identity_answer(&tx, wire, &close_signal).await {
+            if let Some(wire) = reverse_identity_answer(
+                &state,
+                &bus_msg,
+                service_name.is_some(),
+                &mut reverse_answered,
+            ) && !queue_identity_answer(&tx, wire, &close_signal).await
+            {
                 tracing::warn!("reverse identity answer could not be queued; closing session");
                 break;
             }
@@ -2669,7 +2726,9 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 }
                 state.session_admission.apply(outcome);
                 writer_admitted.store(state.peer_context.mesh_peer().is_some(), Ordering::Release);
-                if !track_mesh_session(&state, &anon_id, &source_ip_str, &tx, &close_signal).await { break; }
+                if !track_mesh_session(&state, &anon_id, &source_ip_str, &tx, &close_signal).await {
+                    break;
+                }
             }
             if let Some(observed_outcome) = observed_outcome {
                 canonicalize_connection_from(&mut bus_msg, service_name.as_deref());
@@ -2950,7 +3009,17 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                             );
                         }
                         RegisterGate::Admit(node) => {
-                            if !track_mesh_session(&state, &anon_id, &source_ip_str, &tx, &close_signal).await { break; }
+                            if !track_mesh_session(
+                                &state,
+                                &anon_id,
+                                &source_ip_str,
+                                &tx,
+                                &close_signal,
+                            )
+                            .await
+                            {
+                                break;
+                            }
                             emit_admission_admitted(&state, &node, &source_ip_str, epoch, &anon_id);
                         }
                         RegisterGate::Refuse {

@@ -470,14 +470,17 @@ async fn real_unix_registration_survives_reload_and_tcp_loopback_is_refused() {
         .with_header("command", "noded.register")
         .with_header("from", "local-impostor")
         .with_header("id", "refuse");
-    tcp_sink.send(WsMessage::Text(register.to_wire().into())).await.unwrap();
+    tcp_sink
+        .send(WsMessage::Text(register.to_wire().into()))
+        .await
+        .unwrap();
     tokio::time::timeout(Duration::from_secs(2), async {
         while let Some(Ok(frame)) = tcp_stream.next().await {
             match frame {
                 WsMessage::Text(wire) => {
                     let message = bus_mod::parse(&wire).unwrap();
                     if message.get("id") == Some("refuse") {
-                        assert_eq!(message.rc(),Some(10));
+                        assert_eq!(message.rc(), Some(10));
                         assert!(message.get("error").unwrap_or("").contains("no-proof"));
                     }
                 }
@@ -485,7 +488,9 @@ async fn real_unix_registration_survives_reload_and_tcp_loopback_is_refused() {
                 _ => {}
             }
         }
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
     assert!(!state.registry.read().await.contains_key("local-impostor"));
     unix_task.abort();
     tcp_task.abort();
