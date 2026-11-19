@@ -41,9 +41,9 @@ adds only that item's region to the host's pointer input region. The choice
 is visible in `osd.list`.
 
 Validation precedes mutation. Refusals carry an `error_code`, including
-`invalid_args`, `invalid_scene`, `invalid_anchor`, `invalid_motion`,
-`already_exists`, `not_found`, `budget_exceeded`, `window_not_found`,
-`stale_generation` and `unknown_action`.
+`INVALID_ARGS`, `INVALID_SCENE`, `INVALID_ANCHOR`, `INVALID_MOTION`,
+`ALREADY_EXISTS`, `NOT_FOUND`, `BUDGET_EXCEEDED`, `WINDOW_NOT_FOUND`,
+`STALE_GENERATION` and `UNKNOWN_ACTION`.
 
 Ordinary output captures include the OSD because it is part of the output
 scene. Listed-window captures exclude it with all other non-listed surfaces.

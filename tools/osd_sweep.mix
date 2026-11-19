@@ -27,7 +27,11 @@ elif $mode=="lock" then
     run_argv_must(["git","checkout","-q","--","Cargo.lock"])
   end
 elif $mode=="clippy" then
-  checked(concat(concat(["cargo","clippy","--locked"],$crates),["--all-targets","--","-D","warnings"]))
+  checked(concat(concat(["cargo","clippy","--locked","--no-deps"],$crates),["--all-targets","--","-D","warnings"]))
+elif $mode=="unit" then
+  checked(["cargo","test","--locked","-p","protocols","--lib","layershell::osd"])
+  checked(["cargo","test","--locked","-p","lib-viu","--lib","app_host::osd"])
+  checked(["cargo","test","--locked","-p","toolkit","--lib","layer::"])
 elif $mode=="native" then
   export MIX_TEST_REQUIRE_RECORD="1"
   checked(["cargo","build","--release","--locked","-p","mix","-p","noded","-p","testkit","--bins"])
