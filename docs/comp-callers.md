@@ -55,13 +55,24 @@ The wallpaper is the `backdrop` namespace's Background layer surface tree;
 other layer surfaces (including other Background namespaces), layer popups,
 unlisted bottom-band windows, drag icons, notifications and OSD are excluded.
 Namespace identifies scene routing, not authenticated peer authority.
+Client cursor surfaces are included only if their Wayland client owns a listed
+window in the recorded view. Unattributed or unlisted cursor surfaces use the
+compositor default image. Drag icons are never included. An unknown cursor
+output draws no cursor, as does a cursor belonging to another output.
 The live screen is unchanged, including windows covering listed content.
 
-A listed window closing or changing generation removes it from the active
+Start refuses a window outside the target view as `window_not_on_output`,
+with `id`, `generation` and `output`. viud maps windows onto every protocol
+output, so this fence uses the output camera/view intersection, plus explicit
+fullscreen/constrained output selection, rather than `wl_surface.enter`.
+The renderer rechecks the same fence.
+
+A listed window closing, changing generation or leaving the recorded view removes it from the active
 set and queues one `window_gone` marker with `data:{id,generation}`. The take
 continues, including when the set becomes empty; the canvas stays output-sized
-through listed-window moves and resizes. A successful stop includes all these
-markers. Marker admission is retried under queue pressure; inability to admit
+through listed-window moves and resizes. Status reconciles membership before answering. A successful stop includes all
+these markers, admitted after an image evaluated with the removed window
+excluded; no later frame shows the removed window. Marker admission is retried under queue pressure; inability to admit
 one within the bounded stop drain fails publication instead of silently losing
 it. Existing single-window and stitched targets still fail when a target goes
 away or changes dimensions. Status includes `windows:[{id,generation}]` for
@@ -69,6 +80,9 @@ the active listed set (an empty array for other targets or idle).
 New windows are excluded. There is no `comp.record.windows` mutation command
 in this version; restart the take to change its allowlist.
 
+Filtered takes carry an explicit internal take ID, independent of file paths,
+and force a real first image and a fresh image after membership removal.
+An unchanged-scene answer without a raw consumer fails explicitly.
 Filtered takes track damage on their own composed elements. Changes solely in
 unlisted content cause no readback; unchanged pictures use scheduled repeats.
 

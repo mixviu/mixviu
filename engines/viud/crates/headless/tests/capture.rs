@@ -744,11 +744,11 @@ fn record_privacy_cursor_ownership_output_and_take_identity() {
     let br = bus.window_for("cursor-private", &mut [&mut a, &mut b]);
     bus.call(
         "comp.window.place",
-        place_args(&ar, json!({"x":100,"y":100})),
+        place_args(&ar, json!({"output":"headless-0","x":100,"y":100})),
     );
     bus.call(
         "comp.window.place",
-        place_args(&br, json!({"x":400,"y":100})),
+        place_args(&br, json!({"output":"headless-0","x":400,"y":100})),
     );
     let focus = |mode: &str, a: &mut Pattern, b: &mut Pattern| {
         fs::write(process.root.join("record-input"), mode).unwrap();
@@ -756,6 +756,7 @@ fn record_privacy_cursor_ownership_output_and_take_identity() {
         pump_patterns(&mut [a, b]);
     };
     let take = |name: &str, cursor: bool, a: &mut Pattern, b: &mut Pattern| {
+        eprintln!("LISTED_CURSOR_TAKE {name}");
         let path = process.root.join(format!("{name}.vfl"));
         let start = bus.call("comp.record.start",json!({"request_id":name,"target":{"output":"headless-0","windows":[target(&ar)]},"cursor":cursor,"path":path,"max_seconds":10}));
         pump_patterns(&mut [a, b]);
