@@ -446,9 +446,23 @@ fn rounded_close_stack(closing_front: bool) {
         };
         let rear_red = at(350, 280)[0];
         if closing_front {
-            let alpha = ((f64::from(rear_red) - 18.0) / (255.0 - 18.0)).clamp(0.0, 1.0);
-            for (actual, under) in at(450, 300).into_iter().zip([0x20, 0xd0, 0x40]) {
-                let expected = 255.0 * alpha + f64::from(under) * (1.0 - alpha);
+            // SSD retains its black shadow behind the fading white client.
+            // Thus the underlay's transmission is (1-client_alpha) *
+            // (1-shadow_alpha), not simply 1-client_alpha. Both probes lie
+            // inside the shadow's constant centre tile. Infer transmission
+            // from green-minus-red, which cancels the white foreground, then
+            // independently check blue and the white-over-background probe.
+            let over = at(450, 300);
+            let transmission = (f64::from(over[1]) - f64::from(over[0])) / (208.0 - 32.0);
+            let foreground = f64::from(over[0]) - 32.0 * transmission;
+            assert!((-0.025..=1.025).contains(&transmission));
+            assert!(foreground >= -4.0 && foreground <= 255.0 * (1.0 - transmission) + 4.0);
+            assert!(
+                (f64::from(rear_red) - (foreground + 18.0 * transmission)).abs() <= 4.0,
+                "frame {frame}: retained white client and shadow must composite above both underlays"
+            );
+            for (actual, under) in over.into_iter().zip([0x20, 0xd0, 0x40]) {
+                let expected = foreground + f64::from(under) * transmission;
                 assert!(
                     (f64::from(actual) - expected).abs() <= 4.0,
                     "frame {frame}: top closing ghost must blend above the surviving green window, got {actual}, expected {expected}"
