@@ -58,13 +58,15 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
         .unwrap();
     std::fs::write(
         &node_config,
-        json!({"wg_ip":"127.0.0.1","noded":{"port":port}}).to_string(),
+        json!({"wg_ip":"127.0.0.1","noded":{"port":port,"unix_socket":broker.endpoint}})
+            .to_string(),
     )
     .unwrap();
     let mut daemon = Child(
         tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
             .args(["-c", config.to_str().unwrap(), "serve"])
             .env_remove("MIX_NODED_URL")
+            .env_remove("MIX_BUS_SOCKET")
             .env("MIX_NODE_CONFIG", &node_config)
             .stdout(Stdio::null())
             .spawn()
@@ -83,7 +85,8 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
         .unwrap();
     std::fs::write(
         &node_config,
-        json!({"wg_ip":"127.0.0.1","noded":{"port":port}}).to_string(),
+        json!({"wg_ip":"127.0.0.1","noded":{"port":port,"unix_socket":broker.endpoint}})
+            .to_string(),
     )
     .unwrap();
     ready(&broker.url).await;
@@ -93,6 +96,7 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
             .arg("--node-config")
             .arg(&node_config)
             .env_remove("MIX_NODED_URL")
+            .env_remove("MIX_BUS_SOCKET")
             .env("MIX_NODE_CONFIG", "/nonexistent/overridden.conf.mix")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())

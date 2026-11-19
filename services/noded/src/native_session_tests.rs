@@ -61,6 +61,7 @@ impl Broker {
                 mesh_config_path: None,
                 spec_dir: None,
                 admission_mode: AdmissionMode::Off,
+                frame_policy: config::node::AdmissionMode::Observe,
                 unix_socket: unix.then(|| root.join("bus.sock")),
                 pending_grants_per_parent,
             },

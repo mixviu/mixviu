@@ -181,10 +181,10 @@ fn mesh_unavailable(detail: &str) -> mix::error::MixError {
 ///
 /// Routing strategy: try local Unix socket first for simple names (no dots).
 /// If socket doesn't exist, or target contains dots / `.bus` addresses,
-/// route via WebSocket broker. The broker URL is `ws://127.0.0.1:4200/ws`
-/// when `node.conf.mix` is absent (the bare/loopback path), and
-/// `ws://{wg_ip}:{noded.port}/ws` derived from the local node's WG IP
-/// when `node.conf.mix` is present (the mesh-citizen path) — see
+/// route via the broker. Discovery uses `MIX_NODED_URL`, `MIX_BUS_SOCKET`,
+/// `noded.unix_socket` in node config, then the local runtime Unix socket.
+/// Node config's `wg_ip` and `noded.port` never select client transport.
+/// An explicit TCP URL is legacy and grants no same-node trust — see
 /// `::bus::native_client::NodedClient::connect_anonymous_default()`.
 ///
 /// On a host with no noded, the first Bus form's probe records

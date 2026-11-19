@@ -33,7 +33,7 @@ fn forward($a)
 end
 if port_exists($a.service) then forward($a);exit(0) end
 $root=dirname(script_path())
-$options={service:$a.service,surface:if $a.headless then "headless" else "window" end,url:$a.url}
+$options={service:$a.service,surface:if $a.headless then "headless" else "window" end,url:if $a.url=="" then nil else $a.url end}
 $launch={path:$a.path,capture:$a.capture,window:$a.window}
 $host_argv=[env("MIX_VIU_EXE","/opt/mix/bin/viu"),"run",$root,"--host-options",json_encode($options),$a.comp,"--launch",json_encode($launch)]
 if $a.debug!=nil then push($host_argv,"--debug="..$a.debug) end

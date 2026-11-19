@@ -22,6 +22,53 @@ pub use transcript::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::net::IpAddr;
 
+/// Broker-owned authentication result. Addresses are retained for diagnostics,
+/// never consulted when deciding whether a caller is local or admitted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeerContext {
+    pub identity: PeerIdentity,
+    pub address: Option<std::net::SocketAddr>,
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub enum PeerIdentity {
+    UnixPeer {
+        uid: u32,
+        pid: u32,
+    },
+    MeshAdmitted {
+        node: String,
+        key: [u8; 32],
+        fingerprint: String,
+        epoch: u64,
+        revision: u64,
+    },
+    #[default]
+    Unauthenticated,
+}
+
+impl Default for PeerContext {
+    fn default() -> Self {
+        Self {
+            identity: PeerIdentity::Unauthenticated,
+            address: None,
+        }
+    }
+}
+
+impl PeerContext {
+    pub fn is_local(&self) -> bool {
+        matches!(self.identity, PeerIdentity::UnixPeer { .. })
+    }
+
+    pub fn mesh_peer(&self) -> Option<(&str, &[u8; 32])> {
+        match &self.identity {
+            PeerIdentity::MeshAdmitted { node, key, .. } => Some((node, key)),
+            _ => None,
+        }
+    }
+}
+
 /// Kernel/mesh context, never deserialised from caller-supplied metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransportIdentity {
@@ -44,6 +91,7 @@ pub enum TransportIdentity {
 /// Wire-layer representation of the existing broker's D2 admission state.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct MeshAdmission {
+    pub identity: PeerIdentity,
     pub admitted_node: Option<String>,
     pub last_detail: Option<&'static str>,
     pub response_seen: bool,

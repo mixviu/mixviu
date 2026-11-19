@@ -115,6 +115,8 @@ impl Citizen {
         .env("REL_STATE", dir.0.join("state"))
         .env("MIX_STATS", "off")
         .env_remove("MIX_SESSION_FD")
+        .env_remove("MIX_NODED_URL")
+        .env_remove("MIX_BUS_SOCKET")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr));
@@ -162,17 +164,9 @@ impl Drop for Citizen {
     }
 }
 
-fn node_conf_text(port: u16) -> String {
-    format!("wg_ip: \"127.0.0.1\"\nnoded: {{ port: {port} }}\n")
-}
-
-fn broker_tcp_port(broker: &Broker) -> u16 {
-    broker
-        .url
-        .trim_start_matches("ws://127.0.0.1:")
-        .trim_end_matches("/ws")
-        .parse()
-        .unwrap()
+// Exercise production local discovery rather than deriving a TCP endpoint.
+fn node_conf_text(broker: &Broker) -> String {
+    format!("noded: {{ unix_socket: {:?} }}\n", broker.endpoint)
 }
 
 // ── trace (test-owned file, appended by the real citizen) ────────────────
@@ -351,7 +345,7 @@ if not is_reload_candidate() then start_watch() end
         json!(child.to_str().unwrap())
     );
     let script_path = dir.write("service.mix", &source);
-    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(&broker));
     let mut citizen = Citizen::spawn(bin, &dir, &node_conf, &script_path);
     let c = connect(&broker).await;
     wait_service(&c, HARD).await;
@@ -549,7 +543,7 @@ end
 }
 
 fn boot(citizen_script: &Variant, dir: &Dir, broker: &Broker) -> (PathBuf, Citizen) {
-    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(broker)));
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker));
     let script = dir.write("svc.mix", &script(citizen_script));
     let citizen = Citizen::spawn(
         Path::new(env!("CARGO_BIN_EXE_mix")),
@@ -891,7 +885,7 @@ async fn sigterm_shuts_down_the_child_group_from_prep_and_from_the_dispatching_h
         hook_slow: true,
     };
     dir.write("svc-b.mix", &script(&slow));
-    let node_conf_b = dir.write("node-b.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let node_conf_b = dir.write("node-b.conf.mix", &node_conf_text(&broker));
     let script_b = dir.0.join("svc-b.mix");
     let mut citizen_b = Citizen::spawn(
         Path::new(env!("CARGO_BIN_EXE_mix")),

@@ -139,7 +139,7 @@ async fn async_main() -> Result<()> {
     let node = cli_node.unwrap_or_else(|| node_cfg.node.clone());
     let mesh_config = cli_mesh_config.or_else(|| node_cfg.noded.mesh_config.clone());
 
-    let noded_url = format!("ws://{}/ws", listen);
+    let noded_url = format!("unix://{}", node_cfg.noded.broker_unix_endpoint().display());
 
     let spec_dir = spec::locate_spec_dir(cli_spec_dir.as_deref());
     tracing::info!(
@@ -153,6 +153,12 @@ async fn async_main() -> Result<()> {
     let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
     let noded_node = node.clone();
     let admission_mode = node_cfg.noded.admission;
+    let frame_policy = noded::frame_policy_config(
+        &node_cfg.noded,
+        std::env::var(paths::env::NODED_FRAME_POLICY)
+            .ok()
+            .as_deref(),
+    )?;
     let wg_ip = node_cfg.wg_ip.clone();
     let unix_socket = Some(node_cfg.noded.broker_unix_endpoint());
     let pending_grants_per_parent = node_cfg.noded.pending_grants_per_parent;
@@ -167,6 +173,7 @@ async fn async_main() -> Result<()> {
                 mesh_config_path: mesh_config,
                 spec_dir,
                 admission_mode,
+                frame_policy,
                 unix_socket,
                 pending_grants_per_parent,
             },
@@ -177,7 +184,13 @@ async fn async_main() -> Result<()> {
 
     // Wait for the broker listener to be bound
     if ready_rx.await.is_err() {
-        anyhow::bail!("Broker failed to start");
+        return match noded_handle.await {
+            Ok(Err(error)) => Err(error.context("Broker failed to start")),
+            Ok(Ok(())) => Err(anyhow::anyhow!(
+                "Broker exited without signalling readiness"
+            )),
+            Err(error) => Err(anyhow::anyhow!("Broker startup task failed: {error}")),
+        };
     }
 
     // Spawn client modules

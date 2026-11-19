@@ -1,0 +1,15 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Only fixture CTs; return a single config snapshot with a fake digest.
+$lab = dirname(script_path())
+$argv = args()
+if len($argv) != 4 or $argv[0] != "get" or $argv[2] != "--output-format" or $argv[3] != "json" then die("unexpected pvesh command") end
+$id = split($argv[1], "/")[4]
+if not contains(["102", "103", "104"], $id) then die("not a fixture CT") end
+$text = read_file($lab .. "/" .. $id .. ".conf")
+$result = {digest: substr(hash_sha256($text), 0, 40)}
+for $line in lines($text)
+  if starts_with($line, "hookscript:") then $result.hookscript = trim(after($line, ":")) end
+end
+print(json_encode($result))
+-- Mutate after returning the snapshot, before pct set's locked digest check.
+if exists($lab .. "/digest-race") then write_file($lab .. "/" .. $id .. ".conf", "hookscript: local:snippets/other.mix\n") end

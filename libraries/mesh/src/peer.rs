@@ -132,7 +132,7 @@ impl MeshConfig {
 /// contract the broker's `reconstruct_proof` mirrors). Returns `None` if there
 /// is no d2 seed (prover-incapable) or the challenge is malformed — the caller
 /// then registers without proving (the broker logs `unproven:no-proof`).
-fn build_admit_response(
+pub fn build_admit_response(
     challenge: &BusMessage,
     node_name: &str,
     d2_seed: &Option<[u8; 32]>,
@@ -166,6 +166,10 @@ fn build_admit_response(
         "channel_binding_hash": b64.encode([0u8; 32]),
     })
     .to_string();
+    resp.originate_mesh(node_name);
+    // Bootstrap carries the bridge registration label, not an application
+    // from-address. The receiver consumes it before the all-frame gate.
+    resp.set("from", &format!("bridge-{node_name}"));
     Some(resp.to_wire())
 }
 
@@ -184,6 +188,7 @@ pub struct AuthorityRevision {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionRetireReason {
     Removed,
+    KeyRevoked,
     EndpointChanged { replacement: SocketAddr },
 }
 
@@ -191,6 +196,7 @@ impl ConnectionRetireReason {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Removed => "removed",
+            Self::KeyRevoked => "exact-key-revoked",
             Self::EndpointChanged { .. } => "endpoint-changed",
         }
     }
@@ -228,6 +234,7 @@ pub struct ReconcileReport {
 /// An unsolicited frame received from a particular transport generation.
 #[derive(Debug)]
 pub struct MeshInbound {
+    pub context: bus::native_session::PeerContext,
     pub peer: String,
     pub connection_generation: uuid::Uuid,
     pub message: BusMessage,
@@ -240,6 +247,7 @@ pub struct MeshInboundGuard<'a> {
 
 /// A connection to a remote broker with send/receive channels.
 struct RemoteBroker {
+    context: bus::native_session::PeerContext,
     /// The exact resolved transport target this connection owns. A later
     /// inventory epoch may retain the name while changing its mesh address;
     /// such a call must not reuse this connection.
@@ -303,10 +311,22 @@ struct ConnectAttempt {
 }
 
 struct TransportState {
+    frame_enforce: bool,
+    keys: Option<(mesh_trust::identity::KeyAuthority, String)>,
     desired: HashMap<String, SocketAddr>,
     revision: AuthorityRevision,
     connections: HashMap<String, Arc<RemoteBroker>>,
     attempts: HashMap<String, Arc<ConnectAttempt>>,
+}
+
+impl TransportState {
+    fn authenticates(&self, context: &bus::native_session::PeerContext) -> bool {
+        context.mesh_peer().is_some_and(|(node, key)| {
+            self.keys
+                .as_ref()
+                .is_some_and(|(keys, _)| keys.contains(node, key))
+        })
+    }
 }
 
 /// Manages connections to remote mesh peers.
@@ -337,6 +357,8 @@ impl MeshPeers {
         Self {
             config,
             state: Arc::new(RwLock::new(TransportState {
+                frame_enforce: false,
+                keys: None,
                 desired,
                 revision: AuthorityRevision::default(),
                 connections: HashMap::new(),
@@ -348,6 +370,10 @@ impl MeshPeers {
     }
 
     /// Get this node's name.
+    pub async fn set_frame_enforce(&self, enforce: bool) {
+        self.state.write().await.frame_enforce = enforce;
+    }
+
     pub fn node_name(&self) -> &str {
         &self.config.node_name
     }
@@ -355,10 +381,29 @@ impl MeshPeers {
     /// Atomically install the route authority's desired endpoint projection.
     /// Established transports and in-progress attempts which no longer match
     /// are fenced before this method returns.
+    pub async fn reconcile_identity(
+        &self,
+        desired: HashMap<String, SocketAddr>,
+        revision: AuthorityRevision,
+        keys: mesh_trust::identity::KeyAuthority,
+        mesh: String,
+    ) -> ReconcileReport {
+        self.reconcile(desired, revision, Some((keys, mesh))).await
+    }
+
     pub async fn reconcile_endpoints(
         &self,
         desired: HashMap<String, SocketAddr>,
         revision: AuthorityRevision,
+    ) -> ReconcileReport {
+        self.reconcile(desired, revision, None).await
+    }
+
+    async fn reconcile(
+        &self,
+        desired: HashMap<String, SocketAddr>,
+        revision: AuthorityRevision,
+        keys: Option<(mesh_trust::identity::KeyAuthority, String)>,
     ) -> ReconcileReport {
         let mut state = self.state.write().await;
         let mut report = ReconcileReport::default();
@@ -382,6 +427,23 @@ impl MeshPeers {
                 Some(_) => {}
             }
         }
+        if let Some((authority, _)) = &keys {
+            for (name, connection) in &state.connections {
+                if let Some((node, key)) = connection.context.mesh_peer() {
+                    if !authority.contains(node, key) {
+                        reasons.insert(name.clone(), ConnectionRetireReason::KeyRevoked);
+                    }
+                } else if authority.epoch() > 0 {
+                    reasons.insert(name.clone(), ConnectionRetireReason::KeyRevoked);
+                }
+            }
+            if state.revision != revision {
+                for (_, attempt) in state.attempts.drain() {
+                    attempt.cancel.send_replace(true);
+                }
+            }
+        }
+        state.keys = keys;
         report.added = desired
             .keys()
             .filter(|name| !state.desired.contains_key(*name))
@@ -506,6 +568,9 @@ impl MeshPeers {
 
         // Send the message with the id
         let mut msg = msg;
+        msg.originate_mesh(&self.config.node_name);
+        let caller_request_id = msg.get("request_id").map(str::to_owned);
+        msg.forward_mesh().map_err(anyhow::Error::msg)?;
         msg.set("id", &msg_id);
         let class = msg.command_name().unwrap_or("unknown").to_string();
         let (resp_tx, resp_rx) = oneshot::channel();
@@ -522,6 +587,9 @@ impl MeshPeers {
         // Wait for response with timeout
         match tokio::time::timeout(RESPONSE_TIMEOUT, resp_rx).await {
             Ok(Ok(Ok(mut resp))) => {
+                if let Some(request_id) = caller_request_id {
+                    resp.set("request_id", &request_id);
+                }
                 if let Some(caller_id) = caller_id {
                     resp.set("id", &caller_id);
                 } else {
@@ -543,6 +611,9 @@ impl MeshPeers {
 
     /// Send a fire-and-forget message to a remote node.
     pub async fn send(&self, peer: PeerConfig, msg: BusMessage) -> Result<()> {
+        let mut msg = msg;
+        msg.originate_mesh(&self.config.node_name);
+        msg.forward_mesh().map_err(anyhow::Error::msg)?;
         let node_name = peer.name.clone();
         let connection = self.ensure_connected(&peer).await?;
         let state = self.state.read().await;
@@ -867,12 +938,71 @@ async fn connect_and_publish(
         Ok(Some(Ok(_))) => {}
     }
 
+    let mut context = bus::native_session::PeerContext {
+        identity: Default::default(),
+        address: Some(target),
+    };
+    let authority = state.read().await.keys.clone();
+    if let Some((keys, mesh)) = authority {
+        let id = uuid::Uuid::new_v4().to_string();
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let mut nonce = uuid::Uuid::new_v4().as_bytes().to_vec();
+        nonce.extend_from_slice(uuid::Uuid::new_v4().as_bytes());
+        let body = serde_json::json!({
+            "mesh_fqdn": mesh, "inventory_epoch": keys.epoch(),
+            "verifying_broker_node": node_name, "session_id": b64.encode(uuid::Uuid::new_v4().as_bytes()),
+            "server_nonce": b64.encode(nonce),
+        });
+        let challenge = BusMessage::new()
+            .with_header("command", "noded.identity.challenge")
+            .with_header("id", &id)
+            .with_body(&body.to_string());
+        let exchange = async {
+            ws_sink
+                .send(tungstenite::Message::Text(challenge.to_wire().into()))
+                .await
+                .ok()?;
+            loop {
+                let tungstenite::Message::Text(wire) = ws_stream_rx.next().await?.ok()? else {
+                    continue;
+                };
+                let response = bus::parse(&wire).ok()?;
+                if response.command_name() != Some("noded.identity.response")
+                    || response.get("id") != Some(id.as_str())
+                {
+                    continue;
+                }
+                return keys.authenticate_response(
+                    &body,
+                    &serde_json::from_str(&response.body).ok()?,
+                    &peer.name,
+                );
+            }
+        };
+        tokio::select! {
+            biased;
+            _ = attempt_cancel.changed() => anyhow::bail!("Route revoked during peer proof"),
+            result = tokio::time::timeout(ADMISSION_CHALLENGE_TIMEOUT, exchange) => {
+                if let Ok(Some(identity)) = result { context.identity = identity; }
+            }
+        }
+    }
+    // Enforce gates egress before even registration is written. Off/observe
+    // retain the bounded legacy fallback for old brokers without reverse proof.
+    {
+        let locked = state.read().await;
+        anyhow::ensure!(
+            !locked.frame_enforce || locked.authenticates(&context),
+            "Dialled peer did not prove its identity"
+        );
+    }
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
     let connected = Arc::new(AtomicBool::new(true));
     let generation = uuid::Uuid::new_v4();
     let (connection_cancel, mut writer_cancel) = watch::channel(false);
     let mut reader_cancel = connection_cancel.subscribe();
     let connection = Arc::new(RemoteBroker {
+        context: context.clone(),
         target,
         generation,
         tx,
@@ -880,10 +1010,12 @@ async fn connect_and_publish(
         cancel: connection_cancel,
     });
 
-    let register_msg = BusMessage::new()
+    let mut register_msg = BusMessage::new()
         .with_header("command", "noded.register")
         .with_header("from", &format!("bridge-{node_name}"))
         .with_header("to", "noded");
+    register_msg.originate_mesh(&node_name);
+    register_msg.set("from", &format!("bridge-{node_name}"));
     tokio::select! {
         biased;
         changed = attempt_cancel.changed() => {
@@ -907,6 +1039,18 @@ async fn connect_and_publish(
 
     {
         let mut locked = state.write().await;
+        anyhow::ensure!(
+            !locked.frame_enforce || locked.authenticates(&context),
+            "Unproven dialled peer cannot be published"
+        );
+        if let Some((keys, _)) = &locked.keys
+            && let Some((node, key)) = context.mesh_peer()
+        {
+            anyhow::ensure!(
+                keys.contains(node, key),
+                "Peer key revoked before connection publication"
+            );
+        }
         let still_current = locked.desired.get(&peer.name) == Some(&target)
             && locked
                 .attempts
@@ -926,6 +1070,7 @@ async fn connect_and_publish(
 
     if let Some(message) = early_inbound {
         let _ = incoming_tx.send(MeshInbound {
+            context: context.clone(),
             peer: peer.name.clone(),
             connection_generation: generation,
             message,
@@ -933,6 +1078,7 @@ async fn connect_and_publish(
     }
 
     let connected_send = connected.clone();
+    let writer_node = node_name.clone();
     tokio::spawn(async move {
         let mut cancelled = false;
         loop {
@@ -945,6 +1091,10 @@ async fn connect_and_publish(
                 }
                 next = rx.recv() => {
                     let Some(message) = next else { break };
+                    let message = if let Ok(mut frame) = bus::parse(&message) {
+                        frame.originate_mesh(&writer_node);
+                        frame.to_wire()
+                    } else { message };
                     // The flush itself must also be cancellable: §7.7 says
                     // nothing is written to a retired endpoint after
                     // `routing.reload_applied`, and a backpressured peer can
@@ -1059,6 +1209,22 @@ async fn connect_and_publish(
                 continue;
             }
 
+            if bus_msg.is_empty_message() {
+                continue;
+            }
+            let permitted = match context.mesh_peer() {
+                Some((node, _)) => {
+                    matches!(bus_msg.from_addr().and_then(BusTarget::parse), Some(BusTarget::Local(addr)) if addr.node == node)
+                }
+                None => false,
+            };
+            if !permitted {
+                tracing::info!(peer = %peer_name, address = %target, "dialled peer frame lacks authenticated from identity");
+                if state_read.read().await.frame_enforce {
+                    continue;
+                }
+            }
+
             // Only responses can satisfy a call. An event or inbound request
             // may legitimately carry an ID matching an unrelated request.
             if let Some(id) = bus_msg
@@ -1092,6 +1258,7 @@ async fn connect_and_publish(
             }
 
             let _ = incoming_tx.send(MeshInbound {
+                context: context.clone(),
                 peer: peer_name.clone(),
                 connection_generation: generation,
                 message: bus_msg,
@@ -1346,12 +1513,78 @@ mod tests {
         let (tx, _rx) = mpsc::unbounded_channel();
         let (cancel, _cancel_rx) = watch::channel(false);
         Arc::new(RemoteBroker {
+            context: Default::default(),
             target,
             generation: uuid::Uuid::new_v4(),
             tx,
             connected: Arc::new(AtomicBool::new(true)),
             cancel,
         })
+    }
+
+    #[tokio::test]
+    async fn exact_key_reconcile_retains_overlap_then_drops_only_revoked_generation() {
+        use std::collections::BTreeMap;
+        let endpoint = "192.0.2.2:4200".parse().unwrap();
+        let (mesh, _rx) = test_mesh_with_peer(peer("beta", endpoint));
+        let mut old = test_connection(endpoint);
+        Arc::get_mut(&mut old).unwrap().context.identity =
+            bus::native_session::PeerIdentity::MeshAdmitted {
+                node: "beta".into(),
+                key: [3; 32],
+                fingerprint: String::new(),
+                epoch: 1,
+                revision: 0,
+            };
+        mesh.state
+            .write()
+            .await
+            .connections
+            .insert("beta".into(), old.clone());
+        let keys = |include_old| {
+            let mut credentials = vec![
+                serde_json::json!({"kind":"d2", "pubkey":base64::engine::general_purpose::STANDARD.encode([4;32]),"from_epoch":1,"until_epoch":null}),
+            ];
+            if include_old {
+                credentials.push(serde_json::json!({"kind":"d2","pubkey":base64::engine::general_purpose::STANDARD.encode([3;32]),"from_epoch":1,"until_epoch":null}));
+            }
+            mesh_trust::identity::KeyAuthority::new(
+                &BTreeMap::from([(
+                    "beta".into(),
+                    serde_json::json!({"status":"active","bus":true,"credentials":credentials}),
+                )]),
+                2,
+                0,
+            )
+        };
+        let desired = HashMap::from([("beta".into(), endpoint)]);
+        let overlap = mesh
+            .reconcile_identity(
+                desired.clone(),
+                AuthorityRevision {
+                    epoch: 2,
+                    recovery_generation: 0,
+                },
+                keys(true),
+                "example.test".into(),
+            )
+            .await;
+        assert_eq!(overlap.connections_retained, 1);
+        let start = std::time::Instant::now();
+        let rotated = mesh
+            .reconcile_identity(
+                desired,
+                AuthorityRevision {
+                    epoch: 3,
+                    recovery_generation: 0,
+                },
+                keys(false),
+                "example.test".into(),
+            )
+            .await;
+        assert_eq!(rotated.connections_retired.len(), 1);
+        assert!(!old.connected.load(Ordering::Acquire));
+        assert!(start.elapsed() < Duration::from_secs(1));
     }
 
     #[tokio::test]
@@ -1598,6 +1831,7 @@ mod tests {
             .connections
             .insert("beta".into(), connection.clone());
         let inbound = MeshInbound {
+            context: Default::default(),
             peer: "beta".into(),
             connection_generation: connection.generation,
             message: BusMessage::new(),
@@ -1733,6 +1967,9 @@ mod tests {
             let second = next_bus_frame(&mut websocket).await;
             assert_ne!(first.get("id"), second.get("id"));
             for request in [second, first] {
+                assert_eq!(request.get("hop_limit"), Some("0"));
+                assert!(request.get("deadline").is_some());
+                assert!(request.get("request_id").is_some());
                 let response = BusMessage::new()
                     .with_header("type", "response")
                     .with_header("id", request.get("id").unwrap())
@@ -1748,6 +1985,7 @@ mod tests {
                 .with_header("type", "request")
                 .with_header("id", "1")
                 .with_header("command", command)
+                .with_header("request_id", command)
         };
         let calls = async {
             tokio::join!(
@@ -1761,6 +1999,7 @@ mod tests {
         for (reply, expected) in [(first.unwrap(), "first"), (second.unwrap(), "second")] {
             assert_eq!(reply.get("id"), Some("1"));
             assert_eq!(reply.body, expected);
+            assert_eq!(reply.get("request_id"), Some(expected));
         }
         server.await.unwrap();
     }
@@ -2047,6 +2286,8 @@ mod tests {
         let old = test_connection(target);
         let replacement = test_connection(target);
         let state = RwLock::new(TransportState {
+            frame_enforce: false,
+            keys: None,
             desired: HashMap::from([("beta".into(), target)]),
             revision: AuthorityRevision::default(),
             connections: HashMap::from([("beta".into(), replacement.clone())]),

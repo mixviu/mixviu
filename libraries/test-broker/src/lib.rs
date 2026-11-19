@@ -235,6 +235,7 @@ impl Broker {
                         mesh_config_path: None,
                         spec_dir: None,
                         admission_mode: config::node::AdmissionMode::Off,
+                        frame_policy: config::node::AdmissionMode::Observe,
                     },
                     tcp,
                     tx,

@@ -191,6 +191,7 @@ pub(crate) fn local_eligibility(view: &[RoutingMember], canonical_node: &str) ->
 /// classification, and both inventory-reporting commands.
 #[derive(Debug, Clone)]
 pub(crate) struct RoutingAuthority {
+    pub(crate) keys: mesh_trust::identity::KeyAuthority,
     pub(crate) posture: Posture,
     pub(crate) routes: RouterTable,
     self_eligibility: Option<LocalEligibility>,
@@ -240,7 +241,16 @@ impl RoutingAuthority {
             }
             Posture::Unverified { .. } => (RouterTable::fallback(etc_roster), None),
         };
+        let keys = match &posture {
+            Posture::Verified(a) => mesh_trust::identity::KeyAuthority::new(
+                &a.members_full,
+                a.epoch,
+                a.recovery_generation,
+            ),
+            Posture::Unverified { .. } => Default::default(),
+        };
         Self {
+            keys,
             posture,
             routes,
             self_eligibility,

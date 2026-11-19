@@ -3,17 +3,17 @@
 
 //! Where the broker is.
 //!
-//! Resolution order: `MIX_NODED_URL`; the node configuration file
+//! Resolution order: `MIX_NODED_URL`; `MIX_BUS_SOCKET`; the node configuration file
 //! (the shared `config::node::NodeConfigSearch`, also used for Unix socket
-//! and account settings); and finally the loopback broker. The
-//! fallback is loopback, never another node's address: an unconfigured node
-//! must fail to reach its own broker loudly rather than dial someone else's.
+//! and account settings); and finally the local Unix broker. Explicit TCP
+//! URLs are legacy and grant no node-local authority.
 
 use std::path::PathBuf;
 
 use strict::Value;
 
-/// The broker URL when nothing configures one.
+/// Legacy TCP endpoint for callers that explicitly request it.
+/// Local discovery uses the runtime Unix socket instead.
 pub const DEFAULT_NODED_URL: &str = "ws://127.0.0.1:4200/ws";
 
 const URL_VAR: &str = "MIX_NODED_URL";
@@ -27,19 +27,29 @@ pub fn noded_url() -> String {
     {
         return url;
     }
+    if let Ok(path) = std::env::var(paths::env::BUS_SOCKET)
+        && !path.is_empty()
+    {
+        return format!("unix://{path}");
+    }
     let (path, source) = match config::node::NodeConfigSearch::capture().read() {
         Ok(Some(source)) => source,
-        Ok(None) => return DEFAULT_NODED_URL.to_string(),
+        Ok(None) => return default_local_url(),
         Err(e) => {
             tracing::warn!(
                 error = %e,
-                "failed to read node config; using {DEFAULT_NODED_URL}"
+                "failed to read node config; using local Unix endpoint"
             );
-            return DEFAULT_NODED_URL.to_string();
+            return default_local_url();
         }
     };
     match strict::parse(&source) {
-        Ok(config) => match url_from_node_value(&config) {
+        Ok(config) => match config
+            .get("noded")
+            .and_then(|n| n.get("unix_socket"))
+            .and_then(Value::as_str)
+            .map(|path| format!("unix://{path}"))
+        {
             Some(url) => {
                 tracing::debug!(source = %path.display(), url = %url, "broker URL from node config");
                 url
@@ -47,20 +57,29 @@ pub fn noded_url() -> String {
             None => {
                 tracing::warn!(
                     source = %path.display(),
-                    "node config has no readable wg_ip/noded.port; using {DEFAULT_NODED_URL}"
+                    "node config has no explicit Unix socket; using local runtime endpoint"
                 );
-                DEFAULT_NODED_URL.to_string()
+                default_local_url()
             }
         },
         Err(e) => {
             tracing::warn!(
                 source = %path.display(),
                 error = %e,
-                "node config is not valid strict data; using {DEFAULT_NODED_URL}"
+                "node config is not valid strict data; using local Unix endpoint"
             );
-            DEFAULT_NODED_URL.to_string()
+            default_local_url()
         }
     }
+}
+
+fn default_local_url() -> String {
+    format!(
+        "unix://{}",
+        config::path(config::Dir::Run)
+            .join("noded/bus.sock")
+            .display()
+    )
 }
 
 /// The node configuration file to read, or `None` when no candidate exists.
@@ -98,16 +117,28 @@ fn candidate_paths(
         .unwrap()
 }
 
-/// The broker URL a node configuration describes: `ws://{wg_ip}:{port}/ws`,
-/// with loopback for a missing or empty `wg_ip` and 4200 for a missing
-/// `noded.port`. `None` when the text is not strict data or has neither
-/// key in a readable form.
+/// An endpoint explicitly described by a node configuration. A configured
+/// `noded.unix_socket` takes precedence. Older configurations describe legacy
+/// TCP as `ws://{wg_ip}:{port}/ws`, with loopback for a missing or empty
+/// `wg_ip` and 4200 for a missing `noded.port`. Such TCP URLs grant no local
+/// trust. [`noded_url`] uses only Unix settings for implicit local discovery.
+/// `None` when the document or explicit socket is invalid, or neither endpoint
+/// has readable settings.
 pub fn url_from_node_config(source: &str) -> Option<String> {
     url_from_node_value(&strict::parse(source).ok()?)
 }
 
 /// [`url_from_node_config`] on an already parsed document.
 fn url_from_node_value(config: &Value) -> Option<String> {
+    if let Some(socket) = config
+        .get("noded")
+        .and_then(|noded| noded.get("unix_socket"))
+    {
+        return socket
+            .as_str()
+            .filter(|path| std::path::Path::new(path).is_absolute())
+            .map(|path| format!("unix://{path}"));
+    }
     let wg_ip = config.get("wg_ip").and_then(Value::as_str);
     let port = config
         .get("noded")
@@ -134,6 +165,23 @@ fn port_of(value: &Value) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_unix_socket_precedes_legacy_tcp_and_must_be_absolute() {
+        assert_eq!(
+            url_from_node_config(
+                "wg_ip: '192.0.2.1'\nnoded: { port: 4300, unix_socket: '/run/example/bus.sock' }"
+            )
+            .as_deref(),
+            Some("unix:///run/example/bus.sock")
+        );
+        for socket in ["''", "'relative.sock'", "7"] {
+            assert_eq!(
+                url_from_node_config(&format!("noded: {{ port: 4300, unix_socket: {socket} }}")),
+                None
+            );
+        }
+    }
 
     #[test]
     fn reads_the_example_shape() {

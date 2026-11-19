@@ -6216,6 +6216,7 @@ dependencies = [
  "mesh-trust",
  "mimalloc",
  "notify",
+ "paths",
  "props",
  "rand 0.8.8",
  "serde",

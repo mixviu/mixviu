@@ -13,6 +13,13 @@ fn current_hook($id)
 end
 
 fn plan($desired, $hook_ref)
+  $normalised = []
+  for $id in $desired
+    $id = to_string($id)
+    if not re_match($id, "^[1-9][0-9]*$") then raise("HOOK_ID", "invalid CT id") end
+    if not contains($normalised, $id) then push($normalised, $id) end
+  end
+  $desired = $normalised
   $ids = $desired
   -- pct list includes stopped CTs too. Do not leave our hook on removed CTs.
   for $line in split(run_argv_must(["pct", "list"]), "\n")
@@ -35,6 +42,9 @@ end
 fn verify_hook($path)
   run_argv_must(["test", "-f", $path])
   run_argv_must(["test", "-x", $path])
+  -- Check the hook's managed shebang entrance, including broken symlinks.
+  run_argv_must(["test", "-f", "/usr/local/bin/mix"])
+  run_argv_must(["test", "-x", "/usr/local/bin/mix"])
 end
 
 fn check($source, $path, $updates)
@@ -56,16 +66,26 @@ fn activate($source, $path, $hook_ref, $updates)
   verify_hook($path)
 
   -- Phase 2 changes only the hook field through pct, never whole config files.
+  $completed = []
   for $update in $updates
+    try
     -- Recheck immediately before pct's locked/validated update. Refuse a hook
     -- another operator installed since preflight instead of replacing it.
-    if current_hook($update.id) != $update.old then die("CT " .. $update.id .. " hookscript changed since preflight; rerun installer") end
+    -- pct config hides the digest. Read hook and digest in one native PVE
+    -- API snapshot; pct set checks that digest under its own config lock.
+    $config = json_parse(run_argv_must(["pvesh", "get", "/nodes/localhost/lxc/" .. $update.id .. "/config", "--output-format", "json"]))
+    if ($config.hookscript ?? nil) != $update.old then raise("HOOK_RACE", "hookscript changed since preflight") end
+    if type($config.digest) != "string" or not re_match($config.digest, "^[0-9a-f]{40}$") then raise("HOOK_DIGEST", "missing config digest") end
     if $update.hook == nil then
-      run_argv_must(["pct", "set", $update.id, "--delete", "hookscript"])
+      run_argv_must(["pct", "set", $update.id, "--delete", "hookscript", "--digest", $config.digest])
     else
-      run_argv_must(["pct", "set", $update.id, "--hookscript", $hook_ref])
+      run_argv_must(["pct", "set", $update.id, "--hookscript", $hook_ref, "--digest", $config.digest])
     end
+    push($completed, $update.id)
     $changed = true
+    catch $err
+      raise("HOOK_PARTIAL", "CT " .. $update.id .. " failed; changed CTs: " .. json_encode($completed) .. "; rerun installer to converge: " .. to_string($err))
+    end
   end
   return $changed
 end

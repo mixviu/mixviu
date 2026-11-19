@@ -26,6 +26,7 @@ doctest = false
 
 [dependencies]
 logging.workspace = true
+paths = { path = "../../libraries/paths" }
 bus = { workspace = true, features = ["native"] }
 config.workspace = true
 props = { workspace = true, features = ["bus"] }

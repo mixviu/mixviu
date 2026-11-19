@@ -134,3 +134,24 @@ unshare are denied, or no real udevd message arrives; there is no fake fallback.
 Test-only edge programs: unshare, sleep, readlink, stdbuf, nsenter, udevadm.
 Live installation, trigger and physical replug acceptance belong to the
 orchestrator; no host or CT deployment is implied by these tests.
+# Installer reconciliation
+
+The host installer requires `pvesh` as well as `pct`. Immediately before each
+CT update it reads the hook and config digest together with
+`pvesh get /nodes/localhost/lxc/ID/config --output-format json`, then supplies
+that digest to `pct set`. Proxmox checks the digest under its config lock;
+a concurrent change is refused. No CT config file is rewritten directly.
+The executable hook and its `/usr/local/bin/mix` interpreter are checked
+before any CT update. Numeric and string CT ids identify the same CT.
+
+Updates across CTs are not transactional. A failure reports the failed CT
+and the list already changed; rerunning the installer converges without
+undoing successful updates or overwriting another operator's hook.
+
+The unit's `# mixviu-install: host-only` marker excludes it from the flat
+`share/mixviu/units` desk catalogue in `apps.tar`. Its service-specific
+template remains under `share/udev-forwarder/units` for explicit host installs.
+The full bundled layout render check runs in `tests/mix_services_bundle_test.mix`,
+called by `tools/mix_services_test.mix` in CI's `mix-services` stage and the
+`test`/`all` gate. It covers the current host, desk CT and desk migration root
+maps, native layout roots and relocated roots, and rejects a missing `lib`.

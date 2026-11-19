@@ -3,7 +3,7 @@
 $layout = require("../share/layout/files.mix")
 $tmp = env("TMPDIR", "/tmp") .. "/mix-service-bundle-" .. uuid()
 $repo = dirname(dirname(script_path()))
-$roots = {prefix: "/srv/fixture", etc: "/srv/fixture/etc", var: "/srv/fixture/var",
+$roots = {prefix: "/srv/fixture", lib: "/srv/fixture/lib", etc: "/srv/fixture/etc", var: "/srv/fixture/var",
   run: "/srv/fixture/run", cache: "/srv/fixture/cache", share: "/srv/fixture/share"}
 try
   mkdir($tmp .. "/source", {parents: true})
@@ -26,6 +26,44 @@ try
     end
   end
   print("PASS five bundled service units render without repository sources")
+  -- Full closure, not just the five services above. This runs in CI's
+  -- mix-services stage (also called by test/all and the PR CBC gate).
+  $layout.bundle($repo .. "/share/layout", $tmp .. "/full")
+  $maps = [
+    {name: "desk-ct/host-install/desk-roots", roots: {prefix:"/opt/mix", share:"/opt/mix/share", lib:"/opt/mix/lib", etc:"/opt/mix/etc", var:"/opt/mix/var", run:"/opt/mix/run", cache:"/opt/mix/cache"}},
+    {name: "layout-apply", roots: {}},
+    {name: "relocated", roots: $roots}
+  ]
+  for $name in ["prefix", "share", "lib", "etc", "var", "run", "cache"]
+    $maps[1].roots[$name] = mix_path($name, "", {tier:"system"})
+  end
+  for $installer in $maps
+    $rendered = $layout.plan($tmp .. "/full", $installer.roots)
+    if len($rendered) < 40 then raise("BUNDLE", "full layout closure missing") end
+    for $unit in $rendered
+      if contains($unit.text, "@{") then raise("BUNDLE", "unresolved " .. $installer.name .. ": " .. $unit.path) end
+      if ends_with($unit.path, "/host.tmpfiles.conf") then
+        for $root in ["run", "var"]
+          if not contains($unit.text, "d " .. $installer.roots[$root] .. "/session 0755 root root -") then raise("BUNDLE", "session root ownership") end
+        end
+      end
+    end
+    print("PASS full layout renders installer roots: " .. $installer.name)
+  end
+  $forwarder = read_file($repo .. "/services/udev-forwarder/units/udev-forwarder.service")
+  if $layout.desk_unit($forwarder) then raise("BUNDLE", "host-only forwarder entered desk unit catalogue") end
+  if not $layout.desk_unit(read_file($repo .. "/services/noded/units/noded@.service")) then raise("BUNDLE", "desk session unit excluded") end
+  -- Deliberately omit lib: the former desk installer map must fail, even
+  -- though none of the five service-only fixtures above needed that root.
+  $missing = {prefix:"/opt/mix", share:"/opt/mix/share", etc:"/opt/mix/etc", var:"/opt/mix/var", run:"/opt/mix/run", cache:"/opt/mix/cache"}
+  $rejected = false
+  try
+    $layout.plan($tmp .. "/full", $missing)
+  catch $err
+    $rejected = true
+  end
+  if not $rejected then raise("BUNDLE", "missing lib installer map accepted") end
+  print("PASS missing lib rejected; host-only unit excluded from desk catalogue")
 finally
   remove_dir($tmp)
 end

@@ -132,6 +132,8 @@ pub(crate) async fn bind(path: &Path) -> Result<(UnixListener, SocketGuard)> {
     }
     std::fs::set_permissions(
         format!("/proc/self/fd/{}", inode.as_raw_fd()),
+        // PR 3/4: confirm the production path/UID access policy for this
+        // shared local socket; retain existing permissions in this identity PR.
         std::fs::Permissions::from_mode(0o666),
     )?;
     let resolved = std::fs::symlink_metadata(guard.endpoint())?;

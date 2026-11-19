@@ -43,6 +43,99 @@ use crate::observe::{
 };
 use crate::protection::TrafficClass;
 
+#[path = "frame_policy.rs"]
+mod frame_policy;
+
+static FRAME_REFUSALS: std::sync::LazyLock<std::sync::Mutex<HashMap<&'static str, (u64, u64)>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// Startup-only operator policy; independent of D2 admission. Noded owns this
+/// key in NodedConfig's extension map so older config readers retain it.
+pub fn frame_policy_config(
+    config: &config::node::NodedConfig,
+    env: Option<&str>,
+) -> Result<AdmissionMode> {
+    let value = env
+        .filter(|value| !value.is_empty())
+        .map(|value| serde_json::Value::String(value.to_owned()))
+        .or_else(|| config.extra.get("frame_policy").cloned());
+    value
+        .map(serde_json::from_value)
+        .transpose()
+        .map(|mode| mode.unwrap_or(AdmissionMode::Observe))
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "noded.frame_policy / MIX_NODED_FRAME_POLICY must be off, observe or enforce"
+            )
+        })
+}
+
+/// Shared by unsolicited mesh ingress and solicited replies. Off preserves
+/// legacy delivery; observe reports every violation without dropping traffic.
+fn mesh_frame_allowed(
+    msg: &BusMessage,
+    peer: &str,
+    own: &str,
+    address: &str,
+    mode: AdmissionMode,
+) -> bool {
+    if mode == AdmissionMode::Off || msg.is_empty_message() {
+        return true;
+    }
+    let reason = if frame_policy::wrong_node(msg, own) {
+        Some("wrong-node-ingress")
+    } else if !frame_policy::from_peer(msg, peer) {
+        Some("from-node-mismatch")
+    } else {
+        None
+    };
+    if let Some(reason) = reason {
+        frame_refused(reason, peer, address, mode);
+        return mode != AdmissionMode::Enforce;
+    }
+    true
+}
+
+/// Every violation has a structured audit event; human-facing logs coalesce.
+fn frame_refused(reason: &'static str, peer: &str, address: &str, posture: AdmissionMode) {
+    tracing::debug!(
+        event = "frame.refused",
+        reason,
+        peer,
+        peer_address = address,
+        posture = admission_mode_str(posture),
+        "Inter-node frame policy"
+    );
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let count = {
+        let mut reasons = FRAME_REFUSALS
+            .lock()
+            .expect("frame refusal counters poisoned");
+        let (previous, count) = reasons.entry(reason).or_default();
+        *count += 1;
+        if now.saturating_sub(*previous) >= WARN_COALESCE_MS {
+            *previous = now;
+            Some(std::mem::take(count))
+        } else {
+            None
+        }
+    };
+    if let Some(count) = count {
+        tracing::info!(
+            event = "frame.refused",
+            reason,
+            peer,
+            peer_address = address,
+            posture = admission_mode_str(posture),
+            count,
+            "Inter-node frame refusals (coalesced)"
+        );
+    }
+}
+
 #[cfg(test)]
 #[path = "native_session_tests.rs"]
 mod native_session_tests;
@@ -151,6 +244,7 @@ struct PendingResponse {
     /// Exact recipient connection; a reused service name is not reply authority.
     responder_tx: mpsc::Sender<String>,
     caller_id: String,
+    caller_request_id: Option<String>,
     /// Original caller correlation captured before the broker rewrites `id`.
     /// Kept as an explicit observation field so a future correlation surface
     /// can diverge from the transport reply id without mining rewritten wire.
@@ -250,6 +344,7 @@ impl PendingResponseTable {
                 responder_tx: responder_tx.clone(),
                 observer_correlation_id: caller_id.clone(),
                 caller_id,
+                caller_request_id: msg.get("request_id").map(str::to_owned),
                 caller_service: caller_service.map(ToString::to_string),
                 class,
             },
@@ -361,6 +456,8 @@ impl PendingResponseTable {
 
 #[derive(Clone)]
 struct AppState {
+    d2_seed: Option<[u8; 32]>,
+    peer_context: bus::native_session::PeerContext,
     sessions: Arc<tokio::sync::Mutex<session::Sessions>>,
     protected_responses: Arc<AtomicBool>,
     native_session_endpoint: Option<PathBuf>,
@@ -410,6 +507,7 @@ struct AppState {
     /// (default) sends no challenge — behaviour-neutral. `observe` challenges +
     /// verdicts + logs but never refuses. Start-immutable.
     admission_mode: AdmissionMode,
+    frame_policy: AdmissionMode,
     /// SPEC 13 §9a B1 self-check (2-c-2b) — is the listener bound to this node's
     /// own WG/mesh IP? Start-immutable (the bind never changes at runtime). A
     /// fail-closed input to the enforce gate: a non-WG bind cannot hold the WG
@@ -421,8 +519,8 @@ struct AppState {
     /// SPEC 13 §9a (2-c-2c) — live ENFORCE-admitted inter-node sessions, keyed
     /// by session_id, so an inventory reload that revokes a member can close
     /// exactly that member's session (the §5.5 membership-recheck teardown).
-    /// Populated only on a successful enforce admit; same-node and refused
-    /// sessions are never tracked (no teardown). Empty in off/observe.
+    /// Populated on successful proof in every posture, before registration.
+    /// Unix and unauthenticated sessions need no key revocation tracking.
     live_sessions: Arc<RwLock<HashMap<String, GatedSession>>>,
 }
 
@@ -439,6 +537,7 @@ struct PendingMeshObservation {
 /// `select!`s on it, so `notify_one()` breaks the loop and drops the socket.
 #[derive(Clone)]
 struct GatedSession {
+    identity: bus::native_session::PeerIdentity,
     /// The cryptographically-proven member name established at admission — the
     /// key re-checked against the new inventory snapshot on reload.
     claimed_source_node: String,
@@ -480,7 +579,7 @@ impl SessionAdmission {
     fn apply(&mut self, outcome: AdmitOutcome) {
         self.response_seen = true;
         match outcome {
-            AdmitOutcome::Admit(node) => {
+            AdmitOutcome::Admit(node, _) => {
                 self.admitted_node = Some(node);
             }
             AdmitOutcome::Refuse(detail) => {
@@ -495,7 +594,7 @@ impl SessionAdmission {
 /// [`process_admit_response`] and folded into [`SessionAdmission`].
 enum AdmitOutcome {
     /// would-admit: the proof verified for this (proven) member name.
-    Admit(String),
+    Admit(String, bus::native_session::PeerIdentity),
     /// would-refuse: the §17 detail of why.
     Refuse(&'static str),
 }
@@ -514,6 +613,7 @@ pub struct RunConfig {
     pub mesh_config_path: Option<String>,
     pub spec_dir: Option<PathBuf>,
     pub admission_mode: AdmissionMode,
+    pub frame_policy: AdmissionMode,
 }
 
 pub async fn run(config: RunConfig, ready_tx: oneshot::Sender<()>) -> Result<()> {
@@ -549,6 +649,257 @@ pub async fn run_on(
     serve(config, Some(listener), ready_tx).await
 }
 
+async fn mesh_incoming_loop(
+    mut mesh_incoming_rx: mpsc::UnboundedReceiver<MeshInbound>,
+    mesh_for_incoming: Arc<MeshPeers>,
+    authority_for_mesh: Arc<ArcSwap<crate::routing::RoutingAuthority>>,
+    registry_for_mesh: Registry,
+    observe_for_mesh: Arc<ObserveManager>,
+    node_for_mesh: String,
+    frame_policy: AdmissionMode,
+) {
+    while let Some(inbound) = mesh_incoming_rx.recv().await {
+        if !mesh_for_incoming
+            .inbound_generation_is_current(&inbound.peer, inbound.connection_generation)
+            .await
+        {
+            tracing::debug!(
+                peer = %inbound.peer,
+                connection_generation = %inbound.connection_generation,
+                "Dropping inbound frame from retired mesh connection"
+            );
+            continue;
+        }
+        if inbound.message.is_empty_message() {
+            continue;
+        }
+        // PR 3/4: retain the generation fence; account for queued retired frames.
+        let authenticated_peer = inbound.context.mesh_peer().map(|(node, _)| node.to_owned());
+        if authenticated_peer.is_none() {
+            frame_refused(
+                if matches!(
+                    authority_for_mesh.load().posture,
+                    crate::authority::Posture::Verified(_)
+                ) {
+                    "peer-not-admitted"
+                } else {
+                    "no-identity-source"
+                },
+                "",
+                &format!("{:?}", inbound.context.address),
+                frame_policy,
+            );
+            if frame_policy == AdmissionMode::Enforce {
+                continue;
+            }
+        }
+        let peer = inbound.peer;
+        let connection_generation = inbound.connection_generation;
+        let mut msg = inbound.message;
+        let peer_address = inbound
+            .context
+            .address
+            .map(|address| address.to_string())
+            .unwrap_or_default();
+        if !mesh_frame_allowed(
+            &msg,
+            authenticated_peer.as_deref().unwrap_or(""),
+            &node_for_mesh,
+            &peer_address,
+            frame_policy,
+        ) {
+            continue;
+        }
+        strip_principal(&mut msg);
+        if broker_only_session_event(&msg) {
+            continue;
+        }
+        // Load once before any observation-only allocation. When false,
+        // mesh ingress still canonicalises and serialises exactly what
+        // delivery requires, but retains no correlation string or second
+        // wire copy for observation.
+        let observing = observe_for_mesh.is_active();
+        let target = msg.to_addr().unwrap_or("").to_string();
+        let correlation_id = if observing {
+            msg.get("id").map(ToString::to_string)
+        } else {
+            None
+        };
+        // Mesh ingress has no authenticated remote-service identity yet.
+        // Canonicalise before route classification so both accepted and
+        // route-rejected observations describe the broker-owned envelope.
+        msg.headers.remove("from");
+        let connection = msg.get("broker_connection").map(str::to_owned);
+        let protected = msg.get("broker_protected") == Some("true");
+        if let Some(authenticated) = &authenticated_peer {
+            stamp_mesh_connection(&mut msg, authenticated, connection.as_deref());
+        } else {
+            stamp_broker_origin(&mut msg, BrokerOrigin::Mesh);
+            msg.headers.remove("broker_peer");
+            msg.headers.remove("broker_connection");
+        }
+        let observe_for_mesh = observe_for_mesh.for_class(if protected {
+            TrafficClass::NativeSession
+        } else {
+            TrafficClass::Legacy
+        });
+        // SPEC 01 §4 cross-mesh routing is reserved-but-refused at the
+        // parser until federation transport exists; if a remote hub
+        // attempts to relay a `to: <local>@<fqdn>` address through this
+        // node, drop it here rather than dispatching the local half.
+        let parsed = BusTarget::parse(&target);
+        if matches!(parsed, Some(BusTarget::CrossMesh { .. })) {
+            tracing::warn!(
+                target = %target,
+                "Mesh ingress refused: cross-mesh routing not implemented"
+            );
+            if observing {
+                observe_for_mesh.observe(
+                    Observation::canonical(
+                        ObserveDirection::MeshIn,
+                        ObserveOutcome::Rejected,
+                        &msg,
+                        correlation_id.as_deref(),
+                    )
+                    .with_peer(&peer),
+                );
+            }
+            continue;
+        }
+        let service = match parsed {
+            // `<node>.bus` is the broker form per SPEC 01 §4.1 — the
+            // service is implicit `noded`. Without this default the
+            // dispatch would try to deliver to a local service named
+            // after the node, which is never registered.
+            Some(BusTarget::Local(addr)) => {
+                addr.service.clone().unwrap_or_else(|| "noded".to_string())
+            }
+            None => {
+                // Mirror the egress malformed-address logic: a parser
+                // rejection on a target that *looks* like an Bus
+                // address (contains `.` or `@`) must not fall through
+                // to local-service lookup — otherwise a remote (or
+                // older) broker relaying a SPEC-01-removed shape like
+                // `a.b.c.d.bus` or `maild@delta` could deliver to a
+                // locally-registered service with that literal name.
+                // We drop/log on ingress rather than synthesizing an
+                // error reply because the message originated on a
+                // remote noded — the local service isn't the right
+                // entity to send error responses back to that remote
+                // and there is no authenticated remote-service
+                // identity for one yet (SPEC 10 territory).
+                if target.contains('.') || target.contains('@') {
+                    tracing::warn!(
+                        target = %target,
+                        "Mesh ingress refused: malformed Bus target"
+                    );
+                    if observing {
+                        observe_for_mesh.observe(
+                            Observation::canonical(
+                                ObserveDirection::MeshIn,
+                                ObserveOutcome::Rejected,
+                                &msg,
+                                correlation_id.as_deref(),
+                            )
+                            .with_peer(&peer),
+                        );
+                    }
+                    continue;
+                }
+                target.clone()
+            }
+            // `BusTarget::CrossMesh` is already drained by the
+            // earlier `matches!` above; this arm is unreachable but
+            // satisfies the matcher exhaustiveness check.
+            Some(BusTarget::CrossMesh { .. }) => {
+                unreachable!("cross-mesh ingress already short-circuited above")
+            }
+        };
+
+        let (target_tx, target_class) = {
+            let registry = registry_for_mesh.read().await;
+            (
+                registry.get(&service).map(|entry| entry.tx.clone()),
+                registry
+                    .get(&service)
+                    .map(|entry| entry.traffic_class)
+                    .unwrap_or_default(),
+            )
+        };
+        let target_class = if protected {
+            TrafficClass::NativeSession
+        } else {
+            target_class
+        };
+        let observe_for_mesh = observe_for_mesh.for_class(target_class);
+        let mut observed_wire = None;
+        let outcome = if let Some(target_tx) = target_tx {
+            let canonical_wire = msg.to_wire();
+            let delivery_wire = if observing {
+                observed_wire = Some(canonical_wire.clone());
+                canonical_wire
+            } else {
+                canonical_wire
+            };
+            let Some(_inbound_fence) = mesh_for_incoming
+                .validate_inbound(&peer, connection_generation)
+                .await
+            else {
+                tracing::debug!(
+                    peer = %peer,
+                    connection_generation = %connection_generation,
+                    "Dropping inbound frame retired before final delivery"
+                );
+                continue;
+            };
+            match target_tx.try_send(delivery_wire) {
+                Ok(()) => ObserveOutcome::Delivered,
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    tracing::warn!(
+                        target = %service,
+                        "Mesh→local delivery dropped: peer outbound full"
+                    );
+                    ObserveOutcome::Dropped
+                }
+                Err(mpsc::error::TrySendError::Closed(_)) => {
+                    tracing::debug!(
+                        target = %service,
+                        "Mesh→local delivery failed: peer disconnected"
+                    );
+                    ObserveOutcome::Rejected
+                }
+            }
+        } else {
+            tracing::debug!(target = %service, "No local service for incoming mesh message");
+            ObserveOutcome::Rejected
+        };
+        if observing {
+            if let Some(canonical_wire) = observed_wire.as_deref() {
+                observe_for_mesh.observe(
+                    Observation::from_message(
+                        ObserveDirection::MeshIn,
+                        outcome,
+                        &msg,
+                        canonical_wire,
+                        correlation_id.as_deref(),
+                    )
+                    .with_peer(&peer),
+                );
+            } else {
+                observe_for_mesh.observe(
+                    Observation::canonical(
+                        ObserveDirection::MeshIn,
+                        outcome,
+                        &msg,
+                        correlation_id.as_deref(),
+                    )
+                    .with_peer(&peer),
+                );
+            }
+        }
+    }
+}
+
 async fn serve(
     config: RunConfig,
     bound: Option<tokio::net::TcpListener>,
@@ -565,7 +916,14 @@ async fn serve(
         mesh_config_path,
         spec_dir,
         admission_mode,
+        frame_policy,
     } = config;
+    tracing::info!(
+        event = "frame.policy",
+        posture = admission_mode_str(frame_policy),
+        admission = admission_mode_str(admission_mode),
+        "Inter-node frame policy (startup configuration)"
+    );
     anyhow::ensure!(
         pending_grants_per_parent <= 32,
         "noded.pending_grants_per_parent must be at most 32"
@@ -647,6 +1005,10 @@ async fn serve(
         listener_port,
         etc_roster.as_ref(),
     );
+    anyhow::ensure!(
+        frame_policy != AdmissionMode::Enforce || admit_verified,
+        "frame_policy enforce: no identity source (accepted inventory required)"
+    );
     let listener_endpoint_diverged = Arc::new(AtomicBool::new(false));
     emit_listener_endpoint_state(
         &initial_authority,
@@ -656,13 +1018,12 @@ async fn serve(
         false,
     );
 
-    let (mesh_incoming_tx, mut mesh_incoming_rx) = mpsc::unbounded_channel::<MeshInbound>();
+    let (mesh_incoming_tx, mesh_incoming_rx) = mpsc::unbounded_channel::<MeshInbound>();
+    let d2_seed = mesh_config.d2_seed;
     let mesh = Arc::new(MeshPeers::new(mesh_config, mesh_incoming_tx));
-    mesh.reconcile_endpoints(
-        initial_authority.routes.desired_endpoints(),
-        initial_authority.revision(),
-    )
-    .await;
+    mesh.set_frame_enforce(frame_policy == AdmissionMode::Enforce)
+        .await;
+    reconcile_transport_authority(&mesh, &initial_authority).await;
     let authority = Arc::new(ArcSwap::from_pointee(initial_authority));
 
     // SPEC 13 §9a (slice 2-c-1a) — emit the D2 admission posture so the
@@ -674,7 +1035,7 @@ async fn serve(
         &listen,
         wg_bound,
         admit_verified,
-        load_d2_seed(&d2_seed_path()).is_none(),
+        d2_seed.is_none(),
         admit_epoch,
         false,
     );
@@ -683,209 +1044,15 @@ async fn serve(
     let observe = ObserveManager::new();
     observe.spawn_drainer();
 
-    // Deliver messages from remote hubs to local services
-    let registry_for_mesh = registry.clone();
-    let observe_for_mesh = observe.clone();
-    let mesh_for_incoming = mesh.clone();
-    tokio::spawn(async move {
-        while let Some(inbound) = mesh_incoming_rx.recv().await {
-            if !mesh_for_incoming
-                .inbound_generation_is_current(&inbound.peer, inbound.connection_generation)
-                .await
-            {
-                tracing::debug!(
-                    peer = %inbound.peer,
-                    connection_generation = %inbound.connection_generation,
-                    "Dropping inbound frame from retired mesh connection"
-                );
-                continue;
-            }
-            let peer = inbound.peer;
-            let connection_generation = inbound.connection_generation;
-            let mut msg = inbound.message;
-            strip_principal(&mut msg);
-            if broker_only_session_event(&msg) {
-                continue;
-            }
-            // Load once before any observation-only allocation. When false,
-            // mesh ingress still canonicalises and serialises exactly what
-            // delivery requires, but retains no correlation string or second
-            // wire copy for observation.
-            let observing = observe_for_mesh.is_active();
-            let target = msg.to_addr().unwrap_or("").to_string();
-            let correlation_id = if observing {
-                msg.get("id").map(ToString::to_string)
-            } else {
-                None
-            };
-            // Mesh ingress has no authenticated remote-service identity yet.
-            // Canonicalise before route classification so both accepted and
-            // route-rejected observations describe the broker-owned envelope.
-            msg.headers.remove("from");
-            let connection = msg.get("broker_connection").map(str::to_owned);
-            let protected = msg.get("broker_protected") == Some("true");
-            stamp_mesh_connection(&mut msg, &peer, connection.as_deref());
-            let observe_for_mesh = observe_for_mesh.for_class(if protected {
-                TrafficClass::NativeSession
-            } else {
-                TrafficClass::Legacy
-            });
-            // SPEC 01 §4 cross-mesh routing is reserved-but-refused at the
-            // parser until federation transport exists; if a remote hub
-            // attempts to relay a `to: <local>@<fqdn>` address through this
-            // node, drop it here rather than dispatching the local half.
-            let parsed = BusTarget::parse(&target);
-            if matches!(parsed, Some(BusTarget::CrossMesh { .. })) {
-                tracing::warn!(
-                    target = %target,
-                    "Mesh ingress refused: cross-mesh routing not implemented"
-                );
-                if observing {
-                    observe_for_mesh.observe(
-                        Observation::canonical(
-                            ObserveDirection::MeshIn,
-                            ObserveOutcome::Rejected,
-                            &msg,
-                            correlation_id.as_deref(),
-                        )
-                        .with_peer(&peer),
-                    );
-                }
-                continue;
-            }
-            let service = match parsed {
-                // `<node>.bus` is the broker form per SPEC 01 §4.1 — the
-                // service is implicit `noded`. Without this default the
-                // dispatch would try to deliver to a local service named
-                // after the node, which is never registered.
-                Some(BusTarget::Local(addr)) => {
-                    addr.service.clone().unwrap_or_else(|| "noded".to_string())
-                }
-                None => {
-                    // Mirror the egress malformed-address logic: a parser
-                    // rejection on a target that *looks* like an Bus
-                    // address (contains `.` or `@`) must not fall through
-                    // to local-service lookup — otherwise a remote (or
-                    // older) broker relaying a SPEC-01-removed shape like
-                    // `a.b.c.d.bus` or `maild@delta` could deliver to a
-                    // locally-registered service with that literal name.
-                    // We drop/log on ingress rather than synthesizing an
-                    // error reply because the message originated on a
-                    // remote noded — the local service isn't the right
-                    // entity to send error responses back to that remote
-                    // and there is no authenticated remote-service
-                    // identity for one yet (SPEC 10 territory).
-                    if target.contains('.') || target.contains('@') {
-                        tracing::warn!(
-                            target = %target,
-                            "Mesh ingress refused: malformed Bus target"
-                        );
-                        if observing {
-                            observe_for_mesh.observe(
-                                Observation::canonical(
-                                    ObserveDirection::MeshIn,
-                                    ObserveOutcome::Rejected,
-                                    &msg,
-                                    correlation_id.as_deref(),
-                                )
-                                .with_peer(&peer),
-                            );
-                        }
-                        continue;
-                    }
-                    target.clone()
-                }
-                // `BusTarget::CrossMesh` is already drained by the
-                // earlier `matches!` above; this arm is unreachable but
-                // satisfies the matcher exhaustiveness check.
-                Some(BusTarget::CrossMesh { .. }) => {
-                    unreachable!("cross-mesh ingress already short-circuited above")
-                }
-            };
-
-            let (target_tx, target_class) = {
-                let registry = registry_for_mesh.read().await;
-                (
-                    registry.get(&service).map(|entry| entry.tx.clone()),
-                    registry
-                        .get(&service)
-                        .map(|entry| entry.traffic_class)
-                        .unwrap_or_default(),
-                )
-            };
-            let target_class = if protected {
-                TrafficClass::NativeSession
-            } else {
-                target_class
-            };
-            let observe_for_mesh = observe_for_mesh.for_class(target_class);
-            let mut observed_wire = None;
-            let outcome = if let Some(target_tx) = target_tx {
-                let canonical_wire = msg.to_wire();
-                let delivery_wire = if observing {
-                    observed_wire = Some(canonical_wire.clone());
-                    canonical_wire
-                } else {
-                    canonical_wire
-                };
-                let Some(_inbound_fence) = mesh_for_incoming
-                    .validate_inbound(&peer, connection_generation)
-                    .await
-                else {
-                    tracing::debug!(
-                        peer = %peer,
-                        connection_generation = %connection_generation,
-                        "Dropping inbound frame retired before final delivery"
-                    );
-                    continue;
-                };
-                match target_tx.try_send(delivery_wire) {
-                    Ok(()) => ObserveOutcome::Delivered,
-                    Err(mpsc::error::TrySendError::Full(_)) => {
-                        tracing::warn!(
-                            target = %service,
-                            "Mesh→local delivery dropped: peer outbound full"
-                        );
-                        ObserveOutcome::Dropped
-                    }
-                    Err(mpsc::error::TrySendError::Closed(_)) => {
-                        tracing::debug!(
-                            target = %service,
-                            "Mesh→local delivery failed: peer disconnected"
-                        );
-                        ObserveOutcome::Rejected
-                    }
-                }
-            } else {
-                tracing::debug!(target = %service, "No local service for incoming mesh message");
-                ObserveOutcome::Rejected
-            };
-            if observing {
-                if let Some(canonical_wire) = observed_wire.as_deref() {
-                    observe_for_mesh.observe(
-                        Observation::from_message(
-                            ObserveDirection::MeshIn,
-                            outcome,
-                            &msg,
-                            canonical_wire,
-                            correlation_id.as_deref(),
-                        )
-                        .with_peer(&peer),
-                    );
-                } else {
-                    observe_for_mesh.observe(
-                        Observation::canonical(
-                            ObserveDirection::MeshIn,
-                            outcome,
-                            &msg,
-                            correlation_id.as_deref(),
-                        )
-                        .with_peer(&peer),
-                    );
-                }
-            }
-        }
-    });
+    tokio::spawn(mesh_incoming_loop(
+        mesh_incoming_rx,
+        mesh.clone(),
+        authority.clone(),
+        registry.clone(),
+        observe.clone(),
+        node.clone(),
+        frame_policy,
+    ));
 
     let pending_responses: PendingResponses = Arc::new(PendingResponseTable::new());
     let tap_subscribers: TapSubscribers = Arc::new(RwLock::new(Vec::new()));
@@ -919,6 +1086,8 @@ async fn serve(
     let change_bus = crate::props::ChangeBus::new(broker.clone());
 
     let state = AppState {
+        d2_seed,
+        peer_context: Default::default(),
         session_admission: SessionAdmission::default(),
         sessions: Arc::new(tokio::sync::Mutex::new(
             session::Sessions::with_grant_limit(pending_grants_per_parent),
@@ -950,6 +1119,7 @@ async fn serve(
         listener_port,
         listener_endpoint_diverged,
         admission_mode,
+        frame_policy,
         wg_bound,
         challenge_table: Arc::new(crate::admission::ChallengeTable::new()),
         live_sessions: Arc::new(RwLock::new(HashMap::new())),
@@ -993,10 +1163,8 @@ async fn serve(
         }
     });
 
-    // SPEC 13 §7.7 (2-c-0b) — hot-reload the authority posture on
-    // `inventory.signed` change. off/observe grandfather every live session
-    // (outside the §14 gate); under enforce (2-c-2c) a revocation delta closes
-    // the affected member's live sessions (the §5.5 membership-recheck teardown).
+    // Reconcile exact-key transport generations on every accepted reload,
+    // independently of frame and registration postures.
     spawn_inventory_reload_watcher(state.clone());
 
     // SPEC 07 §5.2 — seed `world.specs.<n>` retained topics at startup.
@@ -1014,10 +1182,7 @@ async fn serve(
     let _ = ready_tx.send(());
 
     // SPEC 13 §9a (2-c-2a) — serve WITH connect-info so each accepted socket
-    // carries its peer's source address. The source IP is the trustworthy
-    // correlator on a would-refuse (the claimed `source_node` is unverified
-    // there) and the input to the same-node-origin classifier the enforce gate
-    // (2-c-2b) uses — never the proof, only the local-vs-network boundary.
+    // carries its real address for audit. It grants no identity or local trust.
     // Nagle off on every accepted socket: a reply or delivery written in two
     // parts otherwise waits on the peer's delayed ACK (40 ms on Linux).
     let listener = axum::serve::ListenerExt::tap_io(listener, |tcp| {
@@ -1320,26 +1485,6 @@ fn admission_effective(
     }
 }
 
-/// SPEC 13 §9a §4 (2-c-2b) — the local-vs-network boundary, NOT the proof. A
-/// session is **same-node** (ungated; a local citizen registering a service)
-/// iff its source is loopback or this broker's OWN bind IP. Every other WG `/24`
-/// address (the hub, any peer) is **inter-node** and gated. This never
-/// identifies WHICH member and never substitutes for the Ed25519 signature, so
-/// it does not reintroduce source-IP-as-proof / per-`/32` pinning. It is sound
-/// only because under the deployed WG path a remote peer's source is its
-/// WG-authenticated `/24` IP — never loopback, never the broker's own bind IP (a
-/// peer can't forge another's tunnel IP nor source from loopback). The non-WG
-/// bind that could see spoofable off-mesh source IPs is exactly the
-/// [`enforce_refuses_all`] `non-wg-bind` fail-closed condition.
-fn is_same_node_origin(src: std::net::IpAddr, bind: &str) -> bool {
-    if src.is_loopback() {
-        return true;
-    }
-    bind.parse::<std::net::SocketAddr>()
-        .map(|a| a.ip() == src)
-        .unwrap_or(false)
-}
-
 /// The register-time enforce decision (SPEC 13 §9a, 2-c-2b) for one
 /// `noded.register` under `mesh.admission=enforce`. Pure over its inputs so the
 /// entire security matrix is unit-testable — a loopback test client would
@@ -1371,8 +1516,8 @@ enum RegisterGate {
 /// vocabulary is the ratified §17 set only.
 #[allow(clippy::too_many_arguments)]
 fn register_gate_decision(
-    source_ip: std::net::IpAddr,
-    bind: &str,
+    local_unix: bool,
+    _bind: &str,
     configured: AdmissionMode,
     wg_bound: bool,
     verified: bool,
@@ -1385,7 +1530,7 @@ fn register_gate_decision(
         return RegisterGate::Ungated;
     }
     // §4 same-node citizens are ungated (a service has no d2 identity).
-    if is_same_node_origin(source_ip, bind) {
+    if local_unix {
         return RegisterGate::Ungated;
     }
     // Inter-node → gated. Emit the synthetic observed only when no admit
@@ -1646,12 +1791,14 @@ async fn process_admit_response(
             }
         };
     let digest = crate::admission::canon_digest(&proof.transcript);
+    let identity = snap.keys.prove(&proof.transcript, &proof.signature);
     let (verdict, detail) = match a.members_full.get(&proof.claimed_source_node) {
         None => ("would-refuse", "no-current-d2-credential"),
         Some(member) => {
             match mesh_trust::admission::admit(member, &proof.transcript, &proof.signature, a.epoch)
             {
-                Ok(()) => ("would-admit", ""),
+                Ok(()) if identity.is_some() => ("would-admit", ""),
+                Ok(()) => ("would-refuse", "no-current-d2-credential"),
                 Err(e) => ("would-refuse", crate::admission::verdict_detail(&e)),
             }
         }
@@ -1667,7 +1814,10 @@ async fn process_admit_response(
         &digest,
     );
     Some(if verdict == "would-admit" {
-        AdmitOutcome::Admit(proof.claimed_source_node)
+        match identity {
+            Some(identity) => AdmitOutcome::Admit(proof.claimed_source_node, identity),
+            None => AdmitOutcome::Refuse("no-current-d2-credential"),
+        }
     } else {
         AdmitOutcome::Refuse(detail)
     })
@@ -1689,13 +1839,8 @@ fn reload_keeps_last_good(
 /// hot-reload the authority posture + route table on change, reusing the SAME
 /// [`crate::authority::load_and_verify`] (no second verify path) and **never
 /// downgrading** a `Verified` posture to `Unverified` on a bad/partial push.
-/// In `off`/`observe` this grandfathers every live session — it swaps the
-/// in-memory snapshot consumed by admission, routing, `noded.inventory`, and
-/// `noded.peers`. D1.4 reconciles outbound transports before publishing that
-/// snapshot. The deployed `enforce` path below also performs 2-c-2c inbound
-/// revocation teardown,
-/// despite older §14 planning text that still calls activation blocked. D1.4
-/// does not widen it. Watch failures are non-fatal: the node keeps
+/// Outbound transports are reconciled before publication; inbound exact-key
+/// teardown follows it in every posture. Watch failures are non-fatal: the node keeps
 /// the start-time posture and logs a warning. **Known limitation:** if the
 /// watched parent dir is *removed and recreated*, the inotify watch is not
 /// re-established and reload goes quiet until the daemon restarts (the error is
@@ -1774,6 +1919,28 @@ fn spawn_inventory_reload_watcher(state: AppState) {
     });
 }
 
+/// Only verified authority enables reverse proof; unverified routing stays legacy.
+async fn reconcile_transport_authority(
+    mesh: &MeshPeers,
+    authority: &crate::routing::RoutingAuthority,
+) -> ReconcileReport {
+    match &authority.posture {
+        crate::authority::Posture::Verified(a) => {
+            mesh.reconcile_identity(
+                authority.routes.desired_endpoints(),
+                authority.revision(),
+                authority.keys.clone(),
+                a.mesh.clone(),
+            )
+            .await
+        }
+        crate::authority::Posture::Unverified { .. } => {
+            mesh.reconcile_endpoints(authority.routes.desired_endpoints(), authority.revision())
+                .await
+        }
+    }
+}
+
 /// Apply one verified reload as a transport-and-authority transaction. The
 /// transport fence precedes authority publication; inbound enforce teardown
 /// completes before the §17 applied events make the new state externally
@@ -1801,10 +1968,7 @@ async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture
 
     // D1.4 §7.7 ordering fence: transport first, then the coherent authority
     // snapshot, then inbound session teardown, then observable applied events.
-    let report = state
-        .mesh
-        .reconcile_endpoints(next.routes.desired_endpoints(), next.revision())
-        .await;
+    let report = reconcile_transport_authority(&state.mesh, &next).await;
     {
         let _fence = state
             .delivery_fence
@@ -1812,9 +1976,7 @@ async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture
             .expect("delivery fence poisoned");
         state.authority.store(next.clone());
     }
-    if state.admission_mode == AdmissionMode::Enforce
-        && let crate::authority::Posture::Verified(accepted) = &next.posture
-    {
+    if let crate::authority::Posture::Verified(accepted) = &next.posture {
         reload_revocation_teardown(state, accepted).await;
     }
 
@@ -1825,7 +1987,7 @@ async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture
         &state.bind,
         state.wg_bound,
         verified,
-        load_d2_seed(&d2_seed_path()).is_none(),
+        state.d2_seed.is_none(),
         epoch,
         true,
     );
@@ -1888,6 +2050,7 @@ fn emit_routing_reload_applied(report: &ReconcileReport, revision: mesh::Authori
 /// overlap where `select_d2_pubkeys` returns both keys, and a plain epoch bump
 /// with the credential still valid — both grandfather). A removed member maps to
 /// `source-tombstoned` (no §17 "removed" value exists; it is no longer a member).
+#[cfg(test)]
 fn reload_revoke_detail(
     member: Option<&serde_json::Value>,
     new_epoch: u64,
@@ -1908,6 +2071,38 @@ fn reload_revoke_detail(
     None
 }
 
+/// Recheck exact-key authority under the delivery fence at both tracking sites.
+async fn track_mesh_session(
+    state: &AppState,
+    id: &str,
+    address: &str,
+    tx: &mpsc::Sender<String>,
+    close: &Arc<tokio::sync::Notify>,
+) -> bool {
+    let Some((node, key)) = state.peer_context.mesh_peer() else {
+        return true;
+    };
+    let mut live = state.live_sessions.write().await;
+    let _fence = state
+        .delivery_fence
+        .read()
+        .expect("delivery fence poisoned");
+    if !state.authority.load().keys.contains(node, key) {
+        return false;
+    }
+    live.insert(
+        id.to_owned(),
+        GatedSession {
+            identity: state.peer_context.identity.clone(),
+            claimed_source_node: node.to_owned(),
+            source_ip: address.to_owned(),
+            tx: tx.clone(),
+            close: close.clone(),
+        },
+    );
+    true
+}
+
 /// SPEC 13 §5.5 (2-c-2c) — close every live enforce-admitted session whose
 /// member failed the [`reload_revoke_detail`] re-check against the new snapshot
 /// `a`. For each: drain its in-flight rpcs and emit one
@@ -1924,8 +2119,14 @@ async fn reload_revocation_teardown(state: &AppState, a: &crate::authority::Acce
         let live = state.live_sessions.read().await;
         live.iter()
             .filter_map(|(sid, s)| {
-                reload_revoke_detail(a.members_full.get(&s.claimed_source_node), a.epoch)
-                    .map(|detail| (sid.clone(), s.clone(), detail))
+                let keys = &state.authority.load().keys;
+                let current = match &s.identity {
+                    bus::native_session::PeerIdentity::MeshAdmitted { node, key, .. } => {
+                        keys.contains(node, key)
+                    }
+                    _ => false,
+                };
+                (!current).then(|| (sid.clone(), s.clone(), "exact-key-revoked"))
             })
             .collect()
     };
@@ -1967,8 +2168,9 @@ async fn reload_revocation_teardown(state: &AppState, a: &crate::authority::Acce
 async fn ws_handler(
     ws: WebSocketUpgrade,
     ConnectInfo(peer): ConnectInfo<std::net::SocketAddr>,
-    State(state): State<AppState>,
+    State(mut state): State<AppState>,
 ) -> impl IntoResponse {
+    state.peer_context.address = Some(peer);
     let source_ip = peer.ip();
     // Bound the per-message / per-frame size a mesh peer can send before
     // we buffer + parse it. axum's defaults (64 MiB message / 16 MiB
@@ -2070,15 +2272,65 @@ fn invalid_bootstrap_envelope(text: &str, command: &str) -> BusMessage {
     message
 }
 
+fn reverse_identity_answer(
+    state: &AppState,
+    message: &BusMessage,
+    registered: bool,
+    answered: &mut bool,
+) -> Option<String> {
+    if *answered || registered {
+        return None;
+    }
+    let body: serde_json::Value = serde_json::from_str(&message.body).ok()?;
+    let authority = state.authority.load_full();
+    let crate::authority::Posture::Verified(a) = &authority.posture else {
+        return None;
+    };
+    let (node, key) = state.peer_context.mesh_peer()?;
+    if !authority.keys.contains(node, key)
+        || body["verifying_broker_node"].as_str() != Some(node)
+        || body["mesh_fqdn"].as_str() != Some(a.mesh.as_str())
+        || body["inventory_epoch"].as_u64() != Some(a.epoch)
+    {
+        return None;
+    }
+    let wire = mesh::build_admit_response(message, &state.node_name, &state.d2_seed)?;
+    let mut response = bus::parse(&wire).ok()?;
+    response.set("command", "noded.identity.response");
+    *answered = true;
+    Some(response.to_wire())
+}
+
+async fn queue_identity_answer(
+    tx: &mpsc::Sender<String>,
+    wire: String,
+    close: &tokio::sync::Notify,
+) -> bool {
+    tokio::select! {
+        biased;
+        _ = close.notified() => false,
+        result = tokio::time::timeout(std::time::Duration::from_secs(1), tx.send(wire)) => matches!(result, Ok(Ok(()))),
+    }
+}
+
 async fn handle_socket(socket: WebSocket, mut state: AppState, transport: TransportIdentity) {
     // Shared with every alias registered on this connection, never with a
     // successor connection. No clock or correlation cleanup clears this bit.
     state.protected_responses = Default::default();
+    state.peer_context.identity = match &transport {
+        TransportIdentity::LocalUnix { uid, peer_pid, .. } => {
+            bus::native_session::PeerIdentity::UnixPeer {
+                uid: *uid,
+                pid: *peer_pid,
+            }
+        }
+        TransportIdentity::Mesh { admission, .. } => admission.identity.clone(),
+        _ => bus::native_session::PeerIdentity::Unauthenticated,
+    };
     if matches!(&transport, TransportIdentity::LocalUnix { .. }) {
         state.observe = state.observe.for_class(TrafficClass::NativeSession);
     }
-    // Preserve the existing IP-based D2 and broker-origin inputs. Unix callers
-    // are local; their UID authority is a separate transport assertion.
+    // Source addresses are diagnostics only. Identity lives in peer_context.
     let source_ip = match &transport {
         TransportIdentity::LegacyTcp { source_ip } | TransportIdentity::Mesh { source_ip, .. } => {
             *source_ip
@@ -2087,8 +2339,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     };
     let (mut ws_sink, mut ws_stream) = socket.split();
     // The source address as a string for §17 event fields (2-c-2a) — the
-    // trustworthy correlator on a would-refuse and the same-node classifier
-    // input for the enforce gate (2-c-2b).
+    // audit correlator on a would-refuse, never an authentication input.
     let source_ip_str = source_ip.to_string();
 
     let (tx, mut rx) = mpsc::channel::<String>(PEER_OUTBOUND_BUFFER);
@@ -2105,6 +2356,12 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         .open_outbox(channel_id, &tx, notice_wake.clone());
     let writer_sessions = state.sessions.clone();
     let writer_epoch = state.broker_epoch;
+    // A legacy unauthenticated client receives no broker mesh assertion.
+    // This flag must follow admission, which completes after the writer starts.
+    // PR 3/4: stamps remain valid only until revocation teardown completes.
+    let writer_admitted = Arc::new(AtomicBool::new(state.peer_context.mesh_peer().is_some()));
+    let writer_context = writer_admitted.clone();
+    let writer_node = state.node_name.clone();
     let send_task = tokio::spawn(async move {
         loop {
             let msg = tokio::select! {
@@ -2121,6 +2378,16 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     continue;
                 },
                 msg = rx.recv() => match msg { Some(msg) => msg, None => break },
+            };
+            let msg = if writer_context.load(Ordering::Acquire) {
+                if let Ok(mut frame) = bus::parse(&msg) {
+                    frame.originate_mesh(&writer_node);
+                    frame.to_wire()
+                } else {
+                    msg
+                }
+            } else {
+                msg
             };
             if ws_sink.send(Message::Text(msg.into())).await.is_err() {
                 break;
@@ -2167,7 +2434,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     // rides the per-session `tx`, so it serialises ahead of any later reply.
     // `challenge_id` is held only to reap the entry on socket close.
     let mut challenge_id: Option<String> = None;
-    if state.admission_mode != AdmissionMode::Off && state.principal.is_none() {
+    if !state.peer_context.is_local() {
         // Snapshot the epoch + mesh, then DROP the authority guard before the
         // awaited `issue()` (don't pin the Arc across the await).
         let inputs = match &state.authority.load().posture {
@@ -2191,6 +2458,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         }
     }
 
+    let mut reverse_answered = false;
     let connection_observe = state.observe.clone();
     loop {
         // SPEC 13 §9a (2-c-2c) — read the next frame OR honour a reload-teardown
@@ -2239,6 +2507,61 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             }
         };
 
+        if bus_msg.is_empty_message() {
+            continue;
+        }
+        if bus_msg.command_name() == Some("noded.identity.challenge") {
+            if let Some(wire) = reverse_identity_answer(
+                &state,
+                &bus_msg,
+                service_name.is_some(),
+                &mut reverse_answered,
+            ) && !queue_identity_answer(&tx, wire, &close_signal).await
+            {
+                tracing::warn!("reverse identity answer could not be queued; closing session");
+                break;
+            }
+            continue;
+        }
+        let admission_bootstrap = bus_msg.command_name() == Some("noded.admit.response")
+            && service_name.is_none()
+            && !state.session_admission.response_seen
+            && state.session_admission.admitted_node.is_none();
+
+        // Gate before native commands, response correlation, subscriptions or
+        // any other delivery side effect. Only the admission proof itself is
+        // permitted before registration (it is consumed below).
+        if !state.peer_context.is_local()
+            && state.frame_policy != AdmissionMode::Off
+            && !admission_bootstrap
+        {
+            let peer = admitted_delivery_peer(&state, source_ip);
+            let no_source = !matches!(
+                state.authority.load().posture,
+                crate::authority::Posture::Verified(_)
+            );
+            if let Some(reason) =
+                frame_policy::session_refusal(&bus_msg, peer.as_deref(), service_name.as_deref())
+                    .or_else(|| {
+                        frame_policy::wrong_node(&bus_msg, &state.node_name)
+                            .then_some("wrong-node-ingress")
+                    })
+            {
+                frame_refused(
+                    if no_source && peer.is_none() {
+                        "no-identity-source"
+                    } else {
+                        reason
+                    },
+                    peer.as_deref().unwrap_or(""),
+                    &source_ip_str,
+                    state.frame_policy,
+                );
+                if state.frame_policy == AdmissionMode::Enforce {
+                    break;
+                }
+            }
+        }
         strip_principal(&mut bus_msg);
         let response_class = if bus_msg.message_type() == Some("response") {
             if let Some(id) = bus_msg.get("id") {
@@ -2366,6 +2689,17 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         // `type:response`, so it MUST be intercepted by command HERE, before the
         // pending-response orphan path below would `take()`-and-drop it.
         if bus_msg.command_name() == Some("noded.admit.response") {
+            // A late proof is never allowed to reset established admission.
+            if !admission_bootstrap {
+                canonicalize_connection_from(&mut bus_msg, service_name.as_deref());
+                state.observe.observe(Observation::canonical(
+                    ObserveDirection::Local,
+                    ObserveOutcome::Rejected,
+                    &bus_msg,
+                    bus_msg.get("id"),
+                ));
+                continue;
+            }
             let outcome = process_admit_response(
                 &state,
                 &bus_msg,
@@ -2376,7 +2710,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             .await;
             let observing = state.observe.is_active();
             let observed_outcome = if observing {
-                Some(if matches!(outcome, Some(AdmitOutcome::Admit(_))) {
+                Some(if matches!(outcome, Some(AdmitOutcome::Admit(_, _))) {
                     ObserveOutcome::BrokerHandled
                 } else {
                     ObserveOutcome::Rejected
@@ -2385,7 +2719,17 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 None
             };
             if let Some(outcome) = outcome {
+                if let AdmitOutcome::Admit(_, identity) = &outcome {
+                    state.peer_context.identity = identity.clone();
+                } else {
+                    state.peer_context.identity =
+                        bus::native_session::PeerIdentity::Unauthenticated;
+                }
                 state.session_admission.apply(outcome);
+                writer_admitted.store(state.peer_context.mesh_peer().is_some(), Ordering::Release);
+                if !track_mesh_session(&state, &anon_id, &source_ip_str, &tx, &close_signal).await {
+                    break;
+                }
             }
             if let Some(observed_outcome) = observed_outcome {
                 canonicalize_connection_from(&mut bus_msg, service_name.as_deref());
@@ -2434,12 +2778,15 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     } else {
                         None
                     };
+                    if let Some(request_id) = &pending.caller_request_id {
+                        bus_msg.set("request_id", request_id);
+                    }
                     let wire = canonicalize_correlated_response(
                         &mut bus_msg,
                         &pending.caller_id,
                         service_name.as_deref(),
                         pending.caller_service.as_deref(),
-                        broker_origin_for_delivery(source_ip, &state.bind),
+                        broker_origin_from_context(&state.peer_context),
                         principal.as_ref().filter(|_| pending.caller_verified),
                     );
                     if observe.is_active() {
@@ -2645,14 +2992,16 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                         crate::authority::Posture::Verified(a) => (true, a.epoch),
                         crate::authority::Posture::Unverified { .. } => (false, 0),
                     };
+                    let mut current_admission = state.session_admission.clone();
+                    current_admission.admitted_node = admitted_delivery_peer(&state, source_ip);
                     match register_gate_decision(
-                        source_ip,
+                        state.peer_context.is_local(),
                         &state.bind,
                         state.admission_mode,
                         state.wg_bound,
                         verified,
                         &from,
-                        &state.session_admission,
+                        &current_admission,
                     ) {
                         RegisterGate::Ungated => {
                             tracing::debug!(
@@ -2661,19 +3010,18 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                             );
                         }
                         RegisterGate::Admit(node) => {
+                            if !track_mesh_session(
+                                &state,
+                                &anon_id,
+                                &source_ip_str,
+                                &tx,
+                                &close_signal,
+                            )
+                            .await
+                            {
+                                break;
+                            }
                             emit_admission_admitted(&state, &node, &source_ip_str, epoch, &anon_id);
-                            // SPEC 13 §5.5 (2-c-2c) — track this live gated
-                            // session so a revocation reload can close it. Keyed
-                            // by session_id; a re-register refreshes the entry.
-                            state.live_sessions.write().await.insert(
-                                anon_id.clone(),
-                                GatedSession {
-                                    claimed_source_node: node,
-                                    source_ip: source_ip_str.clone(),
-                                    tx: tx.clone(),
-                                    close: close_signal.clone(),
-                                },
-                            );
                         }
                         RegisterGate::Refuse {
                             detail,
@@ -2780,7 +3128,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     };
                     stamp_broker_origin(
                         &mut bus_msg,
-                        broker_origin_for_delivery(source_ip, &state.bind),
+                        broker_origin_from_context(&state.peer_context),
                     );
                     bus_msg.set("broker_connection", &broker_connection);
                     if let Some(peer) = admitted_peer {
@@ -2837,7 +3185,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     None
                 };
                 canonicalize_routed_from_in_place(&mut bus_msg, service_name.as_deref());
-                let origin = broker_origin_for_delivery(source_ip, &state.bind);
+                let origin = broker_origin_from_context(&state.peer_context);
                 stamp_broker_origin(&mut bus_msg, origin);
                 bus_msg.set("broker_connection", &broker_connection);
                 let canonical_text = bus_msg.to_wire();
@@ -2887,6 +3235,26 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 }
             }
             Route::RemoteMesh { target } => {
+                if !state.peer_context.is_local() && state.frame_policy != AdmissionMode::Off {
+                    frame_refused(
+                        "remote-origin-relay",
+                        state
+                            .peer_context
+                            .mesh_peer()
+                            .map(|(node, _)| node)
+                            .unwrap_or(""),
+                        &source_ip_str,
+                        state.frame_policy,
+                    );
+                    if state.frame_policy == AdmissionMode::Enforce {
+                        break;
+                    }
+                }
+                // Check only; MeshPeers::call/send owns the single decrement.
+                if let Err(reason) = bus_msg.check_mesh_forward() {
+                    frame_refused(reason, target.name(), &source_ip_str, state.frame_policy);
+                    continue;
+                }
                 canonicalize_routed_from_in_place(&mut bus_msg, service_name.as_deref());
                 bus_msg.set("broker_connection", &broker_connection);
                 if state.observe.traffic_class().protected()
@@ -2896,7 +3264,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 }
                 // Only a local registered source acquires a direct-hop service
                 // assertion. A relay cannot borrow this node's clipboard grant.
-                if is_same_node_origin(source_ip, &state.bind)
+                if state.peer_context.is_local()
                     && let Some(service) = service_name.as_deref()
                     && valid_service_name(service)
                     && state
@@ -2926,10 +3294,23 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 let tx_clone = tx.clone();
                 let mesh = state.mesh.clone();
                 let peer = target.into_peer();
+                let response_peer = peer.name.clone();
+                let response_address = peer.noded_addr().to_string();
+                let response_mode = state.frame_policy;
+                let response_node = state.node_name.clone();
                 let msg_id = bus_msg.get("id").map(|s| s.to_string());
                 tokio::spawn(async move {
                     match mesh.call(peer, bus_msg).await {
                         Ok(mut resp) => {
+                            if !mesh_frame_allowed(
+                                &resp,
+                                &response_peer,
+                                &response_node,
+                                &response_address,
+                                response_mode,
+                            ) {
+                                return;
+                            }
                             if let Some(observation) = pending_observation.as_ref() {
                                 observation.manager.observe(
                                     Observation::from_message(
@@ -3097,7 +3478,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     // reload teardown that selected this session already drained its pending +
     // removed it (so the §14 drain below finds none → no duplicate fate emit);
     // a natural disconnect removes it here. Harmless no-op for an untracked
-    // (same-node / observe / never-admitted) session.
+    // (Unix / never-admitted) session.
     state.live_sessions.write().await.remove(&anon_id);
 
     // SPEC 13 §14 / §7.8 B3 — delivery-on-reconnect instrumentation (slice
@@ -3335,6 +3716,14 @@ fn next_broker_connection(epoch: HexBytes<16>) -> String {
     format!("{epoch}-{counter}")
 }
 
+fn broker_origin_from_context(context: &bus::native_session::PeerContext) -> BrokerOrigin {
+    if context.is_local() {
+        BrokerOrigin::Local
+    } else {
+        BrokerOrigin::Mesh
+    }
+}
+
 fn valid_connection_stamp(id: &str) -> bool {
     !id.is_empty() && id.len() <= 192 && id.bytes().all(|b| b.is_ascii_graphic())
 }
@@ -3348,54 +3737,16 @@ fn stamp_mesh_connection(message: &mut BusMessage, peer: &str, connection: Optio
     }
 }
 
-fn broker_origin_for_delivery(source_ip: std::net::IpAddr, bind: &str) -> BrokerOrigin {
-    if is_same_node_origin(source_ip, bind) {
-        BrokerOrigin::Local
-    } else {
-        BrokerOrigin::Mesh
-    }
-}
-
 /// Caller holds delivery_fence through enqueue and the registry read lock
 /// proving that the registered bridge still belongs to this connection.
-fn admitted_delivery_peer(state: &AppState, source_ip: std::net::IpAddr) -> Option<String> {
-    let authority = state.authority.load();
-    let crate::authority::Posture::Verified(accepted) = &authority.posture else {
-        return None;
-    };
-    if !is_same_node_origin(source_ip, &state.bind) {
-        let peer = accepted
-            .routing_view
-            .iter()
-            .find_map(|member| match member {
-                crate::authority::RoutingMember::ActiveBus { name, mesh_ip, .. }
-                    if *mesh_ip == source_ip =>
-                {
-                    Some(name.clone())
-                }
-                _ => None,
-            })?;
-        if state.admission_mode == AdmissionMode::Enforce
-            && !matches!(
-                register_gate_decision(
-                    source_ip,
-                    &state.bind,
-                    state.admission_mode,
-                    state.wg_bound,
-                    true,
-                    &format!("bridge-{peer}"),
-                    &state.session_admission
-                ),
-                RegisterGate::Admit(_)
-            )
-        {
-            return None;
-        }
-        return reload_revoke_detail(accepted.members_full.get(&peer), accepted.epoch)
-            .is_none()
-            .then_some(peer);
-    }
-    None
+fn admitted_delivery_peer(state: &AppState, _source_ip: std::net::IpAddr) -> Option<String> {
+    let (node, key) = state.peer_context.mesh_peer()?;
+    state
+        .authority
+        .load()
+        .keys
+        .contains(node, key)
+        .then(|| node.to_owned())
 }
 
 fn observe_rejected_local_route(
@@ -4004,6 +4355,9 @@ async fn handle_noded_command(
         if let Some(id) = msg_id {
             resp.set("id", id);
         }
+        if let Some(request_id) = msg.get("request_id") {
+            resp.set("request_id", request_id);
+        }
         resp
     };
 
@@ -4542,7 +4896,7 @@ async fn handle_noded_command(
                     body_ref,
                     &peer_id,
                     tx.clone(),
-                    broker_origin_for_delivery(source_ip, &state.bind),
+                    broker_origin_from_context(&state.peer_context),
                     retain,
                     state.principal.as_ref(),
                     msg.get("broker_connection"),
@@ -5121,6 +5475,8 @@ mod tests {
     //! broadcast_tap to skip the same Sender) and remaining drops are
     //! coalesced to ≤1 WARN per second per axis.
 
+    include!("frame_policy_tests.rs");
+    include!("identity_tests.rs");
     use std::collections::HashMap;
     use std::net::{Ipv4Addr, TcpListener};
     use std::sync::Arc;
@@ -5130,8 +5486,8 @@ mod tests {
 
     use arc_swap::ArcSwap;
     use config::node::AdmissionMode;
-    use mesh::{DEFAULT_NODED_PORT, MeshConfig, MeshPeers, PeerConfig};
-    use tokio::sync::{RwLock, mpsc};
+    use mesh::{DEFAULT_NODED_PORT, MeshConfig, MeshInbound, MeshPeers, PeerConfig};
+    use tokio::sync::{RwLock, mpsc, oneshot};
     use tracing_subscriber::Layer;
     use tracing_subscriber::layer::{Context, SubscriberExt};
     use tracing_subscriber::util::SubscriberInitExt;
@@ -5514,41 +5870,6 @@ mod tests {
         );
     }
 
-    /// SPEC 13 §9a §4 (2-c-2b): the same-node classifier is loopback OR the
-    /// broker's OWN bind IP — every other WG `/24` address (hub, any peer,
-    /// arbitrary) is inter-node. This is the local-vs-network boundary, never
-    /// the proof.
-    #[test]
-    fn same_node_origin_is_loopback_or_own_bind_only() {
-        use super::is_same_node_origin;
-        let bind = "192.0.2.5:4200"; // this node's own WG bind
-        assert!(is_same_node_origin("127.0.0.1".parse().unwrap(), bind));
-        assert!(is_same_node_origin("::1".parse().unwrap(), bind));
-        assert!(
-            is_same_node_origin("192.0.2.5".parse().unwrap(), bind),
-            "own bind IP"
-        );
-        // hub, another member, an arbitrary /24 address → all inter-node.
-        assert!(
-            !is_same_node_origin("192.0.2.1".parse().unwrap(), bind),
-            "hub"
-        );
-        assert!(
-            !is_same_node_origin("192.0.2.7".parse().unwrap(), bind),
-            "peer"
-        );
-        assert!(
-            !is_same_node_origin("192.0.2.99".parse().unwrap(), bind),
-            "arbitrary"
-        );
-        // An unparseable bind classifies a non-loopback source as inter-node
-        // (fail-closed: never accidentally same-node).
-        assert!(!is_same_node_origin(
-            "192.0.2.7".parse().unwrap(),
-            "bad-bind"
-        ));
-    }
-
     /// SPEC 13 §9a (2-c-2b): the fail-closed predicate — `None` for off/observe
     /// and a healthy enforce; the §17 reason (trust-root before bind) otherwise.
     #[test]
@@ -5582,8 +5903,8 @@ mod tests {
         use config::node::AdmissionMode::{Enforce, Observe, Off};
 
         let bind = "192.0.2.5:4200";
-        let loopback: std::net::IpAddr = "127.0.0.1".parse().unwrap();
-        let inter: std::net::IpAddr = "192.0.2.7".parse().unwrap(); // a peer
+        let loopback = true; // Only Unix SO_PEERCRED grants local privilege.
+        let inter = false;
         let none = SessionAdmission::default(); // no proof seen
         let proved = |n: &str| SessionAdmission {
             admitted_node: Some(n.to_string()),
@@ -5612,15 +5933,7 @@ mod tests {
             RegisterGate::Ungated
         );
         assert_eq!(
-            register_gate_decision(
-                "192.0.2.5".parse().unwrap(),
-                bind,
-                Enforce,
-                true,
-                true,
-                "webd",
-                &none
-            ),
+            register_gate_decision(true, bind, Enforce, true, true, "webd", &none),
             RegisterGate::Ungated
         );
 
@@ -5828,6 +6141,8 @@ mod tests {
         let broker = Arc::new(SubscriptionBroker::new());
         let started = Instant::now();
         AppState {
+            d2_seed: None,
+            peer_context: Default::default(),
             session_admission: SessionAdmission::default(),
             sessions: Default::default(),
             protected_responses: Default::default(),
@@ -5855,6 +6170,7 @@ mod tests {
             listener_port,
             listener_endpoint_diverged: Arc::new(AtomicBool::new(false)),
             admission_mode: AdmissionMode::Off,
+            frame_policy: config::node::AdmissionMode::Observe,
             wg_bound: true,
             challenge_table: Arc::new(crate::admission::ChallengeTable::new()),
             live_sessions: Arc::new(RwLock::new(HashMap::new())),
@@ -6160,6 +6476,7 @@ mod tests {
             mesh_config_path: None,
             spec_dir: None,
             admission_mode: config::node::AdmissionMode::Off,
+            frame_policy: config::node::AdmissionMode::Observe,
         };
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
         let error = super::run_on(config(format!("127.0.0.1:{other}")), listener, ready_tx)
@@ -6207,6 +6524,7 @@ mod tests {
                     mesh_config_path: None,
                     spec_dir: None,
                     admission_mode: config::node::AdmissionMode::Off,
+                    frame_policy: config::node::AdmissionMode::Observe,
                 },
                 listener,
                 ready_tx,
@@ -6295,6 +6613,7 @@ mod tests {
                     mesh_config_path: None,
                     spec_dir: None,
                     admission_mode: config::node::AdmissionMode::Observe,
+                    frame_policy: config::node::AdmissionMode::Observe,
                 },
                 listener,
                 ready_tx,
@@ -6331,23 +6650,38 @@ mod tests {
     use futures_util::{SinkExt, StreamExt};
     use tokio_tungstenite::tungstenite::Message as WsMessage;
 
+    trait TestIo: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+    impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> TestIo for T {}
+
     /// Open a raw WebSocket to the broker, return the sink/stream pair.
     async fn raw_connect(
         url: &str,
     ) -> (
         futures_util::stream::SplitSink<
-            tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-            >,
+            tokio_tungstenite::WebSocketStream<Box<dyn TestIo>>,
             WsMessage,
         >,
-        futures_util::stream::SplitStream<
-            tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-            >,
-        >,
+        futures_util::stream::SplitStream<tokio_tungstenite::WebSocketStream<Box<dyn TestIo>>>,
     ) {
-        let (ws, _resp) = tokio_tungstenite::connect_async(url)
+        let (socket, handshake): (Box<dyn TestIo>, &str) =
+            if let Some(path) = url.strip_prefix("unix://") {
+                (
+                    Box::new(tokio::net::UnixStream::connect(path).await.unwrap()),
+                    "ws://localhost/ws",
+                )
+            } else {
+                let address = url
+                    .strip_prefix("ws://")
+                    .unwrap()
+                    .split('/')
+                    .next()
+                    .unwrap();
+                (
+                    Box::new(tokio::net::TcpStream::connect(address).await.unwrap()),
+                    url,
+                )
+            };
+        let (ws, _resp) = tokio_tungstenite::client_async(handshake, socket)
             .await
             .expect("raw ws connect");
         ws.split()
@@ -6357,15 +6691,11 @@ mod tests {
     /// id. Anything else (orphan or unrelated traffic) is skipped.
     async fn raw_call(
         sink: &mut futures_util::stream::SplitSink<
-            tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-            >,
+            tokio_tungstenite::WebSocketStream<Box<dyn TestIo>>,
             WsMessage,
         >,
         stream: &mut futures_util::stream::SplitStream<
-            tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-            >,
+            tokio_tungstenite::WebSocketStream<Box<dyn TestIo>>,
         >,
         req: BusMessage,
         id: &str,
@@ -6399,15 +6729,11 @@ mod tests {
     /// `noded.register` and awaiting rc=0.
     async fn raw_register(
         sink: &mut futures_util::stream::SplitSink<
-            tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-            >,
+            tokio_tungstenite::WebSocketStream<Box<dyn TestIo>>,
             WsMessage,
         >,
         stream: &mut futures_util::stream::SplitStream<
-            tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-            >,
+            tokio_tungstenite::WebSocketStream<Box<dyn TestIo>>,
         >,
         name: &str,
     ) {
@@ -6444,6 +6770,7 @@ mod tests {
                     mesh_config_path: None,
                     spec_dir: None,
                     admission_mode: config::node::AdmissionMode::Off,
+                    frame_policy: config::node::AdmissionMode::Observe,
                 },
                 listener,
                 ready_tx,
@@ -7259,16 +7586,34 @@ mod tests {
     }
 
     #[test]
-    fn broker_origin_comes_from_socket_location_not_registered_name_shape() {
-        let bind = "192.0.2.5:4200";
-        assert_eq!(
-            super::broker_origin_for_delivery("127.0.0.1".parse().unwrap(), bind),
-            super::BrokerOrigin::Local
-        );
-        assert_eq!(
-            super::broker_origin_for_delivery("192.0.2.99".parse().unwrap(), bind),
-            super::BrokerOrigin::Mesh
-        );
+    fn only_kernel_unix_identity_grants_local_origin_in_every_posture() {
+        use bus::native_session::{PeerContext, PeerIdentity};
+        for mode in [
+            AdmissionMode::Off,
+            AdmissionMode::Observe,
+            AdmissionMode::Enforce,
+        ] {
+            for address in ["127.0.0.1:4200", "[::1]:4200", "192.0.2.5:4200"] {
+                let remote = PeerContext {
+                    identity: PeerIdentity::Unauthenticated,
+                    address: Some(address.parse().unwrap()),
+                };
+                assert!(!remote.is_local(), "{mode:?} {address}");
+                assert_eq!(
+                    super::broker_origin_from_context(&remote),
+                    super::BrokerOrigin::Mesh
+                );
+                let local = PeerContext {
+                    identity: PeerIdentity::UnixPeer { uid: 1000, pid: 1 },
+                    address: None,
+                };
+                assert!(local.is_local());
+                assert_eq!(
+                    super::broker_origin_from_context(&local),
+                    super::BrokerOrigin::Local
+                );
+            }
+        }
     }
 
     #[test]
@@ -7283,7 +7628,7 @@ mod tests {
             "caller-9",
             Some("responder"),
             Some("caller"),
-            super::broker_origin_for_delivery("192.0.2.99".parse().unwrap(), "192.0.2.5:4200"),
+            super::BrokerOrigin::Mesh,
             None,
         );
         let delivered = bus_mod::parse(&wire).unwrap();
@@ -7531,6 +7876,13 @@ mod tests {
                 "from_epoch":1, "until_epoch":null}]
         }));
         let mut state = reload_test_state(posture, vec![]).await;
+        state.peer_context.identity = bus::native_session::PeerIdentity::MeshAdmitted {
+            node: "beta".into(),
+            key: [3; 32],
+            fingerprint: String::new(),
+            epoch: 1,
+            revision: 0,
+        };
         state.admission_mode = AdmissionMode::Enforce;
         state.session_admission = super::SessionAdmission {
             admitted_node: Some("beta".into()),
@@ -7538,6 +7890,191 @@ mod tests {
             last_detail: None,
         };
         state
+    }
+
+    #[tokio::test]
+    async fn inter_node_wire_postures_gate_before_dispatch() {
+        use tracing::instrument::WithSubscriber;
+        #[derive(Clone)]
+        struct Audit(Arc<std::sync::Mutex<Vec<u8>>>);
+        impl std::io::Write for Audit {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        for (mode, register, from, refused) in [
+            (AdmissionMode::Enforce, false, "hostd.beta.bus", true),
+            (AdmissionMode::Observe, false, "hostd.beta.bus", false),
+            (AdmissionMode::Off, false, "hostd.beta.bus", false),
+            (AdmissionMode::Enforce, true, "hostd.gamma.bus", true),
+            (AdmissionMode::Observe, true, "hostd.gamma.bus", false),
+            (AdmissionMode::Off, true, "hostd.gamma.bus", false),
+            (AdmissionMode::Enforce, true, "hostd.beta.bus", false),
+            (AdmissionMode::Observe, true, "hostd", false),
+            (AdmissionMode::Enforce, true, "hostd", true),
+            (AdmissionMode::Enforce, true, "late", true),
+            (AdmissionMode::Observe, true, "late", false),
+            (AdmissionMode::Enforce, true, "wrong-node", true),
+            (AdmissionMode::Observe, true, "wrong-node", false),
+        ] {
+            let mut state = mesh_delivery_test_state().await;
+            let mut posture = state.authority.load().posture.clone();
+            if let crate::authority::Posture::Verified(accepted) = &mut posture {
+                accepted.routing_view.push(active_route(
+                    "alpha",
+                    "127.0.0.1".parse().unwrap(),
+                    DEFAULT_NODED_PORT,
+                ));
+            }
+            state
+                .authority
+                .store(Arc::new(crate::routing::RoutingAuthority::new(
+                    posture,
+                    "alpha",
+                    "127.0.0.1",
+                    DEFAULT_NODED_PORT,
+                    &[],
+                )));
+            state.frame_policy = mode;
+            let audit = Audit(Arc::new(std::sync::Mutex::new(Vec::new())));
+            let output = audit.0.clone();
+            let subscriber = tracing_subscriber::fmt()
+                .without_time()
+                .with_ansi(false)
+                .with_max_level(tracing::Level::DEBUG)
+                .with_writer(move || audit.clone())
+                .finish();
+            let dispatch = tracing::Dispatch::new(subscriber);
+            let app = axum::Router::new().route(
+                "/ws",
+                axum::routing::get(move |upgrade: axum::extract::ws::WebSocketUpgrade| {
+                    let state = state.clone();
+                    let dispatch = dispatch.clone();
+                    async move {
+                        upgrade.on_upgrade(move |socket| {
+                            super::handle_socket(
+                                socket,
+                                state.clone(),
+                                bus::native_session::TransportIdentity::Mesh {
+                                    source_ip: "192.0.2.2".parse().unwrap(),
+                                    admission: bus::native_session::MeshAdmission {
+                                        identity: state.peer_context.identity.clone(),
+                                        admitted_node: Some("beta".into()),
+                                        response_seen: true,
+                                        last_detail: None,
+                                    },
+                                },
+                            )
+                            .with_subscriber(dispatch)
+                        })
+                    }
+                }),
+            );
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("ws://{}/ws", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                axum::serve(listener, app).await.unwrap();
+            });
+            let (mut sink, mut stream) = raw_connect(&url).await;
+            if register {
+                raw_register(&mut sink, &mut stream, "bridge-beta").await;
+            }
+            // Empty frames are no-ops even after registration. A correctly
+            // sourced late proof is ignored without resetting admission.
+            if register {
+                sink.send(WsMessage::Text(bus::wire::EMPTY_MESSAGE.into()))
+                    .await
+                    .unwrap();
+                let late = BusMessage::new()
+                    .with_header("to", "noded")
+                    .with_header("from", "hostd.beta.bus")
+                    .with_header("command", "noded.admit.response");
+                sink.send(WsMessage::Text(late.to_wire().into()))
+                    .await
+                    .unwrap();
+            }
+            let mut request = BusMessage::new()
+                .with_header("type", "request")
+                .with_header(
+                    "command",
+                    if from == "late" {
+                        "noded.admit.response"
+                    } else {
+                        "noded.ping"
+                    },
+                )
+                .with_header(
+                    "to",
+                    if from == "wrong-node" {
+                        "noded.gamma.bus"
+                    } else {
+                        "noded"
+                    },
+                )
+                .with_header("id", "policy-probe")
+                .with_header("request_id", "policy-request")
+                .with_header(
+                    "from",
+                    match from {
+                        "late" => "hostd.gamma.bus",
+                        "wrong-node" => "hostd.beta.bus",
+                        _ => from,
+                    },
+                );
+            if refused {
+                sink.send(WsMessage::Text(request.to_wire().into()))
+                    .await
+                    .unwrap();
+                tokio::time::timeout(Duration::from_secs(2), async {
+                    while let Some(Ok(frame)) = stream.next().await {
+                        if let WsMessage::Text(text) = frame {
+                            assert_ne!(
+                                bus_mod::parse(&text).unwrap().get("id"),
+                                Some("policy-probe")
+                            );
+                        }
+                    }
+                })
+                .await
+                .expect("enforce must close the refused connection");
+            } else {
+                if from == "late" {
+                    sink.send(WsMessage::Text(request.to_wire().into()))
+                        .await
+                        .unwrap();
+                    request.set("command", "noded.ping");
+                    request.set("from", "hostd.beta.bus");
+                }
+                let response = raw_call(&mut sink, &mut stream, request, "policy-probe").await;
+                assert_eq!(
+                    response.rc(),
+                    Some(if from == "wrong-node" { 10 } else { 0 })
+                );
+                if from != "wrong-node" {
+                    assert_eq!(response.get("request_id"), Some("policy-request"));
+                }
+                assert!(super::frame_policy::from_peer(&response, "alpha"));
+            }
+            let logs = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+            let violation = !register || from != "hostd.beta.bus";
+            assert_eq!(
+                logs.contains("event=\"frame.refused\""),
+                violation && mode != AdmissionMode::Off,
+                "{logs}"
+            );
+            if from == "wrong-node" {
+                assert!(logs.contains("wrong-node-ingress"), "{logs}");
+            }
+            if violation && mode == AdmissionMode::Observe {
+                assert!(logs.contains("posture=\"observe\""), "{logs}");
+                assert!(logs.contains("192.0.2.2"), "{logs}");
+            }
+            server.abort();
+        }
     }
 
     #[tokio::test]
@@ -7650,8 +8187,12 @@ mod tests {
                 "off" => state.admission_mode = AdmissionMode::Off,
                 "observe" => state.admission_mode = AdmissionMode::Observe,
                 "non-wg" => state.wg_bound = false,
-                "no-proof" => state.session_admission = super::SessionAdmission::default(),
-                "wrong-proof" => state.session_admission.admitted_node = Some("gamma".into()),
+                "no-proof" => state.peer_context.identity = Default::default(),
+                "wrong-proof" => state.peer_context.identity = Default::default(),
+                "local" => {
+                    state.peer_context.identity =
+                        bus::native_session::PeerIdentity::UnixPeer { uid: 1000, pid: 1 }
+                }
                 "revoked" => apply_inventory_reload(&state, reload_posture(2, vec![])).await,
                 _ => {}
             }
@@ -7711,7 +8252,10 @@ mod tests {
             let delivered = bus_mod::parse(&target_rx.recv().await.unwrap()).unwrap();
             assert_eq!(
                 delivered.get("broker_peer"),
-                if matches!(case, "valid" | "off" | "observe" | "relay" | "bad-source") {
+                if matches!(
+                    case,
+                    "valid" | "off" | "observe" | "relay" | "bad-source" | "non-wg"
+                ) {
                     Some("beta")
                 } else {
                     None
@@ -7720,7 +8264,10 @@ mod tests {
             );
             assert_eq!(
                 delivered.get("broker_connection"),
-                if matches!(case, "valid" | "off" | "observe" | "relay" | "bad-source") {
+                if matches!(
+                    case,
+                    "valid" | "off" | "observe" | "relay" | "bad-source" | "non-wg"
+                ) {
                     Some("beta/epoch-1")
                 } else {
                     None
@@ -7729,7 +8276,7 @@ mod tests {
             );
             assert_eq!(
                 delivered.get("broker_service"),
-                if matches!(case, "valid" | "off" | "observe") {
+                if matches!(case, "valid" | "off" | "observe" | "non-wg") {
                     Some("desktopctl")
                 } else {
                     None
@@ -7744,7 +8291,7 @@ mod tests {
         for admitted in [true, false] {
             let mut state = mesh_delivery_test_state().await;
             if !admitted {
-                state.session_admission = super::SessionAdmission::default();
+                state.peer_context.identity = Default::default();
             }
             let (caller, _caller_rx) = mpsc::channel(4);
             let (target, mut target_rx) = mpsc::channel(4);
@@ -8044,8 +8591,8 @@ mod tests {
             );
             assert_eq!(
                 parsed.get("broker_origin"),
-                Some("local"),
-                "loopback-routed delivery must carry the broker-owned local marker",
+                Some("mesh"),
+                "TCP loopback must never receive the local origin marker",
             );
             // Belt-and-braces: pin the broker-rewrite format directly.
             // The wire id on the forward leg must be `noded-<n>`; the
