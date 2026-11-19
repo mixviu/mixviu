@@ -348,7 +348,7 @@ pub fn service(lp: &mut Loop) -> bool {
             };
             if !old.visible
                 || new.is_some_and(|facts| !facts.visible)
-                || (!old.shown && new.is_none_or(|facts| !facts.mapped))
+                || (!old.shown && old.mapped && new.is_none_or(|facts| !facts.mapped))
             {
                 state.exits.remove(uuid);
                 continue;
