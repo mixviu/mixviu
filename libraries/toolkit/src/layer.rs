@@ -98,6 +98,9 @@ pub trait LayerProgram {
     fn wake_deadline(&self) -> Option<std::time::Instant> {
         None
     }
+    /// Service behaviour after an event/deadline, including with zero outputs.
+    /// This hook does not draw or request a frame callback.
+    fn service(&mut self) {}
     /// The compositor completed this surface's frame callback.
     fn frame(&mut self, _surface: &SurfaceInfo, _time_ms: u32) {}
     /// Client presentation requested after a repaint wake, before any draw.

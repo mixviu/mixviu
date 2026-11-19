@@ -239,6 +239,7 @@ pub(super) fn run<P: LayerProgram + 'static>(
             .dispatch(wait, &mut state)
             .map_err(|e| format!("dispatch: {e}"))?;
         state.expire_frames();
+        state.program.service();
         state.presentations();
         state.draw_due(&qh);
         if state.program.should_close() {

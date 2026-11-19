@@ -15,7 +15,7 @@ struct Item {
 struct Program {
     bundle: Option<Bundle>,
     host: Option<Host>,
-    wake: Option<crate::runtime::Wake>,
+    logic: egui::Context,
     items: BTreeMap<(String, String), Item>,
     presets: BTreeMap<String, motion::Preset>,
     scene_source: String,
@@ -124,32 +124,33 @@ impl Program {
 
 impl LayerProgram for Program {
     fn set_waker(&mut self, wake: crate::runtime::Wake) {
-        self.wake = Some(wake);
+        if let Some(bundle) = self.bundle.take() {
+            // Bus work must wake the event loop even with no output or while
+            // every surface is detached. egui coalesces repaint requests
+            // until its next pass, which an empty OSD never draws.
+            let mut host = create(bundle, wake);
+            // Per-item views present the model, not Host's root view.
+            host.headless = true;
+            self.host = Some(host);
+        }
     }
 
     fn wake_deadline(&self) -> Option<Instant> {
         self.host.as_ref().and_then(|host| host.timers.deadline())
     }
 
-    fn setup(&mut self, ctx: &egui::Context) {
-        crate::icons::install(ctx);
-        toolkit::install(ctx, &toolkit::Theme::embedded());
-        if let Some(bundle) = self.bundle.take() {
-            // Bus work must wake the event loop even while every output is
-            // detached. egui coalesces repaint requests until its next pass,
-            // which an empty OSD deliberately never draws.
-            let mut host = create(bundle, self.wake.clone().expect("layer event-loop waker"));
-            // The model is presented by per-item views, not Host's root view.
-            // Root-view draw barriers therefore cannot gate OSD commands.
-            host.headless = true;
-            self.host = Some(host);
+    fn service(&mut self) {
+        if let Some(host) = &mut self.host {
+            host.pump(&self.logic);
         }
     }
 
-    fn presentation(&mut self, ctx: &egui::Context, info: &SurfaceInfo) -> LayerPresentation {
-        if let Some(host) = &mut self.host {
-            host.pump(ctx);
-        }
+    fn setup(&mut self, ctx: &egui::Context) {
+        crate::icons::install(ctx);
+        toolkit::install(ctx, &toolkit::Theme::embedded());
+    }
+
+    fn presentation(&mut self, _ctx: &egui::Context, info: &SurfaceInfo) -> LayerPresentation {
         let Some(host) = &self.host else {
             return LayerPresentation {
                 visible: false,
@@ -312,7 +313,7 @@ pub(super) fn run(bundle: Bundle) {
     let program = Program {
         bundle: Some(bundle),
         host: None,
-        wake: None,
+        logic: egui::Context::default(),
         items: BTreeMap::new(),
         presets: motion::presets()
             .into_iter()
