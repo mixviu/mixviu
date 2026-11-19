@@ -1,5 +1,28 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
+#[tokio::test]
+async fn accepted_rotation_drops_exact_inbound_key_within_one_second() {
+    let state = mesh_delivery_test_state().await;
+    let (tx, _rx) = mpsc::channel(8);
+    let close = Arc::new(tokio::sync::Notify::new());
+    state.live_sessions.write().await.insert("rotating".into(), super::GatedSession {
+        identity: state.peer_context.identity.clone(), claimed_source_node: "beta".into(),
+        source_ip: "192.0.2.2".into(), tx, close: close.clone(),
+    });
+    let mut posture = state.authority.load().posture.clone();
+    if let crate::authority::Posture::Verified(a) = &mut posture {
+        use base64::Engine as _;
+        a.epoch += 1;
+        a.members_full.get_mut("beta").unwrap()["credentials"][0]["pubkey"] =
+            serde_json::json!(base64::engine::general_purpose::STANDARD.encode([4;32]));
+    }
+    let start = Instant::now();
+    apply_inventory_reload(&state, posture).await;
+    tokio::time::timeout(Duration::from_secs(1), close.notified()).await.unwrap();
+    assert!(start.elapsed() < Duration::from_secs(1));
+    assert!(super::admitted_delivery_peer(&state, "192.0.2.2".parse().unwrap()).is_none(), "old session cannot reuse its admission after rotation");
+}
+
 #[test]
 fn frame_posture_defaults_observe_and_is_independent_of_admission() {
     let node: config::node::NodeConfig = config::from_conf_mix_str(

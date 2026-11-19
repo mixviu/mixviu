@@ -139,7 +139,7 @@ async fn async_main() -> Result<()> {
     let node = cli_node.unwrap_or_else(|| node_cfg.node.clone());
     let mesh_config = cli_mesh_config.or_else(|| node_cfg.noded.mesh_config.clone());
 
-    let noded_url = format!("ws://{}/ws", listen);
+    let noded_url = format!("unix://{}", node_cfg.noded.broker_unix_endpoint().display());
 
     let spec_dir = spec::locate_spec_dir(cli_spec_dir.as_deref());
     tracing::info!(

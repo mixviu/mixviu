@@ -8505,8 +8505,8 @@ mod tests {
             );
             assert_eq!(
                 parsed.get("broker_origin"),
-                Some("local"),
-                "loopback-routed delivery must carry the broker-owned local marker",
+                Some("mesh"),
+                "TCP loopback must never receive the local origin marker",
             );
             // Belt-and-braces: pin the broker-rewrite format directly.
             // The wire id on the forward leg must be `noded-<n>`; the

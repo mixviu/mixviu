@@ -108,8 +108,10 @@ async fn two_production_brokers_route_verified_native_clients() {
                 key_type: ALG_ED25519.into(), status: KeyStatus::Active,
             }],
             members: json!([
-                {"name":"alpha", "mesh_ip":ips[0], "bus":true, "status":"active", "noded_port":ports[0]},
-                {"name":"beta", "mesh_ip":ips[1], "bus":true, "status":"active", "noded_port":ports[1]}
+                {"name":"alpha", "mesh_ip":ips[0], "bus":true, "status":"active", "noded_port":ports[0],
+                 "credentials":[{"kind":"d2","pubkey":B64.encode(SigningKey::from_bytes(&[7;32]).verifying_key().to_bytes()),"from_epoch":1,"until_epoch":null}]},
+                {"name":"beta", "mesh_ip":ips[1], "bus":true, "status":"active", "noded_port":ports[1],
+                 "credentials":[{"kind":"d2","pubkey":B64.encode(SigningKey::from_bytes(&[8;32]).verifying_key().to_bytes()),"from_epoch":1,"until_epoch":null}]}
             ]),
             recovery: None,
             recovery_generation: None,
@@ -130,10 +132,12 @@ async fn two_production_brokers_route_verified_native_clients() {
                 fs::create_dir_all(root.join(dir)).unwrap();
             }
             fs::write(root.join("etc/noded/genesis.pub"), &pubkey).unwrap();
+            fs::write(root.join("etc/noded/d2.seed"), B64.encode([7 + i as u8;32])).unwrap();
+            fs::set_permissions(root.join("etc/noded/d2.seed"), fs::Permissions::from_mode(0o600)).unwrap();
             write(&root.join("var/noded/inventory.signed"), &signed);
             write(&root.join("etc/node.conf.mix"), &json!({
                 "node":names[i], "wg_ip":ips[i],
-                "noded":{"port":ports[i],"unix_socket":root.join("run/bus.sock")}
+                "noded":{"port":ports[i],"unix_socket":root.join("run/bus.sock"),"admission":"enforce","frame_policy":"enforce"}
             }));
             write(&root.join("etc/mesh.conf.mix"), &json!({"node_name":names[i],"peers":[]}));
             let log = fs::File::create(root.join("noded.log")).unwrap();
