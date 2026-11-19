@@ -833,6 +833,9 @@ fn apply_visual(lp: &mut Loop, id: SurfaceId, spec: &comp_model::request::PlaceS
     }
     lp.inner.comp.visuals.insert(id, (spec.generation, visual));
     if let Some(window) = window_of(lp, id) {
+        if !visual.visible || !world::comp::animation::active(&window, std::time::Instant::now()) {
+            world::comp::animation::cancel(&window);
+        }
         *window
             .user_data()
             .get_or_insert(|| {

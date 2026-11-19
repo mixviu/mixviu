@@ -44,38 +44,8 @@ pub fn start_visual(
             };
             current.set(property, value);
         }
-        let requested = preset.sample(preset.timing.duration);
         let old = world::comp::animation::run(&window).unwrap();
-        let remaining = (old.preset.timing.duration - old.elapsed(started)).max(0.0);
-        let requested_duration = preset.timing.duration;
-        let mut target = motion::Values::default();
-        for property in motion::Property::ALL {
-            if requested.contains(property) {
-                target.set(property, requested.get(property));
-            }
-        }
-        let mut requested_current = motion::Values::default();
-        for track in &preset.tracks { requested_current.set(track.property, current.get(track.property)); }
-        *preset = motion::retarget(&requested_current, &target, preset.timing);
-        let duration = requested_duration.max(remaining);
-        if duration > 0.0 {
-            for track in &mut preset.tracks {
-                for frame in &mut track.keyframes { frame.offset *= requested_duration / duration; }
-                if track.keyframes.last().unwrap().offset < 1.0 {
-                    let mut endpoint = track.keyframes.last().unwrap().clone(); endpoint.offset = 1.0; track.keyframes.push(endpoint);
-                }
-            }
-            let endpoint = old.preset.sample(old.preset.timing.duration);
-            for old_track in &old.preset.tracks {
-                if preset.tracks.iter().any(|track| track.property == old_track.property) { continue; }
-                let property = old_track.property;
-                let mut frames = vec![motion::Keyframe { offset: 0.0, value: current.get(property), easing: motion::Curve::Linear }];
-                if remaining > 0.0 && remaining < duration { frames.push(motion::Keyframe { offset: remaining / duration, value: endpoint.get(property), easing: motion::Curve::Linear }); }
-                frames.push(motion::Keyframe { offset: 1.0, value: endpoint.get(property), easing: motion::Curve::Linear });
-                preset.tracks.push(motion::Track { property, keyframes: frames });
-            }
-            preset.timing.duration = duration;
-        }
+        *preset = continuation(&current, preset.clone(), &old, started);
     }
     world::comp::animation::start(&window, preset, started);
     ledger::frame_trace::event("window_motion_start", || (id, 0, 0));
@@ -215,5 +185,64 @@ fn arrived_or_moving(status: Status) -> Step {
     match status {
         Status::Running => Step::Moving,
         Status::Done => Step::Arrived,
+    }
+}
+
+fn continuation(current: &motion::Values, mut preset: motion::Preset, old: &world::comp::animation::VisualRun, started: std::time::Instant) -> motion::Preset {
+        let requested = preset.sample(preset.timing.duration);
+        let remaining = (old.preset.timing.duration - old.elapsed(started)).max(0.0);
+        let requested_duration = preset.timing.duration;
+        let mut target = motion::Values::default();
+        for property in motion::Property::ALL {
+            if requested.contains(property) {
+                target.set(property, requested.get(property));
+            }
+        }
+        let mut requested_current = motion::Values::default();
+        for track in &preset.tracks { requested_current.set(track.property, current.get(track.property)); }
+        preset = motion::retarget(&requested_current, &target, preset.timing);
+        let duration = requested_duration.max(remaining);
+        if duration > 0.0 {
+            for track in &mut preset.tracks {
+                if requested_duration == 0.0 { track.keyframes[0].value = track.keyframes.last().unwrap().value; }
+                for frame in &mut track.keyframes { frame.offset *= requested_duration / duration; }
+                if requested_duration == 0.0 { track.keyframes.remove(1); }
+                if track.keyframes.last().unwrap().offset < 1.0 {
+                    let mut endpoint = track.keyframes.last().unwrap().clone(); endpoint.offset = 1.0; track.keyframes.push(endpoint);
+                }
+            }
+            let endpoint = old.preset.sample(old.preset.timing.duration);
+            for old_track in &old.preset.tracks {
+                if preset.tracks.iter().any(|track| track.property == old_track.property) { continue; }
+                let property = old_track.property;
+                let mut frames = vec![motion::Keyframe { offset: 0.0, value: current.get(property), easing: motion::Curve::Linear }];
+                if remaining > 0.0 && remaining < duration { frames.push(motion::Keyframe { offset: remaining / duration, value: endpoint.get(property), easing: motion::Curve::Linear }); }
+                frames.push(motion::Keyframe { offset: 1.0, value: endpoint.get(property), easing: motion::Curve::Linear });
+                preset.tracks.push(motion::Track { property, keyframes: frames });
+            }
+            preset.timing.duration = duration;
+        }
+
+    preset
+}
+
+#[cfg(test)]
+mod review_tests {
+    use super::*;
+    #[test]
+    fn omitted_scale_keeps_its_original_deadline() {
+        let now = std::time::Instant::now();
+        let mut old = motion::presets().into_iter().find(|p| p.name == "fade").unwrap();
+        old.timing.duration = 0.8;
+        old.tracks = vec![motion::Track { property: motion::Property::Scale, keyframes: vec![motion::Keyframe { offset: 0.0, value: 0.4, easing: motion::Curve::Linear }, motion::Keyframe { offset: 1.0, value: 0.8, easing: motion::Curve::Linear }] }];
+        let old = world::comp::animation::VisualRun { preset: old, started: now - std::time::Duration::from_millis(250) };
+        let mut replacement = motion::presets().into_iter().find(|p| p.name == "fade").unwrap();
+        replacement.timing.duration = 0.5;
+        let result = continuation(&old.sample(now), replacement, &old, now);
+        assert!(result.validate().is_ok());
+        for (time, value) in [(0.0,0.525),(0.275,0.6625),(0.55,0.8),(1.0,0.8)] {
+            assert!((result.sample(time).get(motion::Property::Scale)-value).abs() < 1e-6);
+        }
+        assert_eq!(result.sample(0.5).get(motion::Property::Opacity), 1.0);
     }
 }

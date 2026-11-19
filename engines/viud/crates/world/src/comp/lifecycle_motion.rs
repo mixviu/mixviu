@@ -198,7 +198,9 @@ pub fn service(lp: &mut Loop) -> bool {
             {
                 let base = crate::window::draw::frame::scene::visual_of(window);
                 super::animation::start(window, &relative(preset, base), now);
-                state.incoming.insert(*uuid, now);
+                if super::animation::active(window, now) {
+                    state.incoming.insert(*uuid, now);
+                } else { super::animation::finish(window); }
                 state.exits.remove(uuid);
             }
         }
