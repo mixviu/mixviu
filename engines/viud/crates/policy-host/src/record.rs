@@ -114,7 +114,7 @@ fn refused(error: &str) -> ControlReply {
     ControlReply::refused("record_failed", json!({"message":error}))
 }
 fn empty_status(state: &str, error: Option<&str>) -> Value {
-    json!({"session":null,"state":state,"frames":0,"repeated":0,"dropped":0,"dropped_capture":0,"dropped_queue":0,"readback_deferred":0,"pending_ticks":0,"writer":null,"encoder":null,"duration_us":0,"bytes":0,"queue":0,"encoders":["vfl"],"readbacks":0,"readback_us":0,"readback_mean_us":0,"readback_max_us":0,"error":error})
+    json!({"windows":[],"session":null,"state":state,"frames":0,"repeated":0,"dropped":0,"dropped_capture":0,"dropped_queue":0,"readback_deferred":0,"pending_ticks":0,"writer":null,"encoder":null,"duration_us":0,"bytes":0,"queue":0,"encoders":["vfl"],"readbacks":0,"readback_us":0,"readback_mean_us":0,"readback_max_us":0,"error":error})
 }
 fn listed_status(s: &Session) -> Value {
     json!(s.targets.iter().filter_map(|t| t.listed_windows.as_ref()).flatten()
@@ -734,7 +734,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 }
                 // Filtered scene damage is evaluated by its own renderer tracker.
                 // No global scene revision may force a filtered readback.
-                signature.push(s.pixel_counter.saturating_add(1));
+                signature.push(1);
                 continue;
             }
             if let Some(window) = target.window {
@@ -799,7 +799,8 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         signature
     };
     let mut s = session.borrow_mut();
-    let unchanged = s.signature == signature;
+    let filtered = s.targets.iter().any(|t| t.listed_windows.is_some());
+    let unchanged = !filtered && s.signature == signature;
     if superseded(&mut s.deferred_signature, &signature) {
         if let Some(r) = s.recording.as_mut() {
             r.superseded_capture();
@@ -807,7 +808,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         s.deferred_signature = None;
     }
     if s.pending {
-        if !unchanged {
+        if !unchanged && !filtered {
             s.deferred_signature = Some(signature);
         }
         let result = s.recording.as_mut().map(|r| {
@@ -825,7 +826,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         .as_mut()
         .is_some_and(|r| r.skip_readback(!unchanged));
     if unchanged || skipped {
-        if skipped {
+        if skipped && !filtered {
             s.deferred_signature = Some(signature);
         }
         let result = s.recording.as_mut().unwrap().frame(None);

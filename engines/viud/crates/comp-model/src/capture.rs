@@ -181,7 +181,11 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                     .ok_or_else(|| invalid_argument("windows", "array", "1..=16 window targets"))?;
                 if target.contains_key("output") {
                     if target.contains_key("window") || target.contains_key("region") {
-                        return Err(invalid_argument("target", "output and windows", "no window or region"));
+                        return Err(invalid_argument(
+                            "target",
+                            "output and windows",
+                            "no window or region",
+                        ));
                     }
                     let mut capture = Value::Object(target.clone());
                     capture.as_object_mut().unwrap().remove("windows");
@@ -190,24 +194,28 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                     let mut spec = parse(&capture)?;
                     let mut listed = Vec::new();
                     for window in windows {
-                        let w = parse(&json!({"window":window,"path":path}))?.window.unwrap();
-                        if !listed.contains(&w) { listed.push(w); }
+                        let w = parse(&json!({"window":window,"path":path}))?
+                            .window
+                            .unwrap();
+                        if !listed.contains(&w) {
+                            listed.push(w);
+                        }
                     }
                     spec.listed_windows = Some(listed);
                     targets.push(spec);
                 } else {
-                if target.len() != 1 {
-                    return Err(invalid_argument(
-                        "target",
-                        "exclusive windows target",
-                        "{windows:[{id,generation}]}",
-                    ));
-                }
-                for window in windows {
-                    targets.push(parse(
-                        &json!({"window":window,"path":path,"cursor":cursor}),
-                    )?);
-                }
+                    if target.len() != 1 {
+                        return Err(invalid_argument(
+                            "target",
+                            "exclusive windows target",
+                            "{windows:[{id,generation}]}",
+                        ));
+                    }
+                    for window in windows {
+                        targets.push(parse(
+                            &json!({"window":window,"path":path,"cursor":cursor}),
+                        )?);
+                    }
                 }
             } else {
                 let mut capture = Value::Object(target.clone());

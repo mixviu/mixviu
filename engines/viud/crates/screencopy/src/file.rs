@@ -382,7 +382,7 @@ pub fn fail_all(reason: &str) {
 }
 
 pub fn fail_windows(reason: &str) {
-    cancel(|request| request.spec.window.is_some(), reason);
+    cancel(|request| request.spec.window.is_some() || request.spec.listed_windows.is_some(), reason);
 }
 
 /// Share one snapshot between callers. Raw recording requests retain the PBO
