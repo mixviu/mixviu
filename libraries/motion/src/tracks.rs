@@ -465,7 +465,7 @@ impl Timing {
         if reverse {
             progress = 1.0 - progress;
         }
-        Some((progress, if reverse { after } else { before }))
+        Some((progress, before))
     }
 }
 
@@ -628,6 +628,42 @@ mod tests {
             Curve::Steps { n: 2, start: false }.sample_before(0.5, true),
             0.5
         );
+    }
+    #[test]
+    fn step_start_after_fill_does_not_use_before_flag() {
+        for (direction, counts) in [
+            (Direction::Reverse, &[1.0, 2.0, 3.0, 4.0][..]),
+            (Direction::Alternate, &[2.0, 4.0][..]),
+            (Direction::AlternateReverse, &[1.0, 3.0][..]),
+        ] {
+            for &count in counts {
+                for fill in [Fill::Forwards, Fill::Both] {
+                    let mut p = line();
+                    p.timing.direction = direction;
+                    p.timing.iterations = Iterations::Finite(count);
+                    p.timing.fill = fill;
+                    p.tracks[0].keyframes[0].easing = Curve::Steps { n: 2, start: true };
+                    assert_eq!(p.timing.progress(count), Some((0.0, false)));
+                    assert_eq!(p.sample(count).get(Property::Tx), 50.0);
+                    assert_eq!(p.sample(count + 100.0).get(Property::Tx), 50.0);
+                }
+            }
+        }
+    }
+    #[test]
+    fn step_start_backwards_fill_retains_before_flag() {
+        for direction in [Direction::Normal, Direction::Alternate] {
+            for fill in [Fill::Backwards, Fill::Both] {
+                let mut p = line();
+                p.timing.direction = direction;
+                p.timing.fill = fill;
+                p.timing.delay = 1.0;
+                p.tracks[0].keyframes[0].easing = Curve::Steps { n: 2, start: true };
+                assert_eq!(p.timing.progress(0.0), Some((0.0, true)));
+                assert_eq!(p.sample(0.0).get(Property::Tx), 0.0);
+                assert_eq!(p.sample(1.0).get(Property::Tx), 50.0);
+            }
+        }
     }
     #[test]
     fn omitted_keyframe_easing_is_css_ease() {
