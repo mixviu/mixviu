@@ -672,7 +672,11 @@ async fn mesh_incoming_loop(
         let authenticated_peer = inbound.context.mesh_peer().map(|(node, _)| node.to_owned());
         if authenticated_peer.is_none() {
             frame_refused(
-                "peer-not-admitted",
+                if matches!(authority_for_mesh.load().posture, crate::authority::Posture::Verified(_)) {
+                    "peer-not-admitted"
+                } else {
+                    "no-identity-source"
+                },
                 "",
                 &format!("{:?}", inbound.context.address),
                 frame_policy,
