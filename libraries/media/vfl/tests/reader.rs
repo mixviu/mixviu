@@ -277,9 +277,13 @@ fn bench_child() {
         0
     );
     let usage = unsafe { usage.assume_init() };
+    // VmHWM belongs to this executable's address space. ru_maxrss can retain
+    // the pre-exec parent's high-water mark on Linux.
+    let status = std::fs::read_to_string("/proc/self/status").unwrap();
+    let peak = status.lines().find_map(|l| l.strip_prefix("VmHWM:")).unwrap();
     eprintln!(
-        "peak_rss_kib={} user_s={} system_s={}",
-        usage.ru_maxrss,
+        "peak_rss={} user_s={} system_s={}",
+        peak.trim(),
         usage.ru_utime.tv_sec as f64 + usage.ru_utime.tv_usec as f64 / 1_000_000.0,
         usage.ru_stime.tv_sec as f64 + usage.ru_stime.tv_usec as f64 / 1_000_000.0
     );
