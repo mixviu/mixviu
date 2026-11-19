@@ -1,0 +1,30 @@
+-- Focused worker-only checks for listed-window recording.
+$mode = args()[0] ?? "test"
+$packages = ["comp-model", "screencopy", "frames", "policy-host", "headless", "native", "nested"]
+$command = ["cargo", if $mode == "fmt" then "fmt" elif $mode == "clippy" then "clippy" else "test" end]
+for $package in $packages
+  $command = concat($command, ["-p", $package])
+end
+try
+  if $mode == "capture" then
+    for $cmd in [["cargo","build","-p","mix","-p","noded","-p","testkit","--bins"], ["cargo","build","--release","-p","viud"]]
+      $r = run_argv($cmd, {timeout:1800,stdout:"inherit",stderr:"inherit"})
+      if not $r.ok then exit($r.exit_code ?? 1) end
+    end
+    export MIX_TEST_REQUIRE_RECORD=1
+    export MIX_TEST_MIX_EXE=realpath("target/debug/mix")
+    export MIX_TEST_VIUD_EXE=realpath("target/release/viud")
+    $command = ["cargo","test","-p","headless","--test","capture","record_","--","--nocapture","--test-threads=1"]
+  elif $mode == "clippy" then
+    $command = concat($command, ["--all-targets"])
+  elif $mode != "fmt" then
+    $command = concat($command, ["--lib"])
+  end
+  $r = run_argv($command, {timeout:1800,stdout:"inherit",stderr:"inherit"})
+  exit($r.exit_code ?? 1)
+finally
+  print("LISTED_DIFF_BEGIN")
+  print(run_argv(["git","diff"]).stdout)
+  print("LISTED_DIFF_END")
+  print(run_argv(["git","checkout","-q","--","."]).stderr)
+end

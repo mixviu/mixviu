@@ -621,6 +621,65 @@ fn record_vaapi_capability_or_clear_failure() {
 }
 
 #[test]
+fn record_listed_output_excludes_occluders_and_tracks_popup_and_close() {
+    if !process::record_available() { return; }
+    let bus = Bus::start("record-listed");
+    let mut process = process::spawn(1, None, "record-listed", Some(&bus.url));
+    let mut a = Pattern::named(connect(&mut process), "listed", false);
+    let mut b = Pattern::named(connect(&mut process), "private", false);
+    b.solid_buffer(0xff12abcd);
+    b.commit(true);
+    bus.ready();
+    let ar = bus.window_for("listed", &mut [&mut a, &mut b]);
+    let br = bus.window_for("private", &mut [&mut a, &mut b]);
+    for (row, z) in [(&ar, 0), (&br, 10)] {
+        bus.call("comp.window.place", place_args(row, json!({"x":100,"y":100,"z":z})));
+    }
+    pump_patterns(&mut [&mut a, &mut b]);
+    let path = process.root.join("listed.vfl");
+    let start = bus.call("comp.record.start", json!({"request_id":"listed", "target":{"output":ar["output"],"windows":[target(&ar)]},"path":path,"cursor":false,"max_seconds":20}));
+    assert_eq!(start["width"], 1280);
+    let before = bus.call("comp.record.status", json!({"session":start["session"]}));
+    assert_eq!(before["windows"], json!([target(&ar)]));
+    for _ in 0..5 {
+        b.change_buffer(); b.commit(true);
+        pump_patterns(&mut [&mut a, &mut b]);
+    }
+    let quiet = bus.call("comp.record.status", json!({"session":start["session"]}));
+    assert_eq!(quiet["readbacks"], before["readbacks"], "unlisted damage: {quiet}");
+    let (_surface, popup) = a.popup(false);
+    pump_patterns(&mut [&mut a, &mut b]);
+    thread::sleep(Duration::from_millis(150));
+    let with_popup = bus.call("comp.record.status", json!({"session":start["session"]}));
+    assert!(with_popup["readbacks"].as_u64().unwrap() > quiet["readbacks"].as_u64().unwrap());
+    popup.destroy();
+    drop(a);
+    thread::sleep(Duration::from_millis(150));
+    let closed = bus.call("comp.record.status", json!({"session":start["session"]}));
+    assert_eq!(closed["windows"], json!([]));
+    assert_eq!(closed["state"], "recording");
+    let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
+    assert_eq!(stop["error"], Value::Null, "{stop}");
+    let mut saw_app = false;
+    let mut saw_popup = false;
+    vfl_visit(&path, |pixels| {
+        for pixel in pixels.chunks_exact(4) {
+            let c = u32::from_le_bytes(pixel.try_into().unwrap());
+            assert_ne!(c, 0xff12abcd, "private initial pixels leaked");
+            assert_ne!(c, 0xffaa3377, "private updated pixels leaked");
+            saw_app |= COLOURS.contains(&c);
+            saw_popup |= c == 0xffff00ff;
+        }
+    });
+    assert!(saw_app && saw_popup, "listed app and popup must be decoded");
+    let markers = fs::read_to_string(path.join("markers.jsonl")).unwrap();
+    let gone: Vec<Value> = markers.lines().map(|l| serde_json::from_str(l).unwrap()).filter(|m: &Value| m["label"] == "window_gone").collect();
+    assert_eq!(gone.len(), 1);
+    assert_eq!(gone[0]["data"], target(&ar));
+    assert!(path.join("complete.json").exists());
+}
+
+#[test]
 fn record_4k_output_windows_pointer_and_damage_repeat() {
     record_4k();
 }

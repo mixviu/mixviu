@@ -3,6 +3,7 @@
 use super::*;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::output::Output;
+use smithay::backend::renderer::element::Element;
 use std::cell::RefCell;
 
 thread_local! {
@@ -22,14 +23,29 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
         let mut allowed = std::collections::HashSet::new();
         for row in state.inner.comp.registry.surface_rows() {
             if row.role().managed_toplevel() && row.mapped()
-                && (row.band() == surfaces_bottom() || listed.iter().any(|w| w.id == row.id().0 && w.generation == row.generation())) {
+                && listed.iter().any(|w| w.id == row.id().0 && w.generation == row.generation()) {
                 if let Some(uuid) = state.inner.comp.registry.uuid_for(row.id()) { allowed.insert(uuid); }
             }
         }
         let mut plan = Plan::new();
         if spec.cursor {
-            plan.extend(layer::POINTER, seat::pointer::draw::scene::element(state, renderer, size).into_iter().map(DrawNode::Pointer));
+            plan.extend(layer::POINTER, seat::pointer::draw::scene::element(state, renderer, size).into_iter()
+                .filter(|e| e.kind() == Kind::Cursor || matches!(e, world::seat::pointer::element::PointerRenderElement::Memory(_)))
+                .map(DrawNode::Pointer));
         }
+        // Only the backdrop's Background roots, never panels or their popups.
+        // Namespace is routing metadata, not a peer-authorisation claim.
+        let map = smithay::desktop::layer_map_for_output(output);
+        for surface in map.layers().rev().filter(|s| s.layer() == WlrLayer::Background && s.namespace() == "backdrop") {
+            if let Some(geometry) = map.layer_geometry(surface) {
+                plan.push(layer::LAYER_BACKGROUND, DrawNode::Surface(SurfaceNode {
+                    surface: surface.wl_surface().clone(),
+                    location: geometry.loc.to_f64().to_physical(scale).to_i32_round(),
+                    scale, alpha: 1.0,
+                }));
+            }
+        }
+        drop(map);
         let computed = world::viewport::layout::compute(state.inner.viewports(), smithay::utils::Rectangle::from_size(size));
         for (index, region) in computed.regions.iter().enumerate().rev() {
             state.inner.render_target = Some(world::state::RenderTarget {
@@ -45,6 +61,9 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
                 if let Some(window) = windows.get(&uuid) {
                     let (elements, drawn) = world::window::draw::frame::scene::scene(state, renderer, size, window, &context, &mut occ);
                     occ.extend(&drawn.opaque);
+                    if drawn.visible {
+                        window.send_frame(output, state.inner.start_time.elapsed(), Some(std::time::Duration::from_millis(16)), |_, _| Some(output.clone()));
+                    }
                     for elem in elements {
                         plan.push(layer::CANVAS, DrawNode::Canvas { elem: world::canvas::draw::element::Element::Window(elem) });
                     }
@@ -71,4 +90,3 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
     state.inner.render_output = old_output;
 }
 
-fn surfaces_bottom() -> surfaces::StackBand { surfaces::StackBand::Bottom }

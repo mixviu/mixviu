@@ -68,6 +68,7 @@ struct Session {
     params: RecordCommand,
     path: String,
     targets: Vec<CaptureFrameSpec>,
+    gone_markers: Vec<comp_model::capture::CaptureWindow>,
     fps: u32,
     encoder: String,
     probe: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
@@ -119,6 +120,31 @@ fn listed_status(s: &Session) -> Value {
     json!(s.targets.iter().filter_map(|t| t.listed_windows.as_ref()).flatten()
         .map(|w| json!({"id":w.id,"generation":w.generation})).collect::<Vec<_>>())
 }
+fn reconcile_listed(lp: &Loop, s: &mut Session) {
+    for target in &mut s.targets {
+        if let Some(listed) = &mut target.listed_windows {
+            listed.retain(|window| {
+                if lp.inner.comp.registry.resolve_window_target(window.id, Some(window.generation)).is_ok() {
+                    true
+                } else {
+                    s.gone_markers.push(*window);
+                    false
+                }
+            });
+        }
+    }
+    flush_gone_markers(s);
+}
+fn flush_gone_markers(s: &mut Session) -> bool {
+    while let Some(window) = s.gone_markers.first().copied() {
+        let Some(recording) = s.recording.as_mut() else { return false; };
+        if recording.marker("window_gone".into(), json!({"id":window.id,"generation":window.generation})).is_err() {
+            return false;
+        }
+        s.gone_markers.remove(0);
+    }
+    true
+}
 fn event(s: &Session, state: &'static str) {
     if s.last_state.replace(state) == state {
         return;
@@ -135,6 +161,11 @@ pub fn command(
     answer: impl FnOnce(ControlReply) + 'static,
 ) {
     let answer: Answer = Box::new(answer);
+    if matches!(op, RecordCommand::Stop { .. }) {
+        if let Some(current) = CURRENT.with_borrow(Clone::clone) {
+            reconcile_listed(lp, &mut current.borrow_mut());
+        }
+    }
     let params = op.clone();
     if let RecordCommand::Start { request_id, .. } = &op {
         if let Some(past) = PAST.with_borrow_mut(|past| past.get(request_id)) {
@@ -281,6 +312,7 @@ pub fn command(
             pixel_counter: 0,
             path,
             targets,
+            gone_markers: Vec::new(),
             fps,
             encoder,
             probe,
@@ -509,6 +541,15 @@ fn superseded(pending: &mut Option<Vec<u64>>, current: &[u64]) -> bool {
 }
 
 fn stop_stream(s: &mut Session, discard: bool) -> bool {
+    if !discard && s.failed.is_none() && !flush_gone_markers(s) {
+        let until = *s.drain_until.get_or_insert_with(|| Instant::now() + Duration::from_secs(1));
+        if Instant::now() < until {
+            schedule_stop(s, Instant::now() + Duration::from_millis(5));
+            return false;
+        }
+        s.failed = Some("window_gone marker admission timed out".into());
+        if let Some(r) = s.recording.as_mut() { r.error = s.failed.clone(); }
+    }
     // A submitted GPU snapshot already belongs to the take. Let its normal
     // fence callback deliver it before sealing, without blocking the Bus or
     // compositor. A failed/stalled backend still has a bounded escape path.
@@ -642,6 +683,7 @@ fn tick(session: &Rc<RefCell<Session>>, capture: impl FnOnce()) {
 }
 
 fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
+    reconcile_listed(lp, &mut session.borrow_mut());
     let clock = recorder::bus::monotonic_us();
     {
         let mut s = session.borrow_mut();
@@ -677,21 +719,6 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 event(&s, "finishing");
             }
             return;
-        }
-    }
-    // A closed listed window is removed only after its marker is admitted.
-    // Reserved marker capacity can still fill; retry it without losing the event.
-    {
-        let mut s = session.borrow_mut();
-        let gone: Vec<_> = s.targets.iter().filter_map(|t| t.listed_windows.as_ref()).flatten()
-            .filter(|w| lp.inner.comp.registry.resolve_window_target(w.id, Some(w.generation)).is_err()).copied().collect();
-        for window in gone {
-            let Some(r) = s.recording.as_mut() else { continue; };
-            if r.marker("window_gone".into(), json!({"id":window.id,"generation":window.generation})).is_ok() {
-                for t in &mut s.targets {
-                    if let Some(listed) = &mut t.listed_windows { listed.retain(|w| *w != window); }
-                }
-            }
         }
     }
     let signature = {
@@ -972,6 +999,7 @@ mod tests {
             params,
             path,
             targets: vec![],
+            gone_markers: Vec::new(),
             fps: 30,
             encoder: "vfl".into(),
             probe: None,
@@ -1449,6 +1477,7 @@ mod tests {
             params,
             path: "/tmp/pending-record-unit.vfl".into(),
             targets: vec![],
+            gone_markers: Vec::new(),
             fps: 30,
             encoder: "vfl".into(),
             probe: None,
