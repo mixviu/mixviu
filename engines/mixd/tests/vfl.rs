@@ -88,4 +88,10 @@ fn export_bgra_framemd5_y4m_and_ranges() {
     assert!(o.status.success());
     assert!(String::from_utf8(o.stdout).unwrap().contains("\"ok\":true"));
     std::fs::remove_dir_all(p).unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_mixd"))
+        .args(["vfl", "verify", "/nonexistent-vfl-demo-take"])
+        .output()
+        .unwrap();
+    assert!(!o.status.success());
+    assert!(String::from_utf8(o.stdout).unwrap().contains("\"ok\":false"));
 }
