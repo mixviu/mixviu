@@ -84,8 +84,9 @@ impl MotionSpec {
         self.targets
             .iter()
             .map(|target| match target {
-                MotionTarget::Pointer { duration, .. }
-                | MotionTarget::Window { duration, .. } => *duration,
+                MotionTarget::Pointer { duration, .. } | MotionTarget::Window { duration, .. } => {
+                    *duration
+                }
                 // A short replacement can inherit a longer remaining track.
                 MotionTarget::WindowTracks { .. } => Duration::from_millis(MAX_DURATION_MS),
             })

@@ -98,9 +98,12 @@ impl Pattern {
     /// Send a new buffer and destroy its role in the same Wayland read batch.
     pub fn commit_then_destroy(&mut self) {
         self.surface.attach(Some(&self.buffer), 0, 0);
-        self.surface.damage_buffer(0, 0, self.state.size.0, self.state.size.1);
+        self.surface
+            .damage_buffer(0, 0, self.state.size.0, self.state.size.1);
         self.surface.commit();
-        if let Some(decoration) = self._decoration.take() { decoration.destroy(); }
+        if let Some(decoration) = self._decoration.take() {
+            decoration.destroy();
+        }
         self._top.destroy();
         self.xdg.destroy();
         self.surface.destroy();
@@ -552,8 +555,17 @@ delegate_noop!(State: ignore WlSurface);
 delegate_noop!(State: ignore WlShm);
 delegate_noop!(State: WlShmPool);
 impl Dispatch<WlBuffer, ()> for State {
-    fn event(state: &mut Self, _: &WlBuffer, event: wayland_client::protocol::wl_buffer::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
-        if matches!(event, wayland_client::protocol::wl_buffer::Event::Release) { state.buffer_releases += 1; }
+    fn event(
+        state: &mut Self,
+        _: &WlBuffer,
+        event: wayland_client::protocol::wl_buffer::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if matches!(event, wayland_client::protocol::wl_buffer::Event::Release) {
+            state.buffer_releases += 1;
+        }
     }
 }
 impl Dispatch<WlPointer, WlSeat> for State {
