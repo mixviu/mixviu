@@ -425,7 +425,8 @@ where
     } else {
         opaque
     };
-    let (mut elements, crop) = crop_elements(elements, window, ctx, elem_loc, size);
+    let pane = pane_rect(state, ctx, size);
+    let (mut elements, crop) = crop_elements(elements, window, ctx, elem_loc, size, pane);
     if let Some(uuid) = window.uuid() {
         let visual = visual_of(window);
         let anchor = project_point(
@@ -438,6 +439,7 @@ where
             uuid,
             state.inner.render_output.as_deref().unwrap_or_default(),
             state.inner.render_target.map(|rt| rt.slot),
+            pane,
             anchor,
             ctx.scale * ctx.camera_zoom,
             &mut elements,
@@ -973,7 +975,7 @@ where
         Vec::new(),
         decor::render::Pass::Captured,
     );
-    let (elements, _) = crop_elements(elements, window, ctx, (0, 0).into(), size);
+    let (elements, _) = crop_elements(elements, window, ctx, (0, 0).into(), size, Rectangle::from_size(size));
     Ok((
         elements,
         size,
@@ -996,6 +998,7 @@ fn crop_elements<R>(
     ctx: XformCtx,
     loc: Point<i32, Logical>,
     size: Size<i32, Physical>,
+    pane: Rectangle<i32, Physical>,
 ) -> (
     Vec<crate::window::draw::element::Element<R>>,
     Option<Rectangle<i32, Physical>>,
@@ -1005,7 +1008,9 @@ where
     R::TextureId: Texture + Clone + Send + 'static,
 {
     let visual = visual_of(window);
-    let crop = visual.clip.map(|c| project_clip(ctx, loc, c, size));
+    let crop = visual.clip.map(|c| if visual.transformed() {
+        project_clip_unbounded(ctx, loc, c)
+    } else { project_clip(ctx, loc, c, size) });
     let elements: Vec<crate::window::draw::element::Untransformed<R>> =
         if !visual.visible || visual.scale.factor == 0.0 {
             Vec::new()
@@ -1045,21 +1050,17 @@ where
     let elements =
         elements
             .into_iter()
-            .map(|mut element| {
-                if let Element::WindowFitClipped(clipped) = element.raw_mut() {
-                    clipped.set_rescale(factor, offset);
-                }
-                let scaled = RescaleRenderElement::from_element(
-                    element,
-                    Point::from((0, 0)),
-                    Scale::from(factor),
-                );
-                crate::window::draw::element::Element::Transformed(
-                    RelocateRenderElement::from_element(scaled, offset, Relocate::Relative),
-                )
-            })
+            .filter_map(|element| crate::window::draw::element::Element::transformed(element, factor, offset, pane))
             .collect();
     (elements, crop)
+}
+
+fn project_clip_unbounded(ctx: XformCtx, loc: Point<i32, Logical>, clip: comp_model::request::ClipRect) -> Rectangle<i32, Physical> {
+    let x = loc.x as f64 + clip.x;
+    let y = loc.y as f64 + clip.y;
+    let a = project_point(ctx, x, y);
+    let b = project_point(ctx, x + clip.width, y + clip.height);
+    Rectangle::new(a, (b.x.saturating_sub(a.x).max(0), b.y.saturating_sub(a.y).max(0)).into())
 }
 
 /// Bound projected corners to the framebuffer before subtracting them. Local
@@ -1084,6 +1085,16 @@ fn project_clip(
 #[cfg(test)]
 mod clip_tests {
     use super::*;
+    #[test]
+    fn pretransform_clip_keeps_pixels_that_translation_can_reveal() {
+        let ctx = XformCtx::new((0.0, 0.0), 1.0, (100.0, 100.0), 1.0);
+        let local = comp_model::request::ClipRect { x: 0.0, y: 0.0, width: 40.0, height: 40.0 };
+        let projected = project_clip_unbounded(ctx, (-1000, 0).into(), local);
+        assert!(projected.loc.x < 0);
+        assert_eq!(projected.size, (40, 40).into());
+        assert_eq!(project_clip(ctx, (-1000, 0).into(), local, (100,100).into()).size.w, 0);
+    }
+
     #[test]
     fn clip_origin_and_zoom_cannot_overflow_physical_rectangles() {
         let size = Size::from((1280, 720));

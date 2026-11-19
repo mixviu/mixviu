@@ -6,6 +6,7 @@ use motion::{Property, Values};
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceTexture;
 use smithay::backend::renderer::element::texture::TextureRenderElement;
+use smithay::backend::renderer::element::utils::CropRenderElement;
 use smithay::backend::renderer::element::{Element as _, Id, Kind};
 use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{Color32F, ContextId, ImportAll, ImportMem, Renderer, Texture};
@@ -16,11 +17,16 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 smithay::render_elements! {
-    pub Ghost<R> where R: ImportAll + ImportMem + SceneDispatch;
+    pub GhostContent<R> where R: ImportAll + ImportMem + SceneDispatch;
     Texture = ElementWindowSurface<TextureRenderElement<R::TextureId>>,
     ClippedTexture = decor::clip::Clipped<ElementWindowSurface<TextureRenderElement<R::TextureId>>>,
     Solid = SolidColorRenderElement,
     ClippedSolid = decor::clip::Clipped<SolidColorRenderElement>,
+}
+
+smithay::render_elements! {
+    pub Ghost<R> where R: ImportAll + ImportMem + SceneDispatch;
+    Cropped = CropRenderElement<GhostContent<R>>,
 }
 
 struct Snapshot<T: Texture> {
@@ -36,6 +42,7 @@ struct Snapshot<T: Texture> {
     alpha: f32,
     anchor: Point<i32, Physical>,
     logical_scale: f64,
+    pane_clip: Rectangle<i32, Physical>,
     clip: Option<(Option<dispatcher::frame::TexProgram>, decor::clip::Clip)>,
     // Retaining the protocol buffer delays only its release/reuse, never client
     // destruction. A texture clone alone could outlive wl_buffer.release.
@@ -132,6 +139,7 @@ pub fn retain<R>(
     uuid: Uuid,
     output: &str,
     pane: Option<u64>,
+    pane_clip: Rectangle<i32, Physical>,
     anchor: Point<i32, Physical>,
     logical_scale: f64,
     elements: &mut [Element<R>],
@@ -274,6 +282,7 @@ pub fn retain<R>(
             alpha,
             anchor,
             logical_scale,
+            pane_clip,
             clip,
             _buffer: buffer,
         });
@@ -319,12 +328,12 @@ where
                     let texture = draw(snapshot, values);
                     elements.push(if let Some((program, clip)) = &snapshot.clip {
                         let (scale, offset) = transform_parts(snapshot, values);
-                        Ghost::ClippedTexture(
+                        GhostContent::ClippedTexture(
                             decor::clip::Clipped::new(texture, program.clone(), *clip)
                                 .rescaled(scale, offset),
                         )
                     } else {
-                        Ghost::Texture(texture)
+                        GhostContent::Texture(texture)
                     });
                 }
                 if let Some(color) = snapshot.color {
@@ -344,17 +353,18 @@ where
                     );
                     elements.push(if let Some((program, clip)) = &snapshot.clip {
                         let (scale, offset) = transform_parts(snapshot, values);
-                        Ghost::ClippedSolid(
+                        GhostContent::ClippedSolid(
                             decor::clip::Clipped::new(solid, program.clone(), *clip)
                                 .rescaled(scale, offset),
                         )
                     } else {
-                        Ghost::Solid(solid)
+                        GhostContent::Solid(solid)
                     });
                 }
             }
         }
-        elements
+        let pane_clip = cache.get(&(uuid, output.to_owned(), pane)).and_then(|snapshots| snapshots.first()).map(|snapshot| snapshot.pane_clip);
+        elements.into_iter().filter_map(|element| CropRenderElement::from_element(element, Scale::from(1.0), pane_clip?)).map(Ghost::Cropped).collect()
     })
 }
 
