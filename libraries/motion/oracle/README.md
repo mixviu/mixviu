@@ -24,15 +24,13 @@ is shadow blur / 40, background scalar is first-layer X position / 18%, and
 shine scalar is background X position / 100%. These are explicit renderer
 projections, rather than claims of full visual equivalence.
 
-Submit the script through the native CBC queue with `needs: ["chrome"]`,
-`kind: "check"`, the pushed commit and command
-`["mix", "tools/motion_oracle.mix"]`. It emits `MOTION_ORACLE_JSON=` followed
-by one JSON line into the saved CBC log; copy that generated line to
-`libraries/motion/oracle/chrome.json` only after a successful run. The script
-uses a temporary directory and does not dirty the shared worker checkout.
+The committed generated fixture was captured on cos, the media builder, as
+user markc with Google Chrome 157.0.8103.78 on 2026-11-19. The orchestrator
+copied the oracle inputs into a scratch directory, ran the unchanged
+`tools/motion_oracle.mix`, retrieved its `MOTION_ORACLE_JSON=` output, and
+removed the directory. This was not a CBC capture: no CBC worker currently
+advertises the Chrome capability. The private runner is `run_on_cos.mix`.
 
-Capture is currently blocked: on 2026-11-19 the native queue rejected the
-Chrome capability request with `BUILDD_SLOT: no configured slot satisfies
-this job`. No Chrome fixture or passing oracle result is claimed. Restore
-an authorised worker with the `chrome` capability and rerun before accepting
-this library's CSS parity gate.
+The fixture contains all 19 presets and 21 samples each. CBC tests consume
+this committed data without a browser; `chrome_oracle` is an ordinary gate.
+The reference and fixture data are not modified to fit the native sampler.

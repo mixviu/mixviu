@@ -1,12 +1,11 @@
 # Validation status
 
-The shared sampler is pending its browser parity gate. The native build queue
-has no configured slot satisfying `needs: ["chrome"]` (2026-11-19).
-Consequently all nineteen presets have **unmeasured** maximum browser errors:
-up, down, left, right, pop, zoom, fade, wipe, drop, flip, spin, glow, kb,
-float, draw, blink, bg, under and shine. No generated fixture is committed.
-The ignored `chrome_oracle` test fails if explicitly invoked without a real
-fixture; ordinary unit tests cannot establish this gate.
+The generated Chrome fixture was captured on cos (the media builder), not
+CBC, as user markc with Google Chrome 157.0.8103.78 on 2026-11-19. The
+orchestrator ran the unchanged Mix oracle script in a scratch directory and
+retrieved its JSON output. All 19 presets have 21 samples. The committed
+fixture now feeds the ordinary, non-ignored `chrome_oracle` test on CBC.
+Per-property errors and final parity results follow after evaluation.
 
 An optimised native worker test of ten objects with three Bézier-eased
 properties each measured 852,821 scenes/second, 25,584,616 property
