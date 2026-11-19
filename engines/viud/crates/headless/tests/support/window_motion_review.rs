@@ -297,6 +297,87 @@ fn exported_frames(path: &Path, mut visit: impl FnMut(usize, usize, &[u8])) {
 }
 
 #[test]
+fn place_during_active_run_removes_only_supplied_tracks_and_finish_preserves_them() {
+    if !process::record_available() { return; }
+    let bus = Bus::start("motion-review-active-place");
+    let mut process = process::spawn(1, None, "motion-review-active-place", Some(&bus.url));
+    bus.ready();
+    let (mut client, row) = solid_window(&bus, &mut process, "active-place", 0xffffffff, 300, 200);
+    thread::scope(|scope| {
+        let running = scope.spawn(|| bus.call("comp.motion.run", json!({"targets":[{"window":{
+            "id":row["id"],"generation":row["generation"],"duration_ms":1200,
+            "tracks":[
+                {"property":"scale","keyframes":[{"offset":0,"value":0.4,"easing":{"kind":"linear"}},{"offset":1,"value":0.8}]},
+                {"property":"opacity","keyframes":[{"offset":0,"value":0.4,"easing":{"kind":"linear"}},{"offset":1,"value":0.6}]}
+            ]
+        }}]})));
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let sampled = loop {
+            let sampled = bus.window_for("active-place", &mut [&mut client]);
+            if sampled["scale"]["factor"].as_f64().unwrap() < 0.7 { break sampled; }
+            assert!(Instant::now() < deadline, "tracks did not start");
+        };
+        // Equals the stored base: it must still remove the active opacity track.
+        bus.call("comp.window.place", place_args(&row, json!({"opacity":1})));
+        let placed = bus.window_for("active-place", &mut [&mut client]);
+        assert_eq!(placed["opacity"], 1);
+        assert!(placed["scale"]["factor"].as_f64().unwrap() < 0.8);
+        let (width, _, pixels) = ppm(&bus, &process, "placed-during-run", None);
+        assert_eq!(rgb_at(&pixels, width, 320, 220), [255,255,255]);
+        assert_eq!(running.join().unwrap()["status"], "completed");
+        let final_row = bus.window_for("active-place", &mut [&mut client]);
+        assert_eq!(final_row["opacity"], 1);
+        assert_eq!(final_row["scale"]["factor"], 0.8);
+        assert!(final_row["scale"]["factor"].as_f64().unwrap() > sampled["scale"]["factor"].as_f64().unwrap());
+        let (width, _, pixels) = ppm(&bus, &process, "placed-after-finish", None);
+        assert_eq!(rgb_at(&pixels, width, 320, 220), [255,255,255]);
+    });
+}
+
+#[test]
+fn hide_then_destroy_before_lifecycle_tick_has_no_ghost_in_decoded_frames() {
+    if !process::record_available() { return; }
+    let bus = Bus::start("motion-review-hide-destroy");
+    let mut process = process::spawn_preferences("motion-review-hide-destroy", &bus.url,
+        json!({"window_motion":{"unmap":{"preset":"fade","duration_ms":1500}}}));
+    bus.ready();
+    let (mut closing, row) = solid_window(&bus, &mut process, "hide-destroy", 0xffffffff, 300, 200);
+    let (mut sentinel, _) = solid_window(&bus, &mut process, "hide-destroy-sentinel", 0xffff0000, 800, 200);
+    let (width, _, pixels) = ppm(&bus, &process, "hide-destroy-shown", None);
+    assert_eq!(rgb_at(&pixels, width, 400, 280), [255,255,255]);
+    // Freeze lifecycle observation, not dispatch. Both changes happen before
+    // its next tick, deterministically preserving the stale shown facts.
+    fs::write(process.root.join("pause-lifecycle"), b"pause").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !process.root.join("pause-lifecycle.ack").exists() {
+        bus.call("comp.windows.list", json!({}));
+        assert!(Instant::now() < deadline, "lifecycle barrier not acknowledged");
+    }
+    let path = process.root.join("hide-destroy.vfl");
+    let start = bus.call("comp.record.start", json!({"request_id":"hide-destroy","target":{"output":"headless-0"},"path":path,"fps":30,"cursor":false,"max_seconds":10}));
+    bus.call("comp.window.place", place_args(&row, json!({"visible":false})));
+    closing.commit_then_destroy();
+    pump_patterns(&mut [&mut closing]);
+    // A list reply witnesses destruction before the barrier is released.
+    let windows = bus.call("comp.windows.list", json!({}));
+    assert!(!windows["windows"].as_array().unwrap().iter().any(|w| w["id"] == row["id"]));
+    fs::remove_file(process.root.join("pause-lifecycle")).unwrap();
+    sentinel.solid_buffer(0xff20d040);
+    sentinel.commit(true);
+    for _ in 0..100 { sentinel.pump(); thread::sleep(Duration::from_millis(5)); }
+    let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
+    assert_eq!(stop["dropped"], 0);
+    let mut witnessed = 0;
+    exported_frames(&path, |frame, width, pixels| {
+        if pixel(pixels, width, 850, 280) == [0x20,0xd0,0x40] {
+            witnessed += 1;
+            assert_eq!(pixel(pixels, width, 400, 280), [18,20,25], "frame {frame}: explicit hide followed by destruction resurrected pixels");
+        }
+    });
+    assert!(witnessed >= 3, "need several frames after hide/destroy");
+}
+
+#[test]
 fn close_ghost_cannot_leak_into_a_different_workspace_in_recorded_frames() {
     if !process::record_available() {
         return;

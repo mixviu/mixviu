@@ -273,6 +273,23 @@ fn virtual_output(index: usize) -> Output {
     )
 }
 
+/// Deterministic source-order fixture: leave protocol/Bus dispatch and drawing
+/// live while holding lifecycle observation between explicit hide and destroy.
+/// Compiled out of ordinary builds and restricted to our headless context.
+pub fn test_lifecycle_paused() -> bool {
+    #[cfg(feature = "test-support")]
+    if FALLBACK.with(|slot| slot.borrow().is_some())
+        && let Some(root) = std::env::var_os("XDG_RUNTIME_DIR")
+    {
+        let root = std::path::PathBuf::from(root);
+        if root.join("pause-lifecycle").exists() {
+            std::fs::write(root.join("pause-lifecycle.ack"), b"paused").unwrap();
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod identity_tests {
     #[test]

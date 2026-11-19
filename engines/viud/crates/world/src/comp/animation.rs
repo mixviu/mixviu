@@ -85,6 +85,26 @@ pub fn cancel(window: &Window) {
     }
 }
 
+/// Placement takes ownership only of the fields it supplies. Remaining tracks
+/// keep their original clock and endpoint; finish cannot restore removed ones.
+pub fn place(window: &Window, spec: &comp_model::request::PlaceSpec) -> bool {
+    let Some(cell) = window.user_data().get::<Mutex<Option<VisualRun>>>() else {
+        return false;
+    };
+    let mut slot = cell.lock().unwrap();
+    let Some(run) = slot.as_mut() else { return false; };
+    let before = run.preset.tracks.len();
+    run.preset.tracks.retain(|track| !match track.property {
+        Property::Opacity => spec.opacity.is_some(),
+        Property::Scale => spec.scale.is_some(),
+        Property::Tx | Property::Ty => spec.translate.is_some(),
+        _ => false,
+    });
+    let changed = before != run.preset.tracks.len();
+    if run.preset.tracks.is_empty() { *slot = None; }
+    changed
+}
+
 /// Identity of the current visual run, including its terminal filled sample.
 pub fn started(window: &Window) -> Option<Instant> {
     window

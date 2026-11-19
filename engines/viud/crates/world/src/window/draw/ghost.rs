@@ -49,7 +49,17 @@ struct Snapshot<T: Texture> {
     _buffer: Option<smithay::backend::renderer::utils::Buffer>,
 }
 type Cache<T> = HashMap<(Uuid, String, Option<u64>), Vec<Snapshot<T>>>;
-thread_local! { static CACHES: RefCell<HashMap<TypeId, Box<dyn Any>>> = RefCell::new(HashMap::new()); }
+trait ScopedCache: Any {
+    fn clear_output(&mut self, output: &str);
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+impl<T: Texture + 'static> ScopedCache for Cache<T> {
+    fn clear_output(&mut self, output: &str) {
+        self.retain(|(_, scope, _), _| scope != output);
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
+thread_local! { static CACHES: RefCell<HashMap<TypeId, Box<dyn ScopedCache>>> = RefCell::new(HashMap::new()); }
 thread_local! { static ORDERS: RefCell<HashMap<(String, Option<u64>), Vec<Uuid>>> = RefCell::new(HashMap::new()); }
 thread_local! {
     static SOURCES: RefCell<HashMap<Uuid, HashSet<Id>>> = RefCell::new(HashMap::new());
@@ -65,7 +75,7 @@ pub fn workspace(output: &str, workspace: u32) {
             .is_some_and(|old| old != workspace)
     });
     if changed {
-        clear();
+        clear_output(output);
     }
 }
 
@@ -81,7 +91,17 @@ pub fn capture_exit(uuid: Uuid) {
     });
 }
 
-/// Workspace changes invalidate all outgoing images before the new scene.
+/// Invalidate only the changed output before composing its new workspace.
+pub fn clear_output(output: &str) {
+    CACHES.with(|caches| {
+        for cache in caches.borrow_mut().values_mut() { cache.clear_output(output); }
+    });
+    ORDERS.with(|orders| orders.borrow_mut().retain(|(scope, _), _| scope != output));
+    // Source leases are pruned against the surviving lifecycle exits on the
+    // next draw, preserving active images on every other output.
+}
+
+/// All-output invalidation (for example, session locking).
 pub fn clear() {
     CACHES.with(|caches| caches.borrow_mut().clear());
     ORDERS.with(|orders| orders.borrow_mut().clear());
@@ -159,7 +179,7 @@ where
         if let Some(cache) = caches
             .borrow_mut()
             .get_mut(&TypeId::of::<R::TextureId>())
-            .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>())
+            .and_then(|cache| cache.as_any_mut().downcast_mut::<Cache<R::TextureId>>())
         {
             cache.retain(|(uuid, _, _), _| enabled && keep.contains(uuid));
         }
@@ -180,7 +200,7 @@ where
         if let Some(cache) = caches
             .borrow_mut()
             .get_mut(&TypeId::of::<R::TextureId>())
-            .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>())
+            .and_then(|cache| cache.as_any_mut().downcast_mut::<Cache<R::TextureId>>())
         {
             cache.retain(|(_, key, pane), _| key != output || live_pane(*pane));
         }
@@ -303,7 +323,7 @@ pub fn retain<R>(
         let cache = caches
             .entry(TypeId::of::<R::TextureId>())
             .or_insert_with(|| Box::new(Cache::<R::TextureId>::new()))
-            .downcast_mut::<Cache<R::TextureId>>()
+            .as_any_mut().downcast_mut::<Cache<R::TextureId>>()
             .unwrap();
         cache.insert((uuid, output.to_owned(), pane), snapshots);
     });
@@ -320,7 +340,7 @@ where
         let mut caches = caches.borrow_mut();
         let Some(cache) = caches
             .get_mut(&TypeId::of::<R::TextureId>())
-            .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>())
+            .and_then(|cache| cache.as_any_mut().downcast_mut::<Cache<R::TextureId>>())
         else {
             return Vec::new();
         };
@@ -478,6 +498,40 @@ fn draw<T: Texture + Clone>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Debug)]
+    struct TestTexture;
+    impl Texture for TestTexture {
+        fn width(&self) -> u32 { 1 }
+        fn height(&self) -> u32 { 1 }
+        fn format(&self) -> Option<smithay::backend::allocator::Fourcc> { None }
+    }
+
+    #[test]
+    fn workspace_invalidation_removes_only_that_outputs_cached_images_and_order() {
+        let a = Uuid::from_u128(1);
+        let b = Uuid::from_u128(2);
+        CACHES.with(|caches| caches.borrow_mut().insert(TypeId::of::<TestTexture>(), Box::new(Cache::<TestTexture>::from([
+            ((a, "a".into(), None), Vec::new()),
+            ((b, "b".into(), None), Vec::new()),
+        ]))));
+        ORDERS.with(|orders| orders.borrow_mut().extend([(("a".into(), None), vec![a]), (("b".into(), None), vec![b])]));
+        workspace("a", 1);
+        workspace("b", 2);
+        workspace("a", 3);
+        CACHES.with(|caches| {
+            let mut caches = caches.borrow_mut();
+            let cache = caches.get_mut(&TypeId::of::<TestTexture>()).unwrap().as_any_mut().downcast_mut::<Cache<TestTexture>>().unwrap();
+            assert!(!cache.contains_key(&(a, "a".into(), None)));
+            assert!(cache.contains_key(&(b, "b".into(), None)));
+        });
+        ORDERS.with(|orders| {
+            let orders = orders.borrow();
+            assert!(!orders.contains_key(&("a".into(), None)));
+            assert_eq!(orders.get(&("b".into(), None)), Some(&vec![b]));
+        });
+        clear();
+    }
 
     #[test]
     fn simultaneous_exits_keep_neighbours_and_ui_barriers() {

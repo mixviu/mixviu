@@ -11,26 +11,58 @@ use std::collections::HashMap;
 use std::time::Instant;
 use uuid::Uuid;
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 struct Facts {
     mapped: bool,
     minimised: bool,
     workspace: Option<u32>,
     shown: bool,
     visible: bool,
+    output: String,
+}
+
+impl Facts {
+    fn on_current(&self, workspaces: &HashMap<String, u32>) -> bool {
+        self.workspace == workspaces.get(&self.output).copied()
+    }
 }
 
 #[derive(Default)]
 struct State {
     previous: HashMap<Uuid, Facts>,
-    pub exits: HashMap<Uuid, super::animation::VisualRun>,
+    exits: HashMap<Uuid, (String, super::animation::VisualRun)>,
     settings: WindowMotion,
     active: bool,
     incoming: HashMap<Uuid, Instant>,
-    workspace: Option<u32>,
+    workspaces: HashMap<String, u32>,
 }
 
 thread_local! { static STATE: RefCell<State> = RefCell::new(State::default()); }
+
+/// Record explicit policy at application time, before destruction can erase
+/// the registry row and before the next lifecycle observation.
+pub fn visibility(uuid: Uuid, visible: bool) {
+    STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        if let Some(old) = state.previous.get_mut(&uuid) {
+            old.visible = visible;
+            if !visible { old.shown = false; }
+        }
+        if !visible { state.exits.remove(&uuid); }
+    });
+}
+
+impl State {
+    fn sync_workspaces(&mut self, current: HashMap<String, u32>) {
+        for (output, old) in &self.workspaces {
+            if current.get(output) != Some(old) {
+                self.exits.retain(|_, (scope, _)| scope != output);
+                crate::window::draw::ghost::clear_output(output);
+            }
+        }
+        self.workspaces = current;
+    }
+}
 
 pub fn preset(config: &WindowTransition, reverse: bool) -> Option<Preset> {
     if config.duration_ms > 10_000 {
@@ -123,6 +155,25 @@ pub fn service(lp: &mut Loop) -> bool {
         .flat_map(|space| space.state.elements())
         .filter_map(|window| Some((window.uuid()?, window.clone())))
         .collect();
+    let default_output = lp.inner.comp.default_output.as_ref().map(|o| o.key.clone()).unwrap_or_default();
+    let outputs: HashMap<Uuid, String> = lp.inner.all_world_spaces().into_iter()
+        .flat_map(|space| space.state.elements().filter_map(|window| {
+            Some((window.uuid()?, space.state.outputs_for_element(window).first()
+                .map(|output| comp_model::snapshot::output_key(&output.name()))
+                .unwrap_or_else(|| default_output.clone())))
+        }).collect::<Vec<_>>())
+        .collect();
+    let mut workspaces: HashMap<String, u32> = lp.inner.comp.workspaces.current.iter()
+        .map(|(output, workspace)| (output.clone(), *workspace)).collect();
+    for space in lp.inner.all_world_spaces() {
+        for output in space.state.outputs() {
+            let key = comp_model::snapshot::output_key(&output.name());
+            workspaces.entry(key.clone()).or_insert_with(|| lp.inner.comp.workspaces.current_for(Some(&key)));
+        }
+    }
+    for output in outputs.values().chain(std::iter::once(&default_output)) {
+        workspaces.entry(output.clone()).or_insert_with(|| lp.inner.comp.workspaces.current_for(Some(output)));
+    }
     let current: HashMap<Uuid, Facts> = lp
         .inner
         .comp
@@ -130,27 +181,27 @@ pub fn service(lp: &mut Loop) -> bool {
         .surface_rows()
         .filter(|r| r.role().managed_toplevel())
         .filter_map(|r| {
+            let uuid = r.uuid()?;
+            let output = outputs.get(&uuid).unwrap_or(&default_output).clone();
+            let visible = lp.inner.comp.visual(r.id()).visible;
             Some((
-                r.uuid()?,
+                uuid,
                 Facts {
                     mapped: r.mapped(),
                     minimised: r.minimized(),
                     workspace: r.workspace(),
-                    shown: r.mapped() && !lp.inner.comp.hidden_id(r.id()),
-                    visible: lp.inner.comp.visual(r.id()).visible,
+                    shown: r.mapped() && visible && !r.minimized()
+                        && r.workspace() == Some(lp.inner.comp.workspaces.current_for(Some(&output))),
+                    visible,
+                    output,
                 },
             ))
         })
         .collect();
     STATE.with(|state| {
         let mut state = state.borrow_mut();
-        let workspace = lp.inner.comp.current_workspace();
-        let workspace_changed = state.workspace != Some(workspace);
-        if workspace_changed {
-            state.exits.clear();
-            crate::window::draw::ghost::clear();
-            state.workspace = Some(workspace);
-        }
+        let previous_workspaces = state.workspaces.clone();
+        state.sync_workspaces(workspaces);
         state.incoming.retain(|uuid, started| {
             let Some(window) = windows.get(uuid) else {
                 return false;
@@ -191,7 +242,7 @@ pub fn service(lp: &mut Loop) -> bool {
                 settings.restore.as_ref()
             } else if fact.shown
                 && old.is_some_and(|old| {
-                    !old.shown && (workspace_changed || old.workspace != fact.workspace)
+                    !old.shown && (previous_workspaces.get(&fact.output) != state.workspaces.get(&fact.output) || old.workspace != fact.workspace)
                 })
             {
                 settings.workspace.as_ref()
@@ -225,11 +276,11 @@ pub fn service(lp: &mut Loop) -> bool {
             } else {
                 None
             };
-            if new.is_some_and(|facts| !facts.visible) {
+            if !old.visible || new.is_some_and(|facts| !facts.visible) {
                 state.exits.remove(uuid);
                 continue;
             }
-            if old.workspace != Some(workspace) {
+            if !old.on_current(&state.workspaces) {
                 continue;
             }
             if let Some(config) = exit
@@ -238,16 +289,16 @@ pub fn service(lp: &mut Loop) -> bool {
                 crate::window::draw::ghost::capture_exit(*uuid);
                 state.exits.insert(
                     *uuid,
-                    super::animation::VisualRun {
+                    (old.output.clone(), super::animation::VisualRun {
                         started: now,
                         preset,
-                    },
+                    }),
                 );
             }
         }
         state.previous = current;
         state.settings = settings;
-        state.exits.retain(|_, run| run.active(now));
+        state.exits.retain(|_, (_, run)| run.active(now));
         let active = !state.exits.is_empty()
             || windows
                 .values()
@@ -267,8 +318,8 @@ pub fn exits(now: Instant) -> HashMap<Uuid, motion::Values> {
             .borrow()
             .exits
             .iter()
-            .filter(|(_, run)| run.active(now))
-            .map(|(uuid, run)| (*uuid, run.sample(now)))
+            .filter(|(_, (_, run))| run.active(now))
+            .map(|(uuid, (_, run))| (*uuid, run.sample(now)))
             .collect()
     })
 }
@@ -296,6 +347,44 @@ pub fn retained_windows() -> std::collections::HashSet<Uuid> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn workspace_switch_keeps_the_other_outputs_exit_and_uses_its_workspace() {
+        let a = Uuid::from_u128(1);
+        let b = Uuid::from_u128(2);
+        let started = Instant::now();
+        let run = super::super::animation::VisualRun {
+            started,
+            preset: preset(&WindowTransition { preset: "fade".into(), duration_ms: 1000 }, true).unwrap(),
+        };
+        let mut state = State::default();
+        state.workspaces = HashMap::from([("a".into(), 1), ("b".into(), 2)]);
+        state.exits.insert(a, ("a".into(), run.clone()));
+        state.exits.insert(b, ("b".into(), run));
+        let other = Facts { mapped: true, minimised: false, workspace: Some(2), shown: true, visible: true, output: "b".into() };
+        assert!(other.on_current(&state.workspaces));
+        state.sync_workspaces(HashMap::from([("a".into(), 3), ("b".into(), 2)]));
+        assert!(!state.exits.contains_key(&a));
+        let (_, remaining) = state.exits.get(&b).expect("unaffected output retains its exit");
+        let later = started + std::time::Duration::from_millis(500);
+        assert!(remaining.active(later));
+        assert_eq!(remaining.sample(later).get(Property::Opacity), 0.5);
+        assert!(other.on_current(&state.workspaces));
+    }
+
+    #[test]
+    fn explicit_hide_updates_stale_facts_before_the_next_observation() {
+        let uuid = Uuid::from_u128(11);
+        STATE.with(|state| state.borrow_mut().previous.insert(uuid, Facts {
+            mapped: true, minimised: false, workspace: Some(1), shown: true,
+            visible: true, output: "a".into(),
+        }));
+        visibility(uuid, false);
+        STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            let old = state.previous.remove(&uuid).unwrap();
+            assert!(!old.visible && !old.shown, "destroy cannot turn stale shown facts into an exit");
+        });
+    }
     #[test]
     fn disabled_defaults_and_shared_reverse_exit() {
         let settings: WindowMotion = serde_json::from_str("{}").unwrap();

@@ -31,6 +31,14 @@ it does not disable input. `visible:false` suppresses drawing, input and
 frame callbacks through the normal invisible-window path, while retaining
 mapping and size. Clip crops pixels and does not change input geometry.
 
+Placing `opacity`, `scale` or `translate` during a motion run immediately
+takes ownership of those fields, even when the value equals the stored base.
+Their tracks are removed, so the run's completion cannot overwrite the placed
+values. Other tracks retain their existing clock and endpoint. `translate`
+takes both axes; `scale` takes the factor and anchor. Explicit hide cancels
+all visual tracks and suppresses any exit image immediately, including when
+the client is destroyed before the next lifecycle tick.
+
 Stacking uses the existing workspace band and normal raise order for equal
 z values. Compositor-marked drawables remain barriers, and lock, OSD and
 other compositor bands remain above client windows. The scale and translation

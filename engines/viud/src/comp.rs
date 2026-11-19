@@ -634,6 +634,10 @@ impl Bus {
     /// state is committed and the caller told `parked`. Re-arms its timer
     /// while any run: every tick when live, the next end time when paused.
     fn service_motions(&mut self, lp: &mut Loop) {
+        #[cfg(feature = "test-support")]
+        let lifecycle_active = !headless::wire::test_lifecycle_paused()
+            && world::comp::lifecycle_motion::service(lp);
+        #[cfg(not(feature = "test-support"))]
         let lifecycle_active = world::comp::lifecycle_motion::service(lp);
         if lifecycle_active {
             lp.state

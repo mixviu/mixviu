@@ -828,11 +828,18 @@ fn apply_visual(lp: &mut Loop, id: SurfaceId, spec: &comp_model::request::PlaceS
     let old = lp.inner.comp.visual(id);
     let mut visual = old;
     visual.update(spec);
-    if old == visual {
+    if spec.visible.is_some()
+        && let Some(uuid) = lp.inner.comp.registry.uuid_for(id)
+    {
+        world::comp::lifecycle_motion::visibility(uuid, visual.visible);
+    }
+    let window = window_of(lp, id);
+    let tracks_changed = window.as_ref().is_some_and(|window| world::comp::animation::place(window, spec));
+    if old == visual && !tracks_changed {
         return;
     }
     lp.inner.comp.visuals.insert(id, (spec.generation, visual));
-    if let Some(window) = window_of(lp, id) {
+    if let Some(window) = window {
         if !visual.visible || !world::comp::animation::active(&window, std::time::Instant::now()) {
             world::comp::animation::cancel(&window);
         }
