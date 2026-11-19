@@ -74,9 +74,9 @@ unlisted content cause no readback; unchanged pictures use scheduled repeats.
 
 | Action | Parameters | Reply |
 |---|---|---|
-| `comp.record.start` | `request_id`, `target:{output?,output_generation?,window?:{id,generation},region?:{x,y,width,height}}` or `target:{windows:[{id,generation}]}`, absolute `.vfl` directory `path`, `fps?` (30; 1–60), `cursor?` (true), `encoder?` (`vfl`), `max_seconds` (1–86400) | `session,path,recovery_path,width,height,fps,clock:"monotonic",t0_us,frames_path,markers_path` |
+| `comp.record.start` | `request_id`, `target:{output?,output_generation?,window?:{id,generation},region?:{x,y,width,height}}` or `target:{windows:[{id,generation}]}` or `target:{output,output_generation?,windows:[{id,generation}]}`, absolute `.vfl` directory `path`, `fps?` (30; 1–60), `cursor?` (true), `encoder?` (`vfl`), `max_seconds` (1–86400) | `session,path,recovery_path,width,height,fps,clock:"monotonic",t0_us,frames_path,markers_path` |
 | `comp.record.marker` | `session,label,data?` | `session,seq,frame,t_us` |
-| `comp.record.status` | `session?` | `session,state,frames,repeated,dropped,dropped_capture,dropped_queue,readback_deferred,pending_ticks,duration_us,bytes,queue,encoders:["vfl"],readbacks,readback_us,readback_mean_us,readback_max_us,writer,encoder,error` |
+| `comp.record.status` | `session?` | `session,state,windows,frames,repeated,dropped,dropped_capture,dropped_queue,readback_deferred,pending_ticks,duration_us,bytes,queue,encoders:["vfl"],readbacks,readback_us,readback_mean_us,readback_max_us,writer,encoder,error` |
 | `comp.record.stop` | `session,discard?` | `path,recovery_path,bytes,frames,repeated,dropped,dropped_capture,dropped_queue,readback_deferred,pending_ticks,duration_us,frames_path,markers_path,encoder,readbacks,readback_us,readback_mean_us,readback_max_us,writer,error` |
 
 Only VFL is available. Matroska paths, x264 and VAAPI requests are refused.
