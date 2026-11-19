@@ -412,9 +412,12 @@ impl Reader {
             };
             // Only this chunk receipt is advisory. In particular, never bypass
             // finish(), which checks the remaining frame sidecar independently.
-            if let Some(r) = r.filter(|r| !final_recovery || ["bytes", "crc32", "next_frame"]
-                .iter().all(|k| r[*k].as_u64().is_some()))
-                && (r["bytes"] != self.offset
+            if let Some(r) = r.filter(|r| {
+                !final_recovery
+                    || ["bytes", "crc32", "next_frame"]
+                        .iter()
+                        .all(|k| r[*k].as_u64().is_some())
+            }) && (r["bytes"] != self.offset
                 || r["crc32"] != self.crc.clone().finalize()
                 || r["next_frame"] != self.next)
             {
