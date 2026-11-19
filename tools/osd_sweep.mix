@@ -19,7 +19,7 @@ fn prepare_native()
   checked(["cargo","test","--release","--locked","-p","viud","--features","test-support","--test","recorder_binary"])
 end
 $mode=args()[0] ?? "native"
-$crates=["-p","policy-host","-p","protocols","-p","dispatcher","-p","frames","-p","slots","-p","world","-p","seat","-p","viud","-p","lib-viu","-p","toolkit","-p","viu","-p","headless"]
+$crates=["-p","policy-host","-p","protocols","-p","dispatcher","-p","frames","-p","slots","-p","world","-p","seat","-p","viud","-p","lib-viu","-p","toolkit","-p","viu","-p","headless","-p","paths"]
 if $mode=="fmt" then
   require_clean()
   try
@@ -49,6 +49,17 @@ elif $mode=="unit" then
   checked(["cargo","test","--locked","-p","protocols","--lib","layershell::osd"])
   checked(["cargo","test","--locked","-p","lib-viu","--lib","app_host::osd"])
   checked(["cargo","test","--locked","-p","toolkit","--features","layer","--lib","layer::"])
+elif $mode=="tests" then
+  -- Match the merge gate's test-pool invocation and prerequisites. OSD tests
+  -- locate their own host and bundle; no OSD fixture variables are exported.
+  checked(["cargo","build","--locked","-p","mix","--bin","mix"])
+  checked(["cargo","build","--locked","-p","noded","-p","testkit","--bins"])
+  checked(["cargo","build","--locked","-p","viu","--bin","viu"])
+  $mix=realpath("target/debug/mix")
+  $r=run_argv(concat([$mix,"tools/ci/test_pool.mix","--","--locked"],$crates),
+    {timeout:14400,stdout:"inherit",stderr:"inherit",env:{MIX_TEST_MIX_EXE:$mix,MIX_TEST_E2E_EXE:$mix}})
+  if not $r.ok then exit($r.exit_code ?? 124) end
+  checked([$mix,"apps/osd/core-test.mix"])
 elif $mode=="native" then
   export MIX_TEST_REQUIRE_RECORD="1"
   export MIX_TEST_CAPTURE_KEEP_FAILED="1"
@@ -63,5 +74,5 @@ elif contains(["record","acceptance40"],$mode) then
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","benchmark_record_changing_4k_zero_drop","--","--ignored","--exact","--nocapture","--test-threads=1"])
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","record_idle_content_clock_ignores_capture_repaints","--","--exact","--nocapture","--test-threads=1"])
 else
-  raise("ARGUMENT","osd_sweep.mix expects fmt, lock, clippy, native or acceptance40")
+  raise("ARGUMENT","osd_sweep.mix expects fmt, lock, clippy, unit, tests, native or acceptance40")
 end
