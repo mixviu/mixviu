@@ -4,7 +4,7 @@ use viu::view::SceneView;
 #[test]
 fn static_offset_and_container_opacity_survive_disabled_motion() {
     for reduced in [false, true] {
-        let source = |offset, opacity| format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{}\n```\n", json!({"root":{"widget":"column","opacity":opacity,"motion":false,"offset":[offset,0],"children":["b"]},"b":{"widget":"button","label":"Offset","on_click":"test.click"}}));
+        let source = |offset, opacity| format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{}\n```\n", json!({"root":{"widget":"column","opacity":opacity,"motion":reduced,"offset":[offset,0],"children":["b"]},"b":{"widget":"button","label":"Offset","on_click":"test.click"}}));
         let ctx = egui::Context::default();
         if reduced { ctx.global_style_mut(|s| s.animation_time=0.); }
         let mut view = SceneView::new(&source(20,0.5)).unwrap();
@@ -30,7 +30,7 @@ fn static_offset_and_container_opacity_survive_disabled_motion() {
 fn duplicate_native_list_labels_have_independent_exits() {
     let nodes=json!({"root":{"widget":"control","definition":"= $model.widget"}});
     let source=format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
-    let model=|rows| json!({"datasets":{"rows":rows},"widget":{"id":"root","kind":"list","label":"List","initial":0,"properties":{"dataset":"rows","row_count":2,"columns":["Name","Size"]}}});
+    let model=|rows: serde_json::Value| json!({"datasets":{"rows":rows},"widget":{"id":"root","kind":"list","label":"List","initial":0,"properties":{"dataset":"rows","row_count":rows.as_array().unwrap().len(),"columns":["Name","Size"]}}});
     let ctx=egui::Context::default();
     let mut view=SceneView::with_model(&source,model(json!([["duplicate","1"],["duplicate","2"]]))).unwrap();
     for t in [0.,1.] {frame(&ctx,&mut view,t).drop_without_applying_deltas();}

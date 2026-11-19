@@ -16,7 +16,7 @@ use crate::templates::PreparedLists;
 #[test]
 fn furniture_static_offset_and_subtree_opacity_snap_when_disabled() {
     for reduced in [false,true] {
-        let source=|offset,opacity|format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\nroot: {{widget: \"column\", opacity: {opacity}, motion: false, offset: [{offset},0], children: [\"b\"]}}\nb: {{widget: \"button\", label: \"Offset\", on_click: \"activate\"}}\n```\n");
+        let source=|offset,opacity|format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\nroot: {{widget: \"column\", opacity: {opacity}, motion: {reduced}, offset: [{offset},0], children: [\"b\"]}}\nb: {{widget: \"button\", label: \"Offset\", on_click: \"activate\"}}\n```\n");
         let mut scene=SceneUi::new(content(&source(20,0.5),None,false));
         let mut reference=SceneUi::new(content(&source(0,1.),None,false));
         let ctx=egui::Context::default();

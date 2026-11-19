@@ -11,6 +11,7 @@ pub struct SceneMotion {
     nodes: BTreeMap<String, NodeMotion>,
     now: f64,
     reduced: bool,
+    painted_ranges: BTreeMap<LayerId, Vec<std::ops::Range<usize>>>,
 }
 struct NodeMotion {
     seen: bool,
@@ -71,6 +72,7 @@ impl SceneMotion {
         }
     }
     pub fn begin(&mut self, ui: &Ui) {
+        self.painted_ranges.clear();
         self.now = ui.input(|i| i.time);
         self.reduced = ui.style().animation_time == 0.0;
         for n in self.nodes.values_mut() {
@@ -200,6 +202,7 @@ impl SceneMotion {
         };
         if local == egui::emath::TSTransform::IDENTITY
             && n.opacity == 1.0
+            && ui.ctx().layer_transform_to_global(ui.layer_id()).unwrap_or_default() == egui::emath::TSTransform::IDENTITY
             && !n.entrance.as_ref().is_some_and(|p| motion::scene::active(p, self.now))
         {
             return None;
@@ -262,10 +265,14 @@ impl SceneMotion {
             egui::emath::TSTransform::IDENTITY
         };
         n.paint_rect = global.mul_rect(rect);
+        // Settled descendants share their parent's layer. Each shape belongs
+        // to its innermost capture, so parent exits must not retain it twice.
+        let claimed = self.painted_ranges.entry(c.layer).or_default();
         ui.ctx().graphics_mut(|g| {
             let list = g.entry(c.layer);
             let end = list.next_idx();
             for i in c.start.0..end.0 {
+                if claimed.iter().any(|r| r.contains(&i)) { continue; }
                 list.mutate_shape(ShapeIdx(i), |s| {
                     let mut values = values;
                     if c.transformed {
@@ -279,9 +286,11 @@ impl SceneMotion {
             if n.exit.is_some() {
                 n.shapes = list
                     .all_entries()
+                    .enumerate()
                     .skip(c.start.0)
                     .take(end.0 - c.start.0)
-                    .cloned()
+                    .filter(|(i, _)| !claimed.iter().any(|r| r.contains(i)))
+                    .map(|(_, shape)| shape.clone())
                     .collect();
                 if c.transformed {
                     for s in &mut n.shapes {
@@ -289,6 +298,7 @@ impl SceneMotion {
                     }
                 }
             }
+            claimed.push(c.start.0..end.0);
         });
         if n.exit.is_some() {
             let mut ids = std::collections::HashSet::new();
@@ -773,7 +783,7 @@ mod tests {
         let ctx=Context::default();
         let mut state=SceneMotion::default();
         for t in [0.,1.,2.,3.] {
-            ctx.run_ui(raw(t),|ui| {
+            let mut out=ctx.run_ui(raw(t),|ui| {
                 state.begin(ui);
                 let mut c=state.capture(ui,"a",None,None,Some(&json!({"preset":"fade","delay_ms":2000})),true);
                 assert!(state.layer(ui,&mut c,ui.min_rect(),[0.,0.]).is_none());
@@ -781,7 +791,10 @@ mod tests {
                 state.painted(ui,c,ui.min_rect());
                 ui.painter().rect_filled(Rect::from_min_size(egui::pos2(20.,20.),egui::vec2(20.,20.)),0.,egui::Color32::BLUE);
                 state.end(ui);
-            }).drop_without_applying_deltas();
+            });
+            let fills=out.shapes.iter().filter_map(|s|if let egui::Shape::Rect(r)=&s.shape {Some(r.fill)} else {None}).collect::<Vec<_>>();
+            assert_eq!(fills,vec![egui::Color32::RED,egui::Color32::BLUE]);
+            out.textures_delta.clear();
         }
         let mut out=ctx.run_ui(raw(4.),|ui| {state.begin(ui);state.end(ui);});
         out.textures_delta.clear();
