@@ -242,7 +242,11 @@ impl RoutingAuthority {
             Posture::Unverified { .. } => (RouterTable::fallback(etc_roster), None),
         };
         let keys = match &posture {
-            Posture::Verified(a) => mesh_trust::identity::KeyAuthority::new(&a.members_full, a.epoch, a.recovery_generation),
+            Posture::Verified(a) => mesh_trust::identity::KeyAuthority::new(
+                &a.members_full,
+                a.epoch,
+                a.recovery_generation,
+            ),
             Posture::Unverified { .. } => Default::default(),
         };
         Self {

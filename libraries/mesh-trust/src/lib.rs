@@ -6,7 +6,7 @@ pub mod canonical;
 pub mod caps;
 pub mod envelope;
 pub mod freshness;
-pub mod inventory;
 pub mod identity;
+pub mod inventory;
 pub mod routing;
 pub mod sig;

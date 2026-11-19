@@ -32,7 +32,13 @@ use crate::native_client::bounded::{
 };
 use crate::native_client::types::IncomingCommand;
 
-type WsStream = std::pin::Pin<Box<dyn futures_util::Stream<Item = std::result::Result<Message, tokio_tungstenite::tungstenite::Error>> + Send>>;
+type WsStream = std::pin::Pin<
+    Box<
+        dyn futures_util::Stream<
+                Item = std::result::Result<Message, tokio_tungstenite::tungstenite::Error>,
+            > + Send,
+    >,
+>;
 
 async fn connect_socket(url: &str) -> Result<(WsSink, WsStream)> {
     if let Some(path) = url.strip_prefix("unix://") {
@@ -42,7 +48,8 @@ async fn connect_socket(url: &str) -> Result<(WsSink, WsStream)> {
         let (sink, stream) = ws.split();
         return Ok((Box::pin(sink), Box::pin(stream)));
     }
-    let (ws, _) = tokio_tungstenite::connect_async_with_config(url, None, true).await
+    let (ws, _) = tokio_tungstenite::connect_async_with_config(url, None, true)
+        .await
         .map_err(|error| crate::ClientError::Connect(Box::new(error)))?;
     let (sink, stream) = ws.split();
     Ok((Box::pin(sink), Box::pin(stream)))
@@ -1364,7 +1371,11 @@ impl NodedClient {
         Ok(())
     }
 
-    async fn reader_loop<S: futures_util::Stream<Item = std::result::Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin>(
+    async fn reader_loop<
+        S: futures_util::Stream<
+                Item = std::result::Result<Message, tokio_tungstenite::tungstenite::Error>,
+            > + Unpin,
+    >(
         mut stream: S,
         pending: Arc<StdMutex<PendingMap>>,
         incoming_tx: NativeIncomingSender,

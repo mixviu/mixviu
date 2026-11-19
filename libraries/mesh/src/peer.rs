@@ -346,7 +346,7 @@ impl MeshPeers {
             config,
             state: Arc::new(RwLock::new(TransportState {
                 frame_enforce: false,
-            keys: None,
+                keys: None,
                 desired,
                 revision: AuthorityRevision::default(),
                 connections: HashMap::new(),
@@ -358,7 +358,9 @@ impl MeshPeers {
     }
 
     /// Get this node's name.
-    pub async fn set_frame_enforce(&self, enforce: bool) { self.state.write().await.frame_enforce = enforce; }
+    pub async fn set_frame_enforce(&self, enforce: bool) {
+        self.state.write().await.frame_enforce = enforce;
+    }
 
     pub fn node_name(&self) -> &str {
         &self.config.node_name
@@ -367,7 +369,13 @@ impl MeshPeers {
     /// Atomically install the route authority's desired endpoint projection.
     /// Established transports and in-progress attempts which no longer match
     /// are fenced before this method returns.
-    pub async fn reconcile_identity(&self, desired: HashMap<String, SocketAddr>, revision: AuthorityRevision, keys: mesh_trust::identity::KeyAuthority, mesh: String) -> ReconcileReport {
+    pub async fn reconcile_identity(
+        &self,
+        desired: HashMap<String, SocketAddr>,
+        revision: AuthorityRevision,
+        keys: mesh_trust::identity::KeyAuthority,
+        mesh: String,
+    ) -> ReconcileReport {
         self.reconcile(desired, revision, Some((keys, mesh))).await
     }
 
@@ -379,7 +387,12 @@ impl MeshPeers {
         self.reconcile(desired, revision, None).await
     }
 
-    async fn reconcile(&self, desired: HashMap<String, SocketAddr>, revision: AuthorityRevision, keys: Option<(mesh_trust::identity::KeyAuthority, String)>) -> ReconcileReport {
+    async fn reconcile(
+        &self,
+        desired: HashMap<String, SocketAddr>,
+        revision: AuthorityRevision,
+        keys: Option<(mesh_trust::identity::KeyAuthority, String)>,
+    ) -> ReconcileReport {
         let mut state = self.state.write().await;
         let mut report = ReconcileReport::default();
         let mut reasons = HashMap::new();
@@ -405,11 +418,15 @@ impl MeshPeers {
         if let Some((authority, _)) = &keys {
             for (name, connection) in &state.connections {
                 if let Some((node, key)) = connection.context.mesh_peer() {
-                    if !authority.contains(node, key) { reasons.insert(name.clone(), ConnectionRetireReason::Removed); }
+                    if !authority.contains(node, key) {
+                        reasons.insert(name.clone(), ConnectionRetireReason::Removed);
+                    }
                 }
             }
             if state.revision != revision {
-                for (_, attempt) in state.attempts.drain() { attempt.cancel.send_replace(true); }
+                for (_, attempt) in state.attempts.drain() {
+                    attempt.cancel.send_replace(true);
+                }
             }
         }
         state.keys = keys;
@@ -907,7 +924,10 @@ async fn connect_and_publish(
         Ok(Some(Ok(_))) => {}
     }
 
-    let mut context = bus::native_session::PeerContext { identity: Default::default(), address: Some(target) };
+    let mut context = bus::native_session::PeerContext {
+        identity: Default::default(),
+        address: Some(target),
+    };
     let authority = state.read().await.keys.clone();
     if let Some((keys, mesh)) = authority {
         let id = uuid::Uuid::new_v4().to_string();
@@ -919,14 +939,30 @@ async fn connect_and_publish(
             "verifying_broker_node": node_name, "session_id": b64.encode(uuid::Uuid::new_v4().as_bytes()),
             "server_nonce": b64.encode(nonce),
         });
-        let challenge = BusMessage::new().with_header("command", "noded.identity.challenge").with_header("id", &id).with_body(&body.to_string());
+        let challenge = BusMessage::new()
+            .with_header("command", "noded.identity.challenge")
+            .with_header("id", &id)
+            .with_body(&body.to_string());
         let exchange = async {
-            ws_sink.send(tungstenite::Message::Text(challenge.to_wire().into())).await.ok()?;
+            ws_sink
+                .send(tungstenite::Message::Text(challenge.to_wire().into()))
+                .await
+                .ok()?;
             loop {
-                let tungstenite::Message::Text(wire) = ws_stream_rx.next().await?.ok()? else { continue };
+                let tungstenite::Message::Text(wire) = ws_stream_rx.next().await?.ok()? else {
+                    continue;
+                };
                 let response = bus::parse(&wire).ok()?;
-                if response.command_name() != Some("noded.identity.response") || response.get("id") != Some(id.as_str()) { continue; }
-                return keys.authenticate_response(&body, &serde_json::from_str(&response.body).ok()?, &peer.name);
+                if response.command_name() != Some("noded.identity.response")
+                    || response.get("id") != Some(id.as_str())
+                {
+                    continue;
+                }
+                return keys.authenticate_response(
+                    &body,
+                    &serde_json::from_str(&response.body).ok()?,
+                    &peer.name,
+                );
             }
         };
         tokio::select! {
@@ -982,7 +1018,10 @@ async fn connect_and_publish(
         let mut locked = state.write().await;
         if let Some((keys, _)) = &locked.keys {
             if let Some((node, key)) = context.mesh_peer() {
-                anyhow::ensure!(keys.contains(node, key), "Peer key revoked before connection publication");
+                anyhow::ensure!(
+                    keys.contains(node, key),
+                    "Peer key revoked before connection publication"
+                );
             }
         }
         let still_current = locked.desired.get(&peer.name) == Some(&target)
@@ -1143,14 +1182,20 @@ async fn connect_and_publish(
                 continue;
             }
 
-            if bus_msg.is_empty_message() { continue; }
+            if bus_msg.is_empty_message() {
+                continue;
+            }
             let permitted = match context.mesh_peer() {
-                Some((node, _)) => matches!(bus_msg.from_addr().and_then(BusTarget::parse), Some(BusTarget::Local(addr)) if addr.node == node),
+                Some((node, _)) => {
+                    matches!(bus_msg.from_addr().and_then(BusTarget::parse), Some(BusTarget::Local(addr)) if addr.node == node)
+                }
                 None => false,
             };
             if !permitted {
                 tracing::info!(peer = %peer_name, address = %target, "dialled peer frame lacks authenticated from identity");
-                if state_read.read().await.frame_enforce { continue; }
+                if state_read.read().await.frame_enforce {
+                    continue;
+                }
             }
 
             // Only responses can satisfy a call. An event or inbound request

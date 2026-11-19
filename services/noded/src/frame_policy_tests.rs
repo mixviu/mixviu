@@ -55,6 +55,15 @@ async fn next_mesh_frame(
     }
 }
 
+async fn prove_policy_peer(socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) {
+    let challenge = next_mesh_frame(socket).await;
+    assert_eq!(challenge.command_name(), Some("noded.identity.challenge"));
+    let wire = mesh::build_admit_response(&challenge, "beta", &Some([8;32])).unwrap();
+    let mut response = bus_mod::parse(&wire).unwrap();
+    response.set("command","noded.identity.response");
+    socket.send(WsMessage::Text(response.to_wire().into())).await.unwrap();
+}
+
 async fn policy_mesh_state(
     endpoint: std::net::SocketAddr,
 ) -> (AppState, mpsc::UnboundedReceiver<MeshInbound>, PeerConfig) {
@@ -83,10 +92,21 @@ async fn policy_mesh_state(
         },
         tx,
     ));
+    let current = state.authority.load_full();
+    let mut posture = current.posture.clone();
+    if let crate::authority::Posture::Verified(a) = &mut posture {
+        use base64::Engine as _;
+        a.members_full.insert("beta".into(), serde_json::json!({
+            "status":"active", "bus":true, "credentials":[{"kind":"d2",
+            "pubkey":base64::engine::general_purpose::STANDARD.encode(ed25519_dalek::SigningKey::from_bytes(&[8;32]).verifying_key().to_bytes()),
+            "from_epoch":1, "until_epoch":null}]
+        }));
+    }
+    state.authority.store(Arc::new(crate::routing::RoutingAuthority::new(posture,"alpha","127.0.0.1",4200,&[])));
     let authority = state.authority.load_full();
     state
         .mesh
-        .reconcile_endpoints(authority.routes.desired_endpoints(), authority.revision())
+        .reconcile_identity(authority.routes.desired_endpoints(), authority.revision(), authority.keys.clone(), match &authority.posture { crate::authority::Posture::Verified(a) => a.mesh.clone(), _ => unreachable!() })
         .await;
     (state, incoming, peer)
 }
@@ -126,6 +146,7 @@ async fn serve_mesh_receiver_policy_delivers_observe_and_drops_enforce() {
                     .send(WsMessage::Ping(Vec::new().into()))
                     .await
                     .unwrap();
+                prove_policy_peer(&mut socket).await;
                 assert_eq!(
                     next_mesh_frame(&mut socket).await.command_name(),
                     Some("noded.register")
@@ -207,6 +228,7 @@ async fn solicited_mesh_responses_check_source_before_client_delivery() {
                     .send(WsMessage::Ping(Vec::new().into()))
                     .await
                     .unwrap();
+                prove_policy_peer(&mut socket).await;
                 next_mesh_frame(&mut socket).await;
                 let request = next_mesh_frame(&mut socket).await;
                 assert_eq!(request.get("hop_limit"), Some("0"));
@@ -222,28 +244,17 @@ async fn solicited_mesh_responses_check_source_before_client_delivery() {
                 let _ = answered.send(());
                 let _ = stopped.await;
             });
-            let app = axum::Router::new().route(
-                "/ws",
-                axum::routing::get(move |upgrade: axum::extract::ws::WebSocketUpgrade| {
-                    let state = state.clone();
-                    async move {
-                        upgrade.on_upgrade(move |socket| {
-                            super::handle_socket(
-                                socket,
-                                state,
-                                bus::native_session::TransportIdentity::LegacyTcp {
-                                    source_ip: "127.0.0.1".parse().unwrap(),
-                                },
-                            )
-                        })
-                    }
-                }),
-            );
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let url = format!("ws://{}/ws", listener.local_addr().unwrap());
+            let root = std::env::temp_dir().join(format!("bus-policy-{}-{}",std::process::id(),rand::random::<u64>()));
+            std::fs::create_dir(&root).unwrap();
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&root,std::fs::Permissions::from_mode(0o700)).unwrap();
+            let path = root.join("bus.sock");
+            let listener = tokio::net::UnixListener::bind(&path).unwrap();
+            let app = axum::Router::new().route("/ws", axum::routing::get(super::unix_ws_handler)).with_state(state);
             let local = tokio::spawn(async move {
-                axum::serve(listener, app).await.unwrap();
+                axum::serve(listener,app.into_make_service_with_connect_info::<crate::native_ingress::UnixPeer>()).await.unwrap();
             });
+            let url = format!("unix://{}",path.display());
             let (mut sink, mut stream) = raw_connect(&url).await;
             let request = BusMessage::new()
                 .with_header("to", "hostd.beta.bus")
@@ -271,6 +282,9 @@ async fn solicited_mesh_responses_check_source_before_client_delivery() {
             let _ = stop.send(());
             server.await.unwrap();
             local.abort();
+            let _ = local.await;
+            std::fs::remove_file(path).unwrap();
+            std::fs::remove_dir(root).unwrap();
         }
     }
 }

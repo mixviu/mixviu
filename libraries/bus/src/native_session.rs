@@ -32,7 +32,10 @@ pub struct PeerContext {
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum PeerIdentity {
-    UnixPeer { uid: u32, pid: u32 },
+    UnixPeer {
+        uid: u32,
+        pid: u32,
+    },
     MeshAdmitted {
         node: String,
         key: [u8; 32],
@@ -46,7 +49,10 @@ pub enum PeerIdentity {
 
 impl Default for PeerContext {
     fn default() -> Self {
-        Self { identity: PeerIdentity::Unauthenticated, address: None }
+        Self {
+            identity: PeerIdentity::Unauthenticated,
+            address: None,
+        }
     }
 }
 

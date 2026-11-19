@@ -55,7 +55,8 @@ pub fn frame_policy_config(
     config: &config::node::NodedConfig,
     env: Option<&str>,
 ) -> Result<AdmissionMode> {
-    let value = env.filter(|value| !value.is_empty())
+    let value = env
+        .filter(|value| !value.is_empty())
         .map(|value| serde_json::Value::String(value.to_owned()))
         .or_else(|| config.extra.get("frame_policy").cloned());
     value
@@ -670,8 +671,15 @@ async fn mesh_incoming_loop(
         }
         let authenticated_peer = inbound.context.mesh_peer().map(|(node, _)| node.to_owned());
         if authenticated_peer.is_none() {
-            frame_refused("peer-not-admitted", "", &format!("{:?}", inbound.context.address), frame_policy);
-            if frame_policy == AdmissionMode::Enforce { continue; }
+            frame_refused(
+                "peer-not-admitted",
+                "",
+                &format!("{:?}", inbound.context.address),
+                frame_policy,
+            );
+            if frame_policy == AdmissionMode::Enforce {
+                continue;
+            }
         }
         let peer = inbound.peer;
         let connection_generation = inbound.connection_generation;
@@ -982,8 +990,10 @@ async fn serve(
         listener_port,
         etc_roster.as_ref(),
     );
-    anyhow::ensure!(frame_policy != AdmissionMode::Enforce || admit_verified,
-        "frame_policy enforce: no identity source (accepted inventory required)");
+    anyhow::ensure!(
+        frame_policy != AdmissionMode::Enforce || admit_verified,
+        "frame_policy enforce: no identity source (accepted inventory required)"
+    );
     let listener_endpoint_diverged = Arc::new(AtomicBool::new(false));
     emit_listener_endpoint_state(
         &initial_authority,
@@ -995,10 +1005,16 @@ async fn serve(
 
     let (mesh_incoming_tx, mesh_incoming_rx) = mpsc::unbounded_channel::<MeshInbound>();
     let mesh = Arc::new(MeshPeers::new(mesh_config, mesh_incoming_tx));
-    mesh.set_frame_enforce(frame_policy == AdmissionMode::Enforce).await;
+    mesh.set_frame_enforce(frame_policy == AdmissionMode::Enforce)
+        .await;
     mesh.reconcile_identity(
-        initial_authority.routes.desired_endpoints(), initial_authority.revision(), initial_authority.keys.clone(),
-        match &initial_authority.posture { crate::authority::Posture::Verified(a) => a.mesh.clone(), _ => String::new() },
+        initial_authority.routes.desired_endpoints(),
+        initial_authority.revision(),
+        initial_authority.keys.clone(),
+        match &initial_authority.posture {
+            crate::authority::Posture::Verified(a) => a.mesh.clone(),
+            _ => String::new(),
+        },
     )
     .await;
     let authority = Arc::new(ArcSwap::from_pointee(initial_authority));
@@ -1464,27 +1480,6 @@ fn admission_effective(
             None => ("enforce", ""),
         },
     }
-}
-
-/// SPEC 13 §9a §4 (2-c-2b) — the local-vs-network boundary, NOT the proof. A
-/// session is **same-node** (ungated; a local citizen registering a service)
-/// iff its source is loopback or this broker's OWN bind IP. Every other WG `/24`
-/// address (the hub, any peer) is **inter-node** and gated. This never
-/// identifies WHICH member and never substitutes for the Ed25519 signature, so
-/// it does not reintroduce source-IP-as-proof / per-`/32` pinning. It is sound
-/// only because under the deployed WG path a remote peer's source is its
-/// WG-authenticated `/24` IP — never loopback, never the broker's own bind IP (a
-/// peer can't forge another's tunnel IP nor source from loopback). The non-WG
-/// bind that could see spoofable off-mesh source IPs is exactly the
-/// [`enforce_refuses_all`] `non-wg-bind` fail-closed condition.
-#[cfg(test)]
-fn is_same_node_origin(src: std::net::IpAddr, bind: &str) -> bool {
-    if src.is_loopback() {
-        return true;
-    }
-    bind.parse::<std::net::SocketAddr>()
-        .map(|a| a.ip() == src)
-        .unwrap_or(false)
 }
 
 /// The register-time enforce decision (SPEC 13 §9a, 2-c-2b) for one
@@ -1953,8 +1948,15 @@ async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture
     // snapshot, then inbound session teardown, then observable applied events.
     let report = state
         .mesh
-        .reconcile_identity(next.routes.desired_endpoints(), next.revision(), next.keys.clone(),
-            match &next.posture { crate::authority::Posture::Verified(a) => a.mesh.clone(), _ => String::new() })
+        .reconcile_identity(
+            next.routes.desired_endpoints(),
+            next.revision(),
+            next.keys.clone(),
+            match &next.posture {
+                crate::authority::Posture::Verified(a) => a.mesh.clone(),
+                _ => String::new(),
+            },
+        )
         .await;
     {
         let _fence = state
@@ -1963,8 +1965,7 @@ async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture
             .expect("delivery fence poisoned");
         state.authority.store(next.clone());
     }
-    if let crate::authority::Posture::Verified(accepted) = &next.posture
-    {
+    if let crate::authority::Posture::Verified(accepted) = &next.posture {
         reload_revocation_teardown(state, accepted).await;
     }
 
@@ -2077,7 +2078,9 @@ async fn reload_revocation_teardown(state: &AppState, a: &crate::authority::Acce
             .filter_map(|(sid, s)| {
                 let keys = &state.authority.load().keys;
                 let current = match &s.identity {
-                    bus::native_session::PeerIdentity::MeshAdmitted { node, key, .. } => keys.contains(node, key),
+                    bus::native_session::PeerIdentity::MeshAdmitted { node, key, .. } => {
+                        keys.contains(node, key)
+                    }
                     _ => false,
                 };
                 (!current).then(|| (sid.clone(), s.clone(), "exact-key-revoked"))
@@ -2231,7 +2234,12 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     // successor connection. No clock or correlation cleanup clears this bit.
     state.protected_responses = Default::default();
     state.peer_context.identity = match &transport {
-        TransportIdentity::LocalUnix { uid, peer_pid, .. } => bus::native_session::PeerIdentity::UnixPeer { uid: *uid, pid: *peer_pid },
+        TransportIdentity::LocalUnix { uid, peer_pid, .. } => {
+            bus::native_session::PeerIdentity::UnixPeer {
+                uid: *uid,
+                pid: *peer_pid,
+            }
+        }
         TransportIdentity::Mesh { admission, .. } => admission.identity.clone(),
         _ => bus::native_session::PeerIdentity::Unauthenticated,
     };
@@ -2266,7 +2274,10 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         .open_outbox(channel_id, &tx, notice_wake.clone());
     let writer_sessions = state.sessions.clone();
     let writer_epoch = state.broker_epoch;
-    let remote_writer = !state.peer_context.is_local();
+    // A legacy unauthenticated client receives no broker mesh assertion.
+    // This flag must follow admission, which completes after the writer starts.
+    let writer_admitted = Arc::new(AtomicBool::new(state.peer_context.mesh_peer().is_some()));
+    let writer_context = writer_admitted.clone();
     let writer_node = state.node_name.clone();
     let send_task = tokio::spawn(async move {
         loop {
@@ -2285,7 +2296,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 },
                 msg = rx.recv() => match msg { Some(msg) => msg, None => break },
             };
-            let msg = if remote_writer {
+            let msg = if writer_context.load(Ordering::Acquire) {
                 if let Ok(mut frame) = bus::parse(&msg) {
                     frame.originate_mesh(&writer_node);
                     frame.to_wire()
@@ -2417,7 +2428,11 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         }
         if bus_msg.command_name() == Some("noded.identity.challenge") {
             if service_name.is_none() && state.peer_context.mesh_peer().is_some() {
-                if let Some(wire) = mesh::build_admit_response(&bus_msg, &state.node_name, &load_d2_seed(&d2_seed_path())) {
+                if let Some(wire) = mesh::build_admit_response(
+                    &bus_msg,
+                    &state.node_name,
+                    &load_d2_seed(&d2_seed_path()),
+                ) {
                     if let Ok(mut response) = bus::parse(&wire) {
                         response.set("command", "noded.identity.response");
                         let _ = tx.try_send(response.to_wire());
@@ -2439,7 +2454,10 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             && !admission_bootstrap
         {
             let peer = admitted_delivery_peer(&state, source_ip);
-            let no_source = !matches!(state.authority.load().posture, crate::authority::Posture::Verified(_));
+            let no_source = !matches!(
+                state.authority.load().posture,
+                crate::authority::Posture::Verified(_)
+            );
             if let Some(reason) =
                 frame_policy::session_refusal(&bus_msg, peer.as_deref(), service_name.as_deref())
                     .or_else(|| {
@@ -2448,7 +2466,11 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     })
             {
                 frame_refused(
-                    if no_source && peer.is_none() { "no-identity-source" } else { reason },
+                    if no_source && peer.is_none() {
+                        "no-identity-source"
+                    } else {
+                        reason
+                    },
                     peer.as_deref().unwrap_or(""),
                     &source_ip_str,
                     state.frame_policy,
@@ -2618,18 +2640,30 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 if let AdmitOutcome::Admit(_, identity) = &outcome {
                     state.peer_context.identity = identity.clone();
                 } else {
-                    state.peer_context.identity = bus::native_session::PeerIdentity::Unauthenticated;
+                    state.peer_context.identity =
+                        bus::native_session::PeerIdentity::Unauthenticated;
                 }
                 state.session_admission.apply(outcome);
+                writer_admitted.store(state.peer_context.mesh_peer().is_some(), Ordering::Release);
                 let mut live = state.live_sessions.write().await;
-                let _fence = state.delivery_fence.read().expect("delivery fence poisoned");
+                let _fence = state
+                    .delivery_fence
+                    .read()
+                    .expect("delivery fence poisoned");
                 if let Some((node, key)) = state.peer_context.mesh_peer() {
-                    if !state.authority.load().keys.contains(node, key) { break; }
-                    live.insert(anon_id.clone(), GatedSession {
-                        identity: state.peer_context.identity.clone(),
-                        claimed_source_node: node.to_owned(), source_ip: source_ip_str.clone(),
-                        tx: tx.clone(), close: close_signal.clone(),
-                    });
+                    if !state.authority.load().keys.contains(node, key) {
+                        break;
+                    }
+                    live.insert(
+                        anon_id.clone(),
+                        GatedSession {
+                            identity: state.peer_context.identity.clone(),
+                            claimed_source_node: node.to_owned(),
+                            source_ip: source_ip_str.clone(),
+                            tx: tx.clone(),
+                            close: close_signal.clone(),
+                        },
+                    );
                 }
             }
             if let Some(observed_outcome) = observed_outcome {
@@ -3138,12 +3172,14 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 }
             }
             Route::RemoteMesh { target } => {
-                if !state.peer_context.is_local()
-                    && state.frame_policy != AdmissionMode::Off
-                {
+                if !state.peer_context.is_local() && state.frame_policy != AdmissionMode::Off {
                     frame_refused(
                         "remote-origin-relay",
-                        state.peer_context.mesh_peer().map(|(node, _)| node).unwrap_or(""),
+                        state
+                            .peer_context
+                            .mesh_peer()
+                            .map(|(node, _)| node)
+                            .unwrap_or(""),
                         &source_ip_str,
                         state.frame_policy,
                     );
@@ -3618,7 +3654,11 @@ fn next_broker_connection(epoch: HexBytes<16>) -> String {
 }
 
 fn broker_origin_from_context(context: &bus::native_session::PeerContext) -> BrokerOrigin {
-    if context.is_local() { BrokerOrigin::Local } else { BrokerOrigin::Mesh }
+    if context.is_local() {
+        BrokerOrigin::Local
+    } else {
+        BrokerOrigin::Mesh
+    }
 }
 
 fn valid_connection_stamp(id: &str) -> bool {
@@ -3634,20 +3674,16 @@ fn stamp_mesh_connection(message: &mut BusMessage, peer: &str, connection: Optio
     }
 }
 
-#[cfg(test)]
-fn broker_origin_for_delivery(source_ip: std::net::IpAddr, bind: &str) -> BrokerOrigin {
-    if is_same_node_origin(source_ip, bind) {
-        BrokerOrigin::Local
-    } else {
-        BrokerOrigin::Mesh
-    }
-}
-
 /// Caller holds delivery_fence through enqueue and the registry read lock
 /// proving that the registered bridge still belongs to this connection.
 fn admitted_delivery_peer(state: &AppState, _source_ip: std::net::IpAddr) -> Option<String> {
     let (node, key) = state.peer_context.mesh_peer()?;
-    state.authority.load().keys.contains(node, key).then(|| node.to_owned())
+    state
+        .authority
+        .load()
+        .keys
+        .contains(node, key)
+        .then(|| node.to_owned())
 }
 
 fn observe_rejected_local_route(
@@ -5774,37 +5810,6 @@ mod tests {
     /// broker's OWN bind IP — every other WG `/24` address (hub, any peer,
     /// arbitrary) is inter-node. This is the local-vs-network boundary, never
     /// the proof.
-    #[test]
-    fn same_node_origin_is_loopback_or_own_bind_only() {
-        use super::is_same_node_origin;
-        let bind = "192.0.2.5:4200"; // this node's own WG bind
-        assert!(is_same_node_origin("127.0.0.1".parse().unwrap(), bind));
-        assert!(is_same_node_origin("::1".parse().unwrap(), bind));
-        assert!(
-            is_same_node_origin("192.0.2.5".parse().unwrap(), bind),
-            "own bind IP"
-        );
-        // hub, another member, an arbitrary /24 address → all inter-node.
-        assert!(
-            !is_same_node_origin("192.0.2.1".parse().unwrap(), bind),
-            "hub"
-        );
-        assert!(
-            !is_same_node_origin("192.0.2.7".parse().unwrap(), bind),
-            "peer"
-        );
-        assert!(
-            !is_same_node_origin("192.0.2.99".parse().unwrap(), bind),
-            "arbitrary"
-        );
-        // An unparseable bind classifies a non-loopback source as inter-node
-        // (fail-closed: never accidentally same-node).
-        assert!(!is_same_node_origin(
-            "192.0.2.7".parse().unwrap(),
-            "bad-bind"
-        ));
-    }
-
     /// SPEC 13 §9a (2-c-2b): the fail-closed predicate — `None` for off/observe
     /// and a healthy enforce; the §17 reason (trust-root before bind) otherwise.
     #[test]
@@ -5868,15 +5873,7 @@ mod tests {
             RegisterGate::Ungated
         );
         assert_eq!(
-            register_gate_decision(
-                true,
-                bind,
-                Enforce,
-                true,
-                true,
-                "webd",
-                &none
-            ),
+            register_gate_decision(true, bind, Enforce, true, true, "webd", &none),
             RegisterGate::Ungated
         );
 
@@ -6085,7 +6082,7 @@ mod tests {
         let started = Instant::now();
         AppState {
             peer_context: Default::default(),
-        session_admission: SessionAdmission::default(),
+            session_admission: SessionAdmission::default(),
             sessions: Default::default(),
             protected_responses: Default::default(),
             broker_epoch: super::HexBytes([1; 16]),
@@ -6592,25 +6589,32 @@ mod tests {
     use futures_util::{SinkExt, StreamExt};
     use tokio_tungstenite::tungstenite::Message as WsMessage;
 
+    trait TestIo: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+    impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> TestIo for T {}
+
     /// Open a raw WebSocket to the broker, return the sink/stream pair.
     async fn raw_connect(
         url: &str,
     ) -> (
         futures_util::stream::SplitSink<
             tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                Box<dyn TestIo>,
             >,
             WsMessage,
         >,
         futures_util::stream::SplitStream<
             tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                Box<dyn TestIo>,
             >,
         >,
     ) {
-        let (ws, _resp) = tokio_tungstenite::connect_async(url)
-            .await
-            .expect("raw ws connect");
+        let (socket, handshake): (Box<dyn TestIo>, &str) = if let Some(path) = url.strip_prefix("unix://") {
+            (Box::new(tokio::net::UnixStream::connect(path).await.unwrap()), "ws://localhost/ws")
+        } else {
+            let address = url.strip_prefix("ws://").unwrap().split('/').next().unwrap();
+            (Box::new(tokio::net::TcpStream::connect(address).await.unwrap()), url)
+        };
+        let (ws, _resp) = tokio_tungstenite::client_async(handshake, socket).await.expect("raw ws connect");
         ws.split()
     }
 
@@ -6619,13 +6623,13 @@ mod tests {
     async fn raw_call(
         sink: &mut futures_util::stream::SplitSink<
             tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                Box<dyn TestIo>,
             >,
             WsMessage,
         >,
         stream: &mut futures_util::stream::SplitStream<
             tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                Box<dyn TestIo>,
             >,
         >,
         req: BusMessage,
@@ -6661,13 +6665,13 @@ mod tests {
     async fn raw_register(
         sink: &mut futures_util::stream::SplitSink<
             tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                Box<dyn TestIo>,
             >,
             WsMessage,
         >,
         stream: &mut futures_util::stream::SplitStream<
             tokio_tungstenite::WebSocketStream<
-                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+                Box<dyn TestIo>,
             >,
         >,
         name: &str,
@@ -7521,16 +7525,18 @@ mod tests {
     }
 
     #[test]
-    fn broker_origin_comes_from_socket_location_not_registered_name_shape() {
-        let bind = "192.0.2.5:4200";
-        assert_eq!(
-            super::broker_origin_for_delivery("127.0.0.1".parse().unwrap(), bind),
-            super::BrokerOrigin::Local
-        );
-        assert_eq!(
-            super::broker_origin_for_delivery("192.0.2.99".parse().unwrap(), bind),
-            super::BrokerOrigin::Mesh
-        );
+    fn only_kernel_unix_identity_grants_local_origin_in_every_posture() {
+        use bus::native_session::{PeerContext, PeerIdentity};
+        for mode in [AdmissionMode::Off, AdmissionMode::Observe, AdmissionMode::Enforce] {
+            for address in ["127.0.0.1:4200","[::1]:4200","192.0.2.5:4200"] {
+                let remote = PeerContext { identity: PeerIdentity::Unauthenticated, address: Some(address.parse().unwrap()) };
+                assert!(!remote.is_local(), "{mode:?} {address}");
+                assert_eq!(super::broker_origin_from_context(&remote),super::BrokerOrigin::Mesh);
+                let local = PeerContext { identity: PeerIdentity::UnixPeer { uid:1000,pid:1 }, address:None };
+                assert!(local.is_local());
+                assert_eq!(super::broker_origin_from_context(&local),super::BrokerOrigin::Local);
+            }
+        }
     }
 
     #[test]
@@ -7545,7 +7551,7 @@ mod tests {
             "caller-9",
             Some("responder"),
             Some("caller"),
-            super::broker_origin_for_delivery("192.0.2.99".parse().unwrap(), "192.0.2.5:4200"),
+            super::BrokerOrigin::Mesh,
             None,
         );
         let delivered = bus_mod::parse(&wire).unwrap();
@@ -7793,7 +7799,13 @@ mod tests {
                 "from_epoch":1, "until_epoch":null}]
         }));
         let mut state = reload_test_state(posture, vec![]).await;
-        state.peer_context.identity = bus::native_session::PeerIdentity::MeshAdmitted { node: "beta".into(), key: [3;32], fingerprint: String::new(), epoch: 1, revision: 0 };
+        state.peer_context.identity = bus::native_session::PeerIdentity::MeshAdmitted {
+            node: "beta".into(),
+            key: [3; 32],
+            fingerprint: String::new(),
+            epoch: 1,
+            revision: 0,
+        };
         state.admission_mode = AdmissionMode::Enforce;
         state.session_admission = super::SessionAdmission {
             admitted_node: Some("beta".into()),
@@ -8098,8 +8110,9 @@ mod tests {
                 "off" => state.admission_mode = AdmissionMode::Off,
                 "observe" => state.admission_mode = AdmissionMode::Observe,
                 "non-wg" => state.wg_bound = false,
-                "no-proof" => state.session_admission = super::SessionAdmission::default(),
-                "wrong-proof" => state.session_admission.admitted_node = Some("gamma".into()),
+                "no-proof" => state.peer_context.identity = Default::default(),
+                "wrong-proof" => state.peer_context.identity = Default::default(),
+                "local" => state.peer_context.identity = bus::native_session::PeerIdentity::UnixPeer { uid: 1000, pid: 1 },
                 "revoked" => apply_inventory_reload(&state, reload_posture(2, vec![])).await,
                 _ => {}
             }
@@ -8159,7 +8172,7 @@ mod tests {
             let delivered = bus_mod::parse(&target_rx.recv().await.unwrap()).unwrap();
             assert_eq!(
                 delivered.get("broker_peer"),
-                if matches!(case, "valid" | "off" | "observe" | "relay" | "bad-source") {
+                if matches!(case, "valid" | "off" | "observe" | "relay" | "bad-source" | "non-wg") {
                     Some("beta")
                 } else {
                     None
@@ -8168,7 +8181,7 @@ mod tests {
             );
             assert_eq!(
                 delivered.get("broker_connection"),
-                if matches!(case, "valid" | "off" | "observe" | "relay" | "bad-source") {
+                if matches!(case, "valid" | "off" | "observe" | "relay" | "bad-source" | "non-wg") {
                     Some("beta/epoch-1")
                 } else {
                     None
@@ -8177,7 +8190,7 @@ mod tests {
             );
             assert_eq!(
                 delivered.get("broker_service"),
-                if matches!(case, "valid" | "off" | "observe") {
+                if matches!(case, "valid" | "off" | "observe" | "non-wg") {
                     Some("desktopctl")
                 } else {
                     None
@@ -8192,7 +8205,7 @@ mod tests {
         for admitted in [true, false] {
             let mut state = mesh_delivery_test_state().await;
             if !admitted {
-                state.session_admission = super::SessionAdmission::default();
+                state.peer_context.identity = Default::default();
             }
             let (caller, _caller_rx) = mpsc::channel(4);
             let (target, mut target_rx) = mpsc::channel(4);

@@ -28,7 +28,9 @@ pub fn noded_url() -> String {
         return url;
     }
     if let Ok(path) = std::env::var(paths::env::BUS_SOCKET) {
-        if !path.is_empty() { return format!("unix://{path}"); }
+        if !path.is_empty() {
+            return format!("unix://{path}");
+        }
     }
     let (path, source) = match config::node::NodeConfigSearch::capture().read() {
         Ok(Some(source)) => source,
@@ -42,7 +44,12 @@ pub fn noded_url() -> String {
         }
     };
     match strict::parse(&source) {
-        Ok(config) => match config.get("noded").and_then(|n| n.get("unix_socket")).and_then(Value::as_str).map(|path| format!("unix://{path}")) {
+        Ok(config) => match config
+            .get("noded")
+            .and_then(|n| n.get("unix_socket"))
+            .and_then(Value::as_str)
+            .map(|path| format!("unix://{path}"))
+        {
             Some(url) => {
                 tracing::debug!(source = %path.display(), url = %url, "broker URL from node config");
                 url
@@ -67,7 +74,12 @@ pub fn noded_url() -> String {
 }
 
 fn default_local_url() -> String {
-    format!("unix://{}", config::path(config::Dir::Run).join("noded/bus.sock").display())
+    format!(
+        "unix://{}",
+        config::path(config::Dir::Run)
+            .join("noded/bus.sock")
+            .display()
+    )
 }
 
 /// The node configuration file to read, or `None` when no candidate exists.
