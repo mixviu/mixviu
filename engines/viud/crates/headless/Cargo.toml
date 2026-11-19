@@ -18,7 +18,7 @@ mod_module_files = "deny"
 
 [features]
 # Forced source ordering for integration fixtures; never enabled by a backend.
-test-support = ["dep:paths", "dep:dispatcher"]
+test-support = ["dep:paths", "dep:dispatcher", "screencopy/test-support"]
 
 [dependencies]
 dispatcher = { workspace = true, optional = true }

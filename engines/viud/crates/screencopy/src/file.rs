@@ -118,6 +118,13 @@ fn wake_readback() {
 #[cfg(feature = "test-support")]
 pub mod testing {
     use super::*;
+    /// Lose a callback without completing it, to exercise request-owner failure.
+    pub fn forget_raw_answer() -> bool {
+        PIXEL_ANSWERS.with_borrow_mut(|answers| {
+            let key = answers.keys().next().cloned();
+            key.is_some_and(|key| answers.remove(&key).is_some())
+        })
+    }
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},

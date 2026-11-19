@@ -12,6 +12,12 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
     };
     let mode = std::fs::read_to_string(std::path::Path::new(&root).join("record-input"))
         .unwrap_or_default();
+    if mode == "missing-answer" {
+        if screencopy::file::testing::forget_raw_answer() {
+            eprintln!("LISTED_TEST_MISSING_ANSWER fired");
+        }
+        return;
+    }
     state.inner.cursor_output = match mode.as_str() {
         "unknown" => None,
         "other" => Some(comp_model::snapshot::output_key("headless-1")),

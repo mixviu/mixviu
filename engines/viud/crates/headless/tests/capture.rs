@@ -896,6 +896,35 @@ fn record_privacy_window_output_membership_and_marker_order() {
 }
 
 #[test]
+fn record_privacy_missing_unchanged_answer_fails_without_pending_drain() {
+    if !process::record_available() { return; }
+    let bus=Bus::start("record-privacy-missing");
+    let mut process=process::spawn(1,None,"record-privacy-missing",Some(&bus.url));
+    let mut a=Pattern::named(connect(&mut process),"missing-listed",false);
+    a.solid_buffer(0xff11eecc); a.commit(true);
+    bus.ready();
+    let ar=bus.window_for("missing-listed",&mut [&mut a]);
+    let path=process.root.join("missing.vfl");
+    let start=bus.call("comp.record.start",json!({"request_id":"missing","target":{"output":"headless-0","windows":[target(&ar)]},"cursor":false,"path":path,"max_seconds":10}));
+    thread::sleep(Duration::from_millis(150));
+    fs::write(process.root.join("record-input"),"missing-answer").unwrap();
+    let began=Instant::now();
+    loop {
+        let status=bus.call("comp.record.status",json!({"session":start["session"]}));
+        if status["state"]=="failed" { assert!(status["error"].as_str().unwrap().contains("unchanged listed scene has no raw answer")); break; }
+        assert!(began.elapsed()<Duration::from_secs(3),"missing callback left a pending take: {status}");
+        thread::sleep(Duration::from_millis(20));
+    }
+    let stop=bus.call("comp.record.stop",json!({"session":start["session"]}));
+    assert!(!path.exists());
+    let recovery=Path::new(stop["recovery_path"].as_str().unwrap());
+    let mut found=false;
+    let (_,frames)=vfl_scan(recovery,|pixels| {found |= pixels.chunks_exact(4).any(|p|p==0xff11eecc_u32.to_le_bytes());},false).unwrap();
+    assert!(found && frames>0,"failed take retains decoded admitted pixels");
+    assert!(!recovery.join("complete.json").exists());
+}
+
+#[test]
 fn record_4k_output_windows_pointer_and_damage_repeat() {
     record_4k();
 }
