@@ -63,16 +63,12 @@ fn motion_page_resolves_and_renders_from_the_real_mix_model() {
         &mut runtime,
         &wakes,
         "gallery.execute",
-        json!({"id":"reset"}),
+        json!({"id":"motion.page.show"}),
     )
     .model
     .unwrap();
     let source = include_str!("../../../apps/gallery/scene.mix");
-    let (header, body) = source.split_once("```mix\n").unwrap();
-    let mut nodes: Value = serde_json::from_str(body.split("\n```").next().unwrap()).unwrap();
-    nodes["root"] = json!({"widget":"section","children":["motion-page"],"titles":["Motion"]});
-    let source = format!("{header}```mix\n{nodes}\n```\n");
-    let mut view = viu::view::SceneView::with_model(&source, model).unwrap();
+    let mut view = viu::view::SceneView::with_model(source, model).unwrap();
     let ctx = egui::Context::default();
     for t in [0., 0.2, 1.] {
         ctx.run_ui(

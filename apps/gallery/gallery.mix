@@ -69,7 +69,7 @@ fn publish_gallery($ctx, $model)
   if $rc != 0 then raise("MODEL_PUBLISH",to_string($result)) end
 end
 $ctx = viu_context()
-$actions=[{id:"reset",label:"Reset gallery",keys:[],enabled:true}]
+$actions=[{id:"reset",label:"Reset gallery",keys:[],enabled:true},{id:"motion.page.show",label:"Show Motion page",keys:[],enabled:true},{id:"motion.page.widgets",label:"Show Widgets page",keys:[],enabled:true}]
 for $widget in $catalogue
   for $action in $widget.actions
     push($actions,{id:$widget.id.."."..$action,label:$widget.label..": "..$action,keys:[],enabled:true,widget:$widget.id,action:$action})
@@ -80,6 +80,10 @@ on gallery.execute
   $a = $event.args
   try
     if type($a)!="map" then raise("ARGUMENT","arguments must be an object") end
+    if $a.id=="motion.page.show" or $a.id=="motion.page.widgets" then
+      $state.values["motion-pages"]=if $a.id=="motion.page.show" then "Motion" else "Widgets" end
+      publish_gallery($ctx,$state);reply(0,json_encode({executed:$a.id}));return
+    end
     if starts_with($a.id ?? "","view.mode.") then
       if not contains(["view.mode.light","view.mode.dark","view.mode.session"],$a.id) then raise("UNKNOWN_ACTION","Unknown gallery action") end
       $choice.mode=$app_mode.choose($a.id);publish_gallery($ctx,$state);reply(0,json_encode({executed:$a.id}));return
