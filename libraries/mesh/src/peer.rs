@@ -131,7 +131,7 @@ impl MeshConfig {
 /// challenge body's DECODED raw bytes / native-`u64` epoch (the byte-for-byte
 /// contract the broker's `reconstruct_proof` mirrors). Returns `None` if there
 /// is no d2 seed (prover-incapable), the challenge is malformed, or its
-/// verifier/mesh/epoch differs from the caller's trusted expectation. Never
+/// verifier/mesh differs from the caller's trusted expectation. Never
 /// derive these expectations from the received challenge. The caller
 /// then registers without proving (the broker logs `unproven:no-proof`).
 pub fn build_admit_response(
@@ -140,22 +140,22 @@ pub fn build_admit_response(
     d2_seed: &Option<[u8; 32]>,
     expected_verifier: &str,
     expected_mesh: &str,
-    expected_epoch: u64,
+    local_epoch: u64,
 ) -> Option<String> {
     let seed = d2_seed.as_ref()?;
     let id = challenge.get("id")?.to_string();
     let body: serde_json::Value = serde_json::from_str(&challenge.body).ok()?;
     if body["verifying_broker_node"].as_str() != Some(expected_verifier)
         || body["mesh_fqdn"].as_str() != Some(expected_mesh)
-        || body["inventory_epoch"].as_u64() != Some(expected_epoch)
     {
-        tracing::warn!(
-            peer = expected_verifier,
-            mesh = expected_mesh,
-            epoch = expected_epoch,
-            "Refusing admission challenge with unexpected verifier, mesh or epoch"
-        );
+        challenge_diagnostic(true, expected_verifier, expected_mesh, local_epoch, &body);
         return None;
+    }
+    let challenge_epoch = body.get("inventory_epoch")?.as_u64()?;
+    // The verifier owns the nonce and checks the proof against its own
+    // authority. A rolling inventory publish must not strand valid members.
+    if challenge_epoch != local_epoch {
+        challenge_diagnostic(false, expected_verifier, expected_mesh, local_epoch, &body);
     }
     let b64 = base64::engine::general_purpose::STANDARD;
     let transcript = AdmissionTranscript {
@@ -194,6 +194,33 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 const ADMISSION_CHALLENGE_TIMEOUT: Duration = Duration::from_secs(1);
 
+// Constant-space, process-wide coalescing per diagnostic class, including
+// across short-lived connections. Received fields are typed, never raw bodies.
+static CHALLENGE_REFUSALS: Mutex<(Option<std::time::Instant>, u64)> = Mutex::new((None, 0));
+static CHALLENGE_SKEW: Mutex<(Option<std::time::Instant>, u64)> = Mutex::new((None, 0));
+
+fn challenge_diagnostic(refused: bool, peer: &str, mesh: &str, local_epoch: u64, body: &serde_json::Value) {
+    let counter = if refused { &CHALLENGE_REFUSALS } else { &CHALLENGE_SKEW };
+    let now = std::time::Instant::now();
+    let mut state = counter.lock().expect("challenge log counter poisoned");
+    state.1 += 1;
+    if state.0.is_some_and(|last| now.duration_since(last) < Duration::from_secs(60)) {
+        return;
+    }
+    let count = std::mem::take(&mut state.1);
+    state.0 = Some(now);
+    if refused {
+        tracing::warn!(peer, mesh, local_epoch,
+            received_verifier = body["verifying_broker_node"].as_str(),
+            received_mesh = body["mesh_fqdn"].as_str(), count,
+            "Refusing admission challenge with unexpected verifier or mesh (coalesced)");
+    } else {
+        tracing::debug!(peer, mesh, local_epoch,
+            challenge_epoch = body["inventory_epoch"].as_u64(), count,
+            "Answering admission challenge despite inventory epoch skew (coalesced)");
+    }
+}
+
 static UNAUTHENTICATED_FRAMES: AtomicU64 = AtomicU64::new(0);
 
 /// Lifetime total, including observe-mode frames delivered for compatibility.
@@ -202,6 +229,8 @@ pub fn unauthenticated_frame_total() -> u64 {
 }
 
 #[derive(Default)]
+// A burst ending inside the window leaves pending counts unflushed. They
+// remain in the lifetime counter; connection totals reset on reconnect.
 struct UnauthenticatedFrameLog {
     last: Option<std::time::Instant>,
     total: u64,
@@ -1410,7 +1439,7 @@ mod tests {
         );
         for epoch in [6, 8] {
             assert!(
-                build_admit_response(&ch, "delta", &Some([9; 32]), "beta", "bus", epoch).is_none()
+                build_admit_response(&ch, "delta", &Some([9; 32]), "beta", "bus", epoch).is_some()
             );
         }
 
@@ -2124,12 +2153,13 @@ mod tests {
     #[tokio::test]
     async fn dialler_refuses_relay_and_wrong_authority_but_answers_normal_challenge() {
         let b64 = base64::engine::general_purpose::STANDARD;
-        for (verifier, mesh_name, epoch, answered) in [
-            ("gamma", "bus", 7, false),
-            ("beta", "other.example", 7, false),
-            ("beta", "bus", 6, false),
-            ("beta", "bus", 8, false),
-            ("beta", "bus", 7, true),
+        for (verifier, mesh_name, epoch, answered, trusted) in [
+            ("gamma", "bus", 7, false, true),
+            ("beta", "other.example", 7, false, true),
+            ("beta", "bus", 6, true, true),
+            ("beta", "bus", 8, true, true),
+            ("beta", "bus", 7, true, true),
+            ("beta", "bus", 7, false, false),
         ] {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let beta = peer("beta", listener.local_addr().unwrap());
@@ -2142,7 +2172,7 @@ mod tests {
                 },
                 tx,
             );
-            transport
+            if trusted { transport
                 .reconcile_identity(
                     HashMap::from([("beta".into(), beta.noded_addr())]),
                     AuthorityRevision {
@@ -2152,7 +2182,7 @@ mod tests {
                     mesh_trust::identity::KeyAuthority::new(&Default::default(), 7, 0),
                     "bus".into(),
                 )
-                .await;
+                .await; }
             let challenge = BusMessage::new()
                 .with_header("command", "noded.admit.challenge")
                 .with_header("id", "relayed-challenge")
@@ -2176,9 +2206,9 @@ mod tests {
                     first.command_name(),
                     Some(if answered {
                         "noded.admit.response"
-                    } else {
+                    } else if trusted {
                         "noded.identity.challenge"
-                    })
+                    } else { "noded.register" })
                 );
                 if answered {
                     assert_eq!(first.get("id"), Some("relayed-challenge"));

@@ -2282,19 +2282,16 @@ fn reverse_identity_answer(
     if *answered || registered {
         return None;
     }
-    let body: serde_json::Value = serde_json::from_str(&message.body).ok()?;
     let authority = state.authority.load_full();
     let crate::authority::Posture::Verified(a) = &authority.posture else {
         return None;
     };
     let (node, key) = state.peer_context.mesh_peer()?;
-    if !authority.keys.contains(node, key)
-        || body["verifying_broker_node"].as_str() != Some(node)
-        || body["mesh_fqdn"].as_str() != Some(a.mesh.as_str())
-        || body["inventory_epoch"].as_u64() != Some(a.epoch)
-    {
+    if !authority.keys.contains(node, key) {
         return None;
     }
+    // The admitted peer owns the reverse challenge and verifies its epoch.
+    // Keep verifier/mesh binding in the shared signer, accepting publish skew.
     let wire = mesh::build_admit_response(
         message,
         &state.node_name,
