@@ -34,3 +34,9 @@ advertises the Chrome capability. The private runner is `run_on_cos.mix`.
 The fixture contains all 19 presets and 21 samples each. CBC tests consume
 this committed data without a browser; `chrome_oracle` is an ordinary gate.
 The reference and fixture data are not modified to fit the native sampler.
+
+The gate keeps the original tolerances: opacity and scale channels 1e-4;
+translation, rotation, blur and dash offset 0.05 in their native units;
+clip fractions 1e-4. Projected flip scalar uses 0.05 degrees; glow, bg and
+shine scalars use 1e-4. All 19 presets pass. Full per-property maxima are
+recorded in `../VALIDATION.md`.

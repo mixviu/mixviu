@@ -23,7 +23,7 @@ CSS renderer responsibilities and approximations:
 | glow | `scalar` is intensity 0–1: shadow blur 40×, spread 6×, colour rgba(60,200,216,0.35×). This is not opacity of the card. |
 | kb | Table translations assume a 100×100 reference box. Multiply tx by width/100 and ty by height/100, then apply scale before translation as CSS does. Origin is 30% 30%. |
 | bg | `scalar` is progress 0–1: two backgrounds move (0%,0%)→(18%,10%) and (100%,100%)→(82%,90%). |
-| shine | `scalar` is background-position X as a fraction, −2→2. Keep the second background static. |
+| shine | `scalar` is background-position X as a fraction, −2→2. CSS repeats this position for both background layers. |
 | draw | Dash offset assumes path length 1000; multiply by actual length/1000. |
 | wipe | Inset clip right fraction; renderer supplies rectangular clipping. |
 | zoom | Renderer supplies Gaussian blur in logical pixels. |
@@ -52,4 +52,4 @@ can use the existing Hermite helper.
 Run crate tests and clippy through the native build service. The ignored
 `scene_throughput` test reports samples/second for thirty properties in an
 optimised test build. Browser capture instructions and status are in
-`oracle/README.md`; browser equivalence must not be claimed without its fixture.
+`oracle/README.md`; the committed fixture gates the projected property values.
