@@ -19,7 +19,7 @@ fn prepare_native()
   checked(["cargo","test","--release","--locked","-p","viud","--features","test-support","--test","recorder_binary"])
 end
 $mode=args()[0] ?? "native"
-$crates=["-p","protocols","-p","dispatcher","-p","frames","-p","slots","-p","world","-p","seat","-p","viud","-p","lib-viu","-p","toolkit","-p","viu","-p","headless"]
+$crates=["-p","policy-host","-p","protocols","-p","dispatcher","-p","frames","-p","slots","-p","world","-p","seat","-p","viud","-p","lib-viu","-p","toolkit","-p","viu","-p","headless"]
 if $mode=="fmt" then
   require_clean()
   try
@@ -45,6 +45,7 @@ elif $mode=="lock" then
 elif $mode=="clippy" then
   checked(concat(concat(["cargo","clippy","--locked","--no-deps"],$crates),["--all-targets"]))
 elif $mode=="unit" then
+  checked(["cargo","test","--locked","-p","policy-host","--lib"])
   checked(["cargo","test","--locked","-p","protocols","--lib","layershell::osd"])
   checked(["cargo","test","--locked","-p","lib-viu","--lib","app_host::osd"])
   checked(["cargo","test","--locked","-p","toolkit","--features","layer","--lib","layer::"])
