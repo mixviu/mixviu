@@ -183,6 +183,25 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                     .filter(|w| !w.is_empty() && w.len() <= 16)
                     .ok_or_else(|| invalid_argument("windows", "array", "1..=16 window targets"))?;
                 if target.contains_key("output") {
+                    if target
+                        .get("output")
+                        .and_then(Value::as_str)
+                        .is_none_or(str::is_empty)
+                    {
+                        return Err(ControlReply::refused(
+                            "invalid_argument",
+                            json!({"field":"output","expected":"non-empty string"}),
+                        ));
+                    }
+                    if target
+                        .get("output_generation")
+                        .is_some_and(|value| value.as_u64().is_none())
+                    {
+                        return Err(ControlReply::refused(
+                            "invalid_argument",
+                            json!({"field":"output_generation","expected":"unsigned JSON integer"}),
+                        ));
+                    }
                     if target.contains_key("window") || target.contains_key("region") {
                         return Err(invalid_argument(
                             "target",
@@ -441,6 +460,39 @@ pub fn reply(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn listed_output_arguments_have_typed_field_refusals() {
+        let args = json!({"request_id":"listed","target":{"output":"headless-0","windows":[{"id":1,"generation":2}]},"path":"/tmp/listed.vfl","max_seconds":60});
+        for (field, values) in [
+            ("output", vec![Value::Null, json!(7), json!(""), json!({}), json!(false), json!([])]),
+            ("output_generation", vec![Value::Null, json!(1.5), json!(1.0), json!("1"), json!({}), json!(-1), json!(true)]),
+        ] {
+            for value in values {
+                let mut bad = args.clone();
+                bad["target"][field] = value;
+                let (rc, body) = parse_record("comp.record.start", &bad)
+                    .unwrap_err()
+                    .into_wire();
+                let body: Value = serde_json::from_str(&body).unwrap();
+                assert_eq!(rc, 10, "{bad}");
+                assert_eq!(body["error"], "invalid_argument", "{bad}");
+                assert_eq!(body["field"], field, "{bad}");
+            }
+        }
+        for generation in [0, u64::MAX] {
+            let mut valid = args.clone();
+            valid["target"]["output_generation"] = json!(generation);
+            assert!(parse_record("comp.record.start", &valid).is_ok());
+        }
+        // Other target forms retain the shared parser's existing refusal.
+        for target in [json!({"output":null}), json!({"output":"headless-0","output_generation":1.5})] {
+            let mut other = args.clone();
+            other["target"] = target;
+            let body = parse_record("comp.record.start", &other).unwrap_err().wire_json();
+            assert_eq!(body["error"], "invalid_value");
+        }
+    }
 
     #[test]
     fn output_with_windows_is_a_filtered_canvas_not_a_stitch() {
