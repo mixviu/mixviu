@@ -337,7 +337,12 @@ where
             for snapshot in snapshots {
                 if snapshot.client && snapshot._buffer.is_none() {
                     if let Some(buffer) = dispatcher::exit_capture::buffer(&snapshot.source_id) {
-                        if snapshot.color.is_none() {
+                        if let Ok(pixel) = smithay::wayland::single_pixel_buffer::get_single_pixel_buffer(&buffer) {
+                            let color = Color32F::from(pixel.rgba32f());
+                            snapshot.color = Some(Color32F::from([color.r() * snapshot.alpha, color.g() * snapshot.alpha, color.b() * snapshot.alpha, color.a() * snapshot.alpha]));
+                            snapshot.texture = None;
+                        } else {
+                            snapshot.color = None;
                             match renderer.import_buffer(&buffer, None, &[]) {
                                 Some(Ok(texture)) => snapshot.texture = Some(texture),
                                 _ => continue,
