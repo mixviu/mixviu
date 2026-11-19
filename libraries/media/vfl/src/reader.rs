@@ -113,20 +113,46 @@ fn line(input: &mut BufReader<File>, path: &Path, recovery: bool) -> Result<Opti
     }
     match serde_json::from_slice(&b) {
         Ok(v) => Ok(Some(v)),
-        Err(_) if recovery && !b.ends_with(b"\n") && input.fill_buf().map_err(|e| err(path,None,at,ErrorKind::Io,e))?.is_empty() => Ok(None),
+        Err(_)
+            if recovery
+                && !b.ends_with(b"\n")
+                && input
+                    .fill_buf()
+                    .map_err(|e| err(path, None, at, ErrorKind::Io, e))?
+                    .is_empty() =>
+        {
+            Ok(None)
+        }
         Err(e) => Err(err(path, None, at, ErrorKind::Metadata, e)),
     }
 }
 /// Present rows are always checked; only an absent/torn final row is advisory
 /// during recovery. Used by sequential decoding and the seek sidecar skip.
-fn frame_row(input: &mut BufReader<File>, path: &Path, slot: u64, fps: u32, complete: bool) -> Result<(),Error> {
+fn frame_row(
+    input: &mut BufReader<File>,
+    path: &Path,
+    slot: u64,
+    fps: u32,
+    complete: bool,
+) -> Result<(), Error> {
     let at = input.stream_position().unwrap_or(0);
-    let row = line(input,path,!complete)?;
+    let row = line(input, path, !complete)?;
     let valid = match row {
-        Some(v) => v["frame"] == slot && v["t_us"] == (u128::from(slot)*1_000_000/u128::from(fps)) as u64,
+        Some(v) => {
+            v["frame"] == slot
+                && v["t_us"] == (u128::from(slot) * 1_000_000 / u128::from(fps)) as u64
+        }
         None => !complete,
     };
-    if !valid { return Err(err(path,None,at,ErrorKind::Structure,"frame timeline mismatch")); }
+    if !valid {
+        return Err(err(
+            path,
+            None,
+            at,
+            ErrorKind::Structure,
+            "frame timeline mismatch",
+        ));
+    }
     Ok(())
 }
 pub struct Markers {
@@ -141,7 +167,7 @@ impl Markers {
     pub fn open(take: &Path) -> Result<Self, Error> {
         json_file(&take.join("manifest.json"))?;
         let path = take.join("markers.jsonl");
-        let complete = json_file(&take.join("complete.json")).is_ok_and(|v|v["complete"] == true);
+        let complete = json_file(&take.join("complete.json")).is_ok_and(|v| v["complete"] == true);
         let input = match open(&path) {
             Ok(f) => Some(BufReader::new(f)),
             Err(_) if !complete && !path.exists() => None,
@@ -157,7 +183,9 @@ impl Markers {
         })
     }
     pub fn read(&mut self) -> Result<Option<Value>, Error> {
-        let Some(input) = &mut self.input else {return Ok(None)};
+        let Some(input) = &mut self.input else {
+            return Ok(None);
+        };
         let Some(v) = line(input, &self.path, !self.complete)? else {
             return Ok(None);
         };
@@ -224,10 +252,13 @@ impl Reader {
         let height = u32::try_from(number(&m, "height", &mp)?).unwrap_or(0);
         let fps = u32::try_from(number(&m, "fps", &mp)?).unwrap_or(0);
         // Reader-side format limits, before allocating, independent of writer helpers.
-        let raw = u64::from(width).checked_mul(u64::from(height)).and_then(|n|n.checked_mul(4))
+        let raw = u64::from(width)
+            .checked_mul(u64::from(height))
+            .and_then(|n| n.checked_mul(4))
             .filter(|n| *n > 0 && *n <= 256 * 1024 * 1024)
             .filter(|_| (1..=60).contains(&fps))
-            .ok_or_else(||err(&mp,None,0,ErrorKind::Limit,"invalid canvas or fps"))? as usize;
+            .ok_or_else(|| err(&mp, None, 0, ErrorKind::Limit, "invalid canvas or fps"))?
+            as usize;
         if ![1, 2].contains(&version)
             || m["format"] != "bgra8"
             || m["encoder"] != "vfl-lz4"
@@ -374,12 +405,18 @@ impl Reader {
                 Ok(r) => r,
                 Err(e) if final_recovery && e.kind == ErrorKind::Metadata => return Ok(()),
                 Err(mut e) => {
-                e.chunk = Some(self.chunk);
-                e.offset = self.offset;
-                return Err(e);
+                    e.chunk = Some(self.chunk);
+                    e.offset = self.offset;
+                    return Err(e);
                 }
             };
-            if final_recovery && ["bytes","crc32","next_frame"].iter().any(|k|r[*k].as_u64().is_none()) {return Ok(());}
+            if final_recovery
+                && ["bytes", "crc32", "next_frame"]
+                    .iter()
+                    .any(|k| r[*k].as_u64().is_none())
+            {
+                return Ok(());
+            }
             if r["bytes"] != self.offset
                 || r["crc32"] != self.crc.clone().finalize()
                 || r["next_frame"] != self.next
@@ -421,17 +458,17 @@ impl Reader {
             }
             number(r, "dropped", &p)?;
         }
-            if let Some(f) = &mut self.frames
-                && line(f, &self.path.join("frames.jsonl"), !self.complete)?.is_some()
-            {
-                return Err(err(
-                    &self.path.join("frames.jsonl"),
-                    None,
-                    0,
-                    ErrorKind::Structure,
-                    "extra frame sidecar rows",
-                ));
-            }
+        if let Some(f) = &mut self.frames
+            && line(f, &self.path.join("frames.jsonl"), !self.complete)?.is_some()
+        {
+            return Err(err(
+                &self.path.join("frames.jsonl"),
+                None,
+                0,
+                ErrorKind::Structure,
+                "extra frame sidecar rows",
+            ));
+        }
         Ok(())
     }
     fn advance(&mut self, decode: bool) -> Result<bool, Error> {
@@ -546,7 +583,10 @@ impl Reader {
             }
             if let Some(f) = &mut self.frames {
                 let p = self.path.join("frames.jsonl");
-                frame_row(f,&p,slot,self.fps,self.complete).map_err(|mut e| {e.chunk=Some(self.chunk);e})?;
+                frame_row(f, &p, slot, self.fps, self.complete).map_err(|mut e| {
+                    e.chunk = Some(self.chunk);
+                    e
+                })?;
             }
             self.crc.update(&h);
             self.crc.update(&self.payload);
@@ -625,7 +665,13 @@ impl Reader {
         self.file = Some(f);
         if let Some(f) = &mut self.frames {
             for slot in 0..key.2 {
-                frame_row(f, &self.path.join("frames.jsonl"),slot,self.fps,self.complete)?;
+                frame_row(
+                    f,
+                    &self.path.join("frames.jsonl"),
+                    slot,
+                    self.fps,
+                    self.complete,
+                )?;
             }
         }
         self.replay_to(target)?;
@@ -635,9 +681,11 @@ impl Reader {
             pixels: &self.pixels,
         })
     }
-    fn replay_to(&mut self, target: u64) -> Result<(),Error> {
+    fn replay_to(&mut self, target: u64) -> Result<(), Error> {
         while self.next <= target {
-            if self.read()?.is_none() {return Err(self.error(ErrorKind::Structure,"unexpected EOF during seek replay"));}
+            if self.read()?.is_none() {
+                return Err(self.error(ErrorKind::Structure, "unexpected EOF during seek replay"));
+            }
         }
         Ok(())
     }
@@ -663,8 +711,7 @@ pub fn verify(path: &Path) -> Value {
                 }
             }
             match Markers::open(path) {
-                Err(e) if r.complete => errors.push(e.to_string()),
-                Err(_) => {}
+                Err(e) => errors.push(e.to_string()),
                 Ok(mut m) => loop {
                     match m.read() {
                         Ok(Some(v)) => {
@@ -673,7 +720,10 @@ pub fn verify(path: &Path) -> Value {
                                     err(
                                         &m.path,
                                         None,
-                                        m.input.as_mut().and_then(|f|f.stream_position().ok()).unwrap_or(0),
+                                        m.input
+                                            .as_mut()
+                                            .and_then(|f| f.stream_position().ok())
+                                            .unwrap_or(0),
                                         ErrorKind::Structure,
                                         "marker beyond take",
                                     )
@@ -709,14 +759,14 @@ mod tests {
     use super::*;
     #[test]
     fn seek_replay_reports_unexpected_eof() {
-        let path=std::env::temp_dir().join(format!("vfl-seek-eof-{}",std::process::id()));
-        let w=crate::Writer::new(path.clone(),2,2,30).unwrap();
+        let path = std::env::temp_dir().join(format!("vfl-seek-eof-{}", std::process::id()));
+        let w = crate::Writer::new(path.clone(), 2, 2, 30).unwrap();
         drop(w);
         // Simulate a take truncated between scan and replay: an empty unsealed
         // chunk reaches clean EOF without advancing next.
-        let mut r=Reader::open(&path).unwrap();
-        let e=r.replay_to(0).unwrap_err();
-        assert_eq!(e.kind,ErrorKind::Structure);
+        let mut r = Reader::open(&path).unwrap();
+        let e = r.replay_to(0).unwrap_err();
+        assert_eq!(e.kind, ErrorKind::Structure);
         assert!(e.message.contains("unexpected EOF"));
         std::fs::remove_dir_all(path).unwrap();
     }

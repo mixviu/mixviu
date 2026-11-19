@@ -87,15 +87,24 @@ fn export_bgra_framemd5_y4m_and_ranges() {
         .unwrap();
     assert!(o.status.success());
     assert!(String::from_utf8(o.stdout).unwrap().contains("\"ok\":true"));
-    for fps in ["0","61"] {
-        let o=Command::new(env!("CARGO_BIN_EXE_mixd")).args(["vfl","export"]).arg(&p).args(["--fps",fps]).output().unwrap();
+    for fps in ["0", "61"] {
+        let o = Command::new(env!("CARGO_BIN_EXE_mixd"))
+            .args(["vfl", "export"])
+            .arg(&p)
+            .args(["--fps", fps])
+            .output()
+            .unwrap();
         assert!(!o.status.success());
         assert!(String::from_utf8(o.stderr).unwrap().contains("1-60"));
     }
     std::fs::remove_file(p.join("complete.json")).unwrap();
     std::fs::remove_file(p.join("markers.jsonl")).unwrap();
-    let o=Command::new(env!("CARGO_BIN_EXE_mixd")).args(["vfl","markers"]).arg(&p).output().unwrap();
-    assert!(o.status.success(),"{}",String::from_utf8_lossy(&o.stderr));
+    let o = Command::new(env!("CARGO_BIN_EXE_mixd"))
+        .args(["vfl", "markers"])
+        .arg(&p)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     assert!(o.stdout.is_empty());
     std::fs::remove_dir_all(p).unwrap();
     let o = Command::new(env!("CARGO_BIN_EXE_mixd"))

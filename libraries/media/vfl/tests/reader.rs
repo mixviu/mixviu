@@ -181,13 +181,13 @@ fn chunk_order_receipts_and_seek_across_chunks() {
     let mut r = Reader::open(&t.0).unwrap();
     assert_eq!(r.seek(11).unwrap().pixels, expected[11]);
     assert!(r.read().unwrap().is_none());
-    let receipt=t.0.join("chunk-000000.json");
-    let intact=std::fs::read(&receipt).unwrap();
+    let receipt = t.0.join("chunk-000000.json");
+    let intact = std::fs::read(&receipt).unwrap();
     std::fs::remove_file(t.0.join("complete.json")).unwrap();
     tear(&receipt);
-    assert_eq!(verify(&t.0)["ok"],false);
-    assert_eq!(assert_seek_matches(&t.0,&expected),1);
-    std::fs::write(&receipt,intact).unwrap();
+    assert_eq!(verify(&t.0)["ok"], false);
+    assert_eq!(assert_seek_matches(&t.0, &expected), 1);
+    std::fs::write(&receipt, intact).unwrap();
     std::fs::rename(t.0.join("chunk-000001.bin"), t.0.join("chunk-000002.bin")).unwrap();
     assert_eq!(verify(&t.0)["ok"], false);
     let mut r = Reader::open(&t.0).unwrap();
@@ -224,103 +224,146 @@ fn decoded(r: &mut Reader) -> (Vec<Vec<u8>>, Option<media_vfl::reader::ErrorKind
     loop {
         match r.read() {
             Ok(Some(f)) => frames.push(f.pixels.to_vec()),
-            Ok(None) => return (frames,None),
-            Err(e) => return (frames,Some(e.kind)),
+            Ok(None) => return (frames, None),
+            Err(e) => return (frames, Some(e.kind)),
         }
     }
 }
 fn assert_seek_matches(path: &Path, expected: &[Vec<u8>]) -> usize {
-    let mut r=Reader::open(path).unwrap();
-    let (frames, failure)=decoded(&mut r);
-    assert_eq!(frames,&expected[..frames.len()]);
+    let mut r = Reader::open(path).unwrap();
+    let (frames, failure) = decoded(&mut r);
+    assert_eq!(frames, &expected[..frames.len()]);
     for target in 0..frames.len() {
-        let mut r=Reader::open(path).unwrap();
-        assert_eq!(r.seek(target as u64).unwrap().pixels,frames[target]);
-        let (tail,error)=decoded(&mut r);
-        assert_eq!(tail,frames[target+1..]);
-        assert_eq!(error,failure,"target {target}");
+        let mut r = Reader::open(path).unwrap();
+        assert_eq!(r.seek(target as u64).unwrap().pixels, frames[target]);
+        let (tail, error) = decoded(&mut r);
+        assert_eq!(tail, frames[target + 1..]);
+        assert_eq!(error, failure, "target {target}");
     }
-    if failure.is_some() {assert!(Reader::open(path).unwrap().seek(frames.len() as u64).is_err());}
+    if failure.is_some() {
+        assert!(
+            Reader::open(path)
+                .unwrap()
+                .seek(frames.len() as u64)
+                .is_err()
+        );
+    }
     frames.len()
 }
 fn tear(path: &Path) {
-    let mut b=std::fs::read(path).unwrap();b.truncate(b.len()-3);std::fs::write(path,b).unwrap();
+    let mut b = std::fs::read(path).unwrap();
+    b.truncate(b.len() - 3);
+    std::fs::write(path, b).unwrap();
 }
 #[test]
 fn interrupted_torn_final_frame_line_preserves_last_frame() {
-    let (t, expected)=take(false);
+    let (t, expected) = take(false);
     tear(&t.0.join("frames.jsonl"));
-    assert_eq!(assert_seek_matches(&t.0,&expected),12);
-    let v=verify(&t.0);assert_eq!(v["ok"],true,"{v}");assert_eq!(v["complete"],false);assert_eq!(v["frames"],12);
+    assert_eq!(assert_seek_matches(&t.0, &expected), 12);
+    let v = verify(&t.0);
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(v["complete"], false);
+    assert_eq!(v["frames"], 12);
 }
 #[test]
 fn interrupted_torn_final_marker_line_is_advisory() {
-    let (t, expected)=take(false);
+    let (t, expected) = take(false);
     tear(&t.0.join("markers.jsonl"));
-    assert_eq!(assert_seek_matches(&t.0,&expected),12);
-    let v=verify(&t.0);assert_eq!(v["ok"],true,"{v}");assert_eq!(v["complete"],false);assert_eq!(v["markers"],0);
-    assert!(media_vfl::reader::Markers::open(&t.0).unwrap().read().unwrap().is_none());
+    assert_eq!(assert_seek_matches(&t.0, &expected), 12);
+    let v = verify(&t.0);
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(v["complete"], false);
+    assert_eq!(v["markers"], 0);
+    assert!(
+        media_vfl::reader::Markers::open(&t.0)
+            .unwrap()
+            .read()
+            .unwrap()
+            .is_none()
+    );
 }
 #[test]
 fn interrupted_torn_final_receipt_is_advisory() {
-    let (t, expected)=take(false);
+    let (t, expected) = take(false);
     tear(&t.0.join("chunk-000000.json"));
-    assert_eq!(assert_seek_matches(&t.0,&expected),12);
-    let v=verify(&t.0);assert_eq!(v["ok"],true,"{v}");assert_eq!(v["complete"],false);
+    assert_eq!(assert_seek_matches(&t.0, &expected), 12);
+    let v = verify(&t.0);
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(v["complete"], false);
 }
 #[test]
 fn interrupted_torn_binary_tail_stops_at_valid_prefix() {
-    let (t, expected)=take(false);
+    let (t, expected) = take(false);
     tear(&t.0.join("chunk-000000.bin"));
-    assert_eq!(assert_seek_matches(&t.0,&expected),11);
-    let v=verify(&t.0);assert_eq!(v["ok"],false,"{v}");assert_eq!(v["complete"],false);assert_eq!(v["frames"],11);
+    assert_eq!(assert_seek_matches(&t.0, &expected), 11);
+    let v = verify(&t.0);
+    assert_eq!(v["ok"], false, "{v}");
+    assert_eq!(v["complete"], false);
+    assert_eq!(v["frames"], 11);
 }
 #[test]
 fn complete_torn_sidecars_are_errors() {
-    for sidecar in ["frames.jsonl","markers.jsonl","chunk-000000.json"] {
-        let (t, expected)=take(true);tear(&t.0.join(sidecar));
-        let n=assert_seek_matches(&t.0,&expected);
-        assert_eq!(n,if sidecar=="frames.jsonl" {11} else {12});
-        let v=verify(&t.0);assert_eq!(v["ok"],false,"{sidecar}: {v}");
+    for sidecar in ["frames.jsonl", "markers.jsonl", "chunk-000000.json"] {
+        let (t, expected) = take(true);
+        tear(&t.0.join(sidecar));
+        let n = assert_seek_matches(&t.0, &expected);
+        assert_eq!(n, if sidecar == "frames.jsonl" { 11 } else { 12 });
+        let v = verify(&t.0);
+        assert_eq!(v["ok"], false, "{sidecar}: {v}");
     }
 }
 #[test]
 fn malformed_and_oversized_interior_rows_never_disappear() {
-    for complete in [true,false] {
-        for replacement in ["{broken}\n".to_string(),"x".repeat(1024*1024+1)] {
-            let (t, expected)=take(complete);
-            let p=t.0.join("frames.jsonl");let old=std::fs::read_to_string(&p).unwrap();
-            let rows: Vec<_>=old.lines().collect();
-            std::fs::write(&p,format!("{}\n{}{}\n",rows[0],replacement,rows[2..].join("\n"))).unwrap();
-            assert_eq!(assert_seek_matches(&t.0,&expected),1);
-            assert_eq!(verify(&t.0)["ok"],false);
+    for complete in [true, false] {
+        for replacement in ["{broken}\n".to_string(), "x".repeat(1024 * 1024 + 1)] {
+            let (t, expected) = take(complete);
+            let p = t.0.join("frames.jsonl");
+            let old = std::fs::read_to_string(&p).unwrap();
+            let rows: Vec<_> = old.lines().collect();
+            std::fs::write(
+                &p,
+                format!("{}\n{}{}\n", rows[0], replacement, rows[2..].join("\n")),
+            )
+            .unwrap();
+            assert_eq!(assert_seek_matches(&t.0, &expected), 1);
+            assert_eq!(verify(&t.0)["ok"], false);
             assert!(Reader::open(&t.0).unwrap().seek(11).is_err());
         }
-        let (t, _)=take(complete);
-        let p=t.0.join("markers.jsonl");let old=std::fs::read_to_string(&p).unwrap();
-        std::fs::write(p,format!("{{broken}}\n{old}")).unwrap();
-        assert_eq!(verify(&t.0)["ok"],false);
+        let (t, _) = take(complete);
+        let p = t.0.join("markers.jsonl");
+        let old = std::fs::read_to_string(&p).unwrap();
+        std::fs::write(p, format!("{{broken}}\n{old}")).unwrap();
+        assert_eq!(verify(&t.0)["ok"], false);
     }
 }
 #[test]
 fn reader_manifest_caps_are_absolute() {
-    for (width,height,fps) in [(30000,30000,30),(4,4,0),(0,4,30),(4,4,61)] {
-        let (t,_)=take(false);
-        json_edit(&t.0.join("manifest.json"),|v|{v["width"]=json!(width);v["height"]=json!(height);v["fps"]=json!(fps);});
-        let e=Reader::open(&t.0).err().unwrap();
-        assert_eq!(e.kind,media_vfl::reader::ErrorKind::Limit);
-        assert_eq!(e.file,t.0.join("manifest.json"));
+    for (width, height, fps) in [(30000, 30000, 30), (4, 4, 0), (0, 4, 30), (4, 4, 61)] {
+        let (t, _) = take(false);
+        json_edit(&t.0.join("manifest.json"), |v| {
+            v["width"] = json!(width);
+            v["height"] = json!(height);
+            v["fps"] = json!(fps);
+        });
+        let e = Reader::open(&t.0).err().unwrap();
+        assert_eq!(e.kind, media_vfl::reader::ErrorKind::Limit);
+        assert_eq!(e.file, t.0.join("manifest.json"));
     }
 }
 #[test]
 fn recovery_rejects_terminated_and_oversized_final_rows() {
     use std::io::Write;
-    for sidecar in ["frames.jsonl","markers.jsonl"] {
-        for tail in ["{broken}\n".to_string(), "x".repeat(1024*1024+1)] {
-            let (t,expected)=take(false);
-            std::fs::OpenOptions::new().append(true).open(t.0.join(sidecar)).unwrap().write_all(tail.as_bytes()).unwrap();
-            assert_eq!(verify(&t.0)["ok"],false);
-            assert_eq!(assert_seek_matches(&t.0,&expected),12);
+    for sidecar in ["frames.jsonl", "markers.jsonl"] {
+        for tail in ["{broken}\n".to_string(), "x".repeat(1024 * 1024 + 1)] {
+            let (t, expected) = take(false);
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(t.0.join(sidecar))
+                .unwrap()
+                .write_all(tail.as_bytes())
+                .unwrap();
+            assert_eq!(verify(&t.0)["ok"], false);
+            assert_eq!(assert_seek_matches(&t.0, &expected), 12);
         }
     }
 }
