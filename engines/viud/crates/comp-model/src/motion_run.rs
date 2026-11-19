@@ -223,6 +223,9 @@ fn parse_window(window: &serde_json::Map<String, Value>) -> Result<MotionTarget,
         .and_then(Value::as_u64)
         .ok_or_else(|| invalid_argument("window.generation", "integer", "window generation"))?;
     let visual = parse_visual(window)?;
+    if window.contains_key("anchor") && visual.is_none() {
+        return Err(invalid_argument("window.anchor", "anchor alongside tracks or preset", "visual run"));
+    }
     let empty_to = serde_json::Map::new();
     let to_object = match present(window, "to") {
         Some(Value::Object(to)) => to,

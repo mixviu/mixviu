@@ -189,7 +189,12 @@ pub fn install(
         extra.set_preferred(mode);
         scenegraph::display::output::register(state, &extra);
         state.inner.comp.workspaces.count = 2;
-        state.inner.comp.workspaces.current.insert("headless-1".into(), 2);
+        state
+            .inner
+            .comp
+            .workspaces
+            .current
+            .insert("headless-1".into(), 2);
         state
             .inner
             .map_output_everywhere(&extra, (mode.size.w, 0).into());
@@ -205,7 +210,14 @@ pub fn install(
         views.ensure("headless-0");
         views.views_mut("headless-0").root = Viewport::Slots {
             axis: Axis::Vertical,
-            slots: (0..2).map(|id| Slot { id, camera: Default::default(), content: None, weight: 1.0 }).collect(),
+            slots: (0..2)
+                .map(|id| Slot {
+                    id,
+                    camera: Default::default(),
+                    content: None,
+                    weight: 1.0,
+                })
+                .collect(),
         };
     }
     human_seat_without_sources(&mut state.state.seat.seat);

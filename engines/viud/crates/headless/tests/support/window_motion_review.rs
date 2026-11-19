@@ -331,7 +331,9 @@ fn placing_last_track_resolves_reply_promptly() {
             "comp.window.place",
             place_args(&row, json!({"opacity":0.7})),
         );
-        assert_eq!(running.join().unwrap()["status"], "superseded");
+        let answer = running.join().unwrap();
+        assert_eq!(answer["status"], "superseded");
+        assert_eq!(answer["by"], "place");
         assert!(
             placed.elapsed() < Duration::from_millis(500),
             "reply must not wait for the ten-second run"
@@ -722,36 +724,69 @@ fn dim_exit_never_brightens_and_lock_draws_no_ghost() {
 
 #[test]
 fn exiting_window_never_reuses_old_output_or_pane_pixels() {
-    if !process::record_available() { return; }
-    for panes in [false,true] { for minimise in [false,true] {
-        let label = format!("scope-exit-{panes}-{minimise}");
-        let bus = Bus::start(&label);
-        let mut prefs = json!({"window_motion":{"unmap":{"preset":"fade","duration_ms":1500},"minimise":{"preset":"fade","duration_ms":1500}}});
-        prefs[if panes { "_test_two_panes" } else { "_test_two_outputs" }] = json!(true);
-        let mut process = process::spawn_preferences(&label, &bus.url, prefs);
-        bus.ready();
-        let (mut client, row) = solid_window(&bus, &mut process, &label, 0xffffffff, 300, 200);
-        let source_output = if panes { "headless-0" } else { "headless-1" };
-        if !panes { bus.call("comp.window.send_to_workspace", place_args(&row,json!({"index":2,"follow":false}))); }
-        let path = process.root.join("source.vfl");
-        let start = bus.call("comp.record.start",json!({"request_id":"source","target":{"output":source_output},"path":path,"fps":30,"cursor":false,"max_seconds":10}));
-        thread::sleep(Duration::from_millis(150));
-        if panes { bus.call("comp.window.place",place_args(&row,json!({"x":900}))); }
-        else { bus.call("comp.window.send_to_workspace",place_args(&row,json!({"index":1,"follow":false}))); }
-        thread::sleep(Duration::from_millis(150));
-        if minimise { bus.call("comp.window.minimize",target(&row)); }
-        else { client.commit_then_destroy(); pump_patterns(&mut [&mut client]); }
-        thread::sleep(Duration::from_millis(300));
-        bus.call("comp.record.stop", json!({"session":start["session"]}));
-        let mut shown = false;
-        let mut cleared = false;
-        let mut after = 0;
-        exported_frames(&path, |frame,width,pixels| {
-            let p = pixel(pixels,width,400,280);
-            if !cleared && p == [255,255,255] { shown = true; }
-            if shown && p == [18,20,25] { cleared = true; }
-            if cleared { after += 1; assert_eq!(p,[18,20,25],"stale source scope in frame {frame}"); }
-        });
-        assert!(shown && cleared && after >= 5, "must witness source pixels, move and exit");
-    }}
+    if !process::record_available() {
+        return;
+    }
+    for panes in [false, true] {
+        for minimise in [false, true] {
+            let label = format!("scope-exit-{panes}-{minimise}");
+            let bus = Bus::start(&label);
+            let mut prefs = json!({"window_motion":{"unmap":{"preset":"fade","duration_ms":1500},"minimise":{"preset":"fade","duration_ms":1500}}});
+            prefs[if panes {
+                "_test_two_panes"
+            } else {
+                "_test_two_outputs"
+            }] = json!(true);
+            let mut process = process::spawn_preferences(&label, &bus.url, prefs);
+            bus.ready();
+            let (mut client, row) = solid_window(&bus, &mut process, &label, 0xffffffff, 300, 200);
+            let source_output = if panes { "headless-0" } else { "headless-1" };
+            if !panes {
+                bus.call(
+                    "comp.window.send_to_workspace",
+                    place_args(&row, json!({"index":2,"follow":false})),
+                );
+            }
+            let path = process.root.join("source.vfl");
+            let start = bus.call("comp.record.start",json!({"request_id":"source","target":{"output":source_output},"path":path,"fps":30,"cursor":false,"max_seconds":10}));
+            thread::sleep(Duration::from_millis(150));
+            if panes {
+                bus.call("comp.window.place", place_args(&row, json!({"x":900})));
+            } else {
+                bus.call(
+                    "comp.window.send_to_workspace",
+                    place_args(&row, json!({"index":1,"follow":false})),
+                );
+            }
+            thread::sleep(Duration::from_millis(150));
+            if minimise {
+                bus.call("comp.window.minimize", target(&row));
+            } else {
+                client.commit_then_destroy();
+                pump_patterns(&mut [&mut client]);
+            }
+            thread::sleep(Duration::from_millis(300));
+            bus.call("comp.record.stop", json!({"session":start["session"]}));
+            let mut shown = false;
+            let mut cleared = false;
+            let mut after = 0;
+            exported_frames(&path, |frame, width, pixels| {
+                let p = pixel(pixels, width, 400, 280);
+                if !cleared && p == [255, 255, 255] {
+                    shown = true;
+                }
+                if shown && p == [18, 20, 25] {
+                    cleared = true;
+                }
+                if cleared {
+                    after += 1;
+                    assert_eq!(p, [18, 20, 25], "stale source scope in frame {frame}");
+                }
+            });
+            assert!(
+                shown && cleared && after >= 5,
+                "must witness source pixels, move and exit"
+            );
+        }
+    }
 }

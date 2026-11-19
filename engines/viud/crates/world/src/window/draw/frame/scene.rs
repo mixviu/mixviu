@@ -429,10 +429,11 @@ where
     let (mut elements, crop) = crop_elements(elements, window, ctx, elem_loc, size, pane);
     if let Some(uuid) = window.uuid() {
         let visual = visual_of(window);
+        let centre = window.geometry().size.to_f64();
         let anchor = project_point(
             ctx,
-            elem_loc.x as f64 + visual.scale.anchor.x + visual.translate.x,
-            elem_loc.y as f64 + visual.scale.anchor.y + visual.translate.y,
+            elem_loc.x as f64 + visual.scale.anchor.x + (centre.w / 2.0 - visual.scale.anchor.x) * visual.scale.factor + visual.translate.x,
+            elem_loc.y as f64 + visual.scale.anchor.y + (centre.h / 2.0 - visual.scale.anchor.y) * visual.scale.factor + visual.translate.y,
         );
         super::super::ghost::retain(
             renderer,
