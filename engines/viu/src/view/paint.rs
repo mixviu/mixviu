@@ -278,9 +278,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 .layer_id(layer.unwrap_or(base.layer_id())),
         );
         let ui = &mut child;
-        if let Some(layer) = layer {
-            layers.insert(item.key.clone(), layer);
-        }
+        layers.insert(item.key.clone(), ui.layer_id());
         let painter = ui.painter().with_clip_rect(clip);
         let id = Id::unique(("scene-node", &item.key));
         if item.cell {
@@ -576,12 +574,11 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         );
         motion.painted(ui, capture, rect);
         if item.source == Source::Tree
-            && let Some(layer) = layer
             && let Some(r) = scene.layout.nodes.get_mut(&item.id)
         {
             *r = ui
                 .ctx()
-                .layer_transform_to_global(layer)
+                .layer_transform_to_global(ui.layer_id())
                 .unwrap_or_default()
                 .mul_rect(*r);
         }
