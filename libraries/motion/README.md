@@ -14,6 +14,10 @@ Hosts can decode the same table as a Mix value or call `load_presets` for
 validated Rust data. Time and duration are seconds, translations and blur
 are logical pixels, rotation is degrees, clip insets are fractions. Infinite
 iteration is an explicit tagged value rather than a non-JSON number.
+Omitted keyframe easing is CSS `ease`. Directions are `normal`, `reverse`,
+`alternate` and `alternate-reverse` (`alternate_reverse` is accepted as an
+input alias). Finite extrapolation in `Values::lerp` saturates at ±f64::MAX
+when its mathematical result is outside the representable range.
 
 CSS renderer responsibilities and approximations:
 

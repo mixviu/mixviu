@@ -83,7 +83,8 @@ impl Values {
         self.mask == 0
     }
     /// Interpolate the union of present properties, using identity for absent
-    /// ones. Progress may overshoot; this helper deliberately does not clamp it.
+    /// ones. Progress may overshoot; finite extrapolation saturates at ±f64::MAX
+    /// when the result cannot be represented. Progress itself is not clamped.
     pub fn lerp(&self, to: &Self, progress: f64) -> Self {
         let mut result = Self::default();
         for property in Property::ALL {
@@ -108,7 +109,15 @@ fn lerp(a: f64, b: f64, progress: f64) -> f64 {
     else if (0.0..=1.0).contains(&progress) {
         ((1.0 - progress) * a + progress * b).clamp(a.min(b), a.max(b))
     } else {
-        a + (b - a) * progress
+        let result = a + (b - a) * progress;
+        if result.is_finite() {
+            result
+        } else {
+            // Halving endpoints avoids overflowing their difference and leaves
+            // room for cancellation before restoring the result's magnitude.
+            let half = a * 0.5 + (b * 0.5 - a * 0.5) * progress;
+            (half * 2.0).clamp(-f64::MAX, f64::MAX)
+        }
     }
 }
 
@@ -178,7 +187,7 @@ impl Curve {
                 }
                 let scaled = u * n as f64;
                 let mut step = scaled.floor() + if start { 1.0 } else { 0.0 };
-                if before && scaled == scaled.floor() {
+                if before && u == 0.0 {
                     step -= 1.0;
                 }
                 (step / n as f64).clamp(0.0, 1.0)
@@ -204,9 +213,13 @@ impl Curve {
 pub struct Keyframe {
     pub offset: f64,
     pub value: f64,
-    /// Applies from this keyframe to the next, as in CSS.
-    #[serde(default)]
+    /// Applies from this keyframe to the next; omitted easing is CSS `ease`.
+    #[serde(default = "default_keyframe_easing")]
     pub easing: Curve,
+}
+
+fn default_keyframe_easing() -> Curve {
+    Curve::Ease
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -284,7 +297,21 @@ pub enum Fill {
 pub enum Direction {
     #[default]
     Normal,
+    Reverse,
     Alternate,
+    #[serde(rename = "alternate-reverse", alias = "alternate_reverse")]
+    AlternateReverse,
+}
+
+impl Direction {
+    fn reverses(self, iteration: f64) -> bool {
+        match self {
+            Self::Normal => false,
+            Self::Reverse => true,
+            Self::Alternate => iteration % 2.0 == 1.0,
+            Self::AlternateReverse => iteration % 2.0 == 0.0,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
@@ -388,8 +415,9 @@ impl Timing {
         // Reduce time before dividing. `elapsed / duration` may overflow or
         // lose iteration parity for long-running infinite animations.
         if !before && self.iterations == Iterations::Infinite && self.duration > 0.0 {
-            if self.direction == Direction::Normal {
-                return Some((cycle_phase(t, start, self.duration), false));
+            if matches!(self.direction, Direction::Normal | Direction::Reverse) {
+                let phase = cycle_phase(t, start, self.duration);
+                return Some((if self.direction == Direction::Reverse { 1.0 - phase } else { phase }, false));
             }
             let cycle = self.duration * 2.0;
             let directed = if cycle.is_finite() {
@@ -399,14 +427,12 @@ impl Timing {
             } else {
                 (t / self.duration - start / self.duration) % 2.0
             };
-            return Some((
-                if directed > 1.0 {
+            let phase = if directed > 1.0 {
                     2.0 - directed
                 } else {
                     directed
-                },
-                false,
-            ));
+                };
+            return Some((if self.direction == Direction::AlternateReverse { 1.0 - phase } else { phase }, false));
         }
         let iteration_progress = if before {
             0.0
@@ -421,7 +447,7 @@ impl Timing {
             iteration -= 1.0;
             progress = 1.0;
         }
-        let reverse = self.direction == Direction::Alternate && iteration % 2.0 == 1.0;
+        let reverse = self.direction.reverses(iteration);
         if reverse {
             progress = 1.0 - progress;
         }
@@ -576,6 +602,70 @@ mod tests {
         assert!(p.sample(1e300).get(Property::Tx).is_finite());
     }
     #[test]
+    fn steps_fractional_reverse_ending_fill_keeps_midpoint() {
+        let mut p = line();
+        p.timing.iterations = Iterations::Finite(3.5);
+        p.timing.direction = Direction::Alternate;
+        p.timing.fill = Fill::Forwards;
+        p.tracks[0].keyframes[0].easing = Curve::Steps { n: 2, start: false };
+        assert_eq!(p.sample(3.5).get(Property::Tx), 50.0);
+        assert_eq!(p.sample(99.0).get(Property::Tx), 50.0);
+        assert_eq!(Curve::Steps { n: 2, start: false }.sample_before(0.5, true), 0.5);
+    }
+    #[test]
+    fn omitted_keyframe_easing_is_css_ease() {
+        let frame: Keyframe = serde_json::from_str(r#"{"offset":0,"value":0}"#).unwrap();
+        assert_eq!(frame.easing, Curve::Ease);
+        assert!((frame.easing.sample(0.5) - 0.8024033876).abs() < 1e-8);
+        let explicit: Keyframe = serde_json::from_str(r#"{"offset":0,"value":0,"easing":{"kind":"linear"}}"#).unwrap();
+        assert_eq!(explicit.easing, Curve::Linear);
+    }
+    #[test]
+    fn all_directions_apply_to_active_and_filled_phases() {
+        for (direction, before, first, second, after) in [
+            (Direction::Normal, 0.0, 25.0, 25.0, 100.0),
+            (Direction::Reverse, 100.0, 75.0, 75.0, 0.0),
+            (Direction::Alternate, 0.0, 25.0, 75.0, 0.0),
+            (Direction::AlternateReverse, 100.0, 75.0, 25.0, 100.0),
+        ] {
+            let mut p = line();
+            p.timing.direction = direction;
+            p.timing.iterations = Iterations::Finite(2.0);
+            for fill in [Fill::None, Fill::Backwards, Fill::Forwards, Fill::Both] {
+                p.timing.fill = fill;
+                assert_eq!(p.sample(0.25).get(Property::Tx), first);
+                assert_eq!(p.sample(1.25).get(Property::Tx), second);
+                if matches!(fill, Fill::Backwards | Fill::Both) {
+                    assert_eq!(p.sample(-1.0).get(Property::Tx), before);
+                } else { assert!(p.sample(-1.0).is_empty()); }
+                if matches!(fill, Fill::Forwards | Fill::Both) {
+                    assert_eq!(p.sample(2.0).get(Property::Tx), after);
+                    assert_eq!(p.sample(99.0).get(Property::Tx), after);
+                } else { assert!(p.sample(2.0).is_empty()); }
+            }
+            p.timing.iterations = Iterations::Infinite;
+            assert_eq!(p.sample(1_000_000.25).get(Property::Tx), first);
+            assert_eq!(p.sample(1_000_001.25).get(Property::Tx), second);
+            let encoded = serde_json::to_string(&direction).unwrap();
+            assert_eq!(serde_json::from_str::<Direction>(&encoded).unwrap(), direction);
+        }
+        assert_eq!(serde_json::to_string(&Direction::AlternateReverse).unwrap(), r#""alternate-reverse""#);
+    }
+    #[test]
+    fn extreme_extrapolation_saturates_without_intermediate_overflow() {
+        let mut a = Values::default();
+        let mut b = Values::default();
+        a.set(Property::Scalar, -1e308);
+        b.set(Property::Scalar, 1e308);
+        assert_eq!(a.lerp(&b, 2.0).get(Property::Scalar), f64::MAX);
+        assert_eq!(a.lerp(&b, -1.0).get(Property::Scalar), -f64::MAX);
+        // A representable extrapolation must survive overflowing b-a.
+        assert!((a.lerp(&b, 1.1).get(Property::Scalar) / 1.2e308 - 1.0).abs() < 1e-15);
+        a.set(Property::Scalar, f64::MAX);
+        b.set(Property::Scalar, f64::MAX);
+        assert_eq!(a.lerp(&b, f64::MAX).get(Property::Scalar), f64::MAX);
+    }
+    #[test]
     fn named_curves_and_steps() {
         for (curve, expected) in [
             (Curve::Linear, 0.5),
@@ -650,7 +740,7 @@ mod tests {
         p.timing.beat_start = -1e308;
         p.timing.iterations = Iterations::Infinite;
         p.timing.fill = Fill::None;
-        for direction in [Direction::Normal, Direction::Alternate] {
+        for direction in [Direction::Normal, Direction::Reverse, Direction::Alternate, Direction::AlternateReverse] {
             p.timing.direction = direction;
             for duration in [0.125, 1e-300, 1e308] {
                 p.timing.duration = duration;

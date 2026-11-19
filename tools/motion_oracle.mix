@@ -1,7 +1,8 @@
 #!/usr/bin/env mix
 -- version: 0.1.0
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- Run through CBC with needs: ["chrome"], never on the operator desktop.
+-- Run on a Chrome host such as cos as an unprivileged user; no CBC chrome
+-- slot exists. See libraries/motion/oracle/README.md for capture provenance.
 $base = "libraries/motion/oracle/"
 $tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/motion-oracle-XXXXXXXX"]))
 $css = read_file($base .. "reference/anim.css")

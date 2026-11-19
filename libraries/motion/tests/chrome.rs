@@ -11,7 +11,13 @@ fn chrome_oracle() {
     .unwrap();
     let table = presets();
     let captured = fixture["presets"].as_array().unwrap();
+    assert_eq!(table.len(), 19);
     assert_eq!(captured.len(), 19);
+    let expected_names: std::collections::BTreeSet<_> = table.iter().map(|p| p.name.as_str()).collect();
+    let captured_names: std::collections::BTreeSet<_> = captured.iter().map(|p| p["name"].as_str().unwrap()).collect();
+    assert_eq!(expected_names.len(), table.len(), "duplicate table names");
+    assert_eq!(captured_names.len(), captured.len(), "duplicate fixture names");
+    assert_eq!(captured_names, expected_names, "fixture must cover every preset exactly once");
     let mut failures = Vec::new();
     for entry in captured {
         let name = entry["name"].as_str().unwrap();
