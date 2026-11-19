@@ -28,6 +28,7 @@ fn refresh_windows()
     send $comp "comp.props.watch" body={}
     if $rc!=0 then $state.windows={};return false end
     send $comp "comp.windows.list" body={}
+    trace_state(json_encode({query:$reply,raw:$result,at:monotonic()}))
     if $rc!=0 or type($reply.windows)!="list" then $state.windows={};return false end
     $state.windows={}
     for $w in $reply.windows $state.windows[to_string($w.id)]=$w end
@@ -108,7 +109,7 @@ on viu.timer
 end
 on osd.notice
   $notice=$event.args
-  trace_state($notice.command)
+  trace_state(json_encode($notice))
   if $notice.command=="bus.connected" then
     for $topic in $window_topics subscribe($comp.."."..$topic) end
     send $comp "comp.props.watch" body={}
