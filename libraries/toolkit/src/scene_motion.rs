@@ -337,21 +337,28 @@ pub fn visual(ui: &Ui, start: ShapeIdx, rect: Rect, opacity: f64, offset: [f64; 
 pub fn highlight(ui:&Ui,layer:LayerId,start:ShapeIdx,key:&str,declaration:Option<&Value>,enabled:bool) {
     let Some(declaration)=declaration.filter(|v|motion::scene::transitions(v).is_ok_and(|ts|ts.iter().any(|t|t.prop=="highlight"))) else {return;};
     let shapes=ui.ctx().graphics_mut(|g|g.entry(layer).all_entries().skip(start.0).cloned().collect::<Vec<_>>());
-    for (index,mut shape) in shapes.into_iter().enumerate() {
-        let counter=std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let ctx=ui.ctx().clone();let declaration=declaration.clone();let key=format!("{key}/{index}");
-        egui::epaint::shape_transform::adjust_colors(&mut shape.shape,move |c| {
-            if *c==egui::Color32::PLACEHOLDER {return;}
-            let [r,g,b,a]=c.to_srgba_unmultiplied();
-            let target=serde_json::json!(format!("#{r:02x}{g:02x}{b:02x}{a:02x}"));
-            let k=format!("{key}/{}",counter.fetch_add(1,std::sync::atomic::Ordering::Relaxed));
-            let sampled=value(&ctx,&k,"highlight",&target,Some(&declaration),enabled);
-            if let Some(s)=sampled.as_str().and_then(|s|s.strip_prefix('#')) {
-                let byte=|i|u8::from_str_radix(&s[i..i+2],16).unwrap();
-                *c=egui::Color32::from_rgba_unmultiplied(byte(0),byte(2),byte(4),byte(6));
+    for (index,shape) in shapes.into_iter().enumerate() {
+        let clip=shape.clip_rect;
+        let mut painted=Vec::new();
+        for primitive in ui.ctx().tessellate(vec![shape],ui.pixels_per_point()) {
+            match primitive.primitive {
+                egui::epaint::Primitive::Mesh(mut mesh)=>{
+                    let mut colours=Vec::<(egui::Color32,egui::Color32)>::new();
+                    for vertex in &mut mesh.vertices {
+                        if let Some((_,sampled))=colours.iter().find(|(target,_)|*target==vertex.color) {vertex.color=*sampled;continue;}
+                        let target=vertex.color;let [r,g,b,a]=target.to_srgba_unmultiplied();
+                        let k=format!("{key}/{index}/{}",colours.len());
+                        let sampled=value(ui.ctx(),&k,"highlight",&serde_json::json!(format!("#{r:02x}{g:02x}{b:02x}{a:02x}")),Some(declaration),enabled);
+                        let s=sampled.as_str().unwrap().strip_prefix('#').unwrap();let byte=|i|u8::from_str_radix(&s[i..i+2],16).unwrap();
+                        vertex.color=egui::Color32::from_rgba_unmultiplied(byte(0),byte(2),byte(4),byte(6));
+                        colours.push((target,vertex.color));
+                    }
+                    painted.push(egui::Shape::mesh(mesh));
+                }
+                egui::epaint::Primitive::Callback(callback)=>painted.push(egui::Shape::Callback(callback)),
             }
-        });
-        ui.ctx().graphics_mut(|g|g.entry(layer).mutate_shape(ShapeIdx(start.0+index),|s|*s=shape));
+        }
+        ui.ctx().graphics_mut(|g|g.entry(layer).set(ShapeIdx(start.0+index),clip,egui::Shape::Vec(painted)));
     }
 }
 fn transform(shape: &mut ClippedShape, rect: Rect, values: &motion::Values) {
@@ -505,6 +512,24 @@ mod tests {
             match shape {egui::Shape::Text(t)=>t.galley.job.text.contains(label),egui::Shape::Vec(shapes)=>shapes.iter().any(|s|has(s,label)),_=>false}
         }
         shapes.iter().any(|s|has(&s.shape,label))
+    }
+    #[test]
+    fn painted_highlight_colours_follow_the_declared_curve() {
+        let ctx=Context::default();let declaration=json!({"prop":"highlight","ms":100,"ease":{"kind":"linear"}});
+        let mut sampled=egui::Color32::TRANSPARENT;
+        for (t,colour) in [(0.,egui::Color32::RED),(1.,egui::Color32::BLUE),(1.05,egui::Color32::BLUE)] {
+            ctx.run_ui(raw(t),|ui| {
+                let start=ui.ctx().graphics_mut(|g|g.entry(ui.layer_id()).next_idx());
+                ui.painter().rect_filled(Rect::from_min_size(egui::pos2(20.,20.),egui::vec2(30.,20.)),0.,colour);
+                highlight(ui,ui.layer_id(),start,"highlight",Some(&declaration),true);
+                sampled=ui.ctx().graphics_mut(|g| {
+                    let shape=&g.entry(ui.layer_id()).all_entries().nth(start.0).unwrap().shape;
+                    let egui::Shape::Vec(shapes)=shape else {panic!("highlight mesh")};
+                    shapes.iter().find_map(|s|if let egui::Shape::Mesh(m)=s {m.vertices.iter().find(|v|v.color.a()==255).map(|v|v.color)}else{None}).unwrap()
+                });
+            }).drop_without_applying_deltas();
+        }
+        assert!((i32::from(sampled.r())-128).abs()<=1);assert!((i32::from(sampled.b())-128).abs()<=1);
     }
     #[test]
     fn native_menu_and_popup_close_with_paint_only_and_reduced_motion_snaps() {
