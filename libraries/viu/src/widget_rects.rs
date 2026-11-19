@@ -8,7 +8,7 @@ pub(crate) struct WidgetRect {
     pub kind: String,
     pub label: Option<String>,
     pub rect: egui::Rect,
-    pub visible: bool,
+    pub clip: egui::Rect,
     pub enabled: bool,
     pub focused: bool,
 }
@@ -38,7 +38,7 @@ pub(crate) fn query(rows: &[WidgetRect], args: &Value) -> Result<Value, String> 
             .filter(|row| {
                 matches("ids", &row.id)
                     && matches("kinds", &row.kind)
-                    && (args["visible_only"] != true || row.visible)
+                    && (args["visible_only"] != true || row.rect.intersect(row.clip).is_positive())
             })
             .map(|row| {
                 let r = row.rect;

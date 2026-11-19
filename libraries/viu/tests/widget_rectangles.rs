@@ -135,7 +135,9 @@ fn rectangle_frame_cost() {
     for _ in 0..20 {
         draw(&mut view, &ctx, 800., 600.);
     }
-    for queried in [false, true] {
+    for (collect, queried) in [(false, false), (true, false), (true, true)] {
+        #[cfg(feature = "test-support")]
+        view.set_widget_rectangle_collection(collect);
         let start = Instant::now();
         for _ in 0..500 {
             draw(&mut view, &ctx, 800., 600.);
@@ -144,7 +146,7 @@ fn rectangle_frame_cost() {
             }
         }
         println!(
-            "widget_rectangles 100 buttons queried={queried} us/frame={:.3}",
+            "widget_rectangles 100 buttons collect={collect} queried={queried} us/frame={:.3}",
             start.elapsed().as_secs_f64() * 1e6 / 500.
         );
     }

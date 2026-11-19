@@ -31,6 +31,8 @@ pub struct Event {
 }
 
 pub struct SceneView {
+    #[cfg(feature = "test-support")]
+    collect_widget_rects: bool,
     widget_rects: Vec<crate::widget_rects::WidgetRect>,
     frame: Option<Box<SceneView>>,
     regions: BTreeMap<String, egui::Rect>,
@@ -46,6 +48,11 @@ pub struct SceneView {
 }
 
 impl SceneView {
+    #[cfg(feature = "test-support")]
+    #[doc(hidden)]
+    pub fn set_widget_rectangle_collection(&mut self, enabled: bool) {
+        self.collect_widget_rects = enabled;
+    }
     /// Widgets laid out in the latest pass; never returns toolkit identities.
     pub fn widget_rectangles(&self, args: &Value) -> Result<Value, String> {
         let mut rows = self.widget_rects.clone();
@@ -118,6 +125,8 @@ impl SceneView {
             revision: 0,
             geometry: BTreeMap::new(),
             widget_rects: Vec::new(),
+            #[cfg(feature = "test-support")]
+            collect_widget_rects: true,
             widgets: Widgets::default(),
             focus_error: None,
             shown_revision: None,
@@ -922,7 +931,10 @@ impl SceneView {
         }
         // Template instances do not have a unique scene id. Internal control
         // children likewise have no scene node and are deliberately omitted.
-        if route.is_none() {
+        let collect = true;
+        #[cfg(feature = "test-support")]
+        let collect = collect && self.collect_widget_rects;
+        if collect && route.is_none() {
             let rect = if node.family == "control" {
                 node.ports
                     .get("definition")
@@ -953,7 +965,7 @@ impl SceneView {
                         .and_then(Value::as_str)
                         .map(str::to_owned),
                     rect,
-                    visible: rect.intersect(ui.clip_rect()).is_positive(),
+                    clip: ui.clip_rect(),
                     enabled: ui.is_enabled()
                         && node.ports.get("enabled") != Some(&Value::Bool(false)),
                     focused: focused || response.has_focus(),
