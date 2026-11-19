@@ -66,6 +66,7 @@ struct Host {
     ui_state: crate::ui_state::UiState,
     measurements: crate::ui_state::Measurements,
     input_at: Option<Instant>,
+    native_pointer_presses: u64,
     native_drive: bool,
     host_macro_popup: bool,
     preserve_request_body: bool,
@@ -807,6 +808,9 @@ impl Host {
         self.deferred.retain(|_, token| self.calls.contains(token));
         while let Ok(request) = self.local_ui.requests.try_recv() {
             let answer = match request.command.as_str() {
+                // This match services only the in-process LocalUi channel,
+                // never external Bus requests. The query cannot mutate input.
+                "native.pointer.presses" => Ok(json!(self.native_pointer_presses)),
                 "native.defer" => request.args["id"]
                     .as_u64()
                     .ok_or("request id must be an integer".into())
@@ -1955,6 +1959,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         ui_state,
         measurements: Default::default(),
         input_at: None,
+        native_pointer_presses: 0,
         native_drive: bundle.manifest.native_drive,
         preserve_request_body: bundle.manifest.preserve_request_body,
         host_macro_popup: !bundle.manifest.native_drive || bundle.manifest.host_macro_popup,

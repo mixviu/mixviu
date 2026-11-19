@@ -215,12 +215,7 @@ impl LayerProgram for Program {
         if presses > 0
             && let Some(host) = &mut self.host
         {
-            host.dispatch(
-                "osd.pointer".into(),
-                json!({"presses":presses}),
-                BTreeMap::new(),
-                None,
-            );
+            host.native_pointer_presses = host.native_pointer_presses.saturating_add(presses as u64);
         }
         let model = self
             .host
@@ -413,6 +408,31 @@ mod tests {
             std::thread::sleep(Duration::from_millis(1));
         }
         assert!(program.wake_deadline().is_none(), "empty OSD must disarm");
+        // The real Mix owner retries failed watch setup even without outputs.
+        program.host.as_mut().unwrap().dispatch(
+            "osd.notice".into(), json!({"command":"bus.connected"}), BTreeMap::new(), None,
+        );
+        while program.wake_deadline().is_none() {
+            program.service();
+            assert!(Instant::now() < until, "failed subscription setup must arm retry");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let first = program.wake_deadline().unwrap();
+        assert!(first > Instant::now());
+        while program.wake_deadline().is_none_or(|at| at <= first) {
+            program.service();
+            assert!(Instant::now() < until, "failed setup must retry with backoff");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(program.wake_deadline().unwrap().duration_since(Instant::now()) > Duration::from_millis(300));
+        program.host.as_mut().unwrap().dispatch(
+            "osd.notice".into(), json!({"command":"bus.disconnected"}), BTreeMap::new(), None,
+        );
+        while program.wake_deadline().is_some() {
+            program.service();
+            assert!(Instant::now() < until, "disconnect must cancel setup retry");
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     #[test]

@@ -138,6 +138,17 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     let shown_bounds = bounds(&before, &shown, width, region)
         .expect("caption must draw above a maximum-z fullscreen client");
     let items = call(&bus, "osd.list", json!({}));
+    // A peer must neither forge telemetry nor poison subsequent real presses.
+    for args in [json!({"presses":"poison"}), json!({"presses":999}), json!({})] {
+        let output = helper("call", &bus.root, &["osd.pointer", &args.to_string(), "osd"], Some(&bus.url));
+        assert!(output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let reply: Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
+        assert_eq!(reply["rc"], 10, "peer pointer command must be refused: {reply}");
+        let after = call(&bus, "osd.list", json!({}));
+        assert_eq!(after["pointer_presses"], items["pointer_presses"]);
+        assert_eq!(after["items"][0]["scene"], items["items"][0]["scene"]);
+    }
     assert_eq!(items["items"][0]["pointer_input"], false);
     let buttons = pattern.state.pointer_buttons;
     let received = call(&bus, "osd.list", json!({}))["pointer_presses"]
@@ -601,7 +612,8 @@ fn window_card_follows_hides_and_osd_refusals_are_typed() {
         wait(&mut pattern, Duration::from_millis(10));
     }
     wait(&mut pattern, Duration::from_millis(1000));
-    ready(&bus); // The replacement registers with empty state: items are lost.
+    ready(&bus);
+    assert!(call(&bus, "osd.list", json!({}))["items"].as_array().unwrap().is_empty(), "restart must discard all items before re-showing");
     call(&bus, "osd.show", caption());
     wait(&mut pattern, Duration::from_millis(1100));
     let (_, _, recovered) = ppm(&bus, &process, "osd-restarted", None);
