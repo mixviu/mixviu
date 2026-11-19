@@ -52,16 +52,21 @@ pub fn order(output: &str, pane: Option<u64>, current: &[Uuid]) -> Vec<Uuid> {
     ORDERS.with(|orders| {
         let mut orders = orders.borrow_mut();
         let previous = orders.entry((output.to_owned(), pane)).or_default();
-        let mut merged = current.to_vec();
-        for (index, uuid) in previous.iter().enumerate().rev() {
-            if exits.contains_key(uuid) && !merged.contains(uuid) {
-                let next = previous[index + 1..].iter().find_map(|next| merged.iter().position(|id| id == next));
-                merged.insert(next.unwrap_or(merged.len()), *uuid);
-            }
-        }
+        let merged = merge_slots(previous, current, |uuid| exits.contains_key(uuid));
         *previous = merged.clone();
         merged
     })
+}
+
+fn merge_slots(previous: &[Uuid], current: &[Uuid], exiting: impl Fn(&Uuid) -> bool) -> Vec<Uuid> {
+    let mut merged = current.to_vec();
+    for (index, uuid) in previous.iter().enumerate().rev() {
+        if exiting(uuid) && !merged.contains(uuid) {
+            let next = previous[index + 1..].iter().find_map(|next| merged.iter().position(|id| id == next));
+            merged.insert(next.unwrap_or(merged.len()), *uuid);
+        }
+    }
+    merged
 }
 
 pub fn exiting(uuid: Uuid) -> bool {
@@ -300,5 +305,22 @@ fn draw<T: Texture + Clone>(snapshot: &Snapshot<T>, values: &Values) -> ElementW
         inner,
         zoom: 1.0,
         bundle_owned: true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn simultaneous_exits_keep_neighbours_and_ui_barriers() {
+        let ids: Vec<_> = (1..=5).map(Uuid::from_u128).collect();
+        let current = [ids[1], ids[3], ids[4]];
+        let merged = merge_slots(&ids, &current, |id| *id == ids[0] || *id == ids[2]);
+        assert_eq!(merged, ids);
+        assert_eq!(merge_slots(&merged, &current, |_| false), current);
+        // A live drawable raised while its neighbour exits stays raised.
+        let raised = [ids[4], ids[1], ids[3]];
+        assert_eq!(merge_slots(&ids, &raised, |id| *id == ids[0]), [ids[4], ids[0], ids[1], ids[3]]);
     }
 }

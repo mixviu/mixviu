@@ -692,10 +692,9 @@ impl Bus {
                 MotionKind::Window {
                     id,
                     generation,
-                    from,
-                    to,
                     timeline,
                     visual,
+                    ..
                 } => {
                     let step =
                         policy_host::motion::geometry_frame_step(lp, *id, *generation, timeline, t);
@@ -985,7 +984,7 @@ impl Engine<'_> {
                         return;
                     }
                 };
-                let mut timeline = Timeline::new(0.0, duration.as_secs_f64(), easing);
+                let timeline = Timeline::new(0.0, duration.as_secs_f64(), easing);
                 let mut visual = visual;
                 if let Some(preset) = visual.as_mut() {
                     if let Err(refusal) =

@@ -1886,19 +1886,9 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         "Window-local logical clip rectangle, or null"
     ),
     descriptor!(
-        &[L("windows"), S, L("scale")],
-        Object,
-        "Composition-only uniform scale and local anchor"
-    ),
-    descriptor!(
         &[L("windows"), S, L("scale"), L("factor")],
         Number,
         "Uniform drawn scale, 0..=64"
-    ),
-    descriptor!(
-        &[L("windows"), S, L("scale"), L("anchor")],
-        Object,
-        "Window-local logical scale anchor"
     ),
     descriptor!(
         &[L("windows"), S, L("scale"), L("anchor"), L("x")],
@@ -1909,11 +1899,6 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         &[L("windows"), S, L("scale"), L("anchor"), L("y")],
         Number,
         "Local logical anchor y"
-    ),
-    descriptor!(
-        &[L("windows"), S, L("translate")],
-        Object,
-        "Composition-only logical offset"
     ),
     descriptor!(
         &[L("windows"), S, L("translate"), L("x")],

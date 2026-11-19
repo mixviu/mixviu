@@ -338,9 +338,19 @@ fn record_close_retains_pixels_without_retaining_client_or_input() {
 
 #[test]
 fn record_close_retains_rounded_corners_and_rear_stacking() {
+    rounded_close_stack(false);
+}
+
+#[test]
+fn record_close_retains_rounded_corners_and_front_stacking() {
+    rounded_close_stack(true);
+}
+
+fn rounded_close_stack(closing_front: bool) {
     if !process::record_available() { return; }
-    let bus=Bus::start("close-rounded-stack");
-    let mut process=process::spawn_preferences("close-rounded-stack",&bus.url,json!({
+    let label=if closing_front { "close-rounded-front" } else { "close-rounded-rear" };
+    let bus=Bus::start(label);
+    let mut process=process::spawn_preferences(label,&bus.url,json!({
         "decorations_ssd":true,
         "window_motion":{"unmap":{"preset":"fade","duration_ms":600}}
     }));
@@ -348,7 +358,7 @@ fn record_close_retains_rounded_corners_and_rear_stacking() {
     let mut rear=Pattern::decorated(connect(&mut process),"rounded-rear");
     rear.wait_callback(0);
     let rear_row=bus.window_for("rounded-rear",&mut [&mut rear]);
-    bus.call("comp.window.place",place_args(&rear_row,json!({"x":300,"y":200,"z":0})));
+    bus.call("comp.window.place",place_args(&rear_row,json!({"x":300,"y":200,"z":if closing_front {20} else {0}})));
     rear.solid_buffer(0xffffffff);
     rear.commit(true);
     let mut front=Pattern::named(connect(&mut process),"opaque-front",false);
@@ -361,7 +371,7 @@ fn record_close_retains_rounded_corners_and_rear_stacking() {
     let (width,height,before)=ppm(&bus,&process,"rounded-stack-before",None);
     assert_eq!((width,height),(1280,720));
     assert_eq!(pixel(&before,width,350,280),[255,255,255]);
-    assert_eq!(pixel(&before,width,450,300),[0x20,0xd0,0x40]);
+    assert_eq!(pixel(&before,width,450,300),if closing_front {[255,255,255]} else {[0x20,0xd0,0x40]});
     // Find a shader-cut pixel INSIDE the rectangular client buffer, at its
     // bottom-left corner. This proves the fixture has rounded client clipping;
     // a rectangular snapshot would paint white here as soon as it faded.
@@ -385,8 +395,16 @@ fn record_close_retains_rounded_corners_and_rear_stacking() {
             let p=&pixels[(y*width+x)*4..(y*width+x)*4+4];
             [p[2],p[1],p[0]]
         };
-        assert_eq!(at(450,300),[0x20,0xd0,0x40],"frame {frame}: rear ghost must stay behind the opaque front window");
         let rear_red=at(350,280)[0];
+        if closing_front {
+            let alpha=((f64::from(rear_red)-18.0)/(255.0-18.0)).clamp(0.0,1.0);
+            for (actual,under) in at(450,300).into_iter().zip([0x20,0xd0,0x40]) {
+                let expected=255.0*alpha+f64::from(under)*(1.0-alpha);
+                assert!((f64::from(actual)-expected).abs()<=4.0,"frame {frame}: top closing ghost must blend above the surviving green window, got {actual}, expected {expected}");
+            }
+        } else {
+            assert_eq!(at(450,300),[0x20,0xd0,0x40],"frame {frame}: rear ghost must stay behind the opaque front window");
+        }
         if (30..245).contains(&rear_red) {
             fading_frames+=1;
             assert!(at(corner_x,corner_y)[0]<=corner_red+8,"frame {frame}: retained client texture must keep its rounded shader cut");
