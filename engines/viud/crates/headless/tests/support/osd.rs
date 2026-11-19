@@ -142,16 +142,22 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     let buttons = pattern.state.pointer_buttons;
     bus.call(
         "comp.input.pointer.move",
-        json!({"seat":"human","output":"headless-0","x":width-200,"y":height-100}),
+        json!({"seat":"agent","output":"headless-0","x":width-200,"y":height-100}),
     );
     bus.call(
         "comp.input.pointer.button",
-        json!({"seat":"human","button":"left","action":"click"}),
+        json!({"seat":"agent","button":"left","action":"click"}),
     );
     wait(&mut pattern, Duration::from_millis(80));
     assert!(
         pattern.state.pointer_buttons > buttons,
         "passive OSD must pass pointer buttons to the client"
+    );
+    // Headless has an agent seat and no human device sources. Establish its
+    // independent keyboard focus before testing untargeted keys after an OSD click.
+    bus.call(
+        "comp.input.key",
+        json!({"seat":"agent","window":target(&row),"key":"a"}),
     );
     call(
         &bus,
@@ -166,11 +172,11 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     let buttons = pattern.state.pointer_buttons;
     bus.call(
         "comp.input.pointer.move",
-        json!({"seat":"human","output":"headless-0","x":width-200,"y":height-100}),
+        json!({"seat":"agent","output":"headless-0","x":width-200,"y":height-100}),
     );
     bus.call(
         "comp.input.pointer.button",
-        json!({"seat":"human","button":"left","action":"click"}),
+        json!({"seat":"agent","button":"left","action":"click"}),
     );
     wait(&mut pattern, Duration::from_millis(80));
     assert_eq!(
@@ -178,7 +184,7 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         "opted-in OSD must receive its own pointer input"
     );
     let keys = pattern.state.keys;
-    bus.call("comp.input.key", json!({"seat":"human","key":"a"}));
+    bus.call("comp.input.key", json!({"seat":"agent","key":"a"}));
     wait(&mut pattern, Duration::from_millis(50));
     assert!(
         pattern.state.keys > keys,

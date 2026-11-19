@@ -91,15 +91,16 @@ end
 on viu.timer
   if $event.args.timer=="osd-expiry" then $state.osd=$core.finish($state.osd,monotonic());sync_model() end
 end
-on bus.connected
-  subscribe($comp..".props.changed")
-  send $comp "comp.props.watch" body={}
-  if $rc!=0 then $state.windows={} end
-  refresh_windows();sync_model()
-end
-on props.changed
-  if any(values($state.osd.items),fn($i)=$i.anchor.window!=nil) then refresh_windows();sync_model() end
-end
-on bus.disconnected
-  $state.windows={};sync_model()
+on osd.notice
+  $notice=$event.args
+  if $notice.command=="bus.connected" then
+    subscribe($comp..".props.changed")
+    send $comp "comp.props.watch" body={}
+    if $rc!=0 then $state.windows={} end
+    refresh_windows();sync_model()
+  elif $notice.command==$comp..".props.changed" then
+    if any(values($state.osd.items),fn($i)=$i.anchor.window!=nil) then refresh_windows();sync_model() end
+  elif $notice.command=="bus.disconnected" then
+    $state.windows={};sync_model()
+  end
 end
