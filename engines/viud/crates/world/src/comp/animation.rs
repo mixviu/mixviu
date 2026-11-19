@@ -1,0 +1,90 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//! Composition-only window tracks. The frame owner supplies the sample clock.
+use std::cell::Cell;
+use std::sync::Mutex;
+use std::time::Instant;
+
+use comp_model::request::VisualAttributes;
+use motion::{Preset, Property, Values};
+use smithay::desktop::Window;
+
+thread_local! {
+    static FRAME_TIME: Cell<Option<Instant>> = const { Cell::new(None) };
+}
+
+/// Pin every scene contributor to the same presentation timestamp. Input uses
+/// the most recently drawn timestamp until the next frame is assembled.
+pub fn set_frame_time(now: Instant) {
+    FRAME_TIME.with(|time| time.set(Some(now)));
+}
+
+pub fn frame_time() -> Instant {
+    FRAME_TIME.with(|time| time.get()).unwrap_or_else(Instant::now)
+}
+
+#[derive(Clone, Debug)]
+pub struct VisualRun {
+    pub started: Instant,
+    pub preset: Preset,
+}
+
+impl VisualRun {
+    pub fn elapsed(&self, now: Instant) -> f64 {
+        now.saturating_duration_since(self.started).as_secs_f64()
+    }
+
+    pub fn sample(&self, now: Instant) -> Values {
+        self.preset.sample(self.elapsed(now))
+    }
+
+    pub fn active(&self, now: Instant) -> bool {
+        self.elapsed(now) < self.preset.timing.start() + self.preset.timing.duration
+    }
+}
+
+pub fn start(window: &Window, preset: &Preset, started: Instant) {
+    window.user_data().insert_if_missing(|| Mutex::new(None::<VisualRun>));
+    *window.user_data().get::<Mutex<Option<VisualRun>>>().unwrap().lock().unwrap() =
+        Some(VisualRun { started, preset: preset.clone() });
+}
+
+pub fn sampled_values(window: &Window, now: Instant) -> Option<Values> {
+    window.user_data().get::<Mutex<Option<VisualRun>>>()?
+        .lock().unwrap().as_ref().map(|run| run.sample(now))
+}
+
+pub fn active(window: &Window, now: Instant) -> bool {
+    window.user_data().get::<Mutex<Option<VisualRun>>>()
+        .is_some_and(|cell| cell.lock().unwrap().as_ref().is_some_and(|run| run.active(now)))
+}
+
+pub fn apply(values: &Values, mut visual: VisualAttributes) -> VisualAttributes {
+    if values.contains(Property::Opacity) {
+        visual.opacity = values.get(Property::Opacity).clamp(0.0, 1.0);
+    }
+    if values.contains(Property::Scale) {
+        visual.scale.factor = values.get(Property::Scale).clamp(0.0, 64.0);
+    }
+    if values.contains(Property::Tx) {
+        visual.translate.x = values.get(Property::Tx);
+    }
+    if values.contains(Property::Ty) {
+        visual.translate.y = values.get(Property::Ty);
+    }
+    visual
+}
+
+pub fn sample(window: &Window, base: VisualAttributes, now: Instant) -> VisualAttributes {
+    sampled_values(window, now).map_or(base, |values| apply(&values, base))
+}
+
+/// Persist the sampled endpoint before dropping the track, so removing the
+/// final timer cannot make the next frame snap back to the pre-animation state.
+pub fn finish(window: &Window) {
+    let Some(cell) = window.user_data().get::<Mutex<Option<VisualRun>>>() else { return };
+    let Some(run) = cell.lock().unwrap().take() else { return };
+    let values = run.preset.sample(run.preset.timing.start() + run.preset.timing.duration);
+    window.user_data().insert_if_missing(|| Mutex::new(VisualAttributes::default()));
+    let mut visual = window.user_data().get::<Mutex<VisualAttributes>>().unwrap().lock().unwrap();
+    *visual = apply(&values, *visual);
+}

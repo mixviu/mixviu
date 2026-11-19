@@ -241,3 +241,10 @@ that the source retains its Move payload.
 rather than the destroy request. Explicit destroy and client disconnect each
 release exactly one inhibitor, including multiple inhibitors on one surface.
 
+
+## Composition transform accessors (2026-11-19)
+
+`RescaleRenderElement` and `RelocateRenderElement` expose `element_mut`,
+matching the existing crop wrapper. viud uses these to compose its rounded
+clip shader uniforms with window and thumbnail transforms. Rendering behaviour
+is unchanged; no dependency or licence change.

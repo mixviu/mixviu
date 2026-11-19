@@ -714,7 +714,9 @@ pub fn place<H: Clone + Eq + Hash>(
         && (spec.opacity.is_some()
             || spec.z.is_some()
             || spec.visible.is_some()
-            || spec.clip.is_some());
+            || spec.clip.is_some()
+            || spec.scale.is_some()
+            || spec.translate.is_some());
     let sid = record.id();
     let maximized = facts.requested_maximized;
     let fullscreen = facts.committed_fullscreen || facts.requested_fullscreen;

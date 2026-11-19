@@ -60,6 +60,7 @@ pub struct State {
     pub size: (i32, i32),
     pub callbacks: u64,
     pub pointer_buttons: u64,
+    pub pointer_positions: Vec<(f64, f64)>,
     pub keys: u64,
     pub keyboard_enters: u64,
     last_press: Option<(u32, WlSeat)>,
@@ -282,6 +283,7 @@ impl Pattern {
         self.commit(true);
         self.queue.roundtrip(&mut self.state).unwrap();
     }
+
 
     pub fn popup(&mut self, grab: bool) -> (WlSurface, XdgPopup) {
         let qh = self.queue.handle();
@@ -527,6 +529,13 @@ impl Dispatch<WlPointer, WlSeat> for State {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
+        match &event {
+            wl_pointer::Event::Enter { surface_x, surface_y, .. }
+            | wl_pointer::Event::Motion { surface_x, surface_y, .. } => {
+                state.pointer_positions.push((*surface_x, *surface_y));
+            }
+            _ => {}
+        }
         if let wl_pointer::Event::Button {
             serial,
             state: button_state,

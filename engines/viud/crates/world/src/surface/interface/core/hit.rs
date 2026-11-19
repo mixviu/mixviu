@@ -432,6 +432,16 @@ fn hit_window(
         .unwrap_or_default();
     let geom = window.geometry();
     let gloc = geom.loc;
+    let drawn_position = position_world;
+    let visual = crate::window::draw::frame::scene::visual_of(window);
+    let local = visual.inverse(comp_model::request::LogicalOffset {
+        x: position_world.x - elem_loc.x as f64,
+        y: position_world.y - elem_loc.y as f64,
+    })?;
+    let position_world = Point::<f64, Logical>::from((
+        elem_loc.x as f64 + local.x,
+        elem_loc.y as f64 + local.y,
+    ));
 
     // Craft `position` so smithay (`event.location − position`) delivers exactly
     // the surface-local coordinate the client expects.
@@ -439,8 +449,8 @@ fn hit_window(
         let surface_local =
             Point::<f64, Logical>::from((local.x - sub_pos.x as f64, local.y - sub_pos.y as f64));
         let position = Point::<f64, Logical>::from((
-            position_world.x - surface_local.x,
-            position_world.y - surface_local.y,
+            drawn_position.x - surface_local.x,
+            drawn_position.y - surface_local.y,
         ));
         SurfaceHit::Window {
             window: window.clone(),

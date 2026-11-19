@@ -1,0 +1,12 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Owned CBC checkout only: return worker formatting as a patch, then restore.
+try
+  $r = run_argv(["cargo", "fmt", "--all"], {timeout:120, stderr:"stdout"})
+  print($r.stdout)
+  if not $r.ok then exit($r.exit_code ?? 1) end
+  print("MOTION_FMT_BEGIN")
+  print(run_argv_must(["git", "diff"]))
+  print("MOTION_FMT_END")
+finally
+  run_argv_must(["git", "checkout", "-q", "--", "."])
+end

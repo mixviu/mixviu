@@ -135,6 +135,7 @@ struct Options<'a> {
     agent: bool,
     seat: Option<&'a str>,
     size: &'a str,
+    preferences: Option<serde_json::Value>,
 }
 
 impl Default for Options<'_> {
@@ -150,6 +151,7 @@ impl Default for Options<'_> {
             agent: true,
             seat: None,
             size: "1280x720",
+            preferences: None,
         }
     }
 }
@@ -166,6 +168,7 @@ fn spawn_options(options: Options<'_>) -> Process {
         agent,
         seat,
         size,
+        preferences,
     } = options;
     assert!(
         !label.is_empty(),
@@ -207,6 +210,9 @@ fn spawn_options(options: Options<'_>) -> Process {
     }
     let settings = root.join("settings.json");
     fs::write(&settings, serde_json::to_vec(&config).unwrap()).unwrap();
+    if let Some(preferences) = preferences {
+        fs::write(root.join("preferences.json"), serde_json::to_vec(&preferences).unwrap()).unwrap();
+    }
     let log = root.join("viud.log");
     let stderr = fs::File::create(&log).unwrap();
     let mut command = Command::new(binary);
@@ -349,6 +355,16 @@ pub fn spawn_size(label: &str, bus: &str, size: &str) -> Process {
         label,
         bus: Some(bus),
         size,
+        ..Options::default()
+    })
+}
+
+#[allow(dead_code)] // Used by window motion's isolated lifecycle fixture.
+pub fn spawn_preferences(label: &str, bus: &str, preferences: serde_json::Value) -> Process {
+    spawn_options(Options {
+        label,
+        bus: Some(bus),
+        preferences: Some(preferences),
         ..Options::default()
     })
 }

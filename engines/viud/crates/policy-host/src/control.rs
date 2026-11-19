@@ -914,7 +914,7 @@ fn place_window(
 
 /// The window a `comp.motion.run` addresses, resolved the way `comp.window.*`
 /// resolves it (a stale generation is refused).
-fn motion_window(lp: &Loop, id: u64, generation: u64) -> Result<(SurfaceId, Window), ControlReply> {
+pub(crate) fn motion_window(lp: &Loop, id: u64, generation: u64) -> Result<(SurfaceId, Window), ControlReply> {
     let surface = match lp
         .inner
         .comp
@@ -927,6 +927,20 @@ fn motion_window(lp: &Loop, id: u64, generation: u64) -> Result<(SurfaceId, Wind
     let window = window_of(lp, surface)
         .ok_or_else(|| ControlReply::refused("unknown_window", serde_json::json!({})))?;
     Ok((surface, window))
+}
+
+pub fn window_visual(lp: &Loop, id: u64, generation: u64) -> Result<comp_model::request::VisualAttributes, ControlReply> {
+    let (_, window) = motion_window(lp, id, generation)?;
+    Ok(world::window::draw::frame::scene::visual_of(&window))
+}
+
+pub fn window_visual_step(lp: &mut Loop, id: u64, generation: u64, visual: comp_model::request::VisualAttributes) -> Result<(), ControlReply> {
+    let (surface, window) = motion_window(lp, id, generation)?;
+    lp.inner.comp.visuals.insert(surface, (generation, visual));
+    *window.user_data().get_or_insert(|| std::sync::Mutex::new(comp_model::request::VisualAttributes::default())).lock().unwrap() = visual;
+    crate::input::retarget_pointer(lp);
+    lp.state.schedule_redraw(RedrawReason::WindowState);
+    Ok(())
 }
 
 /// Where a window is now, `[x, y, w, h]` in global logical coordinates: the

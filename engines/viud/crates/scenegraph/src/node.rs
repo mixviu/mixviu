@@ -62,6 +62,7 @@ pub enum DrawNode<R: Renderer> {
     Memory(smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement<R>),
     /// A live window thumbnail, screen space (`world::window::draw::thumbnail`).
     Thumbnail(world::window::draw::thumbnail::Thumb<R>),
+    Ghost(world::window::draw::ghost::Ghost<R::TextureId>),
 }
 
 /// A layered collection of draw nodes. Contributors push at explicit `Layer`
@@ -160,6 +161,7 @@ where
             DrawNode::Solid(e) => vec![SceneElement::Sentinel(e)],
             DrawNode::Memory(e) => vec![SceneElement::Memory(e)],
             DrawNode::Thumbnail(e) => vec![SceneElement::Thumbnail(e)],
+            DrawNode::Ghost(e) => vec![SceneElement::Ghost(e)],
             // An UI element is always a GL texture on the renderer's own
             // context (wgpu-GL); there is no dmabuf behind it.
             DrawNode::UI(e) => vec![SceneElement::Surface(e)],

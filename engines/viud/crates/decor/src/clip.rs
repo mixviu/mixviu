@@ -168,6 +168,8 @@ pub struct Clipped<E> {
 }
 
 impl<E> Clipped<E> {
+    /// Inspect the retained content when making a composition-only snapshot.
+    pub fn inner_mut(&mut self) -> &mut E { &mut self.inner }
     pub fn new(inner: E, program: Option<TexProgram>, clip: Clip) -> Self {
         Clipped {
             inner,
@@ -197,6 +199,15 @@ impl<E> Clipped<E> {
             rect: Rectangle::new((x0, y0).into(), ((x1 - x0).max(0), (y1 - y0).max(0)).into()),
             radius: (self.clip.radius as f64 * scale) as f32,
         };
+    }
+
+    /// Compose a thumbnail transform with an existing composition transform.
+    /// Keep the original clip for opaque-region reporting in inner space.
+    pub fn append_rescale(&mut self, scale: f64, offset: Point<i32, Physical>) {
+        let original = self.clip;
+        self.clip = self.drawn;
+        self.set_rescale(scale, offset);
+        self.clip = original;
     }
 }
 
@@ -327,6 +338,19 @@ mod tests {
         // Identity leaves it alone.
         let same = Clipped::new((), None, clip).rescaled(1.0, Point::from((0, 0)));
         assert_eq!(same.drawn, clip);
+    }
+
+    #[test]
+    fn a_thumbnail_composes_with_the_window_transform() {
+        let clip = Clip {
+            rect: Rectangle::new((100, 80).into(), (200, 160).into()),
+            radius: 12.0,
+        };
+        let mut element = Clipped::new((), None, clip).rescaled(0.5, (50, 40).into());
+        element.append_rescale(0.25, (10, 20).into());
+        assert_eq!(element.drawn.rect, Rectangle::new((35, 40).into(), (25, 20).into()));
+        assert_eq!(element.drawn.radius, 1.5);
+        assert_eq!(element.clip, clip);
     }
 
     /// A fully opaque element at a fixed place.

@@ -193,6 +193,7 @@ enum MotionKind {
         from: [f64; 4],
         to: [Option<f64>; 4],
         timeline: Timeline,
+        visual: Option<motion::Preset>,
     },
 }
 
@@ -639,6 +640,9 @@ impl Bus {
         let mut still = Vec::with_capacity(self.motions.len());
         for mut run in std::mem::take(&mut self.motions) {
             if run.reply.is_closed() {
+                if let MotionKind::Window { id, generation, .. } = &run.kind {
+                    policy_host::motion::cancel_visual(lp, *id, *generation);
+                }
                 continue;
             }
             let end = run.kind.end();
@@ -654,6 +658,9 @@ impl Bus {
             } else if std::mem::take(&mut run.rebase_human) {
                 run.human_at_start = human.clone();
             } else if human != run.human_at_start {
+                if let MotionKind::Window { id, generation, .. } = &run.kind {
+                    policy_host::motion::cancel_visual(lp, *id, *generation);
+                }
                 run.reply.send(motion_cancelled("human_input"));
                 continue;
             }
@@ -668,8 +675,16 @@ impl Bus {
                     from,
                     to,
                     timeline,
+                    visual,
                 } => {
-                    policy_host::motion::window_step(lp, *id, *generation, *from, *to, timeline, t)
+                    let step = policy_host::motion::geometry_frame_step(lp, *id, *generation, timeline, t);
+                    if visual.is_some() {
+                        lp.state.schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+                        if !matches!(step, policy_host::motion::Step::Moving) {
+                            policy_host::motion::finish_visual(lp, *id, *generation);
+                        }
+                    }
+                    step
                 }
             };
             match step {
@@ -892,6 +907,11 @@ impl Engine<'_> {
         };
         let started = Instant::now();
         let human_at_start = policy_host::input::human_pointer(self.lp);
+        let (target, visual) = match target {
+            MotionTarget::WindowTracks { id, generation, to, duration, easing, visual } =>
+                (MotionTarget::Window { id, generation, to, duration, easing }, Some(visual)),
+            target => (target, None),
+        };
         let (kind, step) = match target {
             MotionTarget::Pointer {
                 output,
@@ -929,28 +949,46 @@ impl Engine<'_> {
                     }
                 };
                 let mut timeline = Timeline::new(0.0, duration.as_secs_f64(), easing);
-                let step = policy_host::motion::window_step(
-                    self.lp,
-                    id,
-                    generation,
-                    from,
-                    to,
-                    &mut timeline,
-                    0.0,
-                );
+                let mut visual = visual;
+                if let Some(preset) = visual.as_mut() {
+                    if let Err(refusal) = policy_host::motion::start_visual(self.lp, id, generation, preset, started) {
+                        reply.send(refusal);
+                        return;
+                    }
+                } else {
+                    policy_host::motion::cancel_visual(self.lp, id, generation);
+                }
+                // Exactly one owner per window. A replacement starts from the
+                // sampled visual/geometry state and settles the old caller now.
+                let mut keep = Vec::with_capacity(self.motions.len());
+                for run in std::mem::take(self.motions) {
+                    if matches!(&run.kind, MotionKind::Window { id: old_id, generation: old_generation, .. } if *old_id == id && *old_generation == generation) {
+                        run.reply.send(ControlReply::Body(json!({"version":1,"status":"superseded"})));
+                    } else { keep.push(run); }
+                }
+                *self.motions = keep;
+                policy_host::motion::start_geometry(self.lp, id, generation, from, to, started, duration.as_secs_f64(), easing);
+                let step = policy_host::motion::geometry_frame_step(self.lp, id, generation, &timeline, 0.0);
                 let kind = MotionKind::Window {
                     id,
                     generation,
                     from,
                     to,
                     timeline,
+                    visual,
                 };
                 (kind, step)
             }
+            MotionTarget::WindowTracks { .. } => unreachable!("normalised above"),
         };
         match step {
             policy_host::motion::Step::Refused(answer) => reply.send(answer),
-            policy_host::motion::Step::Arrived => reply.send(motion_completed(&kind, false)),
+            policy_host::motion::Step::Arrived => {
+                if let MotionKind::Window { id, generation, visual: Some(_), .. } = &kind {
+                    policy_host::motion::finish_visual(self.lp, *id, *generation);
+                }
+                reply.send(motion_completed(&kind, false));
+            }
             policy_host::motion::Step::Moving => self.motions.push(MotionRun {
                 started,
                 kind,

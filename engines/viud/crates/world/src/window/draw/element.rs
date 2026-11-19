@@ -298,12 +298,12 @@ where
 
 // Final per-window crop, shared by presentation and captures.
 smithay::render_elements! {
-    pub Element<R> where R: ImportAll + ImportMem + SceneDispatch;
+    pub Untransformed<R> where R: ImportAll + ImportMem + SceneDispatch;
     Plain = RawElement<R>,
     Cropped = CropRenderElement<RawElement<R>>,
 }
 
-impl<R: ImportAll + ImportMem + SceneDispatch> Element<R> {
+impl<R: ImportAll + ImportMem + SceneDispatch> Untransformed<R> {
     pub fn raw_mut(&mut self) -> &mut RawElement<R>
     where
         R::TextureId: 'static,
@@ -311,6 +311,26 @@ impl<R: ImportAll + ImportMem + SceneDispatch> Element<R> {
         match self {
             Self::Plain(raw) => raw,
             Self::Cropped(crop) => crop.element_mut(),
+            _ => unreachable!(),
+        }
+    }
+}
+
+// Scale and offset the complete window tree after its window-local crop,
+// including popups, letterboxing, shadows and server decorations.
+smithay::render_elements! {
+    pub Element<R> where R: ImportAll + ImportMem + SceneDispatch;
+    Plain = Untransformed<R>,
+    Transformed = RelocateRenderElement<RescaleRenderElement<Untransformed<R>>>,
+}
+
+impl<R: ImportAll + ImportMem + SceneDispatch> Element<R> {
+    pub fn raw_mut(&mut self) -> &mut RawElement<R>
+    where R::TextureId: 'static,
+    {
+        match self {
+            Self::Plain(inner) => inner.raw_mut(),
+            Self::Transformed(inner) => inner.element_mut().element_mut().raw_mut(),
             _ => unreachable!(),
         }
     }

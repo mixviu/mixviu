@@ -175,10 +175,14 @@ pub fn project(lp: &Loop, identity: Identity, scopes: &ReadScopes) -> CompSnapsh
                         .map(|surface| crate::input::agent_seat_offered(lp, &surface))
                 })
                 .unwrap_or(false);
-            let visual = lp.inner.comp.visual(id);
+            let visual = crate::control::window_of(lp, id)
+                .map(|window| world::window::draw::frame::scene::visual_of(&window))
+                .unwrap_or_else(|| lp.inner.comp.visual(id));
             row.opacity = visual.opacity;
             row.z = visual.z;
             row.clip = visual.clip;
+            row.scale = visual.scale;
+            row.translate = visual.translate;
             row.requested_visible = visual.visible;
             row.placement = lp.inner.comp.placement(id).name();
             row.float_geometry = lp.inner.comp.float_snapshot(id);

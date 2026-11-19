@@ -315,7 +315,7 @@ where
         on_pane_awake: true,
         opaque: Vec::new(),
     };
-    if !force_capture {
+    if !force_capture && !visual_of(window).transformed() {
         match placed_on(state, window, size) {
             // Frustum cull: a window whose slot projects outside the pane being
             // drawn contributes nothing — skip its whole scene (surface-tree
@@ -408,17 +408,23 @@ where
             ctx,
             elem_loc,
             slot_size: slot_size_of(window),
-            crop_output: pane_rect(state, ctx, size),
+            crop_output: if visual_of(window).transformed() {
+                Rectangle::new((-536870911, -536870911).into(), (1073741822, 1073741822).into())
+            } else { pane_rect(state, ctx, size) },
         },
         decoration,
         decor::render::Pass::Presented,
     );
-    drawn.opaque = if visual_of(window).opacity < 1.0 {
+    drawn.opaque = if visual_of(window).opacity < 1.0 || visual_of(window).transformed() {
         Vec::new()
     } else {
         opaque
     };
-    let (elements, crop) = crop_elements(elements, window, ctx, elem_loc, size);
+    let (mut elements, crop) = crop_elements(elements, window, ctx, elem_loc, size);
+    if let Some(uuid) = window.uuid() {
+        super::super::ghost::retain(renderer, uuid,
+            state.inner.render_output.as_deref().unwrap_or_default(), &mut elements);
+    }
     if let Some(crop) = crop {
         drawn.opaque = drawn
             .opaque
@@ -958,11 +964,12 @@ where
 }
 
 pub fn visual_of(window: &Window) -> comp_model::request::VisualAttributes {
-    window
+    let base = window
         .user_data()
         .get::<std::sync::Mutex<comp_model::request::VisualAttributes>>()
         .map(|v| *v.lock().unwrap())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    crate::comp::animation::sample(window, base, crate::comp::animation::frame_time())
 }
 
 fn crop_elements<R>(
@@ -981,20 +988,38 @@ where
 {
     let visual = visual_of(window);
     let crop = visual.clip.map(|c| project_clip(ctx, loc, c, size));
-    let elements = if !visual.visible {
+    let elements = if !visual.visible || visual.scale.factor == 0.0 {
         Vec::new()
     } else if let Some(rect) = crop {
         elements
             .into_iter()
             .filter_map(|e| CropRenderElement::from_element(e, Scale::from(1.0), rect))
-            .map(crate::window::draw::element::Element::Cropped)
+            .map(crate::window::draw::element::Untransformed::Cropped)
             .collect()
     } else {
         elements
             .into_iter()
-            .map(crate::window::draw::element::Element::Plain)
+            .map(crate::window::draw::element::Untransformed::Plain)
             .collect()
     };
+    let factor = visual.scale.factor;
+    let anchor = project_point(ctx, loc.x as f64 + visual.scale.anchor.x, loc.y as f64 + visual.scale.anchor.y);
+    let origin = project_point(ctx, 0.0, 0.0);
+    let translated = project_point(ctx, visual.translate.x, visual.translate.y);
+    let offset = Point::<i32, Physical>::from((
+        ((1.0 - factor) * anchor.x as f64 + (translated.x as f64 - origin.x as f64)).round() as i32,
+        ((1.0 - factor) * anchor.y as f64 + (translated.y as f64 - origin.y as f64)).round() as i32,
+    ));
+    let elements = elements.into_iter().map(|mut element| {
+        if !visual.transformed() {
+            return crate::window::draw::element::Element::Plain(element);
+        }
+        if let Element::WindowFitClipped(clipped) = element.raw_mut() {
+            clipped.set_rescale(factor, offset);
+        }
+        let scaled = RescaleRenderElement::from_element(element, Point::from((0, 0)), Scale::from(factor));
+        crate::window::draw::element::Element::Transformed(RelocateRenderElement::from_element(scaled, offset, Relocate::Relative))
+    }).collect();
     (elements, crop)
 }
 

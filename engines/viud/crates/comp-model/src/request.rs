@@ -188,9 +188,30 @@ pub struct PlaceSpec {
     pub z: Option<Option<i32>>,
     pub visible: Option<Option<bool>>,
     pub clip: Option<Option<ClipRect>>,
+    pub scale: Option<Option<WindowScale>>,
+    pub translate: Option<Option<LogicalOffset>>,
 }
 
-/// Window-local logical crop. Scale and rotation are reserved for a later contract.
+/// Composition-only logical offset, also used for the window-local scale anchor.
+#[derive(Clone, Copy, Debug, Default, PartialEq, serde::Serialize)]
+pub struct LogicalOffset {
+    pub x: f64,
+    pub y: f64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
+pub struct WindowScale {
+    pub factor: f64,
+    pub anchor: LogicalOffset,
+}
+
+impl Default for WindowScale {
+    fn default() -> Self {
+        Self { factor: 1.0, anchor: LogicalOffset::default() }
+    }
+}
+
+/// Window-local logical crop, applied before the composition transform.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize)]
 pub struct ClipRect {
     pub x: f64,
@@ -205,6 +226,8 @@ pub struct VisualAttributes {
     pub z: i32,
     pub visible: bool,
     pub clip: Option<ClipRect>,
+    pub scale: WindowScale,
+    pub translate: LogicalOffset,
 }
 
 impl Default for VisualAttributes {
@@ -214,6 +237,8 @@ impl Default for VisualAttributes {
             z: 0,
             visible: true,
             clip: None,
+            scale: WindowScale::default(),
+            translate: LogicalOffset::default(),
         }
     }
 }
@@ -232,7 +257,41 @@ impl VisualAttributes {
         if let Some(value) = spec.clip {
             self.clip = value;
         }
+        if let Some(value) = spec.scale {
+            self.scale = value.unwrap_or_default();
+        }
+        if let Some(value) = spec.translate {
+            self.translate = value.unwrap_or_default();
+        }
     }
+
+    pub fn transformed(&self) -> bool {
+        self.scale.factor != 1.0 || self.translate != LogicalOffset::default()
+    }
+
+    /// Invert the drawn transform in window-local logical coordinates. A zero
+    /// scale draws no pixels and cannot receive input.
+    pub fn inverse(&self, point: LogicalOffset) -> Option<LogicalOffset> {
+        (self.scale.factor > 0.0).then(|| LogicalOffset {
+            x: self.scale.anchor.x + (point.x - self.translate.x - self.scale.anchor.x) / self.scale.factor,
+            y: self.scale.anchor.y + (point.y - self.translate.y - self.scale.anchor.y) / self.scale.factor,
+        })
+    }
+}
+
+pub fn logical_offset_value(value: &Value) -> Option<LogicalOffset> {
+    let object = value.as_object()?;
+    if object.len() != 2 { return None; }
+    let offset = LogicalOffset { x: object.get("x")?.as_f64()?, y: object.get("y")?.as_f64()? };
+    [offset.x, offset.y].iter().all(|v| v.is_finite() && *v >= i32::MIN as f64 && *v <= i32::MAX as f64).then_some(offset)
+}
+
+pub fn window_scale_value(value: &Value) -> Option<WindowScale> {
+    let object = value.as_object()?;
+    if object.len() != 2 { return None; }
+    let factor = object.get("factor")?.as_f64()?;
+    let anchor = logical_offset_value(object.get("anchor")?)?;
+    (factor.is_finite() && (0.0..=64.0).contains(&factor)).then_some(WindowScale { factor, anchor })
 }
 
 fn visual_arg<T>(
@@ -997,6 +1056,8 @@ pub fn parse_window_command(
                 "z",
                 "visible",
                 "clip",
+                "scale",
+                "translate",
             ];
             let object = args_object(args, &empty, ALLOWED)?;
             let (id, generation) = required_target(object)?;
@@ -1039,6 +1100,8 @@ pub fn parse_window_command(
                     "rectangle or null",
                     "finite x,y; non-negative width,height; i32 logical bounds",
                 )?,
+                scale: visual_arg(object, "scale", window_scale_value, "{factor,anchor:{x,y}} or null", "factor 0..=64; i32 logical anchor")?,
+                translate: visual_arg(object, "translate", logical_offset_value, "{x,y} or null", "i32 logical offset")?,
                 output,
             };
             if spec.output.is_none()
@@ -1050,6 +1113,8 @@ pub fn parse_window_command(
                 && spec.z.is_none()
                 && spec.visible.is_none()
                 && spec.clip.is_none()
+                && spec.scale.is_none()
+                && spec.translate.is_none()
             {
                 return Err(invalid_argument(
                     "x",

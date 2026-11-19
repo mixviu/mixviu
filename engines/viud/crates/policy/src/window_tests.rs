@@ -118,6 +118,8 @@ fn window_commands_refuse_stale_targets_and_the_lock() {
                 z: None,
                 visible: None,
                 clip: None,
+                scale: None,
+                translate: None,
             },
             &facts(),
             &outputs(),
@@ -743,6 +745,8 @@ fn spec(id: u64, generation: u64) -> PlaceSpec {
         z: None,
         visible: None,
         clip: None,
+                scale: None,
+                translate: None,
     }
 }
 

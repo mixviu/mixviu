@@ -39,6 +39,7 @@ decor = { workspace = true }
 screencopy = { workspace = true }
 
 [dev-dependencies]
+motion.workspace = true
 # Enable the fixture in test builds (also when the workspace builds viud).
 headless = { path = ".", features = ["test-support"] }
 screencopy = { workspace = true, features = ["test-support"] }

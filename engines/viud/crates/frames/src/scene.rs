@@ -461,6 +461,8 @@ pub fn prepare(
     renderer: &mut GlesRenderer,
     size: Size<i32, Physical>,
 ) -> PreparedGles {
+    world::comp::animation::set_frame_time(state.inner.comp.clock.now());
+    world::comp::animation_geometry::sample_all(state, world::comp::animation::frame_time());
     crate::scene::gpu::begin(state, renderer);
 
     // Rim hooks, then the systems tick; the world's plan is bridged below
@@ -934,6 +936,8 @@ where
     );
     let _ = prepared.surfaces; // world UI now drawn per-id in the content band
     // The solid background is pushed per-pane in the region loop above.
+    plan.extend(layer::CANVAS, world::window::draw::ghost::elements::<R>(
+        render_key.as_deref().unwrap_or_default()).into_iter().map(DrawNode::Ghost));
     let (elements, meta) = plan.lower(renderer);
 
     // Per-window fractional scale: each window follows its HIGHEST-zoom viewport

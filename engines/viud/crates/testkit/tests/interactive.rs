@@ -804,6 +804,8 @@ fn policy_place_during_an_armed_drag_keeps_the_placed_floating_frame() {
                 z: None,
                 visible: None,
                 clip: None,
+                scale: None,
+                translate: None,
             },
             &WindowFacts {
                 interactive: true,

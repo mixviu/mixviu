@@ -1,5 +1,45 @@
 # comp caller audit
 
+Window motion extends `comp.motion.run`; one call still targets one window
+and waits for completion. Existing `to:{x?,y?,w?,h?}`, `duration_ms` and
+`curve` calls remain valid. Geometry uses global logical coordinates and
+configures client size; visual tracks change composition only.
+
+```json
+{"targets":[{"window":{"id":7,"generation":3,"preset":"pop","duration_ms":300}}]}
+```
+
+Instead of `preset`, send `tracks` (one to four unique properties):
+
+```json
+{"targets":[{"window":{"id":7,"generation":3,"duration_ms":300,"tracks":[{"property":"opacity","keyframes":[{"offset":0,"value":0,"easing":{"kind":"ease_out"}},{"offset":1,"value":1}]}]}}]}
+```
+
+Supported properties are `opacity`, uniform `scale`, `tx` and `ty` (logical
+translation). Scale uses the anchor set by `comp.window.place`. Keyframes
+use the shared motion library schema: strictly increasing offsets with
+endpoints 0 and 1, finite values, and optional easing (CSS `ease` by default).
+Easing objects include named CSS kinds, `bezier:{x1,y1,x2,y2}` represented
+as `{"kind":"bezier","x1":0.2,"y1":0.8,"x2":0.2,"y2":1}`,
+`{"kind":"steps","n":4,"start":false}` and
+`{"kind":"spring","stiffness":100,"damping":10,"mass":1,"velocity":0}`.
+Legacy curve names and four-number bezier arrays remain accepted; `curve`
+can also use these easing objects. On visual tracks it overrides every
+keyframe's easing. `min-jerk` remains geometry/pointer-only.
+
+Tracks and preset are mutually exclusive; `to` may accompany either. The
+shared preset table is projected onto supported properties: `zoom` draws
+scale and opacity without its blur. A preset with no supported properties
+is refused. Rotation and nonuniform scale are outside this contract.
+Explicit unsupported tracks are refused. Durations remain 0–10000 ms,
+default 400 ms; keyframes are capped at 64 per property. End values persist.
+
+A replacement run on the same id/generation settles the first reply with
+`{"version":1,"status":"superseded"}`. It starts at sampled geometry and
+visual state; visual retargeting uses the shared library's linear retarget
+helper for position continuity. First-run entrance keyframes do not restart
+on retarget. Successful terminal replies retain `status:"completed"`.
+
 `comp.callers` is a read-only Bus command with no required arguments, roles or
 grants. Step 1 observes calls and refuses none on identity grounds. Existing
 argument validation and capacity limits still apply.

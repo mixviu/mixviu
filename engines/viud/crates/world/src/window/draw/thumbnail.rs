@@ -265,7 +265,7 @@ where
             if let crate::window::draw::element::RawElement::WindowFitClipped(clipped) =
                 element.raw_mut()
             {
-                clipped.set_rescale(s, at);
+                clipped.append_rescale(s, at);
             }
             let r =
                 RescaleRenderElement::from_element(element, Point::from((0, 0)), Scale::from(s));
