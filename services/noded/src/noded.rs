@@ -1919,10 +1919,7 @@ fn spawn_inventory_reload_watcher(state: AppState) {
     });
 }
 
-/// Apply one verified reload as a transport-and-authority transaction. The
-/// transport fence precedes authority publication; inbound enforce teardown
-/// completes before the §17 applied events make the new state externally
-/// legible. A kept-last-good load returns before touching transport state.
+/// Only verified authority enables reverse proof; unverified routing stays legacy.
 async fn reconcile_transport_authority(
     mesh: &MeshPeers,
     authority: &crate::routing::RoutingAuthority,
@@ -1944,6 +1941,10 @@ async fn reconcile_transport_authority(
     }
 }
 
+/// Apply one verified reload as a transport-and-authority transaction. The
+/// transport fence precedes authority publication; inbound enforce teardown
+/// completes before the §17 applied events make the new state externally
+/// legible. A kept-last-good load returns before touching transport state.
 async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture) {
     let current = state.authority.load();
     let keep = reload_keeps_last_good(&new, &current.posture);

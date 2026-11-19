@@ -322,7 +322,9 @@ struct TransportState {
 impl TransportState {
     fn authenticates(&self, context: &bus::native_session::PeerContext) -> bool {
         context.mesh_peer().is_some_and(|(node, key)| {
-            self.keys.as_ref().is_some_and(|(keys, _)| keys.contains(node, key))
+            self.keys
+                .as_ref()
+                .is_some_and(|(keys, _)| keys.contains(node, key))
         })
     }
 }
