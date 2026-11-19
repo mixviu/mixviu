@@ -17,19 +17,66 @@ noded: {
 ```
 
 `MIX_NODED_FRAME_POLICY=off|observe|enforce` in the broker service environment
-overrides the file. Invalid values refuse startup. The default is `observe`,
-independently of `noded.admission`; both settings are read at startup, so a
-change requires restarting the broker. D2 admission remains unchanged.
+overrides the file; an empty value is unset. Invalid values refuse startup.
+The default is `observe`. Both settings are read at startup. Frame enforcement
+requires an accepted signed inventory; otherwise startup reports "no identity
+source". With an unverified inventory, observe reports `no-identity-source`
+rather than claiming a known peer failed admission.
 
-Install this build on all six citizens with frame policy at `observe`. Watch
+Before upgrading a node that runs admission `enforce`, move **every local
+client to the Unix socket**. TCP loopback registrations are refused immediately
+at broker upgrade, even with frame policy `observe`. Remove stale explicit
+`MIX_NODED_URL=ws://127.0.0.1:4200/ws` values from session environments and
+wrappers, or replace them with the configured Unix endpoint. Check the runtime
+root and socket placement too; a default path cannot find a broker placed in
+a different runtime. A broker-account setting does not make a stale TCP
+override safe. This local-client migration is a prerequisite to installation.
+
+Install this build on the brokers with frame policy at `observe`. Watch
 `frame.refused` for registration, source-node, wrong-node and relay violations:
-observe logs those violations while retaining legacy delivery. Once all six
-citizens run this build and normal traffic is clean, set frame policy to
+observe logs those violations while retaining legacy delivery, including
+unadmitted sessions at the frame gate. Admission enforcement still refuses
+registration without proof. Once every broker runs this build and normal traffic is clean, set frame policy to
 `enforce` per node and restart that broker. Old brokers' bare or absent source
 addresses are the main mixed-version risk; do not enable enforcement early.
 `off` disables frame-policy checks. Explicit malformed or zero forwarding hop
-limits remain refused in all postures. Same-node classification and dialled
-peer authentication are separate follow-up work.
+limits remain refused in all postures.
+
+Local ingress uses the Unix WebSocket endpoint (`noded.unix_socket`, otherwise
+the configured runtime's `noded/bus.sock`). Only kernel SO_PEERCRED grants local
+origin. TCP, including loopback and this node's own address, never does. The
+existing plaintext mesh listener remains for the D2 migration; its off/observe
+frame postures allow legacy delivery without local authority. Enforce rejects
+unproved TCP application clients. There is no additional trusted loopback lane.
+
+The shared Bus client accepts `unix:///absolute/path` in `MIX_NODED_URL` and
+uses Unix discovery by default. `MIX_BUS_SOCKET` and `noded.unix_socket` select
+the endpoint. Existing explicit TCP URLs remain legacy, unverified clients.
+Monitor and logger use the broker's Unix endpoint. Desktops with a configured
+broker account retain the existing verified Unix client path.
+
+With a verified inventory the broker now challenges TCP peers even when
+admission is off: that setting controls registration refusal, not whether an
+identity can be learned. Diallers additionally challenge the broker and pin
+its proof to the member named by the endpoint. Old brokers cannot answer this
+reverse proof. Waiting for that answer adds a bounded **one second per dial**
+to an old broker, including a re-dial following inventory reload. Off/observe
+permit legacy fallback after that wait; enforcement refuses the unproved
+connection before registration, publication or application writes.
+Observe permits their ordinary traffic but supplies no
+authenticated mesh-service assertion; protected cross-node deliveries can
+therefore fail during a mixed-version upgrade. Keep enforcement disabled until
+both ends support mutual proof. D2 remains plaintext and origin-only; TLS and
+channel-bound authentication are the next PR.
+The D2 signing seed is loaded once at startup for both directions. Restart the
+broker after changing its seed file, before the old credential window closes.
+
+Accepted reloads retain connections only while their exact proven key remains
+current and uniquely assigned. Overlapping current keys coexist. Inbound
+tracking starts at proof completion, before registration, in every posture;
+outbound attempts recheck the live key authority before publication. The
+immutable key lookup is built per accepted revision. Teardown notification and
+transport cancellation target less than one second after accepted reload.
 
 ## Offline broker principal preparation
 

@@ -2,7 +2,7 @@
 -- Gold-compatible Prefs launch policy; the native host owns the connection.
 $nav=require("navigation.mix")
 $service="prefs";$comp=env("MIX_COMP_SERVICE","comp")
-$url=env("MIX_NODED_URL","ws://127.0.0.1:4200/ws")
+$url=env("MIX_NODED_URL","")
 $page=nil;$debug=[];$argv=args();$at=0
 if contains(["--version","-V"],$argv[0]) then print("prefs 0.1.2");exit(0) end
 if contains(["--help","-h"],$argv[0]) then
@@ -44,7 +44,9 @@ try
     print("prefs: "..json_encode($reply));exit(1)
   end
 catch $not_running $absent=true end
-$launch=concat([env("MIX_VIU_EXE",path_join(env("MIX_PREFIX","/opt/mix"),"bin/viu")),"run",dirname(script_path())],$debug)
+-- Shared discovery treats an empty environment value as unset; so does the host.
+$host_options={url:if $url=="" then nil else $url end}
+$launch=concat([env("MIX_VIU_EXE",path_join(env("MIX_PREFIX","/opt/mix"),"bin/viu")),"run",dirname(script_path()),"--host-options",json_encode($host_options)],$debug)
 if $page!=nil then $launch=concat($launch,["--page",$page]) end
 $result=run_argv($launch,{timeout:0,max_output:1000000})
 print($result.stdout)

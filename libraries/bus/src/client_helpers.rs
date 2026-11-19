@@ -307,14 +307,17 @@ impl BrokerEnvironment {
         // which would advertise a socket outside the process's environment.
         options.discover_by_ping = paths::run_root_is_tier_default(&self.directories, &directories)
             .map_err(anyhow::Error::msg)?;
-        let url = self
-            .url
-            .or_else(|| {
-                source
-                    .as_ref()
-                    .and_then(|(_, source)| crate::client::url_from_node_config(source))
-            })
-            .unwrap_or_else(|| crate::DEFAULT_NODED_URL.to_owned());
+        let url = self.url.unwrap_or_else(|| {
+            let endpoint = options
+                .endpoint
+                .as_ref()
+                .or(options.configured_endpoint.as_ref())
+                .or(options.default_endpoints.first());
+            format!(
+                "unix://{}",
+                endpoint.expect("local endpoint defaults").display()
+            )
+        });
         Ok(BrokerConfiguration {
             options,
             url,
@@ -1032,7 +1035,7 @@ pub(crate) mod tests {
         }
         .configuration()
         .unwrap();
-        assert_eq!(configuration.url, "ws://192.0.2.10:4300/ws");
+        assert_eq!(configuration.url, format!("unix://{}", socket.display()));
         assert_eq!(configuration.options.configured_endpoint, Some(socket));
         assert_eq!(
             configuration.options.endpoint_candidates().unwrap()[1],

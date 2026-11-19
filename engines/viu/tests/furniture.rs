@@ -131,6 +131,7 @@ fn ticks(pid: u32) -> u64 {
 }
 async fn exercise(old: bool, parent: Option<&Path>) {
     let broker = test_broker::Broker::start();
+    let url = format!("unix://{}", broker.endpoint.display());
     let root = tempfile::tempdir().unwrap();
     let binary = PathBuf::from(
         std::env::var(if old {
@@ -140,14 +141,14 @@ async fn exercise(old: bool, parent: Option<&Path>) {
         })
         .expect("build gate supplies exact binaries"),
     );
-    let comp = spawn(root.path(), &binary, old, &broker.url, parent);
+    let comp = spawn(root.path(), &binary, old, &url, parent);
     let socket = root.path().join("wayland-furniture-test");
     let until = Instant::now() + Duration::from_secs(30);
     while !socket.exists() {
         assert!(Instant::now() < until, "headless socket timed out");
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    let client = bus::SupervisedClient::connect_options("furniture-gate", &broker.url)
+    let client = bus::SupervisedClient::connect_options("furniture-gate", &url)
         .connect()
         .await
         .unwrap();
@@ -164,7 +165,7 @@ async fn exercise(old: bool, parent: Option<&Path>) {
             .env("XDG_CONFIG_HOME", root.path().join("config"))
             .env("XDG_STATE_HOME", root.path().join("state"))
             .env("XDG_DATA_HOME", root.path().join("data"))
-            .env("MIX_NODED_URL", &broker.url)
+            .env("MIX_NODED_URL", &url)
             .env("MIX_VIU_COMP_SERVICE", "comp-headless")
             .env_remove("DISPLAY")
             .env_remove("NOTIFY_SOCKET")
@@ -465,9 +466,10 @@ async fn native_client_maps_reserves_pings_receives_corners_and_measures_idle_cp
     // real early input path in an owned nested compositor inside a headless
     // parent, preserving the existing headless seat refusal contract.
     let broker = test_broker::Broker::start();
+    let url = format!("unix://{}", broker.endpoint.display());
     let root = tempfile::tempdir().unwrap();
     let binary = PathBuf::from(std::env::var("MIX_TEST_VIUD_NATIVE_EXE").unwrap());
-    let _parent = spawn(root.path(), &binary, false, &broker.url, None);
+    let _parent = spawn(root.path(), &binary, false, &url, None);
     let until = Instant::now() + Duration::from_secs(15);
     while !root.path().join("wayland-furniture-test").exists() {
         assert!(Instant::now() < until);

@@ -139,7 +139,7 @@ async fn async_main() -> Result<()> {
     let node = cli_node.unwrap_or_else(|| node_cfg.node.clone());
     let mesh_config = cli_mesh_config.or_else(|| node_cfg.noded.mesh_config.clone());
 
-    let noded_url = format!("ws://{}/ws", listen);
+    let noded_url = format!("unix://{}", node_cfg.noded.broker_unix_endpoint().display());
 
     let spec_dir = spec::locate_spec_dir(cli_spec_dir.as_deref());
     tracing::info!(
@@ -184,7 +184,13 @@ async fn async_main() -> Result<()> {
 
     // Wait for the broker listener to be bound
     if ready_rx.await.is_err() {
-        anyhow::bail!("Broker failed to start");
+        return match noded_handle.await {
+            Ok(Err(error)) => Err(error.context("Broker failed to start")),
+            Ok(Ok(())) => Err(anyhow::anyhow!(
+                "Broker exited without signalling readiness"
+            )),
+            Err(error) => Err(anyhow::anyhow!("Broker startup task failed: {error}")),
+        };
     }
 
     // Spawn client modules
