@@ -189,7 +189,7 @@ fn start($opts)
   $export = $opts.export ?? true
   $before = _client_now()
   for $attempt = 1 to 10
-    $port = $opts.port ?? random(47000, 47999)
+    $port = $opts.port ?? ($opts.ports ?? [])[$attempt - 1] ?? random(47000, 47999)
     $log = $dir .. "/noded-" .. to_string($attempt) .. ".log"
     write_file($conf, json_encode({node: $name, mesh: $name .. ".invalid", wg_ip: "127.0.0.1",
       noded: {port: $port, admission: "off", unix_socket: $dir .. "/run/noded/bus.sock"}}))
@@ -205,8 +205,8 @@ fn start($opts)
     -- From here on the spawned broker is ours to clean up on ANY failure.
     $state = "no"
     try
-      if $id.starttime == nil then raise("BROKER", "spawned noded " .. to_string($p) .. " exited at once; see " .. $log) end
-      write_file($dir .. "/noded.pid", json_encode($id))
+      if $id.starttime != nil then
+        write_file($dir .. "/noded.pid", json_encode($id))
       -- Readiness goes through this process's own client, so point it at the
       -- candidate. Wait for the listener first: a failed connect is sticky
       -- (later sends answer -3 until bus_reconnect(); TODO-mix).
@@ -220,10 +220,11 @@ fn start($opts)
           sleep(0.25)
         end
       end
+      end
     catch $m
       _client_set($before)
       if $id.starttime != nil then _retire($id) end
-      raise("BROKER", "private broker start failed: " .. $m)
+      raise("BROKER", "private broker start failed: " .. $m .. "; " .. read_file($log))
     end
     if $state == "yes" then
       if not $export then _client_set($before) end
@@ -231,7 +232,12 @@ fn start($opts)
     end
     _client_set($before)
     _retire($id)
-    if $opts.port != nil then raise("BROKER", "private broker on fixed port " .. to_string($port) .. " not owned (" .. $state .. "); see " .. $log) end
+    $detail = read_file($log)
+    -- Only a diagnosed bind conflict is retryable. In particular an immediate
+    -- exit (before /proc identity capture) must report its real launch error.
+    if $opts.port != nil or not contains($detail, "Address already in use (os error 98)") then
+      raise("BROKER", "private broker on port " .. to_string($port) .. " not owned (" .. $state .. "); see " .. $log .. "; " .. $detail)
+    end
   end
   raise("BROKER", "no owned private broker after 10 attempts in " .. $dir)
 end

@@ -1,0 +1,28 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Focused worker checks for recorder maintenance; no deployment.
+fn checked($argv)
+  $r = run_argv($argv, {timeout:1800, stdout:"inherit", stderr:"inherit"})
+  if not $r.ok then exit($r.exit_code ?? 124) end
+end
+$crates = ["-p","graphics","-p","recorder","-p","screencopy","-p","headless","-p","media-vfl"]
+if (args()[0] ?? "test") == "fmt" then
+  try
+    checked(concat(["cargo","fmt"], $crates))
+  finally
+    print("SWEEP_DIFF_BEGIN")
+    print(run_argv_must(["git","diff"]))
+    print("SWEEP_DIFF_END")
+    run_argv_must(["git","checkout","-q","--","."])
+  end
+elif args()[0] == "clippy" then
+  checked(concat(concat(["cargo","clippy","--locked"], $crates), ["--all-targets","--","-D","warnings"]))
+elif args()[0] == "capture" then
+  export MIX_TEST_REQUIRE_RECORD="1"
+  export MIX_TEST_MIX_EXE=realpath("target/release/mix")
+  checked(["cargo","test","--release","--locked","-p","headless","--test","capture","--","--test-threads=1"])
+  checked(["cargo","test","--release","--locked","-p","headless","--test","capture","benchmark_record_changing_4k_zero_drop","--","--ignored","--exact","--nocapture","--test-threads=1"])
+else
+  checked(concat(["cargo","test","--locked","--lib"], $crates))
+  checked(["cargo","test","--locked","-p","media-vfl","--test","writer"])
+  checked(["cargo","test","--locked","-p","headless","--test","broker_startup","--","--nocapture"])
+end

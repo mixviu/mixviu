@@ -28,6 +28,17 @@ pub fn capture_render_node() -> String {
     model::environment::config::base::get().render_node.clone()
 }
 
+/// Resolve the device of the renderer doing this capture. Backend selection
+/// (including a headless CLI override) can differ from the settings snapshot.
+pub fn renderer_render_node(
+    renderer: &smithay::backend::renderer::gles::GlesRenderer,
+) -> Result<String, String> {
+    smithay::backend::egl::EGLDevice::device_for_display(renderer.egl_context().display())
+        .and_then(|device| device.render_device_path())
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|error| format!("capture render device: {error}"))
+}
+
 /// Live capture frame rate (`capture_refresh_rate_max`, clamped to 30..=120).
 pub fn capture_fps() -> u32 {
     model::environment::config::base::get()
