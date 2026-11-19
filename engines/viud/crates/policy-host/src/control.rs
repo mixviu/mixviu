@@ -834,7 +834,9 @@ fn apply_visual(lp: &mut Loop, id: SurfaceId, spec: &comp_model::request::PlaceS
         world::comp::lifecycle_motion::visibility(uuid, visual.visible);
     }
     let window = window_of(lp, id);
-    let tracks_changed = window.as_ref().is_some_and(|window| world::comp::animation::place(window, spec));
+    let tracks_changed = window
+        .as_ref()
+        .is_some_and(|window| world::comp::animation::place(window, spec));
     if old == visual && !tracks_changed {
         return;
     }

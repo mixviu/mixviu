@@ -92,7 +92,9 @@ pub fn place(window: &Window, spec: &comp_model::request::PlaceSpec) -> bool {
         return false;
     };
     let mut slot = cell.lock().unwrap();
-    let Some(run) = slot.as_mut() else { return false; };
+    let Some(run) = slot.as_mut() else {
+        return false;
+    };
     let before = run.preset.tracks.len();
     run.preset.tracks.retain(|track| !match track.property {
         Property::Opacity => spec.opacity.is_some(),
@@ -101,7 +103,9 @@ pub fn place(window: &Window, spec: &comp_model::request::PlaceSpec) -> bool {
         _ => false,
     });
     let changed = before != run.preset.tracks.len();
-    if run.preset.tracks.is_empty() { *slot = None; }
+    if run.preset.tracks.is_empty() {
+        *slot = None;
+    }
     changed
 }
 

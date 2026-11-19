@@ -46,9 +46,13 @@ pub fn visibility(uuid: Uuid, visible: bool) {
         let mut state = state.borrow_mut();
         if let Some(old) = state.previous.get_mut(&uuid) {
             old.visible = visible;
-            if !visible { old.shown = false; }
+            if !visible {
+                old.shown = false;
+            }
         }
-        if !visible { state.exits.remove(&uuid); }
+        if !visible {
+            state.exits.remove(&uuid);
+        }
     });
 }
 
@@ -155,24 +159,55 @@ pub fn service(lp: &mut Loop) -> bool {
         .flat_map(|space| space.state.elements())
         .filter_map(|window| Some((window.uuid()?, window.clone())))
         .collect();
-    let default_output = lp.inner.comp.default_output.as_ref().map(|o| o.key.clone()).unwrap_or_default();
-    let outputs: HashMap<Uuid, String> = lp.inner.all_world_spaces().into_iter()
-        .flat_map(|space| space.state.elements().filter_map(|window| {
-            Some((window.uuid()?, space.state.outputs_for_element(window).first()
-                .map(|output| comp_model::snapshot::output_key(&output.name()))
-                .unwrap_or_else(|| default_output.clone())))
-        }).collect::<Vec<_>>())
+    let default_output = lp
+        .inner
+        .comp
+        .default_output
+        .as_ref()
+        .map(|o| o.key.clone())
+        .unwrap_or_default();
+    let outputs: HashMap<Uuid, String> = lp
+        .inner
+        .all_world_spaces()
+        .into_iter()
+        .flat_map(|space| {
+            space
+                .state
+                .elements()
+                .filter_map(|window| {
+                    Some((
+                        window.uuid()?,
+                        space
+                            .state
+                            .outputs_for_element(window)
+                            .first()
+                            .map(|output| comp_model::snapshot::output_key(&output.name()))
+                            .unwrap_or_else(|| default_output.clone()),
+                    ))
+                })
+                .collect::<Vec<_>>()
+        })
         .collect();
-    let mut workspaces: HashMap<String, u32> = lp.inner.comp.workspaces.current.iter()
-        .map(|(output, workspace)| (output.clone(), *workspace)).collect();
+    let mut workspaces: HashMap<String, u32> = lp
+        .inner
+        .comp
+        .workspaces
+        .current
+        .iter()
+        .map(|(output, workspace)| (output.clone(), *workspace))
+        .collect();
     for space in lp.inner.all_world_spaces() {
         for output in space.state.outputs() {
             let key = comp_model::snapshot::output_key(&output.name());
-            workspaces.entry(key.clone()).or_insert_with(|| lp.inner.comp.workspaces.current_for(Some(&key)));
+            workspaces
+                .entry(key.clone())
+                .or_insert_with(|| lp.inner.comp.workspaces.current_for(Some(&key)));
         }
     }
     for output in outputs.values().chain(std::iter::once(&default_output)) {
-        workspaces.entry(output.clone()).or_insert_with(|| lp.inner.comp.workspaces.current_for(Some(output)));
+        workspaces
+            .entry(output.clone())
+            .or_insert_with(|| lp.inner.comp.workspaces.current_for(Some(output)));
     }
     let current: HashMap<Uuid, Facts> = lp
         .inner
@@ -190,8 +225,11 @@ pub fn service(lp: &mut Loop) -> bool {
                     mapped: r.mapped(),
                     minimised: r.minimized(),
                     workspace: r.workspace(),
-                    shown: r.mapped() && visible && !r.minimized()
-                        && r.workspace() == Some(lp.inner.comp.workspaces.current_for(Some(&output))),
+                    shown: r.mapped()
+                        && visible
+                        && !r.minimized()
+                        && r.workspace()
+                            == Some(lp.inner.comp.workspaces.current_for(Some(&output))),
                     visible,
                     output,
                 },
@@ -242,7 +280,10 @@ pub fn service(lp: &mut Loop) -> bool {
                 settings.restore.as_ref()
             } else if fact.shown
                 && old.is_some_and(|old| {
-                    !old.shown && (previous_workspaces.get(&fact.output) != state.workspaces.get(&fact.output) || old.workspace != fact.workspace)
+                    !old.shown
+                        && (previous_workspaces.get(&fact.output)
+                            != state.workspaces.get(&fact.output)
+                            || old.workspace != fact.workspace)
                 })
             {
                 settings.workspace.as_ref()
@@ -289,10 +330,13 @@ pub fn service(lp: &mut Loop) -> bool {
                 crate::window::draw::ghost::capture_exit(*uuid);
                 state.exits.insert(
                     *uuid,
-                    (old.output.clone(), super::animation::VisualRun {
-                        started: now,
-                        preset,
-                    }),
+                    (
+                        old.output.clone(),
+                        super::animation::VisualRun {
+                            started: now,
+                            preset,
+                        },
+                    ),
                 );
             }
         }
@@ -354,35 +398,66 @@ mod tests {
         let started = Instant::now();
         let run = super::super::animation::VisualRun {
             started,
-            preset: preset(&WindowTransition { preset: "fade".into(), duration_ms: 1000 }, true).unwrap(),
+            preset: preset(
+                &WindowTransition {
+                    preset: "fade".into(),
+                    duration_ms: 1000,
+                },
+                true,
+            )
+            .unwrap(),
         };
         let mut state = State::default();
         state.workspaces = HashMap::from([("a".into(), 1), ("b".into(), 2)]);
         state.exits.insert(a, ("a".into(), run.clone()));
-        state.exits.insert(b, ("b".into(), run));
-        let other = Facts { mapped: true, minimised: false, workspace: Some(2), shown: true, visible: true, output: "b".into() };
+        state.exits.insert(b, ("b".into(), run.clone()));
+        let other = Facts {
+            mapped: true,
+            minimised: false,
+            workspace: Some(2),
+            shown: true,
+            visible: true,
+            output: "b".into(),
+        };
         assert!(other.on_current(&state.workspaces));
         state.sync_workspaces(HashMap::from([("a".into(), 3), ("b".into(), 2)]));
         assert!(!state.exits.contains_key(&a));
-        let (_, remaining) = state.exits.get(&b).expect("unaffected output retains its exit");
+        let (_, remaining) = state
+            .exits
+            .get(&b)
+            .expect("unaffected output retains its exit");
         let later = started + std::time::Duration::from_millis(500);
         assert!(remaining.active(later));
-        assert_eq!(remaining.sample(later).get(Property::Opacity), 0.5);
+        assert_eq!(remaining.started, started);
+        assert_eq!(remaining.sample(later), run.sample(later));
+        assert!(remaining.sample(later).get(Property::Opacity) > remaining.sample(started + std::time::Duration::from_millis(750)).get(Property::Opacity));
         assert!(other.on_current(&state.workspaces));
     }
 
     #[test]
     fn explicit_hide_updates_stale_facts_before_the_next_observation() {
         let uuid = Uuid::from_u128(11);
-        STATE.with(|state| state.borrow_mut().previous.insert(uuid, Facts {
-            mapped: true, minimised: false, workspace: Some(1), shown: true,
-            visible: true, output: "a".into(),
-        }));
+        STATE.with(|state| {
+            state.borrow_mut().previous.insert(
+                uuid,
+                Facts {
+                    mapped: true,
+                    minimised: false,
+                    workspace: Some(1),
+                    shown: true,
+                    visible: true,
+                    output: "a".into(),
+                },
+            )
+        });
         visibility(uuid, false);
         STATE.with(|state| {
             let mut state = state.borrow_mut();
             let old = state.previous.remove(&uuid).unwrap();
-            assert!(!old.visible && !old.shown, "destroy cannot turn stale shown facts into an exit");
+            assert!(
+                !old.visible && !old.shown,
+                "destroy cannot turn stale shown facts into an exit"
+            );
         });
     }
     #[test]
