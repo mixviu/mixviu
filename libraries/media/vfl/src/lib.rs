@@ -521,12 +521,18 @@ mod disk_tests {
         let path = std::env::temp_dir().join(format!("vfl-floor-{}", std::process::id()));
         struct Reset;
         impl Drop for Reset {
-            fn drop(&mut self) { TEST_AVAILABLE.set(None); }
+            fn drop(&mut self) {
+                TEST_AVAILABLE.set(None);
+            }
         }
         let _reset = Reset;
         TEST_AVAILABLE.set(Some(FREE_SPACE_FLOOR - 1));
         assert!(
-            Writer::new(path.clone(), 2, 2, 30).err().unwrap().to_string().contains("free-space floor")
+            Writer::new(path.clone(), 2, 2, 30)
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("free-space floor")
         );
         assert!(!path.exists());
         TEST_AVAILABLE.set(None);
@@ -534,7 +540,16 @@ mod disk_tests {
         // Force the next real bounded write to recheck disk space.
         writer.budget.space_checked_until.set(0);
         TEST_AVAILABLE.set(Some(FREE_SPACE_FLOOR));
-        assert!(writer.frame(Frame { slot: 0, pixels: Pixels::Bgra(Arc::from([0; 16])) }).unwrap_err().to_string().contains("free-space floor"));
+        assert!(
+            writer
+                .frame(Frame {
+                    slot: 0,
+                    pixels: Pixels::Bgra(Arc::from([0; 16]))
+                })
+                .unwrap_err()
+                .to_string()
+                .contains("free-space floor")
+        );
         assert!(!path.join("complete.json").exists());
         drop(writer);
         std::fs::remove_dir_all(path).unwrap();

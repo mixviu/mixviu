@@ -77,20 +77,19 @@ impl VideoEncoder {
         encoder: &str,
         max_bytes: Option<u64>,
     ) -> Result<Self, String> {
-        Self::start_worker(width, height, fps, path, encoder, max_bytes, || {})
+        if encoder != "vfl" {
+            return Err("available encoder: vfl".into());
+        }
+        Self::start_worker(width, height, fps, path, max_bytes, || {})
     }
     fn start_worker(
         width: u32,
         height: u32,
         fps: u32,
         path: Option<PathBuf>,
-        encoder: &str,
         max_bytes: Option<u64>,
         before_receive: impl FnOnce() + Send + 'static,
     ) -> Result<Self, String> {
-        if encoder != "vfl" {
-            return Err("available encoder: vfl".into());
-        }
         media_vfl::frame_bytes(width, height, fps).map_err(|e| e.to_string())?;
         let path = path.unwrap_or_else(|| {
             std::env::temp_dir().join(format!(
@@ -355,9 +354,12 @@ mod tests {
     #[test]
     fn bounded_queue_reports_dropped_tail_and_never_waits() {
         let (release, blocked) = std::sync::mpsc::channel();
-        let encoder = VideoEncoder::start_worker(2, 2, 30, None, "vfl", None, move || {
-            blocked.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
-        }).unwrap();
+        let encoder = VideoEncoder::start_worker(2, 2, 30, None, None, move || {
+            blocked
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+        })
+        .unwrap();
         let begin = std::time::Instant::now();
         for _ in 0..4 {
             assert!(encoder.try_push(vec![0; 16]));
@@ -379,9 +381,8 @@ mod tests {
         assert!(begin.elapsed() < std::time::Duration::from_secs(1));
         release.send(()).unwrap();
         let path = encoder.finish_result().unwrap();
-        let manifest: serde_json::Value = serde_json::from_slice(
-            &std::fs::read(path.join("complete.json")).unwrap(),
-        ).unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path.join("complete.json")).unwrap()).unwrap();
         assert_eq!(manifest["frames"], 2004);
         assert_eq!(manifest["dropped"], 1000);
         std::fs::remove_dir_all(path).unwrap();

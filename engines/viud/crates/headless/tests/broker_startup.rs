@@ -9,7 +9,10 @@ fn private_broker_diagnoses_exit_and_retries_only_bind_conflicts() {
     let output = std::process::Command::new(
         std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mix/bin/mix".into()),
     )
-    .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/broker-startup.mix"))
+    .arg(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/support/broker-startup.mix"
+    ))
     .arg(&root)
     .arg(bus::binary("noded"))
     .output()
