@@ -53,7 +53,7 @@ mod device_tests {
     #[test]
     fn capture_uses_the_renderers_non_default_node() {
         assert_eq!(
-            capture_node(|| Ok(PathBuf::from("/dev/dri/renderD199")))).unwrap(),
+            capture_node(|| Ok(PathBuf::from("/dev/dri/renderD199"))).unwrap(),
             "/dev/dri/renderD199",
         );
     }
