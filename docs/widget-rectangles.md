@@ -52,12 +52,12 @@ frames and 500 frames per case, with no GPU. One serial run measured:
 
 | Case | ms/frame |
 |---|---:|
-| Collection disabled (test-only baseline) | 5.128 |
-| Last-frame table, no query | 5.302 |
-| Last-frame table, query each frame | 5.634 |
+| Collection disabled (test-only baseline) | 5.150 |
+| Last-frame table, no query | 5.291 |
+| Last-frame table, query each frame | 5.651 |
 
-The table adds about 0.174 ms in this run; materialising an unfiltered reply
-adds about 0.332 ms. These are debug CPU timings, not release or desktop
+The table adds about 0.141 ms in this run; materialising an unfiltered reply
+adds about 0.360 ms. These are debug CPU timings, not release or desktop
 budgets. The query case includes filtering and reply value allocation, and
 excludes wire encoding, transport, compositor lookup and painting. Other runs
 show noise comparable to the table's cost; rerun the test for comparisons.

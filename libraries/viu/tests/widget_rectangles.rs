@@ -244,18 +244,23 @@ fn focus_readback_uses_the_scene_id() {
 
 #[test]
 fn app_zoom_is_converted_to_surface_logical_coordinates() {
-    let source = format!("---\nscene: 1\nname: test\ncitizen: test\n---\n```mix\n{}\n```\n",json!({
-        "root":{"widget":"column","children":["button"]},
-        "button":{"widget":"button","label":"Zoom"}
-    }));
+    let source = format!(
+        "---\nscene: 1\nname: test\ncitizen: test\n---\n```mix\n{}\n```\n",
+        json!({
+            "root":{"widget":"column","children":["button"]},
+            "button":{"widget":"button","label":"Zoom"}
+        })
+    );
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
     ctx.set_zoom_factor(1.5);
-    for _ in 0..3 { draw(&mut view,&ctx,600.,300.); }
+    for _ in 0..3 {
+        draw(&mut view, &ctx, 600., 300.);
+    }
     let row = view.widget_rectangles(&json!({"ids":["button"]})).unwrap();
     let rect = view.geometry["button"];
-    assert_eq!(row[0]["rect"]["x"],json!(rect.left()*1.5));
-    assert_eq!(row[0]["rect"]["w"],json!(rect.width()*1.5));
+    assert_eq!(row[0]["rect"]["x"], json!(rect.left() * 1.5));
+    assert_eq!(row[0]["rect"]["w"], json!(rect.width() * 1.5));
 }
 
 #[cfg(feature = "test-support")]
