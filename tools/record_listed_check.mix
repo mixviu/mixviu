@@ -6,7 +6,7 @@ for $package in $packages
   $command = concat($command, ["-p", $package])
 end
 try
-  if $mode == "capture" or $mode == "bench" then
+  if $mode == "capture" or $mode == "bench" or $mode == "accept" then
     for $cmd in [["cargo","build","-p","mix","-p","noded","-p","testkit","--bins"], ["cargo","build","--release","-p","viud"]]
       $r = run_argv($cmd, {timeout:1800,stdout:"inherit",stderr:"inherit"})
       if not $r.ok then exit($r.exit_code ?? 1) end
@@ -25,6 +25,10 @@ try
     $command = concat($command, ["--lib"])
   end
   $r = run_argv($command, {timeout:1800,stdout:"inherit",stderr:"inherit"})
+  if $r.ok and $mode == "accept" then
+    export MIX_TEST_CAPTURE_SECONDS=40
+    $r = run_argv(["cargo","test","--release","-p","headless","--test","capture","benchmark_record_changing_4k_zero_drop","--","--ignored","--nocapture","--test-threads=1"],{timeout:1800,stdout:"inherit",stderr:"inherit"})
+  end
   exit($r.exit_code ?? 1)
 finally
   print("LISTED_DIFF_BEGIN")
