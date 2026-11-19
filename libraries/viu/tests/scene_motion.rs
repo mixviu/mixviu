@@ -23,7 +23,9 @@ fn application_painter_samples_up_at_presentation_time() {
     let mut settled=frame(&ctx,&mut view,1.);
     let end=settled.shapes.iter().find_map(|s|if let egui::Shape::Text(t)=&s.shape {if t.galley.job.text=="Motion 0" {Some(t.pos.y)} else {None}}else{None}).unwrap();
     settled.textures_delta.clear();
-    assert!((at-end-3.103).abs()<0.1,"offset: {}",at-end);
+    let preset=motion::presets().into_iter().find(|p|p.name=="up").unwrap();
+    let expected=preset.sample(0.35).get(motion::Property::Ty) as f32;
+    assert!((at-end-expected).abs()<0.001,"offset: {} vs {expected}",at-end);
 }
 #[test]
 #[ignore="release measurement; run explicitly with --release --ignored --nocapture"]
