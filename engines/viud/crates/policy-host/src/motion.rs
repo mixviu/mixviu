@@ -83,13 +83,18 @@ pub fn cancel_visual(lp: &mut Loop, id: u64, generation: u64) {
     }
 }
 
-pub fn visual_replaced(lp: &mut Loop, id: u64, generation: u64, started: std::time::Instant) -> bool {
-    control::motion_window(lp,id,generation).is_ok_and(|(_, window)|
-        world::comp::animation::started(&window) != Some(started))
+pub fn visual_replaced(
+    lp: &mut Loop,
+    id: u64,
+    generation: u64,
+    started: std::time::Instant,
+) -> bool {
+    control::motion_window(lp, id, generation)
+        .is_ok_and(|(_, window)| world::comp::animation::started(&window) != Some(started))
 }
 
 pub fn cancel_geometry(lp: &mut Loop, id: u64, generation: u64) {
-    if let Ok((_, window)) = control::motion_window(lp,id,generation) {
+    if let Ok((_, window)) = control::motion_window(lp, id, generation) {
         world::comp::animation_geometry::cancel(&window);
     }
 }

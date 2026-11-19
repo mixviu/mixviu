@@ -161,10 +161,17 @@ pub fn grabbed_surface_suppressed(
     for space in lp.inner.all_world_spaces() {
         for window in space.state.elements() {
             let visual = crate::window::draw::frame::scene::visual_of(window);
-            if visual.visible && visual.scale.factor > 0.0 { continue; }
-            let Some(root) = window.wl_surface() else { continue; };
-            if surface_tree_offset(&root, target, (0,0).into()).is_some()
-                || PopupManager::popups_for_surface(&root).any(|(popup,_)| surface_tree_offset(popup.wl_surface(), target, (0,0).into()).is_some()) {
+            if visual.visible && visual.scale.factor > 0.0 {
+                continue;
+            }
+            let Some(root) = window.wl_surface() else {
+                continue;
+            };
+            if surface_tree_offset(&root, target, (0, 0).into()).is_some()
+                || PopupManager::popups_for_surface(&root).any(|(popup, _)| {
+                    surface_tree_offset(popup.wl_surface(), target, (0, 0).into()).is_some()
+                })
+            {
                 return true;
             }
         }

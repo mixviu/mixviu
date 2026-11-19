@@ -855,7 +855,7 @@ fn apply_visual(lp: &mut Loop, id: SurfaceId, spec: &comp_model::request::PlaceS
     }
     lp.inner.comp.settings_changed("windows", "window.place");
     world::comp::visibility::sync_hidden(lp);
-    if !visual.visible || visual.scale.factor == 0.0 {
+    if !visual.visible {
         execute(lp, vec![Effect::FinishInteractive(id)]);
         crate::input::hide_window(lp, id);
         settle(lp, None);
@@ -955,7 +955,7 @@ pub fn window_visual_step(
         .get_or_insert(|| std::sync::Mutex::new(comp_model::request::VisualAttributes::default()))
         .lock()
         .unwrap() = visual;
-    if !visual.visible || visual.scale.factor == 0.0 {
+    if !visual.visible {
         crate::input::hide_window(lp, surface);
     }
     crate::input::retarget_pointer(lp);

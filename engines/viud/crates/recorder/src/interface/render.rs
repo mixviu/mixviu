@@ -64,7 +64,7 @@ where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + 'static,
 {
-    use world::window::draw::element::{ClampOpaque, Element, ElementWindowSurface, RawElement};
+    use world::window::draw::element::{ClampOpaque, Element, ElementWindowSurface, RawElement, Untransformed};
     if !scale.is_finite() || scale <= 0.0 {
         return Err("invalid window capture scale".into());
     }
@@ -80,7 +80,7 @@ where
         .into_iter()
         .flatten()
         .map(|inner| {
-            Element::Plain(RawElement::Window(ClampOpaque {
+            Element::Plain(Untransformed::Plain(RawElement::Window(ClampOpaque {
                 inner: ElementWindowSurface {
                     inner,
                     zoom: scale,
@@ -88,7 +88,7 @@ where
                 },
                 screen: size,
                 bundle_owned: false,
-            }))
+            })))
         })
         .collect();
     Ok((elements, size))

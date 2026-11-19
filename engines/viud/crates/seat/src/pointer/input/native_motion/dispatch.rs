@@ -85,7 +85,9 @@ pub fn dispatch(
         if hit::grabbed_surface_suppressed(_loop, &surface) {
             pointer.unset_grab_without_focus_restore(&mut _loop.state, serial, event_time);
             under_hit = None;
-        } else if let Some(origin) = hit::grabbed_surface_origin(_loop, &surface, position_normalized) {
+        } else if let Some(origin) =
+            hit::grabbed_surface_origin(_loop, &surface, position_normalized)
+        {
             under_hit = Some((surface, origin));
         }
     }

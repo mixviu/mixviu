@@ -69,7 +69,8 @@ where
     let order = crate::window::draw::ghost::order(
         state.inner.render_output.as_deref().unwrap_or_default(),
         state.inner.render_target.map(|rt| rt.slot),
-        &state.inner.drawable_order());
+        &state.inner.drawable_order(),
+    );
     let by_uuid: HashMap<Uuid, Window> = state
         .inner
         .space_state()
@@ -120,7 +121,9 @@ where
         if crate::window::draw::ghost::exiting(*uuid) {
             for ghost in crate::window::draw::ghost::elements::<R>(
                 state.inner.render_output.as_deref().unwrap_or_default(),
-                state.inner.render_target.map(|rt| rt.slot), *uuid) {
+                state.inner.render_target.map(|rt| rt.slot),
+                *uuid,
+            ) {
                 content.push(ContentItem::Ghost(ghost));
             }
             continue;

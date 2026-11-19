@@ -95,10 +95,10 @@ pub fn apply(values: &Values, mut visual: VisualAttributes) -> VisualAttributes 
         visual.scale.factor = values.get(Property::Scale).clamp(0.0, 64.0);
     }
     if values.contains(Property::Tx) {
-        visual.translate.x = values.get(Property::Tx);
+        visual.translate.x = values.get(Property::Tx).clamp(i32::MIN as f64, i32::MAX as f64);
     }
     if values.contains(Property::Ty) {
-        visual.translate.y = values.get(Property::Ty);
+        visual.translate.y = values.get(Property::Ty).clamp(i32::MIN as f64, i32::MAX as f64);
     }
     visual
 }

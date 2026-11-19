@@ -33,6 +33,8 @@ scale and opacity without its blur. A preset with no supported properties
 is refused. Rotation and nonuniform scale are outside this contract.
 Explicit unsupported tracks are refused. Durations remain 0–10000 ms,
 default 400 ms; keyframes are capped at 64 per property. End values persist.
+Sampled opacity clamps to 0–1, scale to 0–64 and translation to signed
+32-bit logical bounds, including spring or bezier overshoot.
 
 A replacement run on the same id/generation settles the first reply with
 `{"version":1,"status":"superseded"}`. It starts at sampled geometry and

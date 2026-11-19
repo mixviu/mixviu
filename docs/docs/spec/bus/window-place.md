@@ -45,7 +45,9 @@ buffer size, layout, placement state or workspace membership.
 
 Input follows the drawn transform. Pointer, touch, tablet and injected input
 hit-test using its inverse, then the existing surface input regions and
-content fit. A factor of zero draws nothing and receives no input. Opacity
+content fit. A factor of zero draws nothing and accepts no positional input;
+retained pointer and touch grabs are cancelled on their next event at zero.
+Scale and translation do not change keyboard focus. Opacity
 zero still receives input, as before. Clip continues to crop pixels only;
 it does not narrow input regions. Logical geometry read through the Bus remains
 the untransformed geometry. A closing window's retained image is never an input

@@ -35,6 +35,9 @@ struct Snapshot<T: Texture> {
     anchor: Point<i32, Physical>,
     logical_scale: f64,
     clip: Option<(Option<dispatcher::frame::TexProgram>, decor::clip::Clip)>,
+    // Retaining the protocol buffer delays only its release/reuse, never client
+    // destruction. A texture clone alone could outlive wl_buffer.release.
+    _buffer: Option<smithay::backend::renderer::utils::Buffer>,
 }
 type Cache<T> = HashMap<(Uuid, String, Option<u64>), Vec<Snapshot<T>>>;
 thread_local! { static CACHES: RefCell<HashMap<TypeId, Box<dyn Any>>> = RefCell::new(HashMap::new()); }
@@ -100,6 +103,12 @@ pub fn retain<R>(
             RawElement::WindowFitClipped(clipped) => Some(clipped.snapshot_clip()),
             _ => None,
         };
+        let buffer = match &mut *raw {
+            RawElement::Window(e) => Some(e.inner.inner.buffer().clone()),
+            RawElement::WindowFit(e) => Some(e.inner.element_mut().element_mut().element_mut().inner.buffer().clone()),
+            RawElement::WindowFitClipped(e) => Some(e.inner_mut().inner.element_mut().element_mut().element_mut().inner.buffer().clone()),
+            _ => None,
+        };
         let surface_solid = matches!(raw, RawElement::Window(_) | RawElement::WindowFit(_) | RawElement::WindowFitClipped(_));
         let (texture, color) = match raw {
             RawElement::Chrome(decor::render::ChromeElement::Piece(piece)) => {
@@ -154,6 +163,7 @@ pub fn retain<R>(
             anchor,
             logical_scale,
             clip,
+            _buffer: buffer,
         });
     }
     CACHES.with(|caches| {

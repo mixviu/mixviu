@@ -957,7 +957,10 @@ fn agent_motion(
         return;
     };
     if let Some((surface, _)) = pointer.grab_start_data().and_then(|grab| grab.focus) {
-        if let Some(origin) =
+        if world::surface::interface::hit::grabbed_surface_suppressed(lp, &surface) {
+            pointer.unset_grab_without_focus_restore(&mut lp.state, SERIAL_COUNTER.next_serial(), time);
+            focus = None;
+        } else if let Some(origin) =
             world::surface::interface::hit::grabbed_surface_origin(lp, &surface, position.into())
         {
             focus = Some((surface, origin));
@@ -1037,6 +1040,10 @@ pub fn agent_touch(
                 },
             );
         } else {
+            if touch.current_focus(slot).is_some_and(|(surface, _)| world::surface::interface::hit::grabbed_surface_suppressed(lp, &surface)) {
+                touch.cancel(&mut lp.state);
+                return Ok(());
+            }
             let focus = touch.current_focus(slot).and_then(|(surface, _)| {
                 world::surface::interface::hit::grabbed_surface_origin(
                     lp,

@@ -78,12 +78,21 @@ fn relative(mut preset: Preset, base: comp_model::request::VisualAttributes) -> 
 pub fn service(lp: &mut Loop) -> bool {
     let now = lp.inner.comp.clock.now();
     let settings = lp.inner.preference.window_motion.clone();
-    if settings.map.is_none() && settings.unmap.is_none() && settings.minimise.is_none()
-        && settings.restore.is_none() && settings.workspace.is_none() {
+    if settings.map.is_none()
+        && settings.unmap.is_none()
+        && settings.minimise.is_none()
+        && settings.restore.is_none()
+        && settings.workspace.is_none()
+    {
         let stopped = STATE.with(|state| {
             let mut state = state.borrow_mut();
-            if state.incoming.is_empty() && state.exits.is_empty() && !state.active
-                && state.settings == WindowMotion::default() { return None; }
+            if state.incoming.is_empty()
+                && state.exits.is_empty()
+                && !state.active
+                && state.settings == WindowMotion::default()
+            {
+                return None;
+            }
             let incoming = std::mem::take(&mut state.incoming);
             *state = State::default();
             Some(incoming)
@@ -91,13 +100,17 @@ pub fn service(lp: &mut Loop) -> bool {
         if let Some(incoming) = stopped {
             for space in lp.inner.all_world_spaces() {
                 for window in space.state.elements() {
-                    if window.uuid().and_then(|uuid| incoming.get(&uuid).copied())
-                        .is_some_and(|started| super::animation::started(window) == Some(started)) {
+                    if window
+                        .uuid()
+                        .and_then(|uuid| incoming.get(&uuid).copied())
+                        .is_some_and(|started| super::animation::started(window) == Some(started))
+                    {
                         super::animation::finish(window);
                     }
                 }
             }
-            lp.state.schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+            lp.state
+                .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
         }
         return false;
     }
@@ -129,10 +142,20 @@ pub fn service(lp: &mut Loop) -> bool {
     STATE.with(|state| {
         let mut state = state.borrow_mut();
         if settings != state.settings {
-            for (event, config) in [("map", &settings.map), ("unmap", &settings.unmap),
-                ("minimise", &settings.minimise), ("restore", &settings.restore), ("workspace", &settings.workspace)] {
-                if let Some(config) = config && preset(config, false).is_none() {
-                    warn!("unsupported window lifecycle transition {event} preset {} ignored", config.preset);
+            for (event, config) in [
+                ("map", &settings.map),
+                ("unmap", &settings.unmap),
+                ("minimise", &settings.minimise),
+                ("restore", &settings.restore),
+                ("workspace", &settings.workspace),
+            ] {
+                if let Some(config) = config
+                    && preset(config, false).is_none()
+                {
+                    warn!(
+                        "unsupported window lifecycle transition {event} preset {} ignored",
+                        config.preset
+                    );
                 }
             }
         }
@@ -148,7 +171,9 @@ pub fn service(lp: &mut Loop) -> bool {
             } else {
                 None
             };
-            if appearing { state.exits.remove(uuid); }
+            if appearing {
+                state.exits.remove(uuid);
+            }
             if let Some(config) = enter
                 && let Some(preset) = preset(config, false)
                 && let Some(window) = windows.get(uuid)
@@ -261,7 +286,10 @@ mod tests {
 
     #[test]
     fn entrances_restore_requested_visual_attributes() {
-        let config = WindowTransition { preset: "pop".into(), duration_ms: 300 };
+        let config = WindowTransition {
+            preset: "pop".into(),
+            duration_ms: 300,
+        };
         let mut base = comp_model::request::VisualAttributes::default();
         base.opacity = 0.5;
         base.scale.factor = 0.75;

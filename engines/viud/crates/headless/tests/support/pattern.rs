@@ -33,6 +33,10 @@ use wayland_client::{
     },
 };
 use wayland_protocols::{
+    xdg::decoration::zv1::client::{
+        zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+        zxdg_toplevel_decoration_v1::{self, ZxdgToplevelDecorationV1},
+    },
     ext::session_lock::v1::client::{
         ext_session_lock_manager_v1::ExtSessionLockManagerV1,
         ext_session_lock_v1::{self, ExtSessionLockV1},
@@ -86,6 +90,7 @@ pub struct Pattern {
     shell: XdgWmBase,
     xdg: XdgSurface,
     _top: XdgToplevel,
+    _decoration: Option<ZxdgToplevelDecorationV1>,
 }
 
 impl Pattern {
@@ -148,6 +153,14 @@ impl Pattern {
     }
 
     pub fn named(stream: UnixStream, name: &str, fullscreen: bool) -> Self {
+        Self::create(stream, name, fullscreen, false)
+    }
+
+    pub fn decorated(stream: UnixStream, name: &str) -> Self {
+        Self::create(stream, name, false, true)
+    }
+
+    fn create(stream: UnixStream, name: &str, fullscreen: bool, decorated: bool) -> Self {
         mapping_trace!("PATTERN start app_id={name} socket={stream:?}");
         stream.set_nonblocking(true).unwrap();
         let conn = Connection::from_socket(stream).unwrap();
@@ -175,6 +188,13 @@ impl Pattern {
         let surface = compositor.create_surface(&qh, ());
         let xdg = shell.get_xdg_surface(&surface, &qh, ());
         let top = xdg.get_toplevel(&qh, ());
+        let decoration = decorated.then(|| {
+            let (n, _, _) = find("zxdg_decoration_manager_v1");
+            let manager: ZxdgDecorationManagerV1 = registry.bind(n, 1, &qh, ());
+            let decoration = manager.get_toplevel_decoration(&top, &qh, ());
+            decoration.set_mode(zxdg_toplevel_decoration_v1::Mode::ServerSide);
+            decoration
+        });
         mapping_trace!("PATTERN get_toplevel app_id={name}");
         top.set_app_id(name.into());
         mapping_trace!("PATTERN set_app_id={name}");
@@ -217,6 +237,7 @@ impl Pattern {
             shell,
             xdg,
             _top: top,
+            _decoration: decoration,
         };
         client.commit(true);
         mapping_trace!(
@@ -588,6 +609,8 @@ impl Dispatch<XdgPopup, ()> for State {
     }
 }
 delegate_noop!(State: ignore XdgPositioner);
+delegate_noop!(State: ignore ZxdgDecorationManagerV1);
+delegate_noop!(State: ignore ZxdgToplevelDecorationV1);
 delegate_noop!(State: ignore ExtSessionLockManagerV1);
 impl Dispatch<ExtSessionLockV1, ()> for State {
     fn event(
