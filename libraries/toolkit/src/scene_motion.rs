@@ -633,13 +633,6 @@ pub fn install(ctx: &Context) {
                 if !has_paint {
                     continue;
                 }
-            // Replace the implementation's built-in fade on subsequent
-            // paints. The first library sample is transparent; later samples
-            // must not be multiplied by a second, unrelated timing curve.
-            if let Some(mut area)=egui::containers::area::AreaState::load(&ctx,layer.id) {
-                area.last_became_visible_at=Some(ui.input(|i|i.time)-f64::from(ctx.global_style().animation_time.max(1.0)));
-                ctx.memory_mut(|m|m.areas_mut().set_state(layer,area));
-            }
                 let surface = ui.new_child(egui::UiBuilder::new().layer_id(layer));
                 let disabled = ctx
                     .data(|d| {

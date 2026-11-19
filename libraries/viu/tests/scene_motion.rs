@@ -1,83 +1,177 @@
 //! Scene motion through the application headless painter, no window or GPU.
 use serde_json::json;
 use viu::view::SceneView;
-fn contains_text(shapes:&[egui::epaint::ClippedShape],needle:&str)->bool {
-    fn has(s:&egui::Shape,n:&str)->bool {match s {egui::Shape::Text(t)=>t.galley.job.text.contains(n),egui::Shape::Vec(ss)=>ss.iter().any(|s|has(s,n)),_=>false}}
-    shapes.iter().any(|s|has(&s.shape,needle))
+fn contains_text(shapes: &[egui::epaint::ClippedShape], needle: &str) -> bool {
+    fn has(s: &egui::Shape, n: &str) -> bool {
+        match s {
+            egui::Shape::Text(t) => t.galley.job.text.contains(n),
+            egui::Shape::Vec(ss) => ss.iter().any(|s| has(s, n)),
+            _ => false,
+        }
+    }
+    shapes.iter().any(|s| has(&s.shape, needle))
 }
 #[test]
 fn scaled_input_and_per_node_reduced_motion_use_the_drawn_rectangle() {
-    for enabled in [false,true] {
-        let nodes=json!({"root":{"widget":"column","motion":enabled,"children":["button"]},"button":{"widget":"button","label":"Scaled","enter":"pop","on_click":"test.click"}});
-        let source=format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
-        let ctx=egui::Context::default();let mut view=SceneView::new(&source).unwrap();
-        for t in [0.,0.03] {frame(&ctx,&mut view,t).drop_without_applying_deltas();}
-        let painted=view.geometry["button"];
-        let sample=motion::presets().into_iter().find(|p|p.name=="pop").unwrap().sample(0.03);
-        let reference_ctx=egui::Context::default();
-        let mut reference=SceneView::new(&source.replace("\"motion\":true","\"motion\":false")).unwrap();
-        frame(&reference_ctx,&mut reference,0.03).drop_without_applying_deltas();
-        let scale=if enabled {sample.get(motion::Property::Scale) as f32} else {1.};
-        assert!((painted.width()-reference.geometry["button"].width()*scale).abs()<0.1);
+    for enabled in [false, true] {
+        let nodes = json!({"root":{"widget":"column","motion":enabled,"children":["button"]},"button":{"widget":"button","label":"Scaled","enter":"pop","on_click":"test.click"}});
+        let source =
+            format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+        let ctx = egui::Context::default();
+        let mut view = SceneView::new(&source).unwrap();
+        for t in [0., 0.03] {
+            frame(&ctx, &mut view, t).drop_without_applying_deltas();
+        }
+        let painted = view.geometry["button"];
+        let sample = motion::presets()
+            .into_iter()
+            .find(|p| p.name == "pop")
+            .unwrap()
+            .sample(0.03);
+        let reference_ctx = egui::Context::default();
+        let mut reference =
+            SceneView::new(&source.replace("\"motion\":true", "\"motion\":false")).unwrap();
+        frame(&reference_ctx, &mut reference, 0.03).drop_without_applying_deltas();
+        let scale = if enabled {
+            sample.get(motion::Property::Scale) as f32
+        } else {
+            1.
+        };
+        assert!((painted.width() - reference.geometry["button"].width() * scale).abs() < 0.1);
         // Preserve the toolkit's existing hit slop; test beyond that margin.
-        for (target,expected) in [(painted.center(),true),(egui::pos2(painted.left()-8.,painted.center().y),false)] {
-            let mut commands=Vec::new();
-            for pressed in [true,false] {
-                ctx.run_ui(egui::RawInput{time:Some(0.03),screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1000.,4000.))),events:vec![egui::Event::PointerMoved(target),egui::Event::PointerButton{pos:target,button:egui::PointerButton::Primary,pressed,modifiers:Default::default()}],..Default::default()},|ui|commands.extend(view.show(ui))).drop_without_applying_deltas();
+        for (target, expected) in [
+            (painted.center(), true),
+            (egui::pos2(painted.left() - 8., painted.center().y), false),
+        ] {
+            let mut commands = Vec::new();
+            for pressed in [true, false] {
+                ctx.run_ui(
+                    egui::RawInput {
+                        time: Some(0.03),
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(1000., 4000.),
+                        )),
+                        events: vec![
+                            egui::Event::PointerMoved(target),
+                            egui::Event::PointerButton {
+                                pos: target,
+                                button: egui::PointerButton::Primary,
+                                pressed,
+                                modifiers: Default::default(),
+                            },
+                        ],
+                        ..Default::default()
+                    },
+                    |ui| commands.extend(view.show(ui)),
+                )
+                .drop_without_applying_deltas();
             }
-            assert_eq!(commands.iter().any(|e|e.command=="test.click"),expected,"enabled={enabled}, target={target:?}, rect={painted:?}");
+            assert_eq!(
+                commands.iter().any(|e| e.command == "test.click"),
+                expected,
+                "enabled={enabled}, target={target:?}, rect={painted:?}"
+            );
         }
     }
 }
 #[test]
 fn settled_application_scene_has_no_repaint_request() {
-    let ctx=egui::Context::default();let mut view=SceneView::new(&source(true)).unwrap();
-    for t in [0.,1.,2.,3.,4.] {frame(&ctx,&mut view,t).drop_without_applying_deltas();}
+    let ctx = egui::Context::default();
+    let mut view = SceneView::new(&source(true)).unwrap();
+    for t in [0., 1., 2., 3., 4.] {
+        frame(&ctx, &mut view, t).drop_without_applying_deltas();
+    }
     assert!(!ctx.has_requested_repaint());
 }
 #[test]
 fn list_insertions_and_removals_use_fade_and_reduced_motion_snaps() {
-    for native in [false,true] {
-        for reduced in [false,true] {
-            let model=|updated:bool| if native {
-                let rows=if updated {json!([["remaining","2"],["inserted row","3"]])} else {json!([["removed row","1"],["remaining","2"]])};
-                json!({"datasets":{"rows":rows},"widget":{"id":"root","kind":"list","label":"List","initial":0,"properties":{"dataset":"rows","row_count":2,"columns":["Name","Size"]}}})
-            } else {json!({"rows":if updated {json!([{"id":"b","cells":["remaining"]},{"id":"c","cells":["inserted row"]}])} else {json!([{"id":"a","cells":["removed row"]},{"id":"b","cells":["remaining"]}])}})};
-            let nodes=if native {json!({"root":{"widget":"control","definition":"= $model.widget"}})} else {json!({"root":{"widget":"list","rows":"= $model.rows","row":"item","row_height":24},"item":{"widget":"row","children":["label"]},"label":{"widget":"text","text":"{cells[0]}"}})};
-            let source=format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
-            let ctx=egui::Context::default();if reduced {ctx.global_style_mut(|s|s.animation_time=0.);}
-            let mut view=SceneView::with_model(&source,model(false)).unwrap();
-            for t in [0.,1.] {frame(&ctx,&mut view,t).drop_without_applying_deltas();}
+    for native in [false, true] {
+        for reduced in [false, true] {
+            let model = |updated: bool| {
+                if native {
+                    let rows = if updated {
+                        json!([["remaining", "2"], ["inserted row", "3"]])
+                    } else {
+                        json!([["removed row", "1"], ["remaining", "2"]])
+                    };
+                    json!({"datasets":{"rows":rows},"widget":{"id":"root","kind":"list","label":"List","initial":0,"properties":{"dataset":"rows","row_count":2,"columns":["Name","Size"]}}})
+                } else {
+                    json!({"rows":if updated {json!([{"id":"b","cells":["remaining"]},{"id":"c","cells":["inserted row"]}])} else {json!([{"id":"a","cells":["removed row"]},{"id":"b","cells":["remaining"]}])}})
+                }
+            };
+            let nodes = if native {
+                json!({"root":{"widget":"control","definition":"= $model.widget"}})
+            } else {
+                json!({"root":{"widget":"list","rows":"= $model.rows","row":"item","row_height":24},"item":{"widget":"row","children":["label"]},"label":{"widget":"text","text":"{cells[0]}"}})
+            };
+            let source =
+                format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+            let ctx = egui::Context::default();
+            if reduced {
+                ctx.global_style_mut(|s| s.animation_time = 0.);
+            }
+            let mut view = SceneView::with_model(&source, model(false)).unwrap();
+            for t in [0., 1.] {
+                frame(&ctx, &mut view, t).drop_without_applying_deltas();
+            }
             view.apply_model(model(true)).unwrap();
-            let mut changed=frame(&ctx,&mut view,1.1);
-            assert_eq!(contains_text(&changed.shapes,"removed row"),!reduced,"native={native}, reduced={reduced}");
-            assert!(contains_text(&changed.shapes,"inserted row"));changed.textures_delta.clear();
-            let mut settled=frame(&ctx,&mut view,3.);
-            assert!(!contains_text(&settled.shapes,"removed row"));settled.textures_delta.clear();
+            let mut changed = frame(&ctx, &mut view, 1.1);
+            assert_eq!(
+                contains_text(&changed.shapes, "removed row"),
+                !reduced,
+                "native={native}, reduced={reduced}"
+            );
+            assert!(contains_text(&changed.shapes, "inserted row"));
+            changed.textures_delta.clear();
+            let mut settled = frame(&ctx, &mut view, 3.);
+            assert!(!contains_text(&settled.shapes, "removed row"));
+            settled.textures_delta.clear();
         }
     }
 }
 #[test]
 fn a_button_is_clicked_where_up_paints_it_and_exit_has_no_input() {
-    let nodes=json!({"root":{"widget":"column","children":["button"]},"button":{"widget":"button","label":"Moving","on_click":"test.click","enter":"up","exit":"fade","hidden":"= $model.hidden"}});
-    let source=format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
-    let mut view=SceneView::with_model(&source,json!({"hidden":false})).unwrap();
-    let ctx=egui::Context::default();frame(&ctx,&mut view,0.).drop_without_applying_deltas();
-    frame(&ctx,&mut view,0.03).drop_without_applying_deltas();
-    let target=view.geometry["button"].center();
-    let click=|view:&mut SceneView,t:f64| {
-        let mut commands=Vec::new();
-        for pressed in [true,false] {
-            let mut raw=egui::RawInput {time:Some(t),screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1000.,4000.))),..Default::default()};
-            raw.events=vec![egui::Event::PointerMoved(target),egui::Event::PointerButton{pos:target,button:egui::PointerButton::Primary,pressed,modifiers:Default::default()}];
-            ctx.run_ui(raw,|ui|commands.extend(view.show(ui))).drop_without_applying_deltas();
+    let nodes = json!({"root":{"widget":"column","children":["button"]},"button":{"widget":"button","label":"Moving","on_click":"test.click","enter":"up","exit":"fade","hidden":"= $model.hidden"}});
+    let source = format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+    let mut view = SceneView::with_model(&source, json!({"hidden":false})).unwrap();
+    let ctx = egui::Context::default();
+    frame(&ctx, &mut view, 0.).drop_without_applying_deltas();
+    frame(&ctx, &mut view, 0.03).drop_without_applying_deltas();
+    let target = view.geometry["button"].center();
+    let click = |view: &mut SceneView, t: f64| {
+        let mut commands = Vec::new();
+        for pressed in [true, false] {
+            let mut raw = egui::RawInput {
+                time: Some(t),
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1000., 4000.),
+                )),
+                ..Default::default()
+            };
+            raw.events = vec![
+                egui::Event::PointerMoved(target),
+                egui::Event::PointerButton {
+                    pos: target,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: Default::default(),
+                },
+            ];
+            ctx.run_ui(raw, |ui| commands.extend(view.show(ui)))
+                .drop_without_applying_deltas();
         }
         commands
     };
-    assert!(click(&mut view,0.03).iter().any(|e|e.command=="test.click"));
+    assert!(
+        click(&mut view, 0.03)
+            .iter()
+            .any(|e| e.command == "test.click")
+    );
     view.apply_model(json!({"hidden":true})).unwrap();
-    frame(&ctx,&mut view,0.04).drop_without_applying_deltas();
-    assert!(click(&mut view,0.05).is_empty());
+    frame(&ctx, &mut view, 0.04).drop_without_applying_deltas();
+    assert!(click(&mut view, 0.05).is_empty());
 }
 fn source(animate: bool) -> String {
     let mut nodes = json!({"root":{"widget":"column","children":(0..100).map(|i|format!("n{i}")).collect::<Vec<_>>()}});

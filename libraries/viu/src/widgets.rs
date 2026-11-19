@@ -2127,7 +2127,7 @@ impl Widgets {
                             }
                         },
                     );
-                row_motion.keep_unseen(|key|data.iter().any(|row|row[0].as_str()==Some(key)));
+                row_motion.keep_unseen(|key| data.iter().any(|row| row[0].as_str() == Some(key)));
                 row_motion.end(ui);
                 ui.interact(area.inner_rect, ui.scope_id().with(id), Sense::hover())
             }

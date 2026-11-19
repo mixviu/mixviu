@@ -1,15 +1,28 @@
 use super::*;
 #[test]
 fn bound_motion_values_are_typed_and_revalidated() {
-    let mut document=doc("root: {widget: \"text\", text: \"Bound\", offset: \"= $model.offset\", enter: \"= $model.enter\", transition: \"= $model.transition\"}");
-    document.model=Some(serde_json::json!({"offset":[4,8],"enter":{"preset":"up","stagger_ms":40},"transition":{"prop":"offset","ms":160}}));
-    let resolved=resolve(&document).unwrap();
-    assert_eq!(resolved.nodes["root"].ports["offset"],serde_json::json!([4.,8.]));
+    let mut document = doc(
+        "root: {widget: \"text\", text: \"Bound\", offset: \"= $model.offset\", enter: \"= $model.enter\", transition: \"= $model.transition\"}",
+    );
+    document.model = Some(
+        serde_json::json!({"offset":[4,8],"enter":{"preset":"up","stagger_ms":40},"transition":{"prop":"offset","ms":160}}),
+    );
+    let resolved = resolve(&document).unwrap();
+    assert_eq!(
+        resolved.nodes["root"].ports["offset"],
+        serde_json::json!([4., 8.])
+    );
     assert!(resolved.nodes["root"].ports.contains_key("enter"));
-    let port=crate::schema::port_for("text","offset");
-    assert!(crate::bindings::coerce_port(&serde_json::json!([1]),port).is_err());
-    assert!(crate::bindings::coerce_port(&serde_json::json!(["x",2]),port).is_err());
-    assert!(crate::bindings::coerce_port(&serde_json::json!({"preset":"unknown"}),crate::schema::port_for("text","enter")).is_err());
+    let port = crate::schema::port_for("text", "offset");
+    assert!(crate::bindings::coerce_port(&serde_json::json!([1]), port).is_err());
+    assert!(crate::bindings::coerce_port(&serde_json::json!(["x", 2]), port).is_err());
+    assert!(
+        crate::bindings::coerce_port(
+            &serde_json::json!({"preset":"unknown"}),
+            crate::schema::port_for("text", "enter")
+        )
+        .is_err()
+    );
 }
 #[test]
 fn motion_ports_validate_without_changing_defaults() {
