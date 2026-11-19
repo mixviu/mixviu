@@ -42,6 +42,25 @@ fn write(path: &Path, value: &impl serde::Serialize) {
     fs::write(path, serde_json::to_vec_pretty(value).unwrap()).unwrap();
 }
 
+#[test]
+fn frame_enforcement_refuses_startup_without_identity_source() {
+    let root = std::env::temp_dir().join(format!("noded-no-authority-{:032x}",rand::random::<u128>()));
+    fs::create_dir(&root).unwrap();
+    fs::set_permissions(&root,fs::Permissions::from_mode(0o711)).unwrap();
+    let fixture = Fixture { root, children:Vec::new() };
+    for dir in ["etc","var","run","home"] { fs::create_dir(fixture.root.join(dir)).unwrap(); }
+    let config = fixture.root.join("etc/node.conf.mix");
+    write(&config,&json!({"node":"alpha","wg_ip":"127.0.0.1","noded":{"port":0,"frame_policy":"enforce","admission":"off","unix_socket":fixture.root.join("run/bus.sock")}}));
+    let result = Command::new(env!("CARGO_BIN_EXE_noded"))
+        .args(["serve","--no-monitor","--no-log"]).env_clear()
+        .env("PATH","/usr/bin:/bin").env("HOME",fixture.root.join("home"))
+        .env("MIX_ETC",fixture.root.join("etc")).env("MIX_VAR",fixture.root.join("var"))
+        .env("MIX_RUN",fixture.root.join("run")).env("MIX_NODE_CONFIG",config).output().unwrap();
+    assert!(!result.status.success());
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    assert!(stderr.contains("no identity source"),"{stderr}");
+}
+
 async fn connect(
     root: &Path,
     name: &str,

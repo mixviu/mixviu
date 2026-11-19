@@ -6,7 +6,7 @@ use std::{collections::BTreeMap, time::Duration};
 #[tokio::test]
 async fn furniture_events_refuse_foreign_publishers_and_attest_the_compositor() {
     let broker = test_broker::Broker::start();
-    let url = format!("unix://{}",broker.endpoint.display());
+    let url = format!("unix://{}", broker.endpoint.display());
     let owner = bus::SupervisedClient::connect_options("comp-fixture", &url)
         .connect()
         .await
