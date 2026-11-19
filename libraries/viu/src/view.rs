@@ -2345,3 +2345,7 @@ fn paint_outline(ui: &egui::Ui, node: &Node, rect: egui::Rect) {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "view_motion_identity_tests.rs"]
+mod motion_identity_tests;

@@ -47,6 +47,10 @@ the app wrapper does not apply a second travel transform.
 These defaults honour global reduced motion and
 `motion:false` on a scene node (including its subtree). Ordinary scene nodes
 gain no entrance/exit by default.
+Native list row identity uses `key_column` when supplied, otherwise row data
+plus occurrence among identical rows. Head edits animate only inserted/removed
+identities; sorting changes layout immediately without lifecycle animation.
+See the native dataset contract in `scene-widget-adapter.md`.
 
 The Gallery includes a Motion page with a visibility button, switch, seven
 entrances, stagger, bound opacity/offset/colour, interaction highlights, native

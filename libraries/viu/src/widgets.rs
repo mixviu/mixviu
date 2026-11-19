@@ -915,6 +915,16 @@ impl Widget {
             }) {
                 return Err("dataset requires string cells".into());
             }
+            if let Some(column) = self.properties.get("key_column") {
+                let column = whole(column).and_then(|n| usize::try_from(n).ok())
+                    .ok_or("key_column must be a nonnegative integer")?;
+                let mut keys = BTreeSet::new();
+                for row in rows {
+                    let key = row[column].as_str().filter(|s| !s.is_empty())
+                        .ok_or("key_column requires a nonempty string in every row")?;
+                    if !keys.insert(key) { return Err("key_column values must be unique".into()); }
+                }
+            }
         }
         Ok(())
     }
@@ -928,6 +938,22 @@ pub(crate) fn whole(v: &Value) -> Option<u64> {
             })
             .map(|n| n as u64)
     })
+}
+
+/// Identity survives head edits and sorting. Equal unkeyed rows are
+/// distinguished by occurrence among identical data, never absolute position.
+fn row_motion_keys(rows: &[Value], key_column: Option<usize>) -> Vec<String> {
+    let mut occurrences = BTreeMap::<String, usize>::new();
+    rows.iter().map(|row| {
+        if let Some(column) = key_column {
+            return format!("key:{}", row[column]);
+        }
+        let data = serde_json::to_string(row).unwrap_or_default();
+        let occurrence = occurrences.entry(data.clone()).or_default();
+        let key = format!("data:{data}#{occurrence}");
+        *occurrence += 1;
+        key
+    }).collect()
 }
 
 #[derive(Clone, Debug)]
@@ -1972,6 +1998,9 @@ impl Widgets {
                     .as_array()
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
+                let row_keys = row_motion_keys(data, whole(&widget.properties["key_column"])
+                    .and_then(|n| usize::try_from(n).ok()));
+                let present_keys = row_keys.iter().map(String::as_str).collect::<std::collections::HashSet<_>>();
                 if widget.kind == "table" {
                     let reversed = model["sorted"][id].as_bool().unwrap_or(false);
                     let header = ui.button(format!(
@@ -2029,10 +2058,7 @@ impl Widgets {
                                 let name = cells[0].as_str().unwrap_or("");
                                 let capture = row_motion.capture(
                                     ui,
-                                    &format!(
-                                        "{row}:{}",
-                                        serde_json::to_string(cells).unwrap_or_default()
-                                    ),
+                                    &row_keys[row],
                                     None,
                                     Some(&json!("fade")),
                                     Some(&json!("fade")),
@@ -2131,11 +2157,7 @@ impl Widgets {
                             }
                         },
                     );
-                row_motion.keep_unseen(|key| {
-                    data.iter().enumerate().any(|(index, row)| {
-                        key == format!("{index}:{}", serde_json::to_string(row).unwrap_or_default())
-                    })
-                });
+                row_motion.keep_unseen(|key| present_keys.contains(key));
                 row_motion.end(ui);
                 ui.interact(area.inner_rect, ui.scope_id().with(id), Sense::hover())
             }
@@ -2421,3 +2443,7 @@ fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     }
     text
 }
+
+#[cfg(test)]
+#[path = "row_motion_tests.rs"]
+mod row_motion_tests;
