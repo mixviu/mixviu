@@ -221,8 +221,25 @@ fn spawn_options(options: Options<'_>) -> Process {
     let mut command = Command::new(binary);
     if osd {
         let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..");
+        let viu = std::env::var_os(paths::env::test::TEST_VIU_EXE)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::current_exe()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .join("viu")
+            });
+        assert!(
+            viu.is_file(),
+            "build viu before the OSD tests: {}",
+            viu.display()
+        );
         command
-            .env("MIX_TEST_VIUD_OSD_BUNDLE", workspace.join("apps/osd"))
+            .env(paths::env::test::TEST_VIUD_OSD_BUNDLE, workspace.join("apps/osd"))
+            .env(paths::env::test::TEST_VIU_EXE, viu)
             .env("MIX_VIU_COMP_SERVICE", "comp-headless");
     } else {
         command.env_remove("MIX_TEST_VIUD_OSD_BUNDLE");

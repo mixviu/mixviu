@@ -75,16 +75,9 @@ pub fn launch(headless: bool, comp: &str) -> Option<Host> {
     let prefix = bin.parent()?;
     let bundle = prefix.join("share/mixviu/apps/osd");
     let viu = bin.join("viu");
-    #[cfg(feature = "test-support")]
+    #[cfg(feature = "backend-headless")]
     let (bundle, viu) = if headless {
-        (
-            std::env::var_os("MIX_TEST_VIUD_OSD_BUNDLE")
-                .map(std::path::PathBuf::from)
-                .unwrap_or(bundle),
-            std::env::var_os("MIX_TEST_VIU_EXE")
-                .map(std::path::PathBuf::from)
-                .unwrap_or(viu),
-        )
+        headless::test_osd_paths().unwrap_or((bundle, viu))
     } else {
         (bundle, viu)
     };
