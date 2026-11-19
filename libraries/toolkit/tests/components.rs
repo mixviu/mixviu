@@ -30,8 +30,8 @@ fn harness<S: 'static>(
     // Steps of a 60th of a second: the harness spaces queued clicks a few
     // steps apart, and its default quarter-second steps would split a
     // double click. Animations then take more steps to settle.
-    let builder = Harness::builder()
-        .with_context_setup(move |ctx| toolkit::install(ctx, &fixture::theme(scheme, mode)))
+    let builder = test_harness::configure(Harness::builder())
+        .with_context_setup(move |ctx| {test_harness::reduced_motion(ctx); toolkit::install(ctx, &fixture::theme(scheme, mode));})
         .with_size(vec2(640.0, 400.0))
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60);
@@ -1188,7 +1188,7 @@ fn the_right_hand_group_gives_way_link_first_then_icons_and_the_combo_shrinks() 
 #[test]
 fn title_bar_controls_never_overlap_the_caption_buttons() {
     for width in [760.0, 1100.0, 1700.0] {
-        let builder = Harness::builder().with_size(vec2(width, 300.0));
+        let builder = test_harness::configure(Harness::builder()).with_size(vec2(width, 300.0));
         let h = fixture::harness(builder, &fixture::theme(Scheme::Pro, Mode::Light));
         let minimize = h.get_by_label("Minimize").rect();
         let help = h.get_by_label("Help").rect();
@@ -1232,3 +1232,6 @@ fn title_bar_controls_never_overlap_the_caption_buttons() {
         }
     }
 }
+
+#[path = "support/harness.rs"]
+mod test_harness;

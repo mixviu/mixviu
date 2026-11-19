@@ -188,7 +188,7 @@ impl Sample {
 }
 
 fn harness(sample: Sample, scheme: Scheme, mode: Mode) -> Harness<'static, Sample> {
-    let mut h = Harness::builder()
+    let mut h = test_harness::configure(Harness::builder())
         .with_size(vec2(720.0, 260.0))
         .with_step_dt(0.05)
         .wgpu()
@@ -476,3 +476,6 @@ fn an_empty_table_says_so() {
     assert!(row_labels(&h).is_empty());
     assert!(h.query_by_label("No rows").is_some());
 }
+
+#[path = "support/harness.rs"]
+mod test_harness;

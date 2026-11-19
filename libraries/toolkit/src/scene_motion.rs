@@ -807,9 +807,14 @@ pub fn state(ctx: &Context, id: egui::Id) -> std::sync::Arc<std::sync::Mutex<Sce
 mod tests {
     use super::*;
     use serde_json::json;
+    fn motion_context() -> Context {
+        let ctx=Context::default();
+        ctx.global_style_mut(|style| style.animation_time=0.2);
+        ctx
+    }
     #[test]
     fn a_child_without_retained_exit_shapes_does_not_claim_parent_paint() {
-        let ctx = Context::default();
+        let ctx = motion_context();
         let mut state = SceneMotion::default();
         let rect = Rect::from_min_size(egui::pos2(20., 20.), egui::vec2(20., 20.));
         for t in [0., 1., 2.] {
@@ -846,7 +851,7 @@ mod tests {
     }
     #[test]
     fn delayed_exit_arms_a_deadline_and_settled_capture_keeps_sibling_order() {
-        let ctx = Context::default();
+        let ctx = motion_context();
         let mut state = SceneMotion::default();
         for t in [0., 1., 2., 3.] {
             let mut out = ctx.run_ui(raw(t), |ui| {
@@ -904,7 +909,7 @@ mod tests {
     #[test]
     fn opacity_is_clamped_before_paint() {
         for (alpha, expected) in [(-0.5, 0), (1.5, 255)] {
-            let ctx = Context::default();
+            let ctx = motion_context();
             let mut out = ctx.run_ui(raw(0.), |ui| {
                 let start = ui.ctx().graphics_mut(|g| g.entry(ui.layer_id()).next_idx());
                 ui.painter().rect_filled(
@@ -934,7 +939,7 @@ mod tests {
     }
     #[test]
     fn painted_highlight_colours_follow_the_declared_curve() {
-        let ctx = Context::default();
+        let ctx = motion_context();
         let declaration = json!({"prop":"highlight","ms":100,"ease":{"kind":"linear"}});
         let mut sampled = egui::Color32::TRANSPARENT;
         for (t, colour) in [
@@ -992,7 +997,7 @@ mod tests {
         for popup in [false, true] {
             for mode in 0..3 {
                 let reduced = mode != 0;
-                let ctx = Context::default();
+                let ctx = motion_context();
                 install(&ctx);
                 if mode == 1 {
                     ctx.global_style_mut(|s| s.animation_time = 0.);
@@ -1084,7 +1089,7 @@ mod tests {
     #[test]
     fn tab_switch_retains_old_page_and_animates_new_page() {
         for reduced in [false, true] {
-            let ctx = Context::default();
+            let ctx = motion_context();
             if reduced {
                 ctx.global_style_mut(|s| s.animation_time = 0.);
             }
@@ -1111,7 +1116,7 @@ mod tests {
     }
     #[test]
     fn stagger_samples_two_children_on_library_timing() {
-        let ctx = Context::default();
+        let ctx = motion_context();
         let mut state = SceneMotion::default();
         let enter = json!({"preset":"up","stagger_ms":100});
         for t in [0., 0.2] {
@@ -1183,7 +1188,7 @@ mod tests {
     }
     #[test]
     fn exit_retains_and_then_frees_image_texture() {
-        let ctx = Context::default();
+        let ctx = motion_context();
         let mut state = SceneMotion::default();
         let image = ctx.load_texture(
             "exit-image",
@@ -1222,7 +1227,7 @@ mod tests {
     }
     #[test]
     fn settled_scene_arms_no_repaint() {
-        let ctx = Context::default();
+        let ctx = motion_context();
         install(&ctx);
         let mut state = SceneMotion::default();
         for t in [0., 1., 2., 3., 4.] {
@@ -1267,7 +1272,7 @@ mod tests {
     }
     #[test]
     fn entrance_samples_library_and_retains_exit_paint_only() {
-        let ctx = Context::default();
+        let ctx = motion_context();
         let mut state = SceneMotion::default();
         frame(&ctx, &mut state, 0., true);
         for t in [0.175, 0.35, 0.7] {
@@ -1303,7 +1308,7 @@ mod tests {
     }
     #[test]
     fn reduced_motion_clears_lifecycle_and_snaps_widget_curves() {
-        let ctx = Context::default();
+        let ctx = motion_context();
         let mut state = SceneMotion::default();
         ctx.global_style_mut(|s| s.animation_time = 0.);
         let shapes = frame(&ctx, &mut state, 0., true);
@@ -1329,7 +1334,7 @@ mod tests {
     }
     #[test]
     fn widget_curves_retarget_from_presented_value() {
-        let ctx = Context::default();
+        let ctx = motion_context();
         let id = egui::Id::unique("widget");
         let mut sample = 0.;
         for (t, target, expected) in [
@@ -1350,7 +1355,7 @@ mod tests {
     }
     #[test]
     fn bound_transition_retargets_without_a_jump() {
-        let ctx = Context::default();
+        let ctx = motion_context();
         let spec = json!({"prop":"opacity","ms":100,"ease":{"kind":"linear"}});
         let mut v = Value::Null;
         for (t, target, expected) in [

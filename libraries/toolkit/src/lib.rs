@@ -114,3 +114,7 @@ pub(crate) fn window_id(
 ) -> egui::Id {
     egui::Id::unique((viewport, name))
 }
+
+#[cfg(test)]
+#[path = "../tests/support/harness.rs"]
+mod test_harness;

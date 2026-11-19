@@ -41,8 +41,8 @@ fn graph(ui: &mut Ui, state: &mut State) {
 
 #[test]
 fn painted_history_and_hover_readout() {
-    let mut h = Harness::builder()
-        .with_context_setup(|ctx| toolkit::install(ctx, &toolkit::Theme::embedded()))
+    let mut h = test_harness::configure(Harness::builder())
+        .with_context_setup(|ctx| {test_harness::reduced_motion(ctx);toolkit::install(ctx, &toolkit::Theme::embedded());})
         .with_size(vec2(480.0, 240.0))
         .wgpu()
         .build_ui_state(
@@ -64,3 +64,6 @@ fn painted_history_and_hover_readout() {
     assert!(h.state().calls.get() >= 2);
     h.snapshot("graph_hover");
 }
+
+#[path = "support/harness.rs"]
+mod test_harness;

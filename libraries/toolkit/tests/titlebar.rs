@@ -45,9 +45,9 @@ fn minimum_window_keeps_menu_tail_and_captions_disjoint() {
         design::CaptionSide::Right,
     )
     .with_menus(design::MenuStyle::Bar, design::MenuSide::Left);
-    let mut h = Harness::builder()
+    let mut h = test_harness::configure(Harness::builder())
         .with_size(egui::vec2(320.0, 200.0))
-        .with_context_setup(move |ctx| toolkit::install(ctx, &theme))
+        .with_context_setup(move |ctx| {test_harness::reduced_motion(ctx); toolkit::install(ctx, &theme);})
         .build_ui(move |ui| {
             let viewport = ui.ctx().content_rect();
             let mut root = ui.new_child(egui::UiBuilder::new().max_rect(viewport));
@@ -96,7 +96,7 @@ fn registry() -> Registry<()> {
 fn harness() -> Harness<'static> {
     let registry = registry();
     let strings = Strings::new(FTL);
-    let mut harness = Harness::builder()
+    let mut harness = test_harness::configure(Harness::builder())
         .with_size(egui::vec2(640.0, 200.0))
         .build_ui(move |ui| {
             // build_ui adds an outer frame; window chrome uses the viewport root.
@@ -405,7 +405,7 @@ fn compact_menu_titlebars_on_host() {
             for side in MenuSide::ALL {
                 let registry = registry();
                 let strings = Strings::new(FTL);
-                let mut h = Harness::builder()
+                let mut h = test_harness::configure(Harness::builder())
                     .with_size(egui::vec2(640.0, 240.0))
                     .wgpu()
                     .build_ui(move |ui| {
@@ -524,7 +524,7 @@ fn title_band_layouts_and_hosted_actions_on_host() {
     ] {
         let registry = registry();
         let strings = Strings::new(FTL);
-        let mut h = Harness::builder()
+        let mut h = test_harness::configure(Harness::builder())
             .with_size(egui::vec2(640.0, 200.0))
             .wgpu()
             .build_ui(move |ui| {
@@ -580,3 +580,6 @@ fn on_mix(operation: impl FnOnce()) {
         operation,
     );
 }
+
+#[path = "support/harness.rs"]
+mod test_harness;

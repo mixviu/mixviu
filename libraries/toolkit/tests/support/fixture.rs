@@ -175,6 +175,7 @@ pub const CHROME_THEMES: [(&str, Scheme, Mode); 5] = [
 /// link), then an empty body and the resize edges, every chosen command
 /// executed.
 pub fn harness(builder: HarnessBuilder<Fixture>, theme: &Theme) -> Harness<'static, Fixture> {
+    let builder = crate::test_harness::configure(builder);
     let registry = registry();
     let strings = Strings::new(FTL);
     let dark = toolkit::chrome::dark_base(theme);

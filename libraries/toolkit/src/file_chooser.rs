@@ -1170,7 +1170,6 @@ fn modified_date(time: SystemTime) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    // Chooser fixtures settle shared popup tracks before Harness::run asserts idle.
     use super::*;
 
     #[test]
@@ -1262,7 +1261,7 @@ mod tests {
     fn save_opens_with_filename_focus_and_typing_then_enter_confirms() {
         use egui_kittest::kittest::Queryable;
         let dir = tempfile::tempdir().unwrap();
-        let mut h = egui_kittest::Harness::builder()
+        let mut h = crate::test_harness::configure(egui_kittest::Harness::builder())
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, state: &mut (FileChooser, Option<Outcome>)| {
@@ -1279,7 +1278,6 @@ mod tests {
         h.run_steps(5);
         assert!(h.get_by_label("File name").is_focused());
         h.event(egui::Event::Text("typed.md".into()));
-        h.run_steps(10);
         h.run();
         assert_eq!(h.state().0.name, "typed.md");
         // Let the real directory worker finish before submitting.
@@ -1288,19 +1286,16 @@ mod tests {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
-            h.run_steps(10);
             h.run();
         }
         assert!(h.state().0.pending.is_none());
         h.key_press(Key::Enter);
-        h.run_steps(10);
         h.run();
         for _ in 0..100 {
             if h.state().1.is_some() {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
-            h.run_steps(10);
             h.run();
         }
         assert_eq!(
@@ -1375,7 +1370,7 @@ mod tests {
 
     #[test]
     fn file_chooser_save_snapshot() {
-        let mut h = egui_kittest::Harness::builder()
+        let mut h = crate::test_harness::configure(egui_kittest::Harness::builder())
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, chooser: &mut FileChooser| {
@@ -1391,7 +1386,7 @@ mod tests {
     #[test]
     fn minimum_window_file_chooser_renders() {
         use egui_kittest::kittest::Queryable;
-        let mut h = egui_kittest::Harness::builder()
+        let mut h = crate::test_harness::configure(egui_kittest::Harness::builder())
             .with_size(egui::Vec2::from(crate::window::MIN_SIZE))
             .build_ui_state(
                 |ui, chooser: &mut FileChooser| {
@@ -1417,7 +1412,7 @@ mod tests {
     #[test]
     fn save_existing_file_waits_for_replace_and_cancel_keeps_chooser() {
         use egui_kittest::kittest::Queryable;
-        let mut h = egui_kittest::Harness::builder()
+        let mut h = crate::test_harness::configure(egui_kittest::Harness::builder())
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, state: &mut (FileChooser, Option<Outcome>)| {
@@ -1433,30 +1428,25 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         h.state_mut().0.pending = Some(rx);
         tx.send(Ok(Answer::Save(path.clone(), true))).unwrap();
-        h.run_steps(10);
         h.run();
         assert!(h.state().1.is_none());
         assert!(h.state().0.replace.is_some());
         h.key_press(Key::Escape);
-        h.run_steps(10);
         h.run();
         assert!(h.state().0.replace.is_none());
         assert!(h.state().1.is_none());
         let (tx, rx) = mpsc::channel();
         h.state_mut().0.pending = Some(rx);
         tx.send(Ok(Answer::Save(path.clone(), true))).unwrap();
-        h.run_steps(10);
         h.run();
         assert!(h.query_by_label("Replace").is_some());
         h.get_by_label("Replace").focus();
-        h.run_steps(10);
         h.run();
         assert!(
             h.get_by_label("Replace").is_focused(),
             "replacement button must own focus"
         );
         h.key_press(Key::Enter);
-        h.run_steps(10);
         h.run();
         assert_eq!(
             h.state().1,
@@ -1561,7 +1551,7 @@ mod tests {
 
         let mut chooser = FileChooser::new("/tmp", "Choose files", "Attach");
         chooser.started = true;
-        let mut h = Harness::builder()
+        let mut h = crate::test_harness::configure(Harness::builder())
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, chooser: &mut FileChooser| {
@@ -1572,7 +1562,6 @@ mod tests {
         crate::install(&h.ctx, &crate::Theme::embedded());
         h.run_steps(5);
         h.get_by_label("Path").focus();
-        h.run_steps(10);
         h.run();
         assert!(h.get_by_label("Path").is_focused());
         h.state_mut().path = "/tmp/still typing".into();
@@ -1584,7 +1573,6 @@ mod tests {
             capped: false,
         })))
         .unwrap();
-        h.run_steps(10);
         h.run();
         assert_eq!(h.state().directory, PathBuf::from("/tmp/listed"));
         assert_eq!(h.state().path, "/tmp/still typing");
@@ -1600,7 +1588,6 @@ mod tests {
             capped: false,
         })))
         .unwrap();
-        h.run_steps(10);
         h.run();
         assert_eq!(h.state().path, "/tmp/next");
     }
@@ -1611,7 +1598,7 @@ mod tests {
 
         let mut chooser = FileChooser::new("/tmp", "Choose files", "Attach");
         chooser.started = true;
-        let mut h = Harness::builder()
+        let mut h = crate::test_harness::configure(Harness::builder())
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, state: &mut (FileChooser, Option<Outcome>)| {
@@ -1633,7 +1620,6 @@ mod tests {
         h.state_mut().0.pending = Some(rx);
         let paths = vec![PathBuf::from("/tmp/report.txt")];
         tx.send(Ok(Answer::Picked(paths.clone()))).unwrap();
-        h.run_steps(10);
         h.run();
         assert_eq!(h.state().1, Some(Outcome::Picked(paths)));
     }
@@ -1647,7 +1633,7 @@ mod tests {
         chooser.started = true;
         chooser.entries = vec![entry("report.txt", false)];
         chooser.selection.all(&chooser.entries);
-        let mut h = Harness::builder()
+        let mut h = crate::test_harness::configure(Harness::builder())
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, state: &mut (FileChooser, Option<Outcome>)| {
@@ -1660,11 +1646,9 @@ mod tests {
         crate::install(&h.ctx, &crate::Theme::embedded());
         h.run_steps(5);
         h.get_by_label("Cancel").focus();
-        h.run_steps(10);
         h.run();
         assert!(h.get_by_label("Cancel").is_focused());
         h.key_press(Key::Enter);
-        h.run_steps(10);
         h.run();
         assert_eq!(h.state().1, Some(Outcome::Cancelled));
         assert!(h.state().0.pending.is_none(), "no pick was started");
@@ -1678,7 +1662,7 @@ mod tests {
         let mut chooser = FileChooser::new("/tmp", "Choose files", "Attach");
         chooser.started = true;
         chooser.entries = vec![entry("report.txt", false)];
-        let mut h = Harness::builder()
+        let mut h = crate::test_harness::configure(Harness::builder())
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, state: &mut (FileChooser, bool, Option<Outcome>)| {
@@ -1702,7 +1686,6 @@ mod tests {
         let _ = h.get_by_label("Attach");
         let _ = h.get_by_label("Cancel");
         h.key_press(Key::Escape);
-        h.run_steps(10);
         h.run();
         assert_eq!(h.state().2, Some(Outcome::Cancelled));
         assert!(!h.state().1);
