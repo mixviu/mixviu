@@ -138,29 +138,50 @@ fn reconcile_listed(lp: &Loop, s: &mut Session) {
     let locked = world::comp::session_lock::active(lp);
     if s.targets.iter().any(|t| t.listed_windows.is_some()) && locked != s.locked {
         s.locked = locked;
-        s.scene_markers.push((if locked { "locked" } else { "unlocked" }, Value::Null));
+        s.scene_markers
+            .push((if locked { "locked" } else { "unlocked" }, Value::Null));
         s.scene_epoch += 1;
     }
     for target in &mut s.targets {
         if let Some(listed) = &mut target.listed_windows {
             listed.retain(|window| {
                 // Membership is identity, independent of mapping, view or world.
-                let alive = lp.inner.comp.registry.get(surfaces::SurfaceId(window.id))
+                let alive = lp
+                    .inner
+                    .comp
+                    .registry
+                    .get(surfaces::SurfaceId(window.id))
                     .is_some_and(|row| row.generation() == window.generation);
-                let visible = alive && lp.inner.space_state().state.outputs()
-                    .find(|o| target.output.as_ref() == Some(&o.name()))
-                    .is_some_and(|o| world::comp::recording::on_output(lp, *window, o));
+                let visible = alive
+                    && lp
+                        .inner
+                        .space_state()
+                        .state
+                        .outputs()
+                        .find(|o| target.output.as_ref() == Some(&o.name()))
+                        .is_some_and(|o| world::comp::recording::on_output(lp, *window, o));
                 let was_outside = s.outside.contains(window);
-                let label = if !alive { Some("window_gone") }
-                    else if visible && was_outside { Some("window_returned") }
-                    else if !visible && !was_outside { Some("window_left") }
-                    else { None };
+                let label = if !alive {
+                    Some("window_gone")
+                } else if visible && was_outside {
+                    Some("window_returned")
+                } else if !visible && !was_outside {
+                    Some("window_left")
+                } else {
+                    None
+                };
                 if let Some(label) = label {
-                    s.scene_markers.push((label, json!({"id":window.id,"generation":window.generation})));
+                    s.scene_markers.push((
+                        label,
+                        json!({"id":window.id,"generation":window.generation}),
+                    ));
                     s.scene_epoch += 1;
                 }
-                if !alive || visible { s.outside.retain(|w| w != window); }
-                else if !was_outside { s.outside.push(*window); }
+                if !alive || visible {
+                    s.outside.retain(|w| w != window);
+                } else if !was_outside {
+                    s.outside.push(*window);
+                }
                 alive
             });
         }
@@ -190,13 +211,7 @@ fn flush_scene_markers(s: &mut Session) -> bool {
                 return false;
             }
         }
-        if recording
-            .marker(
-                label.into(),
-                data,
-            )
-            .is_err()
-        {
+        if recording.marker(label.into(), data).is_err() {
             return false;
         }
         s.scene_markers.remove(0);
@@ -305,7 +320,10 @@ pub fn command(
                         .registry
                         .resolve_window_target(window.id, Some(window.generation))
                     {
-                        answer(ControlReply::WindowTarget { id: window.id, error });
+                        answer(ControlReply::WindowTarget {
+                            id: window.id,
+                            error,
+                        });
                         return;
                     }
                 }
@@ -629,7 +647,7 @@ fn stop_stream(s: &mut Session, discard: bool) -> bool {
             schedule_stop(s, Instant::now() + Duration::from_millis(5));
             return false;
         }
-        s.failed = Some("window_gone marker admission timed out".into());
+        s.failed = Some("scene marker admission timed out".into());
         if let Some(r) = s.recording.as_mut() {
             r.error = s.failed.clone();
         }

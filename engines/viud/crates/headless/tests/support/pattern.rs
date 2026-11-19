@@ -380,7 +380,9 @@ impl Pattern {
         self._top.set_app_id(name.into());
         self.state.configured = false;
         self.surface.commit();
-        while !self.state.configured { self.queue.roundtrip(&mut self.state).unwrap(); }
+        while !self.state.configured {
+            self.queue.roundtrip(&mut self.state).unwrap();
+        }
         self.commit(true);
         self.queue.roundtrip(&mut self.state).unwrap();
     }

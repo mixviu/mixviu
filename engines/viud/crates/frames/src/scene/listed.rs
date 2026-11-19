@@ -25,7 +25,8 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
         let listed = spec.listed_windows.as_ref().expect("listed capture");
         let mut allowed = std::collections::HashSet::new();
         for row in state.inner.comp.registry.surface_rows() {
-            if !locked && row.role().managed_toplevel()
+            if !locked
+                && row.role().managed_toplevel()
                 && row.mapped()
                 && listed.iter().any(|w| {
                     w.id == row.id().0
@@ -39,11 +40,13 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
             }
         }
         let mut plan = Plan::new();
-        if !locked && world::comp::recording::cursor_on_output(
-            spec.cursor,
-            state.inner.cursor_output.as_deref(),
-            &key,
-        ) {
+        if !locked
+            && world::comp::recording::cursor_on_output(
+                spec.cursor,
+                state.inner.cursor_output.as_deref(),
+                &key,
+            )
+        {
             let allow_surface = match &state.state.seat.pointer_status {
                 smithay::input::pointer::CursorImageStatus::Surface(surface) => {
                     world::comp::recording::cursor_client_allowed(state, surface, listed, output)
@@ -86,11 +89,24 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
             smithay::utils::Rectangle::from_size(size),
         );
         if locked {
-            plan.push(layer::BACKGROUND, DrawNode::Solid(SolidColorRenderElement::new(
-                background_id(0), smithay::utils::Rectangle::from_size(size),
-                CommitCounter::default(), [0.0, 0.0, 0.0, 1.0], Kind::Unspecified)));
+            plan.push(
+                layer::BACKGROUND,
+                DrawNode::Solid(SolidColorRenderElement::new(
+                    background_id(0),
+                    smithay::utils::Rectangle::from_size(size),
+                    CommitCounter::default(),
+                    [0.0, 0.0, 0.0, 1.0],
+                    Kind::Unspecified,
+                )),
+            );
         }
-        for (index, region) in computed.regions.iter().enumerate().rev().filter(|_| !locked) {
+        for (index, region) in computed
+            .regions
+            .iter()
+            .enumerate()
+            .rev()
+            .filter(|_| !locked)
+        {
             state.inner.render_target = Some(world::state::RenderTarget {
                 slot: region.slot,
                 origin_logical: (
