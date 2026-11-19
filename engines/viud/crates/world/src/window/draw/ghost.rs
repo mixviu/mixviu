@@ -55,7 +55,7 @@ trait ScopedCache: Any {
 }
 impl<T: Texture + 'static> ScopedCache for Cache<T> {
     fn clear_output(&mut self, output: &str) {
-        self.retain(|(_, scope, _), _| scope != output);
+        self.retain(|(_, scope, _), _| comp_model::snapshot::output_key(scope) != output);
     }
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
@@ -77,7 +77,7 @@ pub fn workspace(output: &str, workspace: u32) {
             .is_some_and(|old| old != workspace)
     });
     if changed {
-        clear_output(output);
+        clear_output(&comp_model::snapshot::output_key(output));
     }
 }
 
@@ -94,13 +94,16 @@ pub fn capture_exit(uuid: Uuid) {
 }
 
 /// Invalidate only the changed output before composing its new workspace.
+/// `output` is the workspace/Bus key; cache and pane scopes are connector names.
 pub fn clear_output(output: &str) {
     CACHES.with(|caches| {
         for cache in caches.borrow_mut().values_mut() {
             cache.clear_output(output);
         }
     });
-    ORDERS.with(|orders| orders.borrow_mut().retain(|(scope, _), _| scope != output));
+    ORDERS.with(|orders| {
+        orders.borrow_mut().retain(|(scope, _), _| comp_model::snapshot::output_key(scope) != output)
+    });
     // Source leases are pruned against the surviving lifecycle exits on the
     // next draw, preserving active images on every other output.
 }
@@ -554,6 +557,22 @@ mod tests {
             let orders = orders.borrow();
             assert!(!orders.contains_key(&("a".into(), None)));
             assert_eq!(orders.get(&("b".into(), None)), Some(&vec![b]));
+        });
+        // The lifecycle service supplies Bus slugs, unlike the renderer's
+        // connector names. Invalidating A must not confuse raw connector o_a
+        // with the Bus key of connector a.
+        ORDERS.with(|orders| orders.borrow_mut().insert(("o_a".into(), None), vec![a]));
+        clear_output("o_a");
+        ORDERS.with(|orders| {
+            let orders = orders.borrow();
+            assert_eq!(orders.get(&("b".into(), None)), Some(&vec![b]));
+            assert_eq!(orders.get(&("o_a".into(), None)), Some(&vec![a]));
+        });
+        clear_output("o_b");
+        CACHES.with(|caches| {
+            let mut caches = caches.borrow_mut();
+            let cache = caches.get_mut(&TypeId::of::<TestTexture>()).unwrap().as_any_mut().downcast_mut::<Cache<TestTexture>>().unwrap();
+            assert!(cache.is_empty());
         });
         clear();
     }

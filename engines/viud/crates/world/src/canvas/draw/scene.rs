@@ -62,7 +62,7 @@ where
             .inner
             .comp
             .workspaces
-            .current_for(state.inner.render_output.as_deref()),
+            .current_for(state.inner.render_output.as_deref().map(comp_model::snapshot::output_key).as_deref()),
     );
     crate::window::draw::ghost::prune::<R>();
     let canvas_context = context(state, renderer, size);
