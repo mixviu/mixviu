@@ -27,6 +27,11 @@ Legacy curve names and four-number bezier arrays remain accepted; `curve`
 can also use these easing objects. On visual tracks it overrides every
 keyframe's easing. `min-jerk` remains geometry/pointer-only.
 
+The existing shared long-command pool admits up to 64 outstanding calls,
+allowing 32 simultaneous window runs with room for retargets and other waits.
+Ordinary reads and controls retain their separate admission pool. Saturation
+still returns `busy`.
+
 Tracks and preset are mutually exclusive; `to` may accompany either. The
 shared preset table is projected onto supported properties: `zoom` draws
 scale and opacity without its blur. A preset with no supported properties
