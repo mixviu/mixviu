@@ -219,6 +219,20 @@ fn control_identity_comes_from_the_scene_and_enabled_from_the_control() {
     );
 }
 
+#[test]
+fn focus_readback_uses_the_scene_id() {
+    let source = format!("---\nscene: 1\nname: test\ncitizen: test\n---\n```mix\n{}\n```\n",json!({
+        "root":{"widget":"column","children":["entry"]},
+        "entry":{"widget":"control","definition":{"id":"entry","kind":"field","label":"Entry","initial":""}}
+    }));
+    let mut view = SceneView::new(&source).unwrap();
+    let ctx = egui::Context::default();
+    draw(&mut view,&ctx,400.,200.);
+    view.request_focus("entry").unwrap();
+    draw(&mut view,&ctx,400.,200.);
+    assert_eq!(view.widget_rectangles(&json!({"ids":["entry"]})).unwrap()[0]["focused"],true);
+}
+
 #[cfg(feature = "test-support")]
 #[test]
 fn headless_bus_sweep() {

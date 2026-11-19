@@ -389,7 +389,9 @@ impl SceneView {
         self.geometry
             .extend(self.widgets.geometry.iter().map(|(id, r)| (id.clone(), *r)));
         self.widget_rects.truncate(self.widget_rect_count);
+        let focused = ui.ctx().data(|d| d.get_temp::<String>(egui::Id::unique("viu-focused-widget")));
         for row in &mut self.widget_rects {
+            row.focused = focused.as_deref() == Some(row.id.as_str());
             if let Some(rect) = self.geometry.get(&row.id) {
                 row.rect = *rect;
             }
@@ -950,12 +952,6 @@ impl SceneView {
             };
             if let Some(rect) = rect.filter(|r| r.is_finite()) {
                 let definition = node.ports.get("definition");
-                let control_id = definition.and_then(|v| v["id"].as_str());
-                let focused = control_id.is_some()
-                    && ui
-                        .ctx()
-                        .data(|d| d.get_temp::<String>(egui::Id::unique("viu-focused-widget")))
-                        .is_some_and(|focused| Some(focused.as_str()) == control_id);
                 let enabled = ui.is_enabled()
                     && node.ports.get("enabled") != Some(&Value::Bool(false))
                     && definition.is_none_or(|v| v["properties"]["enabled"] != false);
@@ -967,7 +963,6 @@ impl SceneView {
                     row.rect = rect;
                     row.clip = ui.clip_rect();
                     row.enabled = enabled;
-                    row.focused = focused || response.has_focus();
                 } else {
                     let row = crate::widget_rects::WidgetRect {
                         id: id.into(),
@@ -985,7 +980,7 @@ impl SceneView {
                         rect,
                         clip: ui.clip_rect(),
                         enabled,
-                        focused: focused || response.has_focus(),
+                        focused: false,
                     };
                     if self.widget_rect_count < self.widget_rects.len() {
                         self.widget_rects[self.widget_rect_count] = row;
