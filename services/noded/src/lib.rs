@@ -186,7 +186,9 @@ async fn async_main() -> Result<()> {
     if ready_rx.await.is_err() {
         return match noded_handle.await {
             Ok(Err(error)) => Err(error.context("Broker failed to start")),
-            Ok(Ok(())) => Err(anyhow::anyhow!("Broker exited without signalling readiness")),
+            Ok(Ok(())) => Err(anyhow::anyhow!(
+                "Broker exited without signalling readiness"
+            )),
             Err(error) => Err(anyhow::anyhow!("Broker startup task failed: {error}")),
         };
     }

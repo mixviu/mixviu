@@ -699,7 +699,13 @@ async fn mesh_incoming_loop(
             .address
             .map(|address| address.to_string())
             .unwrap_or_default();
-        if !mesh_frame_allowed(&msg, authenticated_peer.as_deref().unwrap_or(""), &node_for_mesh, &peer_address, frame_policy) {
+        if !mesh_frame_allowed(
+            &msg,
+            authenticated_peer.as_deref().unwrap_or(""),
+            &node_for_mesh,
+            &peer_address,
+            frame_policy,
+        ) {
             continue;
         }
         strip_principal(&mut msg);
