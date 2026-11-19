@@ -233,6 +233,8 @@ impl Widget for PushButton {
             return response;
         }
         let pressed = response.is_pointer_button_down_on();
+        let travel = crate::scene_motion::scalar(ui.ctx(), response.id.with("press"), if pressed {1.0} else {0.0}, 90.0, true);
+        let rect = rect.translate(egui::vec2(0.0,travel));
         let hovered = response.hovered();
         let radius = push_radius(&chrome, height);
         let corner = CornerRadius::same(radius.round() as u8);

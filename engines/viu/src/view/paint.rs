@@ -324,6 +324,8 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                 } else {
                     InteractionState::Resting
                 };
+                let travel = toolkit::scene_motion::scalar(ui.ctx(),id.with("press"),if response.is_pointer_button_down_on() {1.0} else {0.0},90.0,node.ports.get("motion") != Some(&serde_json::Value::Bool(false)));
+                let rect = rect.translate(vec2(0.0,travel));
                 if response.hovered()
                     && let Some(tip) = node
                         .ports
@@ -423,11 +425,8 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                     visuals.widgets.inactive.bg_fill
                 };
                 painter.rect_filled(switch, h / 2.0, track);
-                let knob_x = if value {
-                    switch.right() - h / 2.0
-                } else {
-                    switch.left() + h / 2.0
-                };
+                let slide = toolkit::scene_motion::scalar(ui.ctx(),id.with("slide"),if value {1.0} else {0.0},160.0,node.ports.get("motion") != Some(&serde_json::Value::Bool(false)));
+                let knob_x = egui::lerp(switch.left()+h/2.0..=switch.right()-h/2.0,slide);
                 painter.circle_filled(
                     pos2(knob_x, switch.center().y),
                     h / 2.0 - 2.0,

@@ -40,7 +40,8 @@ impl Entrance {
     }
     pub fn playback(&self, now: f64, index: u32, exit: bool) -> Preset {
         let o = self.options();
-        let mut p = crate::presets().into_iter().find(|p| p.name == o.preset).expect("validated scene preset");
+        static TABLE: std::sync::OnceLock<Vec<Preset>> = std::sync::OnceLock::new();
+        let mut p = TABLE.get_or_init(crate::presets).iter().find(|p| p.name == o.preset).expect("validated scene preset").clone();
         p.timing.beat_start = now;
         p.timing.delay = o.delay_ms / 1000.0;
         p.timing.stagger = o.stagger_ms / 1000.0;

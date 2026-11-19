@@ -20,8 +20,8 @@ struct NodeMotion {
     shapes: Vec<ClippedShape>,
     rect: Rect,
     parent: Option<String>,
-    values: BTreeMap<String, Tween>,
 }
+#[derive(Clone)]
 struct Tween { from: Vec<f64>, to: Vec<f64>, start: f64, spec: Transition }
 impl Tween {
     fn sample(&self, now: f64) -> Vec<f64> {
@@ -48,7 +48,7 @@ impl SceneMotion {
             seen: true,
             entrance: enter.and_then(|v| serde_json::from_value::<Entrance>(v.clone()).ok()).map(|e|e.playback(now,0,false)),
             exit: None, leaving: None, shapes: Vec::new(), rect: Rect::NOTHING,
-            parent: parent.map(str::to_owned), values: BTreeMap::new(),
+            parent: parent.map(str::to_owned),
         });
         n.seen = true;
         n.leaving = None;
@@ -94,6 +94,49 @@ impl SceneMotion {
             true
         });
     }
+}
+
+/// Animate an authored visual port; identity is separate from node lifecycle.
+pub fn value(ctx: &Context, key: &str, prop: &str, target: &Value, declaration: Option<&Value>, enabled: bool) -> Value {
+    let Some(spec) = declaration.and_then(|v|motion::scene::transitions(v).ok()).and_then(|ts|ts.into_iter().find(|t|t.prop==prop)) else { return target.clone(); };
+    let colour = matches!(prop,"color"|"background"|"hover"|"highlight");
+    let decode = |v:&Value| -> Option<Vec<f64>> {
+        if colour {
+            let s=v.as_str()?.strip_prefix('#')?;
+            if !s.is_ascii() || ![6,8].contains(&s.len()) { return None; }
+            let mut cs=(0..s.len()).step_by(2).map(|i|u8::from_str_radix(&s[i..i+2],16).ok().map(f64::from)).collect::<Option<Vec<_>>>()?;
+            if cs.len()==3 {cs.push(255.0);}
+            Some(cs)
+        } else if let Some(a)=v.as_array() { a.iter().map(Value::as_f64).collect() }
+        else { Some(vec![v.as_f64()?]) }
+    };
+    let Some(to)=decode(target) else { return target.clone(); };
+    let now=ctx.input(|i|i.time);
+    let id=egui::Id::unique(("scene-transition",key,prop));
+    let reduced=ctx.style().animation_time==0.0 || !enabled;
+    let (sample,active)=ctx.data_mut(|d| {
+        let mut t=d.get_temp::<Tween>(id).unwrap_or(Tween { from:to.clone(),to:to.clone(),start:now,spec:spec.clone() });
+        if t.to!=to { t=Tween {from:t.sample(now),to:to.clone(),start:now,spec}; }
+        if reduced {t.from=to.clone();t.to=to;}
+        let sample=t.sample(now);
+        let active=!reduced && t.from!=t.to && now<t.start+t.spec.ms/1000.0;
+        d.insert_temp(id,t);
+        (sample,active)
+    });
+    if active {ctx.request_repaint();}
+    if colour { Value::String(format!("#{:02x}{:02x}{:02x}{:02x}",sample[0].clamp(0.,255.).round() as u8,sample[1].clamp(0.,255.).round() as u8,sample[2].clamp(0.,255.).round() as u8,sample[3].clamp(0.,255.).round() as u8)) }
+    else if target.is_array() {serde_json::json!(sample)} else {serde_json::json!(sample[0])}
+}
+
+pub fn visual(ui: &Ui, start: ShapeIdx, rect: Rect, opacity: f64, offset: [f64;2]) {
+    if opacity==1.0 && offset==[0.0,0.0] {return;}
+    let mut values=motion::Values::default();
+    values.set(Property::Opacity,opacity);
+    values.set(Property::Tx,offset[0]);values.set(Property::Ty,offset[1]);
+    ui.ctx().graphics_mut(|g| {
+        let list=g.entry(ui.layer_id());let end=list.next_idx();
+        for i in start.0..end.0 {list.mutate_shape(ShapeIdx(i),|s|transform(s,rect,&values));}
+    });
 }
 fn transform(shape: &mut ClippedShape, rect: Rect, values: &motion::Values) {
     let scale = values.get(Property::Scale) as f32;
