@@ -121,6 +121,7 @@ fn clipping_hidden_nodes_and_filter_validation() {
     ctx.run_ui(egui::RawInput {
         screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(400.,200.))),
         events: vec![egui::Event::PointerMoved(egui::pos2(30.,40.)),egui::Event::MouseWheel {
+            source: egui::MouseWheelSource::Unknown, phase: egui::TouchPhase::Move,
             unit: egui::MouseWheelUnit::Point, delta:egui::vec2(0.,-900.), modifiers:Default::default()
         }], ..Default::default()
     }, |ui| { view.show(ui); }).drop_without_applying_deltas();
@@ -162,6 +163,22 @@ fn rectangle_frame_cost() {
     }
 }
 
+#[test]
+fn control_identity_comes_from_the_scene_and_enabled_from_the_control() {
+    let source = format!("---\nscene: 1\nname: test\ncitizen: test\n---\n```mix\n{}\n```\n",json!({
+        "root":{"widget":"column","children":["scene-button"]},
+        "scene-button":{"widget":"control","definition":{"id":"internal-button","kind":"button","label":"Save","initial":"","properties":{"enabled":false}}}
+    }));
+    let mut view = SceneView::new(&source).unwrap();
+    let ctx = egui::Context::default();
+    draw(&mut view,&ctx,400.,200.);
+    let rows = view.widget_rectangles(&json!({"kinds":["button"]})).unwrap();
+    assert_eq!(rows.as_array().unwrap().len(),1);
+    assert_eq!(rows[0]["id"],"scene-button");
+    assert_eq!(rows[0]["enabled"],false);
+    assert_eq!(view.widget_rectangles(&json!({"ids":["internal-button"]})).unwrap(),json!([]));
+}
+
 #[cfg(feature = "test-support")]
 #[test]
 fn headless_bus_sweep() {
@@ -181,7 +198,11 @@ fn headless_bus_sweep() {
             &std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../apps")
                 .join(app),
-            &["--headless".into(), "--noded-url".into(), broker.url.clone()],
+            &[
+                "--headless".into(),
+                "--noded-url".into(),
+                broker.url.clone(),
+            ],
         )
         .unwrap();
         bundle.manifest.bus_url = Some(broker.url.clone());

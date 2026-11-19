@@ -358,7 +358,8 @@ impl SceneView {
     }
     fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
         self.widget_rects.clear();
-        ui.ctx().data_mut(|d| d.remove::<String>(egui::Id::unique("viu-focused-widget")));
+        ui.ctx()
+            .data_mut(|d| d.remove::<String>(egui::Id::unique("viu-focused-widget")));
         let mut events = Vec::new();
         self.regions.clear();
         self.geometry.clear();

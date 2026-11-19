@@ -347,8 +347,11 @@ impl Host {
                     })
                 });
                 let Some(window) = window else {
-                    let _ = r.reply.send((10, json!({"error_code":"WINDOW_UNAVAILABLE",
-                        "message":"No unique mapped window for this process; retry after mapping"})));
+                    let _ = r.reply.send((
+                        10,
+                        json!({"error_code":"WINDOW_UNAVAILABLE",
+                        "message":"No unique mapped window for this process; retry after mapping"}),
+                    ));
                     return;
                 };
                 let mut body = body;
