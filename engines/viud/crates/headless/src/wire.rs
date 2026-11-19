@@ -167,18 +167,6 @@ pub fn install(
         Some((0, 0).into()),
     );
     output.set_preferred(mode);
-    #[cfg(feature = "test-support")]
-    if std::env::var_os("XDG_RUNTIME_DIR")
-        .and_then(|root| std::fs::read(std::path::PathBuf::from(root).join("preferences.json")).ok())
-        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-        .is_some_and(|prefs| prefs["_test_two_outputs"] == true)
-    {
-        let extra = virtual_output(1);
-        extra.change_current_state(Some(mode), Some(Transform::Normal), Some(Scale::Fractional(options.scale)), Some((mode.size.w, 0).into()));
-        extra.set_preferred(mode);
-        scenegraph::display::output::register(state, &extra);
-        state.inner.map_output_everywhere(&extra, (mode.size.w, 0).into());
-    }
     let mut contract = Contract {
         output: output.clone(),
         mode,
@@ -187,7 +175,39 @@ pub fn install(
     let display_handle = state.state.output.display_handle.clone();
     let damage_tracker =
         scenegraph::state::lifecycle::initialize(state, &output, &display_handle, &mut contract);
+    #[cfg(feature = "test-support")]
+    if std::env::var_os("XDG_RUNTIME_DIR")
+        .is_some_and(|root| std::path::PathBuf::from(root).join("two-outputs").exists())
+    {
+        let extra = virtual_output(1);
+        extra.change_current_state(
+            Some(mode),
+            Some(Transform::Normal),
+            Some(Scale::Fractional(options.scale)),
+            Some((mode.size.w, 0).into()),
+        );
+        extra.set_preferred(mode);
+        scenegraph::display::output::register(state, &extra);
+        state.inner.comp.workspaces.count = 2;
+        state.inner.comp.workspaces.current.insert("headless-1".into(), 2);
+        state
+            .inner
+            .map_output_everywhere(&extra, (mode.size.w, 0).into());
+    }
+
     // This runs before the event loop serves any client.
+    #[cfg(feature = "test-support")]
+    if std::env::var_os("XDG_RUNTIME_DIR")
+        .is_some_and(|root| std::path::PathBuf::from(root).join("two-panes").exists())
+    {
+        use world::viewport::state::{Axis, Slot, Viewport};
+        let views = state.inner.output_views_mut();
+        views.ensure("headless-0");
+        views.views_mut("headless-0").root = Viewport::Slots {
+            axis: Axis::Vertical,
+            slots: (0..2).map(|id| Slot { id, camera: Default::default(), content: None, weight: 1.0 }).collect(),
+        };
+    }
     human_seat_without_sources(&mut state.state.seat.seat);
     state.inner.comp.injection.backend = world::comp::injection::BackendInput::Headless;
     // The loop pins the camera to identity before input or drawing. Put the

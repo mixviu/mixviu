@@ -211,6 +211,12 @@ fn spawn_options(options: Options<'_>) -> Process {
     let settings = root.join("settings.json");
     fs::write(&settings, serde_json::to_vec(&config).unwrap()).unwrap();
     if let Some(preferences) = preferences {
+        if preferences["_test_two_outputs"] == true {
+            fs::write(root.join("two-outputs"), b"fixture").unwrap();
+        }
+        if preferences["_test_two_panes"] == true {
+            fs::write(root.join("two-panes"), b"fixture").unwrap();
+        }
         fs::write(
             root.join("preferences.json"),
             serde_json::to_vec(&preferences).unwrap(),
