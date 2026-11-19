@@ -669,10 +669,16 @@ async fn mesh_incoming_loop(
             );
             continue;
         }
+        if inbound.message.is_empty_message() {
+            continue;
+        }
         let authenticated_peer = inbound.context.mesh_peer().map(|(node, _)| node.to_owned());
         if authenticated_peer.is_none() {
             frame_refused(
-                if matches!(authority_for_mesh.load().posture, crate::authority::Posture::Verified(_)) {
+                if matches!(
+                    authority_for_mesh.load().posture,
+                    crate::authority::Posture::Verified(_)
+                ) {
                     "peer-not-admitted"
                 } else {
                     "no-identity-source"
@@ -688,13 +694,12 @@ async fn mesh_incoming_loop(
         let peer = inbound.peer;
         let connection_generation = inbound.connection_generation;
         let mut msg = inbound.message;
-        let peer_address = inbound.context.address
+        let peer_address = inbound
+            .context
+            .address
             .map(|address| address.to_string())
             .unwrap_or_default();
-        if msg.is_empty_message() {
-            continue;
-        }
-        if !mesh_frame_allowed(&msg, &peer, &node_for_mesh, &peer_address, frame_policy) {
+        if !mesh_frame_allowed(&msg, authenticated_peer.as_deref().unwrap_or(""), &node_for_mesh, &peer_address, frame_policy) {
             continue;
         }
         strip_principal(&mut msg);
@@ -2436,9 +2441,10 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     &bus_msg,
                     &state.node_name,
                     &load_d2_seed(&d2_seed_path()),
-                ) && let Ok(mut response) = bus::parse(&wire) {
-                        response.set("command", "noded.identity.response");
-                        let _ = tx.try_send(response.to_wire());
+                ) && let Ok(mut response) = bus::parse(&wire)
+                {
+                    response.set("command", "noded.identity.response");
+                    let _ = tx.try_send(response.to_wire());
                 }
             }
             continue;

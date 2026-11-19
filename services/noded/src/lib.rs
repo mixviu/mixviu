@@ -184,7 +184,11 @@ async fn async_main() -> Result<()> {
 
     // Wait for the broker listener to be bound
     if ready_rx.await.is_err() {
-        anyhow::bail!("Broker failed to start");
+        return match noded_handle.await {
+            Ok(Err(error)) => Err(error.context("Broker failed to start")),
+            Ok(Ok(())) => Err(anyhow::anyhow!("Broker exited without signalling readiness")),
+            Err(error) => Err(anyhow::anyhow!("Broker startup task failed: {error}")),
+        };
     }
 
     // Spawn client modules
