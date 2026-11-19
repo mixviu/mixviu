@@ -167,6 +167,18 @@ pub fn install(
         Some((0, 0).into()),
     );
     output.set_preferred(mode);
+    #[cfg(feature = "test-support")]
+    if std::env::var_os("XDG_RUNTIME_DIR")
+        .and_then(|root| std::fs::read(std::path::PathBuf::from(root).join("preferences.json")).ok())
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .is_some_and(|prefs| prefs["_test_two_outputs"] == true)
+    {
+        let extra = virtual_output(1);
+        extra.change_current_state(Some(mode), Some(Transform::Normal), Some(Scale::Fractional(options.scale)), Some((mode.size.w, 0).into()));
+        extra.set_preferred(mode);
+        scenegraph::display::output::register(state, &extra);
+        state.inner.map_output_everywhere(&extra, (mode.size.w, 0).into());
+    }
     let mut contract = Contract {
         output: output.clone(),
         mode,

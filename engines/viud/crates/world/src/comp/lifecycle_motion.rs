@@ -327,7 +327,9 @@ pub fn service(lp: &mut Loop) -> bool {
                 && let Some(window) = windows.get(uuid)
             {
                 {
-                    let cell = window.user_data().get_or_insert(|| std::sync::Mutex::new(comp_model::request::VisualAttributes::default()));
+                    let cell = window.user_data().get_or_insert(|| {
+                        std::sync::Mutex::new(comp_model::request::VisualAttributes::default())
+                    });
                     cell.lock().unwrap().scale.center = true;
                 }
                 let base = crate::window::draw::frame::scene::visual_of(window);

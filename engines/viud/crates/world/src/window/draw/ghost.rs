@@ -81,11 +81,19 @@ pub fn begin_pane(output: &str, pane: Option<u64>) {
 }
 
 fn pane_frame(output: &str, pane: Option<u64>) -> u64 {
-    PANE_FRAMES.with(|frames| frames.borrow().get(&(output.to_owned(), pane)).copied().unwrap_or(0))
+    PANE_FRAMES.with(|frames| {
+        frames
+            .borrow()
+            .get(&(output.to_owned(), pane))
+            .copied()
+            .unwrap_or(0)
+    })
 }
 
 fn admit_snapshot(stamp: &mut u64, frame: u64) -> bool {
-    if *stamp != frame && stamp.wrapping_add(1) != frame { return false; }
+    if *stamp != frame && stamp.wrapping_add(1) != frame {
+        return false;
+    }
     *stamp = frame;
     true
 }
@@ -645,7 +653,9 @@ mod frame_scope_tests {
     #[test]
     fn consecutive_exit_frames_remain_admitted() {
         let mut stamp = 10;
-        for frame in 11..30 { assert!(admit_snapshot(&mut stamp, frame)); }
+        for frame in 11..30 {
+            assert!(admit_snapshot(&mut stamp, frame));
+        }
         assert!(!admit_snapshot(&mut stamp, 31));
     }
 }

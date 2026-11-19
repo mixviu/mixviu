@@ -657,7 +657,7 @@ impl Bus {
             {
                 if policy_host::motion::visual_replaced(lp, *id, *generation, run.started) {
                     policy_host::motion::cancel_geometry(lp, *id, *generation);
-                    let by = policy_host::control::motion_window(lp, *id, *generation).map(|(_, window)| world::comp::animation::replacement_cause(&window)).unwrap_or("lifecycle");
+                    let by = policy_host::motion::replacement_cause(lp, *id, *generation);
                     run.reply.send(ControlReply::Body(
                         json!({"version":1,"status":"superseded","by":by}),
                     ));
@@ -944,22 +944,27 @@ impl Engine<'_> {
                 visual,
             } => {
                 if let Some(anchor) = scale_anchor {
-                    if let Ok(mut value) = policy_host::control::window_visual(self.lp, id, generation) {
+                    if let Ok(mut value) =
+                        policy_host::control::window_visual(self.lp, id, generation)
+                    {
                         value.scale.anchor = anchor.anchor;
                         value.scale.center = anchor.center;
-                        let _ = policy_host::control::window_visual_step(self.lp, id, generation, value);
+                        let _ = policy_host::control::window_visual_step(
+                            self.lp, id, generation, value,
+                        );
                     }
                 }
                 (
-                MotionTarget::Window {
-                    id,
-                    generation,
-                    to,
-                    duration,
-                    easing,
-                },
-                Some(visual),
-            )},
+                    MotionTarget::Window {
+                        id,
+                        generation,
+                        to,
+                        duration,
+                        easing,
+                    },
+                    Some(visual),
+                )
+            }
             target => (target, None),
         };
         let (kind, step) = match target {

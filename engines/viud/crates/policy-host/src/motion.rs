@@ -87,6 +87,12 @@ pub fn visual_replaced(
         .is_ok_and(|(_, window)| world::comp::animation::started(&window) != Some(started))
 }
 
+pub fn replacement_cause(lp: &Loop, id: u64, generation: u64) -> &'static str {
+    control::motion_window(lp, id, generation)
+        .map(|(_, window)| world::comp::animation::replacement_cause(&window))
+        .unwrap_or("lifecycle")
+}
+
 pub fn cancel_geometry(lp: &mut Loop, id: u64, generation: u64) {
     if let Ok((_, window)) = control::motion_window(lp, id, generation) {
         world::comp::animation_geometry::cancel(&window);

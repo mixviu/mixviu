@@ -313,9 +313,18 @@ pub fn window_scale_value(value: &Value) -> Option<WindowScale> {
     }
     let factor = object.get("factor")?.as_f64()?;
     let center = object.get("anchor")?.as_str() == Some("center");
-    let anchor = if center { LogicalOffset::default() } else { logical_offset_value(object.get("anchor")?)? };
-    (factor.is_finite() && (factor == 0.0 || (1e-6..=64.0).contains(&factor)))
-        .then_some(WindowScale { factor, anchor, center })
+    let anchor = if center {
+        LogicalOffset::default()
+    } else {
+        logical_offset_value(object.get("anchor")?)?
+    };
+    (factor.is_finite() && (factor == 0.0 || (1e-6..=64.0).contains(&factor))).then_some(
+        WindowScale {
+            factor,
+            anchor,
+            center,
+        },
+    )
 }
 
 fn visual_arg<T>(
@@ -2334,7 +2343,14 @@ mod tests;
 mod center_anchor_tests {
     #[test]
     fn accepts_center_without_weakening_coordinate_validation() {
-        assert!(super::window_scale_value(&serde_json::json!({"factor":0.5,"anchor":"center"})).unwrap().center);
-        assert!(super::window_scale_value(&serde_json::json!({"factor":0.5,"anchor":"unknown"})).is_none());
+        assert!(
+            super::window_scale_value(&serde_json::json!({"factor":0.5,"anchor":"center"}))
+                .unwrap()
+                .center
+        );
+        assert!(
+            super::window_scale_value(&serde_json::json!({"factor":0.5,"anchor":"unknown"}))
+                .is_none()
+        );
     }
 }

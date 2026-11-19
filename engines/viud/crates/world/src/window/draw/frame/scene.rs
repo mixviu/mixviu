@@ -998,7 +998,10 @@ pub fn visual_of(window: &Window) -> comp_model::request::VisualAttributes {
         .unwrap_or_default();
     if base.scale.center {
         let size = window.geometry().size;
-        base.scale.anchor = comp_model::request::LogicalOffset { x: f64::from(size.w) / 2.0, y: f64::from(size.h) / 2.0 };
+        base.scale.anchor = comp_model::request::LogicalOffset {
+            x: f64::from(size.w) / 2.0,
+            y: f64::from(size.h) / 2.0,
+        };
     }
     crate::comp::animation::sample(window, base, crate::comp::animation::frame_time())
 }
