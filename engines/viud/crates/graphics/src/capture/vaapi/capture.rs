@@ -42,7 +42,8 @@ impl CaptureRenderDevice for smithay::backend::renderer::gles::GlesRenderer {
 }
 
 pub fn renderer_render_node(renderer: &impl CaptureRenderDevice) -> Result<String, String> {
-    renderer.render_device_path()
+    renderer
+        .render_device_path()
         .map(|path| path.to_string_lossy().into_owned())
         .map_err(|error| format!("capture render device: {error}"))
 }
