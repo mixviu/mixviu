@@ -102,12 +102,28 @@ impl Pattern {
         self.conn.flush().unwrap();
         surface
     }
-    pub fn drag_icon(&mut self, colour: u32) -> (WlSurface, wayland_client::protocol::wl_data_device::WlDataDevice) {
+    pub fn drag_icon(
+        &mut self,
+        colour: u32,
+    ) -> (
+        WlSurface,
+        wayland_client::protocol::wl_data_device::WlDataDevice,
+    ) {
         use wayland_client::protocol::wl_data_device_manager::WlDataDeviceManager;
-        let name = self.state.globals.iter().find(|(_, i, _)| i == "wl_data_device_manager").unwrap().0;
+        let name = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, i, _)| i == "wl_data_device_manager")
+            .unwrap()
+            .0;
         let qh = self.queue.handle();
         let manager: WlDataDeviceManager = self.registry.bind(name, 3, &qh, ());
-        let (serial, seat) = self.state.last_press.clone().expect("implicit pointer grab");
+        let (serial, seat) = self
+            .state
+            .last_press
+            .clone()
+            .expect("implicit pointer grab");
         let device = manager.get_data_device(&seat, &qh, ());
         let icon = self.compositor.create_surface(&qh, ());
         let buffer = buffer(&self.shm, &qh, 32, 32, |_, _| colour);

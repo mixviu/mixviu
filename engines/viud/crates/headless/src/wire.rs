@@ -181,12 +181,24 @@ pub fn install(
     if std::env::var_os("MIX_TEST_RECORD_FIXTURE").is_some() {
         state.state.seat.seat.add_pointer();
         let secondary = virtual_output(1);
-        secondary.change_current_state(Some(mode), Some(Transform::Normal), Some(Scale::Fractional(options.scale)), Some((1920, 0).into()));
+        secondary.change_current_state(
+            Some(mode),
+            Some(Transform::Normal),
+            Some(Scale::Fractional(options.scale)),
+            Some((1920, 0).into()),
+        );
         secondary.create_global::<dispatcher::state::Dispatch>(&display_handle);
-        state.inner.map_output_everywhere(&secondary, (1920, 0).into());
+        state
+            .inner
+            .map_output_everywhere(&secondary, (1920, 0).into());
         let views = state.inner.output_views_mut();
         views.ensure(&world::state::output_key(&secondary));
-        views.views_mut(&world::state::output_key(&secondary)).focus_camera_mut().transform.position.x = 1920.0;
+        views
+            .views_mut(&world::state::output_key(&secondary))
+            .focus_camera_mut()
+            .transform
+            .position
+            .x = 1920.0;
     }
     state.inner.comp.injection.backend = world::comp::injection::BackendInput::Headless;
     // The loop pins the camera to identity before input or drawing. Put the

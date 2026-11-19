@@ -69,6 +69,8 @@ struct Session {
     path: String,
     targets: Vec<CaptureFrameSpec>,
     gone_markers: Vec<comp_model::capture::CaptureWindow>,
+    membership_epoch: u64,
+    captured_membership: u64,
     fps: u32,
     encoder: String,
     probe: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
@@ -145,6 +147,7 @@ fn reconcile_listed(lp: &Loop, s: &mut Session) {
                     true
                 } else {
                     s.gone_markers.push(*window);
+                    s.membership_epoch += 1;
                     false
                 }
             });
@@ -153,6 +156,7 @@ fn reconcile_listed(lp: &Loop, s: &mut Session) {
     flush_gone_markers(s);
 }
 fn flush_gone_markers(s: &mut Session) -> bool {
+    if s.membership_epoch != s.captured_membership { return false; }
     // A previous GPU answer must enter the writer queue before its marker.
     // The writer's FIFO then persists the old frame before this observation.
     if s.pending { return s.gone_markers.is_empty(); }
@@ -363,6 +367,8 @@ pub fn command(
             path,
             targets,
             gone_markers: Vec::new(),
+            membership_epoch: 0,
+            captured_membership: 0,
             fps,
             encoder,
             probe,
@@ -755,7 +761,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if (!s.pending || Instant::now() >= until) && stop_stream(&mut s, false) {
                 event(&s, "finishing");
             }
-            return;
+            if s.membership_epoch == s.captured_membership || s.failed.is_some() { return; }
         }
         let now_us = match clock {
             Ok(now) => now,
@@ -772,7 +778,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if stop_stream(&mut s, false) {
                 event(&s, "finishing");
             }
-            return;
+            if s.membership_epoch == s.captured_membership || s.failed.is_some() { return; }
         }
     }
     let signature = {
@@ -901,6 +907,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     s.deferred_signature = None;
     s.pending = true;
     let targets = s.targets.clone();
+    let capture_epoch = s.membership_epoch;
     let counter = s.pixel_counter;
     let Some(next_counter) = counter.checked_add(1) else {
         drop(s);
@@ -918,6 +925,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         target.force_capture = session.borrow().recording.is_none();
         let got = frames.clone();
         let session = session.clone();
+        let request_session = session.clone();
         screencopy::file::raw_answer(token.clone(), move |result| {
             {
                 let s = session.borrow();
@@ -1023,6 +1031,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 fail(&session, &error);
                 return;
             }
+            s.captured_membership = capture_epoch;
             if s.start.is_none() {
                 let reply = s.recording.as_ref().unwrap().started();
                 s.start = Some(reply.clone());
@@ -1038,7 +1047,9 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         });
         crate::capture::start(lp, target, Instant::now(), move |reply| {
             if !matches!(reply, ControlReply::Body(_)) {
+                let error = format!("capture: {:?}", reply.clone().into_wire());
                 screencopy::file::raw_fail(&token, reply);
+                if request_session.borrow().pending { fail(&request_session, &error); }
             }
         });
     }
@@ -1076,6 +1087,8 @@ mod tests {
             path,
             targets: vec![],
             gone_markers: Vec::new(),
+            membership_epoch: 0,
+            captured_membership: 0,
             fps: 30,
             encoder: "vfl".into(),
             probe: None,
@@ -1554,6 +1567,8 @@ mod tests {
             path: "/tmp/pending-record-unit.vfl".into(),
             targets: vec![],
             gone_markers: Vec::new(),
+            membership_epoch: 0,
+            captured_membership: 0,
             fps: 30,
             encoder: "vfl".into(),
             probe: None,

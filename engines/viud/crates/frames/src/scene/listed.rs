@@ -27,9 +27,11 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
         for row in state.inner.comp.registry.surface_rows() {
             if row.role().managed_toplevel()
                 && row.mapped()
-                && listed
-                    .iter()
-                    .any(|w| w.id == row.id().0 && w.generation == row.generation() && world::comp::recording::on_output(state, *w, output))
+                && listed.iter().any(|w| {
+                    w.id == row.id().0
+                        && w.generation == row.generation()
+                        && world::comp::recording::on_output(state, *w, output)
+                })
             {
                 if let Some(uuid) = state.inner.comp.registry.uuid_for(row.id()) {
                     allowed.insert(uuid);
@@ -37,12 +39,23 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
             }
         }
         let mut plan = Plan::new();
-        if world::comp::recording::cursor_on_output(spec.cursor, state.inner.cursor_output.as_deref(), &key) {
+        if world::comp::recording::cursor_on_output(
+            spec.cursor,
+            state.inner.cursor_output.as_deref(),
+            &key,
+        ) {
             let allow_surface = match &state.state.seat.pointer_status {
-                smithay::input::pointer::CursorImageStatus::Surface(surface) => world::comp::recording::cursor_client_allowed(state, surface, listed, output),
+                smithay::input::pointer::CursorImageStatus::Surface(surface) => {
+                    world::comp::recording::cursor_client_allowed(state, surface, listed, output)
+                }
                 _ => false,
             };
-            plan.extend(layer::POINTER, seat::pointer::draw::scene::recording_element(state, renderer, size, allow_surface).into_iter().map(DrawNode::Pointer));
+            plan.extend(
+                layer::POINTER,
+                seat::pointer::draw::scene::recording_element(state, renderer, size, allow_surface)
+                    .into_iter()
+                    .map(DrawNode::Pointer),
+            );
         }
         // Only the backdrop's Background roots, never panels or their popups.
         // Namespace is routing metadata, not a peer-authorisation claim.
@@ -131,7 +144,9 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
         }
         state.inner.render_target = old_target;
         let (elements, _) = plan.lower(renderer);
-        let session_key = spec.take_id.as_deref().ok_or_else(|| screencopy::file::capture_failed("listed capture has no take identity"))?;
+        let session_key = spec.take_id.as_deref().ok_or_else(|| {
+            screencopy::file::capture_failed("listed capture has no take identity")
+        })?;
         let changed = TRACKER
             .with_borrow_mut(|cache| {
                 if cache.as_ref().is_none_or(|(key, _)| key != session_key) {

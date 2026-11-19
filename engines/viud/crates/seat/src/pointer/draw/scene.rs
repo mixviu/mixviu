@@ -22,13 +22,21 @@ where
 }
 
 /// Recording owns the artwork policy; drag icons are never cursor artwork.
-pub fn recording_element<R>(state: &mut Loop, renderer: &mut R, size: Size<i32, Physical>, allow_client_surface: bool) -> Vec<PointerRenderElement<R>>
-where R: smithay::backend::renderer::Renderer + ImportAll + ImportMem,
-      R::TextureId: Texture + Clone + Send + 'static,
+pub fn recording_element<R>(
+    state: &mut Loop,
+    renderer: &mut R,
+    size: Size<i32, Physical>,
+    allow_client_surface: bool,
+) -> Vec<PointerRenderElement<R>>
+where
+    R: smithay::backend::renderer::Renderer + ImportAll + ImportMem,
+    R::TextureId: Texture + Clone + Send + 'static,
 {
     use smithay::input::pointer::CursorImageStatus;
     let status = match &state.state.seat.pointer_status {
-        CursorImageStatus::Surface(_) if !allow_client_surface => CursorImageStatus::default_named(),
+        CursorImageStatus::Surface(_) if !allow_client_surface => {
+            CursorImageStatus::default_named()
+        }
         other => other.clone(),
     };
     let previous = state.inner.pointer_mut().element.status.clone();
@@ -37,9 +45,16 @@ where R: smithay::backend::renderer::Renderer + ImportAll + ImportMem,
     elements
 }
 
-fn element_inner<R>(state: &mut Loop, renderer: &mut R, _size: Size<i32, Physical>, cursor_override: Option<smithay::input::pointer::CursorImageStatus>, include_drag: bool) -> Vec<PointerRenderElement<R>>
-where R: smithay::backend::renderer::Renderer + ImportAll + ImportMem,
-      R::TextureId: Texture + Clone + Send + 'static,
+fn element_inner<R>(
+    state: &mut Loop,
+    renderer: &mut R,
+    _size: Size<i32, Physical>,
+    cursor_override: Option<smithay::input::pointer::CursorImageStatus>,
+    include_drag: bool,
+) -> Vec<PointerRenderElement<R>>
+where
+    R: smithay::backend::renderer::Renderer + ImportAll + ImportMem,
+    R::TextureId: Texture + Clone + Send + 'static,
 {
     let mut elements: Vec<PointerRenderElement<R>> = Vec::new();
 
