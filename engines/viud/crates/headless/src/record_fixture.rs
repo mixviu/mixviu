@@ -37,7 +37,7 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
         .comp
         .registry
         .surface_rows()
-        .find(|r| r.app_id().is_some_and(|s| s == app))
+        .find(|r| r.app_id().is_some_and(|s| s.as_ref() == app))
     else {
         return;
     };

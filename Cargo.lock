@@ -3784,6 +3784,7 @@ dependencies = [
  "comp-model",
  "crc32fast",
  "decor",
+ "dispatcher",
  "frames",
  "graphics",
  "headless",
