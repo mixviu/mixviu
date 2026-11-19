@@ -80,6 +80,16 @@ impl VideoEncoder {
         if encoder != "vfl" {
             return Err("available encoder: vfl".into());
         }
+        Self::start_worker(width, height, fps, path, max_bytes, || {})
+    }
+    fn start_worker(
+        width: u32,
+        height: u32,
+        fps: u32,
+        path: Option<PathBuf>,
+        max_bytes: Option<u64>,
+        before_receive: impl FnOnce() + Send + 'static,
+    ) -> Result<Self, String> {
         media_vfl::frame_bytes(width, height, fps).map_err(|e| e.to_string())?;
         let path = path.unwrap_or_else(|| {
             std::env::temp_dir().join(format!(
@@ -121,6 +131,7 @@ impl VideoEncoder {
         let join = std::thread::spawn(move || {
             let result = (|| -> io::Result<()> {
                 let mut log = Writer::new_bounded(worker_path, width, height, fps, max_bytes)?;
+                before_receive();
                 let mut origin_written = false;
                 for (frame, admitted) in rx {
                     q.fetch_sub(1, Ordering::Relaxed);
@@ -299,11 +310,11 @@ mod tests {
         let old = Arc::new(vec![0; 12]);
         assert!(encoder.try_push_rgb_change(old, 2, 2, true));
         let deadline = Instant::now() + std::time::Duration::from_secs(5);
-        while encoder.bytes_handle().load(Ordering::Acquire) == 0 {
+        while encoder.queued.load(Ordering::Acquire) != 0 {
             assert!(Instant::now() < deadline);
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
-        // The first frame is written and the queue is empty. Reserve all four
+        // The worker has dequeued the first frame. Reserve all four
         // slots to deterministically reject the final scene change.
         encoder.queued.store(4, Ordering::Relaxed);
         let last = Arc::new(vec![255; 12]);
@@ -342,13 +353,13 @@ mod tests {
     }
     #[test]
     fn bounded_queue_reports_dropped_tail_and_never_waits() {
-        let mut encoder = VideoEncoder::start_result(2, 2, 30).unwrap();
-        // Replace the channel with a receiver held still for deterministic overload.
-        let old_tx = encoder.tx.take();
-        drop(old_tx);
-        encoder.join.take().unwrap().join().unwrap().unwrap();
-        let (tx, rx) = sync_channel(4);
-        encoder.tx = Some(tx);
+        let (release, blocked) = std::sync::mpsc::channel();
+        let encoder = VideoEncoder::start_worker(2, 2, 30, None, None, move || {
+            blocked
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+        })
+        .unwrap();
         let begin = std::time::Instant::now();
         for _ in 0..4 {
             assert!(encoder.try_push(vec![0; 16]));
@@ -368,11 +379,12 @@ mod tests {
         );
         assert_eq!(encoder.queue_overruns.load(Ordering::Relaxed), 2000);
         assert!(begin.elapsed() < std::time::Duration::from_secs(1));
-        assert!(
-            !encoder.path.join("complete.json").exists(),
-            "drop must leave an interrupted manifest"
-        );
-        drop(rx);
-        std::fs::remove_dir_all(&encoder.path).unwrap();
+        release.send(()).unwrap();
+        let path = encoder.finish_result().unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path.join("complete.json")).unwrap()).unwrap();
+        assert_eq!(manifest["frames"], 2004);
+        assert_eq!(manifest["dropped"], 1000);
+        std::fs::remove_dir_all(path).unwrap();
     }
 }
