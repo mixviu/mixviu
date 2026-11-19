@@ -69,7 +69,7 @@ fn publish_gallery($ctx, $model)
   if $rc != 0 then raise("MODEL_PUBLISH",to_string($result)) end
 end
 $ctx = viu_context()
-$actions=[{id:"reset",label:"Reset gallery",keys:[],enabled:true}]
+$actions=[{id:"reset",label:"Reset gallery",keys:[],enabled:true},{id:"motion.page.show",label:"Show Motion page",keys:[],enabled:true},{id:"motion.page.widgets",label:"Show Widgets page",keys:[],enabled:true}]
 for $widget in $catalogue
   for $action in $widget.actions
     push($actions,{id:$widget.id.."."..$action,label:$widget.label..": "..$action,keys:[],enabled:true,widget:$widget.id,action:$action})
@@ -80,6 +80,10 @@ on gallery.execute
   $a = $event.args
   try
     if type($a)!="map" then raise("ARGUMENT","arguments must be an object") end
+    if $a.id=="motion.page.show" or $a.id=="motion.page.widgets" then
+      $state.values["motion-pages"]=if $a.id=="motion.page.show" then "Motion" else "Widgets" end
+      publish_gallery($ctx,$state);reply(0,json_encode({executed:$a.id}));return
+    end
     if starts_with($a.id ?? "","view.mode.") then
       if not contains(["view.mode.light","view.mode.dark","view.mode.session"],$a.id) then raise("UNKNOWN_ACTION","Unknown gallery action") end
       $choice.mode=$app_mode.choose($a.id);publish_gallery($ctx,$state);reply(0,json_encode({executed:$a.id}));return
@@ -135,6 +139,27 @@ on gallery.execute
   reply(0,"{}")
 end
 publish_gallery($ctx,$state)
+
+on gallery.motion
+  if $event.args.node=="motion-replay" then
+    $state.motion_visible=not ($state.motion_visible ?? true)
+  elif $event.args.node=="motion-toggle" then
+    $state.motion_on=$event.args.value
+  elif $event.args.node=="motion-row-toggle" then
+    if len($state.motion_rows ?? [])==1 then
+      $state.motion_rows=[{id:"a",cells:["First row"]},{id:"b",cells:["Second row"]}]
+    else
+      $state.motion_rows=[{id:"a",cells:["First row"]}]
+    end
+  elif starts_with($event.args.id ?? "","motion-") then
+    if $event.args.action=="accept" or $event.args.action=="cancel" then
+      $state.values[$event.args.id]=false
+    else
+      $state.values[$event.args.id]=$event.args.value
+    end
+  end
+  publish_gallery($ctx,$state)
+end
 
 on gallery.actions
   reply(0,json_encode({actions:concat($actions,map($app_mode.actions($choice.mode),fn($a)=merge($a,{keys:[]})))}))

@@ -75,6 +75,7 @@ pub mod markdown;
 pub mod menu;
 pub mod panel;
 pub mod saved;
+pub mod scene_motion;
 pub mod search;
 pub mod session_look;
 pub mod slider;
@@ -101,6 +102,7 @@ pub use theme::Theme;
 /// Prepare `ctx` for a MixViu application: `theme`'s style and fonts, and the
 /// image loaders the icons need.
 pub fn install(ctx: &egui::Context, theme: &Theme) {
+    scene_motion::install(ctx);
     egui_extras::install_image_loaders(ctx);
     style::apply(ctx, theme);
 }
@@ -112,3 +114,7 @@ pub(crate) fn window_id(
 ) -> egui::Id {
     egui::Id::unique((viewport, name))
 }
+
+#[cfg(test)]
+#[path = "../tests/support/harness.rs"]
+mod test_harness;

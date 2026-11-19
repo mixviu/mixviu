@@ -89,6 +89,7 @@ impl Facilities {
                 .as_array_mut()
                 .expect("validated Bus surface");
             let mut native = Vec::new();
+            native.push(crate::widget_rects::descriptor(&app));
             if manifest.native_ui {
                 native.extend(toolkit::drive::describe(&app));
             }

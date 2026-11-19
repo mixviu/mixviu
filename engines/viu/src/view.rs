@@ -279,6 +279,7 @@ fn embedded(dialog: bool) -> Arc<Theme> {
 
 /// One scene surface's program.
 pub struct SceneUi {
+    motion: toolkit::scene_motion::SceneMotion,
     content: Arc<Content>,
     look: Option<Arc<Look>>,
     /// Local text of the fields being edited, by instance key, until the
@@ -304,6 +305,7 @@ pub struct SceneUi {
 impl SceneUi {
     pub fn new(content: Arc<Content>) -> SceneUi {
         SceneUi {
+            motion: toolkit::scene_motion::SceneMotion::default(),
             hover: tip::Hover::default(),
             images: crate::images::prepare(&content.tree, &content.lists),
             content,

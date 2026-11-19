@@ -5,6 +5,13 @@ use egui::{Color32, Id, Rect, Sense, Vec2};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(crate) fn focus_key() -> Id {
+    // In the pinned toolkit Id::new is a deterministic hash (and delegates
+    // to Id::unique). Keep one explicit key for the writer and readback.
+    #[allow(deprecated)]
+    Id::new("viu-focused-widget")
+}
+
 pub const KINDS: &[&str] = &[
     "mark",
     "macro-menu",
@@ -908,6 +915,21 @@ impl Widget {
             }) {
                 return Err("dataset requires string cells".into());
             }
+            if let Some(column) = self.properties.get("key_column") {
+                let column = whole(column)
+                    .and_then(|n| usize::try_from(n).ok())
+                    .ok_or("key_column must be a nonnegative integer")?;
+                let mut keys = BTreeSet::new();
+                for row in rows {
+                    let key = row[column]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .ok_or("key_column requires a nonempty string in every row")?;
+                    if !keys.insert(key) {
+                        return Err("key_column values must be unique".into());
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -921,6 +943,24 @@ pub(crate) fn whole(v: &Value) -> Option<u64> {
             })
             .map(|n| n as u64)
     })
+}
+
+/// Identity survives head edits and sorting. Equal unkeyed rows are
+/// distinguished by occurrence among identical data, never absolute position.
+fn row_motion_keys(rows: &[Value], key_column: Option<usize>) -> Vec<String> {
+    let mut occurrences = BTreeMap::<String, usize>::new();
+    rows.iter()
+        .map(|row| {
+            if let Some(column) = key_column {
+                return format!("key:{}", row[column]);
+            }
+            let data = serde_json::to_string(row).unwrap_or_default();
+            let occurrence = occurrences.entry(data.clone()).or_default();
+            let key = format!("data:{data}#{occurrence}");
+            *occurrence += 1;
+            key
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug)]
@@ -1098,7 +1138,13 @@ impl Widgets {
         }
     }
     fn remember(&mut self, ui: &egui::Ui, id: &str, response: &egui::Response) {
-        self.geometry.insert(id.into(), response.rect);
+        self.geometry.insert(
+            id.into(),
+            ui.ctx()
+                .layer_transform_to_global(ui.layer_id())
+                .unwrap_or_default()
+                .mul_rect(response.rect),
+        );
         if self.focus.as_deref() == Some(id) {
             response.request_focus();
             if let Some([start, end]) = self.focus_selection.take() {
@@ -1118,7 +1164,7 @@ impl Widgets {
         }
         if response.has_focus() {
             ui.ctx()
-                .data_mut(|d| d.insert_temp(Id::unique("viu-focused-widget"), id.to_owned()));
+                .data_mut(|d| d.insert_temp(focus_key(), id.to_owned()));
         }
     }
     fn draw(
@@ -1531,6 +1577,7 @@ impl Widgets {
                 }
             }
             "button" => {
+                let start = ui.ctx().graphics_mut(|g| g.entry(ui.layer_id()).next_idx());
                 let r = if widget.properties["style"] == "icon" {
                     ui.add(
                         toolkit::button::IconButton::new(
@@ -1546,6 +1593,23 @@ impl Widgets {
                 } else {
                     icon_button(ui, widget.text("icon"), widget.text("text"), false)
                 };
+                // PushButton already paints its own 90 ms travel; avoid applying it twice.
+                if widget.properties["style"] != "primary"
+                    && widget.properties["style"] != "secondary"
+                {
+                    let travel = toolkit::scene_motion::scalar(
+                        ui.ctx(),
+                        r.id.with("press"),
+                        if r.is_pointer_button_down_on() {
+                            1.0
+                        } else {
+                            0.0
+                        },
+                        90.,
+                        ui.style().animation_time != 0.0,
+                    );
+                    toolkit::scene_motion::visual(ui, start, r.rect, 1., [0., f64::from(travel)]);
+                }
                 let r = if let Some(tip) = widget.properties["tooltip"].as_str() {
                     let shortcut = widget.properties["shortcut"]
                         .as_str()
@@ -1752,7 +1816,10 @@ impl Widgets {
                         }
                         response
                     } else {
-                        ui.toggle_value(&mut checked, widget.text("text"))
+                        ui.add(toolkit::toggle::Switch::new(
+                            &mut checked,
+                            widget.text("text"),
+                        ))
                     }
                 };
                 if r.changed() || r.clicked() {
@@ -1786,7 +1853,12 @@ impl Widgets {
                         .as_str()
                         .filter(|s| !s.is_empty())
                     {
-                        ui.small(page);
+                        toolkit::scene_motion::content(
+                            ui,
+                            egui::Id::unique((id, "tab-motion")),
+                            value.as_str().unwrap_or(""),
+                            |ui| ui.small(page),
+                        );
                     }
                 }
                 response
@@ -1925,10 +1997,22 @@ impl Widgets {
             }
             "list" | "table" | "tree" => {
                 let source = widget.text("dataset");
+                let row_motion =
+                    toolkit::scene_motion::state(ui.ctx(), egui::Id::unique((id, "row-motion")));
+                let mut row_motion = row_motion.lock().unwrap();
+                row_motion.begin(ui);
                 let data = model["datasets"][source]
                     .as_array()
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
+                let row_keys = row_motion_keys(
+                    data,
+                    whole(&widget.properties["key_column"]).and_then(|n| usize::try_from(n).ok()),
+                );
+                let present_keys = row_keys
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<std::collections::HashSet<_>>();
                 if widget.kind == "table" {
                     let reversed = model["sorted"][id].as_bool().unwrap_or(false);
                     let header = ui.button(format!(
@@ -1984,6 +2068,14 @@ impl Widgets {
                                 };
                                 let cells = &data[row];
                                 let name = cells[0].as_str().unwrap_or("");
+                                let capture = row_motion.capture(
+                                    ui,
+                                    &row_keys[row],
+                                    None,
+                                    Some(&json!("fade")),
+                                    Some(&json!("fade")),
+                                    widget.kind == "list" && ui.style().animation_time != 0.0,
+                                );
                                 let r = if widget.kind == "table" {
                                     let (rect, response) = ui.allocate_exact_size(
                                         Vec2::new(
@@ -2049,6 +2141,7 @@ impl Widgets {
                                         whole(value) == Some(row as u64),
                                     )
                                 };
+                                row_motion.painted(ui, capture, r.rect);
                                 self.remember(ui, &format!("{id}.{row}"), &r);
                                 if r.clicked() {
                                     changed = Some(json!(row));
@@ -2076,6 +2169,8 @@ impl Widgets {
                             }
                         },
                     );
+                row_motion.keep_unseen(|key| present_keys.contains(key));
+                row_motion.end(ui);
                 ui.interact(area.inner_rect, ui.scope_id().with(id), Sense::hover())
             }
             "collapse" => {
@@ -2360,3 +2455,7 @@ fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     }
     text
 }
+
+#[cfg(test)]
+#[path = "row_motion_tests.rs"]
+mod row_motion_tests;

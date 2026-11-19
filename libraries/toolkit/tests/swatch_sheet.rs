@@ -57,7 +57,7 @@ fn gallery(ui: &mut egui::Ui) {
 
 fn render(theme: &Theme, size: egui::Vec2, title: String, roles: bool) -> RgbaImage {
     let dictionary = theme.dictionary().clone();
-    let mut harness = Harness::builder()
+    let mut harness = test_harness::configure(Harness::builder())
         .with_size(size)
         .wgpu()
         .build_ui(move |ui| {
@@ -260,3 +260,6 @@ fn swatch_sheets() {
         .collect();
     grid(&[row]).save(out.join("density.png")).unwrap();
 }
+
+#[path = "support/harness.rs"]
+mod test_harness;

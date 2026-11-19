@@ -1760,7 +1760,7 @@ mod tests {
                 output: output.into(),
                 status: "done".into(),
             });
-            let mut h = egui_kittest::Harness::builder()
+            let mut h = crate::test_harness::configure(egui_kittest::Harness::builder())
                 .with_size(egui::vec2(760.0, 560.0))
                 .build_ui_state(
                     |ui, state: &mut State| {
@@ -1795,7 +1795,7 @@ mod tests {
             output: "Hello\n".into(),
             status: "Hello desktop done".into(),
         });
-        let mut h = egui_kittest::Harness::builder()
+        let mut h = crate::test_harness::configure(egui_kittest::Harness::builder())
             .with_size(egui::vec2(800.0, 700.0))
             .wgpu()
             .build_ui_state(
@@ -1822,7 +1822,7 @@ mod tests {
             output: "Hello\n".into(),
             status: "done".into(),
         });
-        let mut h = egui_kittest::Harness::builder()
+        let mut h = crate::test_harness::configure(egui_kittest::Harness::builder())
             .with_size(egui::Vec2::from(crate::window::MIN_SIZE))
             .build_ui_state(
                 |ui, state: &mut State| {
@@ -1897,7 +1897,7 @@ mod tests {
 
     #[cfg(unix)]
     fn permission_harness(state: State) -> egui_kittest::Harness<'static, State> {
-        let mut h = egui_kittest::Harness::builder()
+        let mut h = crate::test_harness::configure(egui_kittest::Harness::builder())
             .with_size(egui::vec2(1275.0, 700.0))
             .build_ui_state(|ui, state: &mut State| state.show(ui.ctx()), state);
         crate::install(&h.ctx, &crate::Theme::embedded());
@@ -2246,7 +2246,7 @@ mod tests {
         scale: f32,
     ) -> egui_kittest::Harness<'static, AppMenu> {
         let temp = tempfile::tempdir().unwrap();
-        let builder = egui_kittest::Harness::builder()
+        let builder = crate::test_harness::configure(egui_kittest::Harness::builder())
             .with_size(size)
             .with_pixels_per_point(scale);
         let builder = if render { builder.wgpu() } else { builder };

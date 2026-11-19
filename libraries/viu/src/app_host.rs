@@ -40,6 +40,8 @@ pub(crate) fn validate_overlays(model: &Value) -> Result<(), String> {
     Ok(())
 }
 struct Host {
+    widget_command: String,
+    widget_requests: Vec<Request>,
     require_bus: bool,
     forward_output: bool,
     quit_reply_closes: bool,
@@ -296,6 +298,24 @@ impl Host {
         }
     }
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
+        if r.command == self.widget_command {
+            if let Err(message) = crate::widget_rects::validate(&r.args) {
+                let _ = r
+                    .reply
+                    .send((10, json!({"error_code":"ARGUMENT","message":message})));
+            } else if self.headless || self.no_window {
+                let _ = r.reply.send((0, json!([])));
+            } else {
+                self.widget_requests.retain(|r| !r.reply.is_closed());
+                if self.widget_requests.len() >= 32 {
+                    let _ = r.reply.send((10, json!({"error_code":"BUSY"})));
+                    return;
+                }
+                self.widget_requests.push(r);
+                ctx.request_repaint();
+            }
+            return;
+        }
         if self.no_window {
             self.deliveries
                 .retain(|d| d.load(std::sync::atomic::Ordering::Acquire) == 0);
@@ -1520,8 +1540,21 @@ impl Host {
                 input_headers.insert("viu_input".into(), "bus".into());
             }
             self.dispatching_ui = true;
+            if !self.widget_requests.is_empty() {
+                self.view.request_widget_rectangles();
+            }
             for event in self.view.show(ui) {
                 self.dispatch(event.command, event.body, input_headers.clone(), None);
+            }
+            for request in self.widget_requests.drain(..) {
+                match self.view.widget_rectangles(&request.args) {
+                    Ok(body) => crate::widget_rects::reply(&self.bus, request, body),
+                    Err(message) => {
+                        let _ = request
+                            .reply
+                            .send((10, json!({"error_code":"ARGUMENT","message":message})));
+                    }
+                }
             }
             self.measurements.view(started.elapsed().as_micros() as u64);
             if let Some(at) = self.input_at.take() {
@@ -1763,6 +1796,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         );
     }
     let app = bundle.manifest.app();
+    commands.push(format!("{app}.widgets"));
     if !headless {
         commands.extend(toolkit::drive::COMMANDS.map(|suffix| format!("{app}.{suffix}")));
     }
@@ -1813,7 +1847,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
                 read_only: entry["read_only"] == true,
             });
         }
-        let mut native = Vec::new();
+        let mut native = vec![crate::widget_rects::descriptor(bundle.manifest.app())];
         if bundle.manifest.native_drive {
             native.extend(toolkit::drive::describe(&bundle.manifest.service));
         } else {
@@ -1929,6 +1963,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        widget_command: format!("{}.widgets", bundle.manifest.app()),
+        widget_requests: Vec::new(),
         require_bus: bundle.manifest.require_bus,
         forward_output: bundle.manifest.forward_output,
         quit_reply_closes: bundle.manifest.quit_reply_closes,

@@ -19,6 +19,7 @@ struct Probe {
 
 #[derive(Default, Clone, Debug)]
 struct Seen {
+    time: f64,
     pixels_per_point: f32,
     screen: egui::Vec2,
     hover: Option<egui::Pos2>,
@@ -35,6 +36,7 @@ impl crate::UiProgram for Probe {
         seen.pixels_per_point = ctx.pixels_per_point();
         seen.screen = ctx.content_rect().size();
         seen.hover = ctx.input(|input| input.pointer.hover_pos());
+        seen.time = ctx.input(|input| input.time);
         if let Some(message) = self.emit_once.take() {
             emit.push(message);
         }
@@ -60,6 +62,16 @@ fn runtime(program: Probe) -> UiRuntime<Probe> {
         None,
         RuntimeWake::with_waker(|| {}),
     )
+}
+
+#[test]
+fn explicit_presentation_time_is_scoped_to_one_tick() {
+    let mut rt = runtime(Probe::default());
+    rt.tick_at(0.);
+    assert_eq!(rt.program.seen.lock().unwrap().time, 0.);
+    rt.request_redraw();
+    rt.tick();
+    assert!(rt.program.seen.lock().unwrap().time > 0.);
 }
 
 #[test]
