@@ -84,7 +84,7 @@ impl Reader {
         let (receipt, completion_file, complete) = if complete_path.exists() {
             match json_file(&complete_path) {
                 Ok(v) if v["complete"] == true => (Some(v),Some("complete.json"),true),
-                _ => (None,None,false),
+                _ => (None,Some("complete.json"),false),
             }
         } else if path.join("interrupted.json").exists() {
             (json_file(&path.join("interrupted.json")).ok(),Some("interrupted.json"),false)
@@ -118,7 +118,7 @@ impl Reader {
     fn seal(&self) -> Result<(),Error> {
         let p = self.path.join(format!("chunk-{:06}.json",self.chunk));
         if self.complete || p.exists() {
-            let r = json_file(&p)?;
+            let r = json_file(&p).map_err(|mut e| {e.chunk=Some(self.chunk);e.offset=self.offset;e})?;
             if r["bytes"] != self.offset || r["crc32"] != self.crc.clone().finalize() || r["next_frame"] != self.next {
                 return Err(err(&p,Some(self.chunk),self.offset,ErrorKind::Crc,"chunk receipt mismatch"));
             }
@@ -197,6 +197,7 @@ impl Reader {
     /// The header scan checks CRCs and structure; decompression starts at the selected key.
     pub fn seek(&mut self, target: u64) -> Result<Decoded<'_>,Error> {
         let mut scan = Self::open(&self.path)?;
+        scan.pixels=Vec::new();
         let mut key = (0,0,0);
         loop {
             let chunk = scan.chunk; let offset = scan.offset;
