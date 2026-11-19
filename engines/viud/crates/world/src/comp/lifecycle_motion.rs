@@ -35,7 +35,7 @@ struct State {
     active: bool,
     incoming: HashMap<Uuid, Instant>,
     workspaces: HashMap<String, u32>,
-    presented: HashMap<Uuid, (String, u32)>,
+    presented: HashMap<(Uuid, String), u32>,
 }
 
 thread_local! { static STATE: RefCell<State> = RefCell::new(State::default()); }
@@ -43,9 +43,9 @@ thread_local! { static STATE: RefCell<State> = RefCell::new(State::default()); }
 pub fn presented(output: String, shown: &[(Uuid, u32)]) {
     STATE.with(|state| {
         let mut state = state.borrow_mut();
-        state.presented.retain(|_, (scope, _)| scope != &output);
+        state.presented.retain(|(_, scope), _| scope != &output);
         for &(uuid, workspace) in shown {
-            state.presented.insert(uuid, (output.clone(), workspace));
+            state.presented.insert((uuid, output.clone()), workspace);
         }
     });
 }
@@ -193,14 +193,25 @@ pub fn service(lp: &mut Loop) -> bool {
                 .filter_map(|window| {
                     Some((
                         window.uuid()?,
-                        stable_output(space.state.outputs_for_element(window).iter().map(|output| {
-                            let area = space.state.element_bbox(window)
-                                .and_then(|bbox| bbox.intersection(space.state.output_geometry(output)?))
-                                .map_or(0, |r| i64::from(r.size.w) * i64::from(r.size.h));
-                            (area, output.name())
-                        }).collect())
-                            .map(|name| comp_model::snapshot::output_key(&name))
-                            .unwrap_or_else(|| default_output.clone()),
+                        stable_output(
+                            space
+                                .state
+                                .outputs_for_element(window)
+                                .iter()
+                                .map(|output| {
+                                    let area = space
+                                        .state
+                                        .element_bbox(window)
+                                        .and_then(|bbox| {
+                                            bbox.intersection(space.state.output_geometry(output)?)
+                                        })
+                                        .map_or(0, |r| i64::from(r.size.w) * i64::from(r.size.h));
+                                    (area, output.name())
+                                })
+                                .collect(),
+                        )
+                        .map(|name| comp_model::snapshot::output_key(&name))
+                        .unwrap_or_else(|| default_output.clone()),
                     ))
                 })
                 .collect::<Vec<_>>()
@@ -335,13 +346,20 @@ pub fn service(lp: &mut Loop) -> bool {
             } else {
                 None
             };
-            if !old.visible || new.is_some_and(|facts| !facts.visible)
-                || (!old.shown && new.is_none_or(|facts| !facts.mapped)) {
+            if !old.visible
+                || new.is_some_and(|facts| !facts.visible)
+                || (!old.shown && new.is_none_or(|facts| !facts.mapped))
+            {
                 state.exits.remove(uuid);
                 continue;
             }
-            if !old.shown || !old.on_current(&state.workspaces)
-                || !state.presented.get(uuid).is_some_and(|(output, workspace)| output == &old.output && Some(*workspace) == old.workspace) {
+            if !old.shown
+                || !old.on_current(&state.workspaces)
+                || !state
+                    .presented
+                    .get(&(*uuid, old.output.clone()))
+                    .is_some_and(|workspace| Some(*workspace) == old.workspace)
+            {
                 continue;
             }
             if let Some(config) = exit
@@ -413,10 +431,16 @@ mod tests {
     use super::*;
     #[test]
     fn output_scope_uses_largest_overlap_then_connector_name() {
-        for candidates in [vec![(50,"b".into()),(50,"a".into())], vec![(50,"a".into()),(50,"b".into())]] {
+        for candidates in [
+            vec![(50, "b".into()), (50, "a".into())],
+            vec![(50, "a".into()), (50, "b".into())],
+        ] {
             assert_eq!(stable_output(candidates), Some("a".into()));
         }
-        assert_eq!(stable_output(vec![(100,"b".into()),(50,"a".into())]), Some("b".into()));
+        assert_eq!(
+            stable_output(vec![(100, "b".into()), (50, "a".into())]),
+            Some("b".into())
+        );
     }
     #[test]
     fn workspace_switch_keeps_the_other_outputs_exit_and_uses_its_workspace() {

@@ -282,8 +282,15 @@ pub fn test_lifecycle_paused() -> bool {
         && let Some(root) = std::env::var_os("XDG_RUNTIME_DIR")
     {
         let root = std::path::PathBuf::from(root);
-        if root.join(format!("pause-lifecycle-{}", std::process::id())).exists() {
-            std::fs::write(root.join(format!("pause-lifecycle-{}.ack", std::process::id())), b"paused").unwrap();
+        if root
+            .join(format!("pause-lifecycle-{}", std::process::id()))
+            .exists()
+        {
+            std::fs::write(
+                root.join(format!("pause-lifecycle-{}.ack", std::process::id())),
+                b"paused",
+            )
+            .unwrap();
             return true;
         }
     }
