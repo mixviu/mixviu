@@ -1,0 +1,37 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$pb = require("../../../../../../tests/lib/private_bus.mix")
+$root = args()[0]
+$noded = args()[1]
+mkdir($root, {parents:true})
+$listener = tcp_listen("127.0.0.1", 0)
+$port = tcp_local_addr($listener).port
+fn assert($ok, $message)
+  if not $ok then raise("TEST", $message) end
+end
+try
+  $failed = false
+  try
+    $pb.start({dir:$root .. "/exit", noded:"/usr/bin/false", export:false})
+  catch $m
+    $failed = contains($m, "not owned")
+  end
+  assert($failed, "immediate exit must report failure")
+  assert(not is_file($root .. "/exit/noded-2.log"), "unrelated exit must not retry")
+  $failed = false
+  try
+    $pb.start({dir:$root .. "/fixed", noded:$noded, port:$port, export:false})
+  catch $m
+    print($m)
+    $failed = contains($m, "Address already in use (os error 98)")
+  end
+  assert($failed, "real bind failure must retain its underlying error")
+  assert(not is_file($root .. "/fixed/noded-2.log"), "fixed port must not retry")
+  $free = tcp_listen("127.0.0.1", 0)
+  $next = tcp_local_addr($free).port
+  tcp_close($free)
+  $bus = $pb.start({dir:$root .. "/retry", noded:$noded, ports:[$port, $next], export:false})
+  assert($bus.port == $next, "bind conflict must advance to the next candidate")
+  $pb.stop($bus)
+finally
+  tcp_close($listener)
+end
