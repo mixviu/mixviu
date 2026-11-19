@@ -371,6 +371,7 @@ fn window_card_follows_hides_and_osd_refusals_are_typed() {
         place_args(&row, json!({"x":500,"y":200})),
     );
     wait(&mut pattern, Duration::from_millis(200));
+    println!("ANCHOR_QUERY {}", bus.call("comp.windows.list", json!({})));
     let (_, _, moved) = ppm(&bus, &process, "osd-card-moved", None);
     let second =
         bounds(&before, &moved, w, [720, 180, 220, 180]).expect("moved window card pixels");
