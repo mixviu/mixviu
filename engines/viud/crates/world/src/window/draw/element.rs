@@ -9,7 +9,7 @@ use smithay::backend::renderer::element::{
     Element as ElementSmithay, Id, RenderElement, UnderlyingStorage,
 };
 use smithay::backend::renderer::utils::CommitCounter;
-use smithay::backend::renderer::{ImportAll, ImportMem};
+use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size};
 
@@ -342,13 +342,18 @@ impl<R: ImportAll + ImportMem + SceneDispatch> Element<R> {
         offset: Point<i32, Physical>,
         pane: Rectangle<i32, Physical>,
     ) -> Option<Self>
-    where R::TextureId: Texture + Clone + Send + 'static,
+    where
+        R::TextureId: Texture + Clone + Send + 'static,
     {
         if let RawElement::WindowFitClipped(clipped) = inner.raw_mut() {
             clipped.set_rescale(factor, offset);
         }
         let scaled = RescaleRenderElement::from_element(inner, (0, 0).into(), Scale::from(factor));
-        let moved = RelocateRenderElement::from_element(scaled, offset, smithay::backend::renderer::element::utils::Relocate::Relative);
+        let moved = RelocateRenderElement::from_element(
+            scaled,
+            offset,
+            smithay::backend::renderer::element::utils::Relocate::Relative,
+        );
         CropRenderElement::from_element(moved, Scale::from(1.0), pane).map(Self::Transformed)
     }
 }
@@ -361,8 +366,11 @@ mod composition_tests {
 
     fn solid() -> Untransformed<GlesRenderer> {
         Untransformed::Plain(RawElement::SolidBox(SolidColorRenderElement::new(
-            Id::new(), Rectangle::new((40, 10).into(), (40, 40).into()),
-            CommitCounter::default(), [1.0, 1.0, 1.0, 1.0], Kind::Unspecified,
+            Id::new(),
+            Rectangle::new((40, 10).into(), (40, 40).into()),
+            CommitCounter::default(),
+            [1.0, 1.0, 1.0, 1.0],
+            Kind::Unspecified,
         )))
     }
 
@@ -370,9 +378,15 @@ mod composition_tests {
     fn composition_is_cropped_after_scale_and_translation() {
         let pane = Rectangle::new((0, 0).into(), (100, 100).into());
         let enlarged = Element::transformed(solid(), 2.0, (0, 0).into(), pane).unwrap();
-        assert_eq!(enlarged.geometry(Scale::from(1.0)), Rectangle::new((80, 20).into(), (20, 80).into()));
+        assert_eq!(
+            enlarged.geometry(Scale::from(1.0)),
+            Rectangle::new((80, 20).into(), (20, 80).into())
+        );
         let translated = Element::transformed(solid(), 2.0, (-100, 0).into(), pane).unwrap();
-        assert_eq!(translated.geometry(Scale::from(1.0)), Rectangle::new((0, 20).into(), (60, 80).into()));
+        assert_eq!(
+            translated.geometry(Scale::from(1.0)),
+            Rectangle::new((0, 20).into(), (60, 80).into())
+        );
         assert!(Element::transformed(solid(), 2.0, (100, 0).into(), pane).is_none());
     }
 }

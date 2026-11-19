@@ -363,8 +363,17 @@ where
                 }
             }
         }
-        let pane_clip = cache.get(&(uuid, output.to_owned(), pane)).and_then(|snapshots| snapshots.first()).map(|snapshot| snapshot.pane_clip);
-        elements.into_iter().filter_map(|element| CropRenderElement::from_element(element, Scale::from(1.0), pane_clip?)).map(Ghost::Cropped).collect()
+        let pane_clip = cache
+            .get(&(uuid, output.to_owned(), pane))
+            .and_then(|snapshots| snapshots.first())
+            .map(|snapshot| snapshot.pane_clip);
+        elements
+            .into_iter()
+            .filter_map(|element| {
+                CropRenderElement::from_element(element, Scale::from(1.0), pane_clip?)
+            })
+            .map(Ghost::Cropped)
+            .collect()
     })
 }
 

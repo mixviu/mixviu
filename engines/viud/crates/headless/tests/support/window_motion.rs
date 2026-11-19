@@ -4,6 +4,11 @@
 use super::*;
 use std::io::{BufReader, Read};
 
+fn ppm_pixel(bytes: &[u8], width: usize, x: usize, y: usize) -> [u8; 3] {
+    let at = (y * width + x) * 3;
+    bytes[at..at + 3].try_into().unwrap()
+}
+
 fn visit_export(path: &Path, mut visit: impl FnMut(usize, &[u8])) {
     let manifest: Value =
         serde_json::from_slice(&fs::read(path.join("manifest.json")).unwrap()).unwrap();
@@ -208,7 +213,7 @@ fn scaled_window_input_follows_pixels_and_uses_client_coordinates() {
     );
     let (_, _, pixels) = ppm(&bus, &process, "scaled-input", None);
     assert_eq!(
-        pixel(&pixels, 1280, 250, 280),
+        ppm_pixel(&pixels, 1280, 250, 280),
         [255, 255, 255],
         "scaled pixels extend outside the configured rectangle"
     );
@@ -389,9 +394,9 @@ fn rounded_close_stack(closing_front: bool) {
     pump_patterns(&mut [&mut rear, &mut front]);
     let (width, height, before) = ppm(&bus, &process, "rounded-stack-before", None);
     assert_eq!((width, height), (1280, 720));
-    assert_eq!(pixel(&before, width, 350, 280), [255, 255, 255]);
+    assert_eq!(ppm_pixel(&before, width, 350, 280), [255, 255, 255]);
     assert_eq!(
-        pixel(&before, width, 450, 300),
+        ppm_pixel(&before, width, 450, 300),
         if closing_front {
             [255, 255, 255]
         } else {
@@ -403,7 +408,7 @@ fn rounded_close_stack(closing_front: bool) {
     // a rectangular snapshot would paint white here as soon as it faded.
     let (corner_x, corner_y, corner_red) = (300..308)
         .flat_map(|x| (352..360).map(move |y| (x, y)))
-        .map(|(x, y)| (x, y, pixel(&before, width, x, y)[0]))
+        .map(|(x, y)| (x, y, ppm_pixel(&before, width, x, y)[0]))
         .min_by_key(|(_, _, red)| *red)
         .unwrap();
     assert!(
@@ -537,6 +542,20 @@ fn benchmark_window_motion_1_8_32() {
             bus.call("comp.window.place",place_args(&row,json!({"x":(index%8)*150,"y":(index/8)*170,"scale":{"factor":0.65,"anchor":{"x":0,"y":0}}})));
             patterns.push(pattern);
             rows.push(row);
+        }
+        let mut clients: Vec<_> = patterns.iter_mut().collect();
+        pump_patterns(&mut clients);
+        drop(clients);
+        let (width, height, visible) = ppm(&bus, &process, "benchmark-visible-grid", None);
+        assert_eq!((width, height), (1280, 720));
+        for index in 0..count {
+            let x = (index % 8) * 150 + 50;
+            let y = (index / 8) * 170 + 50;
+            assert_eq!(
+                ppm_pixel(&visible, width, x, y),
+                [255, 255, 255],
+                "benchmark must draw all {count} scaled windows: window {index} at ({x},{y})"
+            );
         }
         let begin = monotonic_ns() / 1000;
         thread::scope(|scope| {

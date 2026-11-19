@@ -975,7 +975,14 @@ where
         Vec::new(),
         decor::render::Pass::Captured,
     );
-    let (elements, _) = crop_elements(elements, window, ctx, (0, 0).into(), size, Rectangle::from_size(size));
+    let (elements, _) = crop_elements(
+        elements,
+        window,
+        ctx,
+        (0, 0).into(),
+        size,
+        Rectangle::from_size(size),
+    );
     Ok((
         elements,
         size,
@@ -1008,9 +1015,13 @@ where
     R::TextureId: Texture + Clone + Send + 'static,
 {
     let visual = visual_of(window);
-    let crop = visual.clip.map(|c| if visual.transformed() {
-        project_clip_unbounded(ctx, loc, c)
-    } else { project_clip(ctx, loc, c, size) });
+    let crop = visual.clip.map(|c| {
+        if visual.transformed() {
+            project_clip_unbounded(ctx, loc, c)
+        } else {
+            project_clip(ctx, loc, c, size)
+        }
+    });
     let elements: Vec<crate::window::draw::element::Untransformed<R>> =
         if !visual.visible || visual.scale.factor == 0.0 {
             Vec::new()
@@ -1047,20 +1058,32 @@ where
         ((1.0 - factor) * anchor.x as f64 + (translated.x as f64 - origin.x as f64)).round() as i32,
         ((1.0 - factor) * anchor.y as f64 + (translated.y as f64 - origin.y as f64)).round() as i32,
     ));
-    let elements =
-        elements
-            .into_iter()
-            .filter_map(|element| crate::window::draw::element::Element::transformed(element, factor, offset, pane))
-            .collect();
+    let elements = elements
+        .into_iter()
+        .filter_map(|element| {
+            crate::window::draw::element::Element::transformed(element, factor, offset, pane)
+        })
+        .collect();
     (elements, crop)
 }
 
-fn project_clip_unbounded(ctx: XformCtx, loc: Point<i32, Logical>, clip: comp_model::request::ClipRect) -> Rectangle<i32, Physical> {
+fn project_clip_unbounded(
+    ctx: XformCtx,
+    loc: Point<i32, Logical>,
+    clip: comp_model::request::ClipRect,
+) -> Rectangle<i32, Physical> {
     let x = loc.x as f64 + clip.x;
     let y = loc.y as f64 + clip.y;
     let a = project_point(ctx, x, y);
     let b = project_point(ctx, x + clip.width, y + clip.height);
-    Rectangle::new(a, (b.x.saturating_sub(a.x).max(0), b.y.saturating_sub(a.y).max(0)).into())
+    Rectangle::new(
+        a,
+        (
+            b.x.saturating_sub(a.x).max(0),
+            b.y.saturating_sub(a.y).max(0),
+        )
+            .into(),
+    )
 }
 
 /// Bound projected corners to the framebuffer before subtracting them. Local
@@ -1088,11 +1111,21 @@ mod clip_tests {
     #[test]
     fn pretransform_clip_keeps_pixels_that_translation_can_reveal() {
         let ctx = XformCtx::new((0.0, 0.0), 1.0, (100.0, 100.0), 1.0);
-        let local = comp_model::request::ClipRect { x: 0.0, y: 0.0, width: 40.0, height: 40.0 };
+        let local = comp_model::request::ClipRect {
+            x: 0.0,
+            y: 0.0,
+            width: 40.0,
+            height: 40.0,
+        };
         let projected = project_clip_unbounded(ctx, (-1000, 0).into(), local);
         assert!(projected.loc.x < 0);
         assert_eq!(projected.size, (40, 40).into());
-        assert_eq!(project_clip(ctx, (-1000, 0).into(), local, (100,100).into()).size.w, 0);
+        assert_eq!(
+            project_clip(ctx, (-1000, 0).into(), local, (100, 100).into())
+                .size
+                .w,
+            0
+        );
     }
 
     #[test]
