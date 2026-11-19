@@ -40,7 +40,7 @@ decor = { workspace = true }
 screencopy = { workspace = true }
 
 [dev-dependencies]
-media-vfl.workspace = true
+media-vfl = { path = "../../../../libraries/media/vfl" }
 wayland-protocols-wlr = { workspace = true, features = ["client"] }
 # Enable the fixture in test builds (also when the workspace builds viud).
 headless = { path = ".", features = ["test-support"] }
