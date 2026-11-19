@@ -115,6 +115,20 @@ async fn connect(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn two_production_brokers_route_verified_native_clients() {
+    production_mesh(1, 1, "enforce").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn admission_enforce_routes_to_newer_inventory_with_frame_observe() {
+    production_mesh(7, 8, "observe").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn admission_enforce_routes_to_older_inventory_with_frame_observe() {
+    production_mesh(7, 6, "observe").await;
+}
+
+async fn production_mesh(dialler_epoch: u64, listener_epoch: u64, frame_policy: &str) {
     tokio::time::timeout(Duration::from_secs(30), async {
         let root = std::env::temp_dir().join(format!(
             "noded-mesh-{}-{:032x}", std::process::id(), rand::random::<u128>()
@@ -152,7 +166,7 @@ async fn two_production_brokers_route_verified_native_clients() {
             recovery: None,
             recovery_generation: None,
         };
-        let signed = SignedInventory {
+        let mut signed = SignedInventory {
             signatures: vec![InvSignature {
                 key_id: "genesis".into(), alg: ALG_ED25519.into(),
                 sig: B64.encode(signing_key.sign(&payload.canonical_bytes()).to_bytes()),
@@ -163,6 +177,8 @@ async fn two_production_brokers_route_verified_native_clients() {
         let urls: Vec<_> = ips.iter().zip(&ports).map(|(ip, port)| format!("ws://{ip}:{port}/ws")).collect();
         drop(reservations);
         for i in 0..2 {
+            signed.payload.epoch = if i == 0 { dialler_epoch } else { listener_epoch };
+            signed.signatures[0].sig = B64.encode(signing_key.sign(&signed.payload.canonical_bytes()).to_bytes());
             let root = &roots[i];
             for dir in ["etc/noded", "var/noded", "run", "home"] {
                 fs::create_dir_all(root.join(dir)).unwrap();
@@ -173,7 +189,7 @@ async fn two_production_brokers_route_verified_native_clients() {
             write(&root.join("var/noded/inventory.signed"), &signed);
             write(&root.join("etc/node.conf.mix"), &json!({
                 "node":names[i], "wg_ip":ips[i],
-                "noded":{"port":ports[i],"unix_socket":root.join("run/bus.sock"),"admission":"enforce","frame_policy":"enforce"}
+                "noded":{"port":ports[i],"unix_socket":root.join("run/bus.sock"),"admission":"enforce","frame_policy":frame_policy}
             }));
             write(&root.join("etc/mesh.conf.mix"), &json!({"node_name":names[i],"peers":[]}));
             let log = fs::File::create(root.join("noded.log")).unwrap();

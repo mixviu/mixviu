@@ -2028,6 +2028,7 @@ fn emit_routing_reload_applied(report: &ReconcileReport, revision: mesh::Authori
             event = "delivery.inflight_fate",
             direction = "outbound",
             class = %inflight.class,
+            reason = inflight.reason.as_str(),
             cause = "reload-teardown",
             fate = "fail-fast",
             id = %inflight.message_id,
@@ -2281,20 +2282,24 @@ fn reverse_identity_answer(
     if *answered || registered {
         return None;
     }
-    let body: serde_json::Value = serde_json::from_str(&message.body).ok()?;
     let authority = state.authority.load_full();
     let crate::authority::Posture::Verified(a) = &authority.posture else {
         return None;
     };
     let (node, key) = state.peer_context.mesh_peer()?;
-    if !authority.keys.contains(node, key)
-        || body["verifying_broker_node"].as_str() != Some(node)
-        || body["mesh_fqdn"].as_str() != Some(a.mesh.as_str())
-        || body["inventory_epoch"].as_u64() != Some(a.epoch)
-    {
+    if !authority.keys.contains(node, key) {
         return None;
     }
-    let wire = mesh::build_admit_response(message, &state.node_name, &state.d2_seed)?;
+    // The admitted peer owns the reverse challenge and verifies its epoch.
+    // Keep verifier/mesh binding in the shared signer, accepting publish skew.
+    let wire = mesh::build_admit_response(
+        message,
+        &state.node_name,
+        &state.d2_seed,
+        node,
+        &a.mesh,
+        a.epoch,
+    )?;
     let mut response = bus::parse(&wire).ok()?;
     response.set("command", "noded.identity.response");
     *answered = true;
