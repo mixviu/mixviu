@@ -369,8 +369,12 @@ mod tests {
             assert!(Instant::now() < until, "OSD show timed out");
             std::thread::sleep(Duration::from_millis(1));
         }
-        assert!(program.wake_deadline().is_some(), "model={}, error={}",
-            program.host.as_ref().unwrap().model, program.host.as_ref().unwrap().error);
+        assert!(
+            program.wake_deadline().is_some(),
+            "model={}, error={}",
+            program.host.as_ref().unwrap().model,
+            program.host.as_ref().unwrap().error
+        );
         loop {
             program.service();
             let host = program.host.as_ref().unwrap();
