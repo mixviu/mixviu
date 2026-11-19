@@ -183,25 +183,6 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                     .filter(|w| !w.is_empty() && w.len() <= 16)
                     .ok_or_else(|| invalid_argument("windows", "array", "1..=16 window targets"))?;
                 if target.contains_key("output") {
-                    if target
-                        .get("output")
-                        .and_then(Value::as_str)
-                        .is_none_or(str::is_empty)
-                    {
-                        return Err(ControlReply::refused(
-                            "invalid_argument",
-                            json!({"field":"output","expected":"non-empty string"}),
-                        ));
-                    }
-                    if target
-                        .get("output_generation")
-                        .is_some_and(|value| value.as_u64().is_none())
-                    {
-                        return Err(ControlReply::refused(
-                            "invalid_argument",
-                            json!({"field":"output_generation","expected":"unsigned JSON integer"}),
-                        ));
-                    }
                     if target.contains_key("window") || target.contains_key("region") {
                         return Err(invalid_argument(
                             "target",
@@ -497,8 +478,8 @@ mod tests {
                     .into_wire();
                 let body: Value = serde_json::from_str(&body).unwrap();
                 assert_eq!(rc, 10, "{bad}");
-                assert_eq!(body["error"], "invalid_argument", "{bad}");
-                assert_eq!(body["field"], field, "{bad}");
+                assert_eq!(body["error"], "invalid_value", "{bad}");
+                assert_eq!(body["path"], field, "{bad}");
             }
         }
         for generation in [0, u64::MAX] {

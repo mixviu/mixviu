@@ -241,8 +241,16 @@ fn assert_recorded_colours(path: &Path, expected: &[u32]) -> u64 {
     records
 }
 
-fn vfl_visit(path: &Path, visit: impl FnMut(&[u8])) -> (Vec<u8>, u64) {
-    vfl_scan(path, visit, true).unwrap()
+fn vfl_visit(path: &Path, mut visit: impl FnMut(&[u8])) -> (Vec<u8>, u64) {
+    let mut reader = media_vfl::reader::Reader::open(path).unwrap();
+    let mut first = Vec::new();
+    let mut count = 0;
+    while let Some(frame) = reader.read().unwrap() {
+        if count == 0 { first = frame.pixels.to_vec(); }
+        visit(frame.pixels);
+        count += 1;
+    }
+    (first, count)
 }
 
 /// A live scan acknowledges only complete, CRC-checked records. The active
@@ -662,6 +670,17 @@ fn record_listed_output_excludes_occluders_and_tracks_popup_and_close() {
             .any(|p| p == rgb(0xff12abcd)),
         "the private overlay must remain on the live screen"
     );
+    let (_private_surface, private_popup) = b.popup(false);
+    pump_patterns(&mut [&mut a, &mut b]);
+    thread::sleep(Duration::from_millis(100));
+    let excluded = bus.call("comp.record.status", json!({"session":start["session"]}));
+    assert_eq!(excluded["readbacks"], before["readbacks"], "unlisted popup causes no readback");
+    let recovery = Path::new(start["recovery_path"].as_str().unwrap());
+    let mut reader = media_vfl::reader::Reader::open(recovery).unwrap();
+    while let Some(frame) = reader.read().unwrap() {
+        assert!(!frame.pixels.chunks_exact(4).any(|p| p == 0xffff00ff_u32.to_le_bytes()));
+    }
+    private_popup.destroy();
     let mut c = Pattern::named(connect(&mut process), "opened-during-take", false);
     c.change_buffer();
     c.commit(true);
@@ -806,7 +825,11 @@ fn record_privacy_cursor_ownership_output_and_take_identity() {
     focus("private", &mut a, &mut b);
     let _private_cursor = b.custom_cursor(0xffff00ff);
     pump_patterns(&mut [&mut a, &mut b]);
+    let live = process.root.join("cursor-live.ppm");
+    bus.call("comp.capture.frame", json!({"output":"headless-0","path":live,"format":"ppm"}));
+    assert!(fs::read(live).unwrap().windows(3).any(|p| p == rgb(0xffff00ff)), "private cursor fixture must draw live");
     let denied = take("private-cursor", true, &mut a, &mut b);
+    assert_ne!(denied[0], baseline[0], "fallback default cursor must appear");
     assert!(
         !contains(&denied, 0xffff00ff),
         "unlisted cursor artwork leaked"
@@ -864,9 +887,14 @@ fn record_privacy_window_output_membership_and_marker_order() {
     let status = bus.call("comp.record.status", json!({"session":start["session"]}));
     assert_eq!(
         status["windows"],
-        json!([]),
-        "status reconciles immediately"
+        json!([target(&ar)]),
+        "out of view retains identity membership"
     );
+    thread::sleep(Duration::from_millis(250));
+    bus.call("comp.window.place", place_args(&ar, json!({"output":"headless-0","x":100,"y":100})));
+    pump_patterns(&mut [&mut a]);
+    thread::sleep(Duration::from_millis(250));
+    drop(a);
     thread::sleep(Duration::from_millis(250));
     let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
     assert_eq!(stop["error"], Value::Null);
@@ -877,6 +905,17 @@ fn record_privacy_window_output_membership_and_marker_order() {
         .map(|l| serde_json::from_str::<Value>(l).unwrap())
         .find(|m| m["label"] == "window_gone")
         .unwrap();
+    let markers: Vec<Value> = fs::read_to_string(path.join("markers.jsonl")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let left = markers.iter().find(|m| m["label"] == "window_left").unwrap()["frame"].as_u64().unwrap();
+    let returned = markers.iter().find(|m| m["label"] == "window_returned").unwrap()["frame"].as_u64().unwrap();
+    let mut reader = media_vfl::reader::Reader::open(&path).unwrap();
+    let mut saw_return = false;
+    while let Some(f) = reader.read().unwrap() {
+        let present = f.pixels.chunks_exact(4).any(|p| p == 0xff11eecc_u32.to_le_bytes());
+        if f.slot >= left && f.slot + 1 < returned { assert!(!present); }
+        if f.slot >= returned { saw_return |= present; }
+    }
+    assert!(saw_return);
     let frame = marker["frame"].as_u64().unwrap();
     let mut index = 0;
     let mut saw = false;
@@ -894,6 +933,105 @@ fn record_privacy_window_output_membership_and_marker_order() {
         saw && index > frame + 1,
         "take must show initial window then a cleared tail"
     );
+}
+
+#[test]
+fn record_privacy_lock_is_blank_and_stops_callbacks() {
+    if !process::record_available() { return; }
+    let bus = Bus::start("record-lock");
+    let mut process = process::spawn(1, None, "record-lock", Some(&bus.url));
+    let mut a = Pattern::named(connect(&mut process), "lock-listed", false);
+    a.solid_buffer(0xff11eecc);
+    a.commit(true);
+    bus.ready();
+    let ar = bus.window_for("lock-listed", &mut [&mut a]);
+    let path = process.root.join("lock.vfl");
+    let start = bus.call("comp.record.start", json!({"request_id":"lock","target":{"output":"headless-0","windows":[target(&ar)]},"path":path,"max_seconds":20,"cursor":true}));
+    let log = process.root.join("lock.log");
+    let file = fs::File::create(&log).unwrap();
+    let mut lock = Command::new(binary("testkit-lock-client"))
+        .args(["--hold","10"]).env("XDG_RUNTIME_DIR", &process.root)
+        .env("WAYLAND_DISPLAY","wayland-headless-test")
+        .stdout(std::process::Stdio::from(file.try_clone().unwrap()))
+        .stderr(file).spawn().unwrap();
+    let wait = |text: &str| {
+        let until = Instant::now() + Duration::from_secs(5);
+        while !fs::read_to_string(&log).unwrap().contains(text) {
+            assert!(Instant::now() < until, "lock client did not report {text}");
+            thread::sleep(Duration::from_millis(10));
+        }
+    };
+    wait("locked");
+    pump_patterns(&mut [&mut a]);
+    let before = a.state.callbacks;
+    a.commit(true);
+    let until = Instant::now() + Duration::from_millis(500);
+    while Instant::now() < until { a.pump(); thread::sleep(Duration::from_millis(5)); }
+    assert_eq!(a.state.callbacks, before, "listed window got callbacks while locked");
+    let quiet = bus.call("comp.record.status",json!({"session":start["session"]}));
+    thread::sleep(Duration::from_millis(200));
+    let quiet2 = bus.call("comp.record.status",json!({"session":start["session"]}));
+    assert_eq!(quiet["readbacks"], quiet2["readbacks"]);
+    assert!(quiet2["repeated"].as_u64() > quiet["repeated"].as_u64());
+    assert_eq!(unsafe { libc::kill(lock.id() as i32, libc::SIGUSR1) }, 0);
+    wait("unlocked");
+    assert!(lock.wait().unwrap().success());
+    pump_patterns(&mut [&mut a]);
+    thread::sleep(Duration::from_millis(200));
+    let stop = bus.call("comp.record.stop",json!({"session":start["session"]}));
+    assert_eq!(stop["error"], Value::Null);
+    let markers: Vec<Value> = fs::read_to_string(path.join("markers.jsonl")).unwrap().lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    let locked = markers.iter().find(|m| m["label"] == "locked").unwrap()["frame"].as_u64().unwrap();
+    let unlocked = markers.iter().find(|m| m["label"] == "unlocked").unwrap()["frame"].as_u64().unwrap();
+    let mut reader = media_vfl::reader::Reader::open(&path).unwrap();
+    let mut blank = 0;
+    let mut returned = false;
+    while let Some(f) = reader.read().unwrap() {
+        if f.slot >= locked && f.slot + 1 < unlocked {
+            assert!(f.pixels.chunks_exact(4).all(|p| p == [0,0,0,255]), "locked frame leaked content");
+            blank += 1;
+        }
+        if f.slot >= unlocked { returned |= f.pixels.chunks_exact(4).any(|p| p == 0xff11eecc_u32.to_le_bytes()); }
+    }
+    assert!(blank > 0 && returned);
+}
+
+#[test]
+fn record_privacy_generation_change_and_start_refusals() {
+    if !process::record_available() { return; }
+    let bus = Bus::start("record-generation");
+    let mut process = process::spawn(1,None,"record-generation",Some(&bus.url));
+    let mut a = Pattern::named(connect(&mut process),"generation-listed",false);
+    a.solid_buffer(0xff11eecc); a.commit(true);
+    bus.ready();
+    let ar = bus.window_for("generation-listed", &mut [&mut a]);
+    let path = process.root.join("generation.vfl");
+    let start = bus.call("comp.record.start",json!({"request_id":"generation","target":{"output":"headless-0","windows":[target(&ar)]},"path":path,"cursor":false,"max_seconds":10}));
+    a.solid_buffer(0xffee9911);
+    a.retake_role("generation-listed");
+    let successor = bus.window_for("generation-listed", &mut [&mut a]);
+    assert_eq!(successor["id"],ar["id"]);
+    assert_ne!(successor["generation"],ar["generation"]);
+    thread::sleep(Duration::from_millis(250));
+    assert_eq!(bus.call("comp.record.status",json!({"session":start["session"]}))["windows"],json!([]));
+    let stop = bus.call("comp.record.stop",json!({"session":start["session"]}));
+    assert_eq!(stop["error"],Value::Null);
+    let mut saw = false;
+    let mut last = false;
+    vfl_visit(&path, |pixels| {
+        last = pixels.chunks_exact(4).any(|p| p == 0xff11eecc_u32.to_le_bytes());
+        saw |= last;
+        assert!(!pixels.chunks_exact(4).any(|p| p == 0xffee9911_u32.to_le_bytes()));
+    });
+    assert!(saw && !last);
+    let markers = fs::read_to_string(path.join("markers.jsonl")).unwrap();
+    assert!(markers.lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).any(|m| m["label"] == "window_gone" && m["data"] == target(&ar)));
+    let args = |row: &Value, id: &str| json!({"request_id":id,"target":{"output":"headless-0","windows":[target(row)]},"path":process.root.join(format!("{id}.vfl")),"max_seconds":1});
+    let stale = bus.call_rc("comp.record.start",args(&ar,"stale"),10);
+    assert_eq!(stale["error"],"stale_target"); assert_eq!(stale["id"],ar["id"]);
+    drop(a); thread::sleep(Duration::from_millis(150));
+    let closed = bus.call_rc("comp.record.start",args(&successor,"closed"),10);
+    assert_eq!(closed["error"],"unknown_window"); assert_eq!(closed["id"],ar["id"]);
 }
 
 #[test]

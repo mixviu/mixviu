@@ -68,9 +68,11 @@ struct Session {
     params: RecordCommand,
     path: String,
     targets: Vec<CaptureFrameSpec>,
-    gone_markers: Vec<comp_model::capture::CaptureWindow>,
-    membership_epoch: u64,
-    captured_membership: u64,
+    scene_markers: Vec<(&'static str, Value)>,
+    outside: Vec<comp_model::capture::CaptureWindow>,
+    locked: bool,
+    scene_epoch: u64,
+    captured_scene: u64,
     fps: u32,
     encoder: String,
     probe: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
@@ -132,44 +134,49 @@ fn reconcile_listed(lp: &Loop, s: &mut Session) {
     if s.failed.is_some() || s.recording.as_ref().is_some_and(|r| !r.is_recording()) {
         return;
     }
+
+    let locked = world::comp::session_lock::active(lp);
+    if s.targets.iter().any(|t| t.listed_windows.is_some()) && locked != s.locked {
+        s.locked = locked;
+        s.scene_markers.push((if locked { "locked" } else { "unlocked" }, Value::Null));
+        s.scene_epoch += 1;
+    }
     for target in &mut s.targets {
         if let Some(listed) = &mut target.listed_windows {
             listed.retain(|window| {
-                if lp
-                    .inner
-                    .comp
-                    .registry
-                    .resolve_window_target(window.id, Some(window.generation))
-                    .is_ok()
-                    && lp
-                        .inner
-                        .space_state()
-                        .state
-                        .outputs()
-                        .find(|o| target.output.as_ref() == Some(&o.name()))
-                        .is_some_and(|o| world::comp::recording::on_output(lp, *window, o))
-                {
-                    true
-                } else {
-                    s.gone_markers.push(*window);
-                    s.membership_epoch += 1;
-                    false
+                // Membership is identity, independent of mapping, view or world.
+                let alive = lp.inner.comp.registry.get(surfaces::SurfaceId(window.id))
+                    .is_some_and(|row| row.generation() == window.generation);
+                let visible = alive && lp.inner.space_state().state.outputs()
+                    .find(|o| target.output.as_ref() == Some(&o.name()))
+                    .is_some_and(|o| world::comp::recording::on_output(lp, *window, o));
+                let was_outside = s.outside.contains(window);
+                let label = if !alive { Some("window_gone") }
+                    else if visible && was_outside { Some("window_returned") }
+                    else if !visible && !was_outside { Some("window_left") }
+                    else { None };
+                if let Some(label) = label {
+                    s.scene_markers.push((label, json!({"id":window.id,"generation":window.generation})));
+                    s.scene_epoch += 1;
                 }
+                if !alive || visible { s.outside.retain(|w| w != window); }
+                else if !was_outside { s.outside.push(*window); }
+                alive
             });
         }
     }
-    flush_gone_markers(s);
+    flush_scene_markers(s);
 }
-fn flush_gone_markers(s: &mut Session) -> bool {
-    if s.membership_epoch != s.captured_membership {
+fn flush_scene_markers(s: &mut Session) -> bool {
+    if s.scene_epoch != s.captured_scene {
         return false;
     }
     // A previous GPU answer must enter the writer queue before its marker.
     // The writer's FIFO then persists the old frame before this observation.
     if s.pending {
-        return s.gone_markers.is_empty();
+        return s.scene_markers.is_empty();
     }
-    while let Some(window) = s.gone_markers.first().copied() {
+    while let Some((label, data)) = s.scene_markers.first().cloned() {
         let Some(recording) = s.recording.as_mut() else {
             return false;
         };
@@ -185,14 +192,14 @@ fn flush_gone_markers(s: &mut Session) -> bool {
         }
         if recording
             .marker(
-                "window_gone".into(),
-                json!({"id":window.id,"generation":window.generation}),
+                label.into(),
+                data,
             )
             .is_err()
         {
             return false;
         }
-        s.gone_markers.remove(0);
+        s.scene_markers.remove(0);
     }
     true
 }
@@ -292,14 +299,13 @@ pub fn command(
         for target in &mut targets {
             if let Some(listed) = &target.listed_windows {
                 for window in listed {
-                    if lp
+                    if let Err(error) = lp
                         .inner
                         .comp
                         .registry
                         .resolve_window_target(window.id, Some(window.generation))
-                        .is_err()
                     {
-                        answer(refused("listed window gone or generation changed"));
+                        answer(ControlReply::WindowTarget { id: window.id, error });
                         return;
                     }
                 }
@@ -382,9 +388,11 @@ pub fn command(
             pixel_counter: 0,
             path,
             targets,
-            gone_markers: Vec::new(),
-            membership_epoch: 0,
-            captured_membership: 0,
+            scene_markers: Vec::new(),
+            outside: Vec::new(),
+            locked: false,
+            scene_epoch: 0,
+            captured_scene: 0,
             fps,
             encoder,
             probe,
@@ -613,7 +621,7 @@ fn superseded(pending: &mut Option<Vec<u64>>, current: &[u64]) -> bool {
 }
 
 fn stop_stream(s: &mut Session, discard: bool) -> bool {
-    if !discard && s.failed.is_none() && !flush_gone_markers(s) {
+    if !discard && s.failed.is_none() && !flush_scene_markers(s) {
         let until = *s
             .drain_until
             .get_or_insert_with(|| Instant::now() + Duration::from_secs(1));
@@ -777,7 +785,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if (!s.pending || Instant::now() >= until) && stop_stream(&mut s, false) {
                 event(&s, "finishing");
             }
-            if s.membership_epoch == s.captured_membership || s.failed.is_some() {
+            if s.scene_epoch == s.captured_scene || s.failed.is_some() {
                 return;
             }
         }
@@ -796,7 +804,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if stop_stream(&mut s, false) {
                 event(&s, "finishing");
             }
-            if s.membership_epoch == s.captured_membership || s.failed.is_some() {
+            if s.scene_epoch == s.captured_scene || s.failed.is_some() {
                 return;
             }
         }
@@ -927,7 +935,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     s.deferred_signature = None;
     s.pending = true;
     let targets = s.targets.clone();
-    let capture_epoch = s.membership_epoch;
+    let capture_epoch = s.scene_epoch;
     let counter = s.pixel_counter;
     let Some(next_counter) = counter.checked_add(1) else {
         drop(s);
@@ -944,7 +952,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         target.take_id = Some(session.borrow().id.clone());
         target.force_capture = {
             let s = session.borrow();
-            s.recording.is_none() || s.membership_epoch != s.captured_membership
+            s.recording.is_none() || s.scene_epoch != s.captured_scene
         };
         let got = frames.clone();
         let session = session.clone();
@@ -980,7 +988,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     return;
                 };
                 let result = recording.frame(None);
-                flush_gone_markers(&mut s);
+                flush_scene_markers(&mut s);
                 if s.drain_until.is_some() {
                     stop_stream(&mut s, false);
                 }
@@ -1054,7 +1062,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 fail(&session, &error);
                 return;
             }
-            s.captured_membership = capture_epoch;
+            s.captured_scene = capture_epoch;
             if s.start.is_none() {
                 let reply = s.recording.as_ref().unwrap().started();
                 s.start = Some(reply.clone());
@@ -1063,7 +1071,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 }
                 event(&s, "recording");
             }
-            flush_gone_markers(&mut s);
+            flush_scene_markers(&mut s);
             if s.drain_until.is_some() && stop_stream(&mut s, false) {
                 event(&s, "finishing");
             }
@@ -1111,9 +1119,11 @@ mod tests {
             params,
             path,
             targets: vec![],
-            gone_markers: Vec::new(),
-            membership_epoch: 0,
-            captured_membership: 0,
+            scene_markers: Vec::new(),
+            outside: Vec::new(),
+            locked: false,
+            scene_epoch: 0,
+            captured_scene: 0,
             fps: 30,
             encoder: "vfl".into(),
             probe: None,
@@ -1591,9 +1601,11 @@ mod tests {
             params,
             path: "/tmp/pending-record-unit.vfl".into(),
             targets: vec![],
-            gone_markers: Vec::new(),
-            membership_epoch: 0,
-            captured_membership: 0,
+            scene_markers: Vec::new(),
+            outside: Vec::new(),
+            locked: false,
+            scene_epoch: 0,
+            captured_scene: 0,
             fps: 30,
             encoder: "vfl".into(),
             probe: None,

@@ -49,7 +49,8 @@ For an output-sized allowlisted take use
 `target:{output:"headless-0",windows:[{id:7,generation:3}]}` with optional
 `output_generation`. The explicit output distinguishes it from the existing
 `target:{windows:[...]}` stitched canvas. Start requires 1–16 live targets;
-duplicates are collapsed. Only those windows, their popup/subsurface trees,
+duplicates are collapsed. The default means backdrop plus the listed windows.
+Only those windows, their popup/subsurface trees,
 the wallpaper and the optional cursor enter a separate offscreen picture.
 The wallpaper is the `backdrop` namespace's Background layer surface tree;
 other layer surfaces (including other Background namespaces), layer popups,
@@ -67,12 +68,18 @@ output, so this fence uses the output camera/view intersection, plus explicit
 fullscreen/constrained output selection, rather than `wl_surface.enter`.
 The renderer rechecks the same fence.
 
-A listed window closing, changing generation or leaving the recorded view removes it from the active
-set and queues one `window_gone` marker with `data:{id,generation}`. The take
+A listed window closing or changing generation removes it from the active
+set and queues one `window_gone` marker with `data:{id,generation}`. Membership
+is by identity, independent of the current view, camera, world or window position.
+Leaving the view queues `window_left`; returning queues `window_returned`, both
+with `data:{id,generation}`. Neither removes membership: returning windows draw again.
+The take
 continues, including when the set becomes empty; the canvas stays output-sized
 through listed-window moves and resizes. Status reconciles membership before answering. A successful stop includes all
 these markers, admitted after an image evaluated with the removed window
-excluded; no later frame shows the removed window. Marker admission is retried under queue pressure; inability to admit
+excluded; no later frame shows a gone window. Visibility and lock markers are
+also admitted after the first image evaluated with the new state; that image
+precedes its marker. Marker admission is retried under queue pressure; inability to admit
 one within the bounded stop drain fails publication instead of silently losing
 it. Existing single-window and stitched targets still fail when a target goes
 away or changes dimensions. Status includes `windows:[{id,generation}]` for
@@ -80,8 +87,14 @@ the active listed set (an empty array for other targets or idle).
 New windows are excluded. There is no `comp.record.windows` mutation command
 in this version; restart the take to change its allowlist.
 
+While session-locked, a listed take captures an opaque black blank only: no
+backdrop, windows, lock surfaces or cursor, and no listed window frame callbacks.
+Recording continues, with quiet locked ticks repeating the blank. `locked` and
+`unlocked` markers (null data) record sampled lock transitions. Unlock restores
+the current backdrop and visible listed windows without changing membership.
+
 Filtered takes carry an explicit internal take ID, independent of file paths,
-and force a real first image and a fresh image after membership removal.
+and force a real first image and a fresh image after observed scene transitions.
 An unchanged-scene answer without a raw consumer fails explicitly.
 Filtered takes track damage on their own composed elements. Changes solely in
 unlisted content cause no readback; unchanged pictures use scheduled repeats.

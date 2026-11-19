@@ -368,6 +368,23 @@ impl Pattern {
         self.queue.roundtrip(&mut self.state).unwrap();
     }
 
+    pub fn retake_role(&mut self, name: &str) {
+        self.surface.attach(None, 0, 0);
+        self.surface.commit();
+        self._top.destroy();
+        self.xdg.destroy();
+        self.queue.roundtrip(&mut self.state).unwrap();
+        let qh = self.queue.handle();
+        self.xdg = self.shell.get_xdg_surface(&self.surface, &qh, ());
+        self._top = self.xdg.get_toplevel(&qh, ());
+        self._top.set_app_id(name.into());
+        self.state.configured = false;
+        self.surface.commit();
+        while !self.state.configured { self.queue.roundtrip(&mut self.state).unwrap(); }
+        self.commit(true);
+        self.queue.roundtrip(&mut self.state).unwrap();
+    }
+
     pub fn popup(&mut self, grab: bool) -> (WlSurface, XdgPopup) {
         let qh = self.queue.handle();
         let surface = self.compositor.create_surface(&qh, ());

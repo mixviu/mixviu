@@ -6,15 +6,15 @@ for $package in $packages
   $command = concat($command, ["-p", $package])
 end
 try
-  if $mode == "capture" or $mode == "bench" or $mode == "accept" or $mode == "probe" then
-    $runtime_build = if $mode == "probe" then ["cargo","build","-p","viud","--features","headless/test-support"] else ["cargo","build","--release","-p","viud","--features","headless/test-support"] end
+  if $mode == "capture" or $mode == "bench" or $mode == "accept" or $mode == "probe" or $mode == "all" then
+    $runtime_build = if $mode == "probe" or $mode == "all" then ["cargo","build","-p","viud","--features","headless/test-support"] else ["cargo","build","--release","-p","viud","--features","headless/test-support"] end
     for $cmd in [["cargo","build","-p","mix","-p","noded","-p","testkit","--bins"], $runtime_build]
       $r = run_argv($cmd, {timeout:1800,stdout:"inherit",stderr:"inherit"})
       if not $r.ok then exit($r.exit_code ?? 1) end
     end
     export MIX_TEST_REQUIRE_RECORD=1
     export MIX_TEST_MIX_EXE=realpath("target/debug/mix")
-    export MIX_TEST_VIUD_EXE=realpath(if $mode == "probe" then "target/debug/viud" else "target/release/viud" end)
+    export MIX_TEST_VIUD_EXE=realpath(if $mode == "probe" or $mode == "all" then "target/debug/viud" else "target/release/viud" end)
     if $mode == "bench" or $mode == "accept" then
       -- Release test binaries locate their broker beside the release runtime.
       -- Build that fixture here rather than depending on a previous worker job.
@@ -22,7 +22,13 @@ try
       if not $r.ok then exit($r.exit_code ?? 1) end
     end
     $command = ["cargo","test","-p","headless","--test","capture","record_","--","--nocapture","--test-threads=1"]
-    if $mode == "probe" then
+    if $mode == "all" then
+      $command = ["cargo","test"]
+      for $package in $packages
+        $command = concat($command,["-p",$package])
+      end
+      $command = concat($command,["--all-targets","--","--nocapture","--test-threads=1"])
+    elif $mode == "probe" then
       $command = ["cargo","test","-p","headless","--test","capture","record_privacy","--","--nocapture","--test-threads=1"]
     end
     if $mode == "bench" then
@@ -32,7 +38,7 @@ try
   elif $mode == "clippy" then
     $command = concat($command, ["--all-targets"])
   elif $mode != "fmt" then
-    $command = concat($command, ["--lib"])
+    $command = concat($command, ["--all-targets"])
   end
   $r = run_argv($command, {timeout:1800,stdout:"inherit",stderr:"inherit"})
   if $r.ok and $mode == "accept" then

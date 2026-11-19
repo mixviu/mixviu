@@ -21,10 +21,11 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
             .ok_or_else(|| screencopy::file::capture_failed("output has no mode"))?
             .size;
         let scale = output.current_scale().fractional_scale();
+        let locked = world::comp::session_lock::active(state);
         let listed = spec.listed_windows.as_ref().expect("listed capture");
         let mut allowed = std::collections::HashSet::new();
         for row in state.inner.comp.registry.surface_rows() {
-            if row.role().managed_toplevel()
+            if !locked && row.role().managed_toplevel()
                 && row.mapped()
                 && listed.iter().any(|w| {
                     w.id == row.id().0
@@ -38,7 +39,7 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
             }
         }
         let mut plan = Plan::new();
-        if world::comp::recording::cursor_on_output(
+        if !locked && world::comp::recording::cursor_on_output(
             spec.cursor,
             state.inner.cursor_output.as_deref(),
             &key,
@@ -62,7 +63,7 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
         for surface in map
             .layers()
             .rev()
-            .filter(|s| s.layer() == WlrLayer::Background && s.namespace() == "backdrop")
+            .filter(|s| !locked && s.layer() == WlrLayer::Background && s.namespace() == "backdrop")
         {
             if world::comp::panels::concealed(surface.wl_surface()) {
                 continue;
@@ -84,7 +85,7 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
             state.inner.viewports(),
             smithay::utils::Rectangle::from_size(size),
         );
-        for (index, region) in computed.regions.iter().enumerate().rev() {
+        if locked {\n            plan.push(layer::BACKGROUND, DrawNode::Solid(SolidColorRenderElement::new(\n                background_id(0), smithay::utils::Rectangle::from_size(size),\n                CommitCounter::default(), [0.0, 0.0, 0.0, 1.0], Kind::Unspecified)));\n        }\n        for (index, region) in computed.regions.iter().enumerate().rev().filter(|_| !locked) {
             state.inner.render_target = Some(world::state::RenderTarget {
                 slot: region.slot,
                 origin_logical: (
