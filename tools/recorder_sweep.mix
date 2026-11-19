@@ -21,6 +21,7 @@ elif args()[0] == "capture" then
   export MIX_TEST_MIX_EXE=realpath("target/release/mix")
   checked(["cargo","test","--release","--locked","-p","viud","--features","test-support","--test","recorder_binary"])
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","--","--test-threads=1"])
+  export MIX_TEST_CAPTURE_SECONDS="40"
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","benchmark_record_changing_4k_zero_drop","--","--ignored","--exact","--nocapture","--test-threads=1"])
 else
   export MIX_TEST_MIX_EXE=realpath("target/debug/mix")
