@@ -465,8 +465,29 @@ mod tests {
     fn listed_output_arguments_have_typed_field_refusals() {
         let args = json!({"request_id":"listed","target":{"output":"headless-0","windows":[{"id":1,"generation":2}]},"path":"/tmp/listed.vfl","max_seconds":60});
         for (field, values) in [
-            ("output", vec![Value::Null, json!(7), json!(""), json!({}), json!(false), json!([])]),
-            ("output_generation", vec![Value::Null, json!(1.5), json!(1.0), json!("1"), json!({}), json!(-1), json!(true)]),
+            (
+                "output",
+                vec![
+                    Value::Null,
+                    json!(7),
+                    json!(""),
+                    json!({}),
+                    json!(false),
+                    json!([]),
+                ],
+            ),
+            (
+                "output_generation",
+                vec![
+                    Value::Null,
+                    json!(1.5),
+                    json!(1.0),
+                    json!("1"),
+                    json!({}),
+                    json!(-1),
+                    json!(true),
+                ],
+            ),
         ] {
             for value in values {
                 let mut bad = args.clone();
@@ -486,10 +507,15 @@ mod tests {
             assert!(parse_record("comp.record.start", &valid).is_ok());
         }
         // Other target forms retain the shared parser's existing refusal.
-        for target in [json!({"output":null}), json!({"output":"headless-0","output_generation":1.5})] {
+        for target in [
+            json!({"output":null}),
+            json!({"output":"headless-0","output_generation":1.5}),
+        ] {
             let mut other = args.clone();
             other["target"] = target;
-            let body = parse_record("comp.record.start", &other).unwrap_err().wire_json();
+            let body = parse_record("comp.record.start", &other)
+                .unwrap_err()
+                .wire_json();
             assert_eq!(body["error"], "invalid_value");
         }
     }
