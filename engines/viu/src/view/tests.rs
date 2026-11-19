@@ -15,20 +15,48 @@ use crate::templates::PreparedLists;
 
 #[test]
 fn furniture_up_takes_clicks_at_the_presented_rectangle() {
-    let source="---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\nroot: {widget: \"button\", label: \"Motion\", enter: \"up\", exit: \"fade\", on_click: \"activate\"}\n```\n";
-    let mut scene=SceneUi::new(content(source,None,false));let ctx=egui::Context::default();scene.setup(&ctx);
-    let raw=|t|egui::RawInput {time:Some(t),screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(200.,200.))),..Default::default()};
-    for t in [0.,0.03] {ctx.run_ui(raw(t),|ui|scene.show(ui,&mut Vec::new())).drop_without_applying_deltas();}
-    let target=scene.layout.nodes["root"].center();let mut emitted=Vec::new();
-    for pressed in [true,false] {
-        let mut raw=raw(0.03);raw.events=vec![egui::Event::PointerMoved(target),egui::Event::PointerButton{pos:target,button:egui::PointerButton::Primary,pressed,modifiers:Default::default()}];
-        ctx.run_ui(raw,|ui|scene.show(ui,&mut emitted)).drop_without_applying_deltas();
+    let source = "---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\nroot: {widget: \"button\", label: \"Motion\", enter: \"up\", exit: \"fade\", on_click: \"activate\"}\n```\n";
+    let mut scene = SceneUi::new(content(source, None, false));
+    let ctx = egui::Context::default();
+    scene.setup(&ctx);
+    let raw = |t| egui::RawInput {
+        time: Some(t),
+        screen_rect: Some(egui::Rect::from_min_size(
+            egui::Pos2::ZERO,
+            egui::vec2(200., 200.),
+        )),
+        ..Default::default()
+    };
+    for t in [0., 0.03] {
+        ctx.run_ui(raw(t), |ui| scene.show(ui, &mut Vec::new()))
+            .drop_without_applying_deltas();
     }
-    assert!(emitted.iter().any(|m|matches!(m,SceneMessage::Click(_))));
-    scene.update(SceneMessage::Replace(content(&source.replace("label: \"Motion\"","label: \"Motion\", hidden: true"),None,false)));
+    let target = scene.layout.nodes["root"].center();
+    let mut emitted = Vec::new();
+    for pressed in [true, false] {
+        let mut raw = raw(0.03);
+        raw.events = vec![
+            egui::Event::PointerMoved(target),
+            egui::Event::PointerButton {
+                pos: target,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Default::default(),
+            },
+        ];
+        ctx.run_ui(raw, |ui| scene.show(ui, &mut emitted))
+            .drop_without_applying_deltas();
+    }
+    assert!(emitted.iter().any(|m| matches!(m, SceneMessage::Click(_))));
+    scene.update(SceneMessage::Replace(content(
+        &source.replace("label: \"Motion\"", "label: \"Motion\", hidden: true"),
+        None,
+        false,
+    )));
     emitted.clear();
-    ctx.run_ui(raw(0.04),|ui|scene.show(ui,&mut emitted)).drop_without_applying_deltas();
-    assert!(!emitted.iter().any(|m|matches!(m,SceneMessage::Click(_))));
+    ctx.run_ui(raw(0.04), |ui| scene.show(ui, &mut emitted))
+        .drop_without_applying_deltas();
+    assert!(!emitted.iter().any(|m| matches!(m, SceneMessage::Click(_))));
 }
 
 pub(super) fn content(source: &str, frame: Option<Frame>, dialog: bool) -> Arc<Content> {

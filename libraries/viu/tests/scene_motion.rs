@@ -14,8 +14,11 @@ fn scaled_input_and_per_node_reduced_motion_use_the_drawn_rectangle() {
         for t in [0.,0.03] {frame(&ctx,&mut view,t).drop_without_applying_deltas();}
         let painted=view.geometry["button"];
         let sample=motion::presets().into_iter().find(|p|p.name=="pop").unwrap().sample(0.03);
-        assert!(painted.width()>0.);
-        if enabled {assert!(sample.get(motion::Property::Scale)<1.);}
+        let reference_ctx=egui::Context::default();
+        let mut reference=SceneView::new(&source.replace("\"motion\":true","\"motion\":false")).unwrap();
+        frame(&reference_ctx,&mut reference,0.03).drop_without_applying_deltas();
+        let scale=if enabled {sample.get(motion::Property::Scale) as f32} else {1.};
+        assert!((painted.width()-reference.geometry["button"].width()*scale).abs()<0.1);
         for (target,expected) in [(painted.center(),true),(egui::pos2(painted.left()-2.,painted.center().y),false)] {
             let mut commands=Vec::new();
             for pressed in [true,false] {

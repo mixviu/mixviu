@@ -999,7 +999,13 @@ pub(crate) fn layout(
 }
 
 /// Walk the laid-out tree, absolute rects in paint order.
-fn collect(tree: &TaffyTree<Meta>, node: NodeId, origin: Pos2, parent:Option<&str>, out: &mut SceneLayout) {
+fn collect(
+    tree: &TaffyTree<Meta>,
+    node: NodeId,
+    origin: Pos2,
+    parent: Option<&str>,
+    out: &mut SceneLayout,
+) {
     let Ok(layout) = tree.layout(node) else {
         return;
     };
@@ -1050,7 +1056,10 @@ fn collect(tree: &TaffyTree<Meta>, node: NodeId, origin: Pos2, parent:Option<&st
     }
     if let Ok(children) = tree.children(node) {
         for child in children {
-            let parent=tree.get_node_context(node).map(|m|m.key.as_str()).or(parent);
+            let parent = tree
+                .get_node_context(node)
+                .map(|m| m.key.as_str())
+                .or(parent);
             collect(tree, child, rect.min, parent, out);
         }
     }

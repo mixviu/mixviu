@@ -1105,7 +1105,13 @@ impl Widgets {
         }
     }
     fn remember(&mut self, ui: &egui::Ui, id: &str, response: &egui::Response) {
-        self.geometry.insert(id.into(), ui.ctx().layer_transform_to_global(ui.layer_id()).unwrap_or_default().mul_rect(response.rect));
+        self.geometry.insert(
+            id.into(),
+            ui.ctx()
+                .layer_transform_to_global(ui.layer_id())
+                .unwrap_or_default()
+                .mul_rect(response.rect),
+        );
         if self.focus.as_deref() == Some(id) {
             response.request_focus();
             if let Some([start, end]) = self.focus_selection.take() {
@@ -1538,7 +1544,7 @@ impl Widgets {
                 }
             }
             "button" => {
-                let start=ui.ctx().graphics_mut(|g|g.entry(ui.layer_id()).next_idx());
+                let start = ui.ctx().graphics_mut(|g| g.entry(ui.layer_id()).next_idx());
                 let r = if widget.properties["style"] == "icon" {
                     ui.add(
                         toolkit::button::IconButton::new(
@@ -1554,9 +1560,21 @@ impl Widgets {
                 } else {
                     icon_button(ui, widget.text("icon"), widget.text("text"), false)
                 };
-                if widget.properties["style"]!="primary" && widget.properties["style"]!="secondary" {
-                    let travel=toolkit::scene_motion::scalar(ui.ctx(),r.id.with("press"),if r.is_pointer_button_down_on(){1.0}else{0.0},90.,ui.style().animation_time!=0.0);
-                    toolkit::scene_motion::visual(ui,start,r.rect,1.,[0.,f64::from(travel)]);
+                if widget.properties["style"] != "primary"
+                    && widget.properties["style"] != "secondary"
+                {
+                    let travel = toolkit::scene_motion::scalar(
+                        ui.ctx(),
+                        r.id.with("press"),
+                        if r.is_pointer_button_down_on() {
+                            1.0
+                        } else {
+                            0.0
+                        },
+                        90.,
+                        ui.style().animation_time != 0.0,
+                    );
+                    toolkit::scene_motion::visual(ui, start, r.rect, 1., [0., f64::from(travel)]);
                 }
                 let r = if let Some(tip) = widget.properties["tooltip"].as_str() {
                     let shortcut = widget.properties["shortcut"]
@@ -1764,7 +1782,10 @@ impl Widgets {
                         }
                         response
                     } else {
-                        ui.add(toolkit::toggle::Switch::new(&mut checked, widget.text("text")))
+                        ui.add(toolkit::toggle::Switch::new(
+                            &mut checked,
+                            widget.text("text"),
+                        ))
                     }
                 };
                 if r.changed() || r.clicked() {
@@ -1798,7 +1819,12 @@ impl Widgets {
                         .as_str()
                         .filter(|s| !s.is_empty())
                     {
-                        toolkit::scene_motion::content(ui,egui::Id::unique((id,"tab-motion")),value.as_str().unwrap_or(""),|ui|ui.small(page));
+                        toolkit::scene_motion::content(
+                            ui,
+                            egui::Id::unique((id, "tab-motion")),
+                            value.as_str().unwrap_or(""),
+                            |ui| ui.small(page),
+                        );
                     }
                 }
                 response
@@ -1937,8 +1963,10 @@ impl Widgets {
             }
             "list" | "table" | "tree" => {
                 let source = widget.text("dataset");
-                let row_motion=toolkit::scene_motion::state(ui.ctx(),egui::Id::unique((id,"row-motion")));
-                let mut row_motion=row_motion.lock().unwrap();row_motion.begin(ui);
+                let row_motion =
+                    toolkit::scene_motion::state(ui.ctx(), egui::Id::unique((id, "row-motion")));
+                let mut row_motion = row_motion.lock().unwrap();
+                row_motion.begin(ui);
                 let data = model["datasets"][source]
                     .as_array()
                     .map(Vec::as_slice)
@@ -1998,7 +2026,14 @@ impl Widgets {
                                 };
                                 let cells = &data[row];
                                 let name = cells[0].as_str().unwrap_or("");
-                                let capture=row_motion.capture(ui,name,None,Some(&json!("fade")),Some(&json!("fade")),widget.kind=="list" && ui.style().animation_time!=0.0);
+                                let capture = row_motion.capture(
+                                    ui,
+                                    name,
+                                    None,
+                                    Some(&json!("fade")),
+                                    Some(&json!("fade")),
+                                    widget.kind == "list" && ui.style().animation_time != 0.0,
+                                );
                                 let r = if widget.kind == "table" {
                                     let (rect, response) = ui.allocate_exact_size(
                                         Vec2::new(
@@ -2064,7 +2099,7 @@ impl Widgets {
                                         whole(value) == Some(row as u64),
                                     )
                                 };
-                                row_motion.painted(ui,capture,r.rect);
+                                row_motion.painted(ui, capture, r.rect);
                                 self.remember(ui, &format!("{id}.{row}"), &r);
                                 if r.clicked() {
                                     changed = Some(json!(row));

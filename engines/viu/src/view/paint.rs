@@ -182,15 +182,18 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
     // The innermost hovered node that has a tip (children paint after
     // their parents, so a later hit replaces an earlier one).
     let mut tip_candidate: Option<super::tip::Candidate> = None;
-    let mut layers=std::collections::BTreeMap::new();
-    let mut disabled=std::collections::BTreeSet::new();
+    let mut layers = std::collections::BTreeMap::new();
+    let mut disabled = std::collections::BTreeSet::new();
     for item in &placed {
         let Some(node) = node_of(scene, item) else {
             continue;
         };
         let mut node = node.clone();
-        let motion_enabled=node.ports.get("motion")!=Some(&serde_json::Value::Bool(false)) && !item.parent.as_ref().is_some_and(|p|disabled.contains(p));
-        if !motion_enabled {disabled.insert(item.key.clone());}
+        let motion_enabled = node.ports.get("motion") != Some(&serde_json::Value::Bool(false))
+            && !item.parent.as_ref().is_some_and(|p| disabled.contains(p));
+        if !motion_enabled {
+            disabled.insert(item.key.clone());
+        }
         for prop in ["color", "background", "hover"] {
             if let Some(target) = node.ports.get(prop).cloned() {
                 let value = toolkit::scene_motion::value(
@@ -220,14 +223,64 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         if !visible.is_positive() && !(rect.width() == 0.0 || rect.height() == 0.0) {
             continue;
         }
-        let mut base=ui.new_child(egui::UiBuilder::new().id_salt((&item.key,"motion-host")).layer_id(item.parent.as_ref().and_then(|p|layers.get(p)).copied().unwrap_or(ui.layer_id())));
-        let offset=toolkit::scene_motion::value(base.ctx(),&item.key,"offset",node.ports.get("offset").unwrap_or(&serde_json::json!([0.,0.])),node.ports.get("transition"),motion_enabled);
-        let default_fade=serde_json::json!("fade");
-        let mut capture=motion.capture(&base,&item.key,item.parent.as_deref(),node.ports.get("enter").or(if item.cell {Some(&default_fade)} else {None}),node.ports.get("exit").or(if item.cell {Some(&default_fade)} else if item.parent.as_ref().is_some_and(|p|layers.contains_key(p)) || node.ports.contains_key("offset") {Some(&serde_json::Value::Null)} else {None}),motion_enabled);
-        let layer=motion.layer(&base,&mut capture,rect,[offset[0].as_f64().unwrap_or(0.),offset[1].as_f64().unwrap_or(0.)]);
-        let mut child=base.new_child(egui::UiBuilder::new().id_salt(&item.key).layer_id(layer.unwrap_or(base.layer_id())));
-        let ui=&mut child;
-        if let Some(layer)=layer {layers.insert(item.key.clone(),layer);}
+        let mut base = ui.new_child(
+            egui::UiBuilder::new()
+                .id_salt((&item.key, "motion-host"))
+                .layer_id(
+                    item.parent
+                        .as_ref()
+                        .and_then(|p| layers.get(p))
+                        .copied()
+                        .unwrap_or(ui.layer_id()),
+                ),
+        );
+        let offset = toolkit::scene_motion::value(
+            base.ctx(),
+            &item.key,
+            "offset",
+            node.ports
+                .get("offset")
+                .unwrap_or(&serde_json::json!([0., 0.])),
+            node.ports.get("transition"),
+            motion_enabled,
+        );
+        let default_fade = serde_json::json!("fade");
+        let mut capture = motion.capture(
+            &base,
+            &item.key,
+            item.parent.as_deref(),
+            node.ports
+                .get("enter")
+                .or(if item.cell { Some(&default_fade) } else { None }),
+            node.ports.get("exit").or(if item.cell {
+                Some(&default_fade)
+            } else if item.parent.as_ref().is_some_and(|p| layers.contains_key(p))
+                || node.ports.contains_key("offset")
+            {
+                Some(&serde_json::Value::Null)
+            } else {
+                None
+            }),
+            motion_enabled,
+        );
+        let layer = motion.layer(
+            &base,
+            &mut capture,
+            rect,
+            [
+                offset[0].as_f64().unwrap_or(0.),
+                offset[1].as_f64().unwrap_or(0.),
+            ],
+        );
+        let mut child = base.new_child(
+            egui::UiBuilder::new()
+                .id_salt(&item.key)
+                .layer_id(layer.unwrap_or(base.layer_id())),
+        );
+        let ui = &mut child;
+        if let Some(layer) = layer {
+            layers.insert(item.key.clone(), layer);
+        }
         let painter = ui.painter().with_clip_rect(clip);
         let id = Id::unique(("scene-node", &item.key));
         if item.cell {
@@ -242,7 +295,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                     emit.push(SceneMessage::Context(route));
                 }
             }
-            motion.painted(ui,capture,rect);
+            motion.painted(ui, capture, rect);
             continue;
         }
         let start = ui.ctx().graphics_mut(|g| g.entry(ui.layer_id()).next_idx());
@@ -510,16 +563,26 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         )
         .as_f64()
         .unwrap_or(1.0);
-        toolkit::scene_motion::visual(
+        toolkit::scene_motion::visual(ui, start, rect, opacity, [0.0, 0.0]);
+        toolkit::scene_motion::highlight(
             ui,
+            ui.layer_id(),
             start,
-            rect,
-            opacity,
-            [0.0,0.0],
+            &item.key,
+            node.ports.get("transition"),
+            motion_enabled,
         );
-        toolkit::scene_motion::highlight(ui,ui.layer_id(),start,&item.key,node.ports.get("transition"),motion_enabled);
-        motion.painted(ui,capture,rect);
-        if item.source==Source::Tree && let Some(layer)=layer && let Some(r)=scene.layout.nodes.get_mut(&item.id) {*r=ui.ctx().layer_transform_to_global(layer).unwrap_or_default().mul_rect(*r);}
+        motion.painted(ui, capture, rect);
+        if item.source == Source::Tree
+            && let Some(layer) = layer
+            && let Some(r) = scene.layout.nodes.get_mut(&item.id)
+        {
+            *r = ui
+                .ctx()
+                .layer_transform_to_global(layer)
+                .unwrap_or_default()
+                .mul_rect(*r);
+        }
     }
     motion.end(ui);
     scene.motion = motion;

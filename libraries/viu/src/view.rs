@@ -545,10 +545,12 @@ impl SceneView {
         let Some(node) = nodes.get(id) else {
             return;
         };
-        let list_row=route.is_some_and(|(_,list,_)|text(list,"row")==id);
-        if !list_row && self.motion_parent.is_none() && !["enter", "exit", "opacity", "offset", "transition"]
-            .iter()
-            .any(|p| node.ports.contains_key(*p))
+        let list_row = route.is_some_and(|(_, list, _)| text(list, "row") == id);
+        if !list_row
+            && self.motion_parent.is_none()
+            && !["enter", "exit", "opacity", "offset", "transition"]
+                .iter()
+                .any(|p| node.ports.contains_key(*p))
         {
             self.node_contents(ui, id, nodes, route, depth, events);
             return;
@@ -561,7 +563,8 @@ impl SceneView {
             |(_, _, item)| format!("{}#{id}", item["id"].as_str().unwrap_or("")),
         );
         let start = ui.ctx().graphics_mut(|g| g.entry(ui.layer_id()).next_idx());
-        let enabled = node.ports.get("motion") != Some(&Value::Bool(false)) && ui.style().animation_time!=0.0;
+        let enabled = node.ports.get("motion") != Some(&Value::Bool(false))
+            && ui.style().animation_time != 0.0;
         let opacity = toolkit::scene_motion::value(
             ui.ctx(),
             &key,
@@ -580,40 +583,90 @@ impl SceneView {
             node.ports.get("transition"),
             enabled,
         );
-        let default_fade=json!("fade");
+        let default_fade = json!("fade");
         let mut capture = self.motion.capture(
             ui,
             &key,
             self.motion_parent.as_deref(),
-            node.ports.get("enter").or(if list_row {Some(&default_fade)} else {None}),
-            node.ports.get("exit").or(if list_row {Some(&default_fade)} else {Some(&Value::Null)}),
+            node.ports
+                .get("enter")
+                .or(if list_row { Some(&default_fade) } else { None }),
+            node.ports.get("exit").or(if list_row {
+                Some(&default_fade)
+            } else {
+                Some(&Value::Null)
+            }),
             node.ports.get("motion") != Some(&Value::Bool(false)),
         );
-        let layer=self.motion.layer(ui,&mut capture,ui.available_rect_before_wrap(),[
-            offset[0].as_f64().unwrap_or(0.0),offset[1].as_f64().unwrap_or(0.0)
-        ]);
+        let layer = self.motion.layer(
+            ui,
+            &mut capture,
+            ui.available_rect_before_wrap(),
+            [
+                offset[0].as_f64().unwrap_or(0.0),
+                offset[1].as_f64().unwrap_or(0.0),
+            ],
+        );
         let parent = self.motion_parent.clone();
         if capture.is_some() {
             self.motion_parent = Some(key.clone());
         }
-        if let Some(layer)=layer {
-            ui.scope_builder(egui::UiBuilder::new().layer_id(layer),|ui|self.node_contents(ui,id,nodes,route,depth,events));
-        } else {self.node_contents(ui, id, nodes, route, depth, events);}
+        if let Some(layer) = layer {
+            ui.scope_builder(egui::UiBuilder::new().layer_id(layer), |ui| {
+                self.node_contents(ui, id, nodes, route, depth, events)
+            });
+        } else {
+            self.node_contents(ui, id, nodes, route, depth, events);
+        }
         self.motion_parent = parent;
-        let painted_rect=self.geometry.get(id).copied().unwrap_or(ui.min_rect());
-        if let Some(layer)=layer {
+        let painted_rect = self.geometry.get(id).copied().unwrap_or(ui.min_rect());
+        if let Some(layer) = layer {
             // Layer transforms carry geometry; opacity remains a paint attribute.
             ui.ctx().graphics_mut(|g| {
-                let list=g.entry(layer);let end=list.next_idx();
-                for i in 0..end.0 {list.mutate_shape(egui::layers::ShapeIdx(i),|s| {
-                    let alpha=opacity as f32;
-                    if alpha!=1.0 {egui::epaint::shape_transform::adjust_colors(&mut s.shape,move |c|*c=c.gamma_multiply(alpha));}
-                });}
+                let list = g.entry(layer);
+                let end = list.next_idx();
+                for i in 0..end.0 {
+                    list.mutate_shape(egui::layers::ShapeIdx(i), |s| {
+                        let alpha = opacity as f32;
+                        if alpha != 1.0 {
+                            egui::epaint::shape_transform::adjust_colors(&mut s.shape, move |c| {
+                                *c = c.gamma_multiply(alpha)
+                            });
+                        }
+                    });
+                }
             });
-        } else {toolkit::scene_motion::visual(ui,start,self.geometry.get(id).copied().unwrap_or(ui.min_rect()),opacity,[0.0,0.0]);}
-        toolkit::scene_motion::highlight(ui,layer.unwrap_or(ui.layer_id()),if layer.is_some(){egui::layers::ShapeIdx(0)}else{start},&key,node.ports.get("transition"),enabled);
-        self.motion.painted(ui,capture,painted_rect);
-        if let Some(layer)=layer && let Some(rect)=self.geometry.get_mut(id) {*rect=ui.ctx().layer_transform_to_global(layer).unwrap_or_default().mul_rect(*rect);}
+        } else {
+            toolkit::scene_motion::visual(
+                ui,
+                start,
+                self.geometry.get(id).copied().unwrap_or(ui.min_rect()),
+                opacity,
+                [0.0, 0.0],
+            );
+        }
+        toolkit::scene_motion::highlight(
+            ui,
+            layer.unwrap_or(ui.layer_id()),
+            if layer.is_some() {
+                egui::layers::ShapeIdx(0)
+            } else {
+                start
+            },
+            &key,
+            node.ports.get("transition"),
+            enabled,
+        );
+        self.motion.painted(ui, capture, painted_rect);
+        if let Some(layer) = layer
+            && let Some(rect) = self.geometry.get_mut(id)
+        {
+            *rect = ui
+                .ctx()
+                .layer_transform_to_global(layer)
+                .unwrap_or_default()
+                .mul_rect(*rect);
+        }
     }
 
     fn node_contents(
@@ -645,7 +698,8 @@ impl SceneView {
                         prop,
                         target,
                         node.ports.get("transition"),
-                        node.ports.get("motion") != Some(&Value::Bool(false)) && ui.style().animation_time!=0.0,
+                        node.ports.get("motion") != Some(&Value::Bool(false))
+                            && ui.style().animation_time != 0.0,
                     ),
                 );
             }
