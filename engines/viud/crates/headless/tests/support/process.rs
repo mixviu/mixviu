@@ -238,7 +238,10 @@ fn spawn_options(options: Options<'_>) -> Process {
             viu.display()
         );
         command
-            .env(paths::env::test::TEST_VIUD_OSD_BUNDLE, workspace.join("apps/osd"))
+            .env(
+                paths::env::test::TEST_VIUD_OSD_BUNDLE,
+                workspace.join("apps/osd"),
+            )
             .env(paths::env::test::TEST_VIU_EXE, viu)
             .env("MIX_VIU_COMP_SERVICE", "comp-headless");
     } else {
