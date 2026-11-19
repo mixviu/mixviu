@@ -130,7 +130,10 @@ pub fn url_from_node_config(source: &str) -> Option<String> {
 
 /// [`url_from_node_config`] on an already parsed document.
 fn url_from_node_value(config: &Value) -> Option<String> {
-    if let Some(socket) = config.get("noded").and_then(|noded| noded.get("unix_socket")) {
+    if let Some(socket) = config
+        .get("noded")
+        .and_then(|noded| noded.get("unix_socket"))
+    {
         return socket
             .as_str()
             .filter(|path| std::path::Path::new(path).is_absolute())
@@ -174,9 +177,7 @@ mod tests {
         );
         for socket in ["''", "'relative.sock'", "7"] {
             assert_eq!(
-                url_from_node_config(&format!(
-                    "noded: {{ port: 4300, unix_socket: {socket} }}"
-                )),
+                url_from_node_config(&format!("noded: {{ port: 4300, unix_socket: {socket} }}")),
                 None
             );
         }

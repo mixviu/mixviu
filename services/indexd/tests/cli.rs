@@ -58,7 +58,8 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
         .unwrap();
     std::fs::write(
         &node_config,
-        json!({"wg_ip":"127.0.0.1","noded":{"port":port,"unix_socket":broker.endpoint}}).to_string(),
+        json!({"wg_ip":"127.0.0.1","noded":{"port":port,"unix_socket":broker.endpoint}})
+            .to_string(),
     )
     .unwrap();
     let mut daemon = Child(
@@ -84,7 +85,8 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
         .unwrap();
     std::fs::write(
         &node_config,
-        json!({"wg_ip":"127.0.0.1","noded":{"port":port,"unix_socket":broker.endpoint}}).to_string(),
+        json!({"wg_ip":"127.0.0.1","noded":{"port":port,"unix_socket":broker.endpoint}})
+            .to_string(),
     )
     .unwrap();
     ready(&broker.url).await;
