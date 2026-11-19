@@ -2,7 +2,6 @@
 //! Output-sized recording scene. No presentation pixels or screen UI enter it.
 use super::*;
 use smithay::backend::renderer::damage::OutputDamageTracker;
-use smithay::backend::renderer::element::Element;
 use smithay::output::Output;
 use std::cell::RefCell;
 

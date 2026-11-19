@@ -7,7 +7,7 @@ use smithay::wayland::seat::WaylandFocus;
 use world::state::Loop;
 thread_local! { static PREVIOUS: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) }; }
 pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
-    let Some(root) = std::env::var_os("MIX_TEST_RECORD_FIXTURE") else {
+    let Some(root) = std::env::var_os(paths::env::test::TEST_RECORD_FIXTURE) else {
         return;
     };
     let mode = std::fs::read_to_string(std::path::Path::new(&root).join("record-input"))

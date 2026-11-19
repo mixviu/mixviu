@@ -178,7 +178,7 @@ pub fn install(
     // This runs before the event loop serves any client.
     human_seat_without_sources(&mut state.state.seat.seat);
     #[cfg(feature = "test-support")]
-    if std::env::var_os("MIX_TEST_RECORD_FIXTURE").is_some() {
+    if std::env::var_os(paths::env::test::TEST_RECORD_FIXTURE).is_some() {
         state.state.seat.seat.add_pointer();
         let secondary = virtual_output(1);
         secondary.change_current_state(
