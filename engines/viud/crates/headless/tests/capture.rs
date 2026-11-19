@@ -214,7 +214,9 @@ fn record_idle_content_clock_ignores_capture_repaints() {
 // Test-only container inspection, independent of the writer's counters. R2
 // owns a production reader. Retain only the first image so 4K tests stay bounded.
 fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
-    vfl_visit(path, |_| {})
+    let (bgra, count) = vfl_visit(path, |_| {});
+    // The reader exposes BGRA; the older first-image assertions use RGB.
+    (bgra.chunks_exact(4).flat_map(|p| [p[2], p[1], p[0]]).collect(), count)
 }
 
 fn assert_recorded_colours(path: &Path, expected: &[u32]) -> u64 {
