@@ -230,3 +230,14 @@ budget waits, and `pending_ticks` counts waits for an in-flight capture. The
 timings plus record/payload byte counts. These fields remain in stop replies.
 Uncaptured state pixels cannot be inferred; source loss accounting counts
 distinct observed states, not every client commit between 30 Hz samples.
+
+Window motion replacement rules: a visual replacement continues omitted visual
+tracks to their original endpoints over the remaining time. A geometry-only
+replacement cancels all visual tracks and holds the last drawn sample. Both
+settle the prior caller with status `superseded`, with `by:run`. Placement
+settles a run whose last track it removes with `by:place`; lifecycle takeover
+uses `by:lifecycle`. Window rows report the sampled opacity during a run.
+
+The focused native motion/record acceptance is the opt-in CI stage
+`mix tools/ci.mix window-motion`; worker formatting patches use
+`mix tools/ci.mix fmt-diff`.

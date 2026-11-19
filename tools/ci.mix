@@ -542,6 +542,10 @@ if $stage == "stage-install" then
   print(stage_install($o.opts.dir ?? "target/stage-install").prefix)
 elif $stage == "stage-smoke" then
   stage_smoke()
+elif $stage == "window-motion" then
+  run_step(["mix", "tools/ci/window_motion.mix", "native"])
+elif $stage == "fmt-diff" then
+  run_step(["mix", "tools/ci/window_motion_format.mix"])
 elif $stage == "fmt" then
   stage_fmt()
 elif $stage == "clippy" then

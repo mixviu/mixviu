@@ -45,6 +45,7 @@ impl VisualRun {
 }
 
 pub fn start(window: &Window, preset: &Preset, started: Instant) {
+    replaced_by(window, "run");
     window
         .user_data()
         .insert_if_missing(|| Mutex::new(None::<VisualRun>));
@@ -57,6 +58,14 @@ pub fn start(window: &Window, preset: &Preset, started: Instant) {
         started,
         preset: preset.clone(),
     });
+}
+
+pub fn replaced_by(window: &Window, cause: &'static str) {
+    *window.user_data().get_or_insert(|| Mutex::new("run")).lock().unwrap() = cause;
+}
+
+pub fn replacement_cause(window: &Window) -> &'static str {
+    window.user_data().get::<Mutex<&'static str>>().map(|v| *v.lock().unwrap()).unwrap_or("run")
 }
 
 pub fn sampled_values(window: &Window, now: Instant) -> Option<Values> {
@@ -103,6 +112,7 @@ pub fn place(window: &Window, spec: &comp_model::request::PlaceSpec) -> bool {
         _ => false,
     });
     let changed = before != run.preset.tracks.len();
+    if changed { replaced_by(window, "place"); }
     if run.preset.tracks.is_empty() {
         *slot = None;
     }

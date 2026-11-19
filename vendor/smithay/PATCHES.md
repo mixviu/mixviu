@@ -254,7 +254,7 @@ its synthetic surface origin when the compositor supplies the same focus,
 without changing grab ownership. This allows viud to invert the current window
 transform for ongoing touches, including motion outside the surface bounds.
 
-# Retained composition images
+## Retained composition images (2026-11-19)
 
 `MemoryRenderBufferRenderElement::texture()` exposes an imported texture by
 reference so compositor lifecycle snapshots retain server chrome without a

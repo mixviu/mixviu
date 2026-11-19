@@ -30,6 +30,7 @@ smithay::render_elements! {
 }
 
 struct Snapshot<T: Texture> {
+    frame: u64,
     id: Id,
     source_id: Id,
     client: bool,
@@ -64,9 +65,29 @@ impl<T: Texture + 'static> ScopedCache for Cache<T> {
 thread_local! { static CACHES: RefCell<HashMap<TypeId, Box<dyn ScopedCache>>> = RefCell::new(HashMap::new()); }
 thread_local! { static ORDERS: RefCell<HashMap<(String, Option<u64>), Vec<Uuid>>> = RefCell::new(HashMap::new()); }
 thread_local! {
+    static PANE_FRAMES: RefCell<HashMap<(String, Option<u64>), u64>> = RefCell::new(HashMap::new());
     static SOURCES: RefCell<HashMap<Uuid, HashSet<Id>>> = RefCell::new(HashMap::new());
     static EXIT_SOURCES: RefCell<HashMap<Uuid, HashSet<Id>>> = RefCell::new(HashMap::new());
     static WORKSPACES: RefCell<HashMap<String, u32>> = RefCell::new(HashMap::new());
+}
+
+/// Advance this pane's composition epoch even when every window is culled.
+pub fn begin_pane(output: &str, pane: Option<u64>) {
+    PANE_FRAMES.with(|frames| {
+        let mut frames = frames.borrow_mut();
+        let frame = frames.entry((output.to_owned(), pane)).or_default();
+        *frame = frame.wrapping_add(1);
+    });
+}
+
+fn pane_frame(output: &str, pane: Option<u64>) -> u64 {
+    PANE_FRAMES.with(|frames| frames.borrow().get(&(output.to_owned(), pane)).copied().unwrap_or(0))
+}
+
+fn admit_snapshot(stamp: &mut u64, frame: u64) -> bool {
+    if *stamp != frame && stamp.wrapping_add(1) != frame { return false; }
+    *stamp = frame;
+    true
 }
 
 pub fn workspace(output: &str, workspace: u32) {
@@ -112,6 +133,7 @@ pub fn clear_output(output: &str) {
 
 /// All-output invalidation (for example, session locking).
 pub fn clear() {
+    PANE_FRAMES.with(|frames| frames.borrow_mut().clear());
     CACHES.with(|caches| caches.borrow_mut().clear());
     ORDERS.with(|orders| orders.borrow_mut().clear());
     SOURCES.with(|sources| sources.borrow_mut().clear());
@@ -307,6 +329,7 @@ pub fn retain<R>(
             }
         });
         snapshots.push(Snapshot {
+            frame: pane_frame(output, pane),
             id: Id::new(),
             source_id,
             client: surface_solid,
@@ -365,6 +388,12 @@ where
             exits.get(&uuid),
         ) {
             for snapshot in snapshots {
+                let frame = pane_frame(output, pane);
+                // The same rule covers live retention and an exit's next draw.
+                // A missed pane frame permanently disqualifies this snapshot.
+                if !admit_snapshot(&mut snapshot.frame, frame) {
+                    continue;
+                }
                 if snapshot.client && snapshot._buffer.is_none() {
                     if let Some(buffer) = dispatcher::exit_capture::buffer(&snapshot.source_id) {
                         if let Ok(pixel) =
@@ -597,5 +626,26 @@ mod tests {
             merge_slots(&ids, &raised, |id| *id == ids[0]),
             [ids[4], ids[0], ids[1], ids[3]]
         );
+    }
+}
+
+#[cfg(test)]
+mod frame_scope_tests {
+    use super::*;
+    #[test]
+    fn missed_frame_disqualifies_old_output_and_pane_snapshots() {
+        for (output, pane) in [("A", Some(1)), ("A", Some(2)), ("B", Some(1))] {
+            begin_pane(output, pane);
+            let mut stamp = pane_frame(output, pane);
+            begin_pane(output, pane); // window moved out, collapsed or occluded
+            begin_pane(output, pane); // exit on a different output/pane
+            assert!(!admit_snapshot(&mut stamp, pane_frame(output, pane)));
+        }
+    }
+    #[test]
+    fn consecutive_exit_frames_remain_admitted() {
+        let mut stamp = 10;
+        for frame in 11..30 { assert!(admit_snapshot(&mut stamp, frame)); }
+        assert!(!admit_snapshot(&mut stamp, 31));
     }
 }

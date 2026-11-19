@@ -75,6 +75,10 @@ where
     // the same viewport. Filled as the DrawOrder loop below walks front to back,
     // so each window is tested against everything already stacked over it.
     let mut occluders = Occluders::new();
+    crate::window::draw::ghost::begin_pane(
+        state.inner.render_output.as_deref().unwrap_or_default(),
+        state.inner.render_target.map(|rt| rt.slot),
+    );
 
     // Interleave windows + world UI by the DrawOrder authority (topmost-first).
     let order = crate::window::draw::ghost::order(

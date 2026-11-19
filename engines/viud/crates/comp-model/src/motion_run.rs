@@ -63,6 +63,7 @@ pub enum MotionTarget {
     },
     /// Additive visual-track form; the original geometry variant stays valid.
     WindowTracks {
+        scale_anchor: Option<crate::request::WindowScale>,
         id: u64,
         generation: u64,
         to: [Option<f64>; 4],
@@ -118,6 +119,7 @@ pub fn parse(args: &Value) -> Result<MotionSpec, ControlReply> {
 
 const POINTER_FIELDS: &[&str] = &["output", "path", "duration_ms", "curve"];
 const WINDOW_FIELDS: &[&str] = &[
+    "anchor",
     "id",
     "generation",
     "to",
@@ -273,6 +275,7 @@ fn parse_window(window: &serde_json::Map<String, Value>) -> Result<MotionTarget,
     if let Some(mut visual) = visual {
         visual.timing.duration = duration.as_secs_f64();
         return Ok(MotionTarget::WindowTracks {
+            scale_anchor: window.get("anchor").map(|anchor| crate::request::window_scale_value(&serde_json::json!({"factor":1,"anchor":anchor})).ok_or_else(|| invalid_argument("window.anchor", "center or {x,y}", "logical anchor"))).transpose()?,
             id,
             generation,
             to,

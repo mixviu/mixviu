@@ -77,3 +77,10 @@ are clamped to the framebuffer after adding the window origin and projecting,
 so an extreme origin, clip or zoom cannot overflow a physical rectangle.
 
 Touch cancellation on hide applies to all active slots if any slot targets the hidden surface tree, following Smithay grab semantics. Clip coordinates and endpoints use the inclusive i32 range (-2147483648 to 2147483647); sizes remain non-negative.
+
+Scale also accepts `anchor:"center"`, resolved from the window geometry at
+composition time. Motion window targets accept `anchor:"center"` or a
+logical `{x,y}` anchor alongside tracks/preset. Lifecycle entrances use the
+window centre, including windows without prior placement. Window rows expose
+the current sampled opacity, rather than just the requested endpoint.
+Superseded replies add `by:"run"|"place"|"lifecycle"`.

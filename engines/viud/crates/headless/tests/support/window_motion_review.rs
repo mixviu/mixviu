@@ -657,3 +657,50 @@ fn close_ghost_cannot_leak_into_a_different_workspace_in_recorded_frames() {
         "recording must include multiple presented workspace-two frames"
     );
 }
+
+#[test]
+fn never_placed_pop_uses_window_center() {
+    if !process::record_available() { return; }
+    let bus = Bus::start("center-pop");
+    let mut process = process::spawn(1, None, "center-pop", Some(&bus.url));
+    bus.ready();
+    let mut client = Pattern::named(connect(&mut process), "center-pop", false);
+    client.wait_callback(0);
+    let row = bus.window_for("center-pop", &mut [&mut client]);
+    bus.call("comp.motion.run", json!({"targets":[{"window":{"id":row["id"],"generation":row["generation"],"preset":"pop","anchor":"center","duration_ms":300}}]}));
+    let after = bus.window_for("center-pop", &mut [&mut client]);
+    assert_eq!(after["scale"]["factor"], 1.0);
+}
+
+#[test]
+fn dim_exit_never_brightens_and_lock_draws_no_ghost() {
+    if !process::record_available() { return; }
+    for locked in [false, true] {
+        let label = if locked { "locked-ghost" } else { "dim-ghost" };
+        let bus = Bus::start(label);
+        let mut process = process::spawn_preferences(label, &bus.url, json!({"window_motion":{"unmap":{"preset":"fade","duration_ms":1500}}}));
+        bus.ready();
+        let (mut client, row) = solid_window(&bus, &mut process, label, 0xffffffff, 300, 200);
+        bus.call("comp.motion.run", json!({"targets":[{"window":{"id":row["id"],"generation":row["generation"],"duration_ms":50,"tracks":[{"property":"opacity","keyframes":[{"offset":0,"value":1},{"offset":1,"value":0.05}]}]}}]}));
+        let _ = ppm(&bus, &process, "dim-shown", None);
+        client.commit_then_destroy();
+        pump_patterns(&mut [&mut client]);
+        let mut locker = Pattern::named(connect(&mut process), "locker", false);
+        let _lock = if locked { Some(locker.lock_session()) } else { None };
+        let path = process.root.join("exit.vfl");
+        let start = bus.call("comp.record.start", json!({"request_id":label,"target":{"output":"headless-0"},"path":path,"fps":30,"cursor":false,"max_seconds":10}));
+        thread::sleep(Duration::from_millis(300));
+        bus.call("comp.record.stop", json!({"session":start["session"]}));
+        let mut frames = 0;
+        exported_frames(&path, |_, width, pixels| {
+            frames += 1;
+            let p = pixel(pixels, width, 400, 280);
+            if locked { assert_eq!(p, [0,0,0]); } else {
+                for (value, background) in p.into_iter().zip([18.0,20.0,25.0]) {
+                    assert!(f64::from(value) <= background + (255.0-background)*0.05 + 2.0);
+                }
+            }
+        });
+        assert!(frames >= 3);
+    }
+}

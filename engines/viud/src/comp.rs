@@ -657,8 +657,9 @@ impl Bus {
             {
                 if policy_host::motion::visual_replaced(lp, *id, *generation, run.started) {
                     policy_host::motion::cancel_geometry(lp, *id, *generation);
+                    let by = policy_host::control::motion_window(lp, *id, *generation).map(|(_, window)| world::comp::animation::replacement_cause(&window)).unwrap_or("lifecycle");
                     run.reply.send(ControlReply::Body(
-                        json!({"version":1,"status":"superseded"}),
+                        json!({"version":1,"status":"superseded","by":by}),
                     ));
                     continue;
                 }
@@ -934,13 +935,22 @@ impl Engine<'_> {
         let human_at_start = policy_host::input::human_pointer(self.lp);
         let (target, visual) = match target {
             MotionTarget::WindowTracks {
+                scale_anchor,
                 id,
                 generation,
                 to,
                 duration,
                 easing,
                 visual,
-            } => (
+            } => {
+                if let Some(anchor) = scale_anchor {
+                    if let Ok(mut value) = policy_host::control::window_visual(self.lp, id, generation) {
+                        value.scale.anchor = anchor.anchor;
+                        value.scale.center = anchor.center;
+                        let _ = policy_host::control::window_visual_step(self.lp, id, generation, value);
+                    }
+                }
+                (
                 MotionTarget::Window {
                     id,
                     generation,
@@ -949,7 +959,7 @@ impl Engine<'_> {
                     easing,
                 },
                 Some(visual),
-            ),
+            )},
             target => (target, None),
         };
         let (kind, step) = match target {
@@ -1013,7 +1023,7 @@ impl Engine<'_> {
                     if matches!(&run.kind, MotionKind::Window { id: old_id, generation: old_generation, .. } if *old_id == id && *old_generation == generation)
                     {
                         run.reply.send(ControlReply::Body(
-                            json!({"version":1,"status":"superseded"}),
+                            json!({"version":1,"status":"superseded","by":"run"}),
                         ));
                     } else {
                         keep.push(run);
