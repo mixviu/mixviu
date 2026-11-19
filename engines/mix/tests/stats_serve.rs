@@ -63,6 +63,8 @@ impl Citizen {
         .env("MIX_ETC", dir)
         .env_remove("MIX_STATS")
         .env_remove("MIX_SESSION_FD")
+        .env_remove("MIX_NODED_URL")
+        .env_remove("MIX_BUS_SOCKET")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr));
@@ -97,15 +99,6 @@ impl Drop for Citizen {
         unsafe { libc::kill(-self.pgid, libc::SIGKILL) };
         let _ = self.child.wait();
     }
-}
-
-fn broker_tcp_port(broker: &Broker) -> u16 {
-    broker
-        .url
-        .trim_start_matches("ws://127.0.0.1:")
-        .trim_end_matches("/ws")
-        .parse()
-        .unwrap()
 }
 
 async fn connect(broker: &Broker) -> VerifiedConnection {
@@ -155,8 +148,8 @@ async fn serve_generations_each_record_their_counters_once() {
     std::fs::write(
         &node_conf,
         format!(
-            "wg_ip: \"127.0.0.1\"\nnoded: {{ port: {} }}\n",
-            broker_tcp_port(&broker)
+            "noded: {{ unix_socket: {:?} }}\n",
+            broker.endpoint
         ),
     )
     .unwrap();

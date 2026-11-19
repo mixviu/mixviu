@@ -3,7 +3,7 @@
 
 //! Where the broker is.
 //!
-//! Resolution order: `MIX_NODED_URL`; the node configuration file
+//! Resolution order: `MIX_NODED_URL`; `MIX_BUS_SOCKET`; the node configuration file
 //! (the shared `config::node::NodeConfigSearch`, also used for Unix socket
 //! and account settings); and finally the local Unix broker. Explicit TCP
 //! URLs are legacy and grant no node-local authority.
@@ -12,7 +12,8 @@ use std::path::PathBuf;
 
 use strict::Value;
 
-/// The broker URL when nothing configures one.
+/// Legacy TCP endpoint for callers that explicitly request it.
+/// Local discovery uses the runtime Unix socket instead.
 pub const DEFAULT_NODED_URL: &str = "ws://127.0.0.1:4200/ws";
 
 const URL_VAR: &str = "MIX_NODED_URL";
@@ -120,6 +121,7 @@ fn candidate_paths(
 /// with loopback for a missing or empty `wg_ip` and 4200 for a missing
 /// `noded.port`. `None` when the text is not strict data or has neither
 /// key in a readable form.
+/// This legacy TCP formatter is not used by [`noded_url`] for local discovery.
 pub fn url_from_node_config(source: &str) -> Option<String> {
     url_from_node_value(&strict::parse(source).ok()?)
 }

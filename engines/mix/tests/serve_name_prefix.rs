@@ -79,6 +79,8 @@ impl Citizen {
         .env("MIX_ETC", &dir.0)
         .env("MIX_STATS", "off")
         .env_remove("MIX_SESSION_FD")
+        .env_remove("MIX_NODED_URL")
+        .env_remove("MIX_BUS_SOCKET")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr));
@@ -105,17 +107,9 @@ impl Drop for Citizen {
     }
 }
 
-fn node_conf_text(port: u16) -> String {
-    format!("wg_ip: \"127.0.0.1\"\nnoded: {{ port: {port} }}\n")
-}
-
-fn broker_tcp_port(broker: &Broker) -> u16 {
-    broker
-        .url
-        .trim_start_matches("ws://127.0.0.1:")
-        .trim_end_matches("/ws")
-        .parse()
-        .unwrap()
+// Exercise production local discovery rather than deriving a TCP endpoint.
+fn node_conf_text(broker: &Broker) -> String {
+    format!("noded: {{ unix_socket: {:?} }}\n", broker.endpoint)
 }
 
 async fn connect(broker: &Broker) -> VerifiedConnection {
@@ -179,7 +173,7 @@ fn help_names(help: &Value) -> Vec<String> {
 async fn placeholder_commands_answer_under_each_instances_serve_name() {
     let dir = Dir::new("names");
     let mut broker = Broker::start();
-    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(&broker));
     let script = dir.write("bridge.mix", SCRIPT);
     let _foo = Citizen::spawn(&dir, &node_conf, &script, "foo");
     let _other = Citizen::spawn(&dir, &node_conf, &script, "other");

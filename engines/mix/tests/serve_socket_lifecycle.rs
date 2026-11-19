@@ -77,6 +77,8 @@ impl Citizen {
         .env("REL_STATE", dir.0.join("state"))
         .env("MIX_STATS", "off")
         .env_remove("MIX_SESSION_FD")
+        .env_remove("MIX_NODED_URL")
+        .env_remove("MIX_BUS_SOCKET")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr));
@@ -106,17 +108,9 @@ impl Drop for Citizen {
     }
 }
 
-fn node_conf_text(port: u16) -> String {
-    format!("wg_ip: \"127.0.0.1\"\nnoded: {{ port: {port} }}\n")
-}
-
-fn broker_tcp_port(broker: &Broker) -> u16 {
-    broker
-        .url
-        .trim_start_matches("ws://127.0.0.1:")
-        .trim_end_matches("/ws")
-        .parse()
-        .unwrap()
+// Exercise production local discovery rather than deriving a TCP endpoint.
+fn node_conf_text(broker: &Broker) -> String {
+    format!("noded: {{ unix_socket: {:?} }}\n", broker.endpoint)
 }
 
 #[derive(Debug)]
@@ -289,7 +283,7 @@ async fn test_serve_socket_lifecycle() {
     let bin_path = std::env::var("MIX_TEST_SOCKET_EXE")
         .unwrap_or_else(|_| env!("CARGO_BIN_EXE_mix").to_string());
 
-    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(&broker));
     let script = dir.write("svc.mix", MIX_TEST_SCRIPT);
 
     let mut citizen = Citizen::spawn(Path::new(&bin_path), &dir, &node_conf, &script);

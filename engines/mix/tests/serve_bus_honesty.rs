@@ -108,6 +108,8 @@ impl Citizen {
             .env("HONEST_TRACE", dir.0.join("trace"))
             .env("MIX_STATS", "off")
             .env_remove("MIX_SESSION_FD")
+        .env_remove("MIX_NODED_URL")
+        .env_remove("MIX_BUS_SOCKET")
             .stdin(Stdio::null())
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr));
@@ -134,17 +136,9 @@ impl Drop for Citizen {
     }
 }
 
-fn node_conf_text(port: u16) -> String {
-    format!("wg_ip: \"127.0.0.1\"\nnoded: {{ port: {port} }}\n")
-}
-
-fn broker_tcp_port(broker: &Broker) -> u16 {
-    broker
-        .url
-        .trim_start_matches("ws://127.0.0.1:")
-        .trim_end_matches("/ws")
-        .parse()
-        .unwrap()
+// Exercise production local discovery rather than deriving a TCP endpoint.
+fn node_conf_text(broker: &Broker) -> String {
+    format!("noded: {{ unix_socket: {:?} }}\n", broker.endpoint)
 }
 
 // ── trace / stderr (test-owned files, appended by the real citizen) ──────
@@ -267,8 +261,7 @@ async fn connection_events_order_broker_loss_reconnect_and_clean_quit() {
     let _g = lock().await;
     let dir = Dir::new("connection-events");
     let mut broker = Broker::bounce_stable();
-    let port = broker.tcp_port();
-    let node_conf = dir.write("node.conf.mix", &node_conf_text(port));
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(&broker));
     let script = dir.write(
         "svc.mix",
         r#"-- version: 0.1.0
@@ -325,7 +318,7 @@ async fn served_handler_callbacks_capture_invocation_locals() {
     let _g = lock().await;
     let dir = Dir::new("closure");
     let broker = Broker::start();
-    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(&broker));
     let script = dir.write(
         "svc.mix",
         r#"-- version: 0.1.0
@@ -369,7 +362,7 @@ async fn lookup_reports_transport_failure_and_emit_remains_nonfatal() {
     let _g = lock().await;
     let dir = Dir::new("honesty");
     let mut broker = Broker::start();
-    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(&broker));
     let script = dir.write("svc.mix", SCRIPT);
     let _citizen = Citizen::spawn(
         Path::new(env!("CARGO_BIN_EXE_mix")),
@@ -407,7 +400,7 @@ async fn uncaught_interruption_text_is_a_reported_serve_error() {
     let _g = lock().await;
     let dir = Dir::new("interruption-error");
     let broker = Broker::start();
-    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(&broker));
     let script = dir.write(
         "svc.mix",
         r#"raise("PROBE_REFUSAL", json_encode({interrupted:false,error:"not a signal"}))"#,
@@ -443,7 +436,7 @@ async fn sigint_during_stalled_registration_exits_promptly_with_130() {
     let _g = lock().await;
     let dir = Dir::new("startup-sigint");
     let broker = Broker::start();
-    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(&broker));
     let script = dir.write("svc.mix", "-- version: 0.1.0\n");
     let stall = broker.pause();
     let mut citizen = Citizen::spawn(
@@ -490,7 +483,7 @@ async fn sigint_during_cpu_only_prelude_exits_promptly_with_130() {
             "prelude-sigint"
         });
         let broker = Broker::start();
-        let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+        let node_conf = dir.write("node.conf.mix", &node_conf_text(&broker));
         let script = dir.write("svc.mix", "on rel.state\nreply(0, \"{}\")\nend\n");
         let prelude = "print(\"PRELUDE_READY\")\n$n=0\nwhile true\n$n=$n+1\nend\n";
         dir.write("prelude.mix", if reload { "" } else { prelude });
@@ -555,7 +548,7 @@ async fn sigint_ends_a_citizen_whose_catch_keeps_computing() {
     let _g = lock().await;
     let dir = Dir::new("looping-catch");
     let broker = Broker::start();
-    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(&broker));
     let script = dir.write(
         "svc.mix",
         "-- version: 0.1.0\n\
@@ -609,7 +602,7 @@ async fn a_handler_waiting_on_a_fifo_does_not_stop_quit() {
     let c_path = std::ffi::CString::new(fifo.to_str().unwrap()).unwrap();
     assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0, "mkfifo");
     let broker = Broker::start();
-    let node_conf = dir.write("node.conf.mix", &node_conf_text(broker_tcp_port(&broker)));
+    let node_conf = dir.write("node.conf.mix", &node_conf_text(&broker));
     let script = dir.write(
         "svc.mix",
         &format!(

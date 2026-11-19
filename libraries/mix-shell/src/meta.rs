@@ -2513,8 +2513,8 @@ fn list_sock_files(dir: &std::path::Path) -> Vec<std::fs::DirEntry> {
 
 /// Query the local noded broker for its registered Bus service roster.
 ///
-/// The mesh is **TCP noded** (`ws://<wg_ip>:4200/ws`, resolved like the
-/// `send` keyword does) — there is no `/run/bus` unix socket. Returns the
+/// Uses the same local Unix discovery as `send` (or an explicit legacy TCP
+/// URL override). Returns the
 /// resolved broker URL + the service-name list, or an error string for a
 /// clean "no mesh" message. One-shot: builds its own current-thread
 /// runtime so the sync meta-command path can call the async client.
@@ -2544,7 +2544,7 @@ fn query_noded_services() -> Result<(String, Vec<String>), String> {
                         .map_err(|e| format!("list_services: {e}"))
                 };
                 // Fail fast — a diagnostic command must not hang on the OS
-                // TCP timeout when the wg_ip is stale/blackholed.
+                // transport timeout when an explicit endpoint is unavailable.
                 match tokio::time::timeout(std::time::Duration::from_secs(5), query).await {
                     Ok(r) => r,
                     Err(_) => Err(format!("timed out after 5s contacting {url_for_thread}")),
