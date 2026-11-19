@@ -389,7 +389,9 @@ impl SceneView {
         self.geometry
             .extend(self.widgets.geometry.iter().map(|(id, r)| (id.clone(), *r)));
         self.widget_rects.truncate(self.widget_rect_count);
-        let focused = ui.ctx().data(|d| d.get_temp::<String>(egui::Id::unique("viu-focused-widget")));
+        let focused = ui
+            .ctx()
+            .data(|d| d.get_temp::<String>(egui::Id::unique("viu-focused-widget")));
         for row in &mut self.widget_rects {
             row.focused = focused.as_deref() == Some(row.id.as_str());
             if let Some(rect) = self.geometry.get(&row.id) {

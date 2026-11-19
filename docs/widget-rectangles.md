@@ -40,3 +40,24 @@ The host retains a last-pass table alongside its existing geometry. Each pass
 clears it, including when the mounted content disappears. Queries filter and
 serialise that table and do not cause layout, render, or application callbacks.
 No compositor polling runs between queries.
+
+Coverage currently includes the root scenes of Mix application bundles. Child
+viewports and the separate furniture scene host are not included. Multiple
+mapped windows in one process cause `WINDOW_UNAVAILABLE`; a stable per-surface
+compositor identity is required to extend this safely. This does not yet close
+the complete all-hosts contract.
+
+The headless debug test `rectangle_frame_cost` uses 100 buttons, 20 warm-up
+frames and 500 frames per case, with no GPU. One serial run measured:
+
+| Case | ms/frame |
+|---|---:|
+| Collection disabled (test-only baseline) | 5.128 |
+| Last-frame table, no query | 5.302 |
+| Last-frame table, query each frame | 5.634 |
+
+The table adds about 0.174 ms in this run; materialising an unfiltered reply
+adds about 0.332 ms. These are debug CPU timings, not release or desktop
+budgets. The query case includes filtering and reply value allocation, and
+excludes wire encoding, transport, compositor lookup and painting. Other runs
+show noise comparable to the table's cost; rerun the test for comparisons.

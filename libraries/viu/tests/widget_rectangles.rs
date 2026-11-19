@@ -201,7 +201,10 @@ fn control_identity_comes_from_the_scene_and_enabled_from_the_control() {
             "scene-button":{"widget":"control","definition":{"id":"internal-button","kind":"button","label":"Save","initial":"","properties":{"enabled":false}}}
         })
     );
-    assert!(SceneView::new(&source).is_err(), "control ids must match their scene node");
+    assert!(
+        SceneView::new(&source).is_err(),
+        "control ids must match their scene node"
+    );
     let source = source.replace("internal-button", "scene-button");
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
@@ -221,16 +224,22 @@ fn control_identity_comes_from_the_scene_and_enabled_from_the_control() {
 
 #[test]
 fn focus_readback_uses_the_scene_id() {
-    let source = format!("---\nscene: 1\nname: test\ncitizen: test\n---\n```mix\n{}\n```\n",json!({
-        "root":{"widget":"column","children":["entry"]},
-        "entry":{"widget":"control","definition":{"id":"entry","kind":"field","label":"Entry","initial":""}}
-    }));
+    let source = format!(
+        "---\nscene: 1\nname: test\ncitizen: test\n---\n```mix\n{}\n```\n",
+        json!({
+            "root":{"widget":"column","children":["entry"]},
+            "entry":{"widget":"control","definition":{"id":"entry","kind":"field","label":"Entry","initial":""}}
+        })
+    );
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
-    draw(&mut view,&ctx,400.,200.);
+    draw(&mut view, &ctx, 400., 200.);
     view.request_focus("entry").unwrap();
-    draw(&mut view,&ctx,400.,200.);
-    assert_eq!(view.widget_rectangles(&json!({"ids":["entry"]})).unwrap()[0]["focused"],true);
+    draw(&mut view, &ctx, 400., 200.);
+    assert_eq!(
+        view.widget_rectangles(&json!({"ids":["entry"]})).unwrap()[0]["focused"],
+        true
+    );
 }
 
 #[cfg(feature = "test-support")]
