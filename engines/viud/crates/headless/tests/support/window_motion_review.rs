@@ -341,20 +341,23 @@ fn placing_last_track_resolves_reply_promptly() {
 
 #[test]
 fn minimised_then_destroyed_never_resurrects_pixels() {
-    unseen_destroy(false);
+    unseen_destroy(false, true);
 }
 
 #[test]
 fn workspace_switch_and_destroy_in_one_tick_never_resurrects_pixels() {
-    unseen_destroy(true);
+    unseen_destroy(true, true);
+    unseen_destroy(true, false);
 }
 
-fn unseen_destroy(workspace: bool) {
+fn unseen_destroy(workspace: bool, already_hidden: bool) {
     if !process::record_available() {
         return;
     }
-    let label = if workspace {
+    let label = if workspace && already_hidden {
         "unseen-workspace"
+    } else if workspace {
+        "leaving-workspace"
     } else {
         "unseen-minimise"
     };
@@ -371,15 +374,24 @@ fn unseen_destroy(workspace: bool) {
             "comp.workspaces.set_count",
             json!({"count":2,"persist":false}),
         );
-        bus.call(
-            "comp.window.send_to_workspace",
-            place_args(&row, json!({"index":2,"follow":false})),
-        );
+        if already_hidden {
+            bus.call(
+                "comp.window.send_to_workspace",
+                place_args(&row, json!({"index":2,"follow":false})),
+            );
+        }
     } else {
         bus.call("comp.window.minimize", target(&row));
     }
     let (width, _, pixels) = ppm(&bus, &process, "unseen-before-destroy", None);
-    assert_eq!(rgb_at(&pixels, width, 400, 280), [18, 20, 25]);
+    assert_eq!(
+        rgb_at(&pixels, width, 400, 280),
+        if already_hidden {
+            [18, 20, 25]
+        } else {
+            [255, 255, 255]
+        }
+    );
     let pause = process
         .root
         .join(format!("pause-lifecycle-{}", process.child.id()));
