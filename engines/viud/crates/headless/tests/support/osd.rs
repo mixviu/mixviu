@@ -191,8 +191,14 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         "OSD pointer input must preserve the client's keyboard focus"
     );
     call(&bus, "osd.hide", json!({"id":"caption","exit":"fade"}));
-    let fade = motion::presets().into_iter().find(|p| p.name == "fade").unwrap();
-    wait(&mut pattern, Duration::from_secs_f64(fade.timing.duration + 0.25));
+    let fade = motion::presets()
+        .into_iter()
+        .find(|p| p.name == "fade")
+        .unwrap();
+    wait(
+        &mut pattern,
+        Duration::from_secs_f64(fade.timing.duration + 0.25),
+    );
     assert!(
         call(&bus, "osd.list", json!({}))["items"]
             .as_array()
