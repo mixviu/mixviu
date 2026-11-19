@@ -957,7 +957,9 @@ fn agent_motion(
         return;
     };
     if let Some((surface, _)) = pointer.grab_start_data().and_then(|grab| grab.focus) {
-        if let Some(origin) = world::surface::interface::hit::grabbed_surface_origin(lp, &surface, position.into()) {
+        if let Some(origin) =
+            world::surface::interface::hit::grabbed_surface_origin(lp, &surface, position.into())
+        {
             focus = Some((surface, origin));
         }
     }
@@ -1036,8 +1038,12 @@ pub fn agent_touch(
             );
         } else {
             let focus = touch.current_focus(slot).and_then(|(surface, _)| {
-                world::surface::interface::hit::grabbed_surface_origin(lp, &surface, position.into())
-                    .map(|origin| (surface, origin))
+                world::surface::interface::hit::grabbed_surface_origin(
+                    lp,
+                    &surface,
+                    position.into(),
+                )
+                .map(|origin| (surface, origin))
             });
             touch.motion(
                 &mut lp.state,

@@ -468,7 +468,12 @@ pub fn prepare(
 
 /// One target presentation timestamp for geometry, visuals and capture pixels.
 /// Native KMS supplies the next vblank estimate; software presentation uses now.
-fn prepare_at(state: &mut Loop, renderer: &mut GlesRenderer, size: Size<i32, Physical>, presentation_time: std::time::Instant) -> PreparedGles {
+fn prepare_at(
+    state: &mut Loop,
+    renderer: &mut GlesRenderer,
+    size: Size<i32, Physical>,
+    presentation_time: std::time::Instant,
+) -> PreparedGles {
     world::comp::animation::set_frame_time(presentation_time);
     world::comp::animation_geometry::sample_all(state, world::comp::animation::frame_time());
     crate::scene::gpu::begin(state, renderer);
@@ -944,8 +949,8 @@ where
     );
     let _ = prepared.surfaces; // world UI now drawn per-id in the content band
     // The solid background is pushed per-pane in the region loop above.
-    let (ghosts, ghost_solids) = world::window::draw::ghost::elements::<R>(
-        render_key.as_deref().unwrap_or_default());
+    let (ghosts, ghost_solids) =
+        world::window::draw::ghost::elements::<R>(render_key.as_deref().unwrap_or_default());
     plan.extend(layer::CANVAS, ghosts.into_iter().map(DrawNode::Ghost));
     plan.extend(layer::CANVAS, ghost_solids.into_iter().map(DrawNode::Solid));
     let (elements, meta) = plan.lower(renderer);

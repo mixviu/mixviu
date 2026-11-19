@@ -326,7 +326,8 @@ smithay::render_elements! {
 
 impl<R: ImportAll + ImportMem + SceneDispatch> Element<R> {
     pub fn raw_mut(&mut self) -> &mut RawElement<R>
-    where R::TextureId: 'static,
+    where
+        R::TextureId: 'static,
     {
         match self {
             Self::Plain(inner) => inner.raw_mut(),

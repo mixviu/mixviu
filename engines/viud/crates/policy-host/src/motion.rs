@@ -23,11 +23,18 @@ pub fn start_visual(
 ) -> Result<(), ControlReply> {
     let (_, window) = control::motion_window(lp, id, generation)?;
     if world::comp::animation::active(&window, started) {
-        let visual = world::comp::animation::sample(&window, control::window_visual(lp, id, generation)?, started);
+        let visual = world::comp::animation::sample(
+            &window,
+            control::window_visual(lp, id, generation)?,
+            started,
+        );
         let mut current = motion::Values::default();
         let previous = world::comp::animation::sampled_values(&window, started).unwrap_or_default();
         for property in motion::Property::ALL {
-            if !previous.contains(property) && !preset.tracks.iter().any(|t| t.property == property) { continue; }
+            if !previous.contains(property) && !preset.tracks.iter().any(|t| t.property == property)
+            {
+                continue;
+            }
             let value = match property {
                 motion::Property::Opacity => visual.opacity,
                 motion::Property::Scale => visual.scale.factor,
@@ -40,13 +47,16 @@ pub fn start_visual(
         let requested = preset.sample(preset.timing.duration);
         let mut target = current;
         for property in motion::Property::ALL {
-            if requested.contains(property) { target.set(property, requested.get(property)); }
+            if requested.contains(property) {
+                target.set(property, requested.get(property));
+            }
         }
         *preset = motion::retarget(&current, &target, preset.timing);
     }
     world::comp::animation::start(&window, preset, started);
     ledger::frame_trace::event("window_motion_start", || (id, 0, 0));
-    lp.state.schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+    lp.state
+        .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
     Ok(())
 }
 
@@ -54,13 +64,15 @@ pub fn start_visual(
 pub fn finish_visual(lp: &mut Loop, id: u64, generation: u64) {
     if let Ok((_, window)) = control::motion_window(lp, id, generation) {
         world::comp::animation::finish(&window);
-        let Ok(visual) = control::window_visual(lp, id, generation) else { return };
+        let Ok(visual) = control::window_visual(lp, id, generation) else {
+            return;
+        };
         let _ = control::window_visual_step(lp, id, generation, visual);
     }
 }
 
 pub fn cancel_visual(lp: &mut Loop, id: u64, generation: u64) {
-    if let Ok((_, window)) = control::motion_window(lp,id,generation) {
+    if let Ok((_, window)) = control::motion_window(lp, id, generation) {
         world::comp::animation_geometry::cancel(&window);
     }
     if let Ok(visual) = control::window_visual(lp, id, generation) {
@@ -71,22 +83,41 @@ pub fn cancel_visual(lp: &mut Loop, id: u64, generation: u64) {
     }
 }
 
-pub fn start_geometry(lp: &mut Loop, id: u64, generation: u64, from: [f64;4], to: [Option<f64>;4], started: std::time::Instant, duration: f64, easing: motion::Easing) {
-    if let Ok((_, window)) = control::motion_window(lp,id,generation) {
+pub fn start_geometry(
+    lp: &mut Loop,
+    id: u64,
+    generation: u64,
+    from: [f64; 4],
+    to: [Option<f64>; 4],
+    started: std::time::Instant,
+    duration: f64,
+    easing: motion::Easing,
+) {
+    if let Ok((_, window)) = control::motion_window(lp, id, generation) {
         world::comp::animation_geometry::cancel(&window);
         if to.iter().any(Option::is_some) {
-            world::comp::animation_geometry::start(&window,started,from,to,duration,easing);
+            world::comp::animation_geometry::start(&window, started, from, to, duration, easing);
         }
     }
 }
 
-pub fn geometry_frame_step(lp: &mut Loop, id: u64, generation: u64, timeline: &Timeline, now: f64) -> Step {
-    let (_, window) = match control::motion_window(lp,id,generation) { Ok(window) => window, Err(refusal) => return Step::Refused(refusal) };
+pub fn geometry_frame_step(
+    lp: &mut Loop,
+    id: u64,
+    generation: u64,
+    timeline: &Timeline,
+    now: f64,
+) -> Step {
+    let (_, window) = match control::motion_window(lp, id, generation) {
+        Ok(window) => window,
+        Err(refusal) => return Step::Refused(refusal),
+    };
     // Timer wakes request frames; only frame preparation samples in-flight values.
     if timeline.status_at(now) == Status::Done {
-        world::comp::animation_geometry::sample_window(lp,&window,std::time::Instant::now());
+        world::comp::animation_geometry::sample_window(lp, &window, std::time::Instant::now());
     }
-    lp.state.schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+    lp.state
+        .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
     arrived_or_moving(timeline.status_at(now))
 }
 

@@ -124,7 +124,9 @@ pub fn motion(_loop: &mut Loop, id: i32, world: Point<f64, Logical>, time: u32) 
         return;
     };
     if let Some((surface, _)) = touch.current_focus(slot(id)) {
-        if let Some(origin) = world::surface::interface::hit::grabbed_surface_origin(_loop, &surface, world) {
+        if let Some(origin) =
+            world::surface::interface::hit::grabbed_surface_origin(_loop, &surface, world)
+        {
             focus = Some((surface, origin));
         }
     }

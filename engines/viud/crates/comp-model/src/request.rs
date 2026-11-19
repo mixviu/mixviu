@@ -207,7 +207,10 @@ pub struct WindowScale {
 
 impl Default for WindowScale {
     fn default() -> Self {
-        Self { factor: 1.0, anchor: LogicalOffset::default() }
+        Self {
+            factor: 1.0,
+            anchor: LogicalOffset::default(),
+        }
     }
 }
 
@@ -273,22 +276,34 @@ impl VisualAttributes {
     /// scale draws no pixels and cannot receive input.
     pub fn inverse(&self, point: LogicalOffset) -> Option<LogicalOffset> {
         (self.scale.factor > 0.0).then(|| LogicalOffset {
-            x: self.scale.anchor.x + (point.x - self.translate.x - self.scale.anchor.x) / self.scale.factor,
-            y: self.scale.anchor.y + (point.y - self.translate.y - self.scale.anchor.y) / self.scale.factor,
+            x: self.scale.anchor.x
+                + (point.x - self.translate.x - self.scale.anchor.x) / self.scale.factor,
+            y: self.scale.anchor.y
+                + (point.y - self.translate.y - self.scale.anchor.y) / self.scale.factor,
         })
     }
 }
 
 pub fn logical_offset_value(value: &Value) -> Option<LogicalOffset> {
     let object = value.as_object()?;
-    if object.len() != 2 { return None; }
-    let offset = LogicalOffset { x: object.get("x")?.as_f64()?, y: object.get("y")?.as_f64()? };
-    [offset.x, offset.y].iter().all(|v| v.is_finite() && *v >= i32::MIN as f64 && *v <= i32::MAX as f64).then_some(offset)
+    if object.len() != 2 {
+        return None;
+    }
+    let offset = LogicalOffset {
+        x: object.get("x")?.as_f64()?,
+        y: object.get("y")?.as_f64()?,
+    };
+    [offset.x, offset.y]
+        .iter()
+        .all(|v| v.is_finite() && *v >= i32::MIN as f64 && *v <= i32::MAX as f64)
+        .then_some(offset)
 }
 
 pub fn window_scale_value(value: &Value) -> Option<WindowScale> {
     let object = value.as_object()?;
-    if object.len() != 2 { return None; }
+    if object.len() != 2 {
+        return None;
+    }
     let factor = object.get("factor")?.as_f64()?;
     let anchor = logical_offset_value(object.get("anchor")?)?;
     (factor.is_finite() && (0.0..=64.0).contains(&factor)).then_some(WindowScale { factor, anchor })
@@ -1100,8 +1115,20 @@ pub fn parse_window_command(
                     "rectangle or null",
                     "finite x,y; non-negative width,height; i32 logical bounds",
                 )?,
-                scale: visual_arg(object, "scale", window_scale_value, "{factor,anchor:{x,y}} or null", "factor 0..=64; i32 logical anchor")?,
-                translate: visual_arg(object, "translate", logical_offset_value, "{x,y} or null", "i32 logical offset")?,
+                scale: visual_arg(
+                    object,
+                    "scale",
+                    window_scale_value,
+                    "{factor,anchor:{x,y}} or null",
+                    "factor 0..=64; i32 logical anchor",
+                )?,
+                translate: visual_arg(
+                    object,
+                    "translate",
+                    logical_offset_value,
+                    "{x,y} or null",
+                    "i32 logical offset",
+                )?,
                 output,
             };
             if spec.output.is_none()

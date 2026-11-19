@@ -284,7 +284,6 @@ impl Pattern {
         self.queue.roundtrip(&mut self.state).unwrap();
     }
 
-
     pub fn popup(&mut self, grab: bool) -> (WlSurface, XdgPopup) {
         let qh = self.queue.handle();
         let surface = self.compositor.create_surface(&qh, ());
@@ -530,8 +529,16 @@ impl Dispatch<WlPointer, WlSeat> for State {
         _: &QueueHandle<Self>,
     ) {
         match &event {
-            wl_pointer::Event::Enter { surface_x, surface_y, .. }
-            | wl_pointer::Event::Motion { surface_x, surface_y, .. } => {
+            wl_pointer::Event::Enter {
+                surface_x,
+                surface_y,
+                ..
+            }
+            | wl_pointer::Event::Motion {
+                surface_x,
+                surface_y,
+                ..
+            } => {
                 state.pointer_positions.push((*surface_x, *surface_y));
             }
             _ => {}

@@ -169,7 +169,9 @@ pub struct Clipped<E> {
 
 impl<E> Clipped<E> {
     /// Inspect the retained content when making a composition-only snapshot.
-    pub fn inner_mut(&mut self) -> &mut E { &mut self.inner }
+    pub fn inner_mut(&mut self) -> &mut E {
+        &mut self.inner
+    }
     pub fn new(inner: E, program: Option<TexProgram>, clip: Clip) -> Self {
         Clipped {
             inner,
@@ -348,7 +350,10 @@ mod tests {
         };
         let mut element = Clipped::new((), None, clip).rescaled(0.5, (50, 40).into());
         element.append_rescale(0.25, (10, 20).into());
-        assert_eq!(element.drawn.rect, Rectangle::new((35, 40).into(), (25, 20).into()));
+        assert_eq!(
+            element.drawn.rect,
+            Rectangle::new((35, 40).into(), (25, 20).into())
+        );
         assert_eq!(element.drawn.radius, 1.5);
         assert_eq!(element.clip, clip);
     }

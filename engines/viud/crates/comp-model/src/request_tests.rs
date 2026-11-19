@@ -11,19 +11,38 @@ fn composition_transform_is_atomic_strict_and_invertible() {
     let body = json!({"id":7,"generation":3,
         "scale":{"factor":0.5,"anchor":{"x":100,"y":80}},
         "translate":{"x":20,"y":-10}});
-    let WindowCommand::Op(WindowOp::Place(spec)) = parse_window_command("comp.window.place", &body).unwrap() else { panic!("place"); };
+    let WindowCommand::Op(WindowOp::Place(spec)) =
+        parse_window_command("comp.window.place", &body).unwrap()
+    else {
+        panic!("place");
+    };
     let mut visual = VisualAttributes::default();
     visual.update(&spec);
-    assert_eq!(visual.inverse(LogicalOffset { x: 170.0, y: 110.0 }), Some(LogicalOffset { x: 200.0, y: 160.0 }));
+    assert_eq!(
+        visual.inverse(LogicalOffset { x: 170.0, y: 110.0 }),
+        Some(LogicalOffset { x: 200.0, y: 160.0 })
+    );
     for invalid in [
         json!({"factor":-1,"anchor":{"x":0,"y":0}}),
         json!({"factor":65,"anchor":{"x":0,"y":0}}),
         json!({"factor":1}),
         json!({"factor":1,"anchor":{"x":0,"y":0,"z":0}}),
     ] {
-        assert!(parse_window_command("comp.window.place", &json!({"id":7,"generation":3,"scale":invalid})).is_err());
+        assert!(
+            parse_window_command(
+                "comp.window.place",
+                &json!({"id":7,"generation":3,"scale":invalid})
+            )
+            .is_err()
+        );
     }
-    let WindowCommand::Op(WindowOp::Place(reset)) = parse_window_command("comp.window.place", &json!({"id":7,"generation":3,"scale":null,"translate":null})).unwrap() else { panic!("place"); };
+    let WindowCommand::Op(WindowOp::Place(reset)) = parse_window_command(
+        "comp.window.place",
+        &json!({"id":7,"generation":3,"scale":null,"translate":null}),
+    )
+    .unwrap() else {
+        panic!("place");
+    };
     visual.update(&reset);
     assert_eq!(visual, VisualAttributes::default());
     visual.scale.factor = 0.0;
@@ -766,8 +785,8 @@ fn step_eight_window_commands_parse_and_refuse_by_field() {
             z: None,
             visible: None,
             clip: None,
-                scale: None,
-                translate: None,
+            scale: None,
+            translate: None,
         })))
     );
     assert_eq!(

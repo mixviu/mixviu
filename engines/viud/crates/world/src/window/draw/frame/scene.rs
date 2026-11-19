@@ -993,7 +993,7 @@ where
 {
     let visual = visual_of(window);
     let crop = visual.clip.map(|c| project_clip(ctx, loc, c, size));
-    let elements = if !visual.visible || visual.scale.factor == 0.0 {
+    let elements: Vec<crate::window::draw::element::Untransformed<R>> = if !visual.visible || visual.scale.factor == 0.0 {
         Vec::new()
     } else if let Some(rect) = crop {
         elements

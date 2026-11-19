@@ -745,8 +745,8 @@ fn spec(id: u64, generation: u64) -> PlaceSpec {
         z: None,
         visible: None,
         clip: None,
-                scale: None,
-                translate: None,
+        scale: None,
+        translate: None,
     }
 }
 

@@ -1,6 +1,8 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Owned CBC checkout only: return worker formatting as a patch, then restore.
 try
+  $metadata = run_argv(["cargo", "metadata", "--offline", "--format-version", "1"], {timeout:120})
+  if not $metadata.ok then print($metadata.stderr); exit($metadata.exit_code ?? 1) end
   $r = run_argv(["cargo", "fmt", "--all"], {timeout:120, stderr:"stdout"})
   print($r.stdout)
   if not $r.ok then exit($r.exit_code ?? 1) end

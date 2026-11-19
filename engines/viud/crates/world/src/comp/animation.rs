@@ -19,7 +19,9 @@ pub fn set_frame_time(now: Instant) {
 }
 
 pub fn frame_time() -> Instant {
-    FRAME_TIME.with(|time| time.get()).unwrap_or_else(Instant::now)
+    FRAME_TIME
+        .with(|time| time.get())
+        .unwrap_or_else(Instant::now)
 }
 
 #[derive(Clone, Debug)]
@@ -43,19 +45,40 @@ impl VisualRun {
 }
 
 pub fn start(window: &Window, preset: &Preset, started: Instant) {
-    window.user_data().insert_if_missing(|| Mutex::new(None::<VisualRun>));
-    *window.user_data().get::<Mutex<Option<VisualRun>>>().unwrap().lock().unwrap() =
-        Some(VisualRun { started, preset: preset.clone() });
+    window
+        .user_data()
+        .insert_if_missing(|| Mutex::new(None::<VisualRun>));
+    *window
+        .user_data()
+        .get::<Mutex<Option<VisualRun>>>()
+        .unwrap()
+        .lock()
+        .unwrap() = Some(VisualRun {
+        started,
+        preset: preset.clone(),
+    });
 }
 
 pub fn sampled_values(window: &Window, now: Instant) -> Option<Values> {
-    window.user_data().get::<Mutex<Option<VisualRun>>>()?
-        .lock().unwrap().as_ref().map(|run| run.sample(now))
+    window
+        .user_data()
+        .get::<Mutex<Option<VisualRun>>>()?
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|run| run.sample(now))
 }
 
 pub fn active(window: &Window, now: Instant) -> bool {
-    window.user_data().get::<Mutex<Option<VisualRun>>>()
-        .is_some_and(|cell| cell.lock().unwrap().as_ref().is_some_and(|run| run.active(now)))
+    window
+        .user_data()
+        .get::<Mutex<Option<VisualRun>>>()
+        .is_some_and(|cell| {
+            cell.lock()
+                .unwrap()
+                .as_ref()
+                .is_some_and(|run| run.active(now))
+        })
 }
 
 pub fn apply(values: &Values, mut visual: VisualAttributes) -> VisualAttributes {
@@ -81,10 +104,23 @@ pub fn sample(window: &Window, base: VisualAttributes, now: Instant) -> VisualAt
 /// Persist the sampled endpoint before dropping the track, so removing the
 /// final timer cannot make the next frame snap back to the pre-animation state.
 pub fn finish(window: &Window) {
-    let Some(cell) = window.user_data().get::<Mutex<Option<VisualRun>>>() else { return };
-    let Some(run) = cell.lock().unwrap().take() else { return };
-    let values = run.preset.sample(run.preset.timing.start() + run.preset.timing.duration);
-    window.user_data().insert_if_missing(|| Mutex::new(VisualAttributes::default()));
-    let mut visual = window.user_data().get::<Mutex<VisualAttributes>>().unwrap().lock().unwrap();
+    let Some(cell) = window.user_data().get::<Mutex<Option<VisualRun>>>() else {
+        return;
+    };
+    let Some(run) = cell.lock().unwrap().take() else {
+        return;
+    };
+    let values = run
+        .preset
+        .sample(run.preset.timing.start() + run.preset.timing.duration);
+    window
+        .user_data()
+        .insert_if_missing(|| Mutex::new(VisualAttributes::default()));
+    let mut visual = window
+        .user_data()
+        .get::<Mutex<VisualAttributes>>()
+        .unwrap()
+        .lock()
+        .unwrap();
     *visual = apply(&values, *visual);
 }

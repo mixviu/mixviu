@@ -159,7 +159,9 @@ pub struct WindowTransition {
     pub duration_ms: u64,
 }
 
-fn default_transition_ms() -> u64 { 300 }
+fn default_transition_ms() -> u64 {
+    300
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]

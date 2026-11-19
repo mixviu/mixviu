@@ -211,7 +211,11 @@ fn spawn_options(options: Options<'_>) -> Process {
     let settings = root.join("settings.json");
     fs::write(&settings, serde_json::to_vec(&config).unwrap()).unwrap();
     if let Some(preferences) = preferences {
-        fs::write(root.join("preferences.json"), serde_json::to_vec(&preferences).unwrap()).unwrap();
+        fs::write(
+            root.join("preferences.json"),
+            serde_json::to_vec(&preferences).unwrap(),
+        )
+        .unwrap();
     }
     let log = root.join("viud.log");
     let stderr = fs::File::create(&log).unwrap();

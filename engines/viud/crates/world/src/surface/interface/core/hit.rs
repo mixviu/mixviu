@@ -438,10 +438,8 @@ fn hit_window(
         x: position_world.x - elem_loc.x as f64,
         y: position_world.y - elem_loc.y as f64,
     })?;
-    let position_world = Point::<f64, Logical>::from((
-        elem_loc.x as f64 + local.x,
-        elem_loc.y as f64 + local.y,
-    ));
+    let position_world =
+        Point::<f64, Logical>::from((elem_loc.x as f64 + local.x, elem_loc.y as f64 + local.y));
 
     // Craft `position` so smithay (`event.location − position`) delivers exactly
     // the surface-local coordinate the client expects.

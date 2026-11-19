@@ -1885,14 +1885,46 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         Object,
         "Window-local logical clip rectangle, or null"
     ),
-    descriptor!(&[L("windows"), S, L("scale")], Object, "Composition-only uniform scale and local anchor"),
-    descriptor!(&[L("windows"), S, L("scale"), L("factor")], Number, "Uniform drawn scale, 0..=64"),
-    descriptor!(&[L("windows"), S, L("scale"), L("anchor")], Object, "Window-local logical scale anchor"),
-    descriptor!(&[L("windows"), S, L("scale"), L("anchor"), L("x")], Number, "Local logical anchor x"),
-    descriptor!(&[L("windows"), S, L("scale"), L("anchor"), L("y")], Number, "Local logical anchor y"),
-    descriptor!(&[L("windows"), S, L("translate")], Object, "Composition-only logical offset"),
-    descriptor!(&[L("windows"), S, L("translate"), L("x")], Number, "Logical translation x"),
-    descriptor!(&[L("windows"), S, L("translate"), L("y")], Number, "Logical translation y"),
+    descriptor!(
+        &[L("windows"), S, L("scale")],
+        Object,
+        "Composition-only uniform scale and local anchor"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("scale"), L("factor")],
+        Number,
+        "Uniform drawn scale, 0..=64"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("scale"), L("anchor")],
+        Object,
+        "Window-local logical scale anchor"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("scale"), L("anchor"), L("x")],
+        Number,
+        "Local logical anchor x"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("scale"), L("anchor"), L("y")],
+        Number,
+        "Local logical anchor y"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("translate")],
+        Object,
+        "Composition-only logical offset"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("translate"), L("x")],
+        Number,
+        "Logical translation x"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("translate"), L("y")],
+        Number,
+        "Logical translation y"
+    ),
     descriptor!(
         &[L("windows"), S, L("clip"), L("x")],
         Number,

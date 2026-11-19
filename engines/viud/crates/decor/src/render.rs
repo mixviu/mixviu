@@ -42,7 +42,9 @@ pub struct Piece<R: Renderer> {
 }
 
 impl<R: Renderer> Piece<R> {
-    pub fn texture(&self) -> &R::TextureId { self.inner.texture() }
+    pub fn texture(&self) -> &R::TextureId {
+        self.inner.texture()
+    }
 }
 
 impl<R: Renderer> Element for Piece<R> {

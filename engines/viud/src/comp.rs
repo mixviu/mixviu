@@ -636,7 +636,8 @@ impl Bus {
     fn service_motions(&mut self, lp: &mut Loop) {
         let lifecycle_active = world::comp::lifecycle_motion::service(lp);
         if lifecycle_active {
-            lp.state.schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+            lp.state
+                .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
         }
         let now = Instant::now();
         let human = policy_host::input::human_pointer(lp);
@@ -681,9 +682,11 @@ impl Bus {
                     timeline,
                     visual,
                 } => {
-                    let step = policy_host::motion::geometry_frame_step(lp, *id, *generation, timeline, t);
+                    let step =
+                        policy_host::motion::geometry_frame_step(lp, *id, *generation, timeline, t);
                     if visual.is_some() {
-                        lp.state.schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+                        lp.state
+                            .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
                         if !matches!(step, policy_host::motion::Step::Moving) {
                             policy_host::motion::finish_visual(lp, *id, *generation);
                         }
@@ -912,8 +915,23 @@ impl Engine<'_> {
         let started = Instant::now();
         let human_at_start = policy_host::input::human_pointer(self.lp);
         let (target, visual) = match target {
-            MotionTarget::WindowTracks { id, generation, to, duration, easing, visual } =>
-                (MotionTarget::Window { id, generation, to, duration, easing }, Some(visual)),
+            MotionTarget::WindowTracks {
+                id,
+                generation,
+                to,
+                duration,
+                easing,
+                visual,
+            } => (
+                MotionTarget::Window {
+                    id,
+                    generation,
+                    to,
+                    duration,
+                    easing,
+                },
+                Some(visual),
+            ),
             target => (target, None),
         };
         let (kind, step) = match target {
@@ -955,7 +973,9 @@ impl Engine<'_> {
                 let mut timeline = Timeline::new(0.0, duration.as_secs_f64(), easing);
                 let mut visual = visual;
                 if let Some(preset) = visual.as_mut() {
-                    if let Err(refusal) = policy_host::motion::start_visual(self.lp, id, generation, preset, started) {
+                    if let Err(refusal) =
+                        policy_host::motion::start_visual(self.lp, id, generation, preset, started)
+                    {
                         reply.send(refusal);
                         return;
                     }
@@ -966,13 +986,29 @@ impl Engine<'_> {
                 // sampled visual/geometry state and settles the old caller now.
                 let mut keep = Vec::with_capacity(self.motions.len());
                 for run in std::mem::take(self.motions) {
-                    if matches!(&run.kind, MotionKind::Window { id: old_id, generation: old_generation, .. } if *old_id == id && *old_generation == generation) {
-                        run.reply.send(ControlReply::Body(json!({"version":1,"status":"superseded"})));
-                    } else { keep.push(run); }
+                    if matches!(&run.kind, MotionKind::Window { id: old_id, generation: old_generation, .. } if *old_id == id && *old_generation == generation)
+                    {
+                        run.reply.send(ControlReply::Body(
+                            json!({"version":1,"status":"superseded"}),
+                        ));
+                    } else {
+                        keep.push(run);
+                    }
                 }
                 *self.motions = keep;
-                policy_host::motion::start_geometry(self.lp, id, generation, from, to, started, duration.as_secs_f64(), easing);
-                let step = policy_host::motion::geometry_frame_step(self.lp, id, generation, &timeline, 0.0);
+                policy_host::motion::start_geometry(
+                    self.lp,
+                    id,
+                    generation,
+                    from,
+                    to,
+                    started,
+                    duration.as_secs_f64(),
+                    easing,
+                );
+                let step = policy_host::motion::geometry_frame_step(
+                    self.lp, id, generation, &timeline, 0.0,
+                );
                 let kind = MotionKind::Window {
                     id,
                     generation,
@@ -988,7 +1024,13 @@ impl Engine<'_> {
         match step {
             policy_host::motion::Step::Refused(answer) => reply.send(answer),
             policy_host::motion::Step::Arrived => {
-                if let MotionKind::Window { id, generation, visual: Some(_), .. } = &kind {
+                if let MotionKind::Window {
+                    id,
+                    generation,
+                    visual: Some(_),
+                    ..
+                } = &kind
+                {
                     policy_host::motion::finish_visual(self.lp, *id, *generation);
                 }
                 reply.send(motion_completed(&kind, false));
