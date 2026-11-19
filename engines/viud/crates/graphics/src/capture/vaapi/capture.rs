@@ -33,9 +33,10 @@ pub fn capture_render_node() -> String {
 pub fn renderer_render_node(
     renderer: &smithay::backend::renderer::gles::GlesRenderer,
 ) -> Result<String, String> {
-    capture_node(|| smithay::backend::egl::EGLDevice::device_for_display(renderer.egl_context().display())
-        .and_then(|device| device.render_device_path())
-    )
+    capture_node(|| {
+        smithay::backend::egl::EGLDevice::device_for_display(renderer.egl_context().display())
+            .and_then(|device| device.render_device_path())
+    })
 }
 
 fn capture_node(
