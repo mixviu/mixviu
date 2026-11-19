@@ -537,13 +537,15 @@ fn capture_latch_is_consumed_and_metadata_refreshes_each_query() {
 
 #[test]
 fn authored_padding_has_a_hand_computed_surface_origin() {
-    let source = scene(json!({"root":{"widget":"column","padding":12,"children":["gap"]},"gap":{"widget":"spacer","size":20}}));
+    let source = scene(
+        json!({"root":{"widget":"column","padding":12,"children":["gap"]},"gap":{"widget":"spacer","size":20}}),
+    );
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
-    draw(&mut view,&ctx,400.,200.);
+    draw(&mut view, &ctx, 400., 200.);
     let row = view.widget_rectangles(&json!({"ids":["gap"]})).unwrap();
-    assert_eq!(row.as_array().unwrap().len(),1);
-    assert_eq!(row[0]["rect"]["x"],json!(12.));
-    assert_eq!(row[0]["rect"]["y"],json!(12.));
-    assert_eq!(row[0]["rect"]["h"],json!(20.));
+    assert_eq!(row.as_array().unwrap().len(), 1);
+    assert_eq!(row[0]["rect"]["x"], json!(12.));
+    assert_eq!(row[0]["rect"]["y"], json!(12.));
+    assert_eq!(row[0]["rect"]["h"], json!(20.));
 }
