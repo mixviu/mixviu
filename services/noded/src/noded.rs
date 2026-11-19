@@ -1035,7 +1035,7 @@ async fn serve(
         &listen,
         wg_bound,
         admit_verified,
-        load_d2_seed(&d2_seed_path()).is_none(),
+        d2_seed.is_none(),
         admit_epoch,
         false,
     );
@@ -1986,7 +1986,7 @@ async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture
         &state.bind,
         state.wg_bound,
         verified,
-        load_d2_seed(&d2_seed_path()).is_none(),
+        state.d2_seed.is_none(),
         epoch,
         true,
     );
