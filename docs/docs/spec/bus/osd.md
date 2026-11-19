@@ -43,7 +43,9 @@ is visible in `osd.list`.
 Validation precedes mutation. Refusals carry an `error_code`, including
 `INVALID_ARGS`, `INVALID_SCENE`, `INVALID_ANCHOR`, `INVALID_MOTION`,
 `ALREADY_EXISTS`, `NOT_FOUND`, `BUDGET_EXCEEDED`, `WINDOW_NOT_FOUND`,
-`STALE_GENERATION` and `UNKNOWN_ACTION`.
+`STALE_GENERATION`, `COMP_UNAVAILABLE`, `INVALID_STATE` and `UNKNOWN_ACTION`.
+Updating an item that is already exiting is refused; callers can show a new
+item after its removal.
 
 Ordinary output captures include the OSD because it is part of the output
 scene. Listed-window captures exclude it with all other non-listed surfaces.

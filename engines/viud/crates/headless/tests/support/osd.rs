@@ -122,6 +122,11 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     call(&bus, "osd.show", caption());
     wait(&mut pattern, Duration::from_millis(1050));
     let (_, _, shown) = ppm(&bus, &process, "osd-shown", None);
+    let badge = rgb(&shown, width, 12, 10);
+    assert_ne!(badge, rgb(&before, width, 12, 10), "the compositor must draw the provenance badge");
+    for (channel, expected) in badge.iter().zip([242_u8, 166, 38]) {
+        assert!(channel.abs_diff(expected) <= 8, "expected the compositor's amber badge, got {badge:?}");
+    }
     let region = [width - 400, height - 200, 400, 200];
     let shown_bounds = bounds(&before, &shown, width, region)
         .expect("caption must draw above a maximum-z fullscreen client");
@@ -319,6 +324,13 @@ fn window_card_follows_hides_and_osd_refusals_are_typed() {
         "minimized anchor must suppress OSD pixels"
     );
     call(&bus, "osd.hide", json!({"id":"card"}));
+    let stale = call_rc(&bus, "osd.show", json!({
+        "id":"stale",
+        "scene":{"kind":"card","text":"must not be installed"},
+        "anchor":{"window":{"id":row["id"],"generation":row["generation"].as_u64().unwrap()+1}}
+    }), 10);
+    assert_eq!(stale["error_code"], "STALE_GENERATION");
+    assert!(call(&bus,"osd.list",json!({}))["items"].as_array().unwrap().is_empty());
     for (command, args) in [
         (
             "osd.show",
@@ -354,6 +366,10 @@ fn window_card_follows_hides_and_osd_refusals_are_typed() {
         "osd.execute",
         json!({"id":"osd.show","params":caption()}),
     );
+    call(&bus, "osd.execute", json!({"id":"osd.update","params":{
+        "id":"caption","scene":{"kind":"title","text":"Updated over execute"}
+    }}));
+    assert_eq!(call(&bus,"osd.list",json!({}))["items"][0]["scene"]["kind"], "title");
     call(
         &bus,
         "osd.execute",

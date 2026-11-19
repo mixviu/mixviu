@@ -32,6 +32,7 @@ pub fn launch(headless: bool, comp: &str) -> Option<Host> {
     };
     let _ = headless;
     if !bundle.join("contract.json").is_file() {
+        info!("OSD bundle is absent; scene host not started");
         return None;
     }
     let mut command = slots::library::process::child::hygiene::command(viu);

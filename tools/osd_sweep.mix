@@ -5,25 +5,34 @@ fn checked($argv)
   $r=run_argv($argv,{timeout:1800,stdout:"inherit",stderr:"inherit"})
   if not $r.ok then exit($r.exit_code ?? 124) end
 end
+fn require_clean()
+  if not run_argv(["git","diff","--quiet"]).ok or not run_argv(["git","diff","--cached","--quiet"]).ok then
+    raise("DIRTY_CHECKOUT","worker diff jobs require a clean checkout")
+  end
+end
 fn prepare_native()
   checked(["cargo","build","--release","--locked","-p","mix","-p","noded","-p","testkit","--bins"])
   checked(["cargo","build","--release","--locked","-p","viu","--bin","viu"])
   export MIX_TEST_MIX_EXE=realpath("target/release/mix")
   export MIX_TEST_VIU_EXE=realpath("target/release/viu")
+  checked([realpath("target/release/mix"),path_join(dirname(script_path()),"../apps/osd/core-test.mix")])
   checked(["cargo","test","--release","--locked","-p","viud","--features","test-support","--test","recorder_binary"])
 end
 $mode=args()[0] ?? "native"
 $crates=["-p","protocols","-p","dispatcher","-p","frames","-p","slots","-p","world","-p","seat","-p","viud","-p","lib-viu","-p","toolkit","-p","viu","-p","headless"]
 if $mode=="fmt" then
+  require_clean()
   try
     checked(concat(["cargo","fmt"],$crates))
   finally
     print("OSD_DIFF_BEGIN")
     print(run_argv_must(["git","diff"]))
     print("OSD_DIFF_END")
-    run_argv_must(["git","checkout","-q","--","."])
+    $changed=filter(split(trim(run_argv_must(["git","diff","--name-only"])),"\n"),fn($p)=$p!="")
+    if len($changed)>0 then run_argv_must(concat(["git","checkout","-q","--"],$changed)) end
   end
 elif $mode=="lock" then
+  require_clean()
   try
     $resolved=run_argv(["cargo","metadata","--offline","--format-version","1"],{timeout:1800})
     if not $resolved.ok then eprint($resolved.stderr);exit($resolved.exit_code ?? 124) end

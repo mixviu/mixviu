@@ -15,16 +15,20 @@ fn sync_model()
   viu_timer("osd-expiry",if $at==nil then nil else max(0,($at-monotonic())*1000) end,{})
 end
 fn refresh_windows()
-  send $comp "comp.windows.list" body={}
-  if $rc==0 then
+  try
+    send $comp "comp.windows.list" body={}
+    if $rc!=0 or type($reply.windows)!="list" then $windows={};return false end
     $windows={}
-    for $w in $reply.windows ?? [] $windows[to_string($w.id)]=$w end
-  else $windows={} end
+    for $w in $reply.windows $windows[to_string($w.id)]=$w end
+    return true
+  catch $message
+    $windows={};return false
+  end
 end
 fn perform($op,$a)
   $candidate=$core.apply($s,$op,$a,monotonic(),$presets)
   if $op!="hide" and $candidate.items[$a.id].anchor.window!=nil then
-    refresh_windows()
+    if not refresh_windows() then raise("COMP_UNAVAILABLE","compositor window inventory is unavailable; retry when it reconnects") end
     $ref=$candidate.items[$a.id].anchor.window;$w=$windows[to_string($ref.id)]
     if $w==nil then raise("WINDOW_NOT_FOUND","anchor window no longer exists") end
     if $w.generation!=$ref.generation then raise("STALE_GENERATION","anchor window role has changed") end

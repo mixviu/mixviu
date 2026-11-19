@@ -37,6 +37,12 @@ fn output_matches(name: &str, target: &str) -> bool {
     name == target || format!("o_{slug}") == target
 }
 
+fn pointer_region(rect: egui::Rect) -> (i32, i32, i32, i32) {
+    let x = rect.min.x.floor() as i32;
+    let y = rect.min.y.floor() as i32;
+    (x, y, rect.max.x.ceil() as i32 - x, rect.max.y.ceil() as i32 - y)
+}
+
 /// Resolve against the same projected window observations the Bus reports.
 fn geometry(item: &Value, model: &Value, info: &SurfaceInfo) -> Option<egui::Rect> {
     let number = |value: &Value, default: f32| value.as_f64().map(|v| v as f32).unwrap_or(default);
@@ -163,12 +169,7 @@ impl LayerProgram for Program {
                             ),
                         rect.size() * values.get(motion::Property::Scale) as f32,
                     );
-                    regions.push((
-                        rect.min.x.floor() as i32,
-                        rect.min.y.floor() as i32,
-                        rect.width().ceil() as i32,
-                        rect.height().ceil() as i32,
-                    ));
+                    regions.push(pointer_region(rect));
                 }
             }
         }
@@ -318,6 +319,31 @@ pub(super) fn run(bundle: Bundle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shipped_bundle_loads_and_renders_each_literal_scene_kind() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/osd");
+        let bundle = Bundle::load(&root, &[]).expect("shipped OSD bundle and Bus surface validate");
+        assert_eq!(bundle.manifest.surface, "osd");
+        for (kind, title, size) in [("title", "", 30), ("caption", "", 22), ("card", "Card title", 22)] {
+            let mut view = SceneView::with_model(&bundle.scene, json!({"kind":kind,"title":title,"text":"Literal OSD text","text_size":size})).expect("shipped scene accepts item model");
+            let context = egui::Context::default();
+            toolkit::install(&context, &toolkit::Theme::embedded());
+            let output = context.run_ui(egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(480., 160.))),
+                ..Default::default()
+            }, |ui| { let _ = view.show(ui); });
+            assert!(!output.shapes.is_empty(), "{kind} scene draws content");
+            output.drop_without_applying_deltas();
+        }
+    }
+
+    #[test]
+    fn pointer_region_covers_fractional_far_edges() {
+        let rect = egui::Rect::from_min_max(egui::pos2(10.8, -3.2), egui::pos2(20.2, 7.1));
+        assert_eq!(pointer_region(rect), (10, -4, 11, 12));
+    }
+
     #[test]
     fn window_anchor_hides_on_minimise_or_generation_change() {
         let item = json!({"scene":{"width":300,"height":80},"anchor":{"window":{"id":1,"generation":7},"offset":{"x":12,"y":24}}});

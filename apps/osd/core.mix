@@ -93,6 +93,7 @@ fn apply($s,$op,$args,$now,$presets)
   $id=identity($args.id)
   if $op=="show" and $s.items[$id]!=nil then raise("ALREADY_EXISTS","an OSD item already has this id") end
   if $op!="show" and $s.items[$id]==nil then raise("NOT_FOUND","no such OSD item") end
+  if $op=="update" and $s.items[$id].phase=="exit" then raise("INVALID_STATE","item is exiting; wait for removal before showing it again") end
   if $op=="show" and len(keys($s.items))>=32 then raise("BUDGET_EXCEEDED","at most 32 OSD items") end
   $item=$s.items[$id] ?? {id:$id,pointer_input:false,phase:"enter",started:$now,enter:nil,exit:nil,exit_seconds:0,expires_at:nil}
   if $op=="hide" then
