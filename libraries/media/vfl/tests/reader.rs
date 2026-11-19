@@ -280,7 +280,10 @@ fn bench_child() {
     // VmHWM belongs to this executable's address space. ru_maxrss can retain
     // the pre-exec parent's high-water mark on Linux.
     let status = std::fs::read_to_string("/proc/self/status").unwrap();
-    let peak = status.lines().find_map(|l| l.strip_prefix("VmHWM:")).unwrap();
+    let peak = status
+        .lines()
+        .find_map(|l| l.strip_prefix("VmHWM:"))
+        .unwrap();
     eprintln!(
         "peak_rss={} user_s={} system_s={}",
         peak.trim(),
