@@ -50,10 +50,12 @@ elif $mode=="unit" then
   checked(["cargo","test","--locked","-p","toolkit","--features","layer","--lib","layer::"])
 elif $mode=="native" then
   export MIX_TEST_REQUIRE_RECORD="1"
+  export MIX_TEST_CAPTURE_KEEP_FAILED="1"
   prepare_native()
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","osd::","--","--nocapture","--test-threads=1"])
 elif contains(["record","acceptance40"],$mode) then
   export MIX_TEST_REQUIRE_RECORD="1"
+  export MIX_TEST_CAPTURE_KEEP_FAILED="1"
   prepare_native()
   export MIX_TEST_CAPTURE_SECONDS="40"
   export MIX_TEST_CAPTURE_OSD="1"

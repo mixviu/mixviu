@@ -40,7 +40,12 @@ fn output_matches(name: &str, target: &str) -> bool {
 fn pointer_region(rect: egui::Rect) -> (i32, i32, i32, i32) {
     let x = rect.min.x.floor() as i32;
     let y = rect.min.y.floor() as i32;
-    (x, y, rect.max.x.ceil() as i32 - x, rect.max.y.ceil() as i32 - y)
+    (
+        x,
+        y,
+        rect.max.x.ceil() as i32 - x,
+        rect.max.y.ceil() as i32 - y,
+    )
 }
 
 /// Resolve against the same projected window observations the Bus reports.
@@ -325,14 +330,30 @@ mod tests {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/osd");
         let bundle = Bundle::load(&root, &[]).expect("shipped OSD bundle and Bus surface validate");
         assert_eq!(bundle.manifest.surface, "osd");
-        for (kind, title, size) in [("title", "", 30), ("caption", "", 22), ("card", "Card title", 22)] {
-            let mut view = SceneView::with_model(&bundle.scene, json!({"kind":kind,"title":title,"text":"Literal OSD text","text_size":size})).expect("shipped scene accepts item model");
+        for (kind, title, size) in [
+            ("title", "", 30),
+            ("caption", "", 22),
+            ("card", "Card title", 22),
+        ] {
+            let mut view = SceneView::with_model(
+                &bundle.scene,
+                json!({"kind":kind,"title":title,"text":"Literal OSD text","text_size":size}),
+            )
+            .expect("shipped scene accepts item model");
             let context = egui::Context::default();
             toolkit::install(&context, &toolkit::Theme::embedded());
-            let output = context.run_ui(egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(480., 160.))),
-                ..Default::default()
-            }, |ui| { let _ = view.show(ui); });
+            let output = context.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(480., 160.),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    let _ = view.show(ui);
+                },
+            );
             assert!(!output.shapes.is_empty(), "{kind} scene draws content");
             output.drop_without_applying_deltas();
         }

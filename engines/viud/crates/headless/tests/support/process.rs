@@ -60,7 +60,11 @@ impl Drop for Process {
         }
         let _ = self.child.kill();
         let _ = self.child.wait();
-        let _ = fs::remove_dir_all(&self.root);
+        if thread::panicking() && std::env::var("MIX_TEST_CAPTURE_KEEP_FAILED").as_deref() == Ok("1") {
+            eprintln!("failed capture artifacts retained: {}", self.root.display());
+        } else {
+            let _ = fs::remove_dir_all(&self.root);
+        }
     }
 }
 

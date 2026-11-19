@@ -123,9 +123,16 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     wait(&mut pattern, Duration::from_millis(1050));
     let (_, _, shown) = ppm(&bus, &process, "osd-shown", None);
     let badge = rgb(&shown, width, 12, 10);
-    assert_ne!(badge, rgb(&before, width, 12, 10), "the compositor must draw the provenance badge");
+    assert_ne!(
+        badge,
+        rgb(&before, width, 12, 10),
+        "the compositor must draw the provenance badge"
+    );
     for (channel, expected) in badge.iter().zip([242_u8, 166, 38]) {
-        assert!(channel.abs_diff(expected) <= 8, "expected the compositor's amber badge, got {badge:?}");
+        assert!(
+            channel.abs_diff(expected) <= 8,
+            "expected the compositor's amber badge, got {badge:?}"
+        );
     }
     let region = [width - 400, height - 200, 400, 200];
     let shown_bounds = bounds(&before, &shown, width, region)
@@ -135,11 +142,11 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     let buttons = pattern.state.pointer_buttons;
     bus.call(
         "comp.input.pointer.move",
-        json!({"seat":"agent","output":"headless-0","x":width-200,"y":height-100}),
+        json!({"seat":"human","output":"headless-0","x":width-200,"y":height-100}),
     );
     bus.call(
         "comp.input.pointer.button",
-        json!({"button":"left","action":"click"}),
+        json!({"seat":"human","button":"left","action":"click"}),
     );
     wait(&mut pattern, Duration::from_millis(80));
     assert!(
@@ -159,11 +166,11 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     let buttons = pattern.state.pointer_buttons;
     bus.call(
         "comp.input.pointer.move",
-        json!({"seat":"agent","output":"headless-0","x":width-200,"y":height-100}),
+        json!({"seat":"human","output":"headless-0","x":width-200,"y":height-100}),
     );
     bus.call(
         "comp.input.pointer.button",
-        json!({"button":"left","action":"click"}),
+        json!({"seat":"human","button":"left","action":"click"}),
     );
     wait(&mut pattern, Duration::from_millis(80));
     assert_eq!(
@@ -171,7 +178,7 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         "opted-in OSD must receive its own pointer input"
     );
     let keys = pattern.state.keys;
-    bus.call("comp.input.key", json!({"key":"a"}));
+    bus.call("comp.input.key", json!({"seat":"human","key":"a"}));
     wait(&mut pattern, Duration::from_millis(50));
     assert!(
         pattern.state.keys > keys,
@@ -191,6 +198,15 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     assert_eq!(stopped["dropped"], 0);
 
     let mut reader = media_vfl::reader::Reader::open(&path).unwrap();
+    let steady_x = shown_bounds[0] + 4;
+    let steady_y = shown_bounds[1] + 36;
+    assert!(steady_x < width && steady_y < height);
+    // This point is below the rounded corner and left of the text inset.
+    // Calibrate against the drawn card so its authored background alpha and
+    // the compositor's output conversion do not become motion expectations.
+    let steady_green_delta = f64::from(rgb(&before, width, steady_x, steady_y)[1])
+        - f64::from(rgb(&shown, width, steady_x, steady_y)[1]);
+    assert!(steady_green_delta > 30.0, "card interior must visibly darken the uniform green client");
     let mut observed = Vec::new();
     let mut last = None;
     while let Some(frame) = reader.read().unwrap() {
@@ -198,7 +214,16 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         if let Some(bbox) = bounds(&before, &pixels, width, region)
             && last != Some(bbox[1])
         {
-            observed.push((frame.t_us as f64 / 1_000_000.0, bbox[1] as f64));
+            let x = bbox[0] + 4;
+            let y = bbox[1] + 36;
+            assert!(x < width && y < height, "motion sample outside output: {bbox:?}");
+            let green_delta = f64::from(rgb(&before, width, x, y)[1])
+                - f64::from(rgb(&pixels, width, x, y)[1]);
+            observed.push((
+                frame.t_us as f64 / 1_000_000.0,
+                bbox[1] as f64,
+                green_delta / steady_green_delta,
+            ));
             last = Some(bbox[1]);
         }
     }
@@ -209,7 +234,7 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     let settled = shown_bounds[1] as f64;
     let moving = observed
         .iter()
-        .take_while(|(_, y)| *y > settled + 1.0)
+        .take_while(|(_, y, _)| *y > settled + 1.0)
         .copied()
         .collect::<Vec<_>>();
     assert!(
@@ -219,25 +244,32 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     // The request is asynchronous relative to the recorder clock. Fit only
     // that one start offset; every decoded position must agree with the
     // canonical pure library sample within raster and one-frame tolerance.
-    let best = (0..1500)
+    let (best, start) = (0..1500)
         .map(|ms| {
             let start = ms as f64 / 1000.0;
-            moving
+            let error = moving
                 .iter()
-                .map(|(t, y)| {
+                .map(|(t, y, _)| {
                     let expected = settled
                         + preset
                             .sample((t - start).max(0.0))
                             .get(motion::Property::Ty);
                     (y - expected).abs()
                 })
-                .fold(0.0_f64, f64::max)
+                .fold(0.0_f64, f64::max);
+            (error, start)
         })
-        .fold(f64::INFINITY, f64::min);
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .unwrap();
     assert!(
         best <= 5.0,
         "decoded entrance disagrees with motion library: max error {best}, samples={moving:?}"
     );
+    for (t, _, opacity) in &moving {
+        let expected = preset.sample((t - start).max(0.0)).get(motion::Property::Opacity);
+        assert!((opacity - expected).abs() <= 0.12,
+            "decoded entrance opacity disagrees with the same motion start: t={t}, start={start}, actual={opacity}, expected={expected}, samples={moving:?}");
+    }
     let mut reader = media_vfl::reader::Reader::open(&path).unwrap();
     let mut final_pixels = Vec::new();
     while let Some(frame) = reader.read().unwrap() {
@@ -257,6 +289,8 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     wait(&mut pattern, Duration::from_millis(150));
     bus.call("comp.record.stop", json!({"session":listed["session"]}));
     let mut reader = media_vfl::reader::Reader::open(&listed_path).unwrap();
+    assert_eq!((reader.width as usize, reader.height as usize), (width, height),
+        "the listed fullscreen client must retain the output dimensions");
     let mut frames = 0;
     while let Some(frame) = reader.read().unwrap() {
         assert_eq!(
@@ -324,13 +358,23 @@ fn window_card_follows_hides_and_osd_refusals_are_typed() {
         "minimized anchor must suppress OSD pixels"
     );
     call(&bus, "osd.hide", json!({"id":"card"}));
-    let stale = call_rc(&bus, "osd.show", json!({
-        "id":"stale",
-        "scene":{"kind":"card","text":"must not be installed"},
-        "anchor":{"window":{"id":row["id"],"generation":row["generation"].as_u64().unwrap()+1}}
-    }), 10);
+    let stale = call_rc(
+        &bus,
+        "osd.show",
+        json!({
+            "id":"stale",
+            "scene":{"kind":"card","text":"must not be installed"},
+            "anchor":{"window":{"id":row["id"],"generation":row["generation"].as_u64().unwrap()+1}}
+        }),
+        10,
+    );
     assert_eq!(stale["error_code"], "STALE_GENERATION");
-    assert!(call(&bus,"osd.list",json!({}))["items"].as_array().unwrap().is_empty());
+    assert!(
+        call(&bus, "osd.list", json!({}))["items"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
     for (command, args) in [
         (
             "osd.show",
@@ -366,10 +410,17 @@ fn window_card_follows_hides_and_osd_refusals_are_typed() {
         "osd.execute",
         json!({"id":"osd.show","params":caption()}),
     );
-    call(&bus, "osd.execute", json!({"id":"osd.update","params":{
-        "id":"caption","scene":{"kind":"title","text":"Updated over execute"}
-    }}));
-    assert_eq!(call(&bus,"osd.list",json!({}))["items"][0]["scene"]["kind"], "title");
+    call(
+        &bus,
+        "osd.execute",
+        json!({"id":"osd.update","params":{
+            "id":"caption","scene":{"kind":"title","text":"Updated over execute"}
+        }}),
+    );
+    assert_eq!(
+        call(&bus, "osd.list", json!({}))["items"][0]["scene"]["kind"],
+        "title"
+    );
     call(
         &bus,
         "osd.execute",
