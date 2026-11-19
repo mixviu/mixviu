@@ -73,7 +73,7 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
         &mut state.state,
         Some((surface, location)),
         &MotionEvent {
-            location: location + (20.0, 20.0).into(),
+            location: smithay::utils::Point::from((location.x + 20.0, location.y + 20.0)),
             serial: SERIAL_COUNTER.next_serial(),
             time: 0,
         },
