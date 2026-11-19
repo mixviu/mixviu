@@ -101,7 +101,7 @@ fn number(v: &Value, key: &str, path: &Path) -> Result<u64, Error> {
 fn line(input: &mut BufReader<File>, path: &Path, recovery: bool) -> Result<Option<Value>, Error> {
     let at = input.stream_position().unwrap_or(0);
     let mut b = Vec::new();
-    input
+    (&mut *input)
         .take(1024 * 1024 + 1)
         .read_until(b'\n', &mut b)
         .map_err(|e| err(path, None, at, ErrorKind::Io, e))?;
