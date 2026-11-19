@@ -1,0 +1,39 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$c=require("core.mix");$presets={}
+fn assert_eq($a,$b)
+  if not deep_eq($a,$b) then raise("TEST","expected "..to_string($b)..", got "..to_string($a)) end
+end
+fn assert($value,$message)
+  if not $value then raise("TEST",$message) end
+end
+for $p in json_parse(read_file(path_join(dirname(script_path()),"../../libraries/motion/presets.json"))) $presets[$p.name]=$p end
+fn expect_refusal($code,$op,$args,$s)
+  $caught=false
+  try $next=$c.apply($s,$op,$args,10,$presets)
+  catch $message,$error
+    assert_eq($error.code,$code);$caught=true
+  end
+  assert($caught,"request should refuse")
+end
+$a={id:"caption",scene:{kind:"caption",text:"Caption"},anchor:{output:"HEADLESS-1",edge:"bottom-right",margin:24},enter:"up",exit:"fade",duration_ms:1000}
+$s=$c.apply($c.fresh(),"show",$a,10,$presets)
+assert_eq($s.items.caption.pointer_input,false)
+assert_eq($s.items.caption.anchor.margin.bottom,24)
+assert_eq($s.items.caption.motion,"up")
+expect_refusal("ALREADY_EXISTS","show",$a,$s)
+expect_refusal("NOT_FOUND","hide",{id:"missing"},$s)
+expect_refusal("INVALID_ARGS","update",{id:"caption",oops:true},$s)
+expect_refusal("INVALID_SCENE","update",{id:"caption",scene:{kind:"code",text:"x"}},$s)
+expect_refusal("INVALID_MOTION","hide",{id:"caption",exit:"unknown"},$s)
+expect_refusal("INVALID_ANCHOR","update",{id:"caption",anchor:{output:"HEADLESS-1",edge:"centre"}},$s)
+expect_refusal("INVALID_ARGS","update",{id:"caption",pointer_input:1},$s)
+expect_refusal("INVALID_ARGS","update",{id:"caption",duration_ms:1.5},$s)
+$s=$c.apply($s,"update",{id:"caption",scene:{kind:"card",title:"Card",text:"Body"},pointer_input:true},10.2,$presets)
+assert_eq($s.items.caption.scene.kind,"card");assert_eq($s.items.caption.pointer_input,true)
+$s=$c.finish($s,11);assert_eq($s.items.caption.phase,"exit")
+$s=$c.finish($s,12);assert_eq(len(keys($s.items)),0);assert_eq($c.next_deadline($s),nil)
+$s=$c.apply($c.fresh(),"show",merge($a,{duration_ms:nil}),20,$presets)
+$s=$c.apply($s,"hide",{id:"caption",exit:"fade"},20.2,$presets)
+assert_eq($s.items.caption.phase,"exit")
+$s=$c.finish($s,30);assert_eq(len(keys($s.items)),0)
+print("OSD core tests passed")

@@ -1,0 +1,8 @@
+---
+scene: 1
+name: osd
+citizen: osd
+---
+```mix
+{root:{widget:"column",gap:4,children:["title","body"]},title:{widget:"text",text:"= $model.title",size:24,bold:true,color:"#ffffff"},body:{widget:"text",text:"= $model.text",size:"= $model.text_size",color:"#ffffff"}}
+```

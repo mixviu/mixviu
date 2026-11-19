@@ -64,6 +64,7 @@ png = "=0.18.1"
 unicode-segmentation = "=1.13.3"
 scene = { path = "../scene" }
 serde_json.workspace = true
+motion.workspace = true
 serde.workspace = true
 reqwest.workspace = true
 datetime.workspace = true

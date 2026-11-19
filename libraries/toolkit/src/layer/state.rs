@@ -61,6 +61,7 @@ const REPEAT: (Duration, Duration) = (Duration::from_millis(600), Duration::from
 
 struct Surface {
     input_passthrough: bool,
+    input_regions: Option<Vec<(i32, i32, i32, i32)>>,
     margin: (i32, i32, i32, i32),
     visible: bool,
     has_buffer: bool,
@@ -258,10 +259,16 @@ impl<P: LayerProgram + 'static> State<P> {
                 scale: surface.scale,
             };
             let desired = self.program.presentation(&surface.ctx, &info);
-            if desired.input_passthrough != surface.input_passthrough {
-                if desired.input_passthrough {
+            if desired.input_passthrough != surface.input_passthrough
+                || desired.input_regions != surface.input_regions {
+                if desired.input_passthrough || desired.input_regions.is_some() {
                     let region = smithay_client_toolkit::compositor::Region::new(&self.compositor)
                         .expect("tooltip input region");
+                    if !desired.input_passthrough {
+                        for &(x, y, width, height) in desired.input_regions.as_deref().unwrap_or(&[]) {
+                            region.add(x, y, width, height);
+                        }
+                    }
                     surface
                         .layer
                         .wl_surface()
@@ -270,6 +277,7 @@ impl<P: LayerProgram + 'static> State<P> {
                     surface.layer.wl_surface().set_input_region(None);
                 }
                 surface.input_passthrough = desired.input_passthrough;
+                surface.input_regions = desired.input_regions;
                 surface.layer.commit();
             }
             let mut next = surface.requested.clone();
@@ -382,6 +390,7 @@ impl<P: LayerProgram + 'static> State<P> {
         logging::debug!(id, namespace = %self.options.namespace, output = ?output_name, "layer viewport created");
         self.surfaces.push(Surface {
             input_passthrough: false,
+            input_regions: None,
             margin: (0, 0, 0, 0),
             visible: true,
             has_buffer: false,

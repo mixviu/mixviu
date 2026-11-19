@@ -6,6 +6,7 @@ extern crate model;
 #[cfg(feature = "backend-native")]
 mod background;
 mod cli;
+mod osd;
 mod comp;
 mod event_loop;
 #[path = "scenes_none.rs"]
@@ -613,6 +614,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // (above) so it connects to OUR socket; the spawned process group is the ONLY client
     // authorized to bind the input-method / virtual-keyboard globals (see `text.input.launch`).
     protocols::text::input::launch::launch(state.inner.preference.ime.clone());
+    let _osd_host = osd::launch(
+        backend == cli::Backend::Headless,
+        &comp::service_name(backend, cli.bus_service.as_deref()),
+    );
 
     // Sampling heartbeat — a sparing, multi-level demo of live developer logs (so the
     // viewer shows activity over time and its level filters can be exercised). Remove when

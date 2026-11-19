@@ -1,0 +1,87 @@
+-- host: viu
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- lint: globals app_args
+$core=require("core.mix");$s=$core.fresh();$ctx=viu_context();$windows={};$presets={}
+$comp=env("MIX_VIU_COMP_SERVICE","comp")
+send "viu-local" "motion.presets" body={}
+if $rc!=0 then raise("MOTION_UNAVAILABLE","motion library is unavailable") end
+for $p in $reply $presets[$p.name]=$p end
+fn sync_model()
+  $model=$core.listing($s,monotonic());$model.windows=$windows
+  $model.text="";$model.title="";$model.text_size=22
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
+  $at=$core.next_deadline($s)
+  viu_timer("osd-expiry",if $at==nil then nil else max(0,($at-monotonic())*1000) end,{})
+end
+fn refresh_windows()
+  send $comp "comp.windows.list" body={}
+  if $rc==0 then
+    $windows={}
+    for $w in $reply.windows ?? [] $windows[to_string($w.id)]=$w end
+  else $windows={} end
+end
+fn perform($op,$a)
+  $candidate=$core.apply($s,$op,$a,monotonic(),$presets)
+  if $op!="hide" and $candidate.items[$a.id].anchor.window!=nil then
+    refresh_windows()
+    $ref=$candidate.items[$a.id].anchor.window;$w=$windows[to_string($ref.id)]
+    if $w==nil then raise("WINDOW_NOT_FOUND","anchor window no longer exists") end
+    if $w.generation!=$ref.generation then raise("STALE_GENERATION","anchor window role has changed") end
+  end
+  $s=$candidate;sync_model()
+  return {id:$a.id,applied:true}
+end
+fn answer_operation($op,$a)
+  try
+    $body=perform($op,$a);reply(0,json_encode($body))
+  catch $message,$error
+    reply(10,json_encode({error_code:$error.code ?? "INVALID_ARGS",message:$message}))
+  end
+end
+fn action_rows()
+  return [
+    {id:"osd.show",label:"Show an OSD scene",params:[{name:"id",type:"string",required:true},{name:"scene",type:"object",required:true},{name:"anchor",type:"object",required:true}]},
+    {id:"osd.update",label:"Update an OSD scene",params:[{name:"id",type:"string",required:true}]},
+    {id:"osd.hide",label:"Hide an OSD scene",params:[{name:"id",type:"string",required:true}]}
+  ]
+end
+sync_model()
+on osd.show answer_operation("show",$event.args) end
+on osd.update answer_operation("update",$event.args) end
+on osd.hide answer_operation("hide",$event.args) end
+on osd.list
+  try
+    $core.check_fields($event.args,[],"list")
+    reply(0,json_encode($core.listing($s,monotonic())))
+  catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on osd.actions
+  try
+    $core.check_fields($event.args,[],"actions")
+    reply(0,json_encode({actions:action_rows()}))
+  catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on osd.execute
+  try
+    $core.check_fields($event.args,["id","params"],"execute")
+    if not contains(["osd.show","osd.update","osd.hide"],$event.args.id) then raise("UNKNOWN_ACTION","unknown OSD action") end
+    $body=perform(substr($event.args.id,4),$event.args.params ?? {})
+    reply(0,json_encode($body))
+  catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on viu.timer
+  if $event.args.timer=="osd-expiry" then $s=$core.finish($s,monotonic());sync_model() end
+end
+on bus.connected
+  subscribe($comp..".props.changed")
+  send $comp "comp.props.watch" body={}
+  if $rc!=0 then $windows={} end
+  refresh_windows();sync_model()
+end
+on props.changed
+  if any(values($s.items),fn($i)=$i.anchor.window!=nil) then refresh_windows();sync_model() end
+end
+on bus.disconnected
+  $windows={};sync_model()
+end

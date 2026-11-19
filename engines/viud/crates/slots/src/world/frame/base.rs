@@ -29,6 +29,8 @@ pub const TILE_PREVIEW: Layer = Layer(490);
 pub const UI_SCREEN: Layer = Layer(500);
 /// Live window thumbnails, over the screen UI card that frames them.
 pub const THUMBNAIL: Layer = Layer(510);
+/// Only compositor-authenticated OSD clients may contribute to this band.
+pub const OSD: Layer = Layer(650);
 pub const POINTER: Layer = Layer(700);
 // Notifications draw above EVERYTHING — the pointer and the picker/lock fades
 // included: a message the user must see is not part of the scene it interrupts.

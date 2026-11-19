@@ -22,6 +22,13 @@ no input, and use the existing invisible-window frame-callback policy.
 Higher `z` stacks windows forward within their existing workspace band;
 ties retain the normal raise order. Compositor-marked drawables are barriers,
 and layer-shell, lock, OSD and screen UI bands are never promoted across.
+
+The OSD band is owned by a compositor-launched viu host, authenticated by
+Wayland credentials and the child's process incarnation. Its Mix behaviour
+serves `osd.show/update/hide/list/actions/execute`; see the
+[OSD contract](../../docs/docs/spec/bus/osd.md). Client namespaces and window
+placement cannot grant OSD authority. Pointer input is opt-in; OSD surfaces
+never take keyboard focus.
 `comp.windows.list` and `windows.s<ID>` expose `opacity`, `z`, `clip`, and
 `requested_visible`; `visible` remains the effective visibility including
 workspace and minimisation. State lasts for the window role's lifetime and

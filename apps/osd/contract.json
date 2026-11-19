@@ -1,0 +1,23 @@
+{
+  "host": {
+    "app": "osd",
+    "service": "osd",
+    "surface": "osd",
+    "title": "OSD",
+    "require_bus": true,
+    "reply_timeout_secs": 10,
+    "commands": ["HELP", "app.describe", "osd.show", "osd.update", "osd.hide", "osd.list", "osd.actions", "osd.execute"],
+    "command_descriptors": [
+      {"name":"HELP","args":[],"description":"List commands","read_only":true},
+      {"name":"app.describe","args":[],"description":"Describe OSD service","read_only":true},
+      {"name":"osd.show","args":["id","scene","anchor","enter?","exit?","duration_ms?","pointer_input?"],"description":"Show an ephemeral OSD scene","read_only":false},
+      {"name":"osd.update","args":["id","scene?","anchor?","enter?","exit?","duration_ms?","pointer_input?"],"description":"Update an OSD scene","read_only":false},
+      {"name":"osd.hide","args":["id","exit?"],"description":"Hide an OSD scene","read_only":false},
+      {"name":"osd.list","args":[],"description":"List OSD items and input policy","read_only":true},
+      {"name":"osd.actions","args":[],"description":"List typed OSD actions","read_only":true},
+      {"name":"osd.execute","args":["id","params?"],"description":"Execute an OSD action","read_only":false}
+    ],
+    "bus_surface": {"arguments_any":true,"describe_list":true},
+    "unknown_command": "unknown command {command}"
+  }
+}

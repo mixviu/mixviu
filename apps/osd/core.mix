@@ -1,0 +1,133 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Behaviour and validation for the reviewed OSD scene catalogue.
+fn check_fields($value,$allowed,$where)
+  if type($value)!="map" then raise("INVALID_ARGS",$where..": expected an object") end
+  for $key in keys($value)
+    if not contains($allowed,$key) then raise("INVALID_ARGS",$where..": unknown field "..$key) end
+  end
+end
+fn checked_number($value,$where,$low=-32768,$high=32768)
+  if type($value)!="number" or $value!=$value or $value<$low or $value>$high then
+    raise("INVALID_ARGS",$where..": expected a finite bounded number")
+  end
+  return $value
+end
+fn omit($map,$excluded)
+  $out={}
+  for $key in keys($map) if not contains($excluded,$key) then $out[$key]=$map[$key] end end
+  return $out
+end
+fn identity($id)
+  if type($id)!="string" or len($id)==0 or len($id)>128 then raise("INVALID_ARGS","id: expected 1–128 characters") end
+  return $id
+end
+fn text_value($value,$where)
+  if type($value)!="string" or len($value)>8192 then raise("INVALID_SCENE",$where..": expected text up to 8192 characters") end
+  return $value
+end
+fn scene($value)
+  check_fields($value,["kind","text","title","width","height"],"scene")
+  if not contains(["title","caption","card"],$value.kind) then raise("INVALID_SCENE","scene.kind: expected title, caption or card") end
+  $value.text=text_value($value.text,"scene.text")
+  $value.title=text_value($value.title ?? "","scene.title")
+  $value.width=checked_number($value.width ?? 480,"scene.width",32,2048)
+  $value.height=checked_number($value.height ?? if $value.kind=="card" then 160 else 80 end,"scene.height",24,1024)
+  $value.text_size=if $value.kind=="title" then 30 else 22 end
+  return $value
+end
+fn anchor($value)
+  check_fields($value,["output","edge","margin","window","offset"],"anchor")
+  if $value.window!=nil then
+    if $value.output!=nil or $value.edge!=nil or $value.margin!=nil then raise("INVALID_ANCHOR","window and output anchors are exclusive") end
+    check_fields($value.window,["id","generation"],"anchor.window")
+    for $key in ["id","generation"]
+      if type($value.window[$key])!="number" or floor($value.window[$key])!=$value.window[$key] or $value.window[$key]<1 then raise("INVALID_ANCHOR","window id and generation must be positive integers") end
+    end
+    $value.offset=$value.offset ?? {x:0,y:0}
+    check_fields($value.offset,["x","y"],"anchor.offset")
+    $value.offset.x=checked_number($value.offset.x ?? 0,"anchor.offset.x")
+    $value.offset.y=checked_number($value.offset.y ?? 0,"anchor.offset.y")
+  else
+    if $value.offset!=nil then raise("INVALID_ANCHOR","offset requires a window anchor") end
+    if type($value.output)!="string" or len($value.output)==0 then raise("INVALID_ANCHOR","anchor.output is required") end
+    if not contains(["top","bottom","left","right","top-left","top-right","bottom-left","bottom-right"],$value.edge) then raise("INVALID_ANCHOR","unknown output edge or corner") end
+    $margin=$value.margin ?? 16
+    if type($margin)=="map" then
+      check_fields($margin,["top","right","bottom","left"],"anchor.margin")
+      for $key in ["top","right","bottom","left"] $margin[$key]=checked_number($margin[$key] ?? 0,"anchor.margin."..$key,0,4096) end
+    else
+      $n=checked_number($margin,"anchor.margin",0,4096);$margin={top:$n,right:$n,bottom:$n,left:$n}
+    end
+    $value.margin=$margin
+  end
+  return $value
+end
+fn preset($name,$presets)
+  if $name==nil then return nil end
+  if type($name)!="string" or not contains(["fade","up","down","left","right","pop"],$name) or $presets[$name]==nil then
+    raise("INVALID_MOTION","expected a supported motion preset: fade, up, down, left, right, pop")
+  end
+  return $name
+end
+fn fresh()
+  return {items:{},serial:0}
+end
+fn finish($s,$now)
+  for $id in keys($s.items)
+    $item=$s.items[$id]
+    if $item.phase=="exit" and $now>=$item.remove_at then
+      $s.items=omit($s.items,[$id]);$s.serial=$s.serial+1
+    elif $item.expires_at!=nil and $now>=$item.expires_at then
+      $s.items[$id].phase="exit";$s.items[$id].motion=$item.exit
+      $s.items[$id].started=$now;$s.items[$id].remove_at=$now+$item.exit_seconds
+      $s.items[$id].expires_at=nil;$s.items[$id].epoch=$s.serial+1;$s.serial=$s.serial+1
+      if $item.exit==nil then $s.items=omit($s.items,[$id]) end
+    end
+  end
+  return $s
+end
+fn apply($s,$op,$args,$now,$presets)
+  $allowed=if $op=="hide" then ["id","exit"] else ["id","scene","anchor","enter","exit","duration_ms","pointer_input"] end
+  check_fields($args,$allowed,$op)
+  $id=identity($args.id)
+  if $op=="show" and $s.items[$id]!=nil then raise("ALREADY_EXISTS","an OSD item already has this id") end
+  if $op!="show" and $s.items[$id]==nil then raise("NOT_FOUND","no such OSD item") end
+  if $op=="show" and len(keys($s.items))>=32 then raise("BUDGET_EXCEEDED","at most 32 OSD items") end
+  $item=$s.items[$id] ?? {id:$id,pointer_input:false,phase:"enter",started:$now,enter:nil,exit:nil,exit_seconds:0,expires_at:nil}
+  if $op=="hide" then
+    $exit=preset($args.exit ?? $item.exit,$presets)
+    if $exit==nil then $s.items=omit($s.items,[$id]);$s.serial=$s.serial+1;return $s end
+    $item.phase="exit";$item.motion=$exit;$item.started=$now;$item.expires_at=nil
+    $item.remove_at=$now+$presets[$exit].timing.duration
+  else
+    if $op=="show" or $args.scene!=nil then $item.scene=scene($args.scene) end
+    if $op=="show" or $args.anchor!=nil then $item.anchor=anchor($args.anchor) end
+    if contains(keys($args),"pointer_input") then
+      if type($args.pointer_input)!="bool" then raise("INVALID_ARGS","pointer_input: expected boolean") end
+      $item.pointer_input=$args.pointer_input
+    end
+    if contains(keys($args),"duration_ms") then
+      if $args.duration_ms!=nil and (type($args.duration_ms)!="number" or floor($args.duration_ms)!=$args.duration_ms or $args.duration_ms<0 or $args.duration_ms>86400000) then raise("INVALID_ARGS","duration_ms: expected integer 0–86400000 or null") end
+      $item.expires_at=if $args.duration_ms==nil then nil else $now+$args.duration_ms/1000 end
+    end
+    if $op=="show" or contains(keys($args),"enter") then $item.enter=preset($args.enter,$presets) end
+    if $op=="show" or contains(keys($args),"exit") then $item.exit=preset($args.exit,$presets) end
+    $item.exit_seconds=if $item.exit==nil then 0 else $presets[$item.exit].timing.duration end
+    if $op=="show" or contains(keys($args),"enter") then $item.motion=$item.enter;$item.started=$now end
+    $item.phase="enter"
+  end
+  $s.serial=$s.serial+1;$item.epoch=$s.serial;$s.items[$id]=$item
+  return $s
+end
+fn next_deadline($s)
+  $next=nil
+  for $item in values($s.items)
+    $at=if $item.phase=="exit" then $item.remove_at else $item.expires_at end
+    if $at!=nil and ($next==nil or $at<$next) then $next=$at end
+  end
+  return $next
+end
+fn listing($s,$now)
+  return {schema:"osd.v1",items:map(values($s.items),fn($item)=merge($item,{elapsed_ms:max(0,($now-$item.started)*1000)}))}
+end

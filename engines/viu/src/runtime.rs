@@ -262,6 +262,7 @@ impl LayerProgram for Program {
         };
         LayerPresentation {
             input_passthrough: false,
+            input_regions: None,
             visible: has_content && snap.mapped,
             exclusive_zone: Some(snap.exclusive_zone_px.round() as i32),
             size: Some(if self.edge == "left" || self.edge == "right" {

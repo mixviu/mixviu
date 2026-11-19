@@ -14,6 +14,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+mod osd;
 type Reply = tokio::sync::oneshot::Sender<(u8, Value)>;
 enum SelectionWait {
     Platform(String),
@@ -2223,6 +2224,10 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
             let _ = rx.recv_timeout(Duration::from_millis(100));
         }
 
+        return Ok(());
+    }
+    if bundle.manifest.surface == "osd" {
+        osd::run(bundle);
         return Ok(());
     }
     if bundle.manifest.surface == "background" {

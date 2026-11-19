@@ -761,6 +761,8 @@ impl BusHandler for Local {
                 "shell.scene.describe" => {
                     json!([{"path":"flow", "enum":["horizontal","vertical"]}, {"path":"hidden","type":"bool"}])
                 }
+                "motion.presets" => serde_json::from_str(motion::PRESETS_JSON)
+                    .expect("validated motion preset table"),
                 "scenes.ready" | "scenes.model" => {
                     if body["generation"].as_u64() != Some(self.generation) {
                         return Ok((10, from_json(json!({"error_code":"stale_generation"}))?));

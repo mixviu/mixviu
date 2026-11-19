@@ -6,6 +6,8 @@
 mod pattern;
 #[path = "support/process.rs"]
 mod process;
+#[path = "support/osd.rs"]
+mod osd;
 
 use pattern::{COLOURS, Pattern};
 use serde_json::{Value, json};

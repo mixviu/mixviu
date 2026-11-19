@@ -1,0 +1,47 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Native OSD acceptance on an isolated render-node compositor and private Bus.
+-- Run through the build service; never on a desktop session.
+fn checked($argv)
+  $r=run_argv($argv,{timeout:1800,stdout:"inherit",stderr:"inherit"})
+  if not $r.ok then exit($r.exit_code ?? 124) end
+end
+$mode=args()[0] ?? "native"
+$crates=["-p","protocols","-p","dispatcher","-p","frames","-p","slots","-p","world","-p","seat","-p","viud","-p","lib-viu","-p","toolkit","-p","viu","-p","headless"]
+if $mode=="fmt" then
+  try
+    checked(concat(["cargo","fmt"],$crates))
+  finally
+    print("OSD_DIFF_BEGIN")
+    print(run_argv_must(["git","diff"]))
+    print("OSD_DIFF_END")
+    run_argv_must(["git","checkout","-q","--","."])
+  end
+elif $mode=="lock" then
+  try
+    $resolved=run_argv(["cargo","metadata","--offline","--format-version","1"],{timeout:1800})
+    if not $resolved.ok then eprint($resolved.stderr);exit($resolved.exit_code ?? 124) end
+  finally
+    print("OSD_DIFF_BEGIN")
+    print(run_argv_must(["git","diff","--","Cargo.lock"]))
+    print("OSD_DIFF_END")
+    run_argv_must(["git","checkout","-q","--","Cargo.lock"])
+  end
+elif $mode=="clippy" then
+  checked(concat(concat(["cargo","clippy","--locked"],$crates),["--all-targets","--","-D","warnings"]))
+elif $mode=="native" then
+  export MIX_TEST_REQUIRE_RECORD="1"
+  checked(["cargo","build","--release","--locked","-p","mix","-p","noded","-p","testkit","--bins"])
+  checked(["cargo","build","--release","--locked","-p","viu","--bin","viu"])
+  export MIX_TEST_MIX_EXE=realpath("target/release/mix")
+  export MIX_TEST_VIU_EXE=realpath("target/release/viu")
+  checked(["cargo","test","--release","--locked","-p","viud","--features","test-support","--test","recorder_binary"])
+  checked(["cargo","test","--release","--locked","-p","headless","--test","capture","osd::","--","--nocapture","--test-threads=1"])
+elif contains(["record","acceptance40"],$mode) then
+  export MIX_TEST_REQUIRE_RECORD="1"
+  export MIX_TEST_MIX_EXE=realpath("target/release/mix")
+  export MIX_TEST_CAPTURE_SECONDS="40"
+  checked(["cargo","test","--release","--locked","-p","headless","--test","capture","benchmark_record_changing_4k_zero_drop","--","--ignored","--exact","--nocapture","--test-threads=1"])
+  checked(["cargo","test","--release","--locked","-p","headless","--test","capture","record_idle_content_clock_ignores_capture_repaints","--","--exact","--nocapture","--test-threads=1"])
+else
+  raise("ARGUMENT","osd_sweep.mix expects fmt, lock, clippy, native or acceptance40")
+end
