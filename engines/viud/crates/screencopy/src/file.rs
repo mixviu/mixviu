@@ -504,7 +504,7 @@ pub fn service_listed(
                 return Ok(Value::Null);
             };
             use smithay::backend::renderer::{Bind, Texture};
-            let size = texture.size();
+            let size = (texture.size().w, texture.size().h).into();
             let framebuffer = renderer.bind(&mut texture).map_err(|e| capture_failed(e.to_string()))?;
             let readback = Readback { size, origin_bottom_left: false };
             let pixels = read_pixels(renderer, Source { framebuffer: &framebuffer, readback }).map_err(capture_failed)?;

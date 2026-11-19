@@ -699,6 +699,12 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         let mut signature = Vec::new();
         for target in &s.targets {
             if target.listed_windows.is_some() {
+                let output = lp.inner.space_state().state.outputs().find(|o| target.output.as_ref() == Some(&o.name()));
+                if output.is_none_or(|o| target.output_generation != Some(lp.inner.comp.output_generation(&o.name()))) {
+                    drop(s);
+                    fail(session, "output target gone or generation changed");
+                    return;
+                }
                 // Filtered scene damage is evaluated by its own renderer tracker.
                 // No global scene revision may force a filtered readback.
                 signature.push(s.pixel_counter.saturating_add(1));
