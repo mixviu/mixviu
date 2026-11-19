@@ -1538,6 +1538,7 @@ impl Widgets {
                 }
             }
             "button" => {
+                let start=ui.ctx().graphics_mut(|g|g.entry(ui.layer_id()).next_idx());
                 let r = if widget.properties["style"] == "icon" {
                     ui.add(
                         toolkit::button::IconButton::new(
@@ -1553,6 +1554,10 @@ impl Widgets {
                 } else {
                     icon_button(ui, widget.text("icon"), widget.text("text"), false)
                 };
+                if widget.properties["style"]!="primary" && widget.properties["style"]!="secondary" {
+                    let travel=toolkit::scene_motion::scalar(ui.ctx(),r.id.with("press"),if r.is_pointer_button_down_on(){1.0}else{0.0},90.,ui.style().animation_time!=0.0);
+                    toolkit::scene_motion::visual(ui,start,r.rect,1.,[0.,f64::from(travel)]);
+                }
                 let r = if let Some(tip) = widget.properties["tooltip"].as_str() {
                     let shortcut = widget.properties["shortcut"]
                         .as_str()
@@ -1759,7 +1764,7 @@ impl Widgets {
                         }
                         response
                     } else {
-                        ui.toggle_value(&mut checked, widget.text("text"))
+                        ui.add(toolkit::toggle::Switch::new(&mut checked, widget.text("text")))
                     }
                 };
                 if r.changed() || r.clicked() {

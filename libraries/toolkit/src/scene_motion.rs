@@ -47,6 +47,8 @@ pub struct Capture {
     layer: LayerId,
     start: ShapeIdx,
     transformed: bool,
+    outer: egui::emath::TSTransform,
+    offset: [f64;2],
 }
 impl SceneMotion {
     pub fn begin(&mut self, ui: &Ui) {
@@ -112,6 +114,8 @@ impl SceneMotion {
             layer,
             start,
             transformed: false,
+            outer: egui::emath::TSTransform::IDENTITY,
+            offset: [0.,0.],
         })
     }
     /// Install the same transform for painting and input before widgets run.
@@ -128,6 +132,7 @@ impl SceneMotion {
         ui.ctx().set_sublayer(ui.layer_id(),layer);
         ui.ctx().set_transform_layer(layer,outer*local);
         c.layer=layer;c.start=ui.ctx().graphics_mut(|g|g.entry(layer).next_idx());c.transformed=true;
+        c.outer=outer;c.offset=offset;
         Some(layer)
     }
     pub fn painted(&mut self, ui: &Ui, capture: Option<Capture>, rect: Rect) {
@@ -135,10 +140,17 @@ impl SceneMotion {
             return;
         };
         let n = self.nodes.get_mut(&c.key).unwrap();
+        let first_bounds=!n.rect.is_finite();
         n.rect = rect;
         let now = self.now;
         let mut values = motion::scene::sample(n.entrance.as_ref(), now, self.reduced);
         values.set(Property::Opacity,n.opacity);
+        if c.transformed {
+            let scale=values.get(Property::Scale) as f32;
+            let translation=rect.center().to_vec2()*(1.0-scale)+egui::vec2(values.get(Property::Tx) as f32+c.offset[0] as f32,values.get(Property::Ty) as f32+c.offset[1] as f32);
+            ui.ctx().set_transform_layer(c.layer,c.outer*egui::emath::TSTransform{scaling:scale.max(0.0001),translation});
+            if first_bounds && scale!=1.0 {ui.ctx().request_discard("motion layout bounds");}
+        }
         let active = n
             .entrance
             .as_ref()
@@ -185,7 +197,8 @@ impl SceneMotion {
             n.textures=textures;
         }
         if active {
-            ui.ctx().request_repaint();
+            if let Some(p)=n.entrance.as_ref().filter(|p|now<p.timing.start()) {ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(p.timing.start()-now));}
+            else {ui.ctx().request_repaint();}
         }
     }
     pub fn end(&mut self, ui: &Ui) {
@@ -318,6 +331,28 @@ pub fn visual(ui: &Ui, start: ShapeIdx, rect: Rect, opacity: f64, offset: [f64; 
             list.mutate_shape(ShapeIdx(i), |s| transform(s, rect, &values));
         }
     });
+}
+/// Interpolate the actual colours a widget painted (hover, pressed, selected,
+/// toggle and foreground), rather than a second set of interaction styles.
+pub fn highlight(ui:&Ui,layer:LayerId,start:ShapeIdx,key:&str,declaration:Option<&Value>,enabled:bool) {
+    let Some(declaration)=declaration.filter(|v|motion::scene::transitions(v).is_ok_and(|ts|ts.iter().any(|t|t.prop=="highlight"))) else {return;};
+    let shapes=ui.ctx().graphics_mut(|g|g.entry(layer).all_entries().skip(start.0).cloned().collect::<Vec<_>>());
+    for (index,mut shape) in shapes.into_iter().enumerate() {
+        let counter=std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let ctx=ui.ctx().clone();let declaration=declaration.clone();let key=format!("{key}/{index}");
+        egui::epaint::shape_transform::adjust_colors(&mut shape.shape,move |c| {
+            if *c==egui::Color32::PLACEHOLDER {return;}
+            let [r,g,b,a]=c.to_srgba_unmultiplied();
+            let target=serde_json::json!(format!("#{r:02x}{g:02x}{b:02x}{a:02x}"));
+            let k=format!("{key}/{}",counter.fetch_add(1,std::sync::atomic::Ordering::Relaxed));
+            let sampled=value(&ctx,&k,"highlight",&target,Some(&declaration),enabled);
+            if let Some(s)=sampled.as_str().and_then(|s|s.strip_prefix('#')) {
+                let byte=|i|u8::from_str_radix(&s[i..i+2],16).unwrap();
+                *c=egui::Color32::from_rgba_unmultiplied(byte(0),byte(2),byte(4),byte(6));
+            }
+        });
+        ui.ctx().graphics_mut(|g|g.entry(layer).mutate_shape(ShapeIdx(start.0+index),|s|*s=shape));
+    }
 }
 fn transform(shape: &mut ClippedShape, rect: Rect, values: &motion::Values) {
     let scale = values.get(Property::Scale) as f32;
@@ -553,7 +588,7 @@ mod tests {
     }
     #[test]
     fn settled_scene_arms_no_repaint() {
-        let ctx=Context::default();let mut state=SceneMotion::default();
+        let ctx=Context::default();install(&ctx);let mut state=SceneMotion::default();
         for t in [0.,1.,2.,3.,4.] {frame(&ctx,&mut state,t,true);}
         assert!(!ctx.has_requested_repaint());
         for t in [5.,7.,8.,9.] {frame(&ctx,&mut state,t,false);}
