@@ -20,38 +20,43 @@ pub fn supervise<S: 'static>(
     // Half-step seed: each failure doubles before scheduling its delay.
     let mut delay = Duration::from_millis(125);
     let mut retry = started + Duration::from_millis(250);
-    if host.is_none() { delay = next_delay(delay); }
+    if host.is_none() {
+        delay = next_delay(delay);
+    }
     handle
-        .insert_source(Timer::from_duration(Duration::from_millis(250)), move |_, _, _| {
-            let now = Instant::now();
-            if let Some(child) = &mut host {
-                match child.0.try_wait() {
-                    Ok(None) => {
-                        if now.duration_since(started) >= Duration::from_secs(30) {
-                            delay = Duration::from_millis(125);
+        .insert_source(
+            Timer::from_duration(Duration::from_millis(250)),
+            move |_, _, _| {
+                let now = Instant::now();
+                if let Some(child) = &mut host {
+                    match child.0.try_wait() {
+                        Ok(None) => {
+                            if now.duration_since(started) >= Duration::from_secs(30) {
+                                delay = Duration::from_millis(125);
+                            }
+                        }
+                        _ => {
+                            // Drop unbinds even if the child has already been reaped.
+                            host = None;
+                            delay = next_delay(delay);
+                            retry = now + delay;
                         }
                     }
-                    _ => {
-                        // Drop unbinds even if the child has already been reaped.
-                        host = None;
+                } else if now >= retry {
+                    host = launch(headless, &comp);
+                    started = now;
+                    if host.is_none() {
                         delay = next_delay(delay);
-                        retry = now + delay;
                     }
+                    retry = now + delay;
                 }
-            } else if now >= retry {
-                host = launch(headless, &comp);
-                started = now;
-                if host.is_none() {
-                    delay = next_delay(delay);
-                }
-                retry = now + delay;
-            }
-            TimeoutAction::ToDuration(if host.is_some() {
-                Duration::from_millis(250)
-            } else {
-                retry.saturating_duration_since(now)
-            })
-        })
+                TimeoutAction::ToDuration(if host.is_some() {
+                    Duration::from_millis(250)
+                } else {
+                    retry.saturating_duration_since(now)
+                })
+            },
+        )
         .expect("OSD supervisor timer");
 }
 
@@ -138,6 +143,9 @@ mod tests {
             delay = super::next_delay(delay);
             sequence.push(delay.as_millis());
         }
-        assert_eq!(sequence, [250, 500, 1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000]);
+        assert_eq!(
+            sequence,
+            [250, 500, 1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000]
+        );
     }
 }
