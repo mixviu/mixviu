@@ -57,6 +57,21 @@ pub fn preset(config: &WindowTransition, reverse: bool) -> Option<Preset> {
     Some(preset)
 }
 
+fn relative(mut preset: Preset, base: comp_model::request::VisualAttributes) -> Preset {
+    for track in &mut preset.tracks {
+        for frame in &mut track.keyframes {
+            frame.value = match track.property {
+                Property::Opacity => frame.value * base.opacity,
+                Property::Scale => frame.value * base.scale.factor,
+                Property::Tx => frame.value + base.translate.x,
+                Property::Ty => frame.value + base.translate.y,
+                _ => frame.value,
+            };
+        }
+    }
+    preset
+}
+
 /// Observe after protocol/policy changes. A close removes input immediately;
 /// its outgoing image lives separately, with no registry or Window reference.
 pub fn service(lp: &mut Loop) -> bool {
@@ -89,8 +104,17 @@ pub fn service(lp: &mut Loop) -> bool {
         .collect();
     STATE.with(|state| {
         let mut state = state.borrow_mut();
+        if settings != state.settings {
+            for (event, config) in [("map", &settings.map), ("unmap", &settings.unmap),
+                ("minimise", &settings.minimise), ("restore", &settings.restore), ("workspace", &settings.workspace)] {
+                if let Some(config) = config && preset(config, false).is_none() {
+                    logging::warn!(event, preset = config.preset, "unsupported window lifecycle transition ignored");
+                }
+            }
+        }
         for (uuid, fact) in &current {
             let old = state.previous.get(uuid);
+            let appearing = fact.shown && old.is_none_or(|old| !old.shown);
             let enter = if fact.mapped && old.is_none_or(|old| !old.mapped) {
                 settings.map.as_ref()
             } else if fact.shown && old.is_some_and(|old| old.minimised) {
@@ -100,11 +124,13 @@ pub fn service(lp: &mut Loop) -> bool {
             } else {
                 None
             };
+            if appearing { state.exits.remove(uuid); }
             if let Some(config) = enter
                 && let Some(preset) = preset(config, false)
                 && let Some(window) = windows.get(uuid)
             {
-                super::animation::start(window, &preset, now);
+                let base = crate::window::draw::frame::scene::visual_of(window);
+                super::animation::start(window, &relative(preset, base), now);
                 state.exits.remove(uuid);
             }
         }
@@ -206,5 +232,19 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[test]
+    fn entrances_restore_requested_visual_attributes() {
+        let config = WindowTransition { preset: "pop".into(), duration_ms: 300 };
+        let mut base = comp_model::request::VisualAttributes::default();
+        base.opacity = 0.5;
+        base.scale.factor = 0.75;
+        base.translate.x = 12.0;
+        let incoming = relative(preset(&config, false).unwrap(), base);
+        let final_value = super::super::animation::apply(&incoming.sample(0.3), base);
+        assert_eq!(final_value.opacity, base.opacity);
+        assert_eq!(final_value.scale, base.scale);
+        assert_eq!(final_value.translate, base.translate);
     }
 }

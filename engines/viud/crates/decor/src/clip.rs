@@ -168,6 +168,10 @@ pub struct Clipped<E> {
 }
 
 impl<E> Clipped<E> {
+    /// Retain the shader and its already projected clip for an exit image.
+    pub fn snapshot_clip(&self) -> (Option<TexProgram>, Clip) {
+        (self.program.clone(), self.drawn)
+    }
     /// Inspect the retained content when making a composition-only snapshot.
     pub fn inner_mut(&mut self) -> &mut E {
         &mut self.inner

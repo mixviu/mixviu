@@ -53,6 +53,7 @@ pub fn retain<R>(
         let transform = element.transform();
         let alpha = element.alpha();
         let raw = element.raw_mut();
+        let surface_solid = matches!(raw, RawElement::Window(_) | RawElement::WindowFit(_) | RawElement::WindowFitClipped(_));
         let (texture, color) = match raw {
             RawElement::Chrome(decor::render::ChromeElement::Piece(piece)) => {
                 (Some(piece.texture().clone()), None)
@@ -88,6 +89,12 @@ pub fn retain<R>(
             },
             _ => continue,
         };
+        let color = color.map(|color| {
+            if surface_solid {
+                Color32F::from([color.r() * alpha, color.g() * alpha,
+                    color.b() * alpha, color.a() * alpha])
+            } else { color }
+        });
         snapshots.push(Snapshot {
             id: Id::new(),
             texture,

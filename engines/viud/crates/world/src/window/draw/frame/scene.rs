@@ -409,8 +409,13 @@ where
             elem_loc,
             slot_size: slot_size_of(window),
             crop_output: if visual_of(window).transformed() {
-                Rectangle::new((-536870911, -536870911).into(), (1073741822, 1073741822).into())
-            } else { pane_rect(state, ctx, size) },
+                Rectangle::new(
+                    (-536870911, -536870911).into(),
+                    (1073741822, 1073741822).into(),
+                )
+            } else {
+                pane_rect(state, ctx, size)
+            },
         },
         decoration,
         decor::render::Pass::Presented,
@@ -423,12 +428,19 @@ where
     let (mut elements, crop) = crop_elements(elements, window, ctx, elem_loc, size);
     if let Some(uuid) = window.uuid() {
         let visual = visual_of(window);
-        let anchor = project_point(ctx,
+        let anchor = project_point(
+            ctx,
             elem_loc.x as f64 + visual.scale.anchor.x + visual.translate.x,
-            elem_loc.y as f64 + visual.scale.anchor.y + visual.translate.y);
-        super::super::ghost::retain(renderer, uuid,
-            state.inner.render_output.as_deref().unwrap_or_default(), anchor,
-            ctx.scale * ctx.camera_zoom, &mut elements);
+            elem_loc.y as f64 + visual.scale.anchor.y + visual.translate.y,
+        );
+        super::super::ghost::retain(
+            renderer,
+            uuid,
+            state.inner.render_output.as_deref().unwrap_or_default(),
+            anchor,
+            ctx.scale * ctx.camera_zoom,
+            &mut elements,
+        );
     }
     if let Some(crop) = crop {
         drawn.opaque = drawn
@@ -993,38 +1005,59 @@ where
 {
     let visual = visual_of(window);
     let crop = visual.clip.map(|c| project_clip(ctx, loc, c, size));
-    let elements: Vec<crate::window::draw::element::Untransformed<R>> = if !visual.visible || visual.scale.factor == 0.0 {
-        Vec::new()
-    } else if let Some(rect) = crop {
-        elements
-            .into_iter()
-            .filter_map(|e| CropRenderElement::from_element(e, Scale::from(1.0), rect))
-            .map(crate::window::draw::element::Untransformed::Cropped)
-            .collect()
-    } else {
-        elements
-            .into_iter()
-            .map(crate::window::draw::element::Untransformed::Plain)
-            .collect()
-    };
+    let elements: Vec<crate::window::draw::element::Untransformed<R>> =
+        if !visual.visible || visual.scale.factor == 0.0 {
+            Vec::new()
+        } else if let Some(rect) = crop {
+            elements
+                .into_iter()
+                .filter_map(|e| CropRenderElement::from_element(e, Scale::from(1.0), rect))
+                .map(crate::window::draw::element::Untransformed::Cropped)
+                .collect()
+        } else {
+            elements
+                .into_iter()
+                .map(crate::window::draw::element::Untransformed::Plain)
+                .collect()
+        };
     if !visual.transformed() {
-        return (elements.into_iter().map(crate::window::draw::element::Element::Plain).collect(), crop);
+        return (
+            elements
+                .into_iter()
+                .map(crate::window::draw::element::Element::Plain)
+                .collect(),
+            crop,
+        );
     }
     let factor = visual.scale.factor;
-    let anchor = project_point(ctx, loc.x as f64 + visual.scale.anchor.x, loc.y as f64 + visual.scale.anchor.y);
+    let anchor = project_point(
+        ctx,
+        loc.x as f64 + visual.scale.anchor.x,
+        loc.y as f64 + visual.scale.anchor.y,
+    );
     let origin = project_point(ctx, 0.0, 0.0);
     let translated = project_point(ctx, visual.translate.x, visual.translate.y);
     let offset = Point::<i32, Physical>::from((
         ((1.0 - factor) * anchor.x as f64 + (translated.x as f64 - origin.x as f64)).round() as i32,
         ((1.0 - factor) * anchor.y as f64 + (translated.y as f64 - origin.y as f64)).round() as i32,
     ));
-    let elements = elements.into_iter().map(|mut element| {
-        if let Element::WindowFitClipped(clipped) = element.raw_mut() {
-            clipped.set_rescale(factor, offset);
-        }
-        let scaled = RescaleRenderElement::from_element(element, Point::from((0, 0)), Scale::from(factor));
-        crate::window::draw::element::Element::Transformed(RelocateRenderElement::from_element(scaled, offset, Relocate::Relative))
-    }).collect();
+    let elements =
+        elements
+            .into_iter()
+            .map(|mut element| {
+                if let Element::WindowFitClipped(clipped) = element.raw_mut() {
+                    clipped.set_rescale(factor, offset);
+                }
+                let scaled = RescaleRenderElement::from_element(
+                    element,
+                    Point::from((0, 0)),
+                    Scale::from(factor),
+                );
+                crate::window::draw::element::Element::Transformed(
+                    RelocateRenderElement::from_element(scaled, offset, Relocate::Relative),
+                )
+            })
+            .collect();
     (elements, crop)
 }
 

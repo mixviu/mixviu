@@ -40,6 +40,26 @@ visual state; visual retargeting uses the shared library's linear retarget
 helper for position continuity. First-run entrance keyframes do not restart
 on retarget. Successful terminal replies retain `status:"completed"`.
 
+Optional lifecycle transitions are configured in `preferences.json`, for
+example:
+
+```json
+{"window_motion":{"map":{"preset":"pop","duration_ms":300},"unmap":{"preset":"fade","duration_ms":300},"minimise":{"preset":"fade","duration_ms":200},"restore":{"preset":"pop","duration_ms":200},"workspace":{"preset":"fade","duration_ms":200}}}
+```
+
+Every event defaults to disabled; omit or set its entry to null. An exit
+plays the preset in reverse. Unmapping removes the client and its input
+target immediately; the compositor retains a separate image only until the
+exit finishes. No client destruction or configure waits for that image.
+
+Frame preparation samples geometry and visual tracks at one target
+presentation timestamp. KMS uses its next-vblank estimate; headless and
+nested software presentation use the scene's monotonic timestamp. Actual KMS
+completion feedback can arrive later and cannot retroactively change pixels.
+The recorder captures those composed pixels, rather than resampling motion
+on its own 30 Hz clock. A quiet output produces repeats without rendering or
+reading pixels; motion wakeups exist only while a run is active.
+
 `comp.callers` is a read-only Bus command with no required arguments, roles or
 grants. Step 1 observes calls and refuses none on identity grounds. Existing
 argument validation and capacity limits still apply.

@@ -123,7 +123,7 @@ fn surface_tree_offset(
             states
                 .data_map
                 .get::<RendererSurfaceStateUserData>()
-                .and_then(|d| d.lock().unwrap().surface_view)
+                .and_then(|d| d.lock().unwrap().view())
                 .map_or(TraversalAction::SkipChildren, |view| {
                     TraversalAction::DoChildren(*position + view.offset)
                 })
@@ -133,7 +133,7 @@ fn surface_tree_offset(
                 if let Some(view) = states
                     .data_map
                     .get::<RendererSurfaceStateUserData>()
-                    .and_then(|d| d.lock().unwrap().surface_view)
+                    .and_then(|d| d.lock().unwrap().view())
                 {
                     *found.borrow_mut() = Some(*position + view.offset);
                 }
