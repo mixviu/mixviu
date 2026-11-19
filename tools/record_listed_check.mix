@@ -6,7 +6,7 @@ for $package in $packages
   $command = concat($command, ["-p", $package])
 end
 try
-  if $mode == "capture" then
+  if $mode == "capture" or $mode == "bench" then
     for $cmd in [["cargo","build","-p","mix","-p","noded","-p","testkit","--bins"], ["cargo","build","--release","-p","viud"]]
       $r = run_argv($cmd, {timeout:1800,stdout:"inherit",stderr:"inherit"})
       if not $r.ok then exit($r.exit_code ?? 1) end
@@ -15,6 +15,10 @@ try
     export MIX_TEST_MIX_EXE=realpath("target/debug/mix")
     export MIX_TEST_VIUD_EXE=realpath("target/release/viud")
     $command = ["cargo","test","-p","headless","--test","capture","record_","--","--nocapture","--test-threads=1"]
+    if $mode == "bench" then
+      export MIX_TEST_CAPTURE_SECONDS=40
+      $command = ["cargo","test","--release","-p","headless","--test","capture","benchmark_record_changing_4k_zero_drop","--","--ignored","--nocapture","--test-threads=1"]
+    end
   elif $mode == "clippy" then
     $command = concat($command, ["--all-targets"])
   elif $mode != "fmt" then

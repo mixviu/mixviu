@@ -382,7 +382,10 @@ pub fn fail_all(reason: &str) {
 }
 
 pub fn fail_windows(reason: &str) {
-    cancel(|request| request.spec.window.is_some() || request.spec.listed_windows.is_some(), reason);
+    cancel(
+        |request| request.spec.window.is_some() || request.spec.listed_windows.is_some(),
+        reason,
+    );
 }
 
 /// Share one snapshot between callers. Raw recording requests retain the PBO
@@ -492,23 +495,52 @@ pub fn service(
 pub fn service_listed(
     renderer: &mut GlesRenderer,
     output: &Output,
-    mut picture: impl FnMut(&mut GlesRenderer, &CaptureFrameSpec) -> Result<Option<smithay::backend::renderer::gles::GlesTexture>, ControlReply>,
+    mut picture: impl FnMut(
+        &mut GlesRenderer,
+        &CaptureFrameSpec,
+    ) -> Result<
+        Option<smithay::backend::renderer::gles::GlesTexture>,
+        ControlReply,
+    >,
 ) {
     for request in take(|r| r.output == output.name() && r.spec.listed_windows.is_some()) {
         let began = Instant::now();
         let result = (|| {
             let Some(mut texture) = picture(renderer, &request.spec)? else {
-                if let Some(answer) = PIXEL_ANSWERS.with_borrow_mut(|a| a.remove(&request.spec.path)) {
+                if let Some(answer) =
+                    PIXEL_ANSWERS.with_borrow_mut(|a| a.remove(&request.spec.path))
+                {
                     answer(Ok((0, 0, Default::default(), 0)));
                 }
                 return Ok(Value::Null);
             };
             use smithay::backend::renderer::{Bind, Texture};
             let size = (texture.size().w, texture.size().h).into();
-            let framebuffer = renderer.bind(&mut texture).map_err(|e| capture_failed(e.to_string()))?;
-            let readback = Readback { size, origin_bottom_left: false };
-            let pixels = read_pixels(renderer, Source { framebuffer: &framebuffer, readback }).map_err(capture_failed)?;
-            complete_timed(&request.spec, readback, &pixels, output, CaptureSource::Offscreen, began.elapsed().as_micros() as u64, request.raw).map_err(capture_failed)
+            let framebuffer = renderer
+                .bind(&mut texture)
+                .map_err(|e| capture_failed(e.to_string()))?;
+            let readback = Readback {
+                size,
+                origin_bottom_left: false,
+            };
+            let pixels = read_pixels(
+                renderer,
+                Source {
+                    framebuffer: &framebuffer,
+                    readback,
+                },
+            )
+            .map_err(capture_failed)?;
+            complete_timed(
+                &request.spec,
+                readback,
+                &pixels,
+                output,
+                CaptureSource::Offscreen,
+                began.elapsed().as_micros() as u64,
+                request.raw,
+            )
+            .map_err(capture_failed)
         })();
         (request.answer)(result);
     }

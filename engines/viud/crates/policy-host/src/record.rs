@@ -117,14 +117,26 @@ fn empty_status(state: &str, error: Option<&str>) -> Value {
     json!({"windows":[],"session":null,"state":state,"frames":0,"repeated":0,"dropped":0,"dropped_capture":0,"dropped_queue":0,"readback_deferred":0,"pending_ticks":0,"writer":null,"encoder":null,"duration_us":0,"bytes":0,"queue":0,"encoders":["vfl"],"readbacks":0,"readback_us":0,"readback_mean_us":0,"readback_max_us":0,"error":error})
 }
 fn listed_status(s: &Session) -> Value {
-    json!(s.targets.iter().filter_map(|t| t.listed_windows.as_ref()).flatten()
-        .map(|w| json!({"id":w.id,"generation":w.generation})).collect::<Vec<_>>())
+    json!(
+        s.targets
+            .iter()
+            .filter_map(|t| t.listed_windows.as_ref())
+            .flatten()
+            .map(|w| json!({"id":w.id,"generation":w.generation}))
+            .collect::<Vec<_>>()
+    )
 }
 fn reconcile_listed(lp: &Loop, s: &mut Session) {
     for target in &mut s.targets {
         if let Some(listed) = &mut target.listed_windows {
             listed.retain(|window| {
-                if lp.inner.comp.registry.resolve_window_target(window.id, Some(window.generation)).is_ok() {
+                if lp
+                    .inner
+                    .comp
+                    .registry
+                    .resolve_window_target(window.id, Some(window.generation))
+                    .is_ok()
+                {
                     true
                 } else {
                     s.gone_markers.push(*window);
@@ -137,8 +149,16 @@ fn reconcile_listed(lp: &Loop, s: &mut Session) {
 }
 fn flush_gone_markers(s: &mut Session) -> bool {
     while let Some(window) = s.gone_markers.first().copied() {
-        let Some(recording) = s.recording.as_mut() else { return false; };
-        if recording.marker("window_gone".into(), json!({"id":window.id,"generation":window.generation})).is_err() {
+        let Some(recording) = s.recording.as_mut() else {
+            return false;
+        };
+        if recording
+            .marker(
+                "window_gone".into(),
+                json!({"id":window.id,"generation":window.generation}),
+            )
+            .is_err()
+        {
             return false;
         }
         s.gone_markers.remove(0);
@@ -161,10 +181,9 @@ pub fn command(
     answer: impl FnOnce(ControlReply) + 'static,
 ) {
     let answer: Answer = Box::new(answer);
-    if matches!(op, RecordCommand::Stop { .. }) {
-        if let Some(current) = CURRENT.with_borrow(Clone::clone) {
-            reconcile_listed(lp, &mut current.borrow_mut());
-        }
+    if matches!(op, RecordCommand::Stop { .. })
+        && let Some(current) = CURRENT.with_borrow(Clone::clone) {
+        reconcile_listed(lp, &mut current.borrow_mut());
     }
     let params = op.clone();
     if let RecordCommand::Start { request_id, .. } = &op {
@@ -239,7 +258,13 @@ pub fn command(
         for target in &mut targets {
             if let Some(listed) = &target.listed_windows {
                 for window in listed {
-                    if lp.inner.comp.registry.resolve_window_target(window.id, Some(window.generation)).is_err() {
+                    if lp
+                        .inner
+                        .comp
+                        .registry
+                        .resolve_window_target(window.id, Some(window.generation))
+                        .is_err()
+                    {
                         answer(refused("listed window gone or generation changed"));
                         return;
                     }
@@ -542,13 +567,17 @@ fn superseded(pending: &mut Option<Vec<u64>>, current: &[u64]) -> bool {
 
 fn stop_stream(s: &mut Session, discard: bool) -> bool {
     if !discard && s.failed.is_none() && !flush_gone_markers(s) {
-        let until = *s.drain_until.get_or_insert_with(|| Instant::now() + Duration::from_secs(1));
+        let until = *s
+            .drain_until
+            .get_or_insert_with(|| Instant::now() + Duration::from_secs(1));
         if Instant::now() < until {
             schedule_stop(s, Instant::now() + Duration::from_millis(5));
             return false;
         }
         s.failed = Some("window_gone marker admission timed out".into());
-        if let Some(r) = s.recording.as_mut() { r.error = s.failed.clone(); }
+        if let Some(r) = s.recording.as_mut() {
+            r.error = s.failed.clone();
+        }
     }
     // A submitted GPU snapshot already belongs to the take. Let its normal
     // fence callback deliver it before sealing, without blocking the Bus or
@@ -726,8 +755,15 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         let mut signature = Vec::new();
         for target in &s.targets {
             if target.listed_windows.is_some() {
-                let output = lp.inner.space_state().state.outputs().find(|o| target.output.as_ref() == Some(&o.name()));
-                if output.is_none_or(|o| target.output_generation != Some(lp.inner.comp.output_generation(&o.name()))) {
+                let output = lp
+                    .inner
+                    .space_state()
+                    .state
+                    .outputs()
+                    .find(|o| target.output.as_ref() == Some(&o.name()));
+                if output.is_none_or(|o| {
+                    target.output_generation != Some(lp.inner.comp.output_generation(&o.name()))
+                }) {
                     drop(s);
                     fail(session, "output target gone or generation changed");
                     return;
@@ -879,10 +915,18 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if frame.0 == 0 && frame.1 == 0 {
                 let mut s = session.borrow_mut();
                 s.pending = false;
-                let result = s.recording.as_mut().expect("repeat after first capture").frame(None);
-                if s.drain_until.is_some() { stop_stream(&mut s, false); }
+                let result = s
+                    .recording
+                    .as_mut()
+                    .expect("repeat after first capture")
+                    .frame(None);
+                if s.drain_until.is_some() {
+                    stop_stream(&mut s, false);
+                }
                 drop(s);
-                if let Err(error) = result { fail(&session, &error); }
+                if let Err(error) = result {
+                    fail(&session, &error);
+                }
                 return;
             }
             got.borrow_mut().push((index, frame));

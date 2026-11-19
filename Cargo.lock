@@ -3134,6 +3134,7 @@ dependencies = [
 name = "frames"
 version = "0.1.2"
 dependencies = [
+ "comp-model",
  "dispatcher",
  "effects",
  "graphics",
@@ -3142,6 +3143,7 @@ dependencies = [
  "recorder",
  "render-gles",
  "scenegraph",
+ "screencopy",
  "seat",
  "slots",
  "smithay",
@@ -3802,6 +3804,7 @@ dependencies = [
  "testkit",
  "wayland-client",
  "wayland-protocols",
+ "wayland-protocols-wlr",
  "world",
 ]
 

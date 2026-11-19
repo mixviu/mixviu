@@ -438,6 +438,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn output_with_windows_is_a_filtered_canvas_not_a_stitch() {
+        let mut args = json!({"request_id":"listed","target":{"output":"headless-0","output_generation":7,"windows":[{"id":1,"generation":2},{"id":1,"generation":2}]},"path":"/tmp/listed.vfl","max_seconds":60,"cursor":false});
+        let RecordCommand::Start { targets, .. } = parse_record("comp.record.start", &args).unwrap() else { panic!() };
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].output.as_deref(), Some("headless-0"));
+        assert_eq!(targets[0].output_generation, Some(7));
+        assert_eq!(targets[0].window, None);
+        assert_eq!(targets[0].listed_windows, Some(vec![CaptureWindow {id:1,generation:2}]));
+        assert!(!targets[0].cursor);
+        for windows in [json!([]), json!(null), json!([{"id":1}]), json!([{"id":1,"generation":2,"extra":true}])] {
+            args["target"]["windows"] = windows;
+            assert!(parse_record("comp.record.start", &args).is_err());
+        }
+    }
+
+    #[test]
     fn recording_path_error_names_the_fault() {
         for (path, fault) in [
             ("relative.vfl", "relative path"),

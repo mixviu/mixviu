@@ -45,6 +45,33 @@ interactive keepalive prompt. Window targets use offscreen rendering and exclude
 other windows and compositor overlays. Multiple windows are arranged left to
 right on a fixed canvas.
 
+For an output-sized allowlisted take use
+`target:{output:"headless-0",windows:[{id:7,generation:3}]}` with optional
+`output_generation`. The explicit output distinguishes it from the existing
+`target:{windows:[...]}` stitched canvas. Start requires 1–16 live targets;
+duplicates are collapsed. Only those windows, their popup/subsurface trees,
+the wallpaper and the optional cursor enter a separate offscreen picture.
+The wallpaper is the `backdrop` namespace's Background layer surface tree;
+other layer surfaces (including other Background namespaces), layer popups,
+unlisted bottom-band windows, drag icons, notifications and OSD are excluded.
+Namespace identifies scene routing, not authenticated peer authority.
+The live screen is unchanged, including windows covering listed content.
+
+A listed window closing or changing generation removes it from the active
+set and queues one `window_gone` marker with `data:{id,generation}`. The take
+continues, including when the set becomes empty; the canvas stays output-sized
+through listed-window moves and resizes. A successful stop includes all these
+markers. Marker admission is retried under queue pressure; inability to admit
+one within the bounded stop drain fails publication instead of silently losing
+it. Existing single-window and stitched targets still fail when a target goes
+away or changes dimensions. Status includes `windows:[{id,generation}]` for
+the active listed set (an empty array for other targets or idle).
+New windows are excluded. There is no `comp.record.windows` mutation command
+in this version; restart the take to change its allowlist.
+
+Filtered takes track damage on their own composed elements. Changes solely in
+unlisted content cause no readback; unchanged pictures use scheduled repeats.
+
 | Action | Parameters | Reply |
 |---|---|---|
 | `comp.record.start` | `request_id`, `target:{output?,output_generation?,window?:{id,generation},region?:{x,y,width,height}}` or `target:{windows:[{id,generation}]}`, absolute `.vfl` directory `path`, `fps?` (30; 1–60), `cursor?` (true), `encoder?` (`vfl`), `max_seconds` (1–86400) | `session,path,recovery_path,width,height,fps,clock:"monotonic",t0_us,frames_path,markers_path` |

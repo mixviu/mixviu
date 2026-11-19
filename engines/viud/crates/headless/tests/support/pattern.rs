@@ -89,9 +89,25 @@ pub struct Pattern {
 }
 
 impl Pattern {
-    pub fn layer(&mut self, namespace: &str, layer: wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::Layer, colour: u32) -> (WlSurface, wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1) {
-        use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1::ZwlrLayerShellV1, zwlr_layer_surface_v1::Anchor};
-        let name = self.state.globals.iter().find(|(_, i, _)| i == "zwlr_layer_shell_v1").unwrap().0;
+    pub fn layer(
+        &mut self,
+        namespace: &str,
+        layer: wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::Layer,
+        colour: u32,
+    ) -> (
+        WlSurface,
+        wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+    ) {
+        use wayland_protocols_wlr::layer_shell::v1::client::{
+            zwlr_layer_shell_v1::ZwlrLayerShellV1, zwlr_layer_surface_v1::Anchor,
+        };
+        let name = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, i, _)| i == "zwlr_layer_shell_v1")
+            .unwrap()
+            .0;
         let qh = self.queue.handle();
         let shell: ZwlrLayerShellV1 = self.registry.bind(name, 1, &qh, ());
         let surface = self.compositor.create_surface(&qh, ());
@@ -101,7 +117,9 @@ impl Pattern {
         role.set_exclusive_zone(-1);
         self.state.layer_size = None;
         surface.commit();
-        while self.state.layer_size.is_none() { self.queue.roundtrip(&mut self.state).unwrap(); }
+        while self.state.layer_size.is_none() {
+            self.queue.roundtrip(&mut self.state).unwrap();
+        }
         let (w, h) = self.state.layer_size.unwrap();
         let buffer = buffer(&self.shm, &qh, w, h, |_, _| colour);
         surface.attach(Some(&buffer), 0, 0);
@@ -524,8 +542,20 @@ impl Dispatch<WpPresentationFeedback, ()> for State {
 }
 delegate_noop!(State: ignore WlCompositor);
 delegate_noop!(State: ignore wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::ZwlrLayerShellV1);
-impl Dispatch<wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1, ()> for State {
-    fn event(state: &mut Self, role: &wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1, event: wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+impl
+    Dispatch<
+        wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+        (),
+    > for State
+{
+    fn event(
+        state: &mut Self,
+        role: &wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+        event: wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         if let wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Event::Configure {serial,width,height} = event {
             role.ack_configure(serial);
             state.layer_size = Some((width as i32, height as i32));
