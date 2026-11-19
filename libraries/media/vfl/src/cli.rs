@@ -32,7 +32,10 @@ pub fn run(args: impl IntoIterator<Item=OsString>) -> Result<(),Box<dyn std::err
     if !r.complete {eprintln!("VFL: interrupted take ({:?}); exporting valid prefix",r.completion_file);}
     if format == "y4m" {writeln!(out,"YUV4MPEG2 W{w} H{h} F{rate}:1 Ip A1:1 C420jpeg XCOLORRANGE=LIMITED")?;}
     // --to is inclusive; --fps declares the output rate and never resamples slots.
-    while let Some(frame)=r.read()? {
+    let mut next=0u64;
+    while to.is_none_or(|n|next<=n) {
+        let Some(frame)=r.read()? else {break};
+        next=frame.slot+1;
         if frame.slot < from {continue;} if to.is_some_and(|n|frame.slot>n) {break;}
         if format == "bgra" {out.write_all(frame.pixels)?;}
         else {

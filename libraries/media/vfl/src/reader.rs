@@ -62,6 +62,7 @@ impl Markers {
 pub struct Decoded<'a> { pub slot: u64, pub t_us: u64, pub pixels: &'a [u8] }
 pub struct Reader {
     path: PathBuf, pub width: u32, pub height: u32, pub fps: u32, version: u64,
+    /// Completion claimed by metadata; only `verify` reports validated completion.
     pub complete: bool, pub completion_file: Option<&'static str>, pub origin: Option<Value>, receipt: Option<Value>,
     raw: usize, pixels: Vec<u8>, payload: Vec<u8>, scratch: Vec<u8>,
     chunk: u64, chunks: u64, file: Option<BufReader<File>>, offset: u64, crc: crc32fast::Hasher,
@@ -86,12 +87,14 @@ impl Reader {
                 _ => (None,None,false),
             }
         } else if path.join("interrupted.json").exists() {
-            (Some(json_file(&path.join("interrupted.json"))?),Some("interrupted.json"),false)
+            (json_file(&path.join("interrupted.json")).ok(),Some("interrupted.json"),false)
         } else { (None,None,false) };
-        let origin = match json_file(&path.join("origin.json")) { Ok(v) => Some(v), Err(e) if complete => return Err(e), Err(_) => None };
+        let mut origin = match json_file(&path.join("origin.json")) { Ok(v) => Some(v), Err(e) if complete => return Err(e), Err(_) => None };
         if let Some(o) = &origin {
-            number(o,"t0_us",&path.join("origin.json"))?;
-            if o["clock"] != "monotonic" { return Err(err(&path.join("origin.json"),None,0,ErrorKind::Metadata,"invalid clock")); }
+            if o["t0_us"].as_u64().is_none() || o["clock"] != "monotonic" {
+                if complete {return Err(err(&path.join("origin.json"),None,0,ErrorKind::Metadata,"invalid origin"));}
+                origin=None;
+            }
         }
         let mut chunks = 0;
         for entry in std::fs::read_dir(&path).map_err(|e|err(&path,None,0,ErrorKind::Io,e))? {
@@ -105,7 +108,7 @@ impl Reader {
         }
         // Count entries as well as the maximum, so a hostile huge index never causes a huge loop.
         let count = std::fs::read_dir(&path).map_err(|e|err(&path,None,0,ErrorKind::Io,e))?.filter_map(Result::ok).filter(|e|e.file_name().to_string_lossy().ends_with(".bin")).count() as u64;
-        if chunks != count || chunks == 0 { return Err(err(&path,None,0,ErrorKind::Structure,"missing or non-contiguous chunks")); }
+        if (complete && chunks != count) || chunks == 0 { return Err(err(&path,None,0,ErrorKind::Structure,"missing or non-contiguous chunks")); }
         let frames = match open(&path.join("frames.jsonl")) { Ok(f) => Some(BufReader::new(f)), Err(e) if complete => return Err(e), Err(_) => None };
         if complete { open(&path.join("markers.jsonl"))?; }
         Ok(Self { path,width,height,fps,version,complete,completion_file,origin,receipt,raw,pixels:vec![0;raw],payload:Vec::new(),scratch:Vec::new(),chunk:0,chunks,file:None,offset:0,crc:crc32fast::Hasher::new(),next:0,keyed:false,stopped:false,last_kind:KEY,frames })
@@ -136,7 +139,7 @@ impl Reader {
     fn advance(&mut self, decode: bool) -> Result<bool,Error> {
         loop {
             if self.chunk == self.chunks { self.finish()?; return Ok(false); }
-            if self.file.is_none() { self.file = Some(BufReader::new(open(&self.chunk_path())?)); }
+            if self.file.is_none() { self.file = Some(BufReader::new(open(&self.chunk_path()).map_err(|e|self.error(e.kind,e.message))?)); }
             let mut h = [0u8;17];
             let file = self.file.as_mut().ok_or_else(||err(&self.path,None,0,ErrorKind::Io,"missing chunk"))?;
             let n = file.read(&mut h[..1]).map_err(|e|self.error(ErrorKind::Io,e))?;
@@ -174,7 +177,7 @@ impl Reader {
                 let p = self.path.join("frames.jsonl");
                 let expected = json!({"frame":slot,"t_us":(u128::from(slot)*1_000_000/u128::from(self.fps)) as u64});
                 let row = line(f,&p);
-                if self.complete && row?.as_ref() != Some(&expected) { return Err(err(&p,Some(self.chunk),self.offset,ErrorKind::Structure,"frame timeline mismatch")); }
+                if self.complete && row?.is_none_or(|v|v["frame"] != expected["frame"] || v["t_us"] != expected["t_us"]) { return Err(err(&p,Some(self.chunk),self.offset,ErrorKind::Structure,"frame timeline mismatch")); }
             }
             self.crc.update(&h); self.crc.update(&self.payload); self.offset += 17+len as u64;
             self.last_kind=kind;
@@ -191,7 +194,7 @@ impl Reader {
         Ok(Some(Decoded {slot,t_us,pixels:&self.pixels}))
     }
     /// Locate the nearest earlier key with a bounded header scan, then decode forward.
-    /// The scan validates the prefix too, so seeking never masks earlier corruption.
+    /// The header scan checks CRCs and structure; decompression starts at the selected key.
     pub fn seek(&mut self, target: u64) -> Result<Decoded<'_>,Error> {
         let mut scan = Self::open(&self.path)?;
         let mut key = (0,0,0);
