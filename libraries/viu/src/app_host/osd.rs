@@ -332,6 +332,58 @@ mod tests {
     use super::*;
 
     #[test]
+    fn behaviour_and_expiry_work_without_any_output_or_egui_pass() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/osd");
+        let mut bundle = Bundle::load(&root, &[]).unwrap();
+        bundle.manifest.bus = false;
+        bundle.manifest.require_bus = false;
+        let mut program = Program {
+            scene_source: bundle.scene.clone(),
+            bundle: Some(bundle),
+            host: None,
+            logic: egui::Context::default(),
+            items: BTreeMap::new(),
+            presets: BTreeMap::new(),
+        };
+        program.set_waker(Arc::new(|| {}));
+        let until = Instant::now() + Duration::from_secs(10);
+        while !program.host.as_ref().unwrap().ready {
+            program.service();
+            assert!(Instant::now() < until, "OSD logic startup timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        program.host.as_mut().unwrap().dispatch(
+            "osd.show".into(),
+            json!({"id":"no-output","scene":{"kind":"caption","text":"Expires without a surface"},
+                "anchor":{"output":"absent-output","edge":"bottom"},"duration_ms":100}),
+            BTreeMap::new(),
+            Some(tx),
+        );
+        loop {
+            program.service();
+            if let Ok((rc, body)) = rx.try_recv() {
+                assert_eq!(rc, 0, "{body}");
+                break;
+            }
+            assert!(Instant::now() < until, "OSD show timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(program.wake_deadline().is_some());
+        loop {
+            program.service();
+            let host = program.host.as_ref().unwrap();
+            assert!(host.error.is_empty(), "{}", host.error);
+            if host.model["items"].as_array().unwrap().is_empty() {
+                break;
+            }
+            assert!(Instant::now() < until, "OSD expiry timed out");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(program.wake_deadline().is_none(), "empty OSD must disarm");
+    }
+
+    #[test]
     fn shipped_bundle_loads_and_renders_each_literal_scene_kind() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/osd");
         let bundle = Bundle::load(&root, &[]).expect("shipped OSD bundle and Bus surface validate");
