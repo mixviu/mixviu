@@ -253,6 +253,7 @@ TouchHandle exposes the retained focus for one slot. Touch motion refreshes
 its synthetic surface origin when the compositor supplies the same focus,
 without changing grab ownership. This allows viud to invert the current window
 transform for ongoing touches, including motion outside the surface bounds.
+
 # Retained composition images
 
 `MemoryRenderBufferRenderElement::texture()` exposes an imported texture by

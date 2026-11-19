@@ -17,6 +17,7 @@ struct Facts {
     minimised: bool,
     workspace: Option<u32>,
     shown: bool,
+    visible: bool,
 }
 
 #[derive(Default)]
@@ -26,6 +27,7 @@ struct State {
     settings: WindowMotion,
     active: bool,
     incoming: HashMap<Uuid, Instant>,
+    workspace: Option<u32>,
 }
 
 thread_local! { static STATE: RefCell<State> = RefCell::new(State::default()); }
@@ -135,12 +137,28 @@ pub fn service(lp: &mut Loop) -> bool {
                     minimised: r.minimized(),
                     workspace: r.workspace(),
                     shown: r.mapped() && !lp.inner.comp.hidden_id(r.id()),
+                    visible: lp.inner.comp.visual(r.id()).visible,
                 },
             ))
         })
         .collect();
     STATE.with(|state| {
         let mut state = state.borrow_mut();
+        let workspace = lp.inner.comp.current_workspace();
+        if state.workspace != Some(workspace) {
+            state.exits.clear();
+            crate::window::draw::ghost::clear();
+            state.workspace = Some(workspace);
+        }
+        state.incoming.retain(|uuid, started| {
+            let Some(window) = windows.get(uuid) else { return false; };
+            if super::animation::started(window) != Some(*started) { return false; }
+            if !super::animation::active(window, now) {
+                super::animation::finish(window);
+                return false;
+            }
+            true
+        });
         if settings != state.settings {
             for (event, config) in [
                 ("map", &settings.map),
@@ -196,9 +214,15 @@ pub fn service(lp: &mut Loop) -> bool {
             } else {
                 None
             };
+            if new.is_some_and(|facts| !facts.visible) {
+                state.exits.remove(uuid);
+                continue;
+            }
+            if old.workspace != Some(workspace) { continue; }
             if let Some(config) = exit
                 && let Some(preset) = preset(config, true)
             {
+                crate::window::draw::ghost::capture_exit(*uuid);
                 state.exits.insert(
                     *uuid,
                     super::animation::VisualRun {

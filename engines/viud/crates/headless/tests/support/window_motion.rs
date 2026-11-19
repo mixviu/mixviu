@@ -209,6 +209,24 @@ fn opacity_track(from: f64, to: f64) -> Value {
 }
 
 #[test]
+fn tiny_animated_scale_suppresses_retained_grab() {
+    assert!(process::record_available());
+    let bus = Bus::start("tiny-grab");
+    let mut process = process::spawn(1, None, "tiny-grab", Some(&bus.url));
+    bus.ready();
+    let (mut pattern, row) = white_window(&bus, &mut process, "tiny-grab");
+    bus.call("comp.input.pointer.move", json!({"seat":"agent","output":"headless-0","x":400,"y":280}));
+    bus.call("comp.input.pointer.button", json!({"seat":"agent","button":"left","action":"press"}));
+    pump_patterns(&mut [&mut pattern]);
+    let before = pattern.state.pointer_positions.len();
+    bus.call("comp.motion.run", json!({"targets":[{"window":{"id":row["id"],"generation":row["generation"],"duration_ms":0,"tracks":[{"property":"scale","keyframes":[{"offset":0,"value":1},{"offset":1,"value":1e-310}]}]}}]}));
+    bus.call("comp.input.pointer.move", json!({"seat":"agent","output":"headless-0","x":450,"y":280}));
+    pump_patterns(&mut [&mut pattern]);
+    assert_eq!(pattern.state.pointer_positions.len(), before, "tiny scale cancels positional grab routing");
+    assert!(pattern.state.pointer_positions.iter().all(|(x,y)| x.is_finite() && y.is_finite()));
+}
+
+#[test]
 fn scaled_window_input_follows_pixels_and_uses_client_coordinates() {
     if !process::record_available() {
         return;
@@ -548,8 +566,9 @@ fn record_window_retarget_supersedes_without_returning_to_first_keyframe() {
             .windows(2)
             .filter(|v| v[0].0 < 0.9 && v[1].0 < 0.9)
             .all(|v| (v[1].1 - v[0].1).abs() < 0.08),
-        "a replacement omitting scale must not drop the running scale track: {values:?}"
+        "a replacement omitting scale must be continuous: {values:?}"
     );
+    assert!((values.last().unwrap().1 - 0.8).abs() <= 0.025, "omitted scale continues to its original endpoint: {values:?}");
 }
 
 #[test]

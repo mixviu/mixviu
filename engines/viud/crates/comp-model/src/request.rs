@@ -275,12 +275,14 @@ impl VisualAttributes {
     /// Invert the drawn transform in window-local logical coordinates. A zero
     /// scale draws no pixels and cannot receive input.
     pub fn inverse(&self, point: LogicalOffset) -> Option<LogicalOffset> {
-        (self.scale.factor > 0.0).then(|| LogicalOffset {
+        if !self.scale.factor.is_finite() || self.scale.factor < 1e-6 { return None; }
+        let local = LogicalOffset {
             x: self.scale.anchor.x
                 + (point.x - self.translate.x - self.scale.anchor.x) / self.scale.factor,
             y: self.scale.anchor.y
                 + (point.y - self.translate.y - self.scale.anchor.y) / self.scale.factor,
-        })
+        };
+        (local.x.is_finite() && local.y.is_finite()).then_some(local)
     }
 }
 
@@ -306,7 +308,7 @@ pub fn window_scale_value(value: &Value) -> Option<WindowScale> {
     }
     let factor = object.get("factor")?.as_f64()?;
     let anchor = logical_offset_value(object.get("anchor")?)?;
-    (factor.is_finite() && (0.0..=64.0).contains(&factor)).then_some(WindowScale { factor, anchor })
+    (factor.is_finite() && (factor == 0.0 || (1e-6..=64.0).contains(&factor))).then_some(WindowScale { factor, anchor })
 }
 
 fn visual_arg<T>(
@@ -1120,7 +1122,7 @@ pub fn parse_window_command(
                     "scale",
                     window_scale_value,
                     "{factor,anchor:{x,y}} or null",
-                    "factor 0..=64; i32 logical anchor",
+                    "factor 0 or 1e-6..=64; i32 logical anchor",
                 )?,
                 translate: visual_arg(
                     object,

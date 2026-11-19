@@ -69,6 +69,17 @@ pub fn sampled_values(window: &Window, now: Instant) -> Option<Values> {
         .map(|run| run.sample(now))
 }
 
+pub fn run(window: &Window) -> Option<VisualRun> {
+    window.user_data().get::<Mutex<Option<VisualRun>>>()?.lock().unwrap().clone()
+}
+
+/// Cancel at the last presented sample, without first applying the endpoint.
+pub fn cancel(window: &Window) {
+    if let Some(cell) = window.user_data().get::<Mutex<Option<VisualRun>>>() {
+        cell.lock().unwrap().take();
+    }
+}
+
 /// Identity of the current visual run, including its terminal filled sample.
 pub fn started(window: &Window) -> Option<Instant> {
     window

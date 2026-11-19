@@ -43,7 +43,7 @@ pub fn grabbed_surface_origin(
             let geom = window.geometry();
             let origin = space.state.element_location(window).unwrap_or_default();
             let visual = crate::window::draw::frame::scene::visual_of(window);
-            if !visual.visible || visual.scale.factor == 0.0 {
+            if !visual.visible || visual.scale.factor < 1e-6 {
                 continue;
             }
             let unscaled = visual.inverse(comp_model::request::LogicalOffset {
@@ -161,7 +161,7 @@ pub fn grabbed_surface_suppressed(
     for space in lp.inner.all_world_spaces() {
         for window in space.state.elements() {
             let visual = crate::window::draw::frame::scene::visual_of(window);
-            if visual.visible && visual.scale.factor > 0.0 {
+            if visual.visible && visual.scale.factor.is_finite() && visual.scale.factor >= 1e-6 {
                 continue;
             }
             let Some(root) = window.wl_surface() else {

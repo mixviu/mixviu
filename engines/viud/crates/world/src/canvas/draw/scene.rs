@@ -56,6 +56,10 @@ where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
+    crate::window::draw::ghost::workspace(
+        state.inner.render_output.as_deref().unwrap_or_default(),
+        state.inner.comp.workspaces.current_for(state.inner.render_output.as_deref()),
+    );
     crate::window::draw::ghost::prune::<R>();
     let canvas_context = context(state, renderer, size);
     let mut content: Vec<ContentItem<R>> = Vec::new();
@@ -120,6 +124,7 @@ where
     for uuid in &order {
         if crate::window::draw::ghost::exiting(*uuid) {
             for ghost in crate::window::draw::ghost::elements::<R>(
+                renderer,
                 state.inner.render_output.as_deref().unwrap_or_default(),
                 state.inner.render_target.map(|rt| rt.slot),
                 *uuid,

@@ -24,6 +24,34 @@ fn harness() -> Harness {
 }
 
 #[test]
+fn visual_cancel_holds_presented_sample_and_omitted_retarget_reaches_old_endpoint() {
+    use std::time::{Duration, Instant};
+    use motion::{Property, Track, Keyframe, Curve};
+    let mut h = harness();
+    let (surface, _, _) = h.mapped_toplevel(64, 48);
+    let id = id_of(&h, &surface);
+    let generation = h.comp().registry.get(id).unwrap().generation();
+    let window = h.wire.inner.space.state.elements().next().unwrap().clone();
+    let now = Instant::now();
+    let mut old = motion::presets().into_iter().find(|p| p.name == "fade").unwrap();
+    old.timing.duration = 0.8;
+    old.tracks = vec![Track { property: Property::Scale, keyframes: vec![Keyframe { offset: 0.0, value: 0.4, easing: Curve::Linear }, Keyframe { offset: 1.0, value: 0.8, easing: Curve::Linear }] }];
+    world::comp::animation::start(&window, &old, now - Duration::from_millis(250));
+    world::comp::animation::set_frame_time(now);
+    let mut replacement = motion::presets().into_iter().find(|p| p.name == "fade").unwrap();
+    replacement.timing.duration = 0.5;
+    policy_host::motion::start_visual(&mut h.wire, id.0, generation, &mut replacement, now).unwrap();
+    assert!((replacement.sample(0.0).get(Property::Scale) - 0.525).abs() < 1e-6);
+    assert!((replacement.sample(0.275).get(Property::Scale) - 0.6625).abs() < 1e-6);
+    assert!((replacement.sample(0.55).get(Property::Scale) - 0.8).abs() < 1e-6);
+    let sampled = policy_host::control::window_visual(&h.wire, id.0, generation).unwrap();
+    policy_host::motion::cancel_visual(&mut h.wire, id.0, generation);
+    assert!(world::comp::animation::started(&window).is_none());
+    assert_eq!(policy_host::control::window_visual(&h.wire, id.0, generation).unwrap(), sampled);
+    assert_eq!(h.comp().visual(id), sampled);
+}
+
+#[test]
 fn hiding_a_surface_revokes_its_retained_tablet_focus_only() {
     use smithay::backend::input::{TabletToolCapabilities, TabletToolDescriptor, TabletToolType};
     use smithay::input::tablet::TabletDescriptor;

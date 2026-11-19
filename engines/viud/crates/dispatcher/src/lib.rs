@@ -8,6 +8,7 @@
 extern crate model;
 
 pub mod frame;
+pub mod exit_capture;
 pub mod idle;
 pub mod idle_inhibit;
 pub mod state;

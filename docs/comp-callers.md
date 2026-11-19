@@ -47,6 +47,15 @@ visual state; visual retargeting uses the shared library's linear retarget
 helper for position continuity. First-run entrance keyframes do not restart
 on retarget. Successful terminal replies retain `status:"completed"`.
 
+Properties omitted by a replacement continue linearly from their current sample
+to their original endpoint over their original remaining time. Requested
+properties use the replacement duration; completed properties hold while any
+continuation finishes. The reply waits for the latest of those deadlines.
+Cancellation holds the last presented sample and removes the tracks, without
+applying their endpoints. Later placement updates take effect normally.
+Placement accepts scale zero or 1e-6–64; animated factors below 1e-6 suppress
+positional input, including retained grabs.
+
 Optional lifecycle transitions are configured in `preferences.json`, for
 example:
 
@@ -58,6 +67,10 @@ Every event defaults to disabled; omit or set its entry to null. An exit
 plays the preset in reverse. Unmapping removes the client and its input
 target immediately; the compositor retains a separate image only until the
 exit finishes. No client destruction or configure waits for that image.
+Completed entrances release their tracks. Explicit `visible:false` suppresses
+pixels immediately and never starts an exit. Workspace switches cancel older
+close/minimise images; workspace animation is a destination entrance, without
+carrying source-workspace pixels into the destination.
 
 Frame preparation samples geometry and visual tracks at one target
 presentation timestamp. KMS uses its next-vblank estimate; headless and

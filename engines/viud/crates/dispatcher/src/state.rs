@@ -2470,6 +2470,7 @@ mod handler_impls {
             protocols::compositor::client::client_compositor_state(client)
         }
         fn new_surface(&mut self, surface: &WlSurface) {
+            crate::exit_capture::register::<Dispatch>(surface);
             install_syncobj_blocker_hook(surface);
             // The comp registry's destroy edge, for every role (a surface with no
             // record, e.g. a cursor or an Xwayland-backed one, is ignored there).

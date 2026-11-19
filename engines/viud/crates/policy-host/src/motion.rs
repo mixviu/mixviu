@@ -45,13 +45,37 @@ pub fn start_visual(
             current.set(property, value);
         }
         let requested = preset.sample(preset.timing.duration);
-        let mut target = current;
+        let old = world::comp::animation::run(&window).unwrap();
+        let remaining = (old.preset.timing.duration - old.elapsed(started)).max(0.0);
+        let requested_duration = preset.timing.duration;
+        let mut target = motion::Values::default();
         for property in motion::Property::ALL {
             if requested.contains(property) {
                 target.set(property, requested.get(property));
             }
         }
-        *preset = motion::retarget(&current, &target, preset.timing);
+        let mut requested_current = motion::Values::default();
+        for track in &preset.tracks { requested_current.set(track.property, current.get(track.property)); }
+        *preset = motion::retarget(&requested_current, &target, preset.timing);
+        let duration = requested_duration.max(remaining);
+        if duration > 0.0 {
+            for track in &mut preset.tracks {
+                for frame in &mut track.keyframes { frame.offset *= requested_duration / duration; }
+                if track.keyframes.last().unwrap().offset < 1.0 {
+                    let mut endpoint = track.keyframes.last().unwrap().clone(); endpoint.offset = 1.0; track.keyframes.push(endpoint);
+                }
+            }
+            let endpoint = old.preset.sample(old.preset.timing.duration);
+            for old_track in &old.preset.tracks {
+                if preset.tracks.iter().any(|track| track.property == old_track.property) { continue; }
+                let property = old_track.property;
+                let mut frames = vec![motion::Keyframe { offset: 0.0, value: current.get(property), easing: motion::Curve::Linear }];
+                if remaining > 0.0 && remaining < duration { frames.push(motion::Keyframe { offset: remaining / duration, value: endpoint.get(property), easing: motion::Curve::Linear }); }
+                frames.push(motion::Keyframe { offset: 1.0, value: endpoint.get(property), easing: motion::Curve::Linear });
+                preset.tracks.push(motion::Track { property, keyframes: frames });
+            }
+            preset.timing.duration = duration;
+        }
     }
     world::comp::animation::start(&window, preset, started);
     ledger::frame_trace::event("window_motion_start", || (id, 0, 0));
@@ -77,7 +101,7 @@ pub fn cancel_visual(lp: &mut Loop, id: u64, generation: u64) {
     }
     if let Ok(visual) = control::window_visual(lp, id, generation) {
         if let Ok((_, window)) = control::motion_window(lp, id, generation) {
-            world::comp::animation::finish(&window);
+            world::comp::animation::cancel(&window);
         }
         let _ = control::window_visual_step(lp, id, generation, visual);
     }

@@ -10,7 +10,7 @@ coordinates). Optional visual fields may be sent without geometry:
 | z | signed 32-bit JSON integer, higher is forward; `1.0` is refused | 0 |
 | visible | boolean | true |
 | clip | `{x,y,width,height}`, logical window-local numbers | no crop |
-| scale | `{factor,anchor:{x,y}}`, uniform factor 0–64 and window-local logical anchor | factor 1, anchor `{x:0,y:0}` |
+| scale | `{factor,anchor:{x,y}}`, factor 0 or 1e-6–64 and window-local logical anchor | factor 1, anchor `{x:0,y:0}` |
 | translate | `{x,y}`, logical offset | `{x:0,y:0}` |
 
 Clip extents must be non-negative, all coordinates and endpoints finite and
@@ -45,8 +45,10 @@ buffer size, layout, placement state or workspace membership.
 
 Input follows the drawn transform. Pointer, touch, tablet and injected input
 hit-test using its inverse, then the existing surface input regions and
-content fit. A factor of zero draws nothing and accepts no positional input;
-retained pointer and touch grabs are cancelled on their next event at zero.
+content fit. Zero draws nothing. Factors below 1e-6 (including intermediate
+animated values) accept no positional input; retained pointer and touch grabs
+are cancelled on their next positional event. The inverse rejects any
+non-finite result. Placement rejects nonzero factors below 1e-6.
 Scale and translation do not change keyboard focus. Opacity
 zero still receives input, as before. Clip continues to crop pixels only;
 it does not narrow input regions. Logical geometry read through the Bus remains

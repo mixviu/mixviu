@@ -13,7 +13,7 @@ use smithay::backend::renderer::{Color32F, ContextId, ImportAll, ImportMem, Rend
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Transform};
 use std::any::{Any, TypeId};
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 smithay::render_elements! {
@@ -32,7 +32,7 @@ smithay::render_elements! {
 struct Snapshot<T: Texture> {
     id: Id,
     source_id: Id,
-    source_commit: CommitCounter,
+    client: bool,
     texture: Option<T>,
     color: Option<Color32F>,
     context: ContextId<T>,
@@ -51,6 +51,31 @@ struct Snapshot<T: Texture> {
 type Cache<T> = HashMap<(Uuid, String, Option<u64>), Vec<Snapshot<T>>>;
 thread_local! { static CACHES: RefCell<HashMap<TypeId, Box<dyn Any>>> = RefCell::new(HashMap::new()); }
 thread_local! { static ORDERS: RefCell<HashMap<(String, Option<u64>), Vec<Uuid>>> = RefCell::new(HashMap::new()); }
+thread_local! {
+    static SOURCES: RefCell<HashMap<Uuid, HashSet<Id>>> = RefCell::new(HashMap::new());
+    static EXIT_SOURCES: RefCell<HashMap<Uuid, HashSet<Id>>> = RefCell::new(HashMap::new());
+    static WORKSPACES: RefCell<HashMap<String, u32>> = RefCell::new(HashMap::new());
+}
+
+pub fn workspace(output: &str, workspace: u32) {
+    let changed = WORKSPACES.with(|scopes| scopes.borrow_mut().insert(output.to_owned(), workspace).is_some_and(|old| old != workspace));
+    if changed { clear(); }
+}
+
+pub fn capture_exit(uuid: Uuid) {
+    let sources = SOURCES.with(|sources| sources.borrow().get(&uuid).cloned()).unwrap_or_default();
+    for source in &sources { dispatcher::exit_capture::capture(source); }
+    EXIT_SOURCES.with(|exits| { exits.borrow_mut().insert(uuid, sources); });
+}
+
+/// Workspace changes invalidate all outgoing images before the new scene.
+pub fn clear() {
+    CACHES.with(|caches| caches.borrow_mut().clear());
+    ORDERS.with(|orders| orders.borrow_mut().clear());
+    SOURCES.with(|sources| sources.borrow_mut().clear());
+    EXIT_SOURCES.with(|sources| sources.borrow_mut().clear());
+    dispatcher::exit_capture::clear();
+}
 
 /// Preserve an outgoing drawable's last slot relative to surviving neighbours,
 /// including world UI stacking barriers. The order remains pane-local.
@@ -99,9 +124,24 @@ where
             caches.borrow_mut().remove(&TypeId::of::<R::TextureId>());
         });
         ORDERS.with(|orders| orders.borrow_mut().clear());
+        SOURCES.with(|sources| sources.borrow_mut().clear());
+        EXIT_SOURCES.with(|sources| sources.borrow_mut().clear());
+        dispatcher::exit_capture::clear();
         return;
     }
     let keep = crate::comp::lifecycle_motion::retained_windows();
+    let exits = crate::comp::lifecycle_motion::exits(crate::comp::animation::frame_time());
+    let armed: HashSet<Id> = SOURCES.with(|sources| {
+        let mut sources = sources.borrow_mut();
+        sources.retain(|uuid, _| keep.contains(uuid));
+        sources.values().flatten().cloned().collect()
+    });
+    let held: HashSet<Id> = EXIT_SOURCES.with(|sources| {
+        let mut sources = sources.borrow_mut();
+        sources.retain(|uuid, _| exits.contains_key(uuid));
+        sources.values().flatten().cloned().collect()
+    });
+    dispatcher::exit_capture::prune(&armed, &held);
     CACHES.with(|caches| {
         if let Some(cache) = caches
             .borrow_mut()
@@ -150,19 +190,11 @@ pub fn retain<R>(
     if !crate::comp::lifecycle_motion::retain_snapshots() {
         return;
     }
-    let previous = CACHES
-        .with(|caches| {
-            caches
-                .borrow_mut()
-                .get_mut(&TypeId::of::<R::TextureId>())
-                .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>())
-                .and_then(|cache| cache.remove(&(uuid, output.to_owned(), pane)))
-        })
-        .unwrap_or_default();
+    if exiting(uuid) { return; }
     let mut snapshots = Vec::new();
-    for (index, element) in elements.iter_mut().enumerate() {
+    let mut sources = HashSet::new();
+    for element in elements.iter_mut() {
         let source_id = element.id().clone();
-        let source_commit = element.current_commit();
         let geometry = element.geometry(Scale::from(1.0));
         let src = element.src();
         let transform = element.transform();
@@ -172,33 +204,14 @@ pub fn retain<R>(
             RawElement::WindowFitClipped(clipped) => Some(clipped.snapshot_clip()),
             _ => None,
         };
-        let buffer = match &mut *raw {
-            RawElement::Window(e) => Some(e.inner.inner.buffer().clone()),
-            RawElement::WindowFit(e) => Some(
-                e.inner
-                    .element_mut()
-                    .element_mut()
-                    .element_mut()
-                    .inner
-                    .buffer()
-                    .clone(),
-            ),
-            RawElement::WindowFitClipped(e) => Some(
-                e.inner_mut()
-                    .inner
-                    .element_mut()
-                    .element_mut()
-                    .element_mut()
-                    .inner
-                    .buffer()
-                    .clone(),
-            ),
-            _ => None,
-        };
         let surface_solid = matches!(
             raw,
             RawElement::Window(_) | RawElement::WindowFit(_) | RawElement::WindowFitClipped(_)
         );
+        if surface_solid {
+            dispatcher::exit_capture::arm(source_id.clone());
+            sources.insert(source_id.clone());
+        }
         let (texture, color) = match raw {
             RawElement::Chrome(decor::render::ChromeElement::Piece(piece)) => {
                 (Some(piece.texture().clone()), None)
@@ -234,29 +247,9 @@ pub fn retain<R>(
             },
             _ => continue,
         };
-        // SHM's normal surface import cache updates its texture in place.
-        // Import without that cache so future commits cannot mutate the exit
-        // image. A DMA buffer stays immutable until the retained lease releases.
-        let texture = if let (Some(_), Some(buffer)) = (&texture, &buffer) {
-            if let Some(texture) = previous
-                .get(index)
-                .filter(|snapshot| {
-                    snapshot.source_id == source_id
-                        && snapshot.source_commit == source_commit
-                        && snapshot.context == renderer.context_id()
-                })
-                .and_then(|snapshot| snapshot.texture.clone())
-            {
-                Some(texture)
-            } else {
-                match renderer.import_buffer(buffer, None, &[]) {
-                    Some(Ok(texture)) => Some(texture),
-                    _ => continue,
-                }
-            }
-        } else {
-            texture
-        };
+        // Live client state is metadata only. No imported texture clone, copied
+        // pixels or buffer lease survives this call until an actual exit.
+        let texture = if surface_solid { None } else { texture };
         let color = color.map(|color| {
             if surface_solid {
                 Color32F::from([
@@ -272,7 +265,7 @@ pub fn retain<R>(
         snapshots.push(Snapshot {
             id: Id::new(),
             source_id,
-            source_commit,
+            client: surface_solid,
             texture,
             color,
             context: renderer.context_id(),
@@ -284,9 +277,10 @@ pub fn retain<R>(
             logical_scale,
             pane_clip,
             clip,
-            _buffer: buffer,
+            _buffer: None,
         });
     }
+    SOURCES.with(|all| { all.borrow_mut().insert(uuid, sources); });
     CACHES.with(|caches| {
         let mut caches = caches.borrow_mut();
         let cache = caches
@@ -298,7 +292,7 @@ pub fn retain<R>(
     });
 }
 
-pub fn elements<R>(output: &str, pane: Option<u64>, uuid: Uuid) -> Vec<Ghost<R>>
+pub fn elements<R>(renderer: &mut R, output: &str, pane: Option<u64>, uuid: Uuid) -> Vec<Ghost<R>>
 where
     R: Renderer + ImportAll + ImportMem + SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
@@ -320,10 +314,22 @@ where
         cache.retain(|(uuid, _, _), _| keep.contains(uuid));
         let mut elements = Vec::new();
         if let (Some(snapshots), Some(values)) = (
-            cache.get(&(uuid, output.to_owned(), pane)),
+            cache.get_mut(&(uuid, output.to_owned(), pane)),
             exits.get(&uuid),
         ) {
             for snapshot in snapshots {
+                if snapshot.client && snapshot._buffer.is_none() {
+                    if let Some(buffer) = dispatcher::exit_capture::buffer(&snapshot.source_id) {
+                        if snapshot.color.is_none() {
+                            match renderer.import_buffer(&buffer, None, &[]) {
+                                Some(Ok(texture)) => snapshot.texture = Some(texture),
+                                _ => continue,
+                            }
+                        }
+                        snapshot.context = renderer.context_id();
+                        snapshot._buffer = Some(buffer);
+                    } else { continue; }
+                }
                 if snapshot.texture.is_some() {
                     let texture = draw(snapshot, values);
                     elements.push(if let Some((program, clip)) = &snapshot.clip {

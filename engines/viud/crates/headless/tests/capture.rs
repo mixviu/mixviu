@@ -8,6 +8,8 @@ mod pattern;
 mod process;
 #[path = "support/window_motion.rs"]
 mod window_motion;
+#[path = "support/window_motion_review.rs"]
+mod window_motion_review;
 
 use pattern::{COLOURS, Pattern};
 use serde_json::{Value, json};

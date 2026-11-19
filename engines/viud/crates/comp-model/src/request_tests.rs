@@ -25,6 +25,7 @@ fn composition_transform_is_atomic_strict_and_invertible() {
     for invalid in [
         json!({"factor":-1,"anchor":{"x":0,"y":0}}),
         json!({"factor":65,"anchor":{"x":0,"y":0}}),
+        json!({"factor":1e-310,"anchor":{"x":0,"y":0}}),
         json!({"factor":1}),
         json!({"factor":1,"anchor":{"x":0,"y":0,"z":0}}),
     ] {
@@ -47,6 +48,13 @@ fn composition_transform_is_atomic_strict_and_invertible() {
     assert_eq!(visual, VisualAttributes::default());
     visual.scale.factor = 0.0;
     assert!(visual.inverse(LogicalOffset::default()).is_none());
+    for factor in [1e-310, 1e-7, f64::NAN, f64::INFINITY] {
+        visual.scale.factor = factor;
+        assert!(visual.inverse(LogicalOffset { x: 100.0, y: -100.0 }).is_none());
+    }
+    visual.scale.factor = 1e-6;
+    assert!(visual.inverse(LogicalOffset { x: 1.0, y: 2.0 }).unwrap().x.is_finite());
+    assert!(visual.inverse(LogicalOffset { x: f64::MAX, y: 0.0 }).is_none());
 }
 
 #[test]
