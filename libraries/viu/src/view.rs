@@ -51,7 +51,9 @@ impl SceneView {
     /// rectangle-table construction or readback.
     pub fn request_widget_rectangles(&mut self) {
         self.collect_widget_rects = true;
-        if let Some(frame) = self.frame.as_mut() { frame.request_widget_rectangles(); }
+        if let Some(frame) = self.frame.as_mut() {
+            frame.request_widget_rectangles();
+        }
     }
     /// The most recent requested capture; the host requests a new pass before
     /// answering each batch of Bus queries.
@@ -359,7 +361,8 @@ impl SceneView {
     fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
         if self.collect_widget_rects {
             self.widget_rects.clear();
-            ui.ctx().data_mut(|d| d.remove::<String>(crate::widgets::focus_key()));
+            ui.ctx()
+                .data_mut(|d| d.remove::<String>(crate::widgets::focus_key()));
         }
         let mut events = Vec::new();
         self.regions.clear();
@@ -388,25 +391,25 @@ impl SceneView {
         self.geometry
             .extend(self.widgets.geometry.iter().map(|(id, r)| (id.clone(), *r)));
         if self.collect_widget_rects {
-        let focused = ui
-            .ctx()
-            .data(|d| d.get_temp::<String>(crate::widgets::focus_key()));
-        let zoom = ui.ctx().zoom_factor();
-        let logical = |rect: egui::Rect| {
-            egui::Rect::from_min_max(
-                (rect.min.to_vec2() * zoom).to_pos2(),
-                (rect.max.to_vec2() * zoom).to_pos2(),
-            )
-        };
-        for row in &mut self.widget_rects {
-            row.focused = focused.as_deref() == Some(row.id.as_str());
-            if let Some(rect) = self.geometry.get(&row.id) {
-                row.rect = *rect;
+            let focused = ui
+                .ctx()
+                .data(|d| d.get_temp::<String>(crate::widgets::focus_key()));
+            let zoom = ui.ctx().zoom_factor();
+            let logical = |rect: egui::Rect| {
+                egui::Rect::from_min_max(
+                    (rect.min.to_vec2() * zoom).to_pos2(),
+                    (rect.max.to_vec2() * zoom).to_pos2(),
+                )
+            };
+            for row in &mut self.widget_rects {
+                row.focused = focused.as_deref() == Some(row.id.as_str());
+                if let Some(rect) = self.geometry.get(&row.id) {
+                    row.rect = *rect;
+                }
+                row.rect = logical(row.rect);
+                row.clip = logical(row.clip);
             }
-            row.rect = logical(row.rect);
-            row.clip = logical(row.clip);
-        }
-        self.collect_widget_rects = false;
+            self.collect_widget_rects = false;
         }
         self.focus_error = self.widgets.finish_frame().err();
         self.shown_revision = Some(self.revision);
@@ -964,25 +967,25 @@ impl SceneView {
                 let enabled = ui.is_enabled()
                     && node.ports.get("enabled") != Some(&Value::Bool(false))
                     && definition.is_none_or(|v| v["properties"]["enabled"] != false);
-                    let row = crate::widget_rects::WidgetRect {
-                        id: id.into(),
-                        kind: definition
-                            .and_then(|v| v["kind"].as_str())
-                            .unwrap_or(&node.family)
-                            .into(),
-                        label: node
-                            .ports
-                            .get("label")
-                            .or_else(|| node.ports.get("text"))
-                            .or_else(|| definition.and_then(|v| v.get("label")))
-                            .and_then(Value::as_str)
-                            .map(str::to_owned),
-                        rect,
-                        clip: ui.clip_rect(),
-                        enabled,
-                        focused: false,
-                    };
-                    self.widget_rects.push(row);
+                let row = crate::widget_rects::WidgetRect {
+                    id: id.into(),
+                    kind: definition
+                        .and_then(|v| v["kind"].as_str())
+                        .unwrap_or(&node.family)
+                        .into(),
+                    label: node
+                        .ports
+                        .get("label")
+                        .or_else(|| node.ports.get("text"))
+                        .or_else(|| definition.and_then(|v| v.get("label")))
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    rect,
+                    clip: ui.clip_rect(),
+                    enabled,
+                    focused: false,
+                };
+                self.widget_rects.push(row);
             }
         }
     }

@@ -300,10 +300,17 @@ impl Host {
     fn request(&mut self, mut r: Request, ctx: &egui::Context) {
         if r.command == self.widget_command {
             if let Err(message) = crate::widget_rects::validate(&r.args) {
-                let _ = r.reply.send((10, json!({"error_code":"ARGUMENT","message":message})));
+                let _ = r
+                    .reply
+                    .send((10, json!({"error_code":"ARGUMENT","message":message})));
             } else if self.headless || self.no_window {
                 let _ = r.reply.send((0, json!([])));
             } else {
+                self.widget_requests.retain(|r| !r.reply.is_closed());
+                if self.widget_requests.len() >= 32 {
+                    let _ = r.reply.send((10, json!({"error_code":"BUSY"})));
+                    return;
+                }
                 self.widget_requests.push(r);
                 ctx.request_repaint();
             }
@@ -1533,14 +1540,20 @@ impl Host {
                 input_headers.insert("viu_input".into(), "bus".into());
             }
             self.dispatching_ui = true;
-            if !self.widget_requests.is_empty() { self.view.request_widget_rectangles(); }
+            if !self.widget_requests.is_empty() {
+                self.view.request_widget_rectangles();
+            }
             for event in self.view.show(ui) {
                 self.dispatch(event.command, event.body, input_headers.clone(), None);
             }
             for request in self.widget_requests.drain(..) {
                 match self.view.widget_rectangles(&request.args) {
                     Ok(body) => crate::widget_rects::reply(&self.bus, request, body),
-                    Err(message) => { let _ = request.reply.send((10, json!({"error_code":"ARGUMENT","message":message}))); }
+                    Err(message) => {
+                        let _ = request
+                            .reply
+                            .send((10, json!({"error_code":"ARGUMENT","message":message})));
+                    }
                 }
             }
             self.measurements.view(started.elapsed().as_micros() as u64);
