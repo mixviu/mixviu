@@ -85,7 +85,12 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
             state.inner.viewports(),
             smithay::utils::Rectangle::from_size(size),
         );
-        if locked {\n            plan.push(layer::BACKGROUND, DrawNode::Solid(SolidColorRenderElement::new(\n                background_id(0), smithay::utils::Rectangle::from_size(size),\n                CommitCounter::default(), [0.0, 0.0, 0.0, 1.0], Kind::Unspecified)));\n        }\n        for (index, region) in computed.regions.iter().enumerate().rev().filter(|_| !locked) {
+        if locked {
+            plan.push(layer::BACKGROUND, DrawNode::Solid(SolidColorRenderElement::new(
+                background_id(0), smithay::utils::Rectangle::from_size(size),
+                CommitCounter::default(), [0.0, 0.0, 0.0, 1.0], Kind::Unspecified)));
+        }
+        for (index, region) in computed.regions.iter().enumerate().rev().filter(|_| !locked) {
             state.inner.render_target = Some(world::state::RenderTarget {
                 slot: region.slot,
                 origin_logical: (
