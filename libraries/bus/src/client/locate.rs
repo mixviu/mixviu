@@ -117,17 +117,25 @@ fn candidate_paths(
         .unwrap()
 }
 
-/// The broker URL a node configuration describes: `ws://{wg_ip}:{port}/ws`,
-/// with loopback for a missing or empty `wg_ip` and 4200 for a missing
-/// `noded.port`. `None` when the text is not strict data or has neither
-/// key in a readable form.
-/// This legacy TCP formatter is not used by [`noded_url`] for local discovery.
+/// An endpoint explicitly described by a node configuration. A configured
+/// `noded.unix_socket` takes precedence. Older configurations describe legacy
+/// TCP as `ws://{wg_ip}:{port}/ws`, with loopback for a missing or empty
+/// `wg_ip` and 4200 for a missing `noded.port`. Such TCP URLs grant no local
+/// trust. [`noded_url`] uses only Unix settings for implicit local discovery.
+/// `None` when the document or explicit socket is invalid, or neither endpoint
+/// has readable settings.
 pub fn url_from_node_config(source: &str) -> Option<String> {
     url_from_node_value(&strict::parse(source).ok()?)
 }
 
 /// [`url_from_node_config`] on an already parsed document.
 fn url_from_node_value(config: &Value) -> Option<String> {
+    if let Some(socket) = config.get("noded").and_then(|noded| noded.get("unix_socket")) {
+        return socket
+            .as_str()
+            .filter(|path| std::path::Path::new(path).is_absolute())
+            .map(|path| format!("unix://{path}"));
+    }
     let wg_ip = config.get("wg_ip").and_then(Value::as_str);
     let port = config
         .get("noded")
@@ -154,6 +162,25 @@ fn port_of(value: &Value) -> Option<u16> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn explicit_unix_socket_precedes_legacy_tcp_and_must_be_absolute() {
+        assert_eq!(
+            url_from_node_config(
+                "wg_ip: '192.0.2.1'\nnoded: { port: 4300, unix_socket: '/run/example/bus.sock' }"
+            )
+            .as_deref(),
+            Some("unix:///run/example/bus.sock")
+        );
+        for socket in ["''", "'relative.sock'", "7"] {
+            assert_eq!(
+                url_from_node_config(&format!(
+                    "noded: {{ port: 4300, unix_socket: {socket} }}"
+                )),
+                None
+            );
+        }
+    }
 
     #[test]
     fn reads_the_example_shape() {
