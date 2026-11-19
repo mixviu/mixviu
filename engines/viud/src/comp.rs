@@ -995,7 +995,13 @@ impl Engine<'_> {
                 } else {
                     policy_host::motion::cancel_visual(self.lp, id, generation);
                 }
-                let timeline = Timeline::new(0.0, visual.as_ref().map_or(duration.as_secs_f64(), |preset| preset.timing.duration.max(duration.as_secs_f64())), easing);
+                let timeline = Timeline::new(
+                    0.0,
+                    visual.as_ref().map_or(duration.as_secs_f64(), |preset| {
+                        preset.timing.duration.max(duration.as_secs_f64())
+                    }),
+                    easing,
+                );
                 // Exactly one owner per window. A replacement starts from the
                 // sampled visual/geometry state and settles the old caller now.
                 let mut keep = Vec::with_capacity(self.motions.len());

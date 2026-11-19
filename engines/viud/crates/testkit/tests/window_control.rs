@@ -23,7 +23,6 @@ fn harness() -> Harness {
     h
 }
 
-
 #[test]
 fn hiding_a_surface_revokes_its_retained_tablet_focus_only() {
     use smithay::backend::input::{TabletToolCapabilities, TabletToolDescriptor, TabletToolType};

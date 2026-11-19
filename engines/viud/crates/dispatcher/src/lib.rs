@@ -7,8 +7,8 @@
 #[macro_use]
 extern crate model;
 
-pub mod frame;
 pub mod exit_capture;
+pub mod frame;
 pub mod idle;
 pub mod idle_inhibit;
 pub mod state;

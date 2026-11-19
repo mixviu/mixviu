@@ -152,8 +152,12 @@ pub fn service(lp: &mut Loop) -> bool {
             state.workspace = Some(workspace);
         }
         state.incoming.retain(|uuid, started| {
-            let Some(window) = windows.get(uuid) else { return false; };
-            if super::animation::started(window) != Some(*started) { return false; }
+            let Some(window) = windows.get(uuid) else {
+                return false;
+            };
+            if super::animation::started(window) != Some(*started) {
+                return false;
+            }
             if !super::animation::active(window, now) {
                 super::animation::finish(window);
                 return false;
@@ -185,7 +189,11 @@ pub fn service(lp: &mut Loop) -> bool {
                 settings.map.as_ref()
             } else if fact.shown && old.is_some_and(|old| old.minimised) {
                 settings.restore.as_ref()
-            } else if fact.shown && old.is_some_and(|old| !old.shown && (workspace_changed || old.workspace != fact.workspace)) {
+            } else if fact.shown
+                && old.is_some_and(|old| {
+                    !old.shown && (workspace_changed || old.workspace != fact.workspace)
+                })
+            {
                 settings.workspace.as_ref()
             } else {
                 None
@@ -201,7 +209,9 @@ pub fn service(lp: &mut Loop) -> bool {
                 super::animation::start(window, &relative(preset, base), now);
                 if super::animation::active(window, now) {
                     state.incoming.insert(*uuid, now);
-                } else { super::animation::finish(window); }
+                } else {
+                    super::animation::finish(window);
+                }
                 state.exits.remove(uuid);
             }
         }
@@ -219,7 +229,9 @@ pub fn service(lp: &mut Loop) -> bool {
                 state.exits.remove(uuid);
                 continue;
             }
-            if old.workspace != Some(workspace) { continue; }
+            if old.workspace != Some(workspace) {
+                continue;
+            }
             if let Some(config) = exit
                 && let Some(preset) = preset(config, true)
             {
@@ -264,8 +276,7 @@ pub fn exits(now: Instant) -> HashMap<Uuid, motion::Values> {
 pub fn retain_snapshots() -> bool {
     STATE.with(|state| {
         let state = state.borrow();
-        state.settings.unmap.is_some()
-            || state.settings.minimise.is_some()
+        state.settings.unmap.is_some() || state.settings.minimise.is_some()
     })
 }
 

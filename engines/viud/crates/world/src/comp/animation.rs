@@ -70,7 +70,12 @@ pub fn sampled_values(window: &Window, now: Instant) -> Option<Values> {
 }
 
 pub fn run(window: &Window) -> Option<VisualRun> {
-    window.user_data().get::<Mutex<Option<VisualRun>>>()?.lock().unwrap().clone()
+    window
+        .user_data()
+        .get::<Mutex<Option<VisualRun>>>()?
+        .lock()
+        .unwrap()
+        .clone()
 }
 
 /// Cancel at the last presented sample, without first applying the endpoint.

@@ -58,14 +58,27 @@ thread_local! {
 }
 
 pub fn workspace(output: &str, workspace: u32) {
-    let changed = WORKSPACES.with(|scopes| scopes.borrow_mut().insert(output.to_owned(), workspace).is_some_and(|old| old != workspace));
-    if changed { clear(); }
+    let changed = WORKSPACES.with(|scopes| {
+        scopes
+            .borrow_mut()
+            .insert(output.to_owned(), workspace)
+            .is_some_and(|old| old != workspace)
+    });
+    if changed {
+        clear();
+    }
 }
 
 pub fn capture_exit(uuid: Uuid) {
-    let sources = SOURCES.with(|sources| sources.borrow().get(&uuid).cloned()).unwrap_or_default();
-    for source in &sources { dispatcher::exit_capture::capture(source); }
-    EXIT_SOURCES.with(|exits| { exits.borrow_mut().insert(uuid, sources); });
+    let sources = SOURCES
+        .with(|sources| sources.borrow().get(&uuid).cloned())
+        .unwrap_or_default();
+    for source in &sources {
+        dispatcher::exit_capture::capture(source);
+    }
+    EXIT_SOURCES.with(|exits| {
+        exits.borrow_mut().insert(uuid, sources);
+    });
 }
 
 /// Workspace changes invalidate all outgoing images before the new scene.
@@ -190,7 +203,9 @@ pub fn retain<R>(
     if !crate::comp::lifecycle_motion::retain_snapshots() {
         return;
     }
-    if exiting(uuid) { return; }
+    if exiting(uuid) {
+        return;
+    }
     let mut snapshots = Vec::new();
     let mut sources = HashSet::new();
     for element in elements.iter_mut() {
@@ -280,7 +295,9 @@ pub fn retain<R>(
             _buffer: None,
         });
     }
-    SOURCES.with(|all| { all.borrow_mut().insert(uuid, sources); });
+    SOURCES.with(|all| {
+        all.borrow_mut().insert(uuid, sources);
+    });
     CACHES.with(|caches| {
         let mut caches = caches.borrow_mut();
         let cache = caches
@@ -328,7 +345,9 @@ where
                         }
                         snapshot.context = renderer.context_id();
                         snapshot._buffer = Some(buffer);
-                    } else { continue; }
+                    } else {
+                        continue;
+                    }
                 }
                 if snapshot.texture.is_some() {
                     let texture = draw(snapshot, values);
