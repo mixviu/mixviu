@@ -447,7 +447,14 @@ fn begin_active(state: &mut Loop, renderer: &mut GlesRenderer) {
         CaptureTarget::FullScreen => CaptureSource::OutputFramebuffer(output_id),
     };
 
-    let gpu = state.inner.environment.gpu.clone();
+    let gpu = match graphics::capture::vaapi::renderer_render_node(renderer) {
+        Ok(node) => node,
+        Err(error) => {
+            warn!("{error}");
+            teardown(state);
+            return;
+        }
+    };
     let req = state
         .inner
         .kernel

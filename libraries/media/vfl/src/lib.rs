@@ -45,12 +45,19 @@ fn check_space(file: &File, incoming: u64) -> io::Result<()> {
 }
 
 fn check_available(available: u64, incoming: u64) -> io::Result<()> {
+    #[cfg(test)]
+    let available = TEST_AVAILABLE.get().unwrap_or(available);
     if available.saturating_sub(incoming) < FREE_SPACE_FLOOR {
         return Err(io::Error::other(
             "VFL free-space floor: requires 1 GiB remaining",
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_AVAILABLE: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
 }
 
 #[derive(Clone)]
@@ -511,12 +518,42 @@ mod disk_tests {
     }
     #[test]
     fn free_space_floor_refuses_start_and_crossing_write() {
+        let path = std::env::temp_dir().join(format!("vfl-floor-{}", std::process::id()));
+        struct Reset;
+        impl Drop for Reset {
+            fn drop(&mut self) {
+                TEST_AVAILABLE.set(None);
+            }
+        }
+        let _reset = Reset;
+        TEST_AVAILABLE.set(Some(FREE_SPACE_FLOOR - 1));
         assert!(
-            check_available(FREE_SPACE_FLOOR - 1, 0)
+            Writer::new(path.clone(), 2, 2, 30)
+                .err()
+                .unwrap()
+                .to_string()
+                .contains("free-space floor")
+        );
+        assert!(!path.exists());
+        TEST_AVAILABLE.set(None);
+        let mut writer = Writer::new(path.clone(), 2, 2, 30).unwrap();
+        // Force the next real bounded write to recheck disk space.
+        writer.budget.space_checked_until.set(0);
+        TEST_AVAILABLE.set(Some(FREE_SPACE_FLOOR));
+        assert!(
+            writer
+                .frame(Frame {
+                    slot: 0,
+                    pixels: Pixels::Bgra(Arc::from([0; 16]))
+                })
                 .unwrap_err()
                 .to_string()
                 .contains("free-space floor")
         );
+        assert!(!path.join("complete.json").exists());
+        drop(writer);
+        std::fs::remove_dir_all(path).unwrap();
+        TEST_AVAILABLE.set(None);
         assert!(check_available(FREE_SPACE_FLOOR + 16, 17).is_err());
         assert!(check_available(FREE_SPACE_FLOOR + 17, 17).is_ok());
     }

@@ -133,6 +133,10 @@ pub mod testing {
     }
     thread_local! {
         static STALL: RefCell<Option<Arc<AtomicUsize>>> = const { RefCell::new(None) };
+        pub(super) static POLLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+    pub fn poll_count() -> usize {
+        POLLS.get()
     }
     #[derive(Debug)]
     struct NeverFence(Arc<AtomicUsize>);
@@ -481,6 +485,11 @@ pub fn service(
 }
 
 fn poll_reads(renderer: &mut GlesRenderer, output: &Output, cursor: bool) {
+    if !reads_pending(output, Some(cursor)) {
+        return;
+    }
+    #[cfg(feature = "test-support")]
+    testing::POLLS.set(testing::POLLS.get() + 1);
     let reads = READS.with_borrow_mut(std::mem::take);
     let mut waiting = Vec::new();
     for mut read in reads {
