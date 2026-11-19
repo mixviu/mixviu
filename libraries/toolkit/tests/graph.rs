@@ -42,7 +42,10 @@ fn graph(ui: &mut Ui, state: &mut State) {
 #[test]
 fn painted_history_and_hover_readout() {
     let mut h = test_harness::configure(Harness::builder())
-        .with_context_setup(|ctx| {test_harness::reduced_motion(ctx);toolkit::install(ctx, &toolkit::Theme::embedded());})
+        .with_context_setup(|ctx| {
+            test_harness::reduced_motion(ctx);
+            toolkit::install(ctx, &toolkit::Theme::embedded());
+        })
         .with_size(vec2(480.0, 240.0))
         .wgpu()
         .build_ui_state(

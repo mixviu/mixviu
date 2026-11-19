@@ -47,7 +47,10 @@ fn minimum_window_keeps_menu_tail_and_captions_disjoint() {
     .with_menus(design::MenuStyle::Bar, design::MenuSide::Left);
     let mut h = test_harness::configure(Harness::builder())
         .with_size(egui::vec2(320.0, 200.0))
-        .with_context_setup(move |ctx| {test_harness::reduced_motion(ctx); toolkit::install(ctx, &theme);})
+        .with_context_setup(move |ctx| {
+            test_harness::reduced_motion(ctx);
+            toolkit::install(ctx, &theme);
+        })
         .build_ui(move |ui| {
             let viewport = ui.ctx().content_rect();
             let mut root = ui.new_child(egui::UiBuilder::new().max_rect(viewport));

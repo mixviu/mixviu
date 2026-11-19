@@ -31,7 +31,10 @@ fn harness<S: 'static>(
     // steps apart, and its default quarter-second steps would split a
     // double click. Animations then take more steps to settle.
     let builder = test_harness::configure(Harness::builder())
-        .with_context_setup(move |ctx| {test_harness::reduced_motion(ctx); toolkit::install(ctx, &fixture::theme(scheme, mode));})
+        .with_context_setup(move |ctx| {
+            test_harness::reduced_motion(ctx);
+            toolkit::install(ctx, &fixture::theme(scheme, mode));
+        })
         .with_size(vec2(640.0, 400.0))
         .with_step_dt(1.0 / 60.0)
         .with_max_steps(60);

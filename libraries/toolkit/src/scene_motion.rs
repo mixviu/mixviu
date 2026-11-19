@@ -808,8 +808,8 @@ mod tests {
     use super::*;
     use serde_json::json;
     fn motion_context() -> Context {
-        let ctx=Context::default();
-        ctx.global_style_mut(|style| style.animation_time=0.2);
+        let ctx = Context::default();
+        ctx.global_style_mut(|style| style.animation_time = 0.2);
         ctx
     }
     #[test]
