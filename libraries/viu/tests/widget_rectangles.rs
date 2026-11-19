@@ -242,3 +242,46 @@ fn headless_bus_sweep() {
         println!("{app}.widgets: [] (headless, no laid-out frame)");
     }
 }
+
+#[cfg(feature = "test-support")]
+#[test]
+fn populated_bus_reply_has_a_compositor_window_fence() {
+    use viu::app_host::test_support::Harness;
+    let broker = test_broker::Broker::start();
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let comp = viu::native_bus::Endpoint::start("comp".into(),broker.url.clone(),
+        vec![bus::CommandDescriptor::new("comp.windows.list",&[],"Test catalogue",true)],
+        "comp.quit".into(),Arc::new(||{}));
+    let client = Arc::new(rt.block_on(bus::SupervisedClient::connect_options("rect-populated",&broker.url).connect()).unwrap());
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/gallery");
+    let bundle = viu::launch::load(&root,&["--headless".into(),"--noded-url".into(),broker.url.clone()]).unwrap();
+    let mut host = Harness::new(bundle);
+    let deadline = Instant::now()+Duration::from_secs(20);
+    while !host.ready() || comp.client().is_none() {
+        host.pump();
+        assert!(Instant::now()<deadline,"host readiness: {}",host.error());
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    host.windowed();
+    for _ in 0..4 { host.draw(); }
+    let task = rt.spawn(async move {
+        let (rc,body,_) = client.call_with_headers_raw_within("gallery","gallery.widgets",&Default::default(),
+            &json!({"ids":["gold-header"],"visible_only":true}).to_string(),Duration::from_secs(10)).await.unwrap();
+        (rc,serde_json::from_str::<serde_json::Value>(&body).unwrap())
+    });
+    while !task.is_finished() {
+        host.pump();
+        while let Ok(request) = comp.requests.try_recv() {
+            assert_eq!(request.command,"comp.windows.list");
+            let _ = request.reply.send((0,json!({"windows":[{"id":7,"generation":2,"pid":std::process::id(),"x":20,"y":30}]})));
+        }
+        assert!(Instant::now()<deadline);
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    let (rc,body) = rt.block_on(task).unwrap();
+    assert_eq!(rc,0,"{body}");
+    assert_eq!(body.as_array().unwrap().len(),1);
+    assert_eq!(body[0]["id"],"gold-header");
+    assert_eq!(body[0]["window"],json!({"id":7,"generation":2}));
+    assert!(body[0]["rect"]["w"].as_f64().unwrap()>0.);
+}
