@@ -186,7 +186,13 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         let Some(node) = node_of(scene, item) else {
             continue;
         };
-        let node = node.clone();
+        let mut node = node.clone();
+        for prop in ["color", "background", "hover"] {
+            if let Some(target) = node.ports.get(prop).cloned() {
+                let value = toolkit::scene_motion::value(ui.ctx(),&item.key,prop,&target,node.ports.get("transition"),node.ports.get("motion") != Some(&serde_json::Value::Bool(false)));
+                node.ports.insert(prop.into(),value);
+            }
+        }
         // A row of a scrolling list moves with its scroll and stays in its box.
         let (rect, clip) = match item
             .in_list
@@ -220,6 +226,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
             continue;
         }
         let capture = motion.capture(ui,&item.key,None,node.ports.get("enter"),node.ports.get("exit"),node.ports.get("motion") != Some(&serde_json::Value::Bool(false)));
+        let start = ui.ctx().graphics_mut(|g|g.entry(ui.layer_id()).next_idx());
         (|| { match node.family.as_str() {
             "column" | "row" => {
                 let normal = scene_colour(&scene.theme(), port_text(&node, "background"));
@@ -454,6 +461,10 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
             _ => {}
         } })();
         motion.painted(ui,capture,rect);
+        let enabled = node.ports.get("motion") != Some(&serde_json::Value::Bool(false));
+        let opacity = toolkit::scene_motion::value(ui.ctx(),&item.key,"opacity",node.ports.get("opacity").unwrap_or(&serde_json::json!(1.0)),node.ports.get("transition"),enabled).as_f64().unwrap_or(1.0);
+        let offset = toolkit::scene_motion::value(ui.ctx(),&item.key,"offset",node.ports.get("offset").unwrap_or(&serde_json::json!([0.0,0.0])),node.ports.get("transition"),enabled);
+        toolkit::scene_motion::visual(ui,start,rect,opacity,[offset[0].as_f64().unwrap_or(0.0),offset[1].as_f64().unwrap_or(0.0)]);
     }
     motion.end(ui);
     scene.motion = motion;

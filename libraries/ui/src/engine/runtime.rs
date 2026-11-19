@@ -136,6 +136,7 @@ pub struct UiRuntime<P: UiProgram> {
     offscreen: bool,
     wake: RuntimeWake,
     started: Instant,
+    presentation_time: Option<f64>,
     set_up: bool,
 }
 
@@ -205,6 +206,7 @@ impl<P: UiProgram> UiRuntime<P> {
             offscreen: false,
             wake,
             started: Instant::now(),
+            presentation_time: None,
             set_up: false,
         }
     }
@@ -305,6 +307,15 @@ impl<P: UiProgram> UiRuntime<P> {
         self.dirty
     }
 
+    /// Present at an explicit timestamp in seconds. Headless callers can
+    /// replay the same input and time sequence without reading a wall clock.
+    pub fn tick_at(&mut self, seconds: f64) -> bool {
+        assert!(seconds.is_finite(), "presentation time must be finite");
+        self.presentation_time = Some(seconds);
+        self.needs_pass = true;
+        self.tick()
+    }
+
     fn raw_input(&mut self) -> RawInput {
         let size = Vec2::new(
             self.size_px.0 as f32 / self.scale,
@@ -317,7 +328,7 @@ impl<P: UiProgram> UiRuntime<P> {
         let mut raw = RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
             max_texture_side,
-            time: Some(self.started.elapsed().as_secs_f64()),
+            time: Some(self.presentation_time.unwrap_or_else(|| self.started.elapsed().as_secs_f64())),
             events: self.take_events(),
             focused: self.focused,
             ..RawInput::default()
