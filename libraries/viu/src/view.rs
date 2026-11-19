@@ -544,7 +544,8 @@ impl SceneView {
         let Some(node) = nodes.get(id) else {
             return;
         };
-        if !["enter", "exit", "opacity", "offset", "transition"]
+        let list_row=route.is_some_and(|(_,list,_)|text(list,"row")==id);
+        if !list_row && self.motion_parent.is_none() && !["enter", "exit", "opacity", "offset", "transition"]
             .iter()
             .any(|p| node.ports.contains_key(*p))
         {
@@ -578,35 +579,42 @@ impl SceneView {
             node.ports.get("transition"),
             enabled,
         );
-        let capture = self.motion.capture(
+        let mut capture = self.motion.capture(
             ui,
             &key,
             self.motion_parent.as_deref(),
-            node.ports.get("enter"),
-            node.ports.get("exit"),
+            node.ports.get("enter").or(if list_row {Some(&json!("fade"))} else {None}),
+            node.ports.get("exit").or(if list_row {Some(&json!("fade"))} else {Some(&Value::Null)}),
             node.ports.get("motion") != Some(&Value::Bool(false)),
         );
+        let layer=self.motion.layer(ui,&mut capture,ui.available_rect_before_wrap(),[
+            offset[0].as_f64().unwrap_or(0.0),offset[1].as_f64().unwrap_or(0.0)
+        ]);
         let parent = self.motion_parent.clone();
         if capture.is_some() {
             self.motion_parent = Some(key);
         }
-        self.node_contents(ui, id, nodes, route, depth, events);
+        if let Some(layer)=layer {
+            ui.scope_builder(egui::UiBuilder::new().layer_id(layer),|ui|self.node_contents(ui,id,nodes,route,depth,events));
+        } else {self.node_contents(ui, id, nodes, route, depth, events);}
         self.motion_parent = parent;
         self.motion.painted(
             ui,
             capture,
             self.geometry.get(id).copied().unwrap_or(ui.min_rect()),
         );
-        toolkit::scene_motion::visual(
-            ui,
-            start,
-            self.geometry.get(id).copied().unwrap_or(ui.min_rect()),
-            opacity,
-            [
-                offset[0].as_f64().unwrap_or(0.0),
-                offset[1].as_f64().unwrap_or(0.0),
-            ],
-        );
+        if let Some(layer)=layer {
+            let transform=ui.ctx().layer_transform_to_global(layer).unwrap_or_default();
+            if let Some(rect)=self.geometry.get_mut(id) {*rect=transform.mul_rect(*rect);}
+            // Layer transforms carry geometry; opacity remains a paint attribute.
+            ui.ctx().graphics_mut(|g| {
+                let list=g.entry(layer);let end=list.next_idx();
+                for i in 0..end.0 {list.mutate_shape(egui::layers::ShapeIdx(i),|s| {
+                    let alpha=opacity as f32;
+                    if alpha!=1.0 {egui::epaint::shape_transform::adjust_colors(&mut s.shape,move |c|*c=c.gamma_multiply(alpha));}
+                });}
+            });
+        } else {toolkit::scene_motion::visual(ui,start,self.geometry.get(id).copied().unwrap_or(ui.min_rect()),opacity,[0.0,0.0]);}
     }
 
     fn node_contents(

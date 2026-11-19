@@ -1793,7 +1793,7 @@ impl Widgets {
                         .as_str()
                         .filter(|s| !s.is_empty())
                     {
-                        ui.small(page);
+                        toolkit::scene_motion::content(ui,egui::Id::unique((id,"tab-motion")),value.as_str().unwrap_or(""),|ui|ui.small(page));
                     }
                 }
                 response

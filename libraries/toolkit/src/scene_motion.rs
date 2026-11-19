@@ -19,7 +19,10 @@ struct NodeMotion {
     leaving: Option<Preset>,
     shapes: Vec<ClippedShape>,
     rect: Rect,
-    parent: Option<String>,
+    paint_rect: Rect,
+    child_enter: Option<Entrance>,
+    child_index: u32,
+    textures: Vec<egui::TextureHandle>,
 }
 #[derive(Clone)]
 struct Tween {
@@ -42,6 +45,7 @@ pub struct Capture {
     key: String,
     layer: LayerId,
     start: ShapeIdx,
+    transformed: bool,
 }
 impl SceneMotion {
     pub fn begin(&mut self, ui: &Ui) {
@@ -49,6 +53,7 @@ impl SceneMotion {
         self.reduced = ui.style().animation_time == 0.0;
         for n in self.nodes.values_mut() {
             n.seen = false;
+            n.child_index = 0;
         }
     }
     #[allow(clippy::too_many_arguments)]
@@ -65,34 +70,61 @@ impl SceneMotion {
             self.nodes.remove(key);
             return None;
         }
-        if enter.is_none() && exit.is_none() {
+        let inherited = parent.and_then(|p|self.nodes.get_mut(p)).and_then(|n| {
+            let index=n.child_index;
+            n.child_index+=1;
+            n.child_enter.clone().map(|e|(e,index))
+        });
+        let own = enter.and_then(|v|serde_json::from_value::<Entrance>(v.clone()).ok());
+        let (entrance,index) = own.clone().map(|e|(e,0)).or(inherited).map_or((None,0),|(e,i)|(Some(e),i));
+        let child_enter = own.filter(|e|e.options().stagger_ms>0.0);
+        if entrance.is_none() && exit.is_none() {
             return None;
         }
         let now = self.now;
+        let inherited_exit=parent.and_then(|p|self.nodes.get(p)).and_then(|n|n.exit.clone());
         let n = self
             .nodes
             .entry(key.to_owned())
             .or_insert_with(|| NodeMotion {
                 seen: true,
-                entrance: enter
-                    .and_then(|v| serde_json::from_value::<Entrance>(v.clone()).ok())
-                    .map(|e| e.playback(now, 0, false)),
+                entrance: if child_enter.is_some() {None} else {entrance.map(|e| e.playback(now, index, false))},
                 exit: None,
                 leaving: None,
                 shapes: Vec::new(),
                 rect: Rect::NOTHING,
-                parent: parent.map(str::to_owned),
+                paint_rect: Rect::NOTHING,
+                child_enter,
+                child_index: 0,
+                textures: Vec::new(),
             });
         n.seen = true;
         n.leaving = None;
-        n.exit = exit.and_then(|v| serde_json::from_value(v.clone()).ok());
+        n.exit = exit.and_then(|v| serde_json::from_value(v.clone()).ok()).or(inherited_exit);
         let layer = ui.layer_id();
         let start = ui.ctx().graphics_mut(|g| g.entry(layer).next_idx());
         Some(Capture {
             key: key.into(),
             layer,
             start,
+            transformed: false,
         })
+    }
+    /// Install the same transform for painting and input before widgets run.
+    pub fn layer(&self, ui:&Ui, capture:&mut Option<Capture>, hint:Rect, offset:[f64;2]) -> Option<LayerId> {
+        let c=capture.as_mut()?;
+        let n=self.nodes.get(&c.key)?;
+        let rect=if n.rect.is_finite() {n.rect} else {hint};
+        let values=motion::scene::sample(n.entrance.as_ref(),self.now,self.reduced);
+        let scale=values.get(Property::Scale) as f32;
+        let translate=egui::vec2(values.get(Property::Tx) as f32+offset[0] as f32,values.get(Property::Ty) as f32+offset[1] as f32);
+        let local=egui::emath::TSTransform {scaling:scale.max(0.0001),translation:rect.center().to_vec2()*(1.0-scale)+translate};
+        let outer=ui.ctx().layer_transform_to_global(ui.layer_id()).unwrap_or_default();
+        let layer=LayerId::new(ui.layer_id().order,ui.scope_id().with(("scene-motion",&c.key)));
+        ui.ctx().set_sublayer(ui.layer_id(),layer);
+        ui.ctx().set_transform_layer(layer,outer*local);
+        c.layer=layer;c.start=ui.ctx().graphics_mut(|g|g.entry(layer).next_idx());c.transformed=true;
+        Some(layer)
     }
     pub fn painted(&mut self, ui: &Ui, capture: Option<Capture>, rect: Rect) {
         let Some(c) = capture else {
@@ -106,9 +138,18 @@ impl SceneMotion {
             .entrance
             .as_ref()
             .is_some_and(|p| motion::scene::active(p, now));
+        let global=if c.transformed {ui.ctx().layer_transform_to_global(c.layer).unwrap_or_default()} else {egui::emath::TSTransform::IDENTITY};
+        n.paint_rect=global.mul_rect(rect);
         ui.ctx().graphics_mut(|g| {
             let list = g.entry(c.layer);
             let end = list.next_idx();
+            for i in c.start.0..end.0 {
+                list.mutate_shape(ShapeIdx(i), |s| {
+                    let mut values=values;
+                    if c.transformed {values.set(Property::Tx,0.0);values.set(Property::Ty,0.0);values.set(Property::Scale,1.0);}
+                    transform(s, rect, &values);
+                });
+            }
             if n.exit.is_some() {
                 n.shapes = list
                     .all_entries()
@@ -116,11 +157,28 @@ impl SceneMotion {
                     .take(end.0 - c.start.0)
                     .cloned()
                     .collect();
-            }
-            for i in c.start.0..end.0 {
-                list.mutate_shape(ShapeIdx(i), |s| transform(s, rect, &values));
+                if c.transformed {
+                    for s in &mut n.shapes {s.transform(global);}
+                }
             }
         });
+        if n.exit.is_some() {
+            let mut ids=std::collections::HashSet::new();
+            fn collect(shape:&egui::Shape,ids:&mut std::collections::HashSet<egui::TextureId>) {
+                if let egui::Shape::Vec(shapes)=shape {for s in shapes {collect(s,ids);}}
+                else {ids.insert(shape.texture_id());}
+            }
+            for s in &n.shapes {collect(&s.shape,&mut ids);}
+            let manager=ui.ctx().tex_manager();
+            let mut textures=Vec::new();
+            for id in ids {
+                if matches!(id,egui::TextureId::Managed(_)) && manager.read().meta(id).is_some() {
+                    manager.write().retain(id);
+                    textures.push(egui::TextureHandle::new(manager.clone(),id));
+                }
+            }
+            n.textures=textures;
+        }
         if active {
             ui.ctx().request_repaint();
         }
@@ -130,19 +188,10 @@ impl SceneMotion {
             self.nodes.clear();
             return;
         }
-        let missing = self
-            .nodes
-            .iter()
-            .filter(|(_, n)| !n.seen)
-            .map(|(id, _)| id.clone())
-            .collect::<std::collections::BTreeSet<_>>();
         let now = self.now;
         self.nodes.retain(|_, n| {
             if n.seen {
                 return true;
-            }
-            if n.parent.as_ref().is_some_and(|p| missing.contains(p)) {
-                return false;
             }
             let Some(exit) = &n.exit else {
                 return false;
@@ -154,7 +203,7 @@ impl SceneMotion {
             let values = p.sample(now);
             for shape in &n.shapes {
                 let mut shape = shape.clone();
-                transform(&mut shape, n.rect, &values);
+                transform(&mut shape, n.paint_rect, &values);
                 ui.painter()
                     .with_clip_rect(shape.clip_rect)
                     .add(shape.shape);
@@ -334,6 +383,53 @@ pub fn scalar(ctx: &Context, id: egui::Id, target: f64, ms: f64, enabled: bool) 
         ctx.request_repaint();
     }
     value
+}
+
+/// Observe native floating surfaces at the end of a pass. Their default is a
+/// fade, which leaves layout and input geometry unchanged. Closed surfaces
+/// replay paint only, after the model has already closed them.
+pub fn install(ctx:&Context) {
+    let key=egui::Id::unique("scene-motion-installed");
+    if ctx.data(|d|d.get_temp::<bool>(key))==Some(true) {return;}
+    ctx.data_mut(|d|d.insert_temp(key,true));
+    ctx.on_end_pass("scene surface motion",std::sync::Arc::new(|ui| {
+        let ctx=ui.ctx().clone();
+        let key=egui::Id::unique(("scene-surfaces",ctx.viewport_id()));
+        let shared=ctx.data_mut(|d| {
+            let state=d.get_temp::<std::sync::Arc<std::sync::Mutex<SceneMotion>>>(key).unwrap_or_default();
+            d.insert_temp(key,state.clone());state
+        });
+        let mut state=shared.lock().unwrap();
+        state.begin(ui);
+        let layers=ctx.memory(|m|m.areas().order().to_vec());
+        for layer in layers {
+            if layer==ui.layer_id() || !matches!(layer.order,egui::Order::Foreground|egui::Order::Middle) {continue;}
+            // Scene transform sublayers have no Area; only floating surfaces
+            // own area state. Tooltips are excluded by their order.
+            if ctx.memory(|m|m.area_rect(layer.id)).is_none() {continue;}
+            let rect=ctx.memory(|m|m.area_rect(layer.id)).unwrap();
+            let has_paint=ctx.graphics_mut(|g|g.get(layer).is_some_and(|p|!p.is_empty()));
+            if !has_paint {continue;}
+            let surface=ui.new_child(egui::UiBuilder::new().layer_id(layer));
+            let mut capture=state.capture(&surface,&format!("{layer:?}"),None,Some(&serde_json::json!("fade")),Some(&serde_json::json!("fade")),true);
+            if let Some(c)=capture.as_mut() {c.start=ShapeIdx(0);}
+            state.painted(&surface,capture,rect);
+        }
+        state.end(ui);
+    }));
+}
+
+/// A built-in compound widget's changing content (for example a tab page).
+/// The closure runs only for current content, never for a departing snapshot.
+pub fn content<R>(ui:&mut Ui,id:egui::Id,key:&str,draw:impl FnOnce(&mut Ui)->R)->R {
+    let state=ui.ctx().data_mut(|d| {
+        let state=d.get_temp::<std::sync::Arc<std::sync::Mutex<SceneMotion>>>(id).unwrap_or_default();
+        d.insert_temp(id,state.clone());state
+    });
+    let mut state=state.lock().unwrap();state.begin(ui);
+    let capture=state.capture(ui,key,None,Some(&serde_json::json!("fade")),Some(&serde_json::json!("fade")),ui.style().animation_time!=0.0);
+    let result=draw(ui);
+    state.painted(ui,capture,ui.min_rect());state.end(ui);result
 }
 
 #[cfg(test)]

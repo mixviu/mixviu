@@ -102,6 +102,7 @@ pub use theme::Theme;
 /// Prepare `ctx` for a MixViu application: `theme`'s style and fonts, and the
 /// image loaders the icons need.
 pub fn install(ctx: &egui::Context, theme: &Theme) {
+    scene_motion::install(ctx);
     egui_extras::install_image_loaders(ctx);
     style::apply(ctx, theme);
 }
