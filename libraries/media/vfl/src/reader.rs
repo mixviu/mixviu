@@ -235,17 +235,18 @@ impl Reader {
             Err(_) => None,
         };
         if let Some(o) = &origin
-            && (o["t0_us"].as_u64().is_none() || o["clock"] != "monotonic") {
-                if complete {
-                    return Err(err(
-                        &path.join("origin.json"),
-                        None,
-                        0,
-                        ErrorKind::Metadata,
-                        "invalid origin",
-                    ));
-                }
-                origin = None;
+            && (o["t0_us"].as_u64().is_none() || o["clock"] != "monotonic")
+        {
+            if complete {
+                return Err(err(
+                    &path.join("origin.json"),
+                    None,
+                    0,
+                    ErrorKind::Metadata,
+                    "invalid origin",
+                ));
+            }
+            origin = None;
         }
         let mut chunks = 0;
         for entry in std::fs::read_dir(&path).map_err(|e| err(&path, None, 0, ErrorKind::Io, e))? {
@@ -387,14 +388,15 @@ impl Reader {
             }
             number(r, "dropped", &p)?;
             if let Some(f) = &mut self.frames
-                && line(f, &self.path.join("frames.jsonl"))?.is_some() {
-                    return Err(err(
-                        &self.path.join("frames.jsonl"),
-                        None,
-                        0,
-                        ErrorKind::Structure,
-                        "extra frame sidecar rows",
-                    ));
+                && line(f, &self.path.join("frames.jsonl"))?.is_some()
+            {
+                return Err(err(
+                    &self.path.join("frames.jsonl"),
+                    None,
+                    0,
+                    ErrorKind::Structure,
+                    "extra frame sidecar rows",
+                ));
             }
         }
         Ok(())
@@ -644,7 +646,16 @@ pub fn verify(path: &Path) -> Value {
                     match m.read() {
                         Ok(Some(v)) => {
                             if v["frame"].as_u64().is_some_and(|n| n >= frames) {
-                                errors.push(err(&m.path, None, m.input.stream_position().unwrap_or(0), ErrorKind::Structure, "marker beyond take").to_string());
+                                errors.push(
+                                    err(
+                                        &m.path,
+                                        None,
+                                        m.input.stream_position().unwrap_or(0),
+                                        ErrorKind::Structure,
+                                        "marker beyond take",
+                                    )
+                                    .to_string(),
+                                );
                                 break;
                             }
                             markers += 1;

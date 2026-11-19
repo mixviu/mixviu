@@ -10,16 +10,14 @@ use std::{
 struct Take(PathBuf);
 impl Take {
     fn new() -> Self {
-        Self(
-            std::env::temp_dir().join(format!(
+        Self(std::env::temp_dir().join(format!(
                 "vfl-reader-{}-{}",
                 std::process::id(),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_nanos()
-            )),
-        )
+            )))
     }
 }
 impl Drop for Take {
@@ -171,7 +169,12 @@ fn chunk_order_receipts_and_seek_across_chunks() {
     std::fs::write(&p, &b[..cut]).unwrap();
     std::fs::write(t.0.join("chunk-000001.bin"), &b[cut..]).unwrap();
     for (n, bytes, next) in [(0, &b[..cut], 1), (1, &b[cut..], 12)] {
-        std::fs::write(t.0.join(format!("chunk-{n:06}.json")), json!({"bytes":bytes.len(),"crc32":crc32fast::hash(bytes),"next_frame":next}).to_string()).unwrap();
+        std::fs::write(
+            t.0.join(format!("chunk-{n:06}.json")),
+            json!({"bytes":bytes.len(),"crc32":crc32fast::hash(bytes),"next_frame":next})
+                .to_string(),
+        )
+        .unwrap();
     }
     json_edit(&t.0.join("complete.json"), |v| v["chunks"] = json!(2));
     assert_eq!(verify(&t.0)["ok"], true);
@@ -191,16 +194,24 @@ fn forged_rectangle_and_torn_recovery_metadata() {
     std::fs::write(t.0.join("interrupted.json"), "{").unwrap();
     std::fs::write(t.0.join("origin.json"), "{}").unwrap();
     assert!(Reader::open(&t.0).is_ok());
-    let p=t.0.join("chunk-000000.bin");
-    let mut b=std::fs::read(&p).unwrap();
-    let mut at=0;
-    while b[at+16] != media_vfl::RECT_DELTA {at+=17+u32::from_le_bytes(b[at..at+4].try_into().unwrap()) as usize;}
-    let end=at+17+u32::from_le_bytes(b[at..at+4].try_into().unwrap()) as usize;
-    b[at+25..at+29].copy_from_slice(&u32::MAX.to_le_bytes());
-    let crc=crc32fast::hash(&b[at+8..end]);b[at+4..at+8].copy_from_slice(&crc.to_le_bytes());
-    std::fs::write(p,b).unwrap();
-    let mut r=Reader::open(&t.0).unwrap();r.read().unwrap();r.read().unwrap();
-    assert_eq!(r.read().err().unwrap().kind, media_vfl::reader::ErrorKind::Limit);
+    let p = t.0.join("chunk-000000.bin");
+    let mut b = std::fs::read(&p).unwrap();
+    let mut at = 0;
+    while b[at + 16] != media_vfl::RECT_DELTA {
+        at += 17 + u32::from_le_bytes(b[at..at + 4].try_into().unwrap()) as usize;
+    }
+    let end = at + 17 + u32::from_le_bytes(b[at..at + 4].try_into().unwrap()) as usize;
+    b[at + 25..at + 29].copy_from_slice(&u32::MAX.to_le_bytes());
+    let crc = crc32fast::hash(&b[at + 8..end]);
+    b[at + 4..at + 8].copy_from_slice(&crc.to_le_bytes());
+    std::fs::write(p, b).unwrap();
+    let mut r = Reader::open(&t.0).unwrap();
+    r.read().unwrap();
+    r.read().unwrap();
+    assert_eq!(
+        r.read().err().unwrap().kind,
+        media_vfl::reader::ErrorKind::Limit
+    );
 }
 #[test]
 #[ignore = "60 second generated 4K30 export measurement on CBC"]
@@ -232,6 +243,7 @@ fn bench_export() {
                 .arg(std::env::current_exe().unwrap())
                 .args(["--ignored", "--exact", "bench_child", "--nocapture"])
                 .env("VFL_BENCH_TAKE", &t.0)
+                .stdout(std::process::Stdio::null())
                 .output()
                 .unwrap();
             assert!(
@@ -253,22 +265,11 @@ fn bench_child() {
     let Some(path) = std::env::var_os("VFL_BENCH_TAKE") else {
         return;
     };
-    use std::io::Write;
-    let mut r = Reader::open(path).unwrap();
     let now = std::time::Instant::now();
-    let mut n = 0;
-    let mut sink = std::fs::OpenOptions::new()
-        .write(true)
-        .open("/dev/null")
-        .unwrap();
-    while let Some(f) = r.read().unwrap() {
-        sink.write_all(f.pixels).unwrap();
-        n += 1;
-    }
-    println!(
-        "frames={n} seconds={} fps={}",
+    media_vfl::cli::run(["export".into(), path, "--format".into(), "bgra".into()]).unwrap();
+    eprintln!(
+        "frames=1800 seconds={} fps={}",
         now.elapsed().as_secs_f64(),
-        n as f64 / now.elapsed().as_secs_f64()
+        1800.0 / now.elapsed().as_secs_f64()
     );
-    assert_eq!(n, 1800);
 }

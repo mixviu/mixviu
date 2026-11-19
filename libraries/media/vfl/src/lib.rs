@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! VFL container and lossless writer, shared by viud and the future reader.
+//! VFL container, lossless writer, bounded reader and headless CLI.
 use serde_json::{Value, json};
 use std::{
     fs::{File, OpenOptions},
