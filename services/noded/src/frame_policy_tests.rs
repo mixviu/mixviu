@@ -1,6 +1,21 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 #[tokio::test]
+async fn registration_rechecks_exact_key_after_rotation_before_dispatch() {
+    let state = mesh_delivery_test_state().await;
+    let mut registration = state.session_admission.clone();
+    assert_eq!(registration.admitted_node.as_deref(),Some("beta"));
+    let mut posture = state.authority.load().posture.clone();
+    if let crate::authority::Posture::Verified(a) = &mut posture {
+        a.epoch += 1;
+        a.members_full.get_mut("beta").unwrap()["credentials"] = serde_json::json!([]);
+    }
+    apply_inventory_reload(&state,posture).await;
+    registration.admitted_node = super::admitted_delivery_peer(&state,"192.0.2.2".parse().unwrap());
+    assert!(matches!(super::register_gate_decision(false,"192.0.2.1:4200",AdmissionMode::Enforce,true,true,"bridge-beta",&registration),super::RegisterGate::Refuse { .. }));
+}
+
+#[tokio::test]
 async fn inventory_rotation_during_inbound_proof_refuses_stale_handshake() {
     let state = mesh_delivery_test_state().await;
     let authority = state.authority.load_full();

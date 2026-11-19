@@ -1020,13 +1020,12 @@ async fn connect_and_publish(
 
     {
         let mut locked = state.write().await;
-        if let Some((keys, _)) = &locked.keys {
-            if let Some((node, key)) = context.mesh_peer() {
+        if let Some((keys, _)) = &locked.keys
+            && let Some((node, key)) = context.mesh_peer() {
                 anyhow::ensure!(
                     keys.contains(node, key),
                     "Peer key revoked before connection publication"
                 );
-            }
         }
         let still_current = locked.desired.get(&peer.name) == Some(&target)
             && locked
