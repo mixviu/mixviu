@@ -417,7 +417,14 @@ impl Timing {
         if !before && self.iterations == Iterations::Infinite && self.duration > 0.0 {
             if matches!(self.direction, Direction::Normal | Direction::Reverse) {
                 let phase = cycle_phase(t, start, self.duration);
-                return Some((if self.direction == Direction::Reverse { 1.0 - phase } else { phase }, false));
+                return Some((
+                    if self.direction == Direction::Reverse {
+                        1.0 - phase
+                    } else {
+                        phase
+                    },
+                    false,
+                ));
             }
             let cycle = self.duration * 2.0;
             let directed = if cycle.is_finite() {
@@ -428,11 +435,18 @@ impl Timing {
                 (t / self.duration - start / self.duration) % 2.0
             };
             let phase = if directed > 1.0 {
-                    2.0 - directed
+                2.0 - directed
+            } else {
+                directed
+            };
+            return Some((
+                if self.direction == Direction::AlternateReverse {
+                    1.0 - phase
                 } else {
-                    directed
-                };
-            return Some((if self.direction == Direction::AlternateReverse { 1.0 - phase } else { phase }, false));
+                    phase
+                },
+                false,
+            ));
         }
         let iteration_progress = if before {
             0.0
@@ -610,14 +624,18 @@ mod tests {
         p.tracks[0].keyframes[0].easing = Curve::Steps { n: 2, start: false };
         assert_eq!(p.sample(3.5).get(Property::Tx), 50.0);
         assert_eq!(p.sample(99.0).get(Property::Tx), 50.0);
-        assert_eq!(Curve::Steps { n: 2, start: false }.sample_before(0.5, true), 0.5);
+        assert_eq!(
+            Curve::Steps { n: 2, start: false }.sample_before(0.5, true),
+            0.5
+        );
     }
     #[test]
     fn omitted_keyframe_easing_is_css_ease() {
         let frame: Keyframe = serde_json::from_str(r#"{"offset":0,"value":0}"#).unwrap();
         assert_eq!(frame.easing, Curve::Ease);
         assert!((frame.easing.sample(0.5) - 0.8024033876).abs() < 1e-8);
-        let explicit: Keyframe = serde_json::from_str(r#"{"offset":0,"value":0,"easing":{"kind":"linear"}}"#).unwrap();
+        let explicit: Keyframe =
+            serde_json::from_str(r#"{"offset":0,"value":0,"easing":{"kind":"linear"}}"#).unwrap();
         assert_eq!(explicit.easing, Curve::Linear);
     }
     #[test]
@@ -637,19 +655,29 @@ mod tests {
                 assert_eq!(p.sample(1.25).get(Property::Tx), second);
                 if matches!(fill, Fill::Backwards | Fill::Both) {
                     assert_eq!(p.sample(-1.0).get(Property::Tx), before);
-                } else { assert!(p.sample(-1.0).is_empty()); }
+                } else {
+                    assert!(p.sample(-1.0).is_empty());
+                }
                 if matches!(fill, Fill::Forwards | Fill::Both) {
                     assert_eq!(p.sample(2.0).get(Property::Tx), after);
                     assert_eq!(p.sample(99.0).get(Property::Tx), after);
-                } else { assert!(p.sample(2.0).is_empty()); }
+                } else {
+                    assert!(p.sample(2.0).is_empty());
+                }
             }
             p.timing.iterations = Iterations::Infinite;
             assert_eq!(p.sample(1_000_000.25).get(Property::Tx), first);
             assert_eq!(p.sample(1_000_001.25).get(Property::Tx), second);
             let encoded = serde_json::to_string(&direction).unwrap();
-            assert_eq!(serde_json::from_str::<Direction>(&encoded).unwrap(), direction);
+            assert_eq!(
+                serde_json::from_str::<Direction>(&encoded).unwrap(),
+                direction
+            );
         }
-        assert_eq!(serde_json::to_string(&Direction::AlternateReverse).unwrap(), r#""alternate-reverse""#);
+        assert_eq!(
+            serde_json::to_string(&Direction::AlternateReverse).unwrap(),
+            r#""alternate-reverse""#
+        );
     }
     #[test]
     fn extreme_extrapolation_saturates_without_intermediate_overflow() {
@@ -740,7 +768,12 @@ mod tests {
         p.timing.beat_start = -1e308;
         p.timing.iterations = Iterations::Infinite;
         p.timing.fill = Fill::None;
-        for direction in [Direction::Normal, Direction::Reverse, Direction::Alternate, Direction::AlternateReverse] {
+        for direction in [
+            Direction::Normal,
+            Direction::Reverse,
+            Direction::Alternate,
+            Direction::AlternateReverse,
+        ] {
             p.timing.direction = direction;
             for duration in [0.125, 1e-300, 1e308] {
                 p.timing.duration = duration;
