@@ -916,13 +916,18 @@ impl Widget {
                 return Err("dataset requires string cells".into());
             }
             if let Some(column) = self.properties.get("key_column") {
-                let column = whole(column).and_then(|n| usize::try_from(n).ok())
+                let column = whole(column)
+                    .and_then(|n| usize::try_from(n).ok())
                     .ok_or("key_column must be a nonnegative integer")?;
                 let mut keys = BTreeSet::new();
                 for row in rows {
-                    let key = row[column].as_str().filter(|s| !s.is_empty())
+                    let key = row[column]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
                         .ok_or("key_column requires a nonempty string in every row")?;
-                    if !keys.insert(key) { return Err("key_column values must be unique".into()); }
+                    if !keys.insert(key) {
+                        return Err("key_column values must be unique".into());
+                    }
                 }
             }
         }
@@ -944,16 +949,18 @@ pub(crate) fn whole(v: &Value) -> Option<u64> {
 /// distinguished by occurrence among identical data, never absolute position.
 fn row_motion_keys(rows: &[Value], key_column: Option<usize>) -> Vec<String> {
     let mut occurrences = BTreeMap::<String, usize>::new();
-    rows.iter().map(|row| {
-        if let Some(column) = key_column {
-            return format!("key:{}", row[column]);
-        }
-        let data = serde_json::to_string(row).unwrap_or_default();
-        let occurrence = occurrences.entry(data.clone()).or_default();
-        let key = format!("data:{data}#{occurrence}");
-        *occurrence += 1;
-        key
-    }).collect()
+    rows.iter()
+        .map(|row| {
+            if let Some(column) = key_column {
+                return format!("key:{}", row[column]);
+            }
+            let data = serde_json::to_string(row).unwrap_or_default();
+            let occurrence = occurrences.entry(data.clone()).or_default();
+            let key = format!("data:{data}#{occurrence}");
+            *occurrence += 1;
+            key
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug)]
@@ -1998,9 +2005,14 @@ impl Widgets {
                     .as_array()
                     .map(Vec::as_slice)
                     .unwrap_or(&[]);
-                let row_keys = row_motion_keys(data, whole(&widget.properties["key_column"])
-                    .and_then(|n| usize::try_from(n).ok()));
-                let present_keys = row_keys.iter().map(String::as_str).collect::<std::collections::HashSet<_>>();
+                let row_keys = row_motion_keys(
+                    data,
+                    whole(&widget.properties["key_column"]).and_then(|n| usize::try_from(n).ok()),
+                );
+                let present_keys = row_keys
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<std::collections::HashSet<_>>();
                 if widget.kind == "table" {
                     let reversed = model["sorted"][id].as_bool().unwrap_or(false);
                     let header = ui.button(format!(

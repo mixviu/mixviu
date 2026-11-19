@@ -3,45 +3,89 @@ use serde_json::json;
 use viu::view::SceneView;
 #[test]
 fn native_head_edits_sort_and_explicit_keys_preserve_surviving_rows() {
-    let nodes=json!({"root":{"widget":"control","definition":"= $model.widget"}});
-    let source=format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
-    let model=|rows: serde_json::Value, keyed| {
-        let mut widget=json!({"id":"root","kind":"list","label":"List","initial":0,"properties":{"dataset":"rows","row_count":rows.as_array().unwrap().len()}});
-        if keyed {widget["properties"]["key_column"]=json!(1);}
+    let nodes = json!({"root":{"widget":"control","definition":"= $model.widget"}});
+    let source = format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+    let model = |rows: serde_json::Value, keyed| {
+        let mut widget = json!({"id":"root","kind":"list","label":"List","initial":0,"properties":{"dataset":"rows","row_count":rows.as_array().unwrap().len()}});
+        if keyed {
+            widget["properties"]["key_column"] = json!(1);
+        }
         json!({"datasets":{"rows":rows},"widget":widget})
     };
-    for (before,after,keyed,expected) in [
-        (json!([["A"],["B"],["C"]]),json!([["B"],["C"]]),false,vec!["A","B","C"]),
-        (json!([["B"],["C"]]),json!([["A"],["B"],["C"]]),false,vec!["A","B","C"]),
-        (json!([["A"],["B"],["C"]]),json!([["C"],["B"],["A"]]),false,vec!["A","B","C"]),
-        (json!([["old","key"]]),json!([["new","key"]]),true,vec!["new"]),
+    for (before, after, keyed, expected) in [
+        (
+            json!([["A"], ["B"], ["C"]]),
+            json!([["B"], ["C"]]),
+            false,
+            vec!["A", "B", "C"],
+        ),
+        (
+            json!([["B"], ["C"]]),
+            json!([["A"], ["B"], ["C"]]),
+            false,
+            vec!["A", "B", "C"],
+        ),
+        (
+            json!([["A"], ["B"], ["C"]]),
+            json!([["C"], ["B"], ["A"]]),
+            false,
+            vec!["A", "B", "C"],
+        ),
+        (
+            json!([["old", "key"]]),
+            json!([["new", "key"]]),
+            true,
+            vec!["new"],
+        ),
     ] {
-        let ctx=egui::Context::default();
-        let mut view=SceneView::with_model(&source,model(before,keyed)).unwrap();
-        for t in [0.,1.,2.] {frame(&ctx,&mut view,t).drop_without_applying_deltas();}
-        view.apply_model(model(after,keyed)).unwrap();
-        let mut out=frame(&ctx,&mut view,2.1);
-        let labels=out.shapes.iter().filter_map(|s|if let egui::Shape::Text(t)=&s.shape {Some(t.galley.job.text.as_str())}else{None}).collect::<Vec<_>>();
-        for label in &expected {assert_eq!(labels.iter().filter(|s| *s==label).count(),1,"{labels:?}");}
-        if keyed {assert!(!labels.contains(&"old"));}
+        let ctx = egui::Context::default();
+        let mut view = SceneView::with_model(&source, model(before, keyed)).unwrap();
+        for t in [0., 1., 2.] {
+            frame(&ctx, &mut view, t).drop_without_applying_deltas();
+        }
+        view.apply_model(model(after, keyed)).unwrap();
+        let mut out = frame(&ctx, &mut view, 2.1);
+        let labels = out
+            .shapes
+            .iter()
+            .filter_map(|s| {
+                if let egui::Shape::Text(t) = &s.shape {
+                    Some(t.galley.job.text.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        for label in &expected {
+            assert_eq!(
+                labels.iter().filter(|s| *s == label).count(),
+                1,
+                "{labels:?}"
+            );
+        }
+        if keyed {
+            assert!(!labels.contains(&"old"));
+        }
         out.textures_delta.clear();
     }
 }
 
 #[test]
 fn a_settled_entering_child_fades_with_its_exiting_column() {
-    let nodes=json!({"root":{"widget":"column","children":["group"]},"group":{"widget":"column","exit":"fade","hidden":"= $model.hidden","children":["child"]},"child":{"widget":"text","text":"retained child","enter":"up"}});
-    let source=format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
-    let ctx=egui::Context::default();
-    let mut view=SceneView::with_model(&source,json!({"hidden":false})).unwrap();
-    for t in [0.,1.,2.] {frame(&ctx,&mut view,t).drop_without_applying_deltas();}
+    let nodes = json!({"root":{"widget":"column","children":["group"]},"group":{"widget":"column","exit":"fade","hidden":"= $model.hidden","children":["child"]},"child":{"widget":"text","text":"retained child","enter":"up"}});
+    let source = format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+    let ctx = egui::Context::default();
+    let mut view = SceneView::with_model(&source, json!({"hidden":false})).unwrap();
+    for t in [0., 1., 2.] {
+        frame(&ctx, &mut view, t).drop_without_applying_deltas();
+    }
     view.apply_model(json!({"hidden":true})).unwrap();
-    frame(&ctx,&mut view,2.1).drop_without_applying_deltas();
-    let mut out=frame(&ctx,&mut view,2.15);
-    assert!(contains_text(&out.shapes,"retained child"));
+    frame(&ctx, &mut view, 2.1).drop_without_applying_deltas();
+    let mut out = frame(&ctx, &mut view, 2.15);
+    assert!(contains_text(&out.shapes, "retained child"));
     out.textures_delta.clear();
-    let mut out=frame(&ctx,&mut view,4.);
-    assert!(!contains_text(&out.shapes,"retained child"));
+    let mut out = frame(&ctx, &mut view, 4.);
+    assert!(!contains_text(&out.shapes, "retained child"));
     out.textures_delta.clear();
 }
 #[test]

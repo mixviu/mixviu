@@ -809,26 +809,38 @@ mod tests {
     use serde_json::json;
     #[test]
     fn a_child_without_retained_exit_shapes_does_not_claim_parent_paint() {
-        let ctx=Context::default();
-        let mut state=SceneMotion::default();
-        let rect=Rect::from_min_size(egui::pos2(20.,20.),egui::vec2(20.,20.));
-        for t in [0.,1.,2.] {
-            ctx.run_ui(raw(t),|ui| {
+        let ctx = Context::default();
+        let mut state = SceneMotion::default();
+        let rect = Rect::from_min_size(egui::pos2(20., 20.), egui::vec2(20., 20.));
+        for t in [0., 1., 2.] {
+            ctx.run_ui(raw(t), |ui| {
                 state.begin(ui);
-                let parent=state.capture(ui,"parent",None,None,Some(&json!("fade")),true);
+                let parent = state.capture(ui, "parent", None, None, Some(&json!("fade")), true);
                 // Independent child track: no inherited or declared exit.
-                let child=state.capture(ui,"child",None,Some(&json!("fade")),None,true);
-                ui.painter().rect_filled(rect,0.,egui::Color32::RED);
-                state.painted(ui,child,rect);
-                state.painted(ui,parent,rect);
+                let child = state.capture(ui, "child", None, Some(&json!("fade")), None, true);
+                ui.painter().rect_filled(rect, 0., egui::Color32::RED);
+                state.painted(ui, child, rect);
+                state.painted(ui, parent, rect);
                 state.end(ui);
-            }).drop_without_applying_deltas();
+            })
+            .drop_without_applying_deltas();
         }
         assert!(!state.nodes["parent"].shapes.is_empty());
-        ctx.run_ui(raw(3.),|ui|{state.begin(ui);state.end(ui);}).drop_without_applying_deltas();
-        let mut out=ctx.run_ui(raw(3.05),|ui|{state.begin(ui);state.end(ui);});
-        let alpha=json!("fade");
-        let expected=serde_json::from_value::<Entrance>(alpha).unwrap().playback(3.,0,true).sample(3.05).get(Property::Opacity);
+        ctx.run_ui(raw(3.), |ui| {
+            state.begin(ui);
+            state.end(ui);
+        })
+        .drop_without_applying_deltas();
+        let mut out = ctx.run_ui(raw(3.05), |ui| {
+            state.begin(ui);
+            state.end(ui);
+        });
+        let alpha = json!("fade");
+        let expected = serde_json::from_value::<Entrance>(alpha)
+            .unwrap()
+            .playback(3., 0, true)
+            .sample(3.05)
+            .get(Property::Opacity);
         assert!(out.shapes.iter().any(|s|matches!(&s.shape,egui::Shape::Rect(r) if (f64::from(r.fill.a())/255.-expected).abs()<0.005)));
         out.textures_delta.clear();
     }
