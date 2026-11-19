@@ -52,6 +52,16 @@ pub struct Capture {
     offset: [f64; 2],
 }
 impl SceneMotion {
+    /// A laid-out node outside its paint viewport is still present. Do not
+    /// turn scrolling into an exit, or retain a stale visible image for it.
+    pub fn keep_unpainted(&mut self,key:&str) {
+        if let Some(n)=self.nodes.get_mut(key) {n.seen=true;n.shapes.clear();n.textures.clear();}
+    }
+    pub fn keep_unseen(&mut self,present:impl Fn(&str)->bool) {
+        for (key,n) in &mut self.nodes {
+            if !n.seen && present(key) {n.seen=true;n.shapes.clear();n.textures.clear();}
+        }
+    }
     pub fn begin(&mut self, ui: &Ui) {
         self.now = ui.input(|i| i.time);
         self.reduced = ui.style().animation_time == 0.0;
@@ -314,6 +324,7 @@ impl SceneMotion {
             let Some(exit) = &n.exit else {
                 return false;
             };
+            if n.shapes.is_empty() {return false;}
             let p = n
                 .leaving
                 .get_or_insert_with(|| exit.playback(now, n.exit_index, true));
@@ -622,6 +633,13 @@ pub fn install(ctx: &Context) {
                 if !has_paint {
                     continue;
                 }
+            // Replace the implementation's built-in fade on subsequent
+            // paints. The first library sample is transparent; later samples
+            // must not be multiplied by a second, unrelated timing curve.
+            if let Some(mut area)=egui::containers::area::AreaState::load(&ctx,layer.id) {
+                area.last_became_visible_at=Some(ui.input(|i|i.time)-f64::from(ctx.global_style().animation_time.max(1.0)));
+                ctx.memory_mut(|m|m.areas_mut().set_state(layer,area));
+            }
                 let surface = ui.new_child(egui::UiBuilder::new().layer_id(layer));
                 let disabled = ctx
                     .data(|d| {

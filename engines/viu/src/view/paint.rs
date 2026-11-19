@@ -221,6 +221,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         };
         let visible = rect.intersect(clip);
         if !visible.is_positive() && !(rect.width() == 0.0 || rect.height() == 0.0) {
+            motion.keep_unpainted(&item.key);
             continue;
         }
         let mut base = ui.new_child(

@@ -19,7 +19,8 @@ fn scaled_input_and_per_node_reduced_motion_use_the_drawn_rectangle() {
         frame(&reference_ctx,&mut reference,0.03).drop_without_applying_deltas();
         let scale=if enabled {sample.get(motion::Property::Scale) as f32} else {1.};
         assert!((painted.width()-reference.geometry["button"].width()*scale).abs()<0.1);
-        for (target,expected) in [(painted.center(),true),(egui::pos2(painted.left()-2.,painted.center().y),false)] {
+        // Preserve the toolkit's existing hit slop; test beyond that margin.
+        for (target,expected) in [(painted.center(),true),(egui::pos2(painted.left()-8.,painted.center().y),false)] {
             let mut commands=Vec::new();
             for pressed in [true,false] {
                 ctx.run_ui(egui::RawInput{time:Some(0.03),screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1000.,4000.))),events:vec![egui::Event::PointerMoved(target),egui::Event::PointerButton{pos:target,button:egui::PointerButton::Primary,pressed,modifiers:Default::default()}],..Default::default()},|ui|commands.extend(view.show(ui))).drop_without_applying_deltas();
