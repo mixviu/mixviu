@@ -206,7 +206,7 @@ impl Widget for Switch<'_> {
         if ui.is_rect_visible(response.rect) {
             let chrome = Chrome::of(ui.ctx());
             let p = &chrome.palette;
-            let t = ui.ctx().animate_bool_responsive(response.id, *self.on);
+            let t = crate::scene_motion::scalar(ui.ctx(), response.id.with("slide"), if *self.on {1.0} else {0.0}, 160.0, true);
             let painter = ui.painter();
             let centre = pos2(
                 knob_x_with_inset(

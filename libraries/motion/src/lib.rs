@@ -26,6 +26,7 @@ mod spring;
 mod spring_curve;
 mod timeline;
 mod tracks;
+pub mod scene;
 pub use presets::{PRESETS_JSON, load_presets, presets};
 pub use spring_curve::SpringCurve;
 pub use tracks::*;

@@ -31,6 +31,8 @@ pub struct Event {
 }
 
 pub struct SceneView {
+    motion: toolkit::scene_motion::SceneMotion,
+    motion_parent: Option<String>,
     collect_widget_rects: bool,
     widget_rects: Vec<crate::widget_rects::WidgetRect>,
     frame: Option<Box<SceneView>>,
@@ -121,6 +123,8 @@ impl SceneView {
         let lists = validate_templates(&tree).map_err(|e| e.to_string())?;
         validate_controls(&tree)?;
         Ok(Self {
+            motion: toolkit::scene_motion::SceneMotion::default(),
+            motion_parent: None,
             frame: None,
             regions: BTreeMap::new(),
             tree,
@@ -360,6 +364,7 @@ impl SceneView {
         self.show_content(ui)
     }
     fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
+        self.motion.begin(ui);
         if self.collect_widget_rects {
             self.widget_rects.clear();
             ui.ctx()
@@ -372,6 +377,7 @@ impl SceneView {
         let tree = self.tree.clone();
         let nodes = tree.nodes.into_iter().collect();
         self.node(ui, "root", &nodes, None, 0, &mut events);
+        self.motion.end(ui);
         for id in &self.overlays {
             let node = &nodes[id];
             if let Ok(widget) = Widget::decode(&node.ports["definition"]) {
@@ -527,6 +533,26 @@ impl SceneView {
     }
 
     fn node(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        nodes: &BTreeMap<String, Node>,
+        route: Option<(&str, &Node, &Value)>,
+        depth: usize,
+        events: &mut Vec<Event>,
+    ) {
+        let Some(node) = nodes.get(id) else { return; };
+        if node.ports.get("hidden") == Some(&Value::Bool(true)) { return; }
+        let key = route.map_or_else(||id.to_owned(),|(_,_,item)|format!("{}#{id}",item["id"].as_str().unwrap_or("")));
+        let capture = self.motion.capture(ui,&key,self.motion_parent.as_deref(),node.ports.get("enter"),node.ports.get("exit"),node.ports.get("motion") != Some(&Value::Bool(false)));
+        let parent = self.motion_parent.clone();
+        if capture.is_some() { self.motion_parent = Some(key); }
+        self.node_contents(ui,id,nodes,route,depth,events);
+        self.motion_parent = parent;
+        self.motion.painted(ui,capture,self.geometry.get(id).copied().unwrap_or(ui.min_rect()));
+    }
+
+    fn node_contents(
         &mut self,
         ui: &mut egui::Ui,
         id: &str,

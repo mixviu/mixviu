@@ -73,6 +73,7 @@ pub mod layer;
 pub mod macros;
 pub mod markdown;
 pub mod menu;
+pub mod scene_motion;
 pub mod panel;
 pub mod saved;
 pub mod search;

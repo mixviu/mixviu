@@ -146,6 +146,8 @@ pub(super) fn elide_end(ui: &Ui, text: &str, font: &FontId, width: f32) -> Strin
 
 /// Paint the whole scene and collect its interactions.
 pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessage>) {
+    let mut motion = std::mem::take(&mut scene.motion);
+    motion.begin(ui);
     let full = ui.max_rect();
     let palette = scene.palette();
     let page = colour(palette.base.surface);
@@ -217,7 +219,8 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
             }
             continue;
         }
-        match node.family.as_str() {
+        let capture = motion.capture(ui,&item.key,None,node.ports.get("enter"),node.ports.get("exit"),node.ports.get("motion") != Some(&serde_json::Value::Bool(false)));
+        (|| { match node.family.as_str() {
             "column" | "row" => {
                 let normal = scene_colour(&scene.theme(), port_text(&node, "background"));
                 let hover = scene_colour(&scene.theme(), port_text(&node, "hover")).or(normal);
@@ -300,7 +303,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                             colour,
                         );
                     }
-                    continue;
+                    return;
                 }
                 if flag(&node, "elide") {
                     text = elide_end(ui, &text, &font, rect.width());
@@ -450,8 +453,11 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
             }
             "image" => drawn.extend(paint_image(scene, ui, &painter, item, &node, rect, ink)),
             _ => {}
-        }
+        } })();
+        motion.painted(ui,capture,rect);
     }
+    motion.end(ui);
+    scene.motion = motion;
     scene.textures.retain(|key, _| drawn.contains(key));
     tip_pass(scene, ui, tip_candidate, emit);
     if framed {

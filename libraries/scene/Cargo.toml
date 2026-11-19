@@ -18,6 +18,7 @@ contract = "none"
 mod_module_files = "deny"
 
 [dependencies]
+motion = { path = "../motion" }
 # The binding expression language: compiled once per binding, evaluated over JSON.
 expr = { path = "../expr" }
 # The node fence is strict data, loaded and never executed.

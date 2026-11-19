@@ -331,6 +331,14 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
     // and canonical resolved documents. A window is edge metadata, not a
     // flex child.
     if f != "window" {
+        ports.extend([
+            p("enter", "motion", false, None),
+            p("exit", "motion", false, None),
+            p("transition", "transitions", false, None),
+            p("motion", "bool", false, None),
+            pn("opacity", false, Some(0.0)),
+            p("offset", "offset", false, None),
+        ]);
         // Optional Viu host geometry slots. No defaults: existing resolved
         // scenes retain their canonical form and ordinary dock placement.
         ports.push(p("window_slot", "string", false, None));
@@ -429,6 +437,17 @@ pub(crate) fn check_port_value(
     out: &mut Vec<Diagnostic>,
 ) {
     let k = p.name;
+    let motion_error = match k {
+        "enter" | "exit" => serde_json::from_value::<motion::scene::Entrance>(v.clone())
+            .map_err(|e| e.to_string()).and_then(|e| e.validate().map_err(str::to_owned)),
+        "transition" => motion::scene::transitions(v).map(|_| ()),
+        "opacity" if v.as_f64().is_some_and(|n| n > 1.0) => Err("opacity must be in 0..1".into()),
+        "offset" if !v.as_array().is_some_and(|a| a.len() == 2 && a.iter().all(|n| n.as_f64().is_some_and(|n| n.is_finite() && n.abs() <= 1e6))) => Err("offset must be two finite lengths within +/-1000000".into()),
+        _ => Ok(()),
+    };
+    if let Err(message) = motion_error {
+        out.push(Diagnostic::error("motion-value", line, format!("{k} on {id}: {message}")));
+    }
     if ["ratio", "minimum", "maximum"].contains(&k) && v.as_f64().is_some_and(|n| n > 1.0) {
         out.push(Diagnostic::error(
             "port-max",
