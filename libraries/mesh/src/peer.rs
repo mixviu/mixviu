@@ -2134,29 +2134,52 @@ mod tests {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let beta = peer("beta", listener.local_addr().unwrap());
             let (tx, _rx) = mpsc::unbounded_channel();
-            let transport = MeshPeers::new(MeshConfig {
-                node_name: "alpha".into(), peers: vec![beta.clone()], d2_seed: Some([9; 32]),
-            }, tx);
-            transport.reconcile_identity(
-                HashMap::from([("beta".into(), beta.noded_addr())]),
-                AuthorityRevision { epoch: 7, recovery_generation: 0 },
-                mesh_trust::identity::KeyAuthority::new(&Default::default(), 7, 0),
-                "bus".into(),
-            ).await;
-            let challenge = BusMessage::new().with_header("command", "noded.admit.challenge")
-                .with_header("id", "relayed-challenge").with_body(&serde_json::json!({
-                    "mesh_fqdn": mesh_name, "inventory_epoch": epoch,
-                    "verifying_broker_node": verifier, "session_id": b64.encode([1;16]),
-                    "server_nonce": b64.encode([2;32]),
-                }).to_string());
+            let transport = MeshPeers::new(
+                MeshConfig {
+                    node_name: "alpha".into(),
+                    peers: vec![beta.clone()],
+                    d2_seed: Some([9; 32]),
+                },
+                tx,
+            );
+            transport
+                .reconcile_identity(
+                    HashMap::from([("beta".into(), beta.noded_addr())]),
+                    AuthorityRevision {
+                        epoch: 7,
+                        recovery_generation: 0,
+                    },
+                    mesh_trust::identity::KeyAuthority::new(&Default::default(), 7, 0),
+                    "bus".into(),
+                )
+                .await;
+            let challenge = BusMessage::new()
+                .with_header("command", "noded.admit.challenge")
+                .with_header("id", "relayed-challenge")
+                .with_body(
+                    &serde_json::json!({
+                        "mesh_fqdn": mesh_name, "inventory_epoch": epoch,
+                        "verifying_broker_node": verifier, "session_id": b64.encode([1;16]),
+                        "server_nonce": b64.encode([2;32]),
+                    })
+                    .to_string(),
+                );
             let server = tokio::spawn(async move {
                 let (stream, _) = listener.accept().await.unwrap();
                 let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
-                socket.send(tungstenite::Message::Text(challenge.to_wire().into())).await.unwrap();
+                socket
+                    .send(tungstenite::Message::Text(challenge.to_wire().into()))
+                    .await
+                    .unwrap();
                 let first = next_bus_frame(&mut socket).await;
-                assert_eq!(first.command_name(), Some(if answered {
-                    "noded.admit.response"
-                } else { "noded.identity.challenge" }));
+                assert_eq!(
+                    first.command_name(),
+                    Some(if answered {
+                        "noded.admit.response"
+                    } else {
+                        "noded.identity.challenge"
+                    })
+                );
                 if answered {
                     assert_eq!(first.get("id"), Some("relayed-challenge"));
                 }
