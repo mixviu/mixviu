@@ -1,7 +1,7 @@
 //! Bounded streaming VFL decoder. A corrupt record terminates the delta chain.
-use crate::{frame_bytes, DELTA, KEY, RECT_DELTA, REPEAT};
+use crate::{frame_bytes, KEY, RECT_DELTA, REPEAT};
 use serde_json::{json, Value};
-use std::{fs::{File, OpenOptions}, io::{BufRead, BufReader, Read, Seek, SeekFrom}, os::unix::fs::OpenOptionsExt, path::{Path, PathBuf}};
+use std::{fs::{File, OpenOptions}, io::{BufRead, BufReader, Read, Seek}, os::unix::fs::OpenOptionsExt, path::{Path, PathBuf}};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind { Io, Metadata, Structure, Crc, Compression, Limit }
@@ -65,7 +65,7 @@ pub struct Reader {
     pub complete: bool, pub completion_file: Option<&'static str>, pub origin: Option<Value>, receipt: Option<Value>,
     raw: usize, pixels: Vec<u8>, payload: Vec<u8>, scratch: Vec<u8>,
     chunk: u64, chunks: u64, file: Option<BufReader<File>>, offset: u64, crc: crc32fast::Hasher,
-    next: u64, keyed: bool, stopped: bool, frames: Option<BufReader<File>>,
+    next: u64, keyed: bool, stopped: bool, last_kind: u8, frames: Option<BufReader<File>>,
 }
 impl Reader {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
@@ -108,7 +108,7 @@ impl Reader {
         if chunks != count || chunks == 0 { return Err(err(&path,None,0,ErrorKind::Structure,"missing or non-contiguous chunks")); }
         let frames = match open(&path.join("frames.jsonl")) { Ok(f) => Some(BufReader::new(f)), Err(e) if complete => return Err(e), Err(_) => None };
         if complete { open(&path.join("markers.jsonl"))?; }
-        Ok(Self { path,width,height,fps,version,complete,completion_file,origin,receipt,raw,pixels:vec![0;raw],payload:Vec::new(),scratch:Vec::new(),chunk:0,chunks,file:None,offset:0,crc:crc32fast::Hasher::new(),next:0,keyed:false,stopped:false,frames })
+        Ok(Self { path,width,height,fps,version,complete,completion_file,origin,receipt,raw,pixels:vec![0;raw],payload:Vec::new(),scratch:Vec::new(),chunk:0,chunks,file:None,offset:0,crc:crc32fast::Hasher::new(),next:0,keyed:false,stopped:false,last_kind:KEY,frames })
     }
     fn chunk_path(&self) -> PathBuf { self.path.join(format!("chunk-{:06}.bin",self.chunk)) }
     fn error(&self, kind: ErrorKind, message: impl ToString) -> Error { err(&self.chunk_path(),Some(self.chunk),self.offset,kind,message) }
@@ -133,7 +133,7 @@ impl Reader {
         }
         Ok(())
     }
-    fn advance(&mut self) -> Result<bool,Error> {
+    fn advance(&mut self, decode: bool) -> Result<bool,Error> {
         loop {
             if self.chunk == self.chunks { self.finish()?; return Ok(false); }
             if self.file.is_none() { self.file = Some(BufReader::new(open(&self.chunk_path())?)); }
@@ -161,11 +161,14 @@ impl Reader {
                     if w == 0 || ht == 0 || x.checked_add(w).is_none_or(|n|n>self.width as usize) || y.checked_add(ht).is_none_or(|n|n>self.height as usize) { return Err(self.error(ErrorKind::Limit,"rectangle exceeds canvas")); }
                     (x,y,w,ht,16)
                 } else { (0,0,self.width as usize,self.height as usize,0) };
+                if decode {
                 self.scratch.resize(w*ht*4,0);
                 let decoded = lz4_flex::block::decompress_into(&self.payload[start..],&mut self.scratch).map_err(|e|self.error(ErrorKind::Compression,e))?;
                 if decoded != self.scratch.len() { return Err(self.error(ErrorKind::Compression,"decoded size mismatch")); }
                 if kind == KEY { self.pixels.copy_from_slice(&self.scratch); self.keyed=true; }
                 else { for row in 0..ht { let dst=((y+row)*self.width as usize+x)*4; for (p,d) in self.pixels[dst..dst+w*4].iter_mut().zip(&self.scratch[row*w*4..(row+1)*w*4]) { *p ^= d; } } }
+                }
+                if kind == KEY {self.keyed=true;}
             }
             if let Some(f) = &mut self.frames {
                 let p = self.path.join("frames.jsonl");
@@ -174,6 +177,7 @@ impl Reader {
                 if self.complete && row?.as_ref() != Some(&expected) { return Err(err(&p,Some(self.chunk),self.offset,ErrorKind::Structure,"frame timeline mismatch")); }
             }
             self.crc.update(&h); self.crc.update(&self.payload); self.offset += 17+len as u64;
+            self.last_kind=kind;
             self.next = self.next.checked_add(1).ok_or_else(||self.error(ErrorKind::Limit,"slot overflow"))?;
             return Ok(true);
         }
@@ -181,7 +185,7 @@ impl Reader {
     /// Returns one borrowed frame; no frame history is retained. After an error the reader stops.
     pub fn read(&mut self) -> Result<Option<Decoded<'_>>,Error> {
         if self.stopped { return Ok(None); }
-        match self.advance() { Ok(true) => {}, Ok(false) => {self.stopped=true;return Ok(None)}, Err(e) => {self.stopped=true;return Err(e)} }
+        match self.advance(true) { Ok(true) => {}, Ok(false) => {self.stopped=true;return Ok(None)}, Err(e) => {self.stopped=true;return Err(e)} }
         let slot = self.next-1;
         let t_us = u64::try_from(u128::from(slot)*1_000_000/u128::from(self.fps)).map_err(|_|self.error(ErrorKind::Limit,"timestamp overflow"))?;
         Ok(Some(Decoded {slot,t_us,pixels:&self.pixels}))
@@ -193,19 +197,22 @@ impl Reader {
         let mut key = (0,0,0);
         loop {
             let chunk = scan.chunk; let offset = scan.offset;
-            if scan.read()?.is_none() { return Err(scan.error(ErrorKind::Structure,"seek beyond take")); }
-            if scan.keyed && scan.payload.len() > 0 {
-                // Read the kind at the validated record's header, without retaining an index.
-                let mut f = open(&scan.chunk_path())?;
-                f.seek(SeekFrom::Start(if chunk == scan.chunk {offset+16} else {16})).map_err(|e|scan.error(ErrorKind::Io,e))?;
-                let mut b=[0]; f.read_exact(&mut b).map_err(|e|scan.error(ErrorKind::Io,e))?;
-                if b[0] == KEY {key=(scan.chunk,if chunk==scan.chunk {offset} else {0},scan.next-1);}
-            }
+            if !scan.advance(false)? { return Err(scan.error(ErrorKind::Structure,"seek beyond take")); }
+            if scan.last_kind == KEY {key=(scan.chunk,if chunk==scan.chunk {offset} else {0},scan.next-1);}
             if scan.next-1 == target {break;}
         }
         *self = Self::open(&self.path)?;
-        // Rebuild chunk checksum and sidecar position up to the key, without retaining frames.
-        while self.next < key.2 { self.read()?; }
+        // Rebuild the current chunk checksum, then position at the selected key.
+        self.chunk=key.0; self.next=key.2; self.offset=key.1;
+        let mut f=BufReader::new(open(&self.chunk_path())?);
+        let mut remaining=key.1; let mut buf=[0u8;8192];
+        while remaining>0 {
+            let n=remaining.min(buf.len() as u64) as usize;
+            f.read_exact(&mut buf[..n]).map_err(|e|self.error(ErrorKind::Io,e))?;
+            self.crc.update(&buf[..n]);remaining-=n as u64;
+        }
+        self.file=Some(f);
+        if let Some(f)=&mut self.frames {for _ in 0..key.2 {line(f,&self.path.join("frames.jsonl"))?;}}
         while self.next <= target { self.read()?; }
         Ok(Decoded {slot:target,t_us:(u128::from(target)*1_000_000/u128::from(self.fps)) as u64,pixels:&self.pixels})
     }

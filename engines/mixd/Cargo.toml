@@ -49,3 +49,6 @@ maild = { path = "../../services/maild", optional = true }
 webd = { path = "../../services/webd", optional = true }
 indexd = { path = "../../services/indexd", optional = true }
 mimalloc.workspace = true
+
+[dev-dependencies]
+media-frame = { path = "../../libraries/media/frame" }
