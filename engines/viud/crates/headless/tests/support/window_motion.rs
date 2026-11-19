@@ -347,72 +347,119 @@ fn record_close_retains_rounded_corners_and_front_stacking() {
 }
 
 fn rounded_close_stack(closing_front: bool) {
-    if !process::record_available() { return; }
-    let label=if closing_front { "close-rounded-front" } else { "close-rounded-rear" };
-    let bus=Bus::start(label);
-    let mut process=process::spawn_preferences(label,&bus.url,json!({
-        "decorations_ssd":true,
-        "window_motion":{"unmap":{"preset":"fade","duration_ms":600}}
-    }));
+    if !process::record_available() {
+        return;
+    }
+    let label = if closing_front {
+        "close-rounded-front"
+    } else {
+        "close-rounded-rear"
+    };
+    let bus = Bus::start(label);
+    let mut process = process::spawn_preferences(
+        label,
+        &bus.url,
+        json!({
+            "decorations_ssd":true,
+            "window_motion":{"unmap":{"preset":"fade","duration_ms":600}}
+        }),
+    );
     bus.ready();
-    let mut rear=Pattern::decorated(connect(&mut process),"rounded-rear");
+    let mut rear = Pattern::decorated(connect(&mut process), "rounded-rear");
     rear.wait_callback(0);
-    let rear_row=bus.window_for("rounded-rear",&mut [&mut rear]);
-    bus.call("comp.window.place",place_args(&rear_row,json!({"x":300,"y":200,"z":if closing_front {20} else {0}})));
+    let rear_row = bus.window_for("rounded-rear", &mut [&mut rear]);
+    bus.call(
+        "comp.window.place",
+        place_args(
+            &rear_row,
+            json!({"x":300,"y":200,"z":if closing_front {20} else {0}}),
+        ),
+    );
     rear.solid_buffer(0xffffffff);
     rear.commit(true);
-    let mut front=Pattern::named(connect(&mut process),"opaque-front",false);
+    let mut front = Pattern::named(connect(&mut process), "opaque-front", false);
     front.wait_callback(0);
-    let front_row=bus.window_for("opaque-front",&mut [&mut rear,&mut front]);
-    bus.call("comp.window.place",place_args(&front_row,json!({"x":400,"y":260,"z":10})));
+    let front_row = bus.window_for("opaque-front", &mut [&mut rear, &mut front]);
+    bus.call(
+        "comp.window.place",
+        place_args(&front_row, json!({"x":400,"y":260,"z":10})),
+    );
     front.solid_buffer(0xff20d040);
     front.commit(true);
-    pump_patterns(&mut [&mut rear,&mut front]);
-    let (width,height,before)=ppm(&bus,&process,"rounded-stack-before",None);
-    assert_eq!((width,height),(1280,720));
-    assert_eq!(pixel(&before,width,350,280),[255,255,255]);
-    assert_eq!(pixel(&before,width,450,300),if closing_front {[255,255,255]} else {[0x20,0xd0,0x40]});
+    pump_patterns(&mut [&mut rear, &mut front]);
+    let (width, height, before) = ppm(&bus, &process, "rounded-stack-before", None);
+    assert_eq!((width, height), (1280, 720));
+    assert_eq!(pixel(&before, width, 350, 280), [255, 255, 255]);
+    assert_eq!(
+        pixel(&before, width, 450, 300),
+        if closing_front {
+            [255, 255, 255]
+        } else {
+            [0x20, 0xd0, 0x40]
+        }
+    );
     // Find a shader-cut pixel INSIDE the rectangular client buffer, at its
     // bottom-left corner. This proves the fixture has rounded client clipping;
     // a rectangular snapshot would paint white here as soon as it faded.
-    let (corner_x,corner_y,corner_red)=(300..308).flat_map(|x| (352..360).map(move |y| (x,y)))
-        .map(|(x,y)| (x,y,pixel(&before,width,x,y)[0]))
-        .min_by_key(|(_,_,red)| *red).unwrap();
-    assert!(corner_red<60,"server-decorated client must have a rounded bottom corner; found {corner_red}");
-    let path=process.root.join("rounded-stack.vfl");
+    let (corner_x, corner_y, corner_red) = (300..308)
+        .flat_map(|x| (352..360).map(move |y| (x, y)))
+        .map(|(x, y)| (x, y, pixel(&before, width, x, y)[0]))
+        .min_by_key(|(_, _, red)| *red)
+        .unwrap();
+    assert!(
+        corner_red < 60,
+        "server-decorated client must have a rounded bottom corner; found {corner_red}"
+    );
+    let path = process.root.join("rounded-stack.vfl");
     let start=bus.call("comp.record.start",json!({"request_id":"rounded-stack","target":{"output":"headless-0"},"path":path,"max_seconds":10,"fps":30,"cursor":false}));
     drop(rear);
     for _ in 0..160 {
         front.pump();
         thread::sleep(Duration::from_millis(5));
     }
-    let stop=bus.call("comp.record.stop",json!({"session":start["session"]}));
-    assert_eq!(stop["dropped"],0,"{stop}");
-    let mut fading_frames=0;
-    let mut final_rear=255;
-    visit_export(&path,|frame,pixels| {
-        let at=|x,y| {
-            let p=&pixels[(y*width+x)*4..(y*width+x)*4+4];
-            [p[2],p[1],p[0]]
+    let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
+    assert_eq!(stop["dropped"], 0, "{stop}");
+    let mut fading_frames = 0;
+    let mut final_rear = 255;
+    visit_export(&path, |frame, pixels| {
+        let at = |x, y| {
+            let p = &pixels[(y * width + x) * 4..(y * width + x) * 4 + 4];
+            [p[2], p[1], p[0]]
         };
-        let rear_red=at(350,280)[0];
+        let rear_red = at(350, 280)[0];
         if closing_front {
-            let alpha=((f64::from(rear_red)-18.0)/(255.0-18.0)).clamp(0.0,1.0);
-            for (actual,under) in at(450,300).into_iter().zip([0x20,0xd0,0x40]) {
-                let expected=255.0*alpha+f64::from(under)*(1.0-alpha);
-                assert!((f64::from(actual)-expected).abs()<=4.0,"frame {frame}: top closing ghost must blend above the surviving green window, got {actual}, expected {expected}");
+            let alpha = ((f64::from(rear_red) - 18.0) / (255.0 - 18.0)).clamp(0.0, 1.0);
+            for (actual, under) in at(450, 300).into_iter().zip([0x20, 0xd0, 0x40]) {
+                let expected = 255.0 * alpha + f64::from(under) * (1.0 - alpha);
+                assert!(
+                    (f64::from(actual) - expected).abs() <= 4.0,
+                    "frame {frame}: top closing ghost must blend above the surviving green window, got {actual}, expected {expected}"
+                );
             }
         } else {
-            assert_eq!(at(450,300),[0x20,0xd0,0x40],"frame {frame}: rear ghost must stay behind the opaque front window");
+            assert_eq!(
+                at(450, 300),
+                [0x20, 0xd0, 0x40],
+                "frame {frame}: rear ghost must stay behind the opaque front window"
+            );
         }
         if (30..245).contains(&rear_red) {
-            fading_frames+=1;
-            assert!(at(corner_x,corner_y)[0]<=corner_red+8,"frame {frame}: retained client texture must keep its rounded shader cut");
+            fading_frames += 1;
+            assert!(
+                at(corner_x, corner_y)[0] <= corner_red + 8,
+                "frame {frame}: retained client texture must keep its rounded shader cut"
+            );
         }
-        final_rear=rear_red;
+        final_rear = rear_red;
     });
-    assert!(fading_frames>=3,"close must show intermediate retained-buffer frames");
-    assert_eq!(final_rear,18,"rear window disappears when its exit completes");
+    assert!(
+        fading_frames >= 3,
+        "close must show intermediate retained-buffer frames"
+    );
+    assert_eq!(
+        final_rear, 18,
+        "rear window disappears when its exit completes"
+    );
 }
 
 #[test]

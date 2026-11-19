@@ -33,10 +33,6 @@ use wayland_client::{
     },
 };
 use wayland_protocols::{
-    xdg::decoration::zv1::client::{
-        zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
-        zxdg_toplevel_decoration_v1::{self, ZxdgToplevelDecorationV1},
-    },
     ext::session_lock::v1::client::{
         ext_session_lock_manager_v1::ExtSessionLockManagerV1,
         ext_session_lock_v1::{self, ExtSessionLockV1},
@@ -44,6 +40,10 @@ use wayland_protocols::{
     wp::presentation_time::client::{
         wp_presentation::{self, WpPresentation},
         wp_presentation_feedback::{self, WpPresentationFeedback},
+    },
+    xdg::decoration::zv1::client::{
+        zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+        zxdg_toplevel_decoration_v1::{self, ZxdgToplevelDecorationV1},
     },
     xdg::shell::client::{
         xdg_popup::{self, XdgPopup},

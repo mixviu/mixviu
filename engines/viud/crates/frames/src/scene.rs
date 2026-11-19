@@ -704,7 +704,13 @@ where
             );
             world::window::draw::ghost::begin_output::<R>(
                 render_key.as_deref().unwrap_or_default(),
-                |pane| computed.regions.iter().any(|region| Some(region.slot) == pane));
+                |pane| {
+                    computed
+                        .regions
+                        .iter()
+                        .any(|region| Some(region.slot) == pane)
+                },
+            );
             let mut cw = Vec::new();
             state.inner.viewports_mut().on_pane_grace.clear();
             state.inner.viewports_mut().on_pane_awake.clear();

@@ -1012,8 +1012,7 @@ impl Engine<'_> {
                 *self.motions = keep;
                 policy_host::motion::start_geometry(
                     self.lp,
-                    id,
-                    generation,
+                    (id, generation),
                     from,
                     to,
                     started,

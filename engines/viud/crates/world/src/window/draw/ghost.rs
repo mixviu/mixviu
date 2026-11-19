@@ -66,7 +66,9 @@ fn merge_slots(previous: &[Uuid], current: &[Uuid], exiting: impl Fn(&Uuid) -> b
     let mut merged = current.to_vec();
     for (index, uuid) in previous.iter().enumerate().rev() {
         if exiting(uuid) && !merged.contains(uuid) {
-            let next = previous[index + 1..].iter().find_map(|next| merged.iter().position(|id| id == next));
+            let next = previous[index + 1..]
+                .iter()
+                .find_map(|next| merged.iter().position(|id| id == next));
             merged.insert(next.unwrap_or(merged.len()), *uuid);
         }
     }
@@ -74,21 +76,31 @@ fn merge_slots(previous: &[Uuid], current: &[Uuid], exiting: impl Fn(&Uuid) -> b
 }
 
 pub fn exiting(uuid: Uuid) -> bool {
-    if !crate::comp::lifecycle_motion::retain_snapshots() { return false; }
+    if !crate::comp::lifecycle_motion::retain_snapshots() {
+        return false;
+    }
     crate::comp::lifecycle_motion::exits(crate::comp::animation::frame_time()).contains_key(&uuid)
 }
 
-pub fn prune<R: Renderer>() where R::TextureId: 'static {
+pub fn prune<R: Renderer>()
+where
+    R::TextureId: 'static,
+{
     let enabled = crate::comp::lifecycle_motion::retain_snapshots();
     if !enabled {
-        CACHES.with(|caches| { caches.borrow_mut().remove(&TypeId::of::<R::TextureId>()); });
+        CACHES.with(|caches| {
+            caches.borrow_mut().remove(&TypeId::of::<R::TextureId>());
+        });
         ORDERS.with(|orders| orders.borrow_mut().clear());
         return;
     }
     let keep = crate::comp::lifecycle_motion::retained_windows();
     CACHES.with(|caches| {
-        if let Some(cache) = caches.borrow_mut().get_mut(&TypeId::of::<R::TextureId>())
-            .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>()) {
+        if let Some(cache) = caches
+            .borrow_mut()
+            .get_mut(&TypeId::of::<R::TextureId>())
+            .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>())
+        {
             cache.retain(|(uuid, _, _), _| enabled && keep.contains(uuid));
         }
     });
@@ -96,11 +108,20 @@ pub fn prune<R: Renderer>() where R::TextureId: 'static {
 
 /// Remove stale pane scopes after each viewport layout calculation.
 pub fn begin_output<R: Renderer>(output: &str, live_pane: impl Fn(Option<u64>) -> bool)
-where R::TextureId: 'static {
-    ORDERS.with(|orders| orders.borrow_mut().retain(|(key, pane), _| key != output || live_pane(*pane)));
+where
+    R::TextureId: 'static,
+{
+    ORDERS.with(|orders| {
+        orders
+            .borrow_mut()
+            .retain(|(key, pane), _| key != output || live_pane(*pane))
+    });
     CACHES.with(|caches| {
-        if let Some(cache) = caches.borrow_mut().get_mut(&TypeId::of::<R::TextureId>())
-            .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>()) {
+        if let Some(cache) = caches
+            .borrow_mut()
+            .get_mut(&TypeId::of::<R::TextureId>())
+            .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>())
+        {
             cache.retain(|(_, key, pane), _| key != output || live_pane(*pane));
         }
     });
@@ -121,10 +142,14 @@ pub fn retain<R>(
     if !crate::comp::lifecycle_motion::retain_snapshots() {
         return;
     }
-    let previous = CACHES.with(|caches| caches.borrow_mut()
-        .get_mut(&TypeId::of::<R::TextureId>())
-        .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>())
-        .and_then(|cache| cache.remove(&(uuid, output.to_owned(), pane))))
+    let previous = CACHES
+        .with(|caches| {
+            caches
+                .borrow_mut()
+                .get_mut(&TypeId::of::<R::TextureId>())
+                .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>())
+                .and_then(|cache| cache.remove(&(uuid, output.to_owned(), pane)))
+        })
         .unwrap_or_default();
     let mut snapshots = Vec::new();
     for (index, element) in elements.iter_mut().enumerate() {
@@ -141,11 +166,31 @@ pub fn retain<R>(
         };
         let buffer = match &mut *raw {
             RawElement::Window(e) => Some(e.inner.inner.buffer().clone()),
-            RawElement::WindowFit(e) => Some(e.inner.element_mut().element_mut().element_mut().inner.buffer().clone()),
-            RawElement::WindowFitClipped(e) => Some(e.inner_mut().inner.element_mut().element_mut().element_mut().inner.buffer().clone()),
+            RawElement::WindowFit(e) => Some(
+                e.inner
+                    .element_mut()
+                    .element_mut()
+                    .element_mut()
+                    .inner
+                    .buffer()
+                    .clone(),
+            ),
+            RawElement::WindowFitClipped(e) => Some(
+                e.inner_mut()
+                    .inner
+                    .element_mut()
+                    .element_mut()
+                    .element_mut()
+                    .inner
+                    .buffer()
+                    .clone(),
+            ),
             _ => None,
         };
-        let surface_solid = matches!(raw, RawElement::Window(_) | RawElement::WindowFit(_) | RawElement::WindowFitClipped(_));
+        let surface_solid = matches!(
+            raw,
+            RawElement::Window(_) | RawElement::WindowFit(_) | RawElement::WindowFitClipped(_)
+        );
         let (texture, color) = match raw {
             RawElement::Chrome(decor::render::ChromeElement::Piece(piece)) => {
                 (Some(piece.texture().clone()), None)
@@ -185,20 +230,36 @@ pub fn retain<R>(
         // Import without that cache so future commits cannot mutate the exit
         // image. A DMA buffer stays immutable until the retained lease releases.
         let texture = if let (Some(_), Some(buffer)) = (&texture, &buffer) {
-            if let Some(texture) = previous.get(index)
-                .filter(|snapshot| snapshot.source_id == source_id && snapshot.source_commit == source_commit && snapshot.context == renderer.context_id())
-                .and_then(|snapshot| snapshot.texture.clone()) {
+            if let Some(texture) = previous
+                .get(index)
+                .filter(|snapshot| {
+                    snapshot.source_id == source_id
+                        && snapshot.source_commit == source_commit
+                        && snapshot.context == renderer.context_id()
+                })
+                .and_then(|snapshot| snapshot.texture.clone())
+            {
                 Some(texture)
-            } else { match renderer.import_buffer(buffer, None, &[]) {
-                Some(Ok(texture)) => Some(texture),
-                _ => continue,
-            } }
-        } else { texture };
+            } else {
+                match renderer.import_buffer(buffer, None, &[]) {
+                    Some(Ok(texture)) => Some(texture),
+                    _ => continue,
+                }
+            }
+        } else {
+            texture
+        };
         let color = color.map(|color| {
             if surface_solid {
-                Color32F::from([color.r() * alpha, color.g() * alpha,
-                    color.b() * alpha, color.a() * alpha])
-            } else { color }
+                Color32F::from([
+                    color.r() * alpha,
+                    color.g() * alpha,
+                    color.b() * alpha,
+                    color.a() * alpha,
+                ])
+            } else {
+                color
+            }
         });
         snapshots.push(Snapshot {
             id: Id::new(),
@@ -249,14 +310,22 @@ where
         }
         cache.retain(|(uuid, _, _), _| keep.contains(uuid));
         let mut elements = Vec::new();
-        if let (Some(snapshots), Some(values)) = (cache.get(&(uuid, output.to_owned(), pane)), exits.get(&uuid)) {
+        if let (Some(snapshots), Some(values)) = (
+            cache.get(&(uuid, output.to_owned(), pane)),
+            exits.get(&uuid),
+        ) {
             for snapshot in snapshots {
                 if snapshot.texture.is_some() {
                     let texture = draw(snapshot, values);
                     elements.push(if let Some((program, clip)) = &snapshot.clip {
                         let (scale, offset) = transform_parts(snapshot, values);
-                        Ghost::ClippedTexture(decor::clip::Clipped::new(texture, program.clone(), *clip).rescaled(scale, offset))
-                    } else { Ghost::Texture(texture) });
+                        Ghost::ClippedTexture(
+                            decor::clip::Clipped::new(texture, program.clone(), *clip)
+                                .rescaled(scale, offset),
+                        )
+                    } else {
+                        Ghost::Texture(texture)
+                    });
                 }
                 if let Some(color) = snapshot.color {
                     let alpha = values.get(Property::Opacity).clamp(0.0, 1.0) as f32;
@@ -275,8 +344,13 @@ where
                     );
                     elements.push(if let Some((program, clip)) = &snapshot.clip {
                         let (scale, offset) = transform_parts(snapshot, values);
-                        Ghost::ClippedSolid(decor::clip::Clipped::new(solid, program.clone(), *clip).rescaled(scale, offset))
-                    } else { Ghost::Solid(solid) });
+                        Ghost::ClippedSolid(
+                            decor::clip::Clipped::new(solid, program.clone(), *clip)
+                                .rescaled(scale, offset),
+                        )
+                    } else {
+                        Ghost::Solid(solid)
+                    });
                 }
             }
         }
@@ -289,21 +363,36 @@ fn transformed<T: Texture>(snapshot: &Snapshot<T>, values: &Values) -> Rectangle
     let geometry = snapshot.geometry;
     let x0 = ((geometry.loc.x as f64 * scale).round() + offset.x as f64) as i32;
     let y0 = ((geometry.loc.y as f64 * scale).round() + offset.y as f64) as i32;
-    let x1 = (((geometry.loc.x as f64 + geometry.size.w as f64) * scale).round() + offset.x as f64) as i32;
-    let y1 = (((geometry.loc.y as f64 + geometry.size.h as f64) * scale).round() + offset.y as f64) as i32;
-    Rectangle::new((x0,y0).into(), (x1.saturating_sub(x0).max(0),y1.saturating_sub(y0).max(0)).into())
+    let x1 = (((geometry.loc.x as f64 + geometry.size.w as f64) * scale).round() + offset.x as f64)
+        as i32;
+    let y1 = (((geometry.loc.y as f64 + geometry.size.h as f64) * scale).round() + offset.y as f64)
+        as i32;
+    Rectangle::new(
+        (x0, y0).into(),
+        (x1.saturating_sub(x0).max(0), y1.saturating_sub(y0).max(0)).into(),
+    )
 }
 
-fn transform_parts<T: Texture>(snapshot: &Snapshot<T>, values: &Values) -> (f64, Point<i32, Physical>) {
+fn transform_parts<T: Texture>(
+    snapshot: &Snapshot<T>,
+    values: &Values,
+) -> (f64, Point<i32, Physical>) {
     let scale = values.get(Property::Scale).clamp(0.0, 64.0);
     let offset = Point::from((
-        ((1.0-scale) * snapshot.anchor.x as f64 + values.get(Property::Tx)*snapshot.logical_scale).round() as i32,
-        ((1.0-scale) * snapshot.anchor.y as f64 + values.get(Property::Ty)*snapshot.logical_scale).round() as i32,
+        ((1.0 - scale) * snapshot.anchor.x as f64
+            + values.get(Property::Tx) * snapshot.logical_scale)
+            .round() as i32,
+        ((1.0 - scale) * snapshot.anchor.y as f64
+            + values.get(Property::Ty) * snapshot.logical_scale)
+            .round() as i32,
     ));
     (scale, offset)
 }
 
-fn draw<T: Texture + Clone>(snapshot: &Snapshot<T>, values: &Values) -> ElementWindowSurface<TextureRenderElement<T>> {
+fn draw<T: Texture + Clone>(
+    snapshot: &Snapshot<T>,
+    values: &Values,
+) -> ElementWindowSurface<TextureRenderElement<T>> {
     let rect = transformed(snapshot, values);
     let texture = snapshot.texture.as_ref().unwrap();
     let inner = TextureRenderElement::from_static_texture(
@@ -343,6 +432,9 @@ mod tests {
         assert_eq!(merge_slots(&merged, &current, |_| false), current);
         // A live drawable raised while its neighbour exits stays raised.
         let raised = [ids[4], ids[1], ids[3]];
-        assert_eq!(merge_slots(&ids, &raised, |id| *id == ids[0]), [ids[4], ids[0], ids[1], ids[3]]);
+        assert_eq!(
+            merge_slots(&ids, &raised, |id| *id == ids[0]),
+            [ids[4], ids[0], ids[1], ids[3]]
+        );
     }
 }

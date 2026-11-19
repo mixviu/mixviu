@@ -71,8 +71,13 @@ pub fn sampled_values(window: &Window, now: Instant) -> Option<Values> {
 
 /// Identity of the current visual run, including its terminal filled sample.
 pub fn started(window: &Window) -> Option<Instant> {
-    window.user_data().get::<Mutex<Option<VisualRun>>>()?
-        .lock().unwrap().as_ref().map(|run| run.started)
+    window
+        .user_data()
+        .get::<Mutex<Option<VisualRun>>>()?
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|run| run.started)
 }
 
 pub fn active(window: &Window, now: Instant) -> bool {
@@ -95,10 +100,14 @@ pub fn apply(values: &Values, mut visual: VisualAttributes) -> VisualAttributes 
         visual.scale.factor = values.get(Property::Scale).clamp(0.0, 64.0);
     }
     if values.contains(Property::Tx) {
-        visual.translate.x = values.get(Property::Tx).clamp(i32::MIN as f64, i32::MAX as f64);
+        visual.translate.x = values
+            .get(Property::Tx)
+            .clamp(i32::MIN as f64, i32::MAX as f64);
     }
     if values.contains(Property::Ty) {
-        visual.translate.y = values.get(Property::Ty).clamp(i32::MIN as f64, i32::MAX as f64);
+        visual.translate.y = values
+            .get(Property::Ty)
+            .clamp(i32::MIN as f64, i32::MAX as f64);
     }
     visual
 }

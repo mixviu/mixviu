@@ -101,14 +101,14 @@ pub fn cancel_geometry(lp: &mut Loop, id: u64, generation: u64) {
 
 pub fn start_geometry(
     lp: &mut Loop,
-    id: u64,
-    generation: u64,
+    target: (u64, u64),
     from: [f64; 4],
     to: [Option<f64>; 4],
     started: std::time::Instant,
     duration: f64,
     easing: motion::Easing,
 ) {
+    let (id, generation) = target;
     if let Ok((_, window)) = control::motion_window(lp, id, generation) {
         world::comp::animation_geometry::cancel(&window);
         if to.iter().any(Option::is_some) {

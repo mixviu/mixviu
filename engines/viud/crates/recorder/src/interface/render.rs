@@ -64,7 +64,9 @@ where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + 'static,
 {
-    use world::window::draw::element::{ClampOpaque, Element, ElementWindowSurface, RawElement, Untransformed};
+    use world::window::draw::element::{
+        ClampOpaque, Element, ElementWindowSurface, RawElement, Untransformed,
+    };
     if !scale.is_finite() || scale <= 0.0 {
         return Err("invalid window capture scale".into());
     }

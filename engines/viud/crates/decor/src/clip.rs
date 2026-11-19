@@ -202,7 +202,10 @@ impl<E> Clipped<E> {
         let x1 = (((r.loc.x as f64 + r.size.w as f64) * scale).round() + offset.x as f64) as i32;
         let y1 = (((r.loc.y as f64 + r.size.h as f64) * scale).round() + offset.y as f64) as i32;
         self.drawn = Clip {
-            rect: Rectangle::new((x0, y0).into(), (x1.saturating_sub(x0).max(0), y1.saturating_sub(y0).max(0)).into()),
+            rect: Rectangle::new(
+                (x0, y0).into(),
+                (x1.saturating_sub(x0).max(0), y1.saturating_sub(y0).max(0)).into(),
+            ),
             radius: (self.clip.radius as f64 * scale) as f32,
         };
     }
