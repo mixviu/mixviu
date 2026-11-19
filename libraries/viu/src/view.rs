@@ -344,6 +344,7 @@ impl SceneView {
             } else {
                 self.geometry.clear();
                 self.widget_rects.clear();
+                self.collect_widget_rects = false;
                 self.shown_revision = None;
             }
             self.geometry.extend(
