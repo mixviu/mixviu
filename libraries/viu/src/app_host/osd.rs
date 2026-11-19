@@ -243,7 +243,7 @@ impl LayerProgram for Program {
             );
             let scale = values.get(motion::Property::Scale) as f32;
             let draw_rect = rect;
-            let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new(("osd", &id)));
+            let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::unique(("osd", &id)));
             let mut child =
                 ui.new_child(egui::UiBuilder::new().max_rect(draw_rect).layer_id(layer));
             child.set_opacity(values.get(motion::Property::Opacity) as f32);

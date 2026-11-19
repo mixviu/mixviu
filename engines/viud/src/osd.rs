@@ -15,17 +15,15 @@ pub fn launch(headless: bool, comp: &str) -> Option<Host> {
     let executable = std::env::current_exe().ok()?;
     let bin = executable.parent()?;
     let prefix = bin.parent()?;
-    let mut bundle = prefix.join("share/mixviu/apps/osd");
-    let mut viu = bin.join("viu");
+    let bundle = prefix.join("share/mixviu/apps/osd");
+    let viu = bin.join("viu");
     #[cfg(feature = "test-support")]
-    if headless {
-        if let Some(path) = std::env::var_os("MIX_TEST_VIUD_OSD_BUNDLE") {
-            bundle = path.into();
-        }
-        if let Some(path) = std::env::var_os("MIX_TEST_VIU_EXE") {
-            viu = path.into();
-        }
-    }
+    let (bundle, viu) = if headless {
+        (
+            std::env::var_os("MIX_TEST_VIUD_OSD_BUNDLE").map(std::path::PathBuf::from).unwrap_or(bundle),
+            std::env::var_os("MIX_TEST_VIU_EXE").map(std::path::PathBuf::from).unwrap_or(viu),
+        )
+    } else { (bundle, viu) };
     let _ = headless;
     if !bundle.join("contract.json").is_file() {
         return None;
@@ -36,6 +34,7 @@ pub fn launch(headless: bool, comp: &str) -> Option<Host> {
         .arg(bundle)
         .arg("--comp")
         .arg(comp)
+        .stdin(std::process::Stdio::null())
         .env("MIX_VIU_COMP_SERVICE", comp);
     let parent = std::process::id() as libc::pid_t;
     // SAFETY: the child hook uses only async-signal-safe syscalls, no allocation.
