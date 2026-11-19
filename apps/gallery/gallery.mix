@@ -136,6 +136,15 @@ on gallery.execute
 end
 publish_gallery($ctx,$state)
 
+on gallery.motion
+  if $event.args.node=="motion-replay" then
+    $state.motion_visible=not ($state.motion_visible ?? true)
+  elif $event.args.node=="motion-toggle" then
+    $state.motion_on=$event.args.value
+  end
+  publish_gallery($ctx,$state)
+end
+
 on gallery.actions
   reply(0,json_encode({actions:concat($actions,map($app_mode.actions($choice.mode),fn($a)=merge($a,{keys:[]})))}))
 end

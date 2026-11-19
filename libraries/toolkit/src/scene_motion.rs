@@ -51,6 +51,7 @@ impl SceneMotion {
             n.seen = false;
         }
     }
+    #[allow(clippy::too_many_arguments)]
     pub fn capture(
         &mut self,
         ui: &Ui,
@@ -60,7 +61,7 @@ impl SceneMotion {
         exit: Option<&Value>,
         enabled: bool,
     ) -> Option<Capture> {
-        if !enabled || self.reduced {
+        if !enabled || self.reduced || ui.style().animation_time == 0.0 {
             self.nodes.remove(key);
             return None;
         }
