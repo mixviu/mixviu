@@ -294,6 +294,53 @@ impl Drop for VideoEncoder {
 mod tests {
     use super::*;
     #[test]
+    fn dropped_final_change_is_written_on_repeat_tick() {
+        let encoder = VideoEncoder::start_result(2, 2, 30).unwrap();
+        let old = Arc::new(vec![0; 12]);
+        assert!(encoder.try_push_rgb_change(old, 2, 2, true));
+        let deadline = Instant::now() + std::time::Duration::from_secs(5);
+        while encoder.bytes_handle().load(Ordering::Acquire) == 0 {
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        // The first frame is written and the queue is empty. Reserve all four
+        // slots to deterministically reject the final scene change.
+        encoder.queued.store(4, Ordering::Relaxed);
+        let last = Arc::new(vec![255; 12]);
+        assert!(!encoder.try_push_rgb_change(last.clone(), 2, 2, true));
+        encoder.queued.store(0, Ordering::Relaxed);
+        // Recording::frame(None) retries its retained Arc with changed=false.
+        assert!(encoder.try_push_rgb_change(last, 2, 2, false));
+        let path = encoder.finish_result().unwrap();
+        let data = std::fs::read(path.join("chunk-000000.bin")).unwrap();
+        let mut at = 0;
+        let mut pixels = vec![0; 16];
+        while at < data.len() {
+            let len = u32::from_le_bytes(data[at..at + 4].try_into().unwrap()) as usize;
+            let payload = &data[at + 17..at + 17 + len];
+            match data[at + 16] {
+                media_vfl::KEY => pixels = lz4_flex::block::decompress(payload, 16).unwrap(),
+                media_vfl::DELTA => {
+                    for (p, d) in pixels
+                        .iter_mut()
+                        .zip(lz4_flex::block::decompress(payload, 16).unwrap())
+                    {
+                        *p ^= d;
+                    }
+                }
+                media_vfl::REPEAT => assert!(payload.is_empty()),
+                kind => panic!("unexpected record kind {kind}"),
+            }
+            at += 17 + len;
+        }
+        assert_eq!(pixels, [255; 16]);
+        let manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path.join("complete.json")).unwrap()).unwrap();
+        assert_eq!(manifest["dropped"], 1);
+        assert_eq!(manifest["frames"], 3);
+        std::fs::remove_dir_all(path).unwrap();
+    }
+    #[test]
     fn bounded_queue_reports_dropped_tail_and_never_waits() {
         let mut encoder = VideoEncoder::start_result(2, 2, 30).unwrap();
         // Replace the channel with a receiver held still for deterministic overload.

@@ -331,7 +331,7 @@ fn fixture_pre_drain_frame(state: &mut Loop) {
 #[inline]
 pub fn test_pre_drain_frame(_state: &mut Loop) {
     #[cfg(feature = "test-support")]
-    if std::env::var_os("MIX_TEST_PRE_DRAIN_FRAME").is_some() {
+    if std::env::var_os(paths::env::test::TEST_PRE_DRAIN_FRAME).is_some() {
         fixture_pre_drain_frame(_state);
     }
 }
