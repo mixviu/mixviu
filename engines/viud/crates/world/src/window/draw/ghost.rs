@@ -47,12 +47,16 @@ thread_local! { static ORDERS: RefCell<HashMap<(String, Option<u64>), Vec<Uuid>>
 
 /// Preserve an outgoing drawable's last slot relative to surviving neighbours,
 /// including world UI stacking barriers. The order remains pane-local.
-pub fn order(output: &str, pane: Option<u64>, current: &[Uuid]) -> Vec<Uuid> {
+pub fn order(output: &str, pane: Option<u64>, current: Vec<Uuid>) -> Vec<Uuid> {
+    if !crate::comp::lifecycle_motion::retain_snapshots() {
+        ORDERS.with(|orders| orders.borrow_mut().clear());
+        return current;
+    }
     let exits = crate::comp::lifecycle_motion::exits(crate::comp::animation::frame_time());
     ORDERS.with(|orders| {
         let mut orders = orders.borrow_mut();
         let previous = orders.entry((output.to_owned(), pane)).or_default();
-        let merged = merge_slots(previous, current, |uuid| exits.contains_key(uuid));
+        let merged = merge_slots(previous, &current, |uuid| exits.contains_key(uuid));
         *previous = merged.clone();
         merged
     })
@@ -70,16 +74,34 @@ fn merge_slots(previous: &[Uuid], current: &[Uuid], exiting: impl Fn(&Uuid) -> b
 }
 
 pub fn exiting(uuid: Uuid) -> bool {
+    if !crate::comp::lifecycle_motion::retain_snapshots() { return false; }
     crate::comp::lifecycle_motion::exits(crate::comp::animation::frame_time()).contains_key(&uuid)
 }
 
 pub fn prune<R: Renderer>() where R::TextureId: 'static {
-    let keep = crate::comp::lifecycle_motion::retained_windows();
     let enabled = crate::comp::lifecycle_motion::retain_snapshots();
+    if !enabled {
+        CACHES.with(|caches| { caches.borrow_mut().remove(&TypeId::of::<R::TextureId>()); });
+        ORDERS.with(|orders| orders.borrow_mut().clear());
+        return;
+    }
+    let keep = crate::comp::lifecycle_motion::retained_windows();
     CACHES.with(|caches| {
         if let Some(cache) = caches.borrow_mut().get_mut(&TypeId::of::<R::TextureId>())
             .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>()) {
             cache.retain(|(uuid, _, _), _| enabled && keep.contains(uuid));
+        }
+    });
+}
+
+/// Remove stale pane scopes after each viewport layout calculation.
+pub fn begin_output<R: Renderer>(output: &str, live_pane: impl Fn(Option<u64>) -> bool)
+where R::TextureId: 'static {
+    ORDERS.with(|orders| orders.borrow_mut().retain(|(key, pane), _| key != output || live_pane(*pane)));
+    CACHES.with(|caches| {
+        if let Some(cache) = caches.borrow_mut().get_mut(&TypeId::of::<R::TextureId>())
+            .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>()) {
+            cache.retain(|(_, key, pane), _| key != output || live_pane(*pane));
         }
     });
 }
@@ -164,7 +186,7 @@ pub fn retain<R>(
         // image. A DMA buffer stays immutable until the retained lease releases.
         let texture = if let (Some(_), Some(buffer)) = (&texture, &buffer) {
             if let Some(texture) = previous.get(index)
-                .filter(|snapshot| snapshot.source_id == source_id && snapshot.source_commit == source_commit)
+                .filter(|snapshot| snapshot.source_id == source_id && snapshot.source_commit == source_commit && snapshot.context == renderer.context_id())
                 .and_then(|snapshot| snapshot.texture.clone()) {
                 Some(texture)
             } else { match renderer.import_buffer(buffer, None, &[]) {
@@ -265,11 +287,11 @@ where
 fn transformed<T: Texture>(snapshot: &Snapshot<T>, values: &Values) -> Rectangle<i32, Physical> {
     let (scale, offset) = transform_parts(snapshot, values);
     let geometry = snapshot.geometry;
-    let x0 = (geometry.loc.x as f64 * scale).round() as i32 + offset.x;
-    let y0 = (geometry.loc.y as f64 * scale).round() as i32 + offset.y;
-    let x1 = ((geometry.loc.x as f64 + geometry.size.w as f64) * scale).round() as i32 + offset.x;
-    let y1 = ((geometry.loc.y as f64 + geometry.size.h as f64) * scale).round() as i32 + offset.y;
-    Rectangle::new((x0,y0).into(), ((x1-x0).max(0),(y1-y0).max(0)).into())
+    let x0 = ((geometry.loc.x as f64 * scale).round() + offset.x as f64) as i32;
+    let y0 = ((geometry.loc.y as f64 * scale).round() + offset.y as f64) as i32;
+    let x1 = (((geometry.loc.x as f64 + geometry.size.w as f64) * scale).round() + offset.x as f64) as i32;
+    let y1 = (((geometry.loc.y as f64 + geometry.size.h as f64) * scale).round() + offset.y as f64) as i32;
+    Rectangle::new((x0,y0).into(), (x1.saturating_sub(x0).max(0),y1.saturating_sub(y0).max(0)).into())
 }
 
 fn transform_parts<T: Texture>(snapshot: &Snapshot<T>, values: &Values) -> (f64, Point<i32, Physical>) {

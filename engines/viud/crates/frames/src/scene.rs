@@ -702,6 +702,9 @@ where
                 state.inner.viewports(),
                 smithay::utils::Rectangle::new(Point::from((0, 0)), size),
             );
+            world::window::draw::ghost::begin_output::<R>(
+                render_key.as_deref().unwrap_or_default(),
+                |pane| computed.regions.iter().any(|region| Some(region.slot) == pane));
             let mut cw = Vec::new();
             state.inner.viewports_mut().on_pane_grace.clear();
             state.inner.viewports_mut().on_pane_awake.clear();

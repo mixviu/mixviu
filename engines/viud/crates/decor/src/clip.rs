@@ -197,12 +197,12 @@ impl<E> Clipped<E> {
 
     pub fn set_rescale(&mut self, scale: f64, offset: Point<i32, Physical>) {
         let r = self.clip.rect;
-        let x0 = (r.loc.x as f64 * scale).round() as i32 + offset.x;
-        let y0 = (r.loc.y as f64 * scale).round() as i32 + offset.y;
-        let x1 = ((r.loc.x + r.size.w) as f64 * scale).round() as i32 + offset.x;
-        let y1 = ((r.loc.y + r.size.h) as f64 * scale).round() as i32 + offset.y;
+        let x0 = ((r.loc.x as f64 * scale).round() + offset.x as f64) as i32;
+        let y0 = ((r.loc.y as f64 * scale).round() + offset.y as f64) as i32;
+        let x1 = (((r.loc.x as f64 + r.size.w as f64) * scale).round() + offset.x as f64) as i32;
+        let y1 = (((r.loc.y as f64 + r.size.h as f64) * scale).round() + offset.y as f64) as i32;
         self.drawn = Clip {
-            rect: Rectangle::new((x0, y0).into(), ((x1 - x0).max(0), (y1 - y0).max(0)).into()),
+            rect: Rectangle::new((x0, y0).into(), (x1.saturating_sub(x0).max(0), y1.saturating_sub(y0).max(0)).into()),
             radius: (self.clip.radius as f64 * scale) as f32,
         };
     }
@@ -360,6 +360,17 @@ mod tests {
         );
         assert_eq!(element.drawn.radius, 1.5);
         assert_eq!(element.clip, clip);
+    }
+
+    #[test]
+    fn extreme_composed_clip_coordinates_saturate() {
+        let clip = Clip {
+            rect: Rectangle::new((i32::MAX - 4, i32::MIN + 4).into(), (100, 100).into()),
+            radius: 12.0,
+        };
+        let element = Clipped::new((), None, clip).rescaled(64.0, (i32::MAX, i32::MIN).into());
+        assert_eq!(element.drawn.rect.loc, (i32::MAX, i32::MIN).into());
+        assert!(element.drawn.rect.size.w >= 0 && element.drawn.rect.size.h >= 0);
     }
 
     /// A fully opaque element at a fixed place.

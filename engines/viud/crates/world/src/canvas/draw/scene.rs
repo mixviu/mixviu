@@ -69,7 +69,7 @@ where
     let order = crate::window::draw::ghost::order(
         state.inner.render_output.as_deref().unwrap_or_default(),
         state.inner.render_target.map(|rt| rt.slot),
-        &state.inner.drawable_order(),
+        state.inner.drawable_order(),
     );
     let by_uuid: HashMap<Uuid, Window> = state
         .inner
