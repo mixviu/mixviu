@@ -145,7 +145,8 @@ pub fn service(lp: &mut Loop) -> bool {
     STATE.with(|state| {
         let mut state = state.borrow_mut();
         let workspace = lp.inner.comp.current_workspace();
-        if state.workspace != Some(workspace) {
+        let workspace_changed = state.workspace != Some(workspace);
+        if workspace_changed {
             state.exits.clear();
             crate::window::draw::ghost::clear();
             state.workspace = Some(workspace);
@@ -184,7 +185,7 @@ pub fn service(lp: &mut Loop) -> bool {
                 settings.map.as_ref()
             } else if fact.shown && old.is_some_and(|old| old.minimised) {
                 settings.restore.as_ref()
-            } else if fact.shown && old.is_some_and(|old| !old.shown) {
+            } else if fact.shown && old.is_some_and(|old| !old.shown && (workspace_changed || old.workspace != fact.workspace)) {
                 settings.workspace.as_ref()
             } else {
                 None
@@ -211,8 +212,6 @@ pub fn service(lp: &mut Loop) -> bool {
                 settings.unmap.as_ref()
             } else if old.shown && new.is_some_and(|new| new.minimised) {
                 settings.minimise.as_ref()
-            } else if old.shown && new.is_some_and(|new| !new.shown) {
-                settings.workspace.as_ref()
             } else {
                 None
             };
@@ -267,7 +266,6 @@ pub fn retain_snapshots() -> bool {
         let state = state.borrow();
         state.settings.unmap.is_some()
             || state.settings.minimise.is_some()
-            || state.settings.workspace.is_some()
     })
 }
 

@@ -13,6 +13,18 @@ thread_local! {
     static ARMED: RefCell<HashSet<Id>> = RefCell::new(HashSet::new());
     static CAPTURED: RefCell<HashMap<Id, Buffer>> = RefCell::new(HashMap::new());
     static ACTIVE: RefCell<HashSet<Id>> = RefCell::new(HashSet::new());
+    static LAST_METRICS: RefCell<Option<(usize, u64)>> = const { RefCell::new(None) };
+}
+
+fn report() {
+    let metrics = CAPTURED.with(|captured| {
+        let captured = captured.borrow();
+        let bytes = captured.values().filter_map(|buffer| smithay::backend::renderer::buffer_dimensions(buffer))
+            .map(|size| size.w.max(0) as u64 * size.h.max(0) as u64 * 4).sum();
+        (captured.len(), bytes)
+    });
+    let changed = LAST_METRICS.with(|last| last.borrow_mut().replace(metrics) != Some(metrics));
+    if changed { info!("window_exit_buffers buffers={} pixel_bytes={}", metrics.0, metrics.1); }
 }
 
 pub fn register<D: 'static>(surface: &WlSurface) {
@@ -45,6 +57,7 @@ fn capture_surface(surface: &WlSurface) {
     if CAPTURED.with(|captured| captured.borrow().contains_key(&id)) { return; }
     if let Some(buffer) = with_renderer_surface_state(surface, |state| state.buffer().cloned()).flatten() {
         CAPTURED.with(|captured| { captured.borrow_mut().insert(id, buffer); });
+        report();
     }
 }
 
@@ -62,10 +75,12 @@ pub fn prune(armed: &HashSet<Id>, exiting: &HashSet<Id>) {
     ARMED.with(|sources| sources.borrow_mut().retain(|id| armed.contains(id)));
     CAPTURED.with(|captured| captured.borrow_mut().retain(|id, _| exiting.contains(id)));
     ACTIVE.with(|active| active.borrow_mut().retain(|id| exiting.contains(id)));
+    report();
 }
 
 pub fn clear() {
     ARMED.with(|armed| armed.borrow_mut().clear());
     CAPTURED.with(|captured| captured.borrow_mut().clear());
     ACTIVE.with(|active| active.borrow_mut().clear());
+    report();
 }

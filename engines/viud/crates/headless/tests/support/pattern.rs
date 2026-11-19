@@ -63,6 +63,7 @@ pub struct State {
     pointers: Vec<WlPointer>,
     pub size: (i32, i32),
     pub callbacks: u64,
+    pub buffer_releases: u64,
     pub pointer_buttons: u64,
     pub pointer_positions: Vec<(f64, f64)>,
     pub keys: u64,
@@ -94,6 +95,23 @@ pub struct Pattern {
 }
 
 impl Pattern {
+    pub fn unmap(&mut self) {
+        self.surface.attach(None, 0, 0);
+        self.surface.commit();
+        self.conn.flush().unwrap();
+    }
+
+    /// Send a new buffer and destroy its role in the same Wayland read batch.
+    pub fn commit_then_destroy(&mut self) {
+        self.surface.attach(Some(&self.buffer), 0, 0);
+        self.surface.damage_buffer(0, 0, self.state.size.0, self.state.size.1);
+        self.surface.commit();
+        if let Some(decoration) = self._decoration.take() { decoration.destroy(); }
+        self._top.destroy();
+        self.xdg.destroy();
+        self.surface.destroy();
+        self.conn.flush().unwrap();
+    }
     pub fn current_buffer(&self) -> WlBuffer {
         self.buffer.clone()
     }
@@ -539,7 +557,11 @@ delegate_noop!(State: ignore wayland_protocols::wp::idle_inhibit::zv1::client::z
 delegate_noop!(State: ignore WlSurface);
 delegate_noop!(State: ignore WlShm);
 delegate_noop!(State: WlShmPool);
-delegate_noop!(State: ignore WlBuffer);
+impl Dispatch<WlBuffer, ()> for State {
+    fn event(state: &mut Self, _: &WlBuffer, event: wayland_client::protocol::wl_buffer::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+        if matches!(event, wayland_client::protocol::wl_buffer::Event::Release) { state.buffer_releases += 1; }
+    }
+}
 impl Dispatch<WlPointer, WlSeat> for State {
     fn event(
         state: &mut Self,

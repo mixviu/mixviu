@@ -26,7 +26,7 @@ elif $mode == "unit" then
   checked(["cargo","test","--locked","-p","testkit","--test","window_control","--test","interactive"])
 elif $mode == "motion" then
   checked(["cargo","test","--release","--locked","-p","viud","--no-default-features","--features","backend-native,test-support","--test","recorder_binary"])
-  checked(["cargo","test","--release","--locked","-p","headless","--test","capture","window_motion::","--","--nocapture","--test-threads=1"])
+  checked(["cargo","test","--release","--locked","-p","headless","--test","capture","window_motion","--","--nocapture","--test-threads=1"])
   for $case in ["placement_visuals_persist_capture_and_suppress_hidden_input", "moved_window_clip_is_local_to_surface_origin", "review_z_overlap_and_workspace_move_deliver_to_top_window", "review_popup_outside_parent_is_drawn_without_clip_in_both_capture_paths", "review_visual_only_place_is_refused_by_session_lock_dispatch", "review_hidden_remap_does_not_focus_and_show_with_geometry_is_atomic", "review_hidden_popup_keyboard_grab_receives_no_more_keys"]
     checked(["cargo","test","--release","--locked","-p","headless","--test","capture",$case,"--","--ignored","--exact","--nocapture","--test-threads=1"])
   end

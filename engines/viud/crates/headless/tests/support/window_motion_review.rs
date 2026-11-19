@@ -28,10 +28,20 @@ fn solid_window(
 
 #[test]
 fn completed_map_entrance_releases_visual_properties_to_window_place() {
+    entrance_releases_visuals(300);
+}
+
+#[test]
+fn zero_duration_map_entrance_releases_visual_properties_to_window_place() {
+    entrance_releases_visuals(0);
+}
+
+fn entrance_releases_visuals(duration_ms: u64) {
     if !process::record_available() { return; }
-    let bus = Bus::start("motion-review-entrance");
-    let mut process = process::spawn_preferences("motion-review-entrance", &bus.url, json!({
-        "window_motion":{"map":{"preset":"pop","duration_ms":300}}
+    let label=format!("motion-review-entrance-{duration_ms}");
+    let bus = Bus::start(&label);
+    let mut process = process::spawn_preferences(&label, &bus.url, json!({
+        "window_motion":{"map":{"preset":"pop","duration_ms":duration_ms}}
     }));
     bus.ready();
     let (mut client, row) = solid_window(&bus, &mut process, "motion-review-entrance", 0xffffffff, 300, 200);
@@ -51,6 +61,75 @@ fn completed_map_entrance_releases_visual_properties_to_window_place() {
         assert!((f64::from(actual)-expected).abs()<=3.0, "window-place opacity must affect drawn pixels after entrance: {actual} vs {expected}");
     }
     assert_eq!(rgb_at(&placed,width,320,280), [18,20,25], "window-place scale must shrink the completed entrance's client image");
+}
+
+#[test]
+fn geometry_only_replacement_freezes_sampled_visuals_and_releases_their_tracks() {
+    if !process::record_available() { return; }
+    let bus=Bus::start("motion-review-cancel");
+    let mut process=process::spawn(1,None,"motion-review-cancel",Some(&bus.url));
+    bus.ready();
+    let (mut client,row)=solid_window(&bus,&mut process,"motion-review-cancel",0xffffffff,300,200);
+    bus.call("comp.window.place",place_args(&row,json!({"scale":{"factor":1,"anchor":{"x":100,"y":80}}})));
+    thread::scope(|scope| {
+        let first=scope.spawn(|| bus.call("comp.motion.run",json!({"targets":[{"window":{
+            "id":row["id"],"generation":row["generation"],"duration_ms":800,
+            "tracks":[
+                {"property":"scale","keyframes":[
+                    {"offset":0,"value":0.4,"easing":{"kind":"linear"}},
+                    {"offset":1,"value":0.8,"easing":{"kind":"linear"}}
+                ]},
+                {"property":"opacity","keyframes":[
+                    {"offset":0,"value":1,"easing":{"kind":"linear"}},
+                    {"offset":1,"value":0.6,"easing":{"kind":"linear"}}
+                ]}
+            ]
+        }}]})));
+        // Observe an actual intermediate sampled state before replacing it;
+        // the wait starts when the Bus call has installed its tracks.
+        let deadline=Instant::now()+Duration::from_secs(2);
+        loop {
+            let sampled=bus.window_for("motion-review-cancel",&mut [&mut client]);
+            if sampled["scale"]["factor"].as_f64().unwrap()<0.7 { break; }
+            assert!(Instant::now()<deadline,"first visual motion must begin before cancellation");
+            client.pump();
+        }
+        thread::sleep(Duration::from_millis(250));
+        let replacement=bus.call("comp.motion.run",json!({"targets":[{"window":{
+            "id":row["id"],"generation":row["generation"],"to":{"x":300},"duration_ms":0
+        }}]}));
+        assert_eq!(first.join().unwrap()["status"],"superseded");
+        assert_eq!(replacement["status"],"completed");
+    });
+    let frozen=bus.window_for("motion-review-cancel",&mut [&mut client]);
+    let scale=frozen["scale"]["factor"].as_f64().unwrap();
+    let opacity=frozen["opacity"].as_f64().unwrap();
+    assert!((0.4..0.75).contains(&scale),"cancellation freezes its sampled scale rather than settling at 0.8: {frozen}");
+    assert!((0.65..1.0).contains(&opacity),"cancellation freezes its sampled opacity rather than settling at 0.6: {frozen}");
+    let (width,_,pixels)=ppm(&bus,&process,"just-cancelled",None);
+    for (actual,background) in rgb_at(&pixels,width,400,280).into_iter().zip([18.0,20.0,25.0]) {
+        let expected=255.0*opacity+background*(1.0-opacity);
+        assert!((f64::from(actual)-expected).abs()<=3.0,"frozen compositor state must match the sampled pixel opacity");
+    }
+    thread::sleep(Duration::from_millis(600));
+    let (_,_,later)=ppm(&bus,&process,"still-cancelled",None);
+    assert!(pixels==later,"cancelled visual tracks must not keep progressing after geometry replacement");
+    let later_row=bus.window_for("motion-review-cancel",&mut [&mut client]);
+    assert_eq!(later_row["scale"],frozen["scale"]);
+    assert_eq!(later_row["opacity"],frozen["opacity"]);
+    bus.call("comp.window.place",place_args(&row,json!({
+        "opacity":0.25,"scale":{"factor":0.9,"anchor":{"x":100,"y":80}}
+    })));
+    let placed=bus.window_for("motion-review-cancel",&mut [&mut client]);
+    assert_eq!(placed["opacity"],0.25);
+    assert_eq!(placed["scale"]["factor"],0.9);
+    let (width,_,changed)=ppm(&bus,&process,"place-after-cancel",None);
+    for point in [(400,280),(320,280)] {
+        for (actual,background) in rgb_at(&changed,width,point.0,point.1).into_iter().zip([18.0,20.0,25.0]) {
+            let expected=255.0*0.25+background*0.75;
+            assert!((f64::from(actual)-expected).abs()<=3.0,"window-place visuals must take ownership after cancellation at {point:?}");
+        }
+    }
 }
 
 #[test]
