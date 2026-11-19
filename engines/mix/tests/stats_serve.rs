@@ -147,10 +147,7 @@ async fn serve_generations_each_record_their_counters_once() {
     let node_conf = dir.0.join("node.conf.mix");
     std::fs::write(
         &node_conf,
-        format!(
-            "noded: {{ unix_socket: {:?} }}\n",
-            broker.endpoint
-        ),
+        format!("noded: {{ unix_socket: {:?} }}\n", broker.endpoint),
     )
     .unwrap();
     let script = dir.0.join("counter.mix");

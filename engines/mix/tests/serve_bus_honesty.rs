@@ -108,8 +108,8 @@ impl Citizen {
             .env("HONEST_TRACE", dir.0.join("trace"))
             .env("MIX_STATS", "off")
             .env_remove("MIX_SESSION_FD")
-        .env_remove("MIX_NODED_URL")
-        .env_remove("MIX_BUS_SOCKET")
+            .env_remove("MIX_NODED_URL")
+            .env_remove("MIX_BUS_SOCKET")
             .stdin(Stdio::null())
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr));
