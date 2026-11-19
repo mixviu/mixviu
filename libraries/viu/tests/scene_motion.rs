@@ -6,6 +6,32 @@ fn contains_text(shapes:&[egui::epaint::ClippedShape],needle:&str)->bool {
     shapes.iter().any(|s|has(&s.shape,needle))
 }
 #[test]
+fn scaled_input_and_per_node_reduced_motion_use_the_drawn_rectangle() {
+    for enabled in [false,true] {
+        let nodes=json!({"root":{"widget":"column","motion":enabled,"children":["button"]},"button":{"widget":"button","label":"Scaled","enter":"pop","on_click":"test.click"}});
+        let source=format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+        let ctx=egui::Context::default();let mut view=SceneView::new(&source).unwrap();
+        for t in [0.,0.03] {frame(&ctx,&mut view,t).drop_without_applying_deltas();}
+        let painted=view.geometry["button"];
+        let sample=motion::presets().into_iter().find(|p|p.name=="pop").unwrap().sample(0.03);
+        assert!(painted.width()>0.);
+        if enabled {assert!(sample.get(motion::Property::Scale)<1.);}
+        for (target,expected) in [(painted.center(),true),(egui::pos2(painted.left()-2.,painted.center().y),false)] {
+            let mut commands=Vec::new();
+            for pressed in [true,false] {
+                ctx.run_ui(egui::RawInput{time:Some(0.03),screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1000.,4000.))),events:vec![egui::Event::PointerMoved(target),egui::Event::PointerButton{pos:target,button:egui::PointerButton::Primary,pressed,modifiers:Default::default()}],..Default::default()},|ui|commands.extend(view.show(ui))).drop_without_applying_deltas();
+            }
+            assert_eq!(commands.iter().any(|e|e.command=="test.click"),expected,"enabled={enabled}, target={target:?}, rect={painted:?}");
+        }
+    }
+}
+#[test]
+fn settled_application_scene_has_no_repaint_request() {
+    let ctx=egui::Context::default();let mut view=SceneView::new(&source(true)).unwrap();
+    for t in [0.,1.,2.,3.,4.] {frame(&ctx,&mut view,t).drop_without_applying_deltas();}
+    assert!(!ctx.has_requested_repaint());
+}
+#[test]
 fn list_insertions_and_removals_use_fade_and_reduced_motion_snaps() {
     for native in [false,true] {
         for reduced in [false,true] {

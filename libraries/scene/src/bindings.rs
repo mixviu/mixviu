@@ -513,6 +513,9 @@ pub(crate) fn coerce_port(
             | ("bool", JsonValue::Bool(_))
             | ("list", JsonValue::Array(_))
             | ("object", JsonValue::Object(_))
+            | ("motion", JsonValue::String(_) | JsonValue::Object(_))
+            | ("transitions", JsonValue::Array(_) | JsonValue::Object(_))
+            | ("offset", JsonValue::Array(_))
     );
     if !ok {
         return Err("binding-type".into());
