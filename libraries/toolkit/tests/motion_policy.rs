@@ -24,7 +24,10 @@ fn production_defaults_and_explicit_motion_opt_in_still_animate() {
         ui.label("Motion enabled");
     });
     h.run();
-    let overlay = toolkit::theme::Overlay { reduced_motion: true, ..Default::default() };
+    let overlay = toolkit::theme::Overlay {
+        reduced_motion: true,
+        ..Default::default()
+    };
     toolkit::install(
         &ctx,
         &toolkit::Theme::embedded().with_overlay(overlay).unwrap(),
