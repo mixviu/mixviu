@@ -216,7 +216,12 @@ fn record_idle_content_clock_ignores_capture_repaints() {
 fn vfl_first(path: &Path) -> (Vec<u8>, u64) {
     let (bgra, count) = vfl_visit(path, |_| {});
     // The reader exposes BGRA; the older first-image assertions use RGB.
-    (bgra.chunks_exact(4).flat_map(|p| [p[2], p[1], p[0]]).collect(), count)
+    (
+        bgra.chunks_exact(4)
+            .flat_map(|p| [p[2], p[1], p[0]])
+            .collect(),
+        count,
+    )
 }
 
 fn assert_recorded_colours(path: &Path, expected: &[u32]) -> u64 {
@@ -956,7 +961,7 @@ fn record_privacy_window_output_membership_and_marker_order() {
             .pixels
             .chunks_exact(4)
             .any(|p| p == 0xff11eecc_u32.to_le_bytes());
-        if f.slot >= left && f.slot + 1 < returned {
+        if f.slot >= left && f.slot < returned {
             assert!(!present);
         }
         if f.slot >= returned {
@@ -1054,7 +1059,7 @@ fn record_privacy_lock_is_blank_and_stops_callbacks() {
     let mut blank = 0;
     let mut returned = false;
     while let Some(f) = reader.read().unwrap() {
-        if f.slot >= locked && f.slot + 1 < unlocked {
+        if f.slot >= locked && f.slot < unlocked {
             assert!(
                 f.pixels.chunks_exact(4).all(|p| p == [0, 0, 0, 255]),
                 "locked frame leaked content"
