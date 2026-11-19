@@ -8,14 +8,7 @@ $window_topics=["props.changed","window.placement.changed","surface.mapped","sur
 send "viu-local" "motion.presets" body={}
 if $rc!=0 then raise("MOTION_UNAVAILABLE","motion library is unavailable") end
 for $p in $reply $presets[$p.name]=$p end
-fn trace_state($tag)
-  if env("MIX_TEST_CAPTURE_KEEP_FAILED")=="1" then
-    $path=path_join(env("XDG_RUNTIME_DIR"),"osd-trace.jsonl")
-    write_file($path,(if is_file($path) then read_file($path) else "" end)..json_encode({tag:$tag,state:$state}).."\n")
-  end
-end
 fn sync_model()
-  trace_state("model")
   $model=$core.listing($state.osd,monotonic());$model.windows=$state.windows
   $model.text="";$model.title="";$model.text_size=22
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
@@ -28,7 +21,6 @@ fn refresh_windows()
     send $comp "comp.props.watch" body={}
     if $rc!=0 then $state.windows={};return false end
     send $comp "comp.windows.list" body={}
-    trace_state(json_encode({query:$reply,raw:$result,at:monotonic()}))
     if $rc!=0 or type($reply.windows)!="list" then $state.windows={};return false end
     $state.windows={}
     for $w in $reply.windows $state.windows[to_string($w.id)]=$w end
@@ -109,7 +101,6 @@ on viu.timer
 end
 on osd.notice
   $notice=$event.args
-  trace_state(json_encode($notice))
   if $notice.command=="bus.connected" then
     for $topic in $window_topics subscribe($comp.."."..$topic) end
     send $comp "comp.props.watch" body={}
