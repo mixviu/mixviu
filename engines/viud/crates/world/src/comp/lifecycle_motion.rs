@@ -430,7 +430,12 @@ mod tests {
         assert!(remaining.active(later));
         assert_eq!(remaining.started, started);
         assert_eq!(remaining.sample(later), run.sample(later));
-        assert!(remaining.sample(later).get(Property::Opacity) > remaining.sample(started + std::time::Duration::from_millis(750)).get(Property::Opacity));
+        assert!(
+            remaining.sample(later).get(Property::Opacity)
+                > remaining
+                    .sample(started + std::time::Duration::from_millis(750))
+                    .get(Property::Opacity)
+        );
         assert!(other.on_current(&state.workspaces));
     }
 

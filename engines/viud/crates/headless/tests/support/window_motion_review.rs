@@ -324,13 +324,13 @@ fn place_during_active_run_removes_only_supplied_tracks_and_finish_preserves_the
         // Equals the stored base: it must still remove the active opacity track.
         bus.call("comp.window.place", place_args(&row, json!({"opacity":1})));
         let placed = bus.window_for("active-place", &mut [&mut client]);
-        assert_eq!(placed["opacity"], 1);
+        assert_eq!(placed["opacity"], 1.0);
         assert!(placed["scale"]["factor"].as_f64().unwrap() < 0.8);
         let (width, _, pixels) = ppm(&bus, &process, "placed-during-run", None);
         assert_eq!(rgb_at(&pixels, width, 320, 220), [255, 255, 255]);
         assert_eq!(running.join().unwrap()["status"], "completed");
         let final_row = bus.window_for("active-place", &mut [&mut client]);
-        assert_eq!(final_row["opacity"], 1);
+        assert_eq!(final_row["opacity"], 1.0);
         assert_eq!(final_row["scale"]["factor"], 0.8);
         assert!(
             final_row["scale"]["factor"].as_f64().unwrap()
