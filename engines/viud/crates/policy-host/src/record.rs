@@ -127,6 +127,9 @@ fn listed_status(s: &Session) -> Value {
     )
 }
 fn reconcile_listed(lp: &Loop, s: &mut Session) {
+    if s.failed.is_some() || s.recording.as_ref().is_some_and(|r| !r.is_recording()) {
+        return;
+    }
     for target in &mut s.targets {
         if let Some(listed) = &mut target.listed_windows {
             listed.retain(|window| {
