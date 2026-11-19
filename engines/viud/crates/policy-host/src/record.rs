@@ -182,7 +182,8 @@ pub fn command(
 ) {
     let answer: Answer = Box::new(answer);
     if matches!(op, RecordCommand::Stop { .. })
-        && let Some(current) = CURRENT.with_borrow(Clone::clone) {
+        && let Some(current) = CURRENT.with_borrow(Clone::clone)
+    {
         reconcile_listed(lp, &mut current.borrow_mut());
     }
     let params = op.clone();

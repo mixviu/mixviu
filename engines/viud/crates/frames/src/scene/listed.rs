@@ -37,7 +37,8 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
             }
         }
         let mut plan = Plan::new();
-        if spec.cursor {
+        let cursor_output = state.inner.cursor_output.clone().or_else(|| state.inner.space_state().state.outputs().next().map(world::state::output_key));
+        if spec.cursor && cursor_output.as_deref() == Some(key.as_str()) {
             plan.extend(
                 layer::POINTER,
                 seat::pointer::draw::scene::element(state, renderer, size)
@@ -60,6 +61,7 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
             .rev()
             .filter(|s| s.layer() == WlrLayer::Background && s.namespace() == "backdrop")
         {
+            if world::comp::panels::concealed(surface.wl_surface()) { continue; }
             if let Some(geometry) = map.layer_geometry(surface) {
                 plan.push(
                     layer::LAYER_BACKGROUND,

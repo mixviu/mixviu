@@ -650,6 +650,12 @@ fn record_listed_output_excludes_occluders_and_tracks_popup_and_close() {
     assert_eq!(start["width"], 1280);
     let before = bus.call("comp.record.status", json!({"session":start["session"]}));
     assert_eq!(before["windows"], json!([target(&ar)]));
+    let live = process.root.join("live.ppm");
+    bus.call("comp.capture.frame", json!({"output":ar["output"],"path":live,"format":"ppm","cursor":false}));
+    assert!(fs::read(live).unwrap().windows(3).any(|p| p == rgb(0xff12abcd)), "the private overlay must remain on the live screen");
+    let mut c = Pattern::named(connect(&mut process), "opened-during-take", false);
+    c.change_buffer(); c.commit(true);
+    bus.window_for("opened-during-take", &mut [&mut a, &mut b, &mut c]);
     for _ in 0..5 {
         b.change_buffer();
         b.commit(true);
@@ -676,18 +682,22 @@ fn record_listed_output_excludes_occluders_and_tracks_popup_and_close() {
     let mut saw_app = false;
     let mut saw_popup = false;
     let mut saw_wallpaper = false;
+    let mut last_had_app = false;
     vfl_visit(&path, |pixels| {
+        last_had_app = false;
         for pixel in pixels.chunks_exact(4) {
             let c = u32::from_le_bytes(pixel.try_into().unwrap());
             assert_ne!(c, 0xff12abcd, "private initial pixels leaked");
             assert_ne!(c, 0xffaa3377, "private updated pixels leaked");
             saw_app |= COLOURS.contains(&c);
+            last_had_app |= COLOURS.contains(&c);
             saw_popup |= c == 0xffff00ff;
             saw_wallpaper |= c == 0xff213243;
         }
     });
     assert!(saw_app && saw_popup, "listed app and popup must be decoded");
     assert!(saw_wallpaper, "the real wallpaper band must be decoded");
+    assert!(!last_had_app, "closing the last listed window must clear its pixels");
     let markers = fs::read_to_string(path.join("markers.jsonl")).unwrap();
     let gone: Vec<Value> = markers
         .lines()
