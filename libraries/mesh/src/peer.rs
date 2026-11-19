@@ -199,25 +199,48 @@ const ADMISSION_CHALLENGE_TIMEOUT: Duration = Duration::from_secs(1);
 static CHALLENGE_REFUSALS: Mutex<(Option<std::time::Instant>, u64)> = Mutex::new((None, 0));
 static CHALLENGE_SKEW: Mutex<(Option<std::time::Instant>, u64)> = Mutex::new((None, 0));
 
-fn challenge_diagnostic(refused: bool, peer: &str, mesh: &str, local_epoch: u64, body: &serde_json::Value) {
-    let counter = if refused { &CHALLENGE_REFUSALS } else { &CHALLENGE_SKEW };
+fn challenge_diagnostic(
+    refused: bool,
+    peer: &str,
+    mesh: &str,
+    local_epoch: u64,
+    body: &serde_json::Value,
+) {
+    let counter = if refused {
+        &CHALLENGE_REFUSALS
+    } else {
+        &CHALLENGE_SKEW
+    };
     let now = std::time::Instant::now();
     let mut state = counter.lock().expect("challenge log counter poisoned");
     state.1 += 1;
-    if state.0.is_some_and(|last| now.duration_since(last) < Duration::from_secs(60)) {
+    if state
+        .0
+        .is_some_and(|last| now.duration_since(last) < Duration::from_secs(60))
+    {
         return;
     }
     let count = std::mem::take(&mut state.1);
     state.0 = Some(now);
     if refused {
-        tracing::warn!(peer, mesh, local_epoch,
+        tracing::warn!(
+            peer,
+            mesh,
+            local_epoch,
             received_verifier = body["verifying_broker_node"].as_str(),
-            received_mesh = body["mesh_fqdn"].as_str(), count,
-            "Refusing admission challenge with unexpected verifier or mesh (coalesced)");
+            received_mesh = body["mesh_fqdn"].as_str(),
+            count,
+            "Refusing admission challenge with unexpected verifier or mesh (coalesced)"
+        );
     } else {
-        tracing::debug!(peer, mesh, local_epoch,
-            challenge_epoch = body["inventory_epoch"].as_u64(), count,
-            "Answering admission challenge despite inventory epoch skew (coalesced)");
+        tracing::debug!(
+            peer,
+            mesh,
+            local_epoch,
+            challenge_epoch = body["inventory_epoch"].as_u64(),
+            count,
+            "Answering admission challenge despite inventory epoch skew (coalesced)"
+        );
     }
 }
 
@@ -2172,17 +2195,19 @@ mod tests {
                 },
                 tx,
             );
-            if trusted { transport
-                .reconcile_identity(
-                    HashMap::from([("beta".into(), beta.noded_addr())]),
-                    AuthorityRevision {
-                        epoch: 7,
-                        recovery_generation: 0,
-                    },
-                    mesh_trust::identity::KeyAuthority::new(&Default::default(), 7, 0),
-                    "bus".into(),
-                )
-                .await; }
+            if trusted {
+                transport
+                    .reconcile_identity(
+                        HashMap::from([("beta".into(), beta.noded_addr())]),
+                        AuthorityRevision {
+                            epoch: 7,
+                            recovery_generation: 0,
+                        },
+                        mesh_trust::identity::KeyAuthority::new(&Default::default(), 7, 0),
+                        "bus".into(),
+                    )
+                    .await;
+            }
             let challenge = BusMessage::new()
                 .with_header("command", "noded.admit.challenge")
                 .with_header("id", "relayed-challenge")
@@ -2208,7 +2233,9 @@ mod tests {
                         "noded.admit.response"
                     } else if trusted {
                         "noded.identity.challenge"
-                    } else { "noded.register" })
+                    } else {
+                        "noded.register"
+                    })
                 );
                 if answered {
                     assert_eq!(first.get("id"), Some("relayed-challenge"));
