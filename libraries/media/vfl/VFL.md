@@ -175,6 +175,11 @@ be ignored during recovery; a valid receipt with a CRC/count mismatch remains
 an error. Earlier malformed receipts and all complete-take sidecar errors are
 fatal. A torn binary tail stops recovery with an error after the valid prefix;
 it never turns the take into a successful verification.
+Advisory receipt handling skips only that receipt, never the frame-sidecar
+tail check. Chunk receipts contain no `dropped` field. Drop totals are trusted
+only after complete-take verification; interrupted totals are always unknown
+(`"dropped":null`), including when `interrupted.json` has a missing or invalid
+`dropped`. A complete take with a missing or non-u64 drop total fails.
 
 ## Scheduling
 

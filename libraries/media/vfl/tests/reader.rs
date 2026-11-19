@@ -290,6 +290,52 @@ fn interrupted_torn_final_receipt_is_advisory() {
     let v = verify(&t.0);
     assert_eq!(v["ok"], true, "{v}");
     assert_eq!(v["complete"], false);
+    assert_eq!(v["dropped"], Value::Null);
+}
+#[test]
+fn advisory_receipts_never_hide_extra_frame_rows() {
+    use std::io::Write;
+    for receipt in ["chunk-000000.json", "interrupted.json"] {
+        for malformed in ["{", "{}"] {
+            for tail in [None, Some("{garbage}\n".to_string()), Some("x".repeat(1024*1024+1)), Some("{\"frame\":12,\"t_us\":12000000}\n".to_string())] {
+                let (t,expected)=take(false);
+                std::fs::write(t.0.join(receipt),malformed).unwrap();
+                if let Some(tail)=&tail {
+                    std::fs::OpenOptions::new().append(true).open(t.0.join("frames.jsonl")).unwrap().write_all(tail.as_bytes()).unwrap();
+                }
+                let mut r=Reader::open(&t.0).unwrap();
+                let (frames,failure)=decoded(&mut r);
+                assert_eq!(frames,expected);
+                assert_eq!(failure.is_some(),tail.is_some(),"{receipt} {malformed}");
+                assert_eq!(assert_seek_matches(&t.0,&expected),12);
+                let v=verify(&t.0);
+                assert_eq!(v["ok"],tail.is_none(),"{receipt} {malformed}: {v}");
+                assert_eq!(v["complete"],false);
+                assert_eq!(v["dropped"],Value::Null);
+                if tail.is_some() {assert!(v["errors"].as_array().unwrap().iter().any(|e|e.as_str().unwrap().contains("frames.jsonl")));}
+            }
+        }
+    }
+}
+#[test]
+fn malformed_drop_counts_are_advisory_only_during_recovery() {
+    for complete in [false,true] {
+        for dropped in [None,Some(json!("bad")),Some(json!(-1)),Some(Value::Null),Some(json!(1.5))] {
+            let (t,expected)=take(complete);
+            let receipt=if complete {"complete.json"} else {"interrupted.json"};
+            json_edit(&t.0.join(receipt),|v| {
+                if let Some(dropped)=dropped {v["dropped"]=dropped;} else {v.as_object_mut().unwrap().remove("dropped");}
+            });
+            let mut r=Reader::open(&t.0).unwrap();
+            let (frames,failure)=decoded(&mut r);
+            assert_eq!(frames,expected);
+            assert_eq!(failure.is_some(),complete);
+            assert_eq!(assert_seek_matches(&t.0,&expected),12);
+            let v=verify(&t.0);assert_eq!(v["ok"],!complete,"{receipt}: {v}");
+            assert_eq!(v["complete"],false);
+            assert_eq!(v["dropped"],Value::Null);
+        }
+    }
 }
 #[test]
 fn interrupted_torn_binary_tail_stops_at_valid_prefix() {

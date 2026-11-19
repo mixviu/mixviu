@@ -402,24 +402,21 @@ impl Reader {
         if self.complete || p.exists() {
             let final_recovery = !self.complete && self.chunk + 1 == self.chunks;
             let r = match json_file(&p) {
-                Ok(r) => r,
-                Err(e) if final_recovery && e.kind == ErrorKind::Metadata => return Ok(()),
+                Ok(r) => Some(r),
+                Err(e) if final_recovery && e.kind == ErrorKind::Metadata => None,
                 Err(mut e) => {
                     e.chunk = Some(self.chunk);
                     e.offset = self.offset;
                     return Err(e);
                 }
             };
-            if final_recovery
-                && ["bytes", "crc32", "next_frame"]
-                    .iter()
-                    .any(|k| r[*k].as_u64().is_none())
-            {
-                return Ok(());
-            }
-            if r["bytes"] != self.offset
+            // Only this chunk receipt is advisory. In particular, never bypass
+            // finish(), which checks the remaining frame sidecar independently.
+            if let Some(r) = r.filter(|r| !final_recovery || ["bytes", "crc32", "next_frame"]
+                .iter().all(|k| r[*k].as_u64().is_some()))
+                && (r["bytes"] != self.offset
                 || r["crc32"] != self.crc.clone().finalize()
-                || r["next_frame"] != self.next
+                || r["next_frame"] != self.next)
             {
                 return Err(err(
                     &p,
@@ -433,6 +430,9 @@ impl Reader {
         Ok(())
     }
     fn finish(&mut self) -> Result<(), Error> {
+        // Only complete.json promises a trustworthy dropped count. Recovery
+        // never reads dropped from interrupted.json or from chunk receipts;
+        // verify represents the unknown count as JSON null.
         if self.complete {
             let p = self.path.join("complete.json");
             let r = self
