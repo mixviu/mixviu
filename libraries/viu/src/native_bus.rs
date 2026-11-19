@@ -211,6 +211,7 @@ pub struct Endpoint {
     pub startup_error: Arc<Mutex<Option<String>>>,
     pub dropped_notices: Arc<AtomicU64>,
     client: SharedClient,
+    runtime_handle: Arc<Mutex<Option<tokio::runtime::Handle>>>,
     stats: Arc<Mutex<BTreeMap<String, egui::Context>>>,
     hints: tokio::sync::mpsc::Sender<Hint>,
     stop: Option<oneshot::Sender<()>>,
@@ -248,6 +249,7 @@ impl Endpoint {
             close_requested: Arc::new(AtomicBool::new(false)),
             dropped_notices: Arc::new(AtomicU64::new(0)),
             client: Arc::new(Mutex::new(None)),
+            runtime_handle: Arc::default(),
             stats: Arc::default(),
             hints,
             stop: None,
@@ -334,6 +336,8 @@ impl Endpoint {
         let dropped = dropped_notices.clone();
         let client: SharedClient = Arc::new(Mutex::new(None));
         let shared = client.clone();
+        let runtime_handle = Arc::new(Mutex::new(None));
+        let worker_handle = runtime_handle.clone();
         let (stop, mut stopped) = oneshot::channel();
         let (hints, mut hint_rx) = tokio::sync::mpsc::channel::<Hint>(1);
         let service_name = name.clone();
@@ -346,6 +350,7 @@ impl Endpoint {
             .collect();
         let thread=std::thread::Builder::new().name("viu-native-bus".into()).spawn(move||{
             let rt=tokio::runtime::Builder::new_current_thread().enable_all().build().expect("native Bus runtime");
+            *worker_handle.lock().unwrap() = Some(rt.handle().clone());
             rt.block_on(async move{
                 let text_replies=policy.transport.text_replies;
                 let pid_fallback=policy.transport.pid_fallback;
@@ -429,6 +434,7 @@ impl Endpoint {
             startup_error,
             dropped_notices,
             client,
+            runtime_handle,
             stats,
             hints,
             stop: Some(stop),
@@ -461,6 +467,9 @@ impl Endpoint {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone()
+    }
+    pub(crate) fn runtime_handle(&self) -> Option<tokio::runtime::Handle> {
+        self.runtime_handle.lock().unwrap().clone()
     }
     pub fn service(&self) -> &str {
         &self.name
