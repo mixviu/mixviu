@@ -660,7 +660,7 @@ pub fn install(ctx: &Context) {
                     !disabled,
                 );
                 if let Some(c) = capture.as_mut() {
-                    c.layer=layer;
+                    c.layer = layer;
                     c.start = ShapeIdx(0);
                 }
                 // Creating a Ui here would register widgets while the plugin
@@ -824,8 +824,10 @@ mod tests {
                 }
                 let mut open = true;
                 for t in [0., 0.1, 0.2] {
-                    let mut input=raw(t);
-                    input.events.push(egui::Event::PointerMoved(egui::pos2(25.,45.)));
+                    let mut input = raw(t);
+                    input
+                        .events
+                        .push(egui::Event::PointerMoved(egui::pos2(25., 45.)));
                     ctx.run_ui(input, |ui| {
                         if popup {
                             let button = ui.button("Open");
