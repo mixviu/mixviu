@@ -25,6 +25,8 @@ smithay::render_elements! {
 
 struct Snapshot<T: Texture> {
     id: Id,
+    source_id: Id,
+    source_commit: CommitCounter,
     texture: Option<T>,
     color: Option<Color32F>,
     context: ContextId<T>,
@@ -78,7 +80,7 @@ pub fn prune<R: Renderer>() where R::TextureId: 'static {
 }
 
 pub fn retain<R>(
-    renderer: &R,
+    renderer: &mut R,
     uuid: Uuid,
     output: &str,
     pane: Option<u64>,
@@ -92,8 +94,15 @@ pub fn retain<R>(
     if !crate::comp::lifecycle_motion::retain_snapshots() {
         return;
     }
+    let previous = CACHES.with(|caches| caches.borrow_mut()
+        .get_mut(&TypeId::of::<R::TextureId>())
+        .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>())
+        .and_then(|cache| cache.remove(&(uuid, output.to_owned(), pane))))
+        .unwrap_or_default();
     let mut snapshots = Vec::new();
-    for element in elements {
+    for (index, element) in elements.iter_mut().enumerate() {
+        let source_id = element.id().clone();
+        let source_commit = element.current_commit();
         let geometry = element.geometry(Scale::from(1.0));
         let src = element.src();
         let transform = element.transform();
@@ -145,6 +154,19 @@ pub fn retain<R>(
             },
             _ => continue,
         };
+        // SHM's normal surface import cache updates its texture in place.
+        // Import without that cache so future commits cannot mutate the exit
+        // image. A DMA buffer stays immutable until the retained lease releases.
+        let texture = if let (Some(_), Some(buffer)) = (&texture, &buffer) {
+            if let Some(texture) = previous.get(index)
+                .filter(|snapshot| snapshot.source_id == source_id && snapshot.source_commit == source_commit)
+                .and_then(|snapshot| snapshot.texture.clone()) {
+                Some(texture)
+            } else { match renderer.import_buffer(buffer, None, &[]) {
+                Some(Ok(texture)) => Some(texture),
+                _ => continue,
+            } }
+        } else { texture };
         let color = color.map(|color| {
             if surface_solid {
                 Color32F::from([color.r() * alpha, color.g() * alpha,
@@ -153,6 +175,8 @@ pub fn retain<R>(
         });
         snapshots.push(Snapshot {
             id: Id::new(),
+            source_id,
+            source_commit,
             texture,
             color,
             context: renderer.context_id(),
