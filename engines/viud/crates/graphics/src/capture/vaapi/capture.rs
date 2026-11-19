@@ -33,10 +33,30 @@ pub fn capture_render_node() -> String {
 pub fn renderer_render_node(
     renderer: &smithay::backend::renderer::gles::GlesRenderer,
 ) -> Result<String, String> {
-    smithay::backend::egl::EGLDevice::device_for_display(renderer.egl_context().display())
+    capture_node(|| smithay::backend::egl::EGLDevice::device_for_display(renderer.egl_context().display())
         .and_then(|device| device.render_device_path())
+    )
+}
+
+fn capture_node(
+    resolve: impl FnOnce() -> Result<PathBuf, smithay::backend::egl::Error>,
+) -> Result<String, String> {
+    resolve()
         .map(|path| path.to_string_lossy().into_owned())
         .map_err(|error| format!("capture render device: {error}"))
+}
+
+#[cfg(test)]
+mod device_tests {
+    use super::*;
+
+    #[test]
+    fn capture_uses_the_renderers_non_default_node() {
+        assert_eq!(
+            capture_node(|| Ok(PathBuf::from("/dev/dri/renderD199")))).unwrap(),
+            "/dev/dri/renderD199",
+        );
+    }
 }
 
 /// Live capture frame rate (`capture_refresh_rate_max`, clamped to 30..=120).

@@ -23,6 +23,7 @@ elif args()[0] == "capture" then
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","--","--test-threads=1"])
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","benchmark_record_changing_4k_zero_drop","--","--ignored","--exact","--nocapture","--test-threads=1"])
 else
+  export MIX_TEST_MIX_EXE=realpath("target/debug/mix")
   checked(concat(["cargo","test","--locked","--lib"], $crates))
   checked(["cargo","test","--locked","-p","media-vfl","--test","writer"])
   checked(["cargo","test","--locked","-p","headless","--test","broker_startup","--","--nocapture"])
