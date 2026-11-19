@@ -21,6 +21,8 @@ struct NodeMotion {
     rect: Rect,
     paint_rect: Rect,
     child_enter: Option<Entrance>,
+    child_exit: Option<Entrance>,
+    exit_index: u32,
     child_index: u32,
     textures: Vec<egui::TextureHandle>,
     opacity: f64,
@@ -34,11 +36,10 @@ struct Tween {
 }
 impl Tween {
     fn sample(&self, now: f64) -> Vec<f64> {
-        let t = self.spec.progress(self.start, now);
         self.from
             .iter()
             .zip(&self.to)
-            .map(|(a, b)| a * (1.0 - t) + b * t)
+            .map(|(a, b)| self.spec.interpolate(self.start,now,*a,*b))
             .collect()
     }
 }
@@ -73,20 +74,23 @@ impl SceneMotion {
             self.nodes.remove(key);
             return None;
         }
-        let inherited = parent.and_then(|p|self.nodes.get_mut(p)).and_then(|n| {
+        let inherited = parent.and_then(|p|self.nodes.get_mut(p)).map(|n| {
             let index=n.child_index;
             n.child_index+=1;
-            n.child_enter.clone().map(|e|(e,index))
+            (n.child_enter.clone(),n.child_exit.clone().or_else(||n.exit.clone()),index,if n.child_exit.is_some(){index}else{n.exit_index})
         });
         let own = enter.and_then(|v|serde_json::from_value::<Entrance>(v.clone()).ok());
-        let (entrance,index) = own.clone().map(|e|(e,0)).or(inherited).map_or((None,0),|(e,i)|(Some(e),i));
+        let (entrance,index) = own.clone().map(|e|(e,0)).or_else(||inherited.as_ref().and_then(|(e,_,i,_)|e.clone().map(|e|(e,*i)))).map_or((None,0),|(e,i)|(Some(e),i));
         let child_enter = own.filter(|e|e.options().stagger_ms>0.0);
-        if entrance.is_none() && exit.is_none() {
+        let own_exit=exit.and_then(|v|serde_json::from_value::<Entrance>(v.clone()).ok());
+        let child_exit=own_exit.clone().filter(|e|e.options().stagger_ms>0.0);
+        let exit_index=if own_exit.is_some(){0}else{inherited.as_ref().map_or(0,|(_,_,_,i)|*i)};
+        let inherited_exit=inherited.and_then(|(_,e,_,_)|e);
+        if entrance.is_none() && exit.is_none() && inherited_exit.is_none() {
             return None;
         }
         let now = self.now;
         let parent_opacity=parent.and_then(|p|self.nodes.get(p)).map_or(1.0,|n|n.opacity);
-        let inherited_exit=parent.and_then(|p|self.nodes.get(p)).and_then(|n|n.exit.clone());
         let n = self
             .nodes
             .entry(key.to_owned())
@@ -98,14 +102,19 @@ impl SceneMotion {
                 shapes: Vec::new(),
                 rect: Rect::NOTHING,
                 paint_rect: Rect::NOTHING,
-                child_enter,
+                child_enter: child_enter.clone(),
+                child_exit: None,
+                exit_index,
                 child_index: 0,
                 textures: Vec::new(),
                 opacity: 1.0,
             });
         n.seen = true;
+        n.child_enter=child_enter;
         n.leaving = None;
-        n.exit = exit.and_then(|v| serde_json::from_value(v.clone()).ok()).or(inherited_exit);
+        n.exit = if child_exit.is_some() {None} else {own_exit.or(inherited_exit)};
+        n.child_exit=child_exit;
+        n.exit_index=exit_index;
         n.opacity=motion::scene::sample(n.entrance.as_ref(),now,false).get(Property::Opacity)*parent_opacity;
         let layer = ui.layer_id();
         let start = ui.ctx().graphics_mut(|g| g.entry(layer).next_idx());
@@ -214,7 +223,7 @@ impl SceneMotion {
             let Some(exit) = &n.exit else {
                 return false;
             };
-            let p = n.leaving.get_or_insert_with(|| exit.playback(now, 0, true));
+            let p = n.leaving.get_or_insert_with(|| exit.playback(now, n.exit_index, true));
             if !motion::scene::active(p, now) {
                 return false;
             }
@@ -403,8 +412,7 @@ pub fn scalar(ctx: &Context, id: egui::Id, target: f64, ms: f64, enabled: bool) 
             to: target,
             start: now,
         });
-        let current =
-            s.from * (1.0 - curve.progress(s.start, now)) + s.to * curve.progress(s.start, now);
+        let current = curve.interpolate(s.start,now,s.from,s.to);
         if s.to != target {
             s = State {
                 from: current,
@@ -416,7 +424,7 @@ pub fn scalar(ctx: &Context, id: egui::Id, target: f64, ms: f64, enabled: bool) 
         let value = if reduced {
             target
         } else {
-            s.from * (1.0 - t) + s.to * t
+            curve.interpolate(s.start,now,s.from,s.to)
         };
         let active = !reduced && s.from != s.to && t < 1.0;
         if reduced {

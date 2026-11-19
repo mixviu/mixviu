@@ -141,6 +141,18 @@ on gallery.motion
     $state.motion_visible=not ($state.motion_visible ?? true)
   elif $event.args.node=="motion-toggle" then
     $state.motion_on=$event.args.value
+  elif $event.args.node=="motion-row-toggle" then
+    if len($state.motion_rows ?? [])==1 then
+      $state.motion_rows=[{id:"a",cells:["First row"]},{id:"b",cells:["Second row"]}]
+    else
+      $state.motion_rows=[{id:"a",cells:["First row"]}]
+    end
+  elif starts_with($event.args.id ?? "","motion-") then
+    if $event.args.action=="accept" or $event.args.action=="cancel" then
+      $state.values[$event.args.id]=false
+    else
+      $state.values[$event.args.id]=$event.args.value
+    end
   end
   publish_gallery($ctx,$state)
 end

@@ -100,6 +100,10 @@ impl Transition {
             self.ease.sample((now - start) * 1000.0 / self.ms)
         }
     }
+    pub fn interpolate(&self,start:f64,now:f64,from:f64,to:f64)->f64 {
+        let progress=self.progress(start,now);
+        from*(1.0-progress)+to*progress
+    }
 }
 pub fn transitions(value: &Value) -> Result<Vec<Transition>, String> {
     let list: Vec<Transition> = if value.is_array() {

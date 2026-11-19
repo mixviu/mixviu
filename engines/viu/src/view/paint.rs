@@ -519,11 +519,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         );
         toolkit::scene_motion::highlight(ui,ui.layer_id(),start,&item.key,node.ports.get("transition"),motion_enabled);
         motion.painted(ui,capture,rect);
-        if item.source==Source::Tree {
-            if let Some(layer)=layer {
-                if let Some(r)=scene.layout.nodes.get_mut(&item.id) {*r=ui.ctx().layer_transform_to_global(layer).unwrap_or_default().mul_rect(*r);}
-            }
-        }
+        if item.source==Source::Tree && let Some(layer)=layer && let Some(r)=scene.layout.nodes.get_mut(&item.id) {*r=ui.ctx().layer_transform_to_global(layer).unwrap_or_default().mul_rect(*r);}
     }
     motion.end(ui);
     scene.motion = motion;

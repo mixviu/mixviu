@@ -613,7 +613,7 @@ impl SceneView {
         } else {toolkit::scene_motion::visual(ui,start,self.geometry.get(id).copied().unwrap_or(ui.min_rect()),opacity,[0.0,0.0]);}
         toolkit::scene_motion::highlight(ui,layer.unwrap_or(ui.layer_id()),if layer.is_some(){egui::layers::ShapeIdx(0)}else{start},&key,node.ports.get("transition"),enabled);
         self.motion.painted(ui,capture,painted_rect);
-        if let Some(layer)=layer {if let Some(rect)=self.geometry.get_mut(id) {*rect=ui.ctx().layer_transform_to_global(layer).unwrap_or_default().mul_rect(*rect);}}
+        if let Some(layer)=layer && let Some(rect)=self.geometry.get_mut(id) {*rect=ui.ctx().layer_transform_to_global(layer).unwrap_or_default().mul_rect(*rect);}
     }
 
     fn node_contents(

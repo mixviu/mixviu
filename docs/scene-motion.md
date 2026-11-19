@@ -1,4 +1,4 @@
-# Scene motion (work in progress)
+# Scene motion
 
 Scene composition declares motion; Mix behaviours change the bound model.
 The motion library samples tracks at the presentation timestamp. The toolkit
@@ -22,21 +22,35 @@ Unknown effects and fields are refused. Durations and delays must be in
 and `spring`, with the library's parameters. Omitted easing is linear.
 Duplicate transition properties are refused.
 
-Implemented bound transitions: opacity, offset and literal `#rrggbb` or
+Bound transitions: opacity, offset and literal `#rrggbb` or
 `#rrggbbaa` colour/background/hover ports. Retargeting begins at the current
 sample. Session reduced motion snaps transitions and removes retained exits.
+`highlight` interpolates the actual foreground and background colours painted
+for hover, press, selection and toggles, using the declared duration and curve.
+
+A container declaration with nonzero `stagger_ms` delegates its preset to its
+direct children: child `i` starts at `delay_ms + i * stagger_ms`. Descendant
+paint follows its containing child's transform. Entrance and exit sampling
+uses the shared table; no model update waits for motion to finish.
+
+Live transforms affect paint and input together, including scale. Exits retain
+the last paint and references to its managed image textures, and run no widget
+code or event route. Those references are released when the exit completes.
 
 Current default changes: shared switch knobs slide over 160 ms; shared push
 buttons travel one scene unit over 90 ms; furniture toggles and buttons use
-those same curves. Existing scene documents gain no entrance/exit by default.
+those same curves. Native menus and floating popups fade on open/close; list
+rows fade on insertion/removal; tab content fades on switches. Default app
+toggles use the shared switch. These defaults honour global reduced motion and
+`motion:false` on a scene node (including its subtree). Ordinary scene nodes
+gain no entrance/exit by default.
 
 The Gallery includes a Motion page with a visibility button, switch, seven
-entrances and bound opacity, offset and colour examples.
+entrances, stagger, bound opacity/offset/colour, interaction highlights, native
+menus/popups, tabs and list insertion/removal. App behaviour is Mix.
 
-This is a draft implementation, not the completed widget-motion contract.
-Container stagger, moving hit-test geometry, general popup/menu lifecycles,
-default list insertion/removal and tab-switch animation remain unfinished.
-Selection/highlight colour transitions, semantic colour interpolation,
-retained texture ownership and nested furniture transforms also need work.
-`stagger_ms` is parsed but is not yet wired to container child indices.
-Do not rely on those unfinished behaviours.
+All samplers use the frame's supplied timestamp. Delayed entrances schedule
+their next start; active motion requests frames; settled motion requests none.
+The headless runtime also accepts explicit presentation timestamps for replay
+and tests. The cost test includes layout, painting and tessellation, without a
+GPU submission; its receipt belongs to the PR rather than the contract.
