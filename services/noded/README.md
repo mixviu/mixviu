@@ -23,6 +23,15 @@ requires an accepted signed inventory; otherwise startup reports "no identity
 source". With an unverified inventory, observe reports `no-identity-source`
 rather than claiming a known peer failed admission.
 
+Before upgrading a node that runs admission `enforce`, move **every local
+client to the Unix socket**. TCP loopback registrations are refused immediately
+at broker upgrade, even with frame policy `observe`. Remove stale explicit
+`MIX_NODED_URL=ws://127.0.0.1:4200/ws` values from session environments and
+wrappers, or replace them with the configured Unix endpoint. Check the runtime
+root and socket placement too; a default path cannot find a broker placed in
+a different runtime. A broker-account setting does not make a stale TCP
+override safe. This local-client migration is a prerequisite to installation.
+
 Install this build on the brokers with frame policy at `observe`. Watch
 `frame.refused` for registration, source-node, wrong-node and relay violations:
 observe logs those violations while retaining legacy delivery, including
@@ -50,7 +59,11 @@ With a verified inventory the broker now challenges TCP peers even when
 admission is off: that setting controls registration refusal, not whether an
 identity can be learned. Diallers additionally challenge the broker and pin
 its proof to the member named by the endpoint. Old brokers cannot answer this
-reverse proof. Observe permits their ordinary traffic but supplies no
+reverse proof. Waiting for that answer adds a bounded **one second per dial**
+to an old broker, including a re-dial following inventory reload. Off/observe
+permit legacy fallback after that wait; enforcement refuses the unproved
+connection before registration, publication or application writes.
+Observe permits their ordinary traffic but supplies no
 authenticated mesh-service assertion; protected cross-node deliveries can
 therefore fail during a mixed-version upgrade. Keep enforcement disabled until
 both ends support mutual proof. D2 remains plaintext and origin-only; TLS and

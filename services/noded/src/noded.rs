@@ -2056,14 +2056,7 @@ fn reload_revoke_detail(
     None
 }
 
-/// SPEC 13 §5.5 (2-c-2c) — close every live enforce-admitted session whose
-/// member failed the [`reload_revoke_detail`] re-check against the new snapshot
-/// `a`. For each: drain its in-flight rpcs and emit one
-/// `delivery.inflight_fate{cause:reload-teardown}` each (draining here CLAIMS
-/// the entries, so the natural session-drop path emits no duplicate
-/// session-churn), emit `admission.refused{reload:true}`, then notify the
-/// session's close lever (the read loop breaks → the socket drops). A
-/// still-admissible member is untouched (grandfather).
+/// Recheck exact-key authority under the delivery fence at both tracking sites.
 async fn track_mesh_session(state: &AppState, id: &str, address: &str, tx: &mpsc::Sender<String>, close: &Arc<tokio::sync::Notify>) -> bool {
     let Some((node, key)) = state.peer_context.mesh_peer() else { return true; };
     let mut live = state.live_sessions.write().await;
@@ -2073,6 +2066,14 @@ async fn track_mesh_session(state: &AppState, id: &str, address: &str, tx: &mpsc
     true
 }
 
+/// SPEC 13 §5.5 (2-c-2c) — close every live enforce-admitted session whose
+/// member failed the [`reload_revoke_detail`] re-check against the new snapshot
+/// `a`. For each: drain its in-flight rpcs and emit one
+/// `delivery.inflight_fate{cause:reload-teardown}` each (draining here CLAIMS
+/// the entries, so the natural session-drop path emits no duplicate
+/// session-churn), emit `admission.refused{reload:true}`, then notify the
+/// session's close lever (the read loop breaks → the socket drops). A
+/// still-admissible member is untouched (grandfather).
 async fn reload_revocation_teardown(state: &AppState, a: &crate::authority::Accepted) {
     // Snapshot the victims under the read lock, then release it before the
     // awaited drains/emits/closes (don't hold the lock across awaits, and a

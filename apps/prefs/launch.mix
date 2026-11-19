@@ -44,6 +44,7 @@ try
     print("prefs: "..json_encode($reply));exit(1)
   end
 catch $not_running $absent=true end
+-- Shared discovery treats an empty environment value as unset; so does the host.
 $host_options={url:if $url=="" then nil else $url end}
 $launch=concat([env("MIX_VIU_EXE",path_join(env("MIX_PREFIX","/opt/mix"),"bin/viu")),"run",dirname(script_path()),"--host-options",json_encode($host_options)],$debug)
 if $page!=nil then $launch=concat($launch,["--page",$page]) end
