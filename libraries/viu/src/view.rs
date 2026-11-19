@@ -619,7 +619,7 @@ impl SceneView {
             self.node_contents(ui, id, nodes, route, depth, events);
         }
         self.motion_parent = parent;
-        let painted_rect = self.geometry.get(id).copied().unwrap_or(ui.min_rect());
+        let painted_rect = self.geometry.get(&key).copied().unwrap_or(ui.min_rect());
         if let Some(layer) = layer {
             // Layer transforms carry geometry; opacity remains a paint attribute.
             ui.ctx().graphics_mut(|g| {
@@ -640,7 +640,7 @@ impl SceneView {
             toolkit::scene_motion::visual(
                 ui,
                 start,
-                self.geometry.get(id).copied().unwrap_or(ui.min_rect()),
+                self.geometry.get(&key).copied().unwrap_or(ui.min_rect()),
                 opacity,
                 [0.0, 0.0],
             );
@@ -659,7 +659,7 @@ impl SceneView {
         );
         self.motion.painted(ui, capture, painted_rect);
         if let Some(layer) = layer
-            && let Some(rect) = self.geometry.get_mut(id)
+            && let Some(rect) = self.geometry.get_mut(&key)
         {
             *rect = ui
                 .ctx()
