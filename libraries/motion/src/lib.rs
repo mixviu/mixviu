@@ -23,6 +23,12 @@ mod minjerk;
 mod route;
 mod spring;
 mod timeline;
+mod spring_curve;
+mod tracks;
+mod presets;
+pub use presets::{PRESETS_JSON, load_presets, presets};
+pub use spring_curve::SpringCurve;
+pub use tracks::*;
 
 pub use bezier::{BezierError, CubicBezier};
 pub use fitts::fitts_ms;
