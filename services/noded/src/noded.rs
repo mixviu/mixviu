@@ -2295,7 +2295,14 @@ fn reverse_identity_answer(
     {
         return None;
     }
-    let wire = mesh::build_admit_response(message, &state.node_name, &state.d2_seed, node, &a.mesh, a.epoch)?;
+    let wire = mesh::build_admit_response(
+        message,
+        &state.node_name,
+        &state.d2_seed,
+        node,
+        &a.mesh,
+        a.epoch,
+    )?;
     let mut response = bus::parse(&wire).ok()?;
     response.set("command", "noded.identity.response");
     *answered = true;

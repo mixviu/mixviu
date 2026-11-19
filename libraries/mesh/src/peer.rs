@@ -130,7 +130,9 @@ impl MeshConfig {
 /// `client_ephemeral`/`channel_binding_hash` are 32 zero bytes, built from the
 /// challenge body's DECODED raw bytes / native-`u64` epoch (the byte-for-byte
 /// contract the broker's `reconstruct_proof` mirrors). Returns `None` if there
-/// is no d2 seed (prover-incapable) or the challenge is malformed — the caller
+/// is no d2 seed (prover-incapable), the challenge is malformed, or its
+/// verifier/mesh/epoch differs from the caller's trusted expectation. Never
+/// derive these expectations from the received challenge. The caller
 /// then registers without proving (the broker logs `unproven:no-proof`).
 pub fn build_admit_response(
     challenge: &BusMessage,
@@ -147,8 +149,12 @@ pub fn build_admit_response(
         || body["mesh_fqdn"].as_str() != Some(expected_mesh)
         || body["inventory_epoch"].as_u64() != Some(expected_epoch)
     {
-        tracing::warn!(peer = expected_verifier, mesh = expected_mesh,
-            epoch = expected_epoch, "Refusing admission challenge with unexpected verifier, mesh or epoch");
+        tracing::warn!(
+            peer = expected_verifier,
+            mesh = expected_mesh,
+            epoch = expected_epoch,
+            "Refusing admission challenge with unexpected verifier, mesh or epoch"
+        );
         return None;
     }
     let b64 = base64::engine::general_purpose::STANDARD;
@@ -207,7 +213,10 @@ impl UnauthenticatedFrameLog {
         UNAUTHENTICATED_FRAMES.fetch_add(1, Ordering::Relaxed);
         self.total += 1;
         self.pending += 1;
-        if self.last.is_none_or(|last| now.duration_since(last) >= Duration::from_secs(60)) {
+        if self
+            .last
+            .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(60))
+        {
             let count = std::mem::take(&mut self.pending);
             self.last = Some(now);
             tracing::info!(peer, %address, posture = if enforce { "enforce" } else { "observe" },
@@ -476,7 +485,9 @@ impl MeshPeers {
                         reasons.insert(name.clone(), ConnectionRetireReason::KeyRevoked);
                     }
                 } else if authority.epoch() > 0 {
-                    reasons.entry(name.clone()).or_insert(ConnectionRetireReason::UnprovenLinkRetired);
+                    reasons
+                        .entry(name.clone())
+                        .or_insert(ConnectionRetireReason::UnprovenLinkRetired);
                 }
             }
             if state.revision != revision {
@@ -520,12 +531,7 @@ impl MeshPeers {
         let retired_generations: HashMap<_, _> = report
             .connections_retired
             .iter()
-            .map(|retired| {
-                (
-                    retired.connection_generation,
-                    retired.reason.clone(),
-                )
-            })
+            .map(|retired| (retired.connection_generation, retired.reason.clone()))
             .collect();
 
         // Sweep pending calls while STILL holding the state write guard: a
@@ -553,9 +559,10 @@ impl MeshPeers {
                     message_id,
                     class: call.class,
                 });
-                let _ = call
-                    .response
-                    .send(Err(format!("route revoked by endpoint reconciliation: {}", retired_generations[&call.connection_generation].as_str())));
+                let _ = call.response.send(Err(format!(
+                    "route revoked by endpoint reconciliation: {}",
+                    retired_generations[&call.connection_generation].as_str()
+                )));
             }
         }
 
@@ -941,8 +948,16 @@ async fn connect_and_publish(
             if let Ok(bus_msg) = bus::parse(&t) {
                 if bus_msg.command_name() == Some("noded.admit.challenge") {
                     let authority = state.read().await.keys.clone();
-                    if let Some(resp_wire) = authority.as_ref().and_then(|(keys, mesh)|
-                        build_admit_response(&bus_msg, &node_name, &d2_seed, &peer.name, mesh, keys.epoch())) {
+                    if let Some(resp_wire) = authority.as_ref().and_then(|(keys, mesh)| {
+                        build_admit_response(
+                            &bus_msg,
+                            &node_name,
+                            &d2_seed,
+                            &peer.name,
+                            mesh,
+                            keys.epoch(),
+                        )
+                    }) {
                         // A send failure here means the connection died —
                         // bail rather than store it. The write is bounded and
                         // cancellable like every other await on this path: a
@@ -1389,16 +1404,22 @@ mod tests {
         // B dialled C (gamma), which relays A's (beta's) challenge. B must
         // not supply the signature C could forward to A to impersonate B.
         assert!(build_admit_response(&ch, "delta", &Some([9; 32]), "gamma", "bus", 7).is_none());
-        assert!(build_admit_response(&ch, "delta", &Some([9; 32]), "beta", "other.example", 7).is_none());
+        assert!(
+            build_admit_response(&ch, "delta", &Some([9; 32]), "beta", "other.example", 7)
+                .is_none()
+        );
         for epoch in [6, 8] {
-            assert!(build_admit_response(&ch, "delta", &Some([9; 32]), "beta", "bus", epoch).is_none());
+            assert!(
+                build_admit_response(&ch, "delta", &Some([9; 32]), "beta", "bus", epoch).is_none()
+            );
         }
 
         // No seed → prover-incapable → None.
         assert!(build_admit_response(&ch, "delta", &None, "beta", "bus", 7).is_none());
 
         // With a seed → a well-shaped response.
-        let wire = build_admit_response(&ch, "delta", &Some([9u8; 32]), "beta", "bus", 7).expect("response");
+        let wire = build_admit_response(&ch, "delta", &Some([9u8; 32]), "beta", "bus", 7)
+            .expect("response");
         let resp = bus::parse(&wire).expect("parse");
         assert_eq!(resp.command_name(), Some("noded.admit.response"));
         assert_eq!(
@@ -1587,19 +1608,33 @@ mod tests {
                 self.0.lock().unwrap().extend_from_slice(bytes);
                 Ok(bytes.len())
             }
-            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
         }
         let capture = Capture::default();
         let writer = capture.clone();
-        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
-            .with_max_level(tracing::Level::INFO).with_writer(move || writer.clone()).finish();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::INFO)
+            .with_writer(move || writer.clone())
+            .finish();
         let _guard = tracing::subscriber::set_default(subscriber);
         let now = std::time::Instant::now();
         let endpoint = "192.0.2.2:4200".parse().unwrap();
         let before = unauthenticated_frame_total();
         let mut log = UnauthenticatedFrameLog::default();
-        for _ in 0..1127 { log.record(now, "beta", endpoint, false); }
-        assert_eq!(String::from_utf8(capture.0.lock().unwrap().clone()).unwrap().lines().count(), 1);
+        for _ in 0..1127 {
+            log.record(now, "beta", endpoint, false);
+        }
+        assert_eq!(
+            String::from_utf8(capture.0.lock().unwrap().clone())
+                .unwrap()
+                .lines()
+                .count(),
+            1
+        );
         log.record(now + Duration::from_secs(60), "beta", endpoint, false);
         let text = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
         assert_eq!(text.lines().count(), 2);
@@ -1616,19 +1651,46 @@ mod tests {
         let (mesh, _rx) = test_mesh_with_peer(peer("beta", endpoint));
         let keys = mesh_trust::identity::KeyAuthority::new(&Default::default(), 2, 0);
         let desired = HashMap::from([("beta".into(), endpoint)]);
-        let revision = AuthorityRevision { epoch: 2, recovery_generation: 0 };
-        mesh.reconcile_identity(desired.clone(), revision, keys.clone(), "bus".into()).await;
+        let revision = AuthorityRevision {
+            epoch: 2,
+            recovery_generation: 0,
+        };
+        mesh.reconcile_identity(desired.clone(), revision, keys.clone(), "bus".into())
+            .await;
         let connection = test_connection(endpoint);
-        mesh.state.write().await.connections.insert("beta".into(), connection.clone());
+        mesh.state
+            .write()
+            .await
+            .connections
+            .insert("beta".into(), connection.clone());
         let (response, receive) = oneshot::channel();
-        mesh.pending.lock().unwrap().insert("old-call".into(), PendingCall {
-            peer: "beta".into(), connection_generation: connection.generation,
-            class: "echo.slow".into(), response,
-        });
-        let report = mesh.reconcile_identity(desired, revision, keys, "bus".into()).await;
-        assert_eq!(report.connections_retired[0].reason.as_str(), "unproven-link-retired");
-        assert_eq!(report.inflight_failed[0].reason.as_str(), "unproven-link-retired");
-        assert!(receive.await.unwrap().unwrap_err().contains("unproven-link-retired"));
+        mesh.pending.lock().unwrap().insert(
+            "old-call".into(),
+            PendingCall {
+                peer: "beta".into(),
+                connection_generation: connection.generation,
+                class: "echo.slow".into(),
+                response,
+            },
+        );
+        let report = mesh
+            .reconcile_identity(desired, revision, keys, "bus".into())
+            .await;
+        assert_eq!(
+            report.connections_retired[0].reason.as_str(),
+            "unproven-link-retired"
+        );
+        assert_eq!(
+            report.inflight_failed[0].reason.as_str(),
+            "unproven-link-retired"
+        );
+        assert!(
+            receive
+                .await
+                .unwrap()
+                .unwrap_err()
+                .contains("unproven-link-retired")
+        );
     }
 
     #[tokio::test]
@@ -2056,6 +2118,51 @@ mod tests {
                 tungstenite::Message::Ping(_) | tungstenite::Message::Pong(_) => continue,
                 frame => panic!("unexpected frame: {frame:?}"),
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn dialler_refuses_relay_and_wrong_authority_but_answers_normal_challenge() {
+        let b64 = base64::engine::general_purpose::STANDARD;
+        for (verifier, mesh_name, epoch, answered) in [
+            ("gamma", "bus", 7, false),
+            ("beta", "other.example", 7, false),
+            ("beta", "bus", 6, false),
+            ("beta", "bus", 8, false),
+            ("beta", "bus", 7, true),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let beta = peer("beta", listener.local_addr().unwrap());
+            let (tx, _rx) = mpsc::unbounded_channel();
+            let transport = MeshPeers::new(MeshConfig {
+                node_name: "alpha".into(), peers: vec![beta.clone()], d2_seed: Some([9; 32]),
+            }, tx);
+            transport.reconcile_identity(
+                HashMap::from([("beta".into(), beta.noded_addr())]),
+                AuthorityRevision { epoch: 7, recovery_generation: 0 },
+                mesh_trust::identity::KeyAuthority::new(&Default::default(), 7, 0),
+                "bus".into(),
+            ).await;
+            let challenge = BusMessage::new().with_header("command", "noded.admit.challenge")
+                .with_header("id", "relayed-challenge").with_body(&serde_json::json!({
+                    "mesh_fqdn": mesh_name, "inventory_epoch": epoch,
+                    "verifying_broker_node": verifier, "session_id": b64.encode([1;16]),
+                    "server_nonce": b64.encode([2;32]),
+                }).to_string());
+            let server = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+                socket.send(tungstenite::Message::Text(challenge.to_wire().into())).await.unwrap();
+                let first = next_bus_frame(&mut socket).await;
+                assert_eq!(first.command_name(), Some(if answered {
+                    "noded.admit.response"
+                } else { "noded.identity.challenge" }));
+                if answered {
+                    assert_eq!(first.get("id"), Some("relayed-challenge"));
+                }
+            });
+            let _ = transport.ensure_connected(&beta).await;
+            server.await.unwrap();
         }
     }
 
