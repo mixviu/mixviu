@@ -15,7 +15,7 @@ use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
 
 fn window(scheme: Scheme, mode: Mode) -> Harness<'static, fixture::Fixture> {
-    let builder = Harness::builder()
+    let builder = test_harness::configure(Harness::builder())
         .with_size(egui::vec2(760.0, 340.0))
         .wgpu();
     fixture::harness(builder, &fixture::theme(scheme, mode))
@@ -75,7 +75,7 @@ fn chrome_classic() {
 /// gutter and tick.
 #[test]
 fn theme_submenu_pro_light() {
-    let builder = Harness::builder()
+    let builder = test_harness::configure(Harness::builder())
         .with_size(egui::vec2(760.0, 520.0))
         .wgpu();
     let mut h = fixture::harness(builder, &fixture::theme(Scheme::Pro, Mode::Light));
@@ -111,3 +111,6 @@ fn caption_minimize_hover_studio_light() {
         "caption_minimize_hover_studio_light",
     );
 }
+
+#[path = "support/harness.rs"]
+mod test_harness;

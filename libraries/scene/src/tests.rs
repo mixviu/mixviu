@@ -6,6 +6,7 @@
 
 mod evaluation;
 mod layout;
+mod motion;
 
 use super::*;
 use crate::fixtures::{CLIPPANEL as C, CONFORMANCE as F, STATIC as S};

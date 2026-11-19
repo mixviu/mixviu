@@ -146,6 +146,8 @@ pub(super) fn elide_end(ui: &Ui, text: &str, font: &FontId, width: f32) -> Strin
 
 /// Paint the whole scene and collect its interactions.
 pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessage>) {
+    let mut motion = std::mem::take(&mut scene.motion);
+    motion.begin(ui);
     let full = ui.max_rect();
     let palette = scene.palette();
     let page = colour(palette.base.surface);
@@ -180,11 +182,32 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
     // The innermost hovered node that has a tip (children paint after
     // their parents, so a later hit replaces an earlier one).
     let mut tip_candidate: Option<super::tip::Candidate> = None;
+    let mut layers = std::collections::BTreeMap::new();
+    let mut opacities = std::collections::BTreeMap::<String, f64>::new();
+    let mut disabled = std::collections::BTreeSet::new();
     for item in &placed {
         let Some(node) = node_of(scene, item) else {
             continue;
         };
-        let node = node.clone();
+        let mut node = node.clone();
+        let motion_enabled = node.ports.get("motion") != Some(&serde_json::Value::Bool(false))
+            && !item.parent.as_ref().is_some_and(|p| disabled.contains(p));
+        if !motion_enabled {
+            disabled.insert(item.key.clone());
+        }
+        for prop in ["color", "background", "hover"] {
+            if let Some(target) = node.ports.get(prop).cloned() {
+                let value = toolkit::scene_motion::value(
+                    ui.ctx(),
+                    &item.key,
+                    prop,
+                    &target,
+                    node.ports.get("transition"),
+                    motion_enabled,
+                );
+                node.ports.insert(prop.into(), value);
+            }
+        }
         // A row of a scrolling list moves with its scroll and stays in its box.
         let (rect, clip) = match item
             .in_list
@@ -199,8 +222,63 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         };
         let visible = rect.intersect(clip);
         if !visible.is_positive() && !(rect.width() == 0.0 || rect.height() == 0.0) {
+            motion.keep_unpainted(&item.key);
             continue;
         }
+        let mut base = ui.new_child(
+            egui::UiBuilder::new()
+                .id_salt((&item.key, "motion-host"))
+                .layer_id(
+                    item.parent
+                        .as_ref()
+                        .and_then(|p| layers.get(p))
+                        .copied()
+                        .unwrap_or(ui.layer_id()),
+                ),
+        );
+        let offset = toolkit::scene_motion::value(
+            base.ctx(),
+            &item.key,
+            "offset",
+            node.ports
+                .get("offset")
+                .unwrap_or(&serde_json::json!([0., 0.])),
+            node.ports.get("transition"),
+            motion_enabled,
+        );
+        let default_fade = serde_json::json!("fade");
+        let mut capture = motion.capture(
+            &base,
+            &item.key,
+            item.parent.as_deref(),
+            node.ports
+                .get("enter")
+                .or(if item.cell { Some(&default_fade) } else { None }),
+            node.ports.get("exit").or(if item.cell {
+                Some(&default_fade)
+            } else if item.parent.as_ref().is_some_and(|p| layers.contains_key(p))
+                || node.ports.contains_key("offset")
+            {
+                Some(&serde_json::Value::Null)
+            } else {
+                None
+            }),
+            motion_enabled,
+        );
+        let offset = [
+            offset[0].as_f64().unwrap_or(0.),
+            offset[1].as_f64().unwrap_or(0.),
+        ];
+        let layer = motion
+            .layer(&base, &mut capture, rect, offset)
+            .or_else(|| toolkit::scene_motion::offset_layer(&base, &item.key, offset));
+        let mut child = base.new_child(
+            egui::UiBuilder::new()
+                .id_salt(&item.key)
+                .layer_id(layer.unwrap_or(base.layer_id())),
+        );
+        let ui = &mut child;
+        layers.insert(item.key.clone(), ui.layer_id());
         let painter = ui.painter().with_clip_rect(clip);
         let id = Id::unique(("scene-node", &item.key));
         if item.cell {
@@ -215,243 +293,304 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                     emit.push(SceneMessage::Context(route));
                 }
             }
+            motion.painted(ui, capture, rect);
             continue;
         }
-        match node.family.as_str() {
-            "column" | "row" => {
-                let normal = scene_colour(&scene.theme(), port_text(&node, "background"));
-                let hover = scene_colour(&scene.theme(), port_text(&node, "hover")).or(normal);
-                let radius = number(&node, "radius").unwrap_or(0.0);
-                let clickable = node.ports.contains_key("on_click")
-                    || node.ports.contains_key("on_context")
-                    || item.source != Source::Tree;
-                let tip = node
-                    .ports
-                    .get("tooltip")
-                    .and_then(super::tip::Tip::from_port);
-                let hovered = if clickable || hover != normal || tip.is_some() {
-                    let response = ui.interact(
-                        visible,
-                        id,
-                        if clickable {
-                            Sense::click()
+        let start = ui.ctx().graphics_mut(|g| g.entry(ui.layer_id()).next_idx());
+        (|| {
+            match node.family.as_str() {
+                "column" | "row" => {
+                    let normal = scene_colour(&scene.theme(), port_text(&node, "background"));
+                    let hover = scene_colour(&scene.theme(), port_text(&node, "hover")).or(normal);
+                    let radius = number(&node, "radius").unwrap_or(0.0);
+                    let clickable = node.ports.contains_key("on_click")
+                        || node.ports.contains_key("on_context")
+                        || item.source != Source::Tree;
+                    let tip = node
+                        .ports
+                        .get("tooltip")
+                        .and_then(super::tip::Tip::from_port);
+                    let hovered = if clickable || hover != normal || tip.is_some() {
+                        let response = ui.interact(
+                            visible,
+                            id,
+                            if clickable {
+                                Sense::click()
+                            } else {
+                                Sense::hover()
+                            },
+                        );
+                        if clickable && response.clicked() {
+                            emit.push(SceneMessage::Click(route_of(scene, item, &node)));
+                        }
+                        // In a list row the route (and its on_context) is the list's.
+                        if clickable && response.secondary_clicked() {
+                            let route = route_of(scene, item, &node);
+                            if route.context.is_some() {
+                                emit.push(SceneMessage::Context(route));
+                            }
+                        }
+                        response.hovered()
+                    } else {
+                        false
+                    };
+                    if hovered && let Some(tip) = tip {
+                        tip_candidate = Some(super::tip::Candidate {
+                            key: item.key.clone(),
+                            rect: visible,
+                            tip,
+                        });
+                    }
+                    if let Some(fill) = if hovered { hover } else { normal } {
+                        painter.rect_filled(rect, radius, fill);
+                    }
+                }
+                "text" => {
+                    let mono = flag(&node, "mono");
+                    let style = if mono { styles.mono } else { styles.ui };
+                    let size = style.size(number(&node, "size"));
+                    let font = font(size, mono, flag(&node, "bold"));
+                    let colour =
+                        scene_colour(&scene.theme(), port_text(&node, "color")).unwrap_or(ink);
+                    let mut text = port_text(&node, "text").to_owned();
+                    if flag(&node, "wrap") {
+                        let lines = super::flex::wrap_text(
+                            &text,
+                            rect.width(),
+                            number(&node, "max_lines").unwrap_or(3.0) as usize,
+                            &|s| {
+                                ui.fonts_mut(|fonts| {
+                                    fonts
+                                        .layout_no_wrap(s.to_owned(), font.clone(), colour)
+                                        .size()
+                                        .x
+                                })
+                            },
+                        );
+                        let line_height = styles.line(mono, size);
+                        for (i, line) in lines.iter().enumerate() {
+                            let (align, x) = match port_text(&node, "align") {
+                                "center" => (Align2::CENTER_CENTER, rect.center().x),
+                                "right" => (Align2::RIGHT_CENTER, rect.right()),
+                                _ => (Align2::LEFT_CENTER, rect.left()),
+                            };
+                            painter.text(
+                                pos2(x, rect.top() + (i as f32 + 0.5) * line_height),
+                                align,
+                                line,
+                                font.clone(),
+                                colour,
+                            );
+                        }
+                        return;
+                    }
+                    if flag(&node, "elide") {
+                        text = elide_end(ui, &text, &font, rect.width());
+                    }
+                    let (align, x) = match port_text(&node, "align") {
+                        "center" => (Align2::CENTER_CENTER, rect.center().x),
+                        "right" => (Align2::RIGHT_CENTER, rect.right()),
+                        _ => (Align2::LEFT_CENTER, rect.left()),
+                    };
+                    painter.text(pos2(x, rect.center().y), align, text, font, colour);
+                }
+                "button" => {
+                    let response = ui.interact(visible, id, Sense::click());
+                    let interaction = if response.is_pointer_button_down_on() {
+                        InteractionState::Pressed
+                    } else if response.hovered() {
+                        InteractionState::Hovered
+                    } else {
+                        InteractionState::Resting
+                    };
+                    let travel = toolkit::scene_motion::scalar(
+                        ui.ctx(),
+                        id.with("press"),
+                        if response.is_pointer_button_down_on() {
+                            1.0
                         } else {
-                            Sense::hover()
+                            0.0
                         },
+                        90.0,
+                        motion_enabled,
                     );
-                    if clickable && response.clicked() {
+                    let rect = rect.translate(vec2(0.0, travel));
+                    if response.hovered()
+                        && let Some(tip) = node
+                            .ports
+                            .get("tooltip")
+                            .and_then(super::tip::Tip::from_port)
+                    {
+                        tip_candidate = Some(super::tip::Candidate {
+                            key: item.key.clone(),
+                            rect: visible,
+                            tip,
+                        });
+                    }
+                    let theme = scene.theme();
+                    let tables = theme.design().tables();
+                    let cell = tables.button.cell(button_key(&node, interaction));
+                    let radius = cell.radius as f32;
+                    painter.rect_filled(rect, radius, linear(cell.pair.surface));
+                    if let Some(border) = cell.border {
+                        painter.rect_stroke(
+                            rect,
+                            radius,
+                            Stroke::new(cell.border_width as f32, linear(border)),
+                            StrokeKind::Inside,
+                        );
+                    }
+                    painter.text(
+                        rect.center(),
+                        Align2::CENTER_CENTER,
+                        port_text(&node, "label"),
+                        font(styles.ui.size, false, false),
+                        linear(cell.pair.foreground),
+                    );
+                    if response.clicked() {
                         emit.push(SceneMessage::Click(route_of(scene, item, &node)));
                     }
-                    // In a list row the route (and its on_context) is the list's.
-                    if clickable && response.secondary_clicked() {
+                    // A right click: the button's own on_context (or, inside a
+                    // list row, the list's).
+                    if response.secondary_clicked() {
                         let route = route_of(scene, item, &node);
                         if route.context.is_some() {
                             emit.push(SceneMessage::Context(route));
                         }
                     }
-                    response.hovered()
-                } else {
-                    false
-                };
-                if hovered && let Some(tip) = tip {
-                    tip_candidate = Some(super::tip::Candidate {
-                        key: item.key.clone(),
-                        rect: visible,
-                        tip,
-                    });
                 }
-                if let Some(fill) = if hovered { hover } else { normal } {
-                    painter.rect_filled(rect, radius, fill);
+                "field" => {
+                    let key = item.key.clone();
+                    let value = scene
+                        .edits
+                        .get(&key)
+                        .cloned()
+                        .unwrap_or_else(|| port_text(&node, "value").to_owned());
+                    let mut text = value.clone();
+                    let field = if item.source == Source::Tree {
+                        field_id(&item.id)
+                    } else {
+                        Id::unique(("scene-field-row", &item.key))
+                    };
+                    let edit = egui::TextEdit::singleline(&mut text)
+                        .id(field)
+                        .hint_text(port_text(&node, "placeholder"))
+                        .password(flag(&node, "password"))
+                        .font(font(styles.ui.size, false, false))
+                        .margin(egui::Margin::symmetric(7, 4));
+                    // In a child clipped like the other nodes, so a field half
+                    // scrolled out of its list neither paints nor takes input
+                    // outside the list's box.
+                    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
+                    child.set_clip_rect(clip.intersect(ui.clip_rect()));
+                    let response = child.put(rect, edit);
+                    let route = route_of(scene, item, &node);
+                    if response.changed() {
+                        emit.push(SceneMessage::Input(Arc::clone(&route), key, text.clone()));
+                    }
+                    if response.lost_focus()
+                        && ui.ctx().input(|input| input.key_pressed(egui::Key::Enter))
+                    {
+                        emit.push(SceneMessage::Submit(route, text));
+                    }
                 }
-            }
-            "text" => {
-                let mono = flag(&node, "mono");
-                let style = if mono { styles.mono } else { styles.ui };
-                let size = style.size(number(&node, "size"));
-                let font = font(size, mono, flag(&node, "bold"));
-                let colour = scene_colour(&scene.theme(), port_text(&node, "color")).unwrap_or(ink);
-                let mut text = port_text(&node, "text").to_owned();
-                if flag(&node, "wrap") {
-                    let lines = super::flex::wrap_text(
-                        &text,
-                        rect.width(),
-                        number(&node, "max_lines").unwrap_or(3.0) as usize,
-                        &|s| {
-                            ui.fonts_mut(|fonts| {
-                                fonts
-                                    .layout_no_wrap(s.to_owned(), font.clone(), colour)
-                                    .size()
-                                    .x
-                            })
-                        },
+                "toggle" => {
+                    let key = item.key.clone();
+                    let value = scene
+                        .toggles
+                        .get(&key)
+                        .copied()
+                        .unwrap_or(flag(&node, "value"));
+                    let response = ui.interact(visible, id, Sense::click());
+                    let h = styles.ui.line(styles.ui.size).min(rect.height());
+                    let switch = Rect::from_min_size(
+                        pos2(rect.left(), rect.center().y - h / 2.0),
+                        vec2(h * 1.8, h),
                     );
-                    let line_height = styles.line(mono, size);
-                    for (i, line) in lines.iter().enumerate() {
-                        let (align, x) = match port_text(&node, "align") {
-                            "center" => (Align2::CENTER_CENTER, rect.center().x),
-                            "right" => (Align2::RIGHT_CENTER, rect.right()),
-                            _ => (Align2::LEFT_CENTER, rect.left()),
-                        };
+                    let visuals = ui.visuals();
+                    let track = if value {
+                        visuals.selection.bg_fill
+                    } else {
+                        visuals.widgets.inactive.bg_fill
+                    };
+                    painter.rect_filled(switch, h / 2.0, track);
+                    let slide = toolkit::scene_motion::scalar(
+                        ui.ctx(),
+                        id.with("slide"),
+                        if value { 1.0 } else { 0.0 },
+                        160.0,
+                        motion_enabled,
+                    );
+                    let knob_x =
+                        egui::lerp(switch.left() + h / 2.0..=switch.right() - h / 2.0, slide);
+                    painter.circle_filled(
+                        pos2(knob_x, switch.center().y),
+                        h / 2.0 - 2.0,
+                        visuals.widgets.active.fg_stroke.color,
+                    );
+                    let label = port_text(&node, "label");
+                    if !label.is_empty() {
                         painter.text(
-                            pos2(x, rect.top() + (i as f32 + 0.5) * line_height),
-                            align,
-                            line,
-                            font.clone(),
-                            colour,
+                            pos2(switch.right() + 8.0, rect.center().y),
+                            Align2::LEFT_CENTER,
+                            label,
+                            font(styles.ui.size, false, false),
+                            ink,
                         );
                     }
-                    continue;
-                }
-                if flag(&node, "elide") {
-                    text = elide_end(ui, &text, &font, rect.width());
-                }
-                let (align, x) = match port_text(&node, "align") {
-                    "center" => (Align2::CENTER_CENTER, rect.center().x),
-                    "right" => (Align2::RIGHT_CENTER, rect.right()),
-                    _ => (Align2::LEFT_CENTER, rect.left()),
-                };
-                painter.text(pos2(x, rect.center().y), align, text, font, colour);
-            }
-            "button" => {
-                let response = ui.interact(visible, id, Sense::click());
-                let interaction = if response.is_pointer_button_down_on() {
-                    InteractionState::Pressed
-                } else if response.hovered() {
-                    InteractionState::Hovered
-                } else {
-                    InteractionState::Resting
-                };
-                if response.hovered()
-                    && let Some(tip) = node
-                        .ports
-                        .get("tooltip")
-                        .and_then(super::tip::Tip::from_port)
-                {
-                    tip_candidate = Some(super::tip::Candidate {
-                        key: item.key.clone(),
-                        rect: visible,
-                        tip,
-                    });
-                }
-                let theme = scene.theme();
-                let tables = theme.design().tables();
-                let cell = tables.button.cell(button_key(&node, interaction));
-                let radius = cell.radius as f32;
-                painter.rect_filled(rect, radius, linear(cell.pair.surface));
-                if let Some(border) = cell.border {
-                    painter.rect_stroke(
-                        rect,
-                        radius,
-                        Stroke::new(cell.border_width as f32, linear(border)),
-                        StrokeKind::Inside,
-                    );
-                }
-                painter.text(
-                    rect.center(),
-                    Align2::CENTER_CENTER,
-                    port_text(&node, "label"),
-                    font(styles.ui.size, false, false),
-                    linear(cell.pair.foreground),
-                );
-                if response.clicked() {
-                    emit.push(SceneMessage::Click(route_of(scene, item, &node)));
-                }
-                // A right click: the button's own on_context (or, inside a
-                // list row, the list's).
-                if response.secondary_clicked() {
-                    let route = route_of(scene, item, &node);
-                    if route.context.is_some() {
-                        emit.push(SceneMessage::Context(route));
+                    if response.clicked() {
+                        emit.push(SceneMessage::Toggle(
+                            route_of(scene, item, &node),
+                            key,
+                            !value,
+                        ));
                     }
                 }
+                "image" => drawn.extend(paint_image(scene, ui, &painter, item, &node, rect, ink)),
+                _ => {}
             }
-            "field" => {
-                let key = item.key.clone();
-                let value = scene
-                    .edits
-                    .get(&key)
-                    .cloned()
-                    .unwrap_or_else(|| port_text(&node, "value").to_owned());
-                let mut text = value.clone();
-                let field = if item.source == Source::Tree {
-                    field_id(&item.id)
-                } else {
-                    Id::unique(("scene-field-row", &item.key))
-                };
-                let edit = egui::TextEdit::singleline(&mut text)
-                    .id(field)
-                    .hint_text(port_text(&node, "placeholder"))
-                    .password(flag(&node, "password"))
-                    .font(font(styles.ui.size, false, false))
-                    .margin(egui::Margin::symmetric(7, 4));
-                // In a child clipped like the other nodes, so a field half
-                // scrolled out of its list neither paints nor takes input
-                // outside the list's box.
-                let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
-                child.set_clip_rect(clip.intersect(ui.clip_rect()));
-                let response = child.put(rect, edit);
-                let route = route_of(scene, item, &node);
-                if response.changed() {
-                    emit.push(SceneMessage::Input(Arc::clone(&route), key, text.clone()));
-                }
-                if response.lost_focus()
-                    && ui.ctx().input(|input| input.key_pressed(egui::Key::Enter))
-                {
-                    emit.push(SceneMessage::Submit(route, text));
-                }
-            }
-            "toggle" => {
-                let key = item.key.clone();
-                let value = scene
-                    .toggles
-                    .get(&key)
-                    .copied()
-                    .unwrap_or(flag(&node, "value"));
-                let response = ui.interact(visible, id, Sense::click());
-                let h = styles.ui.line(styles.ui.size).min(rect.height());
-                let switch = Rect::from_min_size(
-                    pos2(rect.left(), rect.center().y - h / 2.0),
-                    vec2(h * 1.8, h),
-                );
-                let visuals = ui.visuals();
-                let track = if value {
-                    visuals.selection.bg_fill
-                } else {
-                    visuals.widgets.inactive.bg_fill
-                };
-                painter.rect_filled(switch, h / 2.0, track);
-                let knob_x = if value {
-                    switch.right() - h / 2.0
-                } else {
-                    switch.left() + h / 2.0
-                };
-                painter.circle_filled(
-                    pos2(knob_x, switch.center().y),
-                    h / 2.0 - 2.0,
-                    visuals.widgets.active.fg_stroke.color,
-                );
-                let label = port_text(&node, "label");
-                if !label.is_empty() {
-                    painter.text(
-                        pos2(switch.right() + 8.0, rect.center().y),
-                        Align2::LEFT_CENTER,
-                        label,
-                        font(styles.ui.size, false, false),
-                        ink,
-                    );
-                }
-                if response.clicked() {
-                    emit.push(SceneMessage::Toggle(
-                        route_of(scene, item, &node),
-                        key,
-                        !value,
-                    ));
-                }
-            }
-            "image" => drawn.extend(paint_image(scene, ui, &painter, item, &node, rect, ink)),
-            _ => {}
+        })();
+        let enabled = motion_enabled;
+        let opacity = toolkit::scene_motion::value(
+            ui.ctx(),
+            &item.key,
+            "opacity",
+            node.ports.get("opacity").unwrap_or(&serde_json::json!(1.0)),
+            node.ports.get("transition"),
+            enabled,
+        )
+        .as_f64()
+        .unwrap_or(1.0);
+        let opacity = opacity.clamp(0., 1.)
+            * item
+                .parent
+                .as_ref()
+                .and_then(|p| opacities.get(p))
+                .copied()
+                .unwrap_or(1.);
+        opacities.insert(item.key.clone(), opacity);
+        toolkit::scene_motion::visual(ui, start, rect, opacity, [0.0, 0.0]);
+        toolkit::scene_motion::highlight(
+            ui,
+            ui.layer_id(),
+            start,
+            &item.key,
+            node.ports.get("transition"),
+            motion_enabled,
+        );
+        motion.painted(ui, capture, rect);
+        if item.source == Source::Tree
+            && let Some(r) = scene.layout.nodes.get_mut(&item.id)
+        {
+            *r = ui
+                .ctx()
+                .layer_transform_to_global(ui.layer_id())
+                .unwrap_or_default()
+                .mul_rect(*r);
         }
     }
+    motion.end(ui);
+    scene.motion = motion;
     scene.textures.retain(|key, _| drawn.contains(key));
     tip_pass(scene, ui, tip_candidate, emit);
     if framed {

@@ -9,7 +9,7 @@ struct Model {
 }
 
 fn harness(render: bool) -> Harness<'static, Model> {
-    let builder = Harness::builder().with_size(egui::vec2(800.0, 700.0));
+    let builder = test_harness::configure(Harness::builder()).with_size(egui::vec2(800.0, 700.0));
     let builder = if render { builder.wgpu() } else { builder };
     let mut h = builder.build_ui_state(
         |ui, state: &mut Model| {
@@ -122,3 +122,6 @@ fn outside_press_closes_and_shift_enter_edits_the_letter_jump() {
         }]
     );
 }
+
+#[path = "support/harness.rs"]
+mod test_harness;

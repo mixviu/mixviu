@@ -1261,7 +1261,7 @@ mod tests {
     fn save_opens_with_filename_focus_and_typing_then_enter_confirms() {
         use egui_kittest::kittest::Queryable;
         let dir = tempfile::tempdir().unwrap();
-        let mut h = egui_kittest::Harness::builder()
+        let mut h = crate::test_harness::configure(egui_kittest::Harness::builder())
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, state: &mut (FileChooser, Option<Outcome>)| {
@@ -1370,7 +1370,7 @@ mod tests {
 
     #[test]
     fn file_chooser_save_snapshot() {
-        let mut h = egui_kittest::Harness::builder()
+        let mut h = crate::test_harness::configure(egui_kittest::Harness::builder())
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, chooser: &mut FileChooser| {
@@ -1386,7 +1386,7 @@ mod tests {
     #[test]
     fn minimum_window_file_chooser_renders() {
         use egui_kittest::kittest::Queryable;
-        let mut h = egui_kittest::Harness::builder()
+        let mut h = crate::test_harness::configure(egui_kittest::Harness::builder())
             .with_size(egui::Vec2::from(crate::window::MIN_SIZE))
             .build_ui_state(
                 |ui, chooser: &mut FileChooser| {
@@ -1412,7 +1412,7 @@ mod tests {
     #[test]
     fn save_existing_file_waits_for_replace_and_cancel_keeps_chooser() {
         use egui_kittest::kittest::Queryable;
-        let mut h = egui_kittest::Harness::builder()
+        let mut h = crate::test_harness::configure(egui_kittest::Harness::builder())
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, state: &mut (FileChooser, Option<Outcome>)| {
@@ -1551,7 +1551,7 @@ mod tests {
 
         let mut chooser = FileChooser::new("/tmp", "Choose files", "Attach");
         chooser.started = true;
-        let mut h = Harness::builder()
+        let mut h = crate::test_harness::configure(Harness::builder())
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, chooser: &mut FileChooser| {
@@ -1598,7 +1598,7 @@ mod tests {
 
         let mut chooser = FileChooser::new("/tmp", "Choose files", "Attach");
         chooser.started = true;
-        let mut h = Harness::builder()
+        let mut h = crate::test_harness::configure(Harness::builder())
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, state: &mut (FileChooser, Option<Outcome>)| {
@@ -1633,7 +1633,7 @@ mod tests {
         chooser.started = true;
         chooser.entries = vec![entry("report.txt", false)];
         chooser.selection.all(&chooser.entries);
-        let mut h = Harness::builder()
+        let mut h = crate::test_harness::configure(Harness::builder())
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, state: &mut (FileChooser, Option<Outcome>)| {
@@ -1662,7 +1662,7 @@ mod tests {
         let mut chooser = FileChooser::new("/tmp", "Choose files", "Attach");
         chooser.started = true;
         chooser.entries = vec![entry("report.txt", false)];
-        let mut h = Harness::builder()
+        let mut h = crate::test_harness::configure(Harness::builder())
             .with_size(egui::vec2(900.0, 700.0))
             .build_ui_state(
                 |ui, state: &mut (FileChooser, bool, Option<Outcome>)| {

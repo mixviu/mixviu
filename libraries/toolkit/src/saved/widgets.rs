@@ -385,7 +385,7 @@ mod tests {
     }
     #[test]
     fn panel_drag_records_the_share_and_unrelated_clicks_do_not() {
-        let mut h = egui_kittest::Harness::builder()
+        let mut h = crate::test_harness::configure(egui_kittest::Harness::builder())
             .with_context_setup(|ctx| Widgets::default().install(ctx))
             .with_size(egui::vec2(1000.0, 600.0))
             .build_ui_state(

@@ -31,6 +31,8 @@ pub struct Event {
 }
 
 pub struct SceneView {
+    motion: toolkit::scene_motion::SceneMotion,
+    motion_parent: Option<String>,
     collect_widget_rects: bool,
     widget_rects: Vec<crate::widget_rects::WidgetRect>,
     frame: Option<Box<SceneView>>,
@@ -121,6 +123,8 @@ impl SceneView {
         let lists = validate_templates(&tree).map_err(|e| e.to_string())?;
         validate_controls(&tree)?;
         Ok(Self {
+            motion: toolkit::scene_motion::SceneMotion::default(),
+            motion_parent: None,
             frame: None,
             regions: BTreeMap::new(),
             tree,
@@ -322,6 +326,7 @@ impl SceneView {
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
+        toolkit::scene_motion::install(ui.ctx());
         ui.ctx()
             .data_mut(|d| d.insert_temp(egui::Id::unique("viu-editor-focused"), false));
         if let Some(mut frame) = self.frame.take() {
@@ -360,6 +365,7 @@ impl SceneView {
         self.show_content(ui)
     }
     fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
+        self.motion.begin(ui);
         if self.collect_widget_rects {
             self.widget_rects.clear();
             ui.ctx()
@@ -372,6 +378,7 @@ impl SceneView {
         let tree = self.tree.clone();
         let nodes = tree.nodes.into_iter().collect();
         self.node(ui, "root", &nodes, None, 0, &mut events);
+        self.motion.end(ui);
         for id in &self.overlays {
             let node = &nodes[id];
             if let Ok(widget) = Widget::decode(&node.ports["definition"]) {
@@ -535,12 +542,143 @@ impl SceneView {
         depth: usize,
         events: &mut Vec<Event>,
     ) {
+        let Some(node) = nodes.get(id) else {
+            return;
+        };
+        let list_row = route.is_some_and(|(_, list, _)| text(list, "row") == id);
+        if !list_row
+            && self.motion_parent.is_none()
+            && !["enter", "exit", "opacity", "offset", "transition"]
+                .iter()
+                .any(|p| node.ports.contains_key(*p))
+        {
+            self.node_contents(ui, id, nodes, route, depth, events);
+            return;
+        }
+        if node.ports.get("hidden") == Some(&Value::Bool(true)) {
+            return;
+        }
+        let key = route.map_or_else(
+            || id.to_owned(),
+            |(_, _, item)| format!("{}#{id}", item["id"].as_str().unwrap_or("")),
+        );
+        let start = ui.ctx().graphics_mut(|g| g.entry(ui.layer_id()).next_idx());
+        let enabled = node.ports.get("motion") != Some(&Value::Bool(false))
+            && ui.style().animation_time != 0.0;
+        let opacity = toolkit::scene_motion::value(
+            ui.ctx(),
+            &key,
+            "opacity",
+            node.ports.get("opacity").unwrap_or(&json!(1.0)),
+            node.ports.get("transition"),
+            enabled,
+        )
+        .as_f64()
+        .unwrap_or(1.0);
+        let offset = toolkit::scene_motion::value(
+            ui.ctx(),
+            &key,
+            "offset",
+            node.ports.get("offset").unwrap_or(&json!([0.0, 0.0])),
+            node.ports.get("transition"),
+            enabled,
+        );
+        let default_fade = json!("fade");
+        let mut capture = self.motion.capture(
+            ui,
+            &key,
+            self.motion_parent.as_deref(),
+            node.ports
+                .get("enter")
+                .or(if list_row { Some(&default_fade) } else { None }),
+            node.ports.get("exit").or(if list_row {
+                Some(&default_fade)
+            } else {
+                Some(&Value::Null)
+            }),
+            node.ports.get("motion") != Some(&Value::Bool(false)),
+        );
+        let offset = [
+            offset[0].as_f64().unwrap_or(0.),
+            offset[1].as_f64().unwrap_or(0.),
+        ];
+        let layer = self
+            .motion
+            .layer(ui, &mut capture, ui.available_rect_before_wrap(), offset)
+            .or_else(|| toolkit::scene_motion::offset_layer(ui, &key, offset));
+        let parent = self.motion_parent.clone();
+        if capture.is_some() {
+            self.motion_parent = Some(key.clone());
+        }
+        ui.scope_builder(
+            egui::UiBuilder::new().layer_id(layer.unwrap_or(ui.layer_id())),
+            |ui| {
+                ui.multiply_opacity(opacity.clamp(0., 1.) as f32);
+                self.node_contents(ui, id, nodes, route, depth, events);
+            },
+        );
+        self.motion_parent = parent;
+        let painted_rect = self.geometry.get(&key).copied().unwrap_or(ui.min_rect());
+        toolkit::scene_motion::highlight(
+            ui,
+            layer.unwrap_or(ui.layer_id()),
+            if layer.is_some() {
+                egui::layers::ShapeIdx(0)
+            } else {
+                start
+            },
+            &key,
+            node.ports.get("transition"),
+            enabled,
+        );
+        self.motion.painted(ui, capture, painted_rect);
+        if let Some(layer) = layer
+            && let Some(rect) = self.geometry.get_mut(&key)
+        {
+            *rect = ui
+                .ctx()
+                .layer_transform_to_global(layer)
+                .unwrap_or_default()
+                .mul_rect(*rect);
+        }
+    }
+
+    fn node_contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        nodes: &BTreeMap<String, Node>,
+        route: Option<(&str, &Node, &Value)>,
+        depth: usize,
+        events: &mut Vec<Event>,
+    ) {
         if depth > 128 {
             return;
         }
         let Some(node) = nodes.get(id) else {
             return;
         };
+        let mut painted_node = std::borrow::Cow::Borrowed(node);
+        for prop in ["color", "background", "hover"]
+            .into_iter()
+            .filter(|_| node.ports.contains_key("transition"))
+        {
+            if let Some(target) = node.ports.get(prop) {
+                painted_node.to_mut().ports.insert(
+                    prop.into(),
+                    toolkit::scene_motion::value(
+                        ui.ctx(),
+                        id,
+                        prop,
+                        target,
+                        node.ports.get("transition"),
+                        node.ports.get("motion") != Some(&Value::Bool(false))
+                            && ui.style().animation_time != 0.0,
+                    ),
+                );
+            }
+        }
+        let node = &painted_node;
         if self.overlays.contains(id) {
             return;
         }
@@ -565,6 +703,8 @@ impl SceneView {
         );
         let response = ui
             .push_id(&key, |ui| {
+                if node.ports.get("motion") == Some(&Value::Bool(false)) { ui.style_mut().animation_time = 0.0; }
+                let _surface_policy=toolkit::scene_motion::policy(ui);
                 if node.ports.get("enabled") == Some(&Value::Bool(false)) { ui.disable(); if node.family == "dock" { paint_outline(ui,node,allocated); } }
                 if let Some(width) = num(node, "width").or(num(node, "min_width")) {
                     ui.set_width(width);
@@ -2205,3 +2345,7 @@ fn paint_outline(ui: &egui::Ui, node: &Node, rect: egui::Rect) {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "view_motion_identity_tests.rs"]
+mod motion_identity_tests;

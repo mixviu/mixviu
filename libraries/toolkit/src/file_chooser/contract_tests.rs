@@ -8,7 +8,7 @@ type State = (FileChooser, Option<Outcome>);
 #[test]
 fn opening_from_a_still_recorded_menu_raises_above_the_parent_dialog() {
     let chooser = FileChooser::new("/home/user/Documents", "Attach files", "Attach");
-    let mut h = Harness::builder()
+    let mut h = crate::test_harness::configure(Harness::builder())
         .with_size(egui::vec2(900.0, 700.0))
         .with_context_setup(|ctx| crate::install(ctx, &crate::Theme::embedded()))
         .build_ui_state(
@@ -66,7 +66,7 @@ fn opening_from_a_still_recorded_menu_raises_above_the_parent_dialog() {
 
 fn harness(mut chooser: FileChooser) -> Harness<'static, State> {
     chooser.started = true;
-    let mut harness = Harness::builder()
+    let mut harness = crate::test_harness::configure(Harness::builder())
         .with_size(egui::vec2(900.0, 700.0))
         .with_context_setup(|ctx| crate::install(ctx, &crate::Theme::embedded()))
         .build_ui_state(

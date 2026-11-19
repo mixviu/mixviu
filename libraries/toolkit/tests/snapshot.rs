@@ -67,7 +67,7 @@ fn panel_with(theme: &Theme, name: &str, open: Option<&str>) {
     let strings = Strings::new(FTL);
     let commands = registry();
     let state = Demo::default();
-    let mut harness = Harness::builder()
+    let mut harness = test_harness::configure(Harness::builder())
         .with_size(egui::vec2(420.0, 260.0))
         .wgpu()
         .build_ui(move |ui| {
@@ -149,3 +149,6 @@ fn panel_dark() {
         "panel_dark",
     );
 }
+
+#[path = "support/harness.rs"]
+mod test_harness;

@@ -63,7 +63,7 @@ fn render_chrome_scenes_for_comparison() {
     std::fs::create_dir_all(&dir).expect("render directory");
     for (id, scheme, mode) in fixture::CHROME_THEMES {
         for scene in SCENES {
-            let builder = Harness::builder()
+            let builder = test_harness::configure(Harness::builder())
                 .with_size(egui::vec2(1280.0 + 2.0 * MARGIN, 800.0 + 2.0 * MARGIN))
                 .with_pixels_per_point(2.0)
                 .wgpu();
@@ -107,3 +107,6 @@ fn render_chrome_scenes_for_comparison() {
         }
     }
 }
+
+#[path = "support/harness.rs"]
+mod test_harness;

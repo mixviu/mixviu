@@ -212,7 +212,7 @@ fn window(scheme: Scheme, mode: Mode, dialog: bool) -> Harness<'static, Gallery>
         dialog,
         ..Gallery::default()
     };
-    let mut h = Harness::builder()
+    let mut h = test_harness::configure(Harness::builder())
         .with_size(vec2(960.0, 600.0))
         .wgpu()
         .build_ui_state(gallery, state);
@@ -280,3 +280,6 @@ fn a_tooltip_with_its_shortcut_in_pro_dark() {
     h.run_steps(40);
     h.snapshot("tooltip_pro");
 }
+
+#[path = "support/harness.rs"]
+mod test_harness;

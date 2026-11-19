@@ -22,6 +22,7 @@ mod hermite;
 mod minjerk;
 mod presets;
 mod route;
+pub mod scene;
 mod spring;
 mod spring_curve;
 mod timeline;
