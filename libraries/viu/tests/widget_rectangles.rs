@@ -7,6 +7,10 @@ use std::{
 use viu::{bundle::Bundle, runtime::Runtime, view::SceneView};
 
 fn draw(view: &mut SceneView, ctx: &egui::Context, width: f32, height: f32) {
+    draw_capture(view, ctx, width, height, true);
+}
+fn draw_capture(view: &mut SceneView, ctx: &egui::Context, width: f32, height: f32, capture: bool) {
+    if capture { view.request_widget_rectangles(); }
     ctx.run_ui(
         egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
@@ -175,18 +179,16 @@ fn rectangle_frame_cost() {
     for _ in 0..20 {
         draw(&mut view, &ctx, 800., 600.);
     }
-    for (collect, queried) in [(false, false), (true, false), (true, true)] {
-        #[cfg(feature = "test-support")]
-        view.set_widget_rectangle_collection(collect);
+    for queried in [false, true] {
         let start = Instant::now();
         for _ in 0..500 {
-            draw(&mut view, &ctx, 800., 600.);
+            draw_capture(&mut view, &ctx, 800., 600., queried);
             if queried {
                 std::hint::black_box(view.widget_rectangles(&json!({})).unwrap());
             }
         }
         println!(
-            "widget_rectangles 100 buttons collect={collect} queried={queried} us/frame={:.3}",
+            "widget_rectangles 100 buttons pending={queried} us/frame={:.3}",
             start.elapsed().as_secs_f64() * 1e6 / 500.
         );
     }
@@ -227,19 +229,22 @@ fn focus_readback_uses_the_scene_id() {
     let source = format!(
         "---\nscene: 1\nname: test\ncitizen: test\n---\n```mix\n{}\n```\n",
         json!({
-            "root":{"widget":"column","children":["entry"]},
-            "entry":{"widget":"control","definition":{"id":"entry","kind":"field","label":"Entry","initial":""}}
+            "root":{"widget":"column","children":["entry","other"]},
+            "entry":{"widget":"control","definition":{"id":"entry","kind":"field","label":"Entry","initial":""}},
+            "other":{"widget":"control","definition":{"id":"other","kind":"field","label":"Other","initial":""}}
         })
     );
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
     draw(&mut view, &ctx, 400., 200.);
-    view.request_focus("entry").unwrap();
-    draw(&mut view, &ctx, 400., 200.);
-    assert_eq!(
-        view.widget_rectangles(&json!({"ids":["entry"]})).unwrap()[0]["focused"],
-        true
-    );
+    for target in ["entry", "other", "entry"] {
+        view.request_focus(target).unwrap();
+        draw(&mut view, &ctx, 400., 200.);
+        let rows = view.widget_rectangles(&json!({})).unwrap();
+        let rows = rows.as_array().unwrap();
+        assert_eq!(rows.iter().filter(|r| r["id"] == target).count(), 1);
+        for row in rows { assert_eq!(row["focused"], row["id"] == target, "focus on {target}: {row}"); }
+    }
 }
 
 #[test]
@@ -328,8 +333,7 @@ fn headless_bus_sweep() {
 }
 
 #[cfg(feature = "test-support")]
-#[test]
-fn populated_bus_reply_has_a_compositor_window_fence() {
+fn bus_widget_query(catalogue: Option<(u8, serde_json::Value)>, args: serde_json::Value) -> (u8, serde_json::Value) {
     use viu::app_host::test_support::Harness;
     let broker = test_broker::Broker::start();
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -337,7 +341,7 @@ fn populated_bus_reply_has_a_compositor_window_fence() {
         .enable_all()
         .build()
         .unwrap();
-    let comp = viu::native_bus::Endpoint::start(
+    let comp = catalogue.as_ref().map(|_| viu::native_bus::Endpoint::start(
         "comp".into(),
         broker.url.clone(),
         vec![bus::CommandDescriptor::new(
@@ -348,7 +352,7 @@ fn populated_bus_reply_has_a_compositor_window_fence() {
         )],
         "comp.quit".into(),
         Arc::new(|| {}),
-    );
+    ));
     let client = Arc::new(
         rt.block_on(
             bus::SupervisedClient::connect_options("rect-populated", &broker.url).connect(),
@@ -367,7 +371,7 @@ fn populated_bus_reply_has_a_compositor_window_fence() {
     .unwrap();
     let mut host = Harness::new(bundle);
     let deadline = Instant::now() + Duration::from_secs(20);
-    while !host.ready() || comp.client().is_none() {
+    while !host.ready() || comp.as_ref().is_some_and(|c| c.client().is_none()) {
         host.pump();
         assert!(
             Instant::now() < deadline,
@@ -386,7 +390,7 @@ fn populated_bus_reply_has_a_compositor_window_fence() {
                 "gallery",
                 "gallery.widgets",
                 &Default::default(),
-                &json!({"ids":["gold-header"],"visible_only":true}).to_string(),
+                &args.to_string(),
                 Duration::from_secs(10),
             )
             .await
@@ -399,20 +403,87 @@ fn populated_bus_reply_has_a_compositor_window_fence() {
     while !task.is_finished() {
         host.draw();
         host.pump();
-        while let Ok(request) = comp.requests.try_recv() {
-            assert_eq!(request.command, "comp.windows.list");
-            let _ = request.reply.send((
-                0,
-                json!({"windows":[{"id":7,"generation":2,"pid":std::process::id(),"x":20,"y":30}]}),
-            ));
+        if let Some(comp) = &comp {
+            while let Ok(request) = comp.requests.try_recv() {
+                assert_eq!(request.command, "comp.windows.list");
+                let _ = request.reply.send(catalogue.clone().unwrap());
+            }
         }
         assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(2));
     }
-    let (rc, body) = rt.block_on(task).unwrap();
+    rt.block_on(task).unwrap()
+}
+
+#[cfg(feature = "test-support")]
+#[test]
+fn populated_bus_reply_has_a_compositor_window_fence() {
+    let (rc, body) = bus_widget_query(Some((0,json!({"windows":[{"id":7,"generation":2,"pid":std::process::id()}]}))),json!({"ids":["gold-header"],"visible_only":true}));
     assert_eq!(rc, 0, "{body}");
     assert_eq!(body.as_array().unwrap().len(), 1);
     assert_eq!(body[0]["id"], "gold-header");
     assert_eq!(body[0]["window"], json!({"id":7,"generation":2}));
     assert!(body[0]["rect"]["w"].as_f64().unwrap() > 0.);
+}
+
+#[cfg(feature = "test-support")]
+#[test]
+fn bus_refuses_missing_ambiguous_and_refused_compositor_and_bad_arguments() {
+    let pid = std::process::id();
+    for catalogue in [None, Some((10,json!({"error_code":"REFUSED"}))),
+        Some((0,json!({"windows":[{"id":1,"generation":1,"pid":pid},{"id":2,"generation":1,"pid":pid}]})))] {
+        let (rc, body) = bus_widget_query(catalogue, json!({"ids":["gold-header"]}));
+        assert_eq!(rc, 10, "{body}");
+        assert_eq!(body["error_code"], "WINDOW_UNAVAILABLE");
+    }
+    for args in [json!({"id":"typo"}),json!({"ids":false}),json!([])] {
+        let (rc, body) = bus_widget_query(None,args);
+        assert_eq!(rc,10,"{body}");
+        assert_eq!(body["error_code"],"ARGUMENT");
+    }
+}
+
+fn scene(nodes: serde_json::Value) -> String {
+    format!("---\nscene: 1\nname: test\ncitizen: test\n---\n```mix\n{nodes}\n```\n")
+}
+
+#[test]
+fn frame_app_id_collisions_are_refused_at_mount() {
+    let app = scene(json!({"root":{"widget":"column","children":["shared"]},"shared":{"widget":"text","text":"App"}}));
+    let frame = scene(json!({"root":{"widget":"column","children":["gold-content","shared"]},"gold-content":{"widget":"column","children":[]},"shared":{"widget":"text","text":"Frame"}}));
+    assert!(SceneView::with_frame(&app,json!({}),&frame).err().unwrap().contains("identities overlap"));
+}
+
+#[test]
+fn repeated_template_instances_are_laid_out_but_omitted_from_reply() {
+    let source = scene(json!({
+        "root":{"widget":"column","children":["list"]},
+        "list":{"widget":"list","row":"template","row_height":24,"rows":[{"id":"a","cells":["A"]},{"id":"b","cells":["B"]}]},
+        "template":{"widget":"row","children":["cell"]},
+        "cell":{"widget":"text","text":"{cells[0]}"}
+    }));
+    let mut view = SceneView::new(&source).unwrap();
+    let ctx = egui::Context::default();
+    draw(&mut view,&ctx,400.,200.);
+    assert!(view.geometry.contains_key("a#cell"));
+    assert!(view.geometry.contains_key("b#cell"));
+    let rows = view.widget_rectangles(&json!({})).unwrap();
+    assert!(rows.as_array().unwrap().iter().all(|r| r["id"]=="root" || r["id"]=="list"));
+}
+
+#[test]
+fn capture_latch_is_consumed_and_metadata_refreshes_each_query() {
+    let source = scene(json!({"root":{"widget":"column","children":["label"]},"label":{"widget":"text","text":"= $model.caption"}}));
+    let mut view = SceneView::with_model(&source,json!({"caption":"Before"})).unwrap();
+    let ctx = egui::Context::default();
+    draw_capture(&mut view,&ctx,400.,200.,false);
+    assert_eq!(view.widget_rectangles(&json!({})).unwrap(),json!([]));
+    draw(&mut view,&ctx,400.,200.);
+    let before = view.widget_rectangles(&json!({"ids":["label"]})).unwrap();
+    assert_eq!(before[0]["label"],"Before");
+    view.apply_model(json!({"caption":"After"})).unwrap();
+    draw_capture(&mut view,&ctx,600.,200.,false);
+    assert_eq!(view.widget_rectangles(&json!({"ids":["label"]})).unwrap(),before);
+    draw(&mut view,&ctx,600.,200.);
+    assert_eq!(view.widget_rectangles(&json!({"ids":["label"]})).unwrap()[0]["label"],"After");
 }

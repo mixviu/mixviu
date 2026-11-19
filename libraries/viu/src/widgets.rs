@@ -5,6 +5,13 @@ use egui::{Color32, Id, Rect, Sense, Vec2};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(crate) fn focus_key() -> Id {
+    // In the pinned toolkit Id::new is a deterministic hash (and delegates
+    // to Id::unique). Keep one explicit key for the writer and readback.
+    #[allow(deprecated)]
+    Id::new("viu-focused-widget")
+}
+
 pub const KINDS: &[&str] = &[
     "mark",
     "macro-menu",
@@ -1118,7 +1125,7 @@ impl Widgets {
         }
         if response.has_focus() {
             ui.ctx()
-                .data_mut(|d| d.insert_temp(Id::unique("viu-focused-widget"), id.to_owned()));
+                .data_mut(|d| d.insert_temp(focus_key(), id.to_owned()));
         }
     }
     fn draw(
