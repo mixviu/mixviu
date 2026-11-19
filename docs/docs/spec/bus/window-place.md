@@ -50,6 +50,10 @@ zero still receives input, as before. Clip continues to crop pixels only;
 it does not narrow input regions. Logical geometry read through the Bus remains
 the untransformed geometry. A closing window's retained image is never an input
 target. Scaling does not promote windows across compositor band barriers.
+An existing pointer or touch grab keeps its original surface focus until
+release, including outside its bounds; its absolute event coordinates continue
+through the current inverse transform. Relative-pointer deltas retain their
+native device semantics.
 
 A hidden window may still be raised; its new order takes effect when shown.
 Unregistered same-layer drawables also act as stacking barriers. Clip corners

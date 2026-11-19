@@ -56,6 +56,10 @@ fn visual(pixels: &[u8], width: usize) -> (f64, f64) {
     (opacity, (left + right) as f64 / 200.0)
 }
 
+fn trace_field(line: &str, key: &str) -> u64 {
+    line.split_whitespace().find_map(|s| s.strip_prefix(key)?.parse().ok()).unwrap()
+}
+
 fn frame_cpu_samples(process: &process::Process, begin_us: u64, end_us: u64) -> Vec<u64> {
     let field = |line: &str, key: &str| -> u64 {
         line.split_whitespace().find_map(|s| s.strip_prefix(key)?.parse().ok()).unwrap()
@@ -93,6 +97,17 @@ fn record_window_pop_intermediate_pixels_and_idle_repeats() {
     assert!(frame_cpu_samples(&process,idle_begin,idle_end).is_empty(),"completed animation must not schedule frames");
     let mut preset = motion::presets().into_iter().find(|p| p.name == "pop").unwrap();
     preset.timing.duration = 0.3;
+    let trace=fs::read_to_string(process.root.join("frames.log")).unwrap();
+    let motion_start=trace.lines()
+        .find(|line| line.contains("stage=window_motion_start ") && trace_field(line,"subject=")==row["id"].as_u64().unwrap())
+        .map(|line| trace_field(line,"start_us="))
+        .expect("frame trace must expose the motion clock origin");
+    // Recording holds the latest submitted scene until the next 30Hz sample.
+    // Its origin is capture completion. Bound that source age by one recorder
+    // period plus the measured maximum readback latency; allow one output
+    // period for a frame assembled just after the nominal recording slot.
+    let source_age=1.0/30.0+stop["readback_max_us"].as_u64().unwrap() as f64/1_000_000.0;
+    let t0=start["t0_us"].as_u64().unwrap();
     let mut intermediate = 0;
     visit_export(&path, |frame,pixels| {
         let (opacity,scale) = visual(pixels,1280);
@@ -100,16 +115,19 @@ fn record_window_pop_intermediate_pixels_and_idle_repeats() {
         intermediate += 1;
         // Pixel rounding and alpha blend quantisation: <=2.5% opacity and
         // <=2.5% scale (five logical pixels across this 200px fixture).
-        // This checks the joint preset trajectory without deriving scale from
-        // compositor state. This trajectory check does not establish timestamp
-        // alignment: that requires correlating the recorded source frame's
-        // presentation timestamp separately.
-        let matched = (0..=3000).any(|tick| {
-            let values = preset.sample(f64::from(tick)/10000.0);
+        // This checks pixels against the shared library on the recording's
+        // absolute frame clock, within the bounded hold/readback interval.
+        let slot=(t0 as f64 + frame as f64 * 1_000_000.0/30.0 - motion_start as f64)/1_000_000.0;
+        let earliest=(slot-source_age).max(0.0);
+        let latest=(slot+1.0/60.0).min(0.3);
+        let matched = earliest<=latest && (0..=1000).any(|tick| {
+            let t=earliest+(latest-earliest)*f64::from(tick)/1000.0;
+            let values = preset.sample(t);
             (values.get(motion::Property::Opacity)-opacity).abs() <= 0.025
                 && (values.get(motion::Property::Scale)-scale).abs() <= 0.025
         });
-        assert!(matched,"frame={frame} opacity={opacity} scale={scale} is outside the shared pop trajectory");
+        assert!(matched,"frame={frame} slot={slot} allowed={earliest}..{latest} opacity={opacity} scale={scale} is outside the shared pop trajectory");
+        println!("VFL_POP_SAMPLE frame={frame} slot_s={slot:.6} source_age_limit_s={source_age:.6} opacity={opacity:.5} scale={scale:.5}");
     });
     assert!(intermediate >= 2,"300ms at 30Hz must expose intermediate opacity and scale");
 }
@@ -137,6 +155,12 @@ fn scaled_window_input_follows_pixels_and_uses_client_coordinates() {
     assert!(pattern.state.pointer_buttons>=2,"input follows enlarged pixels");
     let &(x,y)=pattern.state.pointer_positions.last().expect("surface-local pointer coordinates");
     assert!((x-25.0).abs()<=0.5 && (y-80.0).abs()<=0.5,"inverse drawn transform must give (25,80), got ({x},{y})");
+    bus.call("comp.input.pointer.button",json!({"seat":"agent","button":"left","action":"press"}));
+    bus.call("comp.input.pointer.move",json!({"seat":"agent","output":"headless-0","x":650,"y":280}));
+    pump_patterns(&mut [&mut pattern]);
+    let &(x,y)=pattern.state.pointer_positions.last().expect("grabbed surface-local motion");
+    assert!((x-225.0).abs()<=0.5 && (y-80.0).abs()<=0.5,"implicit grab outside the drawn window must retain inverse mapping, got ({x},{y})");
+    bus.call("comp.input.pointer.button",json!({"seat":"agent","button":"left","action":"release"}));
     let after=bus.window_for("scaled-input",&mut [&mut pattern]);
     assert_eq!(after["window_width"],row["window_width"],"composition scale never configures a larger client");
     assert_eq!(after["window_height"],row["window_height"]);
@@ -191,9 +215,14 @@ fn record_window_retarget_supersedes_without_returning_to_first_keyframe() {
     let (mut pattern,row) = white_window(&bus,&mut process,"window-retarget");
     let path = process.root.join("retarget.vfl");
     let start = bus.call("comp.record.start",json!({"request_id":"retarget","target":{"output":"headless-0"},"path":path,"max_seconds":10,"fps":30,"cursor":false}));
+    let mut first_tracks=opacity_track(1.0,0.2);
+    first_tracks.as_array_mut().unwrap().push(json!({"property":"scale","keyframes":[
+        {"offset":0,"value":0.4,"easing":{"kind":"linear"}},
+        {"offset":1,"value":0.8,"easing":{"kind":"linear"}}
+    ]}));
     thread::scope(|scope| {
         let first = scope.spawn(|| bus.call("comp.motion.run",json!({"targets":[{"window":{
-            "id":row["id"],"generation":row["generation"],"tracks":opacity_track(1.0,0.2),"duration_ms":800
+            "id":row["id"],"generation":row["generation"],"tracks":first_tracks,"duration_ms":800
         }}]})));
         thread::sleep(Duration::from_millis(250));
         let second = bus.call("comp.motion.run",json!({"targets":[{"window":{
@@ -206,10 +235,11 @@ fn record_window_retarget_supersedes_without_returning_to_first_keyframe() {
     let stop = bus.call("comp.record.stop",json!({"session":start["session"]}));
     assert_eq!(stop["dropped"],0,"{stop}");
     let mut values = Vec::new();
-    visit_export(&path,|_,pixels| values.push(visual(pixels,1280).0));
-    assert!(values.iter().any(|v| *v < 0.9),"the first run must actually change pixels");
-    assert!(values.iter().all(|v| *v > 0.4),"retarget must not jump to the second run's explicit zero endpoint: {values:?}");
-    assert!(values.windows(2).all(|v| (v[1]-v[0]).abs()<0.15),"adjacent 30Hz frames stay within the linear velocity bound: {values:?}");
+    visit_export(&path,|_,pixels| values.push(visual(pixels,1280)));
+    assert!(values.iter().any(|v| v.0 < 0.9),"the first run must actually change pixels");
+    assert!(values.iter().all(|v| v.0 > 0.4),"retarget must not jump to the second run's explicit zero endpoint: {values:?}");
+    assert!(values.windows(2).all(|v| (v[1].0-v[0].0).abs()<0.06),"adjacent 30Hz frames stay within the linear velocity bound plus blend quantisation: {values:?}");
+    assert!(values.windows(2).filter(|v| v[0].0<0.9 && v[1].0<0.9).all(|v| (v[1].1-v[0].1).abs()<0.08),"a replacement omitting scale must not drop the running scale track: {values:?}");
 }
 
 #[test]
@@ -232,8 +262,9 @@ fn benchmark_window_motion_1_8_32() {
         }
         let begin = monotonic_ns()/1000;
         thread::scope(|scope| {
-            let handles: Vec<_> = rows.iter().map(|row| scope.spawn(|| {
-                bus.call("comp.motion.run",json!({"targets":[{"window":{
+            let bus_ref=&bus;
+            let handles: Vec<_> = rows.iter().map(|row| scope.spawn(move || {
+                bus_ref.call("comp.motion.run",json!({"targets":[{"window":{
                     "id":row["id"],"generation":row["generation"],"tracks":opacity_track(0.2,1.0),"duration_ms":2000
                 }}]}))
             })).collect();

@@ -119,10 +119,15 @@ pub fn down(_loop: &mut Loop, id: i32, world: Point<f64, Logical>, time: u32) {
 
 pub fn motion(_loop: &mut Loop, id: i32, world: Point<f64, Logical>, time: u32) {
     // Focus is only used for DnD hit-testing during motion; keep it current.
-    let focus = topmost(_loop, world).as_ref().and_then(focus_of);
+    let mut focus = topmost(_loop, world).as_ref().and_then(focus_of);
     let Some(touch) = _loop.state.seat.seat.get_touch() else {
         return;
     };
+    if let Some((surface, _)) = touch.current_focus(slot(id)) {
+        if let Some(origin) = world::surface::interface::hit::grabbed_surface_origin(_loop, &surface, world) {
+            focus = Some((surface, origin));
+        }
+    }
     touch.motion(
         &mut _loop.state,
         focus,

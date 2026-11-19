@@ -945,7 +945,7 @@ fn agent_hit(
 
 fn agent_motion(
     lp: &mut Loop,
-    focus: Option<(WlSurface, Point<f64, Logical>)>,
+    mut focus: Option<(WlSurface, Point<f64, Logical>)>,
     position: (f64, f64),
     time: u32,
 ) {
@@ -956,6 +956,11 @@ fn agent_motion(
     let Some(pointer) = agent_pointer(lp) else {
         return;
     };
+    if let Some((surface, _)) = pointer.grab_start_data().and_then(|grab| grab.focus) {
+        if let Some(origin) = world::surface::interface::hit::grabbed_surface_origin(lp, &surface, position.into()) {
+            focus = Some((surface, origin));
+        }
+    }
     pointer.motion(
         &mut lp.state,
         focus,
@@ -1030,11 +1035,13 @@ pub fn agent_touch(
                 },
             );
         } else {
+            let focus = touch.current_focus(slot).and_then(|(surface, _)| {
+                world::surface::interface::hit::grabbed_surface_origin(lp, &surface, position.into())
+                    .map(|origin| (surface, origin))
+            });
             touch.motion(
                 &mut lp.state,
-                // Smithay retains each slot's down focus and surface origin.
-                // The motion focus argument is only a possible DnD target.
-                None,
+                focus,
                 &TouchMotion {
                     slot,
                     location: position.into(),

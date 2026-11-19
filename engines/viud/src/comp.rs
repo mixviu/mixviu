@@ -634,6 +634,10 @@ impl Bus {
     /// state is committed and the caller told `parked`. Re-arms its timer
     /// while any run: every tick when live, the next end time when paused.
     fn service_motions(&mut self, lp: &mut Loop) {
+        let lifecycle_active = world::comp::lifecycle_motion::service(lp);
+        if lifecycle_active {
+            lp.state.schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+        }
         let now = Instant::now();
         let human = policy_host::input::human_pointer(lp);
         let paused = self.paused;
@@ -698,7 +702,7 @@ impl Bus {
         self.motions = still;
         // Paused: wake at the earliest end time (1 ms past it, so float
         // rounding never wakes it a hair early), not every frame.
-        let next = if paused {
+        let next = if paused && !lifecycle_active {
             self.motions
                 .iter()
                 .map(|run| {
@@ -706,7 +710,7 @@ impl Bus {
                 })
                 .min()
         } else {
-            (!self.motions.is_empty()).then(|| now + MOTION_TICK)
+            (lifecycle_active || !self.motions.is_empty()).then(|| now + MOTION_TICK)
         };
         self.motion_timer.rearm(&self.handle, next, |_| {});
     }

@@ -855,7 +855,7 @@ fn apply_visual(lp: &mut Loop, id: SurfaceId, spec: &comp_model::request::PlaceS
     }
     lp.inner.comp.settings_changed("windows", "window.place");
     world::comp::visibility::sync_hidden(lp);
-    if !visual.visible {
+    if !visual.visible || visual.scale.factor == 0.0 {
         execute(lp, vec![Effect::FinishInteractive(id)]);
         crate::input::hide_window(lp, id);
         settle(lp, None);
@@ -938,6 +938,9 @@ pub fn window_visual_step(lp: &mut Loop, id: u64, generation: u64, visual: comp_
     let (surface, window) = motion_window(lp, id, generation)?;
     lp.inner.comp.visuals.insert(surface, (generation, visual));
     *window.user_data().get_or_insert(|| std::sync::Mutex::new(comp_model::request::VisualAttributes::default())).lock().unwrap() = visual;
+    if !visual.visible || visual.scale.factor == 0.0 {
+        crate::input::hide_window(lp, surface);
+    }
     crate::input::retarget_pointer(lp);
     lp.state.schedule_redraw(RedrawReason::WindowState);
     Ok(())

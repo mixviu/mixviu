@@ -422,8 +422,13 @@ where
     };
     let (mut elements, crop) = crop_elements(elements, window, ctx, elem_loc, size);
     if let Some(uuid) = window.uuid() {
+        let visual = visual_of(window);
+        let anchor = project_point(ctx,
+            elem_loc.x as f64 + visual.scale.anchor.x + visual.translate.x,
+            elem_loc.y as f64 + visual.scale.anchor.y + visual.translate.y);
         super::super::ghost::retain(renderer, uuid,
-            state.inner.render_output.as_deref().unwrap_or_default(), &mut elements);
+            state.inner.render_output.as_deref().unwrap_or_default(), anchor,
+            ctx.scale * ctx.camera_zoom, &mut elements);
     }
     if let Some(crop) = crop {
         drawn.opaque = drawn
@@ -1002,6 +1007,9 @@ where
             .map(crate::window::draw::element::Untransformed::Plain)
             .collect()
     };
+    if !visual.transformed() {
+        return (elements.into_iter().map(crate::window::draw::element::Element::Plain).collect(), crop);
+    }
     let factor = visual.scale.factor;
     let anchor = project_point(ctx, loc.x as f64 + visual.scale.anchor.x, loc.y as f64 + visual.scale.anchor.y);
     let origin = project_point(ctx, 0.0, 0.0);
@@ -1011,9 +1019,6 @@ where
         ((1.0 - factor) * anchor.y as f64 + (translated.y as f64 - origin.y as f64)).round() as i32,
     ));
     let elements = elements.into_iter().map(|mut element| {
-        if !visual.transformed() {
-            return crate::window::draw::element::Element::Plain(element);
-        }
         if let Element::WindowFitClipped(clipped) = element.raw_mut() {
             clipped.set_rescale(factor, offset);
         }

@@ -25,17 +25,23 @@ pub fn start_visual(
     if world::comp::animation::active(&window, started) {
         let visual = world::comp::animation::sample(&window, control::window_visual(lp, id, generation)?, started);
         let mut current = motion::Values::default();
-        for track in &preset.tracks {
-            let value = match track.property {
+        let previous = world::comp::animation::sampled_values(&window, started).unwrap_or_default();
+        for property in motion::Property::ALL {
+            if !previous.contains(property) && !preset.tracks.iter().any(|t| t.property == property) { continue; }
+            let value = match property {
                 motion::Property::Opacity => visual.opacity,
                 motion::Property::Scale => visual.scale.factor,
                 motion::Property::Tx => visual.translate.x,
                 motion::Property::Ty => visual.translate.y,
                 _ => continue,
             };
-            current.set(track.property, value);
+            current.set(property, value);
         }
-        let target = preset.sample(preset.timing.duration);
+        let requested = preset.sample(preset.timing.duration);
+        let mut target = current;
+        for property in motion::Property::ALL {
+            if requested.contains(property) { target.set(property, requested.get(property)); }
+        }
         *preset = motion::retarget(&current, &target, preset.timing);
     }
     world::comp::animation::start(&window, preset, started);

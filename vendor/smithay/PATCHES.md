@@ -248,3 +248,14 @@ release exactly one inhibitor, including multiple inhibitors on one surface.
 matching the existing crop wrapper. viud uses these to compose its rounded
 clip shader uniforms with window and thumbnail transforms. Rendering behaviour
 is unchanged; no dependency or licence change.
+
+TouchHandle exposes the retained focus for one slot. Touch motion refreshes
+its synthetic surface origin when the compositor supplies the same focus,
+without changing grab ownership. This allows viud to invert the current window
+transform for ongoing touches, including motion outside the surface bounds.
+# Retained composition images
+
+`MemoryRenderBufferRenderElement::texture()` exposes an imported texture by
+reference so compositor lifecycle snapshots retain server chrome without a
+readback or a live protocol resource. No renderer or buffer semantics change.
+

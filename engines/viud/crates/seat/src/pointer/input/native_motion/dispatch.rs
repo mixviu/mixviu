@@ -81,6 +81,12 @@ pub fn dispatch(
 
     let (ui_transform, ui_output_size) = hit::ui_camera(_loop);
 
+    if let Some((surface, _)) = pointer.grab_start_data().and_then(|grab| grab.focus) {
+        if let Some(origin) = hit::grabbed_surface_origin(_loop, &surface, position_normalized) {
+            under_hit = Some((surface, origin));
+        }
+    }
+
     if let Some(registry) = _loop.inner.surface_mut().registry.as_mut() {
         registry.route_pointer_to(ui_target, ui_screen_point, &ui_transform, ui_output_size);
     }

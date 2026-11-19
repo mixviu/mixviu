@@ -8,6 +8,7 @@ use motion::{Direction, Fill, Preset, Property};
 use smithay::desktop::Window;
 use uuid::Uuid;
 use crate::state::Loop;
+use dispatcher::wire::trait_::wire_trait::WireTrait;
 use crate::window::interface::record::window::LoopWindow;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -18,6 +19,7 @@ struct State {
     previous: HashMap<Uuid, Facts>,
     pub exits: HashMap<Uuid, super::animation::VisualRun>,
     settings: WindowMotion,
+    active: bool,
 }
 
 thread_local! { static STATE: RefCell<State> = RefCell::new(State::default()); }
@@ -25,11 +27,13 @@ thread_local! { static STATE: RefCell<State> = RefCell::new(State::default()); }
 pub fn preset(config: &WindowTransition, reverse: bool) -> Option<Preset> {
     if config.duration_ms > 10_000 { return None; }
     let mut preset = motion::presets().into_iter().find(|p| p.name == config.preset)?;
-    if preset.tracks.iter().any(|track| !matches!(track.property,
-        Property::Opacity | Property::Scale | Property::Tx | Property::Ty)) { return None; }
+    preset.tracks.retain(|track| matches!(track.property,
+        Property::Opacity | Property::Scale | Property::Tx | Property::Ty));
+    if preset.tracks.is_empty() { return None; }
     preset.timing.duration = config.duration_ms as f64 / 1000.0;
     preset.timing.fill = Fill::Both;
     preset.timing.delay = 0.0;
+    preset.timing.iterations = motion::Iterations::Finite(1.0);
     preset.timing.direction = if reverse { Direction::Reverse } else { Direction::Normal };
     Some(preset)
 }
@@ -39,7 +43,7 @@ pub fn preset(config: &WindowTransition, reverse: bool) -> Option<Preset> {
 pub fn service(lp: &mut Loop) -> bool {
     let now = lp.inner.comp.clock.now();
     let settings = lp.inner.preference.window_motion.clone();
-    let windows: HashMap<Uuid, Window> = lp.inner.all_world_spaces()
+    let windows: HashMap<Uuid, Window> = lp.inner.all_world_spaces().into_iter()
         .flat_map(|space| space.state.elements())
         .filter_map(|window| Some((window.uuid()?, window.clone())))
         .collect();
@@ -85,7 +89,12 @@ pub fn service(lp: &mut Loop) -> bool {
         state.previous = current;
         state.settings = settings;
         state.exits.retain(|_, run| run.active(now));
-        !state.exits.is_empty() || windows.values().any(|window| super::animation::active(window, now))
+        let active = !state.exits.is_empty() || windows.values().any(|window| super::animation::active(window, now));
+        if state.active && !active {
+            lp.state.schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+        }
+        state.active = active;
+        active
     })
 }
 
@@ -101,6 +110,14 @@ pub fn retain_snapshots() -> bool {
     })
 }
 
+pub fn retained_windows() -> std::collections::HashSet<Uuid> {
+    STATE.with(|state| {
+        let state = state.borrow();
+        state.previous.iter().filter(|(_, facts)| facts.shown).map(|(uuid, _)| *uuid)
+            .chain(state.exits.keys().copied()).collect()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,6 +129,6 @@ mod tests {
         let exit = preset(&config, true).unwrap();
         assert_eq!(exit.sample(0.0).get(Property::Opacity), 1.0);
         assert_eq!(exit.sample(0.3).get(Property::Opacity), 0.0);
-        assert!(preset(&WindowTransition { preset: "spin".into(), duration_ms: 300 }, false).is_none());
+        assert!(preset(&WindowTransition { preset: "draw".into(), duration_ms: 300 }, false).is_none());
     }
 }

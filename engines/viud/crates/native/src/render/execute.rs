@@ -802,7 +802,11 @@ pub fn execute(
                 // ---- Build scene: scoped borrow_mut, dropped immediately. ----
                 let scene = {
                     let mut r = gles_renderer.borrow_mut();
-                    let prepared = frames::scene::prepare_kms(state, r.as_mut(), size, output_id.0);
+                    let now = state.inner.comp.clock.now();
+                    let pipe = &ctx_ref.outputs[output_idx];
+                    let refresh = kms::scanout::timing::vblank::interval(&pipe.mode);
+                    let until = pipe.last_vblank.map(|anchor| kms::scanout::timing::vblank::until_next(anchor, now, refresh)).unwrap_or(refresh);
+                    let prepared = frames::scene::prepare_kms(state, r.as_mut(), size, output_id.0, now + until);
                     let _assembly = ledger::frame_trace::span("kms_scene_assembly", output_id.0);
                     let scene = frames::scene::scene(state, r.as_mut(), size, prepared);
                     drop(r);
