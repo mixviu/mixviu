@@ -93,7 +93,8 @@ removes the private take. Failed stop replies have null sidecar paths.
 If publication renamed the take but parent sync failed, the error names the
 published path whose durability could not be confirmed.
 
-A window resize ends the take because its canvas dimensions are fixed.
+For window-only targets, a resize ends the take because its canvas dimensions
+are fixed. Output-sized listed targets keep their canvas through window resizes.
 Reusing a `request_id` with different parameters is refused. Completed retries
 are retained for the 128 most recently used takes; evicted session IDs are
 refused. A concurrent different request is refused with `record_busy`.
