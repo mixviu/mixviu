@@ -26,10 +26,9 @@ pub fn noded_url() -> String {
     {
         return url;
     }
-    if let Ok(path) = std::env::var(paths::env::BUS_SOCKET) {
-        if !path.is_empty() {
-            return format!("unix://{path}");
-        }
+    if let Ok(path) = std::env::var(paths::env::BUS_SOCKET)
+        && !path.is_empty() {
+        return format!("unix://{path}");
     }
     let (path, source) = match config::node::NodeConfigSearch::capture().read() {
         Ok(Some(source)) => source,

@@ -36,8 +36,7 @@ impl LazyBus {
             span: None,
         };
         if self.endpoint.borrow().is_none() {
-            let url = std::env::var("MIX_NODED_URL")
-                .map_err(|_| fail("macro Bus address is not configured".into()))?;
+            let url = bus::noded_url();
             *self.endpoint.borrow_mut() = Some(Endpoint::start(
                 format!("viu-macro-{}", std::process::id()),
                 url,

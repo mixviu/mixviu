@@ -6,15 +6,16 @@ use std::{collections::BTreeMap, time::Duration};
 #[tokio::test]
 async fn furniture_events_refuse_foreign_publishers_and_attest_the_compositor() {
     let broker = test_broker::Broker::start();
-    let owner = bus::SupervisedClient::connect_options("comp-fixture", &broker.url)
+    let url = format!("unix://{}",broker.endpoint.display());
+    let owner = bus::SupervisedClient::connect_options("comp-fixture", &url)
         .connect()
         .await
         .unwrap();
-    let attacker = bus::SupervisedClient::connect_options("foreign", &broker.url)
+    let attacker = bus::SupervisedClient::connect_options("foreign", &url)
         .connect()
         .await
         .unwrap();
-    let client = bus::SupervisedClient::connect_options("furniture", &broker.url)
+    let client = bus::SupervisedClient::connect_options("furniture", &url)
         .connect()
         .await
         .unwrap();

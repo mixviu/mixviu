@@ -449,7 +449,7 @@ fn main() -> eframe::Result {
             let bus = NativeBus::start(
                 service,
                 std::env::var("MIX_NODED_URL")
-                    .unwrap_or_else(|_| bus::noded_url()),
+                    .unwrap_or_else(|_| "ws://127.0.0.1:4200/ws".into()),
                 wake.clone(),
             );
             let runtime = if mode == "mix" {

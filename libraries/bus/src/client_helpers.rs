@@ -308,10 +308,15 @@ impl BrokerEnvironment {
         options.discover_by_ping = paths::run_root_is_tier_default(&self.directories, &directories)
             .map_err(anyhow::Error::msg)?;
         let url = self.url.unwrap_or_else(|| {
-            let endpoint = options.endpoint.as_ref()
+            let endpoint = options
+                .endpoint
+                .as_ref()
                 .or(options.configured_endpoint.as_ref())
                 .or(options.default_endpoints.first());
-            format!("unix://{}", endpoint.expect("local endpoint defaults").display())
+            format!(
+                "unix://{}",
+                endpoint.expect("local endpoint defaults").display()
+            )
         });
         Ok(BrokerConfiguration {
             options,
@@ -1030,7 +1035,7 @@ pub(crate) mod tests {
         }
         .configuration()
         .unwrap();
-        assert_eq!(configuration.url, format!("unix://{}",socket.display()));
+        assert_eq!(configuration.url, format!("unix://{}", socket.display()));
         assert_eq!(configuration.options.configured_endpoint, Some(socket));
         assert_eq!(
             configuration.options.endpoint_candidates().unwrap()[1],

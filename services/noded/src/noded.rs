@@ -2433,11 +2433,12 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             let body: serde_json::Value = serde_json::from_str(&bus_msg.body).unwrap_or_default();
             let authority = state.authority.load_full();
             let valid = match (&authority.posture, state.peer_context.mesh_peer()) {
-                (crate::authority::Posture::Verified(a), Some((node, key))) =>
+                (crate::authority::Posture::Verified(a), Some((node, key))) => {
                     authority.keys.contains(node, key)
-                    && body["verifying_broker_node"].as_str() == Some(node)
-                    && body["mesh_fqdn"].as_str() == Some(a.mesh.as_str())
-                    && body["inventory_epoch"].as_u64() == Some(a.epoch),
+                        && body["verifying_broker_node"].as_str() == Some(node)
+                        && body["mesh_fqdn"].as_str() == Some(a.mesh.as_str())
+                        && body["inventory_epoch"].as_u64() == Some(a.epoch)
+                }
                 _ => false,
             };
             if !reverse_answered && service_name.is_none() && valid {
@@ -6611,24 +6612,32 @@ mod tests {
         url: &str,
     ) -> (
         futures_util::stream::SplitSink<
-            tokio_tungstenite::WebSocketStream<
-                Box<dyn TestIo>,
-            >,
+            tokio_tungstenite::WebSocketStream<Box<dyn TestIo>>,
             WsMessage,
         >,
-        futures_util::stream::SplitStream<
-            tokio_tungstenite::WebSocketStream<
-                Box<dyn TestIo>,
-            >,
-        >,
+        futures_util::stream::SplitStream<tokio_tungstenite::WebSocketStream<Box<dyn TestIo>>>,
     ) {
-        let (socket, handshake): (Box<dyn TestIo>, &str) = if let Some(path) = url.strip_prefix("unix://") {
-            (Box::new(tokio::net::UnixStream::connect(path).await.unwrap()), "ws://localhost/ws")
-        } else {
-            let address = url.strip_prefix("ws://").unwrap().split('/').next().unwrap();
-            (Box::new(tokio::net::TcpStream::connect(address).await.unwrap()), url)
-        };
-        let (ws, _resp) = tokio_tungstenite::client_async(handshake, socket).await.expect("raw ws connect");
+        let (socket, handshake): (Box<dyn TestIo>, &str) =
+            if let Some(path) = url.strip_prefix("unix://") {
+                (
+                    Box::new(tokio::net::UnixStream::connect(path).await.unwrap()),
+                    "ws://localhost/ws",
+                )
+            } else {
+                let address = url
+                    .strip_prefix("ws://")
+                    .unwrap()
+                    .split('/')
+                    .next()
+                    .unwrap();
+                (
+                    Box::new(tokio::net::TcpStream::connect(address).await.unwrap()),
+                    url,
+                )
+            };
+        let (ws, _resp) = tokio_tungstenite::client_async(handshake, socket)
+            .await
+            .expect("raw ws connect");
         ws.split()
     }
 
@@ -6636,15 +6645,11 @@ mod tests {
     /// id. Anything else (orphan or unrelated traffic) is skipped.
     async fn raw_call(
         sink: &mut futures_util::stream::SplitSink<
-            tokio_tungstenite::WebSocketStream<
-                Box<dyn TestIo>,
-            >,
+            tokio_tungstenite::WebSocketStream<Box<dyn TestIo>>,
             WsMessage,
         >,
         stream: &mut futures_util::stream::SplitStream<
-            tokio_tungstenite::WebSocketStream<
-                Box<dyn TestIo>,
-            >,
+            tokio_tungstenite::WebSocketStream<Box<dyn TestIo>>,
         >,
         req: BusMessage,
         id: &str,
@@ -6678,15 +6683,11 @@ mod tests {
     /// `noded.register` and awaiting rc=0.
     async fn raw_register(
         sink: &mut futures_util::stream::SplitSink<
-            tokio_tungstenite::WebSocketStream<
-                Box<dyn TestIo>,
-            >,
+            tokio_tungstenite::WebSocketStream<Box<dyn TestIo>>,
             WsMessage,
         >,
         stream: &mut futures_util::stream::SplitStream<
-            tokio_tungstenite::WebSocketStream<
-                Box<dyn TestIo>,
-            >,
+            tokio_tungstenite::WebSocketStream<Box<dyn TestIo>>,
         >,
         name: &str,
     ) {
@@ -7541,14 +7542,30 @@ mod tests {
     #[test]
     fn only_kernel_unix_identity_grants_local_origin_in_every_posture() {
         use bus::native_session::{PeerContext, PeerIdentity};
-        for mode in [AdmissionMode::Off, AdmissionMode::Observe, AdmissionMode::Enforce] {
-            for address in ["127.0.0.1:4200","[::1]:4200","192.0.2.5:4200"] {
-                let remote = PeerContext { identity: PeerIdentity::Unauthenticated, address: Some(address.parse().unwrap()) };
+        for mode in [
+            AdmissionMode::Off,
+            AdmissionMode::Observe,
+            AdmissionMode::Enforce,
+        ] {
+            for address in ["127.0.0.1:4200", "[::1]:4200", "192.0.2.5:4200"] {
+                let remote = PeerContext {
+                    identity: PeerIdentity::Unauthenticated,
+                    address: Some(address.parse().unwrap()),
+                };
                 assert!(!remote.is_local(), "{mode:?} {address}");
-                assert_eq!(super::broker_origin_from_context(&remote),super::BrokerOrigin::Mesh);
-                let local = PeerContext { identity: PeerIdentity::UnixPeer { uid:1000,pid:1 }, address:None };
+                assert_eq!(
+                    super::broker_origin_from_context(&remote),
+                    super::BrokerOrigin::Mesh
+                );
+                let local = PeerContext {
+                    identity: PeerIdentity::UnixPeer { uid: 1000, pid: 1 },
+                    address: None,
+                };
                 assert!(local.is_local());
-                assert_eq!(super::broker_origin_from_context(&local),super::BrokerOrigin::Local);
+                assert_eq!(
+                    super::broker_origin_from_context(&local),
+                    super::BrokerOrigin::Local
+                );
             }
         }
     }
@@ -8126,7 +8143,10 @@ mod tests {
                 "non-wg" => state.wg_bound = false,
                 "no-proof" => state.peer_context.identity = Default::default(),
                 "wrong-proof" => state.peer_context.identity = Default::default(),
-                "local" => state.peer_context.identity = bus::native_session::PeerIdentity::UnixPeer { uid: 1000, pid: 1 },
+                "local" => {
+                    state.peer_context.identity =
+                        bus::native_session::PeerIdentity::UnixPeer { uid: 1000, pid: 1 }
+                }
                 "revoked" => apply_inventory_reload(&state, reload_posture(2, vec![])).await,
                 _ => {}
             }
@@ -8186,7 +8206,10 @@ mod tests {
             let delivered = bus_mod::parse(&target_rx.recv().await.unwrap()).unwrap();
             assert_eq!(
                 delivered.get("broker_peer"),
-                if matches!(case, "valid" | "off" | "observe" | "relay" | "bad-source" | "non-wg") {
+                if matches!(
+                    case,
+                    "valid" | "off" | "observe" | "relay" | "bad-source" | "non-wg"
+                ) {
                     Some("beta")
                 } else {
                     None
@@ -8195,7 +8218,10 @@ mod tests {
             );
             assert_eq!(
                 delivered.get("broker_connection"),
-                if matches!(case, "valid" | "off" | "observe" | "relay" | "bad-source" | "non-wg") {
+                if matches!(
+                    case,
+                    "valid" | "off" | "observe" | "relay" | "bad-source" | "non-wg"
+                ) {
                     Some("beta/epoch-1")
                 } else {
                     None

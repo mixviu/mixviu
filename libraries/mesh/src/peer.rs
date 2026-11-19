@@ -1505,21 +1505,61 @@ mod tests {
         let endpoint = "192.0.2.2:4200".parse().unwrap();
         let (mesh, _rx) = test_mesh_with_peer(peer("beta", endpoint));
         let mut old = test_connection(endpoint);
-        Arc::get_mut(&mut old).unwrap().context.identity = bus::native_session::PeerIdentity::MeshAdmitted {
-            node:"beta".into(), key:[3;32], fingerprint:String::new(), epoch:1, revision:0,
-        };
-        mesh.state.write().await.connections.insert("beta".into(),old.clone());
+        Arc::get_mut(&mut old).unwrap().context.identity =
+            bus::native_session::PeerIdentity::MeshAdmitted {
+                node: "beta".into(),
+                key: [3; 32],
+                fingerprint: String::new(),
+                epoch: 1,
+                revision: 0,
+            };
+        mesh.state
+            .write()
+            .await
+            .connections
+            .insert("beta".into(), old.clone());
         let keys = |include_old| {
-            let mut credentials = vec![serde_json::json!({"kind":"d2", "pubkey":base64::engine::general_purpose::STANDARD.encode([4;32]),"from_epoch":1,"until_epoch":null})];
-            if include_old { credentials.push(serde_json::json!({"kind":"d2","pubkey":base64::engine::general_purpose::STANDARD.encode([3;32]),"from_epoch":1,"until_epoch":null})); }
-            mesh_trust::identity::KeyAuthority::new(&BTreeMap::from([("beta".into(),serde_json::json!({"status":"active","bus":true,"credentials":credentials}))]),2,0)
+            let mut credentials = vec![
+                serde_json::json!({"kind":"d2", "pubkey":base64::engine::general_purpose::STANDARD.encode([4;32]),"from_epoch":1,"until_epoch":null}),
+            ];
+            if include_old {
+                credentials.push(serde_json::json!({"kind":"d2","pubkey":base64::engine::general_purpose::STANDARD.encode([3;32]),"from_epoch":1,"until_epoch":null}));
+            }
+            mesh_trust::identity::KeyAuthority::new(
+                &BTreeMap::from([(
+                    "beta".into(),
+                    serde_json::json!({"status":"active","bus":true,"credentials":credentials}),
+                )]),
+                2,
+                0,
+            )
         };
-        let desired = HashMap::from([("beta".into(),endpoint)]);
-        let overlap = mesh.reconcile_identity(desired.clone(),AuthorityRevision { epoch:2,recovery_generation:0 },keys(true),"example.test".into()).await;
-        assert_eq!(overlap.connections_retained,1);
+        let desired = HashMap::from([("beta".into(), endpoint)]);
+        let overlap = mesh
+            .reconcile_identity(
+                desired.clone(),
+                AuthorityRevision {
+                    epoch: 2,
+                    recovery_generation: 0,
+                },
+                keys(true),
+                "example.test".into(),
+            )
+            .await;
+        assert_eq!(overlap.connections_retained, 1);
         let start = std::time::Instant::now();
-        let rotated = mesh.reconcile_identity(desired,AuthorityRevision { epoch:3,recovery_generation:0 },keys(false),"example.test".into()).await;
-        assert_eq!(rotated.connections_retired.len(),1);
+        let rotated = mesh
+            .reconcile_identity(
+                desired,
+                AuthorityRevision {
+                    epoch: 3,
+                    recovery_generation: 0,
+                },
+                keys(false),
+                "example.test".into(),
+            )
+            .await;
+        assert_eq!(rotated.connections_retired.len(), 1);
         assert!(!old.connected.load(Ordering::Acquire));
         assert!(start.elapsed() < Duration::from_secs(1));
     }
