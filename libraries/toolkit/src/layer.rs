@@ -93,6 +93,11 @@ pub trait LayerProgram {
     /// Wake presentation state even before a hidden surface has run egui.
     /// This is event-driven and does not request continuous rendering.
     fn set_waker(&mut self, _wake: std::sync::Arc<dyn Fn() + Send + Sync>) {}
+    /// One-shot behaviour deadline, independent of surface visibility or
+    /// frame callbacks. None leaves the loop blocked until an external event.
+    fn wake_deadline(&self) -> Option<std::time::Instant> {
+        None
+    }
     /// The compositor completed this surface's frame callback.
     fn frame(&mut self, _surface: &SurfaceInfo, _time_ms: u32) {}
     /// Client presentation requested after a repaint wake, before any draw.

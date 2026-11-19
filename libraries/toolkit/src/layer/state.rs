@@ -608,7 +608,7 @@ impl<P: LayerProgram + 'static> State<P> {
             } else {
                 None
             }
-        }))
+        }).chain(std::iter::once(self.program.wake_deadline().map(|at| at.saturating_duration_since(now)))))
     }
 
     /// Stop waiting on frame callbacks that never came.

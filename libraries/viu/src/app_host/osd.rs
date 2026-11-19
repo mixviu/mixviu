@@ -127,6 +127,10 @@ impl LayerProgram for Program {
         self.wake = Some(wake);
     }
 
+    fn wake_deadline(&self) -> Option<Instant> {
+        self.host.as_ref().and_then(|host| host.timers.deadline())
+    }
+
     fn setup(&mut self, ctx: &egui::Context) {
         crate::icons::install(ctx);
         toolkit::install(ctx, &toolkit::Theme::embedded());
