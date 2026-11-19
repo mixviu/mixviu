@@ -93,5 +93,9 @@ fn export_bgra_framemd5_y4m_and_ranges() {
         .output()
         .unwrap();
     assert!(!o.status.success());
-    assert!(String::from_utf8(o.stdout).unwrap().contains("\"ok\":false"));
+    assert!(
+        String::from_utf8(o.stdout)
+            .unwrap()
+            .contains("\"ok\":false")
+    );
 }

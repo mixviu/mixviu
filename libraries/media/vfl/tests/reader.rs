@@ -272,9 +272,15 @@ fn bench_child() {
     );
     let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
     // SAFETY: getrusage writes the supplied valid storage and retains no pointer.
-    assert_eq!(unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) }, 0);
+    assert_eq!(
+        unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) },
+        0
+    );
     let usage = unsafe { usage.assume_init() };
-    eprintln!("peak_rss_kib={} user_s={} system_s={}", usage.ru_maxrss,
+    eprintln!(
+        "peak_rss_kib={} user_s={} system_s={}",
+        usage.ru_maxrss,
         usage.ru_utime.tv_sec as f64 + usage.ru_utime.tv_usec as f64 / 1_000_000.0,
-        usage.ru_stime.tv_sec as f64 + usage.ru_stime.tv_usec as f64 / 1_000_000.0);
+        usage.ru_stime.tv_sec as f64 + usage.ru_stime.tv_usec as f64 / 1_000_000.0
+    );
 }

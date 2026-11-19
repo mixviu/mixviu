@@ -208,7 +208,10 @@ mod tests {
 
     #[test]
     fn mixd_itself_routes_run_serve_list_and_usage() {
-        assert_eq!(route(&os(&["mixd", "vfl", "verify", "video.vfl"])), Route::Vfl);
+        assert_eq!(
+            route(&os(&["mixd", "vfl", "verify", "video.vfl"])),
+            Route::Vfl
+        );
         assert_eq!(
             route(&[OsString::from("mixd"), OsString::from("serve")]),
             Route::Usage
