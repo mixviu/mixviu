@@ -356,7 +356,7 @@ mod tests {
         program.host.as_mut().unwrap().dispatch(
             "osd.show".into(),
             json!({"id":"no-output","scene":{"kind":"caption","text":"Expires without a surface"},
-                "anchor":{"output":"absent-output","edge":"bottom"},"duration_ms":100}),
+                "anchor":{"output":"absent-output","edge":"bottom"},"duration_ms":1000}),
             BTreeMap::new(),
             Some(tx),
         );
@@ -369,7 +369,8 @@ mod tests {
             assert!(Instant::now() < until, "OSD show timed out");
             std::thread::sleep(Duration::from_millis(1));
         }
-        assert!(program.wake_deadline().is_some());
+        assert!(program.wake_deadline().is_some(), "model={}, error={}",
+            program.host.as_ref().unwrap().model, program.host.as_ref().unwrap().error);
         loop {
             program.service();
             let host = program.host.as_ref().unwrap();
