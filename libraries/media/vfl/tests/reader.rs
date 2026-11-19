@@ -238,9 +238,7 @@ fn bench_export() {
         w.finish(1800, 0, 0, None, true).unwrap();
         drop(w);
         for _ in 0..3 {
-            let out = std::process::Command::new("/usr/bin/time")
-                .args(["-v"])
-                .arg(std::env::current_exe().unwrap())
+            let out = std::process::Command::new(std::env::current_exe().unwrap())
                 .args(["--ignored", "--exact", "bench_child", "--nocapture"])
                 .env("VFL_BENCH_TAKE", &t.0)
                 .stdout(std::process::Stdio::null())
@@ -272,4 +270,11 @@ fn bench_child() {
         now.elapsed().as_secs_f64(),
         1800.0 / now.elapsed().as_secs_f64()
     );
+    let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
+    // SAFETY: getrusage writes the supplied valid storage and retains no pointer.
+    assert_eq!(unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) }, 0);
+    let usage = unsafe { usage.assume_init() };
+    eprintln!("peak_rss_kib={} user_s={} system_s={}", usage.ru_maxrss,
+        usage.ru_utime.tv_sec as f64 + usage.ru_utime.tv_usec as f64 / 1_000_000.0,
+        usage.ru_stime.tv_sec as f64 + usage.ru_stime.tv_usec as f64 / 1_000_000.0);
 }
