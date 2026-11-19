@@ -595,20 +595,29 @@ impl<P: LayerProgram + 'static> State<P> {
     /// frame callback's watchdog runs out; otherwise until an event.
     fn next_wake(&self) -> Option<Duration> {
         let now = Instant::now();
-        timing::shortest(self.surfaces.iter().map(|s| {
-            if s.frame_pending {
-                timing::surface_wait(s.pending_since, None, now)
-            } else if s.visible && s.configured && s.dirty {
-                // A skipped frame waits for its retry deadline.
-                timing::surface_wait(
-                    None,
-                    timing::draw_at(s.last_draw, self.program.frame_interval(), s.retry_at),
-                    now,
-                )
-            } else {
-                None
-            }
-        }).chain(std::iter::once(self.program.wake_deadline().map(|at| at.saturating_duration_since(now)))))
+        timing::shortest(
+            self.surfaces
+                .iter()
+                .map(|s| {
+                    if s.frame_pending {
+                        timing::surface_wait(s.pending_since, None, now)
+                    } else if s.visible && s.configured && s.dirty {
+                        // A skipped frame waits for its retry deadline.
+                        timing::surface_wait(
+                            None,
+                            timing::draw_at(s.last_draw, self.program.frame_interval(), s.retry_at),
+                            now,
+                        )
+                    } else {
+                        None
+                    }
+                })
+                .chain(std::iter::once(
+                    self.program
+                        .wake_deadline()
+                        .map(|at| at.saturating_duration_since(now)),
+                )),
+        )
     }
 
     /// Stop waiting on frame callbacks that never came.

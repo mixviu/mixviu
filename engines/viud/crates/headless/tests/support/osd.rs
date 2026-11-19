@@ -206,7 +206,10 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     // the compositor's output conversion do not become motion expectations.
     let steady_green_delta = f64::from(rgb(&before, width, steady_x, steady_y)[1])
         - f64::from(rgb(&shown, width, steady_x, steady_y)[1]);
-    assert!(steady_green_delta > 30.0, "card interior must visibly darken the uniform green client");
+    assert!(
+        steady_green_delta > 30.0,
+        "card interior must visibly darken the uniform green client"
+    );
     let mut observed = Vec::new();
     let mut last = None;
     while let Some(frame) = reader.read().unwrap() {
@@ -216,9 +219,12 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         {
             let x = bbox[0] + 4;
             let y = bbox[1] + 36;
-            assert!(x < width && y < height, "motion sample outside output: {bbox:?}");
-            let green_delta = f64::from(rgb(&before, width, x, y)[1])
-                - f64::from(rgb(&pixels, width, x, y)[1]);
+            assert!(
+                x < width && y < height,
+                "motion sample outside output: {bbox:?}"
+            );
+            let green_delta =
+                f64::from(rgb(&before, width, x, y)[1]) - f64::from(rgb(&pixels, width, x, y)[1]);
             observed.push((
                 frame.t_us as f64 / 1_000_000.0,
                 bbox[1] as f64,
@@ -266,9 +272,13 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         "decoded entrance disagrees with motion library: max error {best}, samples={moving:?}"
     );
     for (t, _, opacity) in &moving {
-        let expected = preset.sample((t - start).max(0.0)).get(motion::Property::Opacity);
-        assert!((opacity - expected).abs() <= 0.12,
-            "decoded entrance opacity disagrees with the same motion start: t={t}, start={start}, actual={opacity}, expected={expected}, samples={moving:?}");
+        let expected = preset
+            .sample((t - start).max(0.0))
+            .get(motion::Property::Opacity);
+        assert!(
+            (opacity - expected).abs() <= 0.12,
+            "decoded entrance opacity disagrees with the same motion start: t={t}, start={start}, actual={opacity}, expected={expected}, samples={moving:?}"
+        );
     }
     let mut reader = media_vfl::reader::Reader::open(&path).unwrap();
     let mut final_pixels = Vec::new();
@@ -289,8 +299,11 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     wait(&mut pattern, Duration::from_millis(150));
     bus.call("comp.record.stop", json!({"session":listed["session"]}));
     let mut reader = media_vfl::reader::Reader::open(&listed_path).unwrap();
-    assert_eq!((reader.width as usize, reader.height as usize), (width, height),
-        "the listed fullscreen client must retain the output dimensions");
+    assert_eq!(
+        (reader.width as usize, reader.height as usize),
+        (width, height),
+        "the listed fullscreen client must retain the output dimensions"
+    );
     let mut frames = 0;
     while let Some(frame) = reader.read().unwrap() {
         assert_eq!(
