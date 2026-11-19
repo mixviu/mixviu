@@ -80,7 +80,8 @@ fn clipping_hidden_nodes_and_filter_validation() {
     let source = format!(
         "---\nscene: 1\nname: test\ncitizen: test\n---\n```mix\n{}\n```\n",
         json!({
-            "root":{"widget":"column","children":["space","off","hidden"],"scroll":true},
+            "root":{"widget":"column","children":["on","space","off","hidden"],"scroll":true},
+            "on":{"widget":"button","label":"Initially visible"},
             "space":{"widget":"spacer","size":800},
             "off":{"widget":"button","label":"Off screen"},
             "hidden":{"widget":"button","label":"Hidden","hidden":true}
@@ -116,6 +117,15 @@ fn clipping_hidden_nodes_and_filter_validation() {
     ] {
         assert!(view.widget_rectangles(&args).is_err());
     }
+    assert_eq!(view.widget_rectangles(&json!({"ids":["on"],"visible_only":true})).unwrap().as_array().unwrap().len(),1);
+    ctx.run_ui(egui::RawInput {
+        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(400.,200.))),
+        events: vec![egui::Event::PointerMoved(egui::pos2(30.,40.)),egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Point, delta:egui::vec2(0.,-900.), modifiers:Default::default()
+        }], ..Default::default()
+    }, |ui| { view.show(ui); }).drop_without_applying_deltas();
+    for _ in 0..30 { draw(&mut view,&ctx,400.,200.); }
+    assert_eq!(view.widget_rectangles(&json!({"ids":["on"],"visible_only":true})).unwrap(),json!([]));
 }
 
 #[test]

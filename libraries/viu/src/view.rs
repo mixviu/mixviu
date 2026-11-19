@@ -967,7 +967,8 @@ impl SceneView {
                     rect,
                     clip: ui.clip_rect(),
                     enabled: ui.is_enabled()
-                        && node.ports.get("enabled") != Some(&Value::Bool(false)),
+                        && node.ports.get("enabled") != Some(&Value::Bool(false))
+                        && definition.is_none_or(|v| v["properties"]["enabled"] != false),
                     focused: focused || response.has_focus(),
                 });
             }
