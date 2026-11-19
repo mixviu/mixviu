@@ -465,6 +465,15 @@ fn changing_4k(strict: bool) {
     assert_eq!((width, height), (3840, 2160));
     let at = (2100 * width + 3800) * 3;
     assert_eq!(&pixels[at..at + 3], &[0xaa, 0x33, 0x77]);
+    if std::env::var("MIX_TEST_CAPTURE_OSD").as_deref() == Ok("1") {
+        osd::ready(&bus);
+        osd::call(&bus, "osd.show", json!({
+            "id":"record-benchmark",
+            "scene":{"kind":"caption","text":"Native 4K30 OSD recording","width":480,"height":80},
+            "anchor":{"output":"headless-0","edge":"bottom-right","margin":24},
+            "enter":"up"
+        }));
+    }
     for recording in [false, true] {
         let start = recording.then(|| bus.call("comp.record.start", json!({"request_id":"changing", "target":{"output":"headless-0"}, "path":process.root.join("changing.vfl"), "max_seconds":seconds+2,"fps":30,"cursor":true})));
         let begin_us = monotonic_ns() / 1000;

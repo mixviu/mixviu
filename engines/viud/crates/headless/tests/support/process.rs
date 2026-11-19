@@ -351,7 +351,13 @@ pub fn spawn_transitions(label: &str, bus: &str) -> Process {
 
 #[allow(dead_code)] // Used by capture.rs; this module is shared with other targets.
 pub fn spawn_4k(label: &str, bus: &str) -> Process {
-    spawn_size(label, bus, "3840x2160")
+    spawn_options(Options {
+        label,
+        bus: Some(bus),
+        size: "3840x2160",
+        osd: std::env::var("MIX_TEST_CAPTURE_OSD").as_deref() == Ok("1"),
+        ..Options::default()
+    })
 }
 
 #[allow(dead_code)]

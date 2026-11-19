@@ -40,17 +40,24 @@ fn answer_operation($op,$a)
   end
 end
 fn action_rows()
-  $id={name:"id",type:"string",required:true}
-  $scene={name:"scene",type:"object",required:false}
-  $anchor={name:"anchor",type:"object",required:false}
-  $enter={name:"enter",type:"string",required:false,enum:["fade","up","down","left","right","pop"]}
-  $exit={name:"exit",type:"string",required:false,enum:["fade","up","down","left","right","pop"]}
-  $duration={name:"duration_ms",type:"integer",required:false,min:0,max:86400000}
-  $pointer={name:"pointer_input",type:"boolean",required:false}
+  $id={type:"string",minLength:1,maxLength:128}
+  $text={type:"string",maxLength:8192}
+  $scene={type:"object",additionalProperties:false,required:["kind","text"],properties:{kind:{enum:["title","caption","card"]},text:$text,title:$text,width:{type:"number",minimum:32,maximum:2048},height:{type:"number",minimum:24,maximum:1024}}}
+  $coordinate={type:"number",minimum:-32768,maximum:32768}
+  $margin={type:"number",minimum:0,maximum:4096}
+  $anchor={oneOf:[
+    {type:"object",additionalProperties:false,required:["output","edge"],properties:{output:{type:"string",minLength:1},edge:{enum:["top","bottom","left","right","top-left","top-right","bottom-left","bottom-right"]},margin:{oneOf:[$margin,{type:"object",additionalProperties:false,properties:{top:$margin,right:$margin,bottom:$margin,left:$margin}}]}}},
+    {type:"object",additionalProperties:false,required:["window"],properties:{window:{type:"object",additionalProperties:false,required:["id","generation"],properties:{id:{type:"integer",minimum:1},generation:{type:"integer",minimum:1}}},offset:{type:"object",additionalProperties:false,properties:{x:$coordinate,y:$coordinate}}}}
+  ]}
+  $motion={enum:[nil,"fade","up","down","left","right","pop"]}
+  $properties={id:$id,scene:$scene,anchor:$anchor,enter:$motion,exit:$motion,duration_ms:{type:["integer","null"],minimum:0,maximum:86400000},pointer_input:{type:"boolean"}}
+  $show={type:"object",additionalProperties:false,required:["id","scene","anchor"],properties:$properties}
+  $update={type:"object",additionalProperties:false,required:["id"],properties:$properties}
+  $hide={type:"object",additionalProperties:false,required:["id"],properties:{id:$id,exit:$motion}}
   return [
-    {id:"osd.show",label:"Show an OSD scene",enabled:true,params:[$id,merge($scene,{required:true}),merge($anchor,{required:true}),$enter,$exit,$duration,$pointer]},
-    {id:"osd.update",label:"Update an OSD scene",enabled:true,params:[$id,$scene,$anchor,$enter,$exit,$duration,$pointer]},
-    {id:"osd.hide",label:"Hide an OSD scene",enabled:true,params:[$id,$exit]}
+    {id:"osd.show",label:"Show an OSD scene",enabled:true,class:"intent",schema:$show},
+    {id:"osd.update",label:"Update an OSD scene",enabled:true,class:"intent",schema:$update},
+    {id:"osd.hide",label:"Hide an OSD scene",enabled:true,class:"intent",schema:$hide}
   ]
 end
 sync_model()

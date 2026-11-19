@@ -2,7 +2,7 @@
 //! OSD acceptance through the real Bus, scene host, compositor and VFL reader.
 use super::*;
 
-fn call(bus: &Bus, command: &str, args: Value) -> Value {
+pub(super) fn call(bus: &Bus, command: &str, args: Value) -> Value {
     call_rc(bus, command, args, 0)
 }
 
@@ -23,7 +23,7 @@ fn call_rc(bus: &Bus, command: &str, args: Value, expected: i32) -> Value {
     }
 }
 
-fn ready(bus: &Bus) {
+pub(super) fn ready(bus: &Bus) {
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
         let output = helper(
@@ -340,10 +340,9 @@ fn window_card_follows_hides_and_osd_refusals_are_typed() {
         );
     }
     let actions = call(&bus, "osd.actions", json!({}));
-    assert!(
-        actions.is_object() || actions.is_array(),
-        "discoverable OSD actions"
-    );
+    assert_eq!(actions["actions"][0]["class"], "intent");
+    assert_eq!(actions["actions"][0]["schema"]["required"], json!(["id","scene","anchor"]));
+    assert_eq!(actions["actions"][0]["schema"]["properties"]["pointer_input"]["type"], "boolean");
     call(
         &bus,
         "osd.execute",

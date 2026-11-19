@@ -44,6 +44,8 @@ elif contains(["record","acceptance40"],$mode) then
   export MIX_TEST_REQUIRE_RECORD="1"
   export MIX_TEST_MIX_EXE=realpath("target/release/mix")
   export MIX_TEST_CAPTURE_SECONDS="40"
+  export MIX_TEST_CAPTURE_OSD="1"
+  export MIX_TEST_VIU_EXE=realpath("target/release/viu")
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","benchmark_record_changing_4k_zero_drop","--","--ignored","--exact","--nocapture","--test-threads=1"])
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","record_idle_content_clock_ignores_capture_repaints","--","--exact","--nocapture","--test-threads=1"])
 else
