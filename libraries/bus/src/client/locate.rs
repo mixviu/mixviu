@@ -5,9 +5,8 @@
 //!
 //! Resolution order: `MIX_NODED_URL`; the node configuration file
 //! (the shared `config::node::NodeConfigSearch`, also used for Unix socket
-//! and account settings); and finally the loopback broker. The
-//! fallback is loopback, never another node's address: an unconfigured node
-//! must fail to reach its own broker loudly rather than dial someone else's.
+//! and account settings); and finally the local Unix broker. Explicit TCP
+//! URLs are legacy and grant no node-local authority.
 
 use std::path::PathBuf;
 
@@ -38,7 +37,7 @@ pub fn noded_url() -> String {
         Err(e) => {
             tracing::warn!(
                 error = %e,
-                "failed to read node config; using {DEFAULT_NODED_URL}"
+                "failed to read node config; using local Unix endpoint"
             );
             return default_local_url();
         }
@@ -57,7 +56,7 @@ pub fn noded_url() -> String {
             None => {
                 tracing::warn!(
                     source = %path.display(),
-                    "node config has no readable wg_ip/noded.port; using {DEFAULT_NODED_URL}"
+                    "node config has no explicit Unix socket; using local runtime endpoint"
                 );
                 default_local_url()
             }
@@ -66,7 +65,7 @@ pub fn noded_url() -> String {
             tracing::warn!(
                 source = %path.display(),
                 error = %e,
-                "node config is not valid strict data; using {DEFAULT_NODED_URL}"
+                "node config is not valid strict data; using local Unix endpoint"
             );
             default_local_url()
         }

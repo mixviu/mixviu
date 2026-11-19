@@ -1788,12 +1788,14 @@ async fn process_admit_response(
             }
         };
     let digest = crate::admission::canon_digest(&proof.transcript);
+    let identity = snap.keys.prove(&proof.transcript, &proof.signature);
     let (verdict, detail) = match a.members_full.get(&proof.claimed_source_node) {
         None => ("would-refuse", "no-current-d2-credential"),
         Some(member) => {
             match mesh_trust::admission::admit(member, &proof.transcript, &proof.signature, a.epoch)
             {
-                Ok(()) => ("would-admit", ""),
+                Ok(()) if identity.is_some() => ("would-admit", ""),
+                Ok(()) => ("would-refuse", "no-current-d2-credential"),
                 Err(e) => ("would-refuse", crate::admission::verdict_detail(&e)),
             }
         }
@@ -1809,7 +1811,7 @@ async fn process_admit_response(
         &digest,
     );
     Some(if verdict == "would-admit" {
-        match snap.keys.prove(&proof.transcript, &proof.signature) {
+        match identity {
             Some(identity) => AdmitOutcome::Admit(proof.claimed_source_node, identity),
             None => AdmitOutcome::Refuse("no-current-d2-credential"),
         }
@@ -2375,6 +2377,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         }
     }
 
+    let mut reverse_answered = false;
     let connection_observe = state.observe.clone();
     loop {
         // SPEC 13 §9a (2-c-2c) — read the next frame OR honour a reload-teardown
@@ -2427,7 +2430,18 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             continue;
         }
         if bus_msg.command_name() == Some("noded.identity.challenge") {
-            if service_name.is_none() && state.peer_context.mesh_peer().is_some() {
+            let body: serde_json::Value = serde_json::from_str(&bus_msg.body).unwrap_or_default();
+            let authority = state.authority.load_full();
+            let valid = match (&authority.posture, state.peer_context.mesh_peer()) {
+                (crate::authority::Posture::Verified(a), Some((node, key))) =>
+                    authority.keys.contains(node, key)
+                    && body["verifying_broker_node"].as_str() == Some(node)
+                    && body["mesh_fqdn"].as_str() == Some(a.mesh.as_str())
+                    && body["inventory_epoch"].as_u64() == Some(a.epoch),
+                _ => false,
+            };
+            if !reverse_answered && service_name.is_none() && valid {
+                reverse_answered = true;
                 if let Some(wire) = mesh::build_admit_response(
                     &bus_msg,
                     &state.node_name,

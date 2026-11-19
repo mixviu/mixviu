@@ -188,6 +188,7 @@ pub struct AuthorityRevision {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionRetireReason {
     Removed,
+    KeyRevoked,
     EndpointChanged { replacement: SocketAddr },
 }
 
@@ -195,6 +196,7 @@ impl ConnectionRetireReason {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Removed => "removed",
+            Self::KeyRevoked => "exact-key-revoked",
             Self::EndpointChanged { .. } => "endpoint-changed",
         }
     }
@@ -419,8 +421,10 @@ impl MeshPeers {
             for (name, connection) in &state.connections {
                 if let Some((node, key)) = connection.context.mesh_peer() {
                     if !authority.contains(node, key) {
-                        reasons.insert(name.clone(), ConnectionRetireReason::Removed);
+                        reasons.insert(name.clone(), ConnectionRetireReason::KeyRevoked);
                     }
+                } else if authority.epoch() > 0 {
+                    reasons.insert(name.clone(), ConnectionRetireReason::KeyRevoked);
                 }
             }
             if state.revision != revision {

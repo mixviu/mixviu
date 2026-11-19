@@ -1,6 +1,50 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 #[tokio::test]
+async fn inventory_rotation_during_inbound_proof_refuses_stale_handshake() {
+    let state = mesh_delivery_test_state().await;
+    let authority = state.authority.load_full();
+    let crate::authority::Posture::Verified(a) = &authority.posture else { unreachable!() };
+    let issued = state.challenge_table.issue(a.epoch,&a.mesh,&state.node_name).await.unwrap();
+    let challenge = BusMessage::new().with_header("id",&issued.id).with_body(&issued.body);
+    let wire = mesh::build_admit_response(&challenge,"beta",&Some([7;32])).unwrap();
+    let mut posture = authority.posture.clone();
+    if let crate::authority::Posture::Verified(a) = &mut posture { a.epoch += 1; }
+    apply_inventory_reload(&state,posture).await;
+    let result = super::process_admit_response(&state,&bus_mod::parse(&wire).unwrap(),"in-flight","192.0.2.2",Some(&issued.id)).await;
+    assert!(matches!(result,Some(super::AdmitOutcome::Refuse("epoch-mismatch"))));
+    assert!(state.challenge_table.take(&issued.id).await.is_none());
+}
+
+#[tokio::test]
+async fn accepted_reload_cancels_dialled_proof_before_registration() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let (state,_incoming,peer) = policy_mesh_state(listener.local_addr().unwrap()).await;
+    let (arrived, waiting) = oneshot::channel();
+    let (release, released) = oneshot::channel();
+    let server = tokio::spawn(async move {
+        let (stream,_) = listener.accept().await.unwrap();
+        let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+        socket.send(WsMessage::Ping(Vec::new().into())).await.unwrap();
+        let challenge = next_mesh_frame(&mut socket).await;
+        assert_eq!(challenge.command_name(),Some("noded.identity.challenge"));
+        arrived.send(()).unwrap();
+        released.await.unwrap();
+        // Dropping this half also proves the cancelled attempt does not need a reply.
+    });
+    let mesh = state.mesh.clone();
+    let call = tokio::spawn(async move { mesh.send(peer,BusMessage::empty()).await });
+    waiting.await.unwrap();
+    let mut posture = state.authority.load().posture.clone();
+    if let crate::authority::Posture::Verified(a) = &mut posture { a.epoch += 1; }
+    let started = Instant::now();
+    apply_inventory_reload(&state,posture).await;
+    assert!(tokio::time::timeout(Duration::from_secs(1),call).await.unwrap().unwrap().is_err());
+    assert!(started.elapsed() < Duration::from_secs(1));
+    release.send(()).unwrap(); server.await.unwrap();
+}
+
+#[tokio::test]
 async fn accepted_rotation_drops_exact_inbound_key_within_one_second() {
     let state = mesh_delivery_test_state().await;
     let (tx, _rx) = mpsc::channel(8);

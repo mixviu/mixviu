@@ -136,9 +136,7 @@ impl KeyAuthority {
             ..Self::default()
         };
         for (node, member) in members {
-            if member["status"] != "active" || member["bus"] != true {
-                continue;
-            }
+            let eligible = member["status"] == "active" && member["bus"] == true;
             for key in select_d2_pubkeys(member, epoch) {
                 let Ok(key) = <[u8; 32]>::try_from(key) else {
                     continue;
@@ -151,8 +149,10 @@ impl KeyAuthority {
                             *owner = None;
                         }
                     })
-                    .or_insert_with(|| Some(node.clone()));
-                authority.members.entry(node.clone()).or_default().push(key);
+                    .or_insert_with(|| eligible.then(|| node.clone()));
+                if eligible {
+                    authority.members.entry(node.clone()).or_default().push(key);
+                }
             }
         }
         authority
