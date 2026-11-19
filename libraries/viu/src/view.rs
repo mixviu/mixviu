@@ -598,21 +598,25 @@ impl SceneView {
             }),
             node.ports.get("motion") != Some(&Value::Bool(false)),
         );
-        let offset = [offset[0].as_f64().unwrap_or(0.), offset[1].as_f64().unwrap_or(0.)];
-        let layer = self.motion.layer(
-            ui,
-            &mut capture,
-            ui.available_rect_before_wrap(),
-            offset,
-        ).or_else(|| toolkit::scene_motion::offset_layer(ui, &key, offset));
+        let offset = [
+            offset[0].as_f64().unwrap_or(0.),
+            offset[1].as_f64().unwrap_or(0.),
+        ];
+        let layer = self
+            .motion
+            .layer(ui, &mut capture, ui.available_rect_before_wrap(), offset)
+            .or_else(|| toolkit::scene_motion::offset_layer(ui, &key, offset));
         let parent = self.motion_parent.clone();
         if capture.is_some() {
             self.motion_parent = Some(key.clone());
         }
-        ui.scope_builder(egui::UiBuilder::new().layer_id(layer.unwrap_or(ui.layer_id())), |ui| {
-            ui.multiply_opacity(opacity.clamp(0., 1.) as f32);
-            self.node_contents(ui, id, nodes, route, depth, events);
-        });
+        ui.scope_builder(
+            egui::UiBuilder::new().layer_id(layer.unwrap_or(ui.layer_id())),
+            |ui| {
+                ui.multiply_opacity(opacity.clamp(0., 1.) as f32);
+                self.node_contents(ui, id, nodes, route, depth, events);
+            },
+        );
         self.motion_parent = parent;
         let painted_rect = self.geometry.get(&key).copied().unwrap_or(ui.min_rect());
         toolkit::scene_motion::highlight(

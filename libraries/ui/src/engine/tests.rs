@@ -66,12 +66,12 @@ fn runtime(program: Probe) -> UiRuntime<Probe> {
 
 #[test]
 fn explicit_presentation_time_is_scoped_to_one_tick() {
-    let mut rt=runtime(Probe::default());
+    let mut rt = runtime(Probe::default());
     rt.tick_at(0.);
-    assert_eq!(rt.program.seen.lock().unwrap().time,0.);
+    assert_eq!(rt.program.seen.lock().unwrap().time, 0.);
     rt.request_redraw();
     rt.tick();
-    assert!(rt.program.seen.lock().unwrap().time>0.);
+    assert!(rt.program.seen.lock().unwrap().time > 0.);
 }
 
 #[test]

@@ -265,13 +265,13 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
             }),
             motion_enabled,
         );
-        let offset = [offset[0].as_f64().unwrap_or(0.), offset[1].as_f64().unwrap_or(0.)];
-        let layer = motion.layer(
-            &base,
-            &mut capture,
-            rect,
-            offset,
-        ).or_else(|| toolkit::scene_motion::offset_layer(&base, &item.key, offset));
+        let offset = [
+            offset[0].as_f64().unwrap_or(0.),
+            offset[1].as_f64().unwrap_or(0.),
+        ];
+        let layer = motion
+            .layer(&base, &mut capture, rect, offset)
+            .or_else(|| toolkit::scene_motion::offset_layer(&base, &item.key, offset));
         let mut child = base.new_child(
             egui::UiBuilder::new()
                 .id_salt(&item.key)
@@ -561,7 +561,13 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         )
         .as_f64()
         .unwrap_or(1.0);
-        let opacity = opacity.clamp(0., 1.) * item.parent.as_ref().and_then(|p| opacities.get(p)).copied().unwrap_or(1.);
+        let opacity = opacity.clamp(0., 1.)
+            * item
+                .parent
+                .as_ref()
+                .and_then(|p| opacities.get(p))
+                .copied()
+                .unwrap_or(1.);
         opacities.insert(item.key.clone(), opacity);
         toolkit::scene_motion::visual(ui, start, rect, opacity, [0.0, 0.0]);
         toolkit::scene_motion::highlight(

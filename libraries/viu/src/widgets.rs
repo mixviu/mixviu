@@ -2029,7 +2029,10 @@ impl Widgets {
                                 let name = cells[0].as_str().unwrap_or("");
                                 let capture = row_motion.capture(
                                     ui,
-                                    &format!("{row}:{}", serde_json::to_string(cells).unwrap_or_default()),
+                                    &format!(
+                                        "{row}:{}",
+                                        serde_json::to_string(cells).unwrap_or_default()
+                                    ),
                                     None,
                                     Some(&json!("fade")),
                                     Some(&json!("fade")),
@@ -2128,7 +2131,11 @@ impl Widgets {
                             }
                         },
                     );
-                row_motion.keep_unseen(|key| data.iter().enumerate().any(|(index, row)| key == format!("{index}:{}", serde_json::to_string(row).unwrap_or_default())));
+                row_motion.keep_unseen(|key| {
+                    data.iter().enumerate().any(|(index, row)| {
+                        key == format!("{index}:{}", serde_json::to_string(row).unwrap_or_default())
+                    })
+                });
                 row_motion.end(ui);
                 ui.interact(area.inner_rect, ui.scope_id().with(id), Sense::hover())
             }

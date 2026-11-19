@@ -11,7 +11,7 @@ pub struct SceneMotion {
     nodes: BTreeMap<String, NodeMotion>,
     now: f64,
     reduced: bool,
-    painted_ranges: BTreeMap<LayerId, Vec<std::ops::Range<usize>>>,
+    painted_ranges: std::collections::HashMap<LayerId, Vec<std::ops::Range<usize>>>,
 }
 struct NodeMotion {
     seen: bool,
@@ -202,8 +202,15 @@ impl SceneMotion {
         };
         if local == egui::emath::TSTransform::IDENTITY
             && n.opacity == 1.0
-            && ui.ctx().layer_transform_to_global(ui.layer_id()).unwrap_or_default() == egui::emath::TSTransform::IDENTITY
-            && !n.entrance.as_ref().is_some_and(|p| motion::scene::active(p, self.now))
+            && ui
+                .ctx()
+                .layer_transform_to_global(ui.layer_id())
+                .unwrap_or_default()
+                == egui::emath::TSTransform::IDENTITY
+            && !n
+                .entrance
+                .as_ref()
+                .is_some_and(|p| motion::scene::active(p, self.now))
         {
             return None;
         }
@@ -272,7 +279,9 @@ impl SceneMotion {
             let list = g.entry(c.layer);
             let end = list.next_idx();
             for i in c.start.0..end.0 {
-                if claimed.iter().any(|r| r.contains(&i)) { continue; }
+                if claimed.iter().any(|r| r.contains(&i)) {
+                    continue;
+                }
                 list.mutate_shape(ShapeIdx(i), |s| {
                     let mut values = values;
                     if c.transformed {
@@ -366,7 +375,10 @@ impl SceneMotion {
                     .add(shape.shape);
             }
             if now < p.timing.start() {
-                ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(p.timing.start() - now));
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_secs_f64(
+                        p.timing.start() - now,
+                    ));
             } else {
                 ui.ctx().request_repaint();
             }
@@ -461,11 +473,26 @@ pub fn value(
 
 /// Static positional targets still transform input when animation is disabled.
 pub fn offset_layer(ui: &Ui, key: &str, offset: [f64; 2]) -> Option<LayerId> {
-    if offset == [0., 0.] { return None; }
-    let layer = LayerId::new(ui.layer_id().order, ui.scope_id().with(("static-offset", key)));
-    let outer = ui.ctx().layer_transform_to_global(ui.layer_id()).unwrap_or_default();
+    if offset == [0., 0.] {
+        return None;
+    }
+    let layer = LayerId::new(
+        ui.layer_id().order,
+        ui.scope_id().with(("static-offset", key)),
+    );
+    let outer = ui
+        .ctx()
+        .layer_transform_to_global(ui.layer_id())
+        .unwrap_or_default();
     ui.ctx().set_sublayer(ui.layer_id(), layer);
-    ui.ctx().set_transform_layer(layer, outer * egui::emath::TSTransform::from_translation(egui::vec2(offset[0] as f32, offset[1] as f32)));
+    ui.ctx().set_transform_layer(
+        layer,
+        outer
+            * egui::emath::TSTransform::from_translation(egui::vec2(
+                offset[0] as f32,
+                offset[1] as f32,
+            )),
+    );
     Some(layer)
 }
 
@@ -780,38 +807,79 @@ mod tests {
     use serde_json::json;
     #[test]
     fn delayed_exit_arms_a_deadline_and_settled_capture_keeps_sibling_order() {
-        let ctx=Context::default();
-        let mut state=SceneMotion::default();
-        for t in [0.,1.,2.,3.] {
-            let mut out=ctx.run_ui(raw(t),|ui| {
+        let ctx = Context::default();
+        let mut state = SceneMotion::default();
+        for t in [0., 1., 2., 3.] {
+            let mut out = ctx.run_ui(raw(t), |ui| {
                 state.begin(ui);
-                let mut c=state.capture(ui,"a",None,None,Some(&json!({"preset":"fade","delay_ms":2000})),true);
-                assert!(state.layer(ui,&mut c,ui.min_rect(),[0.,0.]).is_none());
-                ui.painter().rect_filled(Rect::from_min_size(egui::pos2(20.,20.),egui::vec2(20.,20.)),0.,egui::Color32::RED);
-                state.painted(ui,c,ui.min_rect());
-                ui.painter().rect_filled(Rect::from_min_size(egui::pos2(20.,20.),egui::vec2(20.,20.)),0.,egui::Color32::BLUE);
+                let mut c = state.capture(
+                    ui,
+                    "a",
+                    None,
+                    None,
+                    Some(&json!({"preset":"fade","delay_ms":2000})),
+                    true,
+                );
+                assert!(state.layer(ui, &mut c, ui.min_rect(), [0., 0.]).is_none());
+                ui.painter().rect_filled(
+                    Rect::from_min_size(egui::pos2(20., 20.), egui::vec2(20., 20.)),
+                    0.,
+                    egui::Color32::RED,
+                );
+                state.painted(ui, c, ui.min_rect());
+                ui.painter().rect_filled(
+                    Rect::from_min_size(egui::pos2(20., 20.), egui::vec2(20., 20.)),
+                    0.,
+                    egui::Color32::BLUE,
+                );
                 state.end(ui);
             });
-            let fills=out.shapes.iter().filter_map(|s|if let egui::Shape::Rect(r)=&s.shape {Some(r.fill)} else {None}).collect::<Vec<_>>();
-            assert_eq!(fills,vec![egui::Color32::RED,egui::Color32::BLUE]);
+            let fills = out
+                .shapes
+                .iter()
+                .filter_map(|s| {
+                    if let egui::Shape::Rect(r) = &s.shape {
+                        Some(r.fill)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(fills, vec![egui::Color32::RED, egui::Color32::BLUE]);
             out.textures_delta.clear();
         }
-        let mut out=ctx.run_ui(raw(4.),|ui| {state.begin(ui);state.end(ui);});
+        let mut out = ctx.run_ui(raw(4.), |ui| {
+            state.begin(ui);
+            state.end(ui);
+        });
         out.textures_delta.clear();
-        let mut out=ctx.run_ui(raw(5.),|ui| {state.begin(ui);state.end(ui);});
-        assert!(out.viewport_output[&egui::ViewportId::ROOT].repaint_delay>std::time::Duration::ZERO);
+        let mut out = ctx.run_ui(raw(5.), |ui| {
+            state.begin(ui);
+            state.end(ui);
+        });
+        assert!(
+            out.viewport_output[&egui::ViewportId::ROOT].repaint_delay > std::time::Duration::ZERO
+        );
         out.textures_delta.clear();
     }
     #[test]
     fn opacity_is_clamped_before_paint() {
-        for (alpha,expected) in [(-0.5,0),(1.5,255)] {
-            let ctx=Context::default();
-            let mut out=ctx.run_ui(raw(0.),|ui| {
-                let start=ui.ctx().graphics_mut(|g|g.entry(ui.layer_id()).next_idx());
-                ui.painter().rect_filled(Rect::from_min_size(egui::pos2(20.,20.),egui::vec2(20.,20.)),0.,egui::Color32::WHITE);
-                visual(ui,start,ui.min_rect(),alpha,[0.,0.]);
+        for (alpha, expected) in [(-0.5, 0), (1.5, 255)] {
+            let ctx = Context::default();
+            let mut out = ctx.run_ui(raw(0.), |ui| {
+                let start = ui.ctx().graphics_mut(|g| g.entry(ui.layer_id()).next_idx());
+                ui.painter().rect_filled(
+                    Rect::from_min_size(egui::pos2(20., 20.), egui::vec2(20., 20.)),
+                    0.,
+                    egui::Color32::WHITE,
+                );
+                visual(ui, start, ui.min_rect(), alpha, [0., 0.]);
             });
-            assert!(out.shapes.iter().any(|s| matches!(&s.shape,egui::Shape::Rect(r) if r.fill.a()==expected)));
+            assert!(
+                out.shapes
+                    .iter()
+                    .any(|s| matches!(&s.shape,egui::Shape::Rect(r) if r.fill.a()==expected))
+            );
             out.textures_delta.clear();
         }
     }
@@ -884,10 +952,10 @@ mod tests {
     fn native_menu_and_popup_close_with_paint_only_and_reduced_motion_snaps() {
         for popup in [false, true] {
             for mode in 0..3 {
-                let reduced=mode!=0;
+                let reduced = mode != 0;
                 let ctx = Context::default();
                 install(&ctx);
-                if mode==1 {
+                if mode == 1 {
                     ctx.global_style_mut(|s| s.animation_time = 0.);
                 }
                 let mut open = true;
@@ -897,8 +965,10 @@ mod tests {
                         .events
                         .push(egui::Event::PointerMoved(egui::pos2(25., 45.)));
                     ctx.run_ui(input, |ui| {
-                        if mode==2 {ui.style_mut().animation_time=0.;}
-                        let _policy=policy(ui);
+                        if mode == 2 {
+                            ui.style_mut().animation_time = 0.;
+                        }
+                        let _policy = policy(ui);
                         if popup {
                             let button = ui.button("Open");
                             egui::Popup::from_response(&button)
