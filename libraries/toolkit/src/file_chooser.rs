@@ -1170,6 +1170,7 @@ fn modified_date(time: SystemTime) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    // Chooser fixtures settle shared popup tracks before Harness::run asserts idle.
     use super::*;
 
     #[test]
@@ -1278,7 +1279,6 @@ mod tests {
         h.run_steps(5);
         assert!(h.get_by_label("File name").is_focused());
         h.event(egui::Event::Text("typed.md".into()));
-        // Settle the shared surface open/close tracks before asserting idle.
         h.run_steps(10);
         h.run();
         assert_eq!(h.state().0.name, "typed.md");
@@ -1288,13 +1288,11 @@ mod tests {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
-            // Settle the shared surface open/close tracks before asserting idle.
-        h.run_steps(10);
+            h.run_steps(10);
         h.run();
         }
         assert!(h.state().0.pending.is_none());
         h.key_press(Key::Enter);
-        // Settle the shared surface open/close tracks before asserting idle.
         h.run_steps(10);
         h.run();
         for _ in 0..100 {
@@ -1302,8 +1300,7 @@ mod tests {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
-            // Settle the shared surface open/close tracks before asserting idle.
-        h.run_steps(10);
+            h.run_steps(10);
         h.run();
         }
         assert_eq!(
@@ -1436,13 +1433,11 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         h.state_mut().0.pending = Some(rx);
         tx.send(Ok(Answer::Save(path.clone(), true))).unwrap();
-        // Settle the shared surface open/close tracks before asserting idle.
         h.run_steps(10);
         h.run();
         assert!(h.state().1.is_none());
         assert!(h.state().0.replace.is_some());
         h.key_press(Key::Escape);
-        // Settle the shared surface open/close tracks before asserting idle.
         h.run_steps(10);
         h.run();
         assert!(h.state().0.replace.is_none());
@@ -1450,12 +1445,10 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         h.state_mut().0.pending = Some(rx);
         tx.send(Ok(Answer::Save(path.clone(), true))).unwrap();
-        // Settle the shared surface open/close tracks before asserting idle.
         h.run_steps(10);
         h.run();
         assert!(h.query_by_label("Replace").is_some());
         h.get_by_label("Replace").focus();
-        // Settle the shared surface open/close tracks before asserting idle.
         h.run_steps(10);
         h.run();
         assert!(
@@ -1463,7 +1456,6 @@ mod tests {
             "replacement button must own focus"
         );
         h.key_press(Key::Enter);
-        // Settle the shared surface open/close tracks before asserting idle.
         h.run_steps(10);
         h.run();
         assert_eq!(
@@ -1580,7 +1572,6 @@ mod tests {
         crate::install(&h.ctx, &crate::Theme::embedded());
         h.run_steps(5);
         h.get_by_label("Path").focus();
-        // Settle the shared surface open/close tracks before asserting idle.
         h.run_steps(10);
         h.run();
         assert!(h.get_by_label("Path").is_focused());
@@ -1593,7 +1584,6 @@ mod tests {
             capped: false,
         })))
         .unwrap();
-        // Settle the shared surface open/close tracks before asserting idle.
         h.run_steps(10);
         h.run();
         assert_eq!(h.state().directory, PathBuf::from("/tmp/listed"));
@@ -1610,7 +1600,6 @@ mod tests {
             capped: false,
         })))
         .unwrap();
-        // Settle the shared surface open/close tracks before asserting idle.
         h.run_steps(10);
         h.run();
         assert_eq!(h.state().path, "/tmp/next");
@@ -1644,7 +1633,6 @@ mod tests {
         h.state_mut().0.pending = Some(rx);
         let paths = vec![PathBuf::from("/tmp/report.txt")];
         tx.send(Ok(Answer::Picked(paths.clone()))).unwrap();
-        // Settle the shared surface open/close tracks before asserting idle.
         h.run_steps(10);
         h.run();
         assert_eq!(h.state().1, Some(Outcome::Picked(paths)));
@@ -1672,12 +1660,10 @@ mod tests {
         crate::install(&h.ctx, &crate::Theme::embedded());
         h.run_steps(5);
         h.get_by_label("Cancel").focus();
-        // Settle the shared surface open/close tracks before asserting idle.
         h.run_steps(10);
         h.run();
         assert!(h.get_by_label("Cancel").is_focused());
         h.key_press(Key::Enter);
-        // Settle the shared surface open/close tracks before asserting idle.
         h.run_steps(10);
         h.run();
         assert_eq!(h.state().1, Some(Outcome::Cancelled));
@@ -1716,7 +1702,6 @@ mod tests {
         let _ = h.get_by_label("Attach");
         let _ = h.get_by_label("Cancel");
         h.key_press(Key::Escape);
-        // Settle the shared surface open/close tracks before asserting idle.
         h.run_steps(10);
         h.run();
         assert_eq!(h.state().2, Some(Outcome::Cancelled));
