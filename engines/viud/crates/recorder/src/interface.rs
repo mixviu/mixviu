@@ -1288,7 +1288,7 @@ fn set_encode_progress(state: &mut Loop, percent: u32) {
         return;
     };
     if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
-        let _ = reg.capture_message(id, CaptureMessage::SetEncodeProgress(percent));
+        reg.capture_message(id, CaptureMessage::SetEncodeProgress(percent));
     }
 }
 
@@ -1537,7 +1537,7 @@ fn set_countdown(state: &mut Loop, secs: u32) {
         return;
     };
     if let Some(reg) = state.inner.surface_mut().registry.as_mut() {
-        let _ = reg.capture_message(id, CaptureMessage::SetCountdown(secs));
+        reg.capture_message(id, CaptureMessage::SetCountdown(secs));
     }
 }
 

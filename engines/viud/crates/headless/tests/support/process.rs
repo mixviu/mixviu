@@ -192,7 +192,7 @@ fn spawn_options(options: Options<'_>) -> Process {
     fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
     let node = render_node();
     let mut config = model::environment::config::base::default_settings();
-    if std::env::var_os("MIX_TEST_MAPPING_TRACE").is_some() {
+    if std::env::var_os(paths::env::test::TEST_MAPPING_TRACE).is_some() {
         config.log_level = "info,warn,error,trace,debug".into();
     }
     // Default priority is realtime: headless must override the startup policy.
@@ -210,6 +210,9 @@ fn spawn_options(options: Options<'_>) -> Process {
     let log = root.join("viud.log");
     let stderr = fs::File::create(&log).unwrap();
     let mut command = Command::new(binary);
+    if std::env::var_os(paths::env::test::TEST_PRE_DRAIN_CHILD).is_none() {
+        command.env_remove(paths::env::test::TEST_PRE_DRAIN_FRAME);
+    }
     command
         .args([
             "--socket",

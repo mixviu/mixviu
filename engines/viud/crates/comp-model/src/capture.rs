@@ -117,7 +117,11 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                 return Err(invalid_argument(
                     "path",
                     "absolute path to a VFL directory",
-                    "absolute .vfl path",
+                    if !std::path::Path::new(&path).is_absolute() {
+                        "relative path"
+                    } else {
+                        "path without .vfl extension"
+                    },
                 ));
             }
             let fps = fields
@@ -403,6 +407,25 @@ pub fn reply(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recording_path_error_names_the_fault() {
+        for (path, fault) in [
+            ("relative.vfl", "relative path"),
+            ("/tmp/take.mp4", "path without .vfl extension"),
+        ] {
+            let args = json!({"request_id":"take", "path":path});
+            let error = parse_record("comp.record.start", &args).unwrap_err();
+            assert_eq!(
+                error,
+                ControlReply::Validation(crate::observation::SetValidationError::InvalidValue {
+                    path: "path".into(),
+                    expected: "absolute path to a VFL directory",
+                    range: fault,
+                })
+            );
+        }
+    }
 
     #[test]
     fn recording_validation_and_read_only_classification() {
