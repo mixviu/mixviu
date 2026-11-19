@@ -643,7 +643,6 @@ pub fn install(ctx: &Context) {
                 if !has_paint {
                     continue;
                 }
-                let surface = ui.new_child(egui::UiBuilder::new().layer_id(layer));
                 let disabled = ctx
                     .data(|d| {
                         d.get_temp::<std::collections::HashSet<LayerId>>(egui::Id::unique((
@@ -653,7 +652,7 @@ pub fn install(ctx: &Context) {
                     })
                     .is_some_and(|ids| ids.contains(&layer));
                 let mut capture = state.capture(
-                    &surface,
+                    ui,
                     &format!("{layer:?}"),
                     None,
                     Some(&serde_json::json!("fade")),
@@ -661,9 +660,12 @@ pub fn install(ctx: &Context) {
                     !disabled,
                 );
                 if let Some(c) = capture.as_mut() {
+                    c.layer=layer;
                     c.start = ShapeIdx(0);
                 }
-                state.painted(&surface, capture, rect);
+                // Creating a Ui here would register widgets while the plugin
+                // callback lock is held, re-entering on_widget_under_pointer.
+                state.painted(ui, capture, rect);
             }
             state.end(ui);
         }),
@@ -822,7 +824,9 @@ mod tests {
                 }
                 let mut open = true;
                 for t in [0., 0.1, 0.2] {
-                    ctx.run_ui(raw(t), |ui| {
+                    let mut input=raw(t);
+                    input.events.push(egui::Event::PointerMoved(egui::pos2(25.,45.)));
+                    ctx.run_ui(input, |ui| {
                         if popup {
                             let button = ui.button("Open");
                             egui::Popup::from_response(&button)

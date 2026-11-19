@@ -1289,7 +1289,7 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
             h.run_steps(10);
-        h.run();
+            h.run();
         }
         assert!(h.state().0.pending.is_none());
         h.key_press(Key::Enter);
@@ -1301,7 +1301,7 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(10));
             h.run_steps(10);
-        h.run();
+            h.run();
         }
         assert_eq!(
             h.state().1,
