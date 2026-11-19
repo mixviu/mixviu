@@ -31,6 +31,8 @@ pub const UI_SCREEN: Layer = Layer(500);
 pub const THUMBNAIL: Layer = Layer(510);
 /// Only compositor-authenticated OSD clients may contribute to this band.
 pub const OSD: Layer = Layer(650);
+/// Compositor-only provenance, above every authenticated host surface.
+pub const OSD_PROVENANCE: Layer = Layer(651);
 pub const POINTER: Layer = Layer(700);
 // Notifications draw above EVERYTHING — the pointer and the picker/lock fades
 // included: a message the user must see is not part of the scene it interrupts.

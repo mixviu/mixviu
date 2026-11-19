@@ -702,7 +702,7 @@ where
         }
         // Provenance must cover every host surface, including overlapping outputs.
         for badge in badges {
-            plan.push(layer::OSD, badge);
+            plan.push(layer::OSD_PROVENANCE, badge);
         }
     }
     for elem in surfaces_screen {
