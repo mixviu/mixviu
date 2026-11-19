@@ -163,8 +163,12 @@ fn record_window_pop_intermediate_pixels_and_idle_repeats() {
         if slot < 0.0 {
             return;
         }
-        if (0.04..0.98).contains(&opacity) { intermediate += 1; }
-        if scale > 1.025 { overshoot += 1; }
+        if (0.04..0.98).contains(&opacity) {
+            intermediate += 1;
+        }
+        if scale > 1.025 {
+            overshoot += 1;
+        }
         // Pixel rounding and alpha blend quantisation: <=2.5% opacity and
         // <=2.5% scale (five logical pixels across this 200px fixture).
         // This checks pixels against the shared library on the recording's
@@ -176,7 +180,8 @@ fn record_window_pop_intermediate_pixels_and_idle_repeats() {
                 let t = earliest + (latest - earliest) * f64::from(tick) / 1000.0;
                 let values = preset.sample(t);
                 (values.get(motion::Property::Opacity) - opacity).abs() <= 0.025
-                    && (opacity < 0.04 || (values.get(motion::Property::Scale) - scale).abs() <= 0.025)
+                    && (opacity < 0.04
+                        || (values.get(motion::Property::Scale) - scale).abs() <= 0.025)
             });
         assert!(
             matched,
@@ -190,7 +195,10 @@ fn record_window_pop_intermediate_pixels_and_idle_repeats() {
         intermediate >= 2,
         "300ms at 30Hz must expose intermediate opacity and scale"
     );
-    assert!(overshoot > 0, "pop must expose its opaque scale overshoot, then return to identity");
+    assert!(
+        overshoot > 0,
+        "pop must expose its opaque scale overshoot, then return to identity"
+    );
 }
 
 fn opacity_track(from: f64, to: f64) -> Value {
