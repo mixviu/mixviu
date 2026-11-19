@@ -233,6 +233,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn native_contract() {
         let broker = test_broker::Broker::start();
+        let url = format!("unix://{}", broker.endpoint.display());
         let root = tempfile::tempdir().unwrap();
         let mut config = crate::config::Config::default();
         config.service.vectors_db = root
@@ -262,7 +263,7 @@ mod tests {
                 .store("query", "search_query: ", vec![0.0; crate::EMBEDDING_DIM]);
         }
         let client = Arc::new(
-            NodedClient::connect(BUS_SERVICE, &broker.url)
+            NodedClient::connect(BUS_SERVICE, &url)
                 .await
                 .unwrap()
                 .with_commands(command_manifest().to_vec()),
@@ -284,7 +285,11 @@ mod tests {
         });
         let output = tokio::process::Command::new(mix)
             .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/bus_test.mix"))
-            .env("MIX_NODED_URL", &broker.url)
+            .env("MIX_NODED_URL", &url)
+            .env("MIX_NODE_CONFIG", root.path().join("no-node.conf.mix"))
+            .env("MIX_RUN", root.path().join("run"))
+            .env_remove("MIX_BUS_SOCKET")
+            .env_remove("MIX_SESSION_FD")
             .env("MIX_TEST_INDEXD_BROKER", "1")
             .output()
             .await
