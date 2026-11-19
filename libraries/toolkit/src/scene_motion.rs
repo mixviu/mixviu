@@ -113,7 +113,7 @@ pub fn value(ctx: &Context, key: &str, prop: &str, target: &Value, declaration: 
     let Some(to)=decode(target) else { return target.clone(); };
     let now=ctx.input(|i|i.time);
     let id=egui::Id::unique(("scene-transition",key,prop));
-    let reduced=ctx.style().animation_time==0.0 || !enabled;
+    let reduced=ctx.global_style().animation_time==0.0 || !enabled;
     let (sample,active)=ctx.data_mut(|d| {
         let mut t=d.get_temp::<Tween>(id).unwrap_or(Tween { from:to.clone(),to:to.clone(),start:now,spec:spec.clone() });
         if t.to!=to { t=Tween {from:t.sample(now),to:to.clone(),start:now,spec}; }
@@ -144,7 +144,7 @@ fn transform(shape: &mut ClippedShape, rect: Rect, values: &motion::Values) {
     shape.shape.transform(egui::emath::TSTransform { scaling: scale, translation: rect.center().to_vec2()*(1.0-scale)+offset });
     let opacity = values.get(Property::Opacity).clamp(0.0,1.0) as f32;
     if opacity != 1.0 {
-        egui::epaint::shape_transform::adjust_colors(&mut shape.shape,|c| {
+        egui::epaint::shape_transform::adjust_colors(&mut shape.shape,move |c| {
             if *c != egui::Color32::PLACEHOLDER { *c = c.gamma_multiply(opacity); }
         });
     }
@@ -156,7 +156,7 @@ pub fn scalar(ctx: &Context, id: egui::Id, target: f64, ms: f64, enabled: bool) 
     #[derive(Clone)]
     struct State { from:f64, to:f64, start:f64 }
     let now = ctx.input(|i|i.time);
-    let reduced = ctx.style().animation_time == 0.0 || !enabled;
+    let reduced = ctx.global_style().animation_time == 0.0 || !enabled;
     let curve = Transition { prop:"opacity".into(),ms,ease:motion::Curve::EaseOut };
     let (value,active) = ctx.data_mut(|d| {
         let mut s = d.get_temp::<State>(id).unwrap_or(State { from:target,to:target,start:now });
@@ -171,4 +171,69 @@ pub fn scalar(ctx: &Context, id: egui::Id, target: f64, ms: f64, enabled: bool) 
     });
     if active { ctx.request_repaint(); }
     value
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    fn raw(t:f64) -> egui::RawInput {egui::RawInput {time:Some(t),screen_rect:Some(Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(400.,400.))),..Default::default()}}
+    fn frame(ctx:&Context, state:&mut SceneMotion,t:f64,shown:bool) -> Vec<ClippedShape> {
+        let mut out=ctx.run_ui(raw(t),|ui|{
+            state.begin(ui);
+            if shown {
+                let c=state.capture(ui,"node",None,Some(&json!("up")),Some(&json!("fade")),true);
+                let rect=Rect::from_min_size(egui::pos2(20.,20.),egui::vec2(100.,30.));
+                ui.painter().rect_filled(rect,0.,egui::Color32::RED);
+                state.painted(ui,c,rect);
+            }
+            state.end(ui);
+        });
+        out.textures_delta.clear();out.shapes
+    }
+    #[test]
+    fn entrance_samples_library_and_retains_exit_paint_only() {
+        let ctx=Context::default();let mut state=SceneMotion::default();
+        frame(&ctx,&mut state,0.,true);
+        for t in [0.175,0.35,0.7] {
+            let shapes=frame(&ctx,&mut state,t,true);
+            let rect=shapes.iter().find_map(|s|if let egui::Shape::Rect(r)=&s.shape {Some(r)} else {None}).unwrap();
+            let p=motion::presets().into_iter().find(|p|p.name=="up").unwrap();
+            assert!((rect.rect.top()-20.-p.sample(t).get(Property::Ty) as f32).abs()<0.001);
+            assert!((rect.fill.a() as f64 / 255.-p.sample(t).get(Property::Opacity)).abs()<0.005);
+        }
+        let shapes=frame(&ctx,&mut state,1.,false);
+        assert!(shapes.iter().any(|s|matches!(s.shape,egui::Shape::Rect(_))));
+        assert!(state.nodes["node"].leaving.is_some());
+        frame(&ctx,&mut state,3.,false);
+        assert!(state.nodes.is_empty());
+    }
+    #[test]
+    fn reduced_motion_clears_lifecycle_and_snaps_widget_curves() {
+        let ctx=Context::default();let mut state=SceneMotion::default();
+        ctx.global_style_mut(|s|s.animation_time=0.);
+        let shapes=frame(&ctx,&mut state,0.,true);
+        assert!(state.nodes.is_empty());
+        let rect=shapes.iter().find_map(|s|if let egui::Shape::Rect(r)=&s.shape {Some(r)}else{None}).unwrap();
+        assert_eq!(rect.rect.top(),20.);assert_eq!(rect.fill.a(),255);
+        let mut sample=0.;
+        ctx.run_ui(raw(1.),|ui|sample=scalar(ui.ctx(),egui::Id::unique("toggle"),1.,160.,true)).drop_without_applying_deltas();
+        assert_eq!(sample,1.);
+    }
+    #[test]
+    fn widget_curves_retarget_from_presented_value() {
+        let ctx=Context::default();let id=egui::Id::unique("widget");let mut sample=0.;
+        for (t,target,expected) in [(0.,0.,0.),(1.,1.,0.),(1.08,1.,motion::Curve::EaseOut.sample(0.5)),(1.16,1.,1.)] {
+            ctx.run_ui(raw(t),|ui|sample=scalar(ui.ctx(),id,target,160.,true)).drop_without_applying_deltas();
+            assert!((sample as f64-expected).abs()<1e-5,"{t}: {sample} vs {expected}");
+        }
+    }
+    #[test]
+    fn bound_transition_retargets_without_a_jump() {
+        let ctx=Context::default();let spec=json!({"prop":"opacity","ms":100,"ease":{"kind":"linear"}});let mut v=Value::Null;
+        for (t,target,expected) in [(0.,0.,0.),(1.,1.,0.),(1.05,1.,0.5),(1.05,0.,0.5),(1.1,0.,0.25),(1.15,0.,0.)] {
+            ctx.run_ui(raw(t),|ui|v=value(ui.ctx(),"bound","opacity",&json!(target),Some(&spec),true)).drop_without_applying_deltas();
+            assert!((v.as_f64().unwrap()-expected).abs()<1e-6);
+        }
+    }
 }

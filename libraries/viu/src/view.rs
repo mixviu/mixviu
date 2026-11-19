@@ -542,6 +542,10 @@ impl SceneView {
         events: &mut Vec<Event>,
     ) {
         let Some(node) = nodes.get(id) else { return; };
+        if !["enter","exit","opacity","offset","transition"].iter().any(|p|node.ports.contains_key(*p)) {
+            self.node_contents(ui,id,nodes,route,depth,events);
+            return;
+        }
         if node.ports.get("hidden") == Some(&Value::Bool(true)) { return; }
         let key = route.map_or_else(||id.to_owned(),|(_,_,item)|format!("{}#{id}",item["id"].as_str().unwrap_or("")));
         let start = ui.ctx().graphics_mut(|g|g.entry(ui.layer_id()).next_idx());
@@ -572,10 +576,10 @@ impl SceneView {
         let Some(node) = nodes.get(id) else {
             return;
         };
-        let mut painted_node = node.clone();
-        for prop in ["color", "background", "hover"] {
+        let mut painted_node = std::borrow::Cow::Borrowed(node);
+        for prop in ["color", "background", "hover"].into_iter().filter(|_|node.ports.contains_key("transition")) {
             if let Some(target) = node.ports.get(prop) {
-                painted_node.ports.insert(prop.into(),toolkit::scene_motion::value(ui.ctx(),id,prop,target,node.ports.get("transition"),node.ports.get("motion") != Some(&Value::Bool(false))));
+                painted_node.to_mut().ports.insert(prop.into(),toolkit::scene_motion::value(ui.ctx(),id,prop,target,node.ports.get("transition"),node.ports.get("motion") != Some(&Value::Bool(false))));
             }
         }
         let node = &painted_node;
