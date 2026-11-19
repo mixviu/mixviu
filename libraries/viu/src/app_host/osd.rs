@@ -15,7 +15,7 @@ struct Item {
 struct Program {
     bundle: Option<Bundle>,
     host: Option<Host>,
-    contexts: Arc<std::sync::Mutex<Vec<egui::Context>>>,
+    wake: Option<crate::runtime::Wake>,
     items: BTreeMap<(String, String), Item>,
     presets: BTreeMap<String, motion::Preset>,
     scene_source: String,
@@ -123,20 +123,22 @@ impl Program {
 }
 
 impl LayerProgram for Program {
+    fn set_waker(&mut self, wake: crate::runtime::Wake) {
+        self.wake = Some(wake);
+    }
+
     fn setup(&mut self, ctx: &egui::Context) {
-        self.contexts.lock().unwrap().push(ctx.clone());
         crate::icons::install(ctx);
         toolkit::install(ctx, &toolkit::Theme::embedded());
         if let Some(bundle) = self.bundle.take() {
-            let contexts = self.contexts.clone();
-            self.host = Some(create(
-                bundle,
-                Arc::new(move || {
-                    for context in contexts.lock().unwrap().iter() {
-                        context.request_repaint();
-                    }
-                }),
-            ));
+            // Bus work must wake the event loop even while every output is
+            // detached. egui coalesces repaint requests until its next pass,
+            // which an empty OSD deliberately never draws.
+            let mut host = create(bundle, self.wake.clone().expect("layer event-loop waker"));
+            // The model is presented by per-item views, not Host's root view.
+            // Root-view draw barriers therefore cannot gate OSD commands.
+            host.headless = true;
+            self.host = Some(host);
         }
     }
 
@@ -293,10 +295,9 @@ impl LayerProgram for Program {
         })
     }
 
-    fn removed(&mut self, ctx: &egui::Context, info: &SurfaceInfo) {
+    fn removed(&mut self, _ctx: &egui::Context, info: &SurfaceInfo) {
         let output = info.output.clone().unwrap_or_default();
         self.items.retain(|(out, _), _| out != &output);
-        self.contexts.lock().unwrap().retain(|c| c != ctx);
     }
 }
 
@@ -307,7 +308,7 @@ pub(super) fn run(bundle: Bundle) {
     let program = Program {
         bundle: Some(bundle),
         host: None,
-        contexts: Default::default(),
+        wake: None,
         items: BTreeMap::new(),
         presets: motion::presets()
             .into_iter()
