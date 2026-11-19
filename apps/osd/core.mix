@@ -97,7 +97,7 @@ fn apply($s,$op,$args,$now,$presets)
   if $op=="show" and len(keys($s.items))>=32 then raise("BUDGET_EXCEEDED","at most 32 OSD items") end
   $item=$s.items[$id] ?? {id:$id,pointer_input:false,phase:"enter",started:$now,enter:nil,exit:nil,exit_seconds:0,expires_at:nil}
   if $op=="hide" then
-    $exit=preset($args.exit ?? $item.exit,$presets)
+    $exit=preset(if contains(keys($args),"exit") then $args.exit else $item.exit end,$presets)
     if $exit==nil then $s.items=omit($s.items,[$id]);$s.serial=$s.serial+1;return $s end
     $item.phase="exit";$item.motion=$exit;$item.started=$now;$item.expires_at=nil
     $item.remove_at=$now+$presets[$exit].timing.duration

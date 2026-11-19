@@ -657,6 +657,7 @@ where
     // unlike the unbound cursor/launcher, which follow the active output. A bar therefore
     // stays put on its monitor instead of chasing the cursor / duplicating onto others.
     {
+        let mut badges = Vec::new();
         for (wlr_layer, node) in layershell(state, size, render_key.as_deref()) {
             let band = if protocols::layershell::osd::marked(&node.surface) {
                 // Provenance belongs to the compositor, outside the scene's
@@ -679,8 +680,7 @@ where
                             (12, 4).into(),
                         );
                         let rect = logical.to_f64().to_physical(node.scale).to_i32_round();
-                        plan.push(
-                            layer::OSD,
+                        badges.push(
                             DrawNode::Solid(SolidColorRenderElement::new(
                                 id,
                                 rect,
@@ -702,6 +702,8 @@ where
             };
             plan.push(band, DrawNode::Surface(node));
         }
+        // Provenance must cover every host surface, including overlapping outputs.
+        for badge in badges { plan.push(layer::OSD, badge); }
     }
     for elem in surfaces_screen {
         if draw_ui(&elem.output) {

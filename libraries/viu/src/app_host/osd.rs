@@ -16,6 +16,7 @@ struct Program {
     bundle: Option<Bundle>,
     host: Option<Host>,
     logic: egui::Context,
+    surfaces: Vec<egui::Context>,
     items: BTreeMap<(String, String), Item>,
     presets: BTreeMap<String, motion::Preset>,
     scene_source: String,
@@ -141,11 +142,16 @@ impl LayerProgram for Program {
 
     fn service(&mut self) {
         if let Some(host) = &mut self.host {
+            let before = host.model.clone();
             host.pump(&self.logic);
+            if host.model != before {
+                for ctx in &self.surfaces { ctx.request_repaint(); }
+            }
         }
     }
 
     fn setup(&mut self, ctx: &egui::Context) {
+        self.surfaces.push(ctx.clone());
         crate::icons::install(ctx);
         toolkit::install(ctx, &toolkit::Theme::embedded());
     }
@@ -198,6 +204,10 @@ impl LayerProgram for Program {
     }
 
     fn show(&mut self, ui: &mut egui::Ui, info: &SurfaceInfo) {
+        let presses = ui.input(|i| i.events.iter().filter(|e| matches!(e, egui::Event::PointerButton { pressed: true, .. })).count());
+        if presses > 0 && let Some(host) = &mut self.host {
+            host.dispatch("osd.pointer".into(), json!({"presses":presses}), BTreeMap::new(), None);
+        }
         let model = self
             .host
             .as_ref()
@@ -300,7 +310,8 @@ impl LayerProgram for Program {
         })
     }
 
-    fn removed(&mut self, _ctx: &egui::Context, info: &SurfaceInfo) {
+    fn removed(&mut self, ctx: &egui::Context, info: &SurfaceInfo) {
+        self.surfaces.retain(|surface| surface != ctx);
         let output = info.output.clone().unwrap_or_default();
         self.items.retain(|(out, _), _| out != &output);
     }
@@ -314,6 +325,7 @@ pub(super) fn run(bundle: Bundle) {
         bundle: Some(bundle),
         host: None,
         logic: egui::Context::default(),
+        surfaces: Vec::new(),
         items: BTreeMap::new(),
         presets: motion::presets()
             .into_iter()
@@ -342,6 +354,7 @@ mod tests {
             bundle: Some(bundle),
             host: None,
             logic: egui::Context::default(),
+        surfaces: Vec::new(),
             items: BTreeMap::new(),
             presets: BTreeMap::new(),
         };

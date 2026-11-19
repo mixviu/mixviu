@@ -6,6 +6,15 @@ process start time. The `viu-osd` namespace alone grants nothing: another
 client claiming it is closed. The compositor attaches the OSD mark to the
 surface resource; neither an app ID nor `comp.window.place` can supply it.
 
+Today any Bus citizen on the node may show, update or hide OSD content.
+Caller authorisation belongs to the Bus authorisation work shared with
+`comp.record` and `comp.capture.frame`; surface authentication does not
+authorise the caller or endorse its content.
+
+viud supervises the host with bounded restart backoff (250 ms to 30 s).
+Each restart pins the new child's identity; the old pin is revoked on exit.
+Items are lost on restart and callers must show them again.
+
 Marked surfaces compose in the OSD band above client and screen UI bands.
 The compositor draws an amber provenance mark at the output's upper left
 while OSD content is mapped. Session lock uses its separate lock-only scene.
@@ -36,7 +45,8 @@ is hidden, minimised or gone. A stale generation is refused before mutation.
 `enter` and `exit` use the shared motion library's `fade`, `up`, `down`,
 `left`, `right` and `pop` presets. Exits sample the entrance in reverse.
 `duration_ms` is an optional lifetime in milliseconds, including zero;
-`null` removes the deadline. `pointer_input` defaults to false. Opting in
+`null` removes the deadline. For `osd.hide`, an absent `exit` uses the item's
+configured exit; explicit `exit:null` removes it immediately. `pointer_input` defaults to false. Opting in
 adds only that item's region to the host's pointer input region. The choice
 is visible in `osd.list`.
 

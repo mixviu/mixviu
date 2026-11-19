@@ -2,7 +2,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- lint: globals app_args
-$core=require("core.mix");$state={osd:$core.fresh(),windows:{}};$ctx=viu_context();$presets={}
+$core=require("core.mix");$state={osd:$core.fresh(),windows:{},windows_at:nil,refresh_pending:false,connected:false,pointer_presses:0};$ctx=viu_context();$presets={}
 $comp=env("MIX_VIU_COMP_SERVICE","comp")
 $window_topics=["props.changed","window.placement.changed","surface.mapped","surface.unmapped","workspace.changed","output.changed"]
 send "viu-local" "motion.presets" body={}
@@ -16,14 +16,13 @@ fn sync_model()
   viu_timer("osd-expiry",if $at==nil then nil else max(0,($at-monotonic())*1000) end,{})
 end
 fn refresh_windows()
+  if $state.windows_at!=nil and monotonic()-$state.windows_at<0.016 then return true end
   try
-    for $topic in $window_topics subscribe($comp.."."..$topic) end
-    send $comp "comp.props.watch" body={}
-    if $rc!=0 then $state.windows={};return false end
     send $comp "comp.windows.list" body={}
     if $rc!=0 or type($reply.windows)!="list" then $state.windows={};return false end
     $state.windows={}
     for $w in $reply.windows $state.windows[to_string($w.id)]=$w end
+    $state.windows_at=monotonic()
     return true
   catch $message
     $state.windows={};return false
@@ -75,7 +74,7 @@ on osd.hide answer_operation("hide",$event.args) end
 on osd.list
   try
     $core.check_fields($event.args,[],"list")
-    reply(0,json_encode($core.listing($state.osd,monotonic())))
+    reply(0,json_encode(merge($core.listing($state.osd,monotonic()),{pointer_presses:$state.pointer_presses})))
   catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end
 on osd.actions
@@ -96,19 +95,25 @@ on viu.timer
   if $event.args.timer=="osd-expiry" then
     $state.osd=$core.finish($state.osd,monotonic());sync_model()
   elif $event.args.timer=="osd-windows" then
-    refresh_windows();sync_model()
+    $state.refresh_pending=false;refresh_windows();sync_model()
   end
+end
+on osd.pointer
+  $state.pointer_presses=$state.pointer_presses+$event.args.presses
 end
 on osd.notice
   $notice=$event.args
-  if $notice.command=="bus.connected" then
+  if $notice.command=="bus.connected" and not $state.connected then
+    $state.connected=true;$state.windows_at=nil
     for $topic in $window_topics subscribe($comp.."."..$topic) end
     send $comp "comp.props.watch" body={}
     if $rc!=0 then $state.windows={} end
     refresh_windows();sync_model()
   elif any($window_topics,fn($t)=$notice.command==$comp.."."..$t or $notice.command==$t) then
-    if any(values($state.osd.items),fn($i)=$i.anchor.window!=nil) then viu_timer("osd-windows",0,{}) end
+    if any(values($state.osd.items),fn($i)=$i.anchor.window!=nil) and not $state.refresh_pending then
+      $state.refresh_pending=true;viu_timer("osd-windows",16,{})
+    end
   elif $notice.command=="bus.disconnected" then
-    $state.windows={};sync_model()
+    $state.connected=false;$state.windows_at=nil;$state.windows={};sync_model()
   end
 end
