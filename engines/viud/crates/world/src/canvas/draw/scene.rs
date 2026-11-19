@@ -58,11 +58,14 @@ where
 {
     crate::window::draw::ghost::workspace(
         state.inner.render_output.as_deref().unwrap_or_default(),
-        state
-            .inner
-            .comp
-            .workspaces
-            .current_for(state.inner.render_output.as_deref().map(comp_model::snapshot::output_key).as_deref()),
+        state.inner.comp.workspaces.current_for(
+            state
+                .inner
+                .render_output
+                .as_deref()
+                .map(comp_model::snapshot::output_key)
+                .as_deref(),
+        ),
     );
     crate::window::draw::ghost::prune::<R>();
     let canvas_context = context(state, renderer, size);

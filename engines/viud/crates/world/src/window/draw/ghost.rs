@@ -102,7 +102,9 @@ pub fn clear_output(output: &str) {
         }
     });
     ORDERS.with(|orders| {
-        orders.borrow_mut().retain(|(scope, _), _| comp_model::snapshot::output_key(scope) != output)
+        orders
+            .borrow_mut()
+            .retain(|(scope, _), _| comp_model::snapshot::output_key(scope) != output)
     });
     // Source leases are pruned against the surviving lifecycle exits on the
     // next draw, preserving active images on every other output.
@@ -571,7 +573,12 @@ mod tests {
         clear_output("o_b");
         CACHES.with(|caches| {
             let mut caches = caches.borrow_mut();
-            let cache = caches.get_mut(&TypeId::of::<TestTexture>()).unwrap().as_any_mut().downcast_mut::<Cache<TestTexture>>().unwrap();
+            let cache = caches
+                .get_mut(&TypeId::of::<TestTexture>())
+                .unwrap()
+                .as_any_mut()
+                .downcast_mut::<Cache<TestTexture>>()
+                .unwrap();
             assert!(cache.is_empty());
         });
         clear();
