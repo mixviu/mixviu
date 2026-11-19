@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Explicit test-support input fixture. No Bus command or production API.
-use smithay::input::pointer::{ButtonEvent, MotionEvent};
 use smithay::backend::input::ButtonState;
+use smithay::input::pointer::{ButtonEvent, MotionEvent};
 use smithay::utils::SERIAL_COUNTER;
 use smithay::wayland::seat::WaylandFocus;
 use world::state::Loop;

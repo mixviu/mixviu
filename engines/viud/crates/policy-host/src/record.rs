@@ -141,7 +141,12 @@ fn reconcile_listed(lp: &Loop, s: &mut Session) {
                     .registry
                     .resolve_window_target(window.id, Some(window.generation))
                     .is_ok()
-                    && lp.inner.space_state().state.outputs().find(|o| target.output.as_ref() == Some(&o.name()))
+                    && lp
+                        .inner
+                        .space_state()
+                        .state
+                        .outputs()
+                        .find(|o| target.output.as_ref() == Some(&o.name()))
                         .is_some_and(|o| world::comp::recording::on_output(lp, *window, o))
                 {
                     true
@@ -156,10 +161,14 @@ fn reconcile_listed(lp: &Loop, s: &mut Session) {
     flush_gone_markers(s);
 }
 fn flush_gone_markers(s: &mut Session) -> bool {
-    if s.membership_epoch != s.captured_membership { return false; }
+    if s.membership_epoch != s.captured_membership {
+        return false;
+    }
     // A previous GPU answer must enter the writer queue before its marker.
     // The writer's FIFO then persists the old frame before this observation.
-    if s.pending { return s.gone_markers.is_empty(); }
+    if s.pending {
+        return s.gone_markers.is_empty();
+    }
     while let Some(window) = s.gone_markers.first().copied() {
         let Some(recording) = s.recording.as_mut() else {
             return false;
@@ -170,7 +179,9 @@ fn flush_gone_markers(s: &mut Session) -> bool {
                 s.failed = Some(error);
                 return true;
             }
-            if !recording.latest_queued { return false; }
+            if !recording.latest_queued {
+                return false;
+            }
         }
         if recording
             .marker(
@@ -201,8 +212,10 @@ pub fn command(
     answer: impl FnOnce(ControlReply) + 'static,
 ) {
     let answer: Answer = Box::new(answer);
-    if matches!(op, RecordCommand::Stop { .. } | RecordCommand::Status { .. })
-        && let Some(current) = CURRENT.with_borrow(Clone::clone)
+    if matches!(
+        op,
+        RecordCommand::Stop { .. } | RecordCommand::Status { .. }
+    ) && let Some(current) = CURRENT.with_borrow(Clone::clone)
     {
         reconcile_listed(lp, &mut current.borrow_mut());
     }
@@ -325,7 +338,10 @@ pub fn command(
                 if let Some(listed) = &target.listed_windows {
                     for window in listed {
                         if !world::comp::recording::on_output(lp, *window, output) {
-                            answer(ControlReply::refused("window_not_on_output", json!({"id":window.id,"generation":window.generation,"output":output.name()})));
+                            answer(ControlReply::refused(
+                                "window_not_on_output",
+                                json!({"id":window.id,"generation":window.generation,"output":output.name()}),
+                            ));
                             return;
                         }
                     }
@@ -761,7 +777,9 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if (!s.pending || Instant::now() >= until) && stop_stream(&mut s, false) {
                 event(&s, "finishing");
             }
-            if s.membership_epoch == s.captured_membership || s.failed.is_some() { return; }
+            if s.membership_epoch == s.captured_membership || s.failed.is_some() {
+                return;
+            }
         }
         let now_us = match clock {
             Ok(now) => now,
@@ -778,7 +796,9 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if stop_stream(&mut s, false) {
                 event(&s, "finishing");
             }
-            if s.membership_epoch == s.captured_membership || s.failed.is_some() { return; }
+            if s.membership_epoch == s.captured_membership || s.failed.is_some() {
+                return;
+            }
         }
     }
     let signature = {
@@ -1052,7 +1072,9 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if !matches!(reply, ControlReply::Body(_)) {
                 let error = format!("capture: {:?}", reply.clone().into_wire());
                 screencopy::file::raw_fail(&token, reply);
-                if request_session.borrow().pending { fail(&request_session, &error); }
+                if request_session.borrow().pending {
+                    fail(&request_session, &error);
+                }
             }
         });
     }
