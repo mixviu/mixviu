@@ -140,7 +140,9 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     let items = call(&bus, "osd.list", json!({}));
     assert_eq!(items["items"][0]["pointer_input"], false);
     let buttons = pattern.state.pointer_buttons;
-    let received = call(&bus, "osd.list", json!({}))["pointer_presses"].as_u64().unwrap();
+    let received = call(&bus, "osd.list", json!({}))["pointer_presses"]
+        .as_u64()
+        .unwrap();
     bus.call(
         "comp.input.pointer.move",
         json!({"seat":"agent","output":"headless-0","x":width-200,"y":height-100}),
@@ -153,6 +155,13 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     assert!(
         pattern.state.pointer_buttons > buttons,
         "passive OSD must pass pointer buttons to the client"
+    );
+    assert_eq!(
+        call(&bus, "osd.list", json!({}))["pointer_presses"]
+            .as_u64()
+            .unwrap(),
+        received,
+        "passive OSD must not observe a button"
     );
     // Headless has an agent seat and no human device sources. Establish its
     // independent keyboard focus before testing untargeted keys after an OSD click.
@@ -171,7 +180,9 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         true
     );
     let buttons = pattern.state.pointer_buttons;
-    let received = call(&bus, "osd.list", json!({}))["pointer_presses"].as_u64().unwrap();
+    let received = call(&bus, "osd.list", json!({}))["pointer_presses"]
+        .as_u64()
+        .unwrap();
     bus.call(
         "comp.input.pointer.move",
         json!({"seat":"agent","output":"headless-0","x":width-200,"y":height-100}),
@@ -185,7 +196,13 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         pattern.state.pointer_buttons, buttons,
         "opted-in OSD must consume pointer input"
     );
-    assert!(call(&bus, "osd.list", json!({}))["pointer_presses"].as_u64().unwrap() > received, "host must positively observe the pointer press");
+    assert!(
+        call(&bus, "osd.list", json!({}))["pointer_presses"]
+            .as_u64()
+            .unwrap()
+            > received,
+        "host must positively observe the pointer press"
+    );
     let keys = pattern.state.keys;
     bus.call("comp.input.key", json!({"seat":"agent","key":"a"}));
     wait(&mut pattern, Duration::from_millis(50));
@@ -341,20 +358,40 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     let (_, _, old_text) = ppm(&bus, &process, "osd-old-text", None);
     let update_path = process.root.join("osd-update.vfl");
     let update_record = bus.call("comp.record.start", json!({"request_id":"osd-update","target":{"output":"headless-0"},"path":update_path,"cursor":false,"max_seconds":3}));
-    call(&bus, "osd.update", json!({"id":"caption","scene":{"kind":"caption","text":"NEW TEXT ONLY","width":320,"height":72}}));
+    call(
+        &bus,
+        "osd.update",
+        json!({"id":"caption","scene":{"kind":"caption","text":"NEW TEXT ONLY","width":320,"height":72}}),
+    );
     wait(&mut pattern, Duration::from_millis(180));
     let (_, _, new_text) = ppm(&bus, &process, "osd-new-text", None);
     assert_ne!(old_text, new_text, "text-only update must redraw");
-    bus.call("comp.record.stop", json!({"session":update_record["session"]}));
+    bus.call(
+        "comp.record.stop",
+        json!({"session":update_record["session"]}),
+    );
     let mut reader = media_vfl::reader::Reader::open(&update_path).unwrap();
     let mut final_update = Vec::new();
-    while let Some(frame) = reader.read().unwrap() { final_update = decoded_rgb(frame.pixels); }
-    assert_eq!(final_update, new_text, "decoded recording must show updated text");
+    while let Some(frame) = reader.read().unwrap() {
+        final_update = decoded_rgb(frame.pixels);
+    }
+    assert_eq!(
+        final_update, new_text,
+        "decoded recording must show updated text"
+    );
     call(&bus, "osd.hide", json!({"id":"caption"}));
-    call(&bus, "osd.show", json!({"id":"badge-cover","scene":{"kind":"card","text":"Cover the corner"},"anchor":{"output":"headless-0","edge":"top-left","margin":0}}));
+    call(
+        &bus,
+        "osd.show",
+        json!({"id":"badge-cover","scene":{"kind":"card","text":"Cover the corner"},"anchor":{"output":"headless-0","edge":"top-left","margin":0}}),
+    );
     wait(&mut pattern, Duration::from_millis(150));
     let (_, _, corner) = ppm(&bus, &process, "osd-badge-cover", None);
-    assert_eq!(rgb(&corner,width,12,10), badge, "host pixels cannot cover provenance");
+    assert_eq!(
+        rgb(&corner, width, 12, 10),
+        badge,
+        "host pixels cannot cover provenance"
+    );
     call(&bus, "osd.hide", json!({"id":"badge-cover"}));
     wait(&mut pattern, Duration::from_millis(100));
 
@@ -494,23 +531,46 @@ fn window_card_follows_hides_and_osd_refusals_are_typed() {
     // indefinitely until closed (testkit-layer-client's main dispatch loop).
     let accepted_log = process.root.join("accepted-layer.log");
     let mut accepted = Command::new(binary("testkit-layer-client"))
-        .args(["--namespace","ordinary-review-control","--layer","overlay"])
+        .args([
+            "--namespace",
+            "ordinary-review-control",
+            "--layer",
+            "overlay",
+        ])
         .env("XDG_RUNTIME_DIR", &process.root)
         .env("WAYLAND_DISPLAY", "wayland-headless-test")
-        .stdout(fs::File::create(&accepted_log).unwrap()).spawn().unwrap();
-    let deadline = Instant::now()+Duration::from_secs(3);
-    while !fs::read_to_string(&accepted_log).unwrap().contains("mapped") {
+        .stdout(fs::File::create(&accepted_log).unwrap())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !fs::read_to_string(&accepted_log)
+        .unwrap()
+        .contains("mapped")
+    {
         assert!(accepted.try_wait().unwrap().is_none());
-        assert!(Instant::now()<deadline, "accepted control must map");
+        assert!(Instant::now() < deadline, "accepted control must map");
         wait(&mut pattern, Duration::from_millis(10));
     }
     wait(&mut pattern, Duration::from_millis(100));
-    assert!(accepted.try_wait().unwrap().is_none(), "accepted client must block, unlike a refused claimant");
-    accepted.kill().unwrap();accepted.wait().unwrap();
+    assert!(
+        accepted.try_wait().unwrap().is_none(),
+        "accepted client must block, unlike a refused claimant"
+    );
+    accepted.kill().unwrap();
+    accepted.wait().unwrap();
     call(&bus, "osd.show", caption());
     let parent = process.child.id();
     let children = fs::read_to_string(format!("/proc/{parent}/task/{parent}/children")).unwrap();
-    let host_pid = children.split_whitespace().find(|pid| fs::read_link(format!("/proc/{pid}/exe")).ok().is_some_and(|p| p.file_name().is_some_and(|n| n=="viu"))).expect("direct viu child").parse::<i32>().unwrap();
+    let host_pid = children
+        .split_whitespace()
+        .find(|pid| {
+            fs::read_link(format!("/proc/{pid}/exe"))
+                .ok()
+                .is_some_and(|p| p.file_name().is_some_and(|n| n == "viu"))
+        })
+        .expect("direct viu child")
+        .parse::<i32>()
+        .unwrap();
     // SAFETY: this is the dedicated fixture's positively identified child.
     assert_eq!(unsafe { libc::kill(host_pid, libc::SIGKILL) }, 0);
     // Claim during the restart gap; a dead pin must never authorise it.
@@ -545,5 +605,8 @@ fn window_card_follows_hides_and_osd_refusals_are_typed() {
     call(&bus, "osd.show", caption());
     wait(&mut pattern, Duration::from_millis(1100));
     let (_, _, recovered) = ppm(&bus, &process, "osd-restarted", None);
-    assert!(bounds(&before, &recovered, w, [880, 520, 400, 200]).is_some(), "re-pinned host must draw");
+    assert!(
+        bounds(&before, &recovered, w, [880, 520, 400, 200]).is_some(),
+        "re-pinned host must draw"
+    );
 }

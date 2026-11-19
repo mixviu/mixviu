@@ -145,7 +145,9 @@ impl LayerProgram for Program {
             let before = host.model.clone();
             host.pump(&self.logic);
             if host.model != before {
-                for ctx in &self.surfaces { ctx.request_repaint(); }
+                for ctx in &self.surfaces {
+                    ctx.request_repaint();
+                }
             }
         }
     }
@@ -204,9 +206,21 @@ impl LayerProgram for Program {
     }
 
     fn show(&mut self, ui: &mut egui::Ui, info: &SurfaceInfo) {
-        let presses = ui.input(|i| i.events.iter().filter(|e| matches!(e, egui::Event::PointerButton { pressed: true, .. })).count());
-        if presses > 0 && let Some(host) = &mut self.host {
-            host.dispatch("osd.pointer".into(), json!({"presses":presses}), BTreeMap::new(), None);
+        let presses = ui.input(|i| {
+            i.events
+                .iter()
+                .filter(|e| matches!(e, egui::Event::PointerButton { pressed: true, .. }))
+                .count()
+        });
+        if presses > 0
+            && let Some(host) = &mut self.host
+        {
+            host.dispatch(
+                "osd.pointer".into(),
+                json!({"presses":presses}),
+                BTreeMap::new(),
+                None,
+            );
         }
         let model = self
             .host
@@ -354,7 +368,7 @@ mod tests {
             bundle: Some(bundle),
             host: None,
             logic: egui::Context::default(),
-        surfaces: Vec::new(),
+            surfaces: Vec::new(),
             items: BTreeMap::new(),
             presets: BTreeMap::new(),
         };

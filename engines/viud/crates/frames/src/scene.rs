@@ -680,15 +680,13 @@ where
                             (12, 4).into(),
                         );
                         let rect = logical.to_f64().to_physical(node.scale).to_i32_round();
-                        badges.push(
-                            DrawNode::Solid(SolidColorRenderElement::new(
-                                id,
-                                rect,
-                                CommitCounter::default(),
-                                [0.95, 0.65, 0.15, 1.0],
-                                Kind::Unspecified,
-                            )),
-                        );
+                        badges.push(DrawNode::Solid(SolidColorRenderElement::new(
+                            id,
+                            rect,
+                            CommitCounter::default(),
+                            [0.95, 0.65, 0.15, 1.0],
+                            Kind::Unspecified,
+                        )));
                     }
                 }
                 layer::OSD
@@ -703,7 +701,9 @@ where
             plan.push(band, DrawNode::Surface(node));
         }
         // Provenance must cover every host surface, including overlapping outputs.
-        for badge in badges { plan.push(layer::OSD, badge); }
+        for badge in badges {
+            plan.push(layer::OSD, badge);
+        }
     }
     for elem in surfaces_screen {
         if draw_ui(&elem.output) {

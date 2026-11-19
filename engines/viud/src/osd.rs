@@ -4,35 +4,49 @@ pub struct Host(std::process::Child);
 
 /// Availability checks do not request compositor frames. A failed child loses
 /// its pin before any replacement is spawned; repeated crashes back off.
-pub fn supervise<S: 'static>(handle: smithay::reexports::calloop::LoopHandle<'static, S>, headless: bool, comp: String) {
-    use smithay::reexports::calloop::timer::{Timer, TimeoutAction};
+pub fn supervise<S: 'static>(
+    handle: smithay::reexports::calloop::LoopHandle<'static, S>,
+    headless: bool,
+    comp: String,
+) {
+    use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
     use std::time::{Duration, Instant};
     let mut host = launch(headless, &comp);
     let mut started = Instant::now();
     let mut delay = Duration::from_millis(250);
     let mut retry = started + delay;
-    handle.insert_source(Timer::from_duration(delay), move |_, _, _| {
-        let now = Instant::now();
-        if let Some(child) = &mut host {
-            match child.0.try_wait() {
-                Ok(None) => {
-                    if now.duration_since(started) >= Duration::from_secs(30) { delay = Duration::from_millis(250); }
+    handle
+        .insert_source(Timer::from_duration(delay), move |_, _, _| {
+            let now = Instant::now();
+            if let Some(child) = &mut host {
+                match child.0.try_wait() {
+                    Ok(None) => {
+                        if now.duration_since(started) >= Duration::from_secs(30) {
+                            delay = Duration::from_millis(250);
+                        }
+                    }
+                    _ => {
+                        // Drop unbinds even if the child has already been reaped.
+                        host = None;
+                        retry = now + delay;
+                        delay = (delay * 2).min(Duration::from_secs(30));
+                    }
                 }
-                _ => {
-                    // Drop unbinds even if the child has already been reaped.
-                    host = None;
-                    retry = now + delay;
+            } else if now >= retry {
+                host = launch(headless, &comp);
+                started = now;
+                retry = now + delay;
+                if host.is_none() {
                     delay = (delay * 2).min(Duration::from_secs(30));
                 }
             }
-        } else if now >= retry {
-            host = launch(headless, &comp);
-            started = now;
-            retry = now + delay;
-            if host.is_none() { delay = (delay * 2).min(Duration::from_secs(30)); }
-        }
-        TimeoutAction::ToDuration(if host.is_some() { Duration::from_millis(250) } else { retry.saturating_duration_since(now) })
-    }).expect("OSD supervisor timer");
+            TimeoutAction::ToDuration(if host.is_some() {
+                Duration::from_millis(250)
+            } else {
+                retry.saturating_duration_since(now)
+            })
+        })
+        .expect("OSD supervisor timer");
 }
 
 impl Drop for Host {
