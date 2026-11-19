@@ -19,6 +19,9 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+comp-model.workspace = true
+surfaces.workspace = true
+screencopy.workspace = true
 ui-surface.workspace = true
 recorder = { workspace = true }
 dispatcher = { workspace = true }

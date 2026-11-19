@@ -17,6 +17,8 @@ pub struct CaptureFrameSpec {
     pub output: Option<String>,
     pub output_generation: Option<u64>,
     pub window: Option<CaptureWindow>,
+    /// Output-sized recording allowlist. None retains ordinary capture semantics.
+    pub listed_windows: Option<Vec<CaptureWindow>>,
     pub region: Option<CaptureRegion>,
     pub cursor: bool,
     pub path: String,
@@ -177,6 +179,23 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                     .as_array()
                     .filter(|w| !w.is_empty() && w.len() <= 16)
                     .ok_or_else(|| invalid_argument("windows", "array", "1..=16 window targets"))?;
+                if target.contains_key("output") {
+                    if target.contains_key("window") || target.contains_key("region") {
+                        return Err(invalid_argument("target", "output and windows", "no window or region"));
+                    }
+                    let mut capture = Value::Object(target.clone());
+                    capture.as_object_mut().unwrap().remove("windows");
+                    capture["path"] = json!(path);
+                    capture["cursor"] = json!(cursor);
+                    let mut spec = parse(&capture)?;
+                    let mut listed = Vec::new();
+                    for window in windows {
+                        let w = parse(&json!({"window":window,"path":path}))?.window.unwrap();
+                        if !listed.contains(&w) { listed.push(w); }
+                    }
+                    spec.listed_windows = Some(listed);
+                    targets.push(spec);
+                } else {
                 if target.len() != 1 {
                     return Err(invalid_argument(
                         "target",
@@ -188,6 +207,7 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                     targets.push(parse(
                         &json!({"window":window,"path":path,"cursor":cursor}),
                     )?);
+                }
                 }
             } else {
                 let mut capture = Value::Object(target.clone());
@@ -371,6 +391,7 @@ pub fn parse(args: &Value) -> Result<CaptureFrameSpec, ControlReply> {
         })
         .transpose()?;
     Ok(CaptureFrameSpec {
+        listed_windows: None,
         output,
         output_generation,
         window,
@@ -489,6 +510,7 @@ mod tests {
         assert_eq!(
             parse(&json!({"path": "/tmp/frame.png"})).unwrap(),
             CaptureFrameSpec {
+                listed_windows: None,
                 output: None,
                 output_generation: None,
                 window: None,

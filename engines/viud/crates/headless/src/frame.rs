@@ -422,6 +422,7 @@ fn compose(
     }
 
     let scale = ctx.output.current_scale().fractional_scale();
+    frames::scene::listed::service(state, renderer, &ctx.output);
     // Window jobs use the owning window's scene (including parked worlds),
     // just as nested does. They never consume the output framebuffer.
     screencopy::offscreen::capture_windows(renderer, &ctx.output, |renderer, target, recording| {

@@ -115,6 +115,10 @@ fn refused(error: &str) -> ControlReply {
 fn empty_status(state: &str, error: Option<&str>) -> Value {
     json!({"session":null,"state":state,"frames":0,"repeated":0,"dropped":0,"dropped_capture":0,"dropped_queue":0,"readback_deferred":0,"pending_ticks":0,"writer":null,"encoder":null,"duration_us":0,"bytes":0,"queue":0,"encoders":["vfl"],"readbacks":0,"readback_us":0,"readback_mean_us":0,"readback_max_us":0,"error":error})
 }
+fn listed_status(s: &Session) -> Value {
+    json!(s.targets.iter().filter_map(|t| t.listed_windows.as_ref()).flatten()
+        .map(|w| json!({"id":w.id,"generation":w.generation})).collect::<Vec<_>>())
+}
 fn event(s: &Session, state: &'static str) {
     if s.last_state.replace(state) == state {
         return;
@@ -202,6 +206,14 @@ pub fn command(
             }
         }
         for target in &mut targets {
+            if let Some(listed) = &target.listed_windows {
+                for window in listed {
+                    if lp.inner.comp.registry.resolve_window_target(window.id, Some(window.generation)).is_err() {
+                        answer(refused("listed window gone or generation changed"));
+                        return;
+                    }
+                }
+            }
             if target.window.is_none() {
                 let outputs: Vec<_> = lp.inner.space_state().state.outputs().cloned().collect();
                 let output = if let Some(name) = &target.output {
@@ -362,6 +374,7 @@ fn session_command(op: RecordCommand, answer: Answer) {
                     )
                 });
             status["session"] = json!(s.id);
+            status["windows"] = listed_status(&s);
             answer(ControlReply::Body(status));
         }
         RecordCommand::Marker { label, data, .. } => answer(
@@ -592,12 +605,14 @@ fn finish_recording(s: &mut Session) -> bool {
     if r.error.is_some() {
         s.failed = r.error.clone();
     }
+    let mut status = r.status();
+    status["windows"] = listed_status(s);
     let past = Past {
         id: s.id.clone(),
         params: s.params.clone(),
         start: s.start.clone(),
         terminal: reply.clone(),
-        status: r.status(),
+        status,
         start_error: None,
     };
     PAST.with_borrow_mut(|all| all.insert(s.request_id.clone(), past));
@@ -664,10 +679,31 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             return;
         }
     }
+    // A closed listed window is removed only after its marker is admitted.
+    // Reserved marker capacity can still fill; retry it without losing the event.
+    {
+        let mut s = session.borrow_mut();
+        let gone: Vec<_> = s.targets.iter().filter_map(|t| t.listed_windows.as_ref()).flatten()
+            .filter(|w| lp.inner.comp.registry.resolve_window_target(w.id, Some(w.generation)).is_err()).copied().collect();
+        for window in gone {
+            let Some(r) = s.recording.as_mut() else { continue; };
+            if r.marker("window_gone".into(), json!({"id":window.id,"generation":window.generation})).is_ok() {
+                for t in &mut s.targets {
+                    if let Some(listed) = &mut t.listed_windows { listed.retain(|w| *w != window); }
+                }
+            }
+        }
+    }
     let signature = {
         let s = session.borrow();
         let mut signature = Vec::new();
         for target in &s.targets {
+            if target.listed_windows.is_some() {
+                // Filtered scene damage is evaluated by its own renderer tracker.
+                // No global scene revision may force a filtered readback.
+                signature.push(s.pixel_counter.saturating_add(1));
+                continue;
+            }
             if let Some(window) = target.window {
                 if lp
                     .inner
@@ -806,6 +842,15 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     return;
                 }
             };
+            if frame.0 == 0 && frame.1 == 0 {
+                let mut s = session.borrow_mut();
+                s.pending = false;
+                let result = s.recording.as_mut().expect("repeat after first capture").frame(None);
+                if s.drain_until.is_some() { stop_stream(&mut s, false); }
+                drop(s);
+                if let Err(error) = result { fail(&session, &error); }
+                return;
+            }
             got.borrow_mut().push((index, frame));
             let count = session.borrow().targets.len();
             if got.borrow().len() != count {
