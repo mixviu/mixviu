@@ -16,6 +16,9 @@ fn sync_model()
 end
 fn refresh_windows()
   try
+    subscribe($comp..".props.changed")
+    send $comp "comp.props.watch" body={}
+    if $rc!=0 then $state.windows={};return false end
     send $comp "comp.windows.list" body={}
     if $rc!=0 or type($reply.windows)!="list" then $state.windows={};return false end
     $state.windows={}
@@ -98,7 +101,7 @@ on osd.notice
     send $comp "comp.props.watch" body={}
     if $rc!=0 then $state.windows={} end
     refresh_windows();sync_model()
-  elif $notice.command==$comp..".props.changed" then
+  elif $notice.command==$comp..".props.changed" or $notice.command=="props.changed" then
     if any(values($state.osd.items),fn($i)=$i.anchor.window!=nil) then refresh_windows();sync_model() end
   elif $notice.command=="bus.disconnected" then
     $state.windows={};sync_model()
