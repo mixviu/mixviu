@@ -4,59 +4,103 @@
 async fn registration_rechecks_exact_key_after_rotation_before_dispatch() {
     let state = mesh_delivery_test_state().await;
     let mut registration = state.session_admission.clone();
-    assert_eq!(registration.admitted_node.as_deref(),Some("beta"));
+    assert_eq!(registration.admitted_node.as_deref(), Some("beta"));
     let mut posture = state.authority.load().posture.clone();
     if let crate::authority::Posture::Verified(a) = &mut posture {
         a.epoch += 1;
         a.members_full.get_mut("beta").unwrap()["credentials"] = serde_json::json!([]);
     }
-    apply_inventory_reload(&state,posture).await;
-    registration.admitted_node = super::admitted_delivery_peer(&state,"192.0.2.2".parse().unwrap());
-    assert!(matches!(super::register_gate_decision(false,"192.0.2.1:4200",AdmissionMode::Enforce,true,true,"bridge-beta",&registration),super::RegisterGate::Refuse { .. }));
+    apply_inventory_reload(&state, posture).await;
+    registration.admitted_node =
+        super::admitted_delivery_peer(&state, "192.0.2.2".parse().unwrap());
+    assert!(matches!(
+        super::register_gate_decision(
+            false,
+            "192.0.2.1:4200",
+            AdmissionMode::Enforce,
+            true,
+            true,
+            "bridge-beta",
+            &registration
+        ),
+        super::RegisterGate::Refuse { .. }
+    ));
 }
 
 #[tokio::test]
 async fn inventory_rotation_during_inbound_proof_refuses_stale_handshake() {
     let state = mesh_delivery_test_state().await;
     let authority = state.authority.load_full();
-    let crate::authority::Posture::Verified(a) = &authority.posture else { unreachable!() };
-    let issued = state.challenge_table.issue(a.epoch,&a.mesh,&state.node_name).await.unwrap();
-    let challenge = BusMessage::new().with_header("id",&issued.id).with_body(&issued.body);
-    let wire = mesh::build_admit_response(&challenge,"beta",&Some([7;32])).unwrap();
+    let crate::authority::Posture::Verified(a) = &authority.posture else {
+        unreachable!()
+    };
+    let issued = state
+        .challenge_table
+        .issue(a.epoch, &a.mesh, &state.node_name)
+        .await
+        .unwrap();
+    let challenge = BusMessage::new()
+        .with_header("id", &issued.id)
+        .with_body(&issued.body);
+    let wire = mesh::build_admit_response(&challenge, "beta", &Some([7; 32])).unwrap();
     let mut posture = authority.posture.clone();
-    if let crate::authority::Posture::Verified(a) = &mut posture { a.epoch += 1; }
-    apply_inventory_reload(&state,posture).await;
-    let result = super::process_admit_response(&state,&bus_mod::parse(&wire).unwrap(),"in-flight","192.0.2.2",Some(&issued.id)).await;
-    assert!(matches!(result,Some(super::AdmitOutcome::Refuse("epoch-mismatch"))));
+    if let crate::authority::Posture::Verified(a) = &mut posture {
+        a.epoch += 1;
+    }
+    apply_inventory_reload(&state, posture).await;
+    let result = super::process_admit_response(
+        &state,
+        &bus_mod::parse(&wire).unwrap(),
+        "in-flight",
+        "192.0.2.2",
+        Some(&issued.id),
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Some(super::AdmitOutcome::Refuse("epoch-mismatch"))
+    ));
     assert!(state.challenge_table.take(&issued.id).await.is_none());
 }
 
 #[tokio::test]
 async fn accepted_reload_cancels_dialled_proof_before_registration() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let (state,_incoming,peer) = policy_mesh_state(listener.local_addr().unwrap()).await;
+    let (state, _incoming, peer) = policy_mesh_state(listener.local_addr().unwrap()).await;
     let (arrived, waiting) = oneshot::channel();
     let (release, released) = oneshot::channel();
     let server = tokio::spawn(async move {
-        let (stream,_) = listener.accept().await.unwrap();
+        let (stream, _) = listener.accept().await.unwrap();
         let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
-        socket.send(WsMessage::Ping(Vec::new().into())).await.unwrap();
+        socket
+            .send(WsMessage::Ping(Vec::new().into()))
+            .await
+            .unwrap();
         let challenge = next_mesh_frame(&mut socket).await;
-        assert_eq!(challenge.command_name(),Some("noded.identity.challenge"));
+        assert_eq!(challenge.command_name(), Some("noded.identity.challenge"));
         arrived.send(()).unwrap();
         released.await.unwrap();
         // Dropping this half also proves the cancelled attempt does not need a reply.
     });
     let mesh = state.mesh.clone();
-    let call = tokio::spawn(async move { mesh.send(peer,BusMessage::empty()).await });
+    let call = tokio::spawn(async move { mesh.send(peer, BusMessage::empty()).await });
     waiting.await.unwrap();
     let mut posture = state.authority.load().posture.clone();
-    if let crate::authority::Posture::Verified(a) = &mut posture { a.epoch += 1; }
+    if let crate::authority::Posture::Verified(a) = &mut posture {
+        a.epoch += 1;
+    }
     let started = Instant::now();
-    apply_inventory_reload(&state,posture).await;
-    assert!(tokio::time::timeout(Duration::from_secs(1),call).await.unwrap().unwrap().is_err());
+    apply_inventory_reload(&state, posture).await;
+    assert!(
+        tokio::time::timeout(Duration::from_secs(1), call)
+            .await
+            .unwrap()
+            .unwrap()
+            .is_err()
+    );
     assert!(started.elapsed() < Duration::from_secs(1));
-    release.send(()).unwrap(); server.await.unwrap();
+    release.send(()).unwrap();
+    server.await.unwrap();
 }
 
 #[tokio::test]
@@ -64,22 +108,33 @@ async fn accepted_rotation_drops_exact_inbound_key_within_one_second() {
     let state = mesh_delivery_test_state().await;
     let (tx, _rx) = mpsc::channel(8);
     let close = Arc::new(tokio::sync::Notify::new());
-    state.live_sessions.write().await.insert("rotating".into(), super::GatedSession {
-        identity: state.peer_context.identity.clone(), claimed_source_node: "beta".into(),
-        source_ip: "192.0.2.2".into(), tx, close: close.clone(),
-    });
+    state.live_sessions.write().await.insert(
+        "rotating".into(),
+        super::GatedSession {
+            identity: state.peer_context.identity.clone(),
+            claimed_source_node: "beta".into(),
+            source_ip: "192.0.2.2".into(),
+            tx,
+            close: close.clone(),
+        },
+    );
     let mut posture = state.authority.load().posture.clone();
     if let crate::authority::Posture::Verified(a) = &mut posture {
         use base64::Engine as _;
         a.epoch += 1;
         a.members_full.get_mut("beta").unwrap()["credentials"][0]["pubkey"] =
-            serde_json::json!(base64::engine::general_purpose::STANDARD.encode([4;32]));
+            serde_json::json!(base64::engine::general_purpose::STANDARD.encode([4; 32]));
     }
     let start = Instant::now();
     apply_inventory_reload(&state, posture).await;
-    tokio::time::timeout(Duration::from_secs(1), close.notified()).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(1), close.notified())
+        .await
+        .unwrap();
     assert!(start.elapsed() < Duration::from_secs(1));
-    assert!(super::admitted_delivery_peer(&state, "192.0.2.2".parse().unwrap()).is_none(), "old session cannot reuse its admission after rotation");
+    assert!(
+        super::admitted_delivery_peer(&state, "192.0.2.2".parse().unwrap()).is_none(),
+        "old session cannot reuse its admission after rotation"
+    );
 }
 
 #[test]
@@ -140,10 +195,13 @@ async fn next_mesh_frame(
 async fn prove_policy_peer(socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) {
     let challenge = next_mesh_frame(socket).await;
     assert_eq!(challenge.command_name(), Some("noded.identity.challenge"));
-    let wire = mesh::build_admit_response(&challenge, "beta", &Some([8;32])).unwrap();
+    let wire = mesh::build_admit_response(&challenge, "beta", &Some([8; 32])).unwrap();
     let mut response = bus_mod::parse(&wire).unwrap();
-    response.set("command","noded.identity.response");
-    socket.send(WsMessage::Text(response.to_wire().into())).await.unwrap();
+    response.set("command", "noded.identity.response");
+    socket
+        .send(WsMessage::Text(response.to_wire().into()))
+        .await
+        .unwrap();
 }
 
 async fn policy_mesh_state(
@@ -184,11 +242,27 @@ async fn policy_mesh_state(
             "from_epoch":1, "until_epoch":null}]
         }));
     }
-    state.authority.store(Arc::new(crate::routing::RoutingAuthority::new(posture,"alpha","127.0.0.1",4200,&[])));
+    state
+        .authority
+        .store(Arc::new(crate::routing::RoutingAuthority::new(
+            posture,
+            "alpha",
+            "127.0.0.1",
+            4200,
+            &[],
+        )));
     let authority = state.authority.load_full();
     state
         .mesh
-        .reconcile_identity(authority.routes.desired_endpoints(), authority.revision(), authority.keys.clone(), match &authority.posture { crate::authority::Posture::Verified(a) => a.mesh.clone(), _ => unreachable!() })
+        .reconcile_identity(
+            authority.routes.desired_endpoints(),
+            authority.revision(),
+            authority.keys.clone(),
+            match &authority.posture {
+                crate::authority::Posture::Verified(a) => a.mesh.clone(),
+                _ => unreachable!(),
+            },
+        )
         .await;
     (state, incoming, peer)
 }
@@ -326,17 +400,28 @@ async fn solicited_mesh_responses_check_source_before_client_delivery() {
                 let _ = answered.send(());
                 let _ = stopped.await;
             });
-            let root = std::env::temp_dir().join(format!("bus-policy-{}-{}",std::process::id(),rand::random::<u64>()));
+            let root = std::env::temp_dir().join(format!(
+                "bus-policy-{}-{}",
+                std::process::id(),
+                rand::random::<u64>()
+            ));
             std::fs::create_dir(&root).unwrap();
             use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&root,std::fs::Permissions::from_mode(0o700)).unwrap();
+            std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o700)).unwrap();
             let path = root.join("bus.sock");
             let listener = tokio::net::UnixListener::bind(&path).unwrap();
-            let app = axum::Router::new().route("/ws", axum::routing::get(super::unix_ws_handler)).with_state(state);
+            let app = axum::Router::new()
+                .route("/ws", axum::routing::get(super::unix_ws_handler))
+                .with_state(state);
             let local = tokio::spawn(async move {
-                axum::serve(listener,app.into_make_service_with_connect_info::<crate::native_ingress::UnixPeer>()).await.unwrap();
+                axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<crate::native_ingress::UnixPeer>(),
+                )
+                .await
+                .unwrap();
             });
-            let url = format!("unix://{}",path.display());
+            let url = format!("unix://{}", path.display());
             let (mut sink, mut stream) = raw_connect(&url).await;
             let request = BusMessage::new()
                 .with_header("to", "hostd.beta.bus")

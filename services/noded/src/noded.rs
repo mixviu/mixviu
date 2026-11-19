@@ -518,8 +518,8 @@ struct AppState {
     /// SPEC 13 §9a (2-c-2c) — live ENFORCE-admitted inter-node sessions, keyed
     /// by session_id, so an inventory reload that revokes a member can close
     /// exactly that member's session (the §5.5 membership-recheck teardown).
-    /// Populated only on a successful enforce admit; same-node and refused
-    /// sessions are never tracked (no teardown). Empty in off/observe.
+    /// Populated on successful proof in every posture, before registration.
+    /// Unix and unauthenticated sessions need no key revocation tracking.
     live_sessions: Arc<RwLock<HashMap<String, GatedSession>>>,
 }
 
@@ -684,11 +684,8 @@ async fn mesh_incoming_loop(
         let peer = inbound.peer;
         let connection_generation = inbound.connection_generation;
         let mut msg = inbound.message;
-        let peer_address = authority_for_mesh
-            .load()
-            .routes
-            .resolve(&peer)
-            .map(|target| target.into_peer().noded_addr().to_string())
+        let peer_address = inbound.context.address
+            .map(|address| address.to_string())
             .unwrap_or_default();
         if msg.is_empty_message() {
             continue;
@@ -1155,10 +1152,8 @@ async fn serve(
         }
     });
 
-    // SPEC 13 §7.7 (2-c-0b) — hot-reload the authority posture on
-    // `inventory.signed` change. off/observe grandfather every live session
-    // (outside the §14 gate); under enforce (2-c-2c) a revocation delta closes
-    // the affected member's live sessions (the §5.5 membership-recheck teardown).
+    // Reconcile exact-key transport generations on every accepted reload,
+    // independently of frame and registration postures.
     spawn_inventory_reload_watcher(state.clone());
 
     // SPEC 07 §5.2 — seed `world.specs.<n>` retained topics at startup.
@@ -1176,10 +1171,7 @@ async fn serve(
     let _ = ready_tx.send(());
 
     // SPEC 13 §9a (2-c-2a) — serve WITH connect-info so each accepted socket
-    // carries its peer's source address. The source IP is the trustworthy
-    // correlator on a would-refuse (the claimed `source_node` is unverified
-    // there) and the input to the same-node-origin classifier the enforce gate
-    // (2-c-2b) uses — never the proof, only the local-vs-network boundary.
+    // carries its real address for audit. It grants no identity or local trust.
     // Nagle off on every accepted socket: a reply or delivery written in two
     // parts otherwise waits on the peer's delayed ACK (40 ms on Linux).
     let listener = axum::serve::ListenerExt::tap_io(listener, |tcp| {
@@ -1836,13 +1828,8 @@ fn reload_keeps_last_good(
 /// hot-reload the authority posture + route table on change, reusing the SAME
 /// [`crate::authority::load_and_verify`] (no second verify path) and **never
 /// downgrading** a `Verified` posture to `Unverified` on a bad/partial push.
-/// In `off`/`observe` this grandfathers every live session — it swaps the
-/// in-memory snapshot consumed by admission, routing, `noded.inventory`, and
-/// `noded.peers`. D1.4 reconciles outbound transports before publishing that
-/// snapshot. The deployed `enforce` path below also performs 2-c-2c inbound
-/// revocation teardown,
-/// despite older §14 planning text that still calls activation blocked. D1.4
-/// does not widen it. Watch failures are non-fatal: the node keeps
+/// Outbound transports are reconciled before publication; inbound exact-key
+/// teardown follows it in every posture. Watch failures are non-fatal: the node keeps
 /// the start-time posture and logs a warning. **Known limitation:** if the
 /// watched parent dir is *removed and recreated*, the inotify watch is not
 /// re-established and reload goes quiet until the daemon restarts (the error is
@@ -2248,8 +2235,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     if matches!(&transport, TransportIdentity::LocalUnix { .. }) {
         state.observe = state.observe.for_class(TrafficClass::NativeSession);
     }
-    // Preserve the existing IP-based D2 and broker-origin inputs. Unix callers
-    // are local; their UID authority is a separate transport assertion.
+    // Source addresses are diagnostics only. Identity lives in peer_context.
     let source_ip = match &transport {
         TransportIdentity::LegacyTcp { source_ip } | TransportIdentity::Mesh { source_ip, .. } => {
             *source_ip
@@ -2258,8 +2244,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     };
     let (mut ws_sink, mut ws_stream) = socket.split();
     // The source address as a string for §17 event fields (2-c-2a) — the
-    // trustworthy correlator on a would-refuse and the same-node classifier
-    // input for the enforce gate (2-c-2b).
+    // audit correlator on a would-refuse, never an authentication input.
     let source_ip_str = source_ip.to_string();
 
     let (tx, mut rx) = mpsc::channel::<String>(PEER_OUTBOUND_BUFFER);
@@ -2447,11 +2432,9 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     &bus_msg,
                     &state.node_name,
                     &load_d2_seed(&d2_seed_path()),
-                ) {
-                    if let Ok(mut response) = bus::parse(&wire) {
+                ) && let Ok(mut response) = bus::parse(&wire) {
                         response.set("command", "noded.identity.response");
                         let _ = tx.try_send(response.to_wire());
-                    }
                 }
             }
             continue;
@@ -3430,7 +3413,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     // reload teardown that selected this session already drained its pending +
     // removed it (so the §14 drain below finds none → no duplicate fate emit);
     // a natural disconnect removes it here. Harmless no-op for an untracked
-    // (same-node / observe / never-admitted) session.
+    // (Unix / never-admitted) session.
     state.live_sessions.write().await.remove(&anon_id);
 
     // SPEC 13 §14 / §7.8 B3 — delivery-on-reconnect instrumentation (slice
@@ -5821,10 +5804,6 @@ mod tests {
         );
     }
 
-    /// SPEC 13 §9a §4 (2-c-2b): the same-node classifier is loopback OR the
-    /// broker's OWN bind IP — every other WG `/24` address (hub, any peer,
-    /// arbitrary) is inter-node. This is the local-vs-network boundary, never
-    /// the proof.
     /// SPEC 13 §9a (2-c-2b): the fail-closed predicate — `None` for off/observe
     /// and a healthy enforce; the §17 reason (trust-root before bind) otherwise.
     #[test]
