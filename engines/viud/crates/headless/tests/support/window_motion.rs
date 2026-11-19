@@ -534,10 +534,10 @@ fn record_window_retarget_supersedes_without_returning_to_first_keyframe() {
     thread::scope(|scope| {
         let first = scope.spawn(|| {
             bus.call("comp.motion.run",json!({"targets":[{"window":{
-            "id":row["id"],"generation":row["generation"],"tracks":first_tracks,"duration_ms":800
+            "id":row["id"],"generation":row["generation"],"tracks":first_tracks,"duration_ms":4000
         }}]}))
         });
-        thread::sleep(Duration::from_millis(250));
+        thread::sleep(Duration::from_millis(800));
         let second = bus.call("comp.motion.run",json!({"targets":[{"window":{
             "id":row["id"],"generation":row["generation"],"tracks":opacity_track(0.0,1.0),"duration_ms":500
         }}]}));

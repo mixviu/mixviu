@@ -95,12 +95,6 @@ pub struct Pattern {
 }
 
 impl Pattern {
-    pub fn unmap(&mut self) {
-        self.surface.attach(None, 0, 0);
-        self.surface.commit();
-        self.conn.flush().unwrap();
-    }
-
     /// Send a new buffer and destroy its role in the same Wayland read batch.
     pub fn commit_then_destroy(&mut self) {
         self.surface.attach(Some(&self.buffer), 0, 0);

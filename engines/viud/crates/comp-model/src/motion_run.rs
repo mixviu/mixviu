@@ -85,8 +85,9 @@ impl MotionSpec {
             .iter()
             .map(|target| match target {
                 MotionTarget::Pointer { duration, .. }
-                | MotionTarget::Window { duration, .. }
-                | MotionTarget::WindowTracks { duration, .. } => *duration,
+                | MotionTarget::Window { duration, .. } => *duration,
+                // A short replacement can inherit a longer remaining track.
+                MotionTarget::WindowTracks { .. } => Duration::from_millis(MAX_DURATION_MS),
             })
             .max()
             .unwrap_or_default()
@@ -567,6 +568,7 @@ mod tests {
                 panic!("tracks")
             };
             assert_eq!(*duration, Duration::from_millis(300));
+            assert_eq!(spec.budget(), Duration::from_secs(11));
             assert_eq!(visual.timing.duration, 0.3);
             assert!(to.iter().all(Option::is_none));
             assert!(visual.tracks.iter().all(|t| window_property(t.property)));
