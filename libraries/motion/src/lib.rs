@@ -20,9 +20,15 @@ mod fitts;
 mod glide;
 mod hermite;
 mod minjerk;
+mod presets;
 mod route;
 mod spring;
+mod spring_curve;
 mod timeline;
+mod tracks;
+pub use presets::{PRESETS_JSON, load_presets, presets};
+pub use spring_curve::SpringCurve;
+pub use tracks::*;
 
 pub use bezier::{BezierError, CubicBezier};
 pub use fitts::fitts_ms;

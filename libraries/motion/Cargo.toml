@@ -1,6 +1,6 @@
 [package]
 name = "motion"
-description = "Pure motion maths for viud: timing curves, springs, waypoint routes, Fitts durations and retarget segments (no display, no clock)"
+description = "Shared toolkit-neutral motion tracks, CSS presets and deterministic easing"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -9,12 +9,15 @@ repository.workspace = true
 publish = false
 
 [package.metadata.mixviu]
-component = "viud"
-kind = "service"
-layer = "desktop"
+component = "motion"
+kind = "library"
+layer = "shared"
 contract = "none"
 
 [dependencies]
+serde.workspace = true
+serde_json.workspace = true
+libm = { version = "=0.2.16", default-features = false }
 
 [lints.clippy]
 mod_module_files = "deny"

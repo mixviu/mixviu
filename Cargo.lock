@@ -5977,6 +5977,11 @@ dependencies = [
 [[package]]
 name = "motion"
 version = "0.1.2"
+dependencies = [
+ "libm",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "moxcms"
