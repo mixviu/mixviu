@@ -117,16 +117,45 @@ fn clipping_hidden_nodes_and_filter_validation() {
     ] {
         assert!(view.widget_rectangles(&args).is_err());
     }
-    assert_eq!(view.widget_rectangles(&json!({"ids":["on"],"visible_only":true})).unwrap().as_array().unwrap().len(),1);
-    ctx.run_ui(egui::RawInput {
-        screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(400.,200.))),
-        events: vec![egui::Event::PointerMoved(egui::pos2(30.,40.)),egui::Event::MouseWheel {
-            source: egui::MouseWheelSource::Unknown, phase: egui::TouchPhase::Move,
-            unit: egui::MouseWheelUnit::Point, delta:egui::vec2(0.,-900.), modifiers:Default::default()
-        }], ..Default::default()
-    }, |ui| { view.show(ui); }).drop_without_applying_deltas();
-    for _ in 0..30 { draw(&mut view,&ctx,400.,200.); }
-    assert_eq!(view.widget_rectangles(&json!({"ids":["on"],"visible_only":true})).unwrap(),json!([]));
+    assert_eq!(
+        view.widget_rectangles(&json!({"ids":["on"],"visible_only":true}))
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    ctx.run_ui(
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(400., 200.),
+            )),
+            events: vec![
+                egui::Event::PointerMoved(egui::pos2(30., 40.)),
+                egui::Event::MouseWheel {
+                    source: egui::MouseWheelSource::Unknown,
+                    phase: egui::TouchPhase::Move,
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: egui::vec2(0., -900.),
+                    modifiers: Default::default(),
+                },
+            ],
+            ..Default::default()
+        },
+        |ui| {
+            view.show(ui);
+        },
+    )
+    .drop_without_applying_deltas();
+    for _ in 0..30 {
+        draw(&mut view, &ctx, 400., 200.);
+    }
+    assert_eq!(
+        view.widget_rectangles(&json!({"ids":["on"],"visible_only":true}))
+            .unwrap(),
+        json!([])
+    );
 }
 
 #[test]
@@ -165,18 +194,27 @@ fn rectangle_frame_cost() {
 
 #[test]
 fn control_identity_comes_from_the_scene_and_enabled_from_the_control() {
-    let source = format!("---\nscene: 1\nname: test\ncitizen: test\n---\n```mix\n{}\n```\n",json!({
-        "root":{"widget":"column","children":["scene-button"]},
-        "scene-button":{"widget":"control","definition":{"id":"internal-button","kind":"button","label":"Save","initial":"","properties":{"enabled":false}}}
-    }));
+    let source = format!(
+        "---\nscene: 1\nname: test\ncitizen: test\n---\n```mix\n{}\n```\n",
+        json!({
+            "root":{"widget":"column","children":["scene-button"]},
+            "scene-button":{"widget":"control","definition":{"id":"internal-button","kind":"button","label":"Save","initial":"","properties":{"enabled":false}}}
+        })
+    );
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
-    draw(&mut view,&ctx,400.,200.);
-    let rows = view.widget_rectangles(&json!({"kinds":["button"]})).unwrap();
-    assert_eq!(rows.as_array().unwrap().len(),1);
-    assert_eq!(rows[0]["id"],"scene-button");
-    assert_eq!(rows[0]["enabled"],false);
-    assert_eq!(view.widget_rectangles(&json!({"ids":["internal-button"]})).unwrap(),json!([]));
+    draw(&mut view, &ctx, 400., 200.);
+    let rows = view
+        .widget_rectangles(&json!({"kinds":["button"]}))
+        .unwrap();
+    assert_eq!(rows.as_array().unwrap().len(), 1);
+    assert_eq!(rows[0]["id"], "scene-button");
+    assert_eq!(rows[0]["enabled"], false);
+    assert_eq!(
+        view.widget_rectangles(&json!({"ids":["internal-button"]}))
+            .unwrap(),
+        json!([])
+    );
 }
 
 #[cfg(feature = "test-support")]
@@ -248,40 +286,86 @@ fn headless_bus_sweep() {
 fn populated_bus_reply_has_a_compositor_window_fence() {
     use viu::app_host::test_support::Harness;
     let broker = test_broker::Broker::start();
-    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
-    let comp = viu::native_bus::Endpoint::start("comp".into(),broker.url.clone(),
-        vec![bus::CommandDescriptor::new("comp.windows.list",&[],"Test catalogue",true)],
-        "comp.quit".into(),Arc::new(||{}));
-    let client = Arc::new(rt.block_on(bus::SupervisedClient::connect_options("rect-populated",&broker.url).connect()).unwrap());
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap();
+    let comp = viu::native_bus::Endpoint::start(
+        "comp".into(),
+        broker.url.clone(),
+        vec![bus::CommandDescriptor::new(
+            "comp.windows.list",
+            &[],
+            "Test catalogue",
+            true,
+        )],
+        "comp.quit".into(),
+        Arc::new(|| {}),
+    );
+    let client = Arc::new(
+        rt.block_on(
+            bus::SupervisedClient::connect_options("rect-populated", &broker.url).connect(),
+        )
+        .unwrap(),
+    );
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps/gallery");
-    let bundle = viu::launch::load(&root,&["--headless".into(),"--noded-url".into(),broker.url.clone()]).unwrap();
+    let bundle = viu::launch::load(
+        &root,
+        &[
+            "--headless".into(),
+            "--noded-url".into(),
+            broker.url.clone(),
+        ],
+    )
+    .unwrap();
     let mut host = Harness::new(bundle);
-    let deadline = Instant::now()+Duration::from_secs(20);
+    let deadline = Instant::now() + Duration::from_secs(20);
     while !host.ready() || comp.client().is_none() {
         host.pump();
-        assert!(Instant::now()<deadline,"host readiness: {}",host.error());
+        assert!(
+            Instant::now() < deadline,
+            "host readiness: {}",
+            host.error()
+        );
         std::thread::sleep(Duration::from_millis(2));
     }
     host.windowed();
-    for _ in 0..4 { host.draw(); }
+    for _ in 0..4 {
+        host.draw();
+    }
     let task = rt.spawn(async move {
-        let (rc,body,_) = client.call_with_headers_raw_within("gallery","gallery.widgets",&Default::default(),
-            &json!({"ids":["gold-header"],"visible_only":true}).to_string(),Duration::from_secs(10)).await.unwrap();
-        (rc,serde_json::from_str::<serde_json::Value>(&body).unwrap())
+        let (rc, body, _) = client
+            .call_with_headers_raw_within(
+                "gallery",
+                "gallery.widgets",
+                &Default::default(),
+                &json!({"ids":["gold-header"],"visible_only":true}).to_string(),
+                Duration::from_secs(10),
+            )
+            .await
+            .unwrap();
+        (
+            rc,
+            serde_json::from_str::<serde_json::Value>(&body).unwrap(),
+        )
     });
     while !task.is_finished() {
         host.pump();
         while let Ok(request) = comp.requests.try_recv() {
-            assert_eq!(request.command,"comp.windows.list");
-            let _ = request.reply.send((0,json!({"windows":[{"id":7,"generation":2,"pid":std::process::id(),"x":20,"y":30}]})));
+            assert_eq!(request.command, "comp.windows.list");
+            let _ = request.reply.send((
+                0,
+                json!({"windows":[{"id":7,"generation":2,"pid":std::process::id(),"x":20,"y":30}]}),
+            ));
         }
-        assert!(Instant::now()<deadline);
+        assert!(Instant::now() < deadline);
         std::thread::sleep(Duration::from_millis(2));
     }
-    let (rc,body) = rt.block_on(task).unwrap();
-    assert_eq!(rc,0,"{body}");
-    assert_eq!(body.as_array().unwrap().len(),1);
-    assert_eq!(body[0]["id"],"gold-header");
-    assert_eq!(body[0]["window"],json!({"id":7,"generation":2}));
-    assert!(body[0]["rect"]["w"].as_f64().unwrap()>0.);
+    let (rc, body) = rt.block_on(task).unwrap();
+    assert_eq!(rc, 0, "{body}");
+    assert_eq!(body.as_array().unwrap().len(), 1);
+    assert_eq!(body[0]["id"], "gold-header");
+    assert_eq!(body[0]["window"], json!({"id":7,"generation":2}));
+    assert!(body[0]["rect"]["w"].as_f64().unwrap() > 0.);
 }

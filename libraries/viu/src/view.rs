@@ -34,6 +34,7 @@ pub struct SceneView {
     #[cfg(feature = "test-support")]
     collect_widget_rects: bool,
     widget_rects: Vec<crate::widget_rects::WidgetRect>,
+    widget_rect_count: usize,
     frame: Option<Box<SceneView>>,
     regions: BTreeMap<String, egui::Rect>,
     tree: ResolvedScene,
@@ -125,6 +126,7 @@ impl SceneView {
             revision: 0,
             geometry: BTreeMap::new(),
             widget_rects: Vec::new(),
+            widget_rect_count: 0,
             #[cfg(feature = "test-support")]
             collect_widget_rects: true,
             widgets: Widgets::default(),
@@ -357,7 +359,7 @@ impl SceneView {
         self.show_content(ui)
     }
     fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
-        self.widget_rects.clear();
+        self.widget_rect_count = 0;
         ui.ctx()
             .data_mut(|d| d.remove::<String>(egui::Id::unique("viu-focused-widget")));
         let mut events = Vec::new();
@@ -386,6 +388,7 @@ impl SceneView {
         }
         self.geometry
             .extend(self.widgets.geometry.iter().map(|(id, r)| (id.clone(), *r)));
+        self.widget_rects.truncate(self.widget_rect_count);
         for row in &mut self.widget_rects {
             if let Some(rect) = self.geometry.get(&row.id) {
                 row.rect = *rect;
@@ -948,11 +951,22 @@ impl SceneView {
             if let Some(rect) = rect.filter(|r| r.is_finite()) {
                 let definition = node.ports.get("definition");
                 let control_id = definition.and_then(|v| v["id"].as_str());
-                let focused = ui
+                let focused = control_id.is_some() && ui
                     .ctx()
                     .data(|d| d.get_temp::<String>(egui::Id::unique("viu-focused-widget")))
                     .is_some_and(|focused| Some(focused.as_str()) == control_id);
-                self.widget_rects.push(crate::widget_rects::WidgetRect {
+                let enabled = ui.is_enabled()
+                    && node.ports.get("enabled") != Some(&Value::Bool(false))
+                    && definition.is_none_or(|v| v["properties"]["enabled"] != false);
+                if let Some(row) = self.widget_rects.get_mut(self.widget_rect_count)
+                    && row.id == id && self.shown_revision == Some(self.revision) {
+                    // Retain metadata allocations while the scene is unchanged.
+                    row.rect = rect;
+                    row.clip = ui.clip_rect();
+                    row.enabled = enabled;
+                    row.focused = focused || response.has_focus();
+                } else {
+                let row = crate::widget_rects::WidgetRect {
                     id: id.into(),
                     kind: definition
                         .and_then(|v| v["kind"].as_str())
@@ -967,11 +981,14 @@ impl SceneView {
                         .map(str::to_owned),
                     rect,
                     clip: ui.clip_rect(),
-                    enabled: ui.is_enabled()
-                        && node.ports.get("enabled") != Some(&Value::Bool(false))
-                        && definition.is_none_or(|v| v["properties"]["enabled"] != false),
+                    enabled,
                     focused: focused || response.has_focus(),
-                });
+                };
+                if self.widget_rect_count < self.widget_rects.len() {
+                    self.widget_rects[self.widget_rect_count] = row;
+                } else { self.widget_rects.push(row); }
+                }
+                self.widget_rect_count += 1;
             }
         }
     }
