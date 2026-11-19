@@ -217,7 +217,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
         if !visible.is_positive() && !(rect.width() == 0.0 || rect.height() == 0.0) {
             continue;
         }
-        let base=ui.new_child(egui::UiBuilder::new().id_salt((&item.key,"motion-host")).layer_id(item.parent.as_ref().and_then(|p|layers.get(p)).copied().unwrap_or(ui.layer_id())));
+        let mut base=ui.new_child(egui::UiBuilder::new().id_salt((&item.key,"motion-host")).layer_id(item.parent.as_ref().and_then(|p|layers.get(p)).copied().unwrap_or(ui.layer_id())));
         let offset=toolkit::scene_motion::value(base.ctx(),&item.key,"offset",node.ports.get("offset").unwrap_or(&serde_json::json!([0.,0.])),node.ports.get("transition"),node.ports.get("motion")!=Some(&serde_json::Value::Bool(false)));
         let default_fade=serde_json::json!("fade");
         let mut capture=motion.capture(&base,&item.key,item.parent.as_deref(),node.ports.get("enter").or(if item.cell {Some(&default_fade)} else {None}),node.ports.get("exit").or(if item.cell {Some(&default_fade)} else if item.parent.as_ref().is_some_and(|p|layers.contains_key(p)) || node.ports.contains_key("offset") {Some(&serde_json::Value::Null)} else {None}),node.ports.get("motion")!=Some(&serde_json::Value::Bool(false)));

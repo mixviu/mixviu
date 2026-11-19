@@ -11,7 +11,7 @@ fn list_insertions_and_removals_use_fade_and_reduced_motion_snaps() {
         for reduced in [false,true] {
             let model=|updated:bool| if native {
                 let rows=if updated {json!([["remaining","2"],["inserted row","3"]])} else {json!([["removed row","1"],["remaining","2"]])};
-                json!({"datasets":{"rows":rows},"widget":{"id":"list","kind":"list","label":"List","initial":0,"properties":{"dataset":"rows","row_count":2,"columns":["Name","Size"]}}})
+                json!({"datasets":{"rows":rows},"widget":{"id":"root","kind":"list","label":"List","initial":0,"properties":{"dataset":"rows","row_count":2,"columns":["Name","Size"]}}})
             } else {json!({"rows":if updated {json!([{"id":"b","cells":["remaining"]},{"id":"c","cells":["inserted row"]}])} else {json!([{"id":"a","cells":["removed row"]},{"id":"b","cells":["remaining"]}])}})};
             let nodes=if native {json!({"root":{"widget":"control","definition":"= $model.widget"}})} else {json!({"root":{"widget":"list","rows":"= $model.rows","row":"item","row_height":24},"item":{"widget":"row","children":["label"]},"label":{"widget":"text","text":"{cells[0]}"}})};
             let source=format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
