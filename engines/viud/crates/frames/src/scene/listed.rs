@@ -29,7 +29,7 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
                 && row.mapped()
                 && listed
                     .iter()
-                    .any(|w| w.id == row.id().0 && w.generation == row.generation())
+                    .any(|w| w.id == row.id().0 && w.generation == row.generation() && world::comp::recording::on_output(state, *w, output))
             {
                 if let Some(uuid) = state.inner.comp.registry.uuid_for(row.id()) {
                     allowed.insert(uuid);
@@ -37,29 +37,12 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
             }
         }
         let mut plan = Plan::new();
-        let cursor_output = state.inner.cursor_output.clone().or_else(|| {
-            state
-                .inner
-                .space_state()
-                .state
-                .outputs()
-                .next()
-                .map(world::state::output_key)
-        });
-        if spec.cursor && cursor_output.as_deref() == Some(key.as_str()) {
-            plan.extend(
-                layer::POINTER,
-                seat::pointer::draw::scene::element(state, renderer, size)
-                    .into_iter()
-                    .filter(|e| {
-                        e.kind() == Kind::Cursor
-                            || matches!(
-                                e,
-                                world::seat::pointer::element::PointerRenderElement::Memory(_)
-                            )
-                    })
-                    .map(DrawNode::Pointer),
-            );
+        if world::comp::recording::cursor_on_output(spec.cursor, state.inner.cursor_output.as_deref(), &key) {
+            let allow_surface = match &state.state.seat.pointer_status {
+                smithay::input::pointer::CursorImageStatus::Surface(surface) => world::comp::recording::cursor_client_allowed(state, surface, listed, output),
+                _ => false,
+            };
+            plan.extend(layer::POINTER, seat::pointer::draw::scene::recording_element(state, renderer, size, allow_surface).into_iter().map(DrawNode::Pointer));
         }
         // Only the backdrop's Background roots, never panels or their popups.
         // Namespace is routing metadata, not a peer-authorisation claim.
@@ -148,13 +131,7 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
         }
         state.inner.render_target = old_target;
         let (elements, _) = plan.lower(renderer);
-        // Strip the counter and target index, leaving the private per-take key.
-        let session_key = spec
-            .path
-            .rsplit_once('-')
-            .and_then(|(s, _)| s.rsplit_once('-'))
-            .map(|(s, _)| s)
-            .unwrap_or(&spec.path);
+        let session_key = spec.take_id.as_deref().ok_or_else(|| screencopy::file::capture_failed("listed capture has no take identity"))?;
         let changed = TRACKER
             .with_borrow_mut(|cache| {
                 if cache.as_ref().is_none_or(|(key, _)| key != session_key) {
@@ -171,7 +148,7 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
                     .map(|(damage, _)| damage.is_some_and(|d| !d.is_empty()))
             })
             .map_err(|e| screencopy::file::capture_failed(e.to_string()))?;
-        if !changed {
+        if !changed && !spec.force_capture {
             return Ok(None);
         }
         screencopy::render_offscreen(renderer, &elements, |_| true, size, scale)

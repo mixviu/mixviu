@@ -720,6 +720,105 @@ fn record_listed_output_excludes_occluders_and_tracks_popup_and_close() {
     assert_eq!(gone.len(), 1);
     assert_eq!(gone[0]["data"], target(&ar));
     assert!(path.join("complete.json").exists());
+    assert!(stop["repeated"].as_u64().unwrap() > 0, "quiet ticks must repeat: {stop}");
+}
+
+#[test]
+fn record_privacy_cursor_ownership_output_and_take_identity() {
+    if !process::record_available() { return; }
+    let bus = Bus::start("record-privacy-cursor");
+    let mut process = process::spawn(1, None, "record-privacy-cursor", Some(&bus.url));
+    let mut a = Pattern::named(connect(&mut process), "cursor-listed", false);
+    a.solid_buffer(0xff334455); a.commit(true);
+    let mut b = Pattern::named(connect(&mut process), "cursor-private", false);
+    b.solid_buffer(0xff667788); b.commit(true);
+    bus.ready();
+    let ar = bus.window_for("cursor-listed", &mut [&mut a, &mut b]);
+    let br = bus.window_for("cursor-private", &mut [&mut a, &mut b]);
+    bus.call("comp.window.place", place_args(&ar, json!({"x":100,"y":100})));
+    bus.call("comp.window.place", place_args(&br, json!({"x":400,"y":100})));
+    let focus = |mode: &str, a: &mut Pattern, b: &mut Pattern| {
+        fs::write(process.root.join("record-input"), mode).unwrap();
+        bus.call("comp.capture.frame", json!({"output":"headless-0","path":process.root.join(format!("focus-{mode}.ppm")),"format":"ppm"}));
+        pump_patterns(&mut [a,b]);
+    };
+    let take = |name: &str, cursor: bool, a: &mut Pattern, b: &mut Pattern| {
+        let path = process.root.join(format!("{name}.vfl"));
+        let start = bus.call("comp.record.start",json!({"request_id":name,"target":{"output":"headless-0","windows":[target(&ar)]},"cursor":cursor,"path":path,"max_seconds":10}));
+        pump_patterns(&mut [a,b]);
+        thread::sleep(Duration::from_millis(150));
+        let stop = bus.call("comp.record.stop",json!({"session":start["session"]}));
+        assert_eq!(stop["error"],Value::Null,"{stop}");
+        assert!(stop["readbacks"].as_u64().unwrap() >= 1, "frame zero must be captured");
+        assert!(stop["repeated"].as_u64().unwrap() > 0);
+        let mut frames = Vec::new();
+        vfl_visit(&path, |pixels| frames.push(pixels.to_vec()));
+        assert!(!frames.is_empty());
+        frames
+    };
+    focus("listed", &mut a, &mut b);
+    let baseline = take("hyphenated-take-a-1", false, &mut a, &mut b);
+    let second = take("hyphenated-take-a-2", false, &mut a, &mut b);
+    assert_eq!(baseline[0],second[0],"consecutive takes both have real identical first images");
+    let default = take("default-cursor", true, &mut a, &mut b);
+    assert_ne!(default[0],baseline[0],"compositor cursor must appear");
+    let contains = |frames: &[Vec<u8>], colour: u32| frames.iter().any(|f| f.chunks_exact(4).any(|p| p == colour.to_le_bytes()));
+    let _allowed = a.custom_cursor(0xff11eecc);
+    pump_patterns(&mut [&mut a,&mut b]);
+    assert!(contains(&take("owned-cursor",true,&mut a,&mut b),0xff11eecc));
+    focus("unknown", &mut a,&mut b);
+    assert_eq!(take("unknown-cursor-output",true,&mut a,&mut b)[0], baseline[0]);
+    focus("other", &mut a,&mut b);
+    assert_eq!(take("other-cursor-output",true,&mut a,&mut b)[0], baseline[0]);
+    focus("private", &mut a,&mut b);
+    let _private_cursor = b.custom_cursor(0xffff00ff);
+    pump_patterns(&mut [&mut a,&mut b]);
+    let denied = take("private-cursor",true,&mut a,&mut b);
+    assert!(!contains(&denied,0xffff00ff),"unlisted cursor artwork leaked");
+    let _drag = b.drag_icon(0xffeedd11);
+    pump_patterns(&mut [&mut a,&mut b]);
+    let live = process.root.join("drag-live.ppm");
+    bus.call("comp.capture.frame",json!({"output":"headless-0","path":live,"format":"ppm"}));
+    assert!(fs::read(live).unwrap().windows(3).any(|p| p == rgb(0xffeedd11)),"live drag icon fixture must draw");
+    let drag = take("private-drag",true,&mut a,&mut b);
+    assert!(!contains(&drag,0xffeedd11) && !contains(&drag,0xffff00ff));
+}
+
+#[test]
+fn record_privacy_window_output_membership_and_marker_order() {
+    if !process::record_available() { return; }
+    let bus = Bus::start("record-privacy-output");
+    let mut process = process::spawn(1,None,"record-privacy-output",Some(&bus.url));
+    let mut a = Pattern::named(connect(&mut process),"output-listed",false);
+    a.solid_buffer(0xff11eecc); a.commit(true);
+    bus.ready();
+    let ar = bus.window_for("output-listed", &mut [&mut a]);
+    bus.call("comp.window.place",place_args(&ar,json!({"output":"headless-1","x":100,"y":100})));
+    let path = process.root.join("off-output.vfl");
+    let refused = bus.call_rc("comp.record.start",json!({"request_id":"off","target":{"output":"headless-0","windows":[target(&ar)]},"path":path,"max_seconds":10}),10);
+    assert_eq!(refused["error"],"window_not_on_output"); assert_eq!(refused["id"],target(&ar)["id"]);
+    assert!(!path.exists());
+    bus.call("comp.window.place",place_args(&ar,json!({"output":"headless-0","x":100,"y":100})));
+    let path = process.root.join("left-output.vfl");
+    let start=bus.call("comp.record.start",json!({"request_id":"left","target":{"output":"headless-0","windows":[target(&ar)]},"cursor":false,"path":path,"max_seconds":10}));
+    pump_patterns(&mut [&mut a]);
+    bus.call("comp.window.place",place_args(&ar,json!({"output":"headless-1","x":100,"y":100})));
+    let status=bus.call("comp.record.status",json!({"session":start["session"]}));
+    assert_eq!(status["windows"],json!([]),"status reconciles immediately");
+    thread::sleep(Duration::from_millis(250));
+    let stop=bus.call("comp.record.stop",json!({"session":start["session"]}));
+    assert_eq!(stop["error"],Value::Null); assert!(stop["repeated"].as_u64().unwrap()>0);
+    let marker: Value=fs::read_to_string(path.join("markers.jsonl")).unwrap().lines().map(|l|serde_json::from_str::<Value>(l).unwrap()).find(|m|m["label"]=="window_gone").unwrap();
+    let frame=marker["frame"].as_u64().unwrap();
+    let mut index=0;
+    let mut saw=false;
+    vfl_visit(&path,|pixels| {
+        let present=pixels.chunks_exact(4).any(|p|p==0xff11eecc_u32.to_le_bytes());
+        saw|=present;
+        if index>frame { assert!(!present,"old window frame followed its marker"); }
+        index+=1;
+    });
+    assert!(saw && index>frame+1,"take must show initial window then a cleared tail");
 }
 
 #[test]

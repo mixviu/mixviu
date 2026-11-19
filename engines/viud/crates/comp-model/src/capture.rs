@@ -19,6 +19,9 @@ pub struct CaptureFrameSpec {
     pub window: Option<CaptureWindow>,
     /// Output-sized recording allowlist. None retains ordinary capture semantics.
     pub listed_windows: Option<Vec<CaptureWindow>>,
+    /// Internal recording identity and first-frame fence, never caller supplied.
+    pub take_id: Option<String>,
+    pub force_capture: bool,
     pub region: Option<CaptureRegion>,
     pub cursor: bool,
     pub path: String,
@@ -399,6 +402,8 @@ pub fn parse(args: &Value) -> Result<CaptureFrameSpec, ControlReply> {
         })
         .transpose()?;
     Ok(CaptureFrameSpec {
+        take_id: None,
+        force_capture: false,
         listed_windows: None,
         output,
         output_generation,
@@ -549,6 +554,8 @@ mod tests {
         assert_eq!(
             parse(&json!({"path": "/tmp/frame.png"})).unwrap(),
             CaptureFrameSpec {
+                take_id: None,
+                force_capture: false,
                 listed_windows: None,
                 output: None,
                 output_generation: None,

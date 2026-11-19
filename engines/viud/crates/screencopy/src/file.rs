@@ -515,6 +515,8 @@ pub fn service_listed(
                     PIXEL_ANSWERS.with_borrow_mut(|a| a.remove(&request.spec.path))
                 {
                     answer(Ok((0, 0, Default::default(), 0)));
+                } else {
+                    return Err(capture_failed("unchanged listed scene has no raw answer"));
                 }
                 return Ok(Value::Null);
             };

@@ -210,6 +210,9 @@ fn spawn_options(options: Options<'_>) -> Process {
     let log = root.join("viud.log");
     let stderr = fs::File::create(&log).unwrap();
     let mut command = Command::new(binary);
+    if label.starts_with("record-privacy-") {
+        command.env("MIX_TEST_RECORD_FIXTURE", &root);
+    }
     if std::env::var_os(paths::env::test::TEST_PRE_DRAIN_CHILD).is_none() {
         command.env_remove(paths::env::test::TEST_PRE_DRAIN_FRAME);
     }

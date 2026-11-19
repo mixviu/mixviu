@@ -63,6 +63,7 @@ pub struct State {
     pub keys: u64,
     pub keyboard_enters: u64,
     last_press: Option<(u32, WlSeat)>,
+    last_enter: Option<(u32, WlPointer)>,
     popup_configured: bool,
     pub locked: bool,
     pub presented: u64,
@@ -89,6 +90,34 @@ pub struct Pattern {
 }
 
 impl Pattern {
+    pub fn custom_cursor(&mut self, colour: u32) -> WlSurface {
+        let qh = self.queue.handle();
+        let surface = self.compositor.create_surface(&qh, ());
+        let buffer = buffer(&self.shm, &qh, 32, 32, |_, _| colour);
+        let (serial, pointer) = self.state.last_enter.clone().expect("cursor enter");
+        pointer.set_cursor(serial, Some(&surface), 0, 0);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.damage_buffer(0, 0, 32, 32);
+        surface.commit();
+        self.conn.flush().unwrap();
+        surface
+    }
+    pub fn drag_icon(&mut self, colour: u32) -> (WlSurface, wayland_client::protocol::wl_data_device::WlDataDevice) {
+        use wayland_client::protocol::wl_data_device_manager::WlDataDeviceManager;
+        let name = self.state.globals.iter().find(|(_, i, _)| i == "wl_data_device_manager").unwrap().0;
+        let qh = self.queue.handle();
+        let manager: WlDataDeviceManager = self.registry.bind(name, 3, &qh, ());
+        let (serial, seat) = self.state.last_press.clone().expect("implicit pointer grab");
+        let device = manager.get_data_device(&seat, &qh, ());
+        let icon = self.compositor.create_surface(&qh, ());
+        let buffer = buffer(&self.shm, &qh, 32, 32, |_, _| colour);
+        device.start_drag(None, &self.surface, Some(&icon), serial);
+        icon.attach(Some(&buffer), 0, 0);
+        icon.damage_buffer(0, 0, 32, 32);
+        icon.commit();
+        self.conn.flush().unwrap();
+        (icon, device)
+    }
     pub fn layer(
         &mut self,
         namespace: &str,
@@ -541,6 +570,9 @@ impl Dispatch<WpPresentationFeedback, ()> for State {
     }
 }
 delegate_noop!(State: ignore WlCompositor);
+delegate_noop!(State: ignore wayland_client::protocol::wl_data_device_manager::WlDataDeviceManager);
+delegate_noop!(State: ignore wayland_client::protocol::wl_data_device::WlDataDevice);
+delegate_noop!(State: ignore wayland_client::protocol::wl_data_offer::WlDataOffer);
 delegate_noop!(State: ignore wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::ZwlrLayerShellV1);
 impl
     Dispatch<
@@ -582,12 +614,15 @@ delegate_noop!(State: ignore WlBuffer);
 impl Dispatch<WlPointer, WlSeat> for State {
     fn event(
         state: &mut Self,
-        _: &WlPointer,
+        pointer: &WlPointer,
         event: wl_pointer::Event,
         seat: &WlSeat,
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
+        if let wl_pointer::Event::Enter { serial, .. } = &event {
+            state.last_enter = Some((*serial, pointer.clone()));
+        }
         if let wl_pointer::Event::Button {
             serial,
             state: button_state,

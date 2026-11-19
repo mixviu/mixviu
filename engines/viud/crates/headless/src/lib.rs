@@ -10,3 +10,5 @@ extern crate model;
 
 mod frame;
 pub mod wire;
+#[cfg(feature = "test-support")]
+mod record_fixture;

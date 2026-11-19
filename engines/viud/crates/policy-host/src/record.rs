@@ -139,6 +139,8 @@ fn reconcile_listed(lp: &Loop, s: &mut Session) {
                     .registry
                     .resolve_window_target(window.id, Some(window.generation))
                     .is_ok()
+                    && lp.inner.space_state().state.outputs().find(|o| target.output.as_ref() == Some(&o.name()))
+                        .is_some_and(|o| world::comp::recording::on_output(lp, *window, o))
                 {
                     true
                 } else {
@@ -151,10 +153,21 @@ fn reconcile_listed(lp: &Loop, s: &mut Session) {
     flush_gone_markers(s);
 }
 fn flush_gone_markers(s: &mut Session) -> bool {
+    // A previous GPU answer must enter the writer queue before its marker.
+    // The writer's FIFO then persists the old frame before this observation.
+    if s.pending { return s.gone_markers.is_empty(); }
     while let Some(window) = s.gone_markers.first().copied() {
         let Some(recording) = s.recording.as_mut() else {
             return false;
         };
+        if !recording.latest_queued {
+            if let Err(error) = recording.frame(None) {
+                recording.error = Some(error.clone());
+                s.failed = Some(error);
+                return true;
+            }
+            if !recording.latest_queued { return false; }
+        }
         if recording
             .marker(
                 "window_gone".into(),
@@ -184,7 +197,7 @@ pub fn command(
     answer: impl FnOnce(ControlReply) + 'static,
 ) {
     let answer: Answer = Box::new(answer);
-    if matches!(op, RecordCommand::Stop { .. })
+    if matches!(op, RecordCommand::Stop { .. } | RecordCommand::Status { .. })
         && let Some(current) = CURRENT.with_borrow(Clone::clone)
     {
         reconcile_listed(lp, &mut current.borrow_mut());
@@ -305,6 +318,14 @@ pub fn command(
                 }
                 target.output = Some(output.name());
                 target.output_generation = Some(generation);
+                if let Some(listed) = &target.listed_windows {
+                    for window in listed {
+                        if !world::comp::recording::on_output(lp, *window, output) {
+                            answer(ControlReply::refused("window_not_on_output", json!({"id":window.id,"generation":window.generation,"output":output.name()})));
+                            return;
+                        }
+                    }
+                }
             }
         }
         let id = match recorder::bus::private_token() {
@@ -893,6 +914,8 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     for (index, mut target) in targets.into_iter().enumerate() {
         let token = format!("{prefix}-{index}");
         target.path = token.clone();
+        target.take_id = Some(session.borrow().id.clone());
+        target.force_capture = session.borrow().recording.is_none();
         let got = frames.clone();
         let session = session.clone();
         screencopy::file::raw_answer(token.clone(), move |result| {
@@ -919,11 +942,14 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if frame.0 == 0 && frame.1 == 0 {
                 let mut s = session.borrow_mut();
                 s.pending = false;
-                let result = s
-                    .recording
-                    .as_mut()
-                    .expect("repeat after first capture")
-                    .frame(None);
+                let Some(recording) = s.recording.as_mut() else {
+                    // Never turn frame zero into a repeat, even if a renderer
+                    // violates the force-capture contract. Retry a full capture.
+                    s.signature.clear();
+                    return;
+                };
+                let result = recording.frame(None);
+                flush_gone_markers(&mut s);
                 if s.drain_until.is_some() {
                     stop_stream(&mut s, false);
                 }
@@ -1005,6 +1031,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 }
                 event(&s, "recording");
             }
+            flush_gone_markers(&mut s);
             if s.drain_until.is_some() && stop_stream(&mut s, false) {
                 event(&s, "finishing");
             }

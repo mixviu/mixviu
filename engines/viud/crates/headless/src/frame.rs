@@ -379,6 +379,8 @@ fn compose(
     renderer: &mut GlesRenderer,
     visible: &mut Vec<Window>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    #[cfg(feature = "test-support")]
+    crate::record_fixture::before_frame(state, &ctx.output);
     use frames::draw::plan::frame::{FramePass, plan};
     screencopy::file::poll(renderer, &ctx.output);
     let capture =

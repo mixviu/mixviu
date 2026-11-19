@@ -34,6 +34,7 @@ pub mod latch;
 pub mod occlusion;
 pub mod panels;
 pub mod placement;
+pub mod recording;
 pub mod presentation;
 pub mod region;
 pub mod scenes;

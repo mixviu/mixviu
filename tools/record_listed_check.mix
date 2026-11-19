@@ -1,13 +1,13 @@
 -- Focused worker-only checks for listed-window recording.
 $mode = args()[0] ?? "test"
-$packages = ["comp-model", "screencopy", "frames", "policy-host", "headless", "native", "nested"]
+$packages = ["comp-model", "screencopy", "frames", "policy-host", "headless", "native", "nested", "world", "seat", "recorder"]
 $command = ["cargo", if $mode == "fmt" then "fmt" elif $mode == "clippy" then "clippy" else "test" end]
 for $package in $packages
   $command = concat($command, ["-p", $package])
 end
 try
   if $mode == "capture" or $mode == "bench" or $mode == "accept" then
-    for $cmd in [["cargo","build","-p","mix","-p","noded","-p","testkit","--bins"], ["cargo","build","--release","-p","viud"]]
+    for $cmd in [["cargo","build","-p","mix","-p","noded","-p","testkit","--bins"], ["cargo","build","--release","-p","viud","--features","headless/test-support"]]
       $r = run_argv($cmd, {timeout:1800,stdout:"inherit",stderr:"inherit"})
       if not $r.ok then exit($r.exit_code ?? 1) end
     end
