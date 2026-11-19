@@ -977,6 +977,15 @@ async fn connect_and_publish(
             }
         }
     }
+    // Enforce gates egress before even registration is written. Off/observe
+    // retain the bounded legacy fallback for old brokers without reverse proof.
+    {
+        let locked = state.read().await;
+        anyhow::ensure!(
+            !locked.frame_enforce || context.mesh_peer().is_some(),
+            "Dialled peer did not prove its identity"
+        );
+    }
     let (tx, mut rx) = mpsc::unbounded_channel::<String>();
     let connected = Arc::new(AtomicBool::new(true));
     let generation = uuid::Uuid::new_v4();
@@ -1020,6 +1029,10 @@ async fn connect_and_publish(
 
     {
         let mut locked = state.write().await;
+        anyhow::ensure!(
+            !locked.frame_enforce || context.mesh_peer().is_some(),
+            "Unproven dialled peer cannot be published"
+        );
         if let Some((keys, _)) = &locked.keys
             && let Some((node, key)) = context.mesh_peer()
         {

@@ -456,6 +456,7 @@ impl PendingResponseTable {
 
 #[derive(Clone)]
 struct AppState {
+    d2_seed: Option<[u8; 32]>,
     peer_context: bus::native_session::PeerContext,
     sessions: Arc<tokio::sync::Mutex<session::Sessions>>,
     protected_responses: Arc<AtomicBool>,
@@ -672,6 +673,7 @@ async fn mesh_incoming_loop(
         if inbound.message.is_empty_message() {
             continue;
         }
+        // PR 3/4: retain the generation fence; account for queued retired frames.
         let authenticated_peer = inbound.context.mesh_peer().map(|(node, _)| node.to_owned());
         if authenticated_peer.is_none() {
             frame_refused(
@@ -734,6 +736,7 @@ async fn mesh_incoming_loop(
         } else {
             stamp_broker_origin(&mut msg, BrokerOrigin::Mesh);
             msg.headers.remove("broker_peer");
+            msg.headers.remove("broker_connection");
         }
         let observe_for_mesh = observe_for_mesh.for_class(if protected {
             TrafficClass::NativeSession
@@ -1016,19 +1019,11 @@ async fn serve(
     );
 
     let (mesh_incoming_tx, mesh_incoming_rx) = mpsc::unbounded_channel::<MeshInbound>();
+    let d2_seed = mesh_config.d2_seed;
     let mesh = Arc::new(MeshPeers::new(mesh_config, mesh_incoming_tx));
     mesh.set_frame_enforce(frame_policy == AdmissionMode::Enforce)
         .await;
-    mesh.reconcile_identity(
-        initial_authority.routes.desired_endpoints(),
-        initial_authority.revision(),
-        initial_authority.keys.clone(),
-        match &initial_authority.posture {
-            crate::authority::Posture::Verified(a) => a.mesh.clone(),
-            _ => String::new(),
-        },
-    )
-    .await;
+    reconcile_transport_authority(&mesh, &initial_authority).await;
     let authority = Arc::new(ArcSwap::from_pointee(initial_authority));
 
     // SPEC 13 §9a (slice 2-c-1a) — emit the D2 admission posture so the
@@ -1091,6 +1086,7 @@ async fn serve(
     let change_bus = crate::props::ChangeBus::new(broker.clone());
 
     let state = AppState {
+        d2_seed,
         peer_context: Default::default(),
         session_admission: SessionAdmission::default(),
         sessions: Arc::new(tokio::sync::Mutex::new(
@@ -1927,6 +1923,13 @@ fn spawn_inventory_reload_watcher(state: AppState) {
 /// transport fence precedes authority publication; inbound enforce teardown
 /// completes before the §17 applied events make the new state externally
 /// legible. A kept-last-good load returns before touching transport state.
+async fn reconcile_transport_authority(mesh: &MeshPeers, authority: &crate::routing::RoutingAuthority) -> ReconcileReport {
+    match &authority.posture {
+        crate::authority::Posture::Verified(a) => mesh.reconcile_identity(authority.routes.desired_endpoints(), authority.revision(), authority.keys.clone(), a.mesh.clone()).await,
+        crate::authority::Posture::Unverified { .. } => mesh.reconcile_endpoints(authority.routes.desired_endpoints(), authority.revision()).await,
+    }
+}
+
 async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture) {
     let current = state.authority.load();
     let keep = reload_keeps_last_good(&new, &current.posture);
@@ -1950,18 +1953,7 @@ async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture
 
     // D1.4 §7.7 ordering fence: transport first, then the coherent authority
     // snapshot, then inbound session teardown, then observable applied events.
-    let report = state
-        .mesh
-        .reconcile_identity(
-            next.routes.desired_endpoints(),
-            next.revision(),
-            next.keys.clone(),
-            match &next.posture {
-                crate::authority::Posture::Verified(a) => a.mesh.clone(),
-                _ => String::new(),
-            },
-        )
-        .await;
+    let report = reconcile_transport_authority(&state.mesh, &next).await;
     {
         let _fence = state
             .delivery_fence
@@ -2072,6 +2064,15 @@ fn reload_revoke_detail(
 /// session-churn), emit `admission.refused{reload:true}`, then notify the
 /// session's close lever (the read loop breaks → the socket drops). A
 /// still-admissible member is untouched (grandfather).
+async fn track_mesh_session(state: &AppState, id: &str, address: &str, tx: &mpsc::Sender<String>, close: &Arc<tokio::sync::Notify>) -> bool {
+    let Some((node, key)) = state.peer_context.mesh_peer() else { return true; };
+    let mut live = state.live_sessions.write().await;
+    let _fence = state.delivery_fence.read().expect("delivery fence poisoned");
+    if !state.authority.load().keys.contains(node, key) { return false; }
+    live.insert(id.to_owned(), GatedSession { identity: state.peer_context.identity.clone(), claimed_source_node: node.to_owned(), source_ip: address.to_owned(), tx: tx.clone(), close: close.clone() });
+    true
+}
+
 async fn reload_revocation_teardown(state: &AppState, a: &crate::authority::Accepted) {
     // Snapshot the victims under the read lock, then release it before the
     // awaited drains/emits/closes (don't hold the lock across awaits, and a
@@ -2233,6 +2234,31 @@ fn invalid_bootstrap_envelope(text: &str, command: &str) -> BusMessage {
     message
 }
 
+fn reverse_identity_answer(state: &AppState, message: &BusMessage, registered: bool, answered: &mut bool) -> Option<String> {
+    if *answered || registered { return None; }
+    let body: serde_json::Value = serde_json::from_str(&message.body).ok()?;
+    let authority = state.authority.load_full();
+    let crate::authority::Posture::Verified(a) = &authority.posture else { return None; };
+    let (node, key) = state.peer_context.mesh_peer()?;
+    if !authority.keys.contains(node, key)
+        || body["verifying_broker_node"].as_str() != Some(node)
+        || body["mesh_fqdn"].as_str() != Some(a.mesh.as_str())
+        || body["inventory_epoch"].as_u64() != Some(a.epoch) { return None; }
+    let wire = mesh::build_admit_response(message, &state.node_name, &state.d2_seed)?;
+    let mut response = bus::parse(&wire).ok()?;
+    response.set("command", "noded.identity.response");
+    *answered = true;
+    Some(response.to_wire())
+}
+
+async fn queue_identity_answer(tx: &mpsc::Sender<String>, wire: String, close: &tokio::sync::Notify) -> bool {
+    tokio::select! {
+        biased;
+        _ = close.notified() => false,
+        result = tokio::time::timeout(std::time::Duration::from_secs(1), tx.send(wire)) => matches!(result, Ok(Ok(()))),
+    }
+}
+
 async fn handle_socket(socket: WebSocket, mut state: AppState, transport: TransportIdentity) {
     // Shared with every alias registered on this connection, never with a
     // successor connection. No clock or correlation cleanup clears this bit.
@@ -2278,6 +2304,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     let writer_epoch = state.broker_epoch;
     // A legacy unauthenticated client receives no broker mesh assertion.
     // This flag must follow admission, which completes after the writer starts.
+    // PR 3/4: stamps remain valid only until revocation teardown completes.
     let writer_admitted = Arc::new(AtomicBool::new(state.peer_context.mesh_peer().is_some()));
     let writer_context = writer_admitted.clone();
     let writer_node = state.node_name.clone();
@@ -2430,28 +2457,10 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             continue;
         }
         if bus_msg.command_name() == Some("noded.identity.challenge") {
-            let body: serde_json::Value = serde_json::from_str(&bus_msg.body).unwrap_or_default();
-            let authority = state.authority.load_full();
-            let valid = match (&authority.posture, state.peer_context.mesh_peer()) {
-                (crate::authority::Posture::Verified(a), Some((node, key))) => {
-                    authority.keys.contains(node, key)
-                        && body["verifying_broker_node"].as_str() == Some(node)
-                        && body["mesh_fqdn"].as_str() == Some(a.mesh.as_str())
-                        && body["inventory_epoch"].as_u64() == Some(a.epoch)
-                }
-                _ => false,
-            };
-            if !reverse_answered && service_name.is_none() && valid {
-                reverse_answered = true;
-                if let Some(wire) = mesh::build_admit_response(
-                    &bus_msg,
-                    &state.node_name,
-                    &load_d2_seed(&d2_seed_path()),
-                ) && let Ok(mut response) = bus::parse(&wire)
-                {
-                    response.set("command", "noded.identity.response");
-                    let _ = tx.try_send(response.to_wire());
-                }
+            if let Some(wire) = reverse_identity_answer(&state, &bus_msg, service_name.is_some(), &mut reverse_answered)
+                && !queue_identity_answer(&tx, wire, &close_signal).await {
+                tracing::warn!("reverse identity answer could not be queued; closing session");
+                break;
             }
             continue;
         }
@@ -2659,26 +2668,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 }
                 state.session_admission.apply(outcome);
                 writer_admitted.store(state.peer_context.mesh_peer().is_some(), Ordering::Release);
-                let mut live = state.live_sessions.write().await;
-                let _fence = state
-                    .delivery_fence
-                    .read()
-                    .expect("delivery fence poisoned");
-                if let Some((node, key)) = state.peer_context.mesh_peer() {
-                    if !state.authority.load().keys.contains(node, key) {
-                        break;
-                    }
-                    live.insert(
-                        anon_id.clone(),
-                        GatedSession {
-                            identity: state.peer_context.identity.clone(),
-                            claimed_source_node: node.to_owned(),
-                            source_ip: source_ip_str.clone(),
-                            tx: tx.clone(),
-                            close: close_signal.clone(),
-                        },
-                    );
-                }
+                if !track_mesh_session(&state, &anon_id, &source_ip_str, &tx, &close_signal).await { break; }
             }
             if let Some(observed_outcome) = observed_outcome {
                 canonicalize_connection_from(&mut bus_msg, service_name.as_deref());
@@ -2959,20 +2949,8 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                             );
                         }
                         RegisterGate::Admit(node) => {
+                            if !track_mesh_session(&state, &anon_id, &source_ip_str, &tx, &close_signal).await { break; }
                             emit_admission_admitted(&state, &node, &source_ip_str, epoch, &anon_id);
-                            // SPEC 13 §5.5 (2-c-2c) — track this live gated
-                            // session so a revocation reload can close it. Keyed
-                            // by session_id; a re-register refreshes the entry.
-                            state.live_sessions.write().await.insert(
-                                anon_id.clone(),
-                                GatedSession {
-                                    identity: state.peer_context.identity.clone(),
-                                    claimed_source_node: node,
-                                    source_ip: source_ip_str.clone(),
-                                    tx: tx.clone(),
-                                    close: close_signal.clone(),
-                                },
-                            );
                         }
                         RegisterGate::Refuse {
                             detail,
@@ -5427,6 +5405,7 @@ mod tests {
     //! coalesced to ≤1 WARN per second per axis.
 
     include!("frame_policy_tests.rs");
+    include!("identity_tests.rs");
     use std::collections::HashMap;
     use std::net::{Ipv4Addr, TcpListener};
     use std::sync::Arc;
@@ -6091,6 +6070,7 @@ mod tests {
         let broker = Arc::new(SubscriptionBroker::new());
         let started = Instant::now();
         AppState {
+            d2_seed: None,
             peer_context: Default::default(),
             session_admission: SessionAdmission::default(),
             sessions: Default::default(),
