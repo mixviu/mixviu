@@ -2,38 +2,38 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
 -- lint: globals app_args
-$core=require("core.mix");$s=$core.fresh();$ctx=viu_context();$windows={};$presets={}
+$core=require("core.mix");$state={osd:$core.fresh(),windows:{}};$ctx=viu_context();$presets={}
 $comp=env("MIX_VIU_COMP_SERVICE","comp")
 send "viu-local" "motion.presets" body={}
 if $rc!=0 then raise("MOTION_UNAVAILABLE","motion library is unavailable") end
 for $p in $reply $presets[$p.name]=$p end
 fn sync_model()
-  $model=$core.listing($s,monotonic());$model.windows=$windows
+  $model=$core.listing($state.osd,monotonic());$model.windows=$state.windows
   $model.text="";$model.title="";$model.text_size=22
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
-  $at=$core.next_deadline($s)
+  $at=$core.next_deadline($state.osd)
   viu_timer("osd-expiry",if $at==nil then nil else max(0,($at-monotonic())*1000) end,{})
 end
 fn refresh_windows()
   try
     send $comp "comp.windows.list" body={}
-    if $rc!=0 or type($reply.windows)!="list" then $windows={};return false end
-    $windows={}
-    for $w in $reply.windows $windows[to_string($w.id)]=$w end
+    if $rc!=0 or type($reply.windows)!="list" then $state.windows={};return false end
+    $state.windows={}
+    for $w in $reply.windows $state.windows[to_string($w.id)]=$w end
     return true
   catch $message
-    $windows={};return false
+    $state.windows={};return false
   end
 end
 fn perform($op,$a)
-  $candidate=$core.apply($s,$op,$a,monotonic(),$presets)
+  $candidate=$core.apply($state.osd,$op,$a,monotonic(),$presets)
   if $op!="hide" and $candidate.items[$a.id].anchor.window!=nil then
     if not refresh_windows() then raise("COMP_UNAVAILABLE","compositor window inventory is unavailable; retry when it reconnects") end
-    $ref=$candidate.items[$a.id].anchor.window;$w=$windows[to_string($ref.id)]
+    $ref=$candidate.items[$a.id].anchor.window;$w=$state.windows[to_string($ref.id)]
     if $w==nil then raise("WINDOW_NOT_FOUND","anchor window no longer exists") end
     if $w.generation!=$ref.generation then raise("STALE_GENERATION","anchor window role has changed") end
   end
-  $s=$candidate;sync_model()
+  $state.osd=$candidate;sync_model()
   return {id:$a.id,applied:true}
 end
 fn answer_operation($op,$a)
@@ -71,7 +71,7 @@ on osd.hide answer_operation("hide",$event.args) end
 on osd.list
   try
     $core.check_fields($event.args,[],"list")
-    reply(0,json_encode($core.listing($s,monotonic())))
+    reply(0,json_encode($core.listing($state.osd,monotonic())))
   catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end
 on osd.actions
@@ -89,17 +89,17 @@ on osd.execute
   catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end
 on viu.timer
-  if $event.args.timer=="osd-expiry" then $s=$core.finish($s,monotonic());sync_model() end
+  if $event.args.timer=="osd-expiry" then $state.osd=$core.finish($state.osd,monotonic());sync_model() end
 end
 on bus.connected
   subscribe($comp..".props.changed")
   send $comp "comp.props.watch" body={}
-  if $rc!=0 then $windows={} end
+  if $rc!=0 then $state.windows={} end
   refresh_windows();sync_model()
 end
 on props.changed
-  if any(values($s.items),fn($i)=$i.anchor.window!=nil) then refresh_windows();sync_model() end
+  if any(values($state.osd.items),fn($i)=$i.anchor.window!=nil) then refresh_windows();sync_model() end
 end
 on bus.disconnected
-  $windows={};sync_model()
+  $state.windows={};sync_model()
 end
