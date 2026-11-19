@@ -14,8 +14,10 @@
 //! }}]}
 //! comp.motion.run {targets: [{window: {
 //!     id, generation,
-//!     to: {x?, y?, w?, h?},       // global logical; absent fields stay put
-//!     duration_ms?, curve?        // as for pointer
+//!     to?: {x?, y?, w?, h?},      // global logical; absent fields stay put
+//!     tracks?: [{property, keyframes}], // opacity, scale, tx, ty
+//!     preset?: "pop",            // shared table; exclusive with tracks
+//!     duration_ms?, curve?        // curve also accepts shared easing objects
 //! }}]}
 //! ```
 //!
@@ -204,7 +206,7 @@ fn parse_window(window: &serde_json::Map<String, Value>) -> Result<MotionTarget,
     {
         return Err(invalid_argument(
             "window",
-            "only id, generation, to, duration_ms and curve",
+            "only id, generation, to, duration_ms, curve, tracks and preset",
             "unknown field refused",
         ));
     }
@@ -333,7 +335,7 @@ fn parse_curve(value: &Value) -> Result<Easing, ControlReply> {
     let bad = || {
         invalid_argument(
             "curve",
-            "a curve name or [x1, y1, x2, y2]",
+            "a curve name, shared easing object or [x1, y1, x2, y2]",
             "linear | ease | ease-in | ease-out | ease-in-out | min-jerk",
         )
     };
