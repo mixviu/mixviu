@@ -39,11 +39,12 @@ code or event route. Those references are released when the exit completes.
 
 Current default changes: shared switch knobs slide over 160 ms; shared push
 buttons travel one scene unit over 90 ms; furniture toggles and buttons use
-those same curves. Native menus and floating popups fade on open/close; list
+those same curves. Native menus and floating popups fade on open/close;
+list rows fade on insertion/removal; tab content fades on switches. Default app
+toggles use the shared switch.
 Primary and secondary app buttons use the shared push button's own travel;
 the app wrapper does not apply a second travel transform.
-rows fade on insertion/removal; tab content fades on switches. Default app
-toggles use the shared switch. These defaults honour global reduced motion and
+These defaults honour global reduced motion and
 `motion:false` on a scene node (including its subtree). Ordinary scene nodes
 gain no entrance/exit by default.
 
