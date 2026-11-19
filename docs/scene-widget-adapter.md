@@ -28,6 +28,14 @@ commits. Invalid candidates retain the last good model, tree and revision.
 Equivalent integral JSON numbers remain valid after scene normalisation to f64.
 Dataset row_count must equal the selected dataset length; cells are strings,
 with at least two columns for a table and one for list/tree.
+Optional `properties.key_column` selects a zero-based dataset column containing
+a unique, nonempty string key per row. Invalid indices, missing cells and
+duplicate keys are refused. This key preserves row motion identity when cells
+are edited. Without it, identity is the complete row data plus its occurrence
+number among identical rows. Head insertions/removals retain surviving keys;
+sorting changes layout immediately and triggers no entrance or exit. Without
+explicit keys, removing an indistinguishable duplicate retires its last
+occurrence; applications needing individual identity must supply keys.
 
 Legacy text/button/field/toggle scene families map to the same native widgets.
 Rows/columns, legacy list templates and spacer retain layout/routing semantics.

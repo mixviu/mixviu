@@ -8628,6 +8628,7 @@ version = "0.1.2"
 dependencies = [
  "expr",
  "indexmap",
+ "motion",
  "serde",
  "serde_json",
  "strict",
@@ -10175,6 +10176,7 @@ dependencies = [
  "logging",
  "macros",
  "mimedb",
+ "motion",
  "paths",
  "png 0.18.1",
  "pulldown-cmark",

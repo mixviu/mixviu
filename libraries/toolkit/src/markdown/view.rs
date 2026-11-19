@@ -607,7 +607,7 @@ let x = 1;
     }
 
     fn harness(document: Document) -> Harness<'static, Seen> {
-        let mut h = Harness::builder()
+        let mut h = crate::test_harness::configure(Harness::builder())
             .with_size(egui::vec2(520.0, 640.0))
             .build_ui_state(
                 |ui, seen: &mut Seen| {

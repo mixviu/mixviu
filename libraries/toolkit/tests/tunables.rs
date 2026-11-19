@@ -49,7 +49,7 @@ fn distinct_roles_under_the_pair_renderer() {
             .chrome
             .insert(role.into(), design::family::style::StyleColour(value));
     }
-    let mut h = Harness::builder()
+    let mut h = test_harness::configure(Harness::builder())
         .with_size(vec2(360.0, 300.0))
         .wgpu()
         .build_ui_state(
@@ -74,7 +74,7 @@ fn distinct_roles_under_the_pair_renderer() {
 
 #[test]
 fn cached_icon_and_idle_number_repaint_after_a_tune() {
-    let mut h = Harness::builder()
+    let mut h = test_harness::configure(Harness::builder())
         .with_size(vec2(360.0, 300.0))
         .wgpu()
         .build_ui_state(gallery, "Idle".into());
@@ -190,7 +190,7 @@ fn a_dialog_button_grows_when_its_installed_label_padding_grows() {
             "button_push_padding".into(),
             design::StyleValueSource::Number(padding),
         );
-        let mut h = Harness::builder()
+        let mut h = test_harness::configure(Harness::builder())
             .with_size(vec2(500.0, 240.0))
             .build_ui(|ui| {
                 toolkit::dialog::Dialog::new(egui::Id::unique("padding"), "Document")
@@ -241,7 +241,7 @@ fn field_focus_width_is_drawn_from_the_installed_style() {
             })
             .with_overlay(overlay)
             .unwrap();
-            let mut h = Harness::builder()
+            let mut h = test_harness::configure(Harness::builder())
                 .with_size(vec2(300.0, 90.0))
                 .wgpu()
                 .build_ui_state(
@@ -261,7 +261,7 @@ fn field_focus_width_is_drawn_from_the_installed_style() {
 
 #[test]
 fn the_canvas_hot_distance_repaints_under_an_idle_pointer() {
-    let mut h = Harness::builder()
+    let mut h = test_harness::configure(Harness::builder())
         .with_size(vec2(300.0, 190.0))
         .wgpu()
         .build_ui_state(
@@ -306,3 +306,6 @@ fn the_canvas_hot_distance_repaints_under_an_idle_pointer() {
     h.run();
     h.snapshot("canvas_hot_distance_after");
 }
+
+#[path = "support/harness.rs"]
+mod test_harness;

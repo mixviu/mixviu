@@ -53,14 +53,14 @@ impl egui::Plugin for Sent {
 }
 
 fn window() -> Harness<'static, App> {
-    window_with(Harness::builder())
+    window_with(test_harness::configure(Harness::builder()))
 }
 
 /// Passes a 60th of a second apart, as a live window draws: a click, a
 /// scroll and a click then fit in a double click's half second.
 fn live_window() -> Harness<'static, App> {
     window_with(
-        Harness::builder()
+        test_harness::configure(Harness::builder())
             .with_step_dt(1.0 / 60.0)
             .with_max_steps(240),
     )
@@ -176,7 +176,7 @@ fn node<'a>(tree: &'a Value, label: &str) -> &'a Value {
 /// (which open on press) still worked.
 #[test]
 fn a_click_works_when_passes_are_a_second_apart() {
-    let mut h = window_with(Harness::builder().with_step_dt(1.0));
+    let mut h = window_with(test_harness::configure(Harness::builder()).with_step_dt(1.0));
     ok(&mut h, "ui.click", json!({"label":"Count"}));
     h.run();
     assert_eq!(h.state().count, 1, "a button clicks at one pass a second");
@@ -195,7 +195,7 @@ fn a_click_works_when_passes_are_a_second_apart() {
 /// egui hit-tested, so a click that does nothing can be explained.
 #[test]
 fn a_traced_click_reports_each_pass() {
-    let mut h = window_with(Harness::builder().with_step_dt(1.0));
+    let mut h = window_with(test_harness::configure(Harness::builder()).with_step_dt(1.0));
     let answer = ok(&mut h, "ui.click", json!({"label":"Count","trace":true}));
     let passes = answer["passes"].as_array().expect("passes");
     assert!(passes.len() >= 2, "{answer}");
@@ -1156,3 +1156,6 @@ fn on_mix(operation: impl FnOnce()) {
         operation,
     );
 }
+
+#[path = "support/harness.rs"]
+mod test_harness;
