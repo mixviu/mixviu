@@ -623,6 +623,19 @@ mod tests {
             },
         );
         let result = Rc::new(RefCell::new(None));
+        // Idle native/headless frames must not enter the poll body or arm a
+        // capture deadline. This uses a real renderer, but submits no read.
+        let polls = screencopy::file::testing::poll_count();
+        let _ = screencopy::file::testing::take_wake();
+        for _ in 0..120 {
+            screencopy::file::poll(&mut renderer, &output);
+        }
+        assert_eq!(screencopy::file::testing::poll_count(), polls);
+        assert!(!screencopy::file::testing::take_wake());
+        assert_eq!(
+            graphics::capture::vaapi::renderer_render_node(&renderer).unwrap(),
+            node,
+        );
         let got = result.clone();
         let token = "/parked-fence-test";
         screencopy::file::raw_answer(token.into(), move |answer| *got.borrow_mut() = Some(answer));

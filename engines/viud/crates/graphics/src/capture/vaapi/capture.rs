@@ -28,6 +28,45 @@ pub fn capture_render_node() -> String {
     model::environment::config::base::get().render_node.clone()
 }
 
+/// Resolve the device of the renderer doing this capture. Backend selection
+/// (including a headless CLI override) can differ from the settings snapshot.
+pub trait CaptureRenderDevice {
+    fn render_device_path(&self) -> Result<PathBuf, smithay::backend::egl::Error>;
+}
+
+impl CaptureRenderDevice for smithay::backend::renderer::gles::GlesRenderer {
+    fn render_device_path(&self) -> Result<PathBuf, smithay::backend::egl::Error> {
+        smithay::backend::egl::EGLDevice::device_for_display(self.egl_context().display())
+            .and_then(|device| device.render_device_path())
+    }
+}
+
+pub fn renderer_render_node(renderer: &impl CaptureRenderDevice) -> Result<String, String> {
+    renderer
+        .render_device_path()
+        .map(|path| path.to_string_lossy().into_owned())
+        .map_err(|error| format!("capture render device: {error}"))
+}
+
+#[cfg(test)]
+mod device_tests {
+    use super::*;
+
+    #[test]
+    fn capture_uses_the_renderers_non_default_node() {
+        struct NonDefaultRenderer;
+        impl CaptureRenderDevice for NonDefaultRenderer {
+            fn render_device_path(&self) -> Result<PathBuf, smithay::backend::egl::Error> {
+                Ok(PathBuf::from("/dev/dri/renderD199"))
+            }
+        }
+        assert_eq!(
+            renderer_render_node(&NonDefaultRenderer).unwrap(),
+            "/dev/dri/renderD199",
+        );
+    }
+}
+
 /// Live capture frame rate (`capture_refresh_rate_max`, clamped to 30..=120).
 pub fn capture_fps() -> u32 {
     model::environment::config::base::get()
