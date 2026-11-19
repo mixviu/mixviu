@@ -12,7 +12,10 @@ export MIX_TEST_VIUD_EXE=realpath(".") .. "/target/release/viud"
 if $mode == "native" then
   -- mix's login-shell feature boundary requires a separate Cargo invocation.
   checked(["cargo","build","--release","--locked","-p","mix"])
-  checked(["cargo","build","--release","--locked","-p","mixd","-p","noded","-p","testkit","--bins"])
+  -- VFL is unconditional in mixd; unrelated service personalities are not
+  -- needed to exercise its production exporter.
+  checked(["cargo","build","--release","--locked","-p","mixd","--no-default-features"])
+  checked(["cargo","build","--release","--locked","-p","noded","-p","testkit","--bins"])
   checked(["cargo","test","--release","--locked","-p","viud","--features","test-support","--test","recorder_binary"])
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","--","--nocapture","--test-threads=1"])
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","window_motion::benchmark_window_motion_1_8_32","--","--ignored","--exact","--nocapture","--test-threads=1"])
