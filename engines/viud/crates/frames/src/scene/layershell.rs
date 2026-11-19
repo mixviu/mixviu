@@ -40,8 +40,10 @@ pub fn layershell(
             // surface tree for it on unrelated client frames.
             if protocols::layershell::osd::marked(layer.wl_surface())
                 && !smithay::backend::renderer::utils::with_renderer_surface_state(
-                    layer.wl_surface(), |state| state.buffer().is_some(),
-                ).unwrap_or(false)
+                    layer.wl_surface(),
+                    |state| state.buffer().is_some(),
+                )
+                .unwrap_or(false)
             {
                 continue;
             }

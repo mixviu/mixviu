@@ -20,10 +20,16 @@ pub fn launch(headless: bool, comp: &str) -> Option<Host> {
     #[cfg(feature = "test-support")]
     let (bundle, viu) = if headless {
         (
-            std::env::var_os("MIX_TEST_VIUD_OSD_BUNDLE").map(std::path::PathBuf::from).unwrap_or(bundle),
-            std::env::var_os("MIX_TEST_VIU_EXE").map(std::path::PathBuf::from).unwrap_or(viu),
+            std::env::var_os("MIX_TEST_VIUD_OSD_BUNDLE")
+                .map(std::path::PathBuf::from)
+                .unwrap_or(bundle),
+            std::env::var_os("MIX_TEST_VIU_EXE")
+                .map(std::path::PathBuf::from)
+                .unwrap_or(viu),
         )
-    } else { (bundle, viu) };
+    } else {
+        (bundle, viu)
+    };
     let _ = headless;
     if !bundle.join("contract.json").is_file() {
         return None;

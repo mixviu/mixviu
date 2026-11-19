@@ -341,8 +341,14 @@ fn window_card_follows_hides_and_osd_refusals_are_typed() {
     }
     let actions = call(&bus, "osd.actions", json!({}));
     assert_eq!(actions["actions"][0]["class"], "intent");
-    assert_eq!(actions["actions"][0]["schema"]["required"], json!(["id","scene","anchor"]));
-    assert_eq!(actions["actions"][0]["schema"]["properties"]["pointer_input"]["type"], "boolean");
+    assert_eq!(
+        actions["actions"][0]["schema"]["required"],
+        json!(["id", "scene", "anchor"])
+    );
+    assert_eq!(
+        actions["actions"][0]["schema"]["properties"]["pointer_input"]["type"],
+        "boolean"
+    );
     call(
         &bus,
         "osd.execute",

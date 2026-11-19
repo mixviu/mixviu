@@ -5,6 +5,13 @@ fn checked($argv)
   $r=run_argv($argv,{timeout:1800,stdout:"inherit",stderr:"inherit"})
   if not $r.ok then exit($r.exit_code ?? 124) end
 end
+fn prepare_native()
+  checked(["cargo","build","--release","--locked","-p","mix","-p","noded","-p","testkit","--bins"])
+  checked(["cargo","build","--release","--locked","-p","viu","--bin","viu"])
+  export MIX_TEST_MIX_EXE=realpath("target/release/mix")
+  export MIX_TEST_VIU_EXE=realpath("target/release/viu")
+  checked(["cargo","test","--release","--locked","-p","viud","--features","test-support","--test","recorder_binary"])
+end
 $mode=args()[0] ?? "native"
 $crates=["-p","protocols","-p","dispatcher","-p","frames","-p","slots","-p","world","-p","seat","-p","viud","-p","lib-viu","-p","toolkit","-p","viu","-p","headless"]
 if $mode=="fmt" then
@@ -34,18 +41,13 @@ elif $mode=="unit" then
   checked(["cargo","test","--locked","-p","toolkit","--features","layer","--lib","layer::"])
 elif $mode=="native" then
   export MIX_TEST_REQUIRE_RECORD="1"
-  checked(["cargo","build","--release","--locked","-p","mix","-p","noded","-p","testkit","--bins"])
-  checked(["cargo","build","--release","--locked","-p","viu","--bin","viu"])
-  export MIX_TEST_MIX_EXE=realpath("target/release/mix")
-  export MIX_TEST_VIU_EXE=realpath("target/release/viu")
-  checked(["cargo","test","--release","--locked","-p","viud","--features","test-support","--test","recorder_binary"])
+  prepare_native()
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","osd::","--","--nocapture","--test-threads=1"])
 elif contains(["record","acceptance40"],$mode) then
   export MIX_TEST_REQUIRE_RECORD="1"
-  export MIX_TEST_MIX_EXE=realpath("target/release/mix")
+  prepare_native()
   export MIX_TEST_CAPTURE_SECONDS="40"
   export MIX_TEST_CAPTURE_OSD="1"
-  export MIX_TEST_VIU_EXE=realpath("target/release/viu")
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","benchmark_record_changing_4k_zero_drop","--","--ignored","--exact","--nocapture","--test-threads=1"])
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","record_idle_content_clock_ignores_capture_repaints","--","--exact","--nocapture","--test-threads=1"])
 else
