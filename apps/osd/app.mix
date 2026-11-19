@@ -40,10 +40,17 @@ fn answer_operation($op,$a)
   end
 end
 fn action_rows()
+  $id={name:"id",type:"string",required:true}
+  $scene={name:"scene",type:"object",required:false}
+  $anchor={name:"anchor",type:"object",required:false}
+  $enter={name:"enter",type:"string",required:false,enum:["fade","up","down","left","right","pop"]}
+  $exit={name:"exit",type:"string",required:false,enum:["fade","up","down","left","right","pop"]}
+  $duration={name:"duration_ms",type:"integer",required:false,min:0,max:86400000}
+  $pointer={name:"pointer_input",type:"boolean",required:false}
   return [
-    {id:"osd.show",label:"Show an OSD scene",params:[{name:"id",type:"string",required:true},{name:"scene",type:"object",required:true},{name:"anchor",type:"object",required:true}]},
-    {id:"osd.update",label:"Update an OSD scene",params:[{name:"id",type:"string",required:true}]},
-    {id:"osd.hide",label:"Hide an OSD scene",params:[{name:"id",type:"string",required:true}]}
+    {id:"osd.show",label:"Show an OSD scene",enabled:true,params:[$id,merge($scene,{required:true}),merge($anchor,{required:true}),$enter,$exit,$duration,$pointer]},
+    {id:"osd.update",label:"Update an OSD scene",enabled:true,params:[$id,$scene,$anchor,$enter,$exit,$duration,$pointer]},
+    {id:"osd.hide",label:"Hide an OSD scene",enabled:true,params:[$id,$exit]}
   ]
 end
 sync_model()

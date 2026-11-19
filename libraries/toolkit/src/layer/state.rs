@@ -260,12 +260,15 @@ impl<P: LayerProgram + 'static> State<P> {
             };
             let desired = self.program.presentation(&surface.ctx, &info);
             if desired.input_passthrough != surface.input_passthrough
-                || desired.input_regions != surface.input_regions {
+                || desired.input_regions != surface.input_regions
+            {
                 if desired.input_passthrough || desired.input_regions.is_some() {
                     let region = smithay_client_toolkit::compositor::Region::new(&self.compositor)
                         .expect("tooltip input region");
                     if !desired.input_passthrough {
-                        for &(x, y, width, height) in desired.input_regions.as_deref().unwrap_or(&[]) {
+                        for &(x, y, width, height) in
+                            desired.input_regions.as_deref().unwrap_or(&[])
+                        {
                             region.add(x, y, width, height);
                         }
                     }

@@ -2,12 +2,12 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Real render-node compositor, Wayland clients and an owned private Bus.
 //! Build viud (backend-headless,test-support), noded and testkit binaries first.
+#[path = "support/osd.rs"]
+mod osd;
 #[path = "support/pattern.rs"]
 mod pattern;
 #[path = "support/process.rs"]
 mod process;
-#[path = "support/osd.rs"]
-mod osd;
 
 use pattern::{COLOURS, Pattern};
 use serde_json::{Value, json};

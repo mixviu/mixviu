@@ -61,7 +61,8 @@ fn exclusive_layer(_loop: &Loop) -> Option<WlSurface> {
         for band in [Layer::Overlay, Layer::Top] {
             for layer in map.layers_on(band).rev() {
                 if layer.cached_state().keyboard_interactivity == KeyboardInteractivity::Exclusive
-                    && !protocols::layershell::osd::marked(layer.wl_surface()) {
+                    && !protocols::layershell::osd::marked(layer.wl_surface())
+                {
                     return Some(layer.wl_surface().clone());
                 }
             }

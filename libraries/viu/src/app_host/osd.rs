@@ -22,7 +22,10 @@ struct Program {
 }
 
 fn output_matches(name: &str, target: &str) -> bool {
-    name == target || comp_model::snapshot::output_key(name) == target
+    // Window observations use the public output slug; explicit anchors may
+    // use the connector name reported by Wayland.
+    let slug: String = name.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '_' }).collect();
+    name == target || format!("o_{slug}") == target
 }
 
 /// Resolve against the same projected window observations the Bus reports.
@@ -107,6 +110,10 @@ impl LayerProgram for Program {
             if let Some(rect) = geometry(&item, &host.model, info) {
                 visible = true;
                 if item["pointer_input"] == true {
+                    let key = (info.output.clone().unwrap_or_default(), item["id"].as_str().unwrap_or_default().to_owned());
+                    let elapsed = self.items.get(&key).map(|entry| entry.initial_elapsed + entry.origin.elapsed().as_secs_f64()).unwrap_or_else(|| item["elapsed_ms"].as_f64().unwrap_or(0.) / 1000.);
+                    let (values, _) = self.motion(&item, elapsed);
+                    let rect = egui::Rect::from_center_size(rect.center() + egui::vec2(values.get(motion::Property::Tx) as f32, values.get(motion::Property::Ty) as f32), rect.size() * values.get(motion::Property::Scale) as f32);
                     regions.push((rect.min.x.floor() as i32, rect.min.y.floor() as i32, rect.width().ceil() as i32, rect.height().ceil() as i32));
                 }
             }
@@ -145,7 +152,7 @@ impl LayerProgram for Program {
             let (values, moving) = self.motion(&snapshot, elapsed);
             let translate = egui::vec2(values.get(motion::Property::Tx) as f32, values.get(motion::Property::Ty) as f32);
             let scale = values.get(motion::Property::Scale) as f32;
-            let draw_rect = egui::Rect::from_center_size(rect.center() + translate, rect.size() * scale);
+            let draw_rect = rect;
             let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::new(("osd", &id)));
             let mut child = ui.new_child(egui::UiBuilder::new().max_rect(draw_rect).layer_id(layer));
             child.set_opacity(values.get(motion::Property::Opacity) as f32);
@@ -155,11 +162,19 @@ impl LayerProgram for Program {
             let mut content_ui = child.new_child(egui::UiBuilder::new().max_rect(content));
             let entry = self.items.get_mut(&key).unwrap();
             let _ = entry.view.show(&mut content_ui);
+            #[allow(deprecated)]
+            ui.ctx().transform_layer_shapes(layer, egui::emath::TSTransform {
+                scaling: scale,
+                translation: rect.center().to_vec2() * (1. - scale) + translate,
+            });
             if moving { ui.ctx().request_repaint_after(Duration::from_millis(16)); }
         }
     }
 
     fn should_close(&self) -> bool {
+        if self.host.as_ref().is_some_and(|h| h.require_bus && h.bus.registration_failed.load(std::sync::atomic::Ordering::Acquire)) {
+            std::process::exit(1);
+        }
         self.host.as_ref().is_some_and(|h| h.bus.close_requested.load(std::sync::atomic::Ordering::Acquire))
     }
 

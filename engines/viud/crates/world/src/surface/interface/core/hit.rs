@@ -750,7 +750,12 @@ pub fn surface_under_filtered_cx(
         }
     }
     if let Some(hit) = hit_ui_in_space(
-        &hcx, cursor_phys, &ui_transform, ui_output_size, UiSpace::Screen, filter,
+        &hcx,
+        cursor_phys,
+        &ui_transform,
+        ui_output_size,
+        UiSpace::Screen,
+        filter,
     ) {
         return Some(hit);
     }

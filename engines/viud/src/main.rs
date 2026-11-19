@@ -6,9 +6,9 @@ extern crate model;
 #[cfg(feature = "backend-native")]
 mod background;
 mod cli;
-mod osd;
 mod comp;
 mod event_loop;
+mod osd;
 #[path = "scenes_none.rs"]
 mod scenes;
 mod shutdown;

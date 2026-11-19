@@ -20,7 +20,11 @@ static HOST: Mutex<Option<Identity>> = Mutex::new(None);
 
 fn start_time(pid: i32) -> Option<u64> {
     let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    stat[stat.rfind(')')? + 1..].split_whitespace().nth(19)?.parse().ok()
+    stat[stat.rfind(')')? + 1..]
+        .split_whitespace()
+        .nth(19)?
+        .parse()
+        .ok()
 }
 
 /// Pin a direct child launched by the compositor. Unreadable identity fails closed.
@@ -35,10 +39,12 @@ pub fn unbind() {
 }
 
 pub fn authorized(client: &Client, display: &DisplayHandle) -> bool {
-    let Some(host) = *HOST.lock().unwrap() else { return false };
-    client.get_credentials(display).is_ok_and(|credentials| {
-        host.matches(credentials.pid, start_time(host.pid))
-    })
+    let Some(host) = *HOST.lock().unwrap() else {
+        return false;
+    };
+    client
+        .get_credentials(display)
+        .is_ok_and(|credentials| host.matches(credentials.pid, start_time(host.pid)))
 }
 
 /// Attached by viud to the Wayland resource after peer authentication.
@@ -49,17 +55,25 @@ pub struct Mark {
 
 impl Default for Mark {
     fn default() -> Self {
-        Self { badge: smithay::backend::renderer::element::Id::new() }
+        Self {
+            badge: smithay::backend::renderer::element::Id::new(),
+        }
     }
 }
 
-pub fn marked(surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface) -> bool {
+pub fn marked(
+    surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
+) -> bool {
     let mut surface = surface.clone();
     loop {
-        if smithay::wayland::compositor::with_states(&surface, |state| state.data_map.get::<Mark>().is_some()) {
+        if smithay::wayland::compositor::with_states(&surface, |state| {
+            state.data_map.get::<Mark>().is_some()
+        }) {
             return true;
         }
-        let Some(parent) = smithay::wayland::compositor::get_parent(&surface) else { return false };
+        let Some(parent) = smithay::wayland::compositor::get_parent(&surface) else {
+            return false;
+        };
         surface = parent;
     }
 }
@@ -76,7 +90,10 @@ mod tests {
 
     #[test]
     fn identity_rejects_pid_reuse_dead_leader_and_other_clients() {
-        let host = Identity { pid: 42, start: 1234 };
+        let host = Identity {
+            pid: 42,
+            start: 1234,
+        };
         assert!(host.matches(42, Some(1234)));
         assert!(!host.matches(43, Some(1234)));
         assert!(!host.matches(42, Some(1235)));
