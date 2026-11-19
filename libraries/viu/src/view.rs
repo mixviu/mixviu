@@ -598,53 +598,23 @@ impl SceneView {
             }),
             node.ports.get("motion") != Some(&Value::Bool(false)),
         );
+        let offset = [offset[0].as_f64().unwrap_or(0.), offset[1].as_f64().unwrap_or(0.)];
         let layer = self.motion.layer(
             ui,
             &mut capture,
             ui.available_rect_before_wrap(),
-            [
-                offset[0].as_f64().unwrap_or(0.0),
-                offset[1].as_f64().unwrap_or(0.0),
-            ],
-        );
+            offset,
+        ).or_else(|| toolkit::scene_motion::offset_layer(ui, &key, offset));
         let parent = self.motion_parent.clone();
         if capture.is_some() {
             self.motion_parent = Some(key.clone());
         }
-        if let Some(layer) = layer {
-            ui.scope_builder(egui::UiBuilder::new().layer_id(layer), |ui| {
-                self.node_contents(ui, id, nodes, route, depth, events)
-            });
-        } else {
+        ui.scope_builder(egui::UiBuilder::new().layer_id(layer.unwrap_or(ui.layer_id())), |ui| {
+            ui.multiply_opacity(opacity.clamp(0., 1.) as f32);
             self.node_contents(ui, id, nodes, route, depth, events);
-        }
+        });
         self.motion_parent = parent;
         let painted_rect = self.geometry.get(&key).copied().unwrap_or(ui.min_rect());
-        if let Some(layer) = layer {
-            // Layer transforms carry geometry; opacity remains a paint attribute.
-            ui.ctx().graphics_mut(|g| {
-                let list = g.entry(layer);
-                let end = list.next_idx();
-                for i in 0..end.0 {
-                    list.mutate_shape(egui::layers::ShapeIdx(i), |s| {
-                        let alpha = opacity as f32;
-                        if alpha != 1.0 {
-                            egui::epaint::shape_transform::adjust_colors(&mut s.shape, move |c| {
-                                *c = c.gamma_multiply(alpha)
-                            });
-                        }
-                    });
-                }
-            });
-        } else {
-            toolkit::scene_motion::visual(
-                ui,
-                start,
-                self.geometry.get(&key).copied().unwrap_or(ui.min_rect()),
-                opacity,
-                [0.0, 0.0],
-            );
-        }
         toolkit::scene_motion::highlight(
             ui,
             layer.unwrap_or(ui.layer_id()),

@@ -61,6 +61,7 @@ fn motion_ports_validate_without_changing_defaults() {
         "offset: [1]",
         "offset: [1, \"x\"]",
         "opacity: 2",
+        "opacity: -0.5",
     ] {
         assert!(
             resolve(&doc(&format!(

@@ -198,6 +198,12 @@ impl SceneMotion {
             scaling: scale.max(0.0001),
             translation: rect.center().to_vec2() * (1.0 - scale) + translate,
         };
+        if local == egui::emath::TSTransform::IDENTITY
+            && n.opacity == 1.0
+            && !n.entrance.as_ref().is_some_and(|p| motion::scene::active(p, self.now))
+        {
+            return None;
+        }
         let outer = ui
             .ctx()
             .layer_transform_to_global(ui.layer_id())
@@ -349,7 +355,11 @@ impl SceneMotion {
                     .with_clip_rect(shape.clip_rect)
                     .add(shape.shape);
             }
-            ui.ctx().request_repaint();
+            if now < p.timing.start() {
+                ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(p.timing.start() - now));
+            } else {
+                ui.ctx().request_repaint();
+            }
             true
         });
     }
@@ -437,6 +447,16 @@ pub fn value(
     } else {
         serde_json::json!(sample[0])
     }
+}
+
+/// Static positional targets still transform input when animation is disabled.
+pub fn offset_layer(ui: &Ui, key: &str, offset: [f64; 2]) -> Option<LayerId> {
+    if offset == [0., 0.] { return None; }
+    let layer = LayerId::new(ui.layer_id().order, ui.scope_id().with(("static-offset", key)));
+    let outer = ui.ctx().layer_transform_to_global(ui.layer_id()).unwrap_or_default();
+    ui.ctx().set_sublayer(ui.layer_id(), layer);
+    ui.ctx().set_transform_layer(layer, outer * egui::emath::TSTransform::from_translation(egui::vec2(offset[0] as f32, offset[1] as f32)));
+    Some(layer)
 }
 
 pub fn visual(ui: &Ui, start: ShapeIdx, rect: Rect, opacity: f64, offset: [f64; 2]) {
@@ -748,6 +768,40 @@ pub fn state(ctx: &Context, id: egui::Id) -> std::sync::Arc<std::sync::Mutex<Sce
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn delayed_exit_arms_a_deadline_and_settled_capture_keeps_sibling_order() {
+        let ctx=Context::default();
+        let mut state=SceneMotion::default();
+        for t in [0.,1.,2.,3.] {
+            ctx.run_ui(raw(t),|ui| {
+                state.begin(ui);
+                let mut c=state.capture(ui,"a",None,None,Some(&json!({"preset":"fade","delay_ms":2000})),true);
+                assert!(state.layer(ui,&mut c,ui.min_rect(),[0.,0.]).is_none());
+                ui.painter().rect_filled(Rect::from_min_size(egui::pos2(20.,20.),egui::vec2(20.,20.)),0.,egui::Color32::RED);
+                state.painted(ui,c,ui.min_rect());
+                ui.painter().rect_filled(Rect::from_min_size(egui::pos2(20.,20.),egui::vec2(20.,20.)),0.,egui::Color32::BLUE);
+                state.end(ui);
+            }).drop_without_applying_deltas();
+        }
+        let mut out=ctx.run_ui(raw(4.),|ui| {state.begin(ui);state.end(ui);});
+        out.textures_delta.clear();
+        let mut out=ctx.run_ui(raw(5.),|ui| {state.begin(ui);state.end(ui);});
+        assert!(out.viewport_output[&egui::ViewportId::ROOT].repaint_delay>std::time::Duration::ZERO);
+        out.textures_delta.clear();
+    }
+    #[test]
+    fn opacity_is_clamped_before_paint() {
+        for (alpha,expected) in [(-0.5,0),(1.5,255)] {
+            let ctx=Context::default();
+            let mut out=ctx.run_ui(raw(0.),|ui| {
+                let start=ui.ctx().graphics_mut(|g|g.entry(ui.layer_id()).next_idx());
+                ui.painter().rect_filled(Rect::from_min_size(egui::pos2(20.,20.),egui::vec2(20.,20.)),0.,egui::Color32::WHITE);
+                visual(ui,start,ui.min_rect(),alpha,[0.,0.]);
+            });
+            assert!(out.shapes.iter().any(|s| matches!(&s.shape,egui::Shape::Rect(r) if r.fill.a()==expected)));
+            out.textures_delta.clear();
+        }
+    }
     fn text_present(shapes: &[ClippedShape], label: &str) -> bool {
         fn has(shape: &egui::Shape, label: &str) -> bool {
             match shape {
@@ -816,10 +870,11 @@ mod tests {
     #[test]
     fn native_menu_and_popup_close_with_paint_only_and_reduced_motion_snaps() {
         for popup in [false, true] {
-            for reduced in [false, true] {
+            for mode in 0..3 {
+                let reduced=mode!=0;
                 let ctx = Context::default();
                 install(&ctx);
-                if reduced {
+                if mode==1 {
                     ctx.global_style_mut(|s| s.animation_time = 0.);
                 }
                 let mut open = true;
@@ -829,6 +884,8 @@ mod tests {
                         .events
                         .push(egui::Event::PointerMoved(egui::pos2(25., 45.)));
                     ctx.run_ui(input, |ui| {
+                        if mode==2 {ui.style_mut().animation_time=0.;}
+                        let _policy=policy(ui);
                         if popup {
                             let button = ui.button("Open");
                             egui::Popup::from_response(&button)

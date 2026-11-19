@@ -313,7 +313,9 @@ impl<P: UiProgram> UiRuntime<P> {
         assert!(seconds.is_finite(), "presentation time must be finite");
         self.presentation_time = Some(seconds);
         self.needs_pass = true;
-        self.tick()
+        let result = self.tick();
+        self.presentation_time = None;
+        result
     }
 
     fn raw_input(&mut self) -> RawInput {

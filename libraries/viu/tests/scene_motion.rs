@@ -1,6 +1,47 @@
 //! Scene motion through the application headless painter, no window or GPU.
 use serde_json::json;
 use viu::view::SceneView;
+#[test]
+fn static_offset_and_container_opacity_survive_disabled_motion() {
+    for reduced in [false, true] {
+        let source = |offset, opacity| format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{}\n```\n", json!({"root":{"widget":"column","opacity":opacity,"motion":false,"offset":[offset,0],"children":["b"]},"b":{"widget":"button","label":"Offset","on_click":"test.click"}}));
+        let ctx = egui::Context::default();
+        if reduced { ctx.global_style_mut(|s| s.animation_time=0.); }
+        let mut view = SceneView::new(&source(20,0.5)).unwrap();
+        let mut plain = SceneView::new(&source(0,1.)).unwrap();
+        let reference_ctx = egui::Context::default();
+        frame(&reference_ctx,&mut plain,0.).drop_without_applying_deltas();
+        let mut out=frame(&ctx,&mut view,0.);
+        assert!((view.geometry["b"].left()-plain.geometry["b"].left()-20.).abs()<0.01);
+        assert!(out.shapes.iter().any(|s| matches!(&s.shape,egui::Shape::Text(t) if t.galley.job.text=="Offset" && t.fallback_color.a() <= 128)));
+        out.textures_delta.clear();
+        let target=view.geometry["b"].center();
+        let mut commands=Vec::new();
+        for pressed in [true,false] {
+            let mut raw=egui::RawInput {time:Some(0.1), ..Default::default()};
+            raw.events=vec![egui::Event::PointerMoved(target),egui::Event::PointerButton{pos:target,button:egui::PointerButton::Primary,pressed,modifiers:Default::default()}];
+            ctx.run_ui(raw,|ui| commands.extend(view.show(ui))).drop_without_applying_deltas();
+        }
+        assert!(commands.iter().any(|e| e.command=="test.click"));
+    }
+}
+
+#[test]
+fn duplicate_native_list_labels_have_independent_exits() {
+    let nodes=json!({"root":{"widget":"control","definition":"= $model.widget"}});
+    let source=format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+    let model=|rows| json!({"datasets":{"rows":rows},"widget":{"id":"root","kind":"list","label":"List","initial":0,"properties":{"dataset":"rows","row_count":2,"columns":["Name","Size"]}}});
+    let ctx=egui::Context::default();
+    let mut view=SceneView::with_model(&source,model(json!([["duplicate","1"],["duplicate","2"]]))).unwrap();
+    for t in [0.,1.] {frame(&ctx,&mut view,t).drop_without_applying_deltas();}
+    view.apply_model(model(json!([["duplicate","1"]]))).unwrap();
+    let mut out=frame(&ctx,&mut view,1.1);
+    assert_eq!(out.shapes.iter().filter(|s|matches!(&s.shape,egui::Shape::Text(t) if t.galley.job.text=="duplicate")).count(),2);
+    out.textures_delta.clear();
+    let mut out=frame(&ctx,&mut view,3.);
+    assert_eq!(out.shapes.iter().filter(|s|matches!(&s.shape,egui::Shape::Text(t) if t.galley.job.text=="duplicate")).count(),1);
+    out.textures_delta.clear();
+}
 fn contains_text(shapes: &[egui::epaint::ClippedShape], needle: &str) -> bool {
     fn has(s: &egui::Shape, n: &str) -> bool {
         match s {

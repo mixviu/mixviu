@@ -442,7 +442,7 @@ pub(crate) fn check_port_value(
             .map_err(|e| e.to_string())
             .and_then(|e| e.validate().map_err(str::to_owned)),
         "transition" => motion::scene::transitions(v).map(|_| ()),
-        "opacity" if v.as_f64().is_some_and(|n| n > 1.0) => Err("opacity must be in 0..1".into()),
+        "opacity" if v.as_f64().is_some_and(|n| !(0.0..=1.0).contains(&n)) => Err("opacity must be in 0..1".into()),
         "offset"
             if !v.as_array().is_some_and(|a| {
                 a.len() == 2
