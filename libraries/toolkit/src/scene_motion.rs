@@ -54,12 +54,20 @@ pub struct Capture {
 impl SceneMotion {
     /// A laid-out node outside its paint viewport is still present. Do not
     /// turn scrolling into an exit, or retain a stale visible image for it.
-    pub fn keep_unpainted(&mut self,key:&str) {
-        if let Some(n)=self.nodes.get_mut(key) {n.seen=true;n.shapes.clear();n.textures.clear();}
+    pub fn keep_unpainted(&mut self, key: &str) {
+        if let Some(n) = self.nodes.get_mut(key) {
+            n.seen = true;
+            n.shapes.clear();
+            n.textures.clear();
+        }
     }
-    pub fn keep_unseen(&mut self,present:impl Fn(&str)->bool) {
-        for (key,n) in &mut self.nodes {
-            if !n.seen && present(key) {n.seen=true;n.shapes.clear();n.textures.clear();}
+    pub fn keep_unseen(&mut self, present: impl Fn(&str) -> bool) {
+        for (key, n) in &mut self.nodes {
+            if !n.seen && present(key) {
+                n.seen = true;
+                n.shapes.clear();
+                n.textures.clear();
+            }
         }
     }
     pub fn begin(&mut self, ui: &Ui) {
@@ -324,7 +332,9 @@ impl SceneMotion {
             let Some(exit) = &n.exit else {
                 return false;
             };
-            if n.shapes.is_empty() {return false;}
+            if n.shapes.is_empty() {
+                return false;
+            }
             let p = n
                 .leaving
                 .get_or_insert_with(|| exit.playback(now, n.exit_index, true));
@@ -920,7 +930,7 @@ mod tests {
         let mut state = SceneMotion::default();
         let enter = json!({"preset":"up","stagger_ms":100});
         for t in [0., 0.2] {
-            let mut out=ctx.run_ui(raw(t), |ui| {
+            let mut out = ctx.run_ui(raw(t), |ui| {
                 state.begin(ui);
                 let c = state.capture(ui, "container", None, Some(&enter), Some(&enter), true);
                 for key in ["a", "b"] {
@@ -935,12 +945,26 @@ mod tests {
                 state.painted(ui, c, ui.min_rect());
                 state.end(ui);
             });
-            let rectangles=out.shapes.iter().filter_map(|s|if let egui::Shape::Rect(r)=&s.shape{Some(r)}else{None}).collect::<Vec<_>>();
-            for (index,r) in rectangles.iter().enumerate() {
-                let expected=serde_json::from_value::<Entrance>(enter.clone()).unwrap().playback(0.,index as u32,false).sample(t);
-                assert!((r.rect.top()-20.-expected.get(Property::Ty) as f32).abs()<0.001);
+            let rectangles = out
+                .shapes
+                .iter()
+                .filter_map(|s| {
+                    if let egui::Shape::Rect(r) = &s.shape {
+                        Some(r)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            for (index, r) in rectangles.iter().enumerate() {
+                let expected = serde_json::from_value::<Entrance>(enter.clone())
+                    .unwrap()
+                    .playback(0., index as u32, false)
+                    .sample(t);
+                assert!((r.rect.top() - 20. - expected.get(Property::Ty) as f32).abs() < 0.001);
             }
-            assert_eq!(rectangles.len(),2);out.textures_delta.clear();
+            assert_eq!(rectangles.len(), 2);
+            out.textures_delta.clear();
         }
         for (key, index) in [("a", 0), ("b", 1)] {
             let expected = serde_json::from_value::<Entrance>(enter.clone())
@@ -956,10 +980,20 @@ mod tests {
             state.nodes["a"].entrance.as_ref().unwrap().sample(0.2),
             state.nodes["b"].entrance.as_ref().unwrap().sample(0.2)
         );
-        ctx.run_ui(raw(1.),|ui|{state.begin(ui);state.end(ui);}).drop_without_applying_deltas();
-        for (key,index) in [("a",0),("b",1)] {
-            let expected=serde_json::from_value::<Entrance>(enter.clone()).unwrap().playback(1.,index,true).sample(1.2);
-            assert_eq!(state.nodes[key].leaving.as_ref().unwrap().sample(1.2),expected);
+        ctx.run_ui(raw(1.), |ui| {
+            state.begin(ui);
+            state.end(ui);
+        })
+        .drop_without_applying_deltas();
+        for (key, index) in [("a", 0), ("b", 1)] {
+            let expected = serde_json::from_value::<Entrance>(enter.clone())
+                .unwrap()
+                .playback(1., index, true)
+                .sample(1.2);
+            assert_eq!(
+                state.nodes[key].leaving.as_ref().unwrap().sample(1.2),
+                expected
+            );
         }
     }
     #[test]
