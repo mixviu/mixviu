@@ -201,6 +201,8 @@ fn control_identity_comes_from_the_scene_and_enabled_from_the_control() {
             "scene-button":{"widget":"control","definition":{"id":"internal-button","kind":"button","label":"Save","initial":"","properties":{"enabled":false}}}
         })
     );
+    assert!(SceneView::new(&source).is_err(), "control ids must match their scene node");
+    let source = source.replace("internal-button", "scene-button");
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
     draw(&mut view, &ctx, 400., 200.);
@@ -351,6 +353,7 @@ fn populated_bus_reply_has_a_compositor_window_fence() {
         )
     });
     while !task.is_finished() {
+        host.draw();
         host.pump();
         while let Ok(request) = comp.requests.try_recv() {
             assert_eq!(request.command, "comp.windows.list");

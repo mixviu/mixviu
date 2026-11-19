@@ -13,8 +13,8 @@ The reply is an array:
   "window":{"id":7,"generation":2},"enabled":true,"focused":false}]
 ```
 
-Ids are the authored scene node keys, including when a `control` definition
-has a different internal id. Kinds are scene families, or the control's
+Ids are the authored scene node keys. A `control` definition must use the
+same id as its scene node (scene validation enforces this). Kinds are scene families, or the control's
 declared kind. Internal compound-control children and repeated template nodes
 are omitted: they have no unique scene node identity. No generated identities
 are exposed. Hidden nodes and nodes not laid out in the latest pass are absent.

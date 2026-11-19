@@ -1880,7 +1880,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
                 read_only: entry["read_only"] == true,
             });
         }
-        let mut native = Vec::new();
+        let mut native = vec![crate::widget_rects::descriptor(bundle.manifest.app())];
         if bundle.manifest.native_drive {
             native.extend(toolkit::drive::describe(&bundle.manifest.service));
         } else {
