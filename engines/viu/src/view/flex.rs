@@ -95,6 +95,7 @@ pub(crate) enum Source {
 /// One drawn node.
 #[derive(Clone, Debug)]
 pub(crate) struct Placed {
+    pub parent: Option<String>,
     /// The instance key local state (edits, toggles) is kept under.
     pub key: String,
     pub id: String,
@@ -993,12 +994,12 @@ pub(crate) fn layout(
         close,
         ..SceneLayout::default()
     };
-    collect(&tree, page, body.min, &mut out);
+    collect(&tree, page, body.min, None, &mut out);
     out
 }
 
 /// Walk the laid-out tree, absolute rects in paint order.
-fn collect(tree: &TaffyTree<Meta>, node: NodeId, origin: Pos2, out: &mut SceneLayout) {
+fn collect(tree: &TaffyTree<Meta>, node: NodeId, origin: Pos2, parent:Option<&str>, out: &mut SceneLayout) {
     let Ok(layout) = tree.layout(node) else {
         return;
     };
@@ -1018,6 +1019,7 @@ fn collect(tree: &TaffyTree<Meta>, node: NodeId, origin: Pos2, out: &mut SceneLa
             out.nodes.insert(meta.id.clone(), rect);
         }
         out.placed.push(Placed {
+            parent: parent.map(str::to_owned),
             key: meta.key.clone(),
             id: meta.id.clone(),
             source: meta.source.clone(),
@@ -1048,7 +1050,8 @@ fn collect(tree: &TaffyTree<Meta>, node: NodeId, origin: Pos2, out: &mut SceneLa
     }
     if let Ok(children) = tree.children(node) {
         for child in children {
-            collect(tree, child, rect.min, out);
+            let parent=tree.get_node_context(node).map(|m|m.key.as_str()).or(parent);
+            collect(tree, child, rect.min, parent, out);
         }
     }
 }

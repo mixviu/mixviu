@@ -326,6 +326,7 @@ impl SceneView {
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
+        toolkit::scene_motion::install(ui.ctx());
         ui.ctx()
             .data_mut(|d| d.insert_temp(egui::Id::unique("viu-editor-focused"), false));
         if let Some(mut frame) = self.frame.take() {
@@ -598,11 +599,7 @@ impl SceneView {
             ui.scope_builder(egui::UiBuilder::new().layer_id(layer),|ui|self.node_contents(ui,id,nodes,route,depth,events));
         } else {self.node_contents(ui, id, nodes, route, depth, events);}
         self.motion_parent = parent;
-        self.motion.painted(
-            ui,
-            capture,
-            self.geometry.get(id).copied().unwrap_or(ui.min_rect()),
-        );
+        let painted_rect=self.geometry.get(id).copied().unwrap_or(ui.min_rect());
         if let Some(layer)=layer {
             let transform=ui.ctx().layer_transform_to_global(layer).unwrap_or_default();
             if let Some(rect)=self.geometry.get_mut(id) {*rect=transform.mul_rect(*rect);}
@@ -615,6 +612,7 @@ impl SceneView {
                 });}
             });
         } else {toolkit::scene_motion::visual(ui,start,self.geometry.get(id).copied().unwrap_or(ui.min_rect()),opacity,[0.0,0.0]);}
+        self.motion.painted(ui,capture,painted_rect);
     }
 
     fn node_contents(
@@ -677,6 +675,7 @@ impl SceneView {
         let response = ui
             .push_id(&key, |ui| {
                 if node.ports.get("motion") == Some(&Value::Bool(false)) { ui.style_mut().animation_time = 0.0; }
+                let _surface_policy=toolkit::scene_motion::policy(ui);
                 if node.ports.get("enabled") == Some(&Value::Bool(false)) { ui.disable(); if node.family == "dock" { paint_outline(ui,node,allocated); } }
                 if let Some(width) = num(node, "width").or(num(node, "min_width")) {
                     ui.set_width(width);

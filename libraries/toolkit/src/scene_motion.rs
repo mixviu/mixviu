@@ -23,6 +23,7 @@ struct NodeMotion {
     child_enter: Option<Entrance>,
     child_index: u32,
     textures: Vec<egui::TextureHandle>,
+    opacity: f64,
 }
 #[derive(Clone)]
 struct Tween {
@@ -82,6 +83,7 @@ impl SceneMotion {
             return None;
         }
         let now = self.now;
+        let parent_opacity=parent.and_then(|p|self.nodes.get(p)).map_or(1.0,|n|n.opacity);
         let inherited_exit=parent.and_then(|p|self.nodes.get(p)).and_then(|n|n.exit.clone());
         let n = self
             .nodes
@@ -97,10 +99,12 @@ impl SceneMotion {
                 child_enter,
                 child_index: 0,
                 textures: Vec::new(),
+                opacity: 1.0,
             });
         n.seen = true;
         n.leaving = None;
         n.exit = exit.and_then(|v| serde_json::from_value(v.clone()).ok()).or(inherited_exit);
+        n.opacity=motion::scene::sample(n.entrance.as_ref(),now,false).get(Property::Opacity)*parent_opacity;
         let layer = ui.layer_id();
         let start = ui.ctx().graphics_mut(|g| g.entry(layer).next_idx());
         Some(Capture {
@@ -133,7 +137,8 @@ impl SceneMotion {
         let n = self.nodes.get_mut(&c.key).unwrap();
         n.rect = rect;
         let now = self.now;
-        let values = motion::scene::sample(n.entrance.as_ref(), now, self.reduced);
+        let mut values = motion::scene::sample(n.entrance.as_ref(), now, self.reduced);
+        values.set(Property::Opacity,n.opacity);
         let active = n
             .entrance
             .as_ref()
@@ -392,6 +397,10 @@ pub fn install(ctx:&Context) {
     let key=egui::Id::unique("scene-motion-installed");
     if ctx.data(|d|d.get_temp::<bool>(key))==Some(true) {return;}
     ctx.data_mut(|d|d.insert_temp(key,true));
+    ctx.on_begin_pass("scene surface motion policy",std::sync::Arc::new(|ui| {
+        let key=egui::Id::unique(("motion-disabled-surfaces",ui.ctx().viewport_id()));
+        ui.ctx().data_mut(|d|d.insert_temp(key,std::collections::HashSet::<LayerId>::new()));
+    }));
     ctx.on_end_pass("scene surface motion",std::sync::Arc::new(|ui| {
         let ctx=ui.ctx().clone();
         let key=egui::Id::unique(("scene-surfaces",ctx.viewport_id()));
@@ -401,7 +410,7 @@ pub fn install(ctx:&Context) {
         });
         let mut state=shared.lock().unwrap();
         state.begin(ui);
-        let layers=ctx.memory(|m|m.areas().order().to_vec());
+        let layers=ctx.memory(|m|m.layer_ids().collect::<Vec<_>>());
         for layer in layers {
             if layer==ui.layer_id() || !matches!(layer.order,egui::Order::Foreground|egui::Order::Middle) {continue;}
             // Scene transform sublayers have no Area; only floating surfaces
@@ -411,7 +420,8 @@ pub fn install(ctx:&Context) {
             let has_paint=ctx.graphics_mut(|g|g.get(layer).is_some_and(|p|!p.is_empty()));
             if !has_paint {continue;}
             let surface=ui.new_child(egui::UiBuilder::new().layer_id(layer));
-            let mut capture=state.capture(&surface,&format!("{layer:?}"),None,Some(&serde_json::json!("fade")),Some(&serde_json::json!("fade")),true);
+            let disabled=ctx.data(|d|d.get_temp::<std::collections::HashSet<LayerId>>(egui::Id::unique(("motion-disabled-surfaces",ctx.viewport_id())))).is_some_and(|ids|ids.contains(&layer));
+            let mut capture=state.capture(&surface,&format!("{layer:?}"),None,Some(&serde_json::json!("fade")),Some(&serde_json::json!("fade")),!disabled);
             if let Some(c)=capture.as_mut() {c.start=ShapeIdx(0);}
             state.painted(&surface,capture,rect);
         }
@@ -419,23 +429,89 @@ pub fn install(ctx:&Context) {
     }));
 }
 
+pub struct SurfacePolicy {ctx:Context,before:Vec<(LayerId,usize)>}
+fn surface_counts(ctx:&Context)->Vec<(LayerId,usize)> {
+    let layers=ctx.memory(|m|m.layer_ids().collect::<Vec<_>>());
+    ctx.graphics_mut(|g|layers.into_iter().map(|l|(l,g.get(l).map_or(0,|p|p.next_idx().0))).collect())
+}
+pub fn policy(ui:&Ui)->Option<SurfacePolicy> {
+    (ui.style().animation_time==0.0).then(||SurfacePolicy{ctx:ui.ctx().clone(),before:surface_counts(ui.ctx())})
+}
+impl Drop for SurfacePolicy {
+    fn drop(&mut self) {
+        let disabled=surface_counts(&self.ctx).into_iter().filter(|(l,n)|self.before.iter().find(|(before,_)|before==l).map_or(0,|(_,n)|*n)<*n).map(|(l,_)|l).collect::<Vec<_>>();
+        let key=egui::Id::unique(("motion-disabled-surfaces",self.ctx.viewport_id()));
+        self.ctx.data_mut(|d|{let mut ids=d.get_temp::<std::collections::HashSet<LayerId>>(key).unwrap_or_default();ids.extend(disabled);d.insert_temp(key,ids);});
+    }
+}
+
 /// A built-in compound widget's changing content (for example a tab page).
 /// The closure runs only for current content, never for a departing snapshot.
 pub fn content<R>(ui:&mut Ui,id:egui::Id,key:&str,draw:impl FnOnce(&mut Ui)->R)->R {
-    let state=ui.ctx().data_mut(|d| {
-        let state=d.get_temp::<std::sync::Arc<std::sync::Mutex<SceneMotion>>>(id).unwrap_or_default();
-        d.insert_temp(id,state.clone());state
-    });
+    let state=state(ui.ctx(),id);
     let mut state=state.lock().unwrap();state.begin(ui);
     let capture=state.capture(ui,key,None,Some(&serde_json::json!("fade")),Some(&serde_json::json!("fade")),ui.style().animation_time!=0.0);
     let result=draw(ui);
     state.painted(ui,capture,ui.min_rect());state.end(ui);result
+}
+pub fn state(ctx:&Context,id:egui::Id)->std::sync::Arc<std::sync::Mutex<SceneMotion>> {
+    ctx.data_mut(|d| {
+        let state=d.get_temp::<std::sync::Arc<std::sync::Mutex<SceneMotion>>>(id).unwrap_or_default();
+        d.insert_temp(id,state.clone());state
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn stagger_samples_two_children_on_library_timing() {
+        let ctx=Context::default();let mut state=SceneMotion::default();
+        let enter=json!({"preset":"up","stagger_ms":100});
+        for t in [0.,0.2] {
+            ctx.run_ui(raw(t),|ui| {
+                state.begin(ui);
+                let c=state.capture(ui,"container",None,Some(&enter),None,true);
+                for key in ["a","b"] {
+                    let c=state.capture(ui,key,Some("container"),None,None,true);
+                    ui.painter().rect_filled(Rect::from_min_size(egui::pos2(20.,20.),egui::vec2(30.,20.)),0.,egui::Color32::RED);
+                    state.painted(ui,c,ui.min_rect());
+                }
+                state.painted(ui,c,ui.min_rect());state.end(ui);
+            }).drop_without_applying_deltas();
+        }
+        for (key,index) in [("a",0),("b",1)] {
+            let expected=serde_json::from_value::<Entrance>(enter.clone()).unwrap().playback(0.,index,false).sample(0.2);
+            assert_eq!(state.nodes[key].entrance.as_ref().unwrap().sample(0.2),expected);
+        }
+        assert_ne!(state.nodes["a"].entrance.as_ref().unwrap().sample(0.2),state.nodes["b"].entrance.as_ref().unwrap().sample(0.2));
+    }
+    #[test]
+    fn exit_retains_and_then_frees_image_texture() {
+        let ctx=Context::default();let mut state=SceneMotion::default();
+        let image=ctx.load_texture("exit-image",egui::ColorImage::filled([2,2],egui::Color32::RED),Default::default());let id=image.id();
+        ctx.run_ui(raw(0.),|ui| {
+            state.begin(ui);let c=state.capture(ui,"image",None,None,Some(&json!("fade")),true);
+            let rect=Rect::from_min_size(egui::pos2(20.,20.),egui::vec2(20.,20.));
+            ui.painter().image(id,rect,Rect::from_min_max(egui::Pos2::ZERO,egui::pos2(1.,1.)),egui::Color32::WHITE);
+            state.painted(ui,c,rect);state.end(ui);
+        }).drop_without_applying_deltas();
+        drop(image);
+        assert!(ctx.tex_manager().read().meta(id).is_some());
+        ctx.run_ui(raw(0.1),|ui|{state.begin(ui);state.end(ui);}).drop_without_applying_deltas();
+        assert!(ctx.tex_manager().read().meta(id).is_some());
+        ctx.run_ui(raw(3.),|ui|{state.begin(ui);state.end(ui);}).drop_without_applying_deltas();
+        assert!(ctx.tex_manager().read().meta(id).is_none());
+    }
+    #[test]
+    fn settled_scene_arms_no_repaint() {
+        let ctx=Context::default();let mut state=SceneMotion::default();
+        for t in [0.,1.,2.,3.,4.] {frame(&ctx,&mut state,t,true);}
+        assert!(!ctx.has_requested_repaint());
+        for t in [5.,7.,8.,9.] {frame(&ctx,&mut state,t,false);}
+        assert!(!ctx.has_requested_repaint());
+    }
     fn raw(t: f64) -> egui::RawInput {
         egui::RawInput {
             time: Some(t),

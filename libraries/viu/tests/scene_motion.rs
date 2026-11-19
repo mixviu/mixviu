@@ -1,6 +1,28 @@
 //! Scene motion through the application headless painter, no window or GPU.
 use serde_json::json;
 use viu::view::SceneView;
+#[test]
+fn a_button_is_clicked_where_up_paints_it_and_exit_has_no_input() {
+    let nodes=json!({"root":{"widget":"column","children":["button"]},"button":{"widget":"button","label":"Moving","on_click":"test.click","enter":"up","exit":"fade","hidden":"= $model.hidden"}});
+    let source=format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+    let mut view=SceneView::with_model(&source,json!({"hidden":false})).unwrap();
+    let ctx=egui::Context::default();frame(&ctx,&mut view,0.).drop_without_applying_deltas();
+    frame(&ctx,&mut view,0.03).drop_without_applying_deltas();
+    let target=view.geometry["button"].center();
+    let mut click=|view:&mut SceneView,t:f64| {
+        let mut commands=Vec::new();
+        for pressed in [true,false] {
+            let mut raw=egui::RawInput {time:Some(t),screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1000.,4000.))),..Default::default()};
+            raw.events=vec![egui::Event::PointerMoved(target),egui::Event::PointerButton{pos:target,button:egui::PointerButton::Primary,pressed,modifiers:Default::default()}];
+            ctx.run_ui(raw,|ui|commands.extend(view.show(ui))).drop_without_applying_deltas();
+        }
+        commands
+    };
+    assert!(click(&mut view,0.03).iter().any(|e|e.command=="test.click"));
+    view.apply_model(json!({"hidden":true})).unwrap();
+    frame(&ctx,&mut view,0.04).drop_without_applying_deltas();
+    assert!(click(&mut view,0.05).is_empty());
+}
 fn source(animate: bool) -> String {
     let mut nodes = json!({"root":{"widget":"column","children":(0..100).map(|i|format!("n{i}")).collect::<Vec<_>>()}});
     for i in 0..100 {

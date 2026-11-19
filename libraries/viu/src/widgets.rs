@@ -554,6 +554,8 @@ impl Widget {
                 value.as_str().is_some_and(|v| self.choices().contains(&v))
             }
             "list" | "table" | "tree" => {
+                let row_motion=toolkit::scene_motion::state(ui.ctx(),egui::Id::unique((id,"row-motion")));
+                let mut row_motion=row_motion.lock().unwrap();row_motion.begin(ui);
                 whole(value).is_some_and(|v| v < whole(&self.properties["row_count"]).unwrap_or(0))
             }
             "colour" => value.as_array().is_some_and(|v| {
@@ -1991,6 +1993,7 @@ impl Widgets {
                                 };
                                 let cells = &data[row];
                                 let name = cells[0].as_str().unwrap_or("");
+                                let capture=row_motion.capture(ui,name,None,Some(&json!("fade")),Some(&json!("fade")),widget.kind=="list" && ui.style().animation_time!=0.0);
                                 let r = if widget.kind == "table" {
                                     let (rect, response) = ui.allocate_exact_size(
                                         Vec2::new(
@@ -2056,6 +2059,7 @@ impl Widgets {
                                         whole(value) == Some(row as u64),
                                     )
                                 };
+                                row_motion.painted(ui,capture,r.rect);
                                 self.remember(ui, &format!("{id}.{row}"), &r);
                                 if r.clicked() {
                                     changed = Some(json!(row));
@@ -2083,6 +2087,7 @@ impl Widgets {
                             }
                         },
                     );
+                row_motion.end(ui);
                 ui.interact(area.inner_rect, ui.scope_id().with(id), Sense::hover())
             }
             "collapse" => {
