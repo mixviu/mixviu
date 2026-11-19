@@ -136,13 +136,14 @@ fn mapped_window_survives_render_before_protocol_drain() {
     }
     // Re-exec so the forced source ordering cannot affect parallel tests'
     // compositor children through process-global environment mutation.
-    if std::env::var_os("MIX_TEST_PRE_DRAIN_FRAME").is_none() {
+    if std::env::var_os(paths::env::test::TEST_PRE_DRAIN_CHILD).is_none() {
         let output = Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "mapped_window_survives_render_before_protocol_drain",
             ])
-            .env("MIX_TEST_PRE_DRAIN_FRAME", "1")
+            .env(paths::env::test::TEST_PRE_DRAIN_FRAME, "1")
+            .env(paths::env::test::TEST_PRE_DRAIN_CHILD, "1")
             .output()
             .unwrap();
         assert!(
@@ -364,19 +365,29 @@ fn record_small_changes_zero_drops_and_crcs() {
     p.wait_callback(previous);
     let path = process.root.join("small.vfl");
     let start=bus.call("comp.record.start",json!({"request_id":"small","target":{"output":"headless-0"},"path":path,"fps":10,"cursor":false,"max_seconds":120}));
-    let mut reads = start["readbacks"].as_u64().unwrap_or(1);
     for i in 0..8 {
-        let before = bus.call("comp.record.status", json!({"session":start["session"]}));
-        reads = reads.max(before["readbacks"].as_u64().unwrap());
-        p.solid_buffer(0xffa03370 + i);
+        let colour: u32 = 0xffa03370 + i;
+        p.solid_buffer(colour);
         p.commit(true);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
             p.pump();
             let status = bus.call("comp.record.status", json!({"session":start["session"]}));
             assert_eq!(status["error"], Value::Null, "{status}");
-            if status["readbacks"].as_u64().unwrap() > reads {
-                reads = status["readbacks"].as_u64().unwrap();
+            let mut retained = false;
+            match vfl_scan(
+                Path::new(start["recovery_path"].as_str().unwrap()),
+                |pixels| {
+                    let at = (90 * 320 + 160) * 4;
+                    retained |= pixels[at..at + 4] == colour.to_le_bytes();
+                },
+                false,
+            ) {
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => panic!("live small VFL scan: {error}"),
+            }
+            if retained {
                 break;
             }
             assert!(
@@ -939,10 +950,10 @@ fn record_idle_output_lifecycle_and_clock() {
     bounded_pattern.commit(true);
     bounded_pattern.wait_callback(previous);
     let next=bus.call("comp.record.start",json!({"request_id":"bounded","target":{"output":"headless-0"},"path":process.root.join("bounded.vfl"),"max_seconds":1}));
-    let mut admitted_colours = vec![0xff103050];
-    let mut submitted_colours = admitted_colours.clone();
+    let mut admitted_colours = Vec::new();
+    let mut submitted_colours = Vec::new();
     let at = ((720 * 3 / 4) * 1280 + 1280 * 3 / 4) * 4;
-    'changes: for colour in [0xff507090, 0xff90b0d0, 0xffd0f010] {
+    'changes: for colour in [0xff103050, 0xff507090, 0xff90b0d0, 0xffd0f010] {
         let before = bus.call("comp.record.status", json!({"session":next["session"]}));
         if before["state"] != "recording" {
             break;
@@ -982,6 +993,22 @@ fn record_idle_output_lifecycle_and_clock() {
                     Err(error) => panic!("live VFL scan: {error}"),
                 }
             }
+            if status["state"] == "idle" {
+                // Decide loss from the complete published take, never solely
+                // from a live scan that may have reached a partial record.
+                let mut frame = 0;
+                vfl_scan(
+                    Path::new(next["path"].as_str().unwrap()),
+                    |pixels| {
+                        if retained.is_none() && pixels[at..at + 4] == colour.to_le_bytes() {
+                            retained = Some(frame);
+                        }
+                        frame += 1;
+                    },
+                    true,
+                )
+                .expect("sealed bounded VFL scan");
+            }
             if let Some(frame) = retained {
                 println!(
                     "BOUNDED_RETAINED colour={colour:08x} frame={frame} readbacks={} dropped={}",
@@ -993,6 +1020,12 @@ fn record_idle_output_lifecycle_and_clock() {
             // The one-second take may seal before sampling/retaining a late
             // commit. A readback counter alone cannot promise its pixels.
             if status["state"] == "idle" {
+                if status["readbacks"].as_u64().unwrap() > before["readbacks"].as_u64().unwrap() {
+                    assert!(
+                        status["dropped"].as_u64().unwrap() >= 1,
+                        "read-back colour {colour:08x} lost without a drop: {status}"
+                    );
+                }
                 println!("BOUNDED_SEALED colour={colour:08x} not_retained status={status}");
                 break 'changes;
             }
@@ -2073,12 +2106,14 @@ fn connect(process: &mut process::Process) -> UnixStream {
                 },
                 0
             );
-            eprintln!(
-                "WAYLAND_PEER expected={} actual={} root={}",
-                process.child.id(),
-                cred.pid,
-                process.root.display()
-            );
+            if std::env::var_os(paths::env::test::TEST_MAPPING_TRACE).is_some() {
+                eprintln!(
+                    "WAYLAND_PEER expected={} actual={} root={}",
+                    process.child.id(),
+                    cred.pid,
+                    process.root.display()
+                );
+            }
             assert_eq!(cred.pid as u32, process.child.id());
             return stream;
         }

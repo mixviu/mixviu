@@ -5,7 +5,7 @@ use graphics::capture::encode::VideoEncoder;
 use serde_json::{Value, json};
 use std::{
     fs::File,
-    io::{Read, Write},
+    io::Read,
     os::unix::fs::OpenOptionsExt,
     sync::Arc,
     sync::mpsc::{Receiver, channel},
@@ -158,14 +158,15 @@ impl TakeFiles {
             } else {
                 std::fs::remove_file(path)
             };
-            if let Err(error) = result {
-                if error.kind() != std::io::ErrorKind::NotFound {
-                    return Err(format!("remove private take: {error}"));
-                }
+            if let Err(error) = result
+                && error.kind() != std::io::ErrorKind::NotFound
+            {
+                return Err(format!("remove private take: {error}"));
             }
         }
         Ok(())
     }
+    #[cfg(test)]
     fn publish(&self) -> Result<(), String> {
         self.publish_tracked(&mut false)
     }
@@ -539,10 +540,16 @@ impl Recording {
         let Some(rx) = &self.finishing else {
             return false;
         };
+        let mut disconnected = false;
         let (result, recovery_path) = match rx.try_recv() {
             Ok(result) => result,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                (Err("encoder finaliser disconnected".into()), None)
+                disconnected = true;
+                self.finalise_outcome.timeout();
+                (
+                    Err("encoder finaliser disconnected; check recovery paths".into()),
+                    Some(self.files.video.clone()),
+                )
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
                 if self
@@ -578,11 +585,12 @@ impl Recording {
         self.terminal = Some(
             json!({"recovery_path":if self.error.is_some() {recovery_path} else {None},"path":self.path,"bytes":self.bytes.load(std::sync::atomic::Ordering::Acquire),"frames":self.frames,"repeated":self.repeated,"dropped":self.dropped,"dropped_capture":self.dropped_capture,"dropped_queue":self.dropped-self.dropped_capture,"readback_deferred":self.readback_deferred,"pending_ticks":self.pending_ticks,"writer":self.writer_metrics.json(),"duration_us":self.frames*1_000_000/u64::from(self.fps),"frames_path":if kept {Some(format!("{}/frames.jsonl",self.path))}else{None},"markers_path":if kept {Some(format!("{}/markers.jsonl",self.path))}else{None},"readback_us":self.readback_us,"readbacks":self.readbacks,"readback_mean_us":self.readback_total_us/self.readbacks.max(1),"readback_max_us":self.readback_max_us,"encoder":self.encoder_name,"error":self.error}),
         );
-        if self
-            .finalise_outcome
-            .state
-            .load(std::sync::atomic::Ordering::Acquire)
-            == TIMED_OUT
+        if disconnected
+            || self
+                .finalise_outcome
+                .state
+                .load(std::sync::atomic::Ordering::Acquire)
+                == TIMED_OUT
         {
             let terminal = self.terminal.as_mut().unwrap();
             terminal["manual_cleanup_required"] = json!(true);
@@ -604,7 +612,32 @@ impl Drop for Recording {
 #[cfg(test)]
 mod file_tests {
     use super::*;
+    use std::io::Write;
     use std::os::unix::fs::{PermissionsExt, symlink};
+    #[test]
+    fn disconnected_finaliser_names_recovery_paths() {
+        let dir = std::env::temp_dir().join(private_token().unwrap());
+        std::fs::create_dir(&dir).unwrap();
+        let path = dir.join("disconnected.vfl").to_str().unwrap().to_owned();
+        let mut r = Recording::new("disconnected".into(), path, 2, 2, 30, "vfl".into()).unwrap();
+        r.frame(Some((2, 2, Arc::new(vec![0; 12]), 0))).unwrap();
+        r.stop(false);
+        r.finaliser.take().unwrap().join().unwrap();
+        r.finalise_outcome = Default::default();
+        let (tx, rx) = channel();
+        drop(tx);
+        r.finishing = Some(rx);
+        assert!(r.poll());
+        let terminal = r.terminal.as_ref().unwrap();
+        assert_eq!(terminal["manual_cleanup_required"], true);
+        assert_eq!(terminal["recovery_path"], r.files.video);
+        assert_eq!(
+            terminal["recovery_paths"],
+            json!([r.files.video, r.files.path])
+        );
+        assert!(r.error.as_ref().unwrap().contains("disconnected"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn hung_finaliser_has_bounded_failure_without_joining() {
         let dir = std::env::temp_dir().join(private_token().unwrap());
@@ -690,7 +723,7 @@ mod file_tests {
             wait.recv().unwrap();
             assert!(outcome.timeout());
             release.send(()).unwrap();
-            worker.join().unwrap();
+            let _ = worker.join().unwrap();
             assert_eq!(
                 outcome.state.load(std::sync::atomic::Ordering::Acquire),
                 TIMED_OUT
@@ -698,7 +731,7 @@ mod file_tests {
             assert!(!std::path::Path::new(&files.path).exists());
             assert!(std::path::Path::new(&files.video).exists());
             // A late discard still removes its private files after timeout.
-            finalise_files(
+            let _ = finalise_files(
                 &files,
                 &FinaliseOutcome {
                     state: std::sync::atomic::AtomicU8::new(TIMED_OUT),
