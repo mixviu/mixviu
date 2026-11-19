@@ -231,6 +231,13 @@ fn start($opts)
       return $bus
     end
     _client_set($before)
+    -- A listener can belong to the process occupying our candidate port.
+    -- Give the owned child time to report its bind error before retiring it;
+    -- otherwise a fast foreign answer can erase the diagnostic by killing it.
+    $exit_deadline = monotonic() + 1
+    while process_alive($p) and monotonic() < $exit_deadline
+      sleep(0.01)
+    end
     _retire($id)
     $detail = read_file($log)
     -- Only a diagnosed bind conflict is retryable. In particular an immediate
