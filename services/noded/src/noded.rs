@@ -2028,6 +2028,7 @@ fn emit_routing_reload_applied(report: &ReconcileReport, revision: mesh::Authori
             event = "delivery.inflight_fate",
             direction = "outbound",
             class = %inflight.class,
+            reason = inflight.reason.as_str(),
             cause = "reload-teardown",
             fate = "fail-fast",
             id = %inflight.message_id,
@@ -2294,7 +2295,7 @@ fn reverse_identity_answer(
     {
         return None;
     }
-    let wire = mesh::build_admit_response(message, &state.node_name, &state.d2_seed)?;
+    let wire = mesh::build_admit_response(message, &state.node_name, &state.d2_seed, node, &a.mesh, a.epoch)?;
     let mut response = bus::parse(&wire).ok()?;
     response.set("command", "noded.identity.response");
     *answered = true;

@@ -9,7 +9,7 @@
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -136,10 +136,21 @@ pub fn build_admit_response(
     challenge: &BusMessage,
     node_name: &str,
     d2_seed: &Option<[u8; 32]>,
+    expected_verifier: &str,
+    expected_mesh: &str,
+    expected_epoch: u64,
 ) -> Option<String> {
     let seed = d2_seed.as_ref()?;
     let id = challenge.get("id")?.to_string();
     let body: serde_json::Value = serde_json::from_str(&challenge.body).ok()?;
+    if body["verifying_broker_node"].as_str() != Some(expected_verifier)
+        || body["mesh_fqdn"].as_str() != Some(expected_mesh)
+        || body["inventory_epoch"].as_u64() != Some(expected_epoch)
+    {
+        tracing::warn!(peer = expected_verifier, mesh = expected_mesh,
+            epoch = expected_epoch, "Refusing admission challenge with unexpected verifier, mesh or epoch");
+        return None;
+    }
     let b64 = base64::engine::general_purpose::STANDARD;
     let transcript = AdmissionTranscript {
         mesh_fqdn: body.get("mesh_fqdn")?.as_str()?.to_string(),
@@ -177,6 +188,34 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 const ADMISSION_CHALLENGE_TIMEOUT: Duration = Duration::from_secs(1);
 
+static UNAUTHENTICATED_FRAMES: AtomicU64 = AtomicU64::new(0);
+
+/// Lifetime total, including observe-mode frames delivered for compatibility.
+pub fn unauthenticated_frame_total() -> u64 {
+    UNAUTHENTICATED_FRAMES.load(Ordering::Relaxed)
+}
+
+#[derive(Default)]
+struct UnauthenticatedFrameLog {
+    last: Option<std::time::Instant>,
+    total: u64,
+    pending: u64,
+}
+
+impl UnauthenticatedFrameLog {
+    fn record(&mut self, now: std::time::Instant, peer: &str, address: SocketAddr, enforce: bool) {
+        UNAUTHENTICATED_FRAMES.fetch_add(1, Ordering::Relaxed);
+        self.total += 1;
+        self.pending += 1;
+        if self.last.is_none_or(|last| now.duration_since(last) >= Duration::from_secs(60)) {
+            let count = std::mem::take(&mut self.pending);
+            self.last = Some(now);
+            tracing::info!(peer, %address, posture = if enforce { "enforce" } else { "observe" },
+                count, total = self.total, "dialled peer frame lacks authenticated from identity (coalesced)");
+        }
+    }
+}
+
 /// The signed-routing revision whose desired endpoints are installed.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AuthorityRevision {
@@ -189,6 +228,7 @@ pub struct AuthorityRevision {
 pub enum ConnectionRetireReason {
     Removed,
     KeyRevoked,
+    UnprovenLinkRetired,
     EndpointChanged { replacement: SocketAddr },
 }
 
@@ -197,6 +237,7 @@ impl ConnectionRetireReason {
         match self {
             Self::Removed => "removed",
             Self::KeyRevoked => "exact-key-revoked",
+            Self::UnprovenLinkRetired => "unproven-link-retired",
             Self::EndpointChanged { .. } => "endpoint-changed",
         }
     }
@@ -214,6 +255,7 @@ pub struct RetiredConnection {
 /// An outbound RPC failed by endpoint reconciliation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RetiredInflight {
+    pub reason: ConnectionRetireReason,
     pub peer: String,
     pub connection_generation: uuid::Uuid,
     pub message_id: String,
@@ -434,7 +476,7 @@ impl MeshPeers {
                         reasons.insert(name.clone(), ConnectionRetireReason::KeyRevoked);
                     }
                 } else if authority.epoch() > 0 {
-                    reasons.insert(name.clone(), ConnectionRetireReason::KeyRevoked);
+                    reasons.entry(name.clone()).or_insert(ConnectionRetireReason::UnprovenLinkRetired);
                 }
             }
             if state.revision != revision {
@@ -481,7 +523,7 @@ impl MeshPeers {
             .map(|retired| {
                 (
                     retired.connection_generation,
-                    (retired.peer.clone(), retired.endpoint),
+                    retired.reason.clone(),
                 )
             })
             .collect();
@@ -505,6 +547,7 @@ impl MeshPeers {
                     continue;
                 };
                 report.inflight_failed.push(RetiredInflight {
+                    reason: retired_generations[&call.connection_generation].clone(),
                     peer: call.peer.clone(),
                     connection_generation: call.connection_generation,
                     message_id,
@@ -512,7 +555,7 @@ impl MeshPeers {
                 });
                 let _ = call
                     .response
-                    .send(Err("route revoked by endpoint reconciliation".into()));
+                    .send(Err(format!("route revoked by endpoint reconciliation: {}", retired_generations[&call.connection_generation].as_str())));
             }
         }
 
@@ -897,7 +940,9 @@ async fn connect_and_publish(
         Ok(Some(Ok(tungstenite::Message::Text(t)))) => {
             if let Ok(bus_msg) = bus::parse(&t) {
                 if bus_msg.command_name() == Some("noded.admit.challenge") {
-                    if let Some(resp_wire) = build_admit_response(&bus_msg, &node_name, &d2_seed) {
+                    let authority = state.read().await.keys.clone();
+                    if let Some(resp_wire) = authority.as_ref().and_then(|(keys, mesh)|
+                        build_admit_response(&bus_msg, &node_name, &d2_seed, &peer.name, mesh, keys.epoch())) {
                         // A send failure here means the connection died —
                         // bail rather than store it. The write is bounded and
                         // cancellable like every other await on this path: a
@@ -1141,6 +1186,7 @@ async fn connect_and_publish(
     let link_tx = connection.tx.clone();
     tokio::spawn(async move {
         let mut registration_answered = false;
+        let mut unauthenticated = UnauthenticatedFrameLog::default();
         loop {
             let next = tokio::select! {
                 biased;
@@ -1219,8 +1265,9 @@ async fn connect_and_publish(
                 None => false,
             };
             if !permitted {
-                tracing::info!(peer = %peer_name, address = %target, "dialled peer frame lacks authenticated from identity");
-                if state_read.read().await.frame_enforce {
+                let enforce = state_read.read().await.frame_enforce;
+                unauthenticated.record(std::time::Instant::now(), &peer_name, target, enforce);
+                if enforce {
                     continue;
                 }
             }
@@ -1339,11 +1386,19 @@ mod tests {
         })
         .to_string();
 
+        // B dialled C (gamma), which relays A's (beta's) challenge. B must
+        // not supply the signature C could forward to A to impersonate B.
+        assert!(build_admit_response(&ch, "delta", &Some([9; 32]), "gamma", "bus", 7).is_none());
+        assert!(build_admit_response(&ch, "delta", &Some([9; 32]), "beta", "other.example", 7).is_none());
+        for epoch in [6, 8] {
+            assert!(build_admit_response(&ch, "delta", &Some([9; 32]), "beta", "bus", epoch).is_none());
+        }
+
         // No seed → prover-incapable → None.
-        assert!(build_admit_response(&ch, "delta", &None).is_none());
+        assert!(build_admit_response(&ch, "delta", &None, "beta", "bus", 7).is_none());
 
         // With a seed → a well-shaped response.
-        let wire = build_admit_response(&ch, "delta", &Some([9u8; 32])).expect("response");
+        let wire = build_admit_response(&ch, "delta", &Some([9u8; 32]), "beta", "bus", 7).expect("response");
         let resp = bus::parse(&wire).expect("parse");
         assert_eq!(resp.command_name(), Some("noded.admit.response"));
         assert_eq!(
@@ -1520,6 +1575,60 @@ mod tests {
             connected: Arc::new(AtomicBool::new(true)),
             cancel,
         })
+    }
+
+    #[test]
+    fn sustained_old_peer_logs_one_initial_line_then_counted_summaries() {
+        use std::io::Write;
+        #[derive(Clone, Default)]
+        struct Capture(Arc<Mutex<Vec<u8>>>);
+        impl Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        let capture = Capture::default();
+        let writer = capture.clone();
+        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
+            .with_max_level(tracing::Level::INFO).with_writer(move || writer.clone()).finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+        let now = std::time::Instant::now();
+        let endpoint = "192.0.2.2:4200".parse().unwrap();
+        let before = unauthenticated_frame_total();
+        let mut log = UnauthenticatedFrameLog::default();
+        for _ in 0..1127 { log.record(now, "beta", endpoint, false); }
+        assert_eq!(String::from_utf8(capture.0.lock().unwrap().clone()).unwrap().lines().count(), 1);
+        log.record(now + Duration::from_secs(60), "beta", endpoint, false);
+        let text = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
+        assert_eq!(text.lines().count(), 2);
+        assert!(text.contains("count=1127"), "{text}");
+        assert!(text.contains("total=1128"), "{text}");
+        assert!(text.contains("posture=\"observe\""), "{text}");
+        assert_eq!(log.total, 1128);
+        assert!(unauthenticated_frame_total() >= before + 1128);
+    }
+
+    #[tokio::test]
+    async fn unchanged_keys_retire_unproven_link_with_honest_inflight_reason() {
+        let endpoint = "192.0.2.2:4200".parse().unwrap();
+        let (mesh, _rx) = test_mesh_with_peer(peer("beta", endpoint));
+        let keys = mesh_trust::identity::KeyAuthority::new(&Default::default(), 2, 0);
+        let desired = HashMap::from([("beta".into(), endpoint)]);
+        let revision = AuthorityRevision { epoch: 2, recovery_generation: 0 };
+        mesh.reconcile_identity(desired.clone(), revision, keys.clone(), "bus".into()).await;
+        let connection = test_connection(endpoint);
+        mesh.state.write().await.connections.insert("beta".into(), connection.clone());
+        let (response, receive) = oneshot::channel();
+        mesh.pending.lock().unwrap().insert("old-call".into(), PendingCall {
+            peer: "beta".into(), connection_generation: connection.generation,
+            class: "echo.slow".into(), response,
+        });
+        let report = mesh.reconcile_identity(desired, revision, keys, "bus".into()).await;
+        assert_eq!(report.connections_retired[0].reason.as_str(), "unproven-link-retired");
+        assert_eq!(report.inflight_failed[0].reason.as_str(), "unproven-link-retired");
+        assert!(receive.await.unwrap().unwrap_err().contains("unproven-link-retired"));
     }
 
     #[tokio::test]
