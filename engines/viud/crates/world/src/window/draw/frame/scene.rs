@@ -437,6 +437,7 @@ where
             renderer,
             uuid,
             state.inner.render_output.as_deref().unwrap_or_default(),
+            state.inner.render_target.map(|rt| rt.slot),
             anchor,
             ctx.scale * ctx.camera_zoom,
             &mut elements,

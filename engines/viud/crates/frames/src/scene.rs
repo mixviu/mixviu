@@ -756,6 +756,9 @@ where
                     // cursor builders (they read `render_target` and crop to the
                     // pane rect), where the element geometry is well-defined.
                     match item {
+                        world::canvas::draw::scene::ContentItem::Ghost(elem) => {
+                            plan.push(content_layer, DrawNode::Ghost(elem));
+                        }
                         world::canvas::draw::scene::ContentItem::Canvas { elem } => {
                             plan.push(content_layer, DrawNode::Canvas { elem: *elem })
                         }
@@ -949,10 +952,6 @@ where
     );
     let _ = prepared.surfaces; // world UI now drawn per-id in the content band
     // The solid background is pushed per-pane in the region loop above.
-    let (ghosts, ghost_solids) =
-        world::window::draw::ghost::elements::<R>(render_key.as_deref().unwrap_or_default());
-    plan.extend(layer::CANVAS, ghosts.into_iter().map(DrawNode::Ghost));
-    plan.extend(layer::CANVAS, ghost_solids.into_iter().map(DrawNode::Solid));
     let (elements, meta) = plan.lower(renderer);
 
     // Per-window fractional scale: each window follows its HIGHEST-zoom viewport

@@ -69,6 +69,12 @@ pub fn sampled_values(window: &Window, now: Instant) -> Option<Values> {
         .map(|run| run.sample(now))
 }
 
+/// Identity of the current visual run, including its terminal filled sample.
+pub fn started(window: &Window) -> Option<Instant> {
+    window.user_data().get::<Mutex<Option<VisualRun>>>()?
+        .lock().unwrap().as_ref().map(|run| run.started)
+}
+
 pub fn active(window: &Window, now: Instant) -> bool {
     window
         .user_data()

@@ -150,6 +150,28 @@ pub use crate::surface::interface::core::hit::{
     HitCx, HitFilter, SurfaceHit, pass_all, surface_under_filtered_cx, ui_camera_hcx,
 };
 
+/// A singular drawn transform cannot route a retained pointer/touch grab.
+pub fn grabbed_surface_suppressed(
+    lp: &Loop,
+    target: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
+) -> bool {
+    use dispatcher::wire::trait_::wire_trait::WireTrait;
+    use smithay::desktop::PopupManager;
+    use smithay::wayland::seat::WaylandFocus;
+    for space in lp.inner.all_world_spaces() {
+        for window in space.state.elements() {
+            let visual = crate::window::draw::frame::scene::visual_of(window);
+            if visual.visible && visual.scale.factor > 0.0 { continue; }
+            let Some(root) = window.wl_surface() else { continue; };
+            if surface_tree_offset(&root, target, (0,0).into()).is_some()
+                || PopupManager::popups_for_surface(&root).any(|(popup,_)| surface_tree_offset(popup.wl_surface(), target, (0,0).into()).is_some()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Rim `&Loop` wrapper: feeds the spatial world's storage to the Loop-free core.
 pub fn ui_camera(_loop: &Loop) -> (UiTransform, Size<f64, Physical>) {
     ui_camera_hcx(&HitCx::new(_loop.inner.spatial_storage()))

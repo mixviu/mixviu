@@ -18,6 +18,7 @@ use uuid::Uuid;
 pub enum ContentItem<R: Renderer> {
     Canvas { elem: Box<Element<R>> },
     UI(UiRenderElement),
+    Ghost(crate::window::draw::ghost::Ghost<R>),
 }
 
 /// The WORLD-space UI surface for `uuid`, if the registry still has one.
@@ -55,6 +56,7 @@ where
     R: Renderer + ImportAll + ImportMem + dispatcher::frame::SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
 {
+    crate::window::draw::ghost::prune::<R>();
     let canvas_context = context(state, renderer, size);
     let mut content: Vec<ContentItem<R>> = Vec::new();
     let mut visible_windows = Visible::default();
@@ -64,7 +66,10 @@ where
     let mut occluders = Occluders::new();
 
     // Interleave windows + world UI by the DrawOrder authority (topmost-first).
-    let order = state.inner.drawable_order();
+    let order = crate::window::draw::ghost::order(
+        state.inner.render_output.as_deref().unwrap_or_default(),
+        state.inner.render_target.map(|rt| rt.slot),
+        &state.inner.drawable_order());
     let by_uuid: HashMap<Uuid, Window> = state
         .inner
         .space_state()
@@ -112,6 +117,14 @@ where
     };
 
     for uuid in &order {
+        if crate::window::draw::ghost::exiting(*uuid) {
+            for ghost in crate::window::draw::ghost::elements::<R>(
+                state.inner.render_output.as_deref().unwrap_or_default(),
+                state.inner.render_target.map(|rt| rt.slot), *uuid) {
+                content.push(ContentItem::Ghost(ghost));
+            }
+            continue;
+        }
         if let Some(window) = by_uuid.get(uuid).cloned() {
             draw_window(
                 state,

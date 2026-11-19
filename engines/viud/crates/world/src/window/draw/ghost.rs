@@ -15,7 +15,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-pub type Ghost<T> = ElementWindowSurface<TextureRenderElement<T>>;
+smithay::render_elements! {
+    pub Ghost<R> where R: ImportAll + ImportMem + SceneDispatch;
+    Texture = ElementWindowSurface<TextureRenderElement<R::TextureId>>,
+    ClippedTexture = decor::clip::Clipped<ElementWindowSurface<TextureRenderElement<R::TextureId>>>,
+    Solid = SolidColorRenderElement,
+    ClippedSolid = decor::clip::Clipped<SolidColorRenderElement>,
+}
 
 struct Snapshot<T: Texture> {
     id: Id,
@@ -28,14 +34,51 @@ struct Snapshot<T: Texture> {
     alpha: f32,
     anchor: Point<i32, Physical>,
     logical_scale: f64,
+    clip: Option<(Option<dispatcher::frame::TexProgram>, decor::clip::Clip)>,
 }
-type Cache<T> = HashMap<(Uuid, String), Vec<Snapshot<T>>>;
+type Cache<T> = HashMap<(Uuid, String, Option<u64>), Vec<Snapshot<T>>>;
 thread_local! { static CACHES: RefCell<HashMap<TypeId, Box<dyn Any>>> = RefCell::new(HashMap::new()); }
+thread_local! { static ORDERS: RefCell<HashMap<(String, Option<u64>), Vec<Uuid>>> = RefCell::new(HashMap::new()); }
+
+/// Preserve an outgoing drawable's last slot relative to surviving neighbours,
+/// including world UI stacking barriers. The order remains pane-local.
+pub fn order(output: &str, pane: Option<u64>, current: &[Uuid]) -> Vec<Uuid> {
+    let exits = crate::comp::lifecycle_motion::exits(crate::comp::animation::frame_time());
+    ORDERS.with(|orders| {
+        let mut orders = orders.borrow_mut();
+        let previous = orders.entry((output.to_owned(), pane)).or_default();
+        let mut merged = current.to_vec();
+        for (index, uuid) in previous.iter().enumerate().rev() {
+            if exits.contains_key(uuid) && !merged.contains(uuid) {
+                let next = previous[index + 1..].iter().find_map(|next| merged.iter().position(|id| id == next));
+                merged.insert(next.unwrap_or(merged.len()), *uuid);
+            }
+        }
+        *previous = merged.clone();
+        merged
+    })
+}
+
+pub fn exiting(uuid: Uuid) -> bool {
+    crate::comp::lifecycle_motion::exits(crate::comp::animation::frame_time()).contains_key(&uuid)
+}
+
+pub fn prune<R: Renderer>() where R::TextureId: 'static {
+    let keep = crate::comp::lifecycle_motion::retained_windows();
+    let enabled = crate::comp::lifecycle_motion::retain_snapshots();
+    CACHES.with(|caches| {
+        if let Some(cache) = caches.borrow_mut().get_mut(&TypeId::of::<R::TextureId>())
+            .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>()) {
+            cache.retain(|(uuid, _, _), _| enabled && keep.contains(uuid));
+        }
+    });
+}
 
 pub fn retain<R>(
     renderer: &R,
     uuid: Uuid,
     output: &str,
+    pane: Option<u64>,
     anchor: Point<i32, Physical>,
     logical_scale: f64,
     elements: &mut [Element<R>],
@@ -53,6 +96,10 @@ pub fn retain<R>(
         let transform = element.transform();
         let alpha = element.alpha();
         let raw = element.raw_mut();
+        let clip = match &*raw {
+            RawElement::WindowFitClipped(clipped) => Some(clipped.snapshot_clip()),
+            _ => None,
+        };
         let surface_solid = matches!(raw, RawElement::Window(_) | RawElement::WindowFit(_) | RawElement::WindowFitClipped(_));
         let (texture, color) = match raw {
             RawElement::Chrome(decor::render::ChromeElement::Piece(piece)) => {
@@ -106,6 +153,7 @@ pub fn retain<R>(
             alpha,
             anchor,
             logical_scale,
+            clip,
         });
     }
     CACHES.with(|caches| {
@@ -115,11 +163,11 @@ pub fn retain<R>(
             .or_insert_with(|| Box::new(Cache::<R::TextureId>::new()))
             .downcast_mut::<Cache<R::TextureId>>()
             .unwrap();
-        cache.insert((uuid, output.to_owned()), snapshots);
+        cache.insert((uuid, output.to_owned(), pane), snapshots);
     });
 }
 
-pub fn elements<R>(output: &str) -> (Vec<Ghost<R::TextureId>>, Vec<SolidColorRenderElement>)
+pub fn elements<R>(output: &str, pane: Option<u64>, uuid: Uuid) -> Vec<Ghost<R>>
 where
     R: Renderer + ImportAll + ImportMem + SceneDispatch,
     R::TextureId: Texture + Clone + Send + 'static,
@@ -132,25 +180,22 @@ where
             .get_mut(&TypeId::of::<R::TextureId>())
             .and_then(|cache| cache.downcast_mut::<Cache<R::TextureId>>())
         else {
-            return (Vec::new(), Vec::new());
+            return Vec::new();
         };
         if !crate::comp::lifecycle_motion::retain_snapshots() {
             cache.clear();
-            return (Vec::new(), Vec::new());
+            return Vec::new();
         }
-        cache.retain(|(uuid, _), _| keep.contains(uuid));
+        cache.retain(|(uuid, _, _), _| keep.contains(uuid));
         let mut elements = Vec::new();
-        let mut solids = Vec::new();
-        for ((uuid, key), snapshots) in cache.iter() {
-            if key != output {
-                continue;
-            }
-            let Some(values) = exits.get(uuid) else {
-                continue;
-            };
+        if let (Some(snapshots), Some(values)) = (cache.get(&(uuid, output.to_owned(), pane)), exits.get(&uuid)) {
             for snapshot in snapshots {
                 if snapshot.texture.is_some() {
-                    elements.push(draw(snapshot, values));
+                    let texture = draw(snapshot, values);
+                    elements.push(if let Some((program, clip)) = &snapshot.clip {
+                        let (scale, offset) = transform_parts(snapshot, values);
+                        Ghost::ClippedTexture(decor::clip::Clipped::new(texture, program.clone(), *clip).rescaled(scale, offset))
+                    } else { Ghost::Texture(texture) });
                 }
                 if let Some(color) = snapshot.color {
                     let alpha = values.get(Property::Opacity).clamp(0.0, 1.0) as f32;
@@ -160,37 +205,44 @@ where
                         color.b() * alpha,
                         color.a() * alpha,
                     ]);
-                    solids.push(SolidColorRenderElement::new(
+                    let solid = SolidColorRenderElement::new(
                         snapshot.id.clone(),
                         transformed(snapshot, values),
                         CommitCounter::default(),
                         color,
                         Kind::Unspecified,
-                    ));
+                    );
+                    elements.push(if let Some((program, clip)) = &snapshot.clip {
+                        let (scale, offset) = transform_parts(snapshot, values);
+                        Ghost::ClippedSolid(decor::clip::Clipped::new(solid, program.clone(), *clip).rescaled(scale, offset))
+                    } else { Ghost::Solid(solid) });
                 }
             }
         }
-        (elements, solids)
+        elements
     })
 }
 
 fn transformed<T: Texture>(snapshot: &Snapshot<T>, values: &Values) -> Rectangle<i32, Physical> {
-    let scale = values.get(Property::Scale).clamp(0.0, 64.0);
+    let (scale, offset) = transform_parts(snapshot, values);
     let geometry = snapshot.geometry;
-    let x = snapshot.anchor.x as f64
-        + (geometry.loc.x - snapshot.anchor.x) as f64 * scale
-        + values.get(Property::Tx) * snapshot.logical_scale;
-    let y = snapshot.anchor.y as f64
-        + (geometry.loc.y - snapshot.anchor.y) as f64 * scale
-        + values.get(Property::Ty) * snapshot.logical_scale;
-    let size = (
-        (geometry.size.w as f64 * scale).round() as i32,
-        (geometry.size.h as f64 * scale).round() as i32,
-    );
-    Rectangle::new(((x.round() as i32), (y.round() as i32)).into(), size.into())
+    let x0 = (geometry.loc.x as f64 * scale).round() as i32 + offset.x;
+    let y0 = (geometry.loc.y as f64 * scale).round() as i32 + offset.y;
+    let x1 = ((geometry.loc.x as f64 + geometry.size.w as f64) * scale).round() as i32 + offset.x;
+    let y1 = ((geometry.loc.y as f64 + geometry.size.h as f64) * scale).round() as i32 + offset.y;
+    Rectangle::new((x0,y0).into(), ((x1-x0).max(0),(y1-y0).max(0)).into())
 }
 
-fn draw<T: Texture + Clone>(snapshot: &Snapshot<T>, values: &Values) -> Ghost<T> {
+fn transform_parts<T: Texture>(snapshot: &Snapshot<T>, values: &Values) -> (f64, Point<i32, Physical>) {
+    let scale = values.get(Property::Scale).clamp(0.0, 64.0);
+    let offset = Point::from((
+        ((1.0-scale) * snapshot.anchor.x as f64 + values.get(Property::Tx)*snapshot.logical_scale).round() as i32,
+        ((1.0-scale) * snapshot.anchor.y as f64 + values.get(Property::Ty)*snapshot.logical_scale).round() as i32,
+    ));
+    (scale, offset)
+}
+
+fn draw<T: Texture + Clone>(snapshot: &Snapshot<T>, values: &Values) -> ElementWindowSurface<TextureRenderElement<T>> {
     let rect = transformed(snapshot, values);
     let texture = snapshot.texture.as_ref().unwrap();
     let inner = TextureRenderElement::from_static_texture(

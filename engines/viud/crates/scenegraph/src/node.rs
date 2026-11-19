@@ -62,7 +62,7 @@ pub enum DrawNode<R: Renderer> {
     Memory(smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement<R>),
     /// A live window thumbnail, screen space (`world::window::draw::thumbnail`).
     Thumbnail(world::window::draw::thumbnail::Thumb<R>),
-    Ghost(world::window::draw::ghost::Ghost<R::TextureId>),
+    Ghost(world::window::draw::ghost::Ghost<R>),
 }
 
 /// A layered collection of draw nodes. Contributors push at explicit `Layer`

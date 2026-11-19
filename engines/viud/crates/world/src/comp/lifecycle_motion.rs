@@ -25,6 +25,7 @@ struct State {
     pub exits: HashMap<Uuid, super::animation::VisualRun>,
     settings: WindowMotion,
     active: bool,
+    incoming: HashMap<Uuid, Instant>,
 }
 
 thread_local! { static STATE: RefCell<State> = RefCell::new(State::default()); }
@@ -77,6 +78,29 @@ fn relative(mut preset: Preset, base: comp_model::request::VisualAttributes) -> 
 pub fn service(lp: &mut Loop) -> bool {
     let now = lp.inner.comp.clock.now();
     let settings = lp.inner.preference.window_motion.clone();
+    if settings.map.is_none() && settings.unmap.is_none() && settings.minimise.is_none()
+        && settings.restore.is_none() && settings.workspace.is_none() {
+        let stopped = STATE.with(|state| {
+            let mut state = state.borrow_mut();
+            if state.incoming.is_empty() && state.exits.is_empty() && !state.active
+                && state.settings == WindowMotion::default() { return None; }
+            let incoming = std::mem::take(&mut state.incoming);
+            *state = State::default();
+            Some(incoming)
+        });
+        if let Some(incoming) = stopped {
+            for space in lp.inner.all_world_spaces() {
+                for window in space.state.elements() {
+                    if window.uuid().and_then(|uuid| incoming.get(&uuid).copied())
+                        .is_some_and(|started| super::animation::started(window) == Some(started)) {
+                        super::animation::finish(window);
+                    }
+                }
+            }
+            lp.state.schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+        }
+        return false;
+    }
     let windows: HashMap<Uuid, Window> = lp
         .inner
         .all_world_spaces()
@@ -108,7 +132,7 @@ pub fn service(lp: &mut Loop) -> bool {
             for (event, config) in [("map", &settings.map), ("unmap", &settings.unmap),
                 ("minimise", &settings.minimise), ("restore", &settings.restore), ("workspace", &settings.workspace)] {
                 if let Some(config) = config && preset(config, false).is_none() {
-                    logging::warn!(event, preset = config.preset, "unsupported window lifecycle transition ignored");
+                    warn!("unsupported window lifecycle transition {event} preset {} ignored", config.preset);
                 }
             }
         }
@@ -131,6 +155,7 @@ pub fn service(lp: &mut Loop) -> bool {
             {
                 let base = crate::window::draw::frame::scene::visual_of(window);
                 super::animation::start(window, &relative(preset, base), now);
+                state.incoming.insert(*uuid, now);
                 state.exits.remove(uuid);
             }
         }

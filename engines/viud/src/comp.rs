@@ -644,6 +644,13 @@ impl Bus {
         let paused = self.paused;
         let mut still = Vec::with_capacity(self.motions.len());
         for mut run in std::mem::take(&mut self.motions) {
+            if let MotionKind::Window { id, generation, visual: Some(_), .. } = &run.kind {
+                if policy_host::motion::visual_replaced(lp, *id, *generation, run.started) {
+                    policy_host::motion::cancel_geometry(lp, *id, *generation);
+                    run.reply.send(ControlReply::Body(json!({"version":1,"status":"superseded"})));
+                    continue;
+                }
+            }
             if run.reply.is_closed() {
                 if let MotionKind::Window { id, generation, .. } = &run.kind {
                     policy_host::motion::cancel_visual(lp, *id, *generation);
