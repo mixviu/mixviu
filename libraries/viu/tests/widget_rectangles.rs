@@ -82,3 +82,37 @@ fn rectangle_frame_cost() {
         println!("widget_rectangles 100 buttons queried={queried} us/frame={:.3}",start.elapsed().as_secs_f64()*1e6/500.);
     }
 }
+
+#[cfg(feature = "test-support")]
+#[test]
+fn headless_bus_sweep() {
+    use viu::app_host::test_support::Harness;
+    let broker = test_broker::Broker::start();
+    let rt = tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build().unwrap();
+    let client = Arc::new(rt.block_on(bus::SupervisedClient::connect_options("rect-sweep",&broker.url).connect()).unwrap());
+    for app in ["gallery", "prefs", "term", "dopus"] {
+        let mut bundle = Bundle::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../apps").join(app),&[]).unwrap();
+        bundle.manifest.bus_url = Some(broker.url.clone());
+        bundle.launch = json!({"headless":true});
+        let mut host = Harness::new(bundle);
+        let c = client.clone();
+        let task = rt.spawn(async move {
+            let deadline = Instant::now()+Duration::from_secs(20);
+            loop {
+                if let Ok((0, body, _)) = c.call_with_headers_raw_within(app,&format!("{app}.widgets"),&Default::default(),"{}",Duration::from_secs(2)).await {
+                    return serde_json::from_str::<serde_json::Value>(&body).unwrap();
+                }
+                assert!(Instant::now()<deadline,"{app} unavailable");
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        });
+        let deadline = Instant::now()+Duration::from_secs(25);
+        while !task.is_finished() {
+            host.pump();
+            assert!(Instant::now()<deadline,"{app} Bus timeout");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(rt.block_on(task).unwrap(),json!([]),"{app}: no layout in headless mode");
+        println!("{app}.widgets: [] (headless, no laid-out frame)");
+    }
+}

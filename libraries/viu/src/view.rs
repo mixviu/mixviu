@@ -369,6 +369,11 @@ impl SceneView {
         }
         self.geometry
             .extend(self.widgets.geometry.iter().map(|(id, r)| (id.clone(), *r)));
+        for row in &mut self.widget_rects {
+            if let Some(rect) = self.geometry.get(&row.id) {
+                row.rect = *rect;
+            }
+        }
         self.focus_error = self.widgets.finish_frame().err();
         self.shown_revision = Some(self.revision);
         events
@@ -921,7 +926,7 @@ impl SceneView {
                 let focused = ui.ctx().data(|d| d.get_temp::<String>(egui::Id::unique("viu-focused-widget")))
                     .is_some_and(|focused| Some(focused.as_str()) == control_id);
                 self.widget_rects.push(crate::widget_rects::WidgetRect {
-                    id: id.into(), kind: node.family.clone(),
+                    id: id.into(), kind: definition.and_then(|v| v["kind"].as_str()).unwrap_or(&node.family).into(),
                     label: node.ports.get("label").or_else(|| node.ports.get("text"))
                         .or_else(|| definition.and_then(|v| v.get("label")))
                         .and_then(Value::as_str).map(str::to_owned),
