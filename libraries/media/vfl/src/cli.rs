@@ -7,7 +7,7 @@ use std::{
 };
 pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = args.into_iter().collect();
-    let usage = "usage: mixd vfl verify|markers|export TAKE [--from FRAME] [--to FRAME] [--format bgra|y4m] [--fps N]";
+    let usage = "usage: mixd vfl verify|markers|export TAKE [--from FRAME] [--to FRAME] [--format bgra|y4m] [--fps N (1-60)]";
     let command = args.first().and_then(|v| v.to_str()).ok_or(usage)?;
     let path = PathBuf::from(args.get(1).ok_or(usage)?);
     let mut out = io::BufWriter::new(io::stdout().lock());

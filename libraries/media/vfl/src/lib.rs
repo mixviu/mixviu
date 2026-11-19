@@ -10,6 +10,7 @@ use std::{
     time::Instant,
 };
 pub const VERSION: u32 = 2;
+pub const COMPONENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub mod cli;
 pub mod reader;
 pub const LEGACY_VERSION: u32 = 1;

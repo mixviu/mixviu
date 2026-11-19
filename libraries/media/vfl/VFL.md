@@ -144,7 +144,8 @@ The reader stops at corruption and never resumes a delta chain past it.
 `mixd vfl export TAKE [--from FRAME] [--to FRAME] [--format bgra|y4m]
 [--fps N]` writes only pixels to stdout; diagnostics use stderr. Bounds are
 inclusive slot numbers. The default is raw BGRA at the manifest rate;
-`--fps` changes the declared y4m rate without adding or dropping slots.
+`--fps` accepts integers 1–60 (the format range) and changes the declared
+y4m rate without adding or dropping slots.
 Raw BGRA has no header, so its dimensions and rate must be supplied to the
 consumer. Repeats and healed dropped slots remain explicit output frames.
 Y4M uses centred 4:2:0, BT.709 limited range via `media-frame`, including
@@ -165,7 +166,15 @@ only a full successful verification establishes completion.
 key, then decompresses forward. It does not retain a whole-take index or
 decompress the preceding delta chains. Verification remains the whole-take
 integrity check. Recovery tolerates missing or torn origin, final metadata
-and sidecar tails; a missing origin prevents marker clock alignment.
+and sidecar tails; a missing origin prevents marker clock alignment. Recovery
+ignores a malformed final JSON line only when it is unterminated and at EOF.
+Terminated malformed lines, oversized lines and malformed interior rows
+remain errors. Present frame rows must match the binary timeline, using the
+same rule for sequential read and seek. A malformed final chunk receipt can
+be ignored during recovery; a valid receipt with a CRC/count mismatch remains
+an error. Earlier malformed receipts and all complete-take sidecar errors are
+fatal. A torn binary tail stops recovery with an error after the valid prefix;
+it never turns the take into a successful verification.
 
 ## Scheduling
 

@@ -20,7 +20,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 /// Every personality this binary carries, with its component's version.
 /// The service shell is always present; daemons join here.
 const PERSONALITIES: &[(&str, &str)] = &[
-    ("vfl", env!("CARGO_PKG_VERSION")),
+    ("vfl", media_vfl::COMPONENT_VERSION),
     ("mixd", mix_shell::COMPONENT_VERSION),
     #[cfg(feature = "noded")]
     ("noded", noded::COMPONENT_VERSION),
