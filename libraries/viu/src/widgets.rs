@@ -554,8 +554,6 @@ impl Widget {
                 value.as_str().is_some_and(|v| self.choices().contains(&v))
             }
             "list" | "table" | "tree" => {
-                let row_motion=toolkit::scene_motion::state(ui.ctx(),egui::Id::unique((id,"row-motion")));
-                let mut row_motion=row_motion.lock().unwrap();row_motion.begin(ui);
                 whole(value).is_some_and(|v| v < whole(&self.properties["row_count"]).unwrap_or(0))
             }
             "colour" => value.as_array().is_some_and(|v| {
@@ -1107,7 +1105,7 @@ impl Widgets {
         }
     }
     fn remember(&mut self, ui: &egui::Ui, id: &str, response: &egui::Response) {
-        self.geometry.insert(id.into(), response.rect);
+        self.geometry.insert(id.into(), ui.ctx().layer_transform_to_global(ui.layer_id()).unwrap_or_default().mul_rect(response.rect));
         if self.focus.as_deref() == Some(id) {
             response.request_focus();
             if let Some([start, end]) = self.focus_selection.take() {
@@ -1934,6 +1932,8 @@ impl Widgets {
             }
             "list" | "table" | "tree" => {
                 let source = widget.text("dataset");
+                let row_motion=toolkit::scene_motion::state(ui.ctx(),egui::Id::unique((id,"row-motion")));
+                let mut row_motion=row_motion.lock().unwrap();row_motion.begin(ui);
                 let data = model["datasets"][source]
                     .as_array()
                     .map(Vec::as_slice)

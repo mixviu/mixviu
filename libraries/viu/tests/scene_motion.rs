@@ -9,7 +9,7 @@ fn a_button_is_clicked_where_up_paints_it_and_exit_has_no_input() {
     let ctx=egui::Context::default();frame(&ctx,&mut view,0.).drop_without_applying_deltas();
     frame(&ctx,&mut view,0.03).drop_without_applying_deltas();
     let target=view.geometry["button"].center();
-    let mut click=|view:&mut SceneView,t:f64| {
+    let click=|view:&mut SceneView,t:f64| {
         let mut commands=Vec::new();
         for pressed in [true,false] {
             let mut raw=egui::RawInput {time:Some(t),screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1000.,4000.))),..Default::default()};
