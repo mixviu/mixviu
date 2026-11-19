@@ -9,18 +9,22 @@ $mode = args()[0] ?? "native"
 export MIX_TEST_REQUIRE_RECORD="1"
 export MIX_TEST_MIX_EXE=realpath(".") .. "/target/release/mix"
 export MIX_TEST_VIUD_EXE=realpath(".") .. "/target/release/viud"
-if $mode == "native" then
+if $mode == "native" or $mode == "all-targets" then
   -- mix's login-shell feature boundary requires a separate Cargo invocation.
   checked(["cargo","build","--release","--locked","-p","mix"])
   -- VFL is unconditional in mixd; unrelated service personalities are not
   -- needed to exercise its production exporter.
   checked(["cargo","build","--release","--locked","-p","mixd","--no-default-features"])
   checked(["cargo","build","--release","--locked","-p","noded","-p","testkit","--bins"])
+  if $mode == "all-targets" then
+    checked(["cargo","test","--release","--locked","-p","world","-p","headless","-p","comp-model","-p","policy-host","-p","viud","--no-default-features","--features","viud/backend-native,viud/test-support","--no-fail-fast","--","--test-threads=1"])
+  else
   checked(["cargo","test","--release","--locked","-p","viud","--no-default-features","--features","backend-native,test-support","--test","recorder_binary"])
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","--","--nocapture","--test-threads=1"])
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","window_motion::benchmark_window_motion_1_8_32","--","--ignored","--exact","--nocapture","--test-threads=1"])
   export MIX_TEST_CAPTURE_SECONDS="40"
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","benchmark_record_changing_4k_zero_drop","--","--ignored","--exact","--nocapture","--test-threads=1"])
+  end
 elif $mode == "unit" then
   checked(["cargo","test","--locked","-p","world","-p","decor","-p","policy-host","--lib"])
   checked(["cargo","test","--locked","-p","testkit","--test","window_control","--test","interactive"])

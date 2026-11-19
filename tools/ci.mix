@@ -544,6 +544,8 @@ elif $stage == "stage-smoke" then
   stage_smoke()
 elif $stage == "window-motion" then
   run_step(["mix", "tools/ci/window_motion.mix", "native"])
+elif $stage == "window-motion-tests" then
+  run_step(["mix", "tools/ci/window_motion.mix", "all-targets"])
 elif $stage == "fmt-diff" then
   run_step(["mix", "tools/ci/window_motion_format.mix"])
 elif $stage == "fmt" then
