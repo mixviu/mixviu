@@ -18,10 +18,13 @@ impl SpringCurve {
         }
         let w = libm::sqrt(k / mass);
         let a = damping / (2.0 * mass);
-        if !w.is_finite() || !a.is_finite() || a > w * (1.0 + 1e-12) {
+        if !w.is_finite() || w <= 0.0 || !a.is_finite() || a <= 0.0 || a > w * (1.0 + 1e-12) {
             return Err("spring must be critical or underdamped");
         }
         let wd = libm::sqrt((w * w - a * a).max(0.0));
+        if !wd.is_finite() || !(1.0 / a).is_finite() {
+            return Err("spring parameters exceed numerical range");
+        }
         let mut result = Self { w, a, wd, velocity, duration: 0.0 };
         // Envelope bounds both |x| and |v| for all subsequent times.
         let envelope = |t: f64| {
@@ -36,6 +39,7 @@ impl SpringCurve {
         };
         let mut hi = (1.0 / a).max(1.0 / w);
         // For critical damping the linear envelope peaks before 1/a.
+        if !envelope(hi).is_finite() { return Err("spring envelope overflow"); }
         while envelope(hi) > 1e-4 {
             hi *= 2.0;
             if !hi.is_finite() { return Err("spring duration overflow"); }
@@ -82,5 +86,6 @@ mod tests {
         let spring = SpringCurve::new(100.0, 6.0, 1.0, 0.0).unwrap();
         assert!(spring.sample(0.4) > 1.0);
         assert!(SpringCurve::new(100.0, 0.0, 1.0, 0.0).is_err());
+        assert!(SpringCurve::new(1.0, 1.0, 1e308, 0.0).is_err());
     }
 }

@@ -62,7 +62,11 @@ impl Values {
 }
 
 fn lerp(a: f64, b: f64, progress: f64) -> f64 {
-    if progress == 0.0 { a } else if progress == 1.0 { b } else { a + (b - a) * progress }
+    if progress == 0.0 { a }
+    else if progress == 1.0 { b }
+    // A convex sum avoids overflow in b-a for opposite finite extremes.
+    else if (0.0..=1.0).contains(&progress) { (1.0-progress)*a + progress*b }
+    else { a + (b - a) * progress }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -214,10 +218,9 @@ impl Timing {
         if ![self.duration,self.delay,self.stagger,self.beat_start,self.start()].iter().all(|v| v.is_finite()) || self.duration < 0.0 {
             return Err("timing must be finite and duration non-negative");
         }
-        if let Iterations::Finite(n) = self.iterations {
-            if !n.is_finite() || n < 0.0 || !(n * self.duration).is_finite() {
-                return Err("iteration count must be finite and non-negative");
-            }
+        if let Iterations::Finite(n) = self.iterations
+            && (!n.is_finite() || n < 0.0 || !(n * self.duration).is_finite()) {
+            return Err("iteration count must be finite and non-negative");
         }
         if self.duration == 0.0 && self.iterations == Iterations::Infinite {
             return Err("zero duration cannot repeat infinitely");
@@ -227,10 +230,12 @@ impl Timing {
     /// Returns directed progress and the CSS before flag, or no filled value.
     fn progress(&self, t: f64) -> Option<(f64,bool)> {
         if !t.is_finite() { return None; }
-        let elapsed = t - self.start();
-        let before = elapsed < 0.0;
+        let start = self.start();
+        let elapsed = t - start;
+        let before = t < start;
         let total = match self.iterations { Iterations::Finite(n) => n, Iterations::Infinite => f64::INFINITY };
-        let after = self.duration == 0.0 && !before || elapsed >= self.duration * total;
+        let after = !before && (self.duration == 0.0
+            || matches!(self.iterations, Iterations::Finite(_)) && elapsed >= self.duration * total);
         if before && !matches!(self.fill, Fill::Backwards | Fill::Both) || after && !matches!(self.fill,Fill::Forwards | Fill::Both) {
             return None;
         }
@@ -238,10 +243,12 @@ impl Timing {
         // lose iteration parity for long-running infinite animations.
         if !before && self.iterations == Iterations::Infinite && self.duration > 0.0 {
             if self.direction == Direction::Normal {
-                return Some(((elapsed % self.duration) / self.duration,false));
+                return Some((cycle_phase(t,start,self.duration),false));
             }
             let cycle = self.duration * 2.0;
-            let directed = if cycle.is_finite() { (elapsed % cycle) / self.duration } else { elapsed / self.duration };
+            let directed = if cycle.is_finite() { cycle_phase(t,start,cycle)*2.0 }
+                else if elapsed.is_finite() { elapsed/self.duration }
+                else { (t/self.duration - start/self.duration) % 2.0 };
             return Some((if directed > 1.0 { 2.0-directed } else { directed },false));
         }
         let iteration_progress = if before { 0.0 } else if after { total } else { elapsed / self.duration };
@@ -255,6 +262,15 @@ impl Timing {
         if reverse { progress = 1.0-progress; }
         Some((progress, if reverse { after } else { before }))
     }
+}
+
+/// Unit phase of elapsed time without overflowing either the subtraction or
+/// division. Separate remainder reduction is needed only for opposite extremes.
+fn cycle_phase(t: f64, start: f64, period: f64) -> f64 {
+    let elapsed = t-start;
+    if elapsed.is_finite() { return (elapsed % period)/period; }
+    let phase = ((t % period)/period - (start % period)/period) % 1.0;
+    if phase < 0.0 { phase+1.0 } else { phase }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -292,7 +308,9 @@ pub fn sample(preset: &Preset, timing: &Timing, t: f64) -> Values {
 }
 
 /// Allocate a new linear transition from the sampled values. Its first sample
-/// equals `current` exactly. This preserves position; callers needing velocity
+/// has the same numeric property values as `current` for nonzero duration.
+/// Newly introduced target properties are present with identity values at the
+/// start. This preserves position; callers needing velocity
 /// continuity can use the existing Hermite or spring primitives.
 pub fn retarget(current: &Values, target: &Values, timing: Timing) -> Preset {
     let tracks = Property::ALL.into_iter().filter(|p| current.contains(*p) || target.contains(*p))
@@ -364,6 +382,37 @@ mod tests {
         assert_eq!(transition.sample(1.35),target);
         assert_eq!(current.lerp(&target,0.0),current);
         assert_eq!(current.lerp(&target,1.0),target);
+    }
+    #[test]
+    fn finite_extremes_interpolate_without_overflow() {
+        let mut a=Values::default(); a.set(Property::Scalar,-1e308);
+        let mut b=Values::default(); b.set(Property::Scalar,1e308);
+        assert_eq!(a.lerp(&b,0.5).get(Property::Scalar),0.0);
+        assert_eq!(a.lerp(&b,0.0),a);
+        assert_eq!(a.lerp(&b,1.0),b);
+        let mut p=line();
+        p.tracks[0].keyframes[0].value=-1e308;
+        p.tracks[0].keyframes[1].value=1e308;
+        assert_eq!(p.sample(0.5).get(Property::Tx),0.0);
+    }
+    #[test]
+    fn infinite_phase_handles_elapsed_overflow() {
+        let mut p=line();
+        p.timing.beat_start=-1e308;
+        p.timing.iterations=Iterations::Infinite;
+        p.timing.fill=Fill::None;
+        for direction in [Direction::Normal,Direction::Alternate] {
+            p.timing.direction=direction;
+            for duration in [0.125,1e-300,1e308] {
+                p.timing.duration=duration;
+                assert!(p.timing.validate().is_ok());
+                let sample=p.sample(1e308);
+                assert!(sample.contains(Property::Tx));
+                assert!(sample.get(Property::Tx).is_finite());
+                assert!((0.0..=100.0).contains(&sample.get(Property::Tx)));
+            }
+        }
+        assert_eq!(cycle_phase(1e308,-1e308,0.125),0.0);
     }
     #[test]
     fn validation_rejects_bad_data_and_zero_duration_is_defined() {

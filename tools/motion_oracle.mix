@@ -15,7 +15,7 @@ for $name in ["float","glow","shine","blink"]
   $nodes = $nodes .. '<div id="' .. $name .. '" class="' .. $name .. '"></div>'
 end
 $nodes = $nodes .. '<img id="kb" class="kb"><svg width="100" height="100"><path id="draw" class="draw" d="M0,0 L100,100"/></svg><span id="under" class="underline-draw">underline</span>'
-$html = '<!doctype html><meta charset="utf-8"><style>' .. $css .. '\n[id]{width:100px;height:100px}body{--panel:#123;--accent:#456;--accent2:#789;background-image:linear-gradient(red,blue),linear-gradient(blue,red)}.underline-draw::after{right:auto;width:100px}</style><body><section id="specimen">' .. $nodes .. '</section><script>history.replaceState(null,"","#s=specimen&t=0&beats=0");</script><script>' .. $deck .. '</script><script>' .. $capture .. '</script>'
+$html = '<!doctype html><meta charset="utf-8"><style>' .. $css .. ' [id]{width:100px;height:100px}body{--panel:#123;--accent:#456;--accent2:#789;background-image:linear-gradient(red,blue),linear-gradient(blue,red)}.underline-draw::after{right:auto;width:100px}</style><body><section id="specimen">' .. $nodes .. '</section><script>history.replaceState(null,"","#s=specimen&t=0&beats=0");</script><script>' .. $deck .. '</script><script>' .. $capture .. '</script>'
 write_file($tmp .. "/specimen.html", $html)
 try
   $version = trim(run_argv_must(["google-chrome-stable", "--version"]))

@@ -1,8 +1,9 @@
 # Shared motion
 
 Pure time sampling for hosts, compositors and widget renderers. No clock,
-display or thread is consulted. `presets()` parses the canonical `presets.json`
-once; `sample(&preset, &timing, seconds)` evaluates it without allocation.
+display or thread is consulted. Call `presets()` to parse the canonical
+`presets.json` and retain its result; `sample(&preset, &timing, seconds)`
+evaluates it without allocation.
 Existing waypoint, timeline and velocity helpers retain their API after moving
 from the compositor's private crate.
 
