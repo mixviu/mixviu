@@ -50,7 +50,13 @@ impl SceneView {
     pub fn widget_rectangles(&self, args: &Value) -> Result<Value, String> {
         let mut rows = self.widget_rects.clone();
         if let Some(frame) = &self.frame {
-            rows.extend(frame.widget_rects.iter().filter(|r| r.id != "root").cloned());
+            rows.extend(
+                frame
+                    .widget_rects
+                    .iter()
+                    .filter(|r| r.id != "root")
+                    .cloned(),
+            );
         }
         crate::widget_rects::query(&rows, args)
     }
@@ -343,6 +349,7 @@ impl SceneView {
     }
     fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
         self.widget_rects.clear();
+        ui.ctx().data_mut(|d| d.remove::<String>(egui::Id::unique("viu-focused-widget")));
         let mut events = Vec::new();
         self.regions.clear();
         self.geometry.clear();
@@ -917,21 +924,38 @@ impl SceneView {
         // children likewise have no scene node and are deliberately omitted.
         if route.is_none() {
             let rect = if node.family == "control" {
-                node.ports.get("definition").and_then(|v| v["id"].as_str())
-                    .and_then(|id| self.widgets.geometry.get(id)).copied()
-            } else { self.geometry.get(id).copied() };
+                node.ports
+                    .get("definition")
+                    .and_then(|v| v["id"].as_str())
+                    .and_then(|id| self.widgets.geometry.get(id))
+                    .copied()
+            } else {
+                self.geometry.get(id).copied()
+            };
             if let Some(rect) = rect.filter(|r| r.is_finite()) {
                 let definition = node.ports.get("definition");
                 let control_id = definition.and_then(|v| v["id"].as_str());
-                let focused = ui.ctx().data(|d| d.get_temp::<String>(egui::Id::unique("viu-focused-widget")))
+                let focused = ui
+                    .ctx()
+                    .data(|d| d.get_temp::<String>(egui::Id::unique("viu-focused-widget")))
                     .is_some_and(|focused| Some(focused.as_str()) == control_id);
                 self.widget_rects.push(crate::widget_rects::WidgetRect {
-                    id: id.into(), kind: definition.and_then(|v| v["kind"].as_str()).unwrap_or(&node.family).into(),
-                    label: node.ports.get("label").or_else(|| node.ports.get("text"))
+                    id: id.into(),
+                    kind: definition
+                        .and_then(|v| v["kind"].as_str())
+                        .unwrap_or(&node.family)
+                        .into(),
+                    label: node
+                        .ports
+                        .get("label")
+                        .or_else(|| node.ports.get("text"))
                         .or_else(|| definition.and_then(|v| v.get("label")))
-                        .and_then(Value::as_str).map(str::to_owned),
-                    rect, visible: rect.intersect(ui.clip_rect()).is_positive(),
-                    enabled: ui.is_enabled() && node.ports.get("enabled") != Some(&Value::Bool(false)),
+                        .and_then(Value::as_str)
+                        .map(str::to_owned),
+                    rect,
+                    visible: rect.intersect(ui.clip_rect()).is_positive(),
+                    enabled: ui.is_enabled()
+                        && node.ports.get("enabled") != Some(&Value::Bool(false)),
                     focused: focused || response.has_focus(),
                 });
             }

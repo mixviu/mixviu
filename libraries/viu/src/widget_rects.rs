@@ -19,7 +19,9 @@ pub(crate) fn query(rows: &[WidgetRect], args: &Value) -> Result<Value, String> 
     }
     for key in ["ids", "kinds"] {
         if let Some(value) = args.get(key)
-            && !value.as_array().is_some_and(|a| a.iter().all(Value::is_string))
+            && !value
+                .as_array()
+                .is_some_and(|a| a.iter().all(Value::is_string))
         {
             return Err(format!("{key} must be an array of strings"));
         }
@@ -28,19 +30,28 @@ pub(crate) fn query(rows: &[WidgetRect], args: &Value) -> Result<Value, String> 
         return Err("visible_only must be a boolean".into());
     }
     let matches = |key: &str, value: &str| {
-        args.get(key).is_none_or(|a| a.as_array().unwrap().iter().any(|v| v == value))
+        args.get(key)
+            .is_none_or(|a| a.as_array().unwrap().iter().any(|v| v == value))
     };
-    Ok(Value::Array(rows.iter().filter(|row| {
-        matches("ids", &row.id) && matches("kinds", &row.kind)
-            && (args["visible_only"] != true || row.visible)
-    }).map(|row| {
-        let r = row.rect;
-        let mut value = json!({"id":row.id,"kind":row.kind,
+    Ok(Value::Array(
+        rows.iter()
+            .filter(|row| {
+                matches("ids", &row.id)
+                    && matches("kinds", &row.kind)
+                    && (args["visible_only"] != true || row.visible)
+            })
+            .map(|row| {
+                let r = row.rect;
+                let mut value = json!({"id":row.id,"kind":row.kind,
             "rect":{"x":r.left(),"y":r.top(),"w":r.width(),"h":r.height()},
             "window":null,"enabled":row.enabled,"focused":row.focused});
-        if let Some(label) = &row.label { value["label"] = json!(label); }
-        value
-    }).collect()))
+                if let Some(label) = &row.label {
+                    value["label"] = json!(label);
+                }
+                value
+            })
+            .collect(),
+    ))
 }
 
 pub(crate) fn descriptor(app: &str) -> Value {
