@@ -328,7 +328,10 @@ impl<P: UiProgram> UiRuntime<P> {
         let mut raw = RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size)),
             max_texture_side,
-            time: Some(self.presentation_time.unwrap_or_else(|| self.started.elapsed().as_secs_f64())),
+            time: Some(
+                self.presentation_time
+                    .unwrap_or_else(|| self.started.elapsed().as_secs_f64()),
+            ),
             events: self.take_events(),
             focused: self.focused,
             ..RawInput::default()
