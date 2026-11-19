@@ -16,7 +16,7 @@ if $mode == "native" then
   -- needed to exercise its production exporter.
   checked(["cargo","build","--release","--locked","-p","mixd","--no-default-features"])
   checked(["cargo","build","--release","--locked","-p","noded","-p","testkit","--bins"])
-  checked(["cargo","test","--release","--locked","-p","viud","--features","test-support","--test","recorder_binary"])
+  checked(["cargo","test","--release","--locked","-p","viud","--no-default-features","--features","test-support","--test","recorder_binary"])
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","--","--nocapture","--test-threads=1"])
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","window_motion::benchmark_window_motion_1_8_32","--","--ignored","--exact","--nocapture","--test-threads=1"])
   export MIX_TEST_CAPTURE_SECONDS="40"
