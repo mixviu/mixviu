@@ -96,6 +96,7 @@ on viu.timer
 end
 on osd.notice
   $notice=$event.args
+  if env("MIX_TEST_CAPTURE_KEEP_FAILED")=="1" then write_file(path_join(env("XDG_RUNTIME_DIR"),"osd-notice.json"),json_encode($event)) end
   if $notice.command=="bus.connected" then
     subscribe($comp..".props.changed")
     send $comp "comp.props.watch" body={}
