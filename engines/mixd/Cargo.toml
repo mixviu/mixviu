@@ -35,6 +35,7 @@ settingsd = ["dep:settingsd"]
 editd = ["dep:editd"]
 
 [dependencies]
+media-vfl = { path = "../../libraries/media/vfl" }
 mix-shell = { path = "../../libraries/mix-shell", features = ["service-builtins", "serve"] }
 noded = { path = "../../services/noded", optional = true }
 settingsd = { path = "../../services/settingsd", optional = true }

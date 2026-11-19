@@ -10,6 +10,8 @@ use std::{
     time::Instant,
 };
 pub const VERSION: u32 = 2;
+pub mod reader;
+pub mod cli;
 pub const LEGACY_VERSION: u32 = 1;
 pub const RECORD_HEADER_BYTES: usize = 17;
 pub const KEY: u8 = 0;

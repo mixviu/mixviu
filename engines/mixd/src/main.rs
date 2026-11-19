@@ -20,6 +20,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 /// Every personality this binary carries, with its component's version.
 /// The service shell is always present; daemons join here.
 const PERSONALITIES: &[(&str, &str)] = &[
+    ("vfl", env!("CARGO_PKG_VERSION")),
     ("mixd", mix_shell::COMPONENT_VERSION),
     #[cfg(feature = "noded")]
     ("noded", noded::COMPONENT_VERSION),
@@ -110,6 +111,7 @@ fn main() -> ExitCode {
     unsafe { std::env::remove_var(mix_shell::ENGINE_HANDOFF_ENV) };
     let args: Vec<OsString> = std::env::args_os().collect();
     match route(&args) {
+        Route::Vfl => exit_of(media_vfl::cli::run(args.iter().skip(2).cloned())),
         Route::Personality(name) => run_personality(name),
         Route::List => {
             println!("{}", list());
@@ -129,6 +131,7 @@ fn main() -> ExitCode {
 /// never mixd's `serve` (desk4 P1 found this: the usage check ran first).
 #[derive(Debug, PartialEq)]
 enum Route {
+    Vfl,
     Personality(&'static str),
     List,
     Usage,
@@ -140,6 +143,9 @@ fn route(args: &[OsString]) -> Route {
         .first()
         .map(|a| personality_name(a))
         .unwrap_or_default();
+    if name == "mixd" && args.get(1).is_some_and(|a| a == "vfl") {
+        return Route::Vfl;
+    }
     if let Some((p, _)) = PERSONALITIES
         .iter()
         .find(|(p, _)| *p != "mixd" && *p == name)
@@ -157,6 +163,7 @@ fn route(args: &[OsString]) -> Route {
 
 fn run_personality(name: &str) -> ExitCode {
     match name {
+        "vfl" => exit_of(media_vfl::cli::run(std::env::args_os().skip(1))),
         #[cfg(feature = "noded")]
         "noded" => noded::main(),
         #[cfg(feature = "settingsd")]
