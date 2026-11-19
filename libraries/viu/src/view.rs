@@ -392,11 +392,18 @@ impl SceneView {
         let focused = ui
             .ctx()
             .data(|d| d.get_temp::<String>(egui::Id::unique("viu-focused-widget")));
+        let zoom = ui.ctx().zoom_factor();
+        let logical = |rect: egui::Rect| egui::Rect::from_min_max(
+            (rect.min.to_vec2() * zoom).to_pos2(),
+            (rect.max.to_vec2() * zoom).to_pos2(),
+        );
         for row in &mut self.widget_rects {
             row.focused = focused.as_deref() == Some(row.id.as_str());
             if let Some(rect) = self.geometry.get(&row.id) {
                 row.rect = *rect;
             }
+            row.rect = logical(row.rect);
+            row.clip = logical(row.clip);
         }
         self.focus_error = self.widgets.finish_frame().err();
         self.shown_revision = Some(self.revision);
