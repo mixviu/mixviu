@@ -5544,6 +5544,7 @@ dependencies = [
  "crc32fast",
  "libc",
  "lz4_flex",
+ "media-frame",
  "serde_json",
 ]
 
@@ -5874,6 +5875,8 @@ dependencies = [
  "hostd",
  "indexd",
  "maild",
+ "media-frame",
+ "media-vfl",
  "mimalloc",
  "mix-shell",
  "mixtrayd",
