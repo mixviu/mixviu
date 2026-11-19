@@ -674,7 +674,8 @@ fn never_placed_pop_uses_window_center() {
     bus.call("comp.motion.run", json!({"targets":[{"window":{"id":row["id"],"generation":row["generation"],"preset":"pop","anchor":"center","duration_ms":300}}]}));
     let after = bus.window_for("center-pop", &mut [&mut client]);
     assert_eq!(after["scale"]["factor"], 1.0);
-    assert_eq!(after["scale"]["anchor"], json!({"x":100.0,"y":80.0}));
+    assert_eq!(after["scale"]["anchor"]["x"].as_f64(), Some(100.0));
+    assert_eq!(after["scale"]["anchor"]["y"].as_f64(), Some(80.0));
 }
 
 #[test]
@@ -739,26 +740,19 @@ fn exiting_window_never_reuses_old_output_or_pane_pixels() {
             }] = json!(true);
             let mut process = process::spawn_preferences(&label, &bus.url, prefs);
             bus.ready();
-            let (mut client, row) = solid_window(&bus, &mut process, &label, 0xffffffff, 300, 200);
+            let (mut client, row) = solid_window(&bus, &mut process, &label, 0xffffffff, if panes { 300 } else { 1600 }, 200);
             let source_output = if panes { "headless-0" } else { "headless-1" };
-            if !panes {
-                bus.call(
-                    "comp.window.send_to_workspace",
-                    place_args(&row, json!({"index":2,"follow":false})),
-                );
-            }
             let path = process.root.join("source.vfl");
             let start = bus.call("comp.record.start",json!({"request_id":"source","target":{"output":source_output},"path":path,"fps":30,"cursor":false,"max_seconds":10}));
             thread::sleep(Duration::from_millis(150));
             if panes {
                 bus.call("comp.window.place", place_args(&row, json!({"x":900})));
             } else {
-                bus.call(
-                    "comp.window.send_to_workspace",
-                    place_args(&row, json!({"index":1,"follow":false})),
-                );
+                bus.call("comp.window.place", place_args(&row, json!({"x":300})));
             }
             thread::sleep(Duration::from_millis(150));
+            let (width, _, destination) = ppm(&bus, &process, "destination-shown", None);
+            assert_eq!(rgb_at(&destination, width, if panes { 1000 } else { 400 }, 280), [255,255,255]);
             if minimise {
                 bus.call("comp.window.minimize", target(&row));
             } else {
@@ -785,7 +779,7 @@ fn exiting_window_never_reuses_old_output_or_pane_pixels() {
             });
             assert!(
                 shown && cleared && after >= 5,
-                "must witness source pixels, move and exit"
+                "must witness source pixels, move and exit: panes={panes} minimise={minimise} shown={shown} cleared={cleared} after={after}"
             );
         }
     }

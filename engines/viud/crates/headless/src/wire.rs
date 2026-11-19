@@ -188,13 +188,6 @@ pub fn install(
         );
         extra.set_preferred(mode);
         scenegraph::display::output::register(state, &extra);
-        state.inner.comp.workspaces.count = 2;
-        state
-            .inner
-            .comp
-            .workspaces
-            .current
-            .insert("headless-1".into(), 2);
         state
             .inner
             .map_output_everywhere(&extra, (mode.size.w, 0).into());

@@ -278,6 +278,14 @@ pub(crate) fn draw(state: &mut Loop, ctx: &mut Context) {
         if let Some(extra) = extra.filter(|_| !MULTI.get()) {
             MULTI.set(true);
             let primary = ctx.output.clone();
+            {
+                // Independent output camera: the fixture exposes adjacent world
+                // regions through two real output compositions, not mirrors.
+                let views = state.inner.output_views_mut();
+                views.ensure("headless-1");
+                let camera = views.views_mut("headless-1").focus_camera_mut();
+                camera.transform.position = (1920.0, 360.0).into();
+            }
             ctx.follow(extra);
             state
                 .state
