@@ -465,6 +465,53 @@ pub fn state(ctx:&Context,id:egui::Id)->std::sync::Arc<std::sync::Mutex<SceneMot
 mod tests {
     use super::*;
     use serde_json::json;
+    fn text_present(shapes:&[ClippedShape],label:&str)->bool {
+        fn has(shape:&egui::Shape,label:&str)->bool {
+            match shape {egui::Shape::Text(t)=>t.galley.job.text.contains(label),egui::Shape::Vec(shapes)=>shapes.iter().any(|s|has(s,label)),_=>false}
+        }
+        shapes.iter().any(|s|has(&s.shape,label))
+    }
+    #[test]
+    fn native_menu_and_popup_close_with_paint_only_and_reduced_motion_snaps() {
+        for popup in [false,true] {
+            for reduced in [false,true] {
+                let ctx=Context::default();install(&ctx);
+                if reduced {ctx.global_style_mut(|s|s.animation_time=0.);}
+                let mut open=true;
+                for t in [0.,0.1,0.2] {
+                    ctx.run_ui(raw(t),|ui| {
+                        if popup {
+                            let button=ui.button("Open");
+                            egui::Popup::from_response(&button).open_bool(&mut open).show(|ui|{ui.label("Motion popup item");});
+                        } else {
+                            crate::menu::anchored(ui,egui::Id::unique("motion-menu"),Rect::from_min_size(egui::pos2(20.,20.),egui::vec2(30.,20.)),&mut open,crate::menu::Menu{title:"Menu".into(),entries:vec![crate::menu::Entry::Row(crate::menu::Row::command("motion-item","Motion menu item",None,true))]},&[]);
+                        }
+                    }).drop_without_applying_deltas();
+                }
+                open=false;
+                let mut closed=ctx.run_ui(raw(0.3),|ui| {
+                    if popup {let button=ui.button("Open");egui::Popup::from_response(&button).open_bool(&mut open).show(|ui|{ui.label("Motion popup item");});}
+                    else {crate::menu::anchored(ui,egui::Id::unique("motion-menu"),Rect::NOTHING,&mut open,crate::menu::Menu{title:"Menu".into(),entries:vec![]},&[]);}
+                });
+                assert_eq!(text_present(&closed.shapes,if popup {"Motion popup item"} else {"Motion menu item"}),!reduced,"popup={popup}, reduced={reduced}");
+                closed.textures_delta.clear();
+                for t in [3.,4.,5.] {ctx.run_ui(raw(t),|_|{}).drop_without_applying_deltas();}
+                assert!(!ctx.has_requested_repaint());
+            }
+        }
+    }
+    #[test]
+    fn tab_switch_retains_old_page_and_animates_new_page() {
+        for reduced in [false,true] {
+            let ctx=Context::default();if reduced {ctx.global_style_mut(|s|s.animation_time=0.);}
+            let id=egui::Id::unique("tab");
+            ctx.run_ui(raw(0.),|ui|{content(ui,id,"one",|ui|{ui.label("old tab page");});}).drop_without_applying_deltas();
+            let mut switched=ctx.run_ui(raw(1.),|ui|{content(ui,id,"two",|ui|{ui.label("new tab page");});});
+            assert_eq!(text_present(&switched.shapes,"old tab page"),!reduced);
+            assert!(text_present(&switched.shapes,"new tab page"));switched.textures_delta.clear();
+            assert_eq!(state(&ctx,id).lock().unwrap().nodes.len(),if reduced {0} else {2});
+        }
+    }
     #[test]
     fn stagger_samples_two_children_on_library_timing() {
         let ctx=Context::default();let mut state=SceneMotion::default();

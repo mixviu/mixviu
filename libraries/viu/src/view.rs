@@ -580,12 +580,13 @@ impl SceneView {
             node.ports.get("transition"),
             enabled,
         );
+        let default_fade=json!("fade");
         let mut capture = self.motion.capture(
             ui,
             &key,
             self.motion_parent.as_deref(),
-            node.ports.get("enter").or(if list_row {Some(&json!("fade"))} else {None}),
-            node.ports.get("exit").or(if list_row {Some(&json!("fade"))} else {Some(&Value::Null)}),
+            node.ports.get("enter").or(if list_row {Some(&default_fade)} else {None}),
+            node.ports.get("exit").or(if list_row {Some(&default_fade)} else {Some(&Value::Null)}),
             node.ports.get("motion") != Some(&Value::Bool(false)),
         );
         let layer=self.motion.layer(ui,&mut capture,ui.available_rect_before_wrap(),[

@@ -1,6 +1,32 @@
 //! Scene motion through the application headless painter, no window or GPU.
 use serde_json::json;
 use viu::view::SceneView;
+fn contains_text(shapes:&[egui::epaint::ClippedShape],needle:&str)->bool {
+    fn has(s:&egui::Shape,n:&str)->bool {match s {egui::Shape::Text(t)=>t.galley.job.text.contains(n),egui::Shape::Vec(ss)=>ss.iter().any(|s|has(s,n)),_=>false}}
+    shapes.iter().any(|s|has(&s.shape,needle))
+}
+#[test]
+fn list_insertions_and_removals_use_fade_and_reduced_motion_snaps() {
+    for native in [false,true] {
+        for reduced in [false,true] {
+            let model=|updated:bool| if native {
+                let rows=if updated {json!([["remaining","2"],["inserted row","3"]])} else {json!([["removed row","1"],["remaining","2"]])};
+                json!({"datasets":{"rows":rows},"widget":{"id":"list","kind":"list","label":"List","initial":0,"properties":{"dataset":"rows","row_count":2,"columns":["Name","Size"]}}})
+            } else {json!({"rows":if updated {json!([{"id":"b","cells":["remaining"]},{"id":"c","cells":["inserted row"]}])} else {json!([{"id":"a","cells":["removed row"]},{"id":"b","cells":["remaining"]}])}})};
+            let nodes=if native {json!({"root":{"widget":"control","definition":"= $model.widget"}})} else {json!({"root":{"widget":"list","rows":"= $model.rows","row":"item","row_height":24},"item":{"widget":"row","children":["label"]},"label":{"widget":"text","text":"{cells[0]}"}})};
+            let source=format!("---\nscene: 1\nname: motion\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+            let ctx=egui::Context::default();if reduced {ctx.global_style_mut(|s|s.animation_time=0.);}
+            let mut view=SceneView::with_model(&source,model(false)).unwrap();
+            for t in [0.,1.] {frame(&ctx,&mut view,t).drop_without_applying_deltas();}
+            view.apply_model(model(true)).unwrap();
+            let mut changed=frame(&ctx,&mut view,1.1);
+            assert_eq!(contains_text(&changed.shapes,"removed row"),!reduced,"native={native}, reduced={reduced}");
+            assert!(contains_text(&changed.shapes,"inserted row"));changed.textures_delta.clear();
+            let mut settled=frame(&ctx,&mut view,3.);
+            assert!(!contains_text(&settled.shapes,"removed row"));settled.textures_delta.clear();
+        }
+    }
+}
 #[test]
 fn a_button_is_clicked_where_up_paints_it_and_exit_has_no_input() {
     let nodes=json!({"root":{"widget":"column","children":["button"]},"button":{"widget":"button","label":"Moving","on_click":"test.click","enter":"up","exit":"fade","hidden":"= $model.hidden"}});
