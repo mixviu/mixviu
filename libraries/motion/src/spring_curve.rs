@@ -13,7 +13,10 @@ impl SpringCurve {
     /// underdamped, decaying springs have a finite duration here.
     pub fn new(k: f64, damping: f64, mass: f64, velocity: f64) -> Result<Self, &'static str> {
         if ![k, damping, mass, velocity].iter().all(|v| v.is_finite())
-            || k <= 0.0 || mass <= 0.0 || damping <= 0.0 {
+            || k <= 0.0
+            || mass <= 0.0
+            || damping <= 0.0
+        {
             return Err("spring requires finite positive stiffness, damping and mass");
         }
         let w = libm::sqrt(k / mass);
@@ -25,7 +28,13 @@ impl SpringCurve {
         if !wd.is_finite() || !(1.0 / a).is_finite() {
             return Err("spring parameters exceed numerical range");
         }
-        let mut result = Self { w, a, wd, velocity, duration: 0.0 };
+        let mut result = Self {
+            w,
+            a,
+            wd,
+            velocity,
+            duration: 0.0,
+        };
         // Envelope bounds both |x| and |v| for all subsequent times.
         let envelope = |t: f64| {
             let e = libm::exp(-a * t);
@@ -39,27 +48,41 @@ impl SpringCurve {
         };
         let mut hi = (1.0 / a).max(1.0 / w);
         // For critical damping the linear envelope peaks before 1/a.
-        if !envelope(hi).is_finite() { return Err("spring envelope overflow"); }
+        if !envelope(hi).is_finite() {
+            return Err("spring envelope overflow");
+        }
         while envelope(hi) > 1e-4 {
             hi *= 2.0;
-            if !hi.is_finite() { return Err("spring duration overflow"); }
+            if !hi.is_finite() {
+                return Err("spring duration overflow");
+            }
         }
         let mut lo = 1.0 / a;
         for _ in 0..64 {
             let mid = (lo + hi) * 0.5;
-            if envelope(mid) > 1e-4 { lo = mid; } else { hi = mid; }
+            if envelope(mid) > 1e-4 {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
         }
         result.duration = hi;
         Ok(result)
     }
 
     /// Seconds until both position and velocity envelopes are below 1e-4.
-    pub fn settle_duration(&self) -> f64 { self.duration }
+    pub fn settle_duration(&self) -> f64 {
+        self.duration
+    }
 
     /// Progress from 0 towards 1, with initial velocity in units per second.
     pub fn sample(&self, seconds: f64) -> f64 {
-        if seconds <= 0.0 { return 0.0; }
-        if seconds >= self.duration { return 1.0; }
+        if seconds <= 0.0 {
+            return 0.0;
+        }
+        if seconds >= self.duration {
+            return 1.0;
+        }
         let e = libm::exp(-self.a * seconds);
         let x = if self.wd == 0.0 {
             (-1.0 + (self.velocity - self.w) * seconds) * e

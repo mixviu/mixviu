@@ -23,7 +23,10 @@ mod tests {
     fn canonical_table_is_valid_and_has_all_effects() {
         let p = presets();
         assert_eq!(p.len(), 19);
-        for name in ["up", "down", "left", "right", "pop", "zoom", "fade", "wipe", "drop", "flip", "spin", "glow", "kb", "float", "draw", "blink", "bg", "under", "shine"] {
+        for name in [
+            "up", "down", "left", "right", "pop", "zoom", "fade", "wipe", "drop", "flip", "spin",
+            "glow", "kb", "float", "draw", "blink", "bg", "under", "shine",
+        ] {
             assert!(p.iter().any(|p| p.name == name));
         }
     }
