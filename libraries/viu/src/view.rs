@@ -31,6 +31,7 @@ pub struct Event {
 }
 
 pub struct SceneView {
+    widget_rects: Vec<crate::widget_rects::WidgetRect>,
     frame: Option<Box<SceneView>>,
     regions: BTreeMap<String, egui::Rect>,
     tree: ResolvedScene,
@@ -45,6 +46,14 @@ pub struct SceneView {
 }
 
 impl SceneView {
+    /// Widgets laid out in the latest pass; never returns toolkit identities.
+    pub fn widget_rectangles(&self, args: &Value) -> Result<Value, String> {
+        let mut rows = self.widget_rects.clone();
+        if let Some(frame) = &self.frame {
+            rows.extend(frame.widget_rects.iter().filter(|r| r.id != "root").cloned());
+        }
+        crate::widget_rects::query(&rows, args)
+    }
     pub fn set_terminals(&mut self, terminals: crate::terminal::sessions::Sessions) {
         self.widgets.set_terminals(terminals.clone());
         if let Some(frame) = self.frame.as_mut() {
@@ -102,6 +111,7 @@ impl SceneView {
             lists,
             revision: 0,
             geometry: BTreeMap::new(),
+            widget_rects: Vec::new(),
             widgets: Widgets::default(),
             focus_error: None,
             shown_revision: None,
@@ -316,6 +326,7 @@ impl SceneView {
                 );
             } else {
                 self.geometry.clear();
+                self.widget_rects.clear();
                 self.shown_revision = None;
             }
             self.geometry.extend(
@@ -331,6 +342,7 @@ impl SceneView {
         self.show_content(ui)
     }
     fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
+        self.widget_rects.clear();
         let mut events = Vec::new();
         self.regions.clear();
         self.geometry.clear();
@@ -895,6 +907,29 @@ impl SceneView {
                     response.rect
                 },
             );
+        }
+        // Template instances do not have a unique scene id. Internal control
+        // children likewise have no scene node and are deliberately omitted.
+        if route.is_none() {
+            let rect = if node.family == "control" {
+                node.ports.get("definition").and_then(|v| v["id"].as_str())
+                    .and_then(|id| self.widgets.geometry.get(id)).copied()
+            } else { self.geometry.get(id).copied() };
+            if let Some(rect) = rect.filter(|r| r.is_finite()) {
+                let definition = node.ports.get("definition");
+                let control_id = definition.and_then(|v| v["id"].as_str());
+                let focused = ui.ctx().data(|d| d.get_temp::<String>(egui::Id::unique("viu-focused-widget")))
+                    .is_some_and(|focused| Some(focused.as_str()) == control_id);
+                self.widget_rects.push(crate::widget_rects::WidgetRect {
+                    id: id.into(), kind: node.family.clone(),
+                    label: node.ports.get("label").or_else(|| node.ports.get("text"))
+                        .or_else(|| definition.and_then(|v| v.get("label")))
+                        .and_then(Value::as_str).map(str::to_owned),
+                    rect, visible: rect.intersect(ui.clip_rect()).is_positive(),
+                    enabled: ui.is_enabled() && node.ports.get("enabled") != Some(&Value::Bool(false)),
+                    focused: focused || response.has_focus(),
+                });
+            }
         }
     }
 

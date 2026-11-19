@@ -67,6 +67,7 @@ pub mod timers;
 pub mod tree_table;
 pub mod view;
 pub mod widgets;
+mod widget_rects;
 pub mod window_frame;
 
 pub mod calls;
