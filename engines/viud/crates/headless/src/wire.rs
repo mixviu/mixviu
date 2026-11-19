@@ -276,14 +276,14 @@ fn virtual_output(index: usize) -> Output {
 /// Deterministic source-order fixture: leave protocol/Bus dispatch and drawing
 /// live while holding lifecycle observation between explicit hide and destroy.
 /// Compiled out of ordinary builds and restricted to our headless context.
+#[cfg(feature = "test-support")]
 pub fn test_lifecycle_paused() -> bool {
-    #[cfg(feature = "test-support")]
     if FALLBACK.with(|slot| slot.borrow().is_some())
         && let Some(root) = std::env::var_os("XDG_RUNTIME_DIR")
     {
         let root = std::path::PathBuf::from(root);
-        if root.join("pause-lifecycle").exists() {
-            std::fs::write(root.join("pause-lifecycle.ack"), b"paused").unwrap();
+        if root.join(format!("pause-lifecycle-{}", std::process::id())).exists() {
+            std::fs::write(root.join(format!("pause-lifecycle-{}.ack", std::process::id())), b"paused").unwrap();
             return true;
         }
     }

@@ -297,6 +297,71 @@ fn exported_frames(path: &Path, mut visit: impl FnMut(usize, usize, &[u8])) {
 }
 
 #[test]
+fn placing_last_track_resolves_reply_promptly() {
+    if !process::record_available() { return; }
+    let bus = Bus::start("placed-last-track");
+    let mut process = process::spawn(1, None, "placed-last-track", Some(&bus.url));
+    bus.ready();
+    let (mut client, row) = solid_window(&bus, &mut process, "placed-last-track", 0xffffffff, 300, 200);
+    thread::scope(|scope| {
+        let running = scope.spawn(|| bus.call("comp.motion.run", json!({"targets":[{"window":{
+            "id":row["id"],"generation":row["generation"],"preset":"fade","duration_ms":10000
+        }}]})));
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while bus.window_for("placed-last-track", &mut [&mut client])["opacity"].as_f64().unwrap() == 1.0 {
+            assert!(Instant::now() < deadline);
+        }
+        let placed = Instant::now();
+        bus.call("comp.window.place", place_args(&row, json!({"opacity":0.7})));
+        assert_eq!(running.join().unwrap()["status"], "superseded");
+        assert!(placed.elapsed() < Duration::from_millis(500), "reply must not wait for the ten-second run");
+    });
+}
+
+#[test]
+fn minimised_then_destroyed_never_resurrects_pixels() { unseen_destroy(false); }
+
+#[test]
+fn workspace_switch_and_destroy_in_one_tick_never_resurrects_pixels() { unseen_destroy(true); }
+
+fn unseen_destroy(workspace: bool) {
+    if !process::record_available() { return; }
+    let label = if workspace { "unseen-workspace" } else { "unseen-minimise" };
+    let bus = Bus::start(label);
+    let mut process = process::spawn_preferences(label, &bus.url, json!({"window_motion":{"unmap":{"preset":"fade","duration_ms":1500}}}));
+    bus.ready();
+    let (mut client, row) = solid_window(&bus, &mut process, label, 0xffffffff, 300, 200);
+    if workspace {
+        bus.call("comp.workspaces.set_count", json!({"count":2,"persist":false}));
+        bus.call("comp.window.send_to_workspace", place_args(&row,json!({"index":2,"follow":false})));
+    } else { bus.call("comp.window.minimize", target(&row)); }
+    let (width, _, pixels) = ppm(&bus, &process, "unseen-before-destroy", None);
+    assert_eq!(rgb_at(&pixels,width,400,280), [18,20,25]);
+    let pause = process.root.join(format!("pause-lifecycle-{}", process.child.id()));
+    let ack = process.root.join(format!("pause-lifecycle-{}.ack", process.child.id()));
+    fs::write(&pause,b"pause").unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while !ack.exists() { bus.call("comp.windows.list",json!({})); assert!(Instant::now()<deadline); }
+    if workspace { bus.call("comp.workspace.switch",json!({"index":2})); }
+    client.commit_then_destroy();
+    pump_patterns(&mut [&mut client]);
+    let rows = bus.call("comp.windows.list",json!({}));
+    assert!(rows["windows"].as_array().unwrap().iter().all(|w|w["id"]!=row["id"]));
+    let path = process.root.join("unseen.vfl");
+    let start = bus.call("comp.record.start",json!({"request_id":"unseen","target":{"output":"headless-0"},"path":path,"fps":30,"cursor":false,"max_seconds":10}));
+    fs::remove_file(pause).unwrap();
+    for pass in 0..2 {
+        for _ in 0..50 { client.pump(); thread::sleep(Duration::from_millis(5)); }
+        if workspace && pass==0 { bus.call("comp.workspace.switch",json!({"index":1})); }
+    }
+    let stop = bus.call("comp.record.stop",json!({"session":start["session"]}));
+    assert_eq!(stop["dropped"],0);
+    let mut frames=0;
+    exported_frames(&path, |frame,width,pixels| { frames+=1; assert_eq!(pixel(pixels,width,400,280),[18,20,25],"unseen pixels in frame {frame}"); });
+    assert!(frames>=6);
+}
+
+#[test]
 fn place_during_active_run_removes_only_supplied_tracks_and_finish_preserves_them() {
     if !process::record_available() {
         return;
@@ -366,9 +431,9 @@ fn hide_then_destroy_before_lifecycle_tick_has_no_ghost_in_decoded_frames() {
     assert_eq!(rgb_at(&pixels, width, 400, 280), [255, 255, 255]);
     // Freeze lifecycle observation, not dispatch. Both changes happen before
     // its next tick, deterministically preserving the stale shown facts.
-    fs::write(process.root.join("pause-lifecycle"), b"pause").unwrap();
+    fs::write(process.root.join(format!("pause-lifecycle-{}", process.child.id())), b"pause").unwrap();
     let deadline = Instant::now() + Duration::from_secs(3);
-    while !process.root.join("pause-lifecycle.ack").exists() {
+    while !process.root.join(format!("pause-lifecycle-{}.ack", process.child.id())).exists() {
         bus.call("comp.windows.list", json!({}));
         assert!(
             Instant::now() < deadline,
@@ -392,7 +457,7 @@ fn hide_then_destroy_before_lifecycle_tick_has_no_ghost_in_decoded_frames() {
             .iter()
             .any(|w| w["id"] == row["id"])
     );
-    fs::remove_file(process.root.join("pause-lifecycle")).unwrap();
+    fs::remove_file(process.root.join(format!("pause-lifecycle-{}", process.child.id()))).unwrap();
     sentinel.solid_buffer(0xff20d040);
     sentinel.commit(true);
     for _ in 0..100 {

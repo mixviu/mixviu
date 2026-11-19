@@ -39,6 +39,10 @@ takes both axes; `scale` takes the factor and anchor. Explicit hide cancels
 all visual tracks and suppresses any exit image immediately, including when
 the client is destroyed before the next lifecycle tick.
 
+When placement removes the final visual track, the pending motion reply
+resolves promptly with `status:"superseded"`; it does not wait for the original
+duration or reply budget. Geometry belonging to that superseded run stops.
+
 Stacking uses the existing workspace band and normal raise order for equal
 z values. Compositor-marked drawables remain barriers, and lock, OSD and
 other compositor bands remain above client windows. The scale and translation

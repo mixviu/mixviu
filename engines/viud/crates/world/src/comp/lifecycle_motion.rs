@@ -35,9 +35,25 @@ struct State {
     active: bool,
     incoming: HashMap<Uuid, Instant>,
     workspaces: HashMap<String, u32>,
+    presented: HashMap<Uuid, (String, u32)>,
 }
 
 thread_local! { static STATE: RefCell<State> = RefCell::new(State::default()); }
+
+pub fn presented(output: String, shown: &[(Uuid, u32)]) {
+    STATE.with(|state| {
+        let mut state = state.borrow_mut();
+        state.presented.retain(|_, (scope, _)| scope != &output);
+        for &(uuid, workspace) in shown {
+            state.presented.insert(uuid, (output.clone(), workspace));
+        }
+    });
+}
+
+fn stable_output(mut areas: Vec<(i64, String)>) -> Option<String> {
+    areas.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    areas.into_iter().next().map(|(_, name)| name)
+}
 
 /// Record explicit policy at application time, before destruction can erase
 /// the registry row and before the next lifecycle observation.
@@ -177,11 +193,13 @@ pub fn service(lp: &mut Loop) -> bool {
                 .filter_map(|window| {
                     Some((
                         window.uuid()?,
-                        space
-                            .state
-                            .outputs_for_element(window)
-                            .first()
-                            .map(|output| comp_model::snapshot::output_key(&output.name()))
+                        stable_output(space.state.outputs_for_element(window).iter().map(|output| {
+                            let area = space.state.element_bbox(window)
+                                .and_then(|bbox| bbox.intersection(space.state.output_geometry(output)?))
+                                .map_or(0, |r| i64::from(r.size.w) * i64::from(r.size.h));
+                            (area, output.name())
+                        }).collect())
+                            .map(|name| comp_model::snapshot::output_key(&name))
                             .unwrap_or_else(|| default_output.clone()),
                     ))
                 })
@@ -317,11 +335,13 @@ pub fn service(lp: &mut Loop) -> bool {
             } else {
                 None
             };
-            if !old.visible || new.is_some_and(|facts| !facts.visible) {
+            if !old.visible || new.is_some_and(|facts| !facts.visible)
+                || (!old.shown && new.is_none_or(|facts| !facts.mapped)) {
                 state.exits.remove(uuid);
                 continue;
             }
-            if !old.on_current(&state.workspaces) {
+            if !old.shown || !old.on_current(&state.workspaces)
+                || !state.presented.get(uuid).is_some_and(|(output, workspace)| output == &old.output && Some(*workspace) == old.workspace) {
                 continue;
             }
             if let Some(config) = exit
@@ -391,6 +411,13 @@ pub fn retained_windows() -> std::collections::HashSet<Uuid> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn output_scope_uses_largest_overlap_then_connector_name() {
+        for candidates in [vec![(50,"b".into()),(50,"a".into())], vec![(50,"a".into()),(50,"b".into())]] {
+            assert_eq!(stable_output(candidates), Some("a".into()));
+        }
+        assert_eq!(stable_output(vec![(100,"b".into()),(50,"a".into())]), Some("b".into()));
+    }
     #[test]
     fn workspace_switch_keeps_the_other_outputs_exit_and_uses_its_workspace() {
         let a = Uuid::from_u128(1);
