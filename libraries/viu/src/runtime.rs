@@ -26,6 +26,8 @@ pub(crate) type NativeContext = Box<dyn FnOnce() -> Box<dyn std::any::Any> + Sen
 /// Supplying one does not create a Bus citizen, broker or global registry.
 #[derive(Clone, Default)]
 pub struct Services {
+    #[cfg(feature = "test-support")]
+    pub(crate) test_cpu_probe: bool,
     #[cfg(test)]
     pub(crate) registry_observer: Option<Arc<dyn Fn(Vec<String>) + Send + Sync>>,
     /// A caller-owned applications parent, chiefly for isolated embedded runs.
@@ -278,10 +280,9 @@ impl Runtime {
                         eval.register("viu_palette",crate::native_primitives::palette());
                         eval.register("viu_instants",crate::native_primitives::instants());
                         #[cfg(feature = "test-support")]
-                        eval.register("viu_test_cpu",mix::sync_ext(|args| {
-                            if !args.is_empty(){return Err(failure("viu_test_cpu takes no arguments"));}
-                            from_json(json!(crate::app_host::test_support::thread_cpu().as_secs_f64()))
-                        }));
+                        if services.test_cpu_probe {
+                            crate::app_host::test_support::register_cpu_probe(&mut eval);
+                        }
 
                         eval.register("viu_app_dirs",crate::native_primitives::app_dirs(services.application_roots.clone()));
                         eval.register("viu_maildoc",crate::native_primitives::mail_document());

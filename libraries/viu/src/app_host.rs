@@ -2071,6 +2071,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     }));
     let (clipboard, local_clipboard) = crate::clipboard::Clipboard::channel(wake.clone());
     let services = crate::runtime::Services {
+        #[cfg(feature = "test-support")]
+        test_cpu_probe: true,
         clipboard: Some(clipboard),
         options: json!({"title":bundle.manifest.title,"headless":bundle.manifest.surface=="headless" || bundle.launch["headless"]==true}),
         max_string_bytes: bundle.manifest.max_string_bytes,
@@ -2563,6 +2565,19 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
 #[doc(hidden)]
 pub mod test_support {
     use super::*;
+    // This opt-in diagnostic is outside runtime.rs: both production vocabulary
+    // generators scan that file's literal registration sites, not test helpers.
+    pub(crate) fn register_cpu_probe(eval: &mut mix::evaluator::Evaluator) {
+        eval.register("viu_test_cpu", mix::sync_ext(|args| {
+            if !args.is_empty() {
+                return Err(mix::MixError::RuntimeError {
+                    msg: "viu_test_cpu takes no arguments".into(),
+                    span: None,
+                });
+            }
+            crate::runtime::from_json(json!(thread_cpu().as_secs_f64()))
+        }));
+    }
     pub(crate) fn thread_cpu() -> Duration {
         let mut time = libc::timespec {
             tv_sec: 0,

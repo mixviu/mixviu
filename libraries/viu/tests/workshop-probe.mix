@@ -137,8 +137,22 @@ elif $mode=="accept" then
   checked(["mix",script_path(),"validate"])
   checked(["git","diff","--exit-code"])
 elif $mode=="validate" then
+  $context=require(realpath("tools/ci/lint_context.mix"))
+  $vocabulary=$context.vocabulary("mix").host
+  $generated=[]
+  for $tail in slice(split(read_file("libraries/viu/src/runtime.rs"),"eval.register("),1)
+    push($generated,split(trim($tail),'"')[1])
+  end
+  if $vocabulary!=sort(unique($generated)) or contains($vocabulary,"viu_test_cpu") then
+    raise("PROBE","lint_context and generated production vocabulary differ")
+  end
+  print({production_vocabulary:$vocabulary,test_hook_excluded:true})
+  checked(["mix","tools/ci/lint_context_test.mix","mix"])
   checked(["mix","apps/workshop/counter-test.mix"])
   checked(["cargo","fmt","-p","lib-viu","--","--check"])
+  checked(["cargo","clippy","-p","lib-viu","--all-targets","--no-deps"])
+  checked(["cargo","test","-p","lib-viu","--all-targets","--no-fail-fast"])
+  checked(["cargo","test","-p","lib-viu","--doc"])
   checked(["cargo","clippy","-p","lib-viu","--features","test-support","--all-targets","--no-deps"])
   checked(["cargo","test","-p","lib-viu","--features","test-support","--all-targets","--no-fail-fast"])
   checked(["cargo","test","-p","lib-viu","--features","test-support","--doc"])
