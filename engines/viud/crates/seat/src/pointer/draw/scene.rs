@@ -33,13 +33,9 @@ where
     R::TextureId: Texture + Clone + Send + 'static,
 {
     use smithay::input::pointer::CursorImageStatus;
-    let status = if allow_client_cursor {
-        state.state.seat.pointer_status.clone()
-    } else {
-        CursorImageStatus::default_named()
-    };
+    let status = (!allow_client_cursor).then(CursorImageStatus::default_named);
     let previous = state.inner.pointer_mut().element.status.clone();
-    let elements = element_inner(state, renderer, size, Some(status), false);
+    let elements = element_inner(state, renderer, size, status, false);
     state.inner.pointer_mut().element.status = previous;
     elements
 }
@@ -116,10 +112,12 @@ where
         .region
         .cursor()
         .or(state.state.seat.force_cursor);
-    state.inner.pointer_mut().element.status = match forced {
+    // A recording's privacy override wins even over compositor affordances
+    // inferred from an unlisted window. Live rendering has no override.
+    state.inner.pointer_mut().element.status = cursor_override.unwrap_or_else(|| match forced {
         Some(icon) => smithay::input::pointer::CursorImageStatus::Named(icon),
-        None => cursor_override.unwrap_or_else(|| state.state.seat.pointer_status.clone()),
-    };
+        None => state.state.seat.pointer_status.clone(),
+    });
 
     let hotspot_logical = state.inner.pointer_mut().element.get_current_hotspot();
     // hotspot is in surface logical buffer space; convert to physical:
