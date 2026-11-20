@@ -754,7 +754,9 @@ impl Reader {
             Ok(true) => {}
             Ok(false) => {
                 self.stopped = true;
-                if self.decoded_from_start { self.known_frames = Some(self.next); }
+                if self.decoded_from_start {
+                    self.known_frames = Some(self.next);
+                }
                 return Ok(None);
             }
             Err(e) => {
@@ -767,7 +769,9 @@ impl Reader {
                         return Err(e);
                     }
                     self.torn_tail = true;
-                    if self.decoded_from_start { self.known_frames = Some(self.next); }
+                    if self.decoded_from_start {
+                        self.known_frames = Some(self.next);
+                    }
                     return Ok(None);
                 }
                 self.poisoned = true;
