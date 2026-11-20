@@ -13,6 +13,9 @@ use rustls_pki_types::pem::PemObject as _;
 #[cfg(feature = "datetime")]
 use crate::numeric::as_timestamp;
 use crate::value::Value;
+#[cfg(feature = "sqlite")]
+#[path = "sqlbackup.rs"]
+mod sqlbackup;
 use std::cell::RefCell;
 use std::rc::Rc;
 use unicode_segmentation::UnicodeSegmentation;
@@ -316,6 +319,7 @@ builtin_table! {
     ("tar_pack", CapabilityClass::FsWrite,        "io",      "Pack a source DIRECTORY into a new archive at path (deterministic sorted walk, numeric owner/mtime/mode, security.capability captured as a SCHILY.xattr PAX record with keep_special_bits; refuses device/fifo members, an output inside the source, and a file that changes size while packed). opts: codec (zstd default), level (zstd 1..=22 default 7, gzip clamps to 9), keep_special_bits (default false strips suid/sgid)", contract!((source: string, path: string, opts?: map("tar_pack_options", {codec: string, level: number, keep_special_bits: bool})) -> map("tar_receipt"); failure[raises])),
     ("sqlexec", CapabilityClass::FsWrite,         "io",      "Execute SQL on a SQLite handle, return result rows", contract!((handle: number, sql: string, params?: any) -> any_of(list, map); failure[raises])),
     ("sqlclose", CapabilityClass::FsWrite,        "io",      "Close a SQLite database handle", contract!((handle: number) -> nil; failure[raises])),
+    ("sqlbackup", CapabilityClass::FsWrite,      "io",      "Online SQLite file backup with integrity_check: sqlbackup(src_path, dst_path[, opts]) -> {ok, pages, bytes, integrity, duration_ms}. opts: overwrite (false), mode (0o600), retry_ms (5000, max 60000). Raises typed SQL errors. Shell profile, sqlite feature. See mix man sqlbackup", contract!((src_path: string, dst_path: string, opts?: map) -> map; failure[raises])),
     ("db_query", CapabilityClass::Db,        "db",      "Query the host-injected scoped DB: db_query(sql, [params]) → rows", contract!((sql: string, params?: any_of(list, nil)) -> list; effects[blocking]; failure[raises])),
     ("db_exec", CapabilityClass::Db,         "db",      "Exec on the host-injected scoped DB: db_exec(sql, [params]) → {affected, last_insert_id}", contract!((sql: string, params?: any_of(list, nil)) -> map("db_exec_result", {affected: number, last_insert_id: number}); effects[blocking]; failure[raises])),
     ("jmap", CapabilityClass::Jmap,            "jmap",    "Call the host-injected JMAP upstream: jmap(method, args) → result, or jmap([[method,args,callId],…]) → methodResponses", contract!((method: any_of(string, list), args?: any_of(map, nil)) -> any_of(map, list); effects[blocking]; failure[raises])),
@@ -1017,6 +1021,8 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         #[cfg(feature = "sqlite")]
         "sqlopen" => builtin_sqlopen(args),
         #[cfg(feature = "sqlite")]
+        "sqlbackup" => sqlbackup::builtin_sqlbackup(args),
+        #[cfg(feature = "sqlite")]
         "sqlexec" => builtin_sqlexec(args),
         #[cfg(feature = "sqlite")]
         "sqlclose" => builtin_sqlclose(args),
@@ -1242,6 +1248,9 @@ pub fn man_topic_for_builtin(name: &str) -> Option<&'static str> {
     ];
     if name.starts_with("tar_") {
         return Some("tar");
+    }
+    if name == "sqlbackup" {
+        return Some("sqlbackup");
     }
     if matches!(name, "sqlopen" | "sqlexec" | "sqlclose") {
         return Some("sqlopen");
@@ -30721,7 +30730,7 @@ fn builtin_help(_args: Vec<Value>) -> MixResult<Option<Value>> {
     );
     println!("           (also $b[i], length, slice, `for each` — v0.64.0 — and take, drop,");
     println!("           reverse, index_of, contains — v0.70.0)");
-    println!("SQL:       sqlopen sqlexec sqlclose");
+    println!("SQL:       sqlopen sqlexec sqlclose sqlbackup");
     println!("URL:       url_parse");
     println!("Mail:      rfc2047_decode rfc2047_encode (header encoded-words, v0.67.0)");
     println!("Bus:       send address emit port_exists");

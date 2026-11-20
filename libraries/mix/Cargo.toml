@@ -181,7 +181,7 @@ reqwest = { workspace = true, optional = true, features = ["gzip"] }
 # unifies them (no second rustls/root-store in the tree).
 webpki-roots = { version = "0.26", optional = true }
 rustls-pki-types = { workspace = true, optional = true }
-rusqlite = { workspace = true, optional = true }
+rusqlite = { workspace = true, optional = true, features = ["backup"] }
 # `archive` feature only — see the feature comment above.
 tar = { version = "0.4.46", optional = true }
 structured-zstd = { version = "0.0.58", optional = true }
