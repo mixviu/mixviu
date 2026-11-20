@@ -7,19 +7,32 @@ macro_rules! page {
         #[test]
         fn $name() {
             let ctx = egui::Context::default();
-            let mut view = SceneView::new(include_str!(concat!("../../../apps/gallery/deck-pages/", $file, ".scene.mix"))).unwrap();
+            let mut view = SceneView::new(include_str!(concat!(
+                "../../../apps/gallery/deck-pages/",
+                $file,
+                ".scene.mix"
+            )))
+            .unwrap();
             let raw = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.,900.))),
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1600., 900.),
+                )),
                 ..Default::default()
             };
-            let mut output = ctx.run_ui(raw, |ui| { view.show(ui); });
+            let mut output = ctx.run_ui(raw, |ui| {
+                view.show(ui);
+            });
             assert!(!output.shapes.is_empty());
             let root = view.geometry["root"];
             for (id, rect) in &view.geometry {
                 assert!(rect.is_finite(), "{id}");
-                assert!(rect.width() <= root.width()+1., "{id}: {rect:?}");
+                assert!(rect.width() <= root.width() + 1., "{id}: {rect:?}");
                 if id != "root" {
-                    assert!(rect.bottom() <= 800., "{id}: content extends into rail: {rect:?}");
+                    assert!(
+                        rect.bottom() <= 800.,
+                        "{id}: content extends into rail: {rect:?}"
+                    );
                 }
             }
             output.textures_delta.clear();
@@ -52,14 +65,26 @@ fn source() -> String {
 fn inline_runs_keep_layout_colours_history_and_highlight() {
     let ctx = egui::Context::default();
     let mut view = SceneView::new(&source()).unwrap();
-    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| { view.show(ui); });
-    let job = output.shapes.iter().find_map(|s| match &s.shape {
-        egui::Shape::Text(t) if t.galley.job.text == "fn hello old\nnew" => Some(&t.galley.job),
-        _ => None,
-    }).expect("one inline layout, preserving newline and spaces");
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        view.show(ui);
+    });
+    let job = output
+        .shapes
+        .iter()
+        .find_map(|s| match &s.shape {
+            egui::Shape::Text(t) if t.galley.job.text == "fn hello old\nnew" => Some(&t.galley.job),
+            _ => None,
+        })
+        .expect("one inline layout, preserving newline and spaces");
     assert_eq!(job.sections.len(), 4);
-    assert_eq!(job.sections[0].format.color, egui::Color32::from_rgb(255,143,163));
-    assert_eq!(job.sections[1].format.color, egui::Color32::from_rgb(127,212,255));
+    assert_eq!(
+        job.sections[0].format.color,
+        egui::Color32::from_rgb(255, 143, 163)
+    );
+    assert_eq!(
+        job.sections[1].format.color,
+        egui::Color32::from_rgb(127, 212, 255)
+    );
     assert!(job.sections[2].format.strikethrough.width > 0.);
     assert!(job.sections[3].format.background.a() > 0);
     assert!(view.geometry["root"].height() > 25.);
@@ -69,7 +94,7 @@ fn inline_runs_keep_layout_colours_history_and_highlight() {
 fn malformed_bound_runs_refuse_before_rendering() {
     let nodes = json!({"root":{"widget":"text","text":"","spans":"= $model.runs"}});
     let source = format!("---\nscene: 1\nname: deck\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
-    assert!(SceneView::with_model(&source,json!({"runs":[{"text":"x","role":"typo"}]})).is_err());
+    assert!(SceneView::with_model(&source, json!({"runs":[{"text":"x","role":"typo"}]})).is_err());
 }
 
 #[test]
@@ -82,10 +107,12 @@ fn render_review_slide() {
         .with_size(egui::vec2(1600., 900.))
         .with_pixels_per_point(2.4)
         .wgpu()
-        .build_ui(move |ui| { view.show(ui); });
+        .build_ui(move |ui| {
+            view.show(ui);
+        });
     harness.run();
     let image = harness.render().expect("native offscreen render");
-    assert_eq!(image.dimensions(), (3840,2160));
+    assert_eq!(image.dimensions(), (3840, 2160));
     let out = dir.join("viu-slide.png");
     image.save(&out).unwrap();
     println!("DECK_PNG={}", out.display());

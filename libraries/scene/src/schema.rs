@@ -445,17 +445,46 @@ pub(crate) fn check_port_value(
             runs.len() <= 1024
                 && runs.iter().all(|run| {
                     run.as_object().is_some_and(|o| {
-                        o.keys().all(|k| matches!(k.as_str(), "text" | "role" | "color" | "mono" | "strike" | "highlight"))
-                            && run["text"].as_str().is_some_and(|s| s.len() <= 65536)
-                            && run.get("role").is_none_or(|v| v.as_str().is_some_and(|r| ["text", "keyword", "function", "string", "comment", "value", "ok", "bad", "warn", "acc", "mut"].contains(&r)))
-                            && run.get("color").is_none_or(|v| v.as_str().is_some_and(|s| s.len() == 7 && s.starts_with('#') && s[1..].bytes().all(|b| b.is_ascii_hexdigit())))
-                            && ["mono", "strike", "highlight"].iter().all(|k| run.get(k).is_none_or(JsonValue::is_boolean))
+                        o.keys().all(|k| {
+                            matches!(
+                                k.as_str(),
+                                "text" | "role" | "color" | "mono" | "strike" | "highlight"
+                            )
+                        }) && run["text"].as_str().is_some_and(|s| s.len() <= 65536)
+                            && run.get("role").is_none_or(|v| {
+                                v.as_str().is_some_and(|r| {
+                                    [
+                                        "text", "keyword", "function", "string", "comment",
+                                        "value", "ok", "bad", "warn", "acc", "mut",
+                                    ]
+                                    .contains(&r)
+                                })
+                            })
+                            && run.get("color").is_none_or(|v| {
+                                v.as_str().is_some_and(|s| {
+                                    s.len() == 7
+                                        && s.starts_with('#')
+                                        && s[1..].bytes().all(|b| b.is_ascii_hexdigit())
+                                })
+                            })
+                            && ["mono", "strike", "highlight"]
+                                .iter()
+                                .all(|k| run.get(k).is_none_or(JsonValue::is_boolean))
                     })
                 })
-                && runs.iter().filter_map(|r| r["text"].as_str()).map(str::len).sum::<usize>() <= 65536
+                && runs
+                    .iter()
+                    .filter_map(|r| r["text"].as_str())
+                    .map(str::len)
+                    .sum::<usize>()
+                    <= 65536
         });
         if !valid {
-            out.push(Diagnostic::error("span-value", line, format!("invalid or unbounded inline spans on {id}")));
+            out.push(Diagnostic::error(
+                "span-value",
+                line,
+                format!("invalid or unbounded inline spans on {id}"),
+            ));
         }
     }
     let motion_error = match k {

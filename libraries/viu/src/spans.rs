@@ -14,17 +14,44 @@ pub(crate) fn job(ui: &egui::Ui, spans: &Value, size: f32, mono: bool, base: Col
             "comment" | "mut" => "text_faint",
             _ => "text",
         };
-        let color = run["color"].as_str().and_then(|s| {
-            let rgb = u32::from_str_radix(s.strip_prefix('#')?, 16).ok()?;
-            Some(Color32::from_rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8))
-        }).or_else(|| crate::appearance::colour(ui.ctx(), role)).unwrap_or(base);
-        job.append(run["text"].as_str().unwrap_or(""), 0., TextFormat {
-            font_id: FontId::new(size, if mono || run["mono"] == true { FontFamily::Monospace } else { FontFamily::Proportional }),
-            color,
-            background: if run["highlight"] == true { color.gamma_multiply(0.14) } else { Color32::TRANSPARENT },
-            strikethrough: if run["strike"] == true { Stroke::new(1., color) } else { Stroke::NONE },
-            ..Default::default()
-        });
+        let color = run["color"]
+            .as_str()
+            .and_then(|s| {
+                let rgb = u32::from_str_radix(s.strip_prefix('#')?, 16).ok()?;
+                Some(Color32::from_rgb(
+                    (rgb >> 16) as u8,
+                    (rgb >> 8) as u8,
+                    rgb as u8,
+                ))
+            })
+            .or_else(|| crate::appearance::colour(ui.ctx(), role))
+            .unwrap_or(base);
+        job.append(
+            run["text"].as_str().unwrap_or(""),
+            0.,
+            TextFormat {
+                font_id: FontId::new(
+                    size,
+                    if mono || run["mono"] == true {
+                        FontFamily::Monospace
+                    } else {
+                        FontFamily::Proportional
+                    },
+                ),
+                color,
+                background: if run["highlight"] == true {
+                    color.gamma_multiply(0.14)
+                } else {
+                    Color32::TRANSPARENT
+                },
+                strikethrough: if run["strike"] == true {
+                    Stroke::new(1., color)
+                } else {
+                    Stroke::NONE
+                },
+                ..Default::default()
+            },
+        );
     }
     job
 }
