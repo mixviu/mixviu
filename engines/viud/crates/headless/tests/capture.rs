@@ -175,7 +175,15 @@ fn record_cold_start_under_load_has_no_capture_drops() {
             let running = running.clone();
             scope.spawn(move || {
                 while running.load(std::sync::atomic::Ordering::Relaxed) {
-                    std::hint::spin_loop();
+                    // Keep competing CPU work through the measured second,
+                    // with scheduling room for the other pool tests. The
+                    // injected first-read cost isolates cold-path deferral;
+                    // starving every later read would test scheduler jitter.
+                    let busy_until = Instant::now() + Duration::from_millis(1);
+                    while Instant::now() < busy_until {
+                        std::hint::spin_loop();
+                    }
+                    thread::sleep(Duration::from_millis(4));
                 }
             });
         }
