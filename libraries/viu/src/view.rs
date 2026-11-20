@@ -168,7 +168,7 @@ impl SceneView {
         &self.tree.model
     }
     pub fn lab_equal(&self, other: &Self) -> bool {
-        self.tree == other.tree
+        self.tree == other.tree && match (&self.frame,&other.frame) { (Some(a),Some(b))=>a.lab_equal(b),(None,None)=>true,_=>false }
     }
     /// Disposable prototype; nested edits with rollback receipts per root.
     pub fn apply_patch_lab(&mut self, ops: &Value) -> Result<(), String> {

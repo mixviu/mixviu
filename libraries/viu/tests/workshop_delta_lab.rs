@@ -11,18 +11,20 @@ fn captured_model_patch_replay() {
     paths.sort();
     assert!(!paths.is_empty());
     let mut view: Option<SceneView>=None;
+    let mut full: Option<SceneView>=None;
     for path in paths {
         let model:Value=serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
         let patch:Value=serde_json::from_slice(&std::fs::read(format!("{}.patch",path.display())).unwrap()).unwrap();
-        if view.is_none() { view=Some(SceneView::with_model(&bundle.scene,model).unwrap());continue; }
+        if view.is_none() { view=Some(viu::gold_frame::mount(&bundle.scene,model.clone()).unwrap());full=Some(viu::gold_frame::mount(&bundle.scene,model).unwrap());continue; }
         let view=view.as_mut().unwrap();
         let start=std::time::Instant::now();
         view.apply_patch_lab(&patch).unwrap();
         let apply_us=start.elapsed().as_micros();
         let start=std::time::Instant::now();
-        let full=SceneView::with_model(&bundle.scene,model).unwrap();
+        let full=full.as_mut().unwrap();
+        full.apply_model(model).unwrap();
         let full_us=start.elapsed().as_micros();
-        assert!(view.lab_equal(&full),"{}",path.display());
-        eprintln!("LAB_NATIVE {} apply_us={apply_us} full_resolve_us={full_us}",path.display());
+        assert!(view.lab_equal(full),"{}",path.display());
+        eprintln!("LAB_NATIVE {} apply_us={apply_us} full_apply_us={full_us}",path.display());
     }
 }
