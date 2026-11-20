@@ -157,7 +157,7 @@ impl Host {
     fn publication_result(&mut self, generation: u64, revision: u64, result: Result<(), String>) {
         let (command, body) = match result {
             Ok(()) => {
-                self.model_refused=None;
+                self.model_refused = None;
                 self.model_revision = Some((generation, revision));
                 (
                     "viu.model.applied",
@@ -165,7 +165,7 @@ impl Host {
                 )
             }
             Err(message) => {
-                self.model_refused=Some(generation);
+                self.model_refused = Some(generation);
                 self.error = message.clone();
                 (
                     "viu.model.refused",
@@ -180,7 +180,9 @@ impl Host {
         patch: &crate::model_patch::Patch,
         ctx: &egui::Context,
     ) -> Result<(), String> {
-        if self.model_refused==Some(patch.generation) {return Err("model publication requires full resynchronisation".into());}
+        if self.model_refused == Some(patch.generation) {
+            return Err("model publication requires full resynchronisation".into());
+        }
         if self.model_revision != Some((patch.generation, patch.base)) {
             return Err("stale model base; publish a full model".into());
         }

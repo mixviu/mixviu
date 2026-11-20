@@ -80,11 +80,16 @@ end
     assert_eq!(host.model_revision, Some((generation, 2)));
     assert_eq!(host.view.revision, revision);
     assert_eq!(host.view.model()["label"], "changed");
-    host.dispatch("test.patch".into(),json!({"base":2,"revision":3,"label":"must wait for resync"}),BTreeMap::new(),None);
-    settle(&mut host,&ctx);
+    host.dispatch(
+        "test.patch".into(),
+        json!({"base":2,"revision":3,"label":"must wait for resync"}),
+        BTreeMap::new(),
+        None,
+    );
+    settle(&mut host, &ctx);
     assert!(host.error.contains("requires full resynchronisation"));
-    assert_eq!(host.model_revision,Some((generation,2)));
-    assert_eq!(host.view.model()["label"],"changed");
+    assert_eq!(host.model_revision, Some((generation, 2)));
+    assert_eq!(host.view.model()["label"], "changed");
     host.dispatch(
         "test.full".into(),
         json!({"revision":4,"label":"resynchronised"}),
