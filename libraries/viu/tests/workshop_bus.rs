@@ -531,6 +531,8 @@ fn call(
 #[test]
 fn workshop_capture_diagnostic() {
     for count in [4, 200] {
+        let captures=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/workshop-model-captures");
+        if let Ok(entries)=std::fs::read_dir(&captures) { for entry in entries { let path=entry.unwrap().path(); if path.extension().is_some_and(|e|e=="json" || e=="patch") { std::fs::remove_file(path).unwrap(); } } }
         eprintln!("WORKSHOP_PEERS {count}");
         let broker = test_broker::Broker::start();
         let rt = tokio::runtime::Builder::new_multi_thread()
