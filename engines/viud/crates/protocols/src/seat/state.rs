@@ -28,6 +28,9 @@ pub struct Seat<Handler: SeatHandler> {
     /// on disconnect; ClientId also distinguishes reconnects and PID reuse.
     pub agent_clients: AgentClients,
     pub pointer_status: CursorImageStatus,
+    /// Enter epoch that authorised the pointer image. `None` is compositor or
+    /// tablet state, never evidence of a client cursor for a listed take.
+    pub pointer_status_enter: Option<smithay::utils::Serial>,
     pub relative_pointer_manager_state: RelativePointerManagerState,
     pub pointer_constraints_state: PointerConstraintsState,
     /// `zwp_pointer_gestures_v1` global — lets the focused window client receive

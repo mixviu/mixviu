@@ -24,10 +24,15 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
         _ => Some(world::state::output_key(output)),
     };
     state.inner.comp.injection.agent_pointer = None;
-    if PREVIOUS.with_borrow(|last| *last == mode) {
+    let command = mode.split(':').next().unwrap_or_default();
+    state.state.seat.force_cursor = command.ends_with("forced")
+        .then_some(smithay::input::pointer::CursorIcon::Crosshair);
+    if command != "overlap" && PREVIOUS.with_borrow(|last| *last == mode) {
         return;
     }
-    let app = if mode == "private" {
+    let app = if command.starts_with("different") {
+        "cursor-different"
+    } else if command.starts_with("private") {
         "cursor-private"
     } else {
         "cursor-listed"
@@ -47,19 +52,45 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
     else {
         return;
     };
-    let Some(surface) = window.wl_surface().map(|s| s.into_owned()) else {
+    let Some(mut surface) = window.wl_surface().map(|s| s.into_owned()) else {
         return;
     };
     let Some(pointer) = state.state.seat.seat.get_pointer() else {
         return;
     };
-    let location = state
+    let mut location = state
         .inner
         .space_state()
         .state
         .element_location(&window)
         .unwrap_or_default()
         .to_f64();
+    let mut point = location + smithay::utils::Point::from((20.0, 20.0));
+    if command == "listed-popup" || command == "listed-sub" {
+        // Use Smithay's real surface hit test; the test's enter event confirms
+        // which child actually received focus (not just membership in a walk).
+        let local = if command == "listed-popup" { (190.0, 50.0) } else { (50.0, 50.0) };
+        let Some((child, offset)) = window.surface_under(local, smithay::desktop::WindowSurfaceType::ALL) else {
+            panic!("listed child not mapped: {command}");
+        };
+        assert_ne!(child, surface, "fixture must focus the child");
+        surface = child;
+        point = location + smithay::utils::Point::from(local);
+        location += offset.to_f64();
+    }
+    if command == "overlap" {
+        let hit = world::surface::interface::hit::surface_under_filtered(state, point, &|_| true);
+        let Some(world::surface::interface::hit::SurfaceHit::Window { surface: hit_surface, position, .. }) = hit else {
+            return;
+        };
+        surface = hit_surface;
+        location = position;
+        if pointer.current_focus().as_ref() == Some(&surface) {
+            return;
+        }
+    }
+    let dragging = command == "drag-listed";
+    if !dragging {
     pointer.button(
         &mut state.state,
         &ButtonEvent {
@@ -69,15 +100,17 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
             state: ButtonState::Released,
         },
     );
+    }
     pointer.motion(
         &mut state.state,
         Some((surface, location)),
         &MotionEvent {
-            location: smithay::utils::Point::from((location.x + 20.0, location.y + 20.0)),
+            location: point,
             serial: SERIAL_COUNTER.next_serial(),
             time: 0,
         },
     );
+    if !dragging {
     pointer.button(
         &mut state.state,
         &ButtonEvent {
@@ -87,6 +120,7 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
             state: ButtonState::Pressed,
         },
     );
+    }
     pointer.frame(&mut state.state);
     PREVIOUS.with_borrow_mut(|last| *last = mode);
 }

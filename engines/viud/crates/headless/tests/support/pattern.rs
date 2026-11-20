@@ -98,6 +98,37 @@ impl Pattern {
         pointer.set_cursor(serial, None, 0, 0);
         self.conn.flush().unwrap();
     }
+    pub fn named_cursor(&mut self) {
+        use wayland_protocols::wp::cursor_shape::v1::client::{
+            wp_cursor_shape_manager_v1::WpCursorShapeManagerV1,
+            wp_cursor_shape_device_v1::Shape,
+        };
+        let name = self.state.globals.iter().find(|(_, i, _)| i == "wp_cursor_shape_manager_v1").unwrap().0;
+        let qh = self.queue.handle();
+        let manager: WpCursorShapeManagerV1 = self.registry.bind(name, 1, &qh, ());
+        let (serial, pointer) = self.state.last_enter.clone().expect("cursor enter");
+        let device = manager.get_pointer(&pointer, &qh, ());
+        device.set_shape(serial, Shape::Crosshair);
+        device.destroy();
+        manager.destroy();
+        self.queue.roundtrip(&mut self.state).unwrap();
+    }
+    pub fn subsurface(&mut self) -> (WlSurface, wayland_client::protocol::wl_subsurface::WlSubsurface) {
+        use wayland_client::protocol::wl_subcompositor::WlSubcompositor;
+        let name = self.state.globals.iter().find(|(_, i, _)| i == "wl_subcompositor").unwrap().0;
+        let qh = self.queue.handle();
+        let manager: WlSubcompositor = self.registry.bind(name, 1, &qh, ());
+        let surface = self.compositor.create_surface(&qh, ());
+        let sub = manager.get_subsurface(&surface, &self.surface, &qh, ());
+        sub.set_position(40, 40);
+        let buffer = buffer(&self.shm, &qh, 40, 40, |_, _| 0xff885522);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.damage_buffer(0, 0, 40, 40);
+        surface.commit();
+        self.surface.commit();
+        self.queue.roundtrip(&mut self.state).unwrap();
+        (surface, sub)
+    }
     pub fn custom_cursor(&mut self, colour: u32) -> WlSurface {
         let qh = self.queue.handle();
         let surface = self.compositor.create_surface(&qh, ());
@@ -617,6 +648,10 @@ impl Dispatch<WpPresentationFeedback, ()> for State {
     }
 }
 delegate_noop!(State: ignore WlCompositor);
+delegate_noop!(State: ignore wayland_client::protocol::wl_subcompositor::WlSubcompositor);
+delegate_noop!(State: ignore wayland_client::protocol::wl_subsurface::WlSubsurface);
+delegate_noop!(State: ignore wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1);
+delegate_noop!(State: ignore wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1);
 delegate_noop!(State: ignore wayland_client::protocol::wl_data_device_manager::WlDataDeviceManager);
 delegate_noop!(State: ignore wayland_client::protocol::wl_data_device::WlDataDevice);
 delegate_noop!(State: ignore wayland_client::protocol::wl_data_offer::WlDataOffer);

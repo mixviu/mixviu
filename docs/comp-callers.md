@@ -58,8 +58,14 @@ unlisted bottom-band windows, drag icons, notifications and OSD are excluded.
 Namespace identifies scene routing, not authenticated peer authority.
 Client cursor artwork, named shapes and hidden state are honoured only while
 pointer focus belongs to a listed window's surface tree (including its popups
-and subsurfaces) in the recorded view. Otherwise the compositor default image
-is drawn, including over another window of the same client. Drag icons are never
+and subsurfaces) in the recorded view, and the state was set during that same
+pointer enter epoch. A focus change uses the default until the newly focused
+listed surface sets its cursor; leaving and returning cannot revive old state.
+A cursor surface must also belong to the focused surface's client.
+Otherwise the compositor default image
+is drawn, including over another window of the same client and over compositor
+forced cursor affordances. During a drag the take always uses the default,
+even over a listed drop target: source cursor state and drag icons are never
 included. An unknown cursor output draws no cursor, as does a cursor belonging
 to another output.
 The live screen is unchanged, including windows covering listed content.
