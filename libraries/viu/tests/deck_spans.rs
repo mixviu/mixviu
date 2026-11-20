@@ -230,3 +230,15 @@ fn before_after_cards_paint_the_named_border_colours() {
         assert!(out.shapes.iter().any(|s| matches!(&s.shape,egui::Shape::Rect(r) if r.stroke.color==colour && r.stroke.width==1.)));
     }
 }
+#[test]
+fn a_constant_number_track_never_arms_animation_frames() {
+    let nodes = json!({"root":{"widget":"text","text":"0","number":{"to":0,"ms":60000}}});
+    let source = format!("---\nscene: 1\nname: count\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+    let mut view = SceneView::new(&source).unwrap();
+    let ctx = egui::Context::default();
+    for t in [0.,0.01,0.02] {
+        let mut out = ctx.run_ui(egui::RawInput{time:Some(t),..Default::default()},|ui| {view.show(ui);});
+        out.textures_delta.clear();
+        if t == 0.02 {assert!(out.viewport_output.values().all(|v|v.repaint_delay==std::time::Duration::MAX));}
+    }
+}

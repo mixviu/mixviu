@@ -10,6 +10,7 @@ struct Number {
     stamp: Value,
     preset: Preset,
     seen: bool,
+    changing: bool,
 }
 impl Numbers {
     pub fn begin(&mut self) {
@@ -22,7 +23,7 @@ impl Numbers {
         if n.stamp != *spec { *n = number(spec, now); }
         n.seen = true;
         let finish = n.preset.timing.start() + n.preset.timing.duration;
-        let animated = enabled && ui.style().animation_time != 0.0;
+        let animated = enabled && ui.style().animation_time != 0.0 && n.changing;
         let at = if animated { now } else { finish };
         let value = n.preset.sample(at).get(Property::Scalar);
         if animated && now < finish {
@@ -42,6 +43,8 @@ impl Numbers {
     }
 }
 fn number(spec: &Value, now: f64) -> Number {
+    let from = spec["from"].as_f64().unwrap_or(0.);
+    let to = spec["to"].as_f64().expect("validated number target");
     let preset = Preset {
         name: "number".into(),
         timing: Timing {
@@ -54,10 +57,10 @@ fn number(spec: &Value, now: f64) -> Number {
         tracks: vec![Track {
             property: Property::Scalar,
             keyframes: vec![
-                Keyframe { offset: 0., value: spec["from"].as_f64().unwrap_or(0.), easing: Curve::Bezier { x1: 1./3., y1: 1., x2: 2./3., y2: 1. } },
-                Keyframe { offset: 1., value: spec["to"].as_f64().expect("validated number target"), easing: Curve::Linear },
+                Keyframe { offset: 0., value: from, easing: Curve::Bezier { x1: 1./3., y1: 1., x2: 2./3., y2: 1. } },
+                Keyframe { offset: 1., value: to, easing: Curve::Linear },
             ],
         }],
     };
-    Number { stamp: spec.clone(), preset, seen: true }
+    Number { stamp: spec.clone(), preset, seen: true, changing: from != to }
 }
