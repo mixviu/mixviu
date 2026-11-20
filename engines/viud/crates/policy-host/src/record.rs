@@ -1927,7 +1927,10 @@ mod tests {
         let captured_us = recorder::bus::monotonic_us().unwrap();
         s.deferred_signature = Some(vec![7]);
         assign_first_capture(&mut s, recording, captured_us);
-        assert!(!superseded(&mut s.deferred_signature, &[8]), "pre-origin changes are outside the take");
+        assert!(
+            !superseded(&mut s.deferred_signature, &[8]),
+            "pre-origin changes are outside the take"
+        );
         s.recording
             .as_mut()
             .unwrap()
@@ -1950,8 +1953,11 @@ mod tests {
         s.deferred_signature = Some(vec![8]);
         assert!(superseded(&mut s.deferred_signature, &[9]));
         s.recording.as_mut().unwrap().superseded_capture();
-        assert_eq!(s.recording.as_ref().unwrap().status()["dropped_capture"], 1,
-            "post-origin losses must still count");
+        assert_eq!(
+            s.recording.as_ref().unwrap().status()["dropped_capture"],
+            1,
+            "post-origin losses must still count"
+        );
         stop_stream(&mut s, false);
         while !finish_recording(&mut s) {
             std::thread::sleep(Duration::from_millis(5));
