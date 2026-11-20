@@ -51,7 +51,7 @@ end
 fn citizen($h)
   if $h.broker_origin=="local" and type($h.from)=="string" and $h.from!="" then return "local:"..$h.from end
   if $h.broker_origin=="mesh" and type($h.broker_service)=="string" and type($h.broker_peer)=="string" then return "mesh:"..$h.broker_service.."@"..$h.broker_peer end
-  raise("UNAUTHENTICATED","broker citizen identity required")
+  raise("UNAUTHENTICATED","broker citizen identity required: "..json_encode({origin:$h.broker_origin,from:$h.from,service:$h.broker_service,peer:$h.broker_peer}))
 end
 fn perform($op,$a,$headers)
   $candidate=$core.apply($state.osd,$op,$a,monotonic(),$presets,citizen($headers))
