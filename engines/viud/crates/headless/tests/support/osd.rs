@@ -59,7 +59,7 @@ pub(super) fn ready(bus: &Bus) {
         if surfaces.as_object().is_some_and(|rows| {
             rows.values().any(|row| {
                 row["role"] == "layer"
-                    && row["output"] == "headless-0"
+                    && row["output"].is_string()
                     && row["layer"]["stratum"] == "overlay"
             })
         }) {
