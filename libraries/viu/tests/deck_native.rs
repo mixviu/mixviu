@@ -21,7 +21,7 @@ async fn call(client: &NodedClient, service: &str, command: &str, body: Value) -
             command,
             &Default::default(),
             &body.to_string(),
-            Duration::from_secs(40),
+            Duration::from_secs(180),
         )
         .await
         .unwrap();
@@ -157,6 +157,19 @@ fn bus_sweep_record_reference_play_and_decode_build_states() {
         let stopped=ok(c,"comp-deck","comp.record.stop",json!({"session":recording["session"]})).await;
         assert_eq!(idle["readbacks"],stopped["readbacks"],"a finished deck must not repaint an idle output");
         let state=ok(c,"deck","deck.state",json!({})).await;assert_eq!(state["slide"],"recorder");
+        // Also record the complete authored order, including the brand sting.
+        // Leave ten seconds after each last beat so every authored delay settles.
+        let document:Value=serde_json::from_slice(&std::fs::read(workspace.join("apps/deck/examples/vfl-self-recording.json")).unwrap()).unwrap();
+        let beats:Vec<Vec<u64>>=document["slides"].as_array().unwrap().iter().map(|s|{let n=s["steps"].as_u64().unwrap();let mut b:Vec<_>=(0..n).map(|i|i*2).collect();b.push((n-1)*2+10);b}).collect();
+        let full_path=evidence.join("full-reference.vfl");
+        let full=ok(c,"comp-deck","comp.record.start",json!({"request_id":"deck-full-reference","target":{"output":"headless-0"},"path":full_path,"fps":10,"cursor":false,"max_seconds":180})).await;
+        let completed=ok(c,"deck","deck.play",json!({"beats":beats})).await;
+        assert_eq!(completed["slide"],"closing");assert_eq!(completed["finished"],true);
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        ok(c,"comp-deck","comp.record.stop",json!({"session":full["session"]})).await;
+        let verified=Command::new(bin.join("mixd")).args(["vfl","verify"]).arg(&full_path).output().unwrap();
+        assert!(verified.status.success(),"{}",String::from_utf8_lossy(&verified.stdout));
+        println!("DECK_FULL_VFL={} {}",full_path.display(),String::from_utf8_lossy(&verified.stdout));
     });
     let verify = Command::new(bin.join("mixd"))
         .args(["vfl", "verify"])
