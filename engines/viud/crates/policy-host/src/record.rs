@@ -1249,13 +1249,15 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
 }
 
 fn answer_start(s: &mut Session) {
-    if s.start.is_none() && let Some(recording) = s.recording.as_ref() {
-            let reply = recording.started();
-            s.start = Some(reply.clone());
-            for answer in std::mem::take(&mut s.start_answers) {
-                answer(ControlReply::Body(reply.clone()));
-            }
-            event(s, "recording");
+    if s.start.is_none()
+        && let Some(recording) = s.recording.as_ref()
+    {
+        let reply = recording.started();
+        s.start = Some(reply.clone());
+        for answer in std::mem::take(&mut s.start_answers) {
+            answer(ControlReply::Body(reply.clone()));
+        }
+        event(s, "recording");
     }
 }
 
@@ -1605,7 +1607,10 @@ mod tests {
         install_warmup_deadline(&s, events.handle());
         events.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
         assert!(s.borrow().failed.is_some());
-        assert!(replied.get(), "the independent timer must answer the pending start");
+        assert!(
+            replied.get(),
+            "the independent timer must answer the pending start"
+        );
         assert!(!s.borrow().pending);
         assert!(!ready.get());
         assert_eq!(s.borrow().warmup_errors.len(), 1);
