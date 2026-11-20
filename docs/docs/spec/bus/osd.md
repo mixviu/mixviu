@@ -1,18 +1,25 @@
 # OSD scenes
 
 `osd` is a Mix behaviour on a privileged viu scene host. viud launches the
-host directly and authenticates its Wayland peer against the child's PID and
-process start time. The `viu-osd` namespace alone grants nothing: another
+host directly over a private AF_UNIX socketpair passed as `WAYLAND_SOCKET`,
+without `WAYLAND_DISPLAY`. Only that inserted connection has the private
+client-data token; PID and /proc are not authentication. The `viu-osd` namespace alone grants nothing: another
 client claiming it is closed. The compositor attaches the OSD mark to the
 surface resource; neither an app ID nor `comp.window.place` can supply it.
 
-Today any Bus citizen on the node may show, update or hide OSD content.
+Broker-attributed citizens may show content. Each item records its `owner`
+in `osd.list`; only that owner may update or hide it (`NOT_OWNER` otherwise).
+Unattributed mutations refuse `UNAUTHENTICATED`. Local owners use `local:<citizen>`;
+mesh owners use `mesh:<citizen>@<peer>` from broker-stamped headers, never body fields.
+Each caller has eight of the 32 slots (`CALLER_BUDGET_EXCEEDED`) and 30
+successful updates per one-second window (`RATE_LIMITED`). Failed validation
+does not spend the budget. Hide remains available at the update limit.
 Caller authorisation belongs to the Bus authorisation work shared with
 `comp.record` and `comp.capture.frame`; surface authentication does not
 authorise the caller or endorse its content.
 
 viud supervises the host with bounded restart backoff (250 ms to 30 s).
-Each restart pins the new child's identity; the old pin is revoked on exit.
+Each restart inserts a new token; the old token is revoked on exit.
 Items are lost on restart and callers must show them again.
 
 Marked surfaces compose in the OSD band above client and screen UI bands.

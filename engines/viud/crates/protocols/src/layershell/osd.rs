@@ -1,50 +1,40 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Compositor-owned OSD identity. A namespace is a label, never authority.
-use std::sync::Mutex;
-
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use smithay::reexports::wayland_server::{Client, DisplayHandle};
+use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
+use smithay::wayland::compositor::CompositorClientState;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Identity {
-    pid: i32,
-    start: u64,
+// Only insert() can construct this token; no shared-socket credential grants it.
+struct Connection {
+    state: CompositorClientState,
+    live: Arc<AtomicBool>,
 }
-
-impl Identity {
-    fn matches(self, peer: i32, live_start: Option<u64>) -> bool {
-        self.pid == peer && live_start == Some(self.start)
-    }
+impl ClientData for Connection {
+    fn initialized(&self, _: ClientId) {}
+    fn disconnected(&self, _: ClientId, _: DisconnectReason) {}
 }
-
-static HOST: Mutex<Option<Identity>> = Mutex::new(None);
-
-fn start_time(pid: i32) -> Option<u64> {
-    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    stat[stat.rfind(')')? + 1..]
-        .split_whitespace()
-        .nth(19)?
-        .parse()
-        .ok()
+pub struct Lease(Arc<AtomicBool>);
+impl Lease {
+    pub fn revoke(&self) { self.0.store(false, Ordering::Release); }
 }
-
-/// Pin a direct child launched by the compositor. Unreadable identity fails closed.
-pub fn bind(pid: i32) -> bool {
-    let identity = start_time(pid).map(|start| Identity { pid, start });
-    *HOST.lock().unwrap() = identity;
-    identity.is_some()
+impl Drop for Lease {
+    fn drop(&mut self) { self.revoke(); }
 }
-
-pub fn unbind() {
-    *HOST.lock().unwrap() = None;
+/// Register the private server end before spawning the child. Dropping the
+/// lease revokes authority even if another process retained the old socket.
+pub fn insert(display: &DisplayHandle, stream: std::os::unix::net::UnixStream) -> std::io::Result<Lease> {
+    let live = Arc::new(AtomicBool::new(true));
+    display.clone().insert_client(stream, Arc::new(Connection {
+        state: CompositorClientState::default(), live: live.clone(),
+    }))?;
+    Ok(Lease(live))
 }
-
-pub fn authorized(client: &Client, display: &DisplayHandle) -> bool {
-    let Some(host) = *HOST.lock().unwrap() else {
-        return false;
-    };
-    client
-        .get_credentials(display)
-        .is_ok_and(|credentials| host.matches(credentials.pid, start_time(host.pid)))
+pub fn compositor_state(client: &Client) -> Option<&CompositorClientState> {
+    client.get_data::<Connection>().map(|data| &data.state)
+}
+pub fn authorized(client: &Client, _: &DisplayHandle) -> bool {
+    client.get_data::<Connection>().is_some_and(|data| data.live.load(Ordering::Acquire))
 }
 
 /// Attached by viud to the Wayland resource after peer authentication.
@@ -81,22 +71,35 @@ pub fn marked(
 #[cfg(test)]
 mod tests {
     use super::*;
-
     #[test]
-    fn identity_is_live_and_unreadable_identity_fails_closed() {
-        assert!(start_time(std::process::id() as i32).is_some());
-        assert_eq!(start_time(-1), None);
-    }
-
-    #[test]
-    fn identity_rejects_pid_reuse_dead_leader_and_other_clients() {
-        let host = Identity {
-            pid: 42,
-            start: 1234,
-        };
-        assert!(host.matches(42, Some(1234)));
-        assert!(!host.matches(43, Some(1234)));
-        assert!(!host.matches(42, Some(1235)));
-        assert!(!host.matches(42, None));
+    fn same_pid_shared_client_is_refused_and_restart_revokes_old_connection() {
+        let display = smithay::reexports::wayland_server::Display::<()>::new().unwrap();
+        let mut handle = display.handle();
+        let (shared, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
+        let ordinary = handle.insert_client(shared, Arc::new(())).unwrap();
+        let (private, _child) = std::os::unix::net::UnixStream::pair().unwrap();
+        let lease = insert(&handle, private).unwrap();
+        // Both socketpairs were created by this process: identical peer PIDs.
+        assert_eq!(ordinary.get_credentials(&handle).unwrap().pid, std::process::id() as i32);
+        assert!(!authorized(&ordinary, &handle));
+        // Find the private client through a second insertion with retained handle.
+        let live = Arc::new(AtomicBool::new(true));
+        let (server, _client) = std::os::unix::net::UnixStream::pair().unwrap();
+        let host = handle.insert_client(server, Arc::new(Connection {
+            state: CompositorClientState::default(), live: live.clone(),
+        })).unwrap();
+        let old = Lease(live);
+        assert!(authorized(&host, &handle));
+        drop(old);
+        assert!(!authorized(&host, &handle));
+        let (server, _replacement) = std::os::unix::net::UnixStream::pair().unwrap();
+        let live = Arc::new(AtomicBool::new(true));
+        let replacement = handle.insert_client(server, Arc::new(Connection {
+            state: CompositorClientState::default(), live,
+        })).unwrap();
+        assert!(authorized(&replacement, &handle));
+        assert!(!authorized(&host, &handle));
+        drop(lease);
     }
 }
+

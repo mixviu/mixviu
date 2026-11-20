@@ -47,3 +47,26 @@ assert_eq($inherited.items.caption.phase,"exit")
 $immediate=$c.apply($s,"hide",{id:"caption",exit:nil},40.1,$presets)
 assert_eq(len(keys($immediate.items)),0)
 print("OSD core tests passed")
+
+assert_eq($s.items.caption.owner,"test")
+fn owned_refusal($code,$op,$args,$s,$who,$now=40.2)
+  $caught=false
+  try $next=$c.apply($s,$op,$args,$now,$presets,$who)
+  catch $message,$error assert_eq($error.code,$code);$caught=true end
+  assert($caught,"owned request should refuse")
+end
+owned_refusal("NOT_OWNER","update",{id:"caption"},$s,"other")
+owned_refusal("NOT_OWNER","hide",{id:"caption"},$s,"other")
+owned_refusal("INVALID_ARGS","update",{id:"caption",backing:"card",pointer_input:false},$s,"test")
+owned_refusal("INVALID_ANCHOR","update",{id:"caption",anchor:{output:repeat("x",129),edge:"top"}},$s,"test")
+$quota=$c.fresh()
+for $i=1 to 8 $quota=$c.apply($quota,"show",merge($a,{id:to_string($i)}),40,$presets,"one") end
+owned_refusal("CALLER_BUDGET_EXCEEDED","show",merge($a,{id:"ninth"}),$quota,"one")
+$quota=$c.apply($quota,"show",merge($a,{id:"other"}),40,$presets,"two")
+assert_eq(len(keys($quota.items)),9)
+for $i=1 to 30 $quota=$c.apply($quota,"update",{id:"1"},40.2,$presets,"one") end
+owned_refusal("RATE_LIMITED","update",{id:"1"},$quota,"one")
+$quota=$c.apply($quota,"update",{id:"other"},40.2,$presets,"two")
+$quota=$c.apply($quota,"update",{id:"1"},41.2,$presets,"one")
+assert_eq($quota.rates.one.updates,1)
+print("OSD ownership, quota and rate tests passed")

@@ -48,8 +48,13 @@ fn setup_watch()
     return false
   end
 end
-fn perform($op,$a)
-  $candidate=$core.apply($state.osd,$op,$a,monotonic(),$presets)
+fn citizen($h)
+  if $h.broker_origin=="local" and type($h.from)=="string" and $h.from!="" then return "local:"..$h.from end
+  if $h.broker_origin=="mesh" and type($h.broker_service)=="string" and type($h.broker_peer)=="string" then return "mesh:"..$h.broker_service.."@"..$h.broker_peer end
+  raise("UNAUTHENTICATED","broker citizen identity required")
+end
+fn perform($op,$a,$headers)
+  $candidate=$core.apply($state.osd,$op,$a,monotonic(),$presets,citizen($headers))
   if $op!="hide" and $candidate.items[$a.id].anchor.window!=nil then
     if not refresh_windows() then raise("COMP_UNAVAILABLE","compositor window inventory is unavailable; retry when it reconnects") end
     $ref=$candidate.items[$a.id].anchor.window;$w=$state.windows[to_string($ref.id)]
@@ -59,9 +64,9 @@ fn perform($op,$a)
   $state.osd=$candidate;sync_model()
   return {id:$a.id,applied:true}
 end
-fn answer_operation($op,$a)
+fn answer_operation($op,$a,$headers)
   try
-    $body=perform($op,$a);reply(0,json_encode($body))
+    $body=perform($op,$a,$headers);reply(0,json_encode($body))
   catch $message,$error
     reply(10,json_encode({error_code:$error.code ?? "INVALID_ARGS",message:$message}))
   end
@@ -73,11 +78,11 @@ fn action_rows()
   $coordinate={type:"number",minimum:-32768,maximum:32768}
   $margin={type:"number",minimum:0,maximum:4096}
   $anchor={oneOf:[
-    {type:"object",additionalProperties:false,required:["output","edge"],properties:{output:{type:"string",minLength:1},edge:{enum:["top","bottom","left","right","top-left","top-right","bottom-left","bottom-right"]},margin:{oneOf:[$margin,{type:"object",additionalProperties:false,properties:{top:$margin,right:$margin,bottom:$margin,left:$margin}}]}}},
+    {type:"object",additionalProperties:false,required:["output","edge"],properties:{output:{type:"string",minLength:1,maxLength:128},edge:{enum:["top","bottom","left","right","top-left","top-right","bottom-left","bottom-right"]},margin:{oneOf:[$margin,{type:"object",additionalProperties:false,properties:{top:$margin,right:$margin,bottom:$margin,left:$margin}}]}}},
     {type:"object",additionalProperties:false,required:["window"],properties:{window:{type:"object",additionalProperties:false,required:["id","generation"],properties:{id:{type:"integer",minimum:1},generation:{type:"integer",minimum:1}}},offset:{type:"object",additionalProperties:false,properties:{x:$coordinate,y:$coordinate}}}}
   ]}
   $motion={enum:[nil,"fade","up","down","left","right","pop"]}
-  $properties={id:$id,scene:$scene,anchor:$anchor,enter:$motion,exit:$motion,duration_ms:{type:["integer","null"],minimum:0,maximum:86400000},pointer_input:{type:"boolean"}}
+  $properties={id:$id,scene:$scene,anchor:$anchor,enter:$motion,exit:$motion,duration_ms:{type:["integer","null"],minimum:0,maximum:86400000},pointer_input:{type:"boolean"},backing:{enum:["card","none"]}}
   $show={type:"object",additionalProperties:false,required:["id","scene","anchor"],properties:$properties}
   $update={type:"object",additionalProperties:false,required:["id"],properties:$properties}
   $hide={type:"object",additionalProperties:false,required:["id"],properties:{id:$id,exit:$motion}}
@@ -88,9 +93,9 @@ fn action_rows()
   ]
 end
 sync_model()
-on osd.show answer_operation("show",$event.args) end
-on osd.update answer_operation("update",$event.args) end
-on osd.hide answer_operation("hide",$event.args) end
+on osd.show answer_operation("show",$event.args,$event.headers) end
+on osd.update answer_operation("update",$event.args,$event.headers) end
+on osd.hide answer_operation("hide",$event.args,$event.headers) end
 on osd.list
   try
     $core.check_fields($event.args,[],"list")
@@ -109,7 +114,7 @@ on osd.execute
   try
     $core.check_fields($event.args,["id","params"],"execute")
     if not contains(["osd.show","osd.update","osd.hide"],$event.args.id) then raise("UNKNOWN_ACTION","unknown OSD action") end
-    $body=perform(substr($event.args.id,4),$event.args.params ?? {})
+    $body=perform(substr($event.args.id,4),$event.args.params ?? {},$event.headers)
     reply(0,json_encode($body))
   catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end

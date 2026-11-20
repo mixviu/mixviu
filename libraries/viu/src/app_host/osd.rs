@@ -170,7 +170,7 @@ impl LayerProgram for Program {
         for item in self.snapshots() {
             if let Some(rect) = geometry(&item, &host.model, info) {
                 visible = true;
-                if item["pointer_input"] == true {
+                if item["phase"] != "exit" && (item["pointer_input"] == true || item["backing"] != "none") {
                     let key = (
                         info.output.clone().unwrap_or_default(),
                         item["id"].as_str().unwrap_or_default().to_owned(),
@@ -279,15 +279,18 @@ impl LayerProgram for Program {
             let layer = egui::LayerId::new(egui::Order::Foreground, egui::Id::unique(("osd", &id)));
             let mut child =
                 ui.new_child(egui::UiBuilder::new().max_rect(draw_rect).layer_id(layer));
+            child.set_clip_rect(draw_rect);
             child.set_opacity(values.get(motion::Property::Opacity) as f32);
             child.visuals_mut().override_text_color = Some(egui::Color32::WHITE);
-            child.painter().rect_filled(
+            if snapshot["backing"] != "none" { child.painter().rect_filled(
                 draw_rect,
                 8.,
                 egui::Color32::from_rgba_unmultiplied(20, 24, 32, 240),
             );
-            let content = draw_rect.shrink(12.);
+            }
+            let content = draw_rect.shrink(12.).intersect(draw_rect);
             let mut content_ui = child.new_child(egui::UiBuilder::new().max_rect(content));
+            content_ui.set_clip_rect(content);
             let entry = self.items.get_mut(&key).unwrap();
             let _ = entry.view.show(&mut content_ui);
             #[allow(deprecated)]
@@ -380,7 +383,7 @@ mod tests {
             "osd.show".into(),
             json!({"id":"no-output","scene":{"kind":"caption","text":"Expires without a surface"},
                 "anchor":{"output":"absent-output","edge":"bottom"},"duration_ms":1000}),
-            BTreeMap::new(),
+            BTreeMap::from([("broker_origin".into(), "local".into()), ("from".into(), "test".into())]),
             Some(tx),
         );
         loop {
