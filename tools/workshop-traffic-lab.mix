@@ -1,0 +1,36 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Disposable sender projection experiment against captured Traffic rows.
+$view=require("../apps/workshop/traffic-view.mix")
+$traffic=require("../apps/workshop/traffic.mix")
+$previous=[]
+fn cached_project($s)
+  global $previous
+  $rows=if $s.traffic_filter=="" then slice($s.traffic,max(0,len($s.traffic)-100)) else $traffic.rows($s,100,$s.traffic_filter) end
+  $empty=$s;$empty.traffic=[];$out=$view.project($empty)
+  $next=[];$rendered=[];$index=0
+  for $row in $rows
+    $found=nil
+    for $old in $previous if deep_eq($row,$old.row) then $found=$old;break end end
+    if $found==nil then
+      $one=$s;$one.traffic=[$row];$one.traffic_filter=""
+      $one=$view.project($one)
+      $found={row:$row,cells:$one.traffic_view.initial[1]}
+    end
+    push($next,$found);push($rendered,$found.cells);$index=$index+1
+  end
+  $previous=$next
+  $out.traffic_view.initial=concat($out.traffic_view.initial,$rendered)
+  return $out
+end
+$paths=sort(glob("target/workshop-model-captures/*.json"))
+if len($paths)==0 then raise("LAB","no captured Traffic oracle") end
+for $path in $paths
+  $model=json_parse(read_file($path))
+  if $model.traffic_view.kind!="cell-grid" then raise("LAB","this bounded specimen measures bottom Traffic only") end
+  $rows=map(slice($model.traffic_view.initial,1),fn($cells)=json_parse($cells[4].collapse))
+  $s={traffic:$rows,dock_open:true,traffic_filter:"",dock_side:"bottom",window_width:1100}
+  $start=monotonic();$full=$view.project($s);$full_ms=(monotonic()-$start)*1000
+  $start=monotonic();$cached=cached_project($s);$cached_ms=(monotonic()-$start)*1000
+  if not deep_eq($full,$cached) then raise("LAB","cached projection differs from full Traffic") end
+  print({file:basename($path),rows:len($rows),full_ms:$full_ms,cached_ms:$cached_ms,equivalent:true})
+end
