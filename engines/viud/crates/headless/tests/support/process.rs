@@ -397,11 +397,12 @@ pub fn spawn_size(label: &str, bus: &str, size: &str) -> Process {
 }
 
 #[allow(dead_code)]
-pub fn spawn_osd(label: &str, bus: &str) -> Process {
+pub fn spawn_osd(label: &str, bus: &str, size: &str) -> Process {
     spawn_options(Options {
         label,
         bus: Some(bus),
         osd: true,
+        size,
         ..Options::default()
     })
 }

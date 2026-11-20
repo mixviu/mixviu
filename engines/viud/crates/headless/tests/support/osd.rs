@@ -103,7 +103,10 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         return;
     }
     let bus = Bus::start("osd-caption");
-    let mut process = process::spawn_osd("osd-caption", &bus.url);
+    // Pixel/motion acceptance needs only the caption's 400x200 region. Keep
+    // debug readback/encoding bounded when the gate runs GPU tests together;
+    // strict 4K30 throughput has its own optimised acceptance benchmark.
+    let mut process = process::spawn_osd("osd-caption", &bus.url, "640x360");
     let mut pattern = Pattern::new(connect(&mut process));
     pattern.solid_buffer(0xff20d040);
     pattern.commit(true);
@@ -251,7 +254,7 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     let (_, _, after) = ppm(&bus, &process, "osd-hidden", None);
     assert_eq!(after, before, "fade must leave no OSD pixels");
     let stopped = bus.call("comp.record.stop", json!({"session":record["session"]}));
-    assert_eq!(stopped["dropped"], 0);
+    assert_eq!(stopped["dropped"], 0, "{stopped}");
 
     let mut reader = media_vfl::reader::Reader::open(&path).unwrap();
     let steady_x = shown_bounds[0] + 4;
@@ -434,7 +437,7 @@ fn window_card_follows_hides_and_osd_refusals_are_typed() {
         return;
     }
     let bus = Bus::start("osd-window");
-    let mut process = process::spawn_osd("osd-window", &bus.url);
+    let mut process = process::spawn_osd("osd-window", &bus.url, "1280x720");
     let mut pattern = Pattern::named(connect(&mut process), "osd-anchor", false);
     pattern.wait_callback(0);
     bus.ready();
