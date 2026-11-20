@@ -60,6 +60,7 @@ pub struct State {
     pub size: (i32, i32),
     pub callbacks: u64,
     pub pointer_buttons: u64,
+    pub pointer_motions: u64,
     pub keys: u64,
     pub keyboard_enters: u64,
     last_press: Option<(u32, WlSeat)>,
@@ -725,6 +726,9 @@ impl Dispatch<WlPointer, WlSeat> for State {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
+        if matches!(event, wl_pointer::Event::Motion { .. }) {
+            state.pointer_motions += 1;
+        }
         if let wl_pointer::Event::Enter {
             serial, surface, ..
         } = &event

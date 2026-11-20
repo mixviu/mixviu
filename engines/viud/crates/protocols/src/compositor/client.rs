@@ -20,6 +20,9 @@ use smithay::wayland::compositor::CompositorClientState;
 /// arrives here with no compositor session at all. A client with neither is a client we did
 /// not create and smithay did not either — there is no third source, so it aborts.
 pub fn client_compositor_state(client: &Client) -> &CompositorClientState {
+    if let Some(state) = crate::layershell::osd::compositor_state(client) {
+        return state;
+    }
     if let Some(session) = client.get_data::<WaylandClientSession>() {
         return &session.compositor_state;
     }

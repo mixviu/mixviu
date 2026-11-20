@@ -2881,6 +2881,93 @@ fn review_z_overlap_and_workspace_move_deliver_to_top_window() {
 }
 
 #[test]
+fn stationary_agent_buttons_refresh_hits_but_keep_grab_and_targeted_focus() {
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("stationary-agent");
+    let mut process = process::spawn(1, None, "stationary-agent", Some(&bus.url));
+    let mut a = Pattern::named(connect(&mut process), "stationary-a", false);
+    a.wait_callback(0);
+    let mut b = Pattern::named(connect(&mut process), "stationary-b", false);
+    b.wait_callback(0);
+    bus.ready();
+    let ar = bus.window_for("stationary-a", &mut [&mut a, &mut b]);
+    let br = bus.window_for("stationary-b", &mut [&mut a, &mut b]);
+    for (row, z) in [(&ar, 20), (&br, 10)] {
+        bus.call(
+            "comp.window.place",
+            place_args(row, json!({"x":100,"y":100,"z":z})),
+        );
+    }
+    let row = bus.window_for("stationary-a", &mut [&mut a, &mut b]);
+    bus.call("comp.input.pointer.move", json!({"seat":"agent","output":"headless-0","x":row["window_x"].as_f64().unwrap()+40.0,"y":row["window_y"].as_f64().unwrap()+50.0}));
+    bus.call(
+        "comp.input.pointer.button",
+        json!({"seat":"agent","button":"left","action":"click"}),
+    );
+    pump_patterns(&mut [&mut a, &mut b]);
+    let (ac, bc) = (a.state.pointer_buttons, b.state.pointer_buttons);
+    assert!(ac >= 2, "initial hit must positively reach A");
+    let motions = a.state.pointer_motions;
+    bus.call(
+        "comp.input.pointer.button",
+        json!({"seat":"agent","button":"left","action":"click"}),
+    );
+    pump_patterns(&mut [&mut a, &mut b]);
+    assert_eq!(
+        a.state.pointer_motions, motions,
+        "unchanged hit emits no motion"
+    );
+    let ac = a.state.pointer_buttons;
+    bus.call("comp.window.place", place_args(&br, json!({"z":30})));
+    // No motion: an untargeted press must discover the new topmost window.
+    bus.call(
+        "comp.input.pointer.button",
+        json!({"seat":"agent","button":"left","action":"click"}),
+    );
+    pump_patterns(&mut [&mut a, &mut b]);
+    assert_eq!(a.state.pointer_buttons, ac);
+    assert_eq!(b.state.pointer_buttons, bc + 2);
+
+    bus.call("comp.window.place", place_args(&ar, json!({"z":40})));
+    bus.call(
+        "comp.input.pointer.button",
+        json!({"seat":"agent","button":"left","action":"press"}),
+    );
+    pump_patterns(&mut [&mut a, &mut b]);
+    let (ac, bc) = (a.state.pointer_buttons, b.state.pointer_buttons);
+    bus.call("comp.window.place", place_args(&br, json!({"z":50})));
+    bus.call(
+        "comp.input.pointer.button",
+        json!({"seat":"agent","button":"right","action":"click"}),
+    );
+    bus.call(
+        "comp.input.pointer.button",
+        json!({"seat":"agent","button":"left","action":"release"}),
+    );
+    pump_patterns(&mut [&mut a, &mut b]);
+    assert_eq!(
+        a.state.pointer_buttons,
+        ac + 3,
+        "chord and release retain the implicit grab owner"
+    );
+    assert_eq!(b.state.pointer_buttons, bc);
+    let ac = a.state.pointer_buttons;
+    bus.call(
+        "comp.input.pointer.button",
+        json!({"seat":"agent","window":target(&ar),"button":"left","action":"click"}),
+    );
+    pump_patterns(&mut [&mut a, &mut b]);
+    assert_eq!(
+        a.state.pointer_buttons,
+        ac + 2,
+        "explicit targeting retains the named delivery target"
+    );
+    assert_eq!(b.state.pointer_buttons, bc);
+}
+
+#[test]
 #[ignore = "needs a render node and built viud/noded/Mix"]
 fn review_popup_outside_parent_is_drawn_without_clip_in_both_capture_paths() {
     let bus = Bus::start("popup-clip");
