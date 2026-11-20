@@ -1,0 +1,41 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$claims = 0
+$reports = 0
+$executions = 0
+$TOOLS_WHOIS = "/usr/bin/true"
+$TOOLS_DIG = "/usr/bin/true"
+if tools_exec_safe("relative").ok or tools_exec_safe("/tmp/nonexistent-toolsd").ok then raise("TEST", "unsafe executable accepted") end
+for $domain in ["-h", "x;id.example", "a..test", "a b.test", "$(id).test", "é.test", "a.test\n--help"]
+  if tools_validate("whois", {domain:$domain}).ok then raise("TEST", "bad parameter accepted") end
+end
+if tools_validate("unknown", {}).ok or tools_role_ok(tools_spec("dig"), "unknown") or tools_role_ok(tools_spec("dig"), "user") then raise("TEST", "unknown tool/role accepted") end
+function fixture_http($url, $body, $headers, $opts)
+  global $claims, $reports
+  if $headers["X-Tools-Secret"] != "fixture-secret-never-export" or $opts.ca_file != "/fixture/ca.pem" then raise("TEST", "credential or CA missing") end
+  if ends_with($url, "/claim-next") then
+    if $opts.timeout != 15 then raise("TEST", "claim timeout") end
+    $claims = $claims + 1
+    $run = {run_id:$claims,lease_token:"lease",tool:"dig",requested_role:"admin",params:json_encode({domain:"Example.TEST",type:"mx",shell:"ignored"})}
+    if $claims == 1 then $run.tool = "unknown" end
+    if $claims == 2 then $run.requested_role = "unknown" end
+    if $claims == 3 then $run.params = json_encode({domain:"-h"}) end
+    return {status:200,body:json_encode($run)}
+  end
+  if $opts.timeout != 20 then raise("TEST", "report timeout") end
+  $reports = $reports + 1
+  $v = json_parse($body)
+  if $reports <= 3 then
+    if $v.ok then raise("TEST", "invalid run executed") end
+  else
+    if byte_length($v.output) > 65536 or not $v.truncated then raise("TEST", "combined byte cap") end
+  end
+  return {status:200}
+end
+function fixture_exec($argv, $opts)
+  global $executions
+  if not deep_eq($argv, [realpath("/usr/bin/true"),"+short","mx","example.test"]) then raise("TEST", "shell or payload argv") end
+  if not $opts.clear_env or $opts.cwd != "/" or $opts.timeout != 8 or $opts.max_output != 65536 then raise("TEST", "exec bounds") end
+  if not deep_eq($opts.env, {PATH:"/usr/bin:/bin",LC_ALL:"C",TZ:"UTC"}) then raise("TEST", "credential leaked to env") end
+  $executions = $executions + 1
+  return {ok:true,exit_code:0,stdout:repeat("é", 30000),stderr:repeat("x", 30000),stdout_truncated:false,stderr_truncated:false}
+end

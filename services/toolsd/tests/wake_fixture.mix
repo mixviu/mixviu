@@ -1,0 +1,12 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$starts = 0
+$event = {args:{tool:"evil",target:"other.service"}}
+function fixture_start($argv, $opts)
+  global $starts
+  if not deep_eq($argv, ["/usr/bin/systemctl","--no-block","--no-ask-password","start","toolsd-drain.service"]) or $opts.timeout != 3 then raise("TEST", "wake authority widened") end
+  $starts = $starts + 1
+  return {ok:true}
+end
+function fixture_reply($rc, $body)
+  if $rc != 0 or $body.accepted != true then raise("TEST", "wake reply") end
+end

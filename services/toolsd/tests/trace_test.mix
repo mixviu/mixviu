@@ -1,0 +1,45 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$mix = env("MIX_TEST_MIX_EXE",mix_path("prefix") .. "/bin/mix")
+$scripts = realpath(dirname(script_path()) .. "/../scripts")
+$tmp = "/tmp/toolsd-trace-" .. uuid()
+fn check($ok,$label)
+  if not $ok then raise("TEST",$label) end
+  print("PASS " .. $label)
+end
+mkdir($tmp .. "/cred",{parents:true})
+try
+  write_file($tmp .. "/cred/tools_secret","fixture")
+  $reg = read_file($scripts .. "/lib/tools_registry.mix")
+  $exec = join(filter(lines(read_file($scripts .. "/lib/tools_exec.mix")),fn($l)=not starts_with($l,"include ")),"\n")
+  $drain = read_file($scripts .. "/toolsd_drain.mix")
+  $drain = substr($drain,0,index_of($drain,"-- ── drain loop"))
+  $drain = join(filter(lines($drain),fn($l)=not starts_with($l,"include ")),"\n")
+  $drain = replace($drain,'require("lib/egress.mix")',"require(" .. json_encode($scripts .. "/lib/egress.mix") .. ")")
+  for $name in ["run_argv","http_post","monotonic","sleep"] $drain=replace($drain,$name .. "(","fixture_" .. $name .. "(") end
+  $fixture = read_file(dirname(script_path()) .. "/fixtures/trace.txt")
+  $tail = '
+if tools_trace_argv("9.9.9.9",0).ok or tools_trace_argv("9.9.9.9",21).ok then raise("TEST","hop bounds") end
+run_one({tool:"trace",requested_role:"admin",params:json_encode({domain:"example.test"}),run_id:1,lease_token:"fixture"})
+print(json_encode({execs:$trace_execs,progress:$progress,final:$final,clock:$clock}))
+'
+  write_file($tmp .. "/case.mix",$reg .. "\n" .. $exec .. "\n" .. $fixture .. "\n" .. $drain .. "\n" .. $tail)
+  $blocked = ["0.0.0.0","10.0.0.5","127.0.0.1","169.254.1.1","172.16.0.1","192.168.0.1","100.64.0.1","224.0.0.1","255.255.255.255","240.0.0.1","192.0.0.1","198.18.0.1","192.0.2.1","::1","fe80::1","fc00::1","ff02::1","::ffff:127.0.0.1","::ffff:7f00:1","2001:db8::1","2002:7f00:1::","3fff::1"]
+  for $address in $blocked
+    $r=run_argv([$mix,$tmp .. "/case.mix"],{env:{TRACE_IPS:json_encode([$address]),TOOLS_BASE_URL:"https://queue.example.test",CREDENTIALS_DIRECTORY:$tmp .. "/cred"},timeout:10})
+    check($r.ok,"trace fixture runs " .. $address .. " " .. $r.stderr)
+    $v=json_parse($r.stdout)
+    check($v.execs == 0 and $v.progress == 0 and $v.final.ok == false and contains($v.final.error,"non-public"),"trace refuses resolved target " .. $address)
+  end
+  for $case in ["public","mixed","hops","deadline","resolver_timeout","v6_only"]
+    $ips=if $case == "mixed" then ["9.9.9.9","10.0.0.1"] elif $case == "v6_only" then ["2606:4700:4700::1111"] else ["2606:4700:4700::1111","9.9.9.9"] end
+    $r=run_argv([$mix,$tmp .. "/case.mix"],{env:{TRACE_IPS:json_encode($ips),TRACE_CASE:$case,TOOLS_BASE_URL:"https://queue.example.test",CREDENTIALS_DIRECTORY:$tmp .. "/cred"},timeout:10})
+    check($r.ok,"trace scenario " .. $case .. " " .. $r.stderr)
+    $v=json_parse($r.stdout)
+    if $case == "public" then check($v.execs == 1 and $v.final.ok == true,"IPv4 preference and exact target arrival")
+    elif $case == "hops" then check($v.execs == 20 and $v.final.ok == true,"hard twenty-hop bound")
+    elif $case == "deadline" then check($v.clock <= 60 and $v.execs <= 1,"resolution and retrying progress share monotonic deadline")
+    else check($v.execs == 0 and $v.final.ok == false,"no tool exec on " .. $case) end
+  end
+finally
+  remove_dir($tmp)
+end
