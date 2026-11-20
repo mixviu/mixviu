@@ -347,7 +347,10 @@ impl<P: LayerProgram + 'static> State<P> {
                 surface.requested = next;
                 self.program.visibility(&surface.ctx, true);
             } else if input_changed {
-                surface.layer.commit();
+                // Present the new pixels and input policy together: switching
+                // to transparent backing must not expose clicks while the
+                // previous opaque buffer is still on screen.
+                surface.dirty = true;
             }
         }
         for id in hidden {
