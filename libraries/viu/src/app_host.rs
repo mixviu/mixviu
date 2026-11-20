@@ -991,8 +991,9 @@ impl Host {
                     } else {
                         self.session_dirty |= self.model["theme_choice"] != model["theme_choice"];
                         let projected = self.projection(&model, ctx);
-                        let source = model["native_root"]["scene"]
+                        let source = model["presentation"]["scene"]
                             .as_str()
+                            .or_else(|| model["native_root"]["scene"].as_str())
                             .unwrap_or(&self.scene_source)
                             .to_owned();
                         let appearance = if self.framed
@@ -1548,8 +1549,58 @@ impl Host {
             if !self.widget_requests.is_empty() {
                 self.view.request_widget_rectangles();
             }
-            for event in self.view.show(ui) {
+            // Generic authored presentation canvas: letterbox in the available
+            // viewport, keeping scene coordinates independent of output scale.
+            let canvas = self.model["presentation"]["size"].as_array().and_then(|s| {
+                let w = s.first()?.as_f64()? as f32;
+                let h = s.get(1)?.as_f64()? as f32;
+                (w.is_finite()
+                    && h.is_finite()
+                    && w >= 1.0
+                    && h >= 1.0
+                    && w <= 8192.0
+                    && h <= 8192.0)
+                    .then_some(egui::vec2(w, h))
+            });
+            let events = if let Some(size) = canvas {
+                let available = ui.available_rect_before_wrap();
+                let scale = (available.width() / size.x).min(available.height() / size.y);
+                let origin = available.center() - size * scale * 0.5;
+                let layer =
+                    egui::LayerId::new(ui.layer_id().order, ui.scope_id().with("presentation"));
+                ui.ctx().set_sublayer(ui.layer_id(), layer);
+                ui.ctx().set_transform_layer(
+                    layer,
+                    egui::emath::TSTransform {
+                        scaling: scale,
+                        translation: origin.to_vec2(),
+                    },
+                );
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .layer_id(layer)
+                        .max_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                    |ui| {
+                        ui.set_clip_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, size));
+                        self.view.show(ui)
+                    },
+                )
+                .inner
+            } else {
+                self.view.show(ui)
+            };
+            for event in events {
                 self.dispatch(event.command, event.body, input_headers.clone(), None);
+            }
+            if self.model["presentation"]["clock"] == true && self.inflight.is_empty() {
+                let time = ui.input(|i| i.time);
+                self.dispatch(
+                    "viu.presentation".into(),
+                    json!({"time":time,"serial":self.model["presentation"]["serial"]}),
+                    BTreeMap::new(),
+                    None,
+                );
+                ui.ctx().request_repaint();
             }
             for request in self.widget_requests.drain(..) {
                 match self.view.widget_rectangles(&request.args) {
@@ -2375,6 +2426,7 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
         std::env::var("MIX_VIU_SERVICE").unwrap_or_else(|_| bundle.manifest.service.clone());
     let app_id = crate::launch::app_id(&bundle);
     let mut viewport = egui::ViewportBuilder::default()
+        .with_fullscreen(bundle.manifest.fullscreen)
         .with_transparent(bundle.manifest.frame.is_some())
         .with_decorations(bundle.manifest.frame.is_none())
         .with_inner_size(size)

@@ -1,0 +1,59 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$c=require("core.mix")
+fn assert_eq($a,$b)
+  if not deep_eq($a,$b) then raise("TEST","expected "..to_string($b)..", got "..to_string($a)) end
+end
+fn assert($value)
+  if not $value then raise("TEST","assertion failed") end
+end
+$deck={schema:"deck.v1",slides:[{id:"one",steps:3,scene:{root:{widget:"column",children:["a","b","c"]},a:{widget:"text",text:"first"},b:{widget:"text",text:"second"},c:{widget:"text",text:"third"}},build:{a:{b:0,until:0},b:{b:1,delay:0.5},c:{b:2}}},{id:"sting",kind:"sting",steps:1,scene:{root:{widget:"text",text:"MixViu"}}}]}
+$s=$c.opened($c.fresh(),$deck,"example.json")
+assert_eq($c.snapshot($s).slide,"one")
+assert_eq($c.build_state($s).a.hidden,false)
+assert_eq($c.build_state($s).b.opacity,0)
+$s=$c.seek($s,"one",1)
+assert_eq($c.build_state($s).a.hidden,true)
+assert_eq($c.build_state($s).b.opacity,1)
+$s=$c.advance($s,1);assert_eq($s.step,2)
+$s=$c.advance($s,1);assert_eq($c.snapshot($s).slide,"sting")
+$s=$c.advance($s,-1);assert_eq($s.step,2)
+$s=$c.play($s,{beats:[[0,2,4,6],[0,1]]})
+assert_eq($c.build_state($s).a.age,0)
+$s=$c.sample($s,100);assert_eq($s.step,0)
+$s=$c.sample($s,102);assert_eq($s.step,1)
+assert_eq($c.build_state($s).b.age,-0.5)
+$s=$c.sample($s,104);assert_eq($s.step,2)
+$s=$c.sample($s,106);assert_eq($c.snapshot($s).slide,"sting")
+$s=$c.sample($s,107);assert_eq($s.playing,false);assert_eq($s.finished,true)
+assert_eq($c.sample($s,500),$s)
+fn refused($f,$code,$field)
+  $caught=false
+  try $f() catch $message,$error
+    $caught=true;assert_eq($error.code,$code);assert(contains($message,$field))
+  end
+  assert($caught)
+end
+refused(fn()=$c.opened($s,{schema:"wrong",slides:[]},"bad"),"DECK_VERSION","deck.schema")
+$bad=$deck;$bad.slides[0].build.b.b=99
+refused(fn()=$c.check_deck($bad),"DECK_RANGE","slides[0](one).build.b.b")
+$bad=$deck;$bad.slides[0].scene.b.on_click="surprise"
+refused(fn()=$c.check_deck($bad),"DECK_SCENE","slides[0](one).scene.b.on_click")
+$bad=$deck;$bad.slides[1].id="one"
+refused(fn()=$c.check_deck($bad),"DECK_DUPLICATE","slides[1](one).id")
+refused(fn()=$c.play($s,{beats:[[0,2,1,6],[0,1]]}),"DECK_BEATS","play.beats[0](one)")
+refused(fn()=$c.seek($s,"absent"),"DECK_SLIDE","slide")
+refused(fn()=$c.seek($s,"one",3),"DECK_RANGE","slides(one).step")
+$bad=$deck;$bad.slides[0].scene.b.spans=[{text:"= $model.secret"}]
+refused(fn()=$c.check_deck($bad),"DECK_SCENE","slides[0](one).scene.b.spans[0].text")
+$bad=$deck;$bad.slides[0].build.root=nil
+refused(fn()=$c.check_deck($bad),"DECK_TYPE","slides[0](one).build.root")
+$bad=$deck;$bad.slides[0].build.root={stagger:1};$bad.slides[0].scene.root.children=42
+refused(fn()=$c.check_deck($bad),"DECK_SCENE","slides[0](one).scene.root.children")
+$stagger=$deck;$stagger.slides[0].build={root:{b:0,stagger:0.25,child_anim:"left"}}
+$stagger=$c.check_deck($stagger)
+assert_eq($stagger.slides[0].build.c.delay,0.5)
+assert_eq($stagger.slides[0].build.c.anim,"left")
+$end=$c.opened($c.fresh(),$deck,"end");$end.deck.slides[0].build.c.delay=10
+$end=$c.play($end,{slides:["one"],beats:[[0,2,4,6]]});$end=$c.sample($end,0);$end=$c.sample($end,6)
+assert_eq($c.build_state($end).c.age,-8)
+print("deck core: navigation, timed builds, boundaries, completion and typed refusals passed")
