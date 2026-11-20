@@ -414,7 +414,7 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     bus.call("comp.record.stop", json!({"session":listed["session"]}));
     let mut reader = media_vfl::reader::Reader::open(&listed_path).unwrap();
     assert_eq!(
-        (reader.width as usize, reader.height as usize),
+        (reader.width() as usize, reader.height() as usize),
         (width, height),
         "the listed fullscreen client must retain the output dimensions"
     );
