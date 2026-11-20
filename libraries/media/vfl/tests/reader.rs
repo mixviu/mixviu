@@ -416,6 +416,14 @@ fn writer_record_write_boundaries_recover_only_final_eof() {
 #[test]
 fn completion_read_failures_are_fatal_but_parse_and_false_are_recoverable() {
     use std::os::unix::fs::{symlink, PermissionsExt};
+    if let Some(p) = std::env::var_os("VFL_PERMISSION_TEST_TAKE") {
+        let p = PathBuf::from(p);
+        let e = Reader::open(&p).err().unwrap();
+        assert_eq!(e.kind, media_vfl::reader::ErrorKind::Io);
+        assert_eq!(e.file, p.join("complete.json"));
+        assert!(media_vfl::reader::Markers::open(&p).is_err());
+        return;
+    }
     for case in 0..6 {
         let (t, _) = take(true);
         let p = t.0.join("complete.json");
@@ -427,8 +435,21 @@ fn completion_read_failures_are_fatal_but_parse_and_false_are_recoverable() {
             4 => { std::fs::remove_file(&p).unwrap(); std::fs::create_dir(&p).unwrap(); }
             _ => std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0)).unwrap(),
         }
-        // CBC runs unprivileged; a root test runner cannot exercise EACCES.
-        if case == 5 && unsafe { libc::geteuid() } == 0 { continue; }
+        // Root bypasses file mode bits; exercise the real open failure in an
+        // unprivileged subprocess instead of silently skipping the case.
+        // SAFETY: geteuid has no preconditions.
+        if case == 5 && unsafe { libc::geteuid() } == 0 {
+            use std::os::unix::process::CommandExt;
+            std::fs::set_permissions(&t.0, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let manifest = t.0.join("manifest.json");
+            std::fs::set_permissions(manifest, std::fs::Permissions::from_mode(0o644)).unwrap();
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "completion_read_failures_are_fatal_but_parse_and_false_are_recoverable"])
+                .env("VFL_PERMISSION_TEST_TAKE", &t.0).uid(65534).gid(65534)
+                .output().unwrap();
+            assert!(output.status.success(), "{output:?}");
+            continue;
+        }
         assert_eq!(Reader::open(&t.0).is_ok(), case < 2, "case {case}");
         assert_eq!(media_vfl::reader::Markers::open(&t.0).is_ok(), case < 2);
         assert_eq!(media_vfl::reader::verify_with_options(&t.0, true)["ok"], false);
