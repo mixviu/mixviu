@@ -3788,6 +3788,7 @@ dependencies = [
  "ledger",
  "libc",
  "lz4_flex",
+ "media-vfl",
  "model",
  "motion",
  "outputs",

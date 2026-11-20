@@ -672,14 +672,52 @@ where
     // unlike the unbound cursor/launcher, which follow the active output. A bar therefore
     // stays put on its monitor instead of chasing the cursor / duplicating onto others.
     {
+        let mut badges = Vec::new();
         for (wlr_layer, node) in layershell(state, size, render_key.as_deref()) {
-            let band = match wlr_layer {
-                WlrLayer::Background => layer::LAYER_BACKGROUND,
-                WlrLayer::Bottom => layer::LAYER_BOTTOM,
-                WlrLayer::Top => layer::LAYER_TOP,
-                WlrLayer::Overlay => layer::LAYER_OVERLAY,
+            let band = if protocols::layershell::osd::marked(&node.surface) {
+                // Provenance belongs to the compositor, outside the scene's
+                // pixels. A detached idle host has neither content nor mark.
+                let attached = smithay::backend::renderer::utils::with_renderer_surface_state(
+                    &node.surface,
+                    |state| state.buffer().is_some(),
+                )
+                .unwrap_or(false);
+                if attached {
+                    let badge = smithay::wayland::compositor::with_states(&node.surface, |state| {
+                        state
+                            .data_map
+                            .get::<protocols::layershell::osd::Mark>()
+                            .map(|mark| mark.badge.clone())
+                    });
+                    if let Some(id) = badge {
+                        let logical = smithay::utils::Rectangle::<i32, Logical>::new(
+                            (8, 8).into(),
+                            (12, 4).into(),
+                        );
+                        let rect = logical.to_f64().to_physical(node.scale).to_i32_round();
+                        badges.push(DrawNode::Solid(SolidColorRenderElement::new(
+                            id,
+                            rect,
+                            CommitCounter::default(),
+                            [0.95, 0.65, 0.15, 1.0],
+                            Kind::Unspecified,
+                        )));
+                    }
+                }
+                layer::OSD
+            } else {
+                match wlr_layer {
+                    WlrLayer::Background => layer::LAYER_BACKGROUND,
+                    WlrLayer::Bottom => layer::LAYER_BOTTOM,
+                    WlrLayer::Top => layer::LAYER_TOP,
+                    WlrLayer::Overlay => layer::LAYER_OVERLAY,
+                }
             };
             plan.push(band, DrawNode::Surface(node));
+        }
+        // Provenance must cover every host surface, including overlapping outputs.
+        for badge in badges {
+            plan.push(layer::OSD_PROVENANCE, badge);
         }
     }
     for elem in surfaces_screen {

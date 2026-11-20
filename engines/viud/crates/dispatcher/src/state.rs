@@ -2793,6 +2793,21 @@ mod handler_impls {
             layer: Layer,
             namespace: String,
         ) {
+            if namespace == "viu-osd" {
+                use smithay::reexports::wayland_server::Resource;
+                let trusted = surface.wl_surface().client().is_some_and(|client| {
+                    protocols::layershell::osd::authorized(&client, &self.output.display_handle)
+                });
+                if !trusted {
+                    surface.send_close();
+                    return;
+                }
+                smithay::wayland::compositor::with_states(surface.wl_surface(), |state| {
+                    state
+                        .data_map
+                        .insert_if_missing(protocols::layershell::osd::Mark::default);
+                });
+            }
             self.push_surface_event(
                 crate::wire::trait_::surface_event::SurfaceEvent::RoleTaken {
                     handle: crate::wire::trait_::surface_event::SurfaceHandle::wl(

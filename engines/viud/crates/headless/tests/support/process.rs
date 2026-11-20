@@ -60,7 +60,13 @@ impl Drop for Process {
         }
         let _ = self.child.kill();
         let _ = self.child.wait();
-        let _ = fs::remove_dir_all(&self.root);
+        if thread::panicking()
+            && std::env::var("MIX_TEST_CAPTURE_KEEP_FAILED").as_deref() == Ok("1")
+        {
+            eprintln!("failed capture artifacts retained: {}", self.root.display());
+        } else {
+            let _ = fs::remove_dir_all(&self.root);
+        }
     }
 }
 
@@ -136,6 +142,7 @@ struct Options<'a> {
     seat: Option<&'a str>,
     size: &'a str,
     preferences: Option<serde_json::Value>,
+    osd: bool,
 }
 
 impl Default for Options<'_> {
@@ -152,6 +159,7 @@ impl Default for Options<'_> {
             seat: None,
             size: "1280x720",
             preferences: None,
+            osd: false,
         }
     }
 }
@@ -169,6 +177,7 @@ fn spawn_options(options: Options<'_>) -> Process {
         seat,
         size,
         preferences,
+        osd,
     } = options;
     assert!(
         !label.is_empty(),
@@ -226,6 +235,34 @@ fn spawn_options(options: Options<'_>) -> Process {
     let log = root.join("viud.log");
     let stderr = fs::File::create(&log).unwrap();
     let mut command = Command::new(binary);
+    if osd {
+        let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..");
+        let viu = std::env::var_os(paths::env::test::TEST_VIU_EXE)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                std::env::current_exe()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .join("viu")
+            });
+        assert!(
+            viu.is_file(),
+            "build viu before the OSD tests: {}",
+            viu.display()
+        );
+        command
+            .env(
+                paths::env::test::TEST_VIUD_OSD_BUNDLE,
+                workspace.join("apps/osd"),
+            )
+            .env(paths::env::test::TEST_VIU_EXE, viu)
+            .env("MIX_VIU_COMP_SERVICE", "comp-headless");
+    } else {
+        command.env_remove("MIX_TEST_VIUD_OSD_BUNDLE");
+    }
     if std::env::var_os(paths::env::test::TEST_PRE_DRAIN_CHILD).is_none() {
         command.env_remove(paths::env::test::TEST_PRE_DRAIN_FRAME);
     }
@@ -356,7 +393,13 @@ pub fn spawn_transitions(label: &str, bus: &str) -> Process {
 
 #[allow(dead_code)] // Used by capture.rs; this module is shared with other targets.
 pub fn spawn_4k(label: &str, bus: &str) -> Process {
-    spawn_size(label, bus, "3840x2160")
+    spawn_options(Options {
+        label,
+        bus: Some(bus),
+        size: "3840x2160",
+        osd: std::env::var("MIX_TEST_CAPTURE_OSD").as_deref() == Ok("1"),
+        ..Options::default()
+    })
 }
 
 #[allow(dead_code)]
@@ -375,6 +418,17 @@ pub fn spawn_preferences(label: &str, bus: &str, preferences: serde_json::Value)
         label,
         bus: Some(bus),
         preferences: Some(preferences),
+        ..Options::default()
+    })
+}
+
+#[allow(dead_code)]
+pub fn spawn_osd(label: &str, bus: &str, size: &str) -> Process {
+    spawn_options(Options {
+        label,
+        bus: Some(bus),
+        osd: true,
+        size,
         ..Options::default()
     })
 }

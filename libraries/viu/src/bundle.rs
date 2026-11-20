@@ -278,7 +278,7 @@ impl Bundle {
                     || !entry["description"].is_string()
                     || !entry["read_only"].is_boolean()
             })
-            || !["window", "background", "headless"].contains(&manifest.surface.as_str())
+            || !["window", "background", "headless", "osd"].contains(&manifest.surface.as_str())
             || manifest
                 .notice_command
                 .as_ref()

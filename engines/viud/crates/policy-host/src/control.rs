@@ -921,6 +921,8 @@ fn place_window(
     let Some(owner) = lp.inner.world_of_window(&window) else {
         return;
     };
+    let changed = lp.inner.space_of_mut(owner).state.element_location(&window) != Some(location)
+        || size.is_some_and(|size| window.geometry().size != size);
     if let Some(size) = size {
         shell::stage(&window, size, false);
         shell::send(&window);
@@ -930,6 +932,9 @@ fn place_window(
         .space_of_mut(owner)
         .state
         .map_element(window, location, false);
+    if changed {
+        lp.inner.comp.settings_changed("windows", "window.geometry");
+    }
 }
 
 /// The window a `comp.motion.run` addresses, resolved the way `comp.window.*`

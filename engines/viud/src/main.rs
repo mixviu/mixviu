@@ -8,6 +8,7 @@ mod background;
 mod cli;
 mod comp;
 mod event_loop;
+mod osd;
 #[path = "scenes_none.rs"]
 mod scenes;
 mod shutdown;
@@ -613,6 +614,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // (above) so it connects to OUR socket; the spawned process group is the ONLY client
     // authorized to bind the input-method / virtual-keyboard globals (see `text.input.launch`).
     protocols::text::input::launch::launch(state.inner.preference.ime.clone());
+    osd::supervise(
+        event_loop.handle(),
+        backend == cli::Backend::Headless,
+        comp::service_name(backend, cli.bus_service.as_deref()),
+    );
 
     // Sampling heartbeat — a sparing, multi-level demo of live developer logs (so the
     // viewer shows activity over time and its level filters can be exercised). Remove when
