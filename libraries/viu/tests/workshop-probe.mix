@@ -71,7 +71,12 @@ elif $mode=="negative" then
     for $path in $paths write_file($path,$original[$path]) end
     print(run_argv_must(["git","diff"]))
   end
+elif $mode=="accept" then
+  checked(["mix",script_path(),"negative"])
+  checked(["mix",script_path(),"validate"])
+  checked(["git","diff","--exit-code"])
 elif $mode=="validate" then
+  checked(["mix","apps/workshop/counter-test.mix"])
   checked(["cargo","fmt","-p","lib-viu","--","--check"])
   checked(["cargo","clippy","-p","lib-viu","--features","test-support","--all-targets","--no-deps"])
   checked(["cargo","test","-p","lib-viu","--features","test-support","--all-targets","--no-fail-fast"])
