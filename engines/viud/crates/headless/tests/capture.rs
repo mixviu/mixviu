@@ -189,14 +189,24 @@ fn record_cold_start_under_load_has_no_capture_drops() {
         }
         let begin = Instant::now();
         let starting = scope.spawn(|| bus.call("comp.record.start", json!({"request_id":"cold", "target":{"output":"headless-0"}, "path":process.root.join("cold.vfl"), "max_seconds":10, "fps":30, "cursor":false})));
-        // Keep damage flowing during admission too. Otherwise an idle tick
-        // can repay frame zero's debt before the Bus start reply is received,
-        // hiding the very first-readback deferral in the bypassed build.
-        while !starting.is_finished() {
-            pattern.change_buffer();
-            pattern.commit(true);
+        // Damage once immediately after the first completed read. In the
+        // bypassed build this makes frame zero's debt observable before an
+        // idle tick can repay it. Repeated commits while start is pending
+        // would instead test superseding snapshots during admission.
+        let first_read = Instant::now() + Duration::from_secs(3);
+        while !fs::read_to_string(process.root.join("viud.log"))
+            .unwrap_or_default()
+            .contains("TEST_COLD_READBACK n=1 penalty_us=20000")
+        {
+            assert!(Instant::now() < first_read, "first read did not complete");
             pattern.pump();
-            thread::sleep(Duration::from_millis(16));
+            thread::sleep(Duration::from_millis(1));
+        }
+        pattern.change_buffer();
+        pattern.commit(true);
+        while !starting.is_finished() {
+            pattern.pump();
+            thread::sleep(Duration::from_millis(1));
         }
         let start = starting.join().unwrap();
         let start_ms = begin.elapsed().as_secs_f64() * 1000.0;
@@ -205,10 +215,10 @@ fn record_cold_start_under_load_has_no_capture_drops() {
             // Continue changing content, leaving room to complete each GPU
             // snapshot under the shared pool. This tests cold admission; the
             // strict changing 4K30 case covers sustained capture throughput.
+            thread::sleep(Duration::from_millis(200));
             pattern.change_buffer();
             pattern.commit(true);
             pattern.pump();
-            thread::sleep(Duration::from_millis(200));
         }
         let status = bus.call("comp.record.status", json!({"session":start["session"]}));
         eprintln!("cold record start_ms={start_ms:.3} status={status}");
