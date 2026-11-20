@@ -576,7 +576,7 @@ on viu.test.retained_model
   for $i=0 to 47
     $state=$fixture_traffic.retain($state,{ts:to_string($i),direction:"local",command:"fixture.retained",payload:{text:$event.args.padding}})
   end
-  $state=publish_workshop($state);$dirty=true
+  $state.status="Retained model fixture";$state=publish_workshop($state);$dirty=true
 end
 "#);
         }
@@ -673,7 +673,7 @@ end
             let until=Instant::now()+Duration::from_secs(5);
             loop {
                 host.pump();assert!(host.error().is_empty(),"{}",host.error());
-                if serde_json::to_vec(&host.state()["model"]).unwrap().len()>=2*1024*1024 {break;}
+                if host.state()["model"]["values"]["gold-status-text"]["left"]=="Retained model fixture" && serde_json::to_vec(&host.state()["model"]).unwrap().len()>=2*1024*1024 {break;}
                 assert!(Instant::now()<until,"retained Traffic seed was not published");
                 std::thread::sleep(Duration::from_millis(2));
             }
