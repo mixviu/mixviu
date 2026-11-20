@@ -40,9 +40,9 @@ elif $mode=="validate" then
 elif $mode=="pool" then
   for $iteration=1 to 12
     print("WORKSHOP_POOL_ITERATION "..$iteration)
-    -- Four real test binaries, each with default intra-binary threading.
-    -- The three Mix application targets contend with the discovery owner.
-    checked(["mix","tools/ci/test_pool.mix","--jobs","4","--","-p","lib-viu","--features","test-support","--test","workshop_bus","--test","app_ports","--test","ports_round2","--test","ports_round4","--","--nocapture"])
+    -- Keep the whole crate queued, with default intra-binary threading, so
+    -- contention lasts into the 200-peer phase rather than just startup.
+    checked(["mix","tools/ci/test_pool.mix","--jobs","4","--","-p","lib-viu","--features","test-support","--","--nocapture"])
   end
 else
   checked(concat(slice($test,0,8),["--no-run"]))
