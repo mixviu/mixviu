@@ -2597,7 +2597,7 @@ pub mod test_support {
     #[derive(Default)]
     pub struct DiscoveryProbe {
         numeric_bounds: Option<(u64, u64)>,
-        tick_model_bytes: Vec<u64>,
+        pub(super) tick_model_bytes: Vec<u64>,
         pub(super) profile_scene: bool,
         pub(super) steps: u64,
         pumps: Vec<u64>,
