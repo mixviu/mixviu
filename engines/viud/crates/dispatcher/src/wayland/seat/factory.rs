@@ -172,6 +172,7 @@ where
         agent: Some(agent),
         agent_clients,
         pointer_status: CursorImageStatus::default_named(),
+        pointer_status_enter: None,
         relative_pointer_manager_state,
         pointer_constraints_state,
         pointer_gestures_state,

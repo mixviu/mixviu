@@ -73,7 +73,7 @@ fn roundtrip_all_kinds_dropped_interrupted_and_seek() {
     for complete in [true, false] {
         let (t, expected) = take(complete);
         let mut r = Reader::open(&t.0).unwrap();
-        assert_eq!(r.complete, complete);
+        assert_eq!(r.complete(), complete);
         for (i, p) in expected.iter().enumerate() {
             let f = r.read().unwrap().unwrap();
             assert_eq!(f.slot, i as u64);
@@ -155,7 +155,7 @@ fn v1_without_rectangles_and_missing_recovery_sidecars() {
         std::fs::remove_file(t.0.join(p)).unwrap();
     }
     let mut r = Reader::open(&t.0).unwrap();
-    assert!(!r.complete);
+    assert!(!r.complete());
     assert_eq!(r.read().unwrap().unwrap().pixels, [4; 16]);
     assert!(r.read().unwrap().is_some());
     assert!(r.read().unwrap().is_none());
@@ -181,6 +181,9 @@ fn chunk_order_receipts_and_seek_across_chunks() {
     let mut r = Reader::open(&t.0).unwrap();
     assert_eq!(r.seek(11).unwrap().pixels, expected[11]);
     assert!(r.read().unwrap().is_none());
+    for target in (0..expected.len()).rev().chain(0..expected.len()) {
+        assert_eq!(r.seek(target as u64).unwrap().pixels, expected[target]);
+    }
     let receipt = t.0.join("chunk-000000.json");
     let intact = std::fs::read(&receipt).unwrap();
     std::fs::remove_file(t.0.join("complete.json")).unwrap();
@@ -328,7 +331,7 @@ fn advisory_receipts_never_hide_extra_frame_rows() {
                             .as_array()
                             .unwrap()
                             .iter()
-                            .any(|e| e.as_str().unwrap().contains("frames.jsonl"))
+                            .any(|e| e["file"].as_str().unwrap().contains("frames.jsonl"))
                     );
                 }
             }
@@ -374,11 +377,291 @@ fn malformed_drop_counts_are_advisory_only_during_recovery() {
 fn interrupted_torn_binary_tail_stops_at_valid_prefix() {
     let (t, expected) = take(false);
     tear(&t.0.join("chunk-000000.bin"));
+    std::fs::remove_file(t.0.join("chunk-000000.json")).unwrap();
+    let p = t.0.join("frames.jsonl");
+    let rows = std::fs::read_to_string(&p).unwrap();
+    std::fs::write(
+        p,
+        rows.lines().take(11).collect::<Vec<_>>().join("\n") + "\n",
+    )
+    .unwrap();
     assert_eq!(assert_seek_matches(&t.0, &expected), 11);
     let v = verify(&t.0);
-    assert_eq!(v["ok"], false, "{v}");
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(v["recoverable"], true);
     assert_eq!(v["complete"], false);
-    assert_eq!(v["frames"], 11);
+    assert_eq!(v["valid_frames"], 11);
+    assert_eq!(v["tail"]["chunk"], 0);
+    assert!(v["tail"]["offset"].as_u64().unwrap() > 0);
+}
+#[test]
+fn durable_final_receipt_refuses_torn_binary() {
+    for receipt in [
+        None,
+        Some("{"),
+        Some("{}"),
+        Some("numeric"),
+        Some("symlink"),
+    ] {
+        let (t, _) = take(false);
+        tear(&t.0.join("chunk-000000.bin"));
+        let p = t.0.join("chunk-000000.json");
+        match receipt {
+            None => {}
+            Some("numeric") => json_edit(&p, |v| v["bytes"] = json!(0)),
+            Some("symlink") => {
+                std::fs::remove_file(&p).unwrap();
+                std::os::unix::fs::symlink("absent", &p).unwrap();
+            }
+            Some(s) => std::fs::write(&p, s).unwrap(),
+        }
+        let rows = std::fs::read_to_string(t.0.join("frames.jsonl")).unwrap();
+        std::fs::write(
+            t.0.join("frames.jsonl"),
+            rows.lines().take(11).collect::<Vec<_>>().join("\n") + "\n",
+        )
+        .unwrap();
+        let v = verify(&t.0);
+        assert_eq!(v["ok"], matches!(receipt, Some("{") | Some("{}")), "{v}");
+        if receipt.is_none() || receipt == Some("numeric") {
+            assert_eq!(v["errors"][0]["kind"], "crc");
+            assert!(v["tail"].is_null());
+        }
+    }
+}
+#[test]
+fn frame_count_preserves_position_and_does_not_poison_on_scan_failure() {
+    let (t, expected) = take(true);
+    let mut r = Reader::open(&t.0).unwrap();
+    r.read().unwrap();
+    assert_eq!(r.frame_count().unwrap(), 12);
+    assert_eq!(r.frame_count().unwrap(), 12);
+    assert_eq!(r.read().unwrap().unwrap().pixels, expected[1]);
+    assert_eq!(r.seek(11).unwrap().pixels, expected[11]);
+    let (t, _) = take(false);
+    tear(&t.0.join("chunk-000000.bin"));
+    let mut r = Reader::open(&t.0).unwrap();
+    assert!(r.frame_count().is_err());
+    assert_eq!(r.read().unwrap().unwrap().slot, 0);
+}
+#[test]
+fn frame_count_after_seek_still_decodes_the_skipped_prefix() {
+    let (t, _) = take(true);
+    let p = t.0.join("chunk-000000.bin");
+    let mut b = std::fs::read(&p).unwrap();
+    let end = 17 + u32::from_le_bytes(b[..4].try_into().unwrap()) as usize;
+    b[17..end].fill(0);
+    let crc = crc32fast::hash(&b[8..end]);
+    b[4..8].copy_from_slice(&crc.to_le_bytes());
+    std::fs::write(p, &b).unwrap();
+    json_edit(&t.0.join("chunk-000000.json"), |v| {
+        v["crc32"] = json!(crc32fast::hash(&b))
+    });
+    let mut r = Reader::open(&t.0).unwrap();
+    r.seek(11).unwrap();
+    assert!(r.read().unwrap().is_none());
+    assert!(r.frame_count().is_err());
+    assert!(r.seek(10).is_ok());
+}
+#[test]
+fn non_utf8_paths_encode_errors_without_panicking() {
+    use std::os::unix::ffi::OsStringExt;
+    let path = std::ffi::OsString::from_vec(b"/nonexistent-vfl-\xff".to_vec());
+    let v = verify(Path::new(&path));
+    assert_eq!(v["ok"], false);
+    assert!(
+        v["errors"][0]["file"]
+            .as_str()
+            .unwrap()
+            .contains('\u{fffd}')
+    );
+}
+#[test]
+fn extra_frame_rows_are_errors_at_clean_and_torn_ends() {
+    for torn in [false, true] {
+        let (t, _) = take(false);
+        std::fs::remove_file(t.0.join("chunk-000000.json")).unwrap();
+        if torn {
+            tear(&t.0.join("chunk-000000.bin"));
+        } else {
+            use std::io::Write;
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(t.0.join("frames.jsonl"))
+                .unwrap()
+                .write_all(b"{\"frame\":12,\"t_us\":12000000}\n")
+                .unwrap();
+        }
+        let v = verify(&t.0);
+        assert_eq!(v["ok"], false, "{v}");
+        assert_eq!(v["errors"][0]["kind"], "structure");
+    }
+}
+#[test]
+fn key_index_is_capped_but_linear_verification_and_count_are_not() {
+    let (t, _) = take(false);
+    let p = t.0.join("chunk-000000.bin");
+    let b = std::fs::read(&p).unwrap();
+    let end = 17 + u32::from_le_bytes(b[..4].try_into().unwrap()) as usize;
+    let mut record = b[..end].to_vec();
+    let mut bytes = Vec::new();
+    for slot in 0..65_537u64 {
+        record[8..16].copy_from_slice(&slot.to_le_bytes());
+        let crc = crc32fast::hash(&record[8..]);
+        record[4..8].copy_from_slice(&crc.to_le_bytes());
+        bytes.extend_from_slice(&record);
+    }
+    std::fs::write(p, bytes).unwrap();
+    for name in ["chunk-000000.json", "frames.jsonl", "markers.jsonl"] {
+        std::fs::remove_file(t.0.join(name)).unwrap();
+    }
+    let mut r = Reader::open(&t.0).unwrap();
+    assert_eq!(r.frame_count().unwrap(), 65_537);
+    assert_eq!(
+        r.seek(65_536).err().unwrap().kind,
+        media_vfl::reader::ErrorKind::Limit
+    );
+    assert_eq!(verify(&t.0)["valid_frames"], 65_537);
+    assert_eq!(verify(&t.0)["ok"], true);
+}
+#[test]
+fn writer_record_write_boundaries_recover_only_final_eof() {
+    // Five writer writes: length, CRC, slot, kind, payload. Include a
+    // partial payload as well as the boundary after the complete payload.
+    for boundary in [4, 8, 16, 17, 18, 0] {
+        let (t, expected) = take(false);
+        let p = t.0.join("chunk-000000.bin");
+        let mut b = std::fs::read(&p).unwrap();
+        let mut at = 0;
+        while b[at + 16] != media_vfl::RECT_DELTA {
+            at += 17 + u32::from_le_bytes(b[at..at + 4].try_into().unwrap()) as usize;
+        }
+        let end = at + 17 + u32::from_le_bytes(b[at..at + 4].try_into().unwrap()) as usize;
+        b.truncate(if boundary == 0 { end } else { at + boundary });
+        std::fs::write(&p, b).unwrap();
+        std::fs::remove_file(t.0.join("chunk-000000.json")).unwrap();
+        // Model the writer's ordering: binary record precedes sidecar append.
+        let rows = std::fs::read_to_string(t.0.join("frames.jsonl")).unwrap();
+        let n = if boundary == 0 { 3 } else { 2 };
+        std::fs::write(
+            t.0.join("frames.jsonl"),
+            rows.lines().take(n).collect::<Vec<_>>().join("\n") + "\n",
+        )
+        .unwrap();
+        let v = verify(&t.0);
+        assert_eq!(v["ok"], true, "{boundary}: {v}");
+        assert_eq!(v["recoverable"], boundary != 0, "{v}");
+        assert_eq!(v["valid_frames"], n);
+        let mut r = Reader::open(&t.0).unwrap();
+        assert_eq!(decoded(&mut r).0, expected[..n]);
+        assert_eq!(
+            media_vfl::reader::verify_with_options(&t.0, true)["ok"],
+            false
+        );
+    }
+}
+#[test]
+fn completion_read_failures_are_fatal_but_parse_and_false_are_recoverable() {
+    use std::os::unix::fs::{PermissionsExt, symlink};
+    if let Some(p) = std::env::var_os("VFL_PERMISSION_TEST_TAKE") {
+        let p = PathBuf::from(p);
+        let e = Reader::open(&p).err().unwrap();
+        assert_eq!(e.kind, media_vfl::reader::ErrorKind::Io);
+        assert_eq!(e.file, p.join("complete.json"));
+        assert!(media_vfl::reader::Markers::open(&p).is_err());
+        return;
+    }
+    for case in 0..6 {
+        let (t, _) = take(true);
+        let p = t.0.join("complete.json");
+        match case {
+            0 => std::fs::write(&p, "{").unwrap(),
+            1 => json_edit(&p, |v| v["complete"] = json!(false)),
+            2 => std::fs::write(&p, vec![b' '; 1024 * 1024 + 1]).unwrap(),
+            3 => {
+                std::fs::remove_file(&p).unwrap();
+                symlink("absent", &p).unwrap();
+            }
+            4 => {
+                std::fs::remove_file(&p).unwrap();
+                std::fs::create_dir(&p).unwrap();
+            }
+            _ => std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).unwrap(),
+        }
+        // Root bypasses file mode bits; exercise the real open failure in an
+        // unprivileged subprocess instead of silently skipping the case.
+        // SAFETY: geteuid has no preconditions.
+        if case == 5 && unsafe { libc::geteuid() } == 0 {
+            use std::os::unix::process::CommandExt;
+            std::fs::set_permissions(&t.0, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let manifest = t.0.join("manifest.json");
+            std::fs::set_permissions(manifest, std::fs::Permissions::from_mode(0o644)).unwrap();
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "completion_read_failures_are_fatal_but_parse_and_false_are_recoverable",
+                ])
+                .env("VFL_PERMISSION_TEST_TAKE", &t.0)
+                .uid(65534)
+                .gid(65534)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+            continue;
+        }
+        assert_eq!(Reader::open(&t.0).is_ok(), case < 2, "case {case}");
+        assert_eq!(media_vfl::reader::Markers::open(&t.0).is_ok(), case < 2);
+        assert_eq!(
+            media_vfl::reader::verify_with_options(&t.0, true)["ok"],
+            false
+        );
+    }
+}
+#[test]
+fn failed_seek_poisons_reads_and_future_seeks() {
+    let (t, _) = take(true);
+    let mut r = Reader::open(&t.0).unwrap();
+    assert!(r.seek(100).is_err());
+    assert!(r.read().is_err());
+    assert!(r.seek(0).is_err());
+}
+#[test]
+fn binary_tear_does_not_hide_other_damage_or_apply_to_earlier_chunks() {
+    for complete in [false, true] {
+        let (t, _) = take(complete);
+        tear(&t.0.join("chunk-000000.bin"));
+        use std::io::Write;
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(t.0.join("frames.jsonl"))
+            .unwrap()
+            .write_all(b"{bad}\n")
+            .unwrap();
+        let v = verify(&t.0);
+        assert_eq!(v["ok"], false);
+        assert_eq!(v["recoverable"], false);
+    }
+    let (t, _) = take(false);
+    tear(&t.0.join("chunk-000000.bin"));
+    std::fs::write(t.0.join("chunk-000001.bin"), []).unwrap();
+    let v = verify(&t.0);
+    assert_eq!(v["ok"], false);
+    assert_eq!(v["recoverable"], false);
+}
+#[test]
+fn marker_errors_always_name_row_start() {
+    for tail in [
+        r#"{"seq":1,"frame":0,"label":"x","data":null}"#,
+        r#"{"seq":5,"t_us":0,"frame":0,"label":"x","data":null}"#,
+    ] {
+        let (t, _) = take(true);
+        let p = t.0.join("markers.jsonl");
+        let first = std::fs::read_to_string(&p).unwrap();
+        std::fs::write(&p, format!("{first}{tail}\n")).unwrap();
+        let mut m = media_vfl::reader::Markers::open(&t.0).unwrap();
+        m.read().unwrap();
+        assert_eq!(m.read().unwrap_err().offset, first.len() as u64);
+    }
 }
 #[test]
 fn complete_torn_sidecars_are_errors() {

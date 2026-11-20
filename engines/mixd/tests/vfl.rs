@@ -4,6 +4,95 @@ use std::{
     process::{Command, Stdio},
 };
 
+#[test]
+fn verify_schema_usage_codes_and_completion_policy() {
+    let p = pipe_take("verify-policy", 4);
+    let invoke = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_mixd"))
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let path = p.to_str().unwrap();
+    for args in [
+        vec!["vfl"],
+        vec!["vfl", "verify", path, "--bogus"],
+        vec!["vfl", "export", path, "--from", "bad"],
+        vec!["vfl", "export", path, "--fps", "0"],
+        vec!["vfl", "verify", "--require-complete", "--require-complete"],
+        vec!["vfl", "verify", "--bogus"],
+        vec!["vfl", "markers", "--require-complete", path],
+        vec!["vfl", "markers", "--require-complete"],
+        vec!["vfl", "export", "--require-complete", path],
+        vec!["vfl", "export", "--require-complete"],
+    ] {
+        let o = invoke(&args);
+        assert_eq!(o.status.code(), Some(2), "{o:?}");
+        assert!(String::from_utf8_lossy(&o.stderr).contains("Exit codes:"));
+    }
+    let o = invoke(&["vfl", "verify", path, "--require-complete"]);
+    assert_eq!(o.status.code(), Some(0));
+    assert_eq!(
+        invoke(&["vfl", "verify", "--require-complete", path])
+            .status
+            .code(),
+        Some(0)
+    );
+    std::fs::remove_file(p.join("complete.json")).unwrap();
+    assert_eq!(invoke(&["vfl", "verify", path]).status.code(), Some(0));
+    let o = invoke(&["vfl", "verify", path, "--require-complete"]);
+    assert_eq!(o.status.code(), Some(1));
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["valid_frames"], 128);
+    let e = &v["errors"][0];
+    assert_eq!(e["kind"], "incomplete");
+    assert!(e["file"].as_str().unwrap().ends_with("complete.json"));
+    assert!(e["chunk"].is_null());
+    assert!(e["offset"].is_u64());
+    assert!(e["message"].is_string());
+    let o = invoke(&["--personalities"]);
+    assert!(
+        !String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .any(|l| l.starts_with("vfl "))
+    );
+    std::fs::remove_dir_all(p).unwrap();
+}
+
+#[test]
+fn export_recovers_only_valid_frames_before_torn_record() {
+    let p = pipe_take("torn-export", 4);
+    std::fs::remove_file(p.join("complete.json")).unwrap();
+    let chunk = p.join("chunk-000000.bin");
+    let mut b = std::fs::read(&chunk).unwrap();
+    b.truncate(b.len() - 1);
+    std::fs::write(chunk, b).unwrap();
+    let damaged = Command::new(env!("CARGO_BIN_EXE_mixd"))
+        .args(["vfl", "export"])
+        .arg(&p)
+        .output()
+        .unwrap();
+    assert_eq!(damaged.status.code(), Some(1));
+    let error = String::from_utf8_lossy(&damaged.stderr);
+    assert!(error.contains("chunk 0 offset"));
+    assert!(!error.contains("Some("));
+    std::fs::remove_file(p.join("chunk-000000.json")).unwrap();
+    let rows = std::fs::read_to_string(p.join("frames.jsonl")).unwrap();
+    std::fs::write(
+        p.join("frames.jsonl"),
+        rows.lines().take(127).collect::<Vec<_>>().join("\n") + "\n",
+    )
+    .unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_mixd"))
+        .args(["vfl", "export"])
+        .arg(&p)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(0), "{o:?}");
+    assert_eq!(o.stdout.len(), 127 * 4 * 4 * 4);
+    std::fs::remove_dir_all(p).unwrap();
+}
+
 // More output than a pipe can hold, so closing the reader necessarily reaches
 // the writer while it still has output left (without sleeps or timing races).
 fn pipe_take(name: &str, side: u32) -> std::path::PathBuf {
