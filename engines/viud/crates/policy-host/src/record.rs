@@ -1005,7 +1005,9 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 let mut s = session.borrow_mut();
                 match result {
                     Ok(frame) => screencopy::file::prepare_raw_pool(&frame.2),
-                    Err(error) => s.warmup_errors.push(format!("target {index}: {:?}", error.into_wire())),
+                    Err(error) => s
+                        .warmup_errors
+                        .push(format!("target {index}: {:?}", error.into_wire())),
                 }
                 warmup_remaining.set(warmup_remaining.get() - 1);
                 if warmup_remaining.get() == 0 {

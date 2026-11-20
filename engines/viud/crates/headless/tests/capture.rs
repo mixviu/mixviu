@@ -133,7 +133,9 @@ fn target(row: &Value) -> Value {
 
 #[test]
 fn record_cold_start_under_load_has_no_capture_drops() {
-    if !process::record_available() { return; }
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("cold-record");
     let mut process = process::spawn(1, None, "cold-record", Some(&bus.url));
     let mut pattern = Pattern::new(connect(&mut process));
@@ -145,7 +147,9 @@ fn record_cold_start_under_load_has_no_capture_drops() {
         for _ in 0..8 {
             scope.spawn(|| {
                 let until = Instant::now() + Duration::from_secs(4);
-                while Instant::now() < until { std::hint::spin_loop(); }
+                while Instant::now() < until {
+                    std::hint::spin_loop();
+                }
             });
         }
         let begin = Instant::now();

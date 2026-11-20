@@ -65,7 +65,12 @@ fn diagnostic_tail(path: impl AsRef<std::path::Path>) -> String {
     let _ = file.seek(SeekFrom::Start(tail_start));
     let mut tail = Vec::new();
     let _ = file.take(LIMIT as u64).read_to_end(&mut tail);
-    format!("{}\n... {} bytes omitted ...\n{}", String::from_utf8_lossy(&head), tail_start - LIMIT as u64, String::from_utf8_lossy(&tail))
+    format!(
+        "{}\n... {} bytes omitted ...\n{}",
+        String::from_utf8_lossy(&head),
+        tail_start - LIMIT as u64,
+        String::from_utf8_lossy(&tail)
+    )
 }
 
 impl Drop for Process {
@@ -88,10 +93,7 @@ impl Drop for Process {
                 "frame trace: {}",
                 diagnostic_tail(self.root.join("frames.log"))
             );
-            eprintln!(
-                "viud log: {}",
-                diagnostic_tail(self.root.join("viud.log"))
-            );
+            eprintln!("viud log: {}", diagnostic_tail(self.root.join("viud.log")));
         }
         let _ = self.stop.send(());
         if let Some(watchdog) = self.watchdog.take() {
