@@ -985,7 +985,11 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
             format!("{mode}:{serial}"),
         )
         .unwrap();
-        fs::rename(process.root.join("record-input-next"),process.root.join("record-input")).unwrap();
+        fs::rename(
+            process.root.join("record-input-next"),
+            process.root.join("record-input"),
+        )
+        .unwrap();
         bus.call("comp.capture.frame", json!({"output":"headless-0","path":process.root.join("epoch-focus.ppm"),"format":"ppm"}));
         pump_patterns(&mut [a, b, c]);
     };
@@ -1011,7 +1015,13 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
     };
     let all_equal = |frames: &[Vec<u8>], expected: &[u8], label: &str| {
         for (i, frame) in frames.iter().enumerate() {
-            assert!(frame.as_slice() == expected, "{label}, decoded frame {i}: length={}, expected={}, first difference={:?}", frame.len(), expected.len(), frame.iter().zip(expected).position(|(a,b)|a!=b));
+            assert!(
+                frame.as_slice() == expected,
+                "{label}, decoded frame {i}: length={}, expected={}, first difference={:?}",
+                frame.len(),
+                expected.len(),
+                frame.iter().zip(expected).position(|(a, b)| a != b)
+            );
         }
     };
     let live = |name: &str| {
@@ -1051,7 +1061,10 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
                         .any(|p| p == rgb(0xffff00ff))
                 );
             } else if shape == "named" {
-                assert!(live("epoch-named-live") != live_default, "Named fixture must change the live cursor");
+                assert!(
+                    live("epoch-named-live") != live_default,
+                    "Named fixture must change the live cursor"
+                );
             }
             all_equal(
                 &take(
@@ -1127,7 +1140,11 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
             );
             focus("overlap", &mut a, &mut b, &mut c);
             let source = if different { &mut c } else { &mut b };
-            assert_eq!(source.state.pointer_focus.as_ref(),Some(&source.surface),"overlapping private window must own focus before unmapping");
+            assert_eq!(
+                source.state.pointer_focus.as_ref(),
+                Some(&source.surface),
+                "overlapping private window must own focus before unmapping"
+            );
             let _cursor = match shape {
                 "surface" => Some(source.custom_cursor(0xffff00ff)),
                 "hidden" => {
@@ -1146,7 +1163,11 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
                 b.unmap();
             }
             pump_patterns(&mut [&mut a, &mut b, &mut c]);
-            assert_eq!(a.state.pointer_focus.as_ref(),Some(&a.surface),"unmapping private window must enter A");
+            assert_eq!(
+                a.state.pointer_focus.as_ref(),
+                Some(&a.surface),
+                "unmapping private window must enter A"
+            );
             all_equal(
                 &take(
                     &format!("epoch-unmap-{different}-{shape}"),
@@ -1172,7 +1193,15 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
     let _sub = a.subsurface();
     for child in ["listed-popup", "listed-sub"] {
         focus(child, &mut a, &mut b, &mut c);
-        assert_eq!(a.state.pointer_focus.as_ref(),Some(if child=="listed-popup" {&_popup.0}else{&_sub.0}),"child must receive the enter event");
+        assert_eq!(
+            a.state.pointer_focus.as_ref(),
+            Some(if child == "listed-popup" {
+                &_popup.0
+            } else {
+                &_sub.0
+            }),
+            "child must receive the enter event"
+        );
         let child_default =
             take(&format!("epoch-{child}-default"), &mut a, &mut b, &mut c).remove(0);
         let _cursor = a.custom_cursor(0xff11eecc);

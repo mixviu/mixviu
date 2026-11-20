@@ -719,7 +719,10 @@ impl Dispatch<WlPointer, WlSeat> for State {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_pointer::Event::Enter { serial, surface, .. } = &event {
+        if let wl_pointer::Event::Enter {
+            serial, surface, ..
+        } = &event
+        {
             state.last_enter = Some((*serial, pointer.clone()));
             state.pointer_focus = Some(surface.clone());
         }
