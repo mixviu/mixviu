@@ -20,6 +20,8 @@
 //! `DrawWindow::visible`: no draw, no frame callbacks, no presentation, no
 //! pointer hits.
 
+pub mod animation;
+pub mod animation_geometry;
 pub mod band;
 pub mod bindings;
 pub mod blank;
@@ -31,6 +33,7 @@ pub mod geometry;
 pub mod injection;
 pub(crate) mod input_geometry;
 pub mod latch;
+pub mod lifecycle_motion;
 pub mod occlusion;
 pub mod panels;
 pub mod placement;

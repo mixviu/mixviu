@@ -102,7 +102,8 @@ const PORT_REPLY_CAPACITY: usize = 16;
 const SNAPSHOT_TIMEOUT: Duration = Duration::from_secs(2);
 /// Commands that reply after a wait hold their own permits, so a few long
 /// waits can never starve ordinary reads and controls.
-pub const LONG_COMMAND_PERMITS: usize = 8;
+/// Room for 32 simultaneous window animations plus retargets and other waits.
+pub const LONG_COMMAND_PERMITS: usize = 64;
 const REPLY_SEND_TIMEOUT: Duration = Duration::from_secs(2);
 const PUBLISH_TIMEOUT: Duration = Duration::from_secs(2);
 const GAP_RETRY_INITIAL: Duration = Duration::from_secs(1);

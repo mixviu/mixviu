@@ -452,9 +452,10 @@ pub fn prepare_kms(
     renderer: &mut GlesRenderer,
     size: Size<i32, Physical>,
     subject: u64,
+    presentation_time: std::time::Instant,
 ) -> PreparedGles {
     let _ui_trace = ui_surface::frame_trace::frame(subject);
-    prepare(state, renderer, size)
+    prepare_at(state, renderer, size, presentation_time)
 }
 
 pub fn prepare(
@@ -462,6 +463,20 @@ pub fn prepare(
     renderer: &mut GlesRenderer,
     size: Size<i32, Physical>,
 ) -> PreparedGles {
+    let now = state.inner.comp.clock.now();
+    prepare_at(state, renderer, size, now)
+}
+
+/// One target presentation timestamp for geometry, visuals and capture pixels.
+/// Native KMS supplies the next vblank estimate; software presentation uses now.
+fn prepare_at(
+    state: &mut Loop,
+    renderer: &mut GlesRenderer,
+    size: Size<i32, Physical>,
+    presentation_time: std::time::Instant,
+) -> PreparedGles {
+    world::comp::animation::set_frame_time(presentation_time);
+    world::comp::animation_geometry::sample_all(state, world::comp::animation::frame_time());
     crate::scene::gpu::begin(state, renderer);
 
     // Rim hooks, then the systems tick; the world's plan is bridged below
@@ -726,6 +741,15 @@ where
                 state.inner.viewports(),
                 smithay::utils::Rectangle::new(Point::from((0, 0)), size),
             );
+            world::window::draw::ghost::begin_output::<R>(
+                render_key.as_deref().unwrap_or_default(),
+                |pane| {
+                    computed
+                        .regions
+                        .iter()
+                        .any(|region| Some(region.slot) == pane)
+                },
+            );
             let mut cw = Vec::new();
             state.inner.viewports_mut().on_pane_grace.clear();
             state.inner.viewports_mut().on_pane_awake.clear();
@@ -780,6 +804,9 @@ where
                     // cursor builders (they read `render_target` and crop to the
                     // pane rect), where the element geometry is well-defined.
                     match item {
+                        world::canvas::draw::scene::ContentItem::Ghost(elem) => {
+                            plan.push(content_layer, DrawNode::Ghost(elem));
+                        }
                         world::canvas::draw::scene::ContentItem::Canvas { elem } => {
                             plan.push(content_layer, DrawNode::Canvas { elem: *elem })
                         }

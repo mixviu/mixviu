@@ -19,11 +19,165 @@ use smithay::utils::{Logical, Physical, Point, Rectangle, Size};
 use smithay::wayland::shell::wlr_layer::Layer;
 use ui_surface::{Transform as UiTransform, UiSpace};
 
+/// Continue a client grab in the original surface even outside its input region.
+/// The synthetic origin makes Smithay's world-minus-origin delivery equal the
+/// inverse composition and content-fit transform on every event.
+pub fn grabbed_surface_origin(
+    lp: &Loop,
+    target: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
+    point: Point<f64, Logical>,
+) -> Option<Point<f64, Logical>> {
+    use crate::camera::transform::translate::{fit, slot};
+    use crate::window::interface::draw::visible::DrawWindow;
+    use dispatcher::wire::trait_::wire_trait::WireTrait;
+    use smithay::desktop::PopupManager;
+    use smithay::wayland::seat::WaylandFocus;
+    for space in lp.inner.all_world_spaces() {
+        for window in space.state.elements() {
+            if !window.visible(lp) {
+                continue;
+            }
+            let Some(root) = window.wl_surface() else {
+                continue;
+            };
+            let geom = window.geometry();
+            let origin = space.state.element_location(window).unwrap_or_default();
+            let visual = crate::window::draw::frame::scene::visual_of(window);
+            if !visual.visible || visual.scale.factor < 1e-6 {
+                continue;
+            }
+            let unscaled = visual.inverse(comp_model::request::LogicalOffset {
+                x: point.x - origin.x as f64,
+                y: point.y - origin.y as f64,
+            })?;
+            let world = Point::<f64, Logical>::from((
+                origin.x as f64 + unscaled.x,
+                origin.y as f64 + unscaled.y,
+            ));
+            let (local, popup_fit): (Point<f64, Logical>, _) =
+                match slot::expected_size(window).filter(|s| s.w > 0 && s.h > 0) {
+                    Some(size) => {
+                        let dst = crate::surface::interface::core::hit::root_dst(&root)
+                            .unwrap_or(geom.size);
+                        let fit = fit::window_fit(
+                            origin,
+                            geom,
+                            dst,
+                            size,
+                            slot::resize_stretching(window, geom.size),
+                        );
+                        (
+                            Point::from((
+                                (world.x - fit.fit_surf.0) / fit.fit_sx,
+                                (world.y - fit.fit_surf.1) / fit.fit_sy,
+                            )),
+                            Some(fit),
+                        )
+                    }
+                    None => (
+                        Point::from((
+                            world.x - (origin.x - geom.loc.x) as f64,
+                            world.y - (origin.y - geom.loc.y) as f64,
+                        )),
+                        None,
+                    ),
+                };
+            let mut offset = surface_tree_offset(&root, target, (0, 0).into());
+            if offset.is_none() {
+                for (popup, popup_loc) in PopupManager::popups_for_surface(&root) {
+                    let at = if let Some(fit) = &popup_fit {
+                        let p = fit::popup_offset(fit, geom, popup_loc, popup.geometry().loc);
+                        (p.x.round() as i32, p.y.round() as i32).into()
+                    } else {
+                        geom.loc + popup_loc - popup.geometry().loc
+                    };
+                    offset = surface_tree_offset(popup.wl_surface(), target, at);
+                    if offset.is_some() {
+                        break;
+                    }
+                }
+            }
+            if let Some(offset) = offset {
+                return Some(Point::from((
+                    point.x - local.x + offset.x as f64,
+                    point.y - local.y + offset.y as f64,
+                )));
+            }
+        }
+    }
+    None
+}
+
+fn surface_tree_offset(
+    root: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
+    target: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
+    origin: Point<i32, Logical>,
+) -> Option<Point<i32, Logical>> {
+    use smithay::backend::renderer::utils::RendererSurfaceStateUserData;
+    use smithay::wayland::compositor::{TraversalAction, with_surface_tree_downward};
+    let found = std::cell::RefCell::new(None);
+    with_surface_tree_downward(
+        root,
+        origin,
+        |_, states, position| {
+            states
+                .data_map
+                .get::<RendererSurfaceStateUserData>()
+                .and_then(|d| d.lock().unwrap().view())
+                .map_or(TraversalAction::SkipChildren, |view| {
+                    TraversalAction::DoChildren(*position + view.offset)
+                })
+        },
+        |surface, states, position| {
+            if surface == target {
+                if let Some(view) = states
+                    .data_map
+                    .get::<RendererSurfaceStateUserData>()
+                    .and_then(|d| d.lock().unwrap().view())
+                {
+                    *found.borrow_mut() = Some(*position + view.offset);
+                }
+            }
+        },
+        |_, _, _| found.borrow().is_none(),
+    );
+    found.into_inner()
+}
+
 // The hit type, filter, context, and the `_cx` hit-test entry come from the
 // Loop-free core; re-export so callers keep using `surface_interface_base::hit::*`.
 pub use crate::surface::interface::core::hit::{
     HitCx, HitFilter, SurfaceHit, pass_all, surface_under_filtered_cx, ui_camera_hcx,
 };
+
+/// A singular drawn transform cannot route a retained pointer/touch grab.
+pub fn grabbed_surface_suppressed(
+    lp: &Loop,
+    target: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
+) -> bool {
+    use dispatcher::wire::trait_::wire_trait::WireTrait;
+    use smithay::desktop::PopupManager;
+    use smithay::wayland::seat::WaylandFocus;
+    for space in lp.inner.all_world_spaces() {
+        for window in space.state.elements() {
+            let visual = crate::window::draw::frame::scene::visual_of(window);
+            if visual.visible && visual.scale.factor.is_finite() && visual.scale.factor >= 1e-6 {
+                continue;
+            }
+            let Some(root) = window.wl_surface() else {
+                continue;
+            };
+            if surface_tree_offset(&root, target, (0, 0).into()).is_some()
+                || PopupManager::popups_for_surface(&root).any(|(popup, _)| {
+                    surface_tree_offset(popup.wl_surface(), target, (0, 0).into()).is_some()
+                })
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
 
 /// Rim `&Loop` wrapper: feeds the spatial world's storage to the Loop-free core.
 pub fn ui_camera(_loop: &Loop) -> (UiTransform, Size<f64, Physical>) {

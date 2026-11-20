@@ -105,6 +105,7 @@ pub fn service(lp: &mut Loop) {
 /// Nothing that was running for the
 /// unlocked session survives into the lock.
 fn enter(lp: &mut Loop) {
+    crate::window::draw::ghost::clear();
     let serial = SERIAL_COUNTER.next_serial();
     let time = crate::seat::event_time_ms();
     // A region selection ends `locked`; an interactive grab is dropped.

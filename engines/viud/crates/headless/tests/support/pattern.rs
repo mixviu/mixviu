@@ -41,6 +41,10 @@ use wayland_protocols::{
         wp_presentation::{self, WpPresentation},
         wp_presentation_feedback::{self, WpPresentationFeedback},
     },
+    xdg::decoration::zv1::client::{
+        zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+        zxdg_toplevel_decoration_v1::{self, ZxdgToplevelDecorationV1},
+    },
     xdg::shell::client::{
         xdg_popup::{self, XdgPopup},
         xdg_positioner::{Anchor, Gravity, XdgPositioner},
@@ -59,7 +63,9 @@ pub struct State {
     pointers: Vec<WlPointer>,
     pub size: (i32, i32),
     pub callbacks: u64,
+    pub buffer_releases: u64,
     pub pointer_buttons: u64,
+    pub pointer_positions: Vec<(f64, f64)>,
     pub pointer_motions: u64,
     pub keys: u64,
     pub keyboard_enters: u64,
@@ -89,11 +95,26 @@ pub struct Pattern {
     shell: XdgWmBase,
     xdg: XdgSurface,
     _top: XdgToplevel,
+    _decoration: Option<ZxdgToplevelDecorationV1>,
 }
 
 impl Pattern {
+    /// Send a new buffer and destroy its role in the same Wayland read batch.
+    pub fn commit_then_destroy(&mut self) {
+        self.surface.attach(Some(&self.buffer), 0, 0);
+        self.surface
+            .damage_buffer(0, 0, self.state.size.0, self.state.size.1);
+        self.surface.commit();
+        if let Some(decoration) = self._decoration.take() {
+            decoration.destroy();
+        }
+        self._top.destroy();
+        self.xdg.destroy();
+        self.surface.destroy();
+        self.conn.flush().unwrap();
+    }
     pub fn another_window(&self, name: &str) -> Self {
-        Self::from_connection(self.conn.clone(), name, false)
+        Self::from_connection(self.conn.clone(), name, false, false, (200, 160))
     }
     pub fn hide_cursor(&mut self) {
         let (serial, pointer) = self.state.last_enter.clone().expect("cursor enter");
@@ -295,13 +316,33 @@ impl Pattern {
     }
 
     pub fn named(stream: UnixStream, name: &str, fullscreen: bool) -> Self {
+        Self::create(stream, name, fullscreen, false, (200, 160))
+    }
+
+    pub fn sized(stream: UnixStream, name: &str, size: (i32, i32), decorated: bool) -> Self {
+        Self::create(stream, name, false, decorated, size)
+    }
+
+    fn create(
+        stream: UnixStream,
+        name: &str,
+        fullscreen: bool,
+        decorated: bool,
+        size: (i32, i32),
+    ) -> Self {
         mapping_trace!("PATTERN start app_id={name} socket={stream:?}");
         stream.set_nonblocking(true).unwrap();
         let conn = Connection::from_socket(stream).unwrap();
-        Self::from_connection(conn, name, fullscreen)
+        Self::from_connection(conn, name, fullscreen, decorated, size)
     }
 
-    fn from_connection(conn: Connection, name: &str, fullscreen: bool) -> Self {
+    fn from_connection(
+        conn: Connection,
+        name: &str,
+        fullscreen: bool,
+        decorated: bool,
+        size: (i32, i32),
+    ) -> Self {
         let mut queue = conn.new_event_queue::<State>();
         let qh = queue.handle();
         let registry = conn.display().get_registry(&qh, ());
@@ -326,14 +367,21 @@ impl Pattern {
         let surface = compositor.create_surface(&qh, ());
         let xdg = shell.get_xdg_surface(&surface, &qh, ());
         let top = xdg.get_toplevel(&qh, ());
+        let decoration = decorated.then(|| {
+            let (n, _, _) = find("zxdg_decoration_manager_v1");
+            let manager: ZxdgDecorationManagerV1 = registry.bind(n, 1, &qh, ());
+            let decoration = manager.get_toplevel_decoration(&top, &qh, ());
+            decoration.set_mode(zxdg_toplevel_decoration_v1::Mode::ServerSide);
+            decoration
+        });
         mapping_trace!("PATTERN get_toplevel app_id={name}");
         top.set_app_id(name.into());
         mapping_trace!("PATTERN set_app_id={name}");
         if fullscreen {
             top.set_fullscreen(None);
         } else {
-            top.set_min_size(200, 160);
-            top.set_max_size(200, 160);
+            top.set_min_size(size.0, size.1);
+            top.set_max_size(size.0, size.1);
         }
         for (n, _, v) in state.globals.iter().filter(|(_, i, _)| i == "wl_seat") {
             let _: WlSeat = registry.bind(*n, (*v).min(7), &qh, ());
@@ -349,7 +397,7 @@ impl Pattern {
         // xdg-shell may initially offer 0x0 (the client's choice), before
         // viud places the first buffer and sends its decided size.
         if state.size == (0, 0) {
-            state.size = if fullscreen { (1280, 720) } else { (200, 160) };
+            state.size = if fullscreen { (1280, 720) } else { size };
         }
         let (w, h) = state.size;
         let buffer = buffer(&shm, &qh, w, h, |x, y| {
@@ -368,6 +416,7 @@ impl Pattern {
             shell,
             xdg,
             _top: top,
+            _decoration: decoration,
         };
         client.commit(true);
         mapping_trace!(
@@ -716,7 +765,20 @@ delegate_noop!(State: ignore wayland_protocols::wp::idle_inhibit::zv1::client::z
 delegate_noop!(State: ignore WlSurface);
 delegate_noop!(State: ignore WlShm);
 delegate_noop!(State: WlShmPool);
-delegate_noop!(State: ignore WlBuffer);
+impl Dispatch<WlBuffer, ()> for State {
+    fn event(
+        state: &mut Self,
+        _: &WlBuffer,
+        event: wayland_client::protocol::wl_buffer::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if matches!(event, wayland_client::protocol::wl_buffer::Event::Release) {
+            state.buffer_releases += 1;
+        }
+    }
+}
 impl Dispatch<WlPointer, WlSeat> for State {
     fn event(
         state: &mut Self,
@@ -726,6 +788,21 @@ impl Dispatch<WlPointer, WlSeat> for State {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
+        match &event {
+            wl_pointer::Event::Enter {
+                surface_x,
+                surface_y,
+                ..
+            }
+            | wl_pointer::Event::Motion {
+                surface_x,
+                surface_y,
+                ..
+            } => {
+                state.pointer_positions.push((*surface_x, *surface_y));
+            }
+            _ => {}
+        }
         if matches!(event, wl_pointer::Event::Motion { .. }) {
             state.pointer_motions += 1;
         }
@@ -784,6 +861,8 @@ impl Dispatch<XdgPopup, ()> for State {
     }
 }
 delegate_noop!(State: ignore XdgPositioner);
+delegate_noop!(State: ignore ZxdgDecorationManagerV1);
+delegate_noop!(State: ignore ZxdgToplevelDecorationV1);
 delegate_noop!(State: ignore ExtSessionLockManagerV1);
 impl Dispatch<ExtSessionLockV1, ()> for State {
     fn event(

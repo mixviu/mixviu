@@ -55,6 +55,7 @@
 //! published here, before the edge pass, and the dwell timer is a one-shot
 //! armed only while a dwell is pending ([`DwellTimer`]).
 
+mod motion_clock;
 mod sequence;
 mod session;
 
@@ -106,6 +107,26 @@ fn clear_agent_input(
 mod authority_tests {
     use super::clear_agent_input;
     use world::comp::injection::BackendInput::{Headless, Session};
+
+    #[test]
+    fn human_motion_only_cancels_runs_with_geometry() {
+        for geometry in [false, true] {
+            let run = super::MotionKind::Window {
+                id: 1,
+                generation: 1,
+                from: [0.0; 4],
+                to: [geometry.then_some(100.0), None, None, None],
+                timeline: motion::Timeline::new(0.0, 1.0, motion::Easing::Linear),
+                visual: Some(
+                    motion::presets()
+                        .into_iter()
+                        .find(|p| p.name == "fade")
+                        .unwrap(),
+                ),
+            };
+            assert_eq!(run.cancelled_by_human(), geometry);
+        }
+    }
 
     #[test]
     fn pause_and_lock_clear_only_when_agent_authority_is_lost() {
@@ -176,11 +197,6 @@ enum WaiterKind {
     ForceClose { id: u64, generation: u64 },
 }
 
-/// How often a running `comp.motion.run` is stepped: one frame at 60 Hz, so a
-/// window's configures are throttled to frames. Positions come from the clock,
-/// not from frames, so a parked VT still completes on time.
-const MOTION_TICK: Duration = Duration::from_millis(16);
-
 /// What a running `comp.motion.run` moves.
 enum MotionKind {
     Pointer {
@@ -193,10 +209,17 @@ enum MotionKind {
         from: [f64; 4],
         to: [Option<f64>; 4],
         timeline: Timeline,
+        visual: Option<motion::Preset>,
     },
 }
 
 impl MotionKind {
+    fn cancelled_by_human(&self) -> bool {
+        match self {
+            Self::Pointer { .. } => true,
+            Self::Window { to, .. } => to.iter().any(Option::is_some),
+        }
+    }
     /// Seconds from the start to the end, fixed when the run starts.
     fn end(&self) -> f64 {
         match self {
@@ -270,6 +293,7 @@ pub struct Bus {
     /// The running `comp.motion.run` glides, and the timer that steps them.
     motions: Vec<MotionRun>,
     motion_timer: OneShot,
+    motion_clock: motion_clock::MotionClock,
     sequences: sequence::Sequences,
     pointer: PointerWatch,
     session: session::Session,
@@ -403,6 +427,7 @@ impl Bus {
             region_timer: OneShot::default(),
             motions: Vec::new(),
             motion_timer: OneShot::default(),
+            motion_clock: motion_clock::MotionClock::default(),
             sequences: sequence::Sequences::new(wake),
             pointer: PointerWatch {
                 lease: policy::pointer::PointerLease::default(),
@@ -634,11 +659,35 @@ impl Bus {
     /// while any run: every tick when live, the next end time when paused.
     fn service_motions(&mut self, lp: &mut Loop) {
         let now = Instant::now();
+        #[cfg(feature = "test-support")]
+        let lifecycle_active =
+            !headless::wire::test_lifecycle_paused() && world::comp::lifecycle_motion::service(lp);
+        #[cfg(not(feature = "test-support"))]
+        let lifecycle_active = world::comp::lifecycle_motion::service(lp);
         let human = policy_host::input::human_pointer(lp);
         let paused = self.paused;
         let mut still = Vec::with_capacity(self.motions.len());
         for mut run in std::mem::take(&mut self.motions) {
+            if let MotionKind::Window {
+                id,
+                generation,
+                visual: Some(_),
+                ..
+            } = &run.kind
+            {
+                if policy_host::motion::visual_replaced(lp, *id, *generation, run.started) {
+                    policy_host::motion::cancel_geometry(lp, *id, *generation);
+                    let by = policy_host::motion::replacement_cause(lp, *id, *generation);
+                    run.reply.send(ControlReply::Body(
+                        json!({"version":1,"status":"superseded","by":by}),
+                    ));
+                    continue;
+                }
+            }
             if run.reply.is_closed() {
+                if let MotionKind::Window { id, generation, .. } = &run.kind {
+                    policy_host::motion::cancel_visual(lp, *id, *generation);
+                }
                 continue;
             }
             let end = run.kind.end();
@@ -653,11 +702,21 @@ impl Bus {
                 }
             } else if std::mem::take(&mut run.rebase_human) {
                 run.human_at_start = human.clone();
-            } else if human != run.human_at_start {
+            } else if human != run.human_at_start && run.kind.cancelled_by_human() {
+                if let MotionKind::Window { id, generation, .. } = &run.kind {
+                    policy_host::motion::cancel_visual(lp, *id, *generation);
+                }
                 run.reply.send(motion_cancelled("human_input"));
                 continue;
             }
             let t = elapsed.min(end);
+            if matches!(run.kind, MotionKind::Pointer { .. })
+                && elapsed < end
+                && !self.motion_clock.due(now)
+            {
+                still.push(run);
+                continue;
+            }
             let step = match &mut run.kind {
                 MotionKind::Pointer { glide, output } => {
                     policy_host::motion::pointer_step(lp, glide, output.as_deref(), t)
@@ -665,11 +724,20 @@ impl Bus {
                 MotionKind::Window {
                     id,
                     generation,
-                    from,
-                    to,
                     timeline,
+                    visual,
+                    ..
                 } => {
-                    policy_host::motion::window_step(lp, *id, *generation, *from, *to, timeline, t)
+                    let step =
+                        policy_host::motion::geometry_frame_step(lp, *id, *generation, timeline, t);
+                    if visual.is_none() && !matches!(step, policy_host::motion::Step::Moving) {
+                        lp.state
+                            .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+                    }
+                    if visual.is_some() && !matches!(step, policy_host::motion::Step::Moving) {
+                        policy_host::motion::finish_visual(lp, *id, *generation);
+                    }
+                    step
                 }
             };
             match step {
@@ -683,16 +751,45 @@ impl Bus {
         self.motions = still;
         // Paused: wake at the earliest end time (1 ms past it, so float
         // rounding never wakes it a hair early), not every frame.
-        let next = if paused {
-            self.motions
-                .iter()
-                .map(|run| {
-                    run.started + Duration::from_secs_f64(run.kind.end()) + Duration::from_millis(1)
-                })
-                .min()
-        } else {
-            (!self.motions.is_empty()).then(|| now + MOTION_TICK)
-        };
+        let outputs: Vec<_> = lp
+            .inner
+            .space_state()
+            .state
+            .outputs()
+            .map(|output| {
+                let interval = output
+                    .current_mode()
+                    .filter(|mode| mode.refresh > 0)
+                    .map(|mode| Duration::from_secs_f64(1000.0 / f64::from(mode.refresh)))
+                    .unwrap_or(Duration::from_micros(16_667));
+                (output.name(), interval)
+            })
+            .collect();
+        let active = lifecycle_active || !self.motions.is_empty();
+        let frame = self.motion_clock.step(
+            now,
+            active && (!paused || lifecycle_active),
+            outputs,
+            |key| {
+                // Lifecycle exits still retire while parked, as before. Their
+                // maintenance clock must not request frames on a parked output.
+                if paused {
+                    return;
+                }
+                lp.state
+                    .redraw
+                    .request_pipe_silent(key, dispatcher::state::RedrawReason::WindowState);
+                lp.state.redraw.wake();
+            },
+        );
+        let end = self
+            .motions
+            .iter()
+            .map(|run| {
+                run.started + Duration::from_secs_f64(run.kind.end()) + Duration::from_millis(1)
+            })
+            .min();
+        let next = frame.into_iter().chain(end).min();
         self.motion_timer.rearm(&self.handle, next, |_| {});
     }
 
@@ -892,6 +989,40 @@ impl Engine<'_> {
         };
         let started = Instant::now();
         let human_at_start = policy_host::input::human_pointer(self.lp);
+        let (target, visual) = match target {
+            MotionTarget::WindowTracks {
+                scale_anchor,
+                id,
+                generation,
+                to,
+                duration,
+                easing,
+                visual,
+            } => {
+                if let Some(anchor) = scale_anchor {
+                    if let Ok(mut value) =
+                        policy_host::control::window_visual(self.lp, id, generation)
+                    {
+                        value.scale.anchor = anchor.anchor;
+                        value.scale.center = anchor.center;
+                        let _ = policy_host::control::window_visual_step(
+                            self.lp, id, generation, value,
+                        );
+                    }
+                }
+                (
+                    MotionTarget::Window {
+                        id,
+                        generation,
+                        to,
+                        duration,
+                        easing,
+                    },
+                    Some(visual),
+                )
+            }
+            target => (target, None),
+        };
         let (kind, step) = match target {
             MotionTarget::Pointer {
                 output,
@@ -928,29 +1059,79 @@ impl Engine<'_> {
                         return;
                     }
                 };
-                let mut timeline = Timeline::new(0.0, duration.as_secs_f64(), easing);
-                let step = policy_host::motion::window_step(
+                let mut visual = visual;
+                if let Some(preset) = visual.as_mut() {
+                    if let Err(refusal) =
+                        policy_host::motion::start_visual(self.lp, id, generation, preset, started)
+                    {
+                        reply.send(refusal);
+                        return;
+                    }
+                } else {
+                    policy_host::motion::cancel_visual(self.lp, id, generation);
+                }
+                let timeline = Timeline::new(
+                    0.0,
+                    visual.as_ref().map_or(duration.as_secs_f64(), |preset| {
+                        preset.timing.duration.max(duration.as_secs_f64())
+                    }),
+                    easing,
+                );
+                // Exactly one owner per window. A replacement starts from the
+                // sampled visual/geometry state and settles the old caller now.
+                let mut keep = Vec::with_capacity(self.motions.len());
+                for run in std::mem::take(self.motions) {
+                    if matches!(&run.kind, MotionKind::Window { id: old_id, generation: old_generation, .. } if *old_id == id && *old_generation == generation)
+                    {
+                        run.reply.send(ControlReply::Body(
+                            json!({"version":1,"status":"superseded","by":"run"}),
+                        ));
+                    } else {
+                        keep.push(run);
+                    }
+                }
+                *self.motions = keep;
+                policy_host::motion::start_geometry(
                     self.lp,
-                    id,
-                    generation,
+                    (id, generation),
                     from,
                     to,
-                    &mut timeline,
-                    0.0,
+                    started,
+                    duration.as_secs_f64(),
+                    easing,
                 );
+                let step = policy_host::motion::geometry_frame_step(
+                    self.lp, id, generation, &timeline, 0.0,
+                );
+                self.lp
+                    .state
+                    .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
                 let kind = MotionKind::Window {
                     id,
                     generation,
                     from,
                     to,
                     timeline,
+                    visual,
                 };
                 (kind, step)
             }
+            MotionTarget::WindowTracks { .. } => unreachable!("normalised above"),
         };
         match step {
             policy_host::motion::Step::Refused(answer) => reply.send(answer),
-            policy_host::motion::Step::Arrived => reply.send(motion_completed(&kind, false)),
+            policy_host::motion::Step::Arrived => {
+                if let MotionKind::Window {
+                    id,
+                    generation,
+                    visual: Some(_),
+                    ..
+                } = &kind
+                {
+                    policy_host::motion::finish_visual(self.lp, *id, *generation);
+                }
+                reply.send(motion_completed(&kind, false));
+            }
             policy_host::motion::Step::Moving => self.motions.push(MotionRun {
                 started,
                 kind,

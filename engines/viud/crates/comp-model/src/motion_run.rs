@@ -14,8 +14,10 @@
 //! }}]}
 //! comp.motion.run {targets: [{window: {
 //!     id, generation,
-//!     to: {x?, y?, w?, h?},       // global logical; absent fields stay put
-//!     duration_ms?, curve?        // as for pointer
+//!     to?: {x?, y?, w?, h?},      // global logical; absent fields stay put
+//!     tracks?: [{property, keyframes}], // opacity, scale, tx, ty
+//!     preset?: "pop",            // shared table; exclusive with tracks
+//!     duration_ms?, curve?        // curve also accepts shared easing objects
 //! }}]}
 //! ```
 //!
@@ -59,6 +61,16 @@ pub enum MotionTarget {
         duration: Duration,
         easing: Easing,
     },
+    /// Additive visual-track form; the original geometry variant stays valid.
+    WindowTracks {
+        scale_anchor: Option<crate::request::WindowScale>,
+        id: u64,
+        generation: u64,
+        to: [Option<f64>; 4],
+        duration: Duration,
+        easing: Easing,
+        visual: motion::Preset,
+    },
 }
 
 /// A parsed `comp.motion.run`.
@@ -76,6 +88,8 @@ impl MotionSpec {
                 MotionTarget::Pointer { duration, .. } | MotionTarget::Window { duration, .. } => {
                     *duration
                 }
+                // A short replacement can inherit a longer remaining track.
+                MotionTarget::WindowTracks { .. } => Duration::from_millis(MAX_DURATION_MS),
             })
             .max()
             .unwrap_or_default()
@@ -104,7 +118,16 @@ pub fn parse(args: &Value) -> Result<MotionSpec, ControlReply> {
 }
 
 const POINTER_FIELDS: &[&str] = &["output", "path", "duration_ms", "curve"];
-const WINDOW_FIELDS: &[&str] = &["id", "generation", "to", "duration_ms", "curve"];
+const WINDOW_FIELDS: &[&str] = &[
+    "anchor",
+    "id",
+    "generation",
+    "to",
+    "duration_ms",
+    "curve",
+    "tracks",
+    "preset",
+];
 const TO_FIELDS: &[&str] = &["x", "y", "w", "h"];
 
 fn parse_target(value: &Value) -> Result<MotionTarget, ControlReply> {
@@ -187,7 +210,7 @@ fn parse_window(window: &serde_json::Map<String, Value>) -> Result<MotionTarget,
     {
         return Err(invalid_argument(
             "window",
-            "only id, generation, to, duration_ms and curve",
+            "only id, generation, to, duration_ms, curve, tracks and preset",
             "unknown field refused",
         ));
     }
@@ -199,8 +222,18 @@ fn parse_window(window: &serde_json::Map<String, Value>) -> Result<MotionTarget,
         .get("generation")
         .and_then(Value::as_u64)
         .ok_or_else(|| invalid_argument("window.generation", "integer", "window generation"))?;
+    let visual = parse_visual(window)?;
+    if window.contains_key("anchor") && visual.is_none() {
+        return Err(invalid_argument(
+            "window.anchor",
+            "anchor alongside tracks or preset",
+            "visual run",
+        ));
+    }
+    let empty_to = serde_json::Map::new();
     let to_object = match present(window, "to") {
         Some(Value::Object(to)) => to,
+        None if visual.is_some() => &empty_to,
         _ => {
             return Err(invalid_argument(
                 "window.to",
@@ -231,7 +264,7 @@ fn parse_window(window: &serde_json::Map<String, Value>) -> Result<MotionTarget,
             ),
         };
     }
-    if to.iter().all(Option::is_none) {
+    if to.iter().all(Option::is_none) && visual.is_none() {
         return Err(invalid_argument(
             "window.to",
             "at least one of x, y, w, h",
@@ -246,6 +279,28 @@ fn parse_window(window: &serde_json::Map<String, Value>) -> Result<MotionTarget,
         ));
     }
     let (duration, easing) = parse_timing(window)?;
+    if let Some(mut visual) = visual {
+        visual.timing.duration = duration.as_secs_f64();
+        return Ok(MotionTarget::WindowTracks {
+            scale_anchor: window
+                .get("anchor")
+                .map(|anchor| {
+                    crate::request::window_scale_value(
+                        &serde_json::json!({"factor":1,"anchor":anchor}),
+                    )
+                    .ok_or_else(|| {
+                        invalid_argument("window.anchor", "center or {x,y}", "logical anchor")
+                    })
+                })
+                .transpose()?,
+            id,
+            generation,
+            to,
+            duration,
+            easing,
+            visual,
+        });
+    }
     Ok(MotionTarget::Window {
         id,
         generation,
@@ -302,11 +357,16 @@ fn parse_curve(value: &Value) -> Result<Easing, ControlReply> {
     let bad = || {
         invalid_argument(
             "curve",
-            "a curve name or [x1, y1, x2, y2]",
+            "a curve name, shared easing object or [x1, y1, x2, y2]",
             "linear | ease | ease-in | ease-out | ease-in-out | min-jerk",
         )
     };
     match value {
+        Value::Object(_) => {
+            let curve: motion::Curve = serde_json::from_value(value.clone()).map_err(|_| bad())?;
+            curve.validate().map_err(|_| bad())?;
+            Ok(Easing::Track(curve))
+        }
         Value::String(name) => match name.as_str() {
             "linear" => Ok(Easing::Linear),
             "min-jerk" => Ok(Easing::MinJerk),
@@ -327,6 +387,111 @@ fn parse_curve(value: &Value) -> Result<Easing, ControlReply> {
         }
         _ => Err(bad()),
     }
+}
+
+/// The compositor supports this projection of the shared preset vocabulary.
+pub fn window_property(property: motion::Property) -> bool {
+    matches!(
+        property,
+        motion::Property::Opacity
+            | motion::Property::Scale
+            | motion::Property::Tx
+            | motion::Property::Ty
+    )
+}
+
+fn parse_visual(
+    window: &serde_json::Map<String, Value>,
+) -> Result<Option<motion::Preset>, ControlReply> {
+    let bad = || {
+        invalid_argument(
+            "window.tracks",
+            "1..=4 unique opacity, scale, tx, ty tracks or a preset name",
+            "shared motion keyframes; no rotation",
+        )
+    };
+    let mut visual = match (window.get("tracks"), window.get("preset")) {
+        (None, None) => return Ok(None),
+        (Some(tracks), None) => {
+            let tracks: Vec<motion::Track> =
+                serde_json::from_value(tracks.clone()).map_err(|_| bad())?;
+            if tracks.is_empty()
+                || tracks.len() > 4
+                || tracks
+                    .iter()
+                    .any(|t| !window_property(t.property) || t.keyframes.len() > 64)
+            {
+                return Err(bad());
+            }
+            motion::Preset {
+                name: "window".into(),
+                timing: motion::Timing::default(),
+                tracks,
+            }
+        }
+        (None, Some(Value::String(name))) => {
+            let mut preset = motion::presets()
+                .into_iter()
+                .find(|p| &p.name == name)
+                .ok_or_else(bad)?;
+            preset.tracks.retain(|t| window_property(t.property));
+            if preset.tracks.is_empty() {
+                return Err(bad());
+            }
+            preset
+        }
+        _ => return Err(bad()),
+    };
+    visual.timing = motion::Timing {
+        fill: motion::Fill::Both,
+        ..motion::Timing::default()
+    };
+    if let Some(value) = window.get("curve") {
+        let easing = match parse_curve(value)? {
+            Easing::Linear => motion::Curve::Linear,
+            Easing::Track(curve) => curve,
+            Easing::Bezier(_) | Easing::MinJerk => {
+                // Named CSS curves and bezier arrays also have a shared Curve representation.
+                curve_for_tracks(value)?
+            }
+        };
+        for track in &mut visual.tracks {
+            for frame in &mut track.keyframes {
+                frame.easing = easing;
+            }
+        }
+    }
+    visual.validate().map_err(|_| bad())?;
+    for track in &visual.tracks {
+        if track.keyframes.iter().any(|f| match track.property {
+            motion::Property::Opacity => !(0.0..=1.0).contains(&f.value),
+            motion::Property::Scale => !(0.0..=64.0).contains(&f.value),
+            _ => !(i32::MIN as f64..=i32::MAX as f64).contains(&f.value),
+        }) {
+            return Err(bad());
+        }
+    }
+    Ok(Some(visual))
+}
+
+fn curve_for_tracks(value: &Value) -> Result<motion::Curve, ControlReply> {
+    Ok(match value.as_str() {
+        Some("ease") => motion::Curve::Ease,
+        Some("ease-in") => motion::Curve::EaseIn,
+        Some("ease-out") => motion::Curve::EaseOut,
+        Some("ease-in-out") => motion::Curve::EaseInOut,
+        _ => {
+            let a = value.as_array().ok_or_else(|| {
+                invalid_argument("curve", "shared easing", "min-jerk is geometry-only")
+            })?;
+            motion::Curve::Bezier {
+                x1: a[0].as_f64().unwrap(),
+                y1: a[1].as_f64().unwrap(),
+                x2: a[2].as_f64().unwrap(),
+                y2: a[3].as_f64().unwrap(),
+            }
+        }
+    })
 }
 
 #[cfg(test)]
@@ -406,6 +571,56 @@ mod tests {
             "path": [{"x": 0, "y": 0}], "duration_ms": 2000
         }}]}));
         assert_eq!(spec.budget(), Duration::from_millis(3000));
+    }
+
+    #[test]
+    fn window_presets_project_shared_properties_and_timing() {
+        for name in ["pop", "fade", "zoom"] {
+            let spec = ok(
+                json!({"targets":[{"window":{"id":7,"generation":3,"preset":name,"duration_ms":300}}]}),
+            );
+            let MotionTarget::WindowTracks {
+                visual,
+                duration,
+                to,
+                ..
+            } = &spec.targets[0]
+            else {
+                panic!("tracks")
+            };
+            assert_eq!(*duration, Duration::from_millis(300));
+            assert_eq!(spec.budget(), Duration::from_secs(11));
+            assert_eq!(visual.timing.duration, 0.3);
+            assert!(to.iter().all(Option::is_none));
+            assert!(visual.tracks.iter().all(|t| window_property(t.property)));
+        }
+    }
+
+    #[test]
+    fn validates_explicit_tracks_and_shared_easing() {
+        let track = json!({"property":"opacity","keyframes":[{"offset":0,"value":0,"easing":{"kind":"steps","n":4,"start":false}},{"offset":1,"value":1}]});
+        let spec = ok(
+            json!({"targets":[{"window":{"id":7,"generation":3,"tracks":[track],"to":{"x":50},"curve":{"kind":"spring","stiffness":100,"damping":10,"mass":1,"velocity":0}}}]}),
+        );
+        assert!(matches!(
+            spec.targets[0],
+            MotionTarget::WindowTracks {
+                easing: Easing::Track(motion::Curve::Spring { .. }),
+                ..
+            }
+        ));
+        for tracks in [
+            json!([]),
+            json!([track, track]),
+            json!([{"property":"rotate","keyframes":[{"offset":0,"value":0},{"offset":1,"value":30}]}]),
+            json!([{"property":"opacity","keyframes":[{"offset":0,"value":-1},{"offset":1,"value":1}]}]),
+        ] {
+            assert!(
+                parse(&json!({"targets":[{"window":{"id":7,"generation":3,"tracks":tracks}}]}))
+                    .is_err()
+            );
+        }
+        assert!(parse(&json!({"targets":[{"window":{"id":7,"generation":3,"preset":"pop","tracks":[track]}}]})).is_err());
     }
 
     #[test]

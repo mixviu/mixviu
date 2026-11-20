@@ -2,5 +2,6 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 pub mod element;
 pub mod frame;
+pub mod ghost;
 pub mod occlude;
 pub mod thumbnail;

@@ -1,0 +1,48 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Focused CBC worker entry point. Never launches on a desk or host desktop.
+fn checked($argv)
+  print(join($argv, " "))
+  $r = run_argv($argv, {timeout:1800, stdout:"inherit", stderr:"inherit"})
+  if not $r.ok then exit($r.exit_code ?? 124) end
+end
+$mode = args()[0] ?? "native"
+export MIX_TEST_REQUIRE_RECORD="1"
+export MIX_TEST_MIX_EXE=realpath(".") .. "/target/release/mix"
+export MIX_TEST_VIUD_EXE=realpath(".") .. "/target/release/viud"
+export MIX_TEST_VIU_EXE=realpath(".") .. "/target/release/viu"
+if $mode == "native" or $mode == "all-targets" then
+  -- mix's login-shell feature boundary requires a separate Cargo invocation.
+  checked(["cargo","build","--release","--locked","-p","mix"])
+  -- VFL is unconditional in mixd; unrelated service personalities are not
+  -- needed to exercise its production exporter.
+  checked(["cargo","build","--release","--locked","-p","mixd","--no-default-features"])
+  checked(["cargo","build","--release","--locked","-p","noded","-p","testkit","--bins"])
+  -- The full capture suite also owns the merged OSD host fixture.
+  checked(["cargo","build","--release","--locked","-p","viu","--bin","viu"])
+  if $mode == "all-targets" then
+    -- The caller supplies the changed crates and any path-including consumers.
+    $packages = slice(args(), 1)
+    if len($packages) == 0 then raise("MOTION_CHECK", "all-targets requires PACKAGE...") end
+    $test = ["cargo","test","--release","--locked"]
+    for $package in $packages
+      $test = concat($test, ["-p", $package])
+    end
+    checked(concat($test, ["--no-default-features","--features","viud/backend-native,viud/test-support,headless/compositor-fixtures","--no-fail-fast","--","--test-threads=1"]))
+  else
+  checked(["cargo","test","--release","--locked","-p","viud","--no-default-features","--features","backend-native,test-support","--test","recorder_binary"])
+  checked(["cargo","test","--release","--locked","-p","headless","--features","headless/compositor-fixtures","--test","capture","--","--nocapture","--test-threads=1"])
+  checked(["cargo","test","--release","--locked","-p","headless","--features","headless/compositor-fixtures","--test","capture","benchmark_window_motion","--","--ignored","--nocapture","--test-threads=1"])
+  export MIX_TEST_CAPTURE_SECONDS="40"
+  checked(["cargo","test","--release","--locked","-p","headless","--features","headless/compositor-fixtures","--test","capture","benchmark_record_changing_4k_zero_drop","--","--ignored","--nocapture","--test-threads=1"])
+  end
+elif $mode == "unit" then
+  checked(["cargo","test","--locked","-p","world","-p","decor","-p","policy-host","--lib"])
+  checked(["cargo","test","--locked","-p","testkit","--test","window_control","--test","interactive"])
+elif $mode == "motion" then
+  checked(["cargo","test","--release","--locked","-p","viud","--no-default-features","--features","backend-native,test-support","--test","recorder_binary"])
+  checked(["cargo","test","--release","--locked","-p","headless","--features","headless/compositor-fixtures","--test","capture","window_motion","--","--nocapture","--test-threads=1"])
+elif $mode == "bench" then
+  checked(["cargo","test","--release","--locked","-p","headless","--features","headless/compositor-fixtures","--test","capture","benchmark_window_motion","--","--ignored","--nocapture","--test-threads=1"])
+else
+  raise("MOTION_CHECK", "expected native, all-targets PACKAGE..., unit, motion or bench")
+end

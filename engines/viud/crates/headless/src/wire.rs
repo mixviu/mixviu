@@ -175,7 +175,44 @@ pub fn install(
     let display_handle = state.state.output.display_handle.clone();
     let damage_tracker =
         scenegraph::state::lifecycle::initialize(state, &output, &display_handle, &mut contract);
+    #[cfg(feature = "test-support")]
+    if std::env::var_os("XDG_RUNTIME_DIR")
+        .is_some_and(|root| std::path::PathBuf::from(root).join("two-outputs").exists())
+    {
+        let extra = virtual_output(1);
+        extra.change_current_state(
+            Some(mode),
+            Some(Transform::Normal),
+            Some(Scale::Fractional(options.scale)),
+            Some((mode.size.w, 0).into()),
+        );
+        extra.set_preferred(mode);
+        scenegraph::display::output::register(state, &extra);
+        state
+            .inner
+            .map_output_everywhere(&extra, (mode.size.w, 0).into());
+    }
+
     // This runs before the event loop serves any client.
+    #[cfg(feature = "test-support")]
+    if std::env::var_os("XDG_RUNTIME_DIR")
+        .is_some_and(|root| std::path::PathBuf::from(root).join("two-panes").exists())
+    {
+        use world::viewport::state::{Axis, Slot, Viewport};
+        let views = state.inner.output_views_mut();
+        views.ensure("headless-0");
+        views.views_mut("headless-0").root = Viewport::Slots {
+            axis: Axis::Vertical,
+            slots: (0..2)
+                .map(|id| Slot {
+                    id,
+                    camera: Default::default(),
+                    content: None,
+                    weight: 1.0,
+                })
+                .collect(),
+        };
+    }
     human_seat_without_sources(&mut state.state.seat.seat);
     #[cfg(feature = "test-support")]
     if std::env::var_os(paths::env::test::TEST_RECORD_FIXTURE).is_some() {
@@ -294,6 +331,30 @@ fn virtual_output(index: usize) -> Output {
             serial_number: name,
         },
     )
+}
+
+/// Deterministic source-order fixture: leave protocol/Bus dispatch and drawing
+/// live while holding lifecycle observation between explicit hide and destroy.
+/// Compiled out of ordinary builds and restricted to our headless context.
+#[cfg(feature = "test-support")]
+pub fn test_lifecycle_paused() -> bool {
+    if FALLBACK.with(|slot| slot.borrow().is_some())
+        && let Some(root) = std::env::var_os("XDG_RUNTIME_DIR")
+    {
+        let root = std::path::PathBuf::from(root);
+        if root
+            .join(format!("pause-lifecycle-{}", std::process::id()))
+            .exists()
+        {
+            std::fs::write(
+                root.join(format!("pause-lifecycle-{}.ack", std::process::id())),
+                b"paused",
+            )
+            .unwrap();
+            return true;
+        }
+    }
+    false
 }
 
 #[cfg(test)]

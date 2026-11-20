@@ -16,6 +16,8 @@ pub enum Easing {
     Linear,
     Bezier(CubicBezier),
     MinJerk,
+    /// Shared keyframe easing, including steps and closed-form springs.
+    Track(crate::Curve),
 }
 
 impl Easing {
@@ -24,6 +26,7 @@ impl Easing {
             Self::Linear => u.clamp(0.0, 1.0),
             Self::Bezier(c) => c.sample(u),
             Self::MinJerk => min_jerk(u),
+            Self::Track(curve) => curve.sample(u),
         }
     }
 }

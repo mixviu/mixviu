@@ -168,6 +168,14 @@ pub struct Clipped<E> {
 }
 
 impl<E> Clipped<E> {
+    /// Retain the shader and its already projected clip for an exit image.
+    pub fn snapshot_clip(&self) -> (Option<TexProgram>, Clip) {
+        (self.program.clone(), self.drawn)
+    }
+    /// Inspect the retained content when making a composition-only snapshot.
+    pub fn inner_mut(&mut self) -> &mut E {
+        &mut self.inner
+    }
     pub fn new(inner: E, program: Option<TexProgram>, clip: Clip) -> Self {
         Clipped {
             inner,
@@ -189,14 +197,26 @@ impl<E> Clipped<E> {
 
     pub fn set_rescale(&mut self, scale: f64, offset: Point<i32, Physical>) {
         let r = self.clip.rect;
-        let x0 = (r.loc.x as f64 * scale).round() as i32 + offset.x;
-        let y0 = (r.loc.y as f64 * scale).round() as i32 + offset.y;
-        let x1 = ((r.loc.x + r.size.w) as f64 * scale).round() as i32 + offset.x;
-        let y1 = ((r.loc.y + r.size.h) as f64 * scale).round() as i32 + offset.y;
+        let x0 = ((r.loc.x as f64 * scale).round() + offset.x as f64) as i32;
+        let y0 = ((r.loc.y as f64 * scale).round() + offset.y as f64) as i32;
+        let x1 = (((r.loc.x as f64 + r.size.w as f64) * scale).round() + offset.x as f64) as i32;
+        let y1 = (((r.loc.y as f64 + r.size.h as f64) * scale).round() + offset.y as f64) as i32;
         self.drawn = Clip {
-            rect: Rectangle::new((x0, y0).into(), ((x1 - x0).max(0), (y1 - y0).max(0)).into()),
+            rect: Rectangle::new(
+                (x0, y0).into(),
+                (x1.saturating_sub(x0).max(0), y1.saturating_sub(y0).max(0)).into(),
+            ),
             radius: (self.clip.radius as f64 * scale) as f32,
         };
+    }
+
+    /// Compose a thumbnail transform with an existing composition transform.
+    /// Keep the original clip for opaque-region reporting in inner space.
+    pub fn append_rescale(&mut self, scale: f64, offset: Point<i32, Physical>) {
+        let original = self.clip;
+        self.clip = self.drawn;
+        self.set_rescale(scale, offset);
+        self.clip = original;
     }
 }
 
@@ -327,6 +347,33 @@ mod tests {
         // Identity leaves it alone.
         let same = Clipped::new((), None, clip).rescaled(1.0, Point::from((0, 0)));
         assert_eq!(same.drawn, clip);
+    }
+
+    #[test]
+    fn a_thumbnail_composes_with_the_window_transform() {
+        let clip = Clip {
+            rect: Rectangle::new((100, 80).into(), (200, 160).into()),
+            radius: 12.0,
+        };
+        let mut element = Clipped::new((), None, clip).rescaled(0.5, (50, 40).into());
+        element.append_rescale(0.25, (10, 20).into());
+        assert_eq!(
+            element.drawn.rect,
+            Rectangle::new((35, 40).into(), (25, 20).into())
+        );
+        assert_eq!(element.drawn.radius, 1.5);
+        assert_eq!(element.clip, clip);
+    }
+
+    #[test]
+    fn extreme_composed_clip_coordinates_saturate() {
+        let clip = Clip {
+            rect: Rectangle::new((i32::MAX - 4, i32::MIN + 4).into(), (100, 100).into()),
+            radius: 12.0,
+        };
+        let element = Clipped::new((), None, clip).rescaled(64.0, (i32::MAX, i32::MIN).into());
+        assert_eq!(element.drawn.rect.loc, (i32::MAX, i32::MIN).into());
+        assert!(element.drawn.rect.size.w >= 0 && element.drawn.rect.size.h >= 0);
     }
 
     /// A fully opaque element at a fixed place.

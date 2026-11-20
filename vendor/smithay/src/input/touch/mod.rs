@@ -325,6 +325,16 @@ impl<D: SeatHandler + 'static> TouchHandle<D> {
             .collect()
     }
 
+    /// The retained focus of one touch slot, for compositor coordinate mapping.
+    pub fn current_focus(&self, slot: TouchSlot) -> Option<(D::TouchFocus, Point<f64, Logical>)> {
+        self.inner
+            .lock()
+            .unwrap()
+            .focus
+            .get(&slot)
+            .and_then(|state| state.focus.clone())
+    }
+
     /// Calls `f` with the active grab, if any.
     pub fn with_grab<T>(&self, f: impl FnOnce(Serial, &dyn TouchGrab<D>) -> T) -> Option<T> {
         let guard = self.inner.lock().unwrap();
@@ -637,13 +647,20 @@ impl<D: SeatHandler + 'static> TouchInternal<D> {
         &mut self,
         data: &mut D,
         seat: &Seat<D>,
-        _focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
+        focus: Option<(<D as SeatHandler>::TouchFocus, Point<f64, Logical>)>,
         event: &MotionEvent,
     ) {
         let marker = self.frame_marker();
         let Some(state) = self.focus.get_mut(&event.slot) else {
             return;
         };
+        // Keep focus routing fixed, but allow the compositor to refresh its
+        // coordinate transform during scale, translation and resize.
+        if let (Some((target, origin)), Some((held, held_origin))) = (&focus, state.focus.as_mut()) {
+            if target == held {
+                *held_origin = *origin;
+            }
+        }
         state.pending = marker;
         state.location = event.location;
         if let Some((focus, loc)) = state.focus.as_ref() {

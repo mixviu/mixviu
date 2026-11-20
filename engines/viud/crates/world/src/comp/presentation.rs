@@ -60,6 +60,7 @@ struct ShownWindow {
 }
 
 struct QueuedFrame {
+    lifecycle: Vec<(uuid::Uuid, u32)>,
     shown: Vec<ShownWindow>,
     /// Mapped managed windows the frame does not show: `{id, generation}`
     /// and the root's content seq.
@@ -159,6 +160,7 @@ pub fn frame_queued(lp: &mut Loop, output: &Output, visible: &[Window]) {
     let comp = &lp.inner.comp;
     let mut listed = HashSet::new();
     let mut shown = Vec::new();
+    let mut lifecycle = Vec::new();
     for window in visible {
         let Some(id) = SurfaceHandle::of_window(window)
             .and_then(|handle| comp.registry.id_for_handle(&handle))
@@ -172,6 +174,9 @@ pub fn frame_queued(lp: &mut Loop, output: &Output, visible: &[Window]) {
             continue;
         };
         listed.insert(id);
+        if let (Some(uuid), Some(workspace)) = (record.uuid(), record.workspace()) {
+            lifecycle.push((uuid, workspace));
+        }
         shown.push(ShownWindow {
             id: id.0,
             generation: record.generation(),
@@ -203,6 +208,7 @@ pub fn frame_queued(lp: &mut Loop, output: &Output, visible: &[Window]) {
         queue.pop_front();
     }
     queue.push_back(QueuedFrame {
+        lifecycle,
         shown,
         hidden,
         sources,
@@ -230,6 +236,7 @@ pub fn presented(
     else {
         return;
     };
+    super::lifecycle_motion::presented(comp_model::snapshot::output_key(&name), &frame.lifecycle);
     if presentation.stats.epoch_us == 0 {
         presentation.stats.epoch_us = tv_us;
     }

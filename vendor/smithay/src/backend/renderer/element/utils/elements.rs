@@ -18,6 +18,11 @@ pub struct RescaleRenderElement<E> {
 }
 
 impl<E: Element> RescaleRenderElement<E> {
+    /// Access the wrapped element, for compositor-side shader transforms.
+    pub fn element_mut(&mut self) -> &mut E {
+        &mut self.element
+    }
+
     /// Create a new re-scale element for an existing element
     ///
     /// The origin can be used to scale the element geometry relative to a [`Point`].
@@ -359,6 +364,11 @@ pub struct RelocateRenderElement<E> {
 }
 
 impl<E: Element> RelocateRenderElement<E> {
+    /// Access the wrapped element, for compositor-side shader transforms.
+    pub fn element_mut(&mut self) -> &mut E {
+        &mut self.element
+    }
+
     /// Crate an re-locate element for an existing element
     pub fn from_element(element: E, location: impl Into<Point<i32, Physical>>, relocate: Relocate) -> Self {
         let location = location.into();

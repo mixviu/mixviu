@@ -476,6 +476,10 @@ pub struct MemoryRenderBufferRenderElement<R: Renderer> {
 }
 
 impl<R: Renderer> MemoryRenderBufferRenderElement<R> {
+    /// Retain an already imported image for a compositor-owned exit snapshot.
+    pub fn texture(&self) -> &R::TextureId {
+        &self.texture
+    }
     /// Create a new [`MemoryRenderBufferRenderElement`] for
     /// a [`MemoryRenderBuffer`]
     pub fn from_buffer(

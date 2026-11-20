@@ -9,7 +9,7 @@ use smithay::backend::renderer::element::{
     Element as ElementSmithay, Id, RenderElement, UnderlyingStorage,
 };
 use smithay::backend::renderer::utils::CommitCounter;
-use smithay::backend::renderer::{ImportAll, ImportMem};
+use smithay::backend::renderer::{ImportAll, ImportMem, Texture};
 use smithay::utils::user_data::UserDataMap;
 use smithay::utils::{Buffer, Physical, Point, Rectangle, Scale, Size};
 
@@ -298,12 +298,12 @@ where
 
 // Final per-window crop, shared by presentation and captures.
 smithay::render_elements! {
-    pub Element<R> where R: ImportAll + ImportMem + SceneDispatch;
+    pub Untransformed<R> where R: ImportAll + ImportMem + SceneDispatch;
     Plain = RawElement<R>,
     Cropped = CropRenderElement<RawElement<R>>,
 }
 
-impl<R: ImportAll + ImportMem + SceneDispatch> Element<R> {
+impl<R: ImportAll + ImportMem + SceneDispatch> Untransformed<R> {
     pub fn raw_mut(&mut self) -> &mut RawElement<R>
     where
         R::TextureId: 'static,
@@ -313,5 +313,80 @@ impl<R: ImportAll + ImportMem + SceneDispatch> Element<R> {
             Self::Cropped(crop) => crop.element_mut(),
             _ => unreachable!(),
         }
+    }
+}
+
+// Scale and offset the complete window tree after its window-local crop,
+// including popups, letterboxing, shadows and server decorations.
+smithay::render_elements! {
+    pub Element<R> where R: ImportAll + ImportMem + SceneDispatch;
+    Plain = Untransformed<R>,
+    Transformed = CropRenderElement<RelocateRenderElement<RescaleRenderElement<Untransformed<R>>>>,
+}
+
+impl<R: ImportAll + ImportMem + SceneDispatch> Element<R> {
+    pub fn raw_mut(&mut self) -> &mut RawElement<R>
+    where
+        R::TextureId: 'static,
+    {
+        match self {
+            Self::Plain(inner) => inner.raw_mut(),
+            Self::Transformed(inner) => inner.element_mut().element_mut().element_mut().raw_mut(),
+            _ => unreachable!(),
+        }
+    }
+
+    pub fn transformed(
+        mut inner: Untransformed<R>,
+        factor: f64,
+        offset: Point<i32, Physical>,
+        pane: Rectangle<i32, Physical>,
+    ) -> Option<Self>
+    where
+        R::TextureId: Texture + Clone + Send + 'static,
+    {
+        if let RawElement::WindowFitClipped(clipped) = inner.raw_mut() {
+            clipped.set_rescale(factor, offset);
+        }
+        let scaled = RescaleRenderElement::from_element(inner, (0, 0).into(), Scale::from(factor));
+        let moved = RelocateRenderElement::from_element(
+            scaled,
+            offset,
+            smithay::backend::renderer::element::utils::Relocate::Relative,
+        );
+        CropRenderElement::from_element(moved, Scale::from(1.0), pane).map(Self::Transformed)
+    }
+}
+
+#[cfg(test)]
+mod composition_tests {
+    use super::*;
+    use smithay::backend::renderer::element::Kind;
+    use smithay::backend::renderer::gles::GlesRenderer;
+
+    fn solid() -> Untransformed<GlesRenderer> {
+        Untransformed::Plain(RawElement::SolidBox(SolidColorRenderElement::new(
+            Id::new(),
+            Rectangle::new((40, 10).into(), (40, 40).into()),
+            CommitCounter::default(),
+            [1.0, 1.0, 1.0, 1.0],
+            Kind::Unspecified,
+        )))
+    }
+
+    #[test]
+    fn composition_is_cropped_after_scale_and_translation() {
+        let pane = Rectangle::new((0, 0).into(), (100, 100).into());
+        let enlarged = Element::transformed(solid(), 2.0, (0, 0).into(), pane).unwrap();
+        assert_eq!(
+            enlarged.geometry(Scale::from(1.0)),
+            Rectangle::new((80, 20).into(), (20, 80).into())
+        );
+        let translated = Element::transformed(solid(), 2.0, (-100, 0).into(), pane).unwrap();
+        assert_eq!(
+            translated.geometry(Scale::from(1.0)),
+            Rectangle::new((0, 20).into(), (60, 80).into())
+        );
+        assert!(Element::transformed(solid(), 2.0, (100, 0).into(), pane).is_none());
     }
 }
