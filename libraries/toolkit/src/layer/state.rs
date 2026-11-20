@@ -260,9 +260,9 @@ impl<P: LayerProgram + 'static> State<P> {
                 scale: surface.scale,
             };
             let desired = self.program.presentation(&surface.ctx, &info);
-            if desired.input_passthrough != surface.input_passthrough
-                || desired.input_regions != surface.input_regions
-            {
+            let input_changed = desired.input_passthrough != surface.input_passthrough
+                || desired.input_regions != surface.input_regions;
+            if input_changed {
                 if desired.input_passthrough || desired.input_regions.is_some() {
                     let region = smithay_client_toolkit::compositor::Region::new(&self.compositor)
                         .expect("tooltip input region");
@@ -282,7 +282,9 @@ impl<P: LayerProgram + 'static> State<P> {
                 }
                 surface.input_passthrough = desired.input_passthrough;
                 surface.input_regions = desired.input_regions;
-                surface.layer.commit();
+                // Batch with the remap configuration below. After detach the
+                // layer-shell state is reset: committing a new input region
+                // before restoring anchors would commit an invalid 0x0 layer.
             }
             let mut next = surface.requested.clone();
             if let Some(zone) = desired.exclusive_zone {
@@ -344,6 +346,8 @@ impl<P: LayerProgram + 'static> State<P> {
                 surface.dirty = true;
                 surface.requested = next;
                 self.program.visibility(&surface.ctx, true);
+            } else if input_changed {
+                surface.layer.commit();
             }
         }
         for id in hidden {
