@@ -98,16 +98,27 @@ mod tests {
         let display = smithay::reexports::wayland_server::Display::<()>::new().unwrap();
         let mut handle = display.handle();
         let path = std::env::temp_dir().join(format!(
-            "osd-shared-{}-{}.sock", std::process::id(),
-            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+            "osd-shared-{}-{}.sock",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
         let _peer = std::os::unix::net::UnixStream::connect(&path).unwrap();
         let (shared, _) = listener.accept().unwrap();
         std::fs::remove_file(path).unwrap();
-        let ordinary = handle.insert_client(shared, Arc::new(crate::wayland::connection::record::WaylandClientSession {
-            compositor_state: CompositorClientState::default(), proprietary: false, agent_clients: Default::default(),
-        })).unwrap();
+        let ordinary = handle
+            .insert_client(
+                shared,
+                Arc::new(crate::wayland::connection::record::WaylandClientSession {
+                    compositor_state: CompositorClientState::default(),
+                    proprietary: false,
+                    agent_clients: Default::default(),
+                }),
+            )
+            .unwrap();
         let (private, _child) = std::os::unix::net::UnixStream::pair().unwrap();
         let (host, lease) = insert_connection(&handle, private).unwrap();
         // The shared connection and private socketpair have identical peer PIDs.

@@ -130,11 +130,25 @@ fn check(output: &Output) {
 }
 
 fn helper(action: &str, root: &Path, rest: &[&str], url: Option<&str>) -> Output {
-    Command::new(mix_binary())
-        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/bus.mix"))
-        .arg(action)
-        .arg(root)
-        .args(rest)
+    let mut command = if action == "call" && rest.get(2) == Some(&"osd") {
+        // A one-shot shell send uses its anonymous request lane even after
+        // noded_register registers a separate receive lane. Use the native
+        // supervised citizen so sends carry its broker-attributed identity.
+        let script = root.join("osd-call.mix");
+        fs::write(&script, format!(
+            "send \"osd\" {} timeout=10 body={}\nprint(json_encode({{rc:$rc,body:$result}}))\nexit(0)\n",
+            serde_json::to_string(rest[0]).unwrap(), serde_json::to_string(rest[1]).unwrap()
+        )).unwrap();
+        let mut command = Command::new(binary("mixd"));
+        command.arg("--serve").arg(script).args(["--name", rest.get(3).copied().unwrap_or("headless-osd-owner")]);
+        command
+    } else {
+        let mut command = Command::new(mix_binary());
+        command.arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/bus.mix"))
+            .arg(action).arg(root).args(rest);
+        command
+    };
+    command
         .env("MIX_NODED_URL", url.unwrap_or("ws://127.0.0.1:1"))
         .env("MIX_RUN", root.join("run"))
         .env("MIX_ETC", root.join("etc"))
