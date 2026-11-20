@@ -1,0 +1,85 @@
+{
+  "host": {
+    "app": "deck",
+    "command_descriptors": [
+      {
+        "args": [
+          "path"
+        ],
+        "description": "Deck open",
+        "name": "deck.open",
+        "read_only": false
+      },
+      {
+        "args": [
+          "slide",
+          "step?"
+        ],
+        "description": "Deck goto",
+        "name": "deck.goto",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "Deck next",
+        "name": "deck.next",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "Deck prev",
+        "name": "deck.prev",
+        "read_only": false
+      },
+      {
+        "args": [
+          "slides?",
+          "beats"
+        ],
+        "description": "Deck play",
+        "name": "deck.play",
+        "read_only": false
+      },
+      {
+        "args": [],
+        "description": "Deck state",
+        "name": "deck.state",
+        "read_only": true
+      },
+      {
+        "args": [],
+        "description": "Deck actions",
+        "name": "deck.actions",
+        "read_only": true
+      },
+      {
+        "args": [
+          "id",
+          "params?"
+        ],
+        "description": "Deck execute",
+        "name": "deck.execute",
+        "read_only": false
+      }
+    ],
+    "commands": [
+      "deck.open",
+      "deck.goto",
+      "deck.next",
+      "deck.prev",
+      "deck.play",
+      "deck.state",
+      "deck.actions",
+      "deck.execute"
+    ],
+    "fullscreen": true,
+    "reply_timeout_secs": 180,
+    "require_bus": true,
+    "service": "deck",
+    "size": [
+      1600,
+      900
+    ],
+    "title": "Deck"
+  }
+}
