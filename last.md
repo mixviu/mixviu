@@ -1,3 +1,128 @@
+# PR #213 — Workshop wire fast path
+
+PR: https://github.com/mixviu/mixviu/pull/213 (`mixviu-agent`).
+Branch: `fix/workshop-discovery-flake`.
+Final tested code head: `8e8d6735bcc8c06cbd16f35d554991d8d7219e9f`.
+The following commit records this receipt only.
+
+**Not fixed; PR remains draft.** The fast path passes equivalence and
+reduces info CPU, but the strict soak failed in round 2. Stop with the
+measurements; do not mark ready or retry.
+
+Main `0820aded` (including Deck #204/#210) was already merged as `b899402d`;
+current main was checked before the final runs. No deployment or PR merge.
+The 1 s call timeout and 2 s owner-stall assertion remain unchanged, with
+no serial-list entry, retry or skip. Scene application cost is outside this
+repair and remains separate Viu work.
+
+## Change and equivalence
+
+`counter.wire` first uses native `json_encode`. It takes the unchanged jq
+thaw path only when one regex finds a listed counter key followed by a
+quoted ASCII digit value, or a `_workshop_` witness prefix. Witnesses cover
+tool/raw and permission restoration as well as private-field removal.
+Matches inside opaque data can conservatively take the slow path; they
+cannot change its semantics. Small counters are already numeric, so the
+ordinary discovery reply avoids walking every object in jq.
+
+Equivalence is **parsed JSON equality inside jq**, preserving exact u64
+integers before crossing Mix's numeric boundary. Native JSON may order keys
+differently; byte equality is not the asserted contract for the fast path.
+The corpus includes the existing exact-counter cases, a 200-service
+snapshot, tool and permission witness rows, protected raw/payload/headers,
+all 26 counter keys with `0`, `001`, 2^53, 2^53+1 and u64 max. Assertions
+require ordinary snapshots to use the fast path and digit-string counters
+and witnesses to use the slow path. Existing precision/opaque-data checks
+remain in place.
+
+## Same-worker before/after
+
+CBC `20261121-025638-a5a71b1a-a1`, code `8e8d6735`, cbc3, BUILD_RC=0.
+The same compiled fixture ran in fresh processes; only counter.mix changed
+between the retained jq encoder from `f66d2324` and the new candidate.
+The full counter/equivalence corpus passed in this job.
+
+200-peer triples are median / p99 / max, milliseconds unless counts:
+
+| Measurement | Retained jq encoder | Native fast path |
+| --- | --- | --- |
+| Info evaluator thread CPU | 298.190 / 386.986 / 386.986 (n=21) | 8.949 / 15.460 / 15.460 (n=25) |
+| Info evaluator callback wall | 300.964 / 577.196 / 577.196 (n=21) | 11.292 / 394.414 / 394.414 (n=25) |
+| Info call wall | 388.123 / 838.514 / 838.514 (n=21) | 200.619 / 855.635 / 855.635 (n=25) |
+| Ping call wall | 210.271 / 478.408 / 478.408 (n=20) | 137.945 / 496.080 / 496.080 (n=24) |
+| Refresh call wall | 197.868 / 197.868 / 197.868 (n=1) | 188.110 / 188.110 / 188.110 (n=1) |
+| Pump holds | 1.810 / 6.948 / 227.328 | 1.875 / 14.136 / 392.870 |
+| Discovery completions per pump | 0 / 1 / 4 | 0 / 1 / 4 |
+
+Info median CPU fell 97.0%; wall median fell 48.3%. The wall maximum did
+not improve in this sample. Host scene work remains material; this comparison
+alone is not pool acceptance. Pump data excludes initial mount, as before.
+
+## Validation
+
+CBC `20261121-025714-d18a25b5-a1`, code `8e8d6735`, BUILD_RC=0:
+
+- Both discovery-bound negative controls fail at their intended assertion
+  (cargo 101), then restore the worker files.
+- Counter precision, opaque data, fast/slow equivalence and branch checks pass.
+- cargo fmt check and all-target clippy pass (existing warnings).
+- Every lib-viu test target passes: 55 binaries, 632 passed, zero failed,
+  12 existing ignored. Doctests pass (zero cases). Worker diff is empty.
+
+Strict soak CBC `20261121-030748-af73c5db-a1`, same source and worker,
+BUILD_RC=1: round 1 passed; round 2 failed on `workshop.ping` at 1005.603 ms
+(`workshop_bus.rs:442`, send timed out). Both rounds ran 54 full-crate
+binaries at width four, serial=0, retries disabled. No further round or
+retry ran. This is **not twelve green rounds**.
+
+Round 1 200-peer info: CPU 11.037 / 21.086 / 21.086 ms (n=24), call wall
+85.415 / 957.461 / 957.461 ms. Round 2 200-peer distributions:
+
+| Measurement | Median / p99 / max | Samples |
+| --- | --- | --- |
+| Info CPU ms (completed) | 8.819 / 17.518 / 17.518 | 11 |
+| Info call wall ms | 211.109 / 384.669 / 384.669 | 11 |
+| Ping call wall ms | 210.350 / 1005.603 / 1005.603 | 12 |
+| Refresh call wall ms | 261.181 / 261.181 / 261.181 | 1 |
+| Pump wall ms | 1.878 / 9.980 / 386.977 | 1119 |
+| Pump CPU ms | 1.860 / 9.474 / 386.899 | 1119 |
+| Discovery completions per pump | 0 / 1 / 1 | 1119 |
+
+Completed ping callbacks used at most 2.800 ms CPU. The same round measured
+viu.tick callback CPU max 662.663 ms, scene application 380.859 ms CPU /
+380.946 ms wall inside 383.315 / 383.401 ms host retirement. This points
+to remaining tick/rendering and queued work rather than info encoding as
+the residual latency source; the aggregates do not prove the exact critical
+path of the timed-out ping. That work is outside this wire-only repair.
+The measured, equivalent fast path is retained; no rendering change follows.
+
+All six changed Mix files lint with zero errors, warnings or notes. No
+`tools/ci.mix all` or local Rust build was run. Saved logs were read and
+full measurements retained in the private evidence directory.
+
+## File references
+
+- `apps/workshop/counter.mix:26`: native encode and guarded slow path;
+  `:31` documents the exact conservative condition; `:38` retains jq thaw.
+- `apps/workshop/counter-test.mix:22`: parsed-JSON equivalence helper;
+  `:31` constructs the 200-service case; `:39` exercises every counter key.
+- `libraries/viu/tests/workshop-probe.mix:16`: counter corpus and same-worker
+  comparison; `:90` runs both bound negative controls and scoped validation;
+  `:100` runs the strict twelve-round width-four full-crate soak.
+- `apps/workshop/discovery.mix:125`: eight-service expansion;
+  `apps/workshop/work.mix:7`: sixteen-entry rotating queue scan;
+  `apps/workshop/controller.mix:260`: advance on follow-up.
+- `libraries/viu/tests/workshop_bus.rs:153`: structural bounds regression;
+  `:418` retains the 1 s call timeout and `:429` the 2 s owner budget.
+
+The earlier receipts below retain the failed candidates, distributions,
+negative-control evidence and the scene-cost attribution limit. Their
+acceptance status is historical; the round-4 status above supersedes it.
+
+---
+
+## Earlier rounds (historical)
+
 # PR #213 — Workshop discovery diagnosis (not fixed)
 
 PR: https://github.com/mixviu/mixviu/pull/213, author `mixviu-agent`.
