@@ -352,7 +352,7 @@ fn spawn_options(options: Options<'_>) -> Process {
         .env("MIX_VAR", root.join("var"))
         .env("MIX_RUN", root.join("run"))
         .env("MIX_NODED_URL", bus.unwrap_or("ws://127.0.0.1:1"))
-        .env("MIX_VIUD_HEADLESS_REFRESH_HZ", refresh)
+        .env("MIX_VIUD_HEADLESS_REFRESH_HZ", if label == "record-privacy-cursor-epoch" { "30" } else { refresh })
         .env("MIX_TEST_VIUD_AGENT_SEAT_ALLOW", if agent { format!("viu,testkit-input-probe,testkit-ssd-client,testkit-dnd-source,ced-headless-probe,{}", std::env::current_exe().unwrap().file_name().unwrap().to_string_lossy()) } else { String::new() })
         .env("MIX_VIUD_FRAME_TRACE", if trace { "1" } else { "0" })
         .env("MIX_VIUD_FRAME_TRACE_FILE", root.join("frames.log"))

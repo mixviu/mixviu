@@ -957,7 +957,7 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
     let bus = Bus::start("record-privacy-cursor-epoch");
     // All windows, child focus points and cursor artwork fit this canvas.
     // Bound the matrix's debug GPU/encoding work alongside other pool tests.
-    let mut process = process::spawn_size("record-privacy-cursor-epoch", &bus.url, "640x480");
+    let mut process = process::spawn_size("record-privacy-cursor-epoch", &bus.url, "320x240");
     // This matrix seals dozens of takes, also under the width-eight pool load.
     process.extend_watchdog(Duration::from_secs(180));
     let mut a = Pattern::named(connect(&mut process), "cursor-listed", false);
@@ -978,7 +978,7 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
     for row in [&ar, &br, &cr] {
         bus.call(
             "comp.window.place",
-            place_args(row, json!({"output":"headless-0","x":100,"y":100})),
+            place_args(row, json!({"output":"headless-0","x":20,"y":20})),
         );
     }
     let root = process.root.clone();
@@ -1128,14 +1128,14 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
                 "comp.window.place",
                 place_args(
                     &br,
-                    json!({"output":"headless-0","x":if different {400}else{100},"y":100}),
+                    json!({"output":"headless-0","x":if different {400}else{20},"y":20}),
                 ),
             );
             bus.call(
                 "comp.window.place",
                 place_args(
                     &cr,
-                    json!({"output":"headless-0","x":if different {100}else{400},"y":100}),
+                    json!({"output":"headless-0","x":if different {20}else{400},"y":20}),
                 ),
             );
             focus("overlap", &mut a, &mut b, &mut c);
@@ -1225,6 +1225,7 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
     }
     // A drag source keeps authority to set its cursor during the grab. It
     // must not transfer that authority to the listed drop target's take.
+    bus.call("comp.window.place",place_args(&cr,json!({"output":"headless-0","x":20,"y":20})));
     focus("different", &mut a, &mut b, &mut c);
     let _cursor = c.custom_cursor(0xffff00ff);
     let _drag = c.drag_icon(0xffeedd11);
