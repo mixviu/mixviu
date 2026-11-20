@@ -9,6 +9,7 @@ $mode = args()[0] ?? "native"
 export MIX_TEST_REQUIRE_RECORD="1"
 export MIX_TEST_MIX_EXE=realpath(".") .. "/target/release/mix"
 export MIX_TEST_VIUD_EXE=realpath(".") .. "/target/release/viud"
+export MIX_TEST_VIU_EXE=realpath(".") .. "/target/release/viu"
 if $mode == "native" or $mode == "all-targets" then
   -- mix's login-shell feature boundary requires a separate Cargo invocation.
   checked(["cargo","build","--release","--locked","-p","mix"])
@@ -16,6 +17,8 @@ if $mode == "native" or $mode == "all-targets" then
   -- needed to exercise its production exporter.
   checked(["cargo","build","--release","--locked","-p","mixd","--no-default-features"])
   checked(["cargo","build","--release","--locked","-p","noded","-p","testkit","--bins"])
+  -- The full capture suite also owns the merged OSD host fixture.
+  checked(["cargo","build","--release","--locked","-p","viu","--bin","viu"])
   if $mode == "all-targets" then
     checked(["cargo","test","--release","--locked","-p","world","-p","headless","-p","comp-model","-p","policy-host","-p","viud","-p","comp-service","-p","decor","-p","dispatcher","-p","frames","-p","model","-p","native","-p","policy","-p","recorder","-p","scenegraph","-p","seat","-p","testkit","-p","motion","-p","viu","--no-default-features","--features","viud/backend-native,viud/test-support","--no-fail-fast","--","--test-threads=1"])
   else

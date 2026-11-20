@@ -108,7 +108,13 @@ fn stage_test($mix)
   run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "--workspace", "--exclude", "mix", "--exclude", "headless", "--features", "viud/test-support"], $test_env)
   -- Native capture measures bounded frame/readback budgets. Run its package
   -- after the parallel workspace pool, without competing test binaries.
-  run_step([$mix, "tools/ci/test_pool.mix", "--jobs", "1", "--", "--locked", "-p", "headless", "--features", "headless/test-support"], $test_env)
+  -- Keep the tests in debug, but measure the optimised compositor, as the
+  -- native acceptance does. Debug readbacks exceed its 30 Hz budget.
+  run_step(["cargo", "build", "--release", "--locked", "-p", "viud", "--no-default-features", "--features", "backend-native,test-support"])
+  $capture_env = $test_env
+  $capture_env.MIX_TEST_VIUD_EXE = realpath("target/release/viud")
+  $capture_env.MIX_TEST_VIU_EXE = realpath("target/debug/viu")
+  run_step([$mix, "tools/ci/test_pool.mix", "--jobs", "1", "--", "--locked", "-p", "headless", "--features", "headless/test-support"], $capture_env)
   run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "-p", "portald", "--no-default-features"], $test_env)
   stage_mix_services($mix)
   run_step([$mix, "tools/mesh/tests/all.mix"])
