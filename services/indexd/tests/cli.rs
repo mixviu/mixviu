@@ -259,16 +259,19 @@ async fn bridge_honours_url_override_with_empty_node_config() {
 async fn bridge_discovers_runtime_unix_socket_without_config_socket_key() {
     let broker = test_broker::Broker::start();
     let dir = tempfile::tempdir().unwrap();
-    let socket_dir = dir.path().join("noded");
+    let run_dir = broker.endpoint.parent().unwrap();
+    let socket_dir = run_dir.join("noded");
     std::fs::create_dir(&socket_dir).unwrap();
-    std::os::unix::fs::symlink(&broker.endpoint, socket_dir.join("bus.sock")).unwrap();
+    // Native discovery deliberately rejects symlinks and private ancestors.
+    // Move the live fixture socket within its public, broker-owned run root.
+    std::fs::rename(&broker.endpoint, socket_dir.join("bus.sock")).unwrap();
     let node_config = dir.path().join("node.conf.mix");
     // Legacy TCP would fail: this test must reach the Unix broker.
     std::fs::write(&node_config, "wg_ip: '192.0.2.1'\nnoded: { port: 1 }").unwrap();
     let mut child = Child(tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
         .arg("bridge")
         .env_remove("MIX_NODED_URL").env_remove("MIX_BUS_SOCKET")
-        .env("MIX_NODE_CONFIG", node_config).env("MIX_RUN", dir.path())
+        .env("MIX_NODE_CONFIG", node_config).env("MIX_RUN", run_dir)
         .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap());
     let mut input = child.0.stdin.take().unwrap();
     input.write_all(b"{\"id\":1,\"command\":\"indexd.stats\",\"body\":{}}\n").await.unwrap();
