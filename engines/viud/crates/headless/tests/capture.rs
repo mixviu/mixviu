@@ -137,7 +137,7 @@ fn record_cold_start_under_load_has_no_capture_drops() {
         return;
     }
     let bus = Bus::start("cold-record");
-    let mut process = process::spawn(1, None, "cold-record", Some(&bus.url));
+    let mut process = process::spawn_size("cold-record", &bus.url, "320x240");
     let mut pattern = Pattern::new(connect(&mut process));
     pattern.wait_callback(0);
     bus.ready();
