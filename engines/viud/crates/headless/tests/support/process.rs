@@ -94,7 +94,10 @@ impl Drop for Process {
                 "frame trace: {}",
                 diagnostic_excerpt(self.root.join("frames.log"))
             );
-            eprintln!("viud log: {}", diagnostic_excerpt(self.root.join("viud.log")));
+            eprintln!(
+                "viud log: {}",
+                diagnostic_excerpt(self.root.join("viud.log"))
+            );
         }
         let _ = self.stop.send(());
         if let Some(watchdog) = self.watchdog.take() {

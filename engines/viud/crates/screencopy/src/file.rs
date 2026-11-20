@@ -176,15 +176,21 @@ pub mod testing {
     /// production budget charge, without changing normal frame accounting.
     pub fn penalize_first_readback() {
         COLD_READS.with(|reads| {
-            if reads.get().is_none() { reads.set(Some(0)); }
+            if reads.get().is_none() {
+                reads.set(Some(0));
+            }
         });
     }
     pub(super) fn completed_readback(cost: u64) -> u64 {
         COLD_READS.with(|reads| {
-            let Some(n) = reads.get() else { return cost; };
+            let Some(n) = reads.get() else {
+                return cost;
+            };
             reads.set(Some(n + 1));
             let penalty = if n == 0 { 20_000 } else { 0 };
-            if penalty != 0 { std::thread::sleep(Duration::from_micros(penalty)); }
+            if penalty != 0 {
+                std::thread::sleep(Duration::from_micros(penalty));
+            }
             eprintln!("TEST_COLD_READBACK n={} penalty_us={penalty}", n + 1);
             cost + penalty
         })

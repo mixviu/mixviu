@@ -145,7 +145,9 @@ fn record_cold_start_under_load_has_no_capture_drops() {
     // No screenshot/readback readiness probe: this is a fresh compositor.
     struct StopLoaders(std::sync::Arc<std::sync::atomic::AtomicBool>);
     impl Drop for StopLoaders {
-        fn drop(&mut self) { self.0.store(false, std::sync::atomic::Ordering::Relaxed); }
+        fn drop(&mut self) {
+            self.0.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
     }
     let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
     thread::scope(|scope| {
@@ -177,15 +179,28 @@ fn record_cold_start_under_load_has_no_capture_drops() {
         assert_eq!(status["warmup_done"], true, "{status}");
         assert_eq!(status["warmup_errors"], json!([]), "{status}");
         assert!(status["warmup_us"].as_u64().unwrap() >= 20_000, "{status}");
-        assert!(status["readback_max_us"].as_u64().unwrap() < 16_667, "{status}");
+        assert!(
+            status["readback_max_us"].as_u64().unwrap() < 16_667,
+            "{status}"
+        );
         assert!(status["readbacks"].as_u64().unwrap() > 1, "{status}");
         assert_eq!(status["dropped_capture"], 0, "{status}");
         assert_eq!(status["readback_deferred"], 0, "{status}");
         let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
         let log = fs::read_to_string(process.root.join("viud.log")).unwrap();
-        let reads = log.lines().filter(|line| line.starts_with("TEST_COLD_READBACK n=")).count();
-        assert!(log.contains("n=1 penalty_us=20000"), "cold penalty hook did not fire");
-        assert_eq!(stop["readbacks"].as_u64().unwrap() + 1, reads as u64, "exactly one read is outside the take: {stop}");
+        let reads = log
+            .lines()
+            .filter(|line| line.starts_with("TEST_COLD_READBACK n="))
+            .count();
+        assert!(
+            log.contains("n=1 penalty_us=20000"),
+            "cold penalty hook did not fire"
+        );
+        assert_eq!(
+            stop["readbacks"].as_u64().unwrap() + 1,
+            reads as u64,
+            "exactly one read is outside the take: {stop}"
+        );
         let mut frames = 0_u64;
         vfl_visit(&process.root.join("cold.vfl"), |_| frames += 1);
         assert_eq!(stop["frames"], frames, "warm-up must not enter the take");
