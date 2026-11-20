@@ -27,12 +27,13 @@ fn handle($s,$event)
 end
 $state=publish_workshop($state)
 on workshop.ping
-  $out=handle($state,$event);$state=$out.state
-  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+  -- Queries do not return the entire mutable state through handle/request/
+  -- result. In particular, do not copy the retained traffic for each ping.
+  reply(0,$counter.wire($controller.query_ping()))
 end
 on workshop.info
-  $out=handle($state,$event);$state=$out.state
-  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+  $query=$controller.query_info($state);$state.saved=$query.saved
+  reply(0,$counter.wire($query.body))
 end
 on workshop.actions
   $out=handle($state,$event);$state=$out.state;$state=publish_workshop($state)
