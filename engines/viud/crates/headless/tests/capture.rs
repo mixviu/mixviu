@@ -967,12 +967,15 @@ fn record_privacy_window_output_membership_and_marker_order() {
             .map(|line| serde_json::from_str::<Value>(line).expect("complete marker row"))
             .find(|m| m["label"] == "window_gone");
         let status = bus.call("comp.record.status", json!({"session":start["session"]}));
-        if gone.is_some_and(|m| {
-            status["frames"].as_u64().unwrap() > m["frame"].as_u64().unwrap() + 1
-        }) {
+        if gone
+            .is_some_and(|m| status["frames"].as_u64().unwrap() > m["frame"].as_u64().unwrap() + 1)
+        {
             break;
         }
-        assert!(Instant::now() < until, "no post-close marker/tick: {status}");
+        assert!(
+            Instant::now() < until,
+            "no post-close marker/tick: {status}"
+        );
         thread::sleep(Duration::from_millis(20));
     }
     let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
