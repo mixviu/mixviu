@@ -111,7 +111,7 @@ fn stage_test($mix)
   run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "--workspace", "--exclude", "mix"], $test_env)
   -- Only lifecycle capture fixtures opt into the compositor barriers.
   run_step(["cargo", "build", "--release", "--locked", "-p", "viud", "--no-default-features", "--features", "backend-native,test-support"])
-  run_step([$mix, "tools/ci/test_pool.mix", "--jobs", "1", "--", "--locked", "-p", "viud", "-p", "headless", "--features", "viud/test-support,headless/lifecycle-tests", "--test", "capture"], $test_env)
+  run_step(["cargo", "test", "--locked", "-p", "viud", "-p", "headless", "--features", "viud/test-support,headless/lifecycle-tests", "--test", "capture", "--", "--test-threads=1"], $test_env)
   run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "-p", "portald", "--no-default-features"], $test_env)
   stage_mix_services($mix)
   run_step([$mix, "tools/mesh/tests/all.mix"])
