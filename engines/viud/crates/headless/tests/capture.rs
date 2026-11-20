@@ -147,6 +147,10 @@ fn target(row: &Value) -> Value {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "compositor-fixtures"),
+    ignore = "requires explicit compositor test fixtures"
+)]
 fn mapped_window_survives_render_before_protocol_drain() {
     if !process::record_available() {
         return;

@@ -411,8 +411,8 @@ fn placing_last_track_resolves_reply_promptly() {
 
 #[test]
 #[cfg_attr(
-    not(feature = "lifecycle-tests"),
-    ignore = "requires explicit lifecycle test barriers"
+    not(feature = "compositor-fixtures"),
+    ignore = "requires explicit compositor test fixtures"
 )]
 fn minimised_then_destroyed_never_resurrects_pixels() {
     unseen_destroy(false, true);
@@ -420,8 +420,8 @@ fn minimised_then_destroyed_never_resurrects_pixels() {
 
 #[test]
 #[cfg_attr(
-    not(feature = "lifecycle-tests"),
-    ignore = "requires explicit lifecycle test barriers"
+    not(feature = "compositor-fixtures"),
+    ignore = "requires explicit compositor test fixtures"
 )]
 fn workspace_switch_and_destroy_in_one_tick_never_resurrects_pixels() {
     unseen_destroy(true, true);
@@ -568,8 +568,8 @@ fn place_during_active_run_removes_only_supplied_tracks_and_finish_preserves_the
 
 #[test]
 #[cfg_attr(
-    not(feature = "lifecycle-tests"),
-    ignore = "requires explicit lifecycle test barriers"
+    not(feature = "compositor-fixtures"),
+    ignore = "requires explicit compositor test fixtures"
 )]
 fn hide_then_destroy_before_lifecycle_tick_has_no_ghost_in_decoded_frames() {
     if !process::record_available() {
@@ -820,6 +820,10 @@ fn dim_exit_never_brightens_and_lock_draws_no_ghost() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "compositor-fixtures"),
+    ignore = "requires explicit compositor test fixtures"
+)]
 fn exiting_window_never_reuses_old_output_or_pane_pixels() {
     if !process::record_available() {
         return;
