@@ -508,6 +508,11 @@ fn rounded_close_stack(closing_front: bool) {
         corner_red < 60,
         "server-decorated client must have a rounded bottom corner; found {corner_red}"
     );
+    // A screenshot can render before the normal presentation path. Exits
+    // deliberately require evidence from the preceding presented frame.
+    let presented = rear.state.callbacks;
+    rear.commit(true);
+    rear.wait_callback(presented);
     let path = process.root.join("rounded-stack.vfl");
     let start=bus.call("comp.record.start",json!({"request_id":"rounded-stack","target":{"output":"headless-0"},"path":path,"max_seconds":10,"fps":30,"cursor":false}));
     drop(rear);
