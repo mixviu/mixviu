@@ -10,6 +10,7 @@ fn begin($s,$reply)
   $s.discovery_revision=$s.discovery_revision+1
   $s.discovery={generation:$s.generation,remaining:2045,deadline:monotonic()+15,reply:$reply,peers_done:false,nodes:{"@local":{local:true,info_done:false,list_done:false,descriptions:0,node:{name:"local",local:true,services:[],info:nil,error:nil}}}}
   $s.discovery.data={progress:nil,nodes:[],identities:{},services:{},peers:[],peer_error:nil,error:nil};$s.discovery.open_local=not any($s.snapshot.nodes,fn($n)=$n.local)
+  $s.discovery.lists={}
   $s.status="Discovering services and commands…"
   for $item in [["info","noded.info"],["list","noded.list"],["peers","noded.peers"]]
     $s=$work.enqueue($s,{owner:"discovery",op:$item[0],node:"@local",service:"noded",command:$item[1],lane:"local"})
@@ -104,25 +105,15 @@ fn received($s,$task,$d)
       $s.discovery.nodes[$task.node].node.error="noded.list: "..$error
       if $local then $s.discovery.data.error="noded.list: "..$error end
     else
-      $services=[]
       $budget=max(0,$s.discovery.remaining)
       $accepted=take($value,max(0,$budget-1))
+      $original_count=len($accepted)
       if len($accepted)<len($value) then $s.discovery.nodes[$task.node].node.warning=to_string(len($value)-len($accepted)).." services omitted (global discovery limit)" end
-      for $identity in $accepted
-        $route=if $local then $identity.name else $identity.name.."."..$task.node..".bus" end
-        push($services,$route);$s.discovery.data.identities[$route]=$identity
-      end
-      if $budget>0 and not contains($services,$task.service) then push($services,$task.service) end
-      $s.discovery.nodes[$task.node].node.services=$services
-      for $i=0 to len($services)-1
-        $route=$services[$i]
-        $s.discovery.data.services[$route]={Err:"description phase deadline exceeded"}
-        if $s.discovery.remaining>0 then
-          $s.discovery.remaining=$s.discovery.remaining-1
-          $s.discovery.nodes[$task.node].descriptions=$s.discovery.nodes[$task.node].descriptions+1
-          $s=$work.enqueue($s,{owner:"discovery",op:"describe",node:$task.node,service:$route,phase_deadline:$s.discovery.deadline,lane:if $local then "local" else "remote" end})
-        end
-      end
+      if $budget>0 and not any($accepted,fn($i)=(if $local then $i.name else $i.name.."."..$task.node..".bus" end)==$task.service) then push($accepted,{name:if $local then $task.service else strip_suffix($task.service,"."..$task.node..".bus") end}) end
+      -- Reserve globally now; expand only a fixed number on each owner turn.
+      $s.discovery.remaining=$s.discovery.remaining-len($accepted)
+      $s.discovery.nodes[$task.node].list_done=len($accepted)==0
+      if len($accepted)>0 then $s.discovery.lists[$task.node]={items:$accepted,index:0,local:$local,original_count:$original_count} end
     end
   elif $task.op=="describe" then
     $s.discovery.nodes[$task.node].descriptions=max(0,$s.discovery.nodes[$task.node].descriptions-1)
@@ -131,11 +122,44 @@ fn received($s,$task,$d)
   $s=snapshot($s)
   return $work.launch($s)
 end
+fn advance($s)
+  if $s.discovery==nil then return $s end
+  $steps=0
+  for $node in sort(keys($s.discovery.lists))
+    $batch=$s.discovery.lists[$node]
+    while $batch.index<len($batch.items) and $steps<8
+      $identity=$batch.items[$batch.index];$batch.index=$batch.index+1;$steps=$steps+1
+      $route=if $batch.local then $identity.name else $identity.name.."."..$node..".bus" end
+      $services=$s.discovery.nodes[$node].node.services;push($services,$route);$s.discovery.nodes[$node].node.services=$services
+      if $batch.index<=$batch.original_count then $s.discovery.data.identities[$route]=$identity end
+      $s.discovery.data.services[$route]={Err:"description phase deadline exceeded"}
+      $s.discovery.nodes[$node].descriptions=$s.discovery.nodes[$node].descriptions+1
+      $s=$work.enqueue($s,{owner:"discovery",op:"describe",node:$node,service:$route,phase_deadline:$s.discovery.deadline,lane:if $batch.local then "local" else "remote" end})
+    end
+    if $batch.index==len($batch.items) then
+      $s.discovery.nodes[$node].list_done=true;$s.discovery.lists=delete($s.discovery.lists,$node)
+    else $s.discovery.lists[$node]=$batch end
+    if $steps==8 then break end
+  end
+  return if $steps>0 then snapshot($s) else $s end
+end
 fn expire($s)
   if $s.discovery==nil or monotonic()<$s.discovery.deadline then return $s end
   -- Jobs have their own four-second bound. Forget their results; do not wait
   -- for a peer or retry admission on the owner at the overall deadline.
   $s.queue=filter($s.queue,fn($t)=$t.owner!="discovery")
+  -- Flush accepted identities at expiry, without admitting new describe work.
+  for $node in sort(keys($s.discovery.lists ?? {}))
+    $batch=$s.discovery.lists[$node]
+    while $batch.index<len($batch.items)
+      $identity=$batch.items[$batch.index];$batch.index=$batch.index+1
+      $route=if $batch.local then $identity.name else $identity.name.."."..$node..".bus" end
+      $services=$s.discovery.nodes[$node].node.services;push($services,$route);$s.discovery.nodes[$node].node.services=$services
+      if $batch.index<=$batch.original_count then $s.discovery.data.identities[$route]=$identity end
+      $s.discovery.data.services[$route]={Err:"description phase deadline exceeded"}
+    end
+  end
+  $s.discovery.lists={}
   for $key in keys($s.discovery.nodes)
     $n=$s.discovery.nodes[$key]
     if not $n.list_done or not $n.info_done then $s.discovery.nodes[$key].node.error="discovery deadline exceeded" end

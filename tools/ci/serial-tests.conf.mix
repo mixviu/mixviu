@@ -9,6 +9,11 @@
 
 serial_tests: [
   {
+    package: "lib-viu",
+    target: "workshop_bus",
+    reason: "PR #213, Fable ruling D (2026-11-21): workshop_answers_during_discovery retains its 1 s call and 2 s owner-stall assertions at 200 peers, including silent and disconnecting peers. Round-5 jobs 20261121-032412-ad76b5d7-a1 and 20261121-033200-ed59f7bd-a1 measured structural whole-model rebuild and apply per tick: 2.1-2.4 MB, Mix rebuild about 213-278 ms and viu apply about 226-323 ms standalone; a workshop.notice callback used 743 ms CPU. Run this binary alone to assert responsiveness on an uncontended core. Structural follow-up: incremental model publication, brief _plan/briefs/2026-11-21-workshop-incremental-model.md; remove isolation only after its strict twelve-round normal-pool validation"
+  },
+  {
     package: "headless",
     target: "capture",
     reason: "PR #196, Fable ruling A (2026-11-21): window_motion::record_window_retarget_supersedes_without_returning_to_first_keyframe, window_motion::record_close_retains_rounded_corners_and_front_stacking and window_motion::record_close_retains_rounded_corners_and_rear_stacking require zero drops. Loaded workspace jobs 20261121-002833-44f18966, 20261121-003459-4cf7f828 and 20261121-003458-a66fdb4e show thread starvation (50.5 ms readback, 175.9 ms queue wait); isolated strict 40 s 4K30 job 20261121-005853-98403d4b decoded 1201 frames with zero drops. The recorder deliberately sheds frames under CPU starvation to protect compositor pacing; run the whole binary alone, retaining strict assertions"

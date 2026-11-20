@@ -1,0 +1,187 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run through CBC, not on the developer desktop. All instrumentation is in
+-- lib-viu/test-support or the integration fixture, never the shipped app.
+$mode=$1 ?? "baseline"
+$test=["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--nocapture"]
+fn checked($argv)
+  $r=run_argv($argv,{timeout:3600,stderr:"stdout",max_output:64000000,env:{TEST_POOL_RETRY_REPORT:""}})
+  print($r.stdout)
+  if not $r.ok then exit($r.exit_code ?? 1) end
+end
+if $mode=="format" then
+  $r=run_argv(["cargo","fmt","-p","lib-viu"],{timeout:600,stderr:"stdout"})
+  print($r.stdout);print(run_argv_must(["git","diff"]))
+  print(run_argv_must(["git","checkout","-q","--","."]))
+  if not $r.ok then exit(1) end
+elif $mode=="numeric-negative" then
+  $path="libraries/viu/tests/workshop_bus.rs";$source=read_file($path)
+  try
+    for $case in ["pump","model"]
+      $needle=if $case=="pump" then "const MAX_STANDALONE_PUMP_US: u64 = 800_000;" else "const MAX_TICK_MODEL_BYTES: u64 = 4 * 1024 * 1024;" end
+      $lower=if $case=="pump" then "const MAX_STANDALONE_PUMP_US: u64 = 0;" else "const MAX_TICK_MODEL_BYTES: u64 = 1;" end
+      if not contains($source,$needle) then raise("PROBE","standalone numeric bound missing") end
+      write_file($path,replace($source,$needle,$lower))
+      $r=run_argv($test,{timeout:120,stderr:"stdout",max_output:64000000})
+      print("NUMERIC_NEGATIVE "..$case);print($r.stdout)
+      $expected=if $case=="pump" then "single pump hold: observed_us=" else "tick model bytes: observed_bytes=" end
+      if $r.exit_code!=101 or not contains($r.stdout,$expected) then raise("PROBE","numeric negative control missed its assertion") end
+    end
+  finally
+    write_file($path,$source)
+    print(run_argv_must(["git","diff","--exit-code"]))
+  end
+elif $mode=="tick-after" then
+  checked(["cargo","test","-p","lib-viu","--features","test-support","--lib","view::binding_tests","--","--nocapture"])
+  checked(["mix",script_path(),"tick"])
+elif $mode=="binding-negative" then
+  $path="libraries/viu/src/view.rs";$source=read_file($path)
+  $needle="model_dependency_changed(&binding.deps, &self.tree.model, &model)"
+  if not contains($source,$needle) then raise("PROBE","incremental binding guard missing") end
+  try
+    write_file($path,replace($source,$needle,"true"))
+    $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--lib","model_replacement_evaluates_only_affected_bindings","--","--nocapture"],{timeout:120,stderr:"stdout"})
+    print($r.stdout)
+    if $r.exit_code!=101 or not contains($r.stdout,"unrelated replacement evaluated bindings") then raise("PROBE","binding negative control missed its assertion") end
+  finally
+    write_file($path,$source)
+  end
+elif $mode=="tick" then
+  $path="libraries/viu/tests/workshop_bus.rs";$source=read_file($path)
+  try
+    write_file($path,replace($source,"const PROFILE_TICK: bool = false;","const PROFILE_TICK: bool = true;"))
+    $r=run_argv(["mix",script_path(),"baseline"],{timeout:600,stderr:"stdout",max_output:64000000})
+    print($r.stdout)
+  finally
+    write_file($path,$source)
+    print(run_argv_must(["git","diff","--exit-code"]))
+  end
+  if not $r.ok then exit($r.exit_code ?? 1) end
+elif $mode=="fast-compare" then
+  checked(["mix","apps/workshop/counter-test.mix"])
+  checked(["mix",script_path(),"compare"])
+elif $mode=="wire" then
+  $old_path=realpath("target").."/workshop-wire-old-"..pid()..".mix"
+  write_file($old_path,replace(read_file("apps/workshop/counter.mix"),"if not needs_thaw($encoded) then return $encoded end","if false then return $encoded end"))
+  try
+    $old=require($old_path);$new=require(realpath("apps/workshop/counter.mix"))
+    $value={snapshot:{identities:{},services:{}},title:"001",headers:{seq:"18446744073709551615"},payload:{count:"18446744073709551615"}}
+    for $key in split("count|seq|turn|first|last|seen|since|dropped|ignored_observations|events_seen|ring_dropped|recent_capped|out_msgs|in_msgs|out_bytes|in_bytes|out_1m|in_1m|out_5m|in_5m|msgs|bytes|msgs_1m|msgs_5m|rejected|dropped_count","|")
+      $value[$key]="18446744073709551615"
+    end
+    for $i=0 to 199
+      $name="peer-"..$i
+      $value.snapshot.identities[$name]={name:$name,version:"1",read_only:true,commands:[]}
+      $value.snapshot.services[$name]={Ok:[]}
+    end
+    for $sample=1 to 3
+      $start=monotonic();$before=$old.wire($value);$old_ms=(monotonic()-$start)*1000
+      $start=monotonic();$after=$new.wire($value);$new_ms=(monotonic()-$start)*1000
+      if $before!=$after then raise("PROBE","counter wire output changed") end
+      print({sample:$sample,old_ms:$old_ms,new_ms:$new_ms,bytes:byte_length($after),identical:true})
+    end
+  finally
+    remove($old_path)
+  end
+elif $mode=="helpers" then
+  $path="libraries/viu/tests/workshop_bus.rs";$source=read_file($path)
+  $needle="const PROFILE_INFO_HELPERS: bool = false;"
+  if not contains($source,$needle) then raise("PROBE","helper diagnostic switch missing") end
+  try
+    write_file($path,replace($source,$needle,"const PROFILE_INFO_HELPERS: bool = true;"))
+    $r=run_argv(["mix","tools/ci/test_pool.mix","--jobs","4","--","-p","lib-viu","--features","test-support","--","--nocapture"],{timeout:3600,stderr:"stdout",max_output:64000000,env:{TEST_POOL_RETRY_REPORT:""}})
+    print($r.stdout)
+  finally
+    write_file($path,$source)
+    print(run_argv_must(["git","diff","--exit-code"]))
+  end
+  if not $r.ok then exit($r.exit_code ?? 1) end
+elif $mode=="compare" then
+  checked(concat(slice($test,0,8),["--no-run"]))
+  $path="apps/workshop/counter.mix";$candidate=read_file($path);$candidate_ok=false
+  try
+    for $case in ["jq","native"]
+      write_file($path,if $case=="jq" then replace($candidate,"if not needs_thaw($encoded) then return $encoded end","if false then return $encoded end") else $candidate end)
+      print("OWNER_ENCODER "..$case)
+      $r=run_argv($test,{timeout:120,stderr:"stdout",max_output:64000000});print($r.stdout)
+      print({encoder:$case,rc:$r.exit_code})
+      if not $r.ok then raise("PROBE","encoder comparison failed") end; $candidate_ok=true
+    end
+  finally
+    write_file($path,$candidate)
+    print(run_argv_must(["git","diff","--exit-code"]))
+  end
+  if not $candidate_ok then exit(1) end
+elif $mode=="negative" then
+  for $case in ["expansion","scan","expiry"]
+    $path=if $case=="scan" then "apps/workshop/work.mix" else "apps/workshop/discovery.mix" end
+    $source=read_file($path)
+    if $case=="expansion" then
+      $needle="$s=snapshot($s)\n  return $work.launch($s)"
+      $mutated=replace($source,$needle,"$s=advance($s)\n  "..$needle)
+    elif $case=="scan" then
+      $needle="take($s.queue,16)";$mutated=replace($source,$needle,"$s.queue")
+    else
+      $start=index_of($source,"  -- Flush accepted identities at expiry")
+      $finish=index_of($source,'  for $key in keys($s.discovery.nodes)')
+      if $start==nil or $finish==nil then raise("PROBE","expiry flush missing") end
+      $mutated=substr($source,0,$start)..substr($source,$finish)
+    end
+    if $mutated==$source then raise("PROBE","negative mutation did not change source") end
+    try
+      write_file($path,$mutated)
+      $name=if $case=="expiry" then "discovery_expiry_flushes_pending_lists_without_describes" else "discovery_turns_bound_expansion_and_blocked_admission_scans" end
+      $r=run_argv(concat(slice($test,0,8),[$name,"--","--exact","--nocapture"]),{timeout:120,stderr:"stdout"})
+      print("NEGATIVE "..$case);print($r.stdout)
+      $expected=if $case=="expansion" then "list expanded in its receive turn" elif $case=="scan" then "scanned the entire blocked queue" else "expiry must retain every accepted service" end
+      if $r.exit_code!=101 or not contains($r.stdout,$expected) then raise("PROBE","negative control missed expected assertion") end
+    finally
+      write_file($path,$source)
+      checked(["git","diff","--exit-code"])
+    end
+  end
+
+elif $mode=="accept" then
+  checked(["mix",script_path(),"numeric-negative"])
+  checked(["mix",script_path(),"binding-negative"])
+  checked(["mix",script_path(),"negative"])
+  checked(["mix",script_path(),"validate"])
+  checked(["git","diff","--exit-code"])
+elif $mode=="validate" then
+  $context=require(realpath("tools/ci/lint_context.mix"))
+  $vocabulary=$context.vocabulary("mix").host
+  $generated=[]
+  for $tail in slice(split(read_file("libraries/viu/src/runtime.rs"),"eval.register("),1)
+    push($generated,split(trim($tail),'"')[1])
+  end
+  if not deep_eq($vocabulary,sort(unique($generated))) or contains($vocabulary,"viu_test_cpu") then
+    raise("PROBE","lint_context and generated production vocabulary differ")
+  end
+  print({production_vocabulary:$vocabulary,test_hook_excluded:true})
+  checked(["mix","tools/ci/lint_context_test.mix","mix"])
+  checked(["mix","apps/workshop/counter-test.mix"])
+  checked(["cargo","fmt","-p","lib-viu","--","--check"])
+  checked(["cargo","clippy","-p","lib-viu","--all-targets","--no-deps"])
+  checked(["cargo","test","-p","lib-viu","--all-targets","--no-fail-fast"])
+  checked(["cargo","test","-p","lib-viu","--doc"])
+  checked(["cargo","clippy","-p","lib-viu","--features","test-support","--all-targets","--no-deps"])
+  checked(["cargo","test","-p","lib-viu","--features","test-support","--all-targets","--no-fail-fast"])
+  checked(["cargo","test","-p","lib-viu","--features","test-support","--doc"])
+elif $mode=="pool" then
+  for $iteration=1 to 12
+    print("WORKSHOP_POOL_ITERATION "..$iteration)
+    -- Keep the whole crate queued, with default intra-binary threading, so
+    -- contention lasts into the 200-peer phase rather than just startup.
+    checked(["mix","tools/ci/test_pool.mix","--jobs","4","--","-p","lib-viu","--features","test-support","--","--nocapture"])
+  end
+else
+  checked(concat(slice($test,0,8),["--no-run"]))
+  print("STANDALONE")
+  $alone=run_argv($test,{timeout:120,stderr:"stdout",max_output:64000000});print($alone.stdout)
+  $jobs=[{argv:$test,timeout:120,stderr:"stdout",max_output:64000000}]
+  for $i=1 to 8
+    push($jobs,{argv:["timeout","60","sha256sum","/dev/zero"],timeout:70,stderr:"stdout"})
+  end
+  $results=run_parallel($jobs,{max:9})
+  print("LOADED (eight CPU workers)");print($results[0].stdout)
+  if not $alone.ok or not $results[0].ok then exit(1) end
+end

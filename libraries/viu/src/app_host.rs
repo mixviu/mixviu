@@ -120,6 +120,8 @@ struct Host {
     read_only: BTreeSet<String>,
     #[cfg(feature = "test-support")]
     legacy_draw_barrier: bool,
+    #[cfg(feature = "test-support")]
+    discovery_probe: Option<test_support::DiscoveryProbe>,
     scene_source: String,
     loaded: bool,
     active_scene: String,
@@ -943,6 +945,10 @@ impl Host {
                 break;
             }
             self.job_results.pop_front();
+            #[cfg(feature = "test-support")]
+            if let Some(probe) = &mut self.discovery_probe {
+                probe.steps += 1;
+            }
         }
         if self
             .bus
@@ -952,6 +958,61 @@ impl Host {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         while let Some(done) = self.runtime.try_completion() {
+            #[cfg(feature = "test-support")]
+            let _retire_probe = self
+                .discovery_probe
+                .as_ref()
+                .map(|_| test_support::PhaseProbe::new(format!("retire {}", done.command)));
+            #[cfg(feature = "test-support")]
+            if let Some(probe) = &mut self.discovery_probe {
+                probe.callbacks.push(done.elapsed.as_micros() as u64);
+                if done.command == "viu.tick" {
+                    if let Some(model) = &done.model {
+                        probe
+                            .tick_model_bytes
+                            .push(serde_json::to_vec(model).expect("tick model JSON").len() as u64);
+                    }
+                }
+                for line in done
+                    .stdout
+                    .lines()
+                    .filter(|l| l.starts_with("WORKSHOP_BUILD "))
+                {
+                    eprintln!("WORKSHOP_BUILD_CALLBACK {} {}", done.command, line);
+                }
+                probe
+                    .by_command
+                    .entry(done.command.clone())
+                    .or_default()
+                    .push(done.elapsed.as_micros() as u64);
+                probe.discovery_steps +=
+                    done.stdout.matches("WORKSHOP_DISCOVERY_STEP").count() as u64;
+                probe
+                    .callback_cpu
+                    .entry(done.command.clone())
+                    .or_default()
+                    .push(done.cpu_elapsed.as_micros() as u64);
+                if done.command == "workshop.info" && done.reply.as_ref().is_some_and(|r| r.rc == 0)
+                {
+                    for line in done.stdout.lines() {
+                        if let Some(text) = line.strip_prefix("WORKSHOP_HELPER ") {
+                            let value: Value =
+                                serde_json::from_str(text).expect("helper probe JSON");
+                            let name = value["name"].as_str().unwrap().to_owned();
+                            probe
+                                .helper_cpu
+                                .entry(name.clone())
+                                .or_default()
+                                .push(value["cpu_us"].as_f64().unwrap().round() as u64);
+                            probe
+                                .helper_wall
+                                .entry(name)
+                                .or_default()
+                                .push(value["wall_us"].as_f64().unwrap().round() as u64);
+                        }
+                    }
+                }
+            }
             if let Some((code, message)) = self.ui_state.take_exit() {
                 if !message.is_empty() {
                     eprintln!("{}: {message}", self.app);
@@ -1014,7 +1075,27 @@ impl Host {
                             }
                             self.windows.validate(&model)?;
                             if self.loaded && self.active_scene == source {
-                                self.view.apply_model(projected)
+                                #[cfg(feature = "test-support")]
+                                let _apply_probe = self.discovery_probe.as_ref().map(|_| {
+                                    test_support::PhaseProbe::new(format!(
+                                        "scene.apply {}",
+                                        done.command
+                                    ))
+                                });
+                                #[cfg(feature = "test-support")]
+                                if self
+                                    .discovery_probe
+                                    .as_ref()
+                                    .is_some_and(|p| p.profile_scene)
+                                    && done.command == "viu.tick"
+                                {
+                                    eprintln!("WORKSHOP_DOCUMENT bytes={}", source.len());
+                                    crate::view::profile_apply(true);
+                                }
+                                let result = self.view.apply_model(projected);
+                                #[cfg(feature = "test-support")]
+                                crate::view::profile_apply(false);
+                                result
                             } else {
                                 (if self.framed {
                                     crate::gold_frame::mount(&source, projected)
@@ -1810,6 +1891,18 @@ impl Drop for Host {
 }
 
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
+    create_with_probe(
+        bundle,
+        wake,
+        #[cfg(feature = "test-support")]
+        false,
+    )
+}
+fn create_with_probe(
+    bundle: Bundle,
+    wake: crate::runtime::Wake,
+    #[cfg(feature = "test-support")] test_cpu_probe: bool,
+) -> Host {
     let headless = bundle.manifest.surface == "headless" && bundle.startup.is_some();
     let service = bundle.manifest.service.clone();
     let saved = bundle.manifest.saved_version.map(|v| {
@@ -1990,6 +2083,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     }));
     let (clipboard, local_clipboard) = crate::clipboard::Clipboard::channel(wake.clone());
     let services = crate::runtime::Services {
+        #[cfg(feature = "test-support")]
+        test_cpu_probe,
         clipboard: Some(clipboard),
         options: json!({"title":bundle.manifest.title,"headless":bundle.manifest.surface=="headless" || bundle.launch["headless"]==true}),
         max_string_bytes: bundle.manifest.max_string_bytes,
@@ -2111,6 +2206,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         read_only,
         #[cfg(feature = "test-support")]
         legacy_draw_barrier: false,
+        #[cfg(feature = "test-support")]
+        discovery_probe: None,
         scene_source: bundle.scene,
         loaded: false,
         active_scene: String::new(),
@@ -2480,9 +2577,90 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
 #[doc(hidden)]
 pub mod test_support {
     use super::*;
+    // This opt-in diagnostic is outside runtime.rs: both production vocabulary
+    // generators scan that file's literal registration sites, not test helpers.
+    pub(crate) fn register_cpu_probe(eval: &mut mix::evaluator::Evaluator) {
+        eval.register(
+            "viu_test_cpu",
+            mix::sync_ext(|args| {
+                if !args.is_empty() {
+                    return Err(mix::MixError::RuntimeError {
+                        msg: "viu_test_cpu takes no arguments".into(),
+                        span: None,
+                    });
+                }
+                crate::runtime::from_json(json!(thread_cpu().as_secs_f64()))
+            }),
+        );
+    }
+    pub(crate) fn thread_cpu() -> Duration {
+        let mut time = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        // CLOCK_THREAD_CPUTIME_ID separates actual work from CBC preemption.
+        assert_eq!(
+            unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) },
+            0
+        );
+        Duration::new(time.tv_sec as u64, time.tv_nsec as u32)
+    }
+    pub(super) struct PhaseProbe(String, Instant, Duration);
+    impl PhaseProbe {
+        pub(super) fn new(name: String) -> Self {
+            Self(name, Instant::now(), thread_cpu())
+        }
+    }
+    impl Drop for PhaseProbe {
+        fn drop(&mut self) {
+            let cpu = thread_cpu().saturating_sub(self.2).as_micros();
+            if cpu > 50_000 {
+                eprintln!(
+                    "WORKSHOP_HOST_PHASE {} cpu_us={} wall_us={}",
+                    self.0,
+                    cpu,
+                    self.1.elapsed().as_micros()
+                );
+            }
+        }
+    }
+    #[derive(Default)]
+    pub struct DiscoveryProbe {
+        numeric_bounds: Option<(u64, u64)>,
+        pub(super) tick_model_bytes: Vec<u64>,
+        pub(super) profile_scene: bool,
+        pub(super) steps: u64,
+        pumps: Vec<u64>,
+        per_pump: Vec<u64>,
+        pub(super) callbacks: Vec<u64>,
+        pub(super) by_command: BTreeMap<String, Vec<u64>>,
+        pub(super) callback_cpu: BTreeMap<String, Vec<u64>>,
+        pub(super) helper_cpu: BTreeMap<String, Vec<u64>>,
+        pub(super) helper_wall: BTreeMap<String, Vec<u64>>,
+        pump_cpu: Vec<u64>,
+        pub(super) discovery_steps: u64,
+        completed_per_pump: Vec<u64>,
+        calls: BTreeMap<String, Vec<u64>>,
+    }
+    fn distribution(values: &[u64]) -> Value {
+        let mut sorted = values.to_vec();
+        sorted.sort_unstable();
+        if sorted.is_empty() {
+            return json!({"n":0});
+        }
+        json!({"n":sorted.len(),"median":sorted[sorted.len()/2],
+            "p99":sorted[(sorted.len()*99/100).min(sorted.len()-1)],"max":sorted.last()})
+    }
     pub struct Harness {
         host: Host,
         pub ctx: egui::Context,
+    }
+    impl Drop for Harness {
+        fn drop(&mut self) {
+            if self.host.discovery_probe.is_some() {
+                eprintln!("WORKSHOP_PROBE {}", self.discovery_measurements());
+            }
+        }
     }
     impl Harness {
         pub fn new(bundle: Bundle) -> Self {
@@ -2490,12 +2668,75 @@ pub mod test_support {
             crate::appearance::install(&ctx);
             toolkit::drive::install(&ctx, bundle.manifest.app());
             Self {
-                host: create(bundle, Arc::new(|| {})),
+                host: create_with_probe(bundle, Arc::new(|| {}), true),
                 ctx,
             }
         }
         pub fn pump(&mut self) {
+            let start = Instant::now();
+            let cpu_start = thread_cpu();
+            let before = self.host.discovery_probe.as_ref().map_or(0, |p| p.steps);
+            let completed_before = self
+                .host
+                .discovery_probe
+                .as_ref()
+                .map_or(0, |p| p.discovery_steps);
             self.host.pump(&self.ctx);
+            if let Some(p) = &mut self.host.discovery_probe {
+                let elapsed = start.elapsed().as_micros() as u64;
+                if elapsed > 100_000 {
+                    eprintln!("WORKSHOP_LONG_PUMP us={elapsed} steps={}", p.steps - before);
+                }
+                p.pumps.push(elapsed);
+                p.pump_cpu
+                    .push(thread_cpu().saturating_sub(cpu_start).as_micros() as u64);
+                p.per_pump.push(p.steps - before);
+                p.completed_per_pump
+                    .push(p.discovery_steps - completed_before);
+                if let Some((pump_us, model_bytes)) = p.numeric_bounds {
+                    let measured_model_bytes =
+                        p.tick_model_bytes.iter().copied().max().unwrap_or(0);
+                    assert!(
+                        elapsed <= pump_us,
+                        "single pump hold: observed_us={elapsed}, standalone_bound_us={pump_us}, tick_model_bytes={measured_model_bytes}"
+                    );
+                    assert!(
+                        measured_model_bytes <= model_bytes,
+                        "tick model bytes: observed_bytes={measured_model_bytes}, standalone_bound_bytes={model_bytes}, pump_us={elapsed}"
+                    );
+                }
+            }
+        }
+        pub fn probe_discovery(&mut self) {
+            self.host.discovery_probe = Some(DiscoveryProbe::default());
+        }
+        pub fn discovery_numeric_bounds(&mut self, pump_us: u64, model_bytes: u64) {
+            self.host.discovery_probe.as_mut().unwrap().numeric_bounds =
+                Some((pump_us, model_bytes));
+        }
+        pub fn profile_scene_apply(&mut self) {
+            self.host.discovery_probe.as_mut().unwrap().profile_scene = true;
+        }
+        pub fn record_call(&mut self, command: &str, elapsed: Duration) {
+            if let Some(p) = &mut self.host.discovery_probe {
+                p.calls
+                    .entry(command.into())
+                    .or_default()
+                    .push(elapsed.as_micros() as u64);
+            }
+        }
+        pub fn discovery_measurements(&self) -> Value {
+            let p = self.host.discovery_probe.as_ref().unwrap();
+            json!({"pump_us":distribution(&p.pumps),"steps_per_pump":distribution(&p.per_pump),
+                "tick_model_bytes":distribution(&p.tick_model_bytes),
+                "pump_cpu_us":distribution(&p.pump_cpu),
+                "callback_cpu_us":p.callback_cpu.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
+                "helper_cpu_us":p.helper_cpu.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
+                "helper_wall_us":p.helper_wall.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
+                "discovery_completions_per_pump":distribution(&p.completed_per_pump),
+                "calls_us":p.calls.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
+                "callback_us":distribution(&p.callbacks),
+                "commands_us":p.by_command.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>()})
         }
         pub fn draw(&mut self) {
             self.ctx

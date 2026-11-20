@@ -1,3 +1,796 @@
+# PR #213 round 8 — review fixes validated
+
+PR: https://github.com/mixviu/mixviu/pull/213; branch fix/workshop-discovery-flake.
+Final tested code: `d5de50233afc2508c83c24e04fec11f15d8a7769`; the following commit records this receipt only. Main fetched/merged first, already current at 6033d061 (#196/#210).
+
+All four requested fixes are complete. No binding/encoder policy, deadlines, peers, serial list or numeric limits changed. No tools/ci.mix all in this round. PR remains ready; pr_gate cbc is the next full run.
+
+## Review r1 response
+
+| Finding | Response and evidence |
+| --- | --- |
+| Gemini BLOCKING / GLM: expiry loses accepted services and may admit describes after deadline | Fixed in `apps/workshop/discovery.mix:151`: flush remaining local/remote entries into node services, original identities and deadline-error placeholders, without enqueueing work; clear lists before finalising. `discovery-expiry-test.mix` covers partially expanded lists, routing, original versus synthetic identities, completion, empty queue and zero backend admissions. Removing the flush fails with `expiry must retain every accepted service`. |
+| GLM / Gemini: live test-support host enables CPU probe | Fixed: `app_host.rs:1893` calls the constructor with false; only `test_support::Harness` opts in (`:2671`). Registration remains outside runtime.rs. Exact registry comparison, generator and lint_context unchanged and passing in both feature configurations. |
+| Gemini: controls depend on unreachable branch commits | Fixed: `workshop-probe.mix:62,98,114` uses current-source mutations/copies for jq, eager expansion, unbounded scan and expiry-flush removal. No commit SHAs or `git show`; exact assertion checks and source restoration/diff checks retained. Jq helper smoke test is byte-identical in all three samples. |
+| GLM: slow-only equivalence cases look like fast-path coverage | Fixed: `counter-test.mix:22` requires an expected `needs_thaw` value for every equivalence call. Separate false/fast and true/slow corpus groups; snapshot explicitly false, digit-string counters and witnesses true. Equality remains parsed JSON inside jq to preserve u64 low bits. |
+| DeepSeek: `model.sessions[0]` dependency is skipped | Rejected after code check: `expr::reads()` stops at the first index (`analysis.rs:71`, existing semantics test at `:661`), yielding `model.sessions`, not `model.sessions[0]`. Comparing that containing value detects element changes. Binding code unchanged. |
+| GLM: dynamic-read dependency coverage | Existing syntactic contract covers `$model.m[$model.k].x` as `model.m` and `model.k`, and indexed `item.cells[0]` as `item.cells` (`expr/tests/semantics.rs:661`). The binding predicate compares the containing top-level subtree conservatively. No change to dependency recording or comparison. |
+| DeepSeek: double encode on slow path | Retained intentionally: the fallback is rare by design and keeps the exact old thaw semantics. No encoder behaviour change in this review round. |
+
+Validation: scoped CBC `20261121-071033-20bf890d-a1` (fmt, all-target clippy, every lib-viu target with default features and test-support, exact vocabulary checks, counter path/equivalence cases and six source-mutation negative controls); jq helper `20261121-071255-4ba36e94-a1`. Strict twelve-round width-four crate pool with workshop_bus alone: `20261121-073011-73434aeb-a1`, 12/12 green. No full CI was run in this round; the serial list is unchanged and `pr_gate cbc` is the next full run.
+
+Tested code `d5de50233afc2508c83c24e04fec11f15d8a7769`; receipt head the following receipt commit. All original deadlines, peers, discovery bounds and numeric guards are unchanged. Full history and job receipts: `last.md`.
+
+
+Scoped checks: 55 all-target binaries per configuration (includes terminal_ime_driver example); default 627 passed / 0 failed / 12 existing ignored; test-support 636 / 0 / 12; doctests zero. All eight branch-changed Mix files lint cleanly. Six mutation controls require expected cargo-101 assertion failures, then restore source. Pump negative observed 702 us against 0; model negative 24,206 bytes against 1. Worker fmt applied from 20261121-070923-d33e8115-a1.
+
+Twelve rounds each run all 54 test binaries, width four and workshop_bus alone, retry disabled. Pump maximum 498960 us; model maximum 2668231 bytes, below 800,000 us / 4 MiB. Every expiry regression and 200-peer discovery test passed in every round. Full logs parsed and retained privately.
+
+Earlier receipts below are historical.
+
+---
+
+# PR #213 — test probe registration and final isolation validation
+
+PR: https://github.com/mixviu/mixviu/pull/213 (`mixviu-agent`).
+Branch: `fix/workshop-discovery-flake`.
+Final tested code head: `f8eb1c27f24c8d3b7d2dad144c7a3dd4ae835e1a`.
+The following commit records this receipt only.
+
+**Ready for review.** The registration mismatch is fixed; scoped checks, one full CI and the strict twelve-round isolated soak are green. The flake is resolved by the authorised isolation; incremental model publication remains structural follow-up work.
+
+Current main was fetched and merged first: already up to date at `6033d061`,
+including #196 and #210. All earlier measured gains, the workshop_bus serial
+entry and five negative controls remain. The 1 s call deadline, 2 s owner
+stall assertion, 200 peers, silent peer and disconnecting peer are unchanged.
+No retries, ignores, reduced peer count or pool budget were added.
+
+## Registration repair
+
+`libraries/viu/src/app_host.rs:2570` now registers `viu_test_cpu` from the
+existing test-support module. `runtime.rs:284` calls that helper only when
+the test-support-only `Services.test_cpu_probe` flag is enabled; its default
+is false. The feature-enabled host enables it at `app_host.rs:2075`.
+The registration literal is outside runtime.rs, the only file scanned by
+both vocabulary generators. The default runtime does not gain the hook.
+
+The exact live/generated registry test, lib-mix build generator and
+`tools/ci/lint_context.mix` are unchanged. Both source scanners produce the
+same **41 production names**, excluding the probe. The lint-context host,
+unknown-function, shell and remote-body controls pass. The unchanged exact
+registry test passes with default features and with test-support.
+
+## Scoped verification
+
+CBC `20261121-051153-e9b95699-a1`, BUILD_RC=0, tested code above:
+
+- fmt and all-target clippy pass in both feature configurations.
+- Default features: every lib-viu test target, **55 binaries, 627 passed,
+  zero failed, 12 existing ignored**; doctests pass (zero cases).
+- With test-support: every target, **55 binaries, 635 passed, zero failed,
+  12 existing ignored**; doctests pass (zero cases).
+- Counter precision / native-versus-jq equivalence and slow-path cases pass.
+- All five negative controls fail at their intended assertion (cargo 101),
+  with source restored. Numeric controls observed a **730 us** pump against
+  **0 us**, and **24,206 bytes** against **1 byte** (pump 10,803 us).
+  Expansion, queue scan and unrelated-binding controls also fail as intended.
+- All seven changed Mix files lint with zero errors, warnings or notes.
+  Worker source diff is empty after verification.
+
+Worker rustfmt job `20261121-050948-529f401c-a1` supplied the applied diff.
+An initial scoped attempt `20261121-051031-ea07b6e3-a1` was deliberately
+cancelled (143) before full CI to make the test-support flag public: external
+integration fixtures construct Services with struct-update syntax. The
+corrected source above was then checked completely. No normal test failure
+was retried, and no earlier full CI was repeated within this round.
+
+## Full CI and soak
+
+Exactly one authorised full `mix tools/ci.mix all`: CBC `20261121-053118-35178bee-a1`, **BUILD_RC=0**. The strict Mix and workspace pools passed, including the unchanged default-feature registry equality check; all later gates completed. Full CI's default-feature workshop_bus has zero tests, so it does not substitute for the feature-enabled soak.
+
+Strict twelve-round soak: CBC `20261121-060439-18c6e862-a1`, **BUILD_RC=0**, all **12/12 rounds green**. Each round ran all **54 lib-viu test binaries** (the scoped all-targets run also checks one example target), with the remaining binaries at **width four** and **workshop_bus alone** through the default serial list. The actual discovery test passed twelve times at 200 peers. Retained numeric guards observed a worst post-startup pump of **476986 us** and a largest tick model of **2670825 bytes** across those twelve 200-peer cases. Every round observed a tick model. No failed test was retried.
+
+Full-CI pool receipts:
+
+- `test_pool: 75 binaries; build+record 6 s, pool 24 s (8 at a time), serial 84 s (2 alone), doc-tests 0 s`
+- `test_pool: 526 binaries; build+record 204 s, pool 381 s (8 at a time), serial 201 s (2 alone), doc-tests 13 s`
+- `test_pool: 6 binaries; build+record 20 s, pool 35 s (8 at a time), serial 0 s (0 alone), doc-tests 1 s`
+
+
+## Bounds and structural follow-up
+
+The unchanged post-startup pump limit is **800,000 us**, just over twice the
+standalone maximum 387,676 us. The tick-model limit is **4,194,304 bytes**,
+about 75% above the standalone 2,398,986 bytes. Bases: CBC
+`20261121-033200-ed59f7bd-a1`. Each prints measured values on failure; the
+200-peer fixture must observe a tick model. Guards are installed at
+`libraries/viu/tests/workshop_bus.rs:554`, constants at `:19`, assertions at
+`libraries/viu/src/app_host.rs:2689`. All five controls and the validation
+commands are retained in `libraries/viu/tests/workshop-probe.mix:133`;
+the strict twelve-round pool starts at `:159`.
+
+Fable ruling D narrows the responsiveness claim to an uncontended core.
+Serial enrolment and its measured reason are at
+`tools/ci/serial-tests.conf.mix:11`. Structural work remains in the private
+incremental-model-publication brief. Round-5 figures: **2.1–2.4 MB** model,
+**213–278 ms Mix rebuild** and **226–323 ms scene apply** per tick standalone.
+Start that follow-up by attributing the **743.324 ms CPU / 743.674 ms wall
+workshop.notice** callback from `20261121-034520-3cacd411-a1`; its branch,
+payload and critical path remain unmeasured. Remove isolation only after the
+structural fix passes twelve normal width-four pool rounds.
+
+The ledger and TODO-workshop / TODO-viu record the current disposition.
+Earlier receipts below retain the before/after measurements and original
+red results; their readiness statements are historical. No merge or
+deployment was performed.
+
+---
+
+# PR #213 — Fable ruling D: discovery isolation
+
+PR: https://github.com/mixviu/mixviu/pull/213 (`mixviu-agent`).
+Branch: `fix/workshop-discovery-flake`.
+Final tested code: `167bcbe5e5040a38885ed6f4c762f522bd445ba8`.
+The following commit records this receipt only.
+
+**Not ready: full CI is red.** Ruling-D isolation and numeric guards are
+implemented, but the required isolated soak was not started. Stop with the
+reported failure; do not retry full CI or mark the PR ready.
+
+Current main was fetched first and was already merged: `6033d061` includes
+#196 and #210 (merge `594aa21f` from round 5). All measured gains remain:
+eight-service expansion, sixteen-entry admission scan, exact counter-name
+lookup, native JSON wire fast path, and dependency-aware scene binding apply.
+
+## Ruling and claim
+
+Fable ruling D (2026-11-21) authorises enrolling the **lib-viu/workshop_bus
+binary** in the existing serial list. Its reason names
+`workshop_answers_during_discovery`, PR #213, the measured structural cause
+and the follow-up. At 200 peers, the 2.1-2.4 MB model is rebuilt in Mix
+about 213-278 ms and applied about 226-323 ms per tick, standalone. This is
+substantial whole-model work, not an established pure CPU-starvation limit.
+
+The tested responsiveness claim is now **within 1 s at 200 peers on an
+uncontended core**. The 1 s call deadline, 2 s owner-stall assertion, both
+peer counts, silent peer, disconnecting peer, streamed-results/BUSY checks
+and every existing negative control remain. No retry, ignore, reduced peer
+count, test-thread override or pool-budget constant is introduced.
+
+The serial entry is removed by the structural follow-up **incremental model
+publication**, brief `_plan/briefs/2026-11-21-workshop-incremental-model.md`,
+after its twelve-round normal width-four pool validation. That follow-up
+starts with the round-5 743.324 ms CPU / 743.674 ms wall workshop.notice
+callback, whose branch/payload and exact timeout critical path remain
+unmeasured (CBC `20261121-034520-3cacd411-a1`).
+
+## Numeric standalone guards
+
+| Property | Standalone measurement | Bound | Margin |
+| --- | --- | --- | --- |
+| Longest post-startup pump hold | 387,676 us | 800,000 us | Just over 2x |
+| Largest published tick model | 2,398,986 bytes | 4,194,304 bytes (4 MiB) | About 75% |
+
+Both bases come from CBC `20261121-033200-ed59f7bd-a1`. The pump window starts
+after readiness, matching that measurement; the separate existing 5 s
+startup assertion remains. Each pump checks its numeric hold and the maximum
+serialized size of completed tick models. The model guard must observe at
+least one tick in the 200-peer case. Collection and assertions are confined
+to the existing test-support harness. Model-size measurement overhead is
+included in the guarded pump; production behaviour and budgets are unchanged.
+
+Both failures print measured values and limits. Worker-only negative
+controls lower one bound at a time and require cargo 101 at that assertion:
+
+- Pump: observed **746 us**, bound **0 us**.
+- Model: observed **24,206 bytes**, bound **1 byte** (pump 11,135 us).
+
+These fail numerically, before any RPC timeout. The worker restores each
+source file. Existing expansion, queue-scan and binding controls also remain,
+making **five** negative controls in the scoped gate.
+
+## Checks
+
+CBC `20261121-042324-fee24a9e-a1`, code `167bcbe5`, BUILD_RC=0:
+
+- All five negative controls fail at the intended numeric/work assertion
+  (cargo 101), and worker sources are restored.
+- fmt, all-target clippy, counter precision and fast/slow equivalence pass.
+- Every lib-viu target passes with test-support: 55 binaries, 635 passed,
+  zero failed, 12 existing ignored; doctests pass (zero cases).
+- The worker diff is empty.
+
+Exactly one authorised `tools/ci.mix all` invocation: CBC
+`20261121-043424-f9640729-a1`, same code, **BUILD_RC=1**.
+
+- Workspace fmt, environment checks, all-target clippy, the engine boundary
+  and foreign gate pass before testing.
+- Strict Mix pool: 75 binaries, pool width eight, two serial; passes.
+- Strict workspace pool: 526 binaries, pool width eight, two serial; one
+  failed binary, lib-viu/viu. Its unit result is 400 passed / 1 failed /
+  5 existing ignored.
+- Failure: `registry_tests::generated_lint_vocabulary_matches_the_live_complete_registry`
+  at `libraries/viu/src/registry_tests.rs:61`. Generated vocabulary contains
+  `viu_test_cpu`, but the default-feature live registry does not. The hook is
+  feature-gated in runtime.rs while lib-mix build-time vocabulary scans its
+  registration source. This is a PR integration regression, not a timing
+  failure. The test-support scoped run does not expose this feature mismatch.
+- The serial entry matches, but default-feature workshop_bus contains zero
+  tests in this workspace run. This does not substitute for the required
+  feature-enabled isolated soak. The actual 200-peer fixture passes in the
+  scoped test-support run above.
+
+Full CI stops at that workspace-pool failure; later stages do not run.
+The exact registry contract is retained, and no fix or rerun follows this
+red result under the brief’s stop condition.
+
+The strict twelve-round feature-enabled width-four pool with the serial
+entry honoured was **not started**, because the preceding full CI failed.
+There is no isolated-soak success claim. PR #213 remains draft; isolation
+validation and registry integration repair remain outstanding.
+
+All seven changed Mix files lint with zero errors, warnings or notes.
+Worker rustfmt diff `20261121-041732-cb61d1cd-a1` was applied locally.
+The initial scoped job `20261121-042204-44da0458-a1` found a test-support
+field visibility error (E0616); it was corrected before the successful
+scoped run, any full CI invocation or the soak. No production deadline
+changed. Saved full logs and parsed evidence are retained privately.
+
+## File references
+
+- Readiness blocker: `libraries/viu/src/registry_tests.rs:61`, conditional
+  hook `libraries/viu/src/runtime.rs:281`, static vocabulary scan
+  `libraries/mix/build.rs:20`.
+
+- `tools/ci/serial-tests.conf.mix:11`: lib-viu/workshop_bus enrolment;
+  `:14` contains ruling, measurements, PR and structural follow-up.
+- `libraries/viu/tests/workshop_bus.rs:15`: standalone bounds and rationale;
+  `:554` installs them for the 200-peer post-startup window;
+  `:610` refuses a vacuous model-size guard.
+- `libraries/viu/src/app_host.rs:969`: published tick byte measurement;
+  `:2665` checks pump/model maxima and prints observed values and bounds;
+  `:2701` reports model-byte distributions.
+- `libraries/viu/tests/workshop-probe.mix:16`: both numeric negative controls;
+  `:133` retains all five controls and scoped gates; `:145` runs the strict
+  twelve-round pool using the default serial configuration.
+- Earlier retained gains: `apps/workshop/discovery.mix:125`,
+  `apps/workshop/work.mix:7`, `apps/workshop/counter.mix:26`,
+  `libraries/viu/src/view.rs:313`.
+
+The ledger is resolved by isolation only when the checks above are green;
+structural performance remains tracked in TODO-workshop / TODO-viu and the
+incremental-publication brief. No deployment or PR merge was performed.
+Earlier receipts below retain the diagnosis, observer limits and original
+red results; their acceptance status is historical.
+
+---
+
+# PR #213 — tick model application
+
+PR: https://github.com/mixviu/mixviu/pull/213, branch
+`fix/workshop-discovery-flake`, author `mixviu-agent`.
+Final tested code: `d7b5da26643dc5821f6b19a4428faa9da7311f07`.
+The following commit records this receipt only.
+
+**Not fixed; PR remains draft.** The strict pool failed in round 6.
+Stop with measurements, with no retry or deadline relaxation.
+
+Current main `6033d061` (#196 and #210 included) was merged as `594aa21f`
+before measurement and final gates. All earlier discovery bounds and wire
+optimisations remain. The 1 s call and 2 s owner-stall deadlines remain
+unchanged; no serial entry, retry, skip, full workspace CI or deployment.
+
+## Diagnosis before repair
+
+The premise needs a distinction: Mix produces a **model**, not a new scene
+document. Workshop's scene source stays 14,759 bytes with 100 resolved
+content nodes; its independent frame has 11 nodes. Model data grows from
+24,206 to 2,141,151 bytes during the standalone discovery sample. Host-added
+metrics add 141 bytes. The source is not reparsed on these ticks.
+
+CBC `20261121-032412-ad76b5d7-a1`, code `cf82608c`, CBC worker, measures the
+200-peer case standalone and with eight CPU loaders on that same worker.
+Standalone passed; the loaded sample stopped on info at 1002.437 ms.
+The loaded quantiles therefore describe a shorter, earlier part of discovery.
+All per-tick records are retained in private `round5-scene.json`.
+
+Triples below are median / p99 / max, milliseconds. The sample counts are
+11 standalone and seven loaded. With these small samples, p99 equals max.
+
+| Model construction | Standalone CPU / wall | Loaded CPU / wall |
+| --- | --- | --- |
+| Mix saved reconciliation + presentation/frame/persistence projection | 212.994 / 263.306 / 263.306; 213.124 / 263.415 / 263.415 | 500.504 / 552.508 / 552.508; 500.551 / 552.583 / 552.583 |
+| Model bytes, min / median / max | 24,206 / 1,497,205 / 2,141,151 | 24,206 / 323,273 / 661,096 |
+
+The construction timer ends before diagnostic equality checks, JSON-size
+encoding and the native model send; those probes add overhead to the
+instrumented callback and are disabled in normal acceptance runs. The
+outer apply timer also includes the nested frame probe’s metadata encoding
+and logging after its own timer stops; before/after use the same observer.
+These profiled totals are not substituted for uninstrumented pool latency.
+
+| Content apply phase | Standalone CPU triple | Standalone wall triple | Loaded CPU triple | Loaded wall triple |
+| --- | --- | --- | --- | --- |
+| Model type/byte-budget validation | 36.493 / 52.470 / 52.470 | 36.501 / 52.474 / 52.474 | 18.248 / 36.299 / 36.299 | 18.248 / 36.301 / 36.301 |
+| Binding preparation, reevaluation and port diff | 87.448 / 119.572 / 119.572 | 87.468 / 119.597 / 119.597 | 55.697 / 91.212 / 91.212 | 55.707 / 91.217 / 91.217 |
+| Template/control preparation and validation | 5.643 / 6.374 / 6.374 | 5.643 / 6.375 / 6.375 | 9.756 / 10.165 / 10.165 | 9.770 / 10.166 / 10.166 |
+| Frame application and commit | 155.469 / 222.982 / 222.982 | 155.502 / 223.031 / 223.031 | 83.105 / 157.216 / 157.216 | 83.111 / 157.228 / 157.228 |
+| Total content apply | 285.054 / 400.901 / 400.901 | 285.117 / 400.981 / 400.981 | 166.807 / 294.876 / 294.876 | 166.838 / 294.897 / 294.897 |
+
+Frame apply is nested inside the content total and must not be added again.
+Its standalone CPU was 117.172 / 169.296 / 169.296 ms, loaded
+63.316 / 118.674 / 118.674 ms. Each apply evaluated **68 content and seven
+frame bindings**, although typically five content ports and **zero frame
+ports** changed. The existing port diff runs after reevaluation; it did not
+prevent the unchanged binding work. Copying and serialising the full model
+also contributes to the binding/validation phases.
+
+Scene-text parse/resolve, widget drawing/rebuild and layout are **not entered**
+by this model-only, headless pump fixture. The control phase above decodes
+definitions and validates them; persistent widget state is not rebuilt there.
+No layout or GPU timing is claimed. The measurements therefore distinguish
+actual ingress work from phases that this test never invokes.
+
+Does every tick resend an unchanged scene? No: app.mix gates publication on
+dirty state or an animated pane. All observed published models differed;
+the first changed only the hidden mesh_canvas, and subsequent publications
+changed values/tree/mesh summaries/traffic_view with no selected detail pane.
+The frame's bound ports never changed. A whole-model equality skip would
+miss the measured redundant frame work. No Workshop publication policy is
+changed in this round.
+
+## One contained viu repair, measured after
+
+`SceneView::apply_model` now selects bindings whose recorded top-level model
+dependencies changed. Whole-model and dynamic reads remain conservative.
+With no affected bindings, it installs the new model without reevaluation.
+It still validates the full model budget, templates, controls and overlays,
+and updates frame models and revision state. There is no scene/widget schema
+change and no toolkit-specific name added to a contract.
+
+Same-worker after job `20261121-033200-ed59f7bd-a1`, code `81499703`, CBC worker.
+The three new regression tests pass; standalone passes; the eight-loader
+diagnostic still fails on ping at 1004.530 ms. Instrumented diagnostics are
+not substituted for the strict acceptance pool.
+
+| 200-peer before -> after | Standalone | Eight CPU loaders |
+| --- | --- | --- |
+| Content bindings evaluated per tick | 68 -> median 5, max 5 | 68 -> median 5, max 5 |
+| Frame bindings evaluated per tick | 7 -> 0 | 7 -> 0 |
+| Content apply CPU median / max ms | 285.054 / 400.901 -> 226.307 / 322.769 | 166.807 / 294.876 -> 154.708 / 216.128 |
+| Frame apply CPU median / max ms | 117.172 / 169.296 -> 45.287 / 64.373 | 63.316 / 118.674 -> 30.105 / 42.389 |
+| Mix build CPU median / max ms | 212.994 / 263.306 -> 226.601 / 278.018 | 500.504 / 552.508 -> 461.859 / 556.115 |
+
+P99 equals max in these small samples. After samples: 11 standalone ticks,
+six loaded ticks; model max
+2,398,986 / 651,314 bytes respectively. Progress and traffic volume differ,
+so aggregate medians are not an identical-document microbenchmark. A closer
+standalone size match is 2,003,945 bytes before versus 2,002,484 after:
+content apply CPU **374.126 -> 273.446 ms**, wall 374.173 -> 273.534 ms.
+At roughly 0.65 MB under load: CPU 294.876 -> 216.128 ms, wall
+294.897 -> 216.159 ms. The repair is retained for these measured gains;
+full-model validation/copying remains material.
+
+The initial probe jobs `20261121-032030-4bbf0c7a-a1` and
+`20261121-032228-85f8c381-a1` failed startup because of diagnostic nil-index
+and map-equality mistakes. They provide no product timing evidence; both
+were corrected before the before/after jobs above.
+
+## Gates and strict soak
+
+CBC `20261121-033454-ce98550b-a1`, code `d7b5da26`, BUILD_RC=0:
+
+- All three negative controls fail at the intended assertion (cargo 101):
+  old list expansion, old blocked-queue scan, and unconditional binding
+  reevaluation. Worker files are restored.
+- fmt, all-target clippy, exact-counter/equivalence contracts and every
+  lib-viu target pass: 55 binaries, 635 passed, zero failed, 12 existing
+  ignored. Doctests pass (zero cases); worker diff is empty.
+- The three new tests cover the work bound and full-resolve equivalence
+  after changes/removal, conservative dependencies and atomic rejection of
+  invalid unbound control values.
+
+Strict full-crate width-four soak CBC `20261121-034520-3cacd411-a1`, source `d7b5da26`, BUILD_RC=1: stopped at the first failed round, 6.
+Each round ran 54 binaries, serial=0, retry strict; no round was retried.
+Detailed model profiling was disabled. The 200-peer triples below are
+median / p99 / max.
+
+| Round | Info call wall ms | Ping call wall ms | Pump wall ms |
+| --- | --- | --- | --- |
+| 1 | 72.487 / 493.445 / 493.445 | 55.2 / 676.706 / 676.706 | 2.068 / 10.035 / 217.113 |
+| 2 | 70.004 / 274.005 / 274.005 | 71.824 / 342.06 / 342.06 | 2.306 / 5.792 / 91.481 |
+| 3 | 63.807 / 648.51 / 648.51 | 55.677 / 476.108 / 476.108 | 2.158 / 10.467 / 205.968 |
+| 4 | 60.391 / 836.86 / 836.86 | 41.84 / 676.299 / 676.299 | 2.247 / 6.561 / 198.478 |
+| 5 | 75.923 / 798.993 / 798.993 | 68.285 / 529.783 / 529.783 | 2.159 / 7.354 / 257.363 |
+| 6 | 212.434 / 1003.122 / 1003.122 | 94.236 / 632.594 / 632.594 | 2.058 / 11.384 / 220.794 |
+
+Failure markers: ::error::test failed: lib-viu/workshop_bus (rc 101). This is not twelve green rounds.
+
+
+Round 6 failed on `workshop.info` at **1003.122 ms** (`workshop_bus.rs:461`,
+send timed out). Its 200-peer completed info CPU was
+8.967 / 17.018 / 17.018 ms (n=14; the failed call is not in CPU samples).
+Tick CPU was 198.574 / 240.176 / 240.176 ms (n=6). Host scene application
+reached 215.818 ms CPU / 215.862 ms wall; pump CPU was
+2.041 / 10.555 / 220.756 ms and wall 2.058 / 11.384 / 220.794 (n=1387).
+Discovery completions per pump were 0 / 1 / 1.
+
+The same case recorded a workshop.notice callback at **743.324 ms CPU /
+743.674 ms wall** (median CPU 0.445 ms, p99 197.612 ms, n=317). Its exact
+notice branch/payload and the timed-out call’s critical path were not logged.
+The evidence supports remaining synchronous notice/queued work as the next
+lead; it does not establish CPU starvation or justify a larger deadline.
+The measured scene gain is retained, but this PR is not ready and the flake
+is not fixed. No further measurement run, product change or retry follows.
+
+
+CBC rustfmt was run and its diff applied from
+`20261121-033413-b81b1acb-a1`; all six changed Mix files lint cleanly.
+Detailed earlier wire/discovery evidence and failed experiments remain below.
+
+## File references
+
+- `libraries/viu/src/view.rs:16`: conservative model dependency comparison;
+  `:313`: dependency-aware model application with full validation retained.
+- `libraries/viu/src/view_binding_tests.rs:5`: unrelated replacement work
+  bound, changed/removal oracle comparisons, conservative dependency and
+  atomic invalid-control tests.
+- `libraries/viu/tests/workshop_bus.rs:16`: opt-in Mix projection timing;
+  `libraries/viu/src/view.rs:24`: test-support apply-stage timing.
+- `libraries/viu/tests/workshop-probe.mix:16`: after-measurement recipe;
+  `:19`: binding negative control; `:116`: scoped gates; `:127`: strict soak.
+- `apps/workshop/app.mix:189`: existing tick publication gate, unchanged.
+
+The following receipts are historical; the round-5 status above supersedes
+their acceptance status.
+
+---
+
+# PR #213 — Workshop wire fast path
+
+PR: https://github.com/mixviu/mixviu/pull/213 (`mixviu-agent`).
+Branch: `fix/workshop-discovery-flake`.
+Final tested code head: `8e8d6735bcc8c06cbd16f35d554991d8d7219e9f`.
+The following commit records this receipt only.
+
+**Not fixed; PR remains draft.** The fast path passes equivalence and
+reduces info CPU, but the strict soak failed in round 2. Stop with the
+measurements; do not mark ready or retry.
+
+Main `0820aded` (including Deck #204/#210) was already merged as `b899402d`;
+current main was checked before the final runs. No deployment or PR merge.
+The 1 s call timeout and 2 s owner-stall assertion remain unchanged, with
+no serial-list entry, retry or skip. Scene application cost is outside this
+repair and remains separate Viu work.
+
+## Change and equivalence
+
+`counter.wire` first uses native `json_encode`. It takes the unchanged jq
+thaw path only when one regex finds a listed counter key followed by a
+quoted ASCII digit value, or a `_workshop_` witness prefix. Witnesses cover
+tool/raw and permission restoration as well as private-field removal.
+Matches inside opaque data can conservatively take the slow path; they
+cannot change its semantics. Small counters are already numeric, so the
+ordinary discovery reply avoids walking every object in jq.
+
+Equivalence is **parsed JSON equality inside jq**, preserving exact u64
+integers before crossing Mix's numeric boundary. Native JSON may order keys
+differently; byte equality is not the asserted contract for the fast path.
+The corpus includes the existing exact-counter cases, a 200-service
+snapshot, tool and permission witness rows, protected raw/payload/headers,
+all 26 counter keys with `0`, `001`, 2^53, 2^53+1 and u64 max. Assertions
+require ordinary snapshots to use the fast path and digit-string counters
+and witnesses to use the slow path. Existing precision/opaque-data checks
+remain in place.
+
+## Same-worker before/after
+
+CBC `20261121-025638-a5a71b1a-a1`, code `8e8d6735`, CBC worker, BUILD_RC=0.
+The same compiled fixture ran in fresh processes; only counter.mix changed
+between the retained jq encoder from `f66d2324` and the new candidate.
+The full counter/equivalence corpus passed in this job.
+
+200-peer triples are median / p99 / max, milliseconds unless counts:
+
+| Measurement | Retained jq encoder | Native fast path |
+| --- | --- | --- |
+| Info evaluator thread CPU | 298.190 / 386.986 / 386.986 (n=21) | 8.949 / 15.460 / 15.460 (n=25) |
+| Info evaluator callback wall | 300.964 / 577.196 / 577.196 (n=21) | 11.292 / 394.414 / 394.414 (n=25) |
+| Info call wall | 388.123 / 838.514 / 838.514 (n=21) | 200.619 / 855.635 / 855.635 (n=25) |
+| Ping call wall | 210.271 / 478.408 / 478.408 (n=20) | 137.945 / 496.080 / 496.080 (n=24) |
+| Refresh call wall | 197.868 / 197.868 / 197.868 (n=1) | 188.110 / 188.110 / 188.110 (n=1) |
+| Pump holds | 1.810 / 6.948 / 227.328 | 1.875 / 14.136 / 392.870 |
+| Discovery completions per pump | 0 / 1 / 4 | 0 / 1 / 4 |
+
+Info median CPU fell 97.0%; wall median fell 48.3%. The wall maximum did
+not improve in this sample. Host scene work remains material; this comparison
+alone is not pool acceptance. Pump data excludes initial mount, as before.
+
+## Validation
+
+CBC `20261121-025714-d18a25b5-a1`, code `8e8d6735`, BUILD_RC=0:
+
+- Both discovery-bound negative controls fail at their intended assertion
+  (cargo 101), then restore the worker files.
+- Counter precision, opaque data, fast/slow equivalence and branch checks pass.
+- cargo fmt check and all-target clippy pass (existing warnings).
+- Every lib-viu test target passes: 55 binaries, 632 passed, zero failed,
+  12 existing ignored. Doctests pass (zero cases). Worker diff is empty.
+
+Strict soak CBC `20261121-030748-af73c5db-a1`, same source and worker,
+BUILD_RC=1: round 1 passed; round 2 failed on `workshop.ping` at 1005.603 ms
+(`workshop_bus.rs:442`, send timed out). Both rounds ran 54 full-crate
+binaries at width four, serial=0, retries disabled. No further round or
+retry ran. This is **not twelve green rounds**.
+
+Round 1 200-peer info: CPU 11.037 / 21.086 / 21.086 ms (n=24), call wall
+85.415 / 957.461 / 957.461 ms. Round 2 200-peer distributions:
+
+| Measurement | Median / p99 / max | Samples |
+| --- | --- | --- |
+| Info CPU ms (completed) | 8.819 / 17.518 / 17.518 | 11 |
+| Info call wall ms | 211.109 / 384.669 / 384.669 | 11 |
+| Ping call wall ms | 210.350 / 1005.603 / 1005.603 | 12 |
+| Refresh call wall ms | 261.181 / 261.181 / 261.181 | 1 |
+| Pump wall ms | 1.878 / 9.980 / 386.977 | 1119 |
+| Pump CPU ms | 1.860 / 9.474 / 386.899 | 1119 |
+| Discovery completions per pump | 0 / 1 / 1 | 1119 |
+
+Completed ping callbacks used at most 2.800 ms CPU. The same round measured
+viu.tick callback CPU max 662.663 ms, scene application 380.859 ms CPU /
+380.946 ms wall inside 383.315 / 383.401 ms host retirement. This points
+to remaining tick/rendering and queued work rather than info encoding as
+the residual latency source; the aggregates do not prove the exact critical
+path of the timed-out ping. That work is outside this wire-only repair.
+The measured, equivalent fast path is retained; no rendering change follows.
+
+All six changed Mix files lint with zero errors, warnings or notes. No
+`tools/ci.mix all` or local Rust build was run. Saved logs were read and
+full measurements retained in the private evidence directory.
+
+## File references
+
+- `apps/workshop/counter.mix:26`: native encode and guarded slow path;
+  `:31` documents the exact conservative condition; `:38` retains jq thaw.
+- `apps/workshop/counter-test.mix:22`: parsed-JSON equivalence helper;
+  `:31` constructs the 200-service case; `:39` exercises every counter key.
+- `libraries/viu/tests/workshop-probe.mix:16`: counter corpus and same-worker
+  comparison; `:90` runs both bound negative controls and scoped validation;
+  `:100` runs the strict twelve-round width-four full-crate soak.
+- `apps/workshop/discovery.mix:125`: eight-service expansion;
+  `apps/workshop/work.mix:7`: sixteen-entry rotating queue scan;
+  `apps/workshop/controller.mix:260`: advance on follow-up.
+- `libraries/viu/tests/workshop_bus.rs:153`: structural bounds regression;
+  `:418` retains the 1 s call timeout and `:429` the 2 s owner budget.
+
+The earlier receipts below retain the failed candidates, distributions,
+negative-control evidence and the scene-cost attribution limit. Their
+acceptance status is historical; the round-4 status above supersedes it.
+
+---
+
+## Earlier rounds (historical)
+
+# PR #213 — Workshop discovery diagnosis (not fixed)
+
+PR: https://github.com/mixviu/mixviu/pull/213, author `mixviu-agent`.
+Branch: `fix/workshop-discovery-flake`.
+Final tested code head: `f4c9dc081304aad741cdba3de92bdf3b71384f9d`.
+The receipt-only commit follows this source.
+
+Merged main `0820aded` (Deck #204 and #210 included) in `b899402d`
+before the final checks. No deployment or merge of this PR.
+
+Decision: the product-stall branch of the brief. Admission was limited to
+two jobs, but list expansion and blocked-queue inspection still scaled with
+the service count in one callback. Discovery now expands eight services per
+turn, reserves the global budget before expansion, and keeps the node's list
+unfinished until the last batch. Each launch inspects sixteen queued tasks
+and rotates the rest. Replies can run between turns. The regression checks
+all 201 services and a ready task behind 100 blocked entries.
+
+Batching alone did not cure the info timeout. Counter encoding also matched
+a large field-name regex against every object key. Exact-name membership
+cuts that cost while keeping the same wire fields and value predicate. The
+state-round-trip experiment still failed and was reverted; it is absent
+from the final change. The 1 s call timeout and 2 s owner-stall assertion
+remain unchanged. There is no new serial entry, retry or skip.
+
+## Measurements
+
+Each triple is median / p99 / max. Times are milliseconds; discovery
+completions are counts. Pump measurements below exclude the separately
+recorded initial scene mount. The evaluator runs on another thread: the
+completion count measures discovery job callbacks retired by a pump, not
+the number of service entries expanded inside a callback. The structural
+regression separately proves the eight-entry expansion bound.
+
+Before the bounds, CBC `20261121-004418-0160ba49`, source `68903edf`:
+
+| 200-peer measurement | Standalone | Eight CPU loaders |
+| --- | --- | --- |
+| Pump holds | 1.687 / 3.469 / 269.862 | 0.746 / 2.246 / 70.547 |
+| Discovery completions per pump | 0 / 1 / 6 | 0 / 0 / 1 |
+| Evaluator callbacks | 5.482 / 473.060 / 664.589 | 5.510 / 1177.098 / 1177.098 |
+| workshop.ping | 436.375 / 717.830 / 717.830 (n=15) | 395.358 / 395.358 / 395.358 (n=1) |
+| workshop.info | 547.920 / 655.039 / 655.039 (n=15) | 825.986 / 825.986 / 825.986 (n=1) |
+| workshop.refresh | 335.150 / 335.150 / 335.150 (n=1) | 1004.405 / 1004.405 / 1004.405 (n=1, timeout) |
+
+The loaded sample stops at the failure; its single-call quantiles are not
+tail estimates. The initial 200-peer scene mount was 1267.516 ms standalone
+and 2027.538 ms loaded, with zero discovery completions. Earlier 32-loader
+CBC `20261121-002809-c0913dec-a1` failed startup before calls; it does not
+diagnose the reported RPC timeout.
+
+Thread-CPU follow-up `20261121-005558-7a65eb02-a1`, source `be270734`,
+measured job callback CPU max 49.665 ms standalone and 172.483 ms loaded.
+After batching, the same-worker standalone target run
+`20261121-010021-44bf3ce7-a1` measured max 9.985 ms. The eight-loader sample
+`20261121-010022-8d6fe210` passed but was insufficient acceptance: subsequent
+pool candidates `20261121-010911-60bf0ca7-a1` and
+`20261121-011557-1c30419a-a1` still failed on info. Those reds are retained.
+
+The encoder comparison changed only counter.mix between two fresh runs on
+the same worker and compiled source, after merging main. CBC
+`20261121-012915-63fbae2d-a1`, source `df45072b`:
+
+| 200-peer measurement | Regex encoder | Exact-name encoder |
+| --- | --- | --- |
+| Info thread CPU | 512.400 / 561.034 / 561.034 | 337.778 / 379.094 / 379.094 |
+| Pump holds | 1.743 / 4.782 / 189.067 | 1.740 / 5.953 / 110.858 |
+| Discovery completions per pump | 0 / 1 / 5 | 0 / 1 / 4 |
+| workshop.ping | 359.888 / 428.263 / 428.263 | 140.704 / 318.472 / 318.472 |
+| workshop.info | 586.361 / 934.801 / 934.801 (n=18) | 383.655 / 648.171 / 648.171 (n=22) |
+| workshop.refresh | 216.835 / 216.835 / 216.835 | 202.758 / 202.758 / 202.758 |
+
+CBC `20261121-012646-b39dacdd-a1` compared both encoders on the same
+20,025-byte, 200-service fixture, including all 26 counter names, maximum
+u64 values, ordinary digit strings and opaque headers/payloads. Output was
+byte-identical 3/3. Median encoding time was 35.811 ms before and 25.144 ms
+after (three samples; maxima 44.109 and 25.154 ms).
+
+### Round 3: helper CPU and rejected table experiment
+
+Status: **not fixed; PR remains draft**. Final tested code head
+`f4c9dc081304aad741cdba3de92bdf3b71384f9d`; the following commit updates
+this receipt only. Current main remains `0820aded`, already merged.
+
+Test-only per-helper probes run on the evaluator thread using
+`CLOCK_THREAD_CPUTIME_ID`; wall time uses monotonic time. CBC CBC worker job
+`20261121-022644-fbc42309-a1`, source `2fa53b47`, full-crate width-four
+pool, measured the retained array lookup. The 200-peer info call timed out
+at 1003.254 ms. Completed successful info callbacks (n=14):
+
+| Helper | CPU median / p99 / max ms | Wall median / p99 / max ms |
+| --- | --- | --- |
+| saved.project | 0.034 / 0.108 / 0.108 | 0.035 / 0.116 / 0.116 |
+| native.saved | 0.168 / 0.205 / 0.205 | 3.281 / 6.562 / 6.562 |
+| model.info | 1.581 / 1.852 / 1.852 | 1.586 / 1.857 / 1.857 |
+| handle.inclusive | 2.970 / 5.129 / 5.129 | 5.932 / 9.353 / 9.353 |
+| state.assign | 0.049 / 0.057 / 0.057 | 0.051 / 0.059 / 0.059 |
+| counter.wire | 296.927 / 397.609 / 397.609 | 297.115 / 397.693 / 397.693 |
+
+The handler includes the first three helpers; these are not additive rows.
+Whole info callback CPU was 300.729 / 403.639 / 403.639 ms. The incomplete
+timed-out callback is absent from these helper distributions. Pump wall was
+1.849 / 6.091 / 278.628 ms; CPU max 278.581 ms; discovery completions per
+pump 0 / 1 / 1. Ping wall was 219.544 / 483.736 / 483.736 ms (n=15);
+info 505.006 / 1003.254 / 1003.254 (n=15); refresh 227.259 ms (n=1).
+
+This points at encoding, not the state round trip. One candidate built a
+constant key table once per jq invocation and checked string type before
+membership. Same-worker before/after CBC `20261121-023255-74c991df-a1`,
+source `c8c24638`, changed only counter.mix between fresh owner processes.
+All three 20,025-byte fixture outputs were byte-identical; fixture medians
+24.984 -> 21.767 ms. Real 200-peer info CPU median **295.477 -> 304.088 ms**
+(n=21 each), p99/max 373.195 -> 340.087 ms; wall median 384.577 -> 364.586 ms,
+max 821.312 -> 741.685 ms. Median CPU did not improve, so the change was
+reverted in `644a5612`. Its subsequent diagnostic pool also failed:
+`20261121-023744-82e4b1d6-a1`, source `5cd181b4`, info 1005.597 ms.
+No unchanged acceptance retry followed.
+
+### What the long host holds mean
+
+Round 6 of strict soak `20261121-014417-85cb4bbf-a1` recorded a 288.008 ms
+pump (287.998 ms thread CPU) with zero discovery submissions. That log did
+not record the callback being retired, so exact retrospective attribution
+is unavailable. It must not be described as measured discovery expansion.
+
+The next CBC worker diagnostic added per-completion retirement timing:
+`20261121-022906-2cd20225-a1`, source `155ee9b6`, still using the retained
+array encoder. A 314.582 ms 200-peer pump spent 310.753 ms CPU / 310.844 ms
+wall retiring **viu.tick**. The finer scene probe in
+`20261121-023744-82e4b1d6-a1` (the subsequently rejected table candidate)
+measured scene application as 114.187 ms CPU / 114.197 ms wall inside a
+115.341 / 115.350 ms tick retirement (4-peer case); its early-failing
+200-peer case measured 58.614 / 58.620 ms inside 60.110 / 60.167 ms.
+
+`Host::pump` applies the model returned by the tick callback before servicing
+later work. `SceneView::apply_model` validates the model budget, reconstructs
+the binding set, reevaluates bindings, validates templates and controls,
+and applies the frame model. This is host-thread scene work, separate from
+the evaluator's callback CPU. The repeated tick-retirement holds and fine
+scene timings make scene application the best explanation for the earlier
+288 ms sample, **an inference rather than an exact attribution**.
+
+The remaining failure is consistent with substantial synchronous work on
+both threads: roughly 300 ms encoding, plus tick generation, scene
+application and queued notices. It is not established as pure CPU starvation
+and does not justify increasing the 1 s deadline. A repair needs a measured
+scene/binding breakdown and encoder traversal profile, then a correctness
+control for any reduced or deferred work. No speculative rendering change
+is retained here.
+
+The first helper submission `20261121-021915-82c7c21d-a1` did not reach tests:
+lib-mix's build-time host vocabulary assertion rejected `_viu_test_cpu`.
+Renaming the feature-gated hook to `viu_test_cpu` corrected the diagnostic.
+
+Final source checks: CBC `20261121-023857-83be4ef1-a1`, source
+`f4c9dc08`, BUILD_RC=0. Both negative controls fail at the required assertion
+(cargo 101); fmt, all-target clippy, all 55 lib-viu targets (632 passed,
+0 failed, 12 existing ignored), doctests (0 cases), counter contracts and
+empty worker diff pass. All five changed Mix files lint cleanly.
+
+Final-source standalone host attribution, CBC `20261121-024317-1c8dcd3b-a1`,
+BUILD_RC=0, is a diagnostic, not pool acceptance. In the 200-peer case,
+scene.apply viu.tick reached 222.952 ms CPU / 223.017 ms wall inside
+224.437 / 224.502 ms retirement; pump max 226.884 ms, CPU max 226.833 ms.
+Info CPU 294.449 / 370.460 / 370.460 ms; info wall
+388.903 / 809.436 / 809.436 ms (n=21). Scene application therefore
+accounts for almost all of a comparable long hold on the retained encoder.
+Relevant code: `libraries/viu/src/app_host.rs:1058`,
+`libraries/viu/src/view.rs:294`; test-only attribution at
+`libraries/viu/src/app_host.rs:961`, helper probe fixture at
+`libraries/viu/tests/workshop_bus.rs:15`.
+
+
+
+
+## Files and checks
+
+- `apps/workshop/discovery.mix:125`: resumable eight-service expansion.
+- `apps/workshop/controller.mix:260`: advance on owner follow-up.
+- `apps/workshop/work.mix:11`: sixteen-entry rotating admission scan.
+- `apps/workshop/counter.mix:26`: equivalent exact-name wire predicate.
+- `libraries/viu/src/app_host.rs:2535` and `libraries/viu/src/runtime.rs:131`:
+  opt-in test-support probes, including thread CPU time; off in normal builds.
+- `libraries/viu/tests/workshop_bus.rs:153`: bounded progress/fairness
+  regression; `:418` retains the 1 s call and 2 s owner checks; `:450` runs
+  the real 4/200-peer fixture, including malformed query refusals.
+- `libraries/viu/tests/workshop-probe.mix`: reproducible CBC wire, owner
+  comparison, negative controls, scoped checks and strict pool soak.
+
+Earlier scoped validation, before the helper probes: CBC
+`20261121-013259-c00b82a9-a1`, source `b303db87`, BUILD_RC=0:
+
+- Both negative controls fail with cargo 101 at the intended assertion:
+  old expansion gives "list expanded in its receive turn"; old scan gives
+  "scanned the entire blocked queue". Worker files are restored.
+- Existing exact-counter contracts pass, including opaque tool/permission
+  JSON and u64 precision.
+- cargo fmt and all-target clippy pass (existing warnings).
+- Every lib-viu test target passes: 55 binaries including the example,
+  632 passed, zero failed, 12 existing ignored; doctests pass (zero cases).
+- Worker diff is empty. Later changes add diagnostic probes; production
+  behaviour remains the measured bounds and array encoder.
+
+Strict twelve-round full-crate width-four soak `20261121-014417-85cb4bbf-a1`
+failed in round 6 after five green rounds (54 binaries each round, serial=0,
+retries disabled). Info reached 1001.341 ms; pump 1.855 / 5.904 / 288.008 ms;
+discovery completions 0 / 1 / 1. Completed info CPU was 295.967 / 314.156 /
+314.156 ms, discovery job callback CPU max 11.782 ms. This is not twelve
+green rounds. The later table experiment also failed and was reverted.
+No further unchanged soak was run; PR #213 remains draft, not ready.
+
+All five changed Mix files lint with zero errors, warnings or notes.
+No tools/ci.mix all, install, desktop restart or production action was run.
+Saved logs were read and the full evidence parsed, including expected
+negative-control failures. Quantiles and per-target receipts are retained
+in the private Workshop evidence directory.
+
+---
+
+
 > Current naming: Mix `term`, Rust reference `term-rs`. See [runtime and migration](docs/ports/term-runtime.md). The receipts below retain historical branch, job and installed-file names.
 
 # PR #24 refreshed settlement — 2026-11-10

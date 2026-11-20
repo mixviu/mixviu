@@ -18,3 +18,36 @@ check(jq($wire,'fromjson|.tool.raw.bytes|tostring')=="18446744073709551615","opa
 check(jq($wire,'fromjson|.row.permissions[0].request|tostring')=="18446744073709551615","opaque permission request keys retain every bit")
 check(jq($wire,'fromjson|.payload.seq|type')=="string" and not contains($wire,"_workshop_"),"opaque payloads retain types and private witnesses stay private")
 print("Workshop exact counter contracts PASS")
+
+fn equivalent($v,$expected_thaw,$why)
+  check($c.needs_thaw(json_encode($v))==$expected_thaw,$why..": unexpected wire path")
+  -- Compare in jq, before crossing Mix's numeric boundary, so u64 low bits
+  -- remain significant. Native JSON may legitimately order keys differently.
+  $fast=$c.wire($v);$slow=$c.wire_slow($v)
+  check(jq({fast:$fast,slow:$slow},'(.fast|fromjson)==(.slow|fromjson)'),$why)
+end
+for $v in [nil,true,false,0,1.5,"001",[],{}, {seq:3,title:"001"}]
+  equivalent($v,false,"fast corpus equivalence")
+end
+for $v in [{seq:"9007199254740993",title:"9007199254740993"},$parsed,{tool:$tool,row:$parsed.sessions[0],payload:{seq:"123"}}, {headers:{seq:"42"},raw:{bytes:"001"}}, {_workshop_event_bytes:42}, {_workshop_tool_json:'{"seq":"123"}',raw:{}}, {_workshop_permissions_json:'[{"request":18446744073709551615}]',permissions:[]}]
+  equivalent($v,true,"slow corpus equivalence")
+end
+
+$snapshot={nodes:[],identities:{},services:{},progress:{finished:false,count:200}}
+for $i=0 to 199
+  $name="peer-"..$i
+  $snapshot.identities[$name]={name:$name,version:"1",read_only:true,commands:[]}
+  $snapshot.services[$name]={Ok:[]}
+end
+check(not $c.needs_thaw(json_encode($snapshot)),"ordinary 200-service snapshot takes fast path")
+equivalent($snapshot,false,"200-service snapshot equivalence")
+for $key in split("count|seq|turn|first|last|seen|since|dropped|ignored_observations|events_seen|ring_dropped|recent_capped|out_msgs|in_msgs|out_bytes|in_bytes|out_1m|in_1m|out_5m|in_5m|msgs|bytes|msgs_1m|msgs_5m|rejected|dropped_count","|")
+  for $digits in ["0","001","9007199254740992","9007199254740993","18446744073709551615"]
+    $v={};$v[$key]=$digits
+    check($c.needs_thaw(json_encode($v)),"digit-string counter must take slow path")
+    equivalent($v,true,"all counter names and exact u64 equivalence")
+  end
+end
+check($c.needs_thaw(json_encode($tool)),"tool witness must take slow path")
+check($c.needs_thaw(json_encode($parsed.sessions[0])),"permission witness must take slow path")
+print("Workshop wire fast/slow equivalence PASS (parsed JSON, exact jq integers)")

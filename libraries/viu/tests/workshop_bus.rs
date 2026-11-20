@@ -9,6 +9,94 @@ use std::{
 };
 use viu::{app_host::test_support::Harness, bundle::Bundle};
 
+// The CBC diagnostic recipe enables this only for a measured control run.
+const PROFILE_INFO_HELPERS: bool = false;
+const PROFILE_TICK: bool = false;
+// Fable ruling D: this binary runs alone. Post-startup round-5 standalone
+// max pump was 387,676 us; 800,000 us gives just over 2x margin. Tick models
+// reached 2,398,986 bytes; 4 MiB gives 75% margin. These numeric guards are
+// independent of the unchanged 1 s call and 2 s owner-stall assertions.
+const MAX_STANDALONE_PUMP_US: u64 = 800_000;
+const MAX_TICK_MODEL_BYTES: u64 = 4 * 1024 * 1024;
+
+fn profile_tick(bundle: &mut Bundle) {
+    bundle.program.source = bundle.program.source.replace(
+        "$dirty=false\nfn publish_workshop",
+        "$dirty=false\n$profile_previous={}\nfn publish_workshop",
+    );
+    bundle.program.source = bundle.program.source.replace("fn publish_workshop($s)\n", "fn publish_workshop($s)\n  global $profile_previous\n  $pc=viu_test_cpu();$pw=monotonic()\n");
+    let needle = "  send \"viu-local\" \"scenes.model\" body={generation:$ctx.generation,value:$app_mode.project($projection,\"workshop\",$s.theme_choice)}";
+    let replacement = r#"  $profile_value=$app_mode.project($projection,"workshop",$s.theme_choice)
+  $profile_cpu=(viu_test_cpu()-$pc)*1000000;$profile_wall=(monotonic()-$pw)*1000000
+  $profile_keys=[]
+  for $profile_key in keys($profile_value) if not deep_eq($profile_previous[$profile_key],$profile_value[$profile_key]) then push($profile_keys,$profile_key) end end
+  print("WORKSHOP_BUILD "..json_encode({selected:$s.row_key,cpu_us:$profile_cpu,wall_us:$profile_wall,bytes:byte_length(json_encode($profile_value)),same:deep_eq($profile_previous,$profile_value),changed:$profile_keys}))
+  $profile_previous=$profile_value
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$profile_value}"#;
+    assert!(bundle.program.source.contains(needle));
+    bundle.program.source = bundle.program.source.replace(needle, replacement);
+}
+
+fn profile_info_helpers(bundle: &mut Bundle) -> tempfile::NamedTempFile {
+    let dir = bundle.program.path.parent().unwrap();
+    let source = std::fs::read_to_string(dir.join("controller.mix")).unwrap();
+    let before = r#"    send "viu-local" "native.saved" body=$saved.project($s)
+    if $rc==0 then $s.saved=$reply end
+    return result($s,$m.info($s,viu_context()))"#;
+    let after = r#"    $pc=viu_test_cpu();$pw=monotonic()
+    $projection=$saved.project($s)
+    print("WORKSHOP_HELPER "..json_encode({name:"saved.project",cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+    $pc=viu_test_cpu();$pw=monotonic()
+    send "viu-local" "native.saved" body=$projection
+    $saved_rc=$rc;$saved_reply=$reply
+    print("WORKSHOP_HELPER "..json_encode({name:"native.saved",cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+    if $saved_rc==0 then $s.saved=$saved_reply end
+    $pc=viu_test_cpu();$pw=monotonic()
+    $info=$m.info($s,viu_context())
+    print("WORKSHOP_HELPER "..json_encode({name:"model.info",cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+    return result($s,$info)"#;
+    assert!(
+        source.contains(before),
+        "info helper probe must be installed"
+    );
+    let file = tempfile::Builder::new()
+        .prefix(".workshop-info-profile-")
+        .suffix(".mix")
+        .tempfile_in(dir)
+        .unwrap();
+    std::fs::write(file.path(), source.replacen(before, after, 1)).unwrap();
+    let path = serde_json::to_string(file.path().to_str().unwrap()).unwrap();
+    bundle.program.source = bundle
+        .program
+        .source
+        .replace("require(\"controller.mix\")", &format!("require({path})"));
+    let before = r#"on workshop.info
+  $out=handle($state,$event);$state=$out.state
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end"#;
+    let after = r#"on workshop.info
+  $pc=viu_test_cpu();$pw=monotonic()
+  $out=handle($state,$event)
+  print("WORKSHOP_HELPER "..json_encode({name:"handle.inclusive",cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+  $pc=viu_test_cpu();$pw=monotonic()
+  $state=$out.state
+  print("WORKSHOP_HELPER "..json_encode({name:"state.assign",cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+  if not $out.deferred then
+    $pc=viu_test_cpu();$pw=monotonic()
+    $wire=$counter.wire($out.body)
+    print("WORKSHOP_HELPER "..json_encode({name:"counter.wire",cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+    reply($out.rc,$wire)
+    $wire=nil
+  end
+end"#;
+    assert!(
+        bundle.program.source.contains(before),
+        "info handler probe must be installed"
+    );
+    bundle.program.source = bundle.program.source.replacen(before, after, 1);
+    file
+}
+
 struct RefuseJobs(Arc<std::sync::atomic::AtomicUsize>);
 impl mix::BusHandler for RefuseJobs {
     fn send<'a>(
@@ -84,6 +172,87 @@ print("PASS")
         std::thread::sleep(Duration::from_millis(2));
     }
     assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 3);
+}
+
+#[test]
+fn discovery_turns_bound_expansion_and_blocked_admission_scans() {
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let observed = calls.clone();
+    let mut runtime = viu::runtime::Runtime::new(
+        4,
+        Arc::new(|| {}),
+        Some(Box::new(move || std::rc::Rc::new(RefuseJobs(observed)))),
+    );
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../apps/workshop/discovery-test.mix");
+    runtime.load(viu::runtime::Program { path, scene:"budget".into(), citizen:"budget".into(), source:r#"
+$m=require("model.mix");$w=require("work.mix");$d=require("discovery.mix")
+$s=$m.initial();$s=$d.begin($s,nil);$s.queue=[];$s.jobs={}
+$items=[]
+for $i=0 to 199 push($items,{name:"peer-"..$i}) end
+$task={generation:$s.discovery.generation,op:"list",node:"@local",service:"noded"}
+$s=$d.received($s,$task,{rc:0,body:{rc:0,body:json_encode($items)}})
+if len($s.queue)!=0 or $s.discovery.nodes["@local"].list_done then raise("TEST","list expanded in its receive turn") end
+$turns=0
+while len($s.discovery.lists)>0
+  $before=len($s.queue);$s=$d.advance($s);$delta=len($s.queue)-$before
+  if $delta<1 or $delta>8 then raise("TEST","expansion must make bounded progress") end
+  $turns=$turns+1
+end
+if $turns!=26 or len($s.queue)!=201 or not $s.discovery.nodes["@local"].list_done then raise("TEST","lost a service across turns") end
+if len($s.discovery.data.services)!=201 then raise("TEST","missing streamed placeholders") end
+$s=$m.initial()
+for $i=1 to 100 $s.queue=push($s.queue,{owner:"discovery",retry_at:monotonic()+60}) end
+$s.queue=push($s.queue,{owner:"discovery"})
+$s=$w.launch($s)
+if $s.serial!=0 then raise("TEST","scanned the entire blocked queue") end
+for $i=1 to 6 $s=$w.launch($s) end
+if $s.serial!=1 then raise("TEST","rotation starved the ready tail") end
+print("PASS")
+"#.into() }).unwrap();
+    let end = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(done) = runtime.try_completion() {
+            assert!(done.error.is_none(), "{:?}", done.error);
+            assert!(done.stdout.contains("PASS"));
+            break;
+        }
+        assert!(Instant::now() < end, "budget regression stalled");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 3);
+}
+
+#[test]
+fn discovery_expiry_flushes_pending_lists_without_describes() {
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let observed = calls.clone();
+    let mut runtime = viu::runtime::Runtime::new(
+        4,
+        Arc::new(|| {}),
+        Some(Box::new(move || std::rc::Rc::new(RefuseJobs(observed)))),
+    );
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../apps/workshop/discovery-expiry-test.mix");
+    runtime
+        .load(viu::runtime::Program {
+            source: std::fs::read_to_string(&path).unwrap(),
+            path,
+            scene: "expiry".into(),
+            citizen: "expiry".into(),
+        })
+        .unwrap();
+    let end = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(done) = runtime.try_completion() {
+            assert!(done.error.is_none(), "{:?}", done.error);
+            assert!(done.stdout.contains("Workshop expiry contracts PASS"));
+            break;
+        }
+        assert!(Instant::now() < end, "expiry regression stalled");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 0);
 }
 
 fn fixture(url: &str) -> (tempfile::TempDir, Harness) {
@@ -300,6 +469,7 @@ fn call(
     let caller = caller.clone();
     let command = command.to_owned();
     let label = command.clone();
+    let started = Instant::now();
     let task = rt.spawn(async move {
         tokio::time::timeout(
             Duration::from_secs(1),
@@ -320,6 +490,8 @@ fn call(
         assert!(Instant::now() < end, "owner stalled: {:?}", host.held());
         std::thread::sleep(Duration::from_millis(2));
     }
+    eprintln!("WORKSHOP_CALL {label} us={}", started.elapsed().as_micros());
+    host.record_call(&label, started.elapsed());
     let (rc, body, _) = rt
         .block_on(task)
         .unwrap()
@@ -331,6 +503,7 @@ fn call(
 #[test]
 fn workshop_answers_during_discovery() {
     for count in [4, 200] {
+        eprintln!("WORKSHOP_PEERS {count}");
         let broker = test_broker::Broker::start();
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
@@ -382,7 +555,21 @@ fn workshop_answers_during_discovery() {
         bundle.manifest.bus_url = Some(broker.url.clone());
         bundle.launch = json!({"headless":true});
         bundle.manifest.saved_version = None;
+        let _profile_module = PROFILE_INFO_HELPERS.then(|| profile_info_helpers(&mut bundle));
+        if PROFILE_TICK {
+            profile_tick(&mut bundle);
+        }
+        // Probe only this fixture's discovery callbacks, without adding an
+        // owner round-trip or changing the installed Workshop program.
+        bundle.program.source = bundle.program.source.replace(
+            "on viu.job.completed",
+            "on viu.job.completed\n  if ($state.jobs[$event.args.tag.id].owner ?? nil)==\"discovery\" then print(\"WORKSHOP_DISCOVERY_STEP\") end",
+        );
         let mut host = Harness::new(bundle);
+        host.probe_discovery();
+        if PROFILE_TICK {
+            host.profile_scene_apply();
+        }
         let start = Instant::now();
         while !host.ready() {
             host.pump();
@@ -392,6 +579,14 @@ fn workshop_answers_during_discovery() {
                 host.error()
             );
             std::thread::sleep(Duration::from_millis(2));
+        }
+        eprintln!("WORKSHOP_STARTUP {}", host.discovery_measurements());
+        host.probe_discovery();
+        if count == 200 {
+            host.discovery_numeric_bounds(MAX_STANDALONE_PUMP_US, MAX_TICK_MODEL_BYTES);
+        }
+        if PROFILE_TICK {
+            host.profile_scene_apply();
         }
         let mut overlapping = false;
         let mut streamed = false;
@@ -432,6 +627,29 @@ fn workshop_answers_during_discovery() {
             "healthy results must appear before the silent peer finishes"
         );
         assert!(disconnected.load(std::sync::atomic::Ordering::Acquire));
+        for command in ["workshop.ping", "workshop.info"] {
+            let invalid = request(&rt, &caller, command, json!([]));
+            pump_until(&mut host, |_| invalid.is_finished());
+            let answer = rt.block_on(invalid).unwrap();
+            assert_eq!(answer.0, 10, "{command} must refuse non-object arguments");
+            assert_eq!(answer.1["error_code"], "ARGUMENT");
+        }
+        let info = call(&mut host, &rt, &caller, "workshop.info").1;
+        assert_eq!(info["discovering"], false);
+        assert!(info["snapshot"]["services"].as_object().unwrap().len() >= count);
+        if count == 200 {
+            assert!(
+                host.discovery_measurements()["tick_model_bytes"]["n"]
+                    .as_u64()
+                    .unwrap()
+                    > 0,
+                "numeric model guard must observe a published tick"
+            );
+        }
+        eprintln!(
+            "WORKSHOP_PROBE peers={count} {}",
+            host.discovery_measurements()
+        );
         for task in tasks {
             task.abort();
         }

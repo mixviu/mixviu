@@ -13,6 +13,21 @@ use std::collections::{BTreeMap, BTreeSet};
 /// and of legacy template row expansion. Refuse before changing live state.
 pub const MAX_MODEL_BYTES: usize = 8 * 1024 * 1024;
 
+fn model_dependency_changed(deps: &BTreeSet<String>, before: &Value, after: &Value) -> bool {
+    deps.iter().any(|dep| {
+        dep.strip_prefix("model.")
+            .and_then(|path| path.split('.').next())
+            .is_none_or(|key| before.get(key) != after.get(key))
+    })
+}
+
+#[cfg(feature = "test-support")]
+thread_local! { static PROFILE_APPLY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+#[cfg(feature = "test-support")]
+pub(crate) fn profile_apply(enabled: bool) {
+    PROFILE_APPLY.set(enabled);
+}
+
 fn validate_model_budget(model: &Value) -> Result<(), String> {
     if !model.is_object() {
         return Err("scene model must be an object".into());
@@ -48,6 +63,8 @@ pub struct SceneView {
     shown_revision: Option<u64>,
     slots: BTreeMap<String, egui::Rect>,
     overlays: BTreeSet<String>,
+    #[cfg(test)]
+    evaluated_last_apply: usize,
 }
 
 impl SceneView {
@@ -142,6 +159,8 @@ impl SceneView {
             shown_revision: None,
             slots: BTreeMap::new(),
             overlays: BTreeSet::new(),
+            #[cfg(test)]
+            evaluated_last_apply: 0,
         })
     }
 
@@ -292,22 +311,72 @@ impl SceneView {
     }
 
     pub fn apply_model(&mut self, model: Value) -> Result<(), String> {
+        #[cfg(feature = "test-support")]
+        let probe = PROFILE_APPLY.get().then(|| {
+            (
+                std::time::Instant::now(),
+                crate::app_host::test_support::thread_cpu(),
+            )
+        });
         validate_model_budget(&model)?;
-        let set = scene::bindings::BindingSet::from_resolved(&self.tree);
-        let evaluated = scene::bindings::reevaluate_with_model_limit(
-            &self.tree,
-            &set,
-            "model",
-            &model,
-            MAX_MODEL_BYTES,
-        )
-        .map_err(|e| format!("{e:?}"))?;
+        #[cfg(feature = "test-support")]
+        let validated = probe.map(|_| {
+            (
+                std::time::Instant::now(),
+                crate::app_host::test_support::thread_cpu(),
+            )
+        });
+        let mut set = scene::bindings::BindingSet::from_resolved(&self.tree);
+        // A full model replacement need not evaluate every binding. Compare
+        // the top-level value containing each recorded dependency; whole-model
+        // and dynamic reads remain conservative. Validation still runs below.
+        set.order.retain(|path| {
+            let binding = &set.bindings[path];
+            model_dependency_changed(&binding.deps, &self.tree.model, &model)
+        });
+        let evaluated = if set.order.is_empty() {
+            let mut tree = self.tree.clone();
+            tree.model = model.clone();
+            scene::bindings::ReEval {
+                tree,
+                diagnostics: vec![],
+                changed: vec![],
+                evaluated: vec![],
+            }
+        } else {
+            scene::bindings::reevaluate_with_model_limit(
+                &self.tree,
+                &set,
+                "model",
+                &model,
+                MAX_MODEL_BYTES,
+            )
+            .map_err(|e| format!("{e:?}"))?
+        };
+        #[cfg(test)]
+        {
+            self.evaluated_last_apply = evaluated.evaluated.len();
+        }
         if !evaluated.diagnostics.is_empty() {
             return Err(format!("{:?}", evaluated.diagnostics));
         }
         let candidate = evaluated.tree;
+        #[cfg(feature = "test-support")]
+        let diffed = probe.map(|_| {
+            (
+                std::time::Instant::now(),
+                crate::app_host::test_support::thread_cpu(),
+            )
+        });
         let lists = validate_templates(&candidate).map_err(|e| e.to_string())?;
         validate_controls(&candidate)?;
+        #[cfg(feature = "test-support")]
+        let rebuilt = probe.map(|_| {
+            (
+                std::time::Instant::now(),
+                crate::app_host::test_support::thread_cpu(),
+            )
+        });
         for id in &self.overlays {
             if !candidate
                 .nodes
@@ -326,6 +395,21 @@ impl SceneView {
         self.tree = candidate;
         self.lists = lists;
         self.revision += 1;
+        #[cfg(feature = "test-support")]
+        if let (Some(start), Some(validated), Some(diffed), Some(rebuilt)) =
+            (probe, validated, diffed, rebuilt)
+        {
+            let end = (
+                std::time::Instant::now(),
+                crate::app_host::test_support::thread_cpu(),
+            );
+            let span = |a: (std::time::Instant, std::time::Duration),
+                        b: (std::time::Instant, std::time::Duration)| json!({"wall_us":b.0.duration_since(a.0).as_micros() as u64,"cpu_us":b.1.saturating_sub(a.1).as_micros() as u64});
+            eprintln!(
+                "WORKSHOP_APPLY {}",
+                json!({"nodes":self.tree.nodes.len(),"model_bytes":serde_json::to_vec(&self.tree.model).unwrap().len(),"evaluated":evaluated.evaluated.len(),"changed":evaluated.changed.len(),"validate":span(start,validated),"bindings_diff":span(validated,diffed),"templates_controls":span(diffed,rebuilt),"frame_commit":span(rebuilt,end),"total":span(start,end)})
+            );
+        }
         Ok(())
     }
 
@@ -2371,3 +2455,7 @@ fn paint_outline(ui: &egui::Ui, node: &Node, rect: egui::Rect) {
 #[cfg(test)]
 #[path = "view_motion_identity_tests.rs"]
 mod motion_identity_tests;
+
+#[cfg(test)]
+#[path = "view_binding_tests.rs"]
+mod binding_tests;
