@@ -788,7 +788,9 @@ fn tick(session: &Rc<RefCell<Session>>, capture: impl FnOnce()) {
         if s.recording.is_none()
             && s.failed.is_none()
             && s.warmup_started.is_none()
-            && s.admitted.elapsed().saturating_sub(Duration::from_micros(s.warmup_us))
+            && s.admitted
+                .elapsed()
+                .saturating_sub(Duration::from_micros(s.warmup_us))
                 >= Duration::from_secs(s.max_seconds)
         {
             drop(s);
