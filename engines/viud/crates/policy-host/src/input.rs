@@ -216,7 +216,8 @@ fn payload(
                 Ok(hit) => hit,
                 Err(reply) => return reply,
             };
-            agent_motion(lp, hit, position, now_ms(lp));
+            let time = now_ms(lp);
+            agent_motion(lp, hit, position, time);
         }
         let window = match op {
             InputOp::Targeted { id, generation, .. }
