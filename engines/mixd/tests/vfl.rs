@@ -283,8 +283,8 @@ fn check_export(oracle: bool) {
         ],
     ) } else { Vec::new() };
     let mut yuv = Vec::new();
-    for p in [a.clone(), a, b] {
-        let y = media_frame::Bgra::new(4, 4, p).unwrap().to_yuv420();
+    for pixels in &frames {
+        let y = media_frame::Bgra::new(4, 4, pixels.clone()).unwrap().to_yuv420();
         yuv.extend(y.y);
         yuv.extend(y.u);
         yuv.extend(y.v);
