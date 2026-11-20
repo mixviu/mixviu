@@ -1009,7 +1009,7 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
     };
     let all_equal = |frames: &[Vec<u8>], expected: &[u8], label: &str| {
         for (i, frame) in frames.iter().enumerate() {
-            assert_eq!(frame.as_slice(), expected, "{label}, decoded frame {i}");
+            assert!(frame.as_slice() == expected, "{label}, decoded frame {i}: length={}, expected={}, first difference={:?}", frame.len(), expected.len(), frame.iter().zip(expected).position(|(a,b)|a!=b));
         }
     };
     let live = |name: &str| {
@@ -1028,6 +1028,7 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
         for shape in ["surface", "hidden", "named"] {
             let private = if different { "different" } else { "private" };
             focus(private, &mut a, &mut b, &mut c);
+            let live_default = live("epoch-private-default");
             let source = if different { &mut c } else { &mut b };
             let _cursor = match shape {
                 "surface" => Some(source.custom_cursor(0xffff00ff)),
@@ -1047,6 +1048,8 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
                         .windows(3)
                         .any(|p| p == rgb(0xffff00ff))
                 );
+            } else if shape == "named" {
+                assert!(live("epoch-named-live") != live_default, "Named fixture must change the live cursor");
             }
             all_equal(
                 &take(
