@@ -920,7 +920,10 @@ fn record_privacy_window_output_membership_and_marker_order() {
         "out of view retains identity membership"
     );
     thread::sleep(Duration::from_millis(250));
-    let outside_frames = bus.call("comp.record.status", json!({"session":start["session"]}))["frames"].as_u64().unwrap();
+    let outside_frames =
+        bus.call("comp.record.status", json!({"session":start["session"]}))["frames"]
+            .as_u64()
+            .unwrap();
     bus.call(
         "comp.window.place",
         place_args(&ar, json!({"output":"headless-0","x":100,"y":100})),
