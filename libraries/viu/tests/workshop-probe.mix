@@ -8,7 +8,17 @@ fn checked($argv)
   print($r.stdout)
   if not $r.ok then exit($r.exit_code ?? 1) end
 end
-if $mode=="pool" then
+if $mode=="format" then
+  $r=run_argv(["cargo","fmt","-p","lib-viu"],{timeout:600,stderr:"stdout"})
+  print($r.stdout);print(run_argv_must(["git","diff"]))
+  print(run_argv_must(["git","checkout","-q","--","."]))
+  if not $r.ok then exit(1) end
+elif $mode=="validate" then
+  checked(["cargo","fmt","-p","lib-viu","--","--check"])
+  checked(["cargo","clippy","-p","lib-viu","--features","test-support","--all-targets","--no-deps"])
+  checked(["cargo","test","-p","lib-viu","--features","test-support","--all-targets","--no-fail-fast"])
+  checked(["cargo","test","-p","lib-viu","--features","test-support","--doc"])
+elif $mode=="pool" then
   for $iteration=1 to 12
     print("WORKSHOP_POOL_ITERATION "..$iteration)
     checked(["mix","tools/ci/test_pool.mix","--jobs","4","--","-p","lib-viu","--features","test-support","--","--nocapture"])
