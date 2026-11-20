@@ -19,6 +19,12 @@ fn verify_schema_usage_codes_and_completion_policy() {
         vec!["vfl", "verify", path, "--bogus"],
         vec!["vfl", "export", path, "--from", "bad"],
         vec!["vfl", "export", path, "--fps", "0"],
+        vec!["vfl", "verify", "--require-complete", "--require-complete"],
+        vec!["vfl", "verify", "--bogus"],
+        vec!["vfl", "markers", "--require-complete", path],
+        vec!["vfl", "markers", "--require-complete"],
+        vec!["vfl", "export", "--require-complete", path],
+        vec!["vfl", "export", "--require-complete"],
     ] {
         let o = invoke(&args);
         assert_eq!(o.status.code(), Some(2), "{o:?}");
@@ -39,7 +45,7 @@ fn verify_schema_usage_codes_and_completion_policy() {
     let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
     assert_eq!(v["valid_frames"], 128);
     let e = &v["errors"][0];
-    assert_eq!(e["kind"], "structure");
+    assert_eq!(e["kind"], "incomplete");
     assert!(e["file"].as_str().unwrap().ends_with("complete.json"));
     assert!(e["chunk"].is_null());
     assert!(e["offset"].is_u64());
@@ -61,6 +67,15 @@ fn export_recovers_only_valid_frames_before_torn_record() {
     let mut b = std::fs::read(&chunk).unwrap();
     b.truncate(b.len() - 1);
     std::fs::write(chunk, b).unwrap();
+    let damaged = Command::new(env!("CARGO_BIN_EXE_mixd"))
+        .args(["vfl", "export"]).arg(&p).output().unwrap();
+    assert_eq!(damaged.status.code(), Some(1));
+    let error = String::from_utf8_lossy(&damaged.stderr);
+    assert!(error.contains("chunk 0 offset"));
+    assert!(!error.contains("Some("));
+    std::fs::remove_file(p.join("chunk-000000.json")).unwrap();
+    let rows = std::fs::read_to_string(p.join("frames.jsonl")).unwrap();
+    std::fs::write(p.join("frames.jsonl"), rows.lines().take(127).collect::<Vec<_>>().join("\n") + "\n").unwrap();
     let o = Command::new(env!("CARGO_BIN_EXE_mixd"))
         .args(["vfl", "export"])
         .arg(&p)

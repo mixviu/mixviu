@@ -29,6 +29,12 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<(), Box<dyn std::
         1
     };
     let path = PathBuf::from(args.get(path_arg).ok_or_else(usage)?);
+    // Flags are never take paths. Use ./--name for a literal leading-dash name.
+    if path.as_os_str().as_encoded_bytes().starts_with(b"-")
+        || (command == "verify" && args.iter().filter(|a| *a == "--require-complete").count() > 1)
+    {
+        return Err(Usage.into());
+    }
     let mut out = io::BufWriter::new(io::stdout().lock());
     if command == "verify"
         && (args.len() == 2 && !require_complete || args.len() == 3 && require_complete)

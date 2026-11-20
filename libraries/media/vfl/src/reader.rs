@@ -17,6 +17,7 @@ pub enum ErrorKind {
     Compression,
     Limit,
     TornTail,
+    Incomplete,
 }
 #[derive(Debug)]
 pub struct Error {
@@ -28,21 +29,24 @@ pub struct Error {
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} chunk {:?} offset {}: {:?}: {}",
-            self.file.display(),
-            self.chunk,
-            self.offset,
-            self.kind,
-            self.message
-        )
+        write!(f, "{}", self.file.display())?;
+        if let Some(chunk) = self.chunk { write!(f, " chunk {chunk}")?; }
+        write!(f, " offset {}: {}: {}", self.offset, self.kind.name(), self.message)
     }
 }
 impl std::error::Error for Error {}
+impl ErrorKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Io => "io", Self::Metadata => "metadata", Self::Structure => "structure",
+            Self::Crc => "crc", Self::Compression => "compression", Self::Limit => "limit",
+            Self::TornTail => "torn_tail", Self::Incomplete => "incomplete",
+        }
+    }
+}
 impl Error {
     fn json(&self) -> Value {
-        json!({"kind": format!("{:?}", self.kind).to_lowercase(), "file": self.file,
+        json!({"kind": self.kind.name(), "file": self.file.to_string_lossy(),
             "chunk": self.chunk, "offset": self.offset, "message": self.message})
     }
 }
@@ -281,6 +285,8 @@ pub struct Reader {
     scanned: u64,
     poisoned: bool,
     torn_tail: bool,
+    known_frames: Option<u64>,
+    index_keys: bool,
     #[cfg(test)]
     chunk_reads: Vec<u64>,
 }
@@ -430,6 +436,8 @@ impl Reader {
             scanned: 0,
             poisoned: false,
             torn_tail: false,
+            known_frames: None,
+            index_keys: true,
             #[cfg(test)]
             chunk_reads: vec![0; chunks as usize],
         })
@@ -455,6 +463,17 @@ impl Reader {
     pub fn recoverable(&self) -> bool {
         self.torn_tail
     }
+    /// Exact decodable frame count, cached after EOF. A first call scans using
+    /// a separate decoder, preserving playback position even if the scan fails.
+    pub fn frame_count(&mut self) -> Result<u64, Error> {
+        if self.poisoned { return Err(self.error(ErrorKind::Structure, "reader poisoned")); }
+        if let Some(n) = self.known_frames { return Ok(n); }
+        let mut scan = Self::open(&self.path)?;
+        scan.index_keys = false;
+        while scan.read()?.is_some() {}
+        self.known_frames = Some(scan.next);
+        Ok(scan.next)
+    }
     fn chunk_path(&self) -> PathBuf {
         self.path.join(format!("chunk-{:06}.bin", self.chunk))
     }
@@ -467,7 +486,7 @@ impl Reader {
             message,
         )
     }
-    fn seal(&self) -> Result<(), Error> {
+    fn seal(&self, torn: bool) -> Result<(), Error> {
         let p = self.path.join(format!("chunk-{:06}.json", self.chunk));
         if self.complete || p.exists() {
             let final_recovery = !self.complete && self.chunk + 1 == self.chunks;
@@ -487,7 +506,7 @@ impl Reader {
                     || ["bytes", "crc32", "next_frame"]
                         .iter()
                         .all(|k| r[*k].as_u64().is_some())
-            }) && (r["bytes"] != self.offset
+            }) && (torn || r["bytes"] != self.offset
                 || r["crc32"] != self.crc.clone().finalize()
                 || r["next_frame"] != self.next)
             {
@@ -568,7 +587,7 @@ impl Reader {
                 .read(&mut h[..1])
                 .map_err(|e| self.error(ErrorKind::Io, e))?;
             if n == 0 {
-                self.seal()?;
+                self.seal(false)?;
                 self.chunk += 1;
                 self.file = None;
                 self.offset = 0;
@@ -671,7 +690,10 @@ impl Reader {
                     e
                 })?;
             }
-            if kind == KEY && self.keys.last().is_none_or(|k| k.slot < slot) {
+            if self.index_keys && kind == KEY && self.keys.last().is_none_or(|k| k.slot < slot) {
+                if self.keys.len() == 65_536 {
+                    return Err(self.error(ErrorKind::Limit, "seek index exceeds 65536 keys"));
+                }
                 self.keys.push(KeyPosition {
                     chunk: self.chunk,
                     offset: self.offset,
@@ -703,6 +725,7 @@ impl Reader {
             Ok(true) => {}
             Ok(false) => {
                 self.stopped = true;
+                self.known_frames = Some(self.next);
                 return Ok(None);
             }
             Err(e) => {
@@ -710,11 +733,12 @@ impl Reader {
                 if e.kind == ErrorKind::TornTail && !self.complete {
                     // A torn binary tail must not hide independently corrupt
                     // sidecar rows. Extra valid rows remain advisory in recovery.
-                    if let Err(e) = self.check_recovery_tail() {
+                    if let Err(e) = self.seal(true).and_then(|()| self.finish()) {
                         self.poisoned = true;
                         return Err(e);
                     }
                     self.torn_tail = true;
+                    self.known_frames = Some(self.next);
                     return Ok(None);
                 }
                 self.poisoned = true;
@@ -739,33 +763,6 @@ impl Reader {
             },
             e,
         )
-    }
-    fn check_recovery_tail(&mut self) -> Result<(), Error> {
-        let p = self.path.join("frames.jsonl");
-        if let Some(f) = &mut self.frames {
-            let mut slot = self.next;
-            loop {
-                let at = f
-                    .stream_position()
-                    .map_err(|e| err(&p, None, 0, ErrorKind::Io, e))?;
-                let Some(v) = line(f, &p, true)? else { break };
-                if v["frame"] != slot
-                    || v["t_us"] != (u128::from(slot) * 1_000_000 / u128::from(self.fps)) as u64
-                {
-                    return Err(err(
-                        &p,
-                        None,
-                        at,
-                        ErrorKind::Structure,
-                        "frame timeline mismatch",
-                    ));
-                }
-                slot = slot
-                    .checked_add(1)
-                    .ok_or_else(|| err(&p, None, at, ErrorKind::Limit, "slot overflow"))?;
-            }
-        }
-        Ok(())
     }
     /// Lazily index keys and their checksum/sidecar positions, then decode forward.
     /// Any failed seek poisons this reader; reopen it to try again.
@@ -846,9 +843,11 @@ pub fn verify_with_options(path: &Path, require_complete: bool) -> Value {
     let mut complete = false;
     let mut dropped = Value::Null;
     let mut recoverable = false;
+    let mut tail = Value::Null;
     match Reader::open(path) {
         Err(e) => errors.push(e.json()),
         Ok(mut r) => {
+            r.index_keys = false;
             loop {
                 match r.read() {
                     Ok(Some(_)) => frames += 1,
@@ -888,6 +887,7 @@ pub fn verify_with_options(path: &Path, require_complete: bool) -> Value {
                 },
             }
             recoverable = r.torn_tail && errors.is_empty();
+            if recoverable { tail = json!({"chunk":r.chunk,"offset":r.offset}); }
             complete = r.complete && errors.is_empty();
             if require_complete && !complete {
                 errors.push(
@@ -895,7 +895,7 @@ pub fn verify_with_options(path: &Path, require_complete: bool) -> Value {
                         &path.join("complete.json"),
                         None,
                         0,
-                        ErrorKind::Structure,
+                        ErrorKind::Incomplete,
                         "complete valid take required",
                     )
                     .json(),
@@ -910,7 +910,7 @@ pub fn verify_with_options(path: &Path, require_complete: bool) -> Value {
             }
         }
     }
-    json!({"ok":errors.is_empty(),"recoverable":recoverable,"valid_frames":frames,"frames":frames,"dropped":dropped,"markers":markers,"complete":complete,"errors":errors})
+    json!({"ok":errors.is_empty(),"recoverable":recoverable,"tail":tail,"valid_frames":frames,"frames":frames,"dropped":dropped,"markers":markers,"complete":complete,"errors":errors})
 }
 
 #[cfg(test)]
@@ -918,6 +918,7 @@ mod tests {
     use super::*;
     #[test]
     fn cached_seeks_do_not_read_chunk_zero() {
+        eprintln!("VFL_KEY_POSITION_BYTES={}", std::mem::size_of::<KeyPosition>());
         let path = std::env::temp_dir().join(format!("vfl-index-{}", std::process::id()));
         let mut w = crate::Writer::new(path.clone(), 2, 2, 1).unwrap();
         w.origin(0).unwrap();
