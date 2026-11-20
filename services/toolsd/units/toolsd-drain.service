@@ -77,7 +77,6 @@ IPAddressAllow=127.0.0.53/32
 # The webd this host claims from is pinned per host in
 # /etc/systemd/system/toolsd-drain.service.d/webd.conf:
 #   [Service]
-Environment=MIX_PREFIX=@{prefix} MIX_LIB=@{lib} MIX_ETC=@{etc} MIX_VAR=@{var} MIX_RUN=@{run}
 #   IPAddressAllow=<webd address>/32
 # A private (WG) webd address needs it to get past the deny-list above; a public one is
 # already reachable but is pinned anyway to document intent.
