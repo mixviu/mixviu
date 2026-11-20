@@ -1559,7 +1559,7 @@ impl Host {
                 let available = ui.available_rect_before_wrap();
                 let scale = (available.width()/size.x).min(available.height()/size.y);
                 let origin = available.center() - size * scale * 0.5;
-                let layer = egui::LayerId::new(ui.layer_id().order, ui.id().with("presentation"));
+                let layer = egui::LayerId::new(ui.layer_id().order, ui.scope_id().with("presentation"));
                 ui.ctx().set_sublayer(ui.layer_id(), layer);
                 ui.ctx().set_transform_layer(layer, egui::emath::TSTransform { scaling: scale, translation: origin.to_vec2() });
                 ui.scope_builder(egui::UiBuilder::new().layer_id(layer).max_rect(egui::Rect::from_min_size(egui::Pos2::ZERO,size)), |ui| self.view.show(ui)).inner
@@ -1569,7 +1569,7 @@ impl Host {
             }
             if self.model["presentation"]["clock"] == true && self.inflight.is_empty() {
                 let time = ui.input(|i| i.time);
-                self.dispatch("viu.presentation".into(), json!({"time":time}), BTreeMap::new(), None);
+                self.dispatch("viu.presentation".into(), json!({"time":time,"serial":self.model["presentation"]["serial"]}), BTreeMap::new(), None);
                 ui.ctx().request_repaint();
             }
             for request in self.widget_requests.drain(..) {

@@ -1,13 +1,13 @@
 -- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
-$core=require("core.mix");$ctx=viu_context();$s=$core.fresh();$owed=nil
+$core=require("core.mix");$ctx=viu_context();$state={s:$core.fresh(),owed:nil,serial:0,finish_serial:nil}
 fn cancel_play()
-  if $owed!=nil then viu_reply("finish",$owed,{rc:10,body:{error_code:"DECK_INTERRUPTED",message:"presentation interrupted by command"}});$owed=nil end
+  if .owed!=nil then viu_reply("finish",.owed,{rc:10,body:{error_code:"DECK_INTERRUPTED",message:"presentation interrupted by command"}});.owed=nil end
 end
 fn show_deck()
-  if $s.deck==nil then return end
-  $build=$core.build_state($s)
+  if .s.deck==nil then return end
+  $build=$core.build_state(.s)
   for $id in keys($build)
     if $build[$id].age!=nil then
       send "viu-local" "motion.seek" body={preset:$build[$id].anim,time:$build[$id].age}
@@ -15,7 +15,8 @@ fn show_deck()
       $build[$id].opacity=$reply.opacity;$build[$id].offset=$reply.offset
     end
   end
-  $model={build:$build,native_root:{key:"deck",title:"Deck",size:[1600,900],scene:$core.scene_source($s.deck.slides[$s.slide])},presentation:{size:[1600,900],clock:$s.playing}}
+  .serial=.serial+1
+  $model={build:$build,native_root:{key:"deck",title:"Deck",size:[1600,900],scene:$core.scene_source(.s.deck.slides[.s.slide])},presentation:{size:[1600,900],clock:.s.playing or .finish_serial!=nil,serial:.serial}}
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
   if $rc!=0 then raise("DECK_PRESENT","native model refused") end
 end
@@ -31,27 +32,27 @@ fn actions()
   return $rows
 end
 fn perform($id,$a)
-  if $id=="deck.state" then $core.check_fields($a,[],"state");return $core.snapshot($s) end
+  if $id=="deck.state" then $core.check_fields($a,[],"state");return $core.snapshot(.s) end
   if $id=="deck.open" then
     $core.check_fields($a,["path"],"open")
     if type($a.path)!="string" or not starts_with($a.path,"/") then raise("DECK_PATH","open.path: absolute path required") end
     $deck=if ends_with($a.path,".json") then json_parse(read_file($a.path)) else load_data($a.path) end
-    $candidate=$core.opened($s,$deck,$a.path)
+    $candidate=$core.opened(.s,$deck,$a.path)
     for $slide in $candidate.deck.slides
       send "viu-local" "scene.validate" body={source:$core.scene_source($slide)}
       if $rc!=0 then raise("DECK_SCENE","slides("..$slide.id..").scene: "..to_string($reply)) end
     end
-  elif $id=="deck.goto" then $core.check_fields($a,["slide","step"],"goto");$candidate=$core.seek($s,$a.slide,$a.step ?? 0)
-  elif $id=="deck.next" then $core.check_fields($a,[],"next");$candidate=$core.advance($s,1)
-  elif $id=="deck.prev" then $core.check_fields($a,[],"prev");$candidate=$core.advance($s,-1)
-  elif $id=="deck.play" then $candidate=$core.play($s,$a)
+  elif $id=="deck.goto" then $core.check_fields($a,["slide","step"],"goto");$candidate=$core.seek(.s,$a.slide,$a.step ?? 0)
+  elif $id=="deck.next" then $core.check_fields($a,[],"next");$candidate=$core.advance(.s,1)
+  elif $id=="deck.prev" then $core.check_fields($a,[],"prev");$candidate=$core.advance(.s,-1)
+  elif $id=="deck.play" then $candidate=$core.play(.s,$a)
   else raise("UNKNOWN_ACTION","unknown deck action") end
-  cancel_play();$s=$candidate;show_deck()
+  cancel_play();.finish_serial=nil;.s=$candidate;show_deck()
   if $id=="deck.play" then
-    $owed=$event.headers["viu-call"]
-    if $owed!=nil then viu_reply("hold",$owed,{}) end
+    .owed=$event.headers["viu-call"]
+    if .owed!=nil then viu_reply("hold",.owed,{}) end
   end
-  return $core.snapshot($s)
+  return $core.snapshot(.s)
 end
 fn answer($id,$args)
   try reply(0,json_encode(perform($id,$args)))
@@ -71,11 +72,15 @@ on deck.execute
   catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end
 on viu.presentation
-  if $s.playing then
-    $s=$core.sample($s,$event.args.time);show_deck()
-    if $s.finished and $owed!=nil then viu_reply("finish",$owed,{rc:0,body:$core.snapshot($s)});$owed=nil end
+  if .finish_serial!=nil and $event.args.serial==.finish_serial then
+    if .owed!=nil then viu_reply("finish",.owed,{rc:0,body:$core.snapshot(.s)});.owed=nil end
+    .finish_serial=nil;show_deck()
+  elif .s.playing then
+    .s=$core.sample(.s,$event.args.time)
+    if .s.finished and .owed!=nil then .finish_serial=.serial+1 end
+    show_deck()
   end
 end
 on viu.call.cancelled
-  if $event.args.token==$owed then $owed=nil;$s.playing=false;show_deck() end
+  if $event.args.token==.owed then .owed=nil;.s.playing=false;show_deck() end
 end
