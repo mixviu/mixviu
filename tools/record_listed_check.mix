@@ -23,7 +23,7 @@ try
     end
     $command = ["cargo","test","-p","headless","--test","capture","record_","--","--nocapture","--test-threads=1"]
     if $mode == "all" then
-      $command = ["cargo","test"]
+      $command = ["cargo","test","--no-fail-fast"]
       for $package in $packages
         $command = concat($command,["-p",$package])
       end
