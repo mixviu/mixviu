@@ -678,6 +678,7 @@ fn workshop_capture_diagnostic() {
             );
         }
         eprintln!("WORKSHOP_STEADY peers={count}");
+        if count==200 { for _ in 0..40 { assert_eq!(call(&mut host,&rt,&caller,"workshop.info").0,0); } }
         let steady_end = Instant::now() + Duration::from_secs(4);
         while Instant::now() < steady_end {
             host.pump();
