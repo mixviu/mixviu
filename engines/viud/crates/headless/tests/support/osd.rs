@@ -208,7 +208,10 @@ fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let reply: Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
         assert_eq!(reply["rc"], 10, "{reply}");
-        let body: Value = serde_json::from_str(reply["body"].as_str().unwrap()).unwrap();
+        let body = match &reply["body"] {
+            Value::String(body) => serde_json::from_str(body).unwrap(),
+            body => body.clone(),
+        };
         assert_eq!(body["error_code"], "NOT_OWNER");
     }
     // A peer must neither forge telemetry nor poison subsequent real presses.
