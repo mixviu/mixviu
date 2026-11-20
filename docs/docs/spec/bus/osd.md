@@ -65,7 +65,6 @@ Click-through (`pointer_input:false`) requires explicit `backing:"none"`,
 which draws text without a card background. Updates validate the combined
 item, so switching back to a card also requires pointer input. Exiting items
 stop consuming input as soon as exit starts. Both choices appear in `osd.list`.
-This default is isolated in its own commit pending the product decision.
 
 Validation precedes mutation. Refusals carry an `error_code`, including
 `INVALID_ARGS`, `INVALID_SCENE`, `INVALID_ANCHOR`, `INVALID_MOTION`,

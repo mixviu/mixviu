@@ -15,8 +15,14 @@ fn osd_helper(action: &str, root: &Path, rest: &[&str], _url: Option<&str>) -> O
     Command::new(binary("mixd"))
         .arg("--serve")
         .arg(script)
-        .args(["--name", rest.get(3).copied().unwrap_or("headless-osd-owner")])
-        .env("MIX_NODED_URL", format!("unix://{}", root.join("run/noded/bus.sock").display()))
+        .args([
+            "--name",
+            rest.get(3).copied().unwrap_or("headless-osd-owner"),
+        ])
+        .env(
+            "MIX_NODED_URL",
+            format!("unix://{}", root.join("run/noded/bus.sock").display()),
+        )
         .env("MIX_RUN", root.join("run"))
         .env("MIX_ETC", root.join("etc"))
         .env("MIX_VAR", root.join("var"))
@@ -172,7 +178,9 @@ fn decoded_rgb(frame: &[u8]) -> Vec<u8> {
 
 #[test]
 fn remap_restores_anchors_before_committing_changed_input_regions() {
-    if !process::record_available() { return; }
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("osd-remap-order");
     let mut process = process::spawn_osd("osd-remap-order", &bus.url, "640x360");
     let mut pattern = Pattern::new(connect(&mut process));
@@ -184,10 +192,17 @@ fn remap_restores_anchors_before_committing_changed_input_regions() {
     ready(&bus); // Maps and detaches once: layer-shell has reset its anchors.
     let (width, _, before) = ppm(&bus, &process, "remap-before", None);
     for margin in [32, 64] {
-        call(&bus, "osd.show", json!({"id":"remap","scene":{"kind":"caption","text":"Remap","width":160,"height":64},"anchor":{"output":"headless-0","edge":"bottom-right","margin":margin}}));
+        call(
+            &bus,
+            "osd.show",
+            json!({"id":"remap","scene":{"kind":"caption","text":"Remap","width":160,"height":64},"anchor":{"output":"headless-0","edge":"bottom-right","margin":margin}}),
+        );
         wait(&mut pattern, Duration::from_millis(150));
         let (_, _, shown) = ppm(&bus, &process, &format!("remap-{margin}"), None);
-        assert!(bounds(&before, &shown, width, [400, 180, 240, 180]).is_some(), "remapped layer must draw after input region changes");
+        assert!(
+            bounds(&before, &shown, width, [400, 180, 240, 180]).is_some(),
+            "remapped layer must draw after input region changes"
+        );
         assert_eq!(call(&bus, "osd.list", json!({}))["items"][0]["id"], "remap");
         call(&bus, "osd.hide", json!({"id":"remap"}));
         wait(&mut pattern, Duration::from_millis(100));
@@ -564,7 +579,10 @@ fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
     );
     wait(&mut pattern, Duration::from_millis(150));
     let (_, _, clipped) = ppm(&bus, &process, "osd-clipped", None);
-    assert!(bounds(&before, &clipped, width, [100, 100, 32, 24]).is_some(), "tiny card must positively draw");
+    assert!(
+        bounds(&before, &clipped, width, [100, 100, 32, 24]).is_some(),
+        "tiny card must positively draw"
+    );
     for y in 20..height {
         for x in 0..width {
             if !(100..132).contains(&x) || !(100..124).contains(&y) {
