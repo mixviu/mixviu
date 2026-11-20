@@ -133,6 +133,54 @@ fn frame_cpu_samples(process: &process::Process, begin_us: u64, end_us: u64) -> 
     samples
 }
 
+fn redraw_requests(process: &process::Process, begin: u64, end: u64) -> usize {
+    fs::read_to_string(process.root.join("frames.log")).unwrap().lines()
+        .filter(|line| line.contains("stage=comp_redraw_request "))
+        .filter(|line| (begin..end).contains(&trace_field(line, "start_us=")))
+        .count()
+}
+
+#[test]
+fn motion_redraws_follow_output_frames_and_settle_without_requests() {
+    if !process::record_available() { return; }
+    let bus = Bus::start("motion-redraw-clock");
+    let mut process = process::spawn_size("motion-redraw-clock", &bus.url, MOTION_SIZE);
+    bus.ready();
+    let (mut pattern, row) = white_window_at(&bus, &mut process, "motion-redraw-clock", 50, 30);
+    let _ = ppm(&bus, &process, "ready", None);
+    let begin = monotonic_ns() / 1000;
+    thread::scope(|scope| {
+        let motion = scope.spawn(|| bus.call("comp.motion.run", json!({"targets":[{"window":{
+            "id":row["id"], "generation":row["generation"],
+            "tracks":opacity_track(0.2,1.0),"duration_ms":1200
+        }}]})));
+        // Keep unrelated protocol and Bus events arriving between output ticks.
+        while !motion.is_finished() {
+            pattern.pump();
+            bus.call("comp.window.list", json!({}));
+        }
+        assert_eq!(motion.join().unwrap()["status"], "completed");
+    });
+    let end = monotonic_ns() / 1000;
+    let requests = redraw_requests(&process, begin, end);
+    let nominal_frames = ((end - begin) * 60).div_ceil(1_000_000) as usize;
+    println!("MOTION_REDRAWS output=headless-0 frames={nominal_frames} requests={requests}");
+    assert!(requests <= 3 * nominal_frames + 8,
+        "animation wakes must follow output frames: {requests} requests for {nominal_frames} frames");
+    assert!(!frame_cpu_samples(&process, begin, end).is_empty());
+    // Drain the endpoint's already owed frame before checking a settled scene.
+    let _ = ppm(&bus, &process, "settled", None);
+    pump_patterns(&mut [&mut pattern]);
+    thread::sleep(Duration::from_millis(100));
+    let idle_begin = monotonic_ns() / 1000;
+    thread::sleep(Duration::from_millis(350));
+    let idle_end = monotonic_ns() / 1000;
+    let idle = redraw_requests(&process, idle_begin, idle_end);
+    println!("MOTION_REDRAWS output=headless-0 idle_requests={idle}");
+    assert_eq!(idle, 0, "settled scene must make zero requests");
+    assert!(frame_cpu_samples(&process, idle_begin, idle_end).is_empty());
+}
+
 #[test]
 fn record_window_pop_intermediate_pixels_and_idle_repeats() {
     if !process::record_available() {

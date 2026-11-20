@@ -132,8 +132,7 @@ pub fn geometry_frame_step(
     if timeline.status_at(now) == Status::Done {
         world::comp::animation_geometry::sample_window(lp, &window, lp.inner.comp.clock.now());
     }
-    lp.state
-        .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+    // The engine coalesces invalidations on each output's frame clock.
     arrived_or_moving(timeline.status_at(now))
 }
 
