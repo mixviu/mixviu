@@ -1,0 +1,16 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Only render and nft --check. Never loads rules, enables a unit or deploys.
+$g = getopt(args(), {config:{arg:true}, out:{arg:true}})
+if len($g.errors) != 0 or len($g.rest) != 0 or $g.opts.config == nil or $g.opts.out == nil then
+  raise("USAGE", "egress_render.mix --config PRIVATE.conf.mix --out PRIVATE.nft")
+end
+$e = require("lib/egress.mix")
+$nft = if is_file("/usr/sbin/nft") then "/usr/sbin/nft" else "/usr/bin/nft" end
+fn check_rules($text)
+  $r = run_argv([$nft, "--check", "--file", "-"], {stdin:$text, clear_env:true, timeout:10, max_output:4096})
+  return $r.ok
+end
+$selection = $e.select_rules(load_data($g.opts.config), fn($text) = check_rules($text))
+write_atomic($g.opts.out, $selection.rules, {mode:0o600})
+print(json_encode({mode:$selection.mode, uid:$selection.uid, refresh_cgroup:$selection.refresh_cgroup, applied:false}))
