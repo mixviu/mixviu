@@ -1573,7 +1573,11 @@ impl Widgets {
                     )
                     .response
                 } else {
-                    if widget.properties["fill"] == true {ui.add_sized(egui::vec2(ui.available_width(),0.),label)} else {ui.add(label)}
+                    if widget.properties["fill"] == true {
+                        ui.add_sized(egui::vec2(ui.available_width(), 0.), label)
+                    } else {
+                        ui.add(label)
+                    }
                 }
             }
             "button" => {
@@ -2417,8 +2421,16 @@ fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
         text = text.size(size as f32);
     }
     if widget.properties["bold"] == true {
-        let size = widget.properties["size"].as_f64().map(|s|s as f32).unwrap_or_else(||egui::TextStyle::Body.resolve(ui.style()).size);
-        text = text.font(toolkit::fonts::bound(ui.ctx(),toolkit::fonts::heading(size))).strong();
+        let size = widget.properties["size"]
+            .as_f64()
+            .map(|s| s as f32)
+            .unwrap_or_else(|| egui::TextStyle::Body.resolve(ui.style()).size);
+        text = text
+            .font(toolkit::fonts::bound(
+                ui.ctx(),
+                toolkit::fonts::heading(size),
+            ))
+            .strong();
     }
     if widget.properties["emphasis"] == true {
         let font = egui::TextStyle::Body.resolve(ui.style());

@@ -445,8 +445,35 @@ pub(crate) fn check_port_value(
 ) {
     let k = p.name;
     if k == "background_radials" {
-        let valid=v.as_array().is_some_and(|a|a.len()<=4 && a.iter().all(|r|r.as_object().is_some_and(|o|o.len()==6 && ["x","y","rx","ry","stop","color"].iter().all(|k|o.contains_key(*k))) && ["x","y"].iter().all(|k|r[k].as_f64().is_some_and(|n|n.is_finite() && (-2.0..=3.0).contains(&n))) && ["rx","ry"].iter().all(|k|r[k].as_f64().is_some_and(|n|n.is_finite() && n>0.0 && n<=10000.0)) && r["stop"].as_f64().is_some_and(|n|n>0.0 && n<=1.0) && r["color"].as_str().is_some_and(|s|s.len()==7 && s.starts_with('#') && u32::from_str_radix(&s[1..],16).is_ok())));
-        if !valid {out.push(Diagnostic::error("radial-value",line,format!("invalid bounded background_radials on {id}")));}
+        let valid = v.as_array().is_some_and(|a| {
+            a.len() <= 4
+                && a.iter().all(|r| {
+                    r.as_object().is_some_and(|o| {
+                        o.len() == 6
+                            && ["x", "y", "rx", "ry", "stop", "color"]
+                                .iter()
+                                .all(|k| o.contains_key(*k))
+                    }) && ["x", "y"].iter().all(|k| {
+                        r[k].as_f64()
+                            .is_some_and(|n| n.is_finite() && (-2.0..=3.0).contains(&n))
+                    }) && ["rx", "ry"].iter().all(|k| {
+                        r[k].as_f64()
+                            .is_some_and(|n| n.is_finite() && n > 0.0 && n <= 10000.0)
+                    }) && r["stop"].as_f64().is_some_and(|n| n > 0.0 && n <= 1.0)
+                        && r["color"].as_str().is_some_and(|s| {
+                            s.len() == 7
+                                && s.starts_with('#')
+                                && u32::from_str_radix(&s[1..], 16).is_ok()
+                        })
+                })
+        });
+        if !valid {
+            out.push(Diagnostic::error(
+                "radial-value",
+                line,
+                format!("invalid bounded background_radials on {id}"),
+            ));
+        }
     }
     if k == "number" {
         let valid = v.as_object().is_some_and(|o| {

@@ -325,16 +325,26 @@ fn a_constant_number_track_never_arms_animation_frames() {
 
 #[test]
 fn fixed_width_frame_fills_its_entire_interior() {
-    let nodes=json!({"root":{"widget":"column","width":260,"height":100,"padding":22,"background":"#121821","outline":"#3cc8d8","outline_width":2,"children":["label"]},"label":{"widget":"text","text":"short"}});
-    let source=format!("---\nscene: 1\nname: fill\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
-    let mut view=SceneView::new(&source).unwrap();
-    let rect=std::rc::Rc::new(std::cell::Cell::new(egui::Rect::NOTHING));
-    let out=rect.clone();
-    let mut harness=egui_kittest::Harness::builder().with_size(egui::vec2(400.,200.)).wgpu().build_ui(move|ui|{view.show(ui);out.set(view.geometry["root"]);});
+    let nodes = json!({"root":{"widget":"column","min_width":260,"height":100,"padding":22,"background":"#121821","outline":"#3cc8d8","outline_width":2,"children":["label"]},"label":{"widget":"text","text":"short"}});
+    let source = format!("---\nscene: 1\nname: fill\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+    let mut view = SceneView::new(&source).unwrap();
+    let rect = std::rc::Rc::new(std::cell::Cell::new(egui::Rect::NOTHING));
+    let out = rect.clone();
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(400., 200.))
+        .wgpu()
+        .build_ui(move |ui| {
+            view.show(ui);
+            out.set(view.geometry["root"]);
+        });
     harness.run();
-    let image=harness.render().unwrap();
-    let r=rect.get();
-    for x in (r.left() as u32+4)..(r.right() as u32-4) {
-        assert_eq!(image.get_pixel(x,r.bottom() as u32-10).0,[18,24,33,255],"interior x={x}, rect={r:?}");
+    let image = harness.render().unwrap();
+    let r = rect.get();
+    for x in (r.left() as u32 + 4)..(r.right() as u32 - 4) {
+        assert_eq!(
+            image.get_pixel(x, r.bottom() as u32 - 10).0,
+            [18, 24, 33, 255],
+            "interior x={x}, rect={r:?}"
+        );
     }
 }
