@@ -51,6 +51,26 @@ pub(super) fn ready(bus: &Bus) {
             .unwrap()
             .is_empty()
     );
+    // The Bus owner starts before Gpu::new. An answer alone does not mean
+    // the renderer can present an entrance: wait for its empty Wayland layer.
+    // This private fixture has no other layer clients at startup/restart.
+    loop {
+        let surfaces = bus.call("comp.props.get", json!({"path":"surfaces"}));
+        if surfaces.as_object().is_some_and(|rows| {
+            rows.values().any(|row| {
+                row["role"] == "layer"
+                    && row["output"] == "headless-0"
+                    && row["layer"]["stratum"] == "overlay"
+            })
+        }) {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "OSD renderer did not create its layer: {surfaces}"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
 }
 
 fn wait(pattern: &mut Pattern, duration: Duration) {
