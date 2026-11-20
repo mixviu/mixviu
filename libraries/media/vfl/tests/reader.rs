@@ -440,6 +440,25 @@ fn failed_seek_poisons_reads_and_future_seeks() {
     assert!(r.seek(0).is_err());
 }
 #[test]
+fn binary_tear_does_not_hide_other_damage_or_apply_to_earlier_chunks() {
+    for complete in [false, true] {
+        let (t, _) = take(complete);
+        tear(&t.0.join("chunk-000000.bin"));
+        use std::io::Write;
+        std::fs::OpenOptions::new().append(true).open(t.0.join("frames.jsonl"))
+            .unwrap().write_all(b"{bad}\n").unwrap();
+        let v = verify(&t.0);
+        assert_eq!(v["ok"], false);
+        assert_eq!(v["recoverable"], false);
+    }
+    let (t, _) = take(false);
+    tear(&t.0.join("chunk-000000.bin"));
+    std::fs::write(t.0.join("chunk-000001.bin"), []).unwrap();
+    let v = verify(&t.0);
+    assert_eq!(v["ok"], false);
+    assert_eq!(v["recoverable"], false);
+}
+#[test]
 fn marker_errors_always_name_row_start() {
     for tail in [
         r#"{"seq":1,"frame":0,"label":"x","data":null}"#,
