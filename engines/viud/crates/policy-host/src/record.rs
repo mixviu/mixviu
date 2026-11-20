@@ -85,6 +85,10 @@ struct Session {
     start_answers: Vec<Answer>,
     stop_answers: Vec<Answer>,
     pending: bool,
+    warmup_started: Option<Instant>,
+    warmup_us: u64,
+    warmup_errors: Vec<String>,
+    warmup_done: bool,
     drain_until: Option<Instant>,
     stop_wake: Option<Rc<dyn Fn(Instant) -> bool>>,
     stop_timer_at: Option<Instant>,
@@ -423,6 +427,10 @@ pub fn command(
             start_answers: vec![answer],
             stop_answers: Vec::new(),
             pending: false,
+            warmup_started: None,
+            warmup_us: 0,
+            warmup_errors: Vec::new(),
+            warmup_done: false,
             drain_until: None,
             stop_wake: None,
             stop_timer_at: None,
@@ -505,6 +513,7 @@ fn session_command(op: RecordCommand, answer: Answer) {
                 });
             status["session"] = json!(s.id);
             status["windows"] = listed_status(&s);
+            warmup_status(&s, &mut status);
             answer(ControlReply::Body(status));
         }
         RecordCommand::Marker { label, data, .. } => answer(
@@ -750,6 +759,7 @@ fn finish_recording(s: &mut Session) -> bool {
     }
     let mut status = r.status();
     status["windows"] = listed_status(s);
+    warmup_status(s, &mut status);
     let past = Past {
         id: s.id.clone(),
         params: s.params.clone(),
@@ -764,6 +774,12 @@ fn finish_recording(s: &mut Session) -> bool {
     }
     event(s, if s.failed.is_some() { "failed" } else { "idle" });
     true
+}
+
+fn warmup_status(s: &Session, status: &mut Value) {
+    status["warmup_us"] = json!(s.warmup_us);
+    status["warmup_errors"] = json!(s.warmup_errors);
+    status["warmup_done"] = json!(s.warmup_done);
 }
 
 fn tick(session: &Rc<RefCell<Session>>, capture: impl FnOnce()) {
@@ -952,6 +968,10 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     s.signature = signature;
     s.deferred_signature = None;
     s.pending = true;
+    let warming = !s.warmup_done;
+    if warming {
+        s.warmup_started = Some(Instant::now());
+    }
     let targets = s.targets.clone();
     let capture_epoch = s.scene_epoch;
     let counter = s.pixel_counter;
@@ -964,6 +984,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     let prefix = format!("/{}-{counter}", s.pixel_secret);
     drop(s);
     let frames = Rc::new(RefCell::new(Vec::new()));
+    let warmup_remaining = Rc::new(Cell::new(targets.len()));
     for (index, mut target) in targets.into_iter().enumerate() {
         let token = format!("{prefix}-{index}");
         target.path = token.clone();
@@ -975,7 +996,25 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         let got = frames.clone();
         let session = session.clone();
         let request_session = session.clone();
+        let warmup_remaining = warmup_remaining.clone();
         screencopy::file::raw_answer(token.clone(), move |result| {
+            // Exercise the same allocation, GPU copy, mapping and RGB pool as
+            // the real take. Never charge this cold operation to frame zero.
+            if warming {
+                let mut s = session.borrow_mut();
+                match result {
+                    Ok(frame) => screencopy::file::prepare_raw_pool(&frame.2),
+                    Err(error) => s.warmup_errors.push(format!("target {index}: {:?}", error.into_wire())),
+                }
+                warmup_remaining.set(warmup_remaining.get() - 1);
+                if warmup_remaining.get() == 0 {
+                    s.warmup_us = s.warmup_started.take().unwrap().elapsed().as_micros() as u64;
+                    s.warmup_done = true;
+                    s.pending = false;
+                    s.signature.clear();
+                }
+                return;
+            }
             {
                 let s = session.borrow();
                 if s.failed.is_some() || s.recording.as_ref().is_some_and(|r| !r.is_recording()) {
@@ -1098,7 +1137,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if !matches!(reply, ControlReply::Body(_)) {
                 let error = format!("capture: {:?}", reply.clone().into_wire());
                 screencopy::file::raw_fail(&token, reply);
-                if request_session.borrow().pending {
+                if !warming && request_session.borrow().pending {
                     fail(&request_session, &error);
                 }
             }
@@ -1154,6 +1193,10 @@ mod tests {
             start_answers: vec![],
             stop_answers: vec![],
             pending: false,
+            warmup_started: None,
+            warmup_us: 0,
+            warmup_errors: Vec::new(),
+            warmup_done: false,
             drain_until: None,
             stop_wake: None,
             stop_timer_at: None,
@@ -1639,6 +1682,10 @@ mod tests {
             })],
             stop_answers: vec![],
             pending: true,
+            warmup_started: None,
+            warmup_us: 0,
+            warmup_errors: Vec::new(),
+            warmup_done: false,
             drain_until: None,
             stop_wake: None,
             stop_timer_at: None,

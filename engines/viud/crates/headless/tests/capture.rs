@@ -132,6 +132,44 @@ fn target(row: &Value) -> Value {
 }
 
 #[test]
+fn record_cold_start_under_load_has_no_capture_drops() {
+    if !process::record_available() { return; }
+    let bus = Bus::start("cold-record");
+    let mut process = process::spawn(1, None, "cold-record", Some(&bus.url));
+    let mut pattern = Pattern::new(connect(&mut process));
+    pattern.wait_callback(0);
+    bus.ready();
+    let row = bus.window(&mut pattern);
+    // No screenshot/readback readiness probe: this is a fresh compositor.
+    thread::scope(|scope| {
+        for _ in 0..8 {
+            scope.spawn(|| {
+                let until = Instant::now() + Duration::from_secs(4);
+                while Instant::now() < until { std::hint::spin_loop(); }
+            });
+        }
+        let begin = Instant::now();
+        let start = bus.call("comp.record.start", json!({"request_id":"cold", "target":{"output":row["output"]}, "path":process.root.join("cold.vfl"), "max_seconds":10, "fps":30}));
+        let start_ms = begin.elapsed().as_secs_f64() * 1000.0;
+        let first_second = Instant::now();
+        while first_second.elapsed() < Duration::from_secs(1) {
+            pattern.change_buffer();
+            pattern.commit(true);
+            pattern.pump();
+            thread::sleep(Duration::from_millis(33));
+        }
+        let status = bus.call("comp.record.status", json!({"session":start["session"]}));
+        eprintln!("cold record start_ms={start_ms:.3} status={status}");
+        assert_eq!(status["warmup_done"], true, "{status}");
+        assert_eq!(status["warmup_errors"], json!([]), "{status}");
+        assert!(status["readbacks"].as_u64().unwrap() > 1, "{status}");
+        assert_eq!(status["dropped_capture"], 0, "{status}");
+        assert_eq!(status["readback_deferred"], 0, "{status}");
+        bus.call("comp.record.stop", json!({"session":start["session"]}));
+    });
+}
+
+#[test]
 fn mapped_window_survives_render_before_protocol_drain() {
     if !process::record_available() {
         return;
