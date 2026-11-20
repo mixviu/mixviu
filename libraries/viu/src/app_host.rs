@@ -127,6 +127,8 @@ struct Host {
     active_scene: String,
     owner_close_pending: bool,
     model: Value,
+    model_revision: Option<(u64,u64)>,
+    model_bytes: usize,
     output: Option<String>,
     outputs: BTreeMap<String, Value>,
     runtime: Runtime,
@@ -151,6 +153,32 @@ struct Host {
     saved: Option<crate::saved_state::Saved>,
 }
 impl Host {
+    fn publication_result(&mut self,generation:u64,revision:u64,result:Result<(),String>) {
+        let (command,body)=match result {
+            Ok(())=> {self.model_revision=Some((generation,revision));("viu.model.applied",json!({"generation":generation,"revision":revision}))}
+            Err(message)=> {self.error=message.clone();("viu.model.refused",json!({"generation":generation,"revision":revision,"message":message}))}
+        };
+        self.dispatch(command.into(),body,BTreeMap::new(),None);
+    }
+    fn apply_incremental(&mut self,patch:&crate::model_patch::Patch,ctx:&egui::Context)->Result<(),String> {
+        if self.model_revision!=Some((patch.generation,patch.base)) {return Err("stale model base; publish a full model".into());}
+        if !self.loaded || self.no_window || self.model["native_root"].is_object() || self.model["surfaces"].is_object() {
+            return Err("incremental publication requires a loaded ordinary root scene".into());
+        }
+        for key in patch.roots() {
+            if key.starts_with("__viu_") || ["presentation","native_root","native_windows","surfaces","appearance","theme_choice","window_settings","window_title","window_close","macros_open","native_overlays","native_focus","shortcuts","layer"].contains(&key.as_str()) {
+                return Err(format!("{key} requires full model publication"));
+            }
+        }
+        let edit=crate::model_patch::Edit::apply(&mut self.model,self.model_bytes,patch)?;
+        let result=validate_overlays(&self.model).and_then(|_|self.view.apply_model_patch(patch));
+        if let Err(error)=result {edit.rollback(&mut self.model);return Err(error);}
+        self.model_bytes=edit.bytes;
+        if let Some(saved)=&mut self.saved {if saved.announced {saved.apply(&self.model);}}
+        self.ready=true;
+        ctx.request_repaint();
+        Ok(())
+    }
     fn model_close_ready(&self) -> bool {
         self.model["window_close"] == true
             && self.wire_deliveries.is_empty()
@@ -1041,14 +1069,26 @@ impl Host {
             if let Some(error) = done.error.as_ref() {
                 eprintln!("viu callback {}: {error}", done.sequence);
                 self.error = error.clone();
-            } else if done.model.is_some() {
+            } else if done.model.is_some() || done.model_patch.is_some() {
                 self.error.clear();
+            }
+            if let Some(patch)=done.model_patch.as_ref() {
+                let result=self.apply_incremental(patch,ctx);
+                self.publication_result(done.generation,patch.revision,result);
+            } else if done.error.is_some() {
+                if let Some(revision)=done.model_revision {self.publication_result(done.generation,revision,Err(self.error.clone()));}
             }
             if self.error.is_empty() {
                 if let Some(model) = done.model {
+                    let revision_error=done.model_revision.and_then(|revision|self.model_revision.filter(|(generation,old)|*generation==done.generation && revision<=*old)).is_some();
+                    if revision_error {
+                        self.publication_result(done.generation,done.model_revision.unwrap(),Err("full publication revision must advance".into()));
+                    } else {
                     if self.no_window {
                         self.ready = true;
                         self.model = model;
+                        self.model_bytes=crate::model_patch::model_bytes(&self.model);
+                        if let Some(revision)=done.model_revision {self.publication_result(done.generation,revision,Ok(()));} else {self.model_revision=None;}
                     } else {
                         self.session_dirty |= self.model["theme_choice"] != model["theme_choice"];
                         let projected = self.projection(&model, ctx);
@@ -1160,6 +1200,8 @@ impl Host {
                                 } else {
                                     self.model = model;
                                 }
+                                self.model_bytes=crate::model_patch::model_bytes(&self.model);
+                                if let Some(revision)=done.model_revision {self.publication_result(done.generation,revision,Ok(()));} else {self.model_revision=None;}
                                 ctx.request_repaint();
                                 if let Some(saved) = &mut self.saved {
                                     if saved.announced {
@@ -1167,11 +1209,14 @@ impl Host {
                                     }
                                 }
                             }
-                            Err(e) => self.error = e,
+                            Err(e) => {
+                                if let Some(revision)=done.model_revision {self.publication_result(done.generation,revision,Err(e));} else {self.error=e;}
+                            }
                         }
                     }
                 }
             }
+                }
             self.windows.completed(done.sequence);
             for (seq, answer) in done.answers {
                 if let Some(token) = self.pending.remove(&seq) {
@@ -2083,6 +2128,7 @@ fn create_with_probe(
     }));
     let (clipboard, local_clipboard) = crate::clipboard::Clipboard::channel(wake.clone());
     let services = crate::runtime::Services {
+        incremental_models: true,
         #[cfg(feature = "test-support")]
         test_cpu_probe,
         clipboard: Some(clipboard),
@@ -2213,6 +2259,8 @@ fn create_with_probe(
         active_scene: String::new(),
         owner_close_pending: false,
         model: json!({}),
+        model_revision: None,
+        model_bytes: 2,
         output: None,
         outputs: BTreeMap::new(),
         runtime,
