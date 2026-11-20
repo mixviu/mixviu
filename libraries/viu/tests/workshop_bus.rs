@@ -91,7 +91,8 @@ fn discovery_turns_bound_expansion_and_blocked_admission_scans() {
     let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let observed = calls.clone();
     let mut runtime = viu::runtime::Runtime::new(
-        4, Arc::new(|| {}),
+        4,
+        Arc::new(|| {}),
         Some(Box::new(move || std::rc::Rc::new(RefuseJobs(observed)))),
     );
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

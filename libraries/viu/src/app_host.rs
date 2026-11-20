@@ -968,7 +968,11 @@ impl Host {
                     .push(done.elapsed.as_micros() as u64);
                 probe.discovery_steps +=
                     done.stdout.matches("WORKSHOP_DISCOVERY_STEP").count() as u64;
-                probe.callback_cpu.entry(done.command.clone()).or_default().push(done.cpu_elapsed.as_micros() as u64);
+                probe
+                    .callback_cpu
+                    .entry(done.command.clone())
+                    .or_default()
+                    .push(done.cpu_elapsed.as_micros() as u64);
             }
             if let Some((code, message)) = self.ui_state.take_exit() {
                 if !message.is_empty() {
@@ -2449,9 +2453,15 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
 pub mod test_support {
     use super::*;
     pub(crate) fn thread_cpu() -> Duration {
-        let mut time = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+        let mut time = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
         // CLOCK_THREAD_CPUTIME_ID separates actual work from CBC preemption.
-        assert_eq!(unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) }, 0);
+        assert_eq!(
+            unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) },
+            0
+        );
         Duration::new(time.tv_sec as u64, time.tv_nsec as u32)
     }
     #[derive(Default)]
@@ -2513,7 +2523,8 @@ pub mod test_support {
                     eprintln!("WORKSHOP_LONG_PUMP us={elapsed} steps={}", p.steps - before);
                 }
                 p.pumps.push(elapsed);
-                p.pump_cpu.push(thread_cpu().saturating_sub(cpu_start).as_micros() as u64);
+                p.pump_cpu
+                    .push(thread_cpu().saturating_sub(cpu_start).as_micros() as u64);
                 p.per_pump.push(p.steps - before);
                 p.completed_per_pump
                     .push(p.discovery_steps - completed_before);
