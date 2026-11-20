@@ -734,10 +734,8 @@ impl Bus {
                         lp.state
                             .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
                     }
-                    if visual.is_some() {
-                        if !matches!(step, policy_host::motion::Step::Moving) {
-                            policy_host::motion::finish_visual(lp, *id, *generation);
-                        }
+                    if visual.is_some() && !matches!(step, policy_host::motion::Step::Moving) {
+                        policy_host::motion::finish_visual(lp, *id, *generation);
                     }
                     step
                 }
@@ -770,7 +768,12 @@ impl Bus {
         let active = lifecycle_active || !self.motions.is_empty();
         let frame = self
             .motion_clock
-            .step(now, active && !paused, outputs, |key| {
+            .step(now, active && (!paused || lifecycle_active), outputs, |key| {
+                // Lifecycle exits still retire while parked, as before. Their
+                // maintenance clock must not request frames on a parked output.
+                if paused {
+                    return;
+                }
                 lp.state
                     .redraw
                     .request_pipe_silent(key, dispatcher::state::RedrawReason::WindowState);
