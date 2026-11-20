@@ -1091,6 +1091,9 @@ fn agent_seat_facts(lp: &Loop) -> AgentSeatFacts {
 /// The agent target facts for `surface` (its root's record).
 pub(crate) fn agent_seat_offered(lp: &Loop, surface: &WlSurface) -> bool {
     surface.client().is_some_and(|client| {
+        if protocols::layershell::osd::compositor_state(&client).is_some() {
+            return protocols::layershell::osd::authorized(&client, &lp.state.output.display_handle);
+        }
         lp.state
             .seat
             .agent_clients
