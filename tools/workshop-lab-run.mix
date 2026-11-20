@@ -4,3 +4,5 @@ $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test",
 print($r.stdout)
 print({capture_rc:$r.exit_code})
 print(run_argv_must(["mix","tools/workshop-delta-lab.mix"],{timeout:600,stderr:"stdout",max_output:64000000}))
+
+print(run_argv_must(["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_delta_lab","--","--nocapture"],{timeout:600,stderr:"stdout",max_output:64000000}))

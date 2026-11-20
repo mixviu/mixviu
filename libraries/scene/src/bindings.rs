@@ -349,6 +349,33 @@ pub fn reevaluate_with_model_limit(
 }
 
 /// Whether `value` serialises past the document limit (or not at all).
+/// Lab specimen: evaluate changed model roots without cloning the model/tree.
+pub fn rebind_roots(
+    tree: &ResolvedScene,
+    roots: &BTreeSet<String>,
+) -> Result<BTreeMap<String, Node>, Vec<Diagnostic>> {
+    let set = BindingSet::from_resolved(tree);
+    let started = Instant::now();
+    let mut nodes = BTreeMap::new();
+    let mut diagnostics = Vec::new();
+    for path in &set.order {
+        let binding = &set.bindings[path];
+        if binding.reads_item || !binding.deps.iter().any(|dep| {
+            dep == "model" || dep.strip_prefix("model.").is_some_and(|p| roots.contains(p.split('.').next().unwrap()))
+        }) { continue; }
+        let Some((id, port)) = path.rsplit_once('.') else { continue; };
+        let Some(original) = tree.nodes.get(id) else { continue; };
+        let node = nodes.entry(id.to_owned()).or_insert_with(|| original.clone());
+        match evaluate_budgeted(binding, &tree.model, None, started, || {})
+            .and_then(|v| coerce_port(&v, port_for(&node.family, port))) {
+            Ok(v) => set_port(&mut node.ports, port, v),
+            Err(code) => diagnostics.push(Diagnostic::warning("binding-eval", node.line, code)),
+        }
+    }
+    for (id,node) in &nodes { crate::check_layout_bounds(id,node,&mut diagnostics); }
+    if diagnostics.is_empty() { Ok(nodes) } else { Err(diagnostics) }
+}
+
 fn too_large_for(value: &JsonValue, limit: usize) -> bool {
     serde_json::to_vec(value)
         .ok()

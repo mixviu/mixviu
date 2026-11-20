@@ -61,6 +61,7 @@ for $path in $paths
   for $op in $ops $replayed=apply_one($replayed,$op.path,$op) end
   $apply_ms=(monotonic()-$start)*1000
   if not deep_eq($replayed,$next) then raise("LAB","replay differs from full model") end
+  write_file($path..".patch",json_encode($ops))
   print({file:basename($path),full_bytes:byte_length(json_encode($next)),patch_bytes:byte_length(json_encode($ops)),operations:len($ops),diff_ms:$diff_ms,apply_ms:$apply_ms,equivalent:true})
   $previous=$next
 end

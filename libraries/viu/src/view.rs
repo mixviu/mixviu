@@ -167,6 +167,61 @@ impl SceneView {
     pub fn model(&self) -> &Value {
         &self.tree.model
     }
+    pub fn lab_equal(&self, other: &Self) -> bool {
+        self.tree == other.tree
+    }
+    /// Disposable prototype; nested edits with rollback receipts per root.
+    pub fn apply_patch_lab(&mut self, ops: &Value) -> Result<(), String> {
+        let ops = ops.as_array().ok_or("operations must be a list")?;
+        let mut roots = BTreeSet::new();
+        for op in ops {
+            roots.insert(op["path"][0].as_str().ok_or("root must be a key")?.to_owned());
+        }
+        let before: BTreeMap<_,_> = roots.iter().map(|key| (key.clone(),self.tree.model.get(key).cloned())).collect();
+        let mut old_nodes = BTreeMap::new();
+        let result = (|| {
+            for op in ops {
+                let parts = op["path"].as_array().ok_or("path list required")?;
+                let path = parts.iter().map(|p| p.as_str().map(str::to_owned).or_else(|| p.as_u64().map(|n|n.to_string())).ok_or("invalid path component"))
+                    .collect::<Result<Vec<_>,_>>()?;
+                let pointer = |path: &[String]| path.iter().map(|p| format!("/{}",p.replace('~',"~0").replace('/',"~1"))).collect::<String>();
+                if op["op"] == "splice" {
+                    let target = self.tree.model.pointer_mut(&pointer(&path)).and_then(Value::as_array_mut).ok_or("splice target must be a list")?;
+                    let index = op["index"].as_u64().ok_or("index required")? as usize;
+                    let remove = op["remove"].as_u64().ok_or("remove required")? as usize;
+                    if index > target.len() || remove > target.len()-index { return Err("splice range".into()); }
+                    target.splice(index..index+remove,op["items"].as_array().ok_or("items required")?.iter().cloned());
+                } else {
+                    let (key,parent) = path.split_last().ok_or("nonempty path required")?;
+                    let target = self.tree.model.pointer_mut(&pointer(parent)).ok_or("missing parent")?;
+                    if let Some(map) = target.as_object_mut() {
+                        if op["op"] == "remove" { map.remove(key); }
+                        else if op["op"] == "set" { map.insert(key.clone(),op["value"].clone()); }
+                        else { return Err("unknown operation".into()); }
+                    } else if op["op"] == "set" {
+                        let slot = target.as_array_mut().and_then(|a|key.parse::<usize>().ok().and_then(|i|a.get_mut(i))).ok_or("array index required")?;
+                        *slot = op["value"].clone();
+                    } else { return Err("map required".into()); }
+                }
+            }
+            validate_model_budget(&self.tree.model)?;
+            let nodes = scene::bindings::rebind_roots(&self.tree,&roots).map_err(|e|format!("{e:?}"))?;
+            for (id,node) in nodes { old_nodes.insert(id.clone(),self.tree.nodes.insert(id,node).unwrap()); }
+            let lists = validate_templates(&self.tree).map_err(|e|e.to_string())?;
+            validate_controls(&self.tree)?;
+            if let Some(frame) = self.frame.as_mut() { frame.apply_patch_lab(&Value::Array(ops.clone()))?; }
+            self.lists=lists;
+            Ok(())
+        })();
+        if result.is_err() {
+            for (key,value) in before {
+                if let Some(value)=value { self.tree.model[&key]=value; }
+                else { self.tree.model.as_object_mut().unwrap().remove(&key); }
+            }
+            for (id,node) in old_nodes { self.tree.nodes.insert(id,node); }
+        } else { self.revision+=1; }
+        result
+    }
     /// Mount independently resolved scenes, preserving every application ID.
     /// The frame authors the content rectangle; no app node is rewritten.
     pub fn with_frame(source: &str, model: Value, frame_source: &str) -> Result<Self, String> {
