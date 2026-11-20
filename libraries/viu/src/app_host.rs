@@ -1553,23 +1553,49 @@ impl Host {
             let canvas = self.model["presentation"]["size"].as_array().and_then(|s| {
                 let w = s.first()?.as_f64()? as f32;
                 let h = s.get(1)?.as_f64()? as f32;
-                (w.is_finite() && h.is_finite() && w >= 1.0 && h >= 1.0 && w <= 8192.0 && h <= 8192.0).then_some(egui::vec2(w,h))
+                (w.is_finite()
+                    && h.is_finite()
+                    && w >= 1.0
+                    && h >= 1.0
+                    && w <= 8192.0
+                    && h <= 8192.0)
+                    .then_some(egui::vec2(w, h))
             });
             let events = if let Some(size) = canvas {
                 let available = ui.available_rect_before_wrap();
-                let scale = (available.width()/size.x).min(available.height()/size.y);
+                let scale = (available.width() / size.x).min(available.height() / size.y);
                 let origin = available.center() - size * scale * 0.5;
-                let layer = egui::LayerId::new(ui.layer_id().order, ui.scope_id().with("presentation"));
+                let layer =
+                    egui::LayerId::new(ui.layer_id().order, ui.scope_id().with("presentation"));
                 ui.ctx().set_sublayer(ui.layer_id(), layer);
-                ui.ctx().set_transform_layer(layer, egui::emath::TSTransform { scaling: scale, translation: origin.to_vec2() });
-                ui.scope_builder(egui::UiBuilder::new().layer_id(layer).max_rect(egui::Rect::from_min_size(egui::Pos2::ZERO,size)), |ui| self.view.show(ui)).inner
-            } else { self.view.show(ui) };
+                ui.ctx().set_transform_layer(
+                    layer,
+                    egui::emath::TSTransform {
+                        scaling: scale,
+                        translation: origin.to_vec2(),
+                    },
+                );
+                ui.scope_builder(
+                    egui::UiBuilder::new()
+                        .layer_id(layer)
+                        .max_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                    |ui| self.view.show(ui),
+                )
+                .inner
+            } else {
+                self.view.show(ui)
+            };
             for event in events {
                 self.dispatch(event.command, event.body, input_headers.clone(), None);
             }
             if self.model["presentation"]["clock"] == true && self.inflight.is_empty() {
                 let time = ui.input(|i| i.time);
-                self.dispatch("viu.presentation".into(), json!({"time":time,"serial":self.model["presentation"]["serial"]}), BTreeMap::new(), None);
+                self.dispatch(
+                    "viu.presentation".into(),
+                    json!({"time":time,"serial":self.model["presentation"]["serial"]}),
+                    BTreeMap::new(),
+                    None,
+                );
                 ui.ctx().request_repaint();
             }
             for request in self.widget_requests.drain(..) {
