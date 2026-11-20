@@ -45,7 +45,7 @@ elif $mode=="incremental-negative" then
     $path=if $case=="wire" then "apps/workshop/app.mix" elif $case=="apply" then "libraries/viu/src/app_host.rs" else "libraries/scene/src/bindings.rs" end
     $source=read_file($path)
     if $case=="wire" then
-      $mutated=replace($source,"$full=$model_publication.requires_full($publication.model,$value)","$full=true")
+      $mutated=replace($source,'$full=$model_publication.requires_full($publication.model,$value)','$full=true')
     elif $case=="apply" then
       $needle="let result =\n            validate_overlays(&self.model).and_then(|_| self.view.apply_model_patch(patch));"
       $mutated=replace($source,$needle,"let projected=self.projection(&self.model,ctx);let result=validate_overlays(&self.model).and_then(|_|self.view.apply_model(projected));")
