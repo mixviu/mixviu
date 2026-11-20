@@ -4,8 +4,6 @@
 use crate::state::Loop;
 use comp_model::capture::CaptureWindow;
 use smithay::output::Output;
-use smithay::reexports::wayland_server::{Resource, protocol::wl_surface::WlSurface};
-use smithay::wayland::seat::WaylandFocus;
 
 pub fn on_output(state: &Loop, target: CaptureWindow, output: &Output) -> bool {
     let Ok(window) =
@@ -61,25 +59,28 @@ pub fn on_output(state: &Loop, target: CaptureWindow, output: &Output) -> bool {
     })
 }
 
-pub fn cursor_client_allowed(
+pub fn cursor_focus_allowed(
     state: &Loop,
-    cursor: &WlSurface,
     listed: &[CaptureWindow],
     output: &Output,
 ) -> bool {
-    let Some(owner) = cursor.client().map(|c| c.id()) else {
+    let Some(focus) = state.state.seat.seat.get_pointer().and_then(|p| p.current_focus()) else {
         return false;
     };
     listed.iter().any(|target| {
-        on_output(state, *target, output)
-            && crate::window::draw::frame::scene::capture_window(
-                state,
-                target.id,
-                target.generation,
-            )
-            .ok()
-            .and_then(|w| w.wl_surface().and_then(|s| s.client()).map(|c| c.id()))
-                == Some(owner.clone())
+        if !on_output(state, *target, output) {
+            return false;
+        }
+        let Ok(window) = crate::window::draw::frame::scene::capture_window(
+            state, target.id, target.generation,
+        ) else {
+            return false;
+        };
+        // Includes the toplevel, its subsurfaces and PopupManager's popup trees.
+        // Another window of the same Wayland client is deliberately excluded.
+        let mut allowed = false;
+        window.with_surfaces(|surface, _| allowed |= surface == &focus);
+        allowed
     })
 }
 

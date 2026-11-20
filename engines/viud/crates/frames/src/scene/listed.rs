@@ -47,15 +47,11 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
                 &key,
             )
         {
-            let allow_surface = match &state.state.seat.pointer_status {
-                smithay::input::pointer::CursorImageStatus::Surface(surface) => {
-                    world::comp::recording::cursor_client_allowed(state, surface, listed, output)
-                }
-                _ => false,
-            };
+            let allow_client_cursor =
+                world::comp::recording::cursor_focus_allowed(state, listed, output);
             plan.extend(
                 layer::POINTER,
-                seat::pointer::draw::scene::recording_element(state, renderer, size, allow_surface)
+                seat::pointer::draw::scene::recording_element(state, renderer, size, allow_client_cursor)
                     .into_iter()
                     .map(DrawNode::Pointer),
             );

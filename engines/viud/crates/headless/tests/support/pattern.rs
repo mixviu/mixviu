@@ -90,6 +90,14 @@ pub struct Pattern {
 }
 
 impl Pattern {
+    pub fn another_window(&self, name: &str) -> Self {
+        Self::named(self.conn.clone(), name, false)
+    }
+    pub fn hide_cursor(&mut self) {
+        let (serial, pointer) = self.state.last_enter.clone().expect("cursor enter");
+        pointer.set_cursor(serial, None, 0, 0);
+        self.conn.flush().unwrap();
+    }
     pub fn custom_cursor(&mut self, colour: u32) -> WlSurface {
         let qh = self.queue.handle();
         let surface = self.compositor.create_surface(&qh, ());

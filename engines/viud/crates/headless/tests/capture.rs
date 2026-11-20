@@ -815,7 +815,9 @@ fn record_privacy_cursor_ownership_output_and_take_identity() {
     let mut a = Pattern::named(connect(&mut process), "cursor-listed", false);
     a.solid_buffer(0xff334455);
     a.commit(true);
-    let mut b = Pattern::named(connect(&mut process), "cursor-private", false);
+    // Two toplevels share one Wayland connection: client identity alone must
+    // not grant the private window permission to set the recorded cursor.
+    let mut b = a.another_window("cursor-private");
     b.solid_buffer(0xff667788);
     b.commit(true);
     bus.ready();
@@ -906,6 +908,19 @@ fn record_privacy_cursor_ownership_output_and_take_identity() {
         !contains(&denied, 0xffff00ff),
         "unlisted cursor artwork leaked"
     );
+    b.hide_cursor();
+    pump_patterns(&mut [&mut a, &mut b]);
+    let hidden_live = process.root.join("hidden-live.ppm");
+    let without_cursor = process.root.join("hidden-live-no-cursor.ppm");
+    for (path, cursor) in [(&hidden_live, true), (&without_cursor, false)] {
+        bus.call("comp.capture.frame", json!({"output":"headless-0","path":path,"format":"ppm","cursor":cursor}));
+    }
+    assert_eq!(fs::read(hidden_live).unwrap(), fs::read(without_cursor).unwrap(), "private hidden cursor must be hidden live");
+    let hidden = take("private-hidden-cursor", true, &mut a, &mut b);
+    assert_eq!(hidden[0], denied[0], "private Hidden state must still draw the default cursor in the take");
+    assert_ne!(hidden[0], baseline[0], "default cursor must remain visible");
+    // Retain the private custom cursor for the independent drag exclusion case.
+    let _private_cursor = b.custom_cursor(0xffff00ff);
     let _drag = b.drag_icon(0xffeedd11);
     pump_patterns(&mut [&mut a, &mut b]);
     let live = process.root.join("drag-live.ppm");
