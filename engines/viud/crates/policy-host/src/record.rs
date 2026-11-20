@@ -68,6 +68,11 @@ struct Session {
     params: RecordCommand,
     path: String,
     targets: Vec<CaptureFrameSpec>,
+    scene_markers: Vec<(&'static str, Value)>,
+    outside: Vec<comp_model::capture::CaptureWindow>,
+    locked: bool,
+    scene_epoch: u64,
+    captured_scene: u64,
     fps: u32,
     encoder: String,
     probe: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
@@ -113,7 +118,105 @@ fn refused(error: &str) -> ControlReply {
     ControlReply::refused("record_failed", json!({"message":error}))
 }
 fn empty_status(state: &str, error: Option<&str>) -> Value {
-    json!({"session":null,"state":state,"frames":0,"repeated":0,"dropped":0,"dropped_capture":0,"dropped_queue":0,"readback_deferred":0,"pending_ticks":0,"writer":null,"encoder":null,"duration_us":0,"bytes":0,"queue":0,"encoders":["vfl"],"readbacks":0,"readback_us":0,"readback_mean_us":0,"readback_max_us":0,"error":error})
+    json!({"windows":[],"session":null,"state":state,"frames":0,"repeated":0,"dropped":0,"dropped_capture":0,"dropped_queue":0,"readback_deferred":0,"pending_ticks":0,"writer":null,"encoder":null,"duration_us":0,"bytes":0,"queue":0,"encoders":["vfl"],"readbacks":0,"readback_us":0,"readback_mean_us":0,"readback_max_us":0,"error":error})
+}
+fn listed_status(s: &Session) -> Value {
+    json!(
+        s.targets
+            .iter()
+            .filter_map(|t| t.listed_windows.as_ref())
+            .flatten()
+            .map(|w| json!({"id":w.id,"generation":w.generation}))
+            .collect::<Vec<_>>()
+    )
+}
+fn reconcile_listed(lp: &Loop, s: &mut Session) {
+    if s.failed.is_some() || s.recording.as_ref().is_some_and(|r| !r.is_recording()) {
+        return;
+    }
+
+    let locked = world::comp::session_lock::active(lp);
+    if s.targets.iter().any(|t| t.listed_windows.is_some()) && locked != s.locked {
+        s.locked = locked;
+        s.scene_markers
+            .push((if locked { "locked" } else { "unlocked" }, Value::Null));
+        s.scene_epoch += 1;
+    }
+    for target in &mut s.targets {
+        if let Some(listed) = &mut target.listed_windows {
+            listed.retain(|window| {
+                // Membership is identity, independent of mapping, view or world.
+                let alive = lp
+                    .inner
+                    .comp
+                    .registry
+                    .get(surfaces::SurfaceId(window.id))
+                    .is_some_and(|row| row.generation() == window.generation);
+                let visible = alive
+                    && lp
+                        .inner
+                        .space_state()
+                        .state
+                        .outputs()
+                        .find(|o| target.output.as_ref() == Some(&o.name()))
+                        .is_some_and(|o| world::comp::recording::on_output(lp, *window, o));
+                let was_outside = s.outside.contains(window);
+                let label = if !alive {
+                    Some("window_gone")
+                } else if visible && was_outside {
+                    Some("window_returned")
+                } else if !visible && !was_outside {
+                    Some("window_left")
+                } else {
+                    None
+                };
+                if let Some(label) = label {
+                    s.scene_markers.push((
+                        label,
+                        json!({"id":window.id,"generation":window.generation}),
+                    ));
+                    s.scene_epoch += 1;
+                }
+                if !alive || visible {
+                    s.outside.retain(|w| w != window);
+                } else if !was_outside {
+                    s.outside.push(*window);
+                }
+                alive
+            });
+        }
+    }
+    flush_scene_markers(s);
+}
+fn flush_scene_markers(s: &mut Session) -> bool {
+    if s.scene_epoch != s.captured_scene {
+        return false;
+    }
+    // A previous GPU answer must enter the writer queue before its marker.
+    // The writer's FIFO then persists the old frame before this observation.
+    if s.pending {
+        return s.scene_markers.is_empty();
+    }
+    while let Some((label, data)) = s.scene_markers.first().cloned() {
+        let Some(recording) = s.recording.as_mut() else {
+            return false;
+        };
+        if !recording.latest_queued {
+            if let Err(error) = recording.frame(None) {
+                recording.error = Some(error.clone());
+                s.failed = Some(error);
+                return true;
+            }
+            if !recording.latest_queued {
+                return false;
+            }
+        }
+        if recording.marker(label.into(), data).is_err() {
+            return false;
+        }
+        s.scene_markers.remove(0);
+    }
+    true
 }
 fn event(s: &Session, state: &'static str) {
     if s.last_state.replace(state) == state {
@@ -131,6 +234,13 @@ pub fn command(
     answer: impl FnOnce(ControlReply) + 'static,
 ) {
     let answer: Answer = Box::new(answer);
+    if matches!(
+        op,
+        RecordCommand::Stop { .. } | RecordCommand::Status { .. }
+    ) && let Some(current) = CURRENT.with_borrow(Clone::clone)
+    {
+        reconcile_listed(lp, &mut current.borrow_mut());
+    }
     let params = op.clone();
     if let RecordCommand::Start { request_id, .. } = &op {
         if let Some(past) = PAST.with_borrow_mut(|past| past.get(request_id)) {
@@ -202,6 +312,22 @@ pub fn command(
             }
         }
         for target in &mut targets {
+            if let Some(listed) = &target.listed_windows {
+                for window in listed {
+                    if let Err(error) = lp
+                        .inner
+                        .comp
+                        .registry
+                        .resolve_window_target(window.id, Some(window.generation))
+                    {
+                        answer(ControlReply::WindowTarget {
+                            id: window.id,
+                            error,
+                        });
+                        return;
+                    }
+                }
+            }
             if target.window.is_none() {
                 let outputs: Vec<_> = lp.inner.space_state().state.outputs().cloned().collect();
                 let output = if let Some(name) = &target.output {
@@ -233,6 +359,17 @@ pub fn command(
                 }
                 target.output = Some(output.name());
                 target.output_generation = Some(generation);
+                if let Some(listed) = &target.listed_windows {
+                    for window in listed {
+                        if !world::comp::recording::on_output(lp, *window, output) {
+                            answer(ControlReply::refused(
+                                "window_not_on_output",
+                                json!({"id":window.id,"generation":window.generation,"output":output.name()}),
+                            ));
+                            return;
+                        }
+                    }
+                }
             }
         }
         let id = match recorder::bus::private_token() {
@@ -269,6 +406,11 @@ pub fn command(
             pixel_counter: 0,
             path,
             targets,
+            scene_markers: Vec::new(),
+            outside: Vec::new(),
+            locked: false,
+            scene_epoch: 0,
+            captured_scene: 0,
             fps,
             encoder,
             probe,
@@ -362,6 +504,7 @@ fn session_command(op: RecordCommand, answer: Answer) {
                     )
                 });
             status["session"] = json!(s.id);
+            status["windows"] = listed_status(&s);
             answer(ControlReply::Body(status));
         }
         RecordCommand::Marker { label, data, .. } => answer(
@@ -496,6 +639,19 @@ fn superseded(pending: &mut Option<Vec<u64>>, current: &[u64]) -> bool {
 }
 
 fn stop_stream(s: &mut Session, discard: bool) -> bool {
+    if !discard && s.failed.is_none() && !flush_scene_markers(s) {
+        let until = *s
+            .drain_until
+            .get_or_insert_with(|| Instant::now() + Duration::from_secs(1));
+        if Instant::now() < until {
+            schedule_stop(s, Instant::now() + Duration::from_millis(5));
+            return false;
+        }
+        s.failed = Some("scene marker admission timed out".into());
+        if let Some(r) = s.recording.as_mut() {
+            r.error = s.failed.clone();
+        }
+    }
     // A submitted GPU snapshot already belongs to the take. Let its normal
     // fence callback deliver it before sealing, without blocking the Bus or
     // compositor. A failed/stalled backend still has a bounded escape path.
@@ -592,12 +748,14 @@ fn finish_recording(s: &mut Session) -> bool {
     if r.error.is_some() {
         s.failed = r.error.clone();
     }
+    let mut status = r.status();
+    status["windows"] = listed_status(s);
     let past = Past {
         id: s.id.clone(),
         params: s.params.clone(),
         start: s.start.clone(),
         terminal: reply.clone(),
-        status: r.status(),
+        status,
         start_error: None,
     };
     PAST.with_borrow_mut(|all| all.insert(s.request_id.clone(), past));
@@ -627,6 +785,7 @@ fn tick(session: &Rc<RefCell<Session>>, capture: impl FnOnce()) {
 }
 
 fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
+    reconcile_listed(lp, &mut session.borrow_mut());
     let clock = recorder::bus::monotonic_us();
     {
         let mut s = session.borrow_mut();
@@ -644,7 +803,9 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if (!s.pending || Instant::now() >= until) && stop_stream(&mut s, false) {
                 event(&s, "finishing");
             }
-            return;
+            if s.scene_epoch == s.captured_scene || s.failed.is_some() {
+                return;
+            }
         }
         let now_us = match clock {
             Ok(now) => now,
@@ -661,13 +822,34 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if stop_stream(&mut s, false) {
                 event(&s, "finishing");
             }
-            return;
+            if s.scene_epoch == s.captured_scene || s.failed.is_some() {
+                return;
+            }
         }
     }
     let signature = {
         let s = session.borrow();
         let mut signature = Vec::new();
         for target in &s.targets {
+            if target.listed_windows.is_some() {
+                let output = lp
+                    .inner
+                    .space_state()
+                    .state
+                    .outputs()
+                    .find(|o| target.output.as_ref() == Some(&o.name()));
+                if output.is_none_or(|o| {
+                    target.output_generation != Some(lp.inner.comp.output_generation(&o.name()))
+                }) {
+                    drop(s);
+                    fail(session, "output target gone or generation changed");
+                    return;
+                }
+                // Filtered scene damage is evaluated by its own renderer tracker.
+                // No global scene revision may force a filtered readback.
+                signature.push(1);
+                continue;
+            }
             if let Some(window) = target.window {
                 if lp
                     .inner
@@ -730,7 +912,8 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         signature
     };
     let mut s = session.borrow_mut();
-    let unchanged = s.signature == signature;
+    let filtered = s.targets.iter().any(|t| t.listed_windows.is_some());
+    let unchanged = !filtered && s.signature == signature;
     if superseded(&mut s.deferred_signature, &signature) {
         if let Some(r) = s.recording.as_mut() {
             r.superseded_capture();
@@ -738,7 +921,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         s.deferred_signature = None;
     }
     if s.pending {
-        if !unchanged {
+        if !unchanged && !filtered {
             s.deferred_signature = Some(signature);
         }
         let result = s.recording.as_mut().map(|r| {
@@ -756,7 +939,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         .as_mut()
         .is_some_and(|r| r.skip_readback(!unchanged));
     if unchanged || skipped {
-        if skipped {
+        if skipped && !filtered {
             s.deferred_signature = Some(signature);
         }
         let result = s.recording.as_mut().unwrap().frame(None);
@@ -770,6 +953,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     s.deferred_signature = None;
     s.pending = true;
     let targets = s.targets.clone();
+    let capture_epoch = s.scene_epoch;
     let counter = s.pixel_counter;
     let Some(next_counter) = counter.checked_add(1) else {
         drop(s);
@@ -783,8 +967,14 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     for (index, mut target) in targets.into_iter().enumerate() {
         let token = format!("{prefix}-{index}");
         target.path = token.clone();
+        target.take_id = Some(session.borrow().id.clone());
+        target.force_capture = {
+            let s = session.borrow();
+            s.recording.is_none() || s.scene_epoch != s.captured_scene
+        };
         let got = frames.clone();
         let session = session.clone();
+        let request_session = session.clone();
         screencopy::file::raw_answer(token.clone(), move |result| {
             {
                 let s = session.borrow();
@@ -806,6 +996,26 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     return;
                 }
             };
+            if frame.0 == 0 && frame.1 == 0 {
+                let mut s = session.borrow_mut();
+                s.pending = false;
+                let Some(recording) = s.recording.as_mut() else {
+                    // Never turn frame zero into a repeat, even if a renderer
+                    // violates the force-capture contract. Retry a full capture.
+                    s.signature.clear();
+                    return;
+                };
+                let result = recording.frame(None);
+                flush_scene_markers(&mut s);
+                if s.drain_until.is_some() {
+                    stop_stream(&mut s, false);
+                }
+                drop(s);
+                if let Err(error) = result {
+                    fail(&session, &error);
+                }
+                return;
+            }
             got.borrow_mut().push((index, frame));
             let count = session.borrow().targets.len();
             if got.borrow().len() != count {
@@ -870,6 +1080,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 fail(&session, &error);
                 return;
             }
+            s.captured_scene = capture_epoch;
             if s.start.is_none() {
                 let reply = s.recording.as_ref().unwrap().started();
                 s.start = Some(reply.clone());
@@ -878,13 +1089,18 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 }
                 event(&s, "recording");
             }
+            flush_scene_markers(&mut s);
             if s.drain_until.is_some() && stop_stream(&mut s, false) {
                 event(&s, "finishing");
             }
         });
         crate::capture::start(lp, target, Instant::now(), move |reply| {
             if !matches!(reply, ControlReply::Body(_)) {
+                let error = format!("capture: {:?}", reply.clone().into_wire());
                 screencopy::file::raw_fail(&token, reply);
+                if request_session.borrow().pending {
+                    fail(&request_session, &error);
+                }
             }
         });
     }
@@ -921,6 +1137,11 @@ mod tests {
             params,
             path,
             targets: vec![],
+            scene_markers: Vec::new(),
+            outside: Vec::new(),
+            locked: false,
+            scene_epoch: 0,
+            captured_scene: 0,
             fps: 30,
             encoder: "vfl".into(),
             probe: None,
@@ -1398,6 +1619,11 @@ mod tests {
             params,
             path: "/tmp/pending-record-unit.vfl".into(),
             targets: vec![],
+            scene_markers: Vec::new(),
+            outside: Vec::new(),
+            locked: false,
+            scene_epoch: 0,
+            captured_scene: 0,
             fps: 30,
             encoder: "vfl".into(),
             probe: None,
