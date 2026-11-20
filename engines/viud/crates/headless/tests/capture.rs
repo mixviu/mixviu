@@ -1187,7 +1187,10 @@ fn record_privacy_lock_is_blank_and_stops_callbacks() {
                 .any(|p| p == 0xff11eecc_u32.to_le_bytes());
         }
     }
-    assert!(blank > 0 && returned, "blank={blank}, returned={returned}, locked={locked}, unlocked={unlocked}, stop={stop}");
+    assert!(
+        blank > 0 && returned,
+        "blank={blank}, returned={returned}, locked={locked}, unlocked={unlocked}, stop={stop}"
+    );
 }
 
 #[test]
