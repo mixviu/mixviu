@@ -37,6 +37,10 @@ fn binary(name: &str) -> PathBuf {
 }
 
 struct Bus {
+    // These tests measure a real render node and bounded recorder queues.
+    // Keep fixtures in this binary exclusive even with libtest's default
+    // parallelism; unrelated test binaries still use the normal CI pool.
+    _capture: std::sync::MutexGuard<'static, ()>,
     root: PathBuf,
     url: String,
 }
@@ -74,6 +78,8 @@ impl Bus {
         }
     }
     fn start(label: &str) -> Self {
+        static CAPTURE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let capture = CAPTURE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let root =
             std::env::temp_dir().join(format!("headless-bus-{}-{label}", std::process::id()));
         let output = helper("start", &root, &[binary("noded").to_str().unwrap()], None);
@@ -86,6 +92,7 @@ impl Bus {
         let record: Value =
             serde_json::from_slice(&fs::read(root.join("bus.json")).unwrap()).unwrap();
         Self {
+            _capture: capture,
             root,
             url: record["url"].as_str().unwrap().into(),
         }

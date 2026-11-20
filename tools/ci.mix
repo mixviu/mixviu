@@ -103,7 +103,9 @@ fn stage_test($mix)
   -- --no-fail-fast); a short serial list (tools/ci/serial-tests.conf.mix)
   -- runs alone afterwards.
   run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "-p", "mix", "--features", "test-hooks"], $test_env)
-  run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "--workspace", "--exclude", "mix"], $test_env)
+  -- Native lifecycle fixtures need their explicit barriers in the test binary.
+  -- Production release builds continue to omit test-support.
+  run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "--workspace", "--exclude", "mix", "--features", "viud/test-support"], $test_env)
   run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "-p", "portald", "--no-default-features"], $test_env)
   stage_mix_services($mix)
   run_step([$mix, "tools/mesh/tests/all.mix"])
