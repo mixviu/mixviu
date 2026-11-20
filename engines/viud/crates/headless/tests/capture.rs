@@ -1225,7 +1225,10 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
     }
     // A drag source keeps authority to set its cursor during the grab. It
     // must not transfer that authority to the listed drop target's take.
-    bus.call("comp.window.place",place_args(&cr,json!({"output":"headless-0","x":20,"y":20})));
+    bus.call(
+        "comp.window.place",
+        place_args(&cr, json!({"output":"headless-0","x":20,"y":20})),
+    );
     focus("different", &mut a, &mut b, &mut c);
     let _cursor = c.custom_cursor(0xffff00ff);
     let _drag = c.drag_icon(0xffeedd11);
