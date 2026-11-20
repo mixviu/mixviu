@@ -202,10 +202,13 @@ fn record_cold_start_under_load_has_no_capture_drops() {
         let start_ms = begin.elapsed().as_secs_f64() * 1000.0;
         let first_second = Instant::now();
         while first_second.elapsed() < Duration::from_secs(1) {
+            // Continue changing content, leaving room to complete each GPU
+            // snapshot under the shared pool. This tests cold admission; the
+            // strict changing 4K30 case covers sustained capture throughput.
             pattern.change_buffer();
             pattern.commit(true);
             pattern.pump();
-            thread::sleep(Duration::from_millis(33));
+            thread::sleep(Duration::from_millis(200));
         }
         let status = bus.call("comp.record.status", json!({"session":start["session"]}));
         eprintln!("cold record start_ms={start_ms:.3} status={status}");
