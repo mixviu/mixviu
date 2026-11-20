@@ -40,7 +40,8 @@ fn perform($id,$a)
     $deck=if ends_with($a.path,".json") then json_parse(read_file($a.path)) else load_data($a.path) end
     $candidate=$core.opened($state.s,$deck,$a.path)
     for $slide in $candidate.deck.slides
-      send "viu-local" "scene.validate" body={source:$core.scene_source($slide)}
+      try send "viu-local" "scene.validate" body={source:$core.scene_source($slide)}
+      catch $message raise("DECK_SCENE","slides("..$slide.id..").scene: "..$message,{slide:$slide.id,field:"scene"}) end
       if $rc!=0 then raise("DECK_SCENE","slides("..$slide.id..").scene: "..to_string($reply)) end
     end
   elif $id=="deck.goto" then $core.check_fields($a,["slide","step"],"goto");$candidate=$core.seek($state.s,$a.slide,$a.step ?? 0)
