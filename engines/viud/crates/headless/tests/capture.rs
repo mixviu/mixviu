@@ -955,7 +955,9 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
         return;
     }
     let bus = Bus::start("record-privacy-cursor-epoch");
-    let mut process = process::spawn(1, None, "record-privacy-cursor-epoch", Some(&bus.url));
+    // All windows, child focus points and cursor artwork fit this canvas.
+    // Bound the matrix's debug GPU/encoding work alongside other pool tests.
+    let mut process = process::spawn_size("record-privacy-cursor-epoch", &bus.url, "640x480");
     // This matrix seals dozens of takes, also under the width-eight pool load.
     process.extend_watchdog(Duration::from_secs(180));
     let mut a = Pattern::named(connect(&mut process), "cursor-listed", false);
