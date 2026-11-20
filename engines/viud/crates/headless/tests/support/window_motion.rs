@@ -41,6 +41,16 @@ fn visit_export(path: &Path, mut visit: impl FnMut(usize, &[u8])) {
 }
 
 fn white_window(bus: &Bus, process: &mut process::Process, name: &str) -> (Pattern, Value) {
+    white_window_at(bus, process, name, 300, 200)
+}
+
+fn white_window_at(
+    bus: &Bus,
+    process: &mut process::Process,
+    name: &str,
+    x: i32,
+    y: i32,
+) -> (Pattern, Value) {
     let mut pattern = Pattern::named(connect(process), name, false);
     pattern.wait_callback(0);
     let row = bus.window_for(name, &mut [&mut pattern]);
@@ -49,7 +59,7 @@ fn white_window(bus: &Bus, process: &mut process::Process, name: &str) -> (Patte
         place_args(
             &row,
             json!({
-                "x":300,"y":200,"scale":{"factor":1,"anchor":{"x":100,"y":80}}
+                "x":x,"y":y,"scale":{"factor":1,"anchor":{"x":100,"y":80}}
             }),
         ),
     );
@@ -59,19 +69,25 @@ fn white_window(bus: &Bus, process: &mut process::Process, name: &str) -> (Patte
     (pattern, row)
 }
 
+// Keep functional recordings small enough for the workspace's debug compositor
+// under its parallel pool. The 200x160 client, 30Hz samples and pixel oracles
+// stay unchanged; the separate throughput acceptance still records 4K30.
+const MOTION_SIZE: &str = "480x320";
+const MOTION_WIDTH: usize = 480;
+
 // The fixture is white on the headless background [18,20,25]. Sampling the
 // centre avoids chrome and texture-filtered edges. The run length of the
 // centre colour measures the scaled client width independently of metadata.
 fn visual(pixels: &[u8], width: usize) -> (f64, f64) {
-    let at = |x| &pixels[(280 * width + x) * 4..(280 * width + x) * 4 + 3];
-    let centre = at(400);
+    let at = |x| &pixels[(140 * width + x) * 4..(140 * width + x) * 4 + 3];
+    let centre = at(200);
     let opacity = (f64::from(centre[2]) - 18.0) / (255.0 - 18.0);
     if opacity < 0.04 {
         return (opacity, 0.0);
     }
     let same = |x| at(x).iter().zip(centre).all(|(a, b)| a.abs_diff(*b) <= 2);
-    let left = (100..400).rev().take_while(|x| same(*x)).count();
-    let right = (400..700).take_while(|x| same(*x)).count();
+    let left = (0..200).rev().take_while(|x| same(*x)).count();
+    let right = (200..width).take_while(|x| same(*x)).count();
     (opacity, (left + right) as f64 / 200.0)
 }
 
@@ -104,9 +120,9 @@ fn record_window_pop_intermediate_pixels_and_idle_repeats() {
         return;
     }
     let bus = Bus::start("window-pop");
-    let mut process = process::spawn(1, None, "window-pop", Some(&bus.url));
+    let mut process = process::spawn_size("window-pop", &bus.url, MOTION_SIZE);
     bus.ready();
-    let (mut pattern, row) = white_window(&bus, &mut process, "window-pop");
+    let (mut pattern, row) = white_window_at(&bus, &mut process, "window-pop", 100, 60);
     let path = process.root.join("pop.vfl");
     let start = bus.call("comp.record.start",json!({"request_id":"pop","target":{"output":"headless-0"},"path":path,"max_seconds":10,"fps":30,"cursor":false}));
     let reply = bus.call(
@@ -155,7 +171,7 @@ fn record_window_pop_intermediate_pixels_and_idle_repeats() {
     let mut intermediate = 0;
     let mut overshoot = 0;
     visit_export(&path, |frame, pixels| {
-        let (opacity, scale) = visual(pixels, 1280);
+        let (opacity, scale) = visual(pixels, MOTION_WIDTH);
         let slot =
             (t0 as f64 + frame as f64 * 1_000_000.0 / 30.0 - motion_start as f64) / 1_000_000.0;
         // Slots can hold a source scene from before command admission. That
@@ -329,15 +345,16 @@ fn record_close_retains_pixels_without_retaining_client_or_input() {
         return;
     }
     let bus = Bus::start("window-close");
-    let mut process = process::spawn_preferences(
+    let mut process = process::spawn_preferences_size(
         "window-close",
         &bus.url,
+        MOTION_SIZE,
         json!({
             "window_motion":{"unmap":{"preset":"fade","duration_ms":300}}
         }),
     );
     bus.ready();
-    let (pattern, _row) = white_window(&bus, &mut process, "window-close");
+    let (pattern, _row) = white_window_at(&bus, &mut process, "window-close", 100, 60);
     let path = process.root.join("close.vfl");
     let start=bus.call("comp.record.start",json!({"request_id":"close","target":{"output":"headless-0"},"path":path,"max_seconds":10,"fps":30,"cursor":false}));
     // Drop the entire Wayland connection. A ghost is only presentation data;
@@ -356,7 +373,7 @@ fn record_close_retains_pixels_without_retaining_client_or_input() {
     }
     bus.call(
         "comp.input.pointer.move",
-        json!({"seat":"agent","output":"headless-0","x":400,"y":280}),
+        json!({"seat":"agent","output":"headless-0","x":200,"y":140}),
     );
     let refused = bus.call_rc(
         "comp.input.pointer.button",
@@ -379,7 +396,7 @@ fn record_close_retains_pixels_without_retaining_client_or_input() {
     let mut intermediate = 0;
     let mut last = 1.0;
     visit_export(&path, |_, pixels| {
-        let (opacity, _) = visual(pixels, 1280);
+        let (opacity, _) = visual(pixels, MOTION_WIDTH);
         if (0.04..0.98).contains(&opacity) {
             intermediate += 1;
         }
@@ -415,9 +432,10 @@ fn rounded_close_stack(closing_front: bool) {
         "close-rounded-rear"
     };
     let bus = Bus::start(label);
-    let mut process = process::spawn_preferences(
+    let mut process = process::spawn_preferences_size(
         label,
         &bus.url,
+        MOTION_SIZE,
         json!({
             "decorations_ssd":true,
             "window_motion":{"unmap":{"preset":"fade","duration_ms":600}}
@@ -431,7 +449,7 @@ fn rounded_close_stack(closing_front: bool) {
         "comp.window.place",
         place_args(
             &rear_row,
-            json!({"x":300,"y":200,"z":if closing_front {20} else {0}}),
+            json!({"x":100,"y":60,"z":if closing_front {20} else {0}}),
         ),
     );
     rear.solid_buffer(0xffffffff);
@@ -441,16 +459,16 @@ fn rounded_close_stack(closing_front: bool) {
     let front_row = bus.window_for("opaque-front", &mut [&mut rear, &mut front]);
     bus.call(
         "comp.window.place",
-        place_args(&front_row, json!({"x":400,"y":260,"z":10})),
+        place_args(&front_row, json!({"x":200,"y":120,"z":10})),
     );
     front.solid_buffer(0xff20d040);
     front.commit(true);
     pump_patterns(&mut [&mut rear, &mut front]);
     let (width, height, before) = ppm(&bus, &process, "rounded-stack-before", None);
-    assert_eq!((width, height), (1280, 720));
-    assert_eq!(ppm_pixel(&before, width, 350, 280), [255, 255, 255]);
+    assert_eq!((width, height), (MOTION_WIDTH, 320));
+    assert_eq!(ppm_pixel(&before, width, 150, 140), [255, 255, 255]);
     assert_eq!(
-        ppm_pixel(&before, width, 450, 300),
+        ppm_pixel(&before, width, 250, 160),
         if closing_front {
             [255, 255, 255]
         } else {
@@ -460,8 +478,8 @@ fn rounded_close_stack(closing_front: bool) {
     // Find a shader-cut pixel INSIDE the rectangular client buffer, at its
     // bottom-left corner. This proves the fixture has rounded client clipping;
     // a rectangular snapshot would paint white here as soon as it faded.
-    let (corner_x, corner_y, corner_red) = (300..308)
-        .flat_map(|x| (352..360).map(move |y| (x, y)))
+    let (corner_x, corner_y, corner_red) = (100..108)
+        .flat_map(|x| (212..220).map(move |y| (x, y)))
         .map(|(x, y)| (x, y, ppm_pixel(&before, width, x, y)[0]))
         .min_by_key(|(_, _, red)| *red)
         .unwrap();
@@ -485,7 +503,7 @@ fn rounded_close_stack(closing_front: bool) {
             let p = &pixels[(y * width + x) * 4..(y * width + x) * 4 + 4];
             [p[2], p[1], p[0]]
         };
-        let rear_red = at(350, 280)[0];
+        let rear_red = at(150, 140)[0];
         if closing_front {
             // SSD retains its black shadow behind the fading white client.
             // Thus the underlay's transmission is (1-client_alpha) *
@@ -493,7 +511,7 @@ fn rounded_close_stack(closing_front: bool) {
             // inside the shadow's constant centre tile. Infer transmission
             // from green-minus-red, which cancels the white foreground, then
             // independently check blue and the white-over-background probe.
-            let over = at(450, 300);
+            let over = at(250, 160);
             let transmission = (f64::from(over[1]) - f64::from(over[0])) / (208.0 - 32.0);
             let foreground = f64::from(over[0]) - 32.0 * transmission;
             assert!((-0.025..=1.025).contains(&transmission));
@@ -511,7 +529,7 @@ fn rounded_close_stack(closing_front: bool) {
             }
         } else {
             assert_eq!(
-                at(450, 300),
+                at(250, 160),
                 [0x20, 0xd0, 0x40],
                 "frame {frame}: rear ghost must stay behind the opaque front window"
             );
@@ -541,9 +559,9 @@ fn record_window_retarget_supersedes_without_returning_to_first_keyframe() {
         return;
     }
     let bus = Bus::start("window-retarget");
-    let mut process = process::spawn(1, None, "window-retarget", Some(&bus.url));
+    let mut process = process::spawn_size("window-retarget", &bus.url, MOTION_SIZE);
     bus.ready();
-    let (mut pattern, row) = white_window(&bus, &mut process, "window-retarget");
+    let (mut pattern, row) = white_window_at(&bus, &mut process, "window-retarget", 100, 60);
     let path = process.root.join("retarget.vfl");
     let start = bus.call("comp.record.start",json!({"request_id":"retarget","target":{"output":"headless-0"},"path":path,"max_seconds":10,"fps":30,"cursor":false}));
     let mut first_tracks = opacity_track(1.0, 0.2);
@@ -571,7 +589,7 @@ fn record_window_retarget_supersedes_without_returning_to_first_keyframe() {
     let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
     assert_eq!(stop["dropped"], 0, "{stop}");
     let mut values = Vec::new();
-    visit_export(&path, |_, pixels| values.push(visual(pixels, 1280)));
+    visit_export(&path, |_, pixels| values.push(visual(pixels, MOTION_WIDTH)));
     assert!(
         values.iter().any(|v| v.0 < 0.9),
         "the first run must actually change pixels"

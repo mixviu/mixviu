@@ -414,9 +414,20 @@ pub fn spawn_size(label: &str, bus: &str, size: &str) -> Process {
 
 #[allow(dead_code)] // Used by window motion's isolated lifecycle fixture.
 pub fn spawn_preferences(label: &str, bus: &str, preferences: serde_json::Value) -> Process {
+    spawn_preferences_size(label, bus, "1280x720", preferences)
+}
+
+#[allow(dead_code)]
+pub fn spawn_preferences_size(
+    label: &str,
+    bus: &str,
+    size: &str,
+    preferences: serde_json::Value,
+) -> Process {
     spawn_options(Options {
         label,
         bus: Some(bus),
+        size,
         preferences: Some(preferences),
         ..Options::default()
     })
