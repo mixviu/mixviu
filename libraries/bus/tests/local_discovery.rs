@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Isolate discovery's process environment rather than mutating test threads.
+#![cfg(feature = "client")]
 #[test]
 fn local_discovery_rejects_relative_socket_paths() {
     if std::env::var_os("DISCOVERY_CHILD").is_some() {

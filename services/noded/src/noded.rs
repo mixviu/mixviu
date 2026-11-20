@@ -46,7 +46,8 @@ use crate::protection::TrafficClass;
 #[path = "frame_policy.rs"]
 mod frame_policy;
 
-static FRAME_REFUSALS: std::sync::LazyLock<std::sync::Mutex<HashMap<(String, &'static str), mesh::DiagnosticLog>>> =
+type FrameRefusalLogs = HashMap<(String, &'static str), mesh::DiagnosticLog>;
+static FRAME_REFUSALS: std::sync::LazyLock<std::sync::Mutex<FrameRefusalLogs>> =
     std::sync::LazyLock::new(Default::default);
 
 fn refusal_totals() -> serde_json::Value {
@@ -5478,6 +5479,9 @@ mod tests {
         let state = mesh_delivery_test_state().await;
         let before = super::refusal_totals()["frame_refusals"].as_u64().unwrap();
         super::frame_refused("test-info", "info-peer", "192.0.2.1", config::node::AdmissionMode::Observe);
+        let mut challenge = bus::wire::BusMessage::new().with_header("id", "info-challenge");
+        challenge.body = serde_json::json!({"verifying_broker_node": "wrong", "mesh_fqdn": "example.test"}).to_string();
+        assert!(mesh::build_admit_response(&challenge, "local", &Some([9; 32]), "info-peer", "example.test", 1).is_none());
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
         let request = bus::wire::BusMessage::new().with_header("command", "noded.info");
         super::handle_noded_command(&request, &tx, &state, &mut None, "anon-test", "192.0.2.1".parse().unwrap(), &mut crate::observe::Outcome::BrokerHandled).await;
@@ -5485,6 +5489,7 @@ mod tests {
         let info: serde_json::Value = serde_json::from_str(&reply.body).unwrap();
         assert!(info["meta"]["refusal_totals"]["frame_refusals"].as_u64().unwrap() > before);
         assert!(info["meta"]["refusal_totals"]["challenge_refusals"].as_u64().unwrap() <= mesh::challenge_refusal_total());
+        assert!(info["meta"]["refusal_totals"]["challenge_refusals"].as_u64().unwrap() > 0);
     }
 
     #[test]
@@ -5683,6 +5688,7 @@ mod tests {
         assert_eq!(body["peers"][0]["name"], "beta");
         assert_eq!(body["peers"][0]["wg_ip"], "192.0.2.6");
         assert_eq!(body["peers"][0]["port"], 4300);
+        assert_eq!(body["peers"][0]["challenge_epoch"], serde_json::json!(mesh::peer_challenge_epoch("beta")));
         assert_eq!(body["source"], "signed-inventory");
         assert_eq!(body["authority"]["epoch"], 7);
         assert_eq!(body["authority"]["hash"], "authority-hash");
