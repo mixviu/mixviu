@@ -87,6 +87,13 @@ serial requests another frame. Final serial acknowledgement is a client draw
 acknowledgement; compositor recording/presentation acceptance is separate
 evidence and must not be inferred from it.
 
+The generic presentation model also accepts `presentation.scene` (a complete
+scene document) and `presentation.size` (two logical dimensions). This mounts
+an unframed scene directly; it does not create or configure another window.
+Local native ports are `scene.validate {source}` and
+`motion.seek {preset,time}`. The latter samples the shared finite opacity and
+translation presets at a supplied time, returning `{opacity,offset}`.
+
 ## Reference and checks
 
 `examples/vfl-self-recording.json` is a hand-authored native adaptation of the
