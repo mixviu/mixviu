@@ -1889,6 +1889,17 @@ fn stationary_agent_buttons_refresh_hits_but_keep_grab_and_targeted_focus() {
     pump_patterns(&mut [&mut a, &mut b]);
     let (ac, bc) = (a.state.pointer_buttons, b.state.pointer_buttons);
     assert!(ac >= 2, "initial hit must positively reach A");
+    let motions = a.state.pointer_motions;
+    bus.call(
+        "comp.input.pointer.button",
+        json!({"seat":"agent","button":"left","action":"click"}),
+    );
+    pump_patterns(&mut [&mut a, &mut b]);
+    assert_eq!(
+        a.state.pointer_motions, motions,
+        "unchanged hit emits no motion"
+    );
+    let ac = a.state.pointer_buttons;
     bus.call("comp.window.place", place_args(&br, json!({"z":30})));
     // No motion: an untargeted press must discover the new topmost window.
     bus.call(

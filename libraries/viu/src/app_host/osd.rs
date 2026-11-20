@@ -170,8 +170,7 @@ impl LayerProgram for Program {
         for item in self.snapshots() {
             if let Some(rect) = geometry(&item, &host.model, info) {
                 visible = true;
-                if item["backing"] != "none"
-                {
+                if item["backing"] != "none" {
                     let key = (
                         info.output.clone().unwrap_or_default(),
                         item["id"].as_str().unwrap_or_default().to_owned(),

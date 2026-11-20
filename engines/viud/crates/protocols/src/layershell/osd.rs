@@ -141,7 +141,10 @@ mod tests {
         let mark = Mark::for_client(&host).unwrap();
         assert!(mark.is_live());
         drop(lease);
-        assert!(!mark.is_live(), "existing marks lose band and hit authority on revoke");
+        assert!(
+            !mark.is_live(),
+            "existing marks lose band and hit authority on revoke"
+        );
         assert!(!authorized(&host, &handle));
         let (server, _replacement) = std::os::unix::net::UnixStream::pair().unwrap();
         let (replacement, _lease) = insert_connection(&handle, server).unwrap();
