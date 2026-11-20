@@ -336,6 +336,7 @@ fn sensitive_builtins_stay_categorized() {
         ("chmod", FsWrite),
         ("chown", FsWrite),
         ("sqlopen", FsWrite),
+        ("sqlbackup", FsWrite),
         ("sqlexec", FsWrite),
         ("sqlclose", FsWrite),
         // Network

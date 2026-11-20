@@ -57,6 +57,7 @@ rot. `mix man syntax` is the mental model; gotchas is the corrections.
 - **[datastar](datastar.md)** — `ds_*` SSE event framing.
 - **[archives](tar.md)** — `tar_list`/`tar_unpack`/`tar_pack`, zstd/gzip/none, safe staged extraction.
 - **[SQLite](sqlopen.md)** — `sqlopen`/`sqlexec`/`sqlclose`, read-only by default, `"rwc"` creates.
+- **[SQLite backup](sqlbackup.md)** — `sqlbackup`, online consistent copies with integrity checking and private permissions.
 
 ## Mesh & runtime
 
