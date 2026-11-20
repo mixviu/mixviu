@@ -250,8 +250,14 @@ fn review_slide_cost_and_idle() {
             },
         )
     };
-    for _ in 0..8 {frame(&mut view, 0.).drop_without_applying_deltas();}
-    let backdrop_builds=ctx.data(|d|d.get_temp::<usize>(egui::Id::new("viu-backdrop-builds")).unwrap_or(0));
+    for _ in 0..8 {
+        frame(&mut view, 0.).drop_without_applying_deltas();
+    }
+    let backdrop_builds = ctx.data(|d| {
+        d.get_temp::<usize>(egui::Id::new("viu-backdrop-builds"))
+            .unwrap_or(0)
+    });
+    assert!(backdrop_builds > 0, "staged specimen must exercise the backdrop");
     let mut us = Vec::new();
     for i in 1..=1000 {
         let start = std::time::Instant::now();
@@ -278,7 +284,13 @@ fn review_slide_cost_and_idle() {
     );
     settled.textures_delta.clear();
     println!("DECK_IDLE_REPAINT=none");
-    assert_eq!(ctx.data(|d|d.get_temp::<usize>(egui::Id::new("viu-backdrop-builds")).unwrap_or(0)),backdrop_builds,"static backdrop rebuilt during frame loop");
+    assert_eq!(
+        ctx.data(|d| d
+            .get_temp::<usize>(egui::Id::new("viu-backdrop-builds"))
+            .unwrap_or(0)),
+        backdrop_builds,
+        "static backdrop rebuilt during frame loop"
+    );
     println!("DECK_BACKDROP_BUILDS={backdrop_builds}; unchanged across 1000 frames and idle");
 }
 #[test]
@@ -382,10 +394,22 @@ fn centred_labels_and_spans_use_the_heading_face_when_bold() {
 
 #[test]
 fn unequal_growing_boxes_and_arrow_share_the_row_centre() {
-    let nodes=json!({"root":{"widget":"row","align":"center","min_width":600,"children":["a","arrow","b"]},"a":{"widget":"column","grow":1,"height":60,"children":[]},"arrow":{"widget":"text","text":"→","min_width":40},"b":{"widget":"column","grow":1,"height":140,"children":[]}});
-    let source=format!("---\nscene: 1\nname: row\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
-    let ctx=egui::Context::default();let mut view=SceneView::new(&source).unwrap();
-    for _ in 0..8 {ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);}).drop_without_applying_deltas();}
-    let centre=view.geometry["b"].center().y;
-    for id in ["a","arrow"] {assert!((view.geometry[id].center().y-centre).abs()<1.,"{id}: {:?}",view.geometry);}
+    let nodes = json!({"root":{"widget":"row","align":"center","min_width":600,"children":["a","arrow","b"]},"a":{"widget":"column","grow":1,"height":60,"children":[]},"arrow":{"widget":"text","text":"→","min_width":40},"b":{"widget":"column","grow":1,"height":140,"children":[]}});
+    let source = format!("---\nscene: 1\nname: row\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+    let ctx = egui::Context::default();
+    let mut view = SceneView::new(&source).unwrap();
+    for _ in 0..8 {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            view.show(ui);
+        })
+        .drop_without_applying_deltas();
+    }
+    let centre = view.geometry["b"].center().y;
+    for id in ["a", "arrow"] {
+        assert!(
+            (view.geometry[id].center().y - centre).abs() < 1.,
+            "{id}: {:?}",
+            view.geometry
+        );
+    }
 }

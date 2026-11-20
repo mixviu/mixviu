@@ -473,6 +473,13 @@ elliptical colour fields over `background`. Each entry requires `x`, `y`
 (>0..1) and `color` (#RRGGBB). The first field is on top. Colour fades
 linearly to transparent at `stop` times the radius; omitted means no fields.
 This rectangular backdrop primitive is static and requests no repaint.
+The application host caches a bounded, bilinearly sampled texture per node,
+logical size and resolved colour inputs. Translation reuses the texture;
+resize or changed base/field colours rebuild it. Hidden/removed entries are
+released. Static fields do not regenerate their pixels during frame loops.
+Growing rows with `align: "center"` measure cell heights and centre boxes
+and text on the tallest cell, including arrow text. Layout changes may need
+a settling pass; unchanged rows request no further repaint.
 Fixed/minimum, fill and allocated grow widths also constrain the painted
 frame, so its fill and outline cover the same box. Text `align` and `fill`
 apply to both plain labels and inline spans. Bold proportional labels use
