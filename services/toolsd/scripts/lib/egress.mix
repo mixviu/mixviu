@@ -119,7 +119,7 @@ fn denied_ok($result)
 end
 
 fn dns_ok($r)
-  return $r.ok == true and $r.rcode == 0 and len($r.answers ?? []) > 0
+  return $r.ok == true and $r.rcode == "NOERROR" and len($r.answers ?? []) > 0
 end
 
 fn probe_ok($identity, $v4, $v6, $udp, $tcp)

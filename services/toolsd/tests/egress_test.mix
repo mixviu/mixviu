@@ -50,6 +50,7 @@ for $error in ["Connection refused (os error 111)", "connect deadline exceeded",
   check(not $e.denied_ok({listening:true,connected:false,error:$error}), "inconclusive denial fails " .. $error)
 end
 check(not $e.denied_ok({listening:false,connected:false,error:"(os error 13)"}), "listener setup failure never passes")
+check(not $e.dns_ok({ok:true,rcode:"NXDOMAIN",answers:[]}) and not $e.dns_ok({ok:true,rcode:"SERVFAIL",answers:[]}), "negative DNS answers never pass")
 
 mkdir($tmp,{parents:true})
 try

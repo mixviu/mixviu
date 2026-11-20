@@ -19,6 +19,6 @@ function fixture_dns_query($name, $type, $opts)
   if $opts.server != "127.0.0.53" or $opts.port != 53 or $opts.timeout != 3 then raise("TEST", "wrong DNS target/options") end
   $case = env("EGRESS_CASE")
   if ($case == "dns_tcp_bad" and $opts.tcp == true) or ($case == "dns_udp_bad" and $opts.tcp != true) then return {ok:false} end
-  if $case == "dns_empty" then return {ok:true,rcode:0,answers:[]} end
-  return {ok:true,rcode:0,answers:[{data:"203.0.113.1"}]}
+  if $case == "dns_empty" then return {ok:true,rcode:"NOERROR",answers:[]} end
+  return {ok:true,rcode:"NOERROR",answers:[{data:"203.0.113.1"}]}
 end
