@@ -1,0 +1,15 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+function fixture_exec($argv,$opts)
+  if $argv[1] == "--" then
+    if $opts.timeout != 30 or $opts.max_output != 131072 then raise("TEST","whois bounds") end
+    return {ok:true,stdout:""}
+  end
+  if $opts.max_output != 65536 or $opts.timeout != 15 then raise("TEST","dig bounds") end
+  if $argv[2] == "-x" then
+    if $argv[3] != "192.0.2.1" then raise("TEST","bad DNS answer passed to -x") end
+    return {ok:true,stdout:"mail.example.test.\n"}
+  end
+  if $argv[2] != "-t" or $argv[4] != "-q" or not contains(["example.test","mail.example.test"],$argv[5]) then raise("TEST","MX option injection") end
+  if $argv[3] == "mx" then return {ok:true,stdout:"10 -x.\n20 +trace.\n30 @evil.example.\n40 mail.example.test.\n"} end
+  return {ok:true,stdout:"-x\n@evil\n192.0.2.1\n"}
+end
