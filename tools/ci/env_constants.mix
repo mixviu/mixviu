@@ -1,0 +1,52 @@
+-- version: 0.1.0
+-- env_names.rs deliberately has a flat test module and a stamps! invocation.
+-- Fail closed if that source shape changes instead of guessing its scope.
+fn check($vars, $source)
+  $bad = []
+  $source = re_replace($source, "(?m)//[^\n]*", "")
+  $modules = re_find($source, "(?s)pub mod test\\s*\\{([^{}]*)\\}")
+  if len($modules) != 1 then
+    return ["env_names.rs: expected one flat pub mod test"]
+  end
+  $test = $modules[0].groups[0]
+  $runtime = replace($source, $modules[0].match, "")
+  $actual = {}
+  for $part in [{scope: "runtime", source: $runtime}, {scope: "test", source: $test}]
+    for $m in re_find($part.source, 'pub const ([A-Z0-9_]+):\\s*&(?:\x27static )?str\\s*=\\s*"([^"\n]+)"\\s*;')
+      $id = $m.groups[0]
+      $name = $m.groups[1]
+      if has_key($actual, $name) then push($bad, "duplicate paths constant " .. $name) end
+      $actual[$name] = {id: $id, scope: $part.scope}
+    end
+  end
+  -- Build stamps expand to pub const at runtime scope, not in mod test.
+  for $block in re_find($runtime, "(?s)stamps!\\s*\\{([^{}]*)\\}")
+    for $m in re_find($block.groups[0], '([A-Z0-9_]+)\\s*=\\s*"([^"\n]+)"\\s*;')
+      $name = $m.groups[1]
+      if has_key($actual, $name) then push($bad, "duplicate paths constant " .. $name) end
+      $actual[$name] = {id: $m.groups[0], scope: "runtime"}
+    end
+  end
+  $expected = {}
+  for $v in $vars
+    -- Registry metadata includes prefixes/standard names that are not envs.
+    if not contains($v.meaning, "not an environment variable") then
+      $expected[$v.name] = true
+      if not has_key($actual, $v.name) then
+        push($bad, "missing paths constant " .. $v.name .. " (" .. $v.scope .. ")")
+      else
+        $c = $actual[$v.name]
+        $id = starts_with($v.name, "MIX_") ? substr($v.name, 4) : $v.name
+        if $c.id != $id or $c.scope != $v.scope then
+          push($bad, "paths constant name/scope mismatch " .. $v.name .. ": expected " .. $id .. " in " .. $v.scope)
+        end
+      end
+    end
+  end
+  for $name in sort(keys($actual))
+    if not has_key($expected, $name) then push($bad, "paths constant without registry entry " .. $name) end
+  end
+  return $bad
+end
+
+{check: check}
