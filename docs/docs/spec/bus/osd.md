@@ -17,6 +17,9 @@ does not spend the budget. Hide remains available at the update limit.
 Caller authorisation belongs to the Bus authorisation work shared with
 `comp.record` and `comp.capture.frame`; surface authentication does not
 authorise the caller or endorse its content.
+Future Bus allow/deny checks govern admission to these commands; the reducer's
+owner, slot and update limits still apply after admission. A grant does not
+allow one citizen to modify another citizen's items.
 
 viud supervises the host with bounded restart backoff (250 ms to 30 s).
 Each restart inserts a new token; the old token is revoked on exit.
