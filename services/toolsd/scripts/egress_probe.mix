@@ -1,0 +1,67 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- host: mixd
+-- Root supervisor reads counters; --worker connects as the drain identity.
+-- No credentials, tool queue, firewall writes, shell or privilege changes.
+$g = getopt(args(), {config:{arg:true}, worker:{}, user:{arg:true}})
+if len($g.errors) != 0 or len($g.rest) != 0 or $g.opts.config == nil then raise("USAGE", "egress_probe.mix --config PRIVATE.conf.mix --user toolsd (root supervisor)") end
+$e = require("lib/egress.mix")
+$c = $e.config(load_data($g.opts.config))
+if not $g.opts.worker then
+  if uid() != 0 or not re_match($g.opts.user ?? "", '^[a-z_][a-z0-9_-]*$') then raise("EGRESS_PROBE", "root supervisor requires --user DRAIN_USER") end
+  $nft = if is_file("/usr/sbin/nft") then "/usr/sbin/nft" else "/usr/bin/nft" end
+  $account = run_argv_must(["/usr/bin/id", "-u", $g.opts.user], {clear_env:true, timeout:3})
+  if to_number(trim($account)) != $c.uid then raise("EGRESS_PROBE", "account does not match configured drain UID") end
+  $before = {}
+  for $name in ["deny4", "deny6"]
+    $before[$name] = $e.counter_packets(run_argv_must([$nft,"--json","list","counter","inet","toolsd_egress",$name], {clear_env:true,timeout:3}), $name)
+  end
+  $r = run_argv(["/usr/sbin/runuser", "-u", $g.opts.user, "--", mix_path("prefix") .. "/bin/mixd", "run", script_path(), "--worker", "--config", realpath($g.opts.config)], {clear_env:true,env:{PATH:"/usr/bin:/bin"},timeout:25,max_output:8192})
+  if not $r.ok then raise("EGRESS_PROBE", "drain worker failed") end
+  $v = json_parse($r.stdout)
+  $v.v4.before = $before.deny4
+  $v.v6.before = $before.deny6
+  $v.v4.after = $e.counter_packets(run_argv_must([$nft,"--json","list","counter","inet","toolsd_egress","deny4"], {clear_env:true,timeout:3}), "deny4")
+  $v.v6.after = $e.counter_packets(run_argv_must([$nft,"--json","list","counter","inet","toolsd_egress","deny6"], {clear_env:true,timeout:3}), "deny6")
+  $ok = $e.probe_ok($v.identity, $v.v4, $v.v6, $v.udp, $v.tcp)
+  print(json_encode({pass:$ok, denied4:$v.v4, denied6:$v.v6, dns_udp:$e.dns_ok($v.udp), dns_tcp:$e.dns_ok($v.tcp)}))
+  if not $ok then exit(1) end
+  exit(0)
+end
+$identity = $e.identity_ok($c, uid(), read_file("/proc/self/cgroup"))
+if not $identity then raise("EGRESS_PROBE", "run as the selected drain UID and, for cgroup mode, in toolsd-drain.service") end
+
+fn denied_connect($host)
+  $listener = nil
+  $connection = nil
+  $result = {listening:false, connected:false, error:""}
+  try
+    $listener = tcp_listen($host, 0)
+    $result.listening = true
+    $port = tcp_local_addr($listener).port
+    try
+      $connection = tcp_connect($host, $port, {timeout:5})
+      $result.connected = true
+    catch $message
+      $result.error = $message
+    end
+  catch $message
+    $result.error = $message
+  end
+  if $connection != nil then tcp_close($connection) end
+  if $listener != nil then tcp_close($listener) end
+  return $result
+end
+
+$v4 = denied_connect("127.0.0.1")
+$v6 = denied_connect("::1")
+-- Stop before DNS if the firewall is missing or denial is inconclusive.
+if not $v4.listening or not $v6.listening or $v4.connected or $v6.connected then
+  print(json_encode({pass:false, denied4:$v4, denied6:$v6}))
+  exit(1)
+end
+$name = $c.dns_name ?? "example.com"
+$udp = dns_query($name, "A", {server:"127.0.0.53", port:53, timeout:3})
+$tcp = dns_query($name, "A", {server:"127.0.0.53", port:53, timeout:3, tcp:true})
+-- Only the root supervisor can attest counter deltas. A worker never prints pass.
+print(json_encode({identity:$identity, v4:$v4, v6:$v6, udp:$udp, tcp:$tcp}))

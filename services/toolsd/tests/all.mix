@@ -1,0 +1,9 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Scoped toolsd check, suitable for one CBC job; never runs full CI.
+$mix=env("MIX_TEST_MIX_EXE",mix_path("prefix") .. "/bin/mix")
+$repo=dirname(dirname(dirname(dirname(script_path()))))
+for $case in concat(sort(glob(dirname(script_path()) .. "/*_test.mix")),[$repo .. "/tests/mix_services_bundle_test.mix"])
+  $r=run_argv([$mix,$case],{cwd:$repo,env:{MIX_TEST_MIX_EXE:$mix},timeout:120,stdout:"inherit",stderr:"inherit"})
+  if not $r.ok then raise("TOOLSD_TEST",$case) end
+end
+print("PASS all toolsd suites and bundle closure")
