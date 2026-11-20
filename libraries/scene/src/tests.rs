@@ -960,3 +960,137 @@ fn template_instantiate_binds_item() {
             .unwrap();
     assert_eq!(result.ports["text"], json!("static"));
 }
+#[test]
+fn inline_spans_defaults_validation_and_bound_refusals() {
+    let plain = resolve(&doc("root: {widget: \"text\", text: \"plain\"}")).unwrap();
+    assert!(!plain.nodes["root"].ports.contains_key("spans"));
+    for spans in [
+        "[]",
+        "[{text: \"fn\", role: \"keyword\", color: \"#ff8fa3\", mono: true, strike: true, highlight: true}]",
+        "[{text: \"first\\nsecond\"}]",
+    ] {
+        assert!(
+            resolve(&doc(&format!(
+                "root: {{widget: \"text\", text: \"\", spans: {spans}}}"
+            )))
+            .is_ok()
+        );
+    }
+    for spans in [
+        "{}",
+        "[1]",
+        "[{text: 1}]",
+        "[{text: \"x\", role: \"typo\"}]",
+        "[{text: \"x\", strike: 1}]",
+        "[{text: \"x\", color: \"red\"}]",
+        "[{text: \"x\", color: \"#xxxxxx\"}]",
+        "[{text: \"x\", typo: true}]",
+    ] {
+        assert!(
+            resolve(&doc(&format!(
+                "root: {{widget: \"text\", text: \"\", spans: {spans}}}"
+            )))
+            .is_err(),
+            "{spans}"
+        );
+    }
+    let port = crate::schema::port_for("text", "spans");
+    let huge = serde_json::json!([{"text":"x".repeat(65537)}]);
+    assert!(crate::bindings::coerce_port(&huge, port).is_err());
+    assert!(
+        crate::bindings::coerce_port(
+            &serde_json::json!(vec![serde_json::json!({"text":"x"}); 1025]),
+            port
+        )
+        .is_err()
+    );
+    assert!(
+        crate::bindings::coerce_port(&serde_json::json!([{"text":"x","strike":false}]), port)
+            .is_ok()
+    );
+    assert!(
+        crate::bindings::coerce_port(&serde_json::Value::Null, port)
+            .unwrap()
+            .is_none()
+    );
+}
+#[test]
+fn number_tracks_have_bounded_options_and_no_legacy_defaults() {
+    let plain = resolve(&doc("root: {widget: \"text\", text: \"42\"}")).unwrap();
+    assert!(!plain.nodes["root"].ports.contains_key("number"));
+    for spec in ["{to:1507}", "{from:-10,to:0,ms:0,delay_ms:0,group:false}"] {
+        assert!(
+            resolve(&doc(&format!(
+                "root: {{widget: \"text\", text: \"42\", number: {spec}}}"
+            )))
+            .is_ok()
+        );
+    }
+    for spec in [
+        "{}",
+        "{to:true}",
+        "{to:1,ms:-1}",
+        "{to:1,delay_ms:60001}",
+        "{to:1e16}",
+        "{to:1,group:1}",
+        "{to:1,typo:true}",
+    ] {
+        assert!(
+            resolve(&doc(&format!(
+                "root: {{widget: \"text\", text: \"42\", number: {spec}}}"
+            )))
+            .is_err(),
+            "{spec}"
+        );
+    }
+    assert!(
+        resolve(&doc(
+            "root: {widget: \"text\", text: \"42\", number:{to:42}, spans:[]}"
+        ))
+        .is_err()
+    );
+}
+#[test]
+fn composed_box_outlines_are_optional_typed_ports() {
+    for family in ["row", "column"] {
+        let plain = resolve(&doc(&format!(
+            "root: {{widget: \"{family}\", children:[]}}"
+        )))
+        .unwrap();
+        assert!(!plain.nodes["root"].ports.contains_key("outline"));
+        assert!(resolve(&doc(&format!("root: {{widget: \"{family}\", children:[], outline:\"#f2706b\", outline_width:2, radius:14}}"))).is_ok());
+        for port in ["outline:1", "outline_width:-1"] {
+            assert!(
+                resolve(&doc(&format!(
+                    "root: {{widget: \"{family}\", children:[], {port}}}"
+                )))
+                .is_err()
+            );
+        }
+    }
+}
+
+#[test]
+fn radial_backgrounds_are_optional_bounded_and_strict() {
+    assert!(
+        !resolve(&doc("root:{widget:column,children:[]}"))
+            .unwrap()
+            .nodes["root"]
+            .ports
+            .contains_key("background_radials")
+    );
+    assert!(resolve(&doc("root:{widget:column,children:[],background_radials:[{x:0.85,y:-0.1,rx:1200,ry:700,stop:0.6,color:\"#173048\"}]}" )).is_ok());
+    for r in [
+        "[{}]",
+        "[{x:0,y:0,rx:0,ry:1,stop:1,color:\"#123456\"}]",
+        "[1]",
+        "[{x:0,y:0,rx:1,ry:1,stop:2,color:\"#123456\"}]",
+    ] {
+        assert!(
+            resolve(&doc(&format!(
+                "root:{{widget:column,children:[],background_radials:{r}}}"
+            )))
+            .is_err()
+        );
+    }
+}

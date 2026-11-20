@@ -1,0 +1,27 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+return {
+  "canvas": {"width":1600,"height":900,"scale":2.4},
+  "motion": {"count_ms":1400,"count_delay_ms":200},
+  "backdrop": [{"x":0.85,"y":-0.1,"rx":1200,"ry":700,"stop":0.6,"color":"#173048"},{"x":-0.1,"y":1.1,"rx":900,"ry":600,"stop":0.6,"color":"#1a2433"}],
+  "colour": {
+    "background":"#0d1117","background2":"#121821","panel":"#161d27",
+    "line":"#26303d","text":"#e8edf3","mut":"#8d99a8",
+    "acc":"#3cc8d8","blue":"#7aa7ff","bad":"#f2706b",
+    "ok":"#5ad18a","warn":"#f0b45a","violet":"#b48cff",
+    "keyword":"#ff8fa3","function":"#7fd4ff","string":"#a5e07a",
+    "comment":"#6b7787","value":"#f6c177","code":"#cdd6e0",
+    "code_background":"#0b1016","history":"#5d6876","blank":"#2a3442",
+    "before":"#5a2b2b","after":"#24513a","tag":"#cfe3ff","rail":"#0f151d"
+  },
+  "type": {
+    "headline":68,"small":30,"kicker":26,"panel_title":24,"big":34,
+    "list":31,"caption":26,"node":28,"node_label":20,"arrow":40,
+    "arrow_label":18,"code":25,"terminal":26,"tree":29,"badge":20,
+    "chip":24,"chip_caption":21,"stat":76,"stat_label":22,"mock":27,
+    "wordmark":150,"tagline":40,"date":30,"topic_no":34,
+    "topic_title":120,"topic_sub":38,"rail":19,"rail_compact":17,"series_footer":16
+  },
+  "space": {"top":72,"side":96,"bottom":120,"columns":40,"card_x":32,
+    "card_y":28,"card_radius":18,"flow":18,"chip":12,"terminal_row":38,
+    "tree_row":50.75,"rail_bottom":44,"content_bottom":800,"rail_x":9,"rail_y":3,"rail_radius":6,"rail_gap":10}
+}
