@@ -5888,6 +5888,7 @@ dependencies = [
  "mixtrayd",
  "monitord",
  "noded",
+ "paths",
  "serde_json",
  "settingsd",
  "webd",
