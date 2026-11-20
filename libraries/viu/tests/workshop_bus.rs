@@ -14,14 +14,14 @@ const PROFILE_INFO_HELPERS: bool = false;
 const PROFILE_TICK: bool = false;
 
 fn profile_tick(bundle: &mut Bundle) {
-    bundle.program.source = bundle.program.source.replace("$dirty=false\nfn publish_workshop", "$dirty=false\n$profile_previous=nil\nfn publish_workshop");
+    bundle.program.source = bundle.program.source.replace("$dirty=false\nfn publish_workshop", "$dirty=false\n$profile_previous={}\nfn publish_workshop");
     bundle.program.source = bundle.program.source.replace("fn publish_workshop($s)\n", "fn publish_workshop($s)\n  global $profile_previous\n  $pc=viu_test_cpu();$pw=monotonic()\n");
     let needle="  send \"viu-local\" \"scenes.model\" body={generation:$ctx.generation,value:$app_mode.project($projection,\"workshop\",$s.theme_choice)}";
     let replacement=r#"  $profile_value=$app_mode.project($projection,"workshop",$s.theme_choice)
   $profile_cpu=(viu_test_cpu()-$pc)*1000000;$profile_wall=(monotonic()-$pw)*1000000
   $profile_keys=[]
   for $profile_key in keys($profile_value) if $profile_previous[$profile_key]!=$profile_value[$profile_key] then push($profile_keys,$profile_key) end end
-  print("WORKSHOP_BUILD "..json_encode({cpu_us:$profile_cpu,wall_us:$profile_wall,bytes:byte_length(json_encode($profile_value)),same:$profile_previous==$profile_value,changed:$profile_keys}))
+  print("WORKSHOP_BUILD "..json_encode({selected:$s.row_key,cpu_us:$profile_cpu,wall_us:$profile_wall,bytes:byte_length(json_encode($profile_value)),same:$profile_previous==$profile_value,changed:$profile_keys}))
   $profile_previous=$profile_value
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$profile_value}"#;
     assert!(bundle.program.source.contains(needle));
