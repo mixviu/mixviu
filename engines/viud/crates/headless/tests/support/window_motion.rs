@@ -583,6 +583,12 @@ fn record_window_retarget_supersedes_without_returning_to_first_keyframe() {
     let mut process = process::spawn_size("window-retarget", &bus.url, MOTION_SIZE);
     bus.ready();
     let (mut pattern, row) = white_window_at(&bus, &mut process, "window-retarget", 50, 30);
+    // Establish the initial pixels and warm the renderer's readback allocation
+    // before measuring motion. A cold first copy under the workspace pool took
+    // 17.6ms and incurred recorder debt before retargeting even began.
+    let (width, height, pixels) = ppm(&bus, &process, "retarget-ready", None);
+    assert_eq!((width, height), (MOTION_WIDTH, 220));
+    assert_eq!(ppm_pixel(&pixels, width, 150, 110), [255, 255, 255]);
     let path = process.root.join("retarget.vfl");
     let start = bus.call("comp.record.start",json!({"request_id":"retarget","target":{"output":"headless-0"},"path":path,"max_seconds":10,"fps":30,"cursor":false}));
     let mut first_tracks = opacity_track(1.0, 0.2);

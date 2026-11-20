@@ -45,13 +45,14 @@ pub struct Process {
 impl Drop for Process {
     fn drop(&mut self) {
         if thread::panicking() {
+            eprintln!("viud child status before cleanup: {:?}", self.child.try_wait());
             eprintln!(
                 "frame trace: {}",
-                fs::read_to_string(self.root.join("frames.log")).unwrap_or_default()
+                diagnostic_tail(&self.root.join("frames.log"))
             );
             eprintln!(
                 "viud log: {}",
-                fs::read_to_string(self.root.join("viud.log")).unwrap_or_default()
+                diagnostic_tail(&self.root.join("viud.log"))
             );
         }
         let _ = self.stop.send(());
@@ -68,6 +69,18 @@ impl Drop for Process {
             let _ = fs::remove_dir_all(&self.root);
         }
     }
+}
+
+// Keep the assertion and child status in CBC's bounded saved output. Unbounded
+// frame dumps used to evict the panic which explained the failure.
+fn diagnostic_tail(path: &std::path::Path) -> String {
+    use std::io::{Read, Seek, SeekFrom};
+    let Ok(mut file) = fs::File::open(path) else { return String::new() };
+    let size = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let _ = file.seek(SeekFrom::Start(size.saturating_sub(16_384)));
+    let mut bytes = Vec::new();
+    let _ = file.take(16_384).read_to_end(&mut bytes);
+    format!("[last {} of {size} bytes] {}", bytes.len(), String::from_utf8_lossy(&bytes))
 }
 
 impl Process {
