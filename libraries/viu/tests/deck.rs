@@ -92,16 +92,19 @@ fn retained_play_waits_for_final_draw_and_cancellation_disarms_it() {
         assert!(end.deferred_answers.is_empty());
         let model = end.model.unwrap();
         assert_eq!(model["presentation"]["clock"], true);
-        assert!(matches!(rx.try_recv(),Err(tokio::sync::oneshot::error::TryRecvError::Empty)));
+        assert!(matches!(
+            rx.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
         let ack = if cancel {
             drop(rx);
             deck.call("viu.call.cancelled", json!({"token":token}))
         } else {
-            let ack=deck.call(
+            let ack = deck.call(
                 "viu.presentation",
                 json!({"time":101.1,"serial":model["presentation"]["serial"]}),
             );
-            assert_eq!(rx.try_recv().unwrap().0,0);
+            assert_eq!(rx.try_recv().unwrap().0, 0);
             ack
         };
         assert_eq!(ack.model.unwrap()["presentation"]["clock"], false);
