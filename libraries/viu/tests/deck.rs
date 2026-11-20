@@ -217,13 +217,24 @@ fn invalid_goto_and_actions_have_typed_replies() {
 
 #[test]
 fn native_schema_refusal_names_the_slide_and_preserves_the_open_deck() {
-    let mut deck=Deck::new();deck.open();
-    let dir=tempfile::tempdir().unwrap();let path=dir.path().join("bad.json");
+    let mut deck = Deck::new();
+    deck.open();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bad.json");
     std::fs::write(&path,json!({"schema":"deck.v1","slides":[{"id":"broken","steps":1,"scene":{"root":{"widget":"not-a-widget"}}}]}).to_string()).unwrap();
-    let refused=deck.call("deck.open",json!({"path":path})).reply.unwrap();
-    assert_eq!(refused.rc,10);assert_eq!(refused.body["error_code"],"DECK_SCENE");
-    assert!(refused.body["message"].as_str().unwrap().contains("slides(broken).scene"));
-    assert_eq!(deck.call("deck.state",json!({})).reply.unwrap().body["slide"],"sting");
+    let refused = deck.call("deck.open", json!({"path":path})).reply.unwrap();
+    assert_eq!(refused.rc, 10);
+    assert_eq!(refused.body["error_code"], "DECK_SCENE");
+    assert!(
+        refused.body["message"]
+            .as_str()
+            .unwrap()
+            .contains("slides(broken).scene")
+    );
+    assert_eq!(
+        deck.call("deck.state", json!({})).reply.unwrap().body["slide"],
+        "sting"
+    );
 }
 
 #[test]
