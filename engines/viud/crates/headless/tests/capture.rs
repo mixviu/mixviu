@@ -147,6 +147,134 @@ fn target(row: &Value) -> Value {
 }
 
 #[test]
+fn record_cold_start_under_load_has_no_capture_drops() {
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("cold-record");
+    let mut process = process::spawn_size("cold-record", &bus.url, "320x240");
+    let mut pattern = Pattern::new(connect(&mut process));
+    pattern.wait_callback(0);
+    bus.ready();
+    let row = bus.window(&mut pattern);
+    // Fence presentation using Wayland, not a screenshot: mapping/listing can
+    // precede the first usable output frame, especially in the shared pool.
+    bus.call(
+        "comp.window.fullscreen",
+        place_args(&row, json!({"output":"headless-0"})),
+    );
+    let configured = Instant::now() + Duration::from_secs(5);
+    while pattern.state.size != (320, 240) {
+        pattern.pump();
+        assert!(
+            Instant::now() < configured,
+            "fullscreen configure timed out"
+        );
+        thread::sleep(Duration::from_millis(2));
+    }
+    pattern.change_buffer();
+    let before = pattern.state.callbacks;
+    pattern.commit(true);
+    pattern.wait_callback(before);
+    // No screenshot/readback readiness probe: this is a fresh compositor.
+    struct StopLoaders(std::sync::Arc<std::sync::atomic::AtomicBool>);
+    impl Drop for StopLoaders {
+        fn drop(&mut self) {
+            self.0.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+    let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    thread::scope(|scope| {
+        let _stop = StopLoaders(running.clone());
+        for _ in 0..8 {
+            let running = running.clone();
+            scope.spawn(move || {
+                while running.load(std::sync::atomic::Ordering::Relaxed) {
+                    // Keep competing CPU work through the measured second,
+                    // with scheduling room for the other pool tests. The
+                    // injected first-read cost isolates cold-path deferral;
+                    // starving every later read would test scheduler jitter.
+                    let busy_until = Instant::now() + Duration::from_millis(1);
+                    while Instant::now() < busy_until {
+                        std::hint::spin_loop();
+                    }
+                    thread::sleep(Duration::from_millis(4));
+                }
+            });
+        }
+        let begin = Instant::now();
+        let starting = scope.spawn(|| bus.call("comp.record.start", json!({"request_id":"cold", "target":{"output":"headless-0"}, "path":process.root.join("cold.vfl"), "max_seconds":10, "fps":30, "cursor":false})));
+        // Damage once immediately after the first completed read. In the
+        // bypassed build this makes frame zero's debt observable before an
+        // idle tick can repay it. Repeated commits while start is pending
+        // would instead test superseding snapshots during admission.
+        let first_read = Instant::now() + Duration::from_secs(3);
+        while !fs::read_to_string(process.root.join("viud.log"))
+            .unwrap_or_default()
+            .contains("TEST_COLD_READBACK n=1 penalty_us=20000")
+        {
+            assert!(Instant::now() < first_read, "first read did not complete");
+            pattern.pump();
+            thread::sleep(Duration::from_millis(1));
+        }
+        pattern.change_buffer();
+        pattern.commit(true);
+        while !starting.is_finished() {
+            pattern.pump();
+            thread::sleep(Duration::from_millis(1));
+        }
+        let start = starting.join().unwrap();
+        let start_ms = begin.elapsed().as_secs_f64() * 1000.0;
+        let first_second = Instant::now();
+        while first_second.elapsed() < Duration::from_secs(1) {
+            // Continue changing content, leaving room to complete each GPU
+            // snapshot under the shared pool. This tests cold admission; the
+            // strict changing 4K30 case covers sustained capture throughput.
+            thread::sleep(Duration::from_millis(200));
+            pattern.change_buffer();
+            pattern.commit(true);
+            pattern.pump();
+        }
+        let status = bus.call("comp.record.status", json!({"session":start["session"]}));
+        eprintln!("cold record start_ms={start_ms:.3} status={status}");
+        assert!(start_ms < 3000.0, "start must be bounded: {start_ms} ms");
+        // Check deferrals first so bypassing only warm-up produces a budget
+        // failure, rather than merely a missing warm-up status assertion.
+        assert_eq!(status["readback_deferred"], 0, "{status}");
+        assert_eq!(status["warmup_done"], true, "{status}");
+        assert_eq!(status["warmup_errors"], json!([]), "{status}");
+        assert!(status["warmup_us"].as_u64().unwrap() >= 20_000, "{status}");
+        assert!(
+            status["readback_max_us"].as_u64().unwrap() < 16_667,
+            "{status}"
+        );
+        assert!(status["readbacks"].as_u64().unwrap() > 1, "{status}");
+        assert_eq!(status["dropped_capture"], 0, "{status}");
+        assert_eq!(status["readback_deferred"], 0, "{status}");
+        let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
+        let log = fs::read_to_string(process.root.join("viud.log")).unwrap();
+        let reads = log
+            .lines()
+            .filter(|line| line.starts_with("TEST_COLD_READBACK n="))
+            .count();
+        assert!(
+            log.contains("n=1 penalty_us=20000"),
+            "cold penalty hook did not fire"
+        );
+        assert_eq!(
+            stop["readbacks"].as_u64().unwrap() + 1,
+            reads as u64,
+            "exactly one read is outside the take: {stop}"
+        );
+        let mut frames = 0_u64;
+        vfl_visit(&process.root.join("cold.vfl"), |_| frames += 1);
+        assert_eq!(stop["frames"], frames, "warm-up must not enter the take");
+        let terminal = bus.call("comp.record.status", json!({"session":start["session"]}));
+        assert_eq!(terminal["warmup_us"], status["warmup_us"]);
+    });
+}
+
+#[test]
 fn mapped_window_survives_render_before_protocol_drain() {
     if !process::record_available() {
         return;

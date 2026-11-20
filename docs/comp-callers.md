@@ -191,7 +191,7 @@ unlisted content cause no readback; unchanged pictures use scheduled repeats.
 |---|---|---|
 | `comp.record.start` | `request_id`, `target:{output?,output_generation?,window?:{id,generation},region?:{x,y,width,height}}` or `target:{windows:[{id,generation}]}` or `target:{output,output_generation?,windows:[{id,generation}]}`, absolute `.vfl` directory `path`, `fps?` (30; 1–60), `cursor?` (true), `encoder?` (`vfl`), `max_seconds` (1–86400) | `session,path,recovery_path,width,height,fps,clock:"monotonic",t0_us,frames_path,markers_path` |
 | `comp.record.marker` | `session,label,data?` | `session,seq,frame,t_us` |
-| `comp.record.status` | `session?` | `session,state,windows,frames,repeated,dropped,dropped_capture,dropped_queue,readback_deferred,pending_ticks,duration_us,bytes,queue,encoders:["vfl"],readbacks,readback_us,readback_mean_us,readback_max_us,writer,encoder,error` |
+| `comp.record.status` | `session?` | `session,state,windows,frames,repeated,dropped,dropped_capture,dropped_queue,readback_deferred,pending_ticks,duration_us,bytes,queue,encoders:["vfl"],warmup_done,warmup_us,warmup_errors,readbacks,readback_us,readback_mean_us,readback_max_us,writer,encoder,error` |
 | `comp.record.stop` | `session,discard?` | `path,recovery_path,bytes,frames,repeated,dropped,dropped_capture,dropped_queue,readback_deferred,pending_ticks,duration_us,frames_path,markers_path,encoder,readbacks,readback_us,readback_mean_us,readback_max_us,writer,error` |
 
 Only VFL is available. Matroska paths, x264 and VAAPI requests are refused.
@@ -277,6 +277,25 @@ Unchanged ticks share the previous source allocation and avoid GPU readback.
 `readback_us` is the latest tick's readback cost (zero for a repeat), with mean
 and maximum over `readbacks` actual reads. Window measurements include the
 offscreen render. These are microseconds, not encoder latency.
+
+Before frame zero, start runs one throwaway capture for every target, warming
+the GPU readback and source pixel allocations outside the recording budget.
+The source pool is bounded and shared: region crops and stitched multi-target
+images have separate allocations, so warm-up does not promise to preallocate
+every later crop, stitch or resized frame.
+The first recorded capture follows immediately after warm-up. Status reports
+`warmup_done`, `warmup_us` (wall time including presentation/readback waits),
+and `warmup_errors` (target-indexed diagnostics). A warm-up error does not
+refuse start: the normal first capture is still attempted. Warm-up pixels and
+cost never enter the take's frame, drop or readback counters. These status
+fields remain available after stop.
+
+Warm-up has an independent three-second deadline, shared with ordinary frame
+capture. Ordinary warm-up errors allow the real first capture to proceed.
+Exhausting this deadline fails start immediately and preserves the warm-up
+diagnostic; it does not retry the same dark renderer for another three seconds.
+The finite warm-up interval is excluded from `max_seconds` before frame zero;
+the real first capture then retains the normal pre-frame start watchdog.
 
 Recording accepts either the canonical output id returned by comp.windows.list
 (e.g. `o_hdmi_a_1`) or its backend name (`HDMI-A-1`). Targets are normalised

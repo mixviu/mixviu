@@ -89,7 +89,10 @@ pub mod process;
 
 pub mod time_series;
 
+mod backdrop;
 pub mod dashboard;
 pub mod data_panels;
 pub mod network_map;
+mod numbers;
 pub mod saved_state;
+mod spans;

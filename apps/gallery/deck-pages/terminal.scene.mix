@@ -1,0 +1,8 @@
+---
+scene: 1
+name: deck-gallery
+citizen: gallery
+---
+```mix
+{"root":{"background":"#0d1117","children":["root.0","root.1"],"gap":0,"height":708,"min_width":1600,"padding_bottom":120,"padding_left":96,"padding_right":96,"padding_top":72,"widget":"column"},"root.0":{"background":"#0b1016","children":["root.0.0","root.0.1","root.0.2","root.0.3","root.0.4"],"gap":0,"height":216,"padding_bottom":18,"padding_left":22,"padding_right":22,"padding_top":18,"radius":14,"widget":"column"},"root.0.0":{"color":"#8d99a8","size":20,"text":"Terminal","widget":"text"},"root.0.1":{"max_height":38,"min_height":38,"mono":true,"size":26,"spans":[{"color":"#6b7787","role":"comment","strike":true,"text":"old command"}],"text":"old command","widget":"text"},"root.0.2":{"max_height":38,"min_height":38,"mono":true,"size":26,"spans":[{"color":"#3cc8d8","role":"acc","text":"$ "},{"color":"#e8edf3","role":"text","text":"mix deck.mix"}],"text":"$ mix deck.mix","widget":"text"},"root.0.3":{"max_height":38,"min_height":38,"mono":true,"size":26,"spans":[{"color":"#8d99a8","role":"mut","text":" "}],"text":" ","widget":"text"},"root.0.4":{"max_height":38,"min_height":38,"mono":true,"size":26,"spans":[{"color":"#5ad18a","role":"ok","text":"ready ▌"}],"text":"ready ▌","widget":"text"},"root.1":{"children":[],"height":0,"min_width":1408,"widget":"column"}}
+```

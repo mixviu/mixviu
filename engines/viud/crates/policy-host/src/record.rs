@@ -85,6 +85,10 @@ struct Session {
     start_answers: Vec<Answer>,
     stop_answers: Vec<Answer>,
     pending: bool,
+    warmup_started: Option<Instant>,
+    warmup_us: u64,
+    warmup_errors: Vec<String>,
+    warmup_done: bool,
     drain_until: Option<Instant>,
     stop_wake: Option<Rc<dyn Fn(Instant) -> bool>>,
     stop_timer_at: Option<Instant>,
@@ -423,6 +427,10 @@ pub fn command(
             start_answers: vec![answer],
             stop_answers: Vec::new(),
             pending: false,
+            warmup_started: None,
+            warmup_us: 0,
+            warmup_errors: Vec::new(),
+            warmup_done: false,
             drain_until: None,
             stop_wake: None,
             stop_timer_at: None,
@@ -505,6 +513,7 @@ fn session_command(op: RecordCommand, answer: Answer) {
                 });
             status["session"] = json!(s.id);
             status["windows"] = listed_status(&s);
+            warmup_status(&s, &mut status);
             answer(ControlReply::Body(status));
         }
         RecordCommand::Marker { label, data, .. } => answer(
@@ -576,6 +585,7 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
     } else {
         let mut status = empty_status("failed", Some(error));
         status["session"] = json!(s.id);
+        warmup_status(&s, &mut status);
         let past = Past {
             id: s.id.clone(),
             params: s.params.clone(),
@@ -750,6 +760,7 @@ fn finish_recording(s: &mut Session) -> bool {
     }
     let mut status = r.status();
     status["windows"] = listed_status(s);
+    warmup_status(s, &mut status);
     let past = Past {
         id: s.id.clone(),
         params: s.params.clone(),
@@ -766,12 +777,27 @@ fn finish_recording(s: &mut Session) -> bool {
     true
 }
 
+fn warmup_status(s: &Session, status: &mut Value) {
+    status["warmup_us"] = json!(s.warmup_us);
+    status["warmup_errors"] = json!(s.warmup_errors);
+    status["warmup_done"] = json!(s.warmup_done);
+}
+
 fn tick(session: &Rc<RefCell<Session>>, capture: impl FnOnce()) {
+    if warmup_expired(session) {
+        return;
+    }
     {
         let s = session.borrow();
         if s.recording.is_none()
             && s.failed.is_none()
-            && s.admitted.elapsed() >= Duration::from_secs(s.max_seconds)
+            // Only the independently bounded warm-up is excluded. The real
+            // first capture retains the normal max_seconds start watchdog.
+            && s.warmup_started.is_none()
+            && s.admitted
+                .elapsed()
+                .saturating_sub(Duration::from_micros(s.warmup_us))
+                >= Duration::from_secs(s.max_seconds)
         {
             drop(s);
             cancel_pending(session, "max_seconds elapsed before first frame");
@@ -782,6 +808,105 @@ fn tick(session: &Rc<RefCell<Session>>, capture: impl FnOnce()) {
         return;
     }
     capture();
+}
+
+fn warmup_expired(session: &Rc<RefCell<Session>>) -> bool {
+    let expired = {
+        let s = session.borrow();
+        s.failed.is_none()
+            && !s.warmup_done
+            && s.warmup_started
+                .is_some_and(|at| at.elapsed() >= crate::capture::DEADLINE)
+    };
+    if expired {
+        {
+            let mut s = session.borrow_mut();
+            if let Some(at) = s.warmup_started.take() {
+                s.warmup_us = at.elapsed().as_micros() as u64;
+            }
+            s.warmup_done = true;
+            let error = "warm-up capture deadline passed (3 seconds)".to_owned();
+            model::warn!("record {}: {error}", s.id);
+            s.warmup_errors.push(error);
+        }
+        // A dark renderer already consumed the entire capture deadline. Do
+        // not spend another three seconds attempting the identical capture.
+        fail(session, "warm-up capture deadline passed");
+    }
+    expired
+}
+
+fn install_warmup_deadline<D: 'static>(
+    session: &Rc<RefCell<Session>>,
+    handle: smithay::reexports::calloop::LoopHandle<'static, D>,
+) {
+    let at = session.borrow().warmup_started;
+    let Some(at) = at else {
+        return;
+    };
+    let owner = Rc::downgrade(session);
+    if handle
+        .insert_source(
+            Timer::from_deadline(at + crate::capture::DEADLINE),
+            move |_, _, _| {
+                if let Some(session) = owner.upgrade() {
+                    warmup_expired(&session);
+                }
+                TimeoutAction::Drop
+            },
+        )
+        .is_err()
+    {
+        let mut s = session.borrow_mut();
+        let error = "warm-up deadline timer unavailable".to_owned();
+        model::warn!("record {}: {error}", s.id);
+        s.warmup_errors.push(error);
+        drop(s);
+        fail(session, "warm-up deadline timer unavailable");
+    }
+}
+
+/// Returns permission to schedule frame zero exactly once. Late answers must
+/// neither touch a terminal session nor revive an abandoned warm-up batch.
+fn warmup_answer(
+    session: &Rc<RefCell<Session>>,
+    remaining: &Cell<usize>,
+    index: usize,
+    result: Result<screencopy::file::Pixels, ControlReply>,
+) -> bool {
+    {
+        let s = session.borrow();
+        if s.failed.is_some()
+            || s.recording.as_ref().is_some_and(|r| !r.is_recording())
+            || s.warmup_done
+            || s.warmup_started.is_none()
+        {
+            return false;
+        }
+    }
+    if warmup_expired(session) {
+        return false;
+    }
+    let mut s = session.borrow_mut();
+    match result {
+        Ok(frame) => screencopy::file::prepare_raw_pool(&frame.2),
+        Err(error) => {
+            let error = format!("target {index}: {:?}", error.into_wire());
+            model::warn!("record {} warm-up: {error}", s.id);
+            s.warmup_errors.push(error);
+        }
+    }
+    remaining.set(remaining.get().saturating_sub(1));
+    if remaining.get() != 0 {
+        return false;
+    }
+    if let Some(at) = s.warmup_started.take() {
+        s.warmup_us = at.elapsed().as_micros() as u64;
+    }
+    s.warmup_done = true;
+    s.pending = false;
+    s.signature.clear();
+    true
 }
 
 fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
@@ -952,6 +1077,10 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     s.signature = signature;
     s.deferred_signature = None;
     s.pending = true;
+    let warming = !s.warmup_done;
+    if warming {
+        s.warmup_started = Some(Instant::now());
+    }
     let targets = s.targets.clone();
     let capture_epoch = s.scene_epoch;
     let counter = s.pixel_counter;
@@ -963,7 +1092,14 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
     s.pixel_counter = next_counter;
     let prefix = format!("/{}-{counter}", s.pixel_secret);
     drop(s);
+    if warming {
+        install_warmup_deadline(session, lp.loop_handle.clone());
+        if session.borrow().failed.is_some() {
+            return;
+        }
+    }
     let frames = Rc::new(RefCell::new(Vec::new()));
+    let warmup_remaining = Rc::new(Cell::new(targets.len()));
     for (index, mut target) in targets.into_iter().enumerate() {
         let token = format!("{prefix}-{index}");
         target.path = token.clone();
@@ -975,7 +1111,20 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         let got = frames.clone();
         let session = session.clone();
         let request_session = session.clone();
+        let warmup_remaining = warmup_remaining.clone();
+        let warmup_handle = lp.loop_handle.clone();
         screencopy::file::raw_answer(token.clone(), move |result| {
+            // Exercise the same allocation, GPU copy, mapping and RGB pool as
+            // the real take. Never charge this cold operation to frame zero.
+            if warming {
+                if warmup_answer(&session, &warmup_remaining, index, result) {
+                    // The next real frame need not wait for the record timer.
+                    // Run after the backend releases its current frame borrow.
+                    let next = session.clone();
+                    warmup_handle.insert_idle(move |lp| tick(&next, || capture_tick(lp, &next)));
+                }
+                return;
+            }
             {
                 let s = session.borrow();
                 if s.failed.is_some() || s.recording.as_ref().is_some_and(|r| !r.is_recording()) {
@@ -1081,14 +1230,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                 return;
             }
             s.captured_scene = capture_epoch;
-            if s.start.is_none() {
-                let reply = s.recording.as_ref().unwrap().started();
-                s.start = Some(reply.clone());
-                for answer in std::mem::take(&mut s.start_answers) {
-                    answer(ControlReply::Body(reply.clone()));
-                }
-                event(&s, "recording");
-            }
+            answer_start(&mut s);
             flush_scene_markers(&mut s);
             if s.drain_until.is_some() && stop_stream(&mut s, false) {
                 event(&s, "finishing");
@@ -1098,11 +1240,24 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
             if !matches!(reply, ControlReply::Body(_)) {
                 let error = format!("capture: {:?}", reply.clone().into_wire());
                 screencopy::file::raw_fail(&token, reply);
-                if request_session.borrow().pending {
+                if !warming && request_session.borrow().pending {
                     fail(&request_session, &error);
                 }
             }
         });
+    }
+}
+
+fn answer_start(s: &mut Session) {
+    if s.start.is_none()
+        && let Some(recording) = s.recording.as_ref()
+    {
+        let reply = recording.started();
+        s.start = Some(reply.clone());
+        for answer in std::mem::take(&mut s.start_answers) {
+            answer(ControlReply::Body(reply.clone()));
+        }
+        event(s, "recording");
     }
 }
 
@@ -1116,6 +1271,16 @@ mod tests {
     use super::*;
 
     fn session_fixture(id: &str, root: &std::path::Path) -> Rc<RefCell<Session>> {
+        let session = pending_fixture(id, root);
+        let path = session.borrow().path.clone();
+        let recording =
+            Recording::new_bounded(id.into(), path, 2, 2, 30, "vfl".into(), None).unwrap();
+        session.borrow_mut().start = Some(recording.started());
+        session.borrow_mut().recording = Some(recording);
+        session
+    }
+
+    fn pending_fixture(id: &str, root: &std::path::Path) -> Rc<RefCell<Session>> {
         let path = root
             .join(format!("{id}.vfl"))
             .to_string_lossy()
@@ -1125,8 +1290,6 @@ mod tests {
             &json!({"request_id":id,"path":path,"target":{},"max_seconds":60}),
         )
         .unwrap();
-        let recording =
-            Recording::new_bounded(id.into(), path.clone(), 2, 2, 30, "vfl".into(), None).unwrap();
         Rc::new(RefCell::new(Session {
             frames_parked: |_| false,
             request_id: id.into(),
@@ -1149,11 +1312,15 @@ mod tests {
             probe_join: None,
             max_seconds: 60,
             max_bytes: None,
-            start: Some(recording.started()),
-            recording: Some(recording),
+            start: None,
+            recording: None,
             start_answers: vec![],
             stop_answers: vec![],
             pending: false,
+            warmup_started: None,
+            warmup_us: 0,
+            warmup_errors: Vec::new(),
+            warmup_done: false,
             drain_until: None,
             stop_wake: None,
             stop_timer_at: None,
@@ -1241,6 +1408,7 @@ mod tests {
                         .unwrap()
                         .frame(Some((w, h, pixels, cost)))
                         .unwrap();
+                    answer_start(&mut s);
                     if s.drain_until.is_some() && stop_stream(&mut s, false) {
                         event(&s, "finishing");
                     }
@@ -1277,6 +1445,215 @@ mod tests {
                 true,
             );
         };
+        // Real PBO/fence ownership, using the same warm-up answer and deadline
+        // handlers as capture_tick. No recording object exists during warm-up.
+        let submit_warm = |session: &Rc<RefCell<Session>>, renderer: &mut GlesRenderer| {
+            let token = format!("/{}-warm", session.borrow().pixel_secret);
+            {
+                let mut s = session.borrow_mut();
+                s.pending = true;
+                s.warmup_started = Some(Instant::now());
+            }
+            let ready = Rc::new(Cell::new(false));
+            let answer_ready = ready.clone();
+            let owner = session.clone();
+            screencopy::file::raw_answer(token.clone(), move |result| {
+                answer_ready.set(warmup_answer(&owner, &Cell::new(1), 0, result));
+            });
+            let spec = comp_model::capture::parse(&json!({"path":token,"format":"ppm"})).unwrap();
+            let failed_token = token.clone();
+            screencopy::file::enqueue(&outputs[0], spec, move |result| {
+                if let Err(error) = result {
+                    screencopy::file::raw_fail(&failed_token, error);
+                }
+            });
+            let fence = screencopy::file::testing::stall_next_read();
+            let mut texture = renderer
+                .import_memory(
+                    &[9; 16],
+                    smithay::backend::allocator::Fourcc::Abgr8888,
+                    (2, 2).into(),
+                    false,
+                )
+                .unwrap();
+            let target = renderer.bind(&mut texture).unwrap();
+            screencopy::file::service(
+                renderer,
+                screencopy::Source {
+                    framebuffer: &target,
+                    readback: screencopy::Readback {
+                        size: (2, 2).into(),
+                        origin_bottom_left: false,
+                    },
+                },
+                &outputs[0],
+                screencopy::file::CaptureSource::Offscreen,
+                true,
+            );
+            (token, ready, fence)
+        };
+
+        // A transient warm-up failure permits a normal first capture; it does
+        // not create a frame, a pending tick or a readback-budget charge.
+        let warm = pending_fixture("warm-error", &root);
+        let started = Rc::new(Cell::new(false));
+        let started_answer = started.clone();
+        warm.borrow_mut().start_answers.push(Box::new(move |reply| {
+            assert!(matches!(reply, ControlReply::Body(_)));
+            started_answer.set(true);
+        }));
+        let (token, ready, fence) = submit_warm(&warm, &mut renderer);
+        screencopy::file::raw_fail(
+            &token,
+            ControlReply::refused("test_read_failed", Value::Null),
+        );
+        assert!(ready.get());
+        assert!(!started.get());
+        assert!(warm.borrow().failed.is_none());
+        assert!(warm.borrow().recording.is_none());
+        assert_eq!(warm.borrow().warmup_errors.len(), 1);
+        assert!(!warm.borrow().pending);
+        screencopy::file::release_raw(&format!("/{}-", warm.borrow().pixel_secret));
+        assert_eq!(fence.load(Ordering::Relaxed), 1);
+        let recording = Recording::new_bounded(
+            "warm-error".into(),
+            warm.borrow().path.clone(),
+            2,
+            2,
+            30,
+            "vfl".into(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(recording.status()["frames"], 0);
+        assert_eq!(recording.status()["readbacks"], 0);
+        assert_eq!(recording.status()["dropped_capture"], 0);
+        assert_eq!(recording.status()["readback_deferred"], 0);
+        assign_first_capture(
+            &mut warm.borrow_mut(),
+            recording,
+            recorder::bus::monotonic_us().unwrap(),
+        );
+        submit(&warm, &mut renderer, &outputs[0]);
+        let until = Instant::now() + Duration::from_secs(2);
+        while warm.borrow().pending && Instant::now() < until {
+            screencopy::file::poll(&mut renderer, &outputs[0]);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(
+            warm.borrow().recording.as_ref().unwrap().status()["frames"],
+            1
+        );
+        assert_eq!(
+            warm.borrow().recording.as_ref().unwrap().status()["readbacks"],
+            1
+        );
+        assert!(
+            started.get(),
+            "failed warm-up must still allow a successful start reply"
+        );
+        warm.borrow_mut().recording.as_mut().unwrap().stop(true);
+        while !finish_recording(&mut warm.borrow_mut()) {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let past = PAST.with_borrow_mut(|p| p.get("warm-error")).unwrap();
+        assert_eq!(past.status["warmup_errors"].as_array().unwrap().len(), 1);
+
+        for stopped in [false, true] {
+            let s = pending_fixture(if stopped { "warm-stop" } else { "warm-fail" }, &root);
+            let (_token, ready, fence) = submit_warm(&s, &mut renderer);
+            if stopped {
+                CURRENT.with_borrow_mut(|slot| *slot = Some(s.clone()));
+                assert!(stop_reply("warm-stop"));
+            } else {
+                fail(&s, "target closed during warm-up");
+            }
+            let before = (
+                s.borrow().warmup_us,
+                s.borrow().warmup_done,
+                s.borrow().warmup_errors.clone(),
+            );
+            assert!(!warmup_answer(
+                &s,
+                &Cell::new(1),
+                0,
+                Ok((2, 2, std::sync::Arc::new(vec![0; 12]), 0))
+            ));
+            assert!(!ready.get(), "late answer must not schedule frame zero");
+            assert_eq!(
+                before,
+                (
+                    s.borrow().warmup_us,
+                    s.borrow().warmup_done,
+                    s.borrow().warmup_errors.clone()
+                )
+            );
+            assert!(!s.borrow().pending);
+            assert_eq!(fence.load(Ordering::Relaxed), 1);
+        }
+
+        // Lost callbacks are bounded even without record ticks or renderer
+        // polls. Move the clock origin, not the real three-second limit.
+        let s = pending_fixture("warm-lost", &root);
+        let replied = Rc::new(Cell::new(false));
+        let answer = replied.clone();
+        s.borrow_mut().start_answers.push(Box::new(move |reply| {
+            assert!(!matches!(reply, ControlReply::Body(_)));
+            answer.set(true);
+        }));
+        let (_token, ready, fence) = submit_warm(&s, &mut renderer);
+        assert!(screencopy::file::testing::forget_raw_answer());
+        s.borrow_mut().warmup_started = Some(Instant::now() - crate::capture::DEADLINE);
+        install_warmup_deadline(&s, events.handle());
+        events.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
+        assert!(s.borrow().failed.is_some());
+        assert!(
+            replied.get(),
+            "the independent timer must answer the pending start"
+        );
+        assert!(!s.borrow().pending);
+        assert!(!ready.get());
+        assert_eq!(s.borrow().warmup_errors.len(), 1);
+        assert!(s.borrow().warmup_us >= 3_000_000);
+        assert_eq!(fence.load(Ordering::Relaxed), 1);
+        assert_eq!(screencopy::file::testing::read_count(), 0);
+        let past = PAST.with_borrow_mut(|p| p.get("warm-lost")).unwrap();
+        assert_eq!(past.status["warmup_errors"].as_array().unwrap().len(), 1);
+        assert_eq!(past.status["frames"], 0);
+        assert_eq!(past.status["readbacks"], 0);
+        assert!(!warmup_answer(
+            &s,
+            &Cell::new(1),
+            0,
+            Err(ControlReply::refused("late", Value::Null))
+        ));
+
+        let multi = pending_fixture("warm-multi", &root);
+        multi.borrow_mut().warmup_started = Some(Instant::now());
+        multi.borrow_mut().pending = true;
+        let remaining = Cell::new(2);
+        assert!(!warmup_answer(
+            &multi,
+            &remaining,
+            0,
+            Err(ControlReply::refused("one_output_failed", Value::Null))
+        ));
+        assert!(multi.borrow().pending);
+        assert!(warmup_answer(
+            &multi,
+            &remaining,
+            1,
+            Ok((2, 2, std::sync::Arc::new(vec![0; 12]), 0))
+        ));
+        assert!(!multi.borrow().pending);
+        assert_eq!(multi.borrow().warmup_errors.len(), 1);
+        assert!(!warmup_answer(
+            &multi,
+            &remaining,
+            1,
+            Err(ControlReply::refused("duplicate", Value::Null))
+        ));
+        assert_eq!(multi.borrow().warmup_errors.len(), 1);
         let stop = |session: &Rc<RefCell<Session>>, discard| {
             CURRENT.with_borrow_mut(|current| *current = Some(session.clone()));
             let reply = Rc::new(RefCell::new(None));
@@ -1639,6 +2016,10 @@ mod tests {
             })],
             stop_answers: vec![],
             pending: true,
+            warmup_started: None,
+            warmup_us: 0,
+            warmup_errors: Vec::new(),
+            warmup_done: false,
             drain_until: None,
             stop_wake: None,
             stop_timer_at: None,
