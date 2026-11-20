@@ -4,6 +4,15 @@ $macros=require("macro.mix")
 $model=require("model.mix")
 fn defaults() return $base end
 fn registry($s)
+  global $workshop_actions_projection
+  $input={bindings:$s.bindings,busy:$s.busy,connected:$s.connected,dialog:$s.dialog,quitting:$s.quitting,command:$s.command,macro_selected:$s.macro_selected,macros_open:$s.macros_open,theme_choice:$s.theme_choice,dock_side:$s.dock_side,observe_ticket:$s.mesh.observe_ticket,ping_ticket:$s.mesh.ping_ticket,has_peer:any($s.mesh.nodes,fn($n)=not $n.self),can_call:$model.command($s,$s.selection)!=nil,can_new:$macros.can_new($s)}
+  try $last=$workshop_actions_projection catch $uninitialised $last=nil end
+  if $last!=nil and deep_eq($last.input,$input) then return $last.value end
+  $value=build_registry($s)
+  $workshop_actions_projection={input:$input,value:$value}
+  return $value
+end
+fn build_registry($s)
   $out=[]
   for $a in $base
     if $s.bindings[$a.id]!=nil then $a.shortcut=$s.bindings[$a.id].shortcut end

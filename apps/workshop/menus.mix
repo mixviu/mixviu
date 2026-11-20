@@ -2,7 +2,11 @@
 $actions=require("actions.mix")
 fn registry($s) return $actions.registry($s) end
 fn menus($s)
-  $actions=registry($s);$out=[]
+  global $workshop_menus_projection
+  $actions=registry($s)
+  try $last=$workshop_menus_projection catch $uninitialised $last=nil end
+  if $last!=nil and deep_eq($last.actions,$actions) then return $last.value end
+  $out=[]
   for $menu in ["File","Edit","View","Bus","Macros","Help"]
     $children=[];$last=nil;$theme=[];$theme_group=nil;$placement=[]
     for $a in filter($actions,fn($a)=$a.menu==$menu)
@@ -24,5 +28,6 @@ fn menus($s)
     if len($placement)>0 then push($children,{id:"traffic-placement",label:"Traffic placement",enabled:true,children:$placement}) end
     push($out,{id:$menu,label:$menu,enabled:true,children:$children})
   end
+  $workshop_menus_projection={actions:$actions,value:$out}
   return $out
 end

@@ -92,6 +92,7 @@ fn rows($s)
   return map(flatten_rows(tree($s),0,true),fn($r)=delete(delete(delete($r,"app"),"macro_id"),"route"))
 end
 fn find_row($s,$key)
+  if $key==nil then return nil end
   $found=filter(flatten_rows(tree($s),0,false),fn($r)=$r.key==$key)
   return if len($found)>0 then $found[0] else nil end
 end
