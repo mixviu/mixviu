@@ -5485,6 +5485,27 @@ fn escape_json_string(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     //! Broker regression tests, including bounded diagnostic emission.
+    // A thread-local subscriber cannot isolate process-wide callsite interest.
+    fn log_capture_subprocess(test: &str) -> bool {
+        let test = format!("{}::{test}", module_path!().split_once("::").unwrap().1);
+        if std::env::var("MIXVIU_LOG_CAPTURE_TEST").as_deref() == Ok(test.as_str()) {
+            return false;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &test, "--nocapture"])
+            .env("MIXVIU_LOG_CAPTURE_TEST", &test)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{test}:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        true
+    }
+
     #[tokio::test]
     async fn refusal_totals_are_live_in_info() {
         let state = mesh_delivery_test_state().await;
@@ -5546,6 +5567,9 @@ mod tests {
 
     #[test]
     fn listener_refusals_coalesce_per_peer_and_reason_for_a_minute() {
+        if log_capture_subprocess("listener_refusals_coalesce_per_peer_and_reason_for_a_minute") {
+            return;
+        }
         #[derive(Clone, Default)]
         struct Capture(Arc<StdMutex<Vec<u8>>>);
         impl std::io::Write for Capture {

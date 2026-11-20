@@ -1483,6 +1483,28 @@ async fn fail_pending_generation(
 
 #[cfg(test)]
 mod tests {
+    // Callsite interest is process-wide; a rebuild can still race another test.
+    // Run captures alone, with a fresh cache and diagnostic counters.
+    fn log_capture_subprocess(test: &str) -> bool {
+        let test = format!("{}::{test}", module_path!().split_once("::").unwrap().1);
+        if std::env::var("MIXVIU_LOG_CAPTURE_TEST").as_deref() == Ok(test.as_str()) {
+            return false;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &test, "--nocapture"])
+            .env("MIXVIU_LOG_CAPTURE_TEST", &test)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{test}:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        true
+    }
+
     #[test]
     fn diagnostic_window_counts_every_occurrence_and_emits_first_then_each_minute() {
         let start = std::time::Instant::now();
@@ -1535,6 +1557,9 @@ mod tests {
 
     #[test]
     fn challenge_refusals_name_both_peers_inside_one_window() {
+        if log_capture_subprocess("challenge_refusals_name_both_peers_inside_one_window") {
+            return;
+        }
         use std::io::Write;
         #[derive(Clone, Default)]
         struct Capture(Arc<Mutex<Vec<u8>>>);
@@ -1811,6 +1836,9 @@ mod tests {
 
     #[test]
     fn sustained_old_peer_logs_one_initial_line_then_counted_summaries() {
+        if log_capture_subprocess("sustained_old_peer_logs_one_initial_line_then_counted_summaries") {
+            return;
+        }
         use std::io::Write;
         #[derive(Clone, Default)]
         struct Capture(Arc<Mutex<Vec<u8>>>);
