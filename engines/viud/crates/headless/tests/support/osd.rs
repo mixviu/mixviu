@@ -171,6 +171,32 @@ fn decoded_rgb(frame: &[u8]) -> Vec<u8> {
 }
 
 #[test]
+fn remap_restores_anchors_before_committing_changed_input_regions() {
+    if !process::record_available() { return; }
+    let bus = Bus::start("osd-remap-order");
+    let mut process = process::spawn_osd("osd-remap-order", &bus.url, "640x360");
+    let mut pattern = Pattern::new(connect(&mut process));
+    pattern.state.size = (640, 360);
+    pattern.solid_buffer(0xff20d040);
+    pattern.commit(true);
+    pattern.wait_callback(0);
+    bus.ready();
+    ready(&bus); // Maps and detaches once: layer-shell has reset its anchors.
+    let (width, _, before) = ppm(&bus, &process, "remap-before", None);
+    for margin in [32, 64] {
+        call(&bus, "osd.show", json!({"id":"remap","scene":{"kind":"caption","text":"Remap","width":160,"height":64},"anchor":{"output":"headless-0","edge":"bottom-right","margin":margin}}));
+        wait(&mut pattern, Duration::from_millis(150));
+        let (_, _, shown) = ppm(&bus, &process, &format!("remap-{margin}"), None);
+        assert!(bounds(&before, &shown, width, [400, 180, 240, 180]).is_some(), "remapped layer must draw after input region changes");
+        assert_eq!(call(&bus, "osd.list", json!({}))["items"][0]["id"], "remap");
+        call(&bus, "osd.hide", json!({"id":"remap"}));
+        wait(&mut pattern, Duration::from_millis(100));
+        let (_, _, hidden) = ppm(&bus, &process, &format!("detach-{margin}"), None);
+        assert_eq!(hidden, before, "detach must remove the previous buffer");
+    }
+}
+
+#[test]
 fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
     if !process::record_available() {
         return;
