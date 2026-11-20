@@ -143,7 +143,7 @@ elif $mode=="validate" then
   for $tail in slice(split(read_file("libraries/viu/src/runtime.rs"),"eval.register("),1)
     push($generated,split(trim($tail),'"')[1])
   end
-  if $vocabulary!=sort(unique($generated)) or contains($vocabulary,"viu_test_cpu") then
+  if not deep_eq($vocabulary,sort(unique($generated))) or contains($vocabulary,"viu_test_cpu") then
     raise("PROBE","lint_context and generated production vocabulary differ")
   end
   print({production_vocabulary:$vocabulary,test_hook_excluded:true})

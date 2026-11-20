@@ -2568,15 +2568,18 @@ pub mod test_support {
     // This opt-in diagnostic is outside runtime.rs: both production vocabulary
     // generators scan that file's literal registration sites, not test helpers.
     pub(crate) fn register_cpu_probe(eval: &mut mix::evaluator::Evaluator) {
-        eval.register("viu_test_cpu", mix::sync_ext(|args| {
-            if !args.is_empty() {
-                return Err(mix::MixError::RuntimeError {
-                    msg: "viu_test_cpu takes no arguments".into(),
-                    span: None,
-                });
-            }
-            crate::runtime::from_json(json!(thread_cpu().as_secs_f64()))
-        }));
+        eval.register(
+            "viu_test_cpu",
+            mix::sync_ext(|args| {
+                if !args.is_empty() {
+                    return Err(mix::MixError::RuntimeError {
+                        msg: "viu_test_cpu takes no arguments".into(),
+                        span: None,
+                    });
+                }
+                crate::runtime::from_json(json!(thread_cpu().as_secs_f64()))
+            }),
+        );
     }
     pub(crate) fn thread_cpu() -> Duration {
         let mut time = libc::timespec {
