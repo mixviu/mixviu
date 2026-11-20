@@ -351,20 +351,26 @@ fn fixed_width_frame_fills_its_entire_interior() {
 
 #[test]
 fn centred_labels_and_spans_use_the_heading_face_when_bold() {
-    let nodes=json!({"root":{"widget":"column","min_width":400,"children":["title","runs"]},"title":{"widget":"text","text":"Title","bold":true,"size":56,"align":"center","fill":true},"runs":{"widget":"text","text":"runs","spans":[{"text":"runs"}],"align":"center","fill":true}});
-    let source=format!("---\nscene: 1\nname: typography\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
-    let ctx=egui::Context::default();
-    viu::fonts::install(&ctx,400,600);
-    let mut view=SceneView::new(&source).unwrap();
+    let nodes = json!({"root":{"widget":"column","min_width":400,"children":["title","runs"]},"title":{"widget":"text","text":"Title","bold":true,"size":56,"align":"center","fill":true},"runs":{"widget":"text","text":"runs","spans":[{"text":"runs"}],"align":"center","fill":true}});
+    let source =
+        format!("---\nscene: 1\nname: typography\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+    let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
+    let mut view = SceneView::new(&source).unwrap();
     for _ in 0..2 {
-        let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            view.show(ui);
+        });
         out.textures_delta.clear();
         for shape in &out.shapes {
-            if let egui::Shape::Text(t)=&shape.shape {
-                assert_eq!(t.galley.job.halign,egui::Align::Center);
-                if t.galley.job.text=="Title" {
-                    assert_eq!(t.galley.job.sections[0].format.font_id.family,egui::FontFamily::Name("heading".into()));
-                    assert_eq!(t.galley.job.sections[0].format.font_id.size,56.);
+            if let egui::Shape::Text(t) = &shape.shape {
+                assert_eq!(t.galley.job.halign, egui::Align::Center);
+                if t.galley.job.text == "Title" {
+                    assert_eq!(
+                        t.galley.job.sections[0].format.font_id.family,
+                        egui::FontFamily::Name("heading".into())
+                    );
+                    assert_eq!(t.galley.job.sections[0].format.font_id.size, 56.);
                 }
             }
         }
