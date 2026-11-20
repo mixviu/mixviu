@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Run through CBC, not on the developer desktop. All instrumentation is in
 -- lib-viu/test-support or the integration fixture, never the shipped app.
-$mode=env("WORKSHOP_PROBE_MODE","baseline")
+$mode=$1 ?? "baseline"
 $test=["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--nocapture"]
 fn checked($argv)
   $r=run_argv($argv,{timeout:3600,stderr:"stdout",max_output:64000000})
