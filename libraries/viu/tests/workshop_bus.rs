@@ -445,7 +445,10 @@ fn workshop_answers_during_discovery() {
             "healthy results must appear before the silent peer finishes"
         );
         assert!(disconnected.load(std::sync::atomic::Ordering::Acquire));
-        eprintln!("WORKSHOP_PROBE peers={count} {}", host.discovery_measurements());
+        eprintln!(
+            "WORKSHOP_PROBE peers={count} {}",
+            host.discovery_measurements()
+        );
         for task in tasks {
             task.abort();
         }

@@ -961,8 +961,13 @@ impl Host {
             #[cfg(feature = "test-support")]
             if let Some(probe) = &mut self.discovery_probe {
                 probe.callbacks.push(done.elapsed.as_micros() as u64);
-                probe.by_command.entry(done.command.clone()).or_default().push(done.elapsed.as_micros() as u64);
-                probe.discovery_steps += done.stdout.matches("WORKSHOP_DISCOVERY_STEP").count() as u64;
+                probe
+                    .by_command
+                    .entry(done.command.clone())
+                    .or_default()
+                    .push(done.elapsed.as_micros() as u64);
+                probe.discovery_steps +=
+                    done.stdout.matches("WORKSHOP_DISCOVERY_STEP").count() as u64;
                 probe.callback_cpu.entry(done.command.clone()).or_default().push(done.cpu_elapsed.as_micros() as u64);
             }
             if let Some((code, message)) = self.ui_state.take_exit() {
@@ -2465,7 +2470,9 @@ pub mod test_support {
     fn distribution(values: &[u64]) -> Value {
         let mut sorted = values.to_vec();
         sorted.sort_unstable();
-        if sorted.is_empty() { return json!({"n":0}); }
+        if sorted.is_empty() {
+            return json!({"n":0});
+        }
         json!({"n":sorted.len(),"median":sorted[sorted.len()/2],
             "p99":sorted[(sorted.len()*99/100).min(sorted.len()-1)],"max":sorted.last()})
     }
@@ -2494,7 +2501,11 @@ pub mod test_support {
             let start = Instant::now();
             let cpu_start = thread_cpu();
             let before = self.host.discovery_probe.as_ref().map_or(0, |p| p.steps);
-            let completed_before = self.host.discovery_probe.as_ref().map_or(0, |p| p.discovery_steps);
+            let completed_before = self
+                .host
+                .discovery_probe
+                .as_ref()
+                .map_or(0, |p| p.discovery_steps);
             self.host.pump(&self.ctx);
             if let Some(p) = &mut self.host.discovery_probe {
                 let elapsed = start.elapsed().as_micros() as u64;
@@ -2504,7 +2515,8 @@ pub mod test_support {
                 p.pumps.push(elapsed);
                 p.pump_cpu.push(thread_cpu().saturating_sub(cpu_start).as_micros() as u64);
                 p.per_pump.push(p.steps - before);
-                p.completed_per_pump.push(p.discovery_steps - completed_before);
+                p.completed_per_pump
+                    .push(p.discovery_steps - completed_before);
             }
         }
         pub fn probe_discovery(&mut self) {
@@ -2512,7 +2524,10 @@ pub mod test_support {
         }
         pub fn record_call(&mut self, command: &str, elapsed: Duration) {
             if let Some(p) = &mut self.host.discovery_probe {
-                p.calls.entry(command.into()).or_default().push(elapsed.as_micros() as u64);
+                p.calls
+                    .entry(command.into())
+                    .or_default()
+                    .push(elapsed.as_micros() as u64);
             }
         }
         pub fn discovery_measurements(&self) -> Value {
