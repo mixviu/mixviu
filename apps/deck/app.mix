@@ -64,7 +64,10 @@ on deck.next answer("deck.next",$event.args) end
 on deck.prev answer("deck.prev",$event.args) end
 on deck.play answer("deck.play",$event.args) end
 on deck.state answer("deck.state",$event.args) end
-on deck.actions reply(0,json_encode({actions:actions()})) end
+on deck.actions
+  try $core.check_fields($event.args,[],"actions");reply(0,json_encode({actions:actions()}))
+  catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
 on deck.execute
   try
     $core.check_fields($event.args,["id","params"],"execute")

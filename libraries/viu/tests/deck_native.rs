@@ -169,7 +169,7 @@ fn bus_sweep_record_reference_play_and_decode_build_states() {
     let (width, height) = (reader.width, reader.height);
     let mut samples = Vec::new();
     while let Some(frame) = reader.read().unwrap() {
-        for target in [2.0, 5.0, 13.0, 21.0] {
+        for target in [0.0, 2.0, 3.0, 5.0, 11.0, 13.0, 14.0, 21.0] {
             if (frame.t_us as f64 / 1e6 - target).abs() < 0.045 {
                 let rgb: Vec<u8> = frame
                     .pixels
@@ -196,13 +196,13 @@ fn bus_sweep_record_reference_play_and_decode_build_states() {
             }
         }
     }
-    assert_eq!(samples.len(), 4, "{samples:?}");
+    assert_eq!(samples.len(), 8, "{samples:?}");
     assert!(
-        samples[1].1 > samples[0].1 + 20,
+        samples[3].1 > samples[1].1 + 20,
         "before step 1 must reveal red before-card text: {samples:?}"
     );
     assert!(
-        samples[3].2 > samples[2].2 + 20,
+        samples[7].2 > samples[5].2 + 20,
         "recorder step 1 must reveal green stats: {samples:?}"
     );
     std::fs::copy(root.path().join("native.log"), evidence.join("native.log")).unwrap();

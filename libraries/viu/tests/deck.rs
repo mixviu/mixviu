@@ -153,6 +153,20 @@ fn invalid_goto_and_actions_have_typed_replies() {
     );
     assert_eq!(deck.call("deck.prev", json!({})).reply.unwrap().rc, 0);
 }
+
+#[test]
+fn settled_manual_slide_arms_no_repaint() {
+    let mut deck=Deck::new();deck.open();
+    let model=deck.call("deck.goto",json!({"slide":"before","step":1})).model.unwrap();
+    assert_eq!(model["presentation"]["clock"],false);
+    let mut view=SceneView::with_model(model["native_root"]["scene"].as_str().unwrap(),model.clone()).unwrap();
+    let ctx=egui::Context::default();
+    for i in 0..6 {
+        let mut out=ctx.run_ui(egui::RawInput {time:Some(i as f64),screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1600.,900.))),..Default::default()},|ui|{view.show(ui);});
+        if i==5 {assert!(out.viewport_output.values().all(|v|v.repaint_delay==Duration::MAX));}
+        out.textures_delta.clear();
+    }
+}
 #[test]
 #[ignore = "CBC offscreen evidence; PNGs written in temp_dir()/mixviu-deck-app-review"]
 fn render_reference_scenes() {
