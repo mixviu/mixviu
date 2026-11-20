@@ -279,21 +279,14 @@ impl Pattern {
     }
 
     pub fn unmap(&mut self) {
-        self.state.configured = false;
         self.surface.attach(None, 0, 0);
         self.surface.commit();
         self.conn.flush().unwrap();
     }
-    pub fn map_unmapped(&mut self) {
-        // unmap's empty commit may already have elicited the new initial
-        // configure. Keep that event instead of clearing it a second time.
-        self.surface.commit();
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while !self.state.configured {
-            self.queue.roundtrip(&mut self.state).unwrap();
-            assert!(Instant::now() < deadline, "remap configure timed out");
-        }
-        self.commit(true);
+    pub fn destroy_window(&mut self) {
+        self._top.destroy();
+        self.xdg.destroy();
+        self.surface.destroy();
         self.queue.roundtrip(&mut self.state).unwrap();
     }
     pub fn new(stream: UnixStream) -> Self {

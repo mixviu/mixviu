@@ -967,8 +967,8 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
     c.commit(true);
     bus.ready();
     let ar = bus.window_for("cursor-listed", &mut [&mut a, &mut b, &mut c]);
-    let br = bus.window_for("cursor-private", &mut [&mut a, &mut b, &mut c]);
-    let cr = bus.window_for("cursor-different", &mut [&mut a, &mut b, &mut c]);
+    let mut br = bus.window_for("cursor-private", &mut [&mut a, &mut b, &mut c]);
+    let mut cr = bus.window_for("cursor-different", &mut [&mut a, &mut b, &mut c]);
     // Same coordinates keep the take's default-cursor reference identical
     // across focus changes; only A belongs to the take.
     for row in [&ar, &br, &cr] {
@@ -1179,9 +1179,17 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
                 "unmap enter",
             );
             if different {
-                c.map_unmapped();
+                c.destroy_window();
+                c = Pattern::named(connect(&mut process), "cursor-different", false);
+                c.solid_buffer(0xff998877);
+                c.commit(true);
+                cr = bus.window_for("cursor-different", &mut [&mut a, &mut b, &mut c]);
             } else {
-                b.map_unmapped();
+                b.destroy_window();
+                b = a.another_window("cursor-private");
+                b.solid_buffer(0xff667788);
+                b.commit(true);
+                br = bus.window_for("cursor-private", &mut [&mut a, &mut b, &mut c]);
             }
             pump_patterns(&mut [&mut a, &mut b, &mut c]);
         }
