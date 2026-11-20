@@ -963,6 +963,7 @@ impl Host {
                 probe.callbacks.push(done.elapsed.as_micros() as u64);
                 probe.by_command.entry(done.command.clone()).or_default().push(done.elapsed.as_micros() as u64);
                 probe.discovery_steps += done.stdout.matches("WORKSHOP_DISCOVERY_STEP").count() as u64;
+                probe.callback_cpu.entry(done.command.clone()).or_default().push(done.cpu_elapsed.as_micros() as u64);
             }
             if let Some((code, message)) = self.ui_state.take_exit() {
                 if !message.is_empty() {
@@ -2442,6 +2443,12 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
 #[doc(hidden)]
 pub mod test_support {
     use super::*;
+    pub(crate) fn thread_cpu() -> Duration {
+        let mut time = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+        // CLOCK_THREAD_CPUTIME_ID separates actual work from CBC preemption.
+        assert_eq!(unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) }, 0);
+        Duration::new(time.tv_sec as u64, time.tv_nsec as u32)
+    }
     #[derive(Default)]
     pub struct DiscoveryProbe {
         pub(super) steps: u64,
@@ -2449,6 +2456,8 @@ pub mod test_support {
         per_pump: Vec<u64>,
         pub(super) callbacks: Vec<u64>,
         pub(super) by_command: BTreeMap<String, Vec<u64>>,
+        pub(super) callback_cpu: BTreeMap<String, Vec<u64>>,
+        pump_cpu: Vec<u64>,
         pub(super) discovery_steps: u64,
         completed_per_pump: Vec<u64>,
         calls: BTreeMap<String, Vec<u64>>,
@@ -2483,6 +2492,7 @@ pub mod test_support {
         }
         pub fn pump(&mut self) {
             let start = Instant::now();
+            let cpu_start = thread_cpu();
             let before = self.host.discovery_probe.as_ref().map_or(0, |p| p.steps);
             let completed_before = self.host.discovery_probe.as_ref().map_or(0, |p| p.discovery_steps);
             self.host.pump(&self.ctx);
@@ -2492,6 +2502,7 @@ pub mod test_support {
                     eprintln!("WORKSHOP_LONG_PUMP us={elapsed} steps={}", p.steps - before);
                 }
                 p.pumps.push(elapsed);
+                p.pump_cpu.push(thread_cpu().saturating_sub(cpu_start).as_micros() as u64);
                 p.per_pump.push(p.steps - before);
                 p.completed_per_pump.push(p.discovery_steps - completed_before);
             }
@@ -2507,6 +2518,8 @@ pub mod test_support {
         pub fn discovery_measurements(&self) -> Value {
             let p = self.host.discovery_probe.as_ref().unwrap();
             json!({"pump_us":distribution(&p.pumps),"steps_per_pump":distribution(&p.per_pump),
+                "pump_cpu_us":distribution(&p.pump_cpu),
+                "callback_cpu_us":p.callback_cpu.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
                 "discovery_completions_per_pump":distribution(&p.completed_per_pump),
                 "calls_us":p.calls.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
                 "callback_us":distribution(&p.callbacks),

@@ -131,6 +131,8 @@ pub struct DeferredAnswer {
 pub struct Completion {
     #[cfg(feature = "test-support")]
     pub command: String,
+    #[cfg(feature = "test-support")]
+    pub cpu_elapsed: Duration,
     pub generation: u64,
     pub sequence: u64,
     pub model: Option<Json>,
@@ -242,6 +244,8 @@ impl Runtime {
                 worker_interrupt.store(false, Ordering::Release);
                 if worker_stop.load(Ordering::Acquire) { break; }
                 let start = Instant::now();
+                #[cfg(feature = "test-support")]
+                let cpu_start = crate::app_host::test_support::thread_cpu();
                 #[cfg(feature = "test-support")]
                 let probe_command = match &request {
                     Request::Event(_, _, command, ..) => command.clone(),
@@ -383,6 +387,8 @@ impl Runtime {
                 let completion = Completion {
                     #[cfg(feature = "test-support")]
                     command: probe_command,
+                    #[cfg(feature = "test-support")]
+                    cpu_elapsed: crate::app_host::test_support::thread_cpu().saturating_sub(cpu_start),
                     generation, sequence, model, error: result.err().map(RunFailure::message), elapsed: start.elapsed(), stdout, stderr, behaviour_available: current.is_some(),reply,deferred,answers,deferred_token,deferred_answers };
                 if results.send(completion).is_err() { break; }
                 wake();
