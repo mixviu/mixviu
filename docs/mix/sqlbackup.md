@@ -10,8 +10,11 @@ $copy = sqlbackup("/srv/app/state.db", "/srv/backups/state.db")
 print($copy.integrity)
 ```
 
-The result is `{ok: true, pages, bytes, integrity: "ok", duration_ms}`.
-`pages` is the copied page count; `bytes` is the standalone destination
+The result is `{ok: true, pages, source_pages, bytes, integrity: "ok", duration_ms}`.
+`source_pages` is the pinned snapshot's page count; `pages` is the staging
+copy's page count after explicit, checked backup finalisation. They must
+match before journal conversion or integrity checking; a mismatch raises
+`SQL_INTEGRITY` and reports both counts. `bytes` is the standalone destination
 file size; `duration_ms` is elapsed wall time, including retries and checking.
 Failures raise, rather than returning `ok: false`.
 
@@ -32,9 +35,20 @@ The published copy uses DELETE journal mode, so it needs no WAL sidecars.
 The source's journal mode stays unchanged. A pinned read transaction keeps
 the snapshot stable during copying; a writer may continue committing, but
 its WAL can grow until the copy completes.
+A WAL source in an unwritable directory fails `SQL_IO` when SQLite needs
+to create `-shm` there and cannot. Read-only access to the database alone
+does not guarantee that a live WAL database can be opened.
+
+A crash or forced termination can leave `.mix-sqlbackup-<pid>-N` staging
+files in the destination directory. There is no automatic sweep: PID reuse
+and PID namespaces make a guessed process-liveness check unsafe. During
+maintenance, stop backup jobs, verify no process has the staging files open,
+and remove only those confirmed abandoned staging files and their SQLite
+sidecars. Never remove a staging file belonging to an active backup.
 
 Use overwrite only for an offline backup file. The destination must have
-no open users; symlinks, the source itself and destinations with SQLite
+no open users; symlinks, the source itself (including hard links checked by
+device/inode on Unix) and destinations with SQLite
 sidecars are refused. Sidecar checks cannot detect every open user or
 protect against another process opening the destination concurrently.
 Use a directory trusted by the operator. Publication uses a same-directory

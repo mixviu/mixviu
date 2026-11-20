@@ -35,8 +35,8 @@ async fn live_wal_writer_committed_snapshot_and_contract() {
     let dst = dir.path("copy.db");
     let writer = Connection::open(&src).unwrap();
     writer.execute_batch("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE t(x); INSERT INTO t VALUES(1),(2); BEGIN IMMEDIATE; INSERT INTO t VALUES(3);").unwrap();
-    let result = run(&format!("$r = sqlbackup({:?}, {:?})\nprint($r.ok)\nprint($r.integrity)\nprint($r.pages > 0)\nprint($r.bytes > 0)\nprint($r.duration_ms >= 0)", src, dst)).await.unwrap();
-    assert_eq!(result, "true\nok\ntrue\ntrue\ntrue\n");
+    let result = run(&format!("$r = sqlbackup({:?}, {:?})\nprint($r.ok)\nprint($r.integrity)\nprint($r.pages > 0)\nprint($r.bytes > 0)\nprint($r.duration_ms >= 0)\nprint($r.source_pages == $r.pages)", src, dst)).await.unwrap();
+    assert_eq!(result, "true\nok\ntrue\ntrue\ntrue\ntrue\n");
     let copy = Connection::open(&dst).unwrap();
     assert_eq!(
         copy.query_row("SELECT sum(x) FROM t", [], |r| r.get::<_, i64>(0))
@@ -216,4 +216,66 @@ async fn refuses_symlink_destination_without_touching_target() {
         "OPTION_INVALID"
     );
     assert_eq!(std::fs::read(target).unwrap(), b"keep");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn refuses_source_hardlink_without_replacing_it() {
+    use std::os::unix::fs::MetadataExt;
+    let dir = TestDir::new("backup-hardlink");
+    let src = dir.path("source.db");
+    let dst = dir.path("copy.db");
+    Connection::open(&src).unwrap().execute_batch("CREATE TABLE t(x)").unwrap();
+    std::fs::hard_link(&src, &dst).unwrap();
+    let before = std::fs::metadata(&dst).unwrap();
+    assert_eq!(code(&format!("sqlbackup({src:?}, {dst:?}, {{overwrite: true}})")).await, "OPTION_INVALID");
+    assert_eq!(std::fs::metadata(&dst).unwrap().ino(), before.ino());
+}
+
+#[tokio::test]
+async fn registry_rejects_nonstring_paths_before_filesystem_access() {
+    assert_eq!(code("sqlbackup(nil, \"unused\")").await, "TYPE_MISMATCH");
+    assert_eq!(code("sqlbackup(\"unused\", false)").await, "TYPE_MISMATCH");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn wal_without_creatable_shm_returns_sql_io() {
+    use std::os::unix::{fs::PermissionsExt, process::CommandExt};
+    if let Some(src) = std::env::var_os("MIX_TEST_BACKUP_READONLY_SOURCE") {
+        let dst = std::env::var_os("MIX_TEST_BACKUP_READONLY_DEST").unwrap();
+        assert_eq!(code(&format!("sqlbackup({src:?}, {dst:?})")).await, "SQL_IO");
+        assert!(!std::path::Path::new(&dst).exists());
+        return;
+    }
+    let dir = TestDir::new("backup-readonly-wal");
+    std::fs::set_permissions(dir.path(""), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let writer_path = dir.path("writer.db");
+    let writer = Connection::open(&writer_path).unwrap();
+    writer.execute_batch("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0; CREATE TABLE t(x); INSERT INTO t VALUES(1)").unwrap();
+    let source_dir = dir.path("readonly");
+    let output_dir = dir.path("output");
+    std::fs::create_dir(&source_dir).unwrap();
+    std::fs::create_dir(&output_dir).unwrap();
+    std::fs::set_permissions(&output_dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+    let src = source_dir.join("source.db");
+    std::fs::copy(&writer_path, &src).unwrap();
+    std::fs::copy(dir.path("writer.db-wal"), source_dir.join("source.db-wal")).unwrap();
+    for file in [&src, &source_dir.join("source.db-wal")] {
+        std::fs::set_permissions(file, std::fs::Permissions::from_mode(0o444)).unwrap();
+    }
+    std::fs::set_permissions(&source_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let dst = output_dir.join("copy.db");
+    let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+    child.args(["--exact", "wal_without_creatable_shm_returns_sql_io", "--nocapture"])
+        .env("MIX_TEST_BACKUP_READONLY_SOURCE", &src)
+        .env("MIX_TEST_BACKUP_READONLY_DEST", &dst);
+    // CBC runs as root; drop only the child so permissions are actually tested.
+    if unsafe { libc::geteuid() } == 0 { child.gid(65534).uid(65534); }
+    let result = child.output().unwrap();
+    std::fs::set_permissions(&source_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(result.status.success(), "{}\n{}", String::from_utf8_lossy(&result.stdout), String::from_utf8_lossy(&result.stderr));
+    assert!(String::from_utf8_lossy(&result.stdout).contains("1 passed"));
+    assert!(!source_dir.join("source.db-shm").exists());
+    assert!(!dst.exists());
 }
