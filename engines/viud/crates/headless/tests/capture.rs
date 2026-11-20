@@ -689,7 +689,14 @@ fn record_listed_output_excludes_occluders_and_tracks_popup_and_close() {
     );
     let recovery = Path::new(start["recovery_path"].as_str().unwrap());
     let mut reader = media_vfl::reader::Reader::open(recovery).unwrap();
-    while let Some(frame) = reader.read().unwrap() {
+    // This is a live take: EOF moves as the writer appends repeat records.
+    // Inspect the observed prefix, rather than chasing the recording clock.
+    let mut inspected = 0;
+    for _ in 0..excluded["frames"].as_u64().unwrap() {
+        let Some(frame) = reader.read().unwrap() else {
+            break;
+        };
+        inspected += 1;
         assert!(
             !frame
                 .pixels
@@ -697,6 +704,7 @@ fn record_listed_output_excludes_occluders_and_tracks_popup_and_close() {
                 .any(|p| p == 0xffff00ff_u32.to_le_bytes())
         );
     }
+    assert!(inspected > 0, "the live prefix must contain decoded pixels");
     private_popup.destroy();
     let mut c = Pattern::named(connect(&mut process), "opened-during-take", false);
     c.change_buffer();
