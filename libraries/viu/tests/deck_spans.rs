@@ -71,3 +71,22 @@ fn malformed_bound_runs_refuse_before_rendering() {
     let source = format!("---\nscene: 1\nname: deck\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
     assert!(SceneView::with_model(&source,json!({"runs":[{"text":"x","role":"typo"}]})).is_err());
 }
+
+#[test]
+#[ignore = "CBC offscreen review: stage slide.scene.mix in temp_dir()/mixviu-deck-review"]
+fn render_review_slide() {
+    let dir = std::env::temp_dir().join("mixviu-deck-review");
+    let source = std::fs::read_to_string(dir.join("slide.scene.mix")).unwrap();
+    let mut view = SceneView::new(&source).unwrap();
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(1600., 900.))
+        .with_pixels_per_point(2.4)
+        .wgpu()
+        .build_ui(move |ui| { view.show(ui); });
+    harness.run();
+    let image = harness.render().expect("native offscreen render");
+    assert_eq!(image.dimensions(), (3840,2160));
+    let out = dir.join("viu-slide.png");
+    image.save(&out).unwrap();
+    println!("DECK_PNG={}", out.display());
+}
