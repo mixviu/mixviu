@@ -1056,6 +1056,10 @@ impl Host {
                             }
                             self.windows.validate(&model)?;
                             if self.loaded && self.active_scene == source {
+                                #[cfg(feature = "test-support")]
+                                let _apply_probe = self.discovery_probe.as_ref().map(|_| {
+                                    test_support::PhaseProbe::new(format!("scene.apply {}", done.command))
+                                });
                                 self.view.apply_model(projected)
                             } else {
                                 (if self.framed {
