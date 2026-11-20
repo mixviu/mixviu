@@ -33,6 +33,7 @@ pub struct Event {
 pub struct SceneView {
     motion: toolkit::scene_motion::SceneMotion,
     numbers: crate::numbers::Numbers,
+    backdrops: crate::backdrop::Backdrops,
     motion_parent: Option<String>,
     collect_widget_rects: bool,
     widget_rects: Vec<crate::widget_rects::WidgetRect>,
@@ -126,6 +127,7 @@ impl SceneView {
         Ok(Self {
             motion: toolkit::scene_motion::SceneMotion::default(),
             numbers: crate::numbers::Numbers::default(),
+            backdrops: crate::backdrop::Backdrops::default(),
             motion_parent: None,
             frame: None,
             regions: BTreeMap::new(),
@@ -369,6 +371,7 @@ impl SceneView {
     fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
         self.motion.begin(ui);
         self.numbers.begin();
+        self.backdrops.begin();
         if self.collect_widget_rects {
             self.widget_rects.clear();
             ui.ctx()
@@ -383,6 +386,7 @@ impl SceneView {
         self.node(ui, "root", &nodes, None, 0, &mut events);
         self.motion.end(ui);
         self.numbers.end();
+        self.backdrops.end();
         for id in &self.overlays {
             let node = &nodes[id];
             if let Ok(widget) = Widget::decode(&node.ports["definition"]) {
@@ -1059,7 +1063,8 @@ impl SceneView {
                                         let fixed:Vec<_>=active.iter().map(|child|{let n=&nodes[*child];if num(n,"grow").unwrap_or(0.)>0.{0.}else{num(n,"width").or(num(n,"min_width")).unwrap_or_else(||if n.family=="control"{Widget::decode(&n.ports["definition"]).and_then(|w|w.intrinsic_width(ui,&self.tree.model)).unwrap_or(0.)}else{0.})}}).collect();
                                         let weight:f32=active.iter().map(|child|num(&nodes[*child],"grow").unwrap_or(0.).max(0.)).sum();
                                         let remaining=(ui.available_width()-fixed.iter().sum::<f32>()-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.);
-                                        ui.horizontal_top(|ui|for (i,child) in active.iter().enumerate(){let grow=num(&nodes[*child],"grow").unwrap_or(0.);let width=if grow>0.{remaining*grow/weight}else{fixed[i]};ui.allocate_ui(egui::vec2(width,0.),|ui|{ui.set_min_width(width);self.node(ui,child,nodes,route,depth+1,events);});});
+                                        let mut cells=|ui:&mut egui::Ui|for (i,child) in active.iter().enumerate(){let grow=num(&nodes[*child],"grow").unwrap_or(0.);let width=if grow>0.{remaining*grow/weight}else{fixed[i]};ui.allocate_ui(egui::vec2(width,0.),|ui|{ui.set_min_width(width);self.node(ui,child,nodes,route,depth+1,events);});};
+                                        if text(node,"align")=="center" {egui::Grid::new((&key,"cross-center")).num_columns(active.len()).min_col_width(0.).min_row_height(0.).spacing(ui.spacing().item_spacing).striped(false).show(ui,|ui|cells(ui));} else {ui.horizontal_top(|ui|cells(ui));}
                                     } else if text(node,"align")=="end" {
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
                                     } else if let Some(height) = num(node, "height") {
@@ -1074,7 +1079,7 @@ impl SceneView {
                                 }
                             })
                             .response;
-                        if let Some(radials)=node.ports.get("background_radials") { ui.painter().set(radial_shape,crate::backdrop::shape(response.rect,background,radials)); }
+                        if let Some(radials)=node.ports.get("background_radials") { ui.painter().set(radial_shape,self.backdrops.shape(ui.ctx(),&key,response.rect,background,radials)); }
                         if route.is_some_and(|(_, list, _)| text(list, "row") == id)
                             || node.ports.contains_key("on_click")
                         {

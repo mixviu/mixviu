@@ -95,9 +95,9 @@ fn chapter_rail($chapters,$active,$series)
   $chips=[]
   for $name in $chapters
     $current=$name==$active
-    push($chips,merge(column([merge(deck_text($name,"rail",if $current then "background" else "mut" end),{mono:true,bold:$current,size:$tokens.type.rail_compact})],0),{padding_left:$tokens.space.rail_x,padding_right:$tokens.space.rail_x,padding_top:$tokens.space.rail_y,padding_bottom:$tokens.space.rail_y,radius:$tokens.space.rail_radius,background:if $current then $tokens.colour.acc else $tokens.colour.rail end,outline:if $current then $tokens.colour.acc else $tokens.colour.line end,outline_width:1}))
+    push($chips,merge(column([merge(deck_text($name,"rail",if $current then "background" else "mut" end),{mono:true,bold:$current,size:$tokens.type.rail})],0),{padding_left:$tokens.space.rail_x,padding_right:$tokens.space.rail_x,padding_top:$tokens.space.rail_y,padding_bottom:$tokens.space.rail_y,radius:$tokens.space.rail_radius,background:if $current then $tokens.colour.acc else $tokens.colour.rail end,outline:if $current then $tokens.colour.acc else $tokens.colour.line end,outline_width:1}))
   end
-  return merge(row([row($chips,$tokens.space.rail_gap),merge(deck_text($series,"rail","mut"),{size:$tokens.type.series_footer})],0),{fill:true,justify:"between"})
+  return merge(row([row($chips,$tokens.space.rail_gap),merge(deck_text($series,"rail","mut"),{size:20})],0),{fill:true,justify:"between"})
 end
 fn mock($title, $items)
   return merge(column([deck_text($title,"node_label","mut"),bullets($items,"acc")],6),{padding_left:20,padding_right:20,padding_top:14,padding_bottom:14,background:$tokens.colour.panel,radius:12})
