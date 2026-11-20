@@ -50,27 +50,11 @@ pub fn main() -> Result<()> {
         .enable_all()
         .build()?;
     if let Command::Bridge { node_config } = &cli.command {
-        let node_config = node_config
-            .clone()
-            .or_else(|| {
-                std::env::var_os("MIX_NODE_CONFIG")
-                    .filter(|v| !v.is_empty())
-                    .map(PathBuf::from)
-            })
-            .unwrap_or_else(|| ::paths::root(::paths::Root::Prefix).join("etc/node.conf.mix"));
         return runtime.block_on(async {
             let client = async {
-                let url = match std::env::var("MIX_NODED_URL")
-                    .ok()
-                    .filter(|v| !v.is_empty())
-                {
-                    Some(url) => url,
-                    None => {
-                        let source = std::fs::read_to_string(&node_config)?;
-                        ::bus::client::url_from_node_config(&source).ok_or_else(|| {
-                            anyhow::anyhow!("invalid node config: {}", node_config.display())
-                        })?
-                    }
+                let url = match node_config {
+                    Some(path) => ::bus::client::noded_url_with_config(Some(path)),
+                    None => ::bus::client::noded_url(),
                 };
                 ::bus::native_client::NodedClient::connect_anonymous(&url).await
             }
