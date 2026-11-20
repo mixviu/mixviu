@@ -828,7 +828,11 @@ impl SeatHandler for Dispatch {
         // `cursor_image` also runs inside pointer focus transitions while the
         // pointer's inner lock is held. last_enter uses the separate Wayland
         // serial lock; querying current_focus here would deadlock.
-        self.seat.pointer_status_enter = seat.get_pointer().and_then(|p| p.last_enter());
+        self.seat.pointer_status_enter = if self.dnd.active {
+            None
+        } else {
+            seat.get_pointer().and_then(|p| p.last_enter())
+        };
         self.schedule_redraw(RedrawReason::Cursor);
     }
 

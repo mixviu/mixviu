@@ -25,7 +25,8 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
     };
     state.inner.comp.injection.agent_pointer = None;
     let command = mode.split(':').next().unwrap_or_default();
-    state.state.seat.force_cursor = command.ends_with("forced")
+    state.state.seat.force_cursor = command
+        .ends_with("forced")
         .then_some(smithay::input::pointer::CursorIcon::Crosshair);
     if command != "overlap" && PREVIOUS.with_borrow(|last| *last == mode) {
         return;
@@ -69,8 +70,14 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
     if command == "listed-popup" || command == "listed-sub" {
         // Use Smithay's real surface hit test; the test's enter event confirms
         // which child actually received focus (not just membership in a walk).
-        let local = if command == "listed-popup" { (190.0, 50.0) } else { (50.0, 50.0) };
-        let Some((child, offset)) = window.surface_under(local, smithay::desktop::WindowSurfaceType::ALL) else {
+        let local = if command == "listed-popup" {
+            (190.0, 50.0)
+        } else {
+            (50.0, 50.0)
+        };
+        let Some((child, offset)) =
+            window.surface_under(local, smithay::desktop::WindowSurfaceType::ALL)
+        else {
             panic!("listed child not mapped: {command}");
         };
         assert_ne!(child, surface, "fixture must focus the child");
@@ -80,7 +87,12 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
     }
     if command == "overlap" {
         let hit = world::surface::interface::hit::surface_under_filtered(state, point, &|_| true);
-        let Some(world::surface::interface::hit::SurfaceHit::Window { surface: hit_surface, position, .. }) = hit else {
+        let Some(world::surface::interface::hit::SurfaceHit::Window {
+            surface: hit_surface,
+            position,
+            ..
+        }) = hit
+        else {
             return;
         };
         surface = hit_surface;
@@ -91,15 +103,15 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
     }
     let dragging = command == "drag-listed";
     if !dragging {
-    pointer.button(
-        &mut state.state,
-        &ButtonEvent {
-            serial: SERIAL_COUNTER.next_serial(),
-            time: 0,
-            button: 0x110,
-            state: ButtonState::Released,
-        },
-    );
+        pointer.button(
+            &mut state.state,
+            &ButtonEvent {
+                serial: SERIAL_COUNTER.next_serial(),
+                time: 0,
+                button: 0x110,
+                state: ButtonState::Released,
+            },
+        );
     }
     pointer.motion(
         &mut state.state,
@@ -111,15 +123,15 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
         },
     );
     if !dragging {
-    pointer.button(
-        &mut state.state,
-        &ButtonEvent {
-            serial: SERIAL_COUNTER.next_serial(),
-            time: 0,
-            button: 0x110,
-            state: ButtonState::Pressed,
-        },
-    );
+        pointer.button(
+            &mut state.state,
+            &ButtonEvent {
+                serial: SERIAL_COUNTER.next_serial(),
+                time: 0,
+                button: 0x110,
+                state: ButtonState::Pressed,
+            },
+        );
     }
     pointer.frame(&mut state.state);
     PREVIOUS.with_borrow_mut(|last| *last = mode);

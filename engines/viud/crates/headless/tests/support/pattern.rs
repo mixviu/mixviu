@@ -100,10 +100,15 @@ impl Pattern {
     }
     pub fn named_cursor(&mut self) {
         use wayland_protocols::wp::cursor_shape::v1::client::{
-            wp_cursor_shape_manager_v1::WpCursorShapeManagerV1,
-            wp_cursor_shape_device_v1::Shape,
+            wp_cursor_shape_device_v1::Shape, wp_cursor_shape_manager_v1::WpCursorShapeManagerV1,
         };
-        let name = self.state.globals.iter().find(|(_, i, _)| i == "wp_cursor_shape_manager_v1").unwrap().0;
+        let name = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, i, _)| i == "wp_cursor_shape_manager_v1")
+            .unwrap()
+            .0;
         let qh = self.queue.handle();
         let manager: WpCursorShapeManagerV1 = self.registry.bind(name, 1, &qh, ());
         let (serial, pointer) = self.state.last_enter.clone().expect("cursor enter");
@@ -113,9 +118,20 @@ impl Pattern {
         manager.destroy();
         self.queue.roundtrip(&mut self.state).unwrap();
     }
-    pub fn subsurface(&mut self) -> (WlSurface, wayland_client::protocol::wl_subsurface::WlSubsurface) {
+    pub fn subsurface(
+        &mut self,
+    ) -> (
+        WlSurface,
+        wayland_client::protocol::wl_subsurface::WlSubsurface,
+    ) {
         use wayland_client::protocol::wl_subcompositor::WlSubcompositor;
-        let name = self.state.globals.iter().find(|(_, i, _)| i == "wl_subcompositor").unwrap().0;
+        let name = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, i, _)| i == "wl_subcompositor")
+            .unwrap()
+            .0;
         let qh = self.queue.handle();
         let manager: WlSubcompositor = self.registry.bind(name, 1, &qh, ());
         let surface = self.compositor.create_surface(&qh, ());

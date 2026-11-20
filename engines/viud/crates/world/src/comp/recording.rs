@@ -3,8 +3,8 @@
 //! all outputs in viud; recording instead uses the selected output's view.
 use crate::state::Loop;
 use comp_model::capture::CaptureWindow;
-use smithay::output::Output;
 use smithay::input::pointer::CursorImageStatus;
+use smithay::output::Output;
 use smithay::reexports::wayland_server::Resource;
 
 pub fn on_output(state: &Loop, target: CaptureWindow, output: &Output) -> bool {
@@ -68,15 +68,18 @@ pub fn cursor_focus_allowed(state: &Loop, listed: &[CaptureWindow], output: &Out
     };
     // Drag sources may set a cursor independently of the target's focus.
     // All drags use the compositor default in a take (and never their icon).
-    if state.state.dnd.active || seat.pointer_status_enter.is_none()
-        || seat.pointer_status_enter != pointer.last_enter() {
+    if state.state.dnd.active
+        || seat.pointer_status_enter.is_none()
+        || seat.pointer_status_enter != pointer.last_enter()
+    {
         return false;
     }
     let Some(focus) = pointer.current_focus() else {
         return false;
     };
     if let CursorImageStatus::Surface(surface) = &seat.pointer_status
-        && (surface.client().is_none() || surface.client() != focus.client()) {
+        && (surface.client().is_none() || surface.client() != focus.client())
+    {
         return false;
     }
     listed.iter().any(|target| {

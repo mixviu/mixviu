@@ -951,7 +951,9 @@ fn record_privacy_cursor_ownership_output_and_take_identity() {
 
 #[test]
 fn record_privacy_cursor_enter_epoch_and_listed_children() {
-    if !process::record_available() { return; }
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("record-cursor-epoch");
     let mut process = process::spawn(1, None, "record-cursor-epoch", Some(&bus.url));
     let mut a = Pattern::named(connect(&mut process), "cursor-listed", false);
@@ -970,28 +972,37 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
     // Same coordinates keep the take's default-cursor reference identical
     // across focus changes; only A belongs to the take.
     for row in [&ar, &br, &cr] {
-        bus.call("comp.window.place", place_args(row, json!({"output":"headless-0","x":100,"y":100})));
+        bus.call(
+            "comp.window.place",
+            place_args(row, json!({"output":"headless-0","x":100,"y":100})),
+        );
     }
     let mut serial = 0;
     let mut focus = |mode: &str, a: &mut Pattern, b: &mut Pattern, c: &mut Pattern| {
         serial += 1;
-        fs::write(process.root.join("record-input"), format!("{mode}:{serial}")).unwrap();
+        fs::write(
+            process.root.join("record-input"),
+            format!("{mode}:{serial}"),
+        )
+        .unwrap();
         bus.call("comp.capture.frame", json!({"output":"headless-0","path":process.root.join("epoch-focus.ppm"),"format":"ppm"}));
-        pump_patterns(&mut [a,b,c]);
+        pump_patterns(&mut [a, b, c]);
     };
     let take = |name: &str, a: &mut Pattern, b: &mut Pattern, c: &mut Pattern| {
         let path = process.root.join(format!("{name}.vfl"));
         let start = bus.call("comp.record.start", json!({"request_id":name,"target":{"output":"headless-0","windows":[target(&ar)]},"cursor":true,"path":path,"max_seconds":10}));
-        pump_patterns(&mut [a,b,c]);
-        let deadline = Instant::now()+Duration::from_secs(5);
+        pump_patterns(&mut [a, b, c]);
+        let deadline = Instant::now() + Duration::from_secs(5);
         loop {
             let s = bus.call("comp.record.status", json!({"session":start["session"]}));
-            if s["frames"].as_u64().unwrap() >= 1 { break; }
-            assert!(Instant::now()<deadline,"cursor take first frame: {s}");
+            if s["frames"].as_u64().unwrap() >= 1 {
+                break;
+            }
+            assert!(Instant::now() < deadline, "cursor take first frame: {s}");
         }
         let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
-        assert_eq!(stop["error"],Value::Null,"{stop}");
-        let mut frames=Vec::new();
+        assert_eq!(stop["error"], Value::Null, "{stop}");
+        let mut frames = Vec::new();
         vfl_visit(&path, |p| frames.push(p.to_vec()));
         assert!(!frames.is_empty());
         frames
@@ -1002,105 +1013,201 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
         }
     };
     let live = |name: &str| {
-        let path=process.root.join(format!("{name}.ppm"));
-        bus.call("comp.capture.frame",json!({"output":"headless-0","path":path,"format":"ppm"}));
+        let path = process.root.join(format!("{name}.ppm"));
+        bus.call(
+            "comp.capture.frame",
+            json!({"output":"headless-0","path":path,"format":"ppm"}),
+        );
         fs::read(path).unwrap()
     };
-    focus("listed", &mut a,&mut b,&mut c);
-    let default = take("epoch-default", &mut a,&mut b,&mut c).remove(0);
+    focus("listed", &mut a, &mut b, &mut c);
+    let default = take("epoch-default", &mut a, &mut b, &mut c).remove(0);
     // Exercise Surface, Hidden and Named from same-client and different-client
     // private windows, followed by a listed enter with no cursor response.
-    for different in [false,true] {
-        for shape in ["surface","hidden","named"] {
+    for different in [false, true] {
+        for shape in ["surface", "hidden", "named"] {
             let private = if different { "different" } else { "private" };
-            focus(private,&mut a,&mut b,&mut c);
+            focus(private, &mut a, &mut b, &mut c);
             let source = if different { &mut c } else { &mut b };
             let _cursor = match shape {
                 "surface" => Some(source.custom_cursor(0xffff00ff)),
-                "hidden" => { source.hide_cursor(); None },
-                _ => { source.named_cursor(); None },
+                "hidden" => {
+                    source.hide_cursor();
+                    None
+                }
+                _ => {
+                    source.named_cursor();
+                    None
+                }
             };
-            pump_patterns(&mut [&mut a,&mut b,&mut c]);
+            pump_patterns(&mut [&mut a, &mut b, &mut c]);
             if shape == "surface" {
-                assert!(live("epoch-private-live").windows(3).any(|p|p==rgb(0xffff00ff)));
+                assert!(
+                    live("epoch-private-live")
+                        .windows(3)
+                        .any(|p| p == rgb(0xffff00ff))
+                );
             }
-            all_equal(&take(&format!("epoch-denied-{different}-{shape}"),&mut a,&mut b,&mut c),&default,"private state");
-            focus("listed",&mut a,&mut b,&mut c);
-            all_equal(&take(&format!("epoch-return-{different}-{shape}"),&mut a,&mut b,&mut c),&default,"new enter must use default");
+            all_equal(
+                &take(
+                    &format!("epoch-denied-{different}-{shape}"),
+                    &mut a,
+                    &mut b,
+                    &mut c,
+                ),
+                &default,
+                "private state",
+            );
+            focus("listed", &mut a, &mut b, &mut c);
+            all_equal(
+                &take(
+                    &format!("epoch-return-{different}-{shape}"),
+                    &mut a,
+                    &mut b,
+                    &mut c,
+                ),
+                &default,
+                "new enter must use default",
+            );
             let _own = a.custom_cursor(0xff11eecc);
-            pump_patterns(&mut [&mut a,&mut b,&mut c]);
-            let own = take(&format!("epoch-own-{different}-{shape}"),&mut a,&mut b,&mut c);
-            assert_ne!(own[0],default,"new listed cursor must be honoured");
-            assert!(own[0].chunks_exact(4).any(|p|p==0xff11eecc_u32.to_le_bytes()));
-            all_equal(&own,&own[0],"listed custom cursor");
+            pump_patterns(&mut [&mut a, &mut b, &mut c]);
+            let own = take(
+                &format!("epoch-own-{different}-{shape}"),
+                &mut a,
+                &mut b,
+                &mut c,
+            );
+            assert_ne!(own[0], default, "new listed cursor must be honoured");
+            assert!(
+                own[0]
+                    .chunks_exact(4)
+                    .any(|p| p == 0xff11eecc_u32.to_le_bytes())
+            );
+            all_equal(&own, &own[0], "listed custom cursor");
         }
     }
     // A forced compositor shape must not disclose private focus metadata.
-    focus("private-forced",&mut a,&mut b,&mut c);
-    assert_ne!(live("epoch-forced-live"),{
-        focus("private",&mut a,&mut b,&mut c); live("epoch-not-forced-live")
-    },"forced shape positive control");
-    focus("private-forced",&mut a,&mut b,&mut c);
-    all_equal(&take("epoch-forced-denied",&mut a,&mut b,&mut c),&default,"forced private cursor");
+    focus("private-forced", &mut a, &mut b, &mut c);
+    assert_ne!(
+        live("epoch-forced-live"),
+        {
+            focus("private", &mut a, &mut b, &mut c);
+            live("epoch-not-forced-live")
+        },
+        "forced shape positive control"
+    );
+    focus("private-forced", &mut a, &mut b, &mut c);
+    all_equal(
+        &take("epoch-forced-denied", &mut a, &mut b, &mut c),
+        &default,
+        "forced private cursor",
+    );
     // Unmapping the overlapping private window enters A without A setting
     // anything. Test both client identities and all three cursor states.
-    for different in [false,true] {
-        for shape in ["surface","hidden","named"] {
-            bus.call("comp.window.place",place_args(&br,json!({"output":"headless-0","x":if different {400}else{100},"y":100})));
-            bus.call("comp.window.place",place_args(&cr,json!({"output":"headless-0","x":if different {100}else{400},"y":100})));
-            focus("overlap",&mut a,&mut b,&mut c);
-            let source=if different {&mut c}else{&mut b};
-            let _cursor=match shape {
-                "surface"=>Some(source.custom_cursor(0xffff00ff)),
-                "hidden"=>{source.hide_cursor();None},
-                _=>{source.named_cursor();None},
+    for different in [false, true] {
+        for shape in ["surface", "hidden", "named"] {
+            bus.call(
+                "comp.window.place",
+                place_args(
+                    &br,
+                    json!({"output":"headless-0","x":if different {400}else{100},"y":100}),
+                ),
+            );
+            bus.call(
+                "comp.window.place",
+                place_args(
+                    &cr,
+                    json!({"output":"headless-0","x":if different {100}else{400},"y":100}),
+                ),
+            );
+            focus("overlap", &mut a, &mut b, &mut c);
+            let source = if different { &mut c } else { &mut b };
+            let _cursor = match shape {
+                "surface" => Some(source.custom_cursor(0xffff00ff)),
+                "hidden" => {
+                    source.hide_cursor();
+                    None
+                }
+                _ => {
+                    source.named_cursor();
+                    None
+                }
             };
-            pump_patterns(&mut [&mut a,&mut b,&mut c]);
-            if different { c.unmap(); } else { b.unmap(); }
-            pump_patterns(&mut [&mut a,&mut b,&mut c]);
-            all_equal(&take(&format!("epoch-unmap-{different}-{shape}"),&mut a,&mut b,&mut c),&default,"unmap enter");
-            if different { c.remap(); } else { b.remap(); }
-            pump_patterns(&mut [&mut a,&mut b,&mut c]);
+            pump_patterns(&mut [&mut a, &mut b, &mut c]);
+            if different {
+                c.unmap();
+            } else {
+                b.unmap();
+            }
+            pump_patterns(&mut [&mut a, &mut b, &mut c]);
+            all_equal(
+                &take(
+                    &format!("epoch-unmap-{different}-{shape}"),
+                    &mut a,
+                    &mut b,
+                    &mut c,
+                ),
+                &default,
+                "unmap enter",
+            );
+            if different {
+                c.remap();
+            } else {
+                b.remap();
+            }
+            pump_patterns(&mut [&mut a, &mut b, &mut c]);
         }
     }
     // Confirm the real popup/subsurface hit and the allow direction with a
     // newly set cursor on that exact focused child.
-    focus("listed",&mut a,&mut b,&mut c);
-    let _popup=a.popup(false);
-    let _sub=a.subsurface();
-    for child in ["listed-popup","listed-sub"] {
-        focus(child,&mut a,&mut b,&mut c);
-        let child_default=take(&format!("epoch-{child}-default"),&mut a,&mut b,&mut c).remove(0);
-        let _cursor=a.custom_cursor(0xff11eecc);
-        pump_patterns(&mut [&mut a,&mut b,&mut c]);
-        let custom=take(&format!("epoch-{child}-own"),&mut a,&mut b,&mut c);
-        assert_ne!(custom[0],child_default,"child cursor must be authorised");
-        assert!(custom[0].chunks_exact(4).any(|p|p==0xff11eecc_u32.to_le_bytes()));
-        all_equal(&custom,&custom[0],"child cursor");
+    focus("listed", &mut a, &mut b, &mut c);
+    let _popup = a.popup(false);
+    let _sub = a.subsurface();
+    for child in ["listed-popup", "listed-sub"] {
+        focus(child, &mut a, &mut b, &mut c);
+        let child_default =
+            take(&format!("epoch-{child}-default"), &mut a, &mut b, &mut c).remove(0);
+        let _cursor = a.custom_cursor(0xff11eecc);
+        pump_patterns(&mut [&mut a, &mut b, &mut c]);
+        let custom = take(&format!("epoch-{child}-own"), &mut a, &mut b, &mut c);
+        assert_ne!(custom[0], child_default, "child cursor must be authorised");
+        assert!(
+            custom[0]
+                .chunks_exact(4)
+                .any(|p| p == 0xff11eecc_u32.to_le_bytes())
+        );
+        all_equal(&custom, &custom[0], "child cursor");
     }
     // A drag source keeps authority to set its cursor during the grab. It
     // must not transfer that authority to the listed drop target's take.
-    focus("different",&mut a,&mut b,&mut c);
-    let _cursor=c.custom_cursor(0xffff00ff);
-    let _drag=c.drag_icon(0xffeedd11);
-    pump_patterns(&mut [&mut a,&mut b,&mut c]);
-    focus("drag-listed",&mut a,&mut b,&mut c);
-    let _cursor=c.custom_cursor(0xffff00ff);
-    pump_patterns(&mut [&mut a,&mut b,&mut c]);
-    let drag_live=live("epoch-drag-live");
-    assert!(drag_live.windows(3).any(|p|p==rgb(0xffeedd11)),"drag must remain active over listed target");
+    focus("different", &mut a, &mut b, &mut c);
+    let _cursor = c.custom_cursor(0xffff00ff);
+    let _drag = c.drag_icon(0xffeedd11);
+    pump_patterns(&mut [&mut a, &mut b, &mut c]);
+    focus("drag-listed", &mut a, &mut b, &mut c);
+    let _cursor = c.custom_cursor(0xffff00ff);
+    pump_patterns(&mut [&mut a, &mut b, &mut c]);
+    let drag_live = live("epoch-drag-live");
+    assert!(
+        drag_live.windows(3).any(|p| p == rgb(0xffeedd11)),
+        "drag must remain active over listed target"
+    );
     // Popup/subsurface pixels changed A's reference; establish the expected
     // default at the same pointer position before comparing all decoded bytes.
-    focus("listed",&mut a,&mut b,&mut c);
-    let drag_default=take("epoch-after-drag-default",&mut a,&mut b,&mut c).remove(0);
-    focus("different",&mut a,&mut b,&mut c);
-    let _cursor=c.custom_cursor(0xffff00ff);
-    let _drag=c.drag_icon(0xffeedd11);
-    pump_patterns(&mut [&mut a,&mut b,&mut c]);
-    focus("drag-listed",&mut a,&mut b,&mut c);
-    let _cursor=c.custom_cursor(0xffff00ff);
-    pump_patterns(&mut [&mut a,&mut b,&mut c]);
-    all_equal(&take("epoch-drag-denied",&mut a,&mut b,&mut c),&drag_default,"drag cursor and icon");
+    focus("listed", &mut a, &mut b, &mut c);
+    let drag_default = take("epoch-after-drag-default", &mut a, &mut b, &mut c).remove(0);
+    focus("different", &mut a, &mut b, &mut c);
+    let _cursor = c.custom_cursor(0xffff00ff);
+    let _drag = c.drag_icon(0xffeedd11);
+    pump_patterns(&mut [&mut a, &mut b, &mut c]);
+    focus("drag-listed", &mut a, &mut b, &mut c);
+    let _cursor = c.custom_cursor(0xffff00ff);
+    pump_patterns(&mut [&mut a, &mut b, &mut c]);
+    all_equal(
+        &take("epoch-drag-denied", &mut a, &mut b, &mut c),
+        &drag_default,
+        "drag cursor and icon",
+    );
 }
 
 #[test]
