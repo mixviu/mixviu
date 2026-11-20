@@ -48,7 +48,7 @@ each publication. Final playback freezes the last scene's end sample.
 `delay` and `stagger` are seconds, each in 0..60. A stagger container gives
 unconfigured direct children its beat and `delay + child_index * stagger`.
 Explicit child build entries take precedence. Unsupported transforms must be
-labelled in the scene as stubs; the loader refuses unsupported animation names.
+documented outside slide artwork; the loader refuses unsupported animation names.
 
 Limits: 128 slides, 256 steps per slide, 4096 nodes per slide, 3600 seconds per
 scene. IDs must be unique and 1..128 characters. Unknown deck/build fields
@@ -101,7 +101,7 @@ translation presets at a supplied time, returning `{opacity,offset}`.
 sections and an opening sting. It preserves the historical story and measured
 numbers. Infrastructure names are generalised. Paragraphs are condensed for
 the available widget layout. The screenshot/callout/Ken Burns, count-up strip,
-cyclops drawing/spin and underline effects are visibly labelled 3.1b stubs.
+cyclops drawing/spin and underline effects are omitted and listed in the PR.
 It is a reference adaptation, with visual differences from the HTML original.
 
 `core-test.mix` checks format refusals, boundaries, navigation and deterministic
