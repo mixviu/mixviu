@@ -961,6 +961,7 @@ impl Host {
             #[cfg(feature = "test-support")]
             if let Some(probe) = &mut self.discovery_probe {
                 probe.callbacks.push(done.elapsed.as_micros() as u64);
+                probe.by_command.entry(done.command.clone()).or_default().push(done.elapsed.as_micros() as u64);
             }
             if let Some((code, message)) = self.ui_state.take_exit() {
                 if !message.is_empty() {
@@ -2446,6 +2447,7 @@ pub mod test_support {
         pumps: Vec<u64>,
         per_pump: Vec<u64>,
         pub(super) callbacks: Vec<u64>,
+        pub(super) by_command: BTreeMap<String, Vec<u64>>,
     }
     fn distribution(values: &[u64]) -> Value {
         let mut sorted = values.to_vec();
@@ -2494,7 +2496,8 @@ pub mod test_support {
         pub fn discovery_measurements(&self) -> Value {
             let p = self.host.discovery_probe.as_ref().unwrap();
             json!({"pump_us":distribution(&p.pumps),"steps_per_pump":distribution(&p.per_pump),
-                "callback_us":distribution(&p.callbacks)})
+                "callback_us":distribution(&p.callbacks),
+                "commands_us":p.by_command.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>()})
         }
         pub fn draw(&mut self) {
             self.ctx

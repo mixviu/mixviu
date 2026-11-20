@@ -129,6 +129,8 @@ pub struct DeferredAnswer {
 
 #[derive(Debug)]
 pub struct Completion {
+    #[cfg(feature = "test-support")]
+    pub command: String,
     pub generation: u64,
     pub sequence: u64,
     pub model: Option<Json>,
@@ -240,6 +242,12 @@ impl Runtime {
                 worker_interrupt.store(false, Ordering::Release);
                 if worker_stop.load(Ordering::Acquire) { break; }
                 let start = Instant::now();
+                #[cfg(feature = "test-support")]
+                let probe_command = match &request {
+                    Request::Event(_, _, command, ..) => command.clone(),
+                    Request::Load(..) => "load".into(),
+                    Request::Forget(..) => "forget".into(),
+                };
                 let retained_before=current.as_ref().map(|(_,_,local,..)|local.requests.borrow().clone());
                 let (generation, sequence, result) = match request {
                     Request::Load(generation, program) => {
@@ -372,7 +380,10 @@ impl Runtime {
                 }
                 let (mut deferred_token,mut deferred_answers)=current.as_ref().map(|(_,_,local,..)|(local.prefs_deferred.borrow_mut().take(),std::mem::take(&mut *local.prefs_answers.borrow_mut()))).unwrap_or_default();
                 if result.is_err(){deferred_token=None;deferred_answers.clear();}
-                let completion = Completion { generation, sequence, model, error: result.err().map(RunFailure::message), elapsed: start.elapsed(), stdout, stderr, behaviour_available: current.is_some(),reply,deferred,answers,deferred_token,deferred_answers };
+                let completion = Completion {
+                    #[cfg(feature = "test-support")]
+                    command: probe_command,
+                    generation, sequence, model, error: result.err().map(RunFailure::message), elapsed: start.elapsed(), stdout, stderr, behaviour_available: current.is_some(),reply,deferred,answers,deferred_token,deferred_answers };
                 if results.send(completion).is_err() { break; }
                 wake();
             }
