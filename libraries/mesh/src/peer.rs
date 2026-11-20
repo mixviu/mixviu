@@ -1836,7 +1836,8 @@ mod tests {
 
     #[test]
     fn sustained_old_peer_logs_one_initial_line_then_counted_summaries() {
-        if log_capture_subprocess("sustained_old_peer_logs_one_initial_line_then_counted_summaries") {
+        if log_capture_subprocess("sustained_old_peer_logs_one_initial_line_then_counted_summaries")
+        {
             return;
         }
         use std::io::Write;
