@@ -653,6 +653,18 @@ fn workshop_answers_during_discovery() {
         assert_eq!(info["discovering"], false);
         assert!(info["snapshot"]["services"].as_object().unwrap().len() >= count);
         if count == 200 {
+            // Discovery can finish before Traffic reaches its representative
+            // size on a fast worker. Keep the original assertions above and
+            // add a bounded four-reads/second steady phase at all 200 peers.
+            for _ in 0..24 {
+                assert_eq!(call(&mut host,&rt,&caller,"workshop.info").0,0);
+                let until=Instant::now()+Duration::from_millis(250);
+                while Instant::now()<until {host.pump();std::thread::sleep(Duration::from_millis(2));}
+            }
+            let until=Instant::now()+Duration::from_millis(1200);
+            while Instant::now()<until {host.pump();std::thread::sleep(Duration::from_millis(2));}
+            assert!(host.state()["model"]["traffic_view"]["initial"].is_array(),"steady Traffic must be rendered");
+            assert!(serde_json::to_vec(&host.state()["model"]).unwrap().len()>=2*1024*1024,"steady guard must exercise a retained model of at least 2 MiB");
             assert!(
                 host.discovery_measurements()["tick_model_bytes"]["n"]
                     .as_u64()
