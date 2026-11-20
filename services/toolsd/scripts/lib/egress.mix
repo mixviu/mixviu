@@ -1,0 +1,127 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Pure opt-in firewall rendering and probe verdicts. No host mutation.
+fn number_in($value, $low, $high)
+  return type($value) == "number" and floor($value) == $value and $value >= $low and $value <= $high
+end
+
+fn ipv4($value)
+  if type($value) != "string" then return false end
+  $parts = split($value, ".")
+  return len($parts) == 4 and all($parts, fn($p) = re_match($p, '^(0|[1-9][0-9]{0,2})$') and to_number($p) <= 255)
+end
+
+fn ipv6($value)
+  -- Parse literals only; never interpolate a hostname or nft expression.
+  if type($value) != "string" or not re_match($value, '^[0-9a-fA-F:]+$') then return false end
+  if contains($value, ":::") or count_of($value, "::") > 1 then return false end
+  $parts = split($value, ":")
+  $nonempty = filter($parts, fn($p) = $p != "")
+  if not all($nonempty, fn($p) = len($p) <= 4) then return false end
+  if contains($value, "::") then return len($nonempty) < 8 end
+  return len($parts) == 8 and len($nonempty) == 8
+end
+
+fn family($address)
+  if ipv4($address) then return "ip" end
+  if ipv6($address) then return "ip6" end
+  raise("EGRESS_CONFIG", "expected an IP literal")
+end
+
+fn public_address($address)
+  if family($address) == "ip6" then
+    return starts_with($address, "2") or starts_with($address, "3")
+  end
+  $p = map(split($address, "."), fn($v) = to_number($v))
+  if $p[0] == 0 or $p[0] == 10 or $p[0] == 127 or $p[0] >= 224 then return false end
+  if $p[0] == 172 and $p[1] >= 16 and $p[1] <= 31 then return false end
+  if $p[0] == 192 and $p[1] == 168 then return false end
+  if $p[0] == 169 and $p[1] == 254 then return false end
+  if $p[0] == 100 and $p[1] >= 64 and $p[1] <= 127 then return false end
+  return true
+end
+
+fn config($c)
+  if type($c) != "map" or not number_in($c.uid, 1, 4294967294) then raise("EGRESS_CONFIG", "dedicated non-root drain uid required") end
+  if type($c.node_public) != "list" or len($c.node_public) == 0 then raise("EGRESS_CONFIG", "node_public IP literals required") end
+  for $address in $c.node_public
+    if not public_address($address) then raise("EGRESS_CONFIG", "node_public must not exempt a private or non-unicast address") end
+  end
+  if $c.noded_tcp != nil then
+    if type($c.noded_tcp) != "map" or not number_in($c.noded_tcp.port, 1, 65535) then raise("EGRESS_CONFIG", "invalid noded TCP port") end
+    family($c.noded_tcp.address)
+  end
+  return $c
+end
+
+fn render($input, $mode)
+  $c = config($input)
+  if not contains(["cgroup", "skuid"], $mode) then raise("EGRESS_CONFIG", "unknown selector") end
+  $selector = if $mode == "cgroup" then 'socket cgroupv2 level 2 "system.slice/toolsd-drain.service"' else "meta skuid " .. to_string($c.uid) end
+  $rules = [
+    "# SPDX-License-Identifier: MIT OR Apache-2.0",
+    "# OPT-IN: render/check only; the private hub applies and rolls back this table.",
+    "# Native AF_UNIX noded links do not traverse inet hooks.",
+    "# Cgroup selection requires refresh before every cgroup recreation.",
+    "add table inet toolsd_egress",
+    "flush table inet toolsd_egress",
+    "table inet toolsd_egress {",
+    "  chain output {",
+    "    type filter hook output priority -10; policy accept;",
+    "    " .. $selector .. " jump drain",
+    "  }",
+    "  chain drain {",
+    "    ip daddr 127.0.0.53 udp dport 53 counter return",
+    "    ip daddr 127.0.0.53 tcp dport 53 counter return"
+  ]
+  for $address in $c.node_public
+    push($rules, "    " .. family($address) .. " daddr " .. $address .. " counter return")
+  end
+  if $c.noded_tcp != nil then
+    push($rules, "    " .. family($c.noded_tcp.address) .. " daddr " .. $c.noded_tcp.address .. " tcp dport " .. to_string($c.noded_tcp.port) .. " counter return")
+  end
+  $rules = concat($rules, [
+    "    ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 100.64.0.0/10, 127.0.0.0/8 } counter reject with icmpx type admin-prohibited",
+    "    ip6 daddr { ::1/128, fc00::/7, fe80::/10 } counter reject with icmpx type admin-prohibited",
+    "    return", "  }", "}"
+  ])
+  return join($rules, "\n") .. "\n"
+end
+
+-- check is injected so tests can prove selector fallbacks without CAP_NET_ADMIN.
+-- An explicit cgroup lifecycle promise is needed as well as kernel support.
+fn select_rules($input, $check)
+  $c = config($input)
+  $mode = $c.mode ?? "auto"
+  if not contains(["auto", "cgroup", "skuid"], $mode) then raise("EGRESS_CONFIG", "unknown mode") end
+  if $mode == "cgroup" and $c.refresh_cgroup != true then raise("EGRESS_CONFIG", "cgroup rules require refresh_cgroup lifecycle acknowledgement") end
+  if $mode != "skuid" and $c.refresh_cgroup == true then
+    $text = render($c, "cgroup")
+    if $check($text) then return {mode:"cgroup", uid:$c.uid, refresh_cgroup:true, rules:$text} end
+    if $mode == "cgroup" then raise("EGRESS_CHECK", "cgroup rules unavailable; no output written") end
+  end
+  $text = render($c, "skuid")
+  if not $check($text) then raise("EGRESS_CHECK", "UID rules unavailable; no output written") end
+  return {mode:"skuid", uid:$c.uid, refresh_cgroup:false, rules:$text}
+end
+
+fn identity_ok($c, $actual_uid, $cgroups)
+  if $actual_uid != $c.uid then return false end
+  if $c.mode == "skuid" then return true end
+  if $c.mode != "cgroup" then return false end
+  return any(lines($cgroups), fn($line) = $line == "0::/system.slice/toolsd-drain.service" or starts_with($line, "0::/system.slice/toolsd-drain.service/"))
+end
+
+fn denied_ok($result)
+  -- Only explicit permission denial against our own live listener passes.
+  -- Refusal, timeout, no route, setup failure and successful connects all fail.
+  return $result.listening == true and $result.connected == false and (contains($result.error ?? "", "(os error 13)") or contains($result.error ?? "", "(os error 1)"))
+end
+
+fn dns_ok($r)
+  return $r.ok == true and $r.rcode == 0 and len($r.answers ?? []) > 0
+end
+
+fn probe_ok($identity, $v4, $v6, $udp, $tcp)
+  return $identity and denied_ok($v4) and denied_ok($v6) and dns_ok($udp) and dns_ok($tcp)
+end

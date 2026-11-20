@@ -1,0 +1,24 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+function fixture_uid()
+  return if env("EGRESS_CASE") == "wrong_uid" then 0 else 1234 end
+end
+function fixture_tcp_listen($host, $port)
+  if $host == "::1" and env("EGRESS_CASE") == "no_ipv6" then raise("TEST", "IPv6 unavailable") end
+  return 1
+end
+function fixture_tcp_local_addr($handle) return {port:45678} end
+function fixture_tcp_connect($host, $port, $opts)
+  if $port != 45678 or $opts.timeout != 2 then raise("TEST", "wrong connect options") end
+  if env("EGRESS_CASE") == "unguarded" then return 2 end
+  if env("EGRESS_CASE") == "refused" then raise("TEST", "Connection refused (os error 111)") end
+  if env("EGRESS_CASE") == "timeout" then raise("TEST", "connect deadline exceeded") end
+  raise("TEST", "Permission denied (os error 13)")
+end
+function fixture_tcp_close($handle) return nil end
+function fixture_dns_query($name, $type, $opts)
+  if $opts.server != "127.0.0.53" or $opts.port != 53 or $opts.timeout != 3 then raise("TEST", "wrong DNS target/options") end
+  $case = env("EGRESS_CASE")
+  if ($case == "dns_tcp_bad" and $opts.tcp == true) or ($case == "dns_udp_bad" and $opts.tcp != true) then return {ok:false} end
+  if $case == "dns_empty" then return {ok:true,rcode:0,answers:[]} end
+  return {ok:true,rcode:0,answers:[{data:"203.0.113.1"}]}
+end

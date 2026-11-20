@@ -1,0 +1,47 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- host: mixd
+-- Run explicitly as the drain identity, after the hub has applied the guard.
+-- No credentials, tool queue, firewall writes, shell or privilege changes.
+$g = getopt(args(), {config:{arg:true}})
+if len($g.errors) != 0 or len($g.rest) != 0 or $g.opts.config == nil then raise("USAGE", "egress_probe.mix --config PRIVATE.conf.mix") end
+$e = require("lib/egress.mix")
+$c = $e.config(load_data($g.opts.config))
+$identity = $e.identity_ok($c, uid(), read_file("/proc/self/cgroup"))
+if not $identity then raise("EGRESS_PROBE", "run as the selected drain UID and, for cgroup mode, in toolsd-drain.service") end
+
+fn denied_connect($host)
+  $listener = nil
+  $connection = nil
+  $result = {listening:false, connected:false, error:""}
+  try
+    $listener = tcp_listen($host, 0)
+    $result.listening = true
+    $port = tcp_local_addr($listener).port
+    try
+      $connection = tcp_connect($host, $port, {timeout:2})
+      $result.connected = true
+    catch $message
+      $result.error = $message
+    end
+  catch $message
+    $result.error = $message
+  end
+  if $connection != nil then tcp_close($connection) end
+  if $listener != nil then tcp_close($listener) end
+  return $result
+end
+
+$v4 = denied_connect("127.0.0.1")
+$v6 = denied_connect("::1")
+-- Stop before DNS if the firewall is missing or denial is inconclusive.
+if not $e.denied_ok($v4) or not $e.denied_ok($v6) then
+  print(json_encode({pass:false, denied4:$v4, denied6:$v6}))
+  exit(1)
+end
+$name = $c.dns_name ?? "example.com"
+$udp = dns_query($name, "A", {server:"127.0.0.53", port:53, timeout:3})
+$tcp = dns_query($name, "A", {server:"127.0.0.53", port:53, timeout:3, tcp:true})
+$ok = $e.probe_ok($identity, $v4, $v6, $udp, $tcp)
+print(json_encode({pass:$ok, denied4:true, denied6:true, dns_udp:$e.dns_ok($udp), dns_tcp:$e.dns_ok($tcp)}))
+if not $ok then exit(1) end

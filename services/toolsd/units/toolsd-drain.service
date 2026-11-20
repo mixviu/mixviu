@@ -56,8 +56,13 @@ LockPersonality=yes
 # where the drain may connect.
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
-# EGRESS CONFINEMENT — "toolsd cannot reach the hypervisors or the mesh" as an ENFORCED
-# invariant. The drain's real needs are narrow:
+# VM/PRIVILEGED-HOST DEFENCE ONLY: systemd IPAddress* uses cgroup-BPF and can
+# silently do nothing in an unprivileged Proxmox CT. SystemCallFilter still works.
+# On those CTs the hub must keep this drain masked until it separately applies
+# and probes the opt-in nftables guard (lib/toolsd/egress_render.mix). Bundling
+# or installing MixViu never applies firewall rules. These directives remain
+# useful on hosts where cgroup-BPF is enforced; they are NOT the CT SSRF guard.
+# The drain's real needs are narrow:
 #   * 127.0.0.53 — the systemd-resolved stub. dig/whois resolve THROUGH it, so the drain
 #                  itself never needs arbitrary DNS egress.
 #   * webd       — for claim/report. Allowed per host by a drop-in (see below).
