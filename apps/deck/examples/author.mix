@@ -9,10 +9,15 @@ fn slide($id,$kicker,$title,$steps,$items)
   for $item in $items push($children,$item.node) end
   $chapters=["before","recorder","reader",".mkv","privacy","turning point","live","loose ends","now","owed"]
   $active={mkv:".mkv",turning:"turning point",watch:"live",found:"loose ends"}[$id] ?? $id
-  push($children,{widget:"column",children:[],grow:1})
+  push($children,{widget:"column",children:[],reserve_height:76})
   if $id!="closing" then push($children,$d.chapter_rail($chapters,$active,"MIXVIU ADVENTURES · THE DESK RECORDS ITSELF")) end
   $tree=merge($d.column($children,16),{background:"#0d1117",min_width:1600,height:836,padding_left:96,padding_right:96,padding_top:64})
   $nodes=$d.flatten($tree,"root")
+  for $key in keys($nodes)
+    if $nodes[$key].widget=="text" then $nodes[$key].wrap=true end
+    if $nodes[$key].mono==true then $nodes[$key].size=17 end
+    if $nodes[$key].text=="MIXVIU ADVENTURES · THE DESK RECORDS ITSELF" then $nodes[$key].size=14 end
+  end
   $build["root.0"]={b:0,anim:"left"};$build["root.1"]={b:0,delay:0.15,anim:"left"}
   $i=2
   for $item in $items $build["root."..to_string($i)]={b:$item.b,delay:$item.delay,anim:$item.anim};$i=$i+1 end
@@ -37,7 +42,7 @@ fn record_strip()
 end
 fn slide_stat($value,$caption,$role)
   $node=$d.deck_stat($value,upper($caption),$role,false)
-  $node.children[0].size=60
+  $node.children[0].size=52
   return $node
 end
 $sting=$d.flatten(merge($d.brand("MixViu","Adventures · The desk records itself","20 November 2026"),{min_width:1600,height:708,padding_left:96,padding_top:72,padding_bottom:120,background:"#0d1117"}),"root")
