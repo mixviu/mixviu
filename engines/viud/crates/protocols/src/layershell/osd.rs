@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Compositor-owned OSD identity. A namespace is a label, never authority.
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use smithay::reexports::wayland_server::{Client, DisplayHandle};
 use smithay::reexports::wayland_server::backend::{ClientData, ClientId, DisconnectReason};
+use smithay::reexports::wayland_server::{Client, DisplayHandle};
 use smithay::wayland::compositor::CompositorClientState;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 // Only insert() can construct this token; no shared-socket credential grants it.
 struct Connection {
@@ -16,28 +19,44 @@ impl ClientData for Connection {
 }
 pub struct Lease(Arc<AtomicBool>);
 impl Lease {
-    pub fn revoke(&self) { self.0.store(false, Ordering::Release); }
+    pub fn revoke(&self) {
+        self.0.store(false, Ordering::Release);
+    }
 }
 impl Drop for Lease {
-    fn drop(&mut self) { self.revoke(); }
+    fn drop(&mut self) {
+        self.revoke();
+    }
 }
 /// Register the private server end before spawning the child. Dropping the
 /// lease revokes authority even if another process retained the old socket.
-pub fn insert(display: &DisplayHandle, stream: std::os::unix::net::UnixStream) -> std::io::Result<Lease> {
+pub fn insert(
+    display: &DisplayHandle,
+    stream: std::os::unix::net::UnixStream,
+) -> std::io::Result<Lease> {
     insert_connection(display, stream).map(|(_, lease)| lease)
 }
-fn insert_connection(display: &DisplayHandle, stream: std::os::unix::net::UnixStream) -> std::io::Result<(Client, Lease)> {
+fn insert_connection(
+    display: &DisplayHandle,
+    stream: std::os::unix::net::UnixStream,
+) -> std::io::Result<(Client, Lease)> {
     let live = Arc::new(AtomicBool::new(true));
-    let client = display.clone().insert_client(stream, Arc::new(Connection {
-        state: CompositorClientState::default(), live: live.clone(),
-    }))?;
+    let client = display.clone().insert_client(
+        stream,
+        Arc::new(Connection {
+            state: CompositorClientState::default(),
+            live: live.clone(),
+        }),
+    )?;
     Ok((client, Lease(live)))
 }
 pub fn compositor_state(client: &Client) -> Option<&CompositorClientState> {
     client.get_data::<Connection>().map(|data| &data.state)
 }
 pub fn authorized(client: &Client, _: &DisplayHandle) -> bool {
-    client.get_data::<Connection>().is_some_and(|data| data.live.load(Ordering::Acquire))
+    client
+        .get_data::<Connection>()
+        .is_some_and(|data| data.live.load(Ordering::Acquire))
 }
 
 /// Attached by viud to the Wayland resource after peer authentication.
@@ -83,9 +102,15 @@ mod tests {
         let (private, _child) = std::os::unix::net::UnixStream::pair().unwrap();
         let (host, lease) = insert_connection(&handle, private).unwrap();
         // Both socketpairs were created by this process: identical peer PIDs.
-        assert_eq!(ordinary.get_credentials(&handle).unwrap().pid, std::process::id() as i32);
+        assert_eq!(
+            ordinary.get_credentials(&handle).unwrap().pid,
+            std::process::id() as i32
+        );
         assert!(!authorized(&ordinary, &handle));
-        assert_eq!(host.get_credentials(&handle).unwrap().pid, ordinary.get_credentials(&handle).unwrap().pid);
+        assert_eq!(
+            host.get_credentials(&handle).unwrap().pid,
+            ordinary.get_credentials(&handle).unwrap().pid
+        );
         assert!(authorized(&host, &handle));
         drop(lease);
         assert!(!authorized(&host, &handle));
@@ -95,4 +120,3 @@ mod tests {
         assert!(!authorized(&host, &handle));
     }
 }
-

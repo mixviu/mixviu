@@ -69,7 +69,11 @@ impl Drop for Host {
     }
 }
 
-pub fn launch(headless: bool, comp: &str, display: &smithay::reexports::wayland_server::DisplayHandle) -> Option<Host> {
+pub fn launch(
+    headless: bool,
+    comp: &str,
+    display: &smithay::reexports::wayland_server::DisplayHandle,
+) -> Option<Host> {
     use std::os::fd::AsRawFd;
     use std::os::unix::process::CommandExt;
     let executable = std::env::current_exe().ok()?;

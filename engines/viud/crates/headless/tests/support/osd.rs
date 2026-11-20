@@ -198,7 +198,12 @@ fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
     let items = call(&bus, "osd.list", json!({}));
     assert_eq!(items["items"][0]["owner"], "local:headless-osd-owner");
     for command in ["osd.update", "osd.hide"] {
-        let output = helper("call", &bus.root, &[command, "{\"id\":\"caption\"}", "osd", "other-osd-citizen"], Some(&bus.url));
+        let output = helper(
+            "call",
+            &bus.root,
+            &[command, "{\"id\":\"caption\"}", "osd", "other-osd-citizen"],
+            Some(&bus.url),
+        );
         assert!(output.status.success());
         let stdout = String::from_utf8_lossy(&output.stdout);
         let reply: Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
@@ -250,7 +255,8 @@ fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
     assert!(
         call(&bus, "osd.list", json!({}))["pointer_presses"]
             .as_u64()
-            .unwrap() > received,
+            .unwrap()
+            > received,
         "opaque OSD must observe the button"
     );
     // Headless has an agent seat and no human device sources. Establish its
@@ -303,9 +309,15 @@ fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
     call(&bus, "osd.hide", json!({"id":"caption","exit":"fade"}));
     wait(&mut pattern, Duration::from_millis(40));
     let buttons = pattern.state.pointer_buttons;
-    bus.call("comp.input.pointer.button", json!({"seat":"agent","button":"left","action":"click"}));
+    bus.call(
+        "comp.input.pointer.button",
+        json!({"seat":"agent","button":"left","action":"click"}),
+    );
     wait(&mut pattern, Duration::from_millis(40));
-    assert!(pattern.state.pointer_buttons > buttons, "exiting card must stop consuming input");
+    assert!(
+        pattern.state.pointer_buttons > buttons,
+        "exiting card must stop consuming input"
+    );
     let fade = motion::presets()
         .into_iter()
         .find(|p| p.name == "fade")
@@ -492,23 +504,44 @@ fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
 
     // Real renderer oracle: overflowing text in a tiny card must never escape
     // its declared bounds (the compositor badge is outside this comparison).
-    call(&bus, "osd.show", json!({"id":"clip","scene":{"kind":"card","title":"LONG TITLE".repeat(100),"text":"LONG TEXT\n".repeat(500),"width":32,"height":24},"anchor":{"output":"headless-0","edge":"top-left","margin":100}}));
+    call(
+        &bus,
+        "osd.show",
+        json!({"id":"clip","scene":{"kind":"card","title":"LONG TITLE".repeat(100),"text":"LONG TEXT\n".repeat(500),"width":32,"height":24},"anchor":{"output":"headless-0","edge":"top-left","margin":100}}),
+    );
     wait(&mut pattern, Duration::from_millis(150));
     let (_, _, clipped) = ppm(&bus, &process, "osd-clipped", None);
     for y in 20..height {
         for x in 0..width {
             if !(100..132).contains(&x) || !(100..124).contains(&y) {
-                assert_eq!(rgb(&clipped, width, x, y), rgb(&before, width, x, y), "text escaped card at {x},{y}");
+                assert_eq!(
+                    rgb(&clipped, width, x, y),
+                    rgb(&before, width, x, y),
+                    "text escaped card at {x},{y}"
+                );
             }
         }
     }
-    call(&bus, "osd.update", json!({"id":"clip","pointer_input":false,"backing":"none"}));
+    call(
+        &bus,
+        "osd.update",
+        json!({"id":"clip","pointer_input":false,"backing":"none"}),
+    );
     wait(&mut pattern, Duration::from_millis(80));
     let buttons = pattern.state.pointer_buttons;
-    bus.call("comp.input.pointer.move", json!({"seat":"agent","output":"headless-0","x":116,"y":112}));
-    bus.call("comp.input.pointer.button", json!({"seat":"agent","button":"left","action":"click"}));
+    bus.call(
+        "comp.input.pointer.move",
+        json!({"seat":"agent","output":"headless-0","x":116,"y":112}),
+    );
+    bus.call(
+        "comp.input.pointer.button",
+        json!({"seat":"agent","button":"left","action":"click"}),
+    );
     wait(&mut pattern, Duration::from_millis(80));
-    assert!(pattern.state.pointer_buttons > buttons, "explicit transparent item must pass pointer input");
+    assert!(
+        pattern.state.pointer_buttons > buttons,
+        "explicit transparent item must pass pointer input"
+    );
     call(&bus, "osd.hide", json!({"id":"clip"}));
     wait(&mut pattern, Duration::from_millis(100));
 
