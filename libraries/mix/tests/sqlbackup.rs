@@ -120,8 +120,11 @@ async fn errors_preserve_destination_and_leave_no_staging_files() {
         "SQL_ERROR"
     );
     assert_eq!(std::fs::read(&dst).unwrap(), b"keep");
+    assert_eq!(
+        code(&format!("sqlbackup({src:?}, {dst:?}, nil)")).await,
+        "TYPE_MISMATCH"
+    );
     for opts in [
-        "nil",
         "{mode: -1}",
         "{mode: 512}",
         "{retry_ms: 60001}",

@@ -15,7 +15,8 @@ The result is `{ok: true, pages, bytes, integrity: "ok", duration_ms}`.
 file size; `duration_ms` is elapsed wall time, including retries and checking.
 Failures raise, rather than returning `ok: false`.
 
-Options are a map; unknown keys and invalid types raise `OPTION_INVALID`:
+Options are a map. Wrong top-level argument types raise `TYPE_MISMATCH`;
+unknown option keys and invalid option values raise `OPTION_INVALID`:
 
 | Option | Default | Contract |
 |---|---|---|
@@ -49,6 +50,7 @@ must support that operation. Unix modes are enforced on Unix hosts.
 | `SQL_INTEGRITY` | Destination integrity check did not return only `ok`. |
 | `SQL_ERROR` | Other SQLite failure, including an invalid database. |
 | `OPTION_INVALID` | Invalid paths/options or unsafe overwrite target. |
+| `TYPE_MISMATCH` | A path is not a string or opts is not a map. |
 
 This builtin is in the **shell profile**, behind the existing `sqlite`
 feature, just like `sqlopen`/`sqlexec`/`sqlclose`. It requires `FsWrite`
