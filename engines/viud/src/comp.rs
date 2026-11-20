@@ -660,16 +660,20 @@ impl Bus {
     /// state is committed and the caller told `parked`. Re-arms its timer
     /// while any run: every tick when live, the next end time when paused.
     fn service_motions(&mut self, lp: &mut Loop) {
+        let now = Instant::now();
+        let armed = self.motion_timer.armed.as_ref()
+            .filter(|(_, _, fired)| !fired.get())
+            .map(|(_, at, _)| *at);
+        let frame_due = armed.is_none_or(|at| now >= at);
         #[cfg(feature = "test-support")]
         let lifecycle_active =
             !headless::wire::test_lifecycle_paused() && world::comp::lifecycle_motion::service(lp);
         #[cfg(not(feature = "test-support"))]
         let lifecycle_active = world::comp::lifecycle_motion::service(lp);
-        if lifecycle_active {
+        if lifecycle_active && frame_due {
             lp.state
                 .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
         }
-        let now = Instant::now();
         let human = policy_host::input::human_pointer(lp);
         let paused = self.paused;
         let mut still = Vec::with_capacity(self.motions.len());
@@ -730,8 +734,10 @@ impl Bus {
                     let step =
                         policy_host::motion::geometry_frame_step(lp, *id, *generation, timeline, t);
                     if visual.is_some() {
-                        lp.state
-                            .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+                        if frame_due || !matches!(step, policy_host::motion::Step::Moving) {
+                            lp.state
+                                .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+                        }
                         if !matches!(step, policy_host::motion::Step::Moving) {
                             policy_host::motion::finish_visual(lp, *id, *generation);
                         }
@@ -760,6 +766,10 @@ impl Bus {
         } else {
             (lifecycle_active || !self.motions.is_empty()).then(|| now + MOTION_TICK)
         };
+        // Other event sources must not postpone an already armed motion tick.
+        // Repeated redraw pings used to service and rearm motion indefinitely,
+        // spinning the loop between presentations and starving capture polls.
+        let next = next.map(|at| armed.map_or(at, |armed| armed.min(at)));
         self.motion_timer.rearm(&self.handle, next, |_| {});
     }
 
