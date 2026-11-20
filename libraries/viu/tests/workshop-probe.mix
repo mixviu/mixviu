@@ -13,6 +13,29 @@ if $mode=="format" then
   print($r.stdout);print(run_argv_must(["git","diff"]))
   print(run_argv_must(["git","checkout","-q","--","."]))
   if not $r.ok then exit(1) end
+elif $mode=="wire" then
+  $old_path=realpath("target").."/workshop-wire-old-"..pid()..".mix"
+  write_file($old_path,run_argv_must(["git","show","be270734:apps/workshop/counter.mix"]))
+  try
+    $old=require($old_path);$new=require(realpath("apps/workshop/counter.mix"))
+    $value={snapshot:{identities:{},services:{}},title:"001",headers:{seq:"18446744073709551615"},payload:{count:"18446744073709551615"}}
+    for $key in split("count|seq|turn|first|last|seen|since|dropped|ignored_observations|events_seen|ring_dropped|recent_capped|out_msgs|in_msgs|out_bytes|in_bytes|out_1m|in_1m|out_5m|in_5m|msgs|bytes|msgs_1m|msgs_5m|rejected|dropped_count","|")
+      $value[$key]="18446744073709551615"
+    end
+    for $i=0 to 199
+      $name="peer-"..$i
+      $value.snapshot.identities[$name]={name:$name,version:"1",read_only:true,commands:[]}
+      $value.snapshot.services[$name]={Ok:[]}
+    end
+    for $sample=1 to 3
+      $start=monotonic();$before=$old.wire($value);$old_ms=(monotonic()-$start)*1000
+      $start=monotonic();$after=$new.wire($value);$new_ms=(monotonic()-$start)*1000
+      if $before!=$after then raise("PROBE","counter wire output changed") end
+      print({sample:$sample,old_ms:$old_ms,new_ms:$new_ms,bytes:byte_length($after),identical:true})
+    end
+  finally
+    remove($old_path)
+  end
 elif $mode=="negative" then
   $paths=["apps/workshop/discovery.mix","apps/workshop/controller.mix","apps/workshop/work.mix"]
   $original={}

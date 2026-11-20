@@ -8,22 +8,6 @@ $saved=require("saved.mix")
 fn result($s,$body) return {state:$s,rc:0,body:$body,deferred:false} end
 fn refused($s,$code,$message) return {state:$s,rc:10,body:{error_code:$code,message:$message},deferred:false} end
 fn guard($s) return $s.dialog!=nil or $s.quitting end
-fn query_error() return {error_code:"ARGUMENT",message:"arguments must be a JSON object"} end
-fn query_ping($args)
-  if type($args)!="map" then return {rc:10,body:query_error()} end
-  return {rc:0,body:{schema:"workshop.v1",version:viu_context().version}}
-end
-fn query_info($s,$args)
-  if type($args)!="map" then return {rc:10,saved:$s.saved,body:query_error()} end
-  $before=$s.saved
-  try
-    send "viu-local" "native.saved" body=$saved.project($s)
-    if $rc==0 then $s.saved=$reply end
-    return {rc:0,saved:$s.saved,body:$m.info($s,viu_context())}
-  catch $message,$error
-    return {rc:10,saved:$before,body:{error_code:if contains(["BUSY","DISCONNECTED","ARGUMENT"],$error.code) then $error.code else "ARGUMENT" end,message:$message}}
-  end
-end
 fn theme_edit($s,$args)
   $edit=$theme.theme_edit($s.theme_choice,$args)
   if not $edit.ok then return refused($s,"ARGUMENT",$edit.message) end
@@ -131,10 +115,11 @@ fn request($s,$event)
     else $s=$macros.invoke($s,$op,$a,$id) end
     return {state:$s,rc:0,body:nil,deferred:true}
   end
-  if $cmd=="workshop.ping" then return result($s,query_ping($a).body)
+  if $cmd=="workshop.ping" then return result($s,{schema:"workshop.v1",version:viu_context().version})
   elif $cmd=="workshop.info" then
-    $query=query_info($s,$a);$s.saved=$query.saved
-    return result($s,$query.body)
+    send "viu-local" "native.saved" body=$saved.project($s)
+    if $rc==0 then $s.saved=$reply end
+    return result($s,$m.info($s,viu_context()))
   elif $cmd=="workshop.tree" then return result($s,{rows:$tree.rows($s)})
   elif $cmd=="workshop.reply" then return result($s,{text:$s.answer,value:$s.last_reply})
   elif $cmd=="workshop.actions" then $s.busy=$m.busy($s);return result($s,{actions:$actions.registry($s)})
