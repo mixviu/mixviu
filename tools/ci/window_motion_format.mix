@@ -1,5 +1,10 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Owned CBC checkout only: return worker formatting as a patch, then restore.
+$status = run_argv_must(["git", "status", "--porcelain"])
+if trim($status) != "" then
+  eprint("worker formatting refuses a dirty checkout")
+  exit(1)
+end
 try
   $metadata = run_argv(["cargo", "metadata", "--offline", "--format-version", "1"], {timeout:120})
   if not $metadata.ok then print($metadata.stderr); exit($metadata.exit_code ?? 1) end

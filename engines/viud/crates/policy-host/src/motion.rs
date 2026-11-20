@@ -130,7 +130,7 @@ pub fn geometry_frame_step(
     };
     // Timer wakes request frames; only frame preparation samples in-flight values.
     if timeline.status_at(now) == Status::Done {
-        world::comp::animation_geometry::sample_window(lp, &window, std::time::Instant::now());
+        world::comp::animation_geometry::sample_window(lp, &window, lp.inner.comp.clock.now());
     }
     lp.state
         .schedule_redraw(dispatcher::state::RedrawReason::WindowState);

@@ -108,6 +108,19 @@ mod authority_tests {
     use world::comp::injection::BackendInput::{Headless, Session};
 
     #[test]
+    fn human_motion_only_cancels_runs_with_geometry() {
+        for geometry in [false, true] {
+            let run = super::MotionKind::Window {
+                id: 1, generation: 1, from: [0.0;4],
+                to: [geometry.then_some(100.0),None,None,None],
+                timeline: motion::Timeline::new(0.0,1.0,motion::Easing::Linear),
+                visual: Some(motion::presets().into_iter().find(|p| p.name=="fade").unwrap()),
+            };
+            assert_eq!(run.cancelled_by_human(),geometry);
+        }
+    }
+
+    #[test]
     fn pause_and_lock_clear_only_when_agent_authority_is_lost() {
         assert!(clear_agent_input(Session, true, false, false));
         assert!(!clear_agent_input(Headless, true, false, false));
@@ -198,6 +211,12 @@ enum MotionKind {
 }
 
 impl MotionKind {
+    fn cancelled_by_human(&self) -> bool {
+        match self {
+            Self::Pointer { .. } => true,
+            Self::Window { to, .. } => to.iter().any(Option::is_some),
+        }
+    }
     /// Seconds from the start to the end, fixed when the run starts.
     fn end(&self) -> f64 {
         match self {
@@ -682,7 +701,7 @@ impl Bus {
                 }
             } else if std::mem::take(&mut run.rebase_human) {
                 run.human_at_start = human.clone();
-            } else if human != run.human_at_start {
+            } else if human != run.human_at_start && run.kind.cancelled_by_human() {
                 if let MotionKind::Window { id, generation, .. } = &run.kind {
                     policy_host::motion::cancel_visual(lp, *id, *generation);
                 }

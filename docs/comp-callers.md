@@ -238,6 +238,7 @@ settle the prior caller with status `superseded`, with `by:run`. Placement
 settles a run whose last track it removes with `by:place`; lifecycle takeover
 uses `by:lifecycle`. Window rows report the sampled opacity during a run.
 
-The focused native motion/record acceptance is the opt-in CI stage
-`mix tools/ci.mix window-motion`; worker formatting patches use
-`mix tools/ci.mix fmt-diff`.
+Human pointer movement cancels pointer and window geometry runs, including
+combined geometry/visual runs. Visual-only runs continue when the human pointer
+moves. Explicit hide holds the last presented visual sample for a later show;
+placement after expiry first persists the run's endpoints.

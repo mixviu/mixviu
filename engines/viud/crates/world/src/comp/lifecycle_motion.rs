@@ -330,7 +330,12 @@ pub fn service(lp: &mut Loop) -> bool {
                     let cell = window.user_data().get_or_insert(|| {
                         std::sync::Mutex::new(comp_model::request::VisualAttributes::default())
                     });
-                    cell.lock().unwrap().scale.center = true;
+                    let mut visual = cell.lock().unwrap();
+                    // At identity the anchor cannot move the base image. A
+                    // pre-scaled placement must keep its caller's anchor.
+                    if visual.scale.factor == 1.0 {
+                        visual.scale.center = true;
+                    }
                 }
                 let base = crate::window::draw::frame::scene::visual_of(window);
                 super::animation::start(window, &relative(preset, base), now);

@@ -826,14 +826,16 @@ fn place(lp: &mut Loop, spec: &comp_model::request::PlaceSpec) -> ControlReply {
 
 fn apply_visual(lp: &mut Loop, id: SurfaceId, spec: &comp_model::request::PlaceSpec) {
     let old = lp.inner.comp.visual(id);
-    let mut visual = old;
+    let window = window_of(lp, id);
+    let mut visual = window.as_ref().map_or(old, |window| {
+        world::comp::animation::prepare_place(window, old, spec.visible == Some(false), lp.inner.comp.clock.now())
+    });
     visual.update(spec);
     if spec.visible.is_some()
         && let Some(uuid) = lp.inner.comp.registry.uuid_for(id)
     {
         world::comp::lifecycle_motion::visibility(uuid, visual.visible);
     }
-    let window = window_of(lp, id);
     let tracks_changed = window
         .as_ref()
         .is_some_and(|window| world::comp::animation::place(window, spec));

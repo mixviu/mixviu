@@ -102,6 +102,21 @@ pub fn cancel(window: &Window) {
     }
 }
 
+/// Settle an expired run before placement, or hold the last drawn sample on
+/// explicit hide. The caller then applies the supplied placement fields.
+pub fn prepare_place(window: &Window, base: VisualAttributes, hide: bool, now: Instant) -> VisualAttributes {
+    if started(window).is_some() && !active(window, now) {
+        finish(window);
+        return *window.user_data().get::<Mutex<VisualAttributes>>().unwrap().lock().unwrap();
+    }
+    if hide {
+        let visual = sample(window, base, frame_time());
+        cancel(window);
+        return visual;
+    }
+    base
+}
+
 /// Placement takes ownership only of the fields it supplies. Remaining tracks
 /// keep their original clock and endpoint; finish cannot restore removed ones.
 pub fn place(window: &Window, spec: &comp_model::request::PlaceSpec) -> bool {

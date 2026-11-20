@@ -14,6 +14,46 @@ use surfaces::SurfaceId;
 use testkit::Harness;
 use world::comp::FloatGeometry;
 
+#[test]
+fn expired_visual_run_is_finished_before_placement_between_service_ticks() {
+    use world::comp::animation;
+    let mut h = harness();
+    h.mapped_toplevel(64, 48);
+    let window = h.wire.inner.space.state.elements().next().unwrap();
+    let mut base = comp_model::request::VisualAttributes::default();
+    base.opacity = 0.2;
+    let started = std::time::Instant::now();
+    let mut preset = motion::presets().into_iter().find(|p| p.name == "fade").unwrap();
+    preset.timing.duration = 0.1;
+    // No service/finish tick runs between start and the placement below.
+    animation::start(window, &preset, started);
+    let placed = animation::prepare_place(window, base, false, started + std::time::Duration::from_secs(1));
+    assert_eq!(placed.opacity, 1.0);
+    assert!(animation::started(window).is_none());
+    assert_eq!(animation::sample(window, placed, started).opacity, 1.0);
+}
+
+#[test]
+fn hide_during_visual_run_holds_the_presented_sample() {
+    use world::comp::animation;
+    let mut h = harness();
+    h.mapped_toplevel(64, 48);
+    let window = h.wire.inner.space.state.elements().next().unwrap();
+    let base = comp_model::request::VisualAttributes::default();
+    let started = std::time::Instant::now();
+    let mut preset = motion::presets().into_iter().find(|p| p.name == "fade").unwrap();
+    preset.timing.duration = 1.0;
+    animation::start(window, &preset, started);
+    let presented = started + std::time::Duration::from_millis(100);
+    animation::set_frame_time(presented);
+    let expected = animation::sample(window, base, presented);
+    assert!(expected.opacity < 1.0);
+    let held = animation::prepare_place(window, base, true, started + std::time::Duration::from_millis(300));
+    assert_eq!(held, expected);
+    assert!(animation::started(window).is_none());
+    assert_eq!(animation::sample(window, held, started + std::time::Duration::from_secs(2)), expected);
+}
+
 fn harness() -> Harness {
     let mut h = Harness::new();
     h.wire.inner.comp.default_output = Some(DefaultOutput {
