@@ -666,11 +666,27 @@ fn never_placed_pop_uses_window_center() {
         return;
     }
     let bus = Bus::start("center-pop");
-    let mut process = process::spawn(1, None, "center-pop", Some(&bus.url));
+    let mut process = process::spawn_preferences(
+        "center-pop",
+        &bus.url,
+        json!({"window_motion":{"map":{"preset":"pop","duration_ms":300}}}),
+    );
     bus.ready();
     let mut client = Pattern::named(connect(&mut process), "center-pop", false);
     client.wait_callback(0);
     let row = bus.window_for("center-pop", &mut [&mut client]);
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let mapped = bus.window_for("center-pop", &mut [&mut client]);
+        if mapped["scale"]["anchor"]["x"].as_f64() == Some(100.0) {
+            assert_eq!(mapped["scale"]["anchor"]["y"].as_f64(), Some(80.0));
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "unplaced map preset must use its centre"
+        );
+    }
     bus.call("comp.motion.run", json!({"targets":[{"window":{"id":row["id"],"generation":row["generation"],"preset":"pop","anchor":"center","duration_ms":300}}]}));
     let after = bus.window_for("center-pop", &mut [&mut client]);
     assert_eq!(after["scale"]["factor"], 1.0);
