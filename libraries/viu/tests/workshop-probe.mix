@@ -4,7 +4,7 @@
 $mode=$1 ?? "baseline"
 $test=["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--nocapture"]
 fn checked($argv)
-  $r=run_argv($argv,{timeout:3600,stderr:"stdout",max_output:64000000})
+  $r=run_argv($argv,{timeout:3600,stderr:"stdout",max_output:64000000,env:{TEST_POOL_RETRY_REPORT:""}})
   print($r.stdout)
   if not $r.ok then exit($r.exit_code ?? 1) end
 end
