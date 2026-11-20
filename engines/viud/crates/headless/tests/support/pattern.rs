@@ -114,7 +114,7 @@ impl Pattern {
         self.conn.flush().unwrap();
     }
     pub fn another_window(&self, name: &str) -> Self {
-        Self::from_connection(self.conn.clone(), name, false)
+        Self::from_connection(self.conn.clone(), name, false, false, (200, 160))
     }
     pub fn hide_cursor(&mut self) {
         let (serial, pointer) = self.state.last_enter.clone().expect("cursor enter");
@@ -333,10 +333,16 @@ impl Pattern {
         mapping_trace!("PATTERN start app_id={name} socket={stream:?}");
         stream.set_nonblocking(true).unwrap();
         let conn = Connection::from_socket(stream).unwrap();
-        Self::from_connection(conn, name, fullscreen)
+        Self::from_connection(conn, name, fullscreen, decorated, size)
     }
 
-    fn from_connection(conn: Connection, name: &str, fullscreen: bool) -> Self {
+    fn from_connection(
+        conn: Connection,
+        name: &str,
+        fullscreen: bool,
+        decorated: bool,
+        size: (i32, i32),
+    ) -> Self {
         let mut queue = conn.new_event_queue::<State>();
         let qh = queue.handle();
         let registry = conn.display().get_registry(&qh, ());
