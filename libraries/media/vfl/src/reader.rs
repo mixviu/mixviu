@@ -267,7 +267,6 @@ pub struct Reader {
     next: u64,
     keyed: bool,
     stopped: bool,
-    last_kind: u8,
     frames: Option<BufReader<File>>,
     keys: Vec<KeyPosition>,
     scanned: u64,
@@ -416,7 +415,6 @@ impl Reader {
             next: 0,
             keyed: false,
             stopped: false,
-            last_kind: KEY,
             frames,
             keys: Vec::new(),
             scanned: 0,
@@ -643,7 +641,7 @@ impl Reader {
                     e
                 })?;
             }
-            if kind == KEY && !self.keys.iter().any(|k| k.slot == slot) {
+            if kind == KEY && self.keys.last().is_none_or(|k| k.slot < slot) {
                 self.keys.push(KeyPosition { chunk: self.chunk, offset: self.offset, slot,
                     crc: self.crc.clone(), frame_offset });
             }
@@ -651,7 +649,6 @@ impl Reader {
             self.crc.update(&h);
             self.crc.update(&self.payload);
             self.offset += 17 + len as u64;
-            self.last_kind = kind;
             self.next = self
                 .next
                 .checked_add(1)
@@ -674,6 +671,12 @@ impl Reader {
             Err(e) => {
                 self.stopped = true;
                 if e.kind == ErrorKind::TornTail && !self.complete {
+                    // A torn binary tail must not hide independently corrupt
+                    // sidecar rows. Extra valid rows remain advisory in recovery.
+                    if let Err(e) = self.check_recovery_tail() {
+                        self.poisoned = true;
+                        return Err(e);
+                    }
                     self.torn_tail = true;
                     return Ok(None);
                 }
@@ -694,6 +697,21 @@ impl Reader {
         self.error(if e.kind() == std::io::ErrorKind::UnexpectedEof && self.chunk + 1 == self.chunks {
             ErrorKind::TornTail
         } else { ErrorKind::Io }, e)
+    }
+    fn check_recovery_tail(&mut self) -> Result<(), Error> {
+        let p = self.path.join("frames.jsonl");
+        if let Some(f) = &mut self.frames {
+            let mut slot = self.next;
+            loop {
+                let at = f.stream_position().map_err(|e| err(&p, None, 0, ErrorKind::Io, e))?;
+                let Some(v) = line(f, &p, true)? else { break };
+                if v["frame"] != slot || v["t_us"] != (u128::from(slot) * 1_000_000 / u128::from(self.fps)) as u64 {
+                    return Err(err(&p, None, at, ErrorKind::Structure, "frame timeline mismatch"));
+                }
+                slot = slot.checked_add(1).ok_or_else(|| err(&p, None, at, ErrorKind::Limit, "slot overflow"))?;
+            }
+        }
+        Ok(())
     }
     /// Lazily index keys and their checksum/sidecar positions, then decode forward.
     /// Any failed seek poisons this reader; reopen it to try again.
