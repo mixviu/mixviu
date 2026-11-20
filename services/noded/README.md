@@ -1,5 +1,15 @@
 # noded
 
+Refusal diagnostics emit the first occurrence, then at most one line per 60
+seconds per peer and frame reason (or per peer for admission challenges).
+`count` is the interval count and `total` is the lifetime count, including
+suppressed occurrences across reconnects. A trailing burst needs no flush:
+`noded.info.meta.refusal_totals` exposes `frame_refusals`, `challenge_refusals`
+and `unauthenticated_frames` for the broker process lifetime.
+`noded.peers.peers[].challenge_epoch` reports the last matching admission
+challenge epoch observed for that peer, or null before one is seen. This is
+diagnostic data, not authenticated inventory authority; epoch skew stays at debug.
+
 The native ABP broker: service discovery, routing, subscriptions and authenticated local session grants.
 
 Documentation: <https://mixos.dev/noded/> — source the component manual (not included in this source tree).

@@ -46,8 +46,20 @@ use crate::protection::TrafficClass;
 #[path = "frame_policy.rs"]
 mod frame_policy;
 
-static FRAME_REFUSALS: std::sync::LazyLock<std::sync::Mutex<HashMap<&'static str, (u64, u64)>>> =
+type FrameRefusalLogs = HashMap<(String, &'static str), mesh::DiagnosticLog>;
+static FRAME_REFUSALS: std::sync::LazyLock<std::sync::Mutex<FrameRefusalLogs>> =
     std::sync::LazyLock::new(Default::default);
+
+fn refusal_totals() -> serde_json::Value {
+    let frames = FRAME_REFUSALS
+        .lock()
+        .expect("frame refusal counters poisoned");
+    serde_json::json!({
+        "frame_refusals": frames.values().map(mesh::DiagnosticLog::total).sum::<u64>(),
+        "challenge_refusals": mesh::challenge_refusal_total(),
+        "unauthenticated_frames": mesh::unauthenticated_frame_total(),
+    })
+}
 
 /// Startup-only operator policy; independent of D2 admission. Noded owns this
 /// key in NodedConfig's extension map so older config readers retain it.
@@ -98,6 +110,16 @@ fn mesh_frame_allowed(
 
 /// Every violation has a structured audit event; human-facing logs coalesce.
 fn frame_refused(reason: &'static str, peer: &str, address: &str, posture: AdmissionMode) {
+    frame_refused_at(reason, peer, address, posture, Instant::now());
+}
+
+fn frame_refused_at(
+    reason: &'static str,
+    peer: &str,
+    address: &str,
+    posture: AdmissionMode,
+    now: Instant,
+) {
     tracing::debug!(
         event = "frame.refused",
         reason,
@@ -106,24 +128,16 @@ fn frame_refused(reason: &'static str, peer: &str, address: &str, posture: Admis
         posture = admission_mode_str(posture),
         "Inter-node frame policy"
     );
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
     let count = {
         let mut reasons = FRAME_REFUSALS
             .lock()
             .expect("frame refusal counters poisoned");
-        let (previous, count) = reasons.entry(reason).or_default();
-        *count += 1;
-        if now.saturating_sub(*previous) >= WARN_COALESCE_MS {
-            *previous = now;
-            Some(std::mem::take(count))
-        } else {
-            None
-        }
+        reasons
+            .entry((peer.to_owned(), reason))
+            .or_default()
+            .record(now)
     };
-    if let Some(count) = count {
+    if let Some((count, total)) = count {
         tracing::info!(
             event = "frame.refused",
             reason,
@@ -131,6 +145,7 @@ fn frame_refused(reason: &'static str, peer: &str, address: &str, posture: Admis
             peer_address = address,
             posture = admission_mode_str(posture),
             count,
+            total,
             "Inter-node frame refusals (coalesced)"
         );
     }
@@ -4288,6 +4303,7 @@ fn noded_peers_body(
                 "name": p.name(),
                 "wg_ip": p.mesh_ip(),
                 "port": p.noded_port(),
+                "challenge_epoch": mesh::peer_challenge_epoch(p.name()),
             })
         })
         .collect();
@@ -4694,6 +4710,7 @@ async fn handle_noded_command(
             let mut meta = serde_json::Map::new();
             meta.insert("pending_responses".into(), pending.into());
             meta.insert("pending_responder_closed".into(), responder_closed.into());
+            meta.insert("refusal_totals".into(), refusal_totals());
             let info = bus::NodeInfo {
                 node: state.node_name.clone(),
                 // `bind` is `<host>:<port>`; the host is the WG IP. Parse
@@ -5467,18 +5484,118 @@ fn escape_json_string(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    //! Regression test for the 2026-04-28 noded log-feedback meltdown.
-    //!
-    //! Reproduces the failure shape: a peer that is **registered as a
-    //! service** AND **subscribed to noded.tap** on the same connection
-    //! has its bounded outbound mpsc(256) referenced twice by the broker.
-    //! Floods at this peer used to fire one WARN per dropped message
-    //! (route_local) plus another per dropped tap (broadcast_tap),
-    //! starving journald and the broker itself.
-    //!
-    //! With the fix: drops are deduped (route_local return value tells
-    //! broadcast_tap to skip the same Sender) and remaining drops are
-    //! coalesced to ≤1 WARN per second per axis.
+    //! Broker regression tests, including bounded diagnostic emission.
+    #[tokio::test]
+    async fn refusal_totals_are_live_in_info() {
+        let state = mesh_delivery_test_state().await;
+        let before = super::refusal_totals()["frame_refusals"].as_u64().unwrap();
+        super::frame_refused(
+            "test-info",
+            "info-peer",
+            "192.0.2.1",
+            config::node::AdmissionMode::Observe,
+        );
+        let mut challenge = bus::wire::BusMessage::new().with_header("id", "info-challenge");
+        challenge.body =
+            serde_json::json!({"verifying_broker_node": "wrong", "mesh_fqdn": "example.test"})
+                .to_string();
+        assert!(
+            mesh::build_admit_response(
+                &challenge,
+                "local",
+                &Some([9; 32]),
+                "info-peer",
+                "example.test",
+                1
+            )
+            .is_none()
+        );
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let request = bus::wire::BusMessage::new().with_header("command", "noded.info");
+        super::handle_noded_command(
+            &request,
+            &tx,
+            &state,
+            &mut None,
+            "anon-test",
+            "192.0.2.1".parse().unwrap(),
+            &mut crate::observe::Outcome::BrokerHandled,
+        )
+        .await;
+        let reply = bus::wire::parse(&rx.recv().await.unwrap()).unwrap();
+        let info: serde_json::Value = serde_json::from_str(&reply.body).unwrap();
+        assert!(
+            info["meta"]["refusal_totals"]["frame_refusals"]
+                .as_u64()
+                .unwrap()
+                > before
+        );
+        assert!(
+            info["meta"]["refusal_totals"]["challenge_refusals"]
+                .as_u64()
+                .unwrap()
+                <= mesh::challenge_refusal_total()
+        );
+        assert!(
+            info["meta"]["refusal_totals"]["challenge_refusals"]
+                .as_u64()
+                .unwrap()
+                > 0
+        );
+    }
+
+    #[test]
+    fn listener_refusals_coalesce_per_peer_and_reason_for_a_minute() {
+        #[derive(Clone, Default)]
+        struct Capture(Arc<StdMutex<Vec<u8>>>);
+        impl std::io::Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let output = Capture::default();
+        let writer = output.clone();
+        let _guard = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::INFO)
+            .with_writer(move || writer.clone())
+            .set_default();
+        let now = std::time::Instant::now();
+        for second in 0..180 {
+            for peer in ["coalesce-alpha", "coalesce-beta"] {
+                for reason in ["test-reason-one", "test-reason-two"] {
+                    super::frame_refused_at(
+                        reason,
+                        peer,
+                        "192.0.2.1",
+                        config::node::AdmissionMode::Observe,
+                        now + std::time::Duration::from_secs(second),
+                    );
+                }
+            }
+        }
+        let logs = super::FRAME_REFUSALS.lock().unwrap();
+        let text = String::from_utf8(output.0.lock().unwrap().clone()).unwrap();
+        assert_eq!(text.lines().count(), 12, "{text}");
+        for peer in ["coalesce-alpha", "coalesce-beta"] {
+            for reason in ["test-reason-one", "test-reason-two"] {
+                assert_eq!(logs[&(peer.to_owned(), reason)].total(), 180);
+                assert_eq!(
+                    text.lines()
+                        .filter(|line| line.contains(peer) && line.contains(reason))
+                        .count(),
+                    3
+                );
+            }
+        }
+    }
+    // The 2026-04-28 log-feedback regression below floods a service subscribed
+    // to its own tap. Drops are deduped and warnings coalesced per call site.
 
     include!("frame_policy_tests.rs");
     include!("identity_tests.rs");
@@ -5639,6 +5756,10 @@ mod tests {
         assert_eq!(body["peers"][0]["name"], "beta");
         assert_eq!(body["peers"][0]["wg_ip"], "192.0.2.6");
         assert_eq!(body["peers"][0]["port"], 4300);
+        assert_eq!(
+            body["peers"][0]["challenge_epoch"],
+            serde_json::json!(mesh::peer_challenge_epoch("beta"))
+        );
         assert_eq!(body["source"], "signed-inventory");
         assert_eq!(body["authority"]["epoch"], 7);
         assert_eq!(body["authority"]["hash"], "authority-hash");
