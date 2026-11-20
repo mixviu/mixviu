@@ -120,6 +120,8 @@ struct Host {
     read_only: BTreeSet<String>,
     #[cfg(feature = "test-support")]
     legacy_draw_barrier: bool,
+    #[cfg(feature = "test-support")]
+    discovery_probe: Option<test_support::DiscoveryProbe>,
     scene_source: String,
     loaded: bool,
     active_scene: String,
@@ -943,6 +945,10 @@ impl Host {
                 break;
             }
             self.job_results.pop_front();
+            #[cfg(feature = "test-support")]
+            if let Some(probe) = &mut self.discovery_probe {
+                probe.steps += 1;
+            }
         }
         if self
             .bus
@@ -952,6 +958,10 @@ impl Host {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         while let Some(done) = self.runtime.try_completion() {
+            #[cfg(feature = "test-support")]
+            if let Some(probe) = &mut self.discovery_probe {
+                probe.callbacks.push(done.elapsed.as_micros() as u64);
+            }
             if let Some((code, message)) = self.ui_state.take_exit() {
                 if !message.is_empty() {
                     eprintln!("{}: {message}", self.app);
@@ -2060,6 +2070,8 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
         read_only,
         #[cfg(feature = "test-support")]
         legacy_draw_barrier: false,
+        #[cfg(feature = "test-support")]
+        discovery_probe: None,
         scene_source: bundle.scene,
         loaded: false,
         active_scene: String::new(),
@@ -2428,6 +2440,20 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
 #[doc(hidden)]
 pub mod test_support {
     use super::*;
+    #[derive(Default)]
+    pub struct DiscoveryProbe {
+        steps: u64,
+        pumps: Vec<u64>,
+        per_pump: Vec<u64>,
+        callbacks: Vec<u64>,
+    }
+    fn distribution(values: &[u64]) -> Value {
+        let mut sorted = values.to_vec();
+        sorted.sort_unstable();
+        if sorted.is_empty() { return json!({"n":0}); }
+        json!({"n":sorted.len(),"median":sorted[sorted.len()/2],
+            "p99":sorted[(sorted.len()*99/100).min(sorted.len()-1)],"max":sorted.last()})
+    }
     pub struct Harness {
         host: Host,
         pub ctx: egui::Context,
@@ -2443,7 +2469,21 @@ pub mod test_support {
             }
         }
         pub fn pump(&mut self) {
+            let start = Instant::now();
+            let before = self.host.discovery_probe.as_ref().map_or(0, |p| p.steps);
             self.host.pump(&self.ctx);
+            if let Some(p) = &mut self.host.discovery_probe {
+                p.pumps.push(start.elapsed().as_micros() as u64);
+                p.per_pump.push(p.steps - before);
+            }
+        }
+        pub fn probe_discovery(&mut self) {
+            self.host.discovery_probe = Some(DiscoveryProbe::default());
+        }
+        pub fn discovery_measurements(&self) -> Value {
+            let p = self.host.discovery_probe.as_ref().unwrap();
+            json!({"pump_us":distribution(&p.pumps),"steps_per_pump":distribution(&p.per_pump),
+                "callback_us":distribution(&p.callbacks)})
         }
         pub fn draw(&mut self) {
             self.ctx

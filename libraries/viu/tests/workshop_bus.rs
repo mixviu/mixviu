@@ -300,6 +300,7 @@ fn call(
     let caller = caller.clone();
     let command = command.to_owned();
     let label = command.clone();
+    let started = Instant::now();
     let task = rt.spawn(async move {
         tokio::time::timeout(
             Duration::from_secs(1),
@@ -320,6 +321,7 @@ fn call(
         assert!(Instant::now() < end, "owner stalled: {:?}", host.held());
         std::thread::sleep(Duration::from_millis(2));
     }
+    eprintln!("WORKSHOP_CALL {label} us={}", started.elapsed().as_micros());
     let (rc, body, _) = rt
         .block_on(task)
         .unwrap()
@@ -383,6 +385,7 @@ fn workshop_answers_during_discovery() {
         bundle.launch = json!({"headless":true});
         bundle.manifest.saved_version = None;
         let mut host = Harness::new(bundle);
+        host.probe_discovery();
         let start = Instant::now();
         while !host.ready() {
             host.pump();
@@ -432,6 +435,7 @@ fn workshop_answers_during_discovery() {
             "healthy results must appear before the silent peer finishes"
         );
         assert!(disconnected.load(std::sync::atomic::Ordering::Acquire));
+        eprintln!("WORKSHOP_PROBE peers={count} {}", host.discovery_measurements());
         for task in tasks {
             task.abort();
         }
