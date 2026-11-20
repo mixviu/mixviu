@@ -1311,7 +1311,10 @@ fn record_privacy_window_output_membership_and_marker_order() {
         if left.is_some_and(|m| frames > m["frame"].as_u64().unwrap() + 2) {
             break frames;
         }
-        assert!(Instant::now() < until, "no written off-output marker/ticks: {status}");
+        assert!(
+            Instant::now() < until,
+            "no written off-output marker/ticks: {status}"
+        );
         thread::sleep(Duration::from_millis(20));
     };
     bus.call(
