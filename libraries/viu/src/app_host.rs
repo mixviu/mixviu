@@ -2961,6 +2961,11 @@ pub mod test_support {
         pub fn error(&self) -> &str {
             &self.host.error
         }
+        /// Owner event injection for authored integration fixtures. This does
+        /// not expose a Bus command or add a production evaluator primitive.
+        pub fn owner_event(&mut self,command:&str,args:Value) {
+            self.host.dispatch(command.into(),args,BTreeMap::new(),None);
+        }
         pub fn held(&self) -> Vec<String> {
             self.host
                 .held_requests

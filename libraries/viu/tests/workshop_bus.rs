@@ -566,6 +566,20 @@ fn workshop_answers_during_discovery() {
         bundle.manifest.bus_url = Some(broker.url.clone());
         bundle.launch = json!({"headless":true});
         bundle.manifest.saved_version = None;
+        if count==200 {
+            // A deterministic large retained model, authored in Mix and
+            // injected only through this test owner's native event queue.
+            bundle.program.source.push_str(r#"
+on viu.test.retained_model
+  $fixture_traffic=require("traffic.mix")
+  $state.traffic=[];$state.traffic_bytes=0
+  for $i=0 to 47
+    $state=$fixture_traffic.retain($state,{ts:to_string($i),direction:"local",command:"fixture.retained",payload:{text:$event.args.padding}})
+  end
+  $state=publish_workshop($state);$dirty=true
+end
+"#);
+        }
         let _profile_module = PROFILE_INFO_HELPERS.then(|| profile_info_helpers(&mut bundle));
         if PROFILE_TICK {
             profile_tick(&mut bundle);
@@ -653,10 +667,24 @@ fn workshop_answers_during_discovery() {
         assert_eq!(info["discovering"], false);
         assert!(info["snapshot"]["services"].as_object().unwrap().len() >= count);
         if count == 200 {
-            // Discovery can finish before Traffic reaches its representative
-            // size on a fast worker. Keep the original assertions above and
-            // add a bounded four-reads/second steady phase at all 200 peers.
-            for _ in 0..24 {
+            eprintln!("WORKSHOP_DISCOVERY_PHASE {}",host.discovery_measurements());
+            host.probe_discovery();
+            host.owner_event("viu.test.retained_model",json!({"padding":"x".repeat(48*1024)}));
+            let until=Instant::now()+Duration::from_secs(5);
+            loop {
+                host.pump();assert!(host.error().is_empty(),"{}",host.error());
+                if serde_json::to_vec(&host.state()["model"]).unwrap().len()>=2*1024*1024 {break;}
+                assert!(Instant::now()<until,"retained Traffic seed was not published");
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            // Full initialisation is outside the per-tick incremental budget,
+            // exactly as startup is. Every subsequent ordinary tick is guarded.
+            host.probe_discovery();
+            host.discovery_numeric_bounds(MAX_STANDALONE_PUMP_US,MAX_TICK_MODEL_BYTES);
+            host.patch_cpu_bound(MAX_PATCH_APPLY_CPU_US);
+            if PROFILE_TICK {host.profile_scene_apply();}
+            if VERIFY_INCREMENTAL {host.verify_incremental_publications();}
+            for _ in 0..8 {
                 assert_eq!(call(&mut host, &rt, &caller, "workshop.info").0, 0);
                 let until = Instant::now() + Duration::from_millis(250);
                 while Instant::now() < until {
@@ -674,8 +702,8 @@ fn workshop_answers_during_discovery() {
                 "steady Traffic must be rendered"
             );
             assert!(
-                serde_json::to_vec(&host.state()["model"]).unwrap().len() >= 1024 * 1024,
-                "steady guard must exercise a retained model of at least 1 MiB (larger than the 768 KiB wire bound)"
+                serde_json::to_vec(&host.state()["model"]).unwrap().len() >= 2 * 1024 * 1024,
+                "steady guard must exercise a retained model of at least 2 MiB"
             );
             assert!(
                 host.discovery_measurements()["tick_model_bytes"]["n"]
