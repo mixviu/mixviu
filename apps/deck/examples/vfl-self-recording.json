@@ -31,7 +31,7 @@
           "gap": 28,
           "height": 708,
           "max_width": 1600,
-          "min_width": 1408,
+          "min_width": 1600,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_top": 72,
@@ -96,7 +96,7 @@
           "gap": 20,
           "height": 708,
           "max_width": 1600,
-          "min_width": 1408,
+          "min_width": 1600,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -113,8 +113,6 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
-          "grow": 1,
-          "min_width": 0,
           "size": 26,
           "text": "MixViu Adventures · before",
           "widget": "text",
@@ -188,7 +186,6 @@
           ],
           "gap": 6,
           "grow": 1,
-          "min_width": 0,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -219,7 +216,6 @@
           ],
           "gap": 0,
           "grow": 1,
-          "min_width": 0,
           "widget": "column"
         },
         "root.2.1.1.0": {
@@ -244,7 +240,6 @@
           ],
           "gap": 6,
           "grow": 1,
-          "min_width": 0,
           "outline": "#3cc8d8",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -275,7 +270,6 @@
           ],
           "gap": 0,
           "grow": 1,
-          "min_width": 0,
           "widget": "column"
         },
         "root.2.1.3.0": {
@@ -300,7 +294,6 @@
           ],
           "gap": 6,
           "grow": 1,
-          "min_width": 0,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -331,7 +324,6 @@
           ],
           "gap": 0,
           "grow": 1,
-          "min_width": 0,
           "widget": "column"
         },
         "root.2.1.5.0": {
@@ -356,7 +348,6 @@
           ],
           "gap": 6,
           "grow": 1,
-          "min_width": 0,
           "outline": "#5ad18a",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -397,7 +388,6 @@
           ],
           "gap": 16,
           "grow": 1,
-          "min_width": 0,
           "outline": "#5a2b2b",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -429,7 +419,6 @@
           ],
           "gap": 16,
           "grow": 1,
-          "min_width": 0,
           "outline": "#26303d",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -497,7 +486,7 @@
           "gap": 20,
           "height": 708,
           "max_width": 1600,
-          "min_width": 1408,
+          "min_width": 1600,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -514,8 +503,6 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
-          "grow": 1,
-          "min_width": 0,
           "size": 26,
           "text": "The new recorder · PR #162",
           "widget": "text",
@@ -591,7 +578,6 @@
           ],
           "gap": 0,
           "grow": 1,
-          "min_width": 0,
           "widget": "column"
         },
         "root.3.0.0": {
@@ -615,7 +601,6 @@
           ],
           "gap": 0,
           "grow": 1,
-          "min_width": 0,
           "widget": "column"
         },
         "root.3.1.0": {
@@ -639,7 +624,6 @@
           ],
           "gap": 0,
           "grow": 1,
-          "min_width": 0,
           "widget": "column"
         },
         "root.3.2.0": {
@@ -730,7 +714,7 @@
           "gap": 20,
           "height": 708,
           "max_width": 1600,
-          "min_width": 1408,
+          "min_width": 1600,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -747,8 +731,6 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
-          "grow": 1,
-          "min_width": 0,
           "size": 26,
           "text": "Trouble 1 · nothing could read it",
           "widget": "text",
@@ -932,7 +914,7 @@
           "gap": 20,
           "height": 708,
           "max_width": 1600,
-          "min_width": 1408,
+          "min_width": 1600,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -949,8 +931,6 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
-          "grow": 1,
-          "min_width": 0,
           "size": 26,
           "text": "Trouble 2 · the wrong file name",
           "widget": "text",
@@ -1083,7 +1063,7 @@
           "gap": 20,
           "height": 708,
           "max_width": 1600,
-          "min_width": 1408,
+          "min_width": 1600,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -1100,8 +1080,6 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
-          "grow": 1,
-          "min_width": 0,
           "size": 26,
           "text": "Trouble 3 · privacy",
           "widget": "text",
@@ -1264,7 +1242,7 @@
           "gap": 20,
           "height": 708,
           "max_width": 1600,
-          "min_width": 1408,
+          "min_width": 1600,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -1281,8 +1259,6 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
-          "grow": 1,
-          "min_width": 0,
           "size": 26,
           "text": "The turning point · staging",
           "widget": "text",
@@ -1361,7 +1337,6 @@
           ],
           "gap": 6,
           "grow": 1,
-          "min_width": 0,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1392,7 +1367,6 @@
           ],
           "gap": 0,
           "grow": 1,
-          "min_width": 0,
           "widget": "column"
         },
         "root.3.1.0": {
@@ -1417,7 +1391,6 @@
           ],
           "gap": 6,
           "grow": 1,
-          "min_width": 0,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1448,7 +1421,6 @@
           ],
           "gap": 0,
           "grow": 1,
-          "min_width": 0,
           "widget": "column"
         },
         "root.3.3.0": {
@@ -1473,7 +1445,6 @@
           ],
           "gap": 6,
           "grow": 1,
-          "min_width": 0,
           "outline": "#5ad18a",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1565,7 +1536,7 @@
           "gap": 20,
           "height": 708,
           "max_width": 1600,
-          "min_width": 1408,
+          "min_width": 1600,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -1582,8 +1553,6 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
-          "grow": 1,
-          "min_width": 0,
           "size": 26,
           "text": "Live · staging",
           "widget": "text",
@@ -1634,7 +1603,6 @@
           ],
           "gap": 6,
           "grow": 1,
-          "min_width": 0,
           "outline": "#3cc8d8",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1665,7 +1633,6 @@
           ],
           "gap": 0,
           "grow": 1,
-          "min_width": 0,
           "widget": "column"
         },
         "root.2.1.0": {
@@ -1690,7 +1657,6 @@
           ],
           "gap": 6,
           "grow": 1,
-          "min_width": 0,
           "outline": "#3cc8d8",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1721,7 +1687,6 @@
           ],
           "gap": 0,
           "grow": 1,
-          "min_width": 0,
           "widget": "column"
         },
         "root.2.3.0": {
@@ -1746,7 +1711,6 @@
           ],
           "gap": 6,
           "grow": 1,
-          "min_width": 0,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1777,7 +1741,6 @@
           ],
           "gap": 0,
           "grow": 1,
-          "min_width": 0,
           "widget": "column"
         },
         "root.2.5.0": {
@@ -1802,7 +1765,6 @@
           ],
           "gap": 6,
           "grow": 1,
-          "min_width": 0,
           "outline": "#5ad18a",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1900,7 +1862,7 @@
           "gap": 20,
           "height": 708,
           "max_width": 1600,
-          "min_width": 1408,
+          "min_width": 1600,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -1917,8 +1879,6 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
-          "grow": 1,
-          "min_width": 0,
           "size": 26,
           "text": "Loose ends",
           "widget": "text",
@@ -2081,7 +2041,7 @@
           "gap": 20,
           "height": 708,
           "max_width": 1600,
-          "min_width": 1408,
+          "min_width": 1600,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -2098,8 +2058,6 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
-          "grow": 1,
-          "min_width": 0,
           "size": 26,
           "text": "Outcome · 20 November",
           "widget": "text",
@@ -2250,7 +2208,7 @@
           "gap": 20,
           "height": 708,
           "max_width": 1600,
-          "min_width": 1408,
+          "min_width": 1600,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -2267,8 +2225,6 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
-          "grow": 1,
-          "min_width": 0,
           "size": 26,
           "text": "Still owed",
           "widget": "text",
@@ -2319,8 +2275,6 @@
         },
         "root.2.0.0": {
           "color": "#3cc8d8",
-          "grow": 1,
-          "min_width": 0,
           "size": 31,
           "text": "●",
           "widget": "text",
@@ -2328,8 +2282,6 @@
         },
         "root.2.0.1": {
           "color": "#e8edf3",
-          "grow": 1,
-          "min_width": 0,
           "size": 31,
           "text": "Merge listed windows (#193)",
           "widget": "text",
@@ -2346,8 +2298,6 @@
         },
         "root.2.1.0": {
           "color": "#3cc8d8",
-          "grow": 1,
-          "min_width": 0,
           "size": 31,
           "text": "●",
           "widget": "text",
@@ -2355,8 +2305,6 @@
         },
         "root.2.1.1": {
           "color": "#e8edf3",
-          "grow": 1,
-          "min_width": 0,
           "size": 31,
           "text": "Quiet exit on a closed pipe",
           "widget": "text",
@@ -2373,8 +2321,6 @@
         },
         "root.2.2.0": {
           "color": "#3cc8d8",
-          "grow": 1,
-          "min_width": 0,
           "size": 31,
           "text": "●",
           "widget": "text",
@@ -2382,8 +2328,6 @@
         },
         "root.2.2.1": {
           "color": "#e8edf3",
-          "grow": 1,
-          "min_width": 0,
           "size": 31,
           "text": "Bench the recorder on a desk",
           "widget": "text",
@@ -2400,8 +2344,6 @@
         },
         "root.2.3.0": {
           "color": "#3cc8d8",
-          "grow": 1,
-          "min_width": 0,
           "size": 31,
           "text": "●",
           "widget": "text",
@@ -2409,8 +2351,6 @@
         },
         "root.2.3.1": {
           "color": "#e8edf3",
-          "grow": 1,
-          "min_width": 0,
           "size": 31,
           "text": "Motion and captions in the compositor",
           "widget": "text",
@@ -2427,8 +2367,6 @@
         },
         "root.2.4.0": {
           "color": "#3cc8d8",
-          "grow": 1,
-          "min_width": 0,
           "size": 31,
           "text": "●",
           "widget": "text",
@@ -2436,8 +2374,6 @@
         },
         "root.2.4.1": {
           "color": "#e8edf3",
-          "grow": 1,
-          "min_width": 0,
           "size": 31,
           "text": "A deck app, recorded live",
           "widget": "text",
@@ -2487,7 +2423,7 @@
           "gap": 20,
           "height": 708,
           "max_width": 1600,
-          "min_width": 1408,
+          "min_width": 1600,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -2504,8 +2440,6 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
-          "grow": 1,
-          "min_width": 0,
           "size": 26,
           "text": "MixViu Adventures",
           "widget": "text",
