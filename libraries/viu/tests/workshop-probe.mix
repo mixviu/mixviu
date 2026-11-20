@@ -8,7 +8,23 @@ fn checked($argv)
   print($r.stdout)
   if not $r.ok then exit($r.exit_code ?? 1) end
 end
-if $mode=="format" then
+if $mode=="guard-negative" then
+  $path="apps/workshop/counter.mix";$source=read_file($path)
+  $needle="if not needs_thaw($encoded) then return $encoded end"
+  $mutated=replace($source,$needle,"if not needs_thaw($encoded) then  return $encoded end")
+  if $mutated==$source then raise("PROBE","guard control did not change source") end
+  try
+    write_file($path,$mutated)
+    for $case in ["wire","compare"]
+      $r=run_argv(["mix",script_path(),$case],{timeout:600,stderr:"stdout",max_output:64000000})
+      print($r.stdout)
+      if $r.ok or not contains($r.stdout,$case.." mutation did not change source") then raise("PROBE","mutation guard did not refuse source drift: "..$case) end
+    end
+  finally
+    write_file($path,$source)
+    checked(["git","diff","--exit-code"])
+  end
+elif $mode=="format" then
   $r=run_argv(["cargo","fmt","-p","lib-viu"],{timeout:600,stderr:"stdout"})
   print($r.stdout);print(run_argv_must(["git","diff"]))
   print(run_argv_must(["git","checkout","-q","--","."]))
