@@ -49,6 +49,31 @@ pub struct Process {
     oom_before: String,
 }
 
+fn diagnostic_excerpt(path: impl AsRef<std::path::Path>) -> String {
+    use std::io::{Read, Seek, SeekFrom};
+    const LIMIT: usize = 16 * 1024;
+    let Ok(mut file) = fs::File::open(path) else {
+        return String::new();
+    };
+    let mut head = Vec::new();
+    let _ = file.by_ref().take(LIMIT as u64).read_to_end(&mut head);
+    let length = file.metadata().map(|m| m.len()).unwrap_or(0);
+    if length <= (2 * LIMIT) as u64 {
+        let _ = file.by_ref().take(LIMIT as u64).read_to_end(&mut head);
+        return String::from_utf8_lossy(&head).into_owned();
+    }
+    let tail_start = (length.saturating_sub(LIMIT as u64)).max(LIMIT as u64);
+    let _ = file.seek(SeekFrom::Start(tail_start));
+    let mut tail = Vec::new();
+    let _ = file.take(LIMIT as u64).read_to_end(&mut tail);
+    format!(
+        "{}\n... {} bytes omitted ...\n{}",
+        String::from_utf8_lossy(&head),
+        tail_start - LIMIT as u64,
+        String::from_utf8_lossy(&tail)
+    )
+}
+
 impl Drop for Process {
     fn drop(&mut self) {
         if thread::panicking() {
@@ -67,11 +92,11 @@ impl Drop for Process {
             }
             eprintln!(
                 "frame trace: {}",
-                fs::read_to_string(self.root.join("frames.log")).unwrap_or_default()
+                diagnostic_excerpt(self.root.join("frames.log"))
             );
             eprintln!(
                 "viud log: {}",
-                fs::read_to_string(self.root.join("viud.log")).unwrap_or_default()
+                diagnostic_excerpt(self.root.join("viud.log"))
             );
         }
         let _ = self.stop.send(());
@@ -106,7 +131,7 @@ impl Process {
                 status.signal() == Some(libc::SIGKILL),
                 self.oom_before,
                 oom_evidence(),
-                fs::read_to_string(self.root.join("viud.log")).unwrap_or_default()
+                diagnostic_excerpt(self.root.join("viud.log"))
             );
         }
     }
@@ -278,6 +303,10 @@ fn spawn_options(options: Options<'_>) -> Process {
     let stderr = fs::File::create(&log).unwrap();
     let mut command = Command::new(binary);
     if label.starts_with("record-privacy-") {
+        command.env(paths::env::test::TEST_RECORD_FIXTURE, &root);
+    }
+    if label == "cold-record" {
+        fs::write(root.join("record-input"), "cold-readback").unwrap();
         command.env(paths::env::test::TEST_RECORD_FIXTURE, &root);
     }
     if label == "record-privacy-cursor-epoch" {
