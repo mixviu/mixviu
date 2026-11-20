@@ -1,0 +1,8 @@
+---
+scene: 1
+name: deck
+citizen: deck
+---
+```mix
+{root:{widget:"text",text:"Deck · open a deck with deck.open {path}",size:32}}
+```

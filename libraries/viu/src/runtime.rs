@@ -780,6 +780,33 @@ impl BusHandler for Local {
                 }
                 "motion.presets" => serde_json::from_str(motion::PRESETS_JSON)
                     .expect("validated motion preset table"),
+                "scene.validate" => {
+                    let source = body["source"]
+                        .as_str()
+                        .ok_or_else(|| failure("source required"))?;
+                    let document = scene::parse(source).map_err(|e| failure(&format!("{e:?}")))?;
+                    scene::resolve(&document).map_err(|e| failure(&format!("{e:?}")))?;
+                    json!({"valid":true})
+                }
+                "motion.seek" => {
+                    let name = body["preset"]
+                        .as_str()
+                        .ok_or_else(|| failure("preset required"))?;
+                    let at = body["time"]
+                        .as_f64()
+                        .filter(|v| v.is_finite())
+                        .ok_or_else(|| failure("finite time required"))?;
+                    let entrance = motion::scene::Entrance::Name(name.into());
+                    entrance.validate().map_err(failure)?;
+                    if !["fade", "up", "down", "left", "right"].contains(&name) {
+                        return Err(failure(
+                            "seek currently supports opacity and translation presets only",
+                        ));
+                    }
+                    let values = entrance.playback(0.0, 0, false).sample(at);
+                    json!({"opacity":values.get(motion::Property::Opacity),
+                        "offset":[values.get(motion::Property::Tx),values.get(motion::Property::Ty)]})
+                }
                 "scenes.ready" | "scenes.model" => {
                     if body["generation"].as_u64() != Some(self.generation) {
                         return Ok((10, from_json(json!({"error_code":"stale_generation"}))?));
