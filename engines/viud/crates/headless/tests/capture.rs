@@ -144,11 +144,17 @@ fn record_cold_start_under_load_has_no_capture_drops() {
     let row = bus.window(&mut pattern);
     // Fence presentation using Wayland, not a screenshot: mapping/listing can
     // precede the first usable output frame, especially in the shared pool.
-    bus.call("comp.window.fullscreen", place_args(&row, json!({"output":"headless-0"})));
+    bus.call(
+        "comp.window.fullscreen",
+        place_args(&row, json!({"output":"headless-0"})),
+    );
     let configured = Instant::now() + Duration::from_secs(5);
     while pattern.state.size != (320, 240) {
         pattern.pump();
-        assert!(Instant::now() < configured, "fullscreen configure timed out");
+        assert!(
+            Instant::now() < configured,
+            "fullscreen configure timed out"
+        );
         thread::sleep(Duration::from_millis(2));
     }
     pattern.change_buffer();
@@ -174,7 +180,7 @@ fn record_cold_start_under_load_has_no_capture_drops() {
             });
         }
         let begin = Instant::now();
-        let starting = scope.spawn(|| bus.call("comp.record.start", json!({"request_id":"cold", "target":{"output":row["output"]}, "path":process.root.join("cold.vfl"), "max_seconds":10, "fps":30, "cursor":false})));
+        let starting = scope.spawn(|| bus.call("comp.record.start", json!({"request_id":"cold", "target":{"output":"headless-0"}, "path":process.root.join("cold.vfl"), "max_seconds":10, "fps":30, "cursor":false})));
         // Keep damage flowing during admission too. Otherwise an idle tick
         // can repay frame zero's debt before the Bus start reply is received,
         // hiding the very first-readback deferral in the bypassed build.
