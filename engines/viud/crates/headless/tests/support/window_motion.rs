@@ -83,8 +83,8 @@ fn white_window_sized(
 // Keep functional recordings small enough for the workspace's debug compositor
 // under its parallel pool. The 200x160 client, 30Hz samples and pixel oracles
 // stay unchanged; the separate throughput acceptance still records 4K30.
-const MOTION_SIZE: &str = "480x320";
-const MOTION_WIDTH: usize = 480;
+const MOTION_SIZE: &str = "300x220";
+const MOTION_WIDTH: usize = 300;
 // Close tests need only colour, corner and stacking probes, not the pop's
 // 200px scale ruler. Bound their per-frame debug encoder work further.
 const CLOSE_SIZE: &str = "240x180";
@@ -98,15 +98,15 @@ fn opacity_at(pixels: &[u8], width: usize, x: usize, y: usize) -> f64 {
 // centre avoids chrome and texture-filtered edges. The run length of the
 // centre colour measures the scaled client width independently of metadata.
 fn visual(pixels: &[u8], width: usize) -> (f64, f64) {
-    let at = |x| &pixels[(140 * width + x) * 4..(140 * width + x) * 4 + 3];
-    let centre = at(200);
+    let at = |x| &pixels[(110 * width + x) * 4..(110 * width + x) * 4 + 3];
+    let centre = at(150);
     let opacity = (f64::from(centre[2]) - 18.0) / (255.0 - 18.0);
     if opacity < 0.04 {
         return (opacity, 0.0);
     }
     let same = |x| at(x).iter().zip(centre).all(|(a, b)| a.abs_diff(*b) <= 2);
-    let left = (0..200).rev().take_while(|x| same(*x)).count();
-    let right = (200..width).take_while(|x| same(*x)).count();
+    let left = (0..150).rev().take_while(|x| same(*x)).count();
+    let right = (150..width).take_while(|x| same(*x)).count();
     (opacity, (left + right) as f64 / 200.0)
 }
 
@@ -141,7 +141,7 @@ fn record_window_pop_intermediate_pixels_and_idle_repeats() {
     let bus = Bus::start("window-pop");
     let mut process = process::spawn_size("window-pop", &bus.url, MOTION_SIZE);
     bus.ready();
-    let (mut pattern, row) = white_window_at(&bus, &mut process, "window-pop", 100, 60);
+    let (mut pattern, row) = white_window_at(&bus, &mut process, "window-pop", 50, 30);
     let path = process.root.join("pop.vfl");
     let start = bus.call("comp.record.start",json!({"request_id":"pop","target":{"output":"headless-0"},"path":path,"max_seconds":10,"fps":30,"cursor":false}));
     let reply = bus.call(
@@ -582,7 +582,7 @@ fn record_window_retarget_supersedes_without_returning_to_first_keyframe() {
     let bus = Bus::start("window-retarget");
     let mut process = process::spawn_size("window-retarget", &bus.url, MOTION_SIZE);
     bus.ready();
-    let (mut pattern, row) = white_window_at(&bus, &mut process, "window-retarget", 100, 60);
+    let (mut pattern, row) = white_window_at(&bus, &mut process, "window-retarget", 50, 30);
     let path = process.root.join("retarget.vfl");
     let start = bus.call("comp.record.start",json!({"request_id":"retarget","target":{"output":"headless-0"},"path":path,"max_seconds":10,"fps":30,"cursor":false}));
     let mut first_tracks = opacity_track(1.0, 0.2);
