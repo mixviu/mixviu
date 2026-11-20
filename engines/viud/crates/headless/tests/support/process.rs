@@ -5,7 +5,11 @@ use std::{
     os::unix::{fs::PermissionsExt, process::ExitStatusExt},
     path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -51,9 +55,14 @@ impl Drop for Process {
             if let Ok(Some(status)) = self.child.try_wait() {
                 eprintln!(
                     "viud child exit before cleanup: pid={} status={status} code={:?} signal={:?} core_dumped={} watchdog_fired={} OOM_plausible={} oom_before={} oom_after={}",
-                    self.child.id(), status.code(), status.signal(), status.core_dumped(),
-                    self.watchdog_fired.load(Ordering::SeqCst), status.signal() == Some(libc::SIGKILL),
-                    self.oom_before, oom_evidence()
+                    self.child.id(),
+                    status.code(),
+                    status.signal(),
+                    status.core_dumped(),
+                    self.watchdog_fired.load(Ordering::SeqCst),
+                    status.signal() == Some(libc::SIGKILL),
+                    self.oom_before,
+                    oom_evidence()
                 );
             }
             eprintln!(
@@ -82,9 +91,15 @@ impl Process {
         if let Some(status) = self.child.try_wait().expect("query viud exit status") {
             panic!(
                 "viud exited: pid={} status={status} code={:?} signal={:?} core_dumped={} elapsed={:?} watchdog_fired={} OOM_plausible={} (SIGKILL alone does not prove OOM); oom_before={} oom_after={}\n{}",
-                self.child.id(), status.code(), status.signal(), status.core_dumped(),
-                self.started.elapsed(), self.watchdog_fired.load(Ordering::SeqCst),
-                status.signal() == Some(libc::SIGKILL), self.oom_before, oom_evidence(),
+                self.child.id(),
+                status.code(),
+                status.signal(),
+                status.core_dumped(),
+                self.started.elapsed(),
+                self.watchdog_fired.load(Ordering::SeqCst),
+                status.signal() == Some(libc::SIGKILL),
+                self.oom_before,
+                oom_evidence(),
                 fs::read_to_string(self.root.join("viud.log")).unwrap_or_default()
             );
         }
@@ -115,9 +130,14 @@ impl Process {
 
 fn oom_evidence() -> String {
     let vm = fs::read_to_string("/proc/vmstat").unwrap_or_default();
-    let kills = vm.lines().find(|line| line.starts_with("oom_kill ")).unwrap_or("oom_kill unavailable");
+    let kills = vm
+        .lines()
+        .find(|line| line.starts_with("oom_kill "))
+        .unwrap_or("oom_kill unavailable");
     let cgroup = fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
-    let events = cgroup.lines().find_map(|line| line.strip_prefix("0::"))
+    let events = cgroup
+        .lines()
+        .find_map(|line| line.strip_prefix("0::"))
         .and_then(|path| fs::read_to_string(format!("/sys/fs/cgroup{path}/memory.events")).ok())
         .unwrap_or_else(|| "cgroup memory.events unavailable".into());
     format!("{kills}; cgroup: {}", events.replace('\n', ","))
