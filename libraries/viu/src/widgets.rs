@@ -2422,7 +2422,10 @@ fn label_text(ui: &egui::Ui, widget: &Widget, value: &Value) -> egui::RichText {
     if let Some(size) = widget.properties["size"].as_f64() {
         text = text.size(size as f32);
     }
-    if widget.properties["bold"] == true {
+    if widget.properties["bold"] == true && widget.properties["mono"] == true {
+        // Monospace keeps its family; the heading face is proportional.
+        text = text.strong();
+    } else if widget.properties["bold"] == true {
         let size = widget.properties["size"]
             .as_f64()
             .map(|s| s as f32)

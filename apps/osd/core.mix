@@ -51,6 +51,7 @@ fn anchor($value)
   else
     if $value.offset!=nil then raise("INVALID_ANCHOR","offset requires a window anchor") end
     if type($value.output)!="string" or len($value.output)==0 then raise("INVALID_ANCHOR","anchor.output is required") end
+    if len($value.output)>128 then raise("INVALID_ANCHOR","anchor.output: maximum length is 128") end
     if not contains(["top","bottom","left","right","top-left","top-right","bottom-left","bottom-right"],$value.edge) then raise("INVALID_ANCHOR","unknown output edge or corner") end
     $margin=$value.margin ?? 16
     if type($margin)=="map" then
@@ -71,7 +72,7 @@ fn preset($name,$presets)
   return $name
 end
 fn fresh()
-  return {items:{},serial:0}
+  return {items:{},serial:0,rates:{}}
 end
 fn finish($s,$now)
   for $id in keys($s.items)
@@ -87,15 +88,26 @@ fn finish($s,$now)
   end
   return $s
 end
-fn apply($s,$op,$args,$now,$presets)
-  $allowed=if $op=="hide" then ["id","exit"] else ["id","scene","anchor","enter","exit","duration_ms","pointer_input"] end
+fn apply($s,$op,$args,$now,$presets,$owner)
+  $allowed=if $op=="hide" then ["id","exit"] else ["id","scene","anchor","enter","exit","duration_ms","pointer_input","backing"] end
   check_fields($args,$allowed,$op)
   $id=identity($args.id)
   if $op=="show" and $s.items[$id]!=nil then raise("ALREADY_EXISTS","an OSD item already has this id") end
   if $op!="show" and $s.items[$id]==nil then raise("NOT_FOUND","no such OSD item") end
+  if $op!="show" and $s.items[$id].owner!=$owner then raise("NOT_OWNER","item belongs to another citizen") end
   if $op=="update" and $s.items[$id].phase=="exit" then raise("INVALID_STATE","item is exiting; wait for removal before showing it again") end
   if $op=="show" and len(keys($s.items))>=32 then raise("BUDGET_EXCEEDED","at most 32 OSD items") end
-  $item=$s.items[$id] ?? {id:$id,pointer_input:false,phase:"enter",started:$now,enter:nil,exit:nil,exit_seconds:0,expires_at:nil}
+  if $op=="show" and len(filter(values($s.items),fn($i)=$i.owner==$owner))>=8 then raise("CALLER_BUDGET_EXCEEDED","at most 8 items per caller") end
+  -- Retain rate records only for the current second, bounding inactive caller state.
+  for $who in keys($s.rates)
+    if $now-$s.rates[$who].at>=1 then $s.rates=omit($s.rates,[$who]) end
+  end
+  if contains(["show","update","hide"],$op) then
+    $rate=$s.rates[$owner] ?? {at:$now,mutations:0}
+    if $rate.mutations>=30 then raise("RATE_LIMITED","at most 30 mutations per second per caller") end
+    $rate.mutations=$rate.mutations+1;$s.rates[$owner]=$rate
+  end
+  $item=$s.items[$id] ?? {id:$id,owner:$owner,backing:"card",pointer_input:true,phase:"enter",started:$now,enter:nil,exit:nil,exit_seconds:0,expires_at:nil}
   if $op=="hide" then
     $exit=preset(if contains(keys($args),"exit") then $args.exit else $item.exit end,$presets)
     if $exit==nil then $s.items=omit($s.items,[$id]);$s.serial=$s.serial+1;return $s end
@@ -108,6 +120,12 @@ fn apply($s,$op,$args,$now,$presets)
       if type($args.pointer_input)!="bool" then raise("INVALID_ARGS","pointer_input: expected boolean") end
       $item.pointer_input=$args.pointer_input
     end
+    if contains(keys($args),"backing") then
+      if not contains(["card","none"],$args.backing) then raise("INVALID_ARGS","backing: expected card or none") end
+      $item.backing=$args.backing
+    end
+    if not $item.pointer_input and $item.backing!="none" then raise("INVALID_ARGS","click-through requires backing none") end
+    if $item.pointer_input and $item.backing=="none" then raise("INVALID_ARGS","transparent backing requires pointer_input false") end
     if contains(keys($args),"duration_ms") then
       if $args.duration_ms!=nil and (type($args.duration_ms)!="number" or floor($args.duration_ms)!=$args.duration_ms or $args.duration_ms<0 or $args.duration_ms>86400000) then raise("INVALID_ARGS","duration_ms: expected integer 0–86400000 or null") end
       $item.expires_at=if $args.duration_ms==nil then nil else $now+$args.duration_ms/1000 end
@@ -131,4 +149,10 @@ fn next_deadline($s)
 end
 fn listing($s,$now)
   return {schema:"osd.v1",items:map(values($s.items),fn($item)=merge($item,{elapsed_ms:max(0,($now-$item.started)*1000)}))}
+end
+
+fn citizen($h)
+  if $h.broker_origin=="local" and type($h.from)=="string" and $h.from!="" then return "local:"..$h.from end
+  if $h.broker_origin=="mesh" and type($h.broker_service)=="string" and type($h.broker_peer)=="string" and $h.broker_service!="" and $h.broker_peer!="" then return "mesh:"..$h.broker_service.."@"..$h.broker_peer end
+  raise("UNAUTHENTICATED","broker citizen identity required: "..json_encode({origin:$h.broker_origin,from:$h.from,service:$h.broker_service,peer:$h.broker_peer}))
 end

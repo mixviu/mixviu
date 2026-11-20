@@ -9,15 +9,15 @@ end
 for $p in json_parse(read_file(path_join(dirname(script_path()),"../../libraries/motion/presets.json"))) $presets[$p.name]=$p end
 fn expect_refusal($code,$op,$args,$s)
   $caught=false
-  try $next=$c.apply($s,$op,$args,10,$presets)
+  try $next=$c.apply($s,$op,$args,10,$presets,"test")
   catch $message,$error
     assert_eq($error.code,$code);$caught=true
   end
   assert($caught,"request should refuse")
 end
 $a={id:"caption",scene:{kind:"caption",text:"Caption"},anchor:{output:"HEADLESS-1",edge:"bottom-right",margin:24},enter:"up",exit:"fade",duration_ms:1000}
-$s=$c.apply($c.fresh(),"show",$a,10,$presets)
-assert_eq($s.items.caption.pointer_input,false)
+$s=$c.apply($c.fresh(),"show",$a,10,$presets,"test")
+assert_eq($s.items.caption.pointer_input,true)
 assert_eq($s.items.caption.anchor.margin.bottom,24)
 assert_eq($s.items.caption.motion,"up")
 expect_refusal("ALREADY_EXISTS","show",$a,$s)
@@ -28,22 +28,72 @@ expect_refusal("INVALID_MOTION","hide",{id:"caption",exit:"unknown"},$s)
 expect_refusal("INVALID_ANCHOR","update",{id:"caption",anchor:{output:"HEADLESS-1",edge:"centre"}},$s)
 expect_refusal("INVALID_ARGS","update",{id:"caption",pointer_input:1},$s)
 expect_refusal("INVALID_ARGS","update",{id:"caption",duration_ms:1.5},$s)
-$s=$c.apply($s,"update",{id:"caption",scene:{kind:"card",title:"Card",text:"Body"},pointer_input:true},10.2,$presets)
+$s=$c.apply($s,"update",{id:"caption",scene:{kind:"card",title:"Card",text:"Body"},pointer_input:true},10.2,$presets,"test")
 assert_eq($s.items.caption.scene.kind,"card");assert_eq($s.items.caption.pointer_input,true)
 $s=$c.finish($s,11);assert_eq($s.items.caption.phase,"exit")
 $exiting=$s
 expect_refusal("INVALID_STATE","update",{id:"caption",scene:{kind:"caption",text:"Must not revive"}},$s)
 assert_eq($s,$exiting)
 $s=$c.finish($s,12);assert_eq(len(keys($s.items)),0);assert_eq($c.next_deadline($s),nil)
-$s=$c.apply($c.fresh(),"show",merge($a,{duration_ms:nil}),20,$presets)
-$s=$c.apply($s,"hide",{id:"caption",exit:"fade"},20.2,$presets)
+$s=$c.apply($c.fresh(),"show",merge($a,{duration_ms:nil}),20,$presets,"test")
+$s=$c.apply($s,"hide",{id:"caption",exit:"fade"},20.2,$presets,"test")
 assert_eq($s.items.caption.phase,"exit")
 expect_refusal("INVALID_STATE","update",{id:"caption",duration_ms:5000},$s)
 $s=$c.finish($s,30);assert_eq(len(keys($s.items)),0)
-$s=$c.apply($c.fresh(),"show",$a,40,$presets)
-$inherited=$c.apply($s,"hide",{id:"caption"},40.1,$presets)
+$s=$c.apply($c.fresh(),"show",$a,40,$presets,"test")
+$inherited=$c.apply($s,"hide",{id:"caption"},40.1,$presets,"test")
 assert_eq($inherited.items.caption.motion,"fade")
 assert_eq($inherited.items.caption.phase,"exit")
-$immediate=$c.apply($s,"hide",{id:"caption",exit:nil},40.1,$presets)
+$immediate=$c.apply($s,"hide",{id:"caption",exit:nil},40.1,$presets,"test")
 assert_eq(len(keys($immediate.items)),0)
 print("OSD core tests passed")
+
+assert_eq($s.items.caption.owner,"test")
+fn owned_refusal($code,$op,$args,$s,$who,$now=40.2)
+  $caught=false
+  try $next=$c.apply($s,$op,$args,$now,$presets,$who)
+  catch $message,$error assert_eq($error.code,$code);$caught=true end
+  assert($caught,"owned request should refuse")
+end
+owned_refusal("NOT_OWNER","update",{id:"caption"},$s,"other")
+owned_refusal("NOT_OWNER","hide",{id:"caption"},$s,"other")
+owned_refusal("INVALID_ARGS","update",{id:"caption",backing:"card",pointer_input:false},$s,"test")
+owned_refusal("INVALID_ANCHOR","update",{id:"caption",anchor:{output:repeat("x",129),edge:"top"}},$s,"test")
+$quota=$c.fresh()
+for $i=1 to 8 $quota=$c.apply($quota,"show",merge($a,{id:to_string($i)}),40,$presets,"one") end
+owned_refusal("CALLER_BUDGET_EXCEEDED","show",merge($a,{id:"ninth"}),$quota,"one")
+$quota=$c.apply($quota,"show",merge($a,{id:"other"}),40,$presets,"two")
+assert_eq(len(keys($quota.items)),9)
+for $i=1 to 22 $quota=$c.apply($quota,"update",{id:"1"},40.2,$presets,"one") end
+owned_refusal("RATE_LIMITED","update",{id:"1"},$quota,"one")
+$quota=$c.apply($quota,"update",{id:"other"},40.2,$presets,"two")
+$quota=$c.apply($quota,"update",{id:"1"},41.2,$presets,"one")
+assert_eq($quota.rates.one.mutations,1)
+print("OSD ownership, quota and rate tests passed")
+
+owned_refusal("INVALID_ARGS","update",{id:"caption",backing:"none",pointer_input:true},$s,"test")
+assert_eq($c.citizen({broker_origin:"mesh",broker_service:"alice",broker_peer:"peer-a"}),"mesh:alice@peer-a")
+assert_eq($c.citizen({broker_origin:"local",from:"alice"}),"local:alice")
+for $headers in [{broker_origin:"mesh",broker_service:"",broker_peer:"peer"},{broker_origin:"mesh",broker_service:"alice",broker_peer:""},{broker_origin:"mesh",broker_service:"alice"},{broker_origin:"local",from:""}]
+  $caught=false
+  try $owner=$c.citizen($headers)
+  catch $message,$error assert_eq($error.code,"UNAUTHENTICATED");$caught=true end
+  assert($caught,"empty identities must refuse")
+end
+$churn=$c.fresh()
+for $i=1 to 15
+  $churn=$c.apply($churn,"show",$a,50,$presets,"churn")
+  $churn=$c.apply($churn,"hide",{id:"caption",exit:nil},50,$presets,"churn")
+end
+owned_refusal("RATE_LIMITED","show",$a,$churn,"churn",50.1)
+$churn=$c.apply($churn,"show",$a,51,$presets,"churn")
+for $i=1 to 29 $churn=$c.apply($churn,"update",{id:"caption"},51,$presets,"churn") end
+owned_refusal("RATE_LIMITED","hide",{id:"caption",exit:nil},$churn,"churn",51.1)
+$before=$c.fresh()
+owned_refusal("INVALID_ARGS","show",merge($a,{backing:"none"}),$before,"one",60)
+assert_eq($before.rates,{})
+$caught=false
+try $invalid=$c.anchor({output:repeat("x",129),edge:"top"})
+catch $message,$error assert(contains($message,"length"),"length diagnostic");$caught=true end
+assert($caught,"overlong output must refuse")
+print("OSD round 2 mutation and identity tests passed")

@@ -267,6 +267,7 @@ pub fn release_human(state: &mut dispatcher::state::Dispatch, comp: &mut super::
     // emulation's deferred releases rather than delivering them twice.
     if state.tablet.take_revoked_cursor() {
         state.seat.pointer_status = smithay::input::pointer::CursorImageStatus::default_named();
+        state.seat.pointer_status_enter = None;
     }
     comp.bindings.reset_holds();
     let _ = comp.injection.human.take_all();

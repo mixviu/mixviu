@@ -1,0 +1,18 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$mix=env("MIX_TEST_MIX_EXE",mix_path("prefix") .. "/bin/mix")
+$scripts=realpath(dirname(script_path()) .. "/../scripts")
+$tmp="/tmp/toolsd-shwho-" .. uuid()
+mkdir($tmp,{parents:true})
+try
+  $source=read_file($scripts .. "/tools/shwho.mix")
+  for $lib in ["tools_registry","egress"]
+    $source=replace($source,'require("../lib/' .. $lib .. '.mix")',"require(" .. json_encode($scripts .. "/lib/" .. $lib .. ".mix") .. ")")
+  end
+  $source=replace($source,"run_argv(","fixture_exec(")
+  write_file($tmp .. "/case.mix",read_file(dirname(script_path()) .. "/fixtures/shwho.txt") .. "\n" .. $source)
+  $r=run_argv([$mix,$tmp .. "/case.mix","--","example.test","/usr/bin/true","/usr/bin/true"],{timeout:10})
+  if not $r.ok then raise("TEST",$r.stderr) end
+  print("PASS shwho rejects MX/IP option injection; explicit dig -q slot and output caps")
+finally
+  remove_dir($tmp)
+end

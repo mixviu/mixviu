@@ -4,7 +4,7 @@ $g = getopt(args(), {mix: {arg: true}, bin: {arg: true}, service: {arg: true}})
 if len($g.errors) != 0 or $g.opts.mix == nil or $g.opts.bin == nil then
   raise("USAGE", "mix_services_test.mix --mix EXE --bin DIR [--service NAME]")
 end
-if $g.opts.service != nil and not contains(["agentd", "peersd", "releasesd", "daylight", "scenes"], $g.opts.service) then
+if $g.opts.service != nil and not contains(["agentd", "peersd", "releasesd", "daylight", "toolsd", "scenes"], $g.opts.service) then
   raise("USAGE", "unknown --service")
 end
 $mix = realpath($g.opts.mix)
@@ -16,7 +16,7 @@ for $case in ["services/udev-forwarder/tests/layout.mix", "services/udev-forward
   if not $result.ok then raise("FORWARDER_TEST", $case) end
 end
 $failed = []
-for $svc in ["agentd", "peersd", "releasesd", "daylight"]
+for $svc in ["agentd", "peersd", "releasesd", "daylight", "toolsd"]
   if $g.opts.service != nil and $g.opts.service != $svc then continue end
   $passed_checks = 0
   $failed_checks = 0

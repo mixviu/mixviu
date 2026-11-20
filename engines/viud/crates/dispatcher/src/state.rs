@@ -825,6 +825,14 @@ impl SeatHandler for Dispatch {
             return;
         }
         self.seat.pointer_status = image;
+        // `cursor_image` also runs inside pointer focus transitions while the
+        // pointer's inner lock is held. last_enter uses the separate Wayland
+        // serial lock; querying current_focus here would deadlock.
+        self.seat.pointer_status_enter = if self.dnd.active {
+            None
+        } else {
+            seat.get_pointer().and_then(|p| p.last_enter())
+        };
         self.schedule_redraw(RedrawReason::Cursor);
     }
 
@@ -1280,6 +1288,7 @@ mod tablet_impls {
                         .set_tool_cursor(tool, surface, (hotspot_x, hotspot_y).into())
             {
                 state.seat.pointer_status = status;
+                state.seat.pointer_status_enter = None;
                 state.schedule_redraw(RedrawReason::Cursor);
             }
         }
@@ -2664,6 +2673,7 @@ mod handler_impls {
     }
     impl DndGrabHandler for Dispatch {
         fn cancelled(&mut self, _: Seat<Self>, _: Point<f64, Logical>) {
+            self.dnd.active = false;
             if let Some(icon) = self.dnd.icon.take() {
                 self.push_surface_event(crate::wire::trait_::surface_event::SurfaceEvent::Dormant(
                     crate::wire::trait_::surface_event::SurfaceHandle::wl(&icon),
@@ -2687,6 +2697,7 @@ mod handler_impls {
             _: Seat<Self>,
             _: Point<f64, Logical>,
         ) {
+            self.dnd.active = false;
             if let Some(icon) = self.dnd.icon.take() {
                 self.push_surface_event(crate::wire::trait_::surface_event::SurfaceEvent::Dormant(
                     crate::wire::trait_::surface_event::SurfaceHandle::wl(&icon),
@@ -2757,6 +2768,7 @@ mod handler_impls {
                         );
                     }
                     self.dnd.icon = icon;
+                    self.dnd.active = true;
                     let grab =
                         DnDGrab::new_pointer(&self.output.display_handle, start_data, source, seat);
                     match attached {
@@ -2802,9 +2814,12 @@ mod handler_impls {
                     return;
                 }
                 smithay::wayland::compositor::with_states(surface.wl_surface(), |state| {
-                    state
-                        .data_map
-                        .insert_if_missing(protocols::layershell::osd::Mark::default);
+                    state.data_map.insert_if_missing(|| {
+                        protocols::layershell::osd::Mark::for_client(
+                            &surface.wl_surface().client().unwrap(),
+                        )
+                        .unwrap()
+                    });
                 });
             }
             self.push_surface_event(

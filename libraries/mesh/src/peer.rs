@@ -1483,6 +1483,28 @@ async fn fail_pending_generation(
 
 #[cfg(test)]
 mod tests {
+    // Callsite interest is process-wide; a rebuild can still race another test.
+    // Run captures alone, with a fresh cache and diagnostic counters.
+    fn log_capture_subprocess(test: &str) -> bool {
+        let test = format!("{}::{test}", module_path!().split_once("::").unwrap().1);
+        if std::env::var("MIXVIU_LOG_CAPTURE_TEST").as_deref() == Ok(test.as_str()) {
+            return false;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &test, "--nocapture"])
+            .env("MIXVIU_LOG_CAPTURE_TEST", &test)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{test}:\n{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+        true
+    }
+
     #[test]
     fn diagnostic_window_counts_every_occurrence_and_emits_first_then_each_minute() {
         let start = std::time::Instant::now();
@@ -1535,6 +1557,9 @@ mod tests {
 
     #[test]
     fn challenge_refusals_name_both_peers_inside_one_window() {
+        if log_capture_subprocess("challenge_refusals_name_both_peers_inside_one_window") {
+            return;
+        }
         use std::io::Write;
         #[derive(Clone, Default)]
         struct Capture(Arc<Mutex<Vec<u8>>>);
@@ -1555,6 +1580,15 @@ mod tests {
             .with_writer(move || writer.clone())
             .finish();
         tracing::subscriber::with_default(subscriber, || {
+            // Other tests may have registered this callsite without a subscriber.
+            tracing::callsite::rebuild_interest_cache();
+            // Reset only this test's namespace, preserving other tests' counters.
+            {
+                let mut logs = super::CHALLENGE_REFUSALS.lock().unwrap();
+                for peer in ["refusal-alpha", "refusal-beta"] {
+                    logs.remove(peer);
+                }
+            }
             for _ in 0..100 {
                 for peer in ["refusal-alpha", "refusal-beta"] {
                     super::challenge_diagnostic(
@@ -1802,6 +1836,10 @@ mod tests {
 
     #[test]
     fn sustained_old_peer_logs_one_initial_line_then_counted_summaries() {
+        if log_capture_subprocess("sustained_old_peer_logs_one_initial_line_then_counted_summaries")
+        {
+            return;
+        }
         use std::io::Write;
         #[derive(Clone, Default)]
         struct Capture(Arc<Mutex<Vec<u8>>>);
@@ -1823,6 +1861,7 @@ mod tests {
             .with_writer(move || writer.clone())
             .finish();
         let _guard = tracing::subscriber::set_default(subscriber);
+        tracing::callsite::rebuild_interest_cache();
         let now = std::time::Instant::now();
         let endpoint = "192.0.2.2:4200".parse().unwrap();
         let before = unauthenticated_frame_total();

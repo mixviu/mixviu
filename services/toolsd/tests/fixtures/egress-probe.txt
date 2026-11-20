@@ -1,0 +1,44 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+function fixture_uid()
+  if not contains(args(),"--worker") then return 0 end
+  return if env("EGRESS_CASE") == "wrong_uid" then 0 else 1234 end
+end
+function fixture_tcp_listen($host, $port)
+  if $host == "::1" and env("EGRESS_CASE") == "no_ipv6" then raise("TEST", "IPv6 unavailable") end
+  return 1
+end
+function fixture_tcp_local_addr($handle) return {port:45678} end
+function fixture_tcp_connect($host, $port, $opts)
+  if $port != 45678 or $opts.timeout != 5 then raise("TEST", "wrong connect options") end
+  if env("EGRESS_CASE") == "unguarded" then return 2 end
+  if env("EGRESS_CASE") == "refused" then raise("TEST", "Connection refused (os error 111)") end
+  if env("EGRESS_CASE") == "timeout" then raise("TEST", "connect deadline exceeded") end
+  if $host == "127.0.0.1" then raise("TEST", "No route to host (os error 113)") end
+  raise("TEST", "Permission denied (os error 13)")
+end
+$counter_reads = {}
+function fixture_run_argv_must($argv, $opts)
+  global $counter_reads
+  if $argv[0] == "/usr/bin/id" then return "1234\n" end
+  if not contains(["/usr/bin/nft","/usr/sbin/nft"],$argv[0]) or $argv[1] != "--json" then raise("TEST","not a counter read") end
+  $name = $argv[6]
+  $n = $counter_reads[$name] ?? 0
+  $counter_reads[$name] = $n + 1
+  $packets = if $n == 0 then 10 else 11 end
+  if contains(["no_counter","refused","timeout"],env("EGRESS_CASE")) then $packets = 10 end
+  if env("EGRESS_CASE") == "counter_reset" and $n > 0 then $packets = 9 end
+  if env("EGRESS_CASE") == "missing_counter" then return '{"nftables":[]}' end
+  return json_encode({nftables:[{counter:{family:"inet",table:"toolsd_egress",name:$name,packets:$packets}}]})
+end
+function fixture_run_argv($argv, $opts)
+  if $argv[0] != "/usr/sbin/runuser" or $argv[2] != "toolsd" or not $opts.clear_env then raise("TEST","wrong privilege split") end
+  return run_argv([env("MIX_TEST_MIX_EXE",mix_path("prefix") .. "/bin/mix"),script_path(),"--worker","--config",$g.opts.config],{env:{EGRESS_CASE:env("EGRESS_CASE")},timeout:10})
+end
+function fixture_tcp_close($handle) return nil end
+function fixture_dns_query($name, $type, $opts)
+  if $opts.server != "127.0.0.53" or $opts.port != 53 or $opts.timeout != 3 then raise("TEST", "wrong DNS target/options") end
+  $case = env("EGRESS_CASE")
+  if ($case == "dns_tcp_bad" and $opts.tcp == true) or ($case == "dns_udp_bad" and $opts.tcp != true) then return {ok:false} end
+  if $case == "dns_empty" then return {ok:true,rcode:"NOERROR",answers:[]} end
+  return {ok:true,rcode:"NOERROR",answers:[{data:"203.0.113.1"}]}
+end
