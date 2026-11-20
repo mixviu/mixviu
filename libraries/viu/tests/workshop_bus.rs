@@ -14,10 +14,13 @@ const PROFILE_INFO_HELPERS: bool = false;
 const PROFILE_TICK: bool = false;
 
 fn profile_tick(bundle: &mut Bundle) {
-    bundle.program.source = bundle.program.source.replace("$dirty=false\nfn publish_workshop", "$dirty=false\n$profile_previous={}\nfn publish_workshop");
+    bundle.program.source = bundle.program.source.replace(
+        "$dirty=false\nfn publish_workshop",
+        "$dirty=false\n$profile_previous={}\nfn publish_workshop",
+    );
     bundle.program.source = bundle.program.source.replace("fn publish_workshop($s)\n", "fn publish_workshop($s)\n  global $profile_previous\n  $pc=viu_test_cpu();$pw=monotonic()\n");
-    let needle="  send \"viu-local\" \"scenes.model\" body={generation:$ctx.generation,value:$app_mode.project($projection,\"workshop\",$s.theme_choice)}";
-    let replacement=r#"  $profile_value=$app_mode.project($projection,"workshop",$s.theme_choice)
+    let needle = "  send \"viu-local\" \"scenes.model\" body={generation:$ctx.generation,value:$app_mode.project($projection,\"workshop\",$s.theme_choice)}";
+    let replacement = r#"  $profile_value=$app_mode.project($projection,"workshop",$s.theme_choice)
   $profile_cpu=(viu_test_cpu()-$pc)*1000000;$profile_wall=(monotonic()-$pw)*1000000
   $profile_keys=[]
   for $profile_key in keys($profile_value) if not deep_eq($profile_previous[$profile_key],$profile_value[$profile_key]) then push($profile_keys,$profile_key) end end
@@ -25,7 +28,7 @@ fn profile_tick(bundle: &mut Bundle) {
   $profile_previous=$profile_value
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$profile_value}"#;
     assert!(bundle.program.source.contains(needle));
-    bundle.program.source=bundle.program.source.replace(needle,replacement);
+    bundle.program.source = bundle.program.source.replace(needle, replacement);
 }
 
 fn profile_info_helpers(bundle: &mut Bundle) -> tempfile::NamedTempFile {
@@ -515,7 +518,9 @@ fn workshop_answers_during_discovery() {
         bundle.launch = json!({"headless":true});
         bundle.manifest.saved_version = None;
         let _profile_module = PROFILE_INFO_HELPERS.then(|| profile_info_helpers(&mut bundle));
-        if PROFILE_TICK { profile_tick(&mut bundle); }
+        if PROFILE_TICK {
+            profile_tick(&mut bundle);
+        }
         // Probe only this fixture's discovery callbacks, without adding an
         // owner round-trip or changing the installed Workshop program.
         bundle.program.source = bundle.program.source.replace(
@@ -524,7 +529,9 @@ fn workshop_answers_during_discovery() {
         );
         let mut host = Harness::new(bundle);
         host.probe_discovery();
-        if PROFILE_TICK { host.profile_scene_apply(); }
+        if PROFILE_TICK {
+            host.profile_scene_apply();
+        }
         let start = Instant::now();
         while !host.ready() {
             host.pump();
@@ -537,7 +544,9 @@ fn workshop_answers_during_discovery() {
         }
         eprintln!("WORKSHOP_STARTUP {}", host.discovery_measurements());
         host.probe_discovery();
-        if PROFILE_TICK { host.profile_scene_apply(); }
+        if PROFILE_TICK {
+            host.profile_scene_apply();
+        }
         let mut overlapping = false;
         let mut streamed = false;
         loop {

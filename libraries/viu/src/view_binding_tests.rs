@@ -8,7 +8,10 @@ fn model_replacement_evaluates_only_affected_bindings() {
     let mut view = SceneView::with_model(source, model.clone()).unwrap();
     model["unrelated"] = json!("after");
     view.apply_model(model.clone()).unwrap();
-    assert_eq!(view.evaluated_last_apply, 0, "unrelated replacement evaluated bindings");
+    assert_eq!(
+        view.evaluated_last_apply, 0,
+        "unrelated replacement evaluated bindings"
+    );
     assert_eq!(view.model(), &model);
     model["a"] = json!("changed");
     view.apply_model(model.clone()).unwrap();
@@ -26,9 +29,21 @@ fn model_replacement_evaluates_only_affected_bindings() {
 fn dependency_filter_is_conservative_for_whole_models_and_nested_changes() {
     let before = json!({"a":{"b":1},"other":0});
     let after = json!({"a":{"b":2},"other":0});
-    assert!(model_dependency_changed(&["model".into()].into(), &before, &after));
-    assert!(model_dependency_changed(&["model.a.b".into()].into(), &before, &after));
-    assert!(!model_dependency_changed(&["model.other".into()].into(), &before, &after));
+    assert!(model_dependency_changed(
+        &["model".into()].into(),
+        &before,
+        &after
+    ));
+    assert!(model_dependency_changed(
+        &["model.a.b".into()].into(),
+        &before,
+        &after
+    ));
+    assert!(!model_dependency_changed(
+        &["model.other".into()].into(),
+        &before,
+        &after
+    ));
 }
 
 #[test]
