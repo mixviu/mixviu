@@ -997,6 +997,7 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
         let session = session.clone();
         let request_session = session.clone();
         let warmup_remaining = warmup_remaining.clone();
+        let warmup_handle = lp.loop_handle.clone();
         screencopy::file::raw_answer(token.clone(), move |result| {
             // Exercise the same allocation, GPU copy, mapping and RGB pool as
             // the real take. Never charge this cold operation to frame zero.
@@ -1012,6 +1013,11 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
                     s.warmup_done = true;
                     s.pending = false;
                     s.signature.clear();
+                    drop(s);
+                    // The next real frame need not wait for the record timer.
+                    // Run after the backend releases its current frame borrow.
+                    let next = session.clone();
+                    warmup_handle.insert_idle(move |lp| capture_tick(lp, &next));
                 }
                 return;
             }
