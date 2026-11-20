@@ -667,18 +667,6 @@ pub fn surface_under_filtered_cx(
 
     let (ui_transform, ui_output_size) = ui_camera_hcx(&hcx);
 
-    // 1. UI Screen-space items — topmost.
-    if let Some(hit) = hit_ui_in_space(
-        &hcx,
-        cursor_phys,
-        &ui_transform,
-        ui_output_size,
-        UiSpace::Screen,
-        filter,
-    ) {
-        return Some(hit);
-    }
-
     // For layer-shell: screen-logical (camera applied, top-left anchored per output).
     // `cursor_xform` was projected through `pane_context()` — the CURSOR's output — so
     // this point is in THAT output's LOCAL, 0-based logical pixels, not global multi-
@@ -702,8 +690,11 @@ pub fn surface_under_filtered_cx(
     // wallpaper is not reachable while a window covers it. Pointer reachability
     // is further narrowed by the surface's own input region inside
     // `surface_under`.
-    let check_layer = |layer_band: Layer| -> Option<SurfaceHit> {
+    let check_layer = |layer_band: Layer, osd_only: bool| -> Option<SurfaceHit> {
         for layer_surface in layer_map.layers_on(layer_band).rev() {
+            if protocols::layershell::osd::marked(layer_surface.wl_surface()) != osd_only {
+                continue;
+            }
             // A concealed layer takes no input.
             if crate::comp::panels::concealed(layer_surface.wl_surface()) {
                 continue;
@@ -751,11 +742,29 @@ pub fn surface_under_filtered_cx(
         None
     };
 
-    // 2-3. Overlay → Top
-    if let Some(hit) = check_layer(Layer::Overlay) {
+    // The authenticated OSD band is above screen UI regardless of a client's
+    // requested layer. Its empty/default input region passes through here.
+    for band in [Layer::Overlay, Layer::Top, Layer::Bottom, Layer::Background] {
+        if let Some(hit) = check_layer(band, true) {
+            return Some(hit);
+        }
+    }
+    if let Some(hit) = hit_ui_in_space(
+        &hcx,
+        cursor_phys,
+        &ui_transform,
+        ui_output_size,
+        UiSpace::Screen,
+        filter,
+    ) {
         return Some(hit);
     }
-    if let Some(hit) = check_layer(Layer::Top) {
+
+    // Ordinary layer-shell bands retain their established priority.
+    if let Some(hit) = check_layer(Layer::Overlay, false) {
+        return Some(hit);
+    }
+    if let Some(hit) = check_layer(Layer::Top, false) {
         return Some(hit);
     }
 
@@ -833,8 +842,8 @@ pub fn surface_under_filtered_cx(
     }
 
     // 6-7. Bottom → Background
-    if let Some(hit) = check_layer(Layer::Bottom) {
+    if let Some(hit) = check_layer(Layer::Bottom, false) {
         return Some(hit);
     }
-    check_layer(Layer::Background)
+    check_layer(Layer::Background, false)
 }

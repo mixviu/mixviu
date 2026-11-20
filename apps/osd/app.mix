@@ -1,0 +1,139 @@
+-- host: viu
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- lint: globals app_args
+$core=require("core.mix");$state={osd:$core.fresh(),windows:{},windows_at:nil,refresh_pending:false,connected:false,setup_pending:false,setup_delay_ms:250};$ctx=viu_context();$presets={}
+$comp=env("MIX_VIU_COMP_SERVICE","comp")
+$window_topics=["props.changed","window.placement.changed","surface.mapped","surface.unmapped","workspace.changed","output.changed"]
+send "viu-local" "motion.presets" body={}
+if $rc!=0 then raise("MOTION_UNAVAILABLE","motion library is unavailable") end
+for $p in $reply $presets[$p.name]=$p end
+fn sync_model()
+  $model=$core.listing($state.osd,monotonic());$model.windows=$state.windows
+  $model.text="";$model.title="";$model.text_size=22
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
+  $at=$core.next_deadline($state.osd)
+  viu_timer("osd-expiry",if $at==nil then nil else max(0,($at-monotonic())*1000) end,{})
+end
+fn refresh_windows()
+  if $state.windows_at!=nil and monotonic()-$state.windows_at<0.016 then return true end
+  try
+    send $comp "comp.windows.list" body={}
+    if $rc!=0 or type($reply.windows)!="list" then $state.windows={};$state.windows_at=nil;return false end
+    $state.windows={}
+    for $w in $reply.windows $state.windows[to_string($w.id)]=$w end
+    $state.windows_at=monotonic()
+    return true
+  catch $message
+    $state.windows={};$state.windows_at=nil;return false
+  end
+end
+fn setup_watch()
+  if not $state.connected then return false end
+  try
+    for $topic in $window_topics subscribe($comp.."."..$topic) end
+    send $comp "comp.props.watch" body={}
+    if $rc!=0 then raise("COMP_UNAVAILABLE","window watch unavailable") end
+    $state.setup_delay_ms=250;$state.setup_pending=false
+    viu_timer("osd-watch",nil,{})
+    refresh_windows();sync_model()
+    return true
+  catch $message
+    $state.windows={};$state.windows_at=nil
+    if not $state.setup_pending then
+      $state.setup_pending=true
+      viu_timer("osd-watch",$state.setup_delay_ms,{})
+      $state.setup_delay_ms=min(30000,$state.setup_delay_ms*2)
+    end
+    return false
+  end
+end
+fn perform($op,$a)
+  $candidate=$core.apply($state.osd,$op,$a,monotonic(),$presets)
+  if $op!="hide" and $candidate.items[$a.id].anchor.window!=nil then
+    if not refresh_windows() then raise("COMP_UNAVAILABLE","compositor window inventory is unavailable; retry when it reconnects") end
+    $ref=$candidate.items[$a.id].anchor.window;$w=$state.windows[to_string($ref.id)]
+    if $w==nil then raise("WINDOW_NOT_FOUND","anchor window no longer exists") end
+    if $w.generation!=$ref.generation then raise("STALE_GENERATION","anchor window role has changed") end
+  end
+  $state.osd=$candidate;sync_model()
+  return {id:$a.id,applied:true}
+end
+fn answer_operation($op,$a)
+  try
+    $body=perform($op,$a);reply(0,json_encode($body))
+  catch $message,$error
+    reply(10,json_encode({error_code:$error.code ?? "INVALID_ARGS",message:$message}))
+  end
+end
+fn action_rows()
+  $id={type:"string",minLength:1,maxLength:128}
+  $text={type:"string",maxLength:8192}
+  $scene={type:"object",additionalProperties:false,required:["kind","text"],properties:{kind:{enum:["title","caption","card"]},text:$text,title:$text,width:{type:"number",minimum:32,maximum:2048},height:{type:"number",minimum:24,maximum:1024}}}
+  $coordinate={type:"number",minimum:-32768,maximum:32768}
+  $margin={type:"number",minimum:0,maximum:4096}
+  $anchor={oneOf:[
+    {type:"object",additionalProperties:false,required:["output","edge"],properties:{output:{type:"string",minLength:1},edge:{enum:["top","bottom","left","right","top-left","top-right","bottom-left","bottom-right"]},margin:{oneOf:[$margin,{type:"object",additionalProperties:false,properties:{top:$margin,right:$margin,bottom:$margin,left:$margin}}]}}},
+    {type:"object",additionalProperties:false,required:["window"],properties:{window:{type:"object",additionalProperties:false,required:["id","generation"],properties:{id:{type:"integer",minimum:1},generation:{type:"integer",minimum:1}}},offset:{type:"object",additionalProperties:false,properties:{x:$coordinate,y:$coordinate}}}}
+  ]}
+  $motion={enum:[nil,"fade","up","down","left","right","pop"]}
+  $properties={id:$id,scene:$scene,anchor:$anchor,enter:$motion,exit:$motion,duration_ms:{type:["integer","null"],minimum:0,maximum:86400000},pointer_input:{type:"boolean"}}
+  $show={type:"object",additionalProperties:false,required:["id","scene","anchor"],properties:$properties}
+  $update={type:"object",additionalProperties:false,required:["id"],properties:$properties}
+  $hide={type:"object",additionalProperties:false,required:["id"],properties:{id:$id,exit:$motion}}
+  return [
+    {id:"osd.show",label:"Show an OSD scene",enabled:true,class:"intent",schema:$show},
+    {id:"osd.update",label:"Update an OSD scene",enabled:true,class:"intent",schema:$update},
+    {id:"osd.hide",label:"Hide an OSD scene",enabled:true,class:"intent",schema:$hide}
+  ]
+end
+sync_model()
+on osd.show answer_operation("show",$event.args) end
+on osd.update answer_operation("update",$event.args) end
+on osd.hide answer_operation("hide",$event.args) end
+on osd.list
+  try
+    $core.check_fields($event.args,[],"list")
+    send "viu-local" "native.pointer.presses" body={}
+    if $rc!=0 then raise("INVALID_STATE","native pointer observation unavailable") end
+    reply(0,json_encode(merge($core.listing($state.osd,monotonic()),{pointer_presses:$reply})))
+  catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on osd.actions
+  try
+    $core.check_fields($event.args,[],"actions")
+    reply(0,json_encode({actions:action_rows()}))
+  catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on osd.execute
+  try
+    $core.check_fields($event.args,["id","params"],"execute")
+    if not contains(["osd.show","osd.update","osd.hide"],$event.args.id) then raise("UNKNOWN_ACTION","unknown OSD action") end
+    $body=perform(substr($event.args.id,4),$event.args.params ?? {})
+    reply(0,json_encode($body))
+  catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on viu.timer
+  if $event.args.timer=="osd-expiry" then
+    $state.osd=$core.finish($state.osd,monotonic());sync_model()
+  elif $event.args.timer=="osd-watch" then
+    $state.setup_pending=false;setup_watch()
+  elif $event.args.timer=="osd-windows" then
+    $state.refresh_pending=false;refresh_windows();sync_model()
+  end
+end
+on osd.notice
+  $notice=$event.args
+  if $notice.command=="bus.connected" and not $state.connected then
+    $state.connected=true;$state.windows_at=nil
+    setup_watch()
+  elif any($window_topics,fn($t)=$notice.command==$comp.."."..$t or $notice.command==$t) then
+    if any(values($state.osd.items),fn($i)=$i.anchor.window!=nil) and not $state.refresh_pending then
+      $state.refresh_pending=true;viu_timer("osd-windows",16,{})
+    end
+  elif $notice.command=="bus.disconnected" then
+    $state.connected=false;$state.setup_pending=false;$state.setup_delay_ms=250
+    viu_timer("osd-watch",nil,{})
+    $state.windows_at=nil;$state.windows={};sync_model()
+  end
+end

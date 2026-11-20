@@ -48,6 +48,7 @@ fn candidate(lp: &Loop) -> Option<WlSurface> {
             let map = layer_map_for_output(output);
             for layer in map.layers_on(band).rev() {
                 if layer.cached_state().keyboard_interactivity == KeyboardInteractivity::Exclusive
+                    && !protocols::layershell::osd::marked(layer.wl_surface())
                     && !super::panels::concealed(layer.wl_surface())
                 {
                     return Some(layer.wl_surface().clone());

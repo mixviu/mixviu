@@ -36,6 +36,17 @@ pub fn layershell(
         let layer_map = layer_map_for_output(output);
 
         for layer in layer_map.layers().rev() {
+            // An empty OSD host detaches its buffer. Do not build or lower a
+            // surface tree for it on unrelated client frames.
+            if protocols::layershell::osd::marked(layer.wl_surface())
+                && !smithay::backend::renderer::utils::with_renderer_surface_state(
+                    layer.wl_surface(),
+                    |state| state.buffer().is_some(),
+                )
+                .unwrap_or(false)
+            {
+                continue;
+            }
             // A layer comp conceals is not drawn.
             if world::comp::panels::concealed(layer.wl_surface()) {
                 continue;
