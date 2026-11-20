@@ -962,6 +962,7 @@ impl Host {
             if let Some(probe) = &mut self.discovery_probe {
                 probe.callbacks.push(done.elapsed.as_micros() as u64);
                 probe.by_command.entry(done.command.clone()).or_default().push(done.elapsed.as_micros() as u64);
+                probe.discovery_steps += done.stdout.matches("WORKSHOP_DISCOVERY_STEP").count() as u64;
             }
             if let Some((code, message)) = self.ui_state.take_exit() {
                 if !message.is_empty() {
@@ -2448,6 +2449,9 @@ pub mod test_support {
         per_pump: Vec<u64>,
         pub(super) callbacks: Vec<u64>,
         pub(super) by_command: BTreeMap<String, Vec<u64>>,
+        pub(super) discovery_steps: u64,
+        completed_per_pump: Vec<u64>,
+        calls: BTreeMap<String, Vec<u64>>,
     }
     fn distribution(values: &[u64]) -> Value {
         let mut sorted = values.to_vec();
@@ -2480,6 +2484,7 @@ pub mod test_support {
         pub fn pump(&mut self) {
             let start = Instant::now();
             let before = self.host.discovery_probe.as_ref().map_or(0, |p| p.steps);
+            let completed_before = self.host.discovery_probe.as_ref().map_or(0, |p| p.discovery_steps);
             self.host.pump(&self.ctx);
             if let Some(p) = &mut self.host.discovery_probe {
                 let elapsed = start.elapsed().as_micros() as u64;
@@ -2488,14 +2493,22 @@ pub mod test_support {
                 }
                 p.pumps.push(elapsed);
                 p.per_pump.push(p.steps - before);
+                p.completed_per_pump.push(p.discovery_steps - completed_before);
             }
         }
         pub fn probe_discovery(&mut self) {
             self.host.discovery_probe = Some(DiscoveryProbe::default());
         }
+        pub fn record_call(&mut self, command: &str, elapsed: Duration) {
+            if let Some(p) = &mut self.host.discovery_probe {
+                p.calls.entry(command.into()).or_default().push(elapsed.as_micros() as u64);
+            }
+        }
         pub fn discovery_measurements(&self) -> Value {
             let p = self.host.discovery_probe.as_ref().unwrap();
             json!({"pump_us":distribution(&p.pumps),"steps_per_pump":distribution(&p.per_pump),
+                "discovery_completions_per_pump":distribution(&p.completed_per_pump),
+                "calls_us":p.calls.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
                 "callback_us":distribution(&p.callbacks),
                 "commands_us":p.by_command.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>()})
         }

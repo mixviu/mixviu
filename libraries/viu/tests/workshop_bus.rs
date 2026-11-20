@@ -322,6 +322,7 @@ fn call(
         std::thread::sleep(Duration::from_millis(2));
     }
     eprintln!("WORKSHOP_CALL {label} us={}", started.elapsed().as_micros());
+    host.record_call(&label, started.elapsed());
     let (rc, body, _) = rt
         .block_on(task)
         .unwrap()
@@ -385,6 +386,12 @@ fn workshop_answers_during_discovery() {
         bundle.manifest.bus_url = Some(broker.url.clone());
         bundle.launch = json!({"headless":true});
         bundle.manifest.saved_version = None;
+        // Probe only this fixture's discovery callbacks, without adding an
+        // owner round-trip or changing the installed Workshop program.
+        bundle.program.source = bundle.program.source.replace(
+            "on viu.job.completed",
+            "on viu.job.completed\n  if ($state.jobs[$event.args.tag.id].owner ?? nil)==\"discovery\" then print(\"WORKSHOP_DISCOVERY_STEP\") end",
+        );
         let mut host = Harness::new(bundle);
         host.probe_discovery();
         let start = Instant::now();
