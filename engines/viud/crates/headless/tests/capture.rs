@@ -920,6 +920,7 @@ fn record_privacy_window_output_membership_and_marker_order() {
         "out of view retains identity membership"
     );
     thread::sleep(Duration::from_millis(250));
+    let outside_frames = bus.call("comp.record.status", json!({"session":start["session"]}))["frames"].as_u64().unwrap();
     bus.call(
         "comp.window.place",
         place_args(&ar, json!({"output":"headless-0","x":100,"y":100})),
@@ -961,7 +962,7 @@ fn record_privacy_window_output_membership_and_marker_order() {
             .pixels
             .chunks_exact(4)
             .any(|p| p == 0xff11eecc_u32.to_le_bytes());
-        if f.slot >= left && f.slot < returned {
+        if f.slot >= left && f.slot < outside_frames {
             assert!(!present);
         }
         if f.slot >= returned {
@@ -1059,7 +1060,7 @@ fn record_privacy_lock_is_blank_and_stops_callbacks() {
     let mut blank = 0;
     let mut returned = false;
     while let Some(f) = reader.read().unwrap() {
-        if f.slot >= locked && f.slot < unlocked {
+        if f.slot >= locked && f.slot < quiet2["frames"].as_u64().unwrap() {
             assert!(
                 f.pixels.chunks_exact(4).all(|p| p == [0, 0, 0, 255]),
                 "locked frame leaked content"
