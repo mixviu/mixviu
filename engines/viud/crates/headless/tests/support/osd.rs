@@ -200,6 +200,11 @@ fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
     // the dedicated optimised native run keeps the original 30 fps workload.
     let fps = if cfg!(debug_assertions) { 10 } else { 30 };
     let record = bus.call("comp.record.start",json!({"request_id":"osd-caption","target":{"output":"headless-0"},"path":path,"fps":fps,"cursor":false,"max_seconds":10}));
+    // Keep the pointer stationary as the opaque card appears beneath it.
+    bus.call(
+        "comp.input.pointer.move",
+        json!({"seat":"agent","output":"headless-0","x":width-200,"y":height-100}),
+    );
     call(&bus, "osd.show", caption());
     wait(&mut pattern, Duration::from_millis(1050));
     let (_, _, shown) = ppm(&bus, &process, "osd-shown", None);
@@ -265,10 +270,6 @@ fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
     let received = call(&bus, "osd.list", json!({}))["pointer_presses"]
         .as_u64()
         .unwrap();
-    bus.call(
-        "comp.input.pointer.move",
-        json!({"seat":"agent","output":"headless-0","x":width-200,"y":height-100}),
-    );
     bus.call(
         "comp.input.pointer.button",
         json!({"seat":"agent","button":"left","action":"click"}),
