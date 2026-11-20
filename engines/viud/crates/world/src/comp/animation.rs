@@ -120,7 +120,7 @@ pub fn prepare_place(
             .unwrap();
     }
     if hide {
-        let visual = sample(window, base, frame_time());
+        let visual = crate::window::draw::frame::scene::visual_of(window);
         cancel(window);
         return visual;
     }

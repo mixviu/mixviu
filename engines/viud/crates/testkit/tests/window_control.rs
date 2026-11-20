@@ -48,16 +48,21 @@ fn hide_during_visual_run_holds_the_presented_sample() {
     h.mapped_toplevel(64, 48);
     let window = h.wire.inner.space.state.elements().next().unwrap();
     let base = comp_model::request::VisualAttributes::default();
+    // Lifecycle entrances can own a centre anchor in the draw-side base while
+    // the placement cache still contains its original identity transform.
+    let mut drawn_base = base;
+    drawn_base.scale.center = true;
+    window.user_data().insert_if_missing(|| std::sync::Mutex::new(drawn_base));
     let started = std::time::Instant::now();
     let mut preset = motion::presets()
         .into_iter()
-        .find(|p| p.name == "fade")
+        .find(|p| p.name == "pop")
         .unwrap();
     preset.timing.duration = 1.0;
     animation::start(window, &preset, started);
     let presented = started + std::time::Duration::from_millis(100);
     animation::set_frame_time(presented);
-    let expected = animation::sample(window, base, presented);
+    let expected = world::window::draw::frame::scene::visual_of(window);
     assert!(expected.opacity < 1.0);
     let held = animation::prepare_place(
         window,
