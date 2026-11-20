@@ -24,6 +24,18 @@ fn extract($json,$path)
   return compact($digits)
 end
 fn wire($value)
+  $encoded=json_encode($value)
+  if not needs_thaw($encoded) then return $encoded end
+  return wire_slow($value)
+end
+fn needs_thaw($encoded)
+  -- Native JSON is sufficient unless a listed counter key has a quoted
+  -- ASCII digit value, or any _workshop_ witness key may need restoration
+  -- (tool raw / permissions) or removal. One conservative text scan may
+  -- also match inside opaque data; false positives only take the old path.
+  return re_match($encoded,'"(count|seq|turn|first|last|seen|since|dropped|ignored_observations|events_seen|ring_dropped|recent_capped|out_msgs|in_msgs|out_bytes|in_bytes|out_1m|in_1m|out_5m|in_5m|msgs|bytes|msgs_1m|msgs_5m|rejected|dropped_count)"\s*:\s*"[0-9]+"|"_workshop_')
+end
+fn wire_slow($value)
   -- Only counter/sequence fields are numeric on the protocol. User strings
   -- (including titles and IDs made entirely of digits) retain their type.
   -- Exact membership avoids matching a large regex for every object key in

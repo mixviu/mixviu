@@ -13,6 +13,9 @@ if $mode=="format" then
   print($r.stdout);print(run_argv_must(["git","diff"]))
   print(run_argv_must(["git","checkout","-q","--","."]))
   if not $r.ok then exit(1) end
+elif $mode=="fast-compare" then
+  checked(["mix","apps/workshop/counter-test.mix"])
+  checked(["mix",script_path(),"compare"])
 elif $mode=="wire" then
   $old_path=realpath("target").."/workshop-wire-old-"..pid()..".mix"
   write_file($old_path,run_argv_must(["git","show","be270734:apps/workshop/counter.mix"]))
@@ -53,12 +56,12 @@ elif $mode=="compare" then
   checked(concat(slice($test,0,8),["--no-run"]))
   $path="apps/workshop/counter.mix";$candidate=read_file($path);$candidate_ok=false
   try
-    for $case in ["regex","lookup"]
-      write_file($path,if $case=="regex" then run_argv_must(["git","show","be270734:"..$path]) else $candidate end)
+    for $case in ["jq","native"]
+      write_file($path,if $case=="jq" then run_argv_must(["git","show","f66d2324:"..$path]) else $candidate end)
       print("OWNER_ENCODER "..$case)
       $r=run_argv($test,{timeout:120,stderr:"stdout",max_output:64000000});print($r.stdout)
       print({encoder:$case,rc:$r.exit_code})
-      if $case=="lookup" then $candidate_ok=$r.ok end
+      if $case=="native" then $candidate_ok=$r.ok end
     end
   finally
     write_file($path,$candidate)
