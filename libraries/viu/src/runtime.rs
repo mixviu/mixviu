@@ -334,6 +334,7 @@ impl Runtime {
                         context["options"]=services.options.clone();
                         context["native_backend"]=json!(backend.is_some());
                         context["native_facilities"]=json!(services.calls.is_some());
+                        context["incremental_models"]=json!(services.incremental_models);
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(context.clone())));
                         #[cfg(test)]
                         if let Some(observe) = &services.registry_observer { observe(eval.extension_names()); }

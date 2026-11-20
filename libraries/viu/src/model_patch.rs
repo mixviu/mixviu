@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Bounded scene-data edits. Paths are typed components, never expressions.
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
 
@@ -8,11 +8,11 @@ pub const MAX_PATCH_BYTES: usize = 1024 * 1024;
 pub const MAX_OPERATIONS: usize = 512;
 pub const MAX_REVISION: u64 = (1 << 53) - 1;
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum Part { Key(String), Index(usize) }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Operation {
     Set { path: Vec<Part>, value: Value },
@@ -20,7 +20,7 @@ pub enum Operation {
     Splice { path: Vec<Part>, index: usize, remove: usize, items: Vec<Value> },
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Patch {
     pub generation: u64,

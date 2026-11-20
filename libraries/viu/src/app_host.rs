@@ -166,7 +166,7 @@ impl Host {
             return Err("incremental publication requires a loaded ordinary root scene".into());
         }
         for key in patch.roots() {
-            if key.starts_with("__viu_") || ["presentation","native_root","native_windows","surfaces","appearance","theme_choice","window_settings","window_title","window_close","macros_open","native_overlays","native_focus","shortcuts","layer"].contains(&key.as_str()) {
+            if key.starts_with("__viu_") || ["presentation","native_root","native_windows","surfaces","appearance","theme_choice","window_settings","window_title","window_close","macros_open","native_overlays","native_focus","layer"].contains(&key.as_str()) {
                 return Err(format!("{key} requires full model publication"));
             }
         }
@@ -995,6 +995,9 @@ impl Host {
             if let Some(probe) = &mut self.discovery_probe {
                 probe.callbacks.push(done.elapsed.as_micros() as u64);
                 if done.command == "viu.tick" {
+                    if let Some(patch)=&done.model_patch {
+                        probe.tick_model_bytes.push(serde_json::to_vec(patch).expect("patch JSON").len() as u64);
+                    }
                     if let Some(model) = &done.model {
                         probe
                             .tick_model_bytes

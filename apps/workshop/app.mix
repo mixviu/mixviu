@@ -23,6 +23,10 @@ fn publish_workshop($s)
   $projection=$frame.project($s,$presentation.project($s));$persist=$saved.project($s)
   for $key in keys($persist) $projection[$key]=$persist[$key] end
   $value=$app_mode.project($projection,"workshop",$s.theme_choice)
+  if not ($ctx.incremental_models ?? false) then
+    send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$value}
+    $publication.dirty=false;return $s
+  end
   $full=$model_publication.requires_full($publication.model,$value)
   $operations=if $full then [] else $model_publication.difference($publication.model,$value) end
   if not $full and len($operations)==0 then $publication.dirty=false;return $s end
