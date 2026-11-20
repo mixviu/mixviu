@@ -41527,6 +41527,7 @@ mod man_topic_tests {
             "math",
             "regex",
             "remote",
+            "sqlbackup",
             "sqlopen",
             "strings",
             "system",
