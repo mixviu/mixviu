@@ -2,9 +2,10 @@
 -- Run through CBC, not on the developer desktop. All instrumentation is in
 -- lib-viu/test-support or the integration fixture, never the shipped app.
 $mode=$1 ?? "baseline"
+$check_env={TEST_POOL_RETRY_REPORT:""}
 $test=["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--nocapture"]
 fn checked($argv)
-  $r=run_argv($argv,{timeout:3600,stderr:"stdout",max_output:64000000,env:{TEST_POOL_RETRY_REPORT:""}})
+  $r=run_argv($argv,{timeout:3600,stderr:"stdout",max_output:64000000,env:$check_env})
   print($r.stdout)
   if not $r.ok then exit($r.exit_code ?? 1) end
 end
@@ -95,11 +96,12 @@ elif $mode=="binding-negative" then
   finally
     write_file($path,$source)
   end
-elif $mode=="tick" then
+elif $mode=="tick" or $mode=="tick-alone" then
   $path="libraries/viu/tests/workshop_bus.rs";$source=read_file($path)
   try
     write_file($path,replace($source,"const PROFILE_TICK: bool = false;","const PROFILE_TICK: bool = true;"))
-    $r=run_argv(["mix",script_path(),"baseline"],{timeout:600,stderr:"stdout",max_output:64000000})
+    $argv=if $mode=="tick-alone" then $test else ["mix",script_path(),"baseline"] end
+    $r=run_argv($argv,{timeout:600,stderr:"stdout",max_output:64000000})
     print($r.stdout)
   finally
     write_file($path,$source)
@@ -202,6 +204,8 @@ elif $mode=="accept" then
   checked(["mix",script_path(),"validate"])
   checked(["git","diff","--exit-code"])
 elif $mode=="validate" then
+  checked(["cargo","build","-p","mix"])
+  $check_env.MIX_TEST_MIX_EXE=realpath("target/debug/mix")
   $context=require(realpath("tools/ci/lint_context.mix"))
   $vocabulary=$context.vocabulary("mix").host
   $generated=[]
@@ -214,7 +218,12 @@ elif $mode=="validate" then
   print({production_vocabulary:$vocabulary,test_hook_excluded:true})
   checked(["mix","tools/ci/lint_context_test.mix","mix"])
   checked(["mix","apps/workshop/counter-test.mix"])
-  checked(["cargo","fmt","-p","lib-viu","--","--check"])
+  checked(["cargo","fmt","-p","lib-viu","-p","scene","--","--check"])
+  checked(["cargo","clippy","-p","scene","--all-targets","--no-deps"])
+  checked(["cargo","test","-p","scene","--all-targets","--no-fail-fast"])
+  checked(["cargo","test","-p","scene","--doc"])
+  $changed=split(trim(run_argv_must(["git","diff","--name-only","a3b1e286","HEAD"])),"\n")
+  for $path in $changed if ends_with($path,".mix") then checked(["mix","lint",$path]) end end
   checked(["cargo","clippy","-p","lib-viu","--all-targets","--no-deps"])
   checked(["cargo","test","-p","lib-viu","--all-targets","--no-fail-fast"])
   checked(["cargo","test","-p","lib-viu","--doc"])
