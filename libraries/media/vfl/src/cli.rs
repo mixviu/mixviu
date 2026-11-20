@@ -20,12 +20,25 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<(), Box<dyn std::
         }
         return Ok(());
     }
+    // Streaming commands stop when their consumer leaves. Discard buffered bytes
+    // as well: BufWriter's Drop would otherwise attempt another write.
+    macro_rules! stdout_or_end {
+        ($write:expr) => {
+            if let Err(error) = $write {
+                if error.kind() == io::ErrorKind::BrokenPipe {
+                    let _ = out.into_parts();
+                    return Ok(());
+                }
+                return Err(error.into());
+            }
+        };
+    }
     if command == "markers" && args.len() == 2 {
         let mut markers = Markers::open(&path)?;
         while let Some(v) = markers.read()? {
-            writeln!(out, "{v}")?;
+            stdout_or_end!(writeln!(out, "{v}"));
         }
-        out.flush()?;
+        stdout_or_end!(out.flush());
         return Ok(());
     }
     if command != "export" {
@@ -63,10 +76,10 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<(), Box<dyn std::
         );
     }
     if format == "y4m" {
-        writeln!(
+        stdout_or_end!(writeln!(
             out,
             "YUV4MPEG2 W{w} H{h} F{rate}:1 Ip A1:1 C420jpeg XCOLORRANGE=LIMITED"
-        )?;
+        ));
     }
     // --to is inclusive; --fps declares the output rate and never resamples slots.
     let mut next = 0u64;
@@ -80,15 +93,15 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<(), Box<dyn std::
             break;
         }
         if format == "bgra" {
-            out.write_all(frame.pixels)?;
+            stdout_or_end!(out.write_all(frame.pixels));
         } else {
             let yuv = media_frame::Bgra::new(w, h, frame.pixels.to_vec())?.to_yuv420();
-            out.write_all(b"FRAME\n")?;
-            out.write_all(&yuv.y)?;
-            out.write_all(&yuv.u)?;
-            out.write_all(&yuv.v)?;
+            stdout_or_end!(out.write_all(b"FRAME\n"));
+            stdout_or_end!(out.write_all(&yuv.y));
+            stdout_or_end!(out.write_all(&yuv.u));
+            stdout_or_end!(out.write_all(&yuv.v));
         }
     }
-    out.flush()?;
+    stdout_or_end!(out.flush());
     Ok(())
 }
