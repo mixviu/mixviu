@@ -959,6 +959,10 @@ impl Host {
         }
         while let Some(done) = self.runtime.try_completion() {
             #[cfg(feature = "test-support")]
+            let _retire_probe = self.discovery_probe.as_ref().map(|_| {
+                test_support::PhaseProbe::new(format!("retire {}", done.command))
+            });
+            #[cfg(feature = "test-support")]
             if let Some(probe) = &mut self.discovery_probe {
                 probe.callbacks.push(done.elapsed.as_micros() as u64);
                 probe
@@ -2531,6 +2535,20 @@ pub mod test_support {
             0
         );
         Duration::new(time.tv_sec as u64, time.tv_nsec as u32)
+    }
+    pub(super) struct PhaseProbe(String, Instant, Duration);
+    impl PhaseProbe {
+        pub(super) fn new(name: String) -> Self {
+            Self(name, Instant::now(), thread_cpu())
+        }
+    }
+    impl Drop for PhaseProbe {
+        fn drop(&mut self) {
+            let cpu = thread_cpu().saturating_sub(self.2).as_micros();
+            if cpu > 50_000 {
+                eprintln!("WORKSHOP_HOST_PHASE {} cpu_us={} wall_us={}", self.0, cpu, self.1.elapsed().as_micros());
+            }
+        }
     }
     #[derive(Default)]
     pub struct DiscoveryProbe {
