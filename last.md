@@ -1,3 +1,142 @@
+# PR #213 — Fable ruling D: discovery isolation
+
+PR: https://github.com/mixviu/mixviu/pull/213 (`mixviu-agent`).
+Branch: `fix/workshop-discovery-flake`.
+Final tested code: `167bcbe5e5040a38885ed6f4c762f522bd445ba8`.
+The following commit records this receipt only.
+
+**Not ready: full CI is red.** Ruling-D isolation and numeric guards are
+implemented, but the required isolated soak was not started. Stop with the
+reported failure; do not retry full CI or mark the PR ready.
+
+Current main was fetched first and was already merged: `6033d061` includes
+#196 and #210 (merge `594aa21f` from round 5). All measured gains remain:
+eight-service expansion, sixteen-entry admission scan, exact counter-name
+lookup, native JSON wire fast path, and dependency-aware scene binding apply.
+
+## Ruling and claim
+
+Fable ruling D (2026-11-21) authorises enrolling the **lib-viu/workshop_bus
+binary** in the existing serial list. Its reason names
+`workshop_answers_during_discovery`, PR #213, the measured structural cause
+and the follow-up. At 200 peers, the 2.1-2.4 MB model is rebuilt in Mix
+about 213-278 ms and applied about 226-323 ms per tick, standalone. This is
+substantial whole-model work, not an established pure CPU-starvation limit.
+
+The tested responsiveness claim is now **within 1 s at 200 peers on an
+uncontended core**. The 1 s call deadline, 2 s owner-stall assertion, both
+peer counts, silent peer, disconnecting peer, streamed-results/BUSY checks
+and every existing negative control remain. No retry, ignore, reduced peer
+count, test-thread override or pool-budget constant is introduced.
+
+The serial entry is removed by the structural follow-up **incremental model
+publication**, brief `_plan/briefs/2026-11-21-workshop-incremental-model.md`,
+after its twelve-round normal width-four pool validation. That follow-up
+starts with the round-5 743.324 ms CPU / 743.674 ms wall workshop.notice
+callback, whose branch/payload and exact timeout critical path remain
+unmeasured (CBC `20261121-034520-3cacd411-a1`).
+
+## Numeric standalone guards
+
+| Property | Standalone measurement | Bound | Margin |
+| --- | --- | --- | --- |
+| Longest post-startup pump hold | 387,676 us | 800,000 us | Just over 2x |
+| Largest published tick model | 2,398,986 bytes | 4,194,304 bytes (4 MiB) | About 75% |
+
+Both bases come from CBC `20261121-033200-ed59f7bd-a1`. The pump window starts
+after readiness, matching that measurement; the separate existing 5 s
+startup assertion remains. Each pump checks its numeric hold and the maximum
+serialized size of completed tick models. The model guard must observe at
+least one tick in the 200-peer case. Collection and assertions are confined
+to the existing test-support harness. Model-size measurement overhead is
+included in the guarded pump; production behaviour and budgets are unchanged.
+
+Both failures print measured values and limits. Worker-only negative
+controls lower one bound at a time and require cargo 101 at that assertion:
+
+- Pump: observed **746 us**, bound **0 us**.
+- Model: observed **24,206 bytes**, bound **1 byte** (pump 11,135 us).
+
+These fail numerically, before any RPC timeout. The worker restores each
+source file. Existing expansion, queue-scan and binding controls also remain,
+making **five** negative controls in the scoped gate.
+
+## Checks
+
+CBC `20261121-042324-fee24a9e-a1`, code `167bcbe5`, BUILD_RC=0:
+
+- All five negative controls fail at the intended numeric/work assertion
+  (cargo 101), and worker sources are restored.
+- fmt, all-target clippy, counter precision and fast/slow equivalence pass.
+- Every lib-viu target passes with test-support: 55 binaries, 635 passed,
+  zero failed, 12 existing ignored; doctests pass (zero cases).
+- The worker diff is empty.
+
+Exactly one authorised `tools/ci.mix all` invocation: CBC
+`20261121-043424-f9640729-a1`, same code, **BUILD_RC=1**.
+
+- Workspace fmt, environment checks, all-target clippy, the engine boundary
+  and foreign gate pass before testing.
+- Strict Mix pool: 75 binaries, pool width eight, two serial; passes.
+- Strict workspace pool: 526 binaries, pool width eight, two serial; one
+  failed binary, lib-viu/viu. Its unit result is 400 passed / 1 failed /
+  5 existing ignored.
+- Failure: `registry_tests::generated_lint_vocabulary_matches_the_live_complete_registry`
+  at `libraries/viu/src/registry_tests.rs:61`. Generated vocabulary contains
+  `viu_test_cpu`, but the default-feature live registry does not. The hook is
+  feature-gated in runtime.rs while lib-mix build-time vocabulary scans its
+  registration source. This is a PR integration regression, not a timing
+  failure. The test-support scoped run does not expose this feature mismatch.
+- The serial entry matches, but default-feature workshop_bus contains zero
+  tests in this workspace run. This does not substitute for the required
+  feature-enabled isolated soak. The actual 200-peer fixture passes in the
+  scoped test-support run above.
+
+Full CI stops at that workspace-pool failure; later stages do not run.
+The exact registry contract is retained, and no fix or rerun follows this
+red result under the brief’s stop condition.
+
+The strict twelve-round feature-enabled width-four pool with the serial
+entry honoured was **not started**, because the preceding full CI failed.
+There is no isolated-soak success claim. PR #213 remains draft; isolation
+validation and registry integration repair remain outstanding.
+
+All seven changed Mix files lint with zero errors, warnings or notes.
+Worker rustfmt diff `20261121-041732-cb61d1cd-a1` was applied locally.
+The initial scoped job `20261121-042204-44da0458-a1` found a test-support
+field visibility error (E0616); it was corrected before the successful
+scoped run, any full CI invocation or the soak. No production deadline
+changed. Saved full logs and parsed evidence are retained privately.
+
+## File references
+
+- Readiness blocker: `libraries/viu/src/registry_tests.rs:61`, conditional
+  hook `libraries/viu/src/runtime.rs:281`, static vocabulary scan
+  `libraries/mix/build.rs:20`.
+
+- `tools/ci/serial-tests.conf.mix:11`: lib-viu/workshop_bus enrolment;
+  `:14` contains ruling, measurements, PR and structural follow-up.
+- `libraries/viu/tests/workshop_bus.rs:15`: standalone bounds and rationale;
+  `:554` installs them for the 200-peer post-startup window;
+  `:610` refuses a vacuous model-size guard.
+- `libraries/viu/src/app_host.rs:969`: published tick byte measurement;
+  `:2665` checks pump/model maxima and prints observed values and bounds;
+  `:2701` reports model-byte distributions.
+- `libraries/viu/tests/workshop-probe.mix:16`: both numeric negative controls;
+  `:133` retains all five controls and scoped gates; `:145` runs the strict
+  twelve-round pool using the default serial configuration.
+- Earlier retained gains: `apps/workshop/discovery.mix:125`,
+  `apps/workshop/work.mix:7`, `apps/workshop/counter.mix:26`,
+  `libraries/viu/src/view.rs:313`.
+
+The ledger is resolved by isolation only when the checks above are green;
+structural performance remains tracked in TODO-workshop / TODO-viu and the
+incremental-publication brief. No deployment or PR merge was performed.
+Earlier receipts below retain the diagnosis, observer limits and original
+red results; their acceptance status is historical.
+
+---
+
 # PR #213 — tick model application
 
 PR: https://github.com/mixviu/mixviu/pull/213, branch
