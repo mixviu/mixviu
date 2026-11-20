@@ -202,7 +202,11 @@ fn export_bgra_y4m_and_ranges() {
 fn export_ffmpeg_framemd5_y4m_oracle() {
     match Command::new("ffmpeg").arg("-version").output() {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            assert_ne!(std::env::var("MIX_TEST_REQUIRE_FFMPEG").as_deref(), Ok("1"), "ffmpeg required: framemd5 oracle cannot run");
+            assert_ne!(
+                std::env::var("MIX_TEST_REQUIRE_FFMPEG").as_deref(),
+                Ok("1"),
+                "ffmpeg required: framemd5 oracle cannot run"
+            );
             eprintln!("ffmpeg absent: framemd5 oracle not run");
             return;
         }
@@ -255,7 +259,10 @@ fn check_export(oracle: bool) {
         h.finish()
     };
     assert_eq!(raw.len(), 3 * 64);
-    assert_eq!(raw.chunks_exact(64).map(hash).collect::<Vec<_>>(), frames.iter().map(|f| hash(f)).collect::<Vec<_>>());
+    assert_eq!(
+        raw.chunks_exact(64).map(hash).collect::<Vec<_>>(),
+        frames.iter().map(|f| hash(f)).collect::<Vec<_>>()
+    );
     let md5args = [
         "-f",
         "rawvideo",
@@ -276,15 +283,21 @@ fn check_export(oracle: bool) {
     }
     assert_eq!(export(&["--from", "1", "--to", "1"]), a);
     let y4m = export(&["--format", "y4m"]);
-    let decoded = if oracle { ffmpeg(
-        &y4m,
-        &[
-            "-i", "pipe:0", "-pix_fmt", "yuv420p", "-f", "rawvideo", "pipe:1",
-        ],
-    ) } else { Vec::new() };
+    let decoded = if oracle {
+        ffmpeg(
+            &y4m,
+            &[
+                "-i", "pipe:0", "-pix_fmt", "yuv420p", "-f", "rawvideo", "pipe:1",
+            ],
+        )
+    } else {
+        Vec::new()
+    };
     let mut yuv = Vec::new();
     for pixels in &frames {
-        let y = media_frame::Bgra::new(4, 4, pixels.clone()).unwrap().to_yuv420();
+        let y = media_frame::Bgra::new(4, 4, pixels.clone())
+            .unwrap()
+            .to_yuv420();
         yuv.extend(y.y);
         yuv.extend(y.u);
         yuv.extend(y.v);
@@ -292,11 +305,16 @@ fn check_export(oracle: bool) {
     let header = b"YUV4MPEG2 W4 H4 F30:1 Ip A1:1 C420jpeg XCOLORRANGE=LIMITED\n";
     assert!(y4m.starts_with(header));
     assert_eq!(y4m.len(), header.len() + 3 * (6 + 24));
-    for (record, pixels) in y4m[header.len()..].chunks_exact(30).zip(yuv.chunks_exact(24)) {
+    for (record, pixels) in y4m[header.len()..]
+        .chunks_exact(30)
+        .zip(yuv.chunks_exact(24))
+    {
         assert_eq!(&record[..6], b"FRAME\n");
         assert_eq!(hash(&record[6..]), hash(pixels));
     }
-    if oracle { assert_eq!(decoded, yuv); }
+    if oracle {
+        assert_eq!(decoded, yuv);
+    }
     let o = Command::new(env!("CARGO_BIN_EXE_mixd"))
         .args(["vfl", "verify"])
         .arg(&p)
