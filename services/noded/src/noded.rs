@@ -5565,6 +5565,16 @@ mod tests {
             .with_max_level(tracing::Level::INFO)
             .with_writer(move || writer.clone())
             .set_default();
+        // Refresh callsites that parallel tests may have hit without a subscriber.
+        tracing::callsite::rebuild_interest_cache();
+        {
+            let mut logs = super::FRAME_REFUSALS.lock().unwrap();
+            for peer in ["coalesce-alpha", "coalesce-beta"] {
+                for reason in ["test-reason-one", "test-reason-two"] {
+                    logs.remove(&(peer.to_owned(), reason));
+                }
+            }
+        }
         let now = std::time::Instant::now();
         for second in 0..180 {
             for peer in ["coalesce-alpha", "coalesce-beta"] {
@@ -6362,6 +6372,7 @@ mod tests {
         let names = Arc::new(StdMutex::new(Vec::new()));
         let subscriber = tracing_subscriber::registry().with(RecordEventNames(names.clone()));
         let _guard = tracing::subscriber::set_default(subscriber);
+        tracing::callsite::rebuild_interest_cache();
 
         apply_inventory_reload(
             &state,
@@ -6464,6 +6475,7 @@ mod tests {
         let names = Arc::new(StdMutex::new(Vec::new()));
         let subscriber = tracing_subscriber::registry().with(RecordEventNames(names.clone()));
         let _guard = tracing::subscriber::set_default(subscriber);
+        tracing::callsite::rebuild_interest_cache();
 
         emit_listener_endpoint_state(
             &diverged_authority,
@@ -6630,6 +6642,7 @@ mod tests {
         let _guard = tracing_subscriber::registry()
             .with(CountWarns(warns.clone()))
             .set_default();
+        tracing::callsite::rebuild_interest_cache();
 
         let Some((listener, listen)) = pick_listener() else {
             return;

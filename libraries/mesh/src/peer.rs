@@ -1555,6 +1555,15 @@ mod tests {
             .with_writer(move || writer.clone())
             .finish();
         tracing::subscriber::with_default(subscriber, || {
+            // Other tests may have registered this callsite without a subscriber.
+            tracing::callsite::rebuild_interest_cache();
+            // Reset only this test's namespace, preserving other tests' counters.
+            {
+                let mut logs = super::CHALLENGE_REFUSALS.lock().unwrap();
+                for peer in ["refusal-alpha", "refusal-beta"] {
+                    logs.remove(peer);
+                }
+            }
             for _ in 0..100 {
                 for peer in ["refusal-alpha", "refusal-beta"] {
                     super::challenge_diagnostic(
@@ -1823,6 +1832,7 @@ mod tests {
             .with_writer(move || writer.clone())
             .finish();
         let _guard = tracing::subscriber::set_default(subscriber);
+        tracing::callsite::rebuild_interest_cache();
         let now = std::time::Instant::now();
         let endpoint = "192.0.2.2:4200".parse().unwrap();
         let before = unauthenticated_frame_total();
