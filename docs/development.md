@@ -46,3 +46,12 @@ targets of the caller's selected workspace crates. Include the changed crates an
 crates that include their files by path. `mix tools/ci/window_motion_format.mix` returns
 a formatting diff and restores the worker checkout; it refuses a dirty tree
 before running any formatting or cleanup.
+
+The shared workspace test pool runs `headless/capture` alone after its parallel
+binaries, through `tools/ci/serial-tests.conf.mix`. Its zero-drop recording
+assertions measure 30 Hz capture on a shared render node with a bounded writer
+queue; competing GPU test processes make that throughput measurement invalid.
+The pool still runs the same debug compositor and every enabled capture test,
+including the tests inherited from main. The separate scoped capture step also
+runs the opt-in lifecycle fixtures and ignored placement regressions. Neither
+step relaxes the pixel, timing or zero-drop assertions.

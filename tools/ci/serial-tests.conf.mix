@@ -9,6 +9,11 @@
 
 serial_tests: [
   {
+    package: "headless",
+    target: "capture",
+    reason: "PR #196 zero-drop 30 Hz recording proofs measure a shared render node and bounded writer queue. The full workspace pool oversubscribes both (mid-take capture and queue drops in gate 20261120-222408-1c0ad5e6-a1); nine-target width-eight soaks did not reproduce it. Run the unchanged debug binary after the parallel pool, with every enabled test and assertion intact. Explicit serial admission authorised for #196; remove when these resource measurements have dedicated worker admission"
+  },
+  {
     package: "mix",
     target: "native_session_pty",
     reason: "p4 tests assert pgrep -f 'sleep 600' finds nothing on the whole machine (tests/native_session_pty.rs:3317, :3378); PTY timing; red when another job runs the suite (2026-11-12)"
