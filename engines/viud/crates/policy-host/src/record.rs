@@ -787,7 +787,9 @@ fn tick(session: &Rc<RefCell<Session>>, capture: impl FnOnce()) {
         let s = session.borrow();
         if s.recording.is_none()
             && s.failed.is_none()
-            && s.admitted.elapsed() >= Duration::from_secs(s.max_seconds)
+            && s.warmup_started.is_none()
+            && s.admitted.elapsed().saturating_sub(Duration::from_micros(s.warmup_us))
+                >= Duration::from_secs(s.max_seconds)
         {
             drop(s);
             cancel_pending(session, "max_seconds elapsed before first frame");
