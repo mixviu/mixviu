@@ -1068,7 +1068,15 @@ impl Host {
                                         done.command
                                     ))
                                 });
-                                self.view.apply_model(projected)
+                                #[cfg(feature = "test-support")]
+                                if self.discovery_probe.is_some() && done.command == "viu.tick" {
+                                    eprintln!("WORKSHOP_DOCUMENT bytes={}",source.len());
+                                    crate::view::profile_apply(true);
+                                }
+                                let result = self.view.apply_model(projected);
+                                #[cfg(feature = "test-support")]
+                                crate::view::profile_apply(false);
+                                result
                             } else {
                                 (if self.framed {
                                     crate::gold_frame::mount(&source, projected)

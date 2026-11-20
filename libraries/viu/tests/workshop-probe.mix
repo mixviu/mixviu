@@ -13,6 +13,17 @@ if $mode=="format" then
   print($r.stdout);print(run_argv_must(["git","diff"]))
   print(run_argv_must(["git","checkout","-q","--","."]))
   if not $r.ok then exit(1) end
+elif $mode=="tick" then
+  $path="libraries/viu/tests/workshop_bus.rs";$source=read_file($path)
+  try
+    write_file($path,replace($source,"const PROFILE_TICK: bool = false;","const PROFILE_TICK: bool = true;"))
+    $r=run_argv(["mix",script_path(),"baseline"],{timeout:600,stderr:"stdout",max_output:64000000})
+    print($r.stdout)
+  finally
+    write_file($path,$source)
+    print(run_argv_must(["git","diff"]))
+  end
+  if not $r.ok then exit($r.exit_code ?? 1) end
 elif $mode=="fast-compare" then
   checked(["mix","apps/workshop/counter-test.mix"])
   checked(["mix",script_path(),"compare"])
