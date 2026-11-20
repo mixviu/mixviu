@@ -300,6 +300,7 @@ pub struct Reader {
     torn_tail: bool,
     known_frames: Option<u64>,
     index_keys: bool,
+    decoded_from_start: bool,
     #[cfg(test)]
     chunk_reads: Vec<u64>,
 }
@@ -451,6 +452,7 @@ impl Reader {
             torn_tail: false,
             known_frames: None,
             index_keys: true,
+            decoded_from_start: true,
             #[cfg(test)]
             chunk_reads: vec![0; chunks as usize],
         })
@@ -747,7 +749,7 @@ impl Reader {
             Ok(true) => {}
             Ok(false) => {
                 self.stopped = true;
-                self.known_frames = Some(self.next);
+                if self.decoded_from_start { self.known_frames = Some(self.next); }
                 return Ok(None);
             }
             Err(e) => {
@@ -760,7 +762,7 @@ impl Reader {
                         return Err(e);
                     }
                     self.torn_tail = true;
-                    self.known_frames = Some(self.next);
+                    if self.decoded_from_start { self.known_frames = Some(self.next); }
                     return Ok(None);
                 }
                 self.poisoned = true;
@@ -802,6 +804,7 @@ impl Reader {
         })
     }
     fn position(&mut self, key: KeyPosition) -> Result<(), Error> {
+        self.decoded_from_start = false;
         self.chunk = key.chunk;
         self.offset = key.offset;
         self.next = key.slot;

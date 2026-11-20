@@ -435,6 +435,23 @@ fn frame_count_preserves_position_and_does_not_poison_on_scan_failure() {
     assert_eq!(r.read().unwrap().unwrap().slot, 0);
 }
 #[test]
+fn frame_count_after_seek_still_decodes_the_skipped_prefix() {
+    let (t, _) = take(true);
+    let p = t.0.join("chunk-000000.bin");
+    let mut b = std::fs::read(&p).unwrap();
+    let end = 17 + u32::from_le_bytes(b[..4].try_into().unwrap()) as usize;
+    b[17..end].fill(0);
+    let crc = crc32fast::hash(&b[8..end]);
+    b[4..8].copy_from_slice(&crc.to_le_bytes());
+    std::fs::write(p, &b).unwrap();
+    json_edit(&t.0.join("chunk-000000.json"), |v| v["crc32"] = json!(crc32fast::hash(&b)));
+    let mut r = Reader::open(&t.0).unwrap();
+    r.seek(11).unwrap();
+    assert!(r.read().unwrap().is_none());
+    assert!(r.frame_count().is_err());
+    assert!(r.seek(10).is_ok());
+}
+#[test]
 fn non_utf8_paths_encode_errors_without_panicking() {
     use std::os::unix::ffi::OsStringExt;
     let path = std::ffi::OsString::from_vec(b"/nonexistent-vfl-\xff".to_vec());
