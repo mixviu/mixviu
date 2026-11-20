@@ -18,17 +18,17 @@ fn profile_info_helpers(bundle: &mut Bundle) -> tempfile::NamedTempFile {
     let before = r#"    send "viu-local" "native.saved" body=$saved.project($s)
     if $rc==0 then $s.saved=$reply end
     return result($s,$m.info($s,viu_context()))"#;
-    let after = r#"    $pc=_viu_test_cpu();$pw=monotonic()
+    let after = r#"    $pc=viu_test_cpu();$pw=monotonic()
     $projection=$saved.project($s)
-    print("WORKSHOP_HELPER "..json_encode({name:"saved.project",cpu_us:(_viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
-    $pc=_viu_test_cpu();$pw=monotonic()
+    print("WORKSHOP_HELPER "..json_encode({name:"saved.project",cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+    $pc=viu_test_cpu();$pw=monotonic()
     send "viu-local" "native.saved" body=$projection
     $saved_rc=$rc;$saved_reply=$reply
-    print("WORKSHOP_HELPER "..json_encode({name:"native.saved",cpu_us:(_viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+    print("WORKSHOP_HELPER "..json_encode({name:"native.saved",cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
     if $saved_rc==0 then $s.saved=$saved_reply end
-    $pc=_viu_test_cpu();$pw=monotonic()
+    $pc=viu_test_cpu();$pw=monotonic()
     $info=$m.info($s,viu_context())
-    print("WORKSHOP_HELPER "..json_encode({name:"model.info",cpu_us:(_viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+    print("WORKSHOP_HELPER "..json_encode({name:"model.info",cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
     return result($s,$info)"#;
     assert!(source.contains(before), "info helper probe must be installed");
     let file = tempfile::Builder::new()
@@ -46,16 +46,16 @@ fn profile_info_helpers(bundle: &mut Bundle) -> tempfile::NamedTempFile {
   if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
 end"#;
     let after = r#"on workshop.info
-  $pc=_viu_test_cpu();$pw=monotonic()
+  $pc=viu_test_cpu();$pw=monotonic()
   $out=handle($state,$event)
-  print("WORKSHOP_HELPER "..json_encode({name:"handle.inclusive",cpu_us:(_viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
-  $pc=_viu_test_cpu();$pw=monotonic()
+  print("WORKSHOP_HELPER "..json_encode({name:"handle.inclusive",cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+  $pc=viu_test_cpu();$pw=monotonic()
   $state=$out.state
-  print("WORKSHOP_HELPER "..json_encode({name:"state.assign",cpu_us:(_viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+  print("WORKSHOP_HELPER "..json_encode({name:"state.assign",cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
   if not $out.deferred then
-    $pc=_viu_test_cpu();$pw=monotonic()
+    $pc=viu_test_cpu();$pw=monotonic()
     $wire=$counter.wire($out.body)
-    print("WORKSHOP_HELPER "..json_encode({name:"counter.wire",cpu_us:(_viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+    print("WORKSHOP_HELPER "..json_encode({name:"counter.wire",cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
     reply($out.rc,$wire)
     $wire=nil
   end
