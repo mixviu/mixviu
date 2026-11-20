@@ -86,6 +86,54 @@ print("PASS")
     assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 3);
 }
 
+#[test]
+fn discovery_turns_bound_expansion_and_blocked_admission_scans() {
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let observed = calls.clone();
+    let mut runtime = viu::runtime::Runtime::new(
+        4, Arc::new(|| {}),
+        Some(Box::new(move || std::rc::Rc::new(RefuseJobs(observed)))),
+    );
+    let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../apps/workshop/discovery-test.mix");
+    runtime.load(viu::runtime::Program { path, scene:"budget".into(), citizen:"budget".into(), source:r#"
+$m=require("model.mix");$w=require("work.mix");$d=require("discovery.mix")
+$s=$m.initial();$s=$d.begin($s,nil);$s.queue=[];$s.jobs={}
+$items=[]
+for $i=0 to 199 push($items,{name:"peer-"..$i}) end
+$task={generation:$s.discovery.generation,op:"list",node:"@local",service:"noded"}
+$s=$d.received($s,$task,{rc:0,body:{rc:0,body:json_encode($items)}})
+if len($s.queue)!=0 or $s.discovery.nodes["@local"].list_done then raise("TEST","list expanded in its receive turn") end
+$turns=0
+while len($s.discovery.lists)>0
+  $before=len($s.queue);$s=$d.advance($s);$delta=len($s.queue)-$before
+  if $delta<1 or $delta>8 then raise("TEST","expansion must make bounded progress") end
+  $turns=$turns+1
+end
+if $turns!=26 or len($s.queue)!=201 or not $s.discovery.nodes["@local"].list_done then raise("TEST","lost a service across turns") end
+if len($s.discovery.data.services)!=201 then raise("TEST","missing streamed placeholders") end
+$s=$m.initial()
+for $i=1 to 100 $s.queue=push($s.queue,{owner:"discovery",retry_at:monotonic()+60}) end
+$s.queue=push($s.queue,{owner:"discovery"})
+$s=$w.launch($s)
+if $s.serial!=0 then raise("TEST","scanned the entire blocked queue") end
+for $i=1 to 6 $s=$w.launch($s) end
+if $s.serial!=1 then raise("TEST","rotation starved the ready tail") end
+print("PASS")
+"#.into() }).unwrap();
+    let end = Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Some(done) = runtime.try_completion() {
+            assert!(done.error.is_none(), "{:?}", done.error);
+            assert!(done.stdout.contains("PASS"));
+            break;
+        }
+        assert!(Instant::now() < end, "budget regression stalled");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(calls.load(std::sync::atomic::Ordering::Relaxed), 3);
+}
+
 fn fixture(url: &str) -> (tempfile::TempDir, Harness) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("scene.mix"), r#"---

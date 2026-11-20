@@ -6,7 +6,10 @@ fn enqueue($s,$task)
 end
 fn launch($s)
   $waiting=[];$admitted=0;$now=monotonic()
-  for $task in $s.queue
+  -- Admission is capped at two jobs, but scanning blocked work also costs
+  -- owner time. Rotate at most sixteen entries so other replies interleave.
+  $scan=take($s.queue,16);$unscanned=slice($s.queue,len($scan))
+  for $task in $scan
     $lane=$task.lane ?? "local"
     $used=len(filter(values($s.jobs),fn($j)=($j.lane ?? "local")==$lane))
     if $used>=6 or len($s.jobs)>=15 or $admitted>=2 or $now<($task.retry_at ?? 0) then push($waiting,$task);continue end
@@ -30,7 +33,7 @@ fn launch($s)
     end
     $s.jobs[$id]=$task
   end
-  $s.queue=$waiting
+  $s.queue=concat($unscanned,$waiting)
   return $s
 end
 fn defer($event)
