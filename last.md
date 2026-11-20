@@ -1,3 +1,45 @@
+# Workshop discovery diagnosis — 2026-11-21 (in progress)
+
+Draft PR: https://github.com/mixviu/mixviu/pull/213 (mixviu-agent).
+Branch: `fix/workshop-discovery-flake`; diagnostic source head
+`08d9d547` (no production fix or deadline change yet).
+
+CBC `20261121-002809-c0913dec-a1`, diagnostic head `eda759de`,
+standalone 200-peer sample (all times ms; median/p99/max):
+
+| Measurement | Median | p99 | Max |
+| --- | ---: | ---: | ---: |
+| Pump, including startup | 1.535 | 3.800 | 1157.516 |
+| Job notifications submitted per pump | 0 | 1 | 2 |
+| Evaluator callbacks | 5.656 | 524.240 | 605.728 |
+| workshop.ping (14 calls) | 443.289 | 513.485 | 513.485 |
+| workshop.info (14 calls) | 603.625 | 694.181 | 694.181 |
+| workshop.refresh (1 call) | 336.017 | 336.017 | 336.017 |
+
+Standalone passed; concurrent 32-worker CPU load failed the five-second
+startup assertion before the first call (four-peer case), BUILD_RC=1.
+This is not a valid loaded 200-peer sample or a diagnosis of the reported
+one-second call timeout. No branch of decision step 2 has been selected.
+
+Test-only instrumentation: `libraries/viu/src/app_host.rs` Harness and pump,
+`libraries/viu/src/runtime.rs` callback names, and
+`libraries/viu/tests/workshop_bus.rs` fixture/call helper. The later probes
+separate startup and steady discovery and preserve measurements on failure.
+`libraries/viu/tests/workshop-probe.mix` retains baseline and twelve-round
+actual four-binary pool recipes; Mix lint passes with no diagnostics.
+
+Pending: separated standalone/loaded measurements, justified fix and
+regression if needed, CBC fmt/clippy/all lib-viu test targets, twelve green
+pool rounds. All CBC lock-refusal attempts (75) are non-executions, not
+failed tests. No full CI, deployment, retry, skip or serialisation.
+
+Earlier setup attempts: `20261121-002621-866f4133-a1` selected the engine
+instead of lib-viu; `20261121-002648-f3634e29-a1` caught private probe fields;
+`20261121-002718-76c7bcc2-a1` used the repository home's HEAD and was
+cancelled. None counts as evidence for the fix.
+
+---
+
 > Current naming: Mix `term`, Rust reference `term-rs`. See [runtime and migration](docs/ports/term-runtime.md). The receipts below retain historical branch, job and installed-file names.
 
 # PR #24 refreshed settlement — 2026-11-10
