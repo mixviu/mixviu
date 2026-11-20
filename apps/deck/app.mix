@@ -87,3 +87,5 @@ end
 on viu.call.cancelled
   if $event.args.token==$state.owed then $state.owed=nil;$state.s.playing=false;show_deck() end
 end
+-- Admit commands before a deck is open; the bundle's scene is the empty state.
+send "viu-local" "scenes.model" body={generation:$ctx.generation,value:{presentation:{clock:false}}}

@@ -34,7 +34,7 @@ impl Deck {
             })
             .unwrap();
         let s = Self { runtime, wakes };
-        s.next();
+        assert!(s.next().model.is_some(),"startup must admit deck.open on the real host");
         s
     }
     fn next(&self) -> Completion {

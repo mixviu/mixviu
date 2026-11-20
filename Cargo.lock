@@ -4957,6 +4957,7 @@ dependencies = [
  "maildoc",
  "media-vfl",
  "mimedb",
+ "model",
  "motion",
  "paths",
  "png 0.18.1",
