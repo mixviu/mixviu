@@ -1,0 +1,32 @@
+-- host: viu
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m=require("model.mix");$d=require("discovery.mix")
+fn check($v,$message) if not $v then raise("EXPIRY_TEST",$message) end end
+$s=$m.initial();$s.generation=1
+for $i=0 to 14 $s.jobs[to_string($i)]={lane:"local"} end
+$s.discovery={generation:1,remaining:2045,reply:nil,deadline:monotonic()+60,peers_done:false,lists:{},nodes:{},data:{error:nil,peer_error:nil,nodes:[],identities:{},services:{},peers:[]}}
+$items=[]
+for $i=0 to 11 push($items,{name:"svc-"..$i,version:"original"}) end
+for $node in ["@local","remote"]
+  $s.discovery.nodes[$node]={info_done:true,list_done:false,descriptions:0,node:{name:$node,local:$node=="@local",services:[],info:nil,error:nil}}
+  $s=$d.received($s,{generation:1,op:"list",node:$node,service:if $node=="@local" then "noded" else "noded.remote.bus" end},{rc:0,body:{rc:0,body:json_encode($items)}})
+end
+$s=$d.advance($s)
+check(len($s.discovery.lists)==2,"fixture must retain unexpanded lists")
+$s.discovery.deadline=monotonic()-1
+$s=$d.expire($s)
+-- This is the controller's actual expiry/advance ordering.
+$s=$d.advance($s)
+check($s.discovery==nil and $s.snapshot.progress.finished,"expiry must finalise pending lists")
+check(len($s.queue)==0,"expiry must not enqueue describes after deadline")
+check(len($s.snapshot.services)==26,"expiry must retain every accepted service")
+check(len($s.snapshot.identities)==24,"expiry must exclude synthetic self identities")
+for $node in $s.snapshot.nodes
+  check(len($node.services)==13 and len(unique($node.services))==13,"expiry routes each accepted service once")
+  for $route in $node.services
+    check($s.snapshot.services[$route].Err=="description phase deadline exceeded","expiry must retain deadline error for each service")
+    if starts_with($route,"svc-") then check($s.snapshot.identities[$route].version=="original","expiry retains original identity") end
+  end
+end
+check($s.snapshot.identities.noded==nil and $s.snapshot.identities["noded.remote.bus"]==nil,"synthetic identities stay absent")
+print("Workshop expiry contracts PASS")

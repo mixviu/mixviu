@@ -1891,6 +1891,13 @@ impl Drop for Host {
 }
 
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
+    create_with_probe(bundle, wake, #[cfg(feature = "test-support")] false)
+}
+fn create_with_probe(
+    bundle: Bundle,
+    wake: crate::runtime::Wake,
+    #[cfg(feature = "test-support")] test_cpu_probe: bool,
+) -> Host {
     let headless = bundle.manifest.surface == "headless" && bundle.startup.is_some();
     let service = bundle.manifest.service.clone();
     let saved = bundle.manifest.saved_version.map(|v| {
@@ -2072,7 +2079,7 @@ fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
     let (clipboard, local_clipboard) = crate::clipboard::Clipboard::channel(wake.clone());
     let services = crate::runtime::Services {
         #[cfg(feature = "test-support")]
-        test_cpu_probe: true,
+        test_cpu_probe,
         clipboard: Some(clipboard),
         options: json!({"title":bundle.manifest.title,"headless":bundle.manifest.surface=="headless" || bundle.launch["headless"]==true}),
         max_string_bytes: bundle.manifest.max_string_bytes,
@@ -2656,7 +2663,7 @@ pub mod test_support {
             crate::appearance::install(&ctx);
             toolkit::drive::install(&ctx, bundle.manifest.app());
             Self {
-                host: create(bundle, Arc::new(|| {})),
+                host: create_with_probe(bundle, Arc::new(|| {}), true),
                 ctx,
             }
         }

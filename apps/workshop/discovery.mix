@@ -148,6 +148,18 @@ fn expire($s)
   -- Jobs have their own four-second bound. Forget their results; do not wait
   -- for a peer or retry admission on the owner at the overall deadline.
   $s.queue=filter($s.queue,fn($t)=$t.owner!="discovery")
+  -- Flush accepted identities at expiry, without admitting new describe work.
+  for $node in sort(keys($s.discovery.lists ?? {}))
+    $batch=$s.discovery.lists[$node]
+    while $batch.index<len($batch.items)
+      $identity=$batch.items[$batch.index];$batch.index=$batch.index+1
+      $route=if $batch.local then $identity.name else $identity.name.."."..$node..".bus" end
+      $services=$s.discovery.nodes[$node].node.services;push($services,$route);$s.discovery.nodes[$node].node.services=$services
+      if $batch.index<=$batch.original_count then $s.discovery.data.identities[$route]=$identity end
+      $s.discovery.data.services[$route]={Err:"description phase deadline exceeded"}
+    end
+  end
+  $s.discovery.lists={}
   for $key in keys($s.discovery.nodes)
     $n=$s.discovery.nodes[$key]
     if not $n.list_done or not $n.info_done then $s.discovery.nodes[$key].node.error="discovery deadline exceeded" end
