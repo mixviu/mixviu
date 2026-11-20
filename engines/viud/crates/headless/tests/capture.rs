@@ -1179,9 +1179,9 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
                 "unmap enter",
             );
             if different {
-                c.remap();
+                c.map_unmapped();
             } else {
-                b.remap();
+                b.map_unmapped();
             }
             pump_patterns(&mut [&mut a, &mut b, &mut c]);
         }
