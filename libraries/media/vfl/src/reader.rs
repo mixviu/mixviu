@@ -30,17 +30,30 @@ pub struct Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.file.display())?;
-        if let Some(chunk) = self.chunk { write!(f, " chunk {chunk}")?; }
-        write!(f, " offset {}: {}: {}", self.offset, self.kind.name(), self.message)
+        if let Some(chunk) = self.chunk {
+            write!(f, " chunk {chunk}")?;
+        }
+        write!(
+            f,
+            " offset {}: {}: {}",
+            self.offset,
+            self.kind.name(),
+            self.message
+        )
     }
 }
 impl std::error::Error for Error {}
 impl ErrorKind {
     fn name(self) -> &'static str {
         match self {
-            Self::Io => "io", Self::Metadata => "metadata", Self::Structure => "structure",
-            Self::Crc => "crc", Self::Compression => "compression", Self::Limit => "limit",
-            Self::TornTail => "torn_tail", Self::Incomplete => "incomplete",
+            Self::Io => "io",
+            Self::Metadata => "metadata",
+            Self::Structure => "structure",
+            Self::Crc => "crc",
+            Self::Compression => "compression",
+            Self::Limit => "limit",
+            Self::TornTail => "torn_tail",
+            Self::Incomplete => "incomplete",
         }
     }
 }
@@ -463,11 +476,19 @@ impl Reader {
     pub fn recoverable(&self) -> bool {
         self.torn_tail
     }
+    pub(crate) fn without_seek_index(mut self) -> Self {
+        self.index_keys = false;
+        self
+    }
     /// Exact decodable frame count, cached after EOF. A first call scans using
     /// a separate decoder, preserving playback position even if the scan fails.
     pub fn frame_count(&mut self) -> Result<u64, Error> {
-        if self.poisoned { return Err(self.error(ErrorKind::Structure, "reader poisoned")); }
-        if let Some(n) = self.known_frames { return Ok(n); }
+        if self.poisoned {
+            return Err(self.error(ErrorKind::Structure, "reader poisoned"));
+        }
+        if let Some(n) = self.known_frames {
+            return Ok(n);
+        }
         let mut scan = Self::open(&self.path)?;
         scan.index_keys = false;
         while scan.read()?.is_some() {}
@@ -506,7 +527,8 @@ impl Reader {
                     || ["bytes", "crc32", "next_frame"]
                         .iter()
                         .all(|k| r[*k].as_u64().is_some())
-            }) && (torn || r["bytes"] != self.offset
+            }) && (torn
+                || r["bytes"] != self.offset
                 || r["crc32"] != self.crc.clone().finalize()
                 || r["next_frame"] != self.next)
             {
@@ -731,8 +753,8 @@ impl Reader {
             Err(e) => {
                 self.stopped = true;
                 if e.kind == ErrorKind::TornTail && !self.complete {
-                    // A torn binary tail must not hide independently corrupt
-                    // sidecar rows. Extra valid rows remain advisory in recovery.
+                    // A durable seal or an extra sidecar row disproves the
+                    // unsealed crash shape, even for an incomplete take.
                     if let Err(e) = self.seal(true).and_then(|()| self.finish()) {
                         self.poisoned = true;
                         return Err(e);
@@ -887,7 +909,9 @@ pub fn verify_with_options(path: &Path, require_complete: bool) -> Value {
                 },
             }
             recoverable = r.torn_tail && errors.is_empty();
-            if recoverable { tail = json!({"chunk":r.chunk,"offset":r.offset}); }
+            if recoverable {
+                tail = json!({"chunk":r.chunk,"offset":r.offset});
+            }
             complete = r.complete && errors.is_empty();
             if require_complete && !complete {
                 errors.push(
@@ -918,7 +942,10 @@ mod tests {
     use super::*;
     #[test]
     fn cached_seeks_do_not_read_chunk_zero() {
-        eprintln!("VFL_KEY_POSITION_BYTES={}", std::mem::size_of::<KeyPosition>());
+        eprintln!(
+            "VFL_KEY_POSITION_BYTES={}",
+            std::mem::size_of::<KeyPosition>()
+        );
         let path = std::env::temp_dir().join(format!("vfl-index-{}", std::process::id()));
         let mut w = crate::Writer::new(path.clone(), 2, 2, 1).unwrap();
         w.origin(0).unwrap();

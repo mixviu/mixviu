@@ -93,7 +93,7 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<(), Box<dyn std::
     {
         return Err(Usage.into());
     }
-    let mut r = Reader::open(&path)?;
+    let mut r = Reader::open(&path)?.without_seek_index();
     let (w, h) = (r.width() as usize, r.height() as usize);
     let rate = fps.unwrap_or(r.fps());
     if !r.complete() {

@@ -380,7 +380,11 @@ fn interrupted_torn_binary_tail_stops_at_valid_prefix() {
     std::fs::remove_file(t.0.join("chunk-000000.json")).unwrap();
     let p = t.0.join("frames.jsonl");
     let rows = std::fs::read_to_string(&p).unwrap();
-    std::fs::write(p, rows.lines().take(11).collect::<Vec<_>>().join("\n") + "\n").unwrap();
+    std::fs::write(
+        p,
+        rows.lines().take(11).collect::<Vec<_>>().join("\n") + "\n",
+    )
+    .unwrap();
     assert_eq!(assert_seek_matches(&t.0, &expected), 11);
     let v = verify(&t.0);
     assert_eq!(v["ok"], true, "{v}");
@@ -397,12 +401,16 @@ fn durable_final_receipt_refuses_torn_binary() {
         tear(&t.0.join("chunk-000000.bin"));
         let p = t.0.join("chunk-000000.json");
         match receipt {
-            None => {},
+            None => {}
             Some("numeric") => json_edit(&p, |v| v["bytes"] = json!(0)),
             Some(s) => std::fs::write(&p, s).unwrap(),
         }
         let rows = std::fs::read_to_string(t.0.join("frames.jsonl")).unwrap();
-        std::fs::write(t.0.join("frames.jsonl"), rows.lines().take(11).collect::<Vec<_>>().join("\n") + "\n").unwrap();
+        std::fs::write(
+            t.0.join("frames.jsonl"),
+            rows.lines().take(11).collect::<Vec<_>>().join("\n") + "\n",
+        )
+        .unwrap();
         let v = verify(&t.0);
         assert_eq!(v["ok"], matches!(receipt, Some("{") | Some("{}")), "{v}");
         if receipt.is_none() || receipt == Some("numeric") {
@@ -432,18 +440,28 @@ fn non_utf8_paths_encode_errors_without_panicking() {
     let path = std::ffi::OsString::from_vec(b"/nonexistent-vfl-\xff".to_vec());
     let v = verify(Path::new(&path));
     assert_eq!(v["ok"], false);
-    assert!(v["errors"][0]["file"].as_str().unwrap().contains('\u{fffd}'));
+    assert!(
+        v["errors"][0]["file"]
+            .as_str()
+            .unwrap()
+            .contains('\u{fffd}')
+    );
 }
 #[test]
 fn extra_frame_rows_are_errors_at_clean_and_torn_ends() {
     for torn in [false, true] {
         let (t, _) = take(false);
         std::fs::remove_file(t.0.join("chunk-000000.json")).unwrap();
-        if torn { tear(&t.0.join("chunk-000000.bin")); }
-        else {
+        if torn {
+            tear(&t.0.join("chunk-000000.bin"));
+        } else {
             use std::io::Write;
-            std::fs::OpenOptions::new().append(true).open(t.0.join("frames.jsonl"))
-                .unwrap().write_all(b"{\"frame\":12,\"t_us\":12000000}\n").unwrap();
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(t.0.join("frames.jsonl"))
+                .unwrap()
+                .write_all(b"{\"frame\":12,\"t_us\":12000000}\n")
+                .unwrap();
         }
         let v = verify(&t.0);
         assert_eq!(v["ok"], false, "{v}");
@@ -470,7 +488,10 @@ fn key_index_is_capped_but_linear_verification_and_count_are_not() {
     }
     let mut r = Reader::open(&t.0).unwrap();
     assert_eq!(r.frame_count().unwrap(), 65_537);
-    assert_eq!(r.seek(65_536).err().unwrap().kind, media_vfl::reader::ErrorKind::Limit);
+    assert_eq!(
+        r.seek(65_536).err().unwrap().kind,
+        media_vfl::reader::ErrorKind::Limit
+    );
     assert_eq!(verify(&t.0)["valid_frames"], 65_537);
     assert_eq!(verify(&t.0)["ok"], true);
 }

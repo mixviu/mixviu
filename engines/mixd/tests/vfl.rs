@@ -68,14 +68,21 @@ fn export_recovers_only_valid_frames_before_torn_record() {
     b.truncate(b.len() - 1);
     std::fs::write(chunk, b).unwrap();
     let damaged = Command::new(env!("CARGO_BIN_EXE_mixd"))
-        .args(["vfl", "export"]).arg(&p).output().unwrap();
+        .args(["vfl", "export"])
+        .arg(&p)
+        .output()
+        .unwrap();
     assert_eq!(damaged.status.code(), Some(1));
     let error = String::from_utf8_lossy(&damaged.stderr);
     assert!(error.contains("chunk 0 offset"));
     assert!(!error.contains("Some("));
     std::fs::remove_file(p.join("chunk-000000.json")).unwrap();
     let rows = std::fs::read_to_string(p.join("frames.jsonl")).unwrap();
-    std::fs::write(p.join("frames.jsonl"), rows.lines().take(127).collect::<Vec<_>>().join("\n") + "\n").unwrap();
+    std::fs::write(
+        p.join("frames.jsonl"),
+        rows.lines().take(127).collect::<Vec<_>>().join("\n") + "\n",
+    )
+    .unwrap();
     let o = Command::new(env!("CARGO_BIN_EXE_mixd"))
         .args(["vfl", "export"])
         .arg(&p)
