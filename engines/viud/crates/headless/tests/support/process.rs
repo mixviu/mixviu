@@ -280,6 +280,20 @@ fn spawn_options(options: Options<'_>) -> Process {
     if label.starts_with("record-privacy-") {
         command.env(paths::env::test::TEST_RECORD_FIXTURE, &root);
     }
+    if label == "record-privacy-cursor-epoch" {
+        // Most tests deliberately have no theme, so every Named shape falls
+        // back to the same built-in arrow. Give this test one generated shape
+        // to make Named/forced privacy assertions discriminate decoded pixels.
+        let theme = root.join("cursors/headless-test");
+        fs::create_dir_all(theme.join("cursors")).unwrap();
+        fs::write(theme.join("index.theme"), "Inherits=missing-headless-theme\n").unwrap();
+        let mut bytes = b"Xcur".to_vec();
+        for word in [16_u32, 1, 1, 0xfffd0002, 24, 28, 36, 0xfffd0002, 24, 1, 24, 24, 0, 0, 10] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        for _ in 0..24*24 { bytes.extend_from_slice(&0xff3399ee_u32.to_le_bytes()); }
+        fs::write(theme.join("cursors/crosshair"), bytes).unwrap();
+    }
     if osd {
         let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..");
         let viu = std::env::var_os(paths::env::test::TEST_VIU_EXE)
