@@ -1,0 +1,45 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$TOOLS_MIX = "/usr/bin/true"
+$TOOLS_TRACEROUTE = "/usr/bin/true"
+$clock=0
+$trace_execs=0
+$progress=0
+$final=nil
+function fixture_monotonic() return $clock end
+function fixture_sleep($seconds)
+  global $clock
+  $clock=$clock+$seconds
+end
+function fixture_run_argv($argv,$opts)
+  global $clock,$trace_execs
+  if $argv[1] == "-c" then
+    if $opts.timeout != 5 or $opts.max_output != 4096 or not $opts.clear_env then raise("TEST","resolver bound") end
+    $clock=$clock+1
+    return {ok:env("TRACE_CASE") != "resolver_timeout",stdout:env("TRACE_IPS")}
+  end
+  if not $opts.clear_env or $opts.timeout > 8 or $opts.timeout > 60-$clock or $opts.max_output != 4096 or $argv[9] != "9.9.9.9" then raise("TEST","trace argv/deadline") end
+  $trace_execs=$trace_execs+1
+  $clock=$clock+(if env("TRACE_CASE") == "hops" then 0.1 else $opts.timeout end)
+  $target=if env("TRACE_CASE") == "hops" then "8.8.8.8" else "9.9.9.9" end
+  return {ok:true,stdout:to_string($trace_execs) .. " " .. $target .. " 1 ms\n"}
+end
+function fixture_http_post($url,$body,$headers,$opts)
+  global $clock,$progress,$final
+  $b=json_parse($body)
+  if $b.seq != nil then
+    if $opts.timeout > 15 or $opts.timeout > 60-$clock then raise("TEST","progress deadline") end
+    $progress=$progress+1
+    if env("TRACE_CASE") == "deadline" then
+      if $b.seq == 1 then
+        $clock=$clock+14
+        return {status:200}
+      end
+      $clock=$clock+$opts.timeout
+      return {status:500}
+    end
+    return {status:200}
+  end
+  if $opts.timeout != 20 then raise("TEST","final report bound") end
+  $final=$b
+  return {status:200}
+end
