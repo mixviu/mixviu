@@ -60,7 +60,9 @@ fn exclusive_layer(_loop: &Loop) -> Option<WlSurface> {
         let map = layer_map_for_output(output);
         for band in [Layer::Overlay, Layer::Top] {
             for layer in map.layers_on(band).rev() {
-                if layer.cached_state().keyboard_interactivity == KeyboardInteractivity::Exclusive {
+                if layer.cached_state().keyboard_interactivity == KeyboardInteractivity::Exclusive
+                    && !protocols::layershell::osd::marked(layer.wl_surface())
+                {
                     return Some(layer.wl_surface().clone());
                 }
             }
@@ -142,6 +144,12 @@ pub fn apply_focus(
     keyboard: &KeyboardHandle<Dispatch>,
     serial: Serial,
 ) {
+    // Pointer-only OSD input leaves the person's keyboard focus untouched.
+    if let SurfaceHit::Layer { surface, .. } = hit
+        && protocols::layershell::osd::marked(surface)
+    {
+        return;
+    }
     // Keyboard-transparent UI surfaces (the on-screen keyboard) take the pointer
     // press but must NOT move keyboard focus or deactivate the focused window — the
     // text field being typed into has to keep its focus so injected keys reach it.

@@ -3793,6 +3793,7 @@ dependencies = [
  "lz4_flex",
  "media-vfl",
  "model",
+ "motion",
  "outputs",
  "paths",
  "protocols",

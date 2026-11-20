@@ -498,6 +498,7 @@ fn exclusive_layer(_loop: &Loop) -> Option<WlSurface> {
             for layer in map.layers_on(band).rev() {
                 // A layer comp conceals holds no grab.
                 if layer.cached_state().keyboard_interactivity == KeyboardInteractivity::Exclusive
+                    && !protocols::layershell::osd::marked(layer.wl_surface())
                     && !world::comp::panels::concealed(layer.wl_surface())
                 {
                     return Some(layer.wl_surface().clone());

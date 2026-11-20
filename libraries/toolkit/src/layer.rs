@@ -93,6 +93,14 @@ pub trait LayerProgram {
     /// Wake presentation state even before a hidden surface has run egui.
     /// This is event-driven and does not request continuous rendering.
     fn set_waker(&mut self, _wake: std::sync::Arc<dyn Fn() + Send + Sync>) {}
+    /// One-shot behaviour deadline, independent of surface visibility or
+    /// frame callbacks. None leaves the loop blocked until an external event.
+    fn wake_deadline(&self) -> Option<std::time::Instant> {
+        None
+    }
+    /// Service behaviour after an event/deadline, including with zero outputs.
+    /// This hook does not draw or request a frame callback.
+    fn service(&mut self) {}
     /// The compositor completed this surface's frame callback.
     fn frame(&mut self, _surface: &SurfaceInfo, _time_ms: u32) {}
     /// Client presentation requested after a repaint wake, before any draw.
@@ -141,6 +149,9 @@ pub trait LayerProgram {
 pub struct LayerPresentation {
     /// Empty Wayland input region, for passive cards drawn above other clients.
     pub input_passthrough: bool,
+    /// Optional output-local logical pointer rectangles. An empty list passes
+    /// every pointer event through; keyboard policy remains in LayerOptions.
+    pub input_regions: Option<Vec<(i32, i32, i32, i32)>>,
     pub margin: Option<(i32, i32, i32, i32)>,
     pub visible: bool,
     pub exclusive_zone: Option<i32>,
@@ -151,6 +162,7 @@ impl Default for LayerPresentation {
     fn default() -> Self {
         Self {
             input_passthrough: false,
+            input_regions: None,
             visible: true,
             exclusive_zone: None,
             size: None,
