@@ -1546,7 +1546,7 @@ impl Widgets {
                     label = label.truncate();
                 } else if widget.properties["wrap"] == true {
                     label = label.wrap();
-                }
+                } else if widget.properties["wrap"] == false { label=label.extend(); }
                 if widget.properties["align"] == "center" {
                     label = label.halign(egui::Align::Center);
                 } else if widget.properties["align"] == "right" {

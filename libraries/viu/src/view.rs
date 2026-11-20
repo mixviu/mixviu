@@ -912,7 +912,7 @@ impl SceneView {
                             let label=if node.ports.get("wrap") == Some(&Value::Bool(true)) {label.wrap()} else {label.extend()};
                             if node.ports.get("fill")==Some(&Value::Bool(true)) {ui.add_sized(egui::vec2(ui.available_width(),0.),label);} else {ui.add(label);}
                         } else {
-                        let widget=Widget::new(&key,"label","",json!(number.as_deref().unwrap_or_else(||text(node,"text")))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono"),"align":node.ports.get("align"),"fill":node.ports.get("fill"),"colour":colour}));
+                        let widget=Widget::new(&key,"label","",json!(number.as_deref().unwrap_or_else(||text(node,"text")))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono"),"align":node.ports.get("align"),"wrap":node.ports.get("wrap"),"fill":node.ports.get("fill"),"colour":colour}));
                         self.widgets.widget(ui,&widget,&json!({}));
                         }
                     }
@@ -1059,7 +1059,7 @@ impl SceneView {
                                         let fixed:Vec<_>=active.iter().map(|child|{let n=&nodes[*child];if num(n,"grow").unwrap_or(0.)>0.{0.}else{num(n,"width").or(num(n,"min_width")).unwrap_or_else(||if n.family=="control"{Widget::decode(&n.ports["definition"]).and_then(|w|w.intrinsic_width(ui,&self.tree.model)).unwrap_or(0.)}else{0.})}}).collect();
                                         let weight:f32=active.iter().map(|child|num(&nodes[*child],"grow").unwrap_or(0.).max(0.)).sum();
                                         let remaining=(ui.available_width()-fixed.iter().sum::<f32>()-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.);
-                                        ui.horizontal(|ui|for (i,child) in active.iter().enumerate(){let grow=num(&nodes[*child],"grow").unwrap_or(0.);let width=if grow>0.{remaining*grow/weight}else{fixed[i]};ui.allocate_ui(egui::vec2(width,0.),|ui|{ui.set_min_width(width);self.node(ui,child,nodes,route,depth+1,events);});});
+                                        ui.horizontal_top(|ui|for (i,child) in active.iter().enumerate(){let grow=num(&nodes[*child],"grow").unwrap_or(0.);let width=if grow>0.{remaining*grow/weight}else{fixed[i]};ui.allocate_ui(egui::vec2(width,0.),|ui|{ui.set_min_width(width);self.node(ui,child,nodes,route,depth+1,events);});});
                                     } else if text(node,"align")=="end" {
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
                                     } else if let Some(height) = num(node, "height") {
