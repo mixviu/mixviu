@@ -954,7 +954,27 @@ fn record_privacy_window_output_membership_and_marker_order() {
     pump_patterns(&mut [&mut a]);
     thread::sleep(Duration::from_millis(250));
     drop(a);
-    thread::sleep(Duration::from_millis(250));
+    // A fixed delay can stop before the marker is admitted under load. Wait
+    // for the written marker and a subsequent clock slot, so the decoded
+    // post-marker tail assertion below observes a real quiet tick.
+    let marker_path = Path::new(start["recovery_path"].as_str().unwrap()).join("markers.jsonl");
+    let until = Instant::now() + Duration::from_secs(5);
+    loop {
+        let gone = fs::read_to_string(&marker_path)
+            .unwrap_or_default()
+            .split_inclusive('\n')
+            .filter(|line| line.ends_with('\n'))
+            .map(|line| serde_json::from_str::<Value>(line).expect("complete marker row"))
+            .find(|m| m["label"] == "window_gone");
+        let status = bus.call("comp.record.status", json!({"session":start["session"]}));
+        if gone.is_some_and(|m| {
+            status["frames"].as_u64().unwrap() > m["frame"].as_u64().unwrap() + 1
+        }) {
+            break;
+        }
+        assert!(Instant::now() < until, "no post-close marker/tick: {status}");
+        thread::sleep(Duration::from_millis(20));
+    }
     let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
     assert_eq!(stop["error"], Value::Null);
     assert!(stop["repeated"].as_u64().unwrap() > 0);
