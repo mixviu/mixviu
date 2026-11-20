@@ -283,23 +283,49 @@ fn until_removes_painted_nodes_at_the_beat_and_goto_uses_the_same_build() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("build.json");
     std::fs::write(&path,json!({"schema":"deck.v1","slides":[{"id":"build","steps":2,"scene":{"root":{"widget":"column","children":["before","after"]},"before":{"widget":"text","text":"Before"},"after":{"widget":"text","text":"After"}},"build":{"before":{"b":0,"until":0},"after":{"b":1}}}]}).to_string()).unwrap();
-    assert_eq!(deck.call("deck.open",json!({"path":path})).reply.unwrap().rc,0);
-    deck.call("deck.play",json!({"beats":[[0,2,4]]}));
-    let first=deck.call("viu.presentation",json!({"time":100})).model.unwrap();
-    let (view,mut out)=frame(first);
+    assert_eq!(
+        deck.call("deck.open", json!({"path":path}))
+            .reply
+            .unwrap()
+            .rc,
+        0
+    );
+    deck.call("deck.play", json!({"beats":[[0,2,4]]}));
+    let first = deck
+        .call("viu.presentation", json!({"time":100}))
+        .model
+        .unwrap();
+    let (view, mut out) = frame(first);
     assert!(view.geometry.contains_key("before"));
-    assert!(view.geometry.contains_key("after"),"a future build keeps layout space");
+    assert!(
+        view.geometry.contains_key("after"),
+        "a future build keeps layout space"
+    );
     out.textures_delta.clear();
-    let next=deck.call("viu.presentation",json!({"time":102.8})).model.unwrap();
-    let (view,mut out)=frame(next);
+    let next = deck
+        .call("viu.presentation", json!({"time":102.8}))
+        .model
+        .unwrap();
+    let (view, mut out) = frame(next);
     assert!(!view.geometry.contains_key("before"));
     assert!(view.geometry.contains_key("after"));
-    assert!(!out.shapes.iter().any(|s|matches!(&s.shape,egui::Shape::Text(t) if t.galley.job.text=="Before")));
+    assert!(
+        !out.shapes
+            .iter()
+            .any(|s| matches!(&s.shape,egui::Shape::Text(t) if t.galley.job.text=="Before"))
+    );
     out.textures_delta.clear();
-    let manual=deck.call("deck.goto",json!({"slide":"build","step":1})).model.unwrap();
-    let (view,mut out)=frame(manual);
+    let manual = deck
+        .call("deck.goto", json!({"slide":"build","step":1}))
+        .model
+        .unwrap();
+    let (view, mut out) = frame(manual);
     assert!(!view.geometry.contains_key("before"));
-    assert!(out.shapes.iter().any(|s|matches!(&s.shape,egui::Shape::Text(t) if t.galley.job.text=="After")));
+    assert!(
+        out.shapes
+            .iter()
+            .any(|s| matches!(&s.shape,egui::Shape::Text(t) if t.galley.job.text=="After"))
+    );
     out.textures_delta.clear();
 }
 #[test]
