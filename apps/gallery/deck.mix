@@ -10,7 +10,8 @@ fn inline($runs, $style, $mono)
   $styled = []
   for $run in $runs
     $role = $run.role ?? "text"
-    push($styled, merge($run, {color:$tokens.colour[$role] ?? $tokens.colour.text}))
+    $semantic = if contains(["text","keyword","function","string","comment","value","ok","bad","warn","acc","mut"],$role) then $role else "text" end
+    push($styled, merge($run, {role:$semantic,color:$tokens.colour[$role] ?? $tokens.colour.text}))
   end
   return {widget:"text", text:"", spans:$styled, size:$tokens.type[$style], mono:$mono}
 end
