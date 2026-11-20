@@ -1128,14 +1128,14 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
                 "comp.window.place",
                 place_args(
                     &br,
-                    json!({"output":"headless-0","x":if different {400}else{20},"y":20}),
+                    json!({"output":"headless-0","x":if different {120}else{20},"y":20}),
                 ),
             );
             bus.call(
                 "comp.window.place",
                 place_args(
                     &cr,
-                    json!({"output":"headless-0","x":if different {20}else{400},"y":20}),
+                    json!({"output":"headless-0","x":if different {20}else{120},"y":20}),
                 ),
             );
             focus("overlap", &mut a, &mut b, &mut c);
