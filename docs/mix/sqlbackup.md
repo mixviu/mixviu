@@ -61,7 +61,7 @@ must support that operation. Unix modes are enforced on Unix hosts.
 | `SQL_DEST_EXISTS` | Destination exists and overwrite is false. |
 | `SQL_BUSY`, `SQL_LOCKED` | SQLite could not acquire a lock within the retry budget. |
 | `SQL_IO` | Filesystem, open, read-only, full-disk or SQLite I/O failure. |
-| `SQL_INTEGRITY` | Destination integrity check did not return only `ok`. |
+| `SQL_INTEGRITY` | Source/copy page counts differ, or integrity check did not return only `ok`. |
 | `SQL_ERROR` | Other SQLite failure, including an invalid database. |
 | `OPTION_INVALID` | Invalid paths/options or unsafe overwrite target. |
 | `TYPE_MISMATCH` | A path is not a string or opts is not a map. |

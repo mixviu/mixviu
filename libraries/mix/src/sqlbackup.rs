@@ -14,7 +14,9 @@ struct CheckedBackup<'a> {
 }
 
 fn sqlite_result(rc: i32) -> rusqlite::Result<()> {
-    if rc == ffi::SQLITE_OK { Ok(()) } else {
+    if rc == ffi::SQLITE_OK {
+        Ok(())
+    } else {
         Err(rusqlite::Error::SqliteFailure(ffi::Error::new(rc), None))
     }
 }
@@ -23,11 +25,25 @@ impl<'a> CheckedBackup<'a> {
     fn new(source: &'a Connection, destination: &'a mut Connection) -> rusqlite::Result<Self> {
         // SAFETY: both connections outlive this handle. The exclusive destination
         // borrow prevents other SQLite operations until finish/drop releases it.
-        let raw = unsafe { ffi::sqlite3_backup_init(destination.handle(), c"main".as_ptr(), source.handle(), c"main".as_ptr()) };
+        let raw = unsafe {
+            ffi::sqlite3_backup_init(
+                destination.handle(),
+                c"main".as_ptr(),
+                source.handle(),
+                c"main".as_ptr(),
+            )
+        };
         let raw = std::ptr::NonNull::new(raw).ok_or_else(|| {
-            rusqlite::Error::SqliteFailure(ffi::Error::new(unsafe { ffi::sqlite3_errcode(destination.handle()) }), None)
+            rusqlite::Error::SqliteFailure(
+                ffi::Error::new(unsafe { ffi::sqlite3_errcode(destination.handle()) }),
+                None,
+            )
         })?;
-        Ok(Self { raw: Some(raw), _source: source, _destination: destination })
+        Ok(Self {
+            raw: Some(raw),
+            _source: source,
+            _destination: destination,
+        })
     }
 
     fn step(&self, pages: i32) -> rusqlite::Result<StepResult> {
@@ -51,14 +67,19 @@ impl Drop for CheckedBackup<'_> {
     fn drop(&mut self) {
         if let Some(raw) = self.raw.take() {
             // SAFETY: fallback for an early error; no further use of the handle.
-            unsafe { ffi::sqlite3_backup_finish(raw.as_ptr()); }
+            unsafe {
+                ffi::sqlite3_backup_finish(raw.as_ptr());
+            }
         }
     }
 }
 
 fn verify_page_counts(source: i64, destination: i64) -> MixResult<()> {
     if source != destination {
-        return Err(MixError::structured("SQL_INTEGRITY", format!("sqlbackup: source_pages={source}, destination_pages={destination}")));
+        return Err(MixError::structured(
+            "SQL_INTEGRITY",
+            format!("sqlbackup: source_pages={source}, destination_pages={destination}"),
+        ));
     }
     Ok(())
 }
@@ -82,6 +103,10 @@ fn io_error(e: std::io::Error) -> MixError {
     MixError::structured("SQL_IO", format!("sqlbackup: {e}"))
 }
 
+fn type_mismatch(message: impl std::fmt::Display) -> MixError {
+    MixError::structured("TYPE_MISMATCH", format!("sqlbackup: {message}"))
+}
+
 struct Staging(PathBuf);
 impl Drop for Staging {
     fn drop(&mut self) {
@@ -93,7 +118,10 @@ pub(super) fn builtin_sqlbackup(args: Vec<Value>) -> MixResult<Option<Value>> {
     backup_with_destination(args, |_| Ok(()))
 }
 
-fn backup_with_destination(args: Vec<Value>, configure: impl FnOnce(&Connection) -> MixResult<()>) -> MixResult<Option<Value>> {
+fn backup_with_destination(
+    args: Vec<Value>,
+    configure: impl FnOnce(&Connection) -> MixResult<()>,
+) -> MixResult<Option<Value>> {
     expect_args_between("sqlbackup", &args, 2, 3)?;
     let path_arg = |i: usize| match &args[i] {
         Value::String(s) if !s.is_empty() && s != ":memory:" && !s.contains('\0') => Ok(s.as_str()),
@@ -101,7 +129,10 @@ fn backup_with_destination(args: Vec<Value>, configure: impl FnOnce(&Connection)
             "sqlbackup()",
             "paths must be non-empty filesystem strings",
         )),
-        other => Err(MixError::structured("TYPE_MISMATCH", format!("sqlbackup: path must be a string, got {}", other.type_name()))),
+        other => Err(type_mismatch(format!(
+            "path must be a string, got {}",
+            other.type_name()
+        ))),
     };
     let src = Path::new(path_arg(0)?);
     let dst = Path::new(path_arg(1)?);
@@ -110,7 +141,7 @@ fn backup_with_destination(args: Vec<Value>, configure: impl FnOnce(&Connection)
     let mut retry_ms = 5000;
     if let Some(opts) = args.get(2) {
         let Value::Map(opts) = opts else {
-            return Err(MixError::structured("TYPE_MISMATCH", "sqlbackup: opts must be a map"));
+            return Err(type_mismatch("opts must be a map"));
         };
         for (key, value) in opts.iter() {
             match (key.as_str(), value) {
@@ -155,7 +186,10 @@ fn backup_with_destination(args: Vec<Value>, configure: impl FnOnce(&Connection)
             {
                 use std::os::unix::fs::MetadataExt;
                 if m.dev() == metadata.dev() && m.ino() == metadata.ino() {
-                    return Err(opt_invalid("sqlbackup()", "source and destination are the same inode"));
+                    return Err(opt_invalid(
+                        "sqlbackup()",
+                        "source and destination are the same inode",
+                    ));
                 }
             }
             // Replacing a symlink or live database risks modifying unrelated data.
@@ -207,7 +241,9 @@ fn backup_with_destination(args: Vec<Value>, configure: impl FnOnce(&Connection)
             Err(e) => return Err(sql_error(e)),
         }
     }
-    let source_pages: i64 = source.query_row("PRAGMA page_count", [], |r| r.get(0)).map_err(sql_error)?;
+    let source_pages: i64 = source
+        .query_row("PRAGMA page_count", [], |r| r.get(0))
+        .map_err(sql_error)?;
     let parent = dst
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
@@ -263,7 +299,9 @@ fn backup_with_destination(args: Vec<Value>, configure: impl FnOnce(&Connection)
         }
         backup.finish().map_err(sql_error)?;
     }
-    let pages: i64 = destination.query_row("PRAGMA page_count", [], |r| r.get(0)).map_err(sql_error)?;
+    let pages: i64 = destination
+        .query_row("PRAGMA page_count", [], |r| r.get(0))
+        .map_err(sql_error)?;
     verify_page_counts(source_pages, pages)?;
     // A WAL source copies its journal setting too. Publish a standalone file.
     destination
@@ -336,30 +374,65 @@ mod tests {
         let dir = test_dir::TestDir::new("backup-full");
         let src = dir.path("source.db");
         let dst = dir.path("copy.db");
-        Connection::open(&src).unwrap().execute_batch("CREATE TABLE t(x); INSERT INTO t VALUES(zeroblob(100000))").unwrap();
+        Connection::open(&src)
+            .unwrap()
+            .execute_batch("CREATE TABLE t(x); INSERT INTO t VALUES(zeroblob(100000))")
+            .unwrap();
         for overwrite in [false, true] {
-            if overwrite { std::fs::write(&dst, "keep").unwrap(); }
-            let err = backup_with_destination(vec![
-                Value::String(src.to_str().unwrap().into()),
-                Value::String(dst.to_str().unwrap().into()),
-                Value::map([("overwrite".into(), Value::Bool(overwrite))].into_iter().collect()),
-            ], |destination| destination.execute_batch("PRAGMA max_page_count=1").map_err(sql_error)).unwrap_err();
+            if overwrite {
+                std::fs::write(&dst, "keep").unwrap();
+            }
+            let err = backup_with_destination(
+                vec![
+                    Value::String(src.to_str().unwrap().into()),
+                    Value::String(dst.to_str().unwrap().into()),
+                    Value::map(
+                        [("overwrite".into(), Value::Bool(overwrite))]
+                            .into_iter()
+                            .collect(),
+                    ),
+                ],
+                |destination| {
+                    destination
+                        .execute_batch("PRAGMA max_page_count=1")
+                        .map_err(sql_error)
+                },
+            )
+            .unwrap_err();
             assert_eq!(err.info().unwrap().code, "SQL_IO");
-            if overwrite { assert_eq!(std::fs::read(&dst).unwrap(), b"keep"); }
-            else { assert!(!dst.exists()); }
-            assert!(std::fs::read_dir(dir.path("")).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().starts_with(".mix-sqlbackup-")));
+            if overwrite {
+                assert_eq!(std::fs::read(&dst).unwrap(), b"keep");
+            } else {
+                assert!(!dst.exists());
+            }
+            assert!(std::fs::read_dir(dir.path("")).unwrap().all(|e| {
+                !e.unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".mix-sqlbackup-")
+            }));
         }
     }
 
     #[test]
     fn explicit_finish_returns_native_destination_error() {
         let source = Connection::open_in_memory().unwrap();
-        source.execute_batch("CREATE TABLE t(x); INSERT INTO t VALUES(zeroblob(100000))").unwrap();
+        source
+            .execute_batch("CREATE TABLE t(x); INSERT INTO t VALUES(zeroblob(100000))")
+            .unwrap();
         let mut destination = Connection::open_in_memory().unwrap();
-        destination.execute_batch("PRAGMA max_page_count=1").unwrap();
+        destination
+            .execute_batch("PRAGMA max_page_count=1")
+            .unwrap();
         let backup = CheckedBackup::new(&source, &mut destination).unwrap();
-        assert_eq!(backup.step(-1).unwrap_err().sqlite_error_code(), Some(ErrorCode::DiskFull));
-        assert_eq!(backup.finish().unwrap_err().sqlite_error_code(), Some(ErrorCode::DiskFull));
+        assert_eq!(
+            backup.step(-1).unwrap_err().sqlite_error_code(),
+            Some(ErrorCode::DiskFull)
+        );
+        assert_eq!(
+            backup.finish().unwrap_err().sqlite_error_code(),
+            Some(ErrorCode::DiskFull)
+        );
     }
 
     #[test]
@@ -367,7 +440,10 @@ mod tests {
         for destination in [0, 1] {
             let err = verify_page_counts(20, destination).unwrap_err();
             assert_eq!(err.info().unwrap().code, "SQL_INTEGRITY");
-            assert!(err.to_string().contains(&format!("source_pages=20, destination_pages={destination}")));
+            assert!(
+                err.to_string()
+                    .contains(&format!("source_pages=20, destination_pages={destination}"))
+            );
         }
         verify_page_counts(20, 20).unwrap();
     }
@@ -377,10 +453,24 @@ mod tests {
         for args in [
             vec![Value::Nil, Value::String("dst".into())],
             vec![Value::String("src".into()), Value::Bool(false)],
-            vec![Value::String("src".into()), Value::String("dst".into()), Value::Nil],
+            vec![
+                Value::String("src".into()),
+                Value::String("dst".into()),
+                Value::Nil,
+            ],
         ] {
-            assert_eq!(builtin_sqlbackup(args).unwrap_err().info().unwrap().code, "TYPE_MISMATCH");
+            assert_eq!(
+                builtin_sqlbackup(args).unwrap_err().info().unwrap().code,
+                "TYPE_MISMATCH"
+            );
         }
-        assert_eq!(builtin_sqlbackup(vec![Value::String("".into()), Value::String("dst".into())]).unwrap_err().info().unwrap().code, "OPTION_INVALID");
+        assert_eq!(
+            builtin_sqlbackup(vec![Value::String("".into()), Value::String("dst".into())])
+                .unwrap_err()
+                .info()
+                .unwrap()
+                .code,
+            "OPTION_INVALID"
+        );
     }
 }

@@ -225,10 +225,16 @@ async fn refuses_source_hardlink_without_replacing_it() {
     let dir = TestDir::new("backup-hardlink");
     let src = dir.path("source.db");
     let dst = dir.path("copy.db");
-    Connection::open(&src).unwrap().execute_batch("CREATE TABLE t(x)").unwrap();
+    Connection::open(&src)
+        .unwrap()
+        .execute_batch("CREATE TABLE t(x)")
+        .unwrap();
     std::fs::hard_link(&src, &dst).unwrap();
     let before = std::fs::metadata(&dst).unwrap();
-    assert_eq!(code(&format!("sqlbackup({src:?}, {dst:?}, {{overwrite: true}})")).await, "OPTION_INVALID");
+    assert_eq!(
+        code(&format!("sqlbackup({src:?}, {dst:?}, {{overwrite: true}})")).await,
+        "OPTION_INVALID"
+    );
     assert_eq!(std::fs::metadata(&dst).unwrap().ino(), before.ino());
 }
 
@@ -244,7 +250,10 @@ async fn wal_without_creatable_shm_returns_sql_io() {
     use std::os::unix::{fs::PermissionsExt, process::CommandExt};
     if let Some(src) = std::env::var_os("MIX_TEST_BACKUP_READONLY_SOURCE") {
         let dst = std::env::var_os("MIX_TEST_BACKUP_READONLY_DEST").unwrap();
-        assert_eq!(code(&format!("sqlbackup({src:?}, {dst:?})")).await, "SQL_IO");
+        assert_eq!(
+            code(&format!("sqlbackup({src:?}, {dst:?})")).await,
+            "SQL_IO"
+        );
         assert!(!std::path::Path::new(&dst).exists());
         return;
     }
@@ -267,14 +276,26 @@ async fn wal_without_creatable_shm_returns_sql_io() {
     std::fs::set_permissions(&source_dir, std::fs::Permissions::from_mode(0o555)).unwrap();
     let dst = output_dir.join("copy.db");
     let mut child = std::process::Command::new(std::env::current_exe().unwrap());
-    child.args(["--exact", "wal_without_creatable_shm_returns_sql_io", "--nocapture"])
+    child
+        .args([
+            "--exact",
+            "wal_without_creatable_shm_returns_sql_io",
+            "--nocapture",
+        ])
         .env("MIX_TEST_BACKUP_READONLY_SOURCE", &src)
         .env("MIX_TEST_BACKUP_READONLY_DEST", &dst);
     // CBC runs as root; drop only the child so permissions are actually tested.
-    if unsafe { libc::geteuid() } == 0 { child.gid(65534).uid(65534); }
+    if unsafe { libc::geteuid() } == 0 {
+        child.gid(65534).uid(65534);
+    }
     let result = child.output().unwrap();
     std::fs::set_permissions(&source_dir, std::fs::Permissions::from_mode(0o755)).unwrap();
-    assert!(result.status.success(), "{}\n{}", String::from_utf8_lossy(&result.stdout), String::from_utf8_lossy(&result.stderr));
+    assert!(
+        result.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
     assert!(String::from_utf8_lossy(&result.stdout).contains("1 passed"));
     assert!(!source_dir.join("source.db-shm").exists());
     assert!(!dst.exists());
