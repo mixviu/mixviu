@@ -61,7 +61,10 @@ elif $mode=="fast-compare" then
   checked(["mix",script_path(),"compare"])
 elif $mode=="wire" then
   $old_path=realpath("target").."/workshop-wire-old-"..pid()..".mix"
-  write_file($old_path,replace(read_file("apps/workshop/counter.mix"),"if not needs_thaw($encoded) then return $encoded end","if false then return $encoded end"))
+  $source=read_file("apps/workshop/counter.mix")
+  $mutated=replace($source,"if not needs_thaw($encoded) then return $encoded end","if false then return $encoded end")
+  if $mutated==$source then raise("PROBE","wire mutation did not change source") end
+  write_file($old_path,$mutated)
   try
     $old=require($old_path);$new=require(realpath("apps/workshop/counter.mix"))
     $value={snapshot:{identities:{},services:{}},title:"001",headers:{seq:"18446744073709551615"},payload:{count:"18446744073709551615"}}
@@ -98,9 +101,11 @@ elif $mode=="helpers" then
 elif $mode=="compare" then
   checked(concat(slice($test,0,8),["--no-run"]))
   $path="apps/workshop/counter.mix";$candidate=read_file($path);$candidate_ok=false
+  $mutated=replace($candidate,"if not needs_thaw($encoded) then return $encoded end","if false then return $encoded end")
+  if $mutated==$candidate then raise("PROBE","compare mutation did not change source") end
   try
     for $case in ["jq","native"]
-      write_file($path,if $case=="jq" then replace($candidate,"if not needs_thaw($encoded) then return $encoded end","if false then return $encoded end") else $candidate end)
+      write_file($path,if $case=="jq" then $mutated else $candidate end)
       print("OWNER_ENCODER "..$case)
       $r=run_argv($test,{timeout:120,stderr:"stdout",max_output:64000000});print($r.stdout)
       print({encoder:$case,rc:$r.exit_code})
