@@ -29,8 +29,8 @@ The host takes no keyboard focus, including when pointer input is enabled.
 
 | Command | Body |
 | --- | --- |
-| `osd.show` | `{id, scene, anchor, enter?, exit?, duration_ms?, pointer_input?}` |
-| `osd.update` | `{id, scene?, anchor?, enter?, exit?, duration_ms?, pointer_input?}` |
+| `osd.show` | `{id, scene, anchor, enter?, exit?, duration_ms?, pointer_input?, backing?}` |
+| `osd.update` | `{id, scene?, anchor?, enter?, exit?, duration_ms?, pointer_input?, backing?}` |
 | `osd.hide` | `{id, exit?}` |
 | `osd.list` | `{}` |
 | `osd.actions` | `{}` |

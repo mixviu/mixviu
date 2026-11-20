@@ -24,11 +24,14 @@ impl Drop for Lease {
 /// Register the private server end before spawning the child. Dropping the
 /// lease revokes authority even if another process retained the old socket.
 pub fn insert(display: &DisplayHandle, stream: std::os::unix::net::UnixStream) -> std::io::Result<Lease> {
+    insert_connection(display, stream).map(|(_, lease)| lease)
+}
+fn insert_connection(display: &DisplayHandle, stream: std::os::unix::net::UnixStream) -> std::io::Result<(Client, Lease)> {
     let live = Arc::new(AtomicBool::new(true));
-    display.clone().insert_client(stream, Arc::new(Connection {
+    let client = display.clone().insert_client(stream, Arc::new(Connection {
         state: CompositorClientState::default(), live: live.clone(),
     }))?;
-    Ok(Lease(live))
+    Ok((client, Lease(live)))
 }
 pub fn compositor_state(client: &Client) -> Option<&CompositorClientState> {
     client.get_data::<Connection>().map(|data| &data.state)
@@ -78,28 +81,18 @@ mod tests {
         let (shared, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
         let ordinary = handle.insert_client(shared, Arc::new(())).unwrap();
         let (private, _child) = std::os::unix::net::UnixStream::pair().unwrap();
-        let lease = insert(&handle, private).unwrap();
+        let (host, lease) = insert_connection(&handle, private).unwrap();
         // Both socketpairs were created by this process: identical peer PIDs.
         assert_eq!(ordinary.get_credentials(&handle).unwrap().pid, std::process::id() as i32);
         assert!(!authorized(&ordinary, &handle));
-        // Find the private client through a second insertion with retained handle.
-        let live = Arc::new(AtomicBool::new(true));
-        let (server, _client) = std::os::unix::net::UnixStream::pair().unwrap();
-        let host = handle.insert_client(server, Arc::new(Connection {
-            state: CompositorClientState::default(), live: live.clone(),
-        })).unwrap();
-        let old = Lease(live);
+        assert_eq!(host.get_credentials(&handle).unwrap().pid, ordinary.get_credentials(&handle).unwrap().pid);
         assert!(authorized(&host, &handle));
-        drop(old);
+        drop(lease);
         assert!(!authorized(&host, &handle));
         let (server, _replacement) = std::os::unix::net::UnixStream::pair().unwrap();
-        let live = Arc::new(AtomicBool::new(true));
-        let replacement = handle.insert_client(server, Arc::new(Connection {
-            state: CompositorClientState::default(), live,
-        })).unwrap();
+        let (replacement, _lease) = insert_connection(&handle, server).unwrap();
         assert!(authorized(&replacement, &handle));
         assert!(!authorized(&host, &handle));
-        drop(lease);
     }
 }
 
