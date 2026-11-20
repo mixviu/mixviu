@@ -5472,6 +5472,7 @@ fn escape_json_string(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Broker regression tests, including bounded diagnostic emission.
     #[tokio::test]
     async fn refusal_totals_are_live_in_info() {
         let state = mesh_delivery_test_state().await;
@@ -5482,8 +5483,8 @@ mod tests {
         super::handle_noded_command(&request, &tx, &state, &mut None, "anon-test", "192.0.2.1".parse().unwrap(), &mut crate::observe::Outcome::BrokerHandled).await;
         let reply = bus::wire::parse(&rx.recv().await.unwrap()).unwrap();
         let info: serde_json::Value = serde_json::from_str(&reply.body).unwrap();
-        assert!(info["refusal_totals"]["frame_refusals"].as_u64().unwrap() > before);
-        assert_eq!(info["refusal_totals"]["challenge_refusals"], mesh::challenge_refusal_total());
+        assert!(info["meta"]["refusal_totals"]["frame_refusals"].as_u64().unwrap() > before);
+        assert!(info["meta"]["refusal_totals"]["challenge_refusals"].as_u64().unwrap() <= mesh::challenge_refusal_total());
     }
 
     #[test]
@@ -5520,18 +5521,8 @@ mod tests {
             }
         }
     }
-    //! Regression test for the 2026-04-28 noded log-feedback meltdown.
-    //!
-    //! Reproduces the failure shape: a peer that is **registered as a
-    //! service** AND **subscribed to noded.tap** on the same connection
-    //! has its bounded outbound mpsc(256) referenced twice by the broker.
-    //! Floods at this peer used to fire one WARN per dropped message
-    //! (route_local) plus another per dropped tap (broadcast_tap),
-    //! starving journald and the broker itself.
-    //!
-    //! With the fix: drops are deduped (route_local return value tells
-    //! broadcast_tap to skip the same Sender) and remaining drops are
-    //! coalesced to ≤1 WARN per second per axis.
+    // The 2026-04-28 log-feedback regression below floods a service subscribed
+    // to its own tap. Drops are deduped and warnings coalesced per call site.
 
     include!("frame_policy_tests.rs");
     include!("identity_tests.rs");

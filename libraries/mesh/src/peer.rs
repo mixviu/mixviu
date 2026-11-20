@@ -1477,6 +1477,25 @@ mod tests {
     }
 
     #[test]
+    fn challenge_epochs_are_per_peer_and_do_not_accept_a_wrong_verifier() {
+        let mut challenge = BusMessage::new().with_header("id", "epoch-test");
+        for (peer, epoch) in [("epoch-alpha", 7), ("epoch-beta", 8)] {
+            challenge.body = serde_json::json!({
+                "verifying_broker_node": peer, "mesh_fqdn": "example.test",
+                "inventory_epoch": epoch,
+                "session_id": base64::engine::general_purpose::STANDARD.encode([1; 16]),
+                "server_nonce": base64::engine::general_purpose::STANDARD.encode([2; 32]),
+            }).to_string();
+            assert!(build_admit_response(&challenge, "local", &Some([9; 32]), peer, "example.test", 6).is_some());
+        }
+        assert_eq!(super::peer_challenge_epoch("epoch-alpha"), Some(7));
+        assert_eq!(super::peer_challenge_epoch("epoch-beta"), Some(8));
+        assert!(build_admit_response(&challenge, "local", &Some([9; 32]), "epoch-alpha", "example.test", 6).is_none());
+        assert_eq!(super::peer_challenge_epoch("epoch-alpha"), Some(7));
+        assert_eq!(super::peer_challenge_epoch("epoch-unknown"), None);
+    }
+
+    #[test]
     fn challenge_refusals_name_both_peers_inside_one_window() {
         use std::io::Write;
         #[derive(Clone, Default)]
