@@ -40,8 +40,8 @@ as an unchanged copy.
 
 ## Focused window motion checks
 
-On a CBC worker, `mix tools/ci.mix window-motion` runs the native motion and
-record acceptance suite. `mix tools/ci.mix window-motion-tests` runs all test
-targets of its affected workspace crates. `mix tools/ci.mix fmt-diff` returns
+On a CBC worker, `mix tools/ci/window_motion.mix native` runs the native motion and
+record acceptance suite. `mix tools/ci/window_motion.mix all-targets` runs all test
+targets of its affected workspace crates. `mix tools/ci/window_motion_format.mix` returns
 a formatting diff and restores the worker checkout; it refuses a dirty tree
 before running any formatting or cleanup.

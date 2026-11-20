@@ -19,6 +19,8 @@ mod_module_files = "deny"
 [features]
 # Forced source ordering for integration fixtures; never enabled by a backend.
 test-support = ["dep:paths"]
+# Explicit admission for capture tests requiring compositor lifecycle barriers.
+lifecycle-tests = ["test-support"]
 
 [dependencies]
 paths = { path = "../../../../libraries/paths", optional = true }
