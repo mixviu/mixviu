@@ -216,8 +216,12 @@ impl Host {
             }
         }
         let edit = crate::model_patch::Edit::apply(&mut self.model, self.model_bytes, patch)?;
+        #[cfg(feature="test-support")]
+        crate::view::profile_apply(self.discovery_probe.as_ref().is_some_and(|p|p.profile_scene));
         let result =
             validate_overlays(&self.model).and_then(|_| self.view.apply_model_patch(patch));
+        #[cfg(feature="test-support")]
+        crate::view::profile_apply(false);
         if let Err(error) = result {
             edit.rollback(&mut self.model);
             return Err(error);

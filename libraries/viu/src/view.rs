@@ -189,7 +189,11 @@ impl SceneView {
         &mut self,
         patch: &crate::model_patch::Patch,
     ) -> Result<(), String> {
+        #[cfg(feature="test-support")]
+        let started=PROFILE_APPLY.get().then(crate::app_host::test_support::thread_cpu);
         let edit = crate::model_patch::Edit::apply(&mut self.tree.model, self.model_bytes, patch)?;
+        #[cfg(feature="test-support")]
+        let edited=started.map(|_|crate::app_host::test_support::thread_cpu());
         let mut displaced = BTreeMap::new();
         let result = (|| {
             let nodes =
@@ -198,13 +202,22 @@ impl SceneView {
             for (id, node) in nodes {
                 displaced.insert(id.clone(), self.tree.nodes.insert(id, node).unwrap());
             }
+            #[cfg(feature="test-support")]
+            let rebound=started.map(|_|crate::app_host::test_support::thread_cpu());
             let lists = validate_templates(&self.tree).map_err(|e| e.to_string())?;
             validate_controls(&self.tree)?;
             self.validate_hosted_overlays(&self.tree)?;
+            #[cfg(feature="test-support")]
+            let validated=started.map(|_|crate::app_host::test_support::thread_cpu());
             if let Some(frame) = self.frame.as_mut() {
                 frame.apply_model_patch(patch)?;
             }
             self.lists = lists;
+            #[cfg(feature="test-support")]
+            if let (Some(started),Some(edited),Some(rebound),Some(validated))=(started,edited,rebound,validated) {
+                let end=crate::app_host::test_support::thread_cpu();
+                eprintln!("WORKSHOP_PATCH {}",json!({"nodes":self.tree.nodes.len(),"model_bytes":edit.bytes,"edit_budget_cpu_us":(edited-started).as_micros(),"binding_copy_cpu_us":(rebound-edited).as_micros(),"templates_controls_cpu_us":(validated-rebound).as_micros(),"frame_commit_cpu_us":(end-validated).as_micros(),"total_cpu_us":(end-started).as_micros()}));
+            }
             Ok(())
         })();
         match result {
