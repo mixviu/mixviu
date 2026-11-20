@@ -15,6 +15,16 @@ struct Deck {
     wakes: mpsc::Receiver<()>,
     calls: viu::calls::Calls,
 }
+#[test]
+fn authored_reference_nodes_resolve() {
+    let doc: Value = serde_json::from_str(include_str!("../../../apps/deck/examples/vfl-self-recording.json")).unwrap();
+    for slide in doc["slides"].as_array().unwrap() {
+        let source = format!("---\nscene: 1\nname: reference\ncitizen: deck\n---\n```mix\n{}\n```\n", slide["scene"]);
+        let document = scene::parse(&source).unwrap();
+        scene::resolve(&document).unwrap_or_else(|e| panic!("{}: {e:?}", slide["id"]));
+        assert!(!source.contains("STUB"));
+    }
+}
 impl Deck {
     fn new() -> Self {
         let (tx, wakes) = mpsc::channel();

@@ -183,7 +183,7 @@ fn bus_sweep_record_reference_play_and_decode_build_states() {
     );
     println!("VFL_VERIFY={}", String::from_utf8_lossy(&verify.stdout));
     let mut reader = media_vfl::reader::Reader::open(&path).unwrap();
-    let (width, height) = (reader.width, reader.height);
+    let (width, height) = (reader.width(), reader.height());
     let mut samples = Vec::new();
     while let Some(frame) = reader.read().unwrap() {
         for target in [0.0, 2.0, 3.0, 5.0, 11.0, 13.0, 14.0, 21.0] {
