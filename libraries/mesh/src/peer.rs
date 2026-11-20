@@ -152,6 +152,8 @@ pub fn build_admit_response(
         return None;
     }
     let challenge_epoch = body.get("inventory_epoch")?.as_u64()?;
+    CHALLENGE_EPOCHS.lock().expect("challenge epochs poisoned")
+        .insert(expected_verifier.to_owned(), challenge_epoch);
     // The verifier owns the nonce and checks the proof against its own
     // authority. A rolling inventory publish must not strand valid members.
     if challenge_epoch != local_epoch {
@@ -194,10 +196,51 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 const ADMISSION_CHALLENGE_TIMEOUT: Duration = Duration::from_secs(1);
 
-// Constant-space, process-wide coalescing per diagnostic class, including
-// across short-lived connections. Received fields are typed, never raw bodies.
-static CHALLENGE_REFUSALS: Mutex<(Option<std::time::Instant>, u64)> = Mutex::new((None, 0));
-static CHALLENGE_SKEW: Mutex<(Option<std::time::Instant>, u64)> = Mutex::new((None, 0));
+// Process-wide state survives reconnects. Keys come from trusted peer config,
+// never from received challenge fields.
+static CHALLENGE_REFUSALS: std::sync::LazyLock<Mutex<HashMap<String, DiagnosticLog>>> =
+    std::sync::LazyLock::new(Default::default);
+static CHALLENGE_SKEW: std::sync::LazyLock<Mutex<HashMap<String, DiagnosticLog>>> =
+    std::sync::LazyLock::new(Default::default);
+static CHALLENGE_EPOCHS: std::sync::LazyLock<Mutex<HashMap<String, u64>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// Last matching admission challenge epoch observed from this configured peer.
+/// Diagnostic only: it is not an authenticated inventory or routing authority.
+pub fn peer_challenge_epoch(peer: &str) -> Option<u64> {
+    CHALLENGE_EPOCHS.lock().expect("challenge epochs poisoned").get(peer).copied()
+}
+
+/// Lifetime refused-challenge total, including suppressed diagnostics.
+pub fn challenge_refusal_total() -> u64 {
+    CHALLENGE_REFUSALS.lock().expect("challenge log counter poisoned")
+        .values().map(|log| log.total).sum()
+}
+
+/// Monotonic, reconnect-independent diagnostic coalescing state.
+#[derive(Default)]
+pub struct DiagnosticLog {
+    last: Option<std::time::Instant>,
+    total: u64,
+    pending: u64,
+}
+
+impl DiagnosticLog {
+    /// Record every occurrence; emit first, then at most once per minute.
+    /// Returns (interval count, lifetime count) when a line is due.
+    pub fn record(&mut self, now: std::time::Instant) -> Option<(u64, u64)> {
+        self.total += 1;
+        self.pending += 1;
+        if self.last.is_some_and(|last| now.duration_since(last) < Duration::from_secs(60)) {
+            return None;
+        }
+        self.last = Some(now);
+        Some((std::mem::take(&mut self.pending), self.total))
+    }
+
+    /// Includes a trailing burst that has not produced another log line.
+    pub fn total(&self) -> u64 { self.total }
+}
 
 fn challenge_diagnostic(
     refused: bool,
@@ -212,16 +255,9 @@ fn challenge_diagnostic(
         &CHALLENGE_SKEW
     };
     let now = std::time::Instant::now();
-    let mut state = counter.lock().expect("challenge log counter poisoned");
-    state.1 += 1;
-    if state
-        .0
-        .is_some_and(|last| now.duration_since(last) < Duration::from_secs(60))
-    {
-        return;
-    }
-    let count = std::mem::take(&mut state.1);
-    state.0 = Some(now);
+    let emission = counter.lock().expect("challenge log counter poisoned")
+        .entry(peer.to_owned()).or_default().record(now);
+    let Some((count, total)) = emission else { return; };
     if refused {
         tracing::warn!(
             peer,
@@ -230,6 +266,7 @@ fn challenge_diagnostic(
             received_verifier = body["verifying_broker_node"].as_str(),
             received_mesh = body["mesh_fqdn"].as_str(),
             count,
+            total,
             "Refusing admission challenge with unexpected verifier or mesh (coalesced)"
         );
     } else {
@@ -239,6 +276,7 @@ fn challenge_diagnostic(
             local_epoch,
             challenge_epoch = body["inventory_epoch"].as_u64(),
             count,
+            total,
             "Answering admission challenge despite inventory epoch skew (coalesced)"
         );
     }
@@ -1424,6 +1462,50 @@ async fn fail_pending_generation(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn diagnostic_window_counts_every_occurrence_and_emits_first_then_each_minute() {
+        let start = std::time::Instant::now();
+        let mut log = super::DiagnosticLog::default();
+        let mut emissions = Vec::new();
+        for second in 0..180 {
+            if let Some(counts) = log.record(start + Duration::from_secs(second)) {
+                emissions.push((second, counts));
+            }
+        }
+        assert_eq!(emissions, vec![(0, (1, 1)), (60, (60, 61)), (120, (60, 121))]);
+        assert_eq!(log.total(), 180);
+    }
+
+    #[test]
+    fn challenge_refusals_name_both_peers_inside_one_window() {
+        use std::io::Write;
+        #[derive(Clone, Default)]
+        struct Capture(Arc<Mutex<Vec<u8>>>);
+        impl Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        let output = Capture::default();
+        let writer = output.clone();
+        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
+            .with_writer(move || writer.clone()).finish();
+        tracing::subscriber::with_default(subscriber, || {
+            for _ in 0..100 {
+                for peer in ["refusal-alpha", "refusal-beta"] {
+                    super::challenge_diagnostic(true, peer, "example.test", 1, &serde_json::json!({}));
+                }
+            }
+        });
+        let text = String::from_utf8(output.0.lock().unwrap().clone()).unwrap();
+        assert_eq!(text.lines().count(), 2, "{text}");
+        assert!(text.contains("refusal-alpha") && text.contains("refusal-beta"));
+        let logs = super::CHALLENGE_REFUSALS.lock().unwrap();
+        assert_eq!(logs["refusal-alpha"].total(), 100);
+        assert_eq!(logs["refusal-beta"].total(), 100);
+    }
     use super::*;
     use std::sync::atomic::AtomicUsize;
     use tokio::net::TcpListener;

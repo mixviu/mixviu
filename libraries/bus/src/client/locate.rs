@@ -21,6 +21,12 @@ const DEFAULT_PORT: u16 = 4200;
 
 /// The broker WebSocket URL for this node.
 pub fn noded_url() -> String {
+    noded_url_with_config(None)
+}
+
+/// Local discovery with an optional explicit node-config path. Environment
+/// endpoint overrides retain precedence; no process environment is mutated.
+pub fn noded_url_with_config(node_config: Option<&std::path::Path>) -> String {
     if let Some(url) = std::env::var(URL_VAR)
         .ok()
         .filter(|url| !url.trim().is_empty())
@@ -28,11 +34,16 @@ pub fn noded_url() -> String {
         return url;
     }
     if let Ok(path) = std::env::var(paths::env::BUS_SOCKET)
-        && !path.is_empty()
+        && std::path::Path::new(&path).is_absolute()
     {
         return format!("unix://{path}");
     }
-    let (path, source) = match config::node::NodeConfigSearch::capture().read() {
+    let source = match node_config {
+        Some(path) => std::fs::read_to_string(path)
+            .map(|source| Some((path.to_owned(), source))).map_err(anyhow::Error::from),
+        None => config::node::NodeConfigSearch::capture().read().map_err(anyhow::Error::from),
+    };
+    let (path, source) = match source {
         Ok(Some(source)) => source,
         Ok(None) => return default_local_url(),
         Err(e) => {
@@ -48,6 +59,7 @@ pub fn noded_url() -> String {
             .get("noded")
             .and_then(|n| n.get("unix_socket"))
             .and_then(Value::as_str)
+            .filter(|path| std::path::Path::new(path).is_absolute())
             .map(|path| format!("unix://{path}"))
         {
             Some(url) => {
@@ -57,7 +69,7 @@ pub fn noded_url() -> String {
             None => {
                 tracing::warn!(
                     source = %path.display(),
-                    "node config has no explicit Unix socket; using local runtime endpoint"
+                    "node config has no valid absolute Unix socket; using local runtime endpoint"
                 );
                 default_local_url()
             }

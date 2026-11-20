@@ -46,8 +46,17 @@ use crate::protection::TrafficClass;
 #[path = "frame_policy.rs"]
 mod frame_policy;
 
-static FRAME_REFUSALS: std::sync::LazyLock<std::sync::Mutex<HashMap<&'static str, (u64, u64)>>> =
+static FRAME_REFUSALS: std::sync::LazyLock<std::sync::Mutex<HashMap<(String, &'static str), mesh::DiagnosticLog>>> =
     std::sync::LazyLock::new(Default::default);
+
+fn refusal_totals() -> serde_json::Value {
+    let frames = FRAME_REFUSALS.lock().expect("frame refusal counters poisoned");
+    serde_json::json!({
+        "frame_refusals": frames.values().map(mesh::DiagnosticLog::total).sum::<u64>(),
+        "challenge_refusals": mesh::challenge_refusal_total(),
+        "unauthenticated_frames": mesh::unauthenticated_frame_total(),
+    })
+}
 
 /// Startup-only operator policy; independent of D2 admission. Noded owns this
 /// key in NodedConfig's extension map so older config readers retain it.
@@ -98,6 +107,10 @@ fn mesh_frame_allowed(
 
 /// Every violation has a structured audit event; human-facing logs coalesce.
 fn frame_refused(reason: &'static str, peer: &str, address: &str, posture: AdmissionMode) {
+    frame_refused_at(reason, peer, address, posture, Instant::now());
+}
+
+fn frame_refused_at(reason: &'static str, peer: &str, address: &str, posture: AdmissionMode, now: Instant) {
     tracing::debug!(
         event = "frame.refused",
         reason,
@@ -106,24 +119,13 @@ fn frame_refused(reason: &'static str, peer: &str, address: &str, posture: Admis
         posture = admission_mode_str(posture),
         "Inter-node frame policy"
     );
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
     let count = {
         let mut reasons = FRAME_REFUSALS
             .lock()
             .expect("frame refusal counters poisoned");
-        let (previous, count) = reasons.entry(reason).or_default();
-        *count += 1;
-        if now.saturating_sub(*previous) >= WARN_COALESCE_MS {
-            *previous = now;
-            Some(std::mem::take(count))
-        } else {
-            None
-        }
+        reasons.entry((peer.to_owned(), reason)).or_default().record(now)
     };
-    if let Some(count) = count {
+    if let Some((count, total)) = count {
         tracing::info!(
             event = "frame.refused",
             reason,
@@ -131,6 +133,7 @@ fn frame_refused(reason: &'static str, peer: &str, address: &str, posture: Admis
             peer_address = address,
             posture = admission_mode_str(posture),
             count,
+            total,
             "Inter-node frame refusals (coalesced)"
         );
     }
@@ -4288,6 +4291,7 @@ fn noded_peers_body(
                 "name": p.name(),
                 "wg_ip": p.mesh_ip(),
                 "port": p.noded_port(),
+                "challenge_epoch": mesh::peer_challenge_epoch(p.name()),
             })
         })
         .collect();
@@ -4694,6 +4698,7 @@ async fn handle_noded_command(
             let mut meta = serde_json::Map::new();
             meta.insert("pending_responses".into(), pending.into());
             meta.insert("pending_responder_closed".into(), responder_closed.into());
+            meta.insert("refusal_totals".into(), refusal_totals());
             let info = bus::NodeInfo {
                 node: state.node_name.clone(),
                 // `bind` is `<host>:<port>`; the host is the WG IP. Parse
@@ -5467,6 +5472,54 @@ fn escape_json_string(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn refusal_totals_are_live_in_info() {
+        let state = mesh_delivery_test_state().await;
+        let before = super::refusal_totals()["frame_refusals"].as_u64().unwrap();
+        super::frame_refused("test-info", "info-peer", "192.0.2.1", config::node::AdmissionMode::Observe);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+        let request = bus::wire::BusMessage::new().with_header("command", "noded.info");
+        super::handle_noded_command(&request, &tx, &state, &mut None, "anon-test", "192.0.2.1".parse().unwrap(), &mut crate::observe::Outcome::BrokerHandled).await;
+        let reply = bus::wire::parse(&rx.recv().await.unwrap()).unwrap();
+        let info: serde_json::Value = serde_json::from_str(&reply.body).unwrap();
+        assert!(info["refusal_totals"]["frame_refusals"].as_u64().unwrap() > before);
+        assert_eq!(info["refusal_totals"]["challenge_refusals"], mesh::challenge_refusal_total());
+    }
+
+    #[test]
+    fn listener_refusals_coalesce_per_peer_and_reason_for_a_minute() {
+        #[derive(Clone, Default)]
+        struct Capture(Arc<StdMutex<Vec<u8>>>);
+        impl std::io::Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        let output = Capture::default();
+        let writer = output.clone();
+        let _guard = tracing_subscriber::fmt().without_time().with_ansi(false)
+            .with_max_level(tracing::Level::INFO)
+            .with_writer(move || writer.clone()).set_default();
+        let now = std::time::Instant::now();
+        for second in 0..180 {
+            for peer in ["coalesce-alpha", "coalesce-beta"] {
+                for reason in ["test-reason-one", "test-reason-two"] {
+                    super::frame_refused_at(reason, peer, "192.0.2.1", config::node::AdmissionMode::Observe, now + std::time::Duration::from_secs(second));
+                }
+            }
+        }
+        let logs = super::FRAME_REFUSALS.lock().unwrap();
+        let text = String::from_utf8(output.0.lock().unwrap().clone()).unwrap();
+        assert_eq!(text.lines().count(), 12, "{text}");
+        for peer in ["coalesce-alpha", "coalesce-beta"] {
+            for reason in ["test-reason-one", "test-reason-two"] {
+                assert_eq!(logs[&(peer.to_owned(), reason)].total(), 180);
+                assert_eq!(text.lines().filter(|line| line.contains(peer) && line.contains(reason)).count(), 3);
+            }
+        }
+    }
     //! Regression test for the 2026-04-28 noded log-feedback meltdown.
     //!
     //! Reproduces the failure shape: a peer that is **registered as a

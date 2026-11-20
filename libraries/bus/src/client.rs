@@ -26,7 +26,7 @@ mod supervised;
 pub use crate::native_client::IncomingCommand;
 pub use connection::Connection;
 pub use error::{ClientError, RegistrationRejected, RegistrationRejectionKind, SupervisedError};
-pub use locate::{DEFAULT_NODED_URL, node_config_path, noded_url, url_from_node_config};
+pub use locate::{DEFAULT_NODED_URL, node_config_path, noded_url, noded_url_with_config, url_from_node_config};
 pub use supervised::{
     ConnState, MAX_INITIAL_ATTEMPTS, RECONNECT_BACKOFF_MAX, SubscriptionRegistry, SupervisedClient,
     SupervisedConnectOptions, SupervisedDelivery, initial_connect_backoff_budget,
