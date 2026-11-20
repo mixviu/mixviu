@@ -51,6 +51,17 @@ fn white_window_at(
     x: i32,
     y: i32,
 ) -> (Pattern, Value) {
+    white_window_sized(bus, process, name, x, y, (200, 160))
+}
+
+fn white_window_sized(
+    bus: &Bus,
+    process: &mut process::Process,
+    name: &str,
+    x: i32,
+    y: i32,
+    size: (i32, i32),
+) -> (Pattern, Value) {
     let mut pattern = Pattern::named(connect(process), name, false);
     pattern.wait_callback(0);
     let row = bus.window_for(name, &mut [&mut pattern]);
@@ -63,6 +74,7 @@ fn white_window_at(
             }),
         ),
     );
+    pattern.state.size = size;
     pattern.solid_buffer(0xffffffff);
     pattern.commit(true);
     pump_patterns(&mut [&mut pattern]);
@@ -74,6 +86,14 @@ fn white_window_at(
 // stay unchanged; the separate throughput acceptance still records 4K30.
 const MOTION_SIZE: &str = "480x320";
 const MOTION_WIDTH: usize = 480;
+// Close tests need only colour, corner and stacking probes, not the pop's
+// 200px scale ruler. Bound their per-frame debug encoder work further.
+const CLOSE_SIZE: &str = "240x180";
+const CLOSE_WIDTH: usize = 240;
+
+fn opacity_at(pixels: &[u8], width: usize, x: usize, y: usize) -> f64 {
+    (f64::from(pixels[(y * width + x) * 4 + 2]) - 18.0) / (255.0 - 18.0)
+}
 
 // The fixture is white on the headless background [18,20,25]. Sampling the
 // centre avoids chrome and texture-filtered edges. The run length of the
@@ -348,13 +368,14 @@ fn record_close_retains_pixels_without_retaining_client_or_input() {
     let mut process = process::spawn_preferences_size(
         "window-close",
         &bus.url,
-        MOTION_SIZE,
+        CLOSE_SIZE,
         json!({
             "window_motion":{"unmap":{"preset":"fade","duration_ms":300}}
         }),
     );
     bus.ready();
-    let (pattern, _row) = white_window_at(&bus, &mut process, "window-close", 100, 60);
+    let (pattern, _row) =
+        white_window_sized(&bus, &mut process, "window-close", 50, 40, (100, 80));
     let path = process.root.join("close.vfl");
     let start=bus.call("comp.record.start",json!({"request_id":"close","target":{"output":"headless-0"},"path":path,"max_seconds":10,"fps":30,"cursor":false}));
     // Drop the entire Wayland connection. A ghost is only presentation data;
@@ -373,7 +394,7 @@ fn record_close_retains_pixels_without_retaining_client_or_input() {
     }
     bus.call(
         "comp.input.pointer.move",
-        json!({"seat":"agent","output":"headless-0","x":200,"y":140}),
+        json!({"seat":"agent","output":"headless-0","x":100,"y":80}),
     );
     let refused = bus.call_rc(
         "comp.input.pointer.button",
@@ -396,7 +417,7 @@ fn record_close_retains_pixels_without_retaining_client_or_input() {
     let mut intermediate = 0;
     let mut last = 1.0;
     visit_export(&path, |_, pixels| {
-        let (opacity, _) = visual(pixels, MOTION_WIDTH);
+        let opacity = opacity_at(pixels, CLOSE_WIDTH, 100, 80);
         if (0.04..0.98).contains(&opacity) {
             intermediate += 1;
         }
@@ -435,7 +456,7 @@ fn rounded_close_stack(closing_front: bool) {
     let mut process = process::spawn_preferences_size(
         label,
         &bus.url,
-        MOTION_SIZE,
+        CLOSE_SIZE,
         json!({
             "decorations_ssd":true,
             "window_motion":{"unmap":{"preset":"fade","duration_ms":600}}
@@ -449,9 +470,10 @@ fn rounded_close_stack(closing_front: bool) {
         "comp.window.place",
         place_args(
             &rear_row,
-            json!({"x":100,"y":60,"z":if closing_front {20} else {0}}),
+            json!({"x":50,"y":40,"z":if closing_front {20} else {0}}),
         ),
     );
+    rear.state.size = (100, 80);
     rear.solid_buffer(0xffffffff);
     rear.commit(true);
     let mut front = Pattern::named(connect(&mut process), "opaque-front", false);
@@ -459,16 +481,17 @@ fn rounded_close_stack(closing_front: bool) {
     let front_row = bus.window_for("opaque-front", &mut [&mut rear, &mut front]);
     bus.call(
         "comp.window.place",
-        place_args(&front_row, json!({"x":200,"y":120,"z":10})),
+        place_args(&front_row, json!({"x":100,"y":70,"z":10})),
     );
+    front.state.size = (100, 80);
     front.solid_buffer(0xff20d040);
     front.commit(true);
     pump_patterns(&mut [&mut rear, &mut front]);
     let (width, height, before) = ppm(&bus, &process, "rounded-stack-before", None);
-    assert_eq!((width, height), (MOTION_WIDTH, 320));
-    assert_eq!(ppm_pixel(&before, width, 150, 140), [255, 255, 255]);
+    assert_eq!((width, height), (CLOSE_WIDTH, 180));
+    assert_eq!(ppm_pixel(&before, width, 75, 80), [255, 255, 255]);
     assert_eq!(
-        ppm_pixel(&before, width, 250, 160),
+        ppm_pixel(&before, width, 125, 90),
         if closing_front {
             [255, 255, 255]
         } else {
@@ -478,8 +501,8 @@ fn rounded_close_stack(closing_front: bool) {
     // Find a shader-cut pixel INSIDE the rectangular client buffer, at its
     // bottom-left corner. This proves the fixture has rounded client clipping;
     // a rectangular snapshot would paint white here as soon as it faded.
-    let (corner_x, corner_y, corner_red) = (100..108)
-        .flat_map(|x| (212..220).map(move |y| (x, y)))
+    let (corner_x, corner_y, corner_red) = (50..58)
+        .flat_map(|x| (112..120).map(move |y| (x, y)))
         .map(|(x, y)| (x, y, ppm_pixel(&before, width, x, y)[0]))
         .min_by_key(|(_, _, red)| *red)
         .unwrap();
@@ -503,7 +526,7 @@ fn rounded_close_stack(closing_front: bool) {
             let p = &pixels[(y * width + x) * 4..(y * width + x) * 4 + 4];
             [p[2], p[1], p[0]]
         };
-        let rear_red = at(150, 140)[0];
+        let rear_red = at(75, 80)[0];
         if closing_front {
             // SSD retains its black shadow behind the fading white client.
             // Thus the underlay's transmission is (1-client_alpha) *
@@ -511,7 +534,7 @@ fn rounded_close_stack(closing_front: bool) {
             // inside the shadow's constant centre tile. Infer transmission
             // from green-minus-red, which cancels the white foreground, then
             // independently check blue and the white-over-background probe.
-            let over = at(250, 160);
+            let over = at(125, 90);
             let transmission = (f64::from(over[1]) - f64::from(over[0])) / (208.0 - 32.0);
             let foreground = f64::from(over[0]) - 32.0 * transmission;
             assert!((-0.025..=1.025).contains(&transmission));
@@ -529,7 +552,7 @@ fn rounded_close_stack(closing_front: bool) {
             }
         } else {
             assert_eq!(
-                at(250, 160),
+                at(125, 90),
                 [0x20, 0xd0, 0x40],
                 "frame {frame}: rear ghost must stay behind the opaque front window"
             );
