@@ -1,6 +1,6 @@
 -- Focused worker-only checks for listed-window recording.
 $mode = args()[0] ?? "test"
-$packages = ["comp-model", "screencopy", "frames", "policy-host", "headless", "native", "nested", "world", "seat", "recorder", "paths"]
+$packages = ["comp-model", "screencopy", "frames", "policy-host", "headless", "native", "nested", "world", "seat", "recorder", "paths", "viu"]
 $command = ["cargo", if $mode == "fmt" then "fmt" elif $mode == "clippy" then "clippy" else "test" end]
 for $package in $packages
   $command = concat($command, ["-p", $package])
