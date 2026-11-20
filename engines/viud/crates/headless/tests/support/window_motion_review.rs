@@ -665,9 +665,10 @@ fn close_ghost_cannot_leak_into_a_different_workspace_in_recorded_frames() {
         return;
     }
     let bus = Bus::start("motion-review-workspace");
-    let mut process = process::spawn_preferences(
+    let mut process = process::spawn_preferences_size(
         "motion-review-workspace",
         &bus.url,
+        "480x240",
         json!({
             "window_motion":{"unmap":{"preset":"fade","duration_ms":1000}}
         }),
@@ -682,16 +683,16 @@ fn close_ghost_cannot_leak_into_a_different_workspace_in_recorded_frames() {
         &mut process,
         "workspace-one-private",
         0xffffffff,
-        300,
-        200,
+        20,
+        40,
     );
     let (mut sentinel, sentinel_row) = solid_window(
         &bus,
         &mut process,
         "workspace-two-sentinel",
         0xff20d040,
-        800,
-        200,
+        260,
+        40,
     );
     bus.call(
         "comp.window.send_to_workspace",
@@ -714,8 +715,8 @@ fn close_ghost_cannot_leak_into_a_different_workspace_in_recorded_frames() {
     let mut saw_new = false;
     let mut new_frames = 0;
     exported_frames(&path, |frame, width, pixels| {
-        let old = pixel(pixels, width, 400, 280);
-        let sentinel = pixel(pixels, width, 850, 280);
+        let old = pixel(pixels, width, 120, 120);
+        let sentinel = pixel(pixels, width, 310, 120);
         if !saw_new && old == [255, 255, 255] {
             saw_old = true;
         }
