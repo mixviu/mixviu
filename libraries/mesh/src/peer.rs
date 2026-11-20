@@ -1483,6 +1483,27 @@ async fn fail_pending_generation(
 
 #[cfg(test)]
 mod tests {
+    // Tracing callsite interest and subscriber registration are process-wide.
+    // Keep capture assertions independent of other tests changing that state.
+    fn isolated_diagnostic_capture() -> bool {
+        const CHILD: &str = "MESH_DIAGNOSTIC_CAPTURE_CHILD";
+        let name = std::thread::current().name().unwrap().to_owned();
+        if std::env::var(CHILD).ok().as_deref() == Some(name.as_str()) {
+            return false;
+        }
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", &name, "--nocapture"])
+            .env(CHILD, &name)
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success() && stdout.contains("1 passed; 0 failed"),
+            "diagnostic capture child {name}: {output:?}"
+        );
+        true
+    }
+
     #[test]
     fn diagnostic_window_counts_every_occurrence_and_emits_first_then_each_minute() {
         let start = std::time::Instant::now();
@@ -1535,6 +1556,9 @@ mod tests {
 
     #[test]
     fn challenge_refusals_name_both_peers_inside_one_window() {
+        if isolated_diagnostic_capture() {
+            return;
+        }
         use std::io::Write;
         #[derive(Clone, Default)]
         struct Capture(Arc<Mutex<Vec<u8>>>);
@@ -1802,6 +1826,9 @@ mod tests {
 
     #[test]
     fn sustained_old_peer_logs_one_initial_line_then_counted_summaries() {
+        if isolated_diagnostic_capture() {
+            return;
+        }
         use std::io::Write;
         #[derive(Clone, Default)]
         struct Capture(Arc<Mutex<Vec<u8>>>);
