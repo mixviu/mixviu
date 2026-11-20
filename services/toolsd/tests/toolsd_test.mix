@@ -10,6 +10,12 @@ fn check($ok, $label)
 end
 mkdir($tmp .. "/cred", {parents:true})
 try
+  for $file in walk($repo .. "/services/toolsd/scripts")
+    $lint = run_argv([$mix, "lint", $file], {timeout:10})
+    check($lint.ok, "31cce6f9-compatible lint " .. basename($file))
+  end
+  $unconfigured = run_argv([$mix, $repo .. "/services/toolsd/scripts/toolsd_drain.mix"], {clear_env:true,timeout:10})
+  check($unconfigured.exit_code == 1 and contains($unconfigured.stderr, "TOOLS_BASE_URL not set"), "real drain loads includes and fails closed without config")
   write_file($tmp .. "/cred/tools_secret", "fixture-secret-never-export\n")
   $reg = read_file($repo .. "/services/toolsd/scripts/lib/tools_registry.mix")
   $webreg = read_file($repo .. "/services/webd/vhosts/apps/tools_registry.mix")

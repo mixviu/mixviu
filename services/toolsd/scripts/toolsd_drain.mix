@@ -30,6 +30,8 @@
 --      minimal env and a non-writable cwd. On timeout Mix kills the whole PROCESS GROUP
 --      (setsid + SIGTERM→SIGKILL), so a whois that forked can't outlive its deadline.
 
+-- Retain the proven shared lexical scope in this compatibility port.
+-- lint: ignore MIX-W2401
 include (dirname(script_path()) .. "/lib/tools_exec.mix")
 
 -- Where webd lives, and the credential. Both come from the unit (Environment= /

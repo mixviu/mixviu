@@ -18,6 +18,8 @@
 -- FAIL-CLOSED: if the file is missing, world-writable, or has been swapped for a symlink,
 -- the run errors instead of executing.
 
+-- Retain the proven shared lexical scope in this compatibility port.
+-- lint: ignore MIX-W2401
 include (dirname(script_path()) .. "/lib/tools_registry.mix")
 
 $TOOLS_MIX = mix_path("prefix") .. "/bin/mix"
