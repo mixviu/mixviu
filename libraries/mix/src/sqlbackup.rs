@@ -153,7 +153,7 @@ pub(super) fn builtin_sqlbackup(args: Vec<Value>) -> MixResult<Option<Value>> {
             } else { io_error(e) }
         })?;
     }
-    Ok(Some(Value::Map([
+    Ok(Some(Value::map([
         ("ok".into(), Value::Bool(true)),
         ("pages".into(), Value::Number(pages as f64)),
         ("bytes".into(), Value::Number(bytes as f64)),
