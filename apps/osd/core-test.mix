@@ -17,7 +17,7 @@ fn expect_refusal($code,$op,$args,$s)
 end
 $a={id:"caption",scene:{kind:"caption",text:"Caption"},anchor:{output:"HEADLESS-1",edge:"bottom-right",margin:24},enter:"up",exit:"fade",duration_ms:1000}
 $s=$c.apply($c.fresh(),"show",$a,10,$presets)
-assert_eq($s.items.caption.pointer_input,false)
+assert_eq($s.items.caption.pointer_input,true)
 assert_eq($s.items.caption.anchor.margin.bottom,24)
 assert_eq($s.items.caption.motion,"up")
 expect_refusal("ALREADY_EXISTS","show",$a,$s)

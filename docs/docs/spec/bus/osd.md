@@ -53,9 +53,14 @@ is hidden, minimised or gone. A stale generation is refused before mutation.
 `left`, `right` and `pop` presets. Exits sample the entrance in reverse.
 `duration_ms` is an optional lifetime in milliseconds, including zero;
 `null` removes the deadline. For `osd.hide`, an absent `exit` uses the item's
-configured exit; explicit `exit:null` removes it immediately. `pointer_input` defaults to false. Opting in
-adds only that item's region to the host's pointer input region. The choice
-is visible in `osd.list`.
+configured exit; explicit `exit:null` removes it immediately.
+`pointer_input` defaults to true: the animated drawn bounds consume pointer
+input without changing keyboard focus. `backing` defaults to `"card"`.
+Click-through (`pointer_input:false`) requires explicit `backing:"none"`,
+which draws text without a card background. Updates validate the combined
+item, so switching back to a card also requires pointer input. Exiting items
+stop consuming input as soon as exit starts. Both choices appear in `osd.list`.
+This default is isolated in its own commit pending the product decision.
 
 Validation precedes mutation. Refusals carry an `error_code`, including
 `INVALID_ARGS`, `INVALID_SCENE`, `INVALID_ANCHOR`, `INVALID_MOTION`,

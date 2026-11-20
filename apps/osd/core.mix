@@ -106,7 +106,7 @@ fn apply($s,$op,$args,$now,$presets,$owner="test")
     if $rate.updates>=30 then raise("RATE_LIMITED","at most 30 updates per second per caller") end
     $rate.updates=$rate.updates+1;$s.rates[$owner]=$rate
   end
-  $item=$s.items[$id] ?? {id:$id,owner:$owner,backing:"none",pointer_input:false,phase:"enter",started:$now,enter:nil,exit:nil,exit_seconds:0,expires_at:nil}
+  $item=$s.items[$id] ?? {id:$id,owner:$owner,backing:"card",pointer_input:true,phase:"enter",started:$now,enter:nil,exit:nil,exit_seconds:0,expires_at:nil}
   if $op=="hide" then
     $exit=preset(if contains(keys($args),"exit") then $args.exit else $item.exit end,$presets)
     if $exit==nil then $s.items=omit($s.items,[$id]);$s.serial=$s.serial+1;return $s end
