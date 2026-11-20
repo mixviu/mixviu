@@ -15,9 +15,14 @@ fn query_ping($args)
 end
 fn query_info($s,$args)
   if type($args)!="map" then return {rc:10,saved:$s.saved,body:query_error()} end
-  send "viu-local" "native.saved" body=$saved.project($s)
-  if $rc==0 then $s.saved=$reply end
-  return {rc:0,saved:$s.saved,body:$m.info($s,viu_context())}
+  $before=$s.saved
+  try
+    send "viu-local" "native.saved" body=$saved.project($s)
+    if $rc==0 then $s.saved=$reply end
+    return {rc:0,saved:$s.saved,body:$m.info($s,viu_context())}
+  catch $message,$error
+    return {rc:10,saved:$before,body:{error_code:if contains(["BUSY","DISCONNECTED","ARGUMENT"],$error.code) then $error.code else "ARGUMENT" end,message:$message}}
+  end
 end
 fn theme_edit($s,$args)
   $edit=$theme.theme_edit($s.theme_choice,$args)
