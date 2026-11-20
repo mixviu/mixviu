@@ -2442,10 +2442,10 @@ pub mod test_support {
     use super::*;
     #[derive(Default)]
     pub struct DiscoveryProbe {
-        steps: u64,
+        pub(super) steps: u64,
         pumps: Vec<u64>,
         per_pump: Vec<u64>,
-        callbacks: Vec<u64>,
+        pub(super) callbacks: Vec<u64>,
     }
     fn distribution(values: &[u64]) -> Value {
         let mut sorted = values.to_vec();
