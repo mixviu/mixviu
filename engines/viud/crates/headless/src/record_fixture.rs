@@ -44,7 +44,9 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
         .registry
         .surface_rows()
         .filter(|r| r.app_id().is_some_and(|s| s.as_ref() == app))
-        .find_map(|r| world::window::draw::frame::scene::capture_window(state, r.id().0, r.generation()).ok())
+        .find_map(|r| {
+            world::window::draw::frame::scene::capture_window(state, r.id().0, r.generation()).ok()
+        })
     else {
         return;
     };

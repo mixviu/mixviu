@@ -956,6 +956,8 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
     }
     let bus = Bus::start("record-privacy-cursor-epoch");
     let mut process = process::spawn(1, None, "record-privacy-cursor-epoch", Some(&bus.url));
+    // This matrix seals dozens of takes, also under the width-eight pool load.
+    process.extend_watchdog(Duration::from_secs(180));
     let mut a = Pattern::named(connect(&mut process), "cursor-listed", false);
     a.solid_buffer(0xff334455);
     a.commit(true);
@@ -981,17 +983,12 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
     let mut serial = 0;
     let mut focus = |mode: &str, a: &mut Pattern, b: &mut Pattern, c: &mut Pattern| {
         serial += 1;
-        fs::write(
-            root.join("record-input-next"),
-            format!("{mode}:{serial}"),
-        )
-        .unwrap();
-        fs::rename(
-            root.join("record-input-next"),
-            root.join("record-input"),
-        )
-        .unwrap();
-        bus.call("comp.capture.frame", json!({"output":"headless-0","path":root.join("epoch-focus.ppm"),"format":"ppm"}));
+        fs::write(root.join("record-input-next"), format!("{mode}:{serial}")).unwrap();
+        fs::rename(root.join("record-input-next"), root.join("record-input")).unwrap();
+        bus.call(
+            "comp.capture.frame",
+            json!({"output":"headless-0","path":root.join("epoch-focus.ppm"),"format":"ppm"}),
+        );
         pump_patterns(&mut [a, b, c]);
     };
     let take = |name: &str, a: &mut Pattern, b: &mut Pattern, c: &mut Pattern| {
