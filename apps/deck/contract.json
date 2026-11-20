@@ -1,0 +1,24 @@
+{
+  "host": {
+    "app": "deck",
+    "commands": [
+      "deck.open",
+      "deck.goto",
+      "deck.next",
+      "deck.prev",
+      "deck.play",
+      "deck.state",
+      "deck.actions",
+      "deck.execute"
+    ],
+    "fullscreen": true,
+    "reply_timeout_secs": 180,
+    "require_bus": true,
+    "service": "deck",
+    "size": [
+      1600,
+      900
+    ],
+    "title": "Deck"
+  }
+}

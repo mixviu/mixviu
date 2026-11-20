@@ -1,0 +1,178 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Pure deck policy. All timestamps are supplied by the presentation host.
+fn fault($code,$where,$message)
+  raise($code,$where..": "..$message,{field:$where})
+end
+fn check_fields($value,$allowed,$where)
+  if type($value)!="map" then fault("DECK_TYPE",$where,"expected object") end
+  for $key in keys($value)
+    if not contains($allowed,$key) then fault("DECK_FIELD",$where.."."..$key,"unknown field") end
+  end
+end
+fn number($value,$where,$low,$high,$integer=false)
+  if type($value)!="number" or $value!=$value or $value<$low or $value>$high then fault("DECK_RANGE",$where,"expected finite bounded number") end
+  if $integer and floor($value)!=$value then fault("DECK_TYPE",$where,"expected integer") end
+  return $value
+end
+fn text($value,$where)
+  if type($value)!="string" or len($value)==0 or len($value)>128 then fault("DECK_TYPE",$where,"expected 1..128 characters") end
+  return $value
+end
+fn scene_data($value,$where)
+  if type($value)=="string" and starts_with($value,"=") then fault("DECK_SCENE",$where,"bindings are not deck data") end
+  if type($value)=="map" then
+    for $key in keys($value)
+      if starts_with($key,"on_") then fault("DECK_SCENE",$where.."."..$key,"actions are not deck data") end
+      scene_data($value[$key],$where.."."..$key)
+    end
+  elif type($value)=="list" then
+    $i=0
+    for $item in $value scene_data($item,$where.."["..to_string($i).."]");$i=$i+1 end
+  end
+end
+fn timing($raw,$where,$steps)
+  check_fields($raw,["b","until","anim","delay","stagger","child_anim"],$where)
+  $t={b:number($raw.b ?? 0,$where..".b",0,$steps-1,true),delay:number($raw.delay ?? 0,$where..".delay",0,60),stagger:number($raw.stagger ?? 0,$where..".stagger",0,60),anim:$raw.anim ?? "fade",child_anim:$raw.child_anim ?? "fade",until:nil}
+  if $raw.until!=nil then $t.until=number($raw.until,$where..".until",$t.b,$steps-1,true) end
+  for $key in ["anim","child_anim"]
+    if not contains(["fade","up","down","left","right"],$t[$key]) then fault("DECK_MOTION",$where.."."..$key,"unsupported entrance; 3.1b effects must be visibly stubbed") end
+  end
+  return $t
+end
+fn check_deck($deck)
+  check_fields($deck,["schema","slides"],"deck")
+  if $deck.schema!="deck.v1" then fault("DECK_VERSION","deck.schema","expected deck.v1") end
+  if type($deck.slides)!="list" or len($deck.slides)<1 or len($deck.slides)>128 then fault("DECK_RANGE","deck.slides","expected 1..128 slides") end
+  $ids=[];$i=0
+  for $s in $deck.slides
+    $w="slides["..to_string($i).."]"
+    check_fields($s,["id","kind","steps","scene","build"],$w)
+    $id=text($s.id,$w..".id");$w=$w.."("..$id..")"
+    if contains($ids,$id) then fault("DECK_DUPLICATE",$w..".id","duplicate slide") end
+    push($ids,$id)
+    if not contains(["slide","sting"],$s.kind ?? "slide") then fault("DECK_TYPE",$w..".kind","expected slide or sting") end
+    $steps=number($s.steps,$w..".steps",1,256,true)
+    if type($s.scene)!="map" or type($s.scene.root)!="map" then fault("DECK_SCENE",$w..".scene.root","expected scene node map") end
+    if len(keys($s.scene))>4096 then fault("DECK_RANGE",$w..".scene","too many nodes") end
+    scene_data($s.scene,$w..".scene")
+    $build=$s.build ?? {};check_fields($build,keys($s.scene),$w..".build")
+    for $node in keys($s.scene)
+      if type($s.scene[$node])!="map" or type($s.scene[$node].widget)!="string" then fault("DECK_SCENE",$w..".scene."..$node,"expected widget node") end
+      -- Data cannot smuggle executable bindings or input into a presentation.
+      for $key in keys($s.scene[$node])
+        $v=$s.scene[$node][$key]
+        if starts_with($key,"on_") or (type($v)=="string" and starts_with($v,"=")) then fault("DECK_SCENE",$w..".scene."..$node.."."..$key,"bindings and actions are not deck data") end
+      end
+      if $build[$node]!=nil then $build[$node]=timing($build[$node],$w..".build."..$node,$steps) end
+    end
+    for $node in keys($build)
+      $t=$build[$node];$j=0
+      if $t.stagger>0 then
+        for $child in $s.scene[$node].children ?? []
+          if $s.scene[$child]==nil then fault("DECK_SCENE",$w..".scene."..$node..".children","missing child "..to_string($child)) end
+          if $build[$child]==nil then $build[$child]=timing({b:$t.b,delay:$t.delay+$j*$t.stagger,anim:$t.child_anim},$w..".build."..$child,$steps) end
+          $j=$j+1
+        end
+      end
+    end
+    $deck.slides[$i].build=$build
+    $i=$i+1
+  end
+  return $deck
+end
+fn scene_source($slide)
+  $nodes=$slide.scene
+  for $id in keys($slide.build)
+    $nodes[$id].hidden="= $model.build["..json_encode($id).."].hidden"
+    $nodes[$id].opacity="= $model.build["..json_encode($id).."].opacity"
+    $nodes[$id].offset="= $model.build["..json_encode($id).."].offset"
+    $nodes[$id].motion=false
+  end
+  return "---\nscene: 1\nname: deck\ncitizen: deck\n---\n```mix\n"..json_encode($nodes).."\n```\n"
+end
+fn fresh()
+  return {deck:nil,path:nil,slide:0,step:0,playing:false,timed:false,queue:[],epoch:nil,elapsed:0,finished:false}
+end
+fn opened($s,$deck,$path)
+  $s=fresh();$s.deck=check_deck($deck);$s.path=$path
+  return $s
+end
+fn loaded($s)
+  if $s.deck==nil then fault("DECK_NOT_OPEN","deck","open a deck first") end
+end
+fn index($s,$id)
+  loaded($s)
+  $i=0
+  for $slide in $s.deck.slides
+    if $slide.id==$id then return $i end
+    $i=$i+1
+  end
+  fault("DECK_SLIDE","slide","unknown slide "..to_string($id))
+end
+fn seek($s,$id,$step=0)
+  $i=index($s,$id)
+  $step=number($step,"slides("..$id..").step",0,$s.deck.slides[$i].steps-1,true)
+  $s.slide=$i;$s.step=$step;$s.playing=false;$s.timed=false;$s.epoch=nil;$s.elapsed=0;$s.finished=false
+  return $s
+end
+fn advance($s,$delta)
+  loaded($s)
+  $step=$s.step+$delta;$i=$s.slide
+  if $step>=$s.deck.slides[$i].steps then $i=min($i+1,len($s.deck.slides)-1);$step=if $i==$s.slide then $s.step else 0 end
+  elif $step<0 then $i=max(0,$i-1);$step=if $i==$s.slide then 0 else $s.deck.slides[$i].steps-1 end end
+  return seek($s,$s.deck.slides[$i].id,$step)
+end
+fn play($s,$args)
+  loaded($s);check_fields($args,["slides","beats"],"play")
+  $slides=$args.slides ?? map($s.deck.slides,fn($slide)=$slide.id)
+  if type($slides)!="list" or len($slides)==0 or len($slides)>128 then fault("DECK_RANGE","play.slides","expected 1..128 slide ids") end
+  if type($args.beats)!="list" or len($args.beats)!=len($slides) then fault("DECK_BEATS","play.beats","one beat list per selected slide required") end
+  $queue=[];$i=0
+  for $id in $slides
+    $idx=index($s,$id);$beats=$args.beats[$i];$w="play.beats["..to_string($i).."]("..$id..")"
+    if type($beats)!="list" or len($beats)!=$s.deck.slides[$idx].steps+1 then fault("DECK_BEATS",$w,"step start times plus an explicit end time required") end
+    $prev=-1
+    for $t in $beats
+      number($t,$w,0,3600)
+      if $t<=$prev then fault("DECK_BEATS",$w,"times must strictly increase") end
+      $prev=$t
+    end
+    if $beats[0]!=0 then fault("DECK_BEATS",$w,"first beat must be zero") end
+    push($queue,{slide:$idx,beats:$beats});$i=$i+1
+  end
+  $s.queue=$queue;$s.playing=true;$s.timed=true;$s.epoch=nil;$s.elapsed=0;$s.finished=false;$s.slide=$queue[0].slide;$s.step=0;$s.beats=$queue[0].beats
+  return $s
+end
+fn sample($s,$at)
+  if not $s.playing then return $s end
+  number($at,"presentation.time",0,1e15)
+  if $s.epoch==nil then $s.epoch=$at end
+  $elapsed=max(0,$at-$s.epoch);$s.elapsed=$elapsed
+  for $q in $s.queue
+    $duration=$q.beats[len($q.beats)-1]
+    $s.slide=$q.slide
+    $s.beats=$q.beats;$s.elapsed=$duration
+    if $elapsed<$duration then
+      $s.elapsed=$elapsed;$s.beats=$q.beats;$s.step=0
+      for $j=0 to len($q.beats)-2 if $elapsed>=$q.beats[$j] then $s.step=$j end end
+      return $s
+    end
+    $elapsed=$elapsed-$duration
+  end
+  $s.step=$s.deck.slides[$s.slide].steps-1;$s.playing=false;$s.finished=true
+  return $s
+end
+fn build_state($s)
+  loaded($s);$out={};$slide=$s.deck.slides[$s.slide]
+  for $id in keys($slide.build)
+    $t=$slide.build[$id];$active=$s.step>=$t.b and ($t.until==nil or $s.step<=$t.until)
+    $out[$id]={hidden:$t.until!=nil and not $active,opacity:if $active then 1 else 0 end,offset:[0,0],anim:$t.anim,age:nil}
+    if $s.timed and $active then
+      $out[$id].age=$s.elapsed-$s.beats[$t.b]-$t.delay
+    end
+  end
+  return $out
+end
+fn snapshot($s)
+  return {path:$s.path,slide:if $s.deck==nil then nil else $s.deck.slides[$s.slide].id end,step:$s.step,playing:$s.playing,elapsed:$s.elapsed,finished:$s.finished}
+end
