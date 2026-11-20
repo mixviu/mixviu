@@ -511,7 +511,12 @@ impl Reader {
     }
     fn seal(&self, torn: bool) -> Result<(), Error> {
         let p = self.path.join(format!("chunk-{:06}.json", self.chunk));
-        if self.complete || p.exists() {
+        let present = match std::fs::symlink_metadata(&p) {
+            Ok(_) => true,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            Err(e) => return Err(err(&p, Some(self.chunk), self.offset, ErrorKind::Io, e)),
+        };
+        if self.complete || present {
             let final_recovery = !self.complete && self.chunk + 1 == self.chunks;
             let r = match json_file(&p) {
                 Ok(r) => Some(r),
