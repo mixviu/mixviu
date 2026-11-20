@@ -2,12 +2,12 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use std::{
     fs,
-    os::unix::fs::PermissionsExt,
+    os::unix::{fs::PermissionsExt, process::ExitStatusExt},
     path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::mpsc,
+    sync::{Arc, atomic::{AtomicBool, Ordering}, mpsc},
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[allow(dead_code)]
@@ -40,6 +40,9 @@ pub struct Process {
     pub control: Option<std::os::unix::net::UnixDatagram>,
     stop: mpsc::Sender<()>,
     watchdog: Option<thread::JoinHandle<()>>,
+    watchdog_fired: Arc<AtomicBool>,
+    started: Instant,
+    oom_before: String,
 }
 
 impl Drop for Process {
@@ -65,6 +68,20 @@ impl Drop for Process {
 }
 
 impl Process {
+    /// Shared startup/liveness check: a signal exit has no Rust panic to log.
+    #[allow(dead_code)]
+    pub fn assert_running(&mut self) {
+        if let Some(status) = self.child.try_wait().expect("query viud exit status") {
+            panic!(
+                "viud exited: pid={} status={status} code={:?} signal={:?} core_dumped={} elapsed={:?} watchdog_fired={} OOM_plausible={} (SIGKILL alone does not prove OOM); oom_before={} oom_after={}\n{}",
+                self.child.id(), status.code(), status.signal(), status.core_dumped(),
+                self.started.elapsed(), self.watchdog_fired.load(Ordering::SeqCst),
+                status.signal() == Some(libc::SIGKILL), self.oom_before, oom_evidence(),
+                fs::read_to_string(self.root.join("viud.log")).unwrap_or_default()
+            );
+        }
+    }
+
     #[allow(dead_code)] // Only the long presentation measurement extends it.
     pub fn extend_watchdog(&mut self, duration: Duration) {
         let _ = self.stop.send(());
@@ -72,10 +89,13 @@ impl Process {
             let _ = watchdog.join();
         }
         let pid = self.child.id();
+        self.watchdog_fired.store(false, Ordering::SeqCst);
+        let fired = self.watchdog_fired.clone();
         let (stop, stopped) = mpsc::channel();
         self.stop = stop;
         self.watchdog = Some(thread::spawn(move || {
             if stopped.recv_timeout(duration).is_err() {
+                fired.store(true, Ordering::SeqCst);
                 // SAFETY: killing only our owned test child.
                 unsafe {
                     libc::kill(pid as i32, libc::SIGKILL);
@@ -83,6 +103,16 @@ impl Process {
             }
         }));
     }
+}
+
+fn oom_evidence() -> String {
+    let vm = fs::read_to_string("/proc/vmstat").unwrap_or_default();
+    let kills = vm.lines().find(|line| line.starts_with("oom_kill ")).unwrap_or("oom_kill unavailable");
+    let cgroup = fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
+    let events = cgroup.lines().find_map(|line| line.strip_prefix("0::"))
+        .and_then(|path| fs::read_to_string(format!("/sys/fs/cgroup{path}/memory.events")).ok())
+        .unwrap_or_else(|| "cgroup memory.events unavailable".into());
+    format!("{kills}; cgroup: {}", events.replace('\n', ","))
 }
 
 #[allow(dead_code)] // The timing target uses spawn_measurement instead.
@@ -288,12 +318,17 @@ fn spawn_options(options: Options<'_>) -> Process {
         control = Some(parent);
         child_control = Some(child);
     }
+    let started = Instant::now();
+    let oom_before = oom_evidence();
     let child = command.spawn().expect("start viud");
     drop(child_control);
     let pid = child.id();
     let (stop, stopped) = mpsc::channel();
+    let watchdog_fired = Arc::new(AtomicBool::new(false));
+    let fired = watchdog_fired.clone();
     let watchdog = thread::spawn(move || {
         if stopped.recv_timeout(Duration::from_secs(45)).is_err() {
+            fired.store(true, Ordering::SeqCst);
             // Break a stuck Wayland roundtrip too; never leave the child behind.
             unsafe {
                 libc::kill(pid as i32, libc::SIGKILL);
@@ -306,6 +341,9 @@ fn spawn_options(options: Options<'_>) -> Process {
         root,
         stop,
         watchdog: Some(watchdog),
+        watchdog_fired,
+        started,
+        oom_before,
     }
 }
 

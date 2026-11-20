@@ -117,7 +117,7 @@ fn default_feedback_names_render_device_and_offers_formats() {
         if let Ok(stream) = UnixStream::connect(process.root.join("wayland-headless-test")) {
             break stream;
         }
-        assert!(process.child.try_wait().unwrap().is_none(), "viud exited");
+        process.assert_running();
         assert!(Instant::now() < deadline, "headless socket timed out");
         thread::sleep(Duration::from_millis(10));
     };

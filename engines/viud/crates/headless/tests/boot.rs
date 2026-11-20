@@ -191,7 +191,7 @@ fn lower_refresh_sets_the_virtual_mode() {
         if let Ok(stream) = UnixStream::connect(process.root.join("wayland-headless-test")) {
             break stream;
         }
-        assert!(process.child.try_wait().unwrap().is_none(), "viud exited");
+        process.assert_running();
         assert!(Instant::now() < deadline, "startup timed out");
         thread::sleep(Duration::from_millis(10));
     };

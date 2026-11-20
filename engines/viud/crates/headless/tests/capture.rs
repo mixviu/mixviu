@@ -2692,11 +2692,7 @@ fn connect(process: &mut process::Process) -> UnixStream {
             assert_eq!(cred.pid as u32, process.child.id());
             return stream;
         }
-        assert!(
-            process.child.try_wait().unwrap().is_none(),
-            "viud exited: {}",
-            fs::read_to_string(process.root.join("viud.log")).unwrap()
-        );
+        process.assert_running();
         assert!(Instant::now() < deadline, "viud startup timed out");
         thread::sleep(Duration::from_millis(10));
     }
