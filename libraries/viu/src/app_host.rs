@@ -1072,7 +1072,7 @@ impl Host {
                                     ))
                                 });
                                 #[cfg(feature = "test-support")]
-                                if self.discovery_probe.is_some() && done.command == "viu.tick" {
+                                if self.discovery_probe.as_ref().is_some_and(|p| p.profile_scene) && done.command == "viu.tick" {
                                     eprintln!("WORKSHOP_DOCUMENT bytes={}",source.len());
                                     crate::view::profile_apply(true);
                                 }
@@ -2580,6 +2580,7 @@ pub mod test_support {
     }
     #[derive(Default)]
     pub struct DiscoveryProbe {
+        pub(super) profile_scene: bool,
         pub(super) steps: u64,
         pumps: Vec<u64>,
         per_pump: Vec<u64>,
@@ -2648,6 +2649,9 @@ pub mod test_support {
         }
         pub fn probe_discovery(&mut self) {
             self.host.discovery_probe = Some(DiscoveryProbe::default());
+        }
+        pub fn profile_scene_apply(&mut self) {
+            self.host.discovery_probe.as_mut().unwrap().profile_scene = true;
         }
         pub fn record_call(&mut self, command: &str, elapsed: Duration) {
             if let Some(p) = &mut self.host.discovery_probe {

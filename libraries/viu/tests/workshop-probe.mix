@@ -13,6 +13,21 @@ if $mode=="format" then
   print($r.stdout);print(run_argv_must(["git","diff"]))
   print(run_argv_must(["git","checkout","-q","--","."]))
   if not $r.ok then exit(1) end
+elif $mode=="tick-after" then
+  checked(["cargo","test","-p","lib-viu","--features","test-support","--lib","view::binding_tests","--","--nocapture"])
+  checked(["mix",script_path(),"tick"])
+elif $mode=="binding-negative" then
+  $path="libraries/viu/src/view.rs";$source=read_file($path)
+  $needle="model_dependency_changed(&binding.deps, &self.tree.model, &model)"
+  if not contains($source,$needle) then raise("PROBE","incremental binding guard missing") end
+  try
+    write_file($path,replace($source,$needle,"true"))
+    $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--lib","model_replacement_evaluates_only_affected_bindings","--","--nocapture"],{timeout:120,stderr:"stdout"})
+    print($r.stdout)
+    if $r.exit_code!=101 or not contains($r.stdout,"unrelated replacement evaluated bindings") then raise("PROBE","binding negative control missed its assertion") end
+  finally
+    write_file($path,$source)
+  end
 elif $mode=="tick" then
   $path="libraries/viu/tests/workshop_bus.rs";$source=read_file($path)
   try
@@ -99,6 +114,7 @@ elif $mode=="negative" then
     print(run_argv_must(["git","diff"]))
   end
 elif $mode=="accept" then
+  checked(["mix",script_path(),"binding-negative"])
   checked(["mix",script_path(),"negative"])
   checked(["mix",script_path(),"validate"])
   checked(["git","diff","--exit-code"])

@@ -524,6 +524,7 @@ fn workshop_answers_during_discovery() {
         );
         let mut host = Harness::new(bundle);
         host.probe_discovery();
+        if PROFILE_TICK { host.profile_scene_apply(); }
         let start = Instant::now();
         while !host.ready() {
             host.pump();
@@ -536,6 +537,7 @@ fn workshop_answers_during_discovery() {
         }
         eprintln!("WORKSHOP_STARTUP {}", host.discovery_measurements());
         host.probe_discovery();
+        if PROFILE_TICK { host.profile_scene_apply(); }
         let mut overlapping = false;
         let mut streamed = false;
         loop {

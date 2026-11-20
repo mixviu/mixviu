@@ -13,6 +13,14 @@ use std::collections::{BTreeMap, BTreeSet};
 /// and of legacy template row expansion. Refuse before changing live state.
 pub const MAX_MODEL_BYTES: usize = 8 * 1024 * 1024;
 
+fn model_dependency_changed(deps: &BTreeSet<String>, before: &Value, after: &Value) -> bool {
+    deps.iter().any(|dep| {
+        dep.strip_prefix("model.")
+            .and_then(|path| path.split('.').next())
+            .is_none_or(|key| before.get(key) != after.get(key))
+    })
+}
+
 #[cfg(feature = "test-support")]
 thread_local! { static PROFILE_APPLY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
 #[cfg(feature = "test-support")]
@@ -53,6 +61,8 @@ pub struct SceneView {
     shown_revision: Option<u64>,
     slots: BTreeMap<String, egui::Rect>,
     overlays: BTreeSet<String>,
+    #[cfg(test)]
+    evaluated_last_apply: usize,
 }
 
 impl SceneView {
@@ -147,6 +157,8 @@ impl SceneView {
             shown_revision: None,
             slots: BTreeMap::new(),
             overlays: BTreeSet::new(),
+            #[cfg(test)]
+            evaluated_last_apply: 0,
         })
     }
 
@@ -302,15 +314,28 @@ impl SceneView {
         validate_model_budget(&model)?;
         #[cfg(feature = "test-support")]
         let validated = probe.map(|_| (std::time::Instant::now(), crate::app_host::test_support::thread_cpu()));
-        let set = scene::bindings::BindingSet::from_resolved(&self.tree);
-        let evaluated = scene::bindings::reevaluate_with_model_limit(
+        let mut set = scene::bindings::BindingSet::from_resolved(&self.tree);
+        // A full model replacement need not evaluate every binding. Compare
+        // the top-level value containing each recorded dependency; whole-model
+        // and dynamic reads remain conservative. Validation still runs below.
+        set.order.retain(|path| {
+            let binding = &set.bindings[path];
+            model_dependency_changed(&binding.deps, &self.tree.model, &model)
+        });
+        let evaluated = if set.order.is_empty() {
+            let mut tree = self.tree.clone();
+            tree.model = model.clone();
+            scene::bindings::ReEval { tree, diagnostics: vec![], changed: vec![], evaluated: vec![] }
+        } else { scene::bindings::reevaluate_with_model_limit(
             &self.tree,
             &set,
             "model",
             &model,
             MAX_MODEL_BYTES,
         )
-        .map_err(|e| format!("{e:?}"))?;
+        .map_err(|e| format!("{e:?}"))? };
+        #[cfg(test)]
+        { self.evaluated_last_apply = evaluated.evaluated.len(); }
         if !evaluated.diagnostics.is_empty() {
             return Err(format!("{:?}", evaluated.diagnostics));
         }
@@ -2390,3 +2415,7 @@ fn paint_outline(ui: &egui::Ui, node: &Node, rect: egui::Rect) {
 #[cfg(test)]
 #[path = "view_motion_identity_tests.rs"]
 mod motion_identity_tests;
+
+#[cfg(test)]
+#[path = "view_binding_tests.rs"]
+mod binding_tests;
