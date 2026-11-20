@@ -98,6 +98,11 @@ where
     let decisions = agent_clients.clone();
     let display = display_handle.clone();
     let agent: Seat<I> = seat_named(&mut seat_state, display_handle, AGENT_SEAT, move |client| {
+        // The private OSD connection has compositor-owned authority, without
+        // a peer-PID lookup or an ordinary-session decision cache entry.
+        if protocols::layershell::osd::compositor_state(client).is_some() {
+            return protocols::layershell::osd::authorized(client, &display);
+        }
         // Xwayland never, and before anything else: Smithay connects it over a
         // socketpair the compositor created, so its peer credentials are OUR
         // pid and the own-pid exception below would hand it the seat. Its
@@ -167,6 +172,7 @@ where
         agent: Some(agent),
         agent_clients,
         pointer_status: CursorImageStatus::default_named(),
+        pointer_status_enter: None,
         relative_pointer_manager_state,
         pointer_constraints_state,
         pointer_gestures_state,

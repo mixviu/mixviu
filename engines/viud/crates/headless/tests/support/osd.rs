@@ -2,12 +2,41 @@
 //! OSD acceptance through the real Bus, scene host, compositor and VFL reader.
 use super::*;
 
+fn osd_helper(action: &str, root: &Path, rest: &[&str], _url: Option<&str>) -> Output {
+    assert_eq!(action, "call");
+    assert_eq!(rest.get(2), Some(&"osd"));
+    // Named supervised citizens send on their registered connection. Shell
+    // one-shot sends use an anonymous lane, even after noded_register.
+    let script = root.join("osd-call.mix");
+    fs::write(&script, format!(
+        "send \"osd\" {} timeout=10 body={}\nprint(json_encode({{rc:$rc,body:$result}}))\nexit(0)\n",
+        serde_json::to_string(rest[0]).unwrap(), serde_json::to_string(rest[1]).unwrap()
+    )).unwrap();
+    Command::new(binary("mixd"))
+        .arg("--serve")
+        .arg(script)
+        .args([
+            "--name",
+            rest.get(3).copied().unwrap_or("headless-osd-owner"),
+        ])
+        .env(
+            "MIX_NODED_URL",
+            format!("unix://{}", root.join("run/noded/bus.sock").display()),
+        )
+        .env("MIX_RUN", root.join("run"))
+        .env("MIX_ETC", root.join("etc"))
+        .env("MIX_VAR", root.join("var"))
+        .env("MIX_NODE_CONFIG", root.join("etc/node.conf.mix"))
+        .output()
+        .expect("named OSD caller")
+}
+
 pub(super) fn call(bus: &Bus, command: &str, args: Value) -> Value {
     call_rc(bus, command, args, 0)
 }
 
 fn call_rc(bus: &Bus, command: &str, args: Value, expected: i32) -> Value {
-    let output = helper(
+    let output = osd_helper(
         "call",
         &bus.root,
         &[command, &args.to_string(), "osd"],
@@ -26,7 +55,7 @@ fn call_rc(bus: &Bus, command: &str, args: Value, expected: i32) -> Value {
 pub(super) fn ready(bus: &Bus) {
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
-        let output = helper(
+        let output = osd_helper(
             "call",
             &bus.root,
             &["osd.list", "{}", "osd"],
@@ -148,7 +177,42 @@ fn decoded_rgb(frame: &[u8]) -> Vec<u8> {
 }
 
 #[test]
-fn caption_records_motion_clicks_through_and_fades_to_empty() {
+fn remap_restores_anchors_before_committing_changed_input_regions() {
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("osd-remap-order");
+    let mut process = process::spawn_osd("osd-remap-order", &bus.url, "640x360");
+    let mut pattern = Pattern::new(connect(&mut process));
+    pattern.state.size = (640, 360);
+    pattern.solid_buffer(0xff20d040);
+    pattern.commit(true);
+    pattern.wait_callback(0);
+    bus.ready();
+    ready(&bus); // Maps and detaches once: layer-shell has reset its anchors.
+    let (width, _, before) = ppm(&bus, &process, "remap-before", None);
+    for margin in [32, 64] {
+        call(
+            &bus,
+            "osd.show",
+            json!({"id":"remap","scene":{"kind":"caption","text":"Remap","width":160,"height":64},"anchor":{"output":"headless-0","edge":"bottom-right","margin":margin}}),
+        );
+        wait(&mut pattern, Duration::from_millis(150));
+        let (_, _, shown) = ppm(&bus, &process, &format!("remap-{margin}"), None);
+        assert!(
+            bounds(&before, &shown, width, [400, 180, 240, 180]).is_some(),
+            "remapped layer must draw after input region changes"
+        );
+        assert_eq!(call(&bus, "osd.list", json!({}))["items"][0]["id"], "remap");
+        call(&bus, "osd.hide", json!({"id":"remap"}));
+        wait(&mut pattern, Duration::from_millis(100));
+        let (_, _, hidden) = ppm(&bus, &process, &format!("detach-{margin}"), None);
+        assert_eq!(hidden, before, "detach must remove the previous buffer");
+    }
+}
+
+#[test]
+fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
     if !process::record_available() {
         return;
     }
@@ -177,6 +241,11 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     // the dedicated optimised native run keeps the original 30 fps workload.
     let fps = if cfg!(debug_assertions) { 10 } else { 30 };
     let record = bus.call("comp.record.start",json!({"request_id":"osd-caption","target":{"output":"headless-0"},"path":path,"fps":fps,"cursor":false,"max_seconds":10}));
+    // Keep the pointer stationary as the opaque card appears beneath it.
+    bus.call(
+        "comp.input.pointer.move",
+        json!({"seat":"agent","output":"headless-0","x":width-200,"y":height-100}),
+    );
     call(&bus, "osd.show", caption());
     wait(&mut pattern, Duration::from_millis(1050));
     let (_, _, shown) = ppm(&bus, &process, "osd-shown", None);
@@ -196,13 +265,31 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     let shown_bounds = bounds(&before, &shown, width, region)
         .expect("caption must draw above a maximum-z fullscreen client");
     let items = call(&bus, "osd.list", json!({}));
+    assert_eq!(items["items"][0]["owner"], "local:headless-osd-owner");
+    for command in ["osd.update", "osd.hide"] {
+        let output = osd_helper(
+            "call",
+            &bus.root,
+            &[command, "{\"id\":\"caption\"}", "osd", "other-osd-citizen"],
+            Some(&bus.url),
+        );
+        assert!(output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let reply: Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
+        assert_eq!(reply["rc"], 10, "{reply}");
+        let body = match &reply["body"] {
+            Value::String(body) => serde_json::from_str(body).unwrap(),
+            body => body.clone(),
+        };
+        assert_eq!(body["error_code"], "NOT_OWNER");
+    }
     // A peer must neither forge telemetry nor poison subsequent real presses.
     for args in [
         json!({"presses":"poison"}),
         json!({"presses":999}),
         json!({}),
     ] {
-        let output = helper(
+        let output = osd_helper(
             "call",
             &bus.root,
             &["osd.pointer", &args.to_string(), "osd"],
@@ -219,30 +306,26 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         assert_eq!(after["pointer_presses"], items["pointer_presses"]);
         assert_eq!(after["items"][0]["scene"], items["items"][0]["scene"]);
     }
-    assert_eq!(items["items"][0]["pointer_input"], false);
+    assert_eq!(items["items"][0]["pointer_input"], true);
     let buttons = pattern.state.pointer_buttons;
     let received = call(&bus, "osd.list", json!({}))["pointer_presses"]
         .as_u64()
         .unwrap();
-    bus.call(
-        "comp.input.pointer.move",
-        json!({"seat":"agent","output":"headless-0","x":width-200,"y":height-100}),
-    );
     bus.call(
         "comp.input.pointer.button",
         json!({"seat":"agent","button":"left","action":"click"}),
     );
     wait(&mut pattern, Duration::from_millis(80));
     assert!(
-        pattern.state.pointer_buttons > buttons,
-        "passive OSD must pass pointer buttons to the client"
+        pattern.state.pointer_buttons == buttons,
+        "default opaque OSD must consume pointer buttons"
     );
-    assert_eq!(
+    assert!(
         call(&bus, "osd.list", json!({}))["pointer_presses"]
             .as_u64()
-            .unwrap(),
-        received,
-        "passive OSD must not observe a button"
+            .unwrap()
+            > received,
+        "opaque OSD must observe the button"
     );
     // Headless has an agent seat and no human device sources. Establish its
     // independent keyboard focus before testing untargeted keys after an OSD click.
@@ -292,6 +375,17 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         "OSD pointer input must preserve the client's keyboard focus"
     );
     call(&bus, "osd.hide", json!({"id":"caption","exit":"fade"}));
+    wait(&mut pattern, Duration::from_millis(40));
+    let buttons = pattern.state.pointer_buttons;
+    bus.call(
+        "comp.input.pointer.button",
+        json!({"seat":"agent","button":"left","action":"click"}),
+    );
+    wait(&mut pattern, Duration::from_millis(40));
+    assert!(
+        pattern.state.pointer_buttons == buttons,
+        "opaque exiting card must consume input until removal"
+    );
     let fade = motion::presets()
         .into_iter()
         .find(|p| p.name == "fade")
@@ -474,6 +568,53 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         "host pixels cannot cover provenance"
     );
     call(&bus, "osd.hide", json!({"id":"badge-cover"}));
+    wait(&mut pattern, Duration::from_millis(100));
+
+    // Real renderer oracle: overflowing text in a tiny card must never escape
+    // its declared bounds (the compositor badge is outside this comparison).
+    call(
+        &bus,
+        "osd.show",
+        json!({"id":"clip","scene":{"kind":"card","title":"LONG TITLE".repeat(100),"text":"LONG TEXT\n".repeat(500),"width":32,"height":24},"anchor":{"output":"headless-0","edge":"top-left","margin":100}}),
+    );
+    wait(&mut pattern, Duration::from_millis(150));
+    let (_, _, clipped) = ppm(&bus, &process, "osd-clipped", None);
+    assert!(
+        bounds(&before, &clipped, width, [100, 100, 32, 24]).is_some(),
+        "tiny card must positively draw"
+    );
+    for y in 20..height {
+        for x in 0..width {
+            if !(100..132).contains(&x) || !(100..124).contains(&y) {
+                assert_eq!(
+                    rgb(&clipped, width, x, y),
+                    rgb(&before, width, x, y),
+                    "text escaped card at {x},{y}"
+                );
+            }
+        }
+    }
+    call(
+        &bus,
+        "osd.update",
+        json!({"id":"clip","pointer_input":false,"backing":"none"}),
+    );
+    wait(&mut pattern, Duration::from_millis(80));
+    let buttons = pattern.state.pointer_buttons;
+    bus.call(
+        "comp.input.pointer.move",
+        json!({"seat":"agent","output":"headless-0","x":116,"y":112}),
+    );
+    bus.call(
+        "comp.input.pointer.button",
+        json!({"seat":"agent","button":"left","action":"click"}),
+    );
+    wait(&mut pattern, Duration::from_millis(80));
+    assert!(
+        pattern.state.pointer_buttons > buttons,
+        "explicit transparent item must pass pointer input"
+    );
+    call(&bus, "osd.hide", json!({"id":"clip"}));
     wait(&mut pattern, Duration::from_millis(100));
 
     let idle=bus.call("comp.record.start",json!({"request_id":"osd-idle","target":{"output":"headless-0"},"path":process.root.join("osd-idle.vfl"),"cursor":false,"max_seconds":3}));

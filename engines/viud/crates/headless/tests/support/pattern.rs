@@ -60,9 +60,12 @@ pub struct State {
     pub size: (i32, i32),
     pub callbacks: u64,
     pub pointer_buttons: u64,
+    pub pointer_motions: u64,
     pub keys: u64,
     pub keyboard_enters: u64,
     last_press: Option<(u32, WlSeat)>,
+    last_enter: Option<(u32, WlPointer)>,
+    pub pointer_focus: Option<WlSurface>,
     popup_configured: bool,
     pub locked: bool,
     pub presented: u64,
@@ -70,13 +73,14 @@ pub struct State {
     pub clock: Option<u32>,
     pub times: Vec<u64>,
     pub idled: u64,
+    layer_size: Option<(i32, i32)>,
 }
 
 pub struct Pattern {
     conn: Connection,
     queue: EventQueue<State>,
     pub state: State,
-    surface: WlSurface,
+    pub surface: WlSurface,
     shm: WlShm,
     presentation: WpPresentation,
     buffer: WlBuffer,
@@ -88,6 +92,144 @@ pub struct Pattern {
 }
 
 impl Pattern {
+    pub fn another_window(&self, name: &str) -> Self {
+        Self::from_connection(self.conn.clone(), name, false)
+    }
+    pub fn hide_cursor(&mut self) {
+        let (serial, pointer) = self.state.last_enter.clone().expect("cursor enter");
+        pointer.set_cursor(serial, None, 0, 0);
+        self.conn.flush().unwrap();
+    }
+    pub fn named_cursor(&mut self) {
+        use wayland_protocols::wp::cursor_shape::v1::client::{
+            wp_cursor_shape_device_v1::Shape, wp_cursor_shape_manager_v1::WpCursorShapeManagerV1,
+        };
+        let name = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, i, _)| i == "wp_cursor_shape_manager_v1")
+            .unwrap()
+            .0;
+        let qh = self.queue.handle();
+        let manager: WpCursorShapeManagerV1 = self.registry.bind(name, 1, &qh, ());
+        let (serial, pointer) = self.state.last_enter.clone().expect("cursor enter");
+        let device = manager.get_pointer(&pointer, &qh, ());
+        device.set_shape(serial, Shape::Crosshair);
+        device.destroy();
+        manager.destroy();
+        self.queue.roundtrip(&mut self.state).unwrap();
+    }
+    pub fn subsurface(
+        &mut self,
+    ) -> (
+        WlSurface,
+        wayland_client::protocol::wl_subsurface::WlSubsurface,
+    ) {
+        use wayland_client::protocol::wl_subcompositor::WlSubcompositor;
+        let name = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, i, _)| i == "wl_subcompositor")
+            .unwrap()
+            .0;
+        let qh = self.queue.handle();
+        let manager: WlSubcompositor = self.registry.bind(name, 1, &qh, ());
+        let surface = self.compositor.create_surface(&qh, ());
+        let sub = manager.get_subsurface(&surface, &self.surface, &qh, ());
+        sub.set_position(40, 40);
+        let buffer = buffer(&self.shm, &qh, 40, 40, |_, _| 0xff885522);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.damage_buffer(0, 0, 40, 40);
+        surface.commit();
+        self.surface.commit();
+        self.queue.roundtrip(&mut self.state).unwrap();
+        (surface, sub)
+    }
+    pub fn custom_cursor(&mut self, colour: u32) -> WlSurface {
+        let qh = self.queue.handle();
+        let surface = self.compositor.create_surface(&qh, ());
+        let buffer = buffer(&self.shm, &qh, 32, 32, |_, _| colour);
+        let (serial, pointer) = self.state.last_enter.clone().expect("cursor enter");
+        pointer.set_cursor(serial, Some(&surface), 0, 0);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.damage_buffer(0, 0, 32, 32);
+        surface.commit();
+        self.conn.flush().unwrap();
+        surface
+    }
+    pub fn drag_icon(
+        &mut self,
+        colour: u32,
+    ) -> (
+        WlSurface,
+        wayland_client::protocol::wl_data_device::WlDataDevice,
+    ) {
+        use wayland_client::protocol::wl_data_device_manager::WlDataDeviceManager;
+        let name = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, i, _)| i == "wl_data_device_manager")
+            .unwrap()
+            .0;
+        let qh = self.queue.handle();
+        let manager: WlDataDeviceManager = self.registry.bind(name, 3, &qh, ());
+        let (serial, seat) = self
+            .state
+            .last_press
+            .clone()
+            .expect("implicit pointer grab");
+        let device = manager.get_data_device(&seat, &qh, ());
+        let icon = self.compositor.create_surface(&qh, ());
+        let buffer = buffer(&self.shm, &qh, 32, 32, |_, _| colour);
+        device.start_drag(None, &self.surface, Some(&icon), serial);
+        icon.attach(Some(&buffer), 0, 0);
+        icon.damage_buffer(0, 0, 32, 32);
+        icon.commit();
+        self.conn.flush().unwrap();
+        (icon, device)
+    }
+    pub fn layer(
+        &mut self,
+        namespace: &str,
+        layer: wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::Layer,
+        colour: u32,
+    ) -> (
+        WlSurface,
+        wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+    ) {
+        use wayland_protocols_wlr::layer_shell::v1::client::{
+            zwlr_layer_shell_v1::ZwlrLayerShellV1, zwlr_layer_surface_v1::Anchor,
+        };
+        let name = self
+            .state
+            .globals
+            .iter()
+            .find(|(_, i, _)| i == "zwlr_layer_shell_v1")
+            .unwrap()
+            .0;
+        let qh = self.queue.handle();
+        let shell: ZwlrLayerShellV1 = self.registry.bind(name, 1, &qh, ());
+        let surface = self.compositor.create_surface(&qh, ());
+        let role = shell.get_layer_surface(&surface, None, layer, namespace.into(), &qh, ());
+        role.set_anchor(Anchor::Top | Anchor::Bottom | Anchor::Left | Anchor::Right);
+        role.set_size(0, 0);
+        role.set_exclusive_zone(-1);
+        self.state.layer_size = None;
+        surface.commit();
+        while self.state.layer_size.is_none() {
+            self.queue.roundtrip(&mut self.state).unwrap();
+        }
+        let (w, h) = self.state.layer_size.unwrap();
+        let buffer = buffer(&self.shm, &qh, w, h, |_, _| colour);
+        surface.attach(Some(&buffer), 0, 0);
+        surface.damage_buffer(0, 0, w, h);
+        surface.commit();
+        self.queue.roundtrip(&mut self.state).unwrap();
+        (surface, role)
+    }
     pub fn current_buffer(&self) -> WlBuffer {
         self.buffer.clone()
     }
@@ -142,6 +284,12 @@ impl Pattern {
         self.surface.commit();
         self.conn.flush().unwrap();
     }
+    pub fn destroy_window(&mut self) {
+        self._top.destroy();
+        self.xdg.destroy();
+        self.surface.destroy();
+        self.queue.roundtrip(&mut self.state).unwrap();
+    }
     pub fn new(stream: UnixStream) -> Self {
         Self::named(stream, "headless-pattern", true)
     }
@@ -150,6 +298,10 @@ impl Pattern {
         mapping_trace!("PATTERN start app_id={name} socket={stream:?}");
         stream.set_nonblocking(true).unwrap();
         let conn = Connection::from_socket(stream).unwrap();
+        Self::from_connection(conn, name, fullscreen)
+    }
+
+    fn from_connection(conn: Connection, name: &str, fullscreen: bool) -> Self {
         let mut queue = conn.new_event_queue::<State>();
         let qh = queue.handle();
         let registry = conn.display().get_registry(&qh, ());
@@ -274,6 +426,25 @@ impl Pattern {
         self.surface.attach(None, 0, 0);
         self.surface.commit();
         self.queue.roundtrip(&mut self.state).unwrap();
+        self.state.configured = false;
+        self.surface.commit();
+        while !self.state.configured {
+            self.queue.roundtrip(&mut self.state).unwrap();
+        }
+        self.commit(true);
+        self.queue.roundtrip(&mut self.state).unwrap();
+    }
+
+    pub fn retake_role(&mut self, name: &str) {
+        self.surface.attach(None, 0, 0);
+        self.surface.commit();
+        self._top.destroy();
+        self.xdg.destroy();
+        self.queue.roundtrip(&mut self.state).unwrap();
+        let qh = self.queue.handle();
+        self.xdg = self.shell.get_xdg_surface(&self.surface, &qh, ());
+        self._top = self.xdg.get_toplevel(&qh, ());
+        self._top.set_app_id(name.into());
         self.state.configured = false;
         self.surface.commit();
         while !self.state.configured {
@@ -501,6 +672,34 @@ impl Dispatch<WpPresentationFeedback, ()> for State {
     }
 }
 delegate_noop!(State: ignore WlCompositor);
+delegate_noop!(State: ignore wayland_client::protocol::wl_subcompositor::WlSubcompositor);
+delegate_noop!(State: ignore wayland_client::protocol::wl_subsurface::WlSubsurface);
+delegate_noop!(State: ignore wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1);
+delegate_noop!(State: ignore wayland_protocols::wp::cursor_shape::v1::client::wp_cursor_shape_device_v1::WpCursorShapeDeviceV1);
+delegate_noop!(State: ignore wayland_client::protocol::wl_data_device_manager::WlDataDeviceManager);
+delegate_noop!(State: ignore wayland_client::protocol::wl_data_device::WlDataDevice);
+delegate_noop!(State: ignore wayland_client::protocol::wl_data_offer::WlDataOffer);
+delegate_noop!(State: ignore wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_shell_v1::ZwlrLayerShellV1);
+impl
+    Dispatch<
+        wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+        (),
+    > for State
+{
+    fn event(
+        state: &mut Self,
+        role: &wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::ZwlrLayerSurfaceV1,
+        event: wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::Event::Configure {serial,width,height} = event {
+            role.ack_configure(serial);
+            state.layer_size = Some((width as i32, height as i32));
+        }
+    }
+}
 delegate_noop!(State: ignore wayland_protocols::ext::idle_notify::v1::client::ext_idle_notifier_v1::ExtIdleNotifierV1);
 impl Dispatch<wayland_protocols::ext::idle_notify::v1::client::ext_idle_notification_v1::ExtIdleNotificationV1, ()> for State {
     fn event(state: &mut Self,
@@ -521,12 +720,25 @@ delegate_noop!(State: ignore WlBuffer);
 impl Dispatch<WlPointer, WlSeat> for State {
     fn event(
         state: &mut Self,
-        _: &WlPointer,
+        pointer: &WlPointer,
         event: wl_pointer::Event,
         seat: &WlSeat,
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
+        if matches!(event, wl_pointer::Event::Motion { .. }) {
+            state.pointer_motions += 1;
+        }
+        if let wl_pointer::Event::Enter {
+            serial, surface, ..
+        } = &event
+        {
+            state.last_enter = Some((*serial, pointer.clone()));
+            state.pointer_focus = Some(surface.clone());
+        }
+        if let wl_pointer::Event::Leave { .. } = &event {
+            state.pointer_focus = None;
+        }
         if let wl_pointer::Event::Button {
             serial,
             state: button_state,
