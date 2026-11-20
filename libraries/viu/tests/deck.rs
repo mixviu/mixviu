@@ -13,19 +13,22 @@ use viu::{
 struct Deck {
     runtime: Runtime,
     wakes: mpsc::Receiver<()>,
-    calls:viu::calls::Calls,
+    calls: viu::calls::Calls,
 }
 impl Deck {
     fn new() -> Self {
         let (tx, wakes) = mpsc::channel();
-        let calls=viu::calls::Calls::default();
+        let calls = viu::calls::Calls::default();
         let mut runtime = Runtime::with_services(
             8,
             Arc::new(move || {
                 let _ = tx.send(());
             }),
             None,
-            viu::runtime::Services{calls:Some(calls.clone()),..Default::default()},
+            viu::runtime::Services {
+                calls: Some(calls.clone()),
+                ..Default::default()
+            },
         );
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/deck/app.mix");
         runtime
@@ -36,7 +39,11 @@ impl Deck {
                 citizen: "deck".into(),
             })
             .unwrap();
-        let s = Self { runtime, wakes, calls };
+        let s = Self {
+            runtime,
+            wakes,
+            calls,
+        };
         assert!(
             s.next().model.is_some(),
             "startup must admit deck.open on the real host"
@@ -63,20 +70,46 @@ impl Deck {
 
 #[test]
 fn retained_play_waits_for_final_draw_and_cancellation_disarms_it() {
-    for cancel in [false,true] {
-        let mut deck=Deck::new();deck.open();
-        let (tx,rx)=tokio::sync::oneshot::channel();
-        let token=deck.calls.begin(tx,Arc::new(std::sync::atomic::AtomicBool::new(false))).unwrap();
-        deck.runtime.event_with_headers("deck.play".into(),json!({"slides":["sting"],"beats":[[0,1]]}),std::collections::BTreeMap::from([("viu-call".into(),token.clone())])).unwrap();
-        let start=deck.next();assert_eq!(start.reply.unwrap().rc,0);
-        deck.call("viu.presentation",json!({"time":100}));
-        let end=deck.call("viu.presentation",json!({"time":101}));
+    for cancel in [false, true] {
+        let mut deck = Deck::new();
+        deck.open();
+        let (tx, mut rx) = tokio::sync::oneshot::channel();
+        let token = deck
+            .calls
+            .begin(tx, Arc::new(std::sync::atomic::AtomicBool::new(false)))
+            .unwrap();
+        deck.runtime
+            .event_with_headers(
+                "deck.play".into(),
+                json!({"slides":["sting"],"beats":[[0,1]]}),
+                std::collections::BTreeMap::from([("viu-call".into(), token.clone())]),
+            )
+            .unwrap();
+        let start = deck.next();
+        assert_eq!(start.reply.unwrap().rc, 0);
+        deck.call("viu.presentation", json!({"time":100}));
+        let end = deck.call("viu.presentation", json!({"time":101}));
         assert!(end.deferred_answers.is_empty());
-        let model=end.model.unwrap();assert_eq!(model["presentation"]["clock"],true);
-        let ack=if cancel {drop(rx);deck.call("viu.call.cancelled",json!({"token":token}))} else {deck.call("viu.presentation",json!({"time":101.1,"serial":model["presentation"]["serial"]}))};
-        assert_eq!(ack.model.unwrap()["presentation"]["clock"],false);
-        assert_eq!(ack.deferred_answers.len(),usize::from(!cancel));
-        assert!(deck.call("viu.presentation",json!({"time":102})).model.is_none());
+        let model = end.model.unwrap();
+        assert_eq!(model["presentation"]["clock"], true);
+        assert!(matches!(rx.try_recv(),Err(tokio::sync::oneshot::error::TryRecvError::Empty)));
+        let ack = if cancel {
+            drop(rx);
+            deck.call("viu.call.cancelled", json!({"token":token}))
+        } else {
+            let ack=deck.call(
+                "viu.presentation",
+                json!({"time":101.1,"serial":model["presentation"]["serial"]}),
+            );
+            assert_eq!(rx.try_recv().unwrap().0,0);
+            ack
+        };
+        assert_eq!(ack.model.unwrap()["presentation"]["clock"], false);
+        assert!(
+            deck.call("viu.presentation", json!({"time":102}))
+                .model
+                .is_none()
+        );
     }
 }
 fn frame(model: Value) -> (SceneView, egui::FullOutput) {
