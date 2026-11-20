@@ -444,3 +444,23 @@ Registration does not imply those operations work.
 (`engines/viu/src/runtime.rs:933`, `engines/viu/src/runtime.rs:1000`,
 `engines/viu/src/runtime.rs:1062`,
 `engines/viud/scripts/lib/scenes.mix:2204`.)
+# Inline text runs (deck port specimen)
+
+A `text` node may supply `spans`, an array of inline runs. `text` remains
+required as the plain-text fallback. When spans are present, the application
+scene painter lays them out together, preserving spaces and newlines.
+Omitting spans preserves the existing text behaviour; `[]` draws no text.
+
+Each run requires `text` and may specify `role`, `color` (`#RRGGBB`), `mono`,
+`strike` and `highlight` (booleans). Roles are `text`, `keyword`, `function`,
+`string`, `comment`, `value`, `ok`, `bad`, `warn`, `acc` and `mut`.
+An explicit colour overrides the role colour; otherwise the host resolves
+the semantic role through its active design. Size comes from the text node.
+There are at most 1024 runs and 65536 UTF-8 bytes across their text. Unknown
+fields, roles, invalid colours and wrong flag types refuse during resolution,
+including when supplied by a model binding. Clearing a bound spans value
+restores plain-text rendering.
+
+This is an incomplete deck port. The Quoin surface painter and full deck
+typography/motion parity still need validation; the application painter's
+support does not establish parity for every scene host.
