@@ -991,8 +991,9 @@ impl Host {
                     } else {
                         self.session_dirty |= self.model["theme_choice"] != model["theme_choice"];
                         let projected = self.projection(&model, ctx);
-                        let source = model["native_root"]["scene"]
+                        let source = model["presentation"]["scene"]
                             .as_str()
+                            .or_else(|| model["native_root"]["scene"].as_str())
                             .unwrap_or(&self.scene_source)
                             .to_owned();
                         let appearance = if self.framed

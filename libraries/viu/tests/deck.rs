@@ -34,7 +34,10 @@ impl Deck {
             })
             .unwrap();
         let s = Self { runtime, wakes };
-        assert!(s.next().model.is_some(),"startup must admit deck.open on the real host");
+        assert!(
+            s.next().model.is_some(),
+            "startup must admit deck.open on the real host"
+        );
         s
     }
     fn next(&self) -> Completion {
@@ -57,7 +60,7 @@ impl Deck {
 fn frame(model: Value) -> (SceneView, egui::FullOutput) {
     let ctx = egui::Context::default();
     let mut view = SceneView::with_model(
-        model["native_root"]["scene"].as_str().unwrap(),
+        model["presentation"]["scene"].as_str().unwrap(),
         model.clone(),
     )
     .unwrap();
@@ -156,14 +159,40 @@ fn invalid_goto_and_actions_have_typed_replies() {
 
 #[test]
 fn settled_manual_slide_arms_no_repaint() {
-    let mut deck=Deck::new();deck.open();
-    let model=deck.call("deck.goto",json!({"slide":"before","step":1})).model.unwrap();
-    assert_eq!(model["presentation"]["clock"],false);
-    let mut view=SceneView::with_model(model["native_root"]["scene"].as_str().unwrap(),model.clone()).unwrap();
-    let ctx=egui::Context::default();
+    let mut deck = Deck::new();
+    deck.open();
+    let model = deck
+        .call("deck.goto", json!({"slide":"before","step":1}))
+        .model
+        .unwrap();
+    assert_eq!(model["presentation"]["clock"], false);
+    let mut view = SceneView::with_model(
+        model["presentation"]["scene"].as_str().unwrap(),
+        model.clone(),
+    )
+    .unwrap();
+    let ctx = egui::Context::default();
     for i in 0..6 {
-        let mut out=ctx.run_ui(egui::RawInput {time:Some(i as f64),screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1600.,900.))),..Default::default()},|ui|{view.show(ui);});
-        if i==5 {assert!(out.viewport_output.values().all(|v|v.repaint_delay==Duration::MAX));}
+        let mut out = ctx.run_ui(
+            egui::RawInput {
+                time: Some(i as f64),
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1600., 900.),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                view.show(ui);
+            },
+        );
+        if i == 5 {
+            assert!(
+                out.viewport_output
+                    .values()
+                    .all(|v| v.repaint_delay == Duration::MAX)
+            );
+        }
         out.textures_delta.clear();
     }
 }
@@ -180,7 +209,7 @@ fn render_reference_scenes() {
             .model
             .unwrap();
         let mut view = SceneView::with_model(
-            model["native_root"]["scene"].as_str().unwrap(),
+            model["presentation"]["scene"].as_str().unwrap(),
             model.clone(),
         )
         .unwrap();
