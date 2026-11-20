@@ -260,6 +260,7 @@ fn capture_offscreen(ctx_rc: &Rc<RefCell<NativeRenderContext>>, state: &mut Loop
         let key = world::state::output_key(output);
         state.inner.render_output = Some(key.clone());
         state.inner.output_views_mut().ensure(&key);
+        frames::scene::listed::service(state, renderer, output);
         let prepared = frames::scene::prepare(state, renderer, size);
         let scene = frames::scene::scene(state, renderer, size, prepared);
         screencopy::offscreen::capture(
@@ -278,8 +279,8 @@ fn capture_offscreen(ctx_rc: &Rc<RefCell<NativeRenderContext>>, state: &mut Loop
 
 /// Window snapshots use only the cached render-node context, even while KMS
 /// is active. They never wait for a free scanout pipe or a page flip.
-fn capture_windows_offscreen(ctx_rc: &Rc<RefCell<NativeRenderContext>>, state: &Loop) {
-    if !screencopy::file::pending_windows() {
+fn capture_windows_offscreen(ctx_rc: &Rc<RefCell<NativeRenderContext>>, state: &mut Loop) {
+    if !screencopy::file::pending_windows() && !screencopy::file::pending_listed() {
         return;
     }
     let Ok(ctx) = ctx_rc.try_borrow() else {
@@ -296,6 +297,7 @@ fn capture_windows_offscreen(ctx_rc: &Rc<RefCell<NativeRenderContext>>, state: &
         return;
     };
     for pipe in &ctx.outputs {
+        frames::scene::listed::service(state, renderer, &pipe.output);
         let scale = pipe.output.current_scale().fractional_scale();
         screencopy::offscreen::capture_windows(
             renderer,

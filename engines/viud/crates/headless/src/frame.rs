@@ -412,6 +412,8 @@ fn compose(
     renderer: &mut GlesRenderer,
     visible: &mut Vec<Window>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
+    #[cfg(feature = "test-support")]
+    crate::record_fixture::before_frame(state, &ctx.output);
     use frames::draw::plan::frame::{FramePass, plan};
     screencopy::file::poll(renderer, &ctx.output);
     let capture =
@@ -455,6 +457,7 @@ fn compose(
     }
 
     let scale = ctx.output.current_scale().fractional_scale();
+    frames::scene::listed::service(state, renderer, &ctx.output);
     // Window jobs use the owning window's scene (including parked worlds),
     // just as nested does. They never consume the output framebuffer.
     screencopy::offscreen::capture_windows(renderer, &ctx.output, |renderer, target, recording| {

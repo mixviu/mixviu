@@ -38,6 +38,7 @@ pub mod occlusion;
 pub mod panels;
 pub mod placement;
 pub mod presentation;
+pub mod recording;
 pub mod region;
 pub mod scenes;
 pub mod session_lock;

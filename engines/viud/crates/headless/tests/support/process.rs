@@ -2,12 +2,16 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use std::{
     fs,
-    os::unix::fs::PermissionsExt,
+    os::unix::{fs::PermissionsExt, process::ExitStatusExt},
     path::PathBuf,
     process::{Child, Command, Stdio},
-    sync::mpsc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[allow(dead_code)]
@@ -40,11 +44,27 @@ pub struct Process {
     pub control: Option<std::os::unix::net::UnixDatagram>,
     stop: mpsc::Sender<()>,
     watchdog: Option<thread::JoinHandle<()>>,
+    watchdog_fired: Arc<AtomicBool>,
+    started: Instant,
+    oom_before: String,
 }
 
 impl Drop for Process {
     fn drop(&mut self) {
         if thread::panicking() {
+            if let Ok(Some(status)) = self.child.try_wait() {
+                eprintln!(
+                    "viud child exit before cleanup: pid={} status={status} code={:?} signal={:?} core_dumped={} watchdog_fired={} OOM_plausible={} oom_before={} oom_after={}",
+                    self.child.id(),
+                    status.code(),
+                    status.signal(),
+                    status.core_dumped(),
+                    self.watchdog_fired.load(Ordering::SeqCst),
+                    status.signal() == Some(libc::SIGKILL),
+                    self.oom_before,
+                    oom_evidence()
+                );
+            }
             eprintln!(
                 "viud child status before cleanup: {:?}",
                 self.child.try_wait()
@@ -90,6 +110,26 @@ fn diagnostic_tail(path: &std::path::Path) -> String {
 }
 
 impl Process {
+    /// Shared startup/liveness check: a signal exit has no Rust panic to log.
+    #[allow(dead_code)]
+    pub fn assert_running(&mut self) {
+        if let Some(status) = self.child.try_wait().expect("query viud exit status") {
+            panic!(
+                "viud exited: pid={} status={status} code={:?} signal={:?} core_dumped={} elapsed={:?} watchdog_fired={} OOM_plausible={} (SIGKILL alone does not prove OOM); oom_before={} oom_after={}\n{}",
+                self.child.id(),
+                status.code(),
+                status.signal(),
+                status.core_dumped(),
+                self.started.elapsed(),
+                self.watchdog_fired.load(Ordering::SeqCst),
+                status.signal() == Some(libc::SIGKILL),
+                self.oom_before,
+                oom_evidence(),
+                fs::read_to_string(self.root.join("viud.log")).unwrap_or_default()
+            );
+        }
+    }
+
     #[allow(dead_code)] // Only the long presentation measurement extends it.
     pub fn extend_watchdog(&mut self, duration: Duration) {
         let _ = self.stop.send(());
@@ -97,10 +137,13 @@ impl Process {
             let _ = watchdog.join();
         }
         let pid = self.child.id();
+        self.watchdog_fired.store(false, Ordering::SeqCst);
+        let fired = self.watchdog_fired.clone();
         let (stop, stopped) = mpsc::channel();
         self.stop = stop;
         self.watchdog = Some(thread::spawn(move || {
             if stopped.recv_timeout(duration).is_err() {
+                fired.store(true, Ordering::SeqCst);
                 // SAFETY: killing only our owned test child.
                 unsafe {
                     libc::kill(pid as i32, libc::SIGKILL);
@@ -108,6 +151,21 @@ impl Process {
             }
         }));
     }
+}
+
+fn oom_evidence() -> String {
+    let vm = fs::read_to_string("/proc/vmstat").unwrap_or_default();
+    let kills = vm
+        .lines()
+        .find(|line| line.starts_with("oom_kill "))
+        .unwrap_or("oom_kill unavailable");
+    let cgroup = fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
+    let events = cgroup
+        .lines()
+        .find_map(|line| line.strip_prefix("0::"))
+        .and_then(|path| fs::read_to_string(format!("/sys/fs/cgroup{path}/memory.events")).ok())
+        .unwrap_or_else(|| "cgroup memory.events unavailable".into());
+    format!("{kills}; cgroup: {}", events.replace('\n', ","))
 }
 
 #[allow(dead_code)] // The timing target uses spawn_measurement instead.
@@ -254,6 +312,31 @@ fn spawn_options(options: Options<'_>) -> Process {
     let log = root.join("viud.log");
     let stderr = fs::File::create(&log).unwrap();
     let mut command = Command::new(binary);
+    if label.starts_with("record-privacy-") {
+        command.env(paths::env::test::TEST_RECORD_FIXTURE, &root);
+    }
+    if label == "record-privacy-cursor-epoch" {
+        // Most tests deliberately have no theme, so every Named shape falls
+        // back to the same built-in arrow. Give this test one generated shape
+        // to make Named/forced privacy assertions discriminate decoded pixels.
+        let theme = root.join("cursors/headless-test");
+        fs::create_dir_all(theme.join("cursors")).unwrap();
+        fs::write(
+            theme.join("index.theme"),
+            "Inherits=missing-headless-theme\n",
+        )
+        .unwrap();
+        let mut bytes = b"Xcur".to_vec();
+        for word in [
+            16_u32, 1, 1, 0xfffd0002, 24, 28, 36, 0xfffd0002, 24, 1, 24, 24, 0, 0, 10,
+        ] {
+            bytes.extend_from_slice(&word.to_le_bytes());
+        }
+        for _ in 0..24 * 24 {
+            bytes.extend_from_slice(&0xff3399ee_u32.to_le_bytes());
+        }
+        fs::write(theme.join("cursors/crosshair"), bytes).unwrap();
+    }
     if osd {
         let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../..");
         let viu = std::env::var_os(paths::env::test::TEST_VIU_EXE)
@@ -304,7 +387,7 @@ fn spawn_options(options: Options<'_>) -> Process {
         .env("MIX_VAR", root.join("var"))
         .env("MIX_RUN", root.join("run"))
         .env("MIX_NODED_URL", bus.unwrap_or("ws://127.0.0.1:1"))
-        .env("MIX_VIUD_HEADLESS_REFRESH_HZ", refresh)
+        .env("MIX_VIUD_HEADLESS_REFRESH_HZ", if label == "record-privacy-cursor-epoch" { "30" } else { refresh })
         .env("MIX_TEST_VIUD_AGENT_SEAT_ALLOW", if agent { format!("viu,testkit-input-probe,testkit-ssd-client,testkit-dnd-source,ced-headless-probe,{}", std::env::current_exe().unwrap().file_name().unwrap().to_string_lossy()) } else { String::new() })
         .env("MIX_VIUD_FRAME_TRACE", if trace { "1" } else { "0" })
         .env("MIX_VIUD_FRAME_TRACE_FILE", root.join("frames.log"))
@@ -359,12 +442,17 @@ fn spawn_options(options: Options<'_>) -> Process {
         control = Some(parent);
         child_control = Some(child);
     }
+    let started = Instant::now();
+    let oom_before = oom_evidence();
     let child = command.spawn().expect("start viud");
     drop(child_control);
     let pid = child.id();
     let (stop, stopped) = mpsc::channel();
+    let watchdog_fired = Arc::new(AtomicBool::new(false));
+    let fired = watchdog_fired.clone();
     let watchdog = thread::spawn(move || {
         if stopped.recv_timeout(Duration::from_secs(45)).is_err() {
+            fired.store(true, Ordering::SeqCst);
             // Break a stuck Wayland roundtrip too; never leave the child behind.
             unsafe {
                 libc::kill(pid as i32, libc::SIGKILL);
@@ -377,6 +465,9 @@ fn spawn_options(options: Options<'_>) -> Process {
         root,
         stop,
         watchdog: Some(watchdog),
+        watchdog_fired,
+        started,
+        oom_before,
     }
 }
 

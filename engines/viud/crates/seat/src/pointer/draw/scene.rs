@@ -18,6 +18,39 @@ where
     R: smithay::backend::renderer::Renderer + ImportAll + ImportMem,
     R::TextureId: Texture + Clone + Send + 'static,
 {
+    element_inner(state, renderer, _size, None, true)
+}
+
+/// Recording owns the artwork policy; drag icons are never cursor artwork.
+pub fn recording_element<R>(
+    state: &mut Loop,
+    renderer: &mut R,
+    size: Size<i32, Physical>,
+    allow_client_cursor: bool,
+) -> Vec<PointerRenderElement<R>>
+where
+    R: smithay::backend::renderer::Renderer + ImportAll + ImportMem,
+    R::TextureId: Texture + Clone + Send + 'static,
+{
+    use smithay::input::pointer::CursorImageStatus;
+    let status = (!allow_client_cursor).then(CursorImageStatus::default_named);
+    let previous = state.inner.pointer_mut().element.status.clone();
+    let elements = element_inner(state, renderer, size, status, false);
+    state.inner.pointer_mut().element.status = previous;
+    elements
+}
+
+fn element_inner<R>(
+    state: &mut Loop,
+    renderer: &mut R,
+    _size: Size<i32, Physical>,
+    cursor_override: Option<smithay::input::pointer::CursorImageStatus>,
+    include_drag: bool,
+) -> Vec<PointerRenderElement<R>>
+where
+    R: smithay::backend::renderer::Renderer + ImportAll + ImportMem,
+    R::TextureId: Texture + Clone + Send + 'static,
+{
     let mut elements: Vec<PointerRenderElement<R>> = Vec::new();
 
     // While a touch sequence owns the active output the shared cursor "disappears"
@@ -79,10 +112,12 @@ where
         .region
         .cursor()
         .or(state.state.seat.force_cursor);
-    state.inner.pointer_mut().element.status = match forced {
+    // A recording's privacy override wins even over compositor affordances
+    // inferred from an unlisted window. Live rendering has no override.
+    state.inner.pointer_mut().element.status = cursor_override.unwrap_or_else(|| match forced {
         Some(icon) => smithay::input::pointer::CursorImageStatus::Named(icon),
         None => state.state.seat.pointer_status.clone(),
-    };
+    });
 
     let hotspot_logical = state.inner.pointer_mut().element.get_current_hotspot();
     // hotspot is in surface logical buffer space; convert to physical:
@@ -110,7 +145,7 @@ where
             1.0,
         );
 
-    if let Some(icon_surface) = &state.state.dnd.icon {
+    if include_drag && let Some(icon_surface) = &state.state.dnd.icon {
         let dnd_element = render_elements_from_surface_tree::<_, PointerRenderElement<R>>(
             renderer,
             icon_surface,

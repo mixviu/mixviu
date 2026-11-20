@@ -72,6 +72,7 @@ pub fn capture_offscreen(state: &mut Loop, context: &mut WinitRenderContext) {
     }
     screencopy::file::poll(context.winit_backend.renderer(), &context.output);
     let scale = context.output.current_scale().fractional_scale();
+    frames::scene::listed::service(state, context.winit_backend.renderer(), &context.output);
     screencopy::offscreen::capture_windows(
         context.winit_backend.renderer(),
         &context.output,

@@ -287,6 +287,7 @@ fn finalise_files(
 }
 
 pub struct Recording {
+    pub latest_queued: bool,
     pub session: String,
     pub fps: u32,
     pub t0_us: u64,
@@ -387,6 +388,7 @@ impl Recording {
             files,
             bytes,
             frames: 0,
+            latest_queued: false,
             repeated: 0,
             dropped: 0,
             dropped_capture: 0,
@@ -446,12 +448,13 @@ impl Recording {
         if let Some(error) = encoder.error() {
             return Err(error);
         }
-        if !encoder.try_push_rgb_change(
+        self.latest_queued = encoder.try_push_rgb_change(
             self.last.clone(),
             self.source_width,
             self.source_height,
             changed,
-        ) {
+        );
+        if !self.latest_queued {
             if changed {
                 self.dropped += 1;
             }

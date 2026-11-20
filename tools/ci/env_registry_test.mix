@@ -1,0 +1,51 @@
+-- version: 0.1.0
+-- Exercise the public stage with tracked fixtures, with only git on PATH.
+$mix = args()[0]
+$ci = realpath("tools/ci.mix")
+$root = "/var/tmp/env-registry-" .. to_string(pid())
+mkdir($root)
+try
+  mkdir($root .. "/bin")
+  run_argv_must(["ln", "-s", which("git"), $root .. "/bin/git"])
+  $repo = $root .. "/repo"
+  mkdir($repo .. "/etc")
+  mkdir($repo .. "/libraries/paths/src")
+  mkdir($repo .. "/share/layout")
+  run_argv_must(["git", "init", "-q", $repo])
+  $runtime = "MIX_" .. "CI_FIXTURE_RUNTIME"
+  $test = "MIX_" .. "CI_FIXTURE_TEST"
+  $stamp = "MIX_" .. "CI_FIXTURE_STAMP"
+  $extra = "MIX_" .. "CI_FIXTURE_EXTRA"
+  $vars = [
+    {name: $runtime, scope: "runtime", meaning: "fixture"},
+    {name: $test, scope: "test", meaning: "fixture"},
+    {name: $stamp, scope: "runtime", meaning: "fixture"}
+  ]
+  $runtime_const = 'pub const CI_FIXTURE_RUNTIME: &str = "' .. $runtime .. '";\n'
+  $test_const = 'pub const CI_FIXTURE_TEST: &str = "' .. $test .. '";\n'
+  $stamp_const = 'stamps! { CI_FIXTURE_STAMP = "' .. $stamp .. '"; }\n'
+  $names = $runtime_const .. "pub mod test {\n" .. $test_const .. "}\n" .. $stamp_const
+  $reg = data_encode({vars: $vars, prefixes: [], mixos_allowed: []})
+  write_file($repo .. "/etc/env.conf.mix", $reg)
+  write_file($repo .. "/share/layout/templates.mx", "files: []\n")
+  for $case in [
+    {label: "valid", names: $names, use: "", want: "0 problems", rc: 0},
+    {label: "unregistered", names: $names, use: $extra, want: "unregistered " .. $extra, rc: 1},
+    {label: "missing test constant", names: replace($names, $test_const, ""), use: $test, want: "missing paths constant " .. $test, rc: 1},
+    {label: "constant without entry", names: $names .. 'pub const CI_FIXTURE_EXTRA: &str = "' .. $extra .. '";', use: "", want: "paths constant without registry entry " .. $extra, rc: 1},
+    {label: "test constant outside module", names: $test_const .. replace($names, $test_const, ""), use: "", want: "paths constant name/scope mismatch " .. $test, rc: 1},
+    {label: "runtime constant inside module", names: replace(replace($names, $runtime_const, ""), "pub mod test {", "pub mod test {\n" .. $runtime_const), use: "", want: "paths constant name/scope mismatch " .. $runtime, rc: 1},
+    {label: "missing runtime constant", names: replace($names, $runtime_const, ""), use: $runtime, want: "missing paths constant " .. $runtime, rc: 1}
+  ]
+    write_file($repo .. "/libraries/paths/src/env_names.rs", $case.names)
+    write_file($repo .. "/consumer.txt", $case.use)
+    run_argv_must(["git", "-C", $repo, "add", "."])
+    $r = run_argv([$mix, $ci, "env-registry", "--mix", "/does-not-exist/mix"], {cwd: $repo, env: {PATH: $root .. "/bin"}, timeout: 30})
+    if $r.exit_code != $case.rc or not contains($r.stdout, $case.want) then
+      raise("ENV_REGISTRY_FIXTURE", $case.label .. ": " .. json_encode($r))
+    end
+    print("env-registry fixture: " .. $case.label .. " passed (git-only PATH)")
+  end
+finally
+  remove_dir($root)
+end
