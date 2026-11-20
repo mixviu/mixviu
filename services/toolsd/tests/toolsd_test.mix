@@ -52,7 +52,7 @@ try
   check($r.timed_out, "native process deadline enforced")
   $wake = read_file($repo .. "/services/toolsd/scripts/toolsd.mix")
   $wake = replace(replace(replace($wake, "on toolsd.wake", "function fixture_wake()"), "run_argv(", "fixture_start("), "reply(", "fixture_reply(")
-  $wake = read_file(dirname(script_path()) .. "/wake_fixture.mix") .. "\n" .. $wake .. '\nfixture_wake()\nif $starts != 1 then raise("TEST", "wake did not start drain") end\nprint("PASS wake starts only fixed drain, ignoring tool/target arguments")\n'
+  $wake = read_file(dirname(script_path()) .. "/wake_fixture.mix") .. "\n" .. $wake .. '\nfixture_cases()\n'
   write_file($tmp .. "/wake.mix", replace($wake, '\n', "
 "))
   $r = run_argv([$mix, $tmp .. "/wake.mix"], {clear_env:true, timeout:10})
