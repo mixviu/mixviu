@@ -703,14 +703,34 @@ fn record_listed_output_excludes_occluders_and_tracks_popup_and_close() {
         "unlisted popup causes no readback"
     );
     let recovery = Path::new(start["recovery_path"].as_str().unwrap());
-    let mut reader = media_vfl::reader::Reader::open(recovery).unwrap();
     // This is a live take: EOF moves as the writer appends repeat records.
-    // Inspect the observed prefix, rather than chasing the recording clock.
-    let mut inspected = 0;
-    for _ in 0..excluded["frames"].as_u64().unwrap() {
-        let Some(frame) = reader.read().unwrap() else {
+    // A complete frame sidecar row follows its chunk payload. Wait for the
+    // entire observed prefix before opening the reader, which stops at EOF.
+    let bound = excluded["frames"].as_u64().unwrap();
+    assert!(bound > 0, "the live prefix must contain decoded pixels");
+    let until = Instant::now() + Duration::from_secs(5);
+    loop {
+        let written = fs::read_to_string(recovery.join("frames.jsonl"))
+            .unwrap()
+            .split_inclusive('\n')
+            .filter(|line| line.ends_with('\n'))
+            .count() as u64;
+        if written >= bound {
             break;
-        };
+        }
+        assert!(
+            Instant::now() < until,
+            "live prefix not written: {written}/{bound} frames"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+    let mut reader = media_vfl::reader::Reader::open(recovery).unwrap();
+    let mut inspected = 0;
+    for _ in 0..bound {
+        let frame = reader
+            .read()
+            .unwrap()
+            .expect("written live prefix must be fully readable");
         inspected += 1;
         assert!(
             !frame
@@ -719,7 +739,7 @@ fn record_listed_output_excludes_occluders_and_tracks_popup_and_close() {
                 .any(|p| p == 0xffff00ff_u32.to_le_bytes())
         );
     }
-    assert!(inspected > 0, "the live prefix must contain decoded pixels");
+    assert_eq!(inspected, bound, "inspect the entire observed live prefix");
     private_popup.destroy();
     let mut c = Pattern::named(connect(&mut process), "opened-during-take", false);
     c.change_buffer();
@@ -952,12 +972,28 @@ fn record_privacy_window_output_membership_and_marker_order() {
         place_args(&ar, json!({"output":"headless-0","x":100,"y":100})),
     );
     pump_patterns(&mut [&mut a]);
-    thread::sleep(Duration::from_millis(250));
+    // Marker publication follows the returned-state image in the writer FIFO.
+    // Do not close the window until that image has actually been written.
+    let marker_path = Path::new(start["recovery_path"].as_str().unwrap()).join("markers.jsonl");
+    let until = Instant::now() + Duration::from_secs(5);
+    loop {
+        let status = bus.call("comp.record.status", json!({"session":start["session"]}));
+        let returned = fs::read_to_string(&marker_path)
+            .unwrap_or_default()
+            .split_inclusive('\n')
+            .filter(|line| line.ends_with('\n'))
+            .map(|line| serde_json::from_str::<Value>(line).expect("complete marker row"))
+            .any(|m| m["label"] == "window_returned");
+        if returned {
+            break;
+        }
+        assert!(Instant::now() < until, "no written return marker: {status}");
+        thread::sleep(Duration::from_millis(20));
+    }
     drop(a);
     // A fixed delay can stop before the marker is admitted under load. Wait
     // for the written marker and a subsequent clock slot, so the decoded
     // post-marker tail assertion below observes a real quiet tick.
-    let marker_path = Path::new(start["recovery_path"].as_str().unwrap()).join("markers.jsonl");
     let until = Instant::now() + Duration::from_secs(5);
     loop {
         let gone = fs::read_to_string(&marker_path)
