@@ -196,6 +196,16 @@ fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
     let shown_bounds = bounds(&before, &shown, width, region)
         .expect("caption must draw above a maximum-z fullscreen client");
     let items = call(&bus, "osd.list", json!({}));
+    assert_eq!(items["items"][0]["owner"], "local:headless-osd-owner");
+    for command in ["osd.update", "osd.hide"] {
+        let output = helper("call", &bus.root, &[command, "{\"id\":\"caption\"}", "osd", "other-osd-citizen"], Some(&bus.url));
+        assert!(output.status.success());
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let reply: Value = serde_json::from_str(stdout.lines().last().unwrap()).unwrap();
+        assert_eq!(reply["rc"], 10, "{reply}");
+        let body: Value = serde_json::from_str(reply["body"].as_str().unwrap()).unwrap();
+        assert_eq!(body["error_code"], "NOT_OWNER");
+    }
     // A peer must neither forge telemetry nor poison subsequent real presses.
     for args in [
         json!({"presses":"poison"}),

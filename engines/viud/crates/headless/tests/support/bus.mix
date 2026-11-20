@@ -23,6 +23,7 @@ else
   $command = $a[2]
   $body = $a[3]
   $service = if len($a) > 4 then $a[4] else "comp-headless" end
+  if $service=="osd" then noded_register(if len($a)>5 then $a[5] else "headless-osd-owner" end) end
   send $service $command timeout=10 body=$body
   print(json_encode({rc: $rc, body: $result}))
 end
