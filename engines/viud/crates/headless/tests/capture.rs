@@ -954,8 +954,8 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
     if !process::record_available() {
         return;
     }
-    let bus = Bus::start("record-cursor-epoch");
-    let mut process = process::spawn(1, None, "record-cursor-epoch", Some(&bus.url));
+    let bus = Bus::start("record-privacy-cursor-epoch");
+    let mut process = process::spawn(1, None, "record-privacy-cursor-epoch", Some(&bus.url));
     let mut a = Pattern::named(connect(&mut process), "cursor-listed", false);
     a.solid_buffer(0xff334455);
     a.commit(true);
@@ -981,14 +981,16 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
     let mut focus = |mode: &str, a: &mut Pattern, b: &mut Pattern, c: &mut Pattern| {
         serial += 1;
         fs::write(
-            process.root.join("record-input"),
+            process.root.join("record-input-next"),
             format!("{mode}:{serial}"),
         )
         .unwrap();
+        fs::rename(process.root.join("record-input-next"),process.root.join("record-input")).unwrap();
         bus.call("comp.capture.frame", json!({"output":"headless-0","path":process.root.join("epoch-focus.ppm"),"format":"ppm"}));
         pump_patterns(&mut [a, b, c]);
     };
     let take = |name: &str, a: &mut Pattern, b: &mut Pattern, c: &mut Pattern| {
+        eprintln!("CURSOR_EPOCH_TAKE {name}");
         let path = process.root.join(format!("{name}.vfl"));
         let start = bus.call("comp.record.start", json!({"request_id":name,"target":{"output":"headless-0","windows":[target(&ar)]},"cursor":true,"path":path,"max_seconds":10}));
         pump_patterns(&mut [a, b, c]);
@@ -1125,6 +1127,7 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
             );
             focus("overlap", &mut a, &mut b, &mut c);
             let source = if different { &mut c } else { &mut b };
+            assert_eq!(source.state.pointer_focus.as_ref(),Some(&source.surface),"overlapping private window must own focus before unmapping");
             let _cursor = match shape {
                 "surface" => Some(source.custom_cursor(0xffff00ff)),
                 "hidden" => {
@@ -1143,6 +1146,7 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
                 b.unmap();
             }
             pump_patterns(&mut [&mut a, &mut b, &mut c]);
+            assert_eq!(a.state.pointer_focus.as_ref(),Some(&a.surface),"unmapping private window must enter A");
             all_equal(
                 &take(
                     &format!("epoch-unmap-{different}-{shape}"),
@@ -1168,6 +1172,7 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
     let _sub = a.subsurface();
     for child in ["listed-popup", "listed-sub"] {
         focus(child, &mut a, &mut b, &mut c);
+        assert_eq!(a.state.pointer_focus.as_ref(),Some(if child=="listed-popup" {&_popup.0}else{&_sub.0}),"child must receive the enter event");
         let child_default =
             take(&format!("epoch-{child}-default"), &mut a, &mut b, &mut c).remove(0);
         let _cursor = a.custom_cursor(0xff11eecc);

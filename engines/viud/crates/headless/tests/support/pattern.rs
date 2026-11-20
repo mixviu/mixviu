@@ -64,6 +64,7 @@ pub struct State {
     pub keyboard_enters: u64,
     last_press: Option<(u32, WlSeat)>,
     last_enter: Option<(u32, WlPointer)>,
+    pub pointer_focus: Option<WlSurface>,
     popup_configured: bool,
     pub locked: bool,
     pub presented: u64,
@@ -78,7 +79,7 @@ pub struct Pattern {
     conn: Connection,
     queue: EventQueue<State>,
     pub state: State,
-    surface: WlSurface,
+    pub surface: WlSurface,
     shm: WlShm,
     presentation: WpPresentation,
     buffer: WlBuffer,
@@ -718,8 +719,12 @@ impl Dispatch<WlPointer, WlSeat> for State {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_pointer::Event::Enter { serial, .. } = &event {
+        if let wl_pointer::Event::Enter { serial, surface, .. } = &event {
             state.last_enter = Some((*serial, pointer.clone()));
+            state.pointer_focus = Some(surface.clone());
+        }
+        if let wl_pointer::Event::Leave { .. } = &event {
+            state.pointer_focus = None;
         }
         if let wl_pointer::Event::Button {
             serial,
