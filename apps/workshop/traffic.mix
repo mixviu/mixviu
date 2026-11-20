@@ -12,7 +12,7 @@ fn redact($v)
 end
 fn retain($s,$row)
   if $s.traffic_paused then return $s end
-  $row=redact($row)
+  $pc=viu_test_cpu();$pw=monotonic();$row=redact($row);print("WORKSHOP_BUILD "..json_encode({notice_stage:"traffic.redact",cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
   if not has_key($row,"service") then $row.service=$row.to end
   $bytes=byte_length(json_encode($row))
   if $bytes>8388608 then $s.dropped=$s.dropped+1;return $s end

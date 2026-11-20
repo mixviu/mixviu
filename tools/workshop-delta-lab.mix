@@ -53,6 +53,7 @@ fn apply_one($value,$parts,$op)
   raise("LAB","unknown operation")
 end
 $paths=sort(glob("target/workshop-model-captures/*.json"))
+if len($paths)==0 then raise("LAB","no captured models; refusing a vacuous replay") end
 $previous={}
 for $path in $paths
   $next=json_parse(read_file($path));$start=monotonic();$ops=difference($previous,$next);$diff_ms=(monotonic()-$start)*1000
