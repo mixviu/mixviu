@@ -831,7 +831,7 @@ fn apply_visual(lp: &mut Loop, id: SurfaceId, spec: &comp_model::request::PlaceS
         world::comp::animation::prepare_place(
             window,
             old,
-            spec.visible == Some(false),
+            spec.visible == Some(Some(false)),
             lp.inner.comp.clock.now(),
         )
     });
