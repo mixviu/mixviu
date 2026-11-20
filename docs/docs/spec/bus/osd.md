@@ -11,6 +11,8 @@ Broker-attributed citizens may show content. Each item records its `owner`
 in `osd.list`; only that owner may update or hide it (`NOT_OWNER` otherwise).
 Unattributed mutations refuse `UNAUTHENTICATED`. Local owners use `local:<citizen>`;
 mesh owners use `mesh:<citizen>@<peer>` from broker-stamped headers, never body fields.
+Local mutations use the broker's Unix ingress. Unadmitted legacy TCP calls
+have no attested peer identity and are refused, even with a registered name.
 Each caller has eight of the 32 slots (`CALLER_BUDGET_EXCEEDED`) and 30
 successful updates per one-second window (`RATE_LIMITED`). Failed validation
 does not spend the budget. Hide remains available at the update limit.
