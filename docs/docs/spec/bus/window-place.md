@@ -81,6 +81,7 @@ Touch cancellation on hide applies to all active slots if any slot targets the h
 Scale also accepts `anchor:"center"`, resolved from the window geometry at
 composition time. Motion window targets accept `anchor:"center"` or a
 logical `{x,y}` anchor alongside tracks/preset. Lifecycle entrances use the
-window centre, including windows without prior placement. Window rows expose
+window centre when the base scale is 1, including windows without prior
+placement. A non-identity base scale keeps its caller-provided anchor. Window rows expose
 the current sampled opacity, rather than just the requested endpoint.
 Superseded replies add `by:"run"|"place"|"lifecycle"`.
