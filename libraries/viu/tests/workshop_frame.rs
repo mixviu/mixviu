@@ -160,6 +160,7 @@ fn workshop_policy_contracts_run_inside_the_embedded_runtime() {
         "view",
         "saved",
         "discovery",
+        "publication",
     ] {
         let (tx, rx) = mpsc::channel();
         let mut runtime = Runtime::new(

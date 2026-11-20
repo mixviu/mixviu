@@ -1,0 +1,52 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$publication=require("../../libraries/viu/mix/model-publication.mix")
+$m=require("model.mix");$actions=require("actions.mix");$traffic_view=require("traffic-view.mix")
+fn check($value,$message) if not $value then raise("PUBLICATION_TEST",$message) end end
+fn replay($value,$parts,$op)
+  if len($parts)>0 then
+    $key=$parts[0]
+    if len($parts)==1 and $op.op=="remove" then return delete($value,$key) end
+    $value[$key]=replay($value[$key],slice($parts,1),$op);return $value
+  end
+  if $op.op=="set" then return $op.value end
+  return concat(concat(slice($value,0,$op.index),$op.items),slice($value,$op.index+$op.remove))
+end
+for $pair in [
+  [{a:1,b:nil},{a:2,c:nil}],
+  [{rows:[1,2,3,4]},{rows:[3,4,5]}],
+  [{rows:[{id:"a",value:1},{id:"b",value:2}]},{rows:[{id:"a",value:3},{id:"b",value:2}]}],
+  [{rows:[1,1,2,1]},{rows:[1,2,1,1]}],
+  [{rows:[]},{rows:[[],{},nil]}],
+  [{rows:[1,2,3]},{rows:[]}]
+]
+  $value=$pair[0];$ops=$publication.difference($value,$pair[1])
+  for $op in $ops $value=replay($value,$op.path,$op) end
+  check(deep_eq($value,$pair[1]),"ordered patch replay differs from full data")
+end
+check($publication.requires_full(nil,{}),"first publish is full")
+check($publication.requires_full({appearance:{}},{appearance:{mode:"dark"}}),"appearance is a host input")
+check(not $publication.requires_full({shortcuts:[]},{shortcuts:[{id:"call"}]}),"shortcut data is incremental")
+$s=$m.initial()
+for $busy in [false,true]
+  for $connected in [false,true]
+    for $dialog in [nil,"about"]
+      $s.busy=$busy;$s.connected=$connected;$s.dialog=$dialog
+      check(deep_eq($actions.registry($s),$actions.build_registry($s)),"cached action policy differs")
+      $s.theme_choice.mode="light";$s.dock_side="right";$s.macros_open=true
+      check(deep_eq($actions.registry($s),$actions.build_registry($s)),"cached theme/dock action policy differs")
+      $s.mesh.nodes=[{name:"peer",self:false}];$s.mesh.ping_ticket=1;$s.mesh.observe_ticket=2
+      check(deep_eq($actions.registry($s),$actions.build_registry($s)),"cached mesh admission differs")
+    end
+  end
+end
+$s=$m.initial();$s.dock_side="right"
+$s.traffic=[{ts:"first",command:"one"},{ts:"second",command:"two"}]
+$first=$traffic_view.project($s).traffic_view.initial
+$again=$traffic_view.project($s).traffic_view.initial
+check(deep_eq($first,$again),"unchanged Traffic projection must retain ids and text")
+$s.traffic=concat(slice($s.traffic,1),[{ts:"third",command:"three"}])
+$next=$traffic_view.project($s).traffic_view.initial
+check($next[0].id==$first[1].id and $next[1].id!=$first[0].id,"retained rows must keep identity after head removal")
+$s.dock_side="bottom";$bottom=$traffic_view.project($s).traffic_view.initial
+check($bottom[1][4].collapse==$next[0].text and $bottom[2][4].collapse==$next[1].text,"both placements retain the same complete Traffic body")
+print("Workshop incremental publication policy PASS")

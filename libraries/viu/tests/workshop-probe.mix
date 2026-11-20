@@ -25,7 +25,7 @@ if $mode=="guard-negative" then
     checked(["git","diff","--exit-code"])
   end
 elif $mode=="format" then
-  $r=run_argv(["cargo","fmt","-p","lib-viu"],{timeout:600,stderr:"stdout"})
+  $r=run_argv(["cargo","fmt","-p","lib-viu","-p","scene"],{timeout:600,stderr:"stdout"})
   print($r.stdout);print(run_argv_must(["git","diff"]))
   print(run_argv_must(["git","checkout","-q","--","."]))
   if not $r.ok then exit(1) end
@@ -38,6 +38,30 @@ elif $mode=="equivalence" then
     checked($test)
   finally
     write_file($path,$source)
+  end
+elif $mode=="incremental-negative" then
+  for $case in ["wire","apply","equivalence"]
+    $path=if $case=="wire" then "apps/workshop/app.mix" elif $case=="apply" then "libraries/viu/src/app_host.rs" else "libraries/scene/src/bindings.rs" end
+    $source=read_file($path)
+    if $case=="wire" then
+      $mutated=replace($source,"$full=$model_publication.requires_full($publication.model,$value)","$full=true")
+    elif $case=="apply" then
+      $needle="let result=validate_overlays(&self.model).and_then(|_|self.view.apply_model_patch(patch));"
+      $mutated=replace($source,$needle,"let projected=self.projection(&self.model,ctx);let result=validate_overlays(&self.model).and_then(|_|self.view.apply_model(projected));")
+    else
+      $mutated=replace($source,"if binding.reads_item || !binding.deps.iter().any(|dep| {","if true || binding.reads_item || !binding.deps.iter().any(|dep| {")
+    end
+    if $mutated==$source then raise("PROBE","incremental negative source drift: "..$case) end
+    try
+      write_file($path,$mutated)
+      $argv=if $case=="equivalence" then ["mix",script_path(),"equivalence"] else $test end
+      $r=run_argv($argv,{timeout:600,stderr:"stdout",max_output:64000000});print($r.stdout)
+      $expected=if $case=="wire" then "tick model bytes: observed_bytes=" elif $case=="apply" then "patch apply CPU: observed_us=" else "incremental publication differs from full rendered state" end
+      if $r.ok or not contains($r.stdout,$expected) then raise("PROBE","incremental negative missed its assertion: "..$case) end
+    finally
+      write_file($path,$source)
+      checked(["git","diff","--exit-code"])
+    end
   end
 elif $mode=="numeric-negative" then
   $path="libraries/viu/tests/workshop_bus.rs";$source=read_file($path)
