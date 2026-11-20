@@ -45,6 +45,10 @@ refused(fn()=$c.seek($s,"absent"),"DECK_SLIDE","slide")
 refused(fn()=$c.seek($s,"one",3),"DECK_RANGE","slides(one).step")
 $bad=$deck;$bad.slides[0].scene.b.spans=[{text:"= $model.secret"}]
 refused(fn()=$c.check_deck($bad),"DECK_SCENE","slides[0](one).scene.b.spans[0].text")
+$bad=$deck;$bad.slides[0].build.root=nil
+refused(fn()=$c.check_deck($bad),"DECK_TYPE","slides[0](one).build.root")
+$bad=$deck;$bad.slides[0].build.root={stagger:1};$bad.slides[0].scene.root.children=42
+refused(fn()=$c.check_deck($bad),"DECK_SCENE","slides[0](one).scene.root.children")
 $stagger=$deck;$stagger.slides[0].build={root:{b:0,stagger:0.25,child_anim:"left"}}
 $stagger=$c.check_deck($stagger)
 assert_eq($stagger.slides[0].build.c.delay,0.5)

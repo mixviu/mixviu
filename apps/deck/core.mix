@@ -63,12 +63,15 @@ fn check_deck($deck)
         $v=$s.scene[$node][$key]
         if starts_with($key,"on_") or (type($v)=="string" and starts_with($v,"=")) then fault("DECK_SCENE",$w..".scene."..$node.."."..$key,"bindings and actions are not deck data") end
       end
-      if $build[$node]!=nil then $build[$node]=timing($build[$node],$w..".build."..$node,$steps) end
+      if contains(keys($build),$node) then $build[$node]=timing($build[$node],$w..".build."..$node,$steps) end
     end
     for $node in keys($build)
       $t=$build[$node];$j=0
       if $t.stagger>0 then
-        for $child in $s.scene[$node].children ?? []
+        $children=$s.scene[$node].children ?? []
+        if type($children)!="list" then fault("DECK_SCENE",$w..".scene."..$node..".children","expected child list") end
+        for $child in $children
+          if type($child)!="string" then fault("DECK_SCENE",$w..".scene."..$node..".children","expected child IDs") end
           if $s.scene[$child]==nil then fault("DECK_SCENE",$w..".scene."..$node..".children","missing child "..to_string($child)) end
           if $build[$child]==nil then $build[$child]=timing({b:$t.b,delay:$t.delay+$j*$t.stagger,anim:$t.child_anim},$w..".build."..$child,$steps) end
           $j=$j+1
