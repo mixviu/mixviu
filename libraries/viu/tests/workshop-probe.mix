@@ -1,0 +1,27 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run through CBC, not on the developer desktop. All instrumentation is in
+-- lib-viu/test-support or the integration fixture, never the shipped app.
+$mode=env("WORKSHOP_PROBE_MODE","baseline")
+$test=["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--nocapture"]
+fn checked($argv)
+  $r=run_argv($argv,{timeout:3600,stderr:"stdout",max_output:64000000})
+  print($r.stdout)
+  if not $r.ok then exit($r.exit_code ?? 1) end
+end
+if $mode=="pool" then
+  for $iteration=1 to 12
+    print("WORKSHOP_POOL_ITERATION "..$iteration)
+    checked(["mix","tools/ci/test_pool.mix","--jobs","4","--","-p","lib-viu","--features","test-support","--","--nocapture"])
+  end
+else
+  checked(concat(slice($test,0,8),["--no-run"]))
+  print("STANDALONE")
+  $alone=run_argv($test,{timeout:120,stderr:"stdout",max_output:64000000});print($alone.stdout)
+  $jobs=[{argv:$test,timeout:120,stderr:"stdout",max_output:64000000}]
+  for $i=1 to 8
+    push($jobs,{argv:["timeout","60","sha256sum","/dev/zero"],timeout:70,stderr:"stdout"})
+  end
+  $results=run_parallel($jobs,{max:9})
+  print("LOADED (eight CPU workers)");print($results[0].stdout)
+  if not $alone.ok or not $results[0].ok then exit(1) end
+end
