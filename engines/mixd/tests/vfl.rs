@@ -203,7 +203,7 @@ fn export_ffmpeg_framemd5_y4m_oracle() {
     match Command::new("ffmpeg").arg("-version").output() {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             assert_ne!(
-                std::env::var("MIX_TEST_REQUIRE_FFMPEG").as_deref(),
+                std::env::var(paths::env::test::TEST_REQUIRE_FFMPEG).as_deref(),
                 Ok("1"),
                 "ffmpeg required: framemd5 oracle cannot run"
             );
@@ -252,16 +252,10 @@ fn check_export(oracle: bool) {
     while let Some(frame) = reader.read().unwrap() {
         frames.push(frame.pixels.to_vec());
     }
-    let hash = |bytes: &[u8]| {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        bytes.hash(&mut h);
-        h.finish()
-    };
     assert_eq!(raw.len(), 3 * 64);
     assert_eq!(
-        raw.chunks_exact(64).map(hash).collect::<Vec<_>>(),
-        frames.iter().map(|f| hash(f)).collect::<Vec<_>>()
+        raw.chunks_exact(64).collect::<Vec<_>>(),
+        frames.iter().map(Vec::as_slice).collect::<Vec<_>>()
     );
     let md5args = [
         "-f",
@@ -310,7 +304,7 @@ fn check_export(oracle: bool) {
         .zip(yuv.chunks_exact(24))
     {
         assert_eq!(&record[..6], b"FRAME\n");
-        assert_eq!(hash(&record[6..]), hash(pixels));
+        assert_eq!(&record[6..], pixels);
     }
     if oracle {
         assert_eq!(decoded, yuv);
