@@ -71,6 +71,23 @@ pub(super) fn ready(bus: &Bus) {
         );
         thread::sleep(Duration::from_millis(20));
     }
+    // GPU/font first-use setup is not an entrance sample. Warm it outside
+    // the measured scene, then positively observe detachment before returning.
+    call(bus, "osd.show", json!({"id":"fixture-ready","scene":{"kind":"caption","text":"Ready","width":320,"height":72},"anchor":{"output":"headless-0","edge":"bottom-right","margin":64}}));
+    for mapped in [true, false] {
+        if !mapped {
+            call(bus, "osd.hide", json!({"id":"fixture-ready","exit":null}));
+        }
+        loop {
+            let surfaces = bus.call("comp.props.get", json!({"path":"surfaces"}));
+            let seen = surfaces.as_object().is_some_and(|rows| rows.values().any(|row| {
+                row["role"] == "layer" && row["layer"]["stratum"] == "overlay" && row["mapped"] == true
+            }));
+            if seen == mapped { break; }
+            assert!(Instant::now() < deadline, "OSD first-use map/detach did not complete: {surfaces}");
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
 }
 
 fn wait(pattern: &mut Pattern, duration: Duration) {
