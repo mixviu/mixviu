@@ -969,8 +969,8 @@ impl Host {
                 if done.command == "viu.tick" {
                     if let Some(model) = &done.model {
                         if probe.profile_scene {
-                            let dir = std::path::Path::new("target/workshop-model-captures");
-                            std::fs::create_dir_all(dir).unwrap();
+                            let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/workshop-model-captures");
+                            std::fs::create_dir_all(&dir).unwrap();
                             std::fs::write(dir.join(format!("{:06}.json", done.sequence)), serde_json::to_vec(model).unwrap()).unwrap();
                         }
                         probe

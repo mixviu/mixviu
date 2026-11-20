@@ -656,6 +656,12 @@ fn workshop_capture_diagnostic() {
             "healthy results must appear before the silent peer finishes"
         );
         assert!(disconnected.load(std::sync::atomic::Ordering::Acquire));
+        eprintln!("WORKSHOP_STEADY peers={count}");
+        let steady_end = Instant::now() + Duration::from_secs(4);
+        while Instant::now() < steady_end {
+            host.pump();
+            std::thread::sleep(Duration::from_millis(2));
+        }
         for command in ["workshop.ping", "workshop.info"] {
             let invalid = request(&rt, &caller, command, json!([]));
             pump_until(&mut host, |_| invalid.is_finished());
