@@ -116,7 +116,9 @@ check the complete record exists and its CRC matches. Verify each available
 chunk receipt's length, CRC and next slot. Complete takes must also match
 `complete.json` counts and contain both metadata files and sidecars.
 
-Missing/invalid `complete.json` means interrupted, never a successful take.
+Missing or syntactically invalid `complete.json`, or a parsed value without
+`complete:true`, means interrupted. Other read failures (including permission,
+size-limit and symlink failures) are fatal, for markers as well as frames.
 Scan complete CRC-valid records in order and stop at the first torn or corrupt
 record; never skip it and resume a delta chain. Earlier complete records remain
 usable, including those in the unsealed last chunk. A missing origin prevents
@@ -132,12 +134,22 @@ production reader and verifier in `src/reader.rs`.
 
 ## Reading and exporting
 
-`mixd vfl verify TAKE` streams the whole take and prints
-`{ok,frames,dropped,markers,complete,errors}`. Its status is zero only when
+`mixd vfl verify TAKE [--require-complete]` streams the whole take and prints
+`{ok,valid_frames,frames,recoverable,tail,dropped,markers,complete,errors}`. Its status is zero only when
 `ok` is true. An intact interrupted take can be valid (`ok:true`) while
 `complete:false`; its dropped count is unknown (`null`). A damaged take
 reports the valid prefix frame count and the first binary-chain error.
-Errors name the file, chunk (or null for metadata), byte offset and category.
+Each error is `{kind,file,chunk,offset,message}`: kind is one of `io`,
+`metadata`, `structure`, `crc`, `compression`, `limit`, `torn_tail`, `incomplete`;
+file and message are strings, chunk is an integer or null, and offset is an
+integer byte position (zero for file-level errors). Marker offsets name the
+start of the offending row. `valid_frames` is canonical; `frames` is a
+deprecated alias retained for compatibility.
+`complete` means validated completion, so it is false even for a claimed
+complete take whose validation fails. `--require-complete` makes any
+incomplete or invalid take fail with exit 1; an unmet completion requirement
+uses kind `incomplete`. When `recoverable:true`, `tail:{chunk,offset}` names
+the torn record's chunk and starting byte offset; otherwise `tail` is null.
 The reader stops at corruption and never resumes a delta chain past it.
 
 `mixd vfl markers TAKE` prints validated marker JSON lines.
@@ -160,11 +172,27 @@ mixd vfl export video.vfl --format bgra | ffmpeg -f rawvideo -pixel_format bgra 
 The Rust API borrows one current BGRA frame at a time. Compressed payloads
 and decode scratch are bounded by the manifest canvas; JSON files and each
 sidecar line are capped at 1 MiB. Regular input files are opened without
-following symlinks. `Reader::complete` describes the metadata's claim;
+following symlinks. Metadata is private: `width()`, `height()`, `fps()`,
+`complete()`, `completion_file()` and `origin()` provide read-only access.
+`Reader::complete()` describes the metadata's claim;
 only a full successful verification establishes completion.
-`Reader::seek` scans bounded headers and CRCs to locate the nearest earlier
-key, then decompresses forward. It does not retain a whole-take index or
-decompress the preceding delta chains. Verification remains the whole-take
+`Reader::frame_count(&mut self)` returns the exact decodable frame count.
+If EOF has not established it already, the first call decodes a separate
+reader and caches the result on success. It preserves playback position and
+does not poison the playback reader on a scan failure. The count does not
+validate markers or establish completion. Count scans and verification do
+not allocate a key index. CLI export also streams without a key index.
+`Reader::seek` lazily retains one entry per scanned key: chunk, byte offset,
+slot, CRC state before the key and frame-sidecar byte position. This costs
+56 bytes per key on the 64-bit CBC target, plus Vec spare capacity and
+allocation overhead (no payload or frame history); keys normally occur every ten seconds. Sequential reads
+populate the same index. The player reader caps it at 65,536 keys and returns
+a `limit` error on overflow (3.5 MiB of entry storage at that cap on the
+64-bit target). This bounds amplification from hostile takes
+containing a key every frame. Repeated seeks use cached positions without reading
+or CRCing earlier chunks. A failed seek poisons the reader: subsequent reads
+and seeks fail; reopen to start again. Takes must remain immutable while open.
+Verification remains the whole-take
 integrity check. Recovery tolerates missing or torn origin, final metadata
 and sidecar tails; a missing origin prevents marker clock alignment. Recovery
 ignores a malformed final JSON line only when it is unterminated and at EOF.
@@ -173,13 +201,30 @@ remain errors. Present frame rows must match the binary timeline, using the
 same rule for sequential read and seek. A malformed final chunk receipt can
 be ignored during recovery; a valid receipt with a CRC/count mismatch remains
 an error. Earlier malformed receipts and all complete-take sidecar errors are
-fatal. A torn binary tail stops recovery with an error after the valid prefix;
-it never turns the take into a successful verification.
+fatal. EOF inside the last binary record of an interrupted take ends decoding
+at the valid prefix only if the final receipt is absent or malformed.
+A receipt with numeric bytes/CRC/next-frame fields proves a durable seal:
+a tear with that receipt is damage and fails with a receipt-mismatch error.
+Verification reports `ok:true,recoverable:true` when there are no other
+errors; export writes only those valid frames.
+An intact take has `recoverable:false`. A complete take with a torn tail
+fails; requiring completion also fails for a recoverable interrupted take.
+CRC, structure and decompression errors never receive EOF recovery.
+Extra parsed `frames.jsonl` rows beyond the binary prefix are errors at both
+a clean boundary and a torn tail, even when their timeline values are valid.
+The writer appends a frame row only after the whole binary record: such rows
+are not a normal crash tail. The same missing/unterminated JSON-tail tolerance
+applies at both ends; terminated malformed and oversized rows remain errors.
 Advisory receipt handling skips only that receipt, never the frame-sidecar
 tail check. Chunk receipts contain no `dropped` field. Drop totals are trusted
 only after complete-take verification; interrupted totals are always unknown
 (`"dropped":null`), including when `interrupted.json` has a missing or invalid
 `dropped`. A complete take with a missing or non-u64 drop total fails.
+
+The command is `mixd vfl` only; it is not an installed personality symlink.
+Exit codes are 0 for success or streaming stdout BrokenPipe, 1 for data or
+I/O failures, and 2 for usage errors. Verify keeps its single JSON result
+and reports output write failures as I/O errors.
 
 ## Scheduling
 
