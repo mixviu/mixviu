@@ -79,7 +79,9 @@ impl Bus {
     }
     fn start(label: &str) -> Self {
         static CAPTURE: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let capture = CAPTURE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        let capture = CAPTURE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         let root =
             std::env::temp_dir().join(format!("headless-bus-{}-{label}", std::process::id()));
         let output = helper("start", &root, &[binary("noded").to_str().unwrap()], None);
