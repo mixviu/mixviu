@@ -966,6 +966,9 @@ impl Host {
             #[cfg(feature = "test-support")]
             if let Some(probe) = &mut self.discovery_probe {
                 probe.callbacks.push(done.elapsed.as_micros() as u64);
+                for line in done.stdout.lines().filter(|l| l.starts_with("WORKSHOP_BUILD ")) {
+                    eprintln!("WORKSHOP_BUILD_CALLBACK {} {}", done.command,line);
+                }
                 probe
                     .by_command
                     .entry(done.command.clone())
