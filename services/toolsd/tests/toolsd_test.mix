@@ -25,6 +25,7 @@ try
   $exec = join(filter(lines($exec), fn($l) = not starts_with($l, "include ")), "\n")
   $drain = read_file($repo .. "/services/toolsd/scripts/toolsd_drain.mix")
   $drain = join(filter(lines($drain), fn($l) = not starts_with($l, "include ")), "\n")
+  $drain = replace($drain, 'require("lib/egress.mix")', "require(" .. json_encode($repo .. "/services/toolsd/scripts/lib/egress.mix") .. ")")
   -- Preserve trust checking separately; fixture argv construction uses trusted
   -- /usr/bin/true instead of requiring host whois/dig packages.
   $prefix = read_file(dirname(script_path()) .. "/fixtures/drain.txt")
@@ -35,13 +36,15 @@ try
   $r = run_argv([$mix, $tmp .. "/drain.mix"], {env:{TOOLS_BASE_URL:"https://queue.example.test", TOOLS_CA_FILE:"/fixture/ca.pem", CREDENTIALS_DIRECTORY:$tmp .. "/cred"}, timeout:30})
   check($r.ok, "drain runtime: " .. $r.stdout .. $r.stderr)
   check(not contains($r.stdout .. $r.stderr, "fixture-secret-never-export"), "credential absent from logs")
-  $wall = replace($source, "time()", "fixture_time()")
+  $wall = replace($source, "monotonic()", "fixture_time()")
   $wall = replace($wall, '$claims != 8 or $reports != 8 or $executions != 5', '$claims != 0 or $reports != 0 or $executions != 0')
-  write_file($tmp .. "/wall.mix", '$ticks=0\nfunction fixture_time()\n global $ticks\n $ticks=$ticks+600\n return $ticks\nend\n' .. $wall)
+  write_file($tmp .. "/wall.mix", '$ticks=0\nfunction fixture_time()\n global $ticks\n $ticks=$ticks+501\n return $ticks\nend\n' .. $wall)
   -- Raw fixture text uses literal newlines when assembled for Mix.
   write_file($tmp .. "/wall.mix", replace(read_file($tmp .. "/wall.mix"), '\n', "\n"))
   $r = run_argv([$mix, $tmp .. "/wall.mix"], {env:{TOOLS_BASE_URL:"https://queue.example.test", TOOLS_CA_FILE:"/fixture/ca.pem", CREDENTIALS_DIRECTORY:$tmp .. "/cred"}, timeout:10})
   check($r.ok, "wall budget prevents another claim: " .. $r.stderr)
+  $r = run_argv([$mix, $tmp .. "/drain.mix"], {env:{TOOLS_BASE_URL:"http://queue.example.test",CREDENTIALS_DIRECTORY:$tmp .. "/cred"},timeout:10})
+  check($r.exit_code == 1 and contains($r.stderr,"must use https") and not contains($r.stdout .. $r.stderr,"fixture-secret-never-export"), "HTTP URL refused before credential use")
   $literal = "$(id); echo injected | cat"
   $r = run_argv(["/usr/bin/printf", "%s", $literal], {clear_env:true,timeout:2,max_output:1024})
   check($r.ok and $r.stdout == $literal, "native argv never invokes a shell")
@@ -54,6 +57,8 @@ try
 "))
   $r = run_argv([$mix, $tmp .. "/wake.mix"], {clear_env:true, timeout:10})
   check($r.ok, "wake runtime: " .. $r.stdout .. $r.stderr)
+  $polkit = read_file($repo .. "/services/toolsd/units/49-toolsd-wake.rules")
+  check(contains($polkit, 'subject.user == "toolsd-wake"') and contains($polkit, 'verb == "start" && unit == "toolsd-drain.service"') and contains($polkit, 'action.id == "org.freedesktop.systemd1.manage-units"') and count_of($polkit,"polkit.Result.YES") == 1 and contains($polkit,"polkit.Result.NOT_HANDLED"), "polkit grants only exact wake/start/drain triple")
   $layout = require("../../../share/layout/files.mix")
   $roots = {prefix:"/srv/fixture",lib:"/srv/fixture/lib",etc:"/srv/fixture/etc",var:"/srv/fixture/var",run:"/srv/fixture/run",share:"/srv/fixture/share",cache:"/srv/fixture/cache"}
   $layout.bundle($repo .. "/share/layout", $tmp .. "/bundle")

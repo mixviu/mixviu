@@ -17,7 +17,11 @@ Adaptations: canonical MixViu paths, script-relative lexical includes,
 MIX root environment, version headers, bundle templates, Unix Bus endpoint,
 sysusers and runtime tmpfiles. Existing include-analysis warnings are locally
 acknowledged to preserve the lexical library contract; runtime tests exercise
-that code. No argv, role ladder, tool limits or claim/report protocol change.
+that code. The initial import retained argv, role ladder, limits and protocol.
+Pre-merge review repairs add public-unicast trace validation, HTTPS-only claims,
+bounded monotonic streaming, MX-answer validation and bounded explicit dig query
+slots. The opt-in nft companion uses named deny counters and a root supervisor
+with an unprivileged worker probe; it grants no firewall access to toolsd.
 The immutable registry is checked against webd and the bundle copies webd's
 source into the toolsd destination. Unit hardening, polkit action, credential
 split, eight-run/600-second budget and five-minute backstop are retained.

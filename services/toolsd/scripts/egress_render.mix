@@ -6,7 +6,7 @@ if len($g.errors) != 0 or len($g.rest) != 0 or $g.opts.config == nil or $g.opts.
   raise("USAGE", "egress_render.mix --config PRIVATE.conf.mix --out PRIVATE.nft")
 end
 $e = require("lib/egress.mix")
-$nft = which("nft") ?? raise("EGRESS_CHECK", "nft is required for check-only capability detection")
+$nft = if is_file("/usr/sbin/nft") then "/usr/sbin/nft" else "/usr/bin/nft" end
 fn check_rules($text)
   $r = run_argv([$nft, "--check", "--file", "-"], {stdin:$text, clear_env:true, timeout:10, max_output:4096})
   return $r.ok

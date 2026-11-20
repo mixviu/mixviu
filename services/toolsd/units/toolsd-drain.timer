@@ -21,7 +21,7 @@ Description=MixViu toolsd drain backstop (covers a missed wake or a truncated dr
 #   1. claim answers 204            — "empty OR another run is already claimed" (global
 #                                     concurrency is 1), so this never proves an empty queue;
 #   2. MAX_RUNS (8) reached         — a 9th job in one burst is simply left;
-#   3. wall budget (MAX_WALL - WORST_RUN = 525s) spent;
+#   3. wall budget (MAX_WALL - WORST_RUN = 500s) spent;
 #   4. a claim HTTP/JSON error      — returns the same nil as 204 and breaks the loop.
 # So an interactive spinner can wait up to 5min + AccuracySec. That is accepted because the
 # tools queue is operator-driven and rarely bursts past 8, NOT because it cannot happen.

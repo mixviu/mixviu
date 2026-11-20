@@ -29,8 +29,10 @@ ExecStart=/usr/bin/flock -n @{run}/toolsd/drain.lock @{prefix}/bin/mix @{lib}/to
 LoadCredential=tools_secret:@{etc}/toolsd/secret
 
 # The drain bounds its own WALL (MAX_WALL=600s): it stops claiming once the budget is
-# spent, and never starts a run it cannot finish. Worst case = MAX_WALL + one full run
-# (claim 15 + exec 40 + report 20 = 75s) ~= 675s. 900s leaves headroom without letting a
+# spent, and never starts a run it cannot finish. Reserve 100s per run: claim 15s,
+# streaming work 60s (resolution/hops/progress), report 20s, plus overhead.
+# Eight-run fallback is 800s; the monotonic wall cutoff is 500s. 900s leaves headroom.
+# This bounds work without letting a
 # wedged drain hang forever. The bound counts the CLAIM and REPORT round-trips, not just
 # execution.
 TimeoutStartSec=900

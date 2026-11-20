@@ -31,7 +31,7 @@ $failed = false
 try $e.select_rules(merge($unmanaged, {mode:"cgroup"}), fn($text) = check_all($text)) catch $m $failed = true end
 check($failed, "explicit cgroup requires lifecycle acknowledgement")
 $text = $uidrules.rules
-for $range in ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "100.64.0.0/10", "127.0.0.0/8", "::1/128", "fc00::/7", "fe80::/10"]
+for $range in ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "100.64.0.0/10", "127.0.0.0/8", "::1/128", "fc00::/7", "fe80::/10", "224.0.0.0/4", "255.255.255.255/32", "240.0.0.0/4", "ff00::/8", "::ffff:0:0/96"]
   check(contains($text, $range), "deny " .. $range)
 end
 for $exception in ["ip daddr 127.0.0.53 udp dport 53 counter return", "ip daddr 127.0.0.53 tcp dport 53 counter return", "ip daddr 203.0.113.25 counter return", "ip6 daddr 2001:db8::25 counter return", "ip daddr 127.0.0.1 tcp dport 4200 counter return"]
@@ -47,8 +47,13 @@ check(refuses(merge($c,{noded_tcp:{address:"127.0.0.1",port:"4200; accept"}})), 
 check($e.identity_ok({uid:1234, mode:"skuid"},1234,"") and not $e.identity_ok({uid:1234,mode:"skuid"},0,""), "probe requires drain UID")
 check($e.identity_ok({uid:1234,mode:"cgroup"},1234,"0::/system.slice/toolsd-drain.service\n") and not $e.identity_ok({uid:1234,mode:"cgroup"},1234,"0::/system.slice/other.service\n"), "probe requires actual drain cgroup")
 for $error in ["Connection refused (os error 111)", "connect deadline exceeded", "Network unreachable (os error 101)"]
-  check(not $e.denied_ok({listening:true,connected:false,error:$error}), "inconclusive denial fails " .. $error)
+  check(not $e.denied_ok({listening:true,connected:false,error:$error,before:5,after:5}), "failed connect without rule hit fails " .. $error)
 end
+for $errno in [113,13]
+  check($e.denied_ok({listening:true,connected:false,error:"os error " .. to_string($errno),before:5,after:6}), "counter proves denial independent of family errno " .. to_string($errno))
+end
+check(not $e.denied_ok({listening:true,connected:true,before:5,after:6}), "counter rise cannot hide successful connect")
+check(not $e.denied_ok({listening:true,connected:false,before:5,after:4}), "counter reset never passes")
 check(not $e.denied_ok({listening:false,connected:false,error:"(os error 13)"}), "listener setup failure never passes")
 check(not $e.dns_ok({ok:true,rcode:"NXDOMAIN",answers:[]}) and not $e.dns_ok({ok:true,rcode:"SERVFAIL",answers:[]}), "negative DNS answers never pass")
 
@@ -59,14 +64,14 @@ try
   $source = read_file(dirname(script_path()) .. "/../scripts/egress_probe.mix")
   $module = realpath(dirname(script_path()) .. "/../scripts/lib/egress.mix")
   $source = replace($source, 'require("lib/egress.mix")', "require(" .. json_encode($module) .. ")")
-  for $name in ["uid", "tcp_listen", "tcp_local_addr", "tcp_connect", "tcp_close", "dns_query"]
+  for $name in ["uid", "tcp_listen", "tcp_local_addr", "tcp_connect", "tcp_close", "dns_query", "run_argv_must", "run_argv"]
     $source = replace($source, $name .. "(", "fixture_" .. $name .. "(")
   end
   $source = replace($source, 'read_file("/proc/self/cgroup")', '"0::/system.slice/toolsd-drain.service"')
   write_file($tmp .. "/probe.mix", read_file(dirname(script_path()) .. "/fixtures/egress-probe.txt") .. "\n" .. $source)
-  for $case in ["pass", "wrong_uid", "unguarded", "refused", "timeout", "no_ipv6", "dns_udp_bad", "dns_tcp_bad", "dns_empty"]
-    $r = run_argv([$mix,$tmp .. "/probe.mix","--config",$tmp .. "/config.conf.mix"],{env:{EGRESS_CASE:$case},timeout:10})
-    check(if $case == "pass" then $r.ok and contains($r.stdout, '"pass":true') else not $r.ok end, "probe executable verdict " .. $case .. " " .. $r.stderr)
+  for $case in ["pass", "wrong_uid", "unguarded", "refused", "timeout", "no_ipv6", "dns_udp_bad", "dns_tcp_bad", "dns_empty", "no_counter", "counter_reset", "missing_counter"]
+    $r = run_argv([$mix,$tmp .. "/probe.mix","--config",$tmp .. "/config.conf.mix","--user","toolsd"],{env:{EGRESS_CASE:$case, MIX_TEST_MIX_EXE:$mix},timeout:10})
+    check(if $case == "pass" then $r.ok and contains($r.stdout, '"pass":true') and contains($r.stdout,"os error 113") and contains($r.stdout,"os error 13") else not $r.ok end, "probe executable verdict " .. $case)
   end
   -- The renderer source has exactly one nft invocation and it is check-only.
   $source = read_file(dirname(script_path()) .. "/../scripts/egress_render.mix")
@@ -77,7 +82,11 @@ try
   write_file($tmp .. "/bin/nft", $fake)
   chmod($tmp .. "/bin/nft",0o755)
   write_file($tmp .. "/render.conf.mix",data_encode($c))
-  $renderer = realpath(dirname(script_path()) .. "/../scripts/egress_render.mix")
+  $source = replace($source, 'require("lib/egress.mix")', "require(" .. json_encode($module) .. ")")
+  $source = replace(replace($source,"/usr/sbin/nft",$tmp .. "/bin/nft"),"/usr/bin/nft",$tmp .. "/bin/nft")
+  write_file($tmp .. "/renderer.mix",$source)
+  $renderer = $tmp .. "/renderer.mix"
+  check(not contains(read_file(dirname(script_path()) .. "/../scripts/egress_render.mix"),'which("nft")'), "production nft selection ignores PATH")
   $r = run_argv([$mix,$renderer,"--config",$tmp .. "/render.conf.mix","--out",$tmp .. "/guard.nft"], {env:{PATH:$tmp .. "/bin"},timeout:10})
   check($r.ok and contains($r.stdout, '"applied":false') and contains($r.stdout, '"mode":"skuid"') and read_file($tmp .. "/guard.nft") == $text, "renderer CLI checks fallback and writes only candidate")
   write_file($tmp .. "/bin/nft", "#!" .. $mix .. "\nexit(1)\n")

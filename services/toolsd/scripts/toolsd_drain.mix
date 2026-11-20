@@ -6,8 +6,8 @@
 -- Runs as the UNPRIVILEGED `toolsd` user under a systemd oneshot (flock'd), woken
 -- by the ABP citizen (toolsd.mix) or, as a backstop, by a lazy timer. It holds exactly
 -- ONE credential — the tools claim secret — and holds no other authority: no PVE key, no
--- ssh identity, no polkit rule. Its network egress is confined by the unit (private/mesh
--- ranges denied; only the resolver stub, webd, and the public internet are reachable).
+-- ssh identity, no polkit rule. CT egress needs the separately applied nft guard;
+-- the unit's cgroup-BPF IP filters alone are not a guard in unprivileged CTs.
 --
 --   claim → re-validate → exec (run_argv) → report → repeat until the queue is empty
 --
@@ -33,12 +33,18 @@
 -- Retain the proven shared lexical scope in this compatibility port.
 -- lint: ignore MIX-W2401
 include (dirname(script_path()) .. "/lib/tools_exec.mix")
+$egress = require("lib/egress.mix")
 
 -- Where webd lives, and the credential. Both come from the unit (Environment= /
 -- LoadCredential=), never hardcoded.
 $BASE = env("TOOLS_BASE_URL")
 if $BASE == "" then
   eprintf("toolsd-drain: TOOLS_BASE_URL not set\n")
+  exit(1)
+end
+
+if not starts_with($BASE, "https://") then
+  eprint("toolsd-drain: TOOLS_BASE_URL must use https")
   exit(1)
 end
 
@@ -85,16 +91,15 @@ end
 -- So bound WALL, not just count: stop CLAIMING once the budget is spent, and never start
 -- a run we cannot finish (MAX_WALL - WORST_RUN is the cutoff).
 --
--- MAX_RUNS is the CLOCK-INDEPENDENT fallback and must be safe ON ITS OWN: time() is
--- SystemTime, not monotonic, so a backwards clock step could keep the wall check happy
--- forever (Codex). At 8 runs x WORST_RUN (75s) = 600s < TimeoutStartSec (900s), systemd
--- cannot kill a legitimate drain even if the wall budget never trips. Whatever is left is
--- picked up by the next wake or the backstop timer.
+-- Resolution, hops and progress share a 60s monotonic deadline. Claim (15s)
+-- plus streaming (60s) plus final report (20s) reserves 100s with overhead.
+-- Eight-run fallback is 800s < the 900s unit limit; the monotonic wall budget
+-- normally stops claims earlier. Resolution uses a bounded native Mix child.
 $MAX_RUNS = 8
 $MAX_WALL = 600
-$WORST_RUN = 75
+$WORST_RUN = 100
 $runs = 0
-$started = time()
+$started = monotonic()
 
 -- POST /tools/claim-next → { run_id, tool, params, requested_by, requested_role,
 -- lease_token } | nil when the queue is empty (204).
@@ -135,12 +140,14 @@ end
 -- RETRIED a bounded number of times (the server is idempotent on seq, so re-sending the
 -- same seq after a lost response is safe — Codex): otherwise a single dropped response
 -- would strand the run claimed until its lease expires. A 4xx (fenced/gap) is terminal.
-function report_progress($run, $seq, $chunk)
+function report_progress($run, $seq, $chunk, $deadline)
   $body = json_encode({ run_id: $run["run_id"], lease_token: $run["lease_token"],
                         seq: $seq, chunk: $chunk })
   $try = 0
   while $try < 3
-    $r = http_post($BASE .. "/tools/report", $body, $HDRS, tools_http_opts(15))
+    $remaining = $deadline - monotonic()
+    if $remaining <= 0 then return false end
+    $r = http_post($BASE .. "/tools/report", $body, $HDRS, tools_http_opts(min(15, $remaining)))
     $st = to_number("" .. $r["status"])
     if $st == 200 then
       return true
@@ -151,7 +158,7 @@ function report_progress($run, $seq, $chunk)
     end
     -- transport/5xx → retry the SAME seq (idempotent server-side).
     $try = $try + 1
-    sleep(0.3)
+    sleep(max(0, min(0.3, $deadline - monotonic())))
   end
   return false
 end
@@ -165,14 +172,25 @@ end
 function stream_trace($run, $host)
   -- Resolve ONCE to an IP, then trace the IP: with -n the hop lines are IPs, so arrival is
   -- detected by the target IP appearing (the domain NAME would never match a -n line).
+  $deadline = monotonic() + 60
   $ips = []
-  try
-    $ips = dns_lookup($host)
-  catch $e
+  $resolver = tools_exec_safe($TOOLS_MIX)
+  if $resolver.ok then
+    $resolved = run_argv([$resolver.path, "-c", 'print(json_encode(dns_lookup(args()[0])))', $host],
+      {timeout:5, max_output:4096, cwd:$TOOLS_CWD, env:$TOOLS_ENV, clear_env:true})
+    if $resolved.ok then
+      try $ips = json_parse($resolved.stdout) catch $e end
+    end
   end
   if length($ips) == 0 then
     report($run, false, nil, "", "could not resolve " .. $host, false)
     return
+  end
+  for $ip in $ips
+    if not $egress.public_address($ip) then
+      report($run, false, nil, "", "trace refuses non-public target", false)
+      return
+    end
   end
   -- Prefer an IPv4 target: plain `traceroute` speaks IPv4, and an IPv6-first result would
   -- have it probing an address family it can't route (every hop a timeout). An IPv4 is the
@@ -189,28 +207,23 @@ function stream_trace($run, $host)
   end
   -- One overall wall for the whole trace, not just per-hop: a run of all-timeout hops must
   -- not exceed the tool's budget (Codex — otherwise 20 hops x per-hop deadline > timeout).
-  $deadline = time() + 55
   $max = tools_trace_max_hops()
   $seq = 0
   -- First line names what we're tracing (the modal shows it immediately).
-  if not report_progress($run, 1, "traceroute to " .. $host .. " (" .. $target .. "), " .. ("" .. $max) .. " hops max\n") then
+  if not report_progress($run, 1, "traceroute to " .. $host .. " (" .. $target .. "), " .. ("" .. $max) .. " hops max\n", $deadline) then
     return
   end
   $seq = 1
   $i = 1
   while $i <= $max
-    if time() > $deadline then
-      $seq = $seq + 1
-      $_ = report_progress($run, $seq, "… trace deadline reached\n")
-      break
-    end
+    if monotonic() >= $deadline then break end
     $a = tools_trace_argv($target, $i)
     if $a["ok"] != true then
       report($run, false, nil, "", "" .. $a["error"], false)
       return
     end
     -- Short per-hop deadline: one hop that can't be reached returns a "* * *" line fast.
-    $r = run_argv($a["argv"], { timeout: 8, max_output: 4096,
+    $r = run_argv($a["argv"], { timeout: min(8, max(0.001, $deadline - monotonic())), max_output: 4096,
                                 cwd: $TOOLS_CWD, env: $TOOLS_ENV, clear_env: true })
     -- Extract the hop line whose first token is this hop number (drops any
     -- "traceroute to …" banner traceroute prints on the first probe). A blank/timed-out
@@ -222,7 +235,7 @@ function stream_trace($run, $host)
       end
     end
     $seq = $seq + 1
-    if not report_progress($run, $seq, $line .. "\n") then
+    if not report_progress($run, $seq, $line .. "\n", $deadline) then
       -- lease gone — stop rather than stream into a dead run.
       return
     end
@@ -360,7 +373,7 @@ while $runs < $MAX_RUNS
   -- mid-way through (a killed run's lease would expire and — for a retryable tool — be
   -- re-queued, but the operator would still watch a dead spinner). Whatever is left in the
   -- queue is picked up by the next wake, or by the backstop timer.
-  if (time() - $started) > ($MAX_WALL - $WORST_RUN) then
+  if (monotonic() - $started) > ($MAX_WALL - $WORST_RUN) then
     print("toolsd-drain: wall budget spent after " .. ("" .. $runs) .. " runs — leaving the rest to the next wake")
     break
   end

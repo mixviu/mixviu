@@ -37,13 +37,18 @@ in unprivileged Proxmox CTs. They remain useful on VMs and privileged hosts.
 `SystemCallFilter` is still enforced in those CTs. Keep the drain masked in a
 CT until the hub has separately applied and proved a real egress guard.
 
-The drain stops after eight runs or its 600-second wall budget. Tools have
-fixed deadlines/output caps. A five-minute timer (two minutes after boot,
+The drain stops after eight runs or its 600-second monotonic wall budget,
+reserving 100 seconds before each claim. Trace resolution, hops and progress
+retries share one 60-second monotonic deadline; claim and final report have
+15/20-second bounds. Eight worst-case envelopes fit the 900-second unit bound.
+Resolved trace addresses must all be public unicast; private, special-use,
+documentation, mapped IPv6 and transition targets are refused before exec.
+Tools have fixed deadlines/output caps. A five-minute timer (two minutes after boot,
 ten-second accuracy) covers lost wakes and truncated drains: queued work may
 wait that full interval. Host systemd provides the 900-second final bound.
 
-Run `mix services/toolsd/tests/toolsd_test.mix` and
-`mix tests/mix_services_bundle_test.mix`. Runtime edge fixtures never contact a
+Run `mix services/toolsd/tests/all.mix` for every toolsd suite and the bundle
+closure. Runtime edge fixtures never contact a
 public queue or start host units. An isolated host rehearsal must separately
 prove polkit, credential delivery, Unix registration, executable availability
 and effective egress confinement. Installation, host policy and rollback belong
@@ -76,29 +81,50 @@ Without a proven refresh hook, use the dedicated UID fallback, which survives
 cgroup recreation. Resolve the UID on the destination; do not share that UID
 with other services. The renderer reports the selector and refresh obligation.
 
-Both modes deny 10/8, 172.16/12, 192.168/16, 169.254/16, 100.64/10, 127/8,
-::1, fc00::/7 and fe80::/10. Exceptions precede the deny: only DNS port 53
+Both modes deny 0/8, 10/8, 172.16/12, 192.168/16, 169.254/16, 100.64/10,
+127/8, multicast 224/4 and ff00::/8, reserved 240/4, limited broadcast,
+unspecified/loopback IPv6, fc00::/7 and fe80::/10. IPv4-mapped IPv6 is denied
+as ::ffff:0:0/96 when visible as IPv6; mapped IPv4 sockets also hit the IPv4
+deny rules. Named `deny4`/`deny6` counters record rule hits.
+Exceptions precede the deny: only DNS port 53
 (UDP and TCP) to 127.0.0.53 and the configured node public addresses. Native
 Unix Bus traffic bypasses inet hooks, so needs no IP exception. A legacy TCP
 Bus link can supply `noded_tcp: {address: "127.0.0.1", port: 4200}` for an
 exact address/TCP-port exception; it does not open the whole noded subnet.
 The UID guard affects all IP sockets owned by that account, not toolsd-wake.
 
-After authorised application, run the probe as the selected drain UID with
-`<prefix>/bin/mixd run <lib>/toolsd/egress_probe.mix --config PRIVATE.conf.mix`.
-Set config `mode` to the renderer's selected mode, not `auto`. In cgroup mode
-it must run inside the actual `system.slice/toolsd-drain.service` cgroup
-(the hub can temporarily replace the drain ExecStart with the probe, without
-queue credentials). In UID mode the hub can use `runuser -u toolsd -- ...`.
-The probe verifies identity, creates live IPv4/IPv6 loopback listeners, and
-requires explicit permission denial on connects to them. A refused connection,
-timeout, absent IPv6 or failed listener is inconclusive and fails. It then
-requires successful A answers over both UDP and TCP through 127.0.0.53, using
-`dns_name` from config (default `example.com`). It reads no credentials and
-contacts no tool queue. Record the selected mode, rule counters and probe result
-before unmasking; validate the exact Bus link in the same host rehearsal.
+After authorised application, the hub runs the **root supervisor**:
+`<prefix>/bin/mixd run <lib>/toolsd/egress_probe.mix --config PRIVATE.conf.mix
+--user toolsd`. It reads named counters through an absolute nft executable,
+checks the account UID, then uses absolute `runuser` to launch a credential-free
+worker as the drain. The worker verifies identity, creates live IPv4/IPv6
+loopback listeners, attempts five-second connects, and checks A answers over
+UDP/TCP via 127.0.0.53 (`dns_name`, default `example.com`). A pass requires both
+connects to fail **and each corresponding deny counter to rise**, plus both DNS
+checks. Errno is diagnostic only: IPv4 rejection commonly gives 113, IPv6 13.
+Missing/reset/unchanged counters, successful connects, failed listeners and DNS
+errors fail closed. The worker alone never attests a pass. The drain gains no
+nft privilege or extra polkit authority; counter access stays with the hub.
+
+Set config `mode` to the selected mode, not `auto`, and make this non-secret
+config readable by toolsd. Quiesce other drain/UID traffic and do not reload
+rules during the probe, so counter deltas belong to the test. UID mode needs
+no cgroup movement. Cgroup mode requires the supervisor/worker to be in the
+actual drain cgroup; any temporary hub test unit override must permit the root
+supervisor's netlink counter reads, preserve the worker UID, and omit all queue
+credentials. Do not widen the production drain's hardening for this check.
+Record selector, counter deltas and result before unmasking; validate Bus parity
+in the same isolated rehearsal. No credentials or tool queue are involved.
 Rendering/unit tests do not establish CT enforcement. Applying this firewall
 on a guest requires separate operator approval; this PR authorises no deployment.
 
 Selector syntax and check-only semantics follow the
 [nftables manual](https://netfilter.org/projects/nftables/manpage.html).
+Trace special-use exclusions follow the IANA
+[IPv4](https://www.iana.org/assignments/iana-ipv4-special-registry/) and
+[IPv6](https://www.iana.org/assignments/iana-ipv6-special-registry/) registries,
+conservatively excluding transition/protocol blocks. Documentation literals
+are accepted for offline node-rule examples, but never as trace targets.
+shwho revalidates MX-derived names and uses dig's explicit `-q` query slot:
+[BIND dig's parser](https://github.com/isc-projects/bind9/blob/main/bin/dig/dig.c)
+does not support a `--` terminator. Reverse lookup `-x` consumes a validated IPv4.

@@ -31,6 +31,8 @@
 -- paths it validated, passed positionally after the domain — so this script execs the
 -- symlink-free real files, not /usr/bin/whois|dig which on Debian are alternatives symlink
 -- chains an intermediate hop could hijack (Codex).
+$registry = require("../lib/tools_registry.mix")
+$egress = require("../lib/egress.mix")
 $WHOIS = "/usr/bin/whois"
 $DIG = "/usr/bin/dig"
 
@@ -70,7 +72,16 @@ end
 
 -- dig one record type, return the answers as a list of trimmed lines.
 fn dig($type, $name)
-  $r = run_argv([$DIG, "+short", $type, $name], {timeout: 15})
+  if $type == "-x" then
+    if not $egress.ipv4($name) then return [] end
+  else
+    $name = $registry.tools_valid_domain($name)
+    if $name == nil then return [] end
+  end
+  -- BIND dig has no -- terminator: -q consumes the validated query name.
+  -- -x likewise consumes an IPv4 argument, validated above.
+  $argv = if $type == "-x" then [$DIG, "+short", "-x", $name] else [$DIG, "+short", "-t", $type, "-q", $name] end
+  $r = run_argv($argv, {timeout:15, max_output:65536})
   if not $r.ok or trim($r.stdout) == "" then
     return []
   end
@@ -87,7 +98,9 @@ end
 
 -- Registrar / nameservers / DNSSEC, straight out of the whois record.
 -- whois can be slow (and hang on rate-limited TLD servers), hence the deadline.
-$w = run_argv([$WHOIS, $dom], {timeout: 30})
+$dom = $registry.tools_valid_domain($dom)
+if $dom == nil then raise("PARAM", "invalid domain") end
+$w = run_argv([$WHOIS, "--", $dom], {timeout:30, max_output:131072})
 if $w.timed_out then
   eprintf("WARN: whois %s timed out\n", $dom)
 end
