@@ -38,18 +38,13 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
     } else {
         "cursor-listed"
     };
-    let Some(row) = state
+    let Some(window) = state
         .inner
         .comp
         .registry
         .surface_rows()
-        .find(|r| r.app_id().is_some_and(|s| s.as_ref() == app))
-    else {
-        return;
-    };
-    let id = row.id();
-    let generation = row.generation();
-    let Ok(window) = world::window::draw::frame::scene::capture_window(state, id.0, generation)
+        .filter(|r| r.app_id().is_some_and(|s| s.as_ref() == app))
+        .find_map(|r| world::window::draw::frame::scene::capture_window(state, r.id().0, r.generation()).ok())
     else {
         return;
     };

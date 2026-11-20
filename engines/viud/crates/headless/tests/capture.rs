@@ -977,25 +977,26 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
             place_args(row, json!({"output":"headless-0","x":100,"y":100})),
         );
     }
+    let root = process.root.clone();
     let mut serial = 0;
     let mut focus = |mode: &str, a: &mut Pattern, b: &mut Pattern, c: &mut Pattern| {
         serial += 1;
         fs::write(
-            process.root.join("record-input-next"),
+            root.join("record-input-next"),
             format!("{mode}:{serial}"),
         )
         .unwrap();
         fs::rename(
-            process.root.join("record-input-next"),
-            process.root.join("record-input"),
+            root.join("record-input-next"),
+            root.join("record-input"),
         )
         .unwrap();
-        bus.call("comp.capture.frame", json!({"output":"headless-0","path":process.root.join("epoch-focus.ppm"),"format":"ppm"}));
+        bus.call("comp.capture.frame", json!({"output":"headless-0","path":root.join("epoch-focus.ppm"),"format":"ppm"}));
         pump_patterns(&mut [a, b, c]);
     };
     let take = |name: &str, a: &mut Pattern, b: &mut Pattern, c: &mut Pattern| {
         eprintln!("CURSOR_EPOCH_TAKE {name}");
-        let path = process.root.join(format!("{name}.vfl"));
+        let path = root.join(format!("{name}.vfl"));
         let start = bus.call("comp.record.start", json!({"request_id":name,"target":{"output":"headless-0","windows":[target(&ar)]},"cursor":true,"path":path,"max_seconds":10}));
         pump_patterns(&mut [a, b, c]);
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -1025,7 +1026,7 @@ fn record_privacy_cursor_enter_epoch_and_listed_children() {
         }
     };
     let live = |name: &str| {
-        let path = process.root.join(format!("{name}.ppm"));
+        let path = root.join(format!("{name}.ppm"));
         bus.call(
             "comp.capture.frame",
             json!({"output":"headless-0","path":path,"format":"ppm"}),
