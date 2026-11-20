@@ -128,6 +128,7 @@ struct Host {
     owner_close_pending: bool,
     model: Value,
     model_revision: Option<(u64, u64)>,
+    model_refused: Option<u64>,
     model_bytes: usize,
     output: Option<String>,
     outputs: BTreeMap<String, Value>,
@@ -156,6 +157,7 @@ impl Host {
     fn publication_result(&mut self, generation: u64, revision: u64, result: Result<(), String>) {
         let (command, body) = match result {
             Ok(()) => {
+                self.model_refused=None;
                 self.model_revision = Some((generation, revision));
                 (
                     "viu.model.applied",
@@ -163,6 +165,7 @@ impl Host {
                 )
             }
             Err(message) => {
+                self.model_refused=Some(generation);
                 self.error = message.clone();
                 (
                     "viu.model.refused",
@@ -177,6 +180,7 @@ impl Host {
         patch: &crate::model_patch::Patch,
         ctx: &egui::Context,
     ) -> Result<(), String> {
+        if self.model_refused==Some(patch.generation) {return Err("model publication requires full resynchronisation".into());}
         if self.model_revision != Some((patch.generation, patch.base)) {
             return Err("stale model base; publish a full model".into());
         }
@@ -2236,7 +2240,7 @@ fn create_with_probe(
     }));
     let (clipboard, local_clipboard) = crate::clipboard::Clipboard::channel(wake.clone());
     let services = crate::runtime::Services {
-        incremental_models: true,
+        incremental_models: bundle.manifest.surface != "headless",
         #[cfg(feature = "test-support")]
         test_cpu_probe,
         clipboard: Some(clipboard),
@@ -2368,6 +2372,7 @@ fn create_with_probe(
         owner_close_pending: false,
         model: json!({}),
         model_revision: None,
+        model_refused: None,
         model_bytes: 2,
         output: None,
         outputs: BTreeMap::new(),
