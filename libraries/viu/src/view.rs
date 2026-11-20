@@ -1011,7 +1011,7 @@ impl SceneView {
                         }
                         let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
                         let radial_shape = ui.painter().add(egui::Shape::Noop);
-                        let frame_width = num(node,"width").or(num(node,"min_width")).or_else(|| (node.ports.get("fill")==Some(&Value::Bool(true))).then(||ui.available_width()));
+                        let frame_width = num(node,"width").or(num(node,"min_width")).or_else(|| (node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0.).then(||ui.available_width()));
                         let frame = egui::Frame::new()
                             .fill(if node.ports.contains_key("background_radials") {Color32::TRANSPARENT} else {background})
                             .inner_margin(egui::Margin { left: node_padding(node, "padding_left") as i8, right: node_padding(node, "padding_right") as i8, top: node_padding(node, "padding_top") as i8, bottom: node_padding(node, "padding_bottom") as i8 })
