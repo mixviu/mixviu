@@ -108,6 +108,7 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     // strict 4K30 throughput has its own optimised acceptance benchmark.
     let mut process = process::spawn_osd("osd-caption", &bus.url, "640x360");
     let mut pattern = Pattern::new(connect(&mut process));
+    pattern.state.size = (640, 360);
     pattern.solid_buffer(0xff20d040);
     pattern.commit(true);
     pattern.wait_callback(0);
