@@ -36,6 +36,22 @@ elif $mode=="wire" then
   finally
     remove($old_path)
   end
+elif $mode=="compare" then
+  checked(concat(slice($test,0,8),["--no-run"]))
+  $path="apps/workshop/counter.mix";$candidate=read_file($path);$candidate_ok=false
+  try
+    for $case in ["regex","lookup"]
+      write_file($path,if $case=="regex" then run_argv_must(["git","show","be270734:"..$path]) else $candidate end)
+      print("OWNER_ENCODER "..$case)
+      $r=run_argv($test,{timeout:120,stderr:"stdout",max_output:64000000});print($r.stdout)
+      print({encoder:$case,rc:$r.exit_code})
+      if $case=="lookup" then $candidate_ok=$r.ok end
+    end
+  finally
+    write_file($path,$candidate)
+    print(run_argv_must(["git","diff"]))
+  end
+  if not $candidate_ok then exit(1) end
 elif $mode=="negative" then
   $paths=["apps/workshop/discovery.mix","apps/workshop/controller.mix","apps/workshop/work.mix"]
   $original={}
