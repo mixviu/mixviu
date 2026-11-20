@@ -1,3 +1,35 @@
+# PR #213 round 8 — review fixes validated
+
+PR: https://github.com/mixviu/mixviu/pull/213; branch fix/workshop-discovery-flake.
+Final tested code: `d5de50233afc2508c83c24e04fec11f15d8a7769`; the following commit records this receipt only. Main fetched/merged first, already current at 6033d061 (#196/#210).
+
+All four requested fixes are complete. No binding/encoder policy, deadlines, peers, serial list or numeric limits changed. No tools/ci.mix all in this round. PR remains ready; pr_gate cbc is the next full run.
+
+## Review r1 response
+
+| Finding | Response and evidence |
+| --- | --- |
+| Gemini BLOCKING / GLM: expiry loses accepted services and may admit describes after deadline | Fixed in `apps/workshop/discovery.mix:151`: flush remaining local/remote entries into node services, original identities and deadline-error placeholders, without enqueueing work; clear lists before finalising. `discovery-expiry-test.mix` covers partially expanded lists, routing, original versus synthetic identities, completion, empty queue and zero backend admissions. Removing the flush fails with `expiry must retain every accepted service`. |
+| GLM / Gemini: live test-support host enables CPU probe | Fixed: `app_host.rs:1893` calls the constructor with false; only `test_support::Harness` opts in (`:2671`). Registration remains outside runtime.rs. Exact registry comparison, generator and lint_context unchanged and passing in both feature configurations. |
+| Gemini: controls depend on unreachable branch commits | Fixed: `workshop-probe.mix:62,98,114` uses current-source mutations/copies for jq, eager expansion, unbounded scan and expiry-flush removal. No commit SHAs or `git show`; exact assertion checks and source restoration/diff checks retained. Jq helper smoke test is byte-identical in all three samples. |
+| GLM: slow-only equivalence cases look like fast-path coverage | Fixed: `counter-test.mix:22` requires an expected `needs_thaw` value for every equivalence call. Separate false/fast and true/slow corpus groups; snapshot explicitly false, digit-string counters and witnesses true. Equality remains parsed JSON inside jq to preserve u64 low bits. |
+| DeepSeek: `model.sessions[0]` dependency is skipped | Rejected after code check: `expr::reads()` stops at the first index (`analysis.rs:71`, existing semantics test at `:661`), yielding `model.sessions`, not `model.sessions[0]`. Comparing that containing value detects element changes. Binding code unchanged. |
+| GLM: dynamic-read dependency coverage | Existing syntactic contract covers `$model.m[$model.k].x` as `model.m` and `model.k`, and indexed `item.cells[0]` as `item.cells` (`expr/tests/semantics.rs:661`). The binding predicate compares the containing top-level subtree conservatively. No change to dependency recording or comparison. |
+| DeepSeek: double encode on slow path | Retained intentionally: the fallback is rare by design and keeps the exact old thaw semantics. No encoder behaviour change in this review round. |
+
+Validation: scoped CBC `20261121-071033-20bf890d-a1` (fmt, all-target clippy, every lib-viu target with default features and test-support, exact vocabulary checks, counter path/equivalence cases and six source-mutation negative controls); jq helper `20261121-071255-4ba36e94-a1`. Strict twelve-round width-four crate pool with workshop_bus alone: `20261121-073011-73434aeb-a1`, 12/12 green. No full CI was run in this round; the serial list is unchanged and `pr_gate cbc` is the next full run.
+
+Tested code `d5de50233afc2508c83c24e04fec11f15d8a7769`; receipt head the following receipt commit. All original deadlines, peers, discovery bounds and numeric guards are unchanged. Full history and job receipts: `last.md`.
+
+
+Scoped checks: 55 all-target binaries per configuration (includes terminal_ime_driver example); default 627 passed / 0 failed / 12 existing ignored; test-support 636 / 0 / 12; doctests zero. All eight branch-changed Mix files lint cleanly. Six mutation controls require expected cargo-101 assertion failures, then restore source. Pump negative observed 702 us against 0; model negative 24,206 bytes against 1. Worker fmt applied from 20261121-070923-d33e8115-a1.
+
+Twelve rounds each run all 54 test binaries, width four and workshop_bus alone, retry disabled. Pump maximum 498960 us; model maximum 2668231 bytes, below 800,000 us / 4 MiB. Every expiry regression and 200-peer discovery test passed in every round. Full logs parsed and retained privately.
+
+Earlier receipts below are historical.
+
+---
+
 # PR #213 — test probe registration and final isolation validation
 
 PR: https://github.com/mixviu/mixviu/pull/213 (`mixviu-agent`).
