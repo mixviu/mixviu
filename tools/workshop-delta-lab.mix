@@ -14,6 +14,26 @@ fn difference($before,$after,$path=[])
     return $out
   end
   if type($before)=="list" and type($after)=="list" then
+    -- Traffic's presentation ids are positional. Learn whether preserving
+    -- overlapping rows plus tiny id edits beats replacing the entire list.
+    if len($before)>1 and len($after)>1 and type($before[0])=="map" and has_key($before[0],"id") then
+      for $drop=1 to len($before)-1
+        $overlap=min(len($before)-$drop,len($after))
+        if not deep_eq(delete($before[$drop],"id"),delete($after[0],"id")) then continue end
+        $equal=true
+        for $i=0 to $overlap-1
+          if not deep_eq(delete($before[$drop+$i],"id"),delete($after[$i],"id")) then $equal=false;break end
+        end
+        if $equal then
+          $out=[{op:"splice",path:$path,index:0,remove:$drop,items:[]}]
+          for $i=0 to $overlap-1
+            if $before[$drop+$i].id!=$after[$i].id then push($out,{op:"set",path:concat($path,[$i,"id"]),value:$after[$i].id}) end
+          end
+          push($out,{op:"splice",path:$path,index:$overlap,remove:len($before)-$drop-$overlap,items:slice($after,$overlap)})
+          return $out
+        end
+      end
+    end
     $prefix=0;$suffix=0
     while $prefix<min(len($before),len($after)) and deep_eq($before[$prefix],$after[$prefix]) $prefix=$prefix+1 end
     while $suffix<min(len($before),len($after))-$prefix and deep_eq($before[len($before)-1-$suffix],$after[len($after)-1-$suffix]) $suffix=$suffix+1 end
