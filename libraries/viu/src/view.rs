@@ -173,6 +173,12 @@ impl SceneView {
     pub fn model(&self) -> &Value {
         &self.tree.model
     }
+    #[cfg(feature="test-support")]
+    pub(crate) fn publication_equivalent(&self,other:&Self)->bool {
+        self.tree==other.tree && self.lists==other.lists && match (&self.frame,&other.frame) {
+            (Some(a),Some(b))=>a.publication_equivalent(b),(None,None)=>true,_=>false
+        }
+    }
     /// Stage data edits and binding ports, validate, then commit the frame
     /// before the root. No fallible work follows the frame commit.
     pub(crate) fn apply_model_patch(&mut self, patch:&crate::model_patch::Patch)->Result<(),String> {

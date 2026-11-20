@@ -1084,6 +1084,12 @@ impl Host {
                     probe.patch_apply_cpu.push(test_support::thread_cpu().saturating_sub(patch_started).as_micros() as u64);
                     probe.retained_model_bytes.push(self.model_bytes as u64);
                 }
+                #[cfg(feature="test-support")]
+                if result.is_ok() && self.discovery_probe.as_ref().is_some_and(|p|p.verify_incremental) {
+                    let model=self.projection(&self.model,ctx);
+                    let full=if self.framed {crate::gold_frame::mount(&self.active_scene,model)} else {SceneView::with_model(&self.active_scene,model)}.expect("full publication oracle");
+                    assert!(self.view.publication_equivalent(&full),"incremental publication differs from full rendered state");
+                }
                 self.publication_result(done.generation,patch.revision,result);
             } else if done.error.is_some() {
                 if let Some(revision)=done.model_revision {self.publication_result(done.generation,revision,Err(self.error.clone()));}
@@ -2684,6 +2690,8 @@ pub mod test_support {
     }
     #[derive(Default)]
     pub struct DiscoveryProbe {
+        patch_cpu_bound:Option<u64>,
+        pub(super) verify_incremental:bool,
         pub(super) patch_apply_cpu:Vec<u64>,
         pub(super) retained_model_bytes:Vec<u64>,
         numeric_bounds: Option<(u64, u64)>,
@@ -2753,6 +2761,10 @@ pub mod test_support {
                 p.per_pump.push(p.steps - before);
                 p.completed_per_pump
                     .push(p.discovery_steps - completed_before);
+                if let Some(bound)=p.patch_cpu_bound {
+                    let observed=p.patch_apply_cpu.iter().copied().max().unwrap_or(0);
+                    assert!(observed<=bound,"patch apply CPU: observed_us={observed}, bound_us={bound}");
+                }
                 if let Some((pump_us, model_bytes)) = p.numeric_bounds {
                     let measured_model_bytes =
                         p.tick_model_bytes.iter().copied().max().unwrap_or(0);
@@ -2776,6 +2788,12 @@ pub mod test_support {
         }
         pub fn profile_scene_apply(&mut self) {
             self.host.discovery_probe.as_mut().unwrap().profile_scene = true;
+        }
+        pub fn verify_incremental_publications(&mut self) {
+            self.host.discovery_probe.as_mut().unwrap().verify_incremental=true;
+        }
+        pub fn patch_cpu_bound(&mut self,bound:u64) {
+            self.host.discovery_probe.as_mut().unwrap().patch_cpu_bound=Some(bound);
         }
         pub fn record_call(&mut self, command: &str, elapsed: Duration) {
             if let Some(p) = &mut self.host.discovery_probe {

@@ -12,12 +12,14 @@ use viu::{app_host::test_support::Harness, bundle::Bundle};
 // The CBC diagnostic recipe enables this only for a measured control run.
 const PROFILE_INFO_HELPERS: bool = false;
 const PROFILE_TICK: bool = false;
+const VERIFY_INCREMENTAL: bool = false;
+const MAX_PATCH_APPLY_CPU_US: u64 = 100_000;
 // Fable ruling D: this binary runs alone. Post-startup round-5 standalone
 // max pump was 387,676 us; 800,000 us gives just over 2x margin. Tick models
 // reached 2,398,986 bytes; 4 MiB gives 75% margin. These numeric guards are
 // independent of the unchanged 1 s call and 2 s owner-stall assertions.
 const MAX_STANDALONE_PUMP_US: u64 = 800_000;
-const MAX_TICK_MODEL_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_TICK_MODEL_BYTES: u64 = 768 * 1024;
 
 fn profile_tick(bundle: &mut Bundle) {
     for (needle,replacement) in [
@@ -581,10 +583,12 @@ fn workshop_answers_during_discovery() {
         host.probe_discovery();
         if count == 200 {
             host.discovery_numeric_bounds(MAX_STANDALONE_PUMP_US, MAX_TICK_MODEL_BYTES);
+            host.patch_cpu_bound(MAX_PATCH_APPLY_CPU_US);
         }
         if PROFILE_TICK {
             host.profile_scene_apply();
         }
+        if VERIFY_INCREMENTAL {host.verify_incremental_publications();}
         let mut overlapping = false;
         let mut streamed = false;
         loop {
