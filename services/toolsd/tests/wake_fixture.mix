@@ -30,6 +30,8 @@ function fixture_cases()
     $starts = 0
     $queries = 0
     $replies = 0
+    -- lint: ignore MIX-E1102
+    -- fixture_wake is the real toolsd.wake handler, spliced in by toolsd_test.mix.
     fixture_wake()
     if $starts != 1 or $replies != 1 or $queries != (if $case.ok then 0 else 1 end) then raise("TEST", "wrong wake start/query/reply count") end
     print("PASS wake " .. $case.name .. ": bounded start only, ignores tool/target arguments")
