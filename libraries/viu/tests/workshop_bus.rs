@@ -30,7 +30,10 @@ fn profile_info_helpers(bundle: &mut Bundle) -> tempfile::NamedTempFile {
     $info=$m.info($s,viu_context())
     print("WORKSHOP_HELPER "..json_encode({name:"model.info",cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
     return result($s,$info)"#;
-    assert!(source.contains(before), "info helper probe must be installed");
+    assert!(
+        source.contains(before),
+        "info helper probe must be installed"
+    );
     let file = tempfile::Builder::new()
         .prefix(".workshop-info-profile-")
         .suffix(".mix")
@@ -38,9 +41,10 @@ fn profile_info_helpers(bundle: &mut Bundle) -> tempfile::NamedTempFile {
         .unwrap();
     std::fs::write(file.path(), source.replacen(before, after, 1)).unwrap();
     let path = serde_json::to_string(file.path().to_str().unwrap()).unwrap();
-    bundle.program.source = bundle.program.source.replace(
-        "require(\"controller.mix\")", &format!("require({path})"),
-    );
+    bundle.program.source = bundle
+        .program
+        .source
+        .replace("require(\"controller.mix\")", &format!("require({path})"));
     let before = r#"on workshop.info
   $out=handle($state,$event);$state=$out.state
   if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
@@ -60,7 +64,10 @@ end"#;
     $wire=nil
   end
 end"#;
-    assert!(bundle.program.source.contains(before), "info handler probe must be installed");
+    assert!(
+        bundle.program.source.contains(before),
+        "info handler probe must be installed"
+    );
     bundle.program.source = bundle.program.source.replacen(before, after, 1);
     file
 }

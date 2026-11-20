@@ -959,9 +959,10 @@ impl Host {
         }
         while let Some(done) = self.runtime.try_completion() {
             #[cfg(feature = "test-support")]
-            let _retire_probe = self.discovery_probe.as_ref().map(|_| {
-                test_support::PhaseProbe::new(format!("retire {}", done.command))
-            });
+            let _retire_probe = self
+                .discovery_probe
+                .as_ref()
+                .map(|_| test_support::PhaseProbe::new(format!("retire {}", done.command)));
             #[cfg(feature = "test-support")]
             if let Some(probe) = &mut self.discovery_probe {
                 probe.callbacks.push(done.elapsed.as_micros() as u64);
@@ -977,19 +978,23 @@ impl Host {
                     .entry(done.command.clone())
                     .or_default()
                     .push(done.cpu_elapsed.as_micros() as u64);
-                if done.command == "workshop.info"
-                    && done.reply.as_ref().is_some_and(|r| r.rc == 0)
+                if done.command == "workshop.info" && done.reply.as_ref().is_some_and(|r| r.rc == 0)
                 {
                     for line in done.stdout.lines() {
                         if let Some(text) = line.strip_prefix("WORKSHOP_HELPER ") {
-                            let value: Value = serde_json::from_str(text).expect("helper probe JSON");
+                            let value: Value =
+                                serde_json::from_str(text).expect("helper probe JSON");
                             let name = value["name"].as_str().unwrap().to_owned();
-                            probe.helper_cpu.entry(name.clone()).or_default().push(
-                                value["cpu_us"].as_f64().unwrap().round() as u64,
-                            );
-                            probe.helper_wall.entry(name).or_default().push(
-                                value["wall_us"].as_f64().unwrap().round() as u64,
-                            );
+                            probe
+                                .helper_cpu
+                                .entry(name.clone())
+                                .or_default()
+                                .push(value["cpu_us"].as_f64().unwrap().round() as u64);
+                            probe
+                                .helper_wall
+                                .entry(name)
+                                .or_default()
+                                .push(value["wall_us"].as_f64().unwrap().round() as u64);
                         }
                     }
                 }
@@ -1058,7 +1063,10 @@ impl Host {
                             if self.loaded && self.active_scene == source {
                                 #[cfg(feature = "test-support")]
                                 let _apply_probe = self.discovery_probe.as_ref().map(|_| {
-                                    test_support::PhaseProbe::new(format!("scene.apply {}", done.command))
+                                    test_support::PhaseProbe::new(format!(
+                                        "scene.apply {}",
+                                        done.command
+                                    ))
                                 });
                                 self.view.apply_model(projected)
                             } else {
@@ -2550,7 +2558,12 @@ pub mod test_support {
         fn drop(&mut self) {
             let cpu = thread_cpu().saturating_sub(self.2).as_micros();
             if cpu > 50_000 {
-                eprintln!("WORKSHOP_HOST_PHASE {} cpu_us={} wall_us={}", self.0, cpu, self.1.elapsed().as_micros());
+                eprintln!(
+                    "WORKSHOP_HOST_PHASE {} cpu_us={} wall_us={}",
+                    self.0,
+                    cpu,
+                    self.1.elapsed().as_micros()
+                );
             }
         }
     }
