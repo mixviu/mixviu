@@ -203,6 +203,8 @@ fn bridge_initial_connection_failure_replies_then_exits_nonzero() {
     let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
         .arg("bridge")
         .env_remove("MIX_NODED_URL")
+        .env_remove("MIX_BUS_SOCKET")
+        .env("MIX_RUN", dir.path().join("no-broker"))
         .env("MIX_NODE_CONFIG", path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -249,6 +251,49 @@ async fn bridge_honours_url_override_with_empty_node_config() {
     let reply: Value = serde_json::from_str(&line).unwrap();
     assert_eq!(reply["rc"], 10);
     assert!(reply["body"].is_null());
+    assert!(reply["error"].as_str().unwrap().contains("not found"));
+    assert!(child.0.wait().await.unwrap().success());
+}
+
+#[tokio::test]
+async fn bridge_discovers_runtime_unix_socket_without_config_socket_key() {
+    let broker = test_broker::Broker::start();
+    let dir = tempfile::tempdir().unwrap();
+    let run_dir = broker.endpoint.parent().unwrap();
+    let socket_dir = run_dir.join("noded");
+    std::fs::create_dir(&socket_dir).unwrap();
+    // Native discovery deliberately rejects symlinks and private ancestors.
+    // Move the live fixture socket within its public, broker-owned run root.
+    std::fs::rename(&broker.endpoint, socket_dir.join("bus.sock")).unwrap();
+    let node_config = dir.path().join("node.conf.mix");
+    // Legacy TCP would fail: this test must reach the Unix broker.
+    std::fs::write(&node_config, "wg_ip: '192.0.2.1'\nnoded: { port: 1 }").unwrap();
+    let mut child = Child(
+        tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
+            .arg("bridge")
+            .env_remove("MIX_NODED_URL")
+            .env_remove("MIX_BUS_SOCKET")
+            .env("MIX_NODE_CONFIG", node_config)
+            .env("MIX_RUN", run_dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let mut input = child.0.stdin.take().unwrap();
+    input
+        .write_all(b"{\"id\":1,\"command\":\"indexd.stats\",\"body\":{}}\n")
+        .await
+        .unwrap();
+    drop(input);
+    let mut lines = BufReader::new(child.0.stdout.take().unwrap()).lines();
+    let line = tokio::time::timeout(Duration::from_secs(5), lines.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let reply: Value = serde_json::from_str(&line).unwrap();
+    assert_eq!(reply["rc"], 10);
     assert!(reply["error"].as_str().unwrap().contains("not found"));
     assert!(child.0.wait().await.unwrap().success());
 }
