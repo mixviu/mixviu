@@ -176,17 +176,17 @@ fn record_window_pop_intermediate_pixels_and_idle_repeats() {
         // absolute frame clock, within the bounded hold/readback interval.
         let earliest = (slot - source_age).clamp(0.0, 0.3);
         let latest = (slot + 1.0 / 60.0).clamp(0.0, 0.3);
-        let held_initial = slot <= source_age
-            && (opacity - 1.0).abs() <= 0.025
-            && (scale - 1.0).abs() <= 0.025;
-        let matched = held_initial || earliest <= latest
-            && (0..=1000).any(|tick| {
-                let t = earliest + (latest - earliest) * f64::from(tick) / 1000.0;
-                let values = preset.sample(t);
-                (values.get(motion::Property::Opacity) - opacity).abs() <= 0.025
-                    && (opacity < 0.04
-                        || (values.get(motion::Property::Scale) - scale).abs() <= 0.025)
-            });
+        let held_initial =
+            slot <= source_age && (opacity - 1.0).abs() <= 0.025 && (scale - 1.0).abs() <= 0.025;
+        let matched = held_initial
+            || earliest <= latest
+                && (0..=1000).any(|tick| {
+                    let t = earliest + (latest - earliest) * f64::from(tick) / 1000.0;
+                    let values = preset.sample(t);
+                    (values.get(motion::Property::Opacity) - opacity).abs() <= 0.025
+                        && (opacity < 0.04
+                            || (values.get(motion::Property::Scale) - scale).abs() <= 0.025)
+                });
         assert!(
             matched,
             "frame={frame} slot={slot} allowed={earliest}..{latest} opacity={opacity} scale={scale} is outside the shared pop trajectory"
