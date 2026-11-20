@@ -1,0 +1,8 @@
+---
+scene: 1
+name: deck-gallery
+citizen: gallery
+---
+```mix
+{"root":{"background":"#0d1117","children":["root.0","root.1"],"gap":0,"height":708,"min_width":1600,"padding_bottom":120,"padding_left":96,"padding_right":96,"padding_top":72,"widget":"column"},"root.0":{"align":"center","children":["root.0.0","root.0.1","root.0.2"],"gap":10,"widget":"row"},"root.0.0":{"align":"center","background":"#121821","children":["root.0.0.0","root.0.0.1"],"gap":8,"outline":"#26303d","outline_width":1,"padding_bottom":8,"padding_left":14,"padding_right":14,"padding_top":8,"radius":10,"widget":"row"},"root.0.0.0":{"color":"#8d99a8","size":24,"text":"before","widget":"text"},"root.0.0.1":{"color":"#8d99a8","size":21,"text":"","widget":"text"},"root.0.1":{"align":"center","background":"#121821","children":["root.0.1.0","root.0.1.1"],"gap":8,"outline":"#26303d","outline_width":1,"padding_bottom":8,"padding_left":14,"padding_right":14,"padding_top":8,"radius":10,"widget":"row"},"root.0.1.0":{"color":"#3cc8d8","size":24,"text":"now","widget":"text"},"root.0.1.1":{"color":"#8d99a8","size":21,"text":"","widget":"text"},"root.0.2":{"align":"center","background":"#121821","children":["root.0.2.0","root.0.2.1"],"gap":8,"outline":"#26303d","outline_width":1,"padding_bottom":8,"padding_left":14,"padding_right":14,"padding_top":8,"radius":10,"widget":"row"},"root.0.2.0":{"color":"#8d99a8","size":24,"text":"next","widget":"text"},"root.0.2.1":{"color":"#8d99a8","size":21,"text":"","widget":"text"},"root.1":{"children":[],"height":0,"min_width":1408,"widget":"column"}}
+```

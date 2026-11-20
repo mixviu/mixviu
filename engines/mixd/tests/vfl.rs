@@ -194,8 +194,30 @@ fn ffmpeg(input: &[u8], args: &[&str]) -> Vec<u8> {
     o.stdout
 }
 #[test]
-fn export_bgra_framemd5_y4m_and_ranges() {
-    let p = std::env::temp_dir().join(format!("mixd-vfl-test-{}", std::process::id()));
+fn export_bgra_y4m_and_ranges() {
+    check_export(false);
+}
+
+#[test]
+fn export_ffmpeg_framemd5_y4m_oracle() {
+    match Command::new("ffmpeg").arg("-version").output() {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            assert_ne!(
+                std::env::var(paths::env::test::TEST_REQUIRE_FFMPEG).as_deref(),
+                Ok("1"),
+                "ffmpeg required: framemd5 oracle cannot run"
+            );
+            eprintln!("ffmpeg absent: framemd5 oracle not run");
+            return;
+        }
+        Err(e) => panic!("cannot run ffmpeg: {e}"),
+        Ok(o) => assert!(o.status.success(), "ffmpeg probe failed: {o:?}"),
+    }
+    check_export(true);
+}
+
+fn check_export(oracle: bool) {
+    let p = std::env::temp_dir().join(format!("mixd-vfl-test-{oracle}-{}", std::process::id()));
     let mut w = Writer::new(p.clone(), 4, 4, 30).unwrap();
     w.origin(0).unwrap();
     let a: Vec<u8> = (0..64).map(|i| i * 3).collect();
@@ -224,6 +246,17 @@ fn export_bgra_framemd5_y4m_and_ranges() {
     let raw = export(&[]);
     let expected = [a.clone(), a.clone(), b.clone()].concat();
     assert_eq!(raw, expected);
+    let mut reader = media_vfl::reader::Reader::open(&p).unwrap();
+    assert_eq!(reader.frame_count().unwrap(), 3);
+    let mut frames = Vec::new();
+    while let Some(frame) = reader.read().unwrap() {
+        frames.push(frame.pixels.to_vec());
+    }
+    assert_eq!(raw.len(), 3 * 64);
+    assert_eq!(
+        raw.chunks_exact(64).collect::<Vec<_>>(),
+        frames.iter().map(Vec::as_slice).collect::<Vec<_>>()
+    );
     let md5args = [
         "-f",
         "rawvideo",
@@ -239,23 +272,43 @@ fn export_bgra_framemd5_y4m_and_ranges() {
         "framemd5",
         "pipe:1",
     ];
-    assert_eq!(ffmpeg(&raw, &md5args), ffmpeg(&expected, &md5args));
+    if oracle {
+        assert_eq!(ffmpeg(&raw, &md5args), ffmpeg(&expected, &md5args));
+    }
     assert_eq!(export(&["--from", "1", "--to", "1"]), a);
     let y4m = export(&["--format", "y4m"]);
-    let decoded = ffmpeg(
-        &y4m,
-        &[
-            "-i", "pipe:0", "-pix_fmt", "yuv420p", "-f", "rawvideo", "pipe:1",
-        ],
-    );
+    let decoded = if oracle {
+        ffmpeg(
+            &y4m,
+            &[
+                "-i", "pipe:0", "-pix_fmt", "yuv420p", "-f", "rawvideo", "pipe:1",
+            ],
+        )
+    } else {
+        Vec::new()
+    };
     let mut yuv = Vec::new();
-    for p in [a.clone(), a, b] {
-        let y = media_frame::Bgra::new(4, 4, p).unwrap().to_yuv420();
+    for pixels in &frames {
+        let y = media_frame::Bgra::new(4, 4, pixels.clone())
+            .unwrap()
+            .to_yuv420();
         yuv.extend(y.y);
         yuv.extend(y.u);
         yuv.extend(y.v);
     }
-    assert_eq!(decoded, yuv);
+    let header = b"YUV4MPEG2 W4 H4 F30:1 Ip A1:1 C420jpeg XCOLORRANGE=LIMITED\n";
+    assert!(y4m.starts_with(header));
+    assert_eq!(y4m.len(), header.len() + 3 * (6 + 24));
+    for (record, pixels) in y4m[header.len()..]
+        .chunks_exact(30)
+        .zip(yuv.chunks_exact(24))
+    {
+        assert_eq!(&record[..6], b"FRAME\n");
+        assert_eq!(&record[6..], pixels);
+    }
+    if oracle {
+        assert_eq!(decoded, yuv);
+    }
     let o = Command::new(env!("CARGO_BIN_EXE_mixd"))
         .args(["vfl", "verify"])
         .arg(&p)

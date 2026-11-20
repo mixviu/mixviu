@@ -32,6 +32,8 @@ pub struct Event {
 
 pub struct SceneView {
     motion: toolkit::scene_motion::SceneMotion,
+    numbers: crate::numbers::Numbers,
+    backdrops: crate::backdrop::Backdrops,
     motion_parent: Option<String>,
     collect_widget_rects: bool,
     widget_rects: Vec<crate::widget_rects::WidgetRect>,
@@ -124,6 +126,8 @@ impl SceneView {
         validate_controls(&tree)?;
         Ok(Self {
             motion: toolkit::scene_motion::SceneMotion::default(),
+            numbers: crate::numbers::Numbers::default(),
+            backdrops: crate::backdrop::Backdrops::default(),
             motion_parent: None,
             frame: None,
             regions: BTreeMap::new(),
@@ -366,6 +370,8 @@ impl SceneView {
     }
     fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
         self.motion.begin(ui);
+        self.numbers.begin();
+        self.backdrops.begin();
         if self.collect_widget_rects {
             self.widget_rects.clear();
             ui.ctx()
@@ -379,6 +385,8 @@ impl SceneView {
         let nodes = tree.nodes.into_iter().collect();
         self.node(ui, "root", &nodes, None, 0, &mut events);
         self.motion.end(ui);
+        self.numbers.end();
+        self.backdrops.end();
         for id in &self.overlays {
             let node = &nodes[id];
             if let Ok(widget) = Widget::decode(&node.ports["definition"]) {
@@ -900,8 +908,17 @@ impl SceneView {
                     }
                     "text" => {
                         let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(ui.visuals().text_color()).to_array();
-                        let widget=Widget::new(&key,"label","",json!(text(node,"text"))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono"),"colour":colour}));
+                        let number = node.ports.get("number").map(|spec| self.numbers.text(ui, &key, spec, node.ports.get("motion") != Some(&Value::Bool(false))));
+                        if let Some(spans) = node.ports.get("spans") {
+                            let mut job = crate::spans::job(ui, spans, num(node,"size").unwrap_or(13.0), node.ports.get("mono") == Some(&Value::Bool(true)), node.ports.get("bold") == Some(&Value::Bool(true)), Color32::from_rgba_unmultiplied(colour[0], colour[1], colour[2], colour[3]));
+                            job.halign = match text(node,"align") {"center"=>egui::Align::Center,"right"=>egui::Align::Max,_=>egui::Align::Min};
+                            let label = egui::Label::new(job);
+                            let label=if node.ports.get("wrap") == Some(&Value::Bool(true)) {label.wrap()} else {label.extend()};
+                            if node.ports.get("fill")==Some(&Value::Bool(true)) {ui.add_sized(egui::vec2(ui.available_width(),0.),label);} else {ui.add(label);}
+                        } else {
+                        let widget=Widget::new(&key,"label","",json!(number.as_deref().unwrap_or_else(||text(node,"text")))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono"),"align":node.ports.get("align"),"wrap":node.ports.get("wrap"),"fill":node.ports.get("fill"),"colour":colour}));
                         self.widgets.widget(ui,&widget,&json!({}));
+                        }
                     }
                     "button" => {
                         let widget=Widget::new(&key,"button","",json!("Ready")).with_properties(json!({"text":text(node,"label")}));
@@ -997,12 +1014,15 @@ impl SceneView {
                             return;
                         }
                         let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
+                        let radial_shape = ui.painter().add(egui::Shape::Noop);
+                        let frame_width = num(node,"width").or(num(node,"min_width")).or_else(|| (node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0.).then(||ui.available_width()));
                         let frame = egui::Frame::new()
-                            .fill(background)
+                            .fill(if node.ports.contains_key("background_radials") {Color32::TRANSPARENT} else {background})
                             .inner_margin(egui::Margin { left: node_padding(node, "padding_left") as i8, right: node_padding(node, "padding_right") as i8, top: node_padding(node, "padding_top") as i8, bottom: node_padding(node, "padding_bottom") as i8 })
                             .corner_radius(num(node, "radius").unwrap_or(0.0));
                         let response = frame
                             .show(ui, |ui| {
+                                if let Some(width)=frame_width { ui.set_min_width((width-node_padding(node,"padding_left")-node_padding(node,"padding_right")).max(0.)); }
                                 if let Some(height) = num(node, "height") {
                                     ui.set_min_height(height);
                                 }
@@ -1043,7 +1063,8 @@ impl SceneView {
                                         let fixed:Vec<_>=active.iter().map(|child|{let n=&nodes[*child];if num(n,"grow").unwrap_or(0.)>0.{0.}else{num(n,"width").or(num(n,"min_width")).unwrap_or_else(||if n.family=="control"{Widget::decode(&n.ports["definition"]).and_then(|w|w.intrinsic_width(ui,&self.tree.model)).unwrap_or(0.)}else{0.})}}).collect();
                                         let weight:f32=active.iter().map(|child|num(&nodes[*child],"grow").unwrap_or(0.).max(0.)).sum();
                                         let remaining=(ui.available_width()-fixed.iter().sum::<f32>()-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.);
-                                        ui.horizontal(|ui|for (i,child) in active.iter().enumerate(){let grow=num(&nodes[*child],"grow").unwrap_or(0.);let width=if grow>0.{remaining*grow/weight}else{fixed[i]};ui.allocate_ui(egui::vec2(width,0.),|ui|{ui.set_min_width(width);self.node(ui,child,nodes,route,depth+1,events);});});
+                                        let mut cells=|ui:&mut egui::Ui|for (i,child) in active.iter().enumerate(){let grow=num(&nodes[*child],"grow").unwrap_or(0.);let width=if grow>0.{remaining*grow/weight}else{fixed[i]};let cell=ui.id().with(("cross-size",child));let height=ui.ctx().data(|d|d.get_temp::<f32>(cell)).unwrap_or(0.);let response=ui.allocate_ui(egui::vec2(width,height),|ui|{ui.set_min_width(width);self.node(ui,child,nodes,route,depth+1,events);});let actual=response.response.rect.height();if (height-actual).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cell,actual));ui.ctx().request_repaint();}};
+                                        if text(node,"align")=="center" {egui::Grid::new((&key,"cross-center")).num_columns(active.len()).min_col_width(0.).min_row_height(0.).spacing(ui.spacing().item_spacing).striped(false).show(ui,|ui|cells(ui));} else {ui.horizontal_top(|ui|cells(ui));}
                                     } else if text(node,"align")=="end" {
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
                                     } else if let Some(height) = num(node, "height") {
@@ -1058,6 +1079,7 @@ impl SceneView {
                                 }
                             })
                             .response;
+                        if let Some(radials)=node.ports.get("background_radials") { ui.painter().set(radial_shape,self.backdrops.shape(ui.ctx(),&key,response.rect,background,radials)); }
                         if route.is_some_and(|(_, list, _)| text(list, "row") == id)
                             || node.ports.contains_key("on_click")
                         {
@@ -2339,7 +2361,7 @@ fn paint_outline(ui: &egui::Ui, node: &Node, rect: egui::Rect) {
     }) {
         ui.painter().rect_stroke(
             rect.shrink(0.5),
-            2.0,
+            num(node, "radius").unwrap_or(2.0),
             egui::Stroke::new(num(node, "outline_width").unwrap_or(1.0), outline),
             egui::StrokeKind::Inside,
         );

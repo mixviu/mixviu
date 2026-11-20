@@ -444,3 +444,55 @@ Registration does not imply those operations work.
 (`engines/viu/src/runtime.rs:933`, `engines/viu/src/runtime.rs:1000`,
 `engines/viu/src/runtime.rs:1062`,
 `engines/viud/scripts/lib/scenes.mix:2204`.)
+# Inline text runs (deck port specimen)
+
+A `text` node may supply `spans`, an array of inline runs. `text` remains
+required as the plain-text fallback. When spans are present, the application
+scene painter lays them out together, preserving spaces and newlines.
+Omitting spans preserves the existing text behaviour; `[]` draws no text.
+
+Each run requires `text` and may specify `role`, `color` (`#RRGGBB`), `mono`,
+`strike` and `highlight` (booleans). Roles are `text`, `keyword`, `function`,
+`string`, `comment`, `value`, `ok`, `bad`, `warn`, `acc` and `mut`.
+An explicit colour overrides the role colour; otherwise the host resolves
+the semantic role through its active design. Size comes from the text node.
+There are at most 1024 runs and 65536 UTF-8 bytes across their text. Unknown
+fields, roles, invalid colours and wrong flag types refuse literal resolution.
+Invalid bound values produce a `binding-type` diagnostic and retain the
+shared binding fallback behaviour; initial resolution omits the bad spans.
+Clearing a bound spans value restores plain-text rendering.
+
+This is an incomplete deck port. The Quoin surface painter and full deck
+typography/motion parity still need validation; the application painter's
+support does not establish parity for every scene host.
+# Number tracks (deck port specimen)
+
+Rows and columns accept optional `background_radials`, up to four static
+elliptical colour fields over `background`. Each entry requires `x`, `y`
+(fractions of the box, -2..3), `rx`, `ry` (logical radii, >0..10000), `stop`
+(>0..1) and `color` (#RRGGBB). The first field is on top. Colour fades
+linearly to transparent at `stop` times the radius; omitted means no fields.
+This rectangular backdrop primitive is static and requests no repaint.
+The application host caches a bounded, bilinearly sampled texture per node,
+logical size and resolved colour inputs. Translation reuses the texture;
+resize or changed base/field colours rebuild it. Hidden/removed entries are
+released. Static fields do not regenerate their pixels during frame loops.
+Growing rows with `align: "center"` measure cell heights and centre boxes
+and text on the tallest cell, including arrow text. Layout changes may need
+a settling pass; unchanged rows request no further repaint.
+Fixed/minimum, fill and allocated grow widths also constrain the painted
+frame, so its fill and outline cover the same box. Text `align` and `fill`
+apply to both plain labels and inline spans. Bold proportional labels use
+the theme's heading face, preserving the authored size.
+
+`text.number` is an optional object with required `to` and optional `from`
+(default 0), `ms` (1400), `delay_ms` (200), and `group` (true). It displays
+a rounded integer, with optional comma grouping. `number` and `spans` are
+mutually exclusive. Endpoints must be finite and within ±10^15; duration
+and delay must be within 0..60000 ms. Unknown fields refuse.
+
+The application scene painter samples a scalar track from the shared motion
+library with the deck's cubic count-up easing. The track begins when the
+node is first shown, restarts when its specification changes, and is removed
+when the node leaves. Disabled/reduced motion snaps to the target. Finished
+tracks request no further repaint. The compound stat and caption stay in Mix.

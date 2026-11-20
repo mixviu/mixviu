@@ -224,6 +224,25 @@ fn payload(
         if let Err(reply) = agent_preflight(op, &facts) {
             return reply;
         }
+        // A stationary pointer may have a new surface/input region beneath
+        // it. Match the native button path: refresh after preflight, before press,
+        // preserving implicit and explicit grabs (including chorded buttons).
+        if let InputOp::PointerButton { action, .. } = op
+            && target_window.is_none()
+            && press_states(*action).contains(&true)
+            && agent_pointer(lp).is_some_and(|pointer| !pointer.is_grabbed())
+            && let Some(position) = lp.inner.comp.injection.agent_pointer
+        {
+            let hit = match agent_hit(lp, None, position) {
+                Ok(hit) => hit,
+                Err(reply) => return reply,
+            };
+            let current = agent_pointer(lp).and_then(|pointer| pointer.current_focus());
+            if hit.as_ref().map(|(surface, _)| surface) != current.as_ref() {
+                let time = now_ms(lp);
+                agent_motion(lp, hit, position, time);
+            }
+        }
     }
     let time = now_ms(lp);
     let injected_at_us = world::comp::injection::monotonic_us();
@@ -1091,6 +1110,12 @@ fn agent_seat_facts(lp: &Loop) -> AgentSeatFacts {
 /// The agent target facts for `surface` (its root's record).
 pub(crate) fn agent_seat_offered(lp: &Loop, surface: &WlSurface) -> bool {
     surface.client().is_some_and(|client| {
+        if protocols::layershell::osd::compositor_state(&client).is_some() {
+            return protocols::layershell::osd::authorized(
+                &client,
+                &lp.state.output.display_handle,
+            );
+        }
         lp.state
             .seat
             .agent_clients

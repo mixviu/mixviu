@@ -13,6 +13,14 @@ argv without a shell. External edge dependencies are `/usr/bin/flock`,
 `/usr/bin/traceroute`. Executable ownership, parent permissions and resolved
 targets are checked before execution, including Debian alternatives chains.
 
+Wake returns `0, {accepted: true}` once systemd accepts the non-blocking start
+request; it does not wait for drain completion or attest tool availability.
+A masked, missing or refused drain returns Bus application error `10` with
+JSON `{accepted: false, error_code: "DRAIN_UNAVAILABLE", message: ...}`.
+The message names the unit, its `LoadState`/`ActiveState` and the start error.
+If systemd cannot supply state, it reports `unknown` with the query failure.
+The start and failure-only state query each have a three-second timeout.
+
 Bundle scripts live at `/opt/mix/lib/toolsd`. The bundle takes its registry
 from webd's `vhosts/apps/tools_registry.mix`; the source parity test prevents
 drift. Scripts and their parents must be root-owned and not writable by either

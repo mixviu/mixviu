@@ -1,0 +1,129 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Deck composition constructors. Nested maps are flattened to ordinary scene
+-- nodes by scene(); no native compound widget or application policy is hidden.
+$tokens = require("../../libraries/design/deck.tokens.mix")
+
+fn deck_text($text, $style, $role)
+  return {widget:"text", text:$text, size:$tokens.type[$style], color:$tokens.colour[$role]}
+end
+fn inline($runs, $style, $mono)
+  $styled = []
+  $plain = ""
+  for $run in $runs
+    $plain = $plain .. $run.text
+    $role = $run.role ?? "text"
+    $semantic = if contains(["text","keyword","function","string","comment","value","ok","bad","warn","acc","mut"],$role) then $role else "text" end
+    push($styled, merge($run, {role:$semantic,color:$tokens.colour[$role] ?? $tokens.colour.text}))
+  end
+  return {widget:"text", text:$plain, spans:$styled, size:$tokens.type[$style], mono:$mono}
+end
+fn column($items, $gap)
+  return {widget:"column", children:$items, gap:$gap}
+end
+fn row($items, $gap)
+  return {widget:"row", children:$items, gap:$gap, align:"center"}
+end
+fn card($title, $items, $tone)
+  $content = [deck_text($title, "panel_title", $tone)]
+  for $item in $items
+    push($content, $item)
+  end
+  return merge(column($content,16),{padding_left:$tokens.space.card_x,padding_right:$tokens.space.card_x,padding_top:$tokens.space.card_y,padding_bottom:$tokens.space.card_y,background:$tokens.colour.panel,radius:$tokens.space.card_radius,outline:$tokens.colour[if $tone=="bad" then "before" elif $tone=="ok" then "after" else "line" end],outline_width:1})
+end
+fn chip($text, $caption, $role)
+  return merge(row([deck_text($text,"chip",$role),deck_text($caption,"chip_caption","mut")],8), {padding_left:14,padding_right:14,padding_top:8,padding_bottom:8,background:$tokens.colour.background2,radius:10,outline:$tokens.colour.line,outline_width:1})
+end
+fn kicker($text, $prs)
+  $items = [deck_text($text,"kicker","mut")]
+  for $pr in $prs
+    push($items, chip($pr.text,"",$pr.role ?? "acc"))
+  end
+  return row($items,16)
+end
+fn headline($text, $small)
+  return column([deck_text($text,"headline","text"),deck_text($small,"small","mut")],10)
+end
+fn bullets($items, $role)
+  $lines = []
+  for $item in $items
+    push($lines,row([deck_text("●","list",$role),deck_text($item,"list","text")],22))
+  end
+  return column($lines,20)
+end
+fn flow($nodes)
+  $items = []
+  for $node in $nodes
+    if len($items) > 0 then
+      push($items,column([deck_text("→","arrow","mut"),deck_text($node.via ?? "","arrow_label","mut")],0))
+    end
+    push($items,merge(column([deck_text($node.label ?? "","node_label","mut"),deck_text($node.text,"node",$node.role ?? "text")],6),{padding_left:22,padding_right:22,padding_top:18,padding_bottom:18,background:$tokens.colour.background2,radius:14,outline:$tokens.colour[$node.role ?? "line"],outline_width:2}))
+  end
+  return row($items,$tokens.space.flow)
+end
+fn code($lines)
+  $items = []
+  for $line in $lines
+    push($items,inline($line,"code",true))
+  end
+  return merge(column($items,0),{padding_left:30,padding_right:30,padding_top:26,padding_bottom:26,background:$tokens.colour.code_background,radius:16})
+end
+fn terminal($title, $lines)
+  $items = [deck_text($title,"node_label","mut")]
+  for $line in $lines
+    push($items,merge(inline($line,"terminal",true),{min_height:$tokens.space.terminal_row,max_height:$tokens.space.terminal_row}))
+  end
+  return merge(column($items,0),{height:len($lines)*$tokens.space.terminal_row+64,padding_left:22,padding_right:22,padding_top:18,padding_bottom:18,background:$tokens.colour.code_background,radius:14})
+end
+fn tree($entries)
+  $items = []
+  for $entry in $entries
+    $parts = [merge(deck_text($entry.text,"tree",$entry.role ?? "text"),{mono:true})]
+    if $entry.badge != nil then
+      push($parts,chip($entry.badge,"",$entry.allow == true ? "ok" : "warn"))
+    end
+    push($items,merge(row($parts,12),{height:$tokens.space.tree_row}))
+  end
+  return column($items,0)
+end
+fn deck_stat($number, $caption, $role, $animate=true)
+  $text = deck_text($number,"stat",$role)
+  $target = to_number($number)
+  if $animate and $target != nil then $text.number = {to:$target,ms:$tokens.motion.count_ms,delay_ms:$tokens.motion.count_delay_ms} end
+  return column([$text,deck_text($caption,"stat_label","mut")],0)
+end
+fn chapter_rail($chapters,$active,$series)
+  $chips=[]
+  for $name in $chapters
+    $current=$name==$active
+    push($chips,merge(column([merge(deck_text($name,"rail",if $current then "background" else "mut" end),{mono:true,bold:$current,size:$tokens.type.rail})],0),{padding_left:$tokens.space.rail_x,padding_right:$tokens.space.rail_x,padding_top:$tokens.space.rail_y,padding_bottom:$tokens.space.rail_y,radius:$tokens.space.rail_radius,background:if $current then $tokens.colour.acc else $tokens.colour.rail end,outline:if $current then $tokens.colour.acc else $tokens.colour.line end,outline_width:1}))
+  end
+  return merge(row([row($chips,$tokens.space.rail_gap),merge(deck_text($series,"rail","mut"),{size:$tokens.type.series_footer})],0),{fill:true,justify:"between"})
+end
+fn mock($title, $items)
+  return merge(column([deck_text($title,"node_label","mut"),bullets($items,"acc")],6),{padding_left:20,padding_right:20,padding_top:14,padding_bottom:14,background:$tokens.colour.panel,radius:12})
+end
+fn brand($name, $tagline, $date)
+  return column([deck_text($name,"wordmark","acc"),deck_text($tagline,"tagline","mut"),deck_text($date,"date","text")],28)
+end
+fn topic($number, $title, $subtitle)
+  return column([deck_text($number,"topic_no","acc"),deck_text($title,"topic_title","text"),deck_text($subtitle,"topic_sub","mut")],22)
+end
+fn flatten($tree, $id)
+  $nodes = {}
+  $node = $tree
+  if $tree.children != nil then
+    $node.children = []
+    $i = 0
+    for $child in $tree.children
+      $key = $id .. "." .. to_string($i)
+      $node.children = push($node.children,$key)
+      $nodes = merge($nodes,flatten($child,$key))
+      $i = $i + 1
+    end
+  end
+  $nodes[$id] = $node
+  return $nodes
+end
+fn scene($tree)
+  return "---\nscene: 1\nname: deck-gallery\ncitizen: gallery\n---\n```mix\n" .. json_encode(flatten($tree,"root")) .. "\n```\n"
+end

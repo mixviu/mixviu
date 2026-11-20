@@ -618,6 +618,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         event_loop.handle(),
         backend == cli::Backend::Headless,
         comp::service_name(backend, cli.bus_service.as_deref()),
+        state.state.output.display_handle.clone(),
     );
 
     // Sampling heartbeat — a sparing, multi-level demo of live developer logs (so the
