@@ -168,14 +168,24 @@ impl Pattern {
     }
 
     pub fn named(stream: UnixStream, name: &str, fullscreen: bool) -> Self {
-        Self::create(stream, name, fullscreen, false)
+        Self::create(stream, name, fullscreen, false, (200, 160))
     }
 
     pub fn decorated(stream: UnixStream, name: &str) -> Self {
-        Self::create(stream, name, false, true)
+        Self::create(stream, name, false, true, (200, 160))
     }
 
-    fn create(stream: UnixStream, name: &str, fullscreen: bool, decorated: bool) -> Self {
+    pub fn sized(stream: UnixStream, name: &str, size: (i32, i32), decorated: bool) -> Self {
+        Self::create(stream, name, false, decorated, size)
+    }
+
+    fn create(
+        stream: UnixStream,
+        name: &str,
+        fullscreen: bool,
+        decorated: bool,
+        size: (i32, i32),
+    ) -> Self {
         mapping_trace!("PATTERN start app_id={name} socket={stream:?}");
         stream.set_nonblocking(true).unwrap();
         let conn = Connection::from_socket(stream).unwrap();
@@ -216,8 +226,8 @@ impl Pattern {
         if fullscreen {
             top.set_fullscreen(None);
         } else {
-            top.set_min_size(200, 160);
-            top.set_max_size(200, 160);
+            top.set_min_size(size.0, size.1);
+            top.set_max_size(size.0, size.1);
         }
         for (n, _, v) in state.globals.iter().filter(|(_, i, _)| i == "wl_seat") {
             let _: WlSeat = registry.bind(*n, (*v).min(7), &qh, ());

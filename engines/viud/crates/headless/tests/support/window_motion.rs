@@ -62,7 +62,7 @@ fn white_window_sized(
     y: i32,
     size: (i32, i32),
 ) -> (Pattern, Value) {
-    let mut pattern = Pattern::named(connect(process), name, false);
+    let mut pattern = Pattern::sized(connect(process), name, size, false);
     pattern.wait_callback(0);
     let row = bus.window_for(name, &mut [&mut pattern]);
     bus.call(
@@ -74,7 +74,6 @@ fn white_window_sized(
             }),
         ),
     );
-    pattern.state.size = size;
     pattern.solid_buffer(0xffffffff);
     pattern.commit(true);
     pump_patterns(&mut [&mut pattern]);
@@ -374,8 +373,7 @@ fn record_close_retains_pixels_without_retaining_client_or_input() {
         }),
     );
     bus.ready();
-    let (pattern, _row) =
-        white_window_sized(&bus, &mut process, "window-close", 50, 40, (100, 80));
+    let (pattern, _row) = white_window_sized(&bus, &mut process, "window-close", 50, 40, (100, 80));
     let path = process.root.join("close.vfl");
     let start=bus.call("comp.record.start",json!({"request_id":"close","target":{"output":"headless-0"},"path":path,"max_seconds":10,"fps":30,"cursor":false}));
     // Drop the entire Wayland connection. A ghost is only presentation data;
@@ -463,7 +461,7 @@ fn rounded_close_stack(closing_front: bool) {
         }),
     );
     bus.ready();
-    let mut rear = Pattern::decorated(connect(&mut process), "rounded-rear");
+    let mut rear = Pattern::sized(connect(&mut process), "rounded-rear", (100, 80), true);
     rear.wait_callback(0);
     let rear_row = bus.window_for("rounded-rear", &mut [&mut rear]);
     bus.call(
@@ -473,20 +471,20 @@ fn rounded_close_stack(closing_front: bool) {
             json!({"x":50,"y":40,"z":if closing_front {20} else {0}}),
         ),
     );
-    rear.state.size = (100, 80);
     rear.solid_buffer(0xffffffff);
     rear.commit(true);
-    let mut front = Pattern::named(connect(&mut process), "opaque-front", false);
+    let mut front = Pattern::sized(connect(&mut process), "opaque-front", (100, 80), false);
     front.wait_callback(0);
     let front_row = bus.window_for("opaque-front", &mut [&mut rear, &mut front]);
     bus.call(
         "comp.window.place",
         place_args(&front_row, json!({"x":100,"y":70,"z":10})),
     );
-    front.state.size = (100, 80);
     front.solid_buffer(0xff20d040);
     front.commit(true);
     pump_patterns(&mut [&mut rear, &mut front]);
+    assert_eq!(rear.state.size, (100, 80));
+    assert_eq!(front.state.size, (100, 80));
     let (width, height, before) = ppm(&bus, &process, "rounded-stack-before", None);
     assert_eq!((width, height), (CLOSE_WIDTH, 180));
     assert_eq!(ppm_pixel(&before, width, 75, 80), [255, 255, 255]);
