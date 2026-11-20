@@ -503,6 +503,12 @@ fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
         }
     }
     call(&bus, "osd.update", json!({"id":"clip","pointer_input":false,"backing":"none"}));
+    wait(&mut pattern, Duration::from_millis(80));
+    let buttons = pattern.state.pointer_buttons;
+    bus.call("comp.input.pointer.move", json!({"seat":"agent","output":"headless-0","x":116,"y":112}));
+    bus.call("comp.input.pointer.button", json!({"seat":"agent","button":"left","action":"click"}));
+    wait(&mut pattern, Duration::from_millis(80));
+    assert!(pattern.state.pointer_buttons > buttons, "explicit transparent item must pass pointer input");
     call(&bus, "osd.hide", json!({"id":"clip"}));
     wait(&mut pattern, Duration::from_millis(100));
 
