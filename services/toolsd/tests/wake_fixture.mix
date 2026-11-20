@@ -1,12 +1,49 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $starts = 0
+$queries = 0
+$replies = 0
+$case = {name:"normal",ok:true}
 $event = {args:{tool:"evil",target:"other.service"}}
 function fixture_start($argv, $opts)
-  global $starts
-  if not deep_eq($argv, ["/usr/bin/systemctl","--no-block","--no-ask-password","start","toolsd-drain.service"]) or $opts.timeout != 3 then raise("TEST", "wake authority widened") end
-  $starts = $starts + 1
-  return {ok:true}
+  global $starts, $queries
+  if deep_eq($argv, ["/usr/bin/systemctl","--no-block","--no-ask-password","start","toolsd-drain.service"]) then
+    if $opts.timeout != 3 then raise("TEST", "start deadline changed") end
+    $starts = $starts + 1
+    return {ok:$case.ok, stderr:$case.error ?? "", error:nil}
+  end
+  if not deep_eq($argv, ["/usr/bin/systemctl","--no-ask-password","show","--property=LoadState","--property=ActiveState","toolsd-drain.service"]) or $opts.timeout != 3 or $opts.max_output != 4096 then
+    raise("TEST", "wake authority widened or waited for drain")
+  end
+  $queries = $queries + 1
+  return {ok:$case.name != "offline", stdout:$case.state ?? "", stderr:"system bus unavailable", error:nil}
+end
+function fixture_cases()
+  global $case, $starts, $queries, $replies
+  for $scenario in [
+    {name:"normal",ok:true},
+    {name:"masked",ok:false,error:"Unit toolsd-drain.service is masked.",state:"LoadState=masked\nActiveState=inactive",expect:"LoadState=masked"},
+    {name:"missing",ok:false,error:"Unit toolsd-drain.service not found.",state:"LoadState=not-found\nActiveState=inactive",expect:"LoadState=not-found"},
+    {name:"refused",ok:false,error:"Access denied",state:"LoadState=loaded\nActiveState=inactive",expect:"ActiveState=inactive"},
+    {name:"offline",ok:false,error:"Failed to connect to bus",expect:"LoadState=unknown ActiveState=unknown"}
+  ]
+    $case = $scenario
+    $starts = 0
+    $queries = 0
+    $replies = 0
+    fixture_wake()
+    if $starts != 1 or $replies != 1 or $queries != (if $case.ok then 0 else 1 end) then raise("TEST", "wrong wake start/query/reply count") end
+    print("PASS wake " .. $case.name .. ": bounded start only, ignores tool/target arguments")
+  end
 end
 function fixture_reply($rc, $body)
-  if $rc != 0 or $body.accepted != true then raise("TEST", "wake reply") end
+  global $replies
+  $replies = $replies + 1
+  if $case.ok then
+    if $rc != 0 or not deep_eq($body, {accepted:true}) then raise("TEST", "normal wake reply changed") end
+  else
+    $body = json_parse($body)
+    if $rc != 10 or $body.accepted != false or $body.error_code != "DRAIN_UNAVAILABLE" then raise("TEST", "wake did not return typed Bus error") end
+    if not contains($body.message, "toolsd-drain.service") or not contains($body.message, $case.error) or not contains($body.message, $case.expect) then raise("TEST", "missing start error/unit state") end
+    if $case.name == "offline" and not contains($body.message,"system bus unavailable") then raise("TEST", "query failure lost") end
+  end
 end

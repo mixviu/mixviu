@@ -42,6 +42,13 @@ on toolsd.wake
   if $r.ok then
     reply(0, { accepted: true })
   else
-    reply(1, { accepted: false, error: "drain activation failed: " .. trim($r.stderr) .. trim("" .. $r.error) })
+    -- Query only after rejection; never wait for the drain job to finish. A failed
+    -- query (e.g. no system bus) must not hide the original start failure.
+    $state = run_argv(["/usr/bin/systemctl", "--no-ask-password", "show", "--property=LoadState", "--property=ActiveState", $DRAIN_UNIT], { timeout: 3, max_output: 4096 })
+    $status = trim($state.stdout)
+    if $status == "" then
+      $status = "LoadState=unknown ActiveState=unknown; state query: " .. trim($state.stderr) .. trim("" .. $state.error)
+    end
+    reply(10, json_encode({ accepted: false, error_code: "DRAIN_UNAVAILABLE", message: $DRAIN_UNIT .. " activation failed; " .. $status .. "; " .. trim($r.stderr) .. trim("" .. $r.error) }))
   end
 end
