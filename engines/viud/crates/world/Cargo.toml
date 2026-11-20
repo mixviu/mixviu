@@ -30,6 +30,7 @@ drivers = { workspace = true }
 graphics = { workspace = true }
 ledger = { workspace = true }
 model = { workspace = true }
+motion.workspace = true
 policy = { workspace = true }
 surfaces = { workspace = true }
 render-gles = { workspace = true }

@@ -7,6 +7,77 @@
 use super::*;
 
 #[test]
+fn composition_transform_is_atomic_strict_and_invertible() {
+    let body = json!({"id":7,"generation":3,
+        "scale":{"factor":0.5,"anchor":{"x":100,"y":80}},
+        "translate":{"x":20,"y":-10}});
+    let WindowCommand::Op(WindowOp::Place(spec)) =
+        parse_window_command("comp.window.place", &body).unwrap()
+    else {
+        panic!("place");
+    };
+    let mut visual = VisualAttributes::default();
+    visual.update(&spec);
+    assert_eq!(
+        visual.inverse(LogicalOffset { x: 170.0, y: 110.0 }),
+        Some(LogicalOffset { x: 200.0, y: 160.0 })
+    );
+    for invalid in [
+        json!({"factor":-1,"anchor":{"x":0,"y":0}}),
+        json!({"factor":65,"anchor":{"x":0,"y":0}}),
+        json!({"factor":1e-310,"anchor":{"x":0,"y":0}}),
+        json!({"factor":1}),
+        json!({"factor":1,"anchor":{"x":0,"y":0,"z":0}}),
+    ] {
+        assert!(
+            parse_window_command(
+                "comp.window.place",
+                &json!({"id":7,"generation":3,"scale":invalid})
+            )
+            .is_err()
+        );
+    }
+    let WindowCommand::Op(WindowOp::Place(reset)) = parse_window_command(
+        "comp.window.place",
+        &json!({"id":7,"generation":3,"scale":null,"translate":null}),
+    )
+    .unwrap() else {
+        panic!("place");
+    };
+    visual.update(&reset);
+    assert_eq!(visual, VisualAttributes::default());
+    visual.scale.factor = 0.0;
+    assert!(visual.inverse(LogicalOffset::default()).is_none());
+    for factor in [1e-310, 1e-7, f64::NAN, f64::INFINITY] {
+        visual.scale.factor = factor;
+        assert!(
+            visual
+                .inverse(LogicalOffset {
+                    x: 100.0,
+                    y: -100.0
+                })
+                .is_none()
+        );
+    }
+    visual.scale.factor = 1e-6;
+    assert!(
+        visual
+            .inverse(LogicalOffset { x: 1.0, y: 2.0 })
+            .unwrap()
+            .x
+            .is_finite()
+    );
+    assert!(
+        visual
+            .inverse(LogicalOffset {
+                x: f64::MAX,
+                y: 0.0
+            })
+            .is_none()
+    );
+}
+
+#[test]
 fn placement_commands_have_strict_arguments_and_distinct_classes() {
     use crate::catalogue::{CommandFamily, command_family, read_only};
     for placement in ["floating", "maximized", "tiled"] {
@@ -742,6 +813,8 @@ fn step_eight_window_commands_parse_and_refuse_by_field() {
             z: None,
             visible: None,
             clip: None,
+            scale: None,
+            translate: None,
         })))
     );
     assert_eq!(

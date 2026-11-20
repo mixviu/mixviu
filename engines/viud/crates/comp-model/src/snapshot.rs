@@ -303,6 +303,8 @@ pub struct WindowSnapshot {
     pub opacity: f64,
     pub z: i32,
     pub clip: Option<crate::request::ClipRect>,
+    pub scale: crate::request::WindowScale,
+    pub translate: crate::request::LogicalOffset,
     pub requested_visible: bool,
     pub placement: &'static str,
     pub float_geometry: Option<FloatGeometrySnapshot>,
@@ -824,6 +826,8 @@ macro_rules! window_snapshot {
                     $([stringify!($field)] => serialise_selected(&self.$field),)+
                     ["float_geometry", tail @ ..] => select_serialised(&self.float_geometry, tail),
                     ["clip", tail @ ..] => select_serialised(&self.clip, tail),
+                    ["scale", tail @ ..] => select_serialised(&self.scale, tail),
+                    ["translate", tail @ ..] => select_serialised(&self.translate, tail),
                     ["presentation", tail @ ..] => {
                         select_serialised(self.presentation.as_ref()?, tail)
                     }
@@ -837,6 +841,8 @@ macro_rules! window_snapshot {
                     $([stringify!($field)] => Some(SnapshotNodeKind::Leaf),)+
                     ["float_geometry", tail @ ..] => serialised_node_kind(&self.float_geometry, tail),
                     ["clip", tail @ ..] => serialised_node_kind(&self.clip, tail),
+                    ["scale", tail @ ..] => serialised_node_kind(&self.scale, tail),
+                    ["translate", tail @ ..] => serialised_node_kind(&self.translate, tail),
                     ["presentation", tail @ ..] => {
                         serialised_node_kind(self.presentation.as_ref()?, tail)
                     }
@@ -1067,6 +1073,8 @@ pub fn project_window_row(surface: &SurfaceSnapshot) -> WindowSnapshot {
         opacity: 1.0,
         z: 0,
         clip: None,
+        scale: Default::default(),
+        translate: Default::default(),
         requested_visible: true,
         float_geometry: None,
         occlusion: surface.occlusion.clone(),
@@ -1876,6 +1884,31 @@ pub static DESCRIPTORS: &[DescribeEntry] = &[
         &[L("windows"), S, L("clip")],
         Object,
         "Window-local logical clip rectangle, or null"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("scale"), L("factor")],
+        Number,
+        "Uniform drawn scale, 0..=64"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("scale"), L("anchor"), L("x")],
+        Number,
+        "Local logical anchor x"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("scale"), L("anchor"), L("y")],
+        Number,
+        "Local logical anchor y"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("translate"), L("x")],
+        Number,
+        "Logical translation x"
+    ),
+    descriptor!(
+        &[L("windows"), S, L("translate"), L("y")],
+        Number,
+        "Logical translation y"
     ),
     descriptor!(
         &[L("windows"), S, L("clip"), L("x")],

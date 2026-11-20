@@ -315,7 +315,7 @@ where
         on_pane_awake: true,
         opaque: Vec::new(),
     };
-    if !force_capture {
+    if !force_capture && !visual_of(window).transformed() {
         match placed_on(state, window, size) {
             // Frustum cull: a window whose slot projects outside the pane being
             // drawn contributes nothing — skip its whole scene (surface-tree
@@ -408,17 +408,50 @@ where
             ctx,
             elem_loc,
             slot_size: slot_size_of(window),
-            crop_output: pane_rect(state, ctx, size),
+            crop_output: if visual_of(window).transformed() {
+                Rectangle::new(
+                    (-536870911, -536870911).into(),
+                    (1073741822, 1073741822).into(),
+                )
+            } else {
+                pane_rect(state, ctx, size)
+            },
         },
         decoration,
         decor::render::Pass::Presented,
     );
-    drawn.opaque = if visual_of(window).opacity < 1.0 {
+    drawn.opaque = if visual_of(window).opacity < 1.0 || visual_of(window).transformed() {
         Vec::new()
     } else {
         opaque
     };
-    let (elements, crop) = crop_elements(elements, window, ctx, elem_loc, size);
+    let pane = pane_rect(state, ctx, size);
+    let (mut elements, crop) = crop_elements(elements, window, ctx, elem_loc, size, pane);
+    if let Some(uuid) = window.uuid() {
+        let visual = visual_of(window);
+        let centre = window.geometry().size.to_f64();
+        let anchor = project_point(
+            ctx,
+            elem_loc.x as f64
+                + visual.scale.anchor.x
+                + (centre.w / 2.0 - visual.scale.anchor.x) * visual.scale.factor
+                + visual.translate.x,
+            elem_loc.y as f64
+                + visual.scale.anchor.y
+                + (centre.h / 2.0 - visual.scale.anchor.y) * visual.scale.factor
+                + visual.translate.y,
+        );
+        super::super::ghost::retain(
+            renderer,
+            uuid,
+            state.inner.render_output.as_deref().unwrap_or_default(),
+            state.inner.render_target.map(|rt| rt.slot),
+            pane,
+            anchor,
+            ctx.scale * ctx.camera_zoom,
+            &mut elements,
+        );
+    }
     if let Some(crop) = crop {
         drawn.opaque = drawn
             .opaque
@@ -949,7 +982,14 @@ where
         Vec::new(),
         decor::render::Pass::Captured,
     );
-    let (elements, _) = crop_elements(elements, window, ctx, (0, 0).into(), size);
+    let (elements, _) = crop_elements(
+        elements,
+        window,
+        ctx,
+        (0, 0).into(),
+        size,
+        Rectangle::from_size(size),
+    );
     Ok((
         elements,
         size,
@@ -958,11 +998,19 @@ where
 }
 
 pub fn visual_of(window: &Window) -> comp_model::request::VisualAttributes {
-    window
+    let mut base = window
         .user_data()
         .get::<std::sync::Mutex<comp_model::request::VisualAttributes>>()
         .map(|v| *v.lock().unwrap())
-        .unwrap_or_default()
+        .unwrap_or_default();
+    if base.scale.center {
+        let size = window.geometry().size;
+        base.scale.anchor = comp_model::request::LogicalOffset {
+            x: f64::from(size.w) / 2.0,
+            y: f64::from(size.h) / 2.0,
+        };
+    }
+    crate::comp::animation::sample(window, base, crate::comp::animation::frame_time())
 }
 
 fn crop_elements<R>(
@@ -971,6 +1019,7 @@ fn crop_elements<R>(
     ctx: XformCtx,
     loc: Point<i32, Logical>,
     size: Size<i32, Physical>,
+    pane: Rectangle<i32, Physical>,
 ) -> (
     Vec<crate::window::draw::element::Element<R>>,
     Option<Rectangle<i32, Physical>>,
@@ -980,22 +1029,75 @@ where
     R::TextureId: Texture + Clone + Send + 'static,
 {
     let visual = visual_of(window);
-    let crop = visual.clip.map(|c| project_clip(ctx, loc, c, size));
-    let elements = if !visual.visible {
-        Vec::new()
-    } else if let Some(rect) = crop {
-        elements
-            .into_iter()
-            .filter_map(|e| CropRenderElement::from_element(e, Scale::from(1.0), rect))
-            .map(crate::window::draw::element::Element::Cropped)
-            .collect()
-    } else {
-        elements
-            .into_iter()
-            .map(crate::window::draw::element::Element::Plain)
-            .collect()
-    };
+    let crop = visual.clip.map(|c| {
+        if visual.transformed() {
+            project_clip_unbounded(ctx, loc, c)
+        } else {
+            project_clip(ctx, loc, c, size)
+        }
+    });
+    let elements: Vec<crate::window::draw::element::Untransformed<R>> =
+        if !visual.visible || visual.scale.factor == 0.0 {
+            Vec::new()
+        } else if let Some(rect) = crop {
+            elements
+                .into_iter()
+                .filter_map(|e| CropRenderElement::from_element(e, Scale::from(1.0), rect))
+                .map(crate::window::draw::element::Untransformed::Cropped)
+                .collect()
+        } else {
+            elements
+                .into_iter()
+                .map(crate::window::draw::element::Untransformed::Plain)
+                .collect()
+        };
+    if !visual.transformed() {
+        return (
+            elements
+                .into_iter()
+                .map(crate::window::draw::element::Element::Plain)
+                .collect(),
+            crop,
+        );
+    }
+    let factor = visual.scale.factor;
+    let anchor = project_point(
+        ctx,
+        loc.x as f64 + visual.scale.anchor.x,
+        loc.y as f64 + visual.scale.anchor.y,
+    );
+    let origin = project_point(ctx, 0.0, 0.0);
+    let translated = project_point(ctx, visual.translate.x, visual.translate.y);
+    let offset = Point::<i32, Physical>::from((
+        ((1.0 - factor) * anchor.x as f64 + (translated.x as f64 - origin.x as f64)).round() as i32,
+        ((1.0 - factor) * anchor.y as f64 + (translated.y as f64 - origin.y as f64)).round() as i32,
+    ));
+    let elements = elements
+        .into_iter()
+        .filter_map(|element| {
+            crate::window::draw::element::Element::transformed(element, factor, offset, pane)
+        })
+        .collect();
     (elements, crop)
+}
+
+fn project_clip_unbounded(
+    ctx: XformCtx,
+    loc: Point<i32, Logical>,
+    clip: comp_model::request::ClipRect,
+) -> Rectangle<i32, Physical> {
+    let x = loc.x as f64 + clip.x;
+    let y = loc.y as f64 + clip.y;
+    let a = project_point(ctx, x, y);
+    let b = project_point(ctx, x + clip.width, y + clip.height);
+    Rectangle::new(
+        a,
+        (
+            b.x.saturating_sub(a.x).max(0),
+            b.y.saturating_sub(a.y).max(0),
+        )
+            .into(),
+    )
 }
 
 /// Bound projected corners to the framebuffer before subtracting them. Local
@@ -1020,6 +1122,26 @@ fn project_clip(
 #[cfg(test)]
 mod clip_tests {
     use super::*;
+    #[test]
+    fn pretransform_clip_keeps_pixels_that_translation_can_reveal() {
+        let ctx = XformCtx::new((0.0, 0.0), 1.0, (100.0, 100.0), 1.0);
+        let local = comp_model::request::ClipRect {
+            x: 0.0,
+            y: 0.0,
+            width: 40.0,
+            height: 40.0,
+        };
+        let projected = project_clip_unbounded(ctx, (-1000, 0).into(), local);
+        assert!(projected.loc.x < 0);
+        assert_eq!(projected.size, (40, 40).into());
+        assert_eq!(
+            project_clip(ctx, (-1000, 0).into(), local, (100, 100).into())
+                .size
+                .w,
+            0
+        );
+    }
+
     #[test]
     fn clip_origin_and_zoom_cannot_overflow_physical_rectangles() {
         let size = Size::from((1280, 720));

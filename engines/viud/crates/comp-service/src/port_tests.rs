@@ -1102,7 +1102,7 @@ async fn region_mesh_dispatch_uses_long_pool_and_replies_once() {
     let mut responders = JoinSet::new();
     let permits = Arc::new(Semaphore::new(PORT_QUEUE_CAPACITY));
     let long_permits = Arc::new(Semaphore::new(LONG_COMMAND_PERMITS));
-    // Model seven other long operations occupying the production pool.
+    // Model other long operations occupying all but one production permit.
     let other_operations = long_permits
         .clone()
         .try_acquire_many_owned((LONG_COMMAND_PERMITS - 1) as u32)

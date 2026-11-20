@@ -9,6 +9,11 @@
 
 serial_tests: [
   {
+    package: "headless",
+    target: "capture",
+    reason: "PR #196, Fable ruling A (2026-11-21): window_motion::record_window_retarget_supersedes_without_returning_to_first_keyframe, window_motion::record_close_retains_rounded_corners_and_front_stacking and window_motion::record_close_retains_rounded_corners_and_rear_stacking require zero drops. Loaded workspace jobs 20261121-002833-44f18966, 20261121-003459-4cf7f828 and 20261121-003458-a66fdb4e show thread starvation (50.5 ms readback, 175.9 ms queue wait); isolated strict 40 s 4K30 job 20261121-005853-98403d4b decoded 1201 frames with zero drops. The recorder deliberately sheds frames under CPU starvation to protect compositor pacing; run the whole binary alone, retaining strict assertions"
+  },
+  {
     package: "mix",
     target: "native_session_pty",
     reason: "p4 tests assert pgrep -f 'sleep 600' finds nothing on the whole machine (tests/native_session_pty.rs:3317, :3378); PTY timing; red when another job runs the suite (2026-11-12)"

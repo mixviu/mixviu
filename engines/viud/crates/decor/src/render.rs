@@ -41,6 +41,12 @@ pub struct Piece<R: Renderer> {
     dst: Rectangle<i32, Physical>,
 }
 
+impl<R: Renderer> Piece<R> {
+    pub fn texture(&self) -> &R::TextureId {
+        self.inner.texture()
+    }
+}
+
 impl<R: Renderer> Element for Piece<R> {
     fn alpha(&self) -> f32 {
         self.inner.alpha()

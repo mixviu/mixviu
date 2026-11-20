@@ -162,6 +162,8 @@ fn fixture() -> CompSnapshot {
             opacity: 1.0,
             z: 0,
             clip: None,
+            scale: Default::default(),
+            translate: Default::default(),
             requested_visible: true,
             placement: "floating",
             float_geometry: None,

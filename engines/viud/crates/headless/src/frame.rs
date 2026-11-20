@@ -265,6 +265,39 @@ fn arm_readbacks(state: &mut Loop, context: &Rc<RefCell<Context>>) {
 }
 
 pub(crate) fn draw(state: &mut Loop, ctx: &mut Context) {
+    #[cfg(feature = "test-support")]
+    {
+        thread_local! { static MULTI: std::cell::Cell<bool> = const { std::cell::Cell::new(false) }; }
+        let extra = state
+            .inner
+            .space_state()
+            .state
+            .outputs()
+            .find(|o| o.name() == "headless-1")
+            .cloned();
+        if let Some(extra) = extra.filter(|_| !MULTI.get()) {
+            MULTI.set(true);
+            let primary = ctx.output.clone();
+            {
+                // Independent output camera: the fixture exposes adjacent world
+                // regions through two real output compositions, not mirrors.
+                let views = state.inner.output_views_mut();
+                views.ensure("headless-1");
+                let camera = views.views_mut("headless-1").focus_camera_mut();
+                camera.transform.position = (1920.0, 360.0).into();
+            }
+            ctx.follow(extra);
+            state
+                .state
+                .schedule_redraw(protocols::redraw::schedule::RedrawReason::WindowState);
+            draw(state, ctx);
+            ctx.follow(primary);
+            state
+                .state
+                .schedule_redraw(protocols::redraw::schedule::RedrawReason::WindowState);
+            MULTI.set(false);
+        }
+    }
     if route(
         ctx.vt_session,
         !matches!(

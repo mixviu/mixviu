@@ -1,5 +1,85 @@
 # comp caller audit
 
+Window motion extends `comp.motion.run`; one call still targets one window
+and waits for completion. Existing `to:{x?,y?,w?,h?}`, `duration_ms` and
+`curve` calls remain valid. Geometry uses global logical coordinates and
+configures client size; visual tracks change composition only.
+
+```json
+{"targets":[{"window":{"id":7,"generation":3,"preset":"pop","duration_ms":300}}]}
+```
+
+Instead of `preset`, send `tracks` (one to four unique properties):
+
+```json
+{"targets":[{"window":{"id":7,"generation":3,"duration_ms":300,"tracks":[{"property":"opacity","keyframes":[{"offset":0,"value":0,"easing":{"kind":"ease_out"}},{"offset":1,"value":1}]}]}}]}
+```
+
+Supported properties are `opacity`, uniform `scale`, `tx` and `ty` (logical
+translation). Scale uses the anchor set by `comp.window.place`. Keyframes
+use the shared motion library schema: strictly increasing offsets with
+endpoints 0 and 1, finite values, and optional easing (CSS `ease` by default).
+Easing objects include named CSS kinds, `bezier:{x1,y1,x2,y2}` represented
+as `{"kind":"bezier","x1":0.2,"y1":0.8,"x2":0.2,"y2":1}`,
+`{"kind":"steps","n":4,"start":false}` and
+`{"kind":"spring","stiffness":100,"damping":10,"mass":1,"velocity":0}`.
+Legacy curve names and four-number bezier arrays remain accepted; `curve`
+can also use these easing objects. On visual tracks it overrides every
+keyframe's easing. `min-jerk` remains geometry/pointer-only.
+
+The existing shared long-command pool admits up to 64 outstanding calls,
+allowing 32 simultaneous window runs with room for retargets and other waits.
+Ordinary reads and controls retain their separate admission pool. Saturation
+still returns `busy`.
+
+Tracks and preset are mutually exclusive; `to` may accompany either. The
+shared preset table is projected onto supported properties: `zoom` draws
+scale and opacity without its blur. A preset with no supported properties
+is refused. Rotation and nonuniform scale are outside this contract.
+Explicit unsupported tracks are refused. Durations remain 0–10000 ms,
+default 400 ms; keyframes are capped at 64 per property. End values persist.
+Sampled opacity clamps to 0–1, scale to 0–64 and translation to signed
+32-bit logical bounds, including spring or bezier overshoot.
+
+A replacement run on the same id/generation settles the first reply with
+`{"version":1,"status":"superseded"}`. It starts at sampled geometry and
+visual state; visual retargeting uses the shared library's linear retarget
+helper for position continuity. First-run entrance keyframes do not restart
+on retarget. Successful terminal replies retain `status:"completed"`.
+
+Properties omitted by a replacement continue linearly from their current sample
+to their original endpoint over their original remaining time. Requested
+properties use the replacement duration; completed properties hold while any
+continuation finishes. The reply waits for the latest of those deadlines.
+Cancellation holds the last presented sample and removes the tracks, without
+applying their endpoints. Later placement updates take effect normally.
+Placement accepts scale zero or 1e-6–64; animated factors below 1e-6 suppress
+positional input, including retained grabs.
+
+Optional lifecycle transitions are configured in `preferences.json`, for
+example:
+
+```json
+{"window_motion":{"map":{"preset":"pop","duration_ms":300},"unmap":{"preset":"fade","duration_ms":300},"minimise":{"preset":"fade","duration_ms":200},"restore":{"preset":"pop","duration_ms":200},"workspace":{"preset":"fade","duration_ms":200}}}
+```
+
+Every event defaults to disabled; omit or set its entry to null. An exit
+plays the preset in reverse. Unmapping removes the client and its input
+target immediately; the compositor retains a separate image only until the
+exit finishes. No client destruction or configure waits for that image.
+Completed entrances release their tracks. Explicit `visible:false` suppresses
+pixels immediately and never starts an exit. Workspace switches cancel older
+close/minimise images; workspace animation is a destination entrance, without
+carrying source-workspace pixels into the destination.
+
+Frame preparation samples geometry and visual tracks at one target
+presentation timestamp. KMS uses its next-vblank estimate; headless and
+nested software presentation use the scene's monotonic timestamp. Actual KMS
+completion feedback can arrive later and cannot retroactively change pixels.
+The recorder captures those composed pixels, rather than resampling motion
+on its own 30 Hz clock. A quiet output produces repeats without rendering or
+reading pixels; motion wakeups exist only while a run is active.
+
 `comp.callers` is a read-only Bus command with no required arguments, roles or
 grants. Step 1 observes calls and refuses none on identity grounds. Existing
 argument validation and capacity limits still apply.
@@ -232,3 +312,15 @@ budget waits, and `pending_ticks` counts waits for an in-flight capture. The
 timings plus record/payload byte counts. These fields remain in stop replies.
 Uncaptured state pixels cannot be inferred; source loss accounting counts
 distinct observed states, not every client commit between 30 Hz samples.
+
+Window motion replacement rules: a visual replacement continues omitted visual
+tracks to their original endpoints over the remaining time. A geometry-only
+replacement cancels all visual tracks and holds the last drawn sample. Both
+settle the prior caller with status `superseded`, with `by:run`. Placement
+settles a run whose last track it removes with `by:place`; lifecycle takeover
+uses `by:lifecycle`. Window rows report the sampled opacity during a run.
+
+Human pointer movement cancels pointer and window geometry runs, including
+combined geometry/visual runs. Visual-only runs continue when the human pointer
+moves. Explicit hide holds the last presented visual sample for a later show;
+placement after expiry first persists the run's endpoints.

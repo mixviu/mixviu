@@ -149,11 +149,37 @@ pub struct DefaultMode {
     pub refresh_mhz: u32,
 }
 
+/// One optional lifecycle transition. Preset names are resolved against the
+/// shared motion table by the compositor; unsupported properties are refused.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowTransition {
+    pub preset: String,
+    #[serde(default = "default_transition_ms")]
+    pub duration_ms: u64,
+}
+
+fn default_transition_ms() -> u64 {
+    300
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct WindowMotion {
+    pub map: Option<WindowTransition>,
+    pub unmap: Option<WindowTransition>,
+    pub minimise: Option<WindowTransition>,
+    pub restore: Option<WindowTransition>,
+    pub workspace: Option<WindowTransition>,
+}
+
 /// The complete preferences document. `#[serde(default)]` so a partial or older
 /// `preferences.json` (or a missing file) still loads with sane per-field values.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Preference {
+    /// Optional compositor lifecycle presets. Omitted events have no animation.
+    pub window_motion: WindowMotion,
     /// Persisted comp.props tiling leaves; the policy host validates each leaf.
     pub tiling: serde_json::Map<String, serde_json::Value>,
     /// Pointer cursor speed multiplier on relative motion (`1.0` = unscaled). The
@@ -654,6 +680,7 @@ pub struct Ime {
 impl Default for Preference {
     fn default() -> Self {
         Self {
+            window_motion: WindowMotion::default(),
             tiling: Default::default(),
             cursor_sensitivity: 1.0,
             input_natural_scroll: true,

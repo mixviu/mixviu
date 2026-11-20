@@ -109,6 +109,14 @@ fn stage_test($mix)
   -- runs alone afterwards.
   run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "-p", "mix", "--features", "test-hooks"], $test_env)
   run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "--workspace", "--exclude", "mix"], $test_env)
+  -- Only the scoped capture fixtures select an optimised test-hook compositor.
+  run_step(["cargo", "build", "--release", "--locked", "-p", "viud", "--no-default-features", "--features", "backend-native,test-support"])
+  $capture_env = merge($test_env, {MIX_TEST_VIUD_EXE: realpath("target/release/viud"), MIX_TEST_VIU_EXE: realpath("target/debug/viu")})
+  $capture_test = ["cargo", "test", "--locked", "-p", "viud", "-p", "headless", "--features", "viud/test-support,headless/compositor-fixtures", "--test", "capture"]
+  run_step(concat($capture_test, ["--", "--test-threads=1"]), $capture_env)
+  for $filter in ["review_", "placement_", "moved_window_clip"]
+    run_step(concat($capture_test, [$filter, "--", "--ignored", "--test-threads=1"]), $capture_env)
+  end
   run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "-p", "portald", "--no-default-features"], $test_env)
   stage_mix_services($mix)
   run_step([$mix, "tools/mesh/tests/all.mix"])

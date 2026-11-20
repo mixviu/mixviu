@@ -826,13 +826,33 @@ fn place(lp: &mut Loop, spec: &comp_model::request::PlaceSpec) -> ControlReply {
 
 fn apply_visual(lp: &mut Loop, id: SurfaceId, spec: &comp_model::request::PlaceSpec) {
     let old = lp.inner.comp.visual(id);
-    let mut visual = old;
+    let window = window_of(lp, id);
+    let mut visual = window.as_ref().map_or(old, |window| {
+        world::comp::animation::prepare_place(
+            window,
+            old,
+            spec.visible == Some(Some(false)),
+            lp.inner.comp.clock.now(),
+        )
+    });
     visual.update(spec);
-    if old == visual {
+    if spec.visible.is_some()
+        && let Some(uuid) = lp.inner.comp.registry.uuid_for(id)
+    {
+        world::comp::lifecycle_motion::visibility(uuid, visual.visible);
+    }
+    let tracks_changed = window
+        .as_ref()
+        .is_some_and(|window| world::comp::animation::place(window, spec));
+    if old == visual && !tracks_changed {
         return;
     }
     lp.inner.comp.visuals.insert(id, (spec.generation, visual));
-    if let Some(window) = window_of(lp, id) {
+    if let Some(window) = window {
+        if !visual.visible || !world::comp::animation::active(&window, lp.inner.comp.clock.now()) {
+            world::comp::animation::replaced_by(&window, "place");
+            world::comp::animation::cancel(&window);
+        }
         *window
             .user_data()
             .get_or_insert(|| {
@@ -919,7 +939,11 @@ fn place_window(
 
 /// The window a `comp.motion.run` addresses, resolved the way `comp.window.*`
 /// resolves it (a stale generation is refused).
-fn motion_window(lp: &Loop, id: u64, generation: u64) -> Result<(SurfaceId, Window), ControlReply> {
+pub(crate) fn motion_window(
+    lp: &Loop,
+    id: u64,
+    generation: u64,
+) -> Result<(SurfaceId, Window), ControlReply> {
     let surface = match lp
         .inner
         .comp
@@ -932,6 +956,36 @@ fn motion_window(lp: &Loop, id: u64, generation: u64) -> Result<(SurfaceId, Wind
     let window = window_of(lp, surface)
         .ok_or_else(|| ControlReply::refused("unknown_window", serde_json::json!({})))?;
     Ok((surface, window))
+}
+
+pub fn window_visual(
+    lp: &Loop,
+    id: u64,
+    generation: u64,
+) -> Result<comp_model::request::VisualAttributes, ControlReply> {
+    let (_, window) = motion_window(lp, id, generation)?;
+    Ok(world::window::draw::frame::scene::visual_of(&window))
+}
+
+pub fn window_visual_step(
+    lp: &mut Loop,
+    id: u64,
+    generation: u64,
+    visual: comp_model::request::VisualAttributes,
+) -> Result<(), ControlReply> {
+    let (surface, window) = motion_window(lp, id, generation)?;
+    lp.inner.comp.visuals.insert(surface, (generation, visual));
+    *window
+        .user_data()
+        .get_or_insert(|| std::sync::Mutex::new(comp_model::request::VisualAttributes::default()))
+        .lock()
+        .unwrap() = visual;
+    if !visual.visible {
+        crate::input::hide_window(lp, surface);
+    }
+    crate::input::retarget_pointer(lp);
+    lp.state.schedule_redraw(RedrawReason::WindowState);
+    Ok(())
 }
 
 /// Where a window is now, `[x, y, w, h]` in global logical coordinates: the

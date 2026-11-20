@@ -91,6 +91,10 @@ impl Drop for Process {
                 );
             }
             eprintln!(
+                "viud child status before cleanup: {:?}",
+                self.child.try_wait()
+            );
+            eprintln!(
                 "frame trace: {}",
                 diagnostic_excerpt(self.root.join("frames.log"))
             );
@@ -224,6 +228,7 @@ struct Options<'a> {
     agent: bool,
     seat: Option<&'a str>,
     size: &'a str,
+    preferences: Option<serde_json::Value>,
     osd: bool,
 }
 
@@ -240,6 +245,7 @@ impl Default for Options<'_> {
             agent: true,
             seat: None,
             size: "1280x720",
+            preferences: None,
             osd: false,
         }
     }
@@ -257,6 +263,7 @@ fn spawn_options(options: Options<'_>) -> Process {
         agent,
         seat,
         size,
+        preferences,
         osd,
     } = options;
     assert!(
@@ -299,6 +306,19 @@ fn spawn_options(options: Options<'_>) -> Process {
     }
     let settings = root.join("settings.json");
     fs::write(&settings, serde_json::to_vec(&config).unwrap()).unwrap();
+    if let Some(preferences) = preferences {
+        if preferences["_test_two_outputs"] == true {
+            fs::write(root.join("two-outputs"), b"fixture").unwrap();
+        }
+        if preferences["_test_two_panes"] == true {
+            fs::write(root.join("two-panes"), b"fixture").unwrap();
+        }
+        fs::write(
+            root.join("preferences.json"),
+            serde_json::to_vec(&preferences).unwrap(),
+        )
+        .unwrap();
+    }
     let log = root.join("viud.log");
     let stderr = fs::File::create(&log).unwrap();
     let mut command = Command::new(binary);
@@ -514,6 +534,27 @@ pub fn spawn_size(label: &str, bus: &str, size: &str) -> Process {
         label,
         bus: Some(bus),
         size,
+        ..Options::default()
+    })
+}
+
+#[allow(dead_code)] // Used by window motion's isolated lifecycle fixture.
+pub fn spawn_preferences(label: &str, bus: &str, preferences: serde_json::Value) -> Process {
+    spawn_preferences_size(label, bus, "1280x720", preferences)
+}
+
+#[allow(dead_code)]
+pub fn spawn_preferences_size(
+    label: &str,
+    bus: &str,
+    size: &str,
+    preferences: serde_json::Value,
+) -> Process {
+    spawn_options(Options {
+        label,
+        bus: Some(bus),
+        size,
+        preferences: Some(preferences),
         ..Options::default()
     })
 }

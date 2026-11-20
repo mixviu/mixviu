@@ -37,3 +37,12 @@ Record new source imports and any adaptations in provenance. Frozen import
 hashes identify this seed; when files intentionally evolve, preserve the import
 record and explicitly update the integrity policy rather than disguising edits
 as an unchanged copy.
+
+## Focused window motion checks
+
+On a CBC worker, `mix tools/ci/window_motion.mix native` runs the native motion and
+record acceptance suite. `mix tools/ci/window_motion.mix all-targets PACKAGE...` runs all test
+targets of the caller's selected workspace crates. Include the changed crates and any
+crates that include their files by path. `mix tools/ci/window_motion_format.mix` returns
+a formatting diff and restores the worker checkout; it refuses a dirty tree
+before running any formatting or cleanup.
