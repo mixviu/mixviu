@@ -487,6 +487,7 @@ mod tests {
         let warns = Arc::new(AtomicU64::new(0));
         let subscriber = tracing_subscriber::registry().with(CountWarns(warns.clone()));
         let authority = tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
             RoutingAuthority::new(
                 accepted(vec![
                     active("alpha", "192.0.2.1"),
@@ -508,6 +509,7 @@ mod tests {
         let warns = Arc::new(AtomicU64::new(0));
         let subscriber = tracing_subscriber::registry().with(CountWarns(warns.clone()));
         let authority = tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
             RoutingAuthority::new(
                 accepted(vec![
                     active_at("alpha", "192.0.2.1", 4300),
@@ -530,6 +532,7 @@ mod tests {
         let warns = Arc::new(AtomicU64::new(0));
         let subscriber = tracing_subscriber::registry().with(CountWarns(warns.clone()));
         let authority = tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
             RoutingAuthority::new(
                 accepted(vec![
                     active("alpha", "192.0.2.1"),
@@ -564,6 +567,7 @@ mod tests {
         let warns = Arc::new(AtomicU64::new(0));
         let subscriber = tracing_subscriber::registry().with(CountWarns(warns.clone()));
         tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
             RoutingAuthority::new(
                 accepted(vec![
                     active("alpha", "192.0.2.1"),
@@ -587,6 +591,7 @@ mod tests {
         let warns = Arc::new(AtomicU64::new(0));
         let subscriber = tracing_subscriber::registry().with(CountWarns(warns.clone()));
         tracing::subscriber::with_default(subscriber, || {
+            tracing::callsite::rebuild_interest_cache();
             RoutingAuthority::new(
                 accepted(vec![
                     active("alpha", "192.0.2.1"),
