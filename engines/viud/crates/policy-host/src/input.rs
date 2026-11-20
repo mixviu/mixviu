@@ -208,6 +208,7 @@ fn payload(
         // it. Match the native button path: refresh before preflight/press,
         // preserving implicit and explicit grabs (including chorded buttons).
         if let InputOp::PointerButton { action, .. } = op
+            && target_window.is_none()
             && press_states(*action).contains(&true)
             && agent_pointer(lp).is_some_and(|pointer| !pointer.is_grabbed())
             && let Some(position) = lp.inner.comp.injection.agent_pointer
