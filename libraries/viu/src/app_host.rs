@@ -1891,7 +1891,12 @@ impl Drop for Host {
 }
 
 fn create(bundle: Bundle, wake: crate::runtime::Wake) -> Host {
-    create_with_probe(bundle, wake, #[cfg(feature = "test-support")] false)
+    create_with_probe(
+        bundle,
+        wake,
+        #[cfg(feature = "test-support")]
+        false,
+    )
 }
 fn create_with_probe(
     bundle: Bundle,

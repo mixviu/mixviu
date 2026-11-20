@@ -227,12 +227,21 @@ print("PASS")
 fn discovery_expiry_flushes_pending_lists_without_describes() {
     let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let observed = calls.clone();
-    let mut runtime = viu::runtime::Runtime::new(4, Arc::new(|| {}),
-        Some(Box::new(move || std::rc::Rc::new(RefuseJobs(observed)))));
+    let mut runtime = viu::runtime::Runtime::new(
+        4,
+        Arc::new(|| {}),
+        Some(Box::new(move || std::rc::Rc::new(RefuseJobs(observed)))),
+    );
     let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../apps/workshop/discovery-expiry-test.mix");
-    runtime.load(viu::runtime::Program { source: std::fs::read_to_string(&path).unwrap(),
-        path, scene: "expiry".into(), citizen: "expiry".into() }).unwrap();
+    runtime
+        .load(viu::runtime::Program {
+            source: std::fs::read_to_string(&path).unwrap(),
+            path,
+            scene: "expiry".into(),
+            citizen: "expiry".into(),
+        })
+        .unwrap();
     let end = Instant::now() + Duration::from_secs(10);
     loop {
         if let Some(done) = runtime.try_completion() {
