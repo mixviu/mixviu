@@ -257,7 +257,10 @@ fn review_slide_cost_and_idle() {
         d.get_temp::<usize>(egui::Id::new("viu-backdrop-builds"))
             .unwrap_or(0)
     });
-    assert!(backdrop_builds > 0, "staged specimen must exercise the backdrop");
+    assert!(
+        backdrop_builds > 0,
+        "staged specimen must exercise the backdrop"
+    );
     let mut us = Vec::new();
     for i in 1..=1000 {
         let start = std::time::Instant::now();
