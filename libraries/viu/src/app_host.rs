@@ -2458,6 +2458,13 @@ pub mod test_support {
         host: Host,
         pub ctx: egui::Context,
     }
+    impl Drop for Harness {
+        fn drop(&mut self) {
+            if self.host.discovery_probe.is_some() {
+                eprintln!("WORKSHOP_PROBE {}", self.discovery_measurements());
+            }
+        }
+    }
     impl Harness {
         pub fn new(bundle: Bundle) -> Self {
             let ctx = egui::Context::default();
@@ -2473,7 +2480,11 @@ pub mod test_support {
             let before = self.host.discovery_probe.as_ref().map_or(0, |p| p.steps);
             self.host.pump(&self.ctx);
             if let Some(p) = &mut self.host.discovery_probe {
-                p.pumps.push(start.elapsed().as_micros() as u64);
+                let elapsed = start.elapsed().as_micros() as u64;
+                if elapsed > 100_000 {
+                    eprintln!("WORKSHOP_LONG_PUMP us={elapsed} steps={}", p.steps - before);
+                }
+                p.pumps.push(elapsed);
                 p.per_pump.push(p.steps - before);
             }
         }

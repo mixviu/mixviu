@@ -333,6 +333,7 @@ fn call(
 #[test]
 fn workshop_answers_during_discovery() {
     for count in [4, 200] {
+        eprintln!("WORKSHOP_PEERS {count}");
         let broker = test_broker::Broker::start();
         let rt = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
@@ -396,6 +397,8 @@ fn workshop_answers_during_discovery() {
             );
             std::thread::sleep(Duration::from_millis(2));
         }
+        eprintln!("WORKSHOP_STARTUP {}", host.discovery_measurements());
+        host.probe_discovery();
         let mut overlapping = false;
         let mut streamed = false;
         loop {
