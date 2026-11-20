@@ -141,6 +141,7 @@ pub mod testing {
     thread_local! {
         static STALL: RefCell<Option<Arc<AtomicUsize>>> = const { RefCell::new(None) };
         static COLD_READS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+        static COLD_TRACE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
         pub(super) static POLLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     }
     pub fn poll_count() -> usize {
@@ -195,6 +196,14 @@ pub mod testing {
             cost + penalty
         })
     }
+    pub(super) fn trace(output: &Output, stage: &str) {
+        if COLD_READS.get().is_some() && COLD_TRACE.get() < 12 {
+            COLD_TRACE.set(COLD_TRACE.get() + 1);
+            REQUESTS.with_borrow(|requests| {
+                eprintln!("COLD_QUEUE stage={stage} tid={:?} output={} requests={:?}", std::thread::current().id(), output.name(), requests.iter().map(|r| (&r.output, r.raw, r.spec.cursor, r.spec.window.is_some(), r.spec.listed_windows.is_some())).collect::<Vec<_>>());
+            });
+        }
+    }
     pub(super) fn replace_fence(fence: SyncPoint) -> SyncPoint {
         STALL
             .with_borrow_mut(|slot| slot.take())
@@ -231,6 +240,8 @@ pub fn enqueue(
             raw,
         })
     });
+    #[cfg(feature = "test-support")]
+    testing::trace(output, "enqueue");
     id
 }
 
@@ -434,6 +445,8 @@ pub fn service(
     kind: CaptureSource,
     cursor: bool,
 ) {
+    #[cfg(feature = "test-support")]
+    testing::trace(output, if cursor { "service-cursor" } else { "service-base" });
     poll_reads(renderer, output, cursor);
     let requests = take(|request| {
         request.output == output.name()
