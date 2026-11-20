@@ -181,11 +181,14 @@ fn bus_sweep_record_reference_play_and_decode_build_states() {
                     .flat_map(|p| [p[2], p[1], p[0]])
                     .collect();
                 let image = image::RgbImage::from_raw(width, height, rgb).unwrap();
-                if target==21.0 {
-                    for (x,y) in [(width-4,height/2),(width/2,height-4)] {
-                        let pixel=image.get_pixel(x,y);
-                        for (actual,expected) in pixel.0.iter().zip([13_u8,17,23]) {
-                            assert!(actual.abs_diff(expected)<=4,"scaled canvas clipped at {x},{y}: {pixel:?}");
+                if target == 21.0 {
+                    for (x, y) in [(width - 4, height / 2), (width / 2, height - 4)] {
+                        let pixel = image.get_pixel(x, y);
+                        for (actual, expected) in pixel.0.iter().zip([13_u8, 17, 23]) {
+                            assert!(
+                                actual.abs_diff(expected) <= 4,
+                                "scaled canvas clipped at {x},{y}: {pixel:?}"
+                            );
                         }
                     }
                 }
