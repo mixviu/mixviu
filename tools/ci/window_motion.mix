@@ -20,7 +20,14 @@ if $mode == "native" or $mode == "all-targets" then
   -- The full capture suite also owns the merged OSD host fixture.
   checked(["cargo","build","--release","--locked","-p","viu","--bin","viu"])
   if $mode == "all-targets" then
-    checked(["cargo","test","--release","--locked","-p","world","-p","headless","-p","comp-model","-p","policy-host","-p","viud","-p","comp-service","-p","decor","-p","dispatcher","-p","frames","-p","model","-p","native","-p","policy","-p","recorder","-p","scenegraph","-p","seat","-p","testkit","-p","motion","-p","viu","--no-default-features","--features","viud/backend-native,viud/test-support,headless/compositor-fixtures","--no-fail-fast","--","--test-threads=1"])
+    -- The caller supplies the changed crates and any path-including consumers.
+    $packages = slice(args(), 1)
+    if len($packages) == 0 then raise("MOTION_CHECK", "all-targets requires PACKAGE...") end
+    $test = ["cargo","test","--release","--locked"]
+    for $package in $packages
+      $test = concat($test, ["-p", $package])
+    end
+    checked(concat($test, ["--no-default-features","--features","viud/backend-native,viud/test-support,headless/compositor-fixtures","--no-fail-fast","--","--test-threads=1"]))
   else
   checked(["cargo","test","--release","--locked","-p","viud","--no-default-features","--features","backend-native,test-support","--test","recorder_binary"])
   checked(["cargo","test","--release","--locked","-p","headless","--features","headless/compositor-fixtures","--test","capture","--","--nocapture","--test-threads=1"])
@@ -37,5 +44,5 @@ elif $mode == "motion" then
 elif $mode == "bench" then
   checked(["cargo","test","--release","--locked","-p","headless","--features","headless/compositor-fixtures","--test","capture","benchmark_window_motion","--","--ignored","--nocapture","--test-threads=1"])
 else
-  raise("MOTION_CHECK", "expected native, unit, motion or bench")
+  raise("MOTION_CHECK", "expected native, all-targets PACKAGE..., unit, motion or bench")
 end

@@ -115,7 +115,7 @@ pub fn prepare_place(
         return *window
             .user_data()
             .get::<Mutex<VisualAttributes>>()
-            .unwrap()
+            .expect("finish installs the window's visual attributes")
             .lock()
             .unwrap();
     }

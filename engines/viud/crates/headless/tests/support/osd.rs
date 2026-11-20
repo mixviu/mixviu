@@ -148,10 +148,6 @@ fn decoded_rgb(frame: &[u8]) -> Vec<u8> {
 }
 
 #[test]
-#[cfg_attr(
-    not(feature = "compositor-fixtures"),
-    ignore = "requires explicit compositor test fixtures"
-)]
 fn caption_records_motion_clicks_through_and_fades_to_empty() {
     if !process::record_available() {
         return;
@@ -491,10 +487,6 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
 }
 
 #[test]
-#[cfg_attr(
-    not(feature = "compositor-fixtures"),
-    ignore = "requires explicit compositor test fixtures"
-)]
 fn window_card_follows_hides_and_osd_refusals_are_typed() {
     if !process::record_available() {
         return;
