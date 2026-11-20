@@ -537,6 +537,7 @@ fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
     );
     wait(&mut pattern, Duration::from_millis(150));
     let (_, _, clipped) = ppm(&bus, &process, "osd-clipped", None);
+    assert!(bounds(&before, &clipped, width, [100, 100, 32, 24]).is_some(), "tiny card must positively draw");
     for y in 20..height {
         for x in 0..width {
             if !(100..132).contains(&x) || !(100..124).contains(&y) {
