@@ -25,7 +25,7 @@ fn incremental_model_matches_full_ports_and_rolls_back_invalid_controls() {
 #[test]
 fn frame_refusal_rolls_back_root_model_ports_and_revision() {
     let content="---\nscene: 1\nname: root\ncitizen: test\n---\n```mix\nroot: {widget: \"text\", text: \"= $model.label\"}\n```\n";
-    let frame="---\nscene: 1\nname: frame\ncitizen: test\n---\n```mix\nroot: {widget: \"column\", children: [\"gold-content\",\"field\"]}\ngold-content: {widget: \"spacer\"}\nfield: {widget: \"control\", definition: {id: \"field\", kind: \"field\", label: \"Field\", initial: \"ok\"}}\n```\n";
+    let frame="---\nscene: 1\nname: frame\ncitizen: test\n---\n```mix\nroot: {widget: \"column\", children: [\"gold-content\",\"field\"]}\n\"gold-content\": {widget: \"spacer\"}\nfield: {widget: \"control\", definition: {id: \"field\", kind: \"field\", label: \"Field\", initial: \"ok\"}}\n```\n";
     let model=json!({"label":"before","values":{"field":"ok"}});
     let mut view=SceneView::with_frame(content,model.clone(),frame).unwrap();
     let nodes=view.tree.nodes.clone();let frame_nodes=view.frame.as_ref().unwrap().tree.nodes.clone();

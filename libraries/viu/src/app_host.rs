@@ -1076,7 +1076,14 @@ impl Host {
                 self.error.clear();
             }
             if let Some(patch)=done.model_patch.as_ref() {
+                #[cfg(feature="test-support")]
+                let patch_started=test_support::thread_cpu();
                 let result=self.apply_incremental(patch,ctx);
+                #[cfg(feature="test-support")]
+                if let Some(probe)=self.discovery_probe.as_mut() {
+                    probe.patch_apply_cpu.push(test_support::thread_cpu().saturating_sub(patch_started).as_micros() as u64);
+                    probe.retained_model_bytes.push(self.model_bytes as u64);
+                }
                 self.publication_result(done.generation,patch.revision,result);
             } else if done.error.is_some() {
                 if let Some(revision)=done.model_revision {self.publication_result(done.generation,revision,Err(self.error.clone()));}
@@ -2677,6 +2684,8 @@ pub mod test_support {
     }
     #[derive(Default)]
     pub struct DiscoveryProbe {
+        pub(super) patch_apply_cpu:Vec<u64>,
+        pub(super) retained_model_bytes:Vec<u64>,
         numeric_bounds: Option<(u64, u64)>,
         pub(super) tick_model_bytes: Vec<u64>,
         pub(super) profile_scene: bool,
@@ -2780,6 +2789,8 @@ pub mod test_support {
             let p = self.host.discovery_probe.as_ref().unwrap();
             json!({"pump_us":distribution(&p.pumps),"steps_per_pump":distribution(&p.per_pump),
                 "tick_model_bytes":distribution(&p.tick_model_bytes),
+                "patch_apply_cpu_us":distribution(&p.patch_apply_cpu),
+                "retained_model_bytes":distribution(&p.retained_model_bytes),
                 "pump_cpu_us":distribution(&p.pump_cpu),
                 "callback_cpu_us":p.callback_cpu.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
                 "helper_cpu_us":p.helper_cpu.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
