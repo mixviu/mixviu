@@ -97,11 +97,20 @@ mod tests {
     fn same_pid_shared_client_is_refused_and_restart_revokes_old_connection() {
         let display = smithay::reexports::wayland_server::Display::<()>::new().unwrap();
         let mut handle = display.handle();
-        let (shared, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
-        let ordinary = handle.insert_client(shared, Arc::new(())).unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "osd-shared-{}-{}.sock", std::process::id(),
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()
+        ));
+        let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+        let _peer = std::os::unix::net::UnixStream::connect(&path).unwrap();
+        let (shared, _) = listener.accept().unwrap();
+        std::fs::remove_file(path).unwrap();
+        let ordinary = handle.insert_client(shared, Arc::new(crate::wayland::connection::record::WaylandClientSession {
+            compositor_state: CompositorClientState::default(), proprietary: false, agent_clients: Default::default(),
+        })).unwrap();
         let (private, _child) = std::os::unix::net::UnixStream::pair().unwrap();
         let (host, lease) = insert_connection(&handle, private).unwrap();
-        // Both socketpairs were created by this process: identical peer PIDs.
+        // The shared connection and private socketpair have identical peer PIDs.
         assert_eq!(
             ordinary.get_credentials(&handle).unwrap().pid,
             std::process::id() as i32
