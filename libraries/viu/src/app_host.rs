@@ -1580,7 +1580,10 @@ impl Host {
                     egui::UiBuilder::new()
                         .layer_id(layer)
                         .max_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
-                    |ui| self.view.show(ui),
+                    |ui| {
+                        ui.set_clip_rect(egui::Rect::from_min_size(egui::Pos2::ZERO, size));
+                        self.view.show(ui)
+                    },
                 )
                 .inner
             } else {
