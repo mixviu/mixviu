@@ -61,6 +61,10 @@ fn bus_sweep_record_reference_play_and_decode_build_states() {
     )
     .unwrap();
     let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let settings=root.path().join("settings.json");
+    let mut defaults=model::environment::config::base::default_settings();
+    defaults.priority="inherited".into();
+    std::fs::write(&settings,serde_json::to_vec(&defaults).unwrap()).unwrap();
     let log = std::fs::File::create(root.path().join("native.log")).unwrap();
     let command = |name: &str| {
         let mut c = Command::new(bin.join(name));
@@ -95,6 +99,7 @@ fn bus_sweep_record_reference_play_and_decode_build_states() {
         "--bus-service",
         "comp-deck",
     ]);
+    comp.arg("--config-file").arg(settings);
     let _comp = Owned(comp.spawn().unwrap());
     let start = Instant::now();
     while !root.path().join("wayland-deck").exists() {
@@ -117,7 +122,7 @@ fn bus_sweep_record_reference_play_and_decode_build_states() {
         .enable_all()
         .build()
         .unwrap();
-    let evidence = std::env::temp_dir().join("mixviu-deck-app-native");
+    let evidence = std::env::temp_dir().join(format!("mixviu-deck-app-native-{}",std::process::id()));
     std::fs::create_dir_all(&evidence).unwrap();
     let path = evidence.join("reference.vfl");
     assert!(

@@ -30,7 +30,8 @@
           ],
           "gap": 28,
           "height": 708,
-          "min_width": 1600,
+          "max_width": 1600,
+          "min_width": 1408,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_top": 72,
@@ -40,19 +41,22 @@
           "color": "#3cc8d8",
           "size": 150,
           "text": "MixViu",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1": {
           "color": "#8d99a8",
           "size": 40,
           "text": "Adventures · The desk records itself",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2": {
           "color": "#e8edf3",
           "size": 30,
           "text": "20 November 2026",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         }
       },
       "steps": 1
@@ -91,7 +95,8 @@
           ],
           "gap": 20,
           "height": 708,
-          "min_width": 1600,
+          "max_width": 1600,
+          "min_width": 1408,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -108,9 +113,12 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "grow": 1,
+          "min_width": 0,
           "size": 26,
           "text": "MixViu Adventures · before",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1": {
           "children": [
@@ -121,16 +129,19 @@
           "widget": "column"
         },
         "root.1.0": {
+          "bold": true,
           "color": "#e8edf3",
           "size": 68,
           "text": "Every night, a desk makes the takes",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1.1": {
           "color": "#8d99a8",
           "size": 30,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2": {
           "background": "#161d27",
@@ -152,7 +163,8 @@
           "color": "#e8edf3",
           "size": 24,
           "text": "The nightly episode's tutorial takes",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1": {
           "align": "center",
@@ -175,6 +187,8 @@
             "root.2.1.0.1"
           ],
           "gap": 6,
+          "grow": 1,
+          "min_width": 0,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -188,13 +202,15 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "script",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.0.1": {
           "color": "#e8edf3",
           "size": 28,
           "text": "tutorial steps",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.1": {
           "children": [
@@ -202,19 +218,23 @@
             "root.2.1.1.1"
           ],
           "gap": 0,
+          "grow": 1,
+          "min_width": 0,
           "widget": "column"
         },
         "root.2.1.1.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.1.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.2": {
           "background": "#121821",
@@ -223,6 +243,8 @@
             "root.2.1.2.1"
           ],
           "gap": 6,
+          "grow": 1,
+          "min_width": 0,
           "outline": "#3cc8d8",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -236,13 +258,15 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "over the Bus",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.2.1": {
           "color": "#3cc8d8",
           "size": 28,
           "text": "apps on a desk",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.3": {
           "children": [
@@ -250,19 +274,23 @@
             "root.2.1.3.1"
           ],
           "gap": 0,
+          "grow": 1,
+          "min_width": 0,
           "widget": "column"
         },
         "root.2.1.3.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.3.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.4": {
           "background": "#121821",
@@ -271,6 +299,8 @@
             "root.2.1.4.1"
           ],
           "gap": 6,
+          "grow": 1,
+          "min_width": 0,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -284,13 +314,15 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "capture",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.4.1": {
           "color": "#e8edf3",
           "size": 28,
           "text": "the screen",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.5": {
           "children": [
@@ -298,19 +330,23 @@
             "root.2.1.5.1"
           ],
           "gap": 0,
+          "grow": 1,
+          "min_width": 0,
           "widget": "column"
         },
         "root.2.1.5.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.5.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.6": {
           "background": "#121821",
@@ -319,6 +355,8 @@
             "root.2.1.6.1"
           ],
           "gap": 6,
+          "grow": 1,
+          "min_width": 0,
           "outline": "#5ad18a",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -332,13 +370,15 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "media builder",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.6.1": {
           "color": "#5ad18a",
           "size": 28,
           "text": "narrated video",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3": {
           "align": "center",
@@ -356,6 +396,8 @@
             "root.3.0.1"
           ],
           "gap": 16,
+          "grow": 1,
+          "min_width": 0,
           "outline": "#5a2b2b",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -369,13 +411,15 @@
           "color": "#f2706b",
           "size": 24,
           "text": "But the desks carry no ffmpeg",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.0.1": {
           "color": "#f2706b",
           "size": 26,
           "text": "By design: no ffmpeg and no C or C++ tools on the desks. The first recorder wrote through an ffmpeg subprocess.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.1": {
           "background": "#161d27",
@@ -384,6 +428,8 @@
             "root.3.1.1"
           ],
           "gap": 16,
+          "grow": 1,
+          "min_width": 0,
           "outline": "#26303d",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -397,13 +443,15 @@
           "color": "#f0b45a",
           "size": 24,
           "text": "So every take fell back",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.1.1": {
           "color": "#f0b45a",
           "size": 26,
           "text": "Still screenshots: one per step, held while the narration plays.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         }
       },
       "steps": 2
@@ -448,7 +496,8 @@
           ],
           "gap": 20,
           "height": 708,
-          "min_width": 1600,
+          "max_width": 1600,
+          "min_width": 1408,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -465,9 +514,12 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "grow": 1,
+          "min_width": 0,
           "size": 26,
           "text": "The new recorder · PR #162",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1": {
           "children": [
@@ -478,16 +530,19 @@
           "widget": "column"
         },
         "root.1.0": {
+          "bold": true,
           "color": "#e8edf3",
           "size": 68,
           "text": "The compositor records itself, as .vfl",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1.1": {
           "color": "#8d99a8",
           "size": 30,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2": {
           "background": "#161d27",
@@ -509,13 +564,15 @@
           "color": "#e8edf3",
           "size": 24,
           "text": "A take is a directory",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1": {
           "color": "#e8edf3",
           "size": 26,
           "text": "A lossless frame log, pure Rust, no ffmpeg. Key frame: the whole picture. Delta: changed rectangles. Repeat: nothing changed.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3": {
           "align": "center",
@@ -533,19 +590,23 @@
             "root.3.0.1"
           ],
           "gap": 0,
+          "grow": 1,
+          "min_width": 0,
           "widget": "column"
         },
         "root.3.0.0": {
           "color": "#e8edf3",
           "size": 76,
           "text": "1507",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.0.1": {
           "color": "#8d99a8",
           "size": 22,
           "text": "frames in 50 s",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.1": {
           "children": [
@@ -553,19 +614,23 @@
             "root.3.1.1"
           ],
           "gap": 0,
+          "grow": 1,
+          "min_width": 0,
           "widget": "column"
         },
         "root.3.1.0": {
           "color": "#5ad18a",
           "size": 76,
           "text": "1477",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.1.1": {
           "color": "#8d99a8",
           "size": 22,
           "text": "repeats",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.2": {
           "children": [
@@ -573,19 +638,23 @@
             "root.3.2.1"
           ],
           "gap": 0,
+          "grow": 1,
+          "min_width": 0,
           "widget": "column"
         },
         "root.3.2.0": {
           "color": "#5ad18a",
           "size": 76,
           "text": "0",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.2.1": {
           "color": "#8d99a8",
           "size": 22,
           "text": "dropped",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.4": {
           "background": "#161d27",
@@ -607,13 +676,15 @@
           "color": "#5ad18a",
           "size": 24,
           "text": "On disk",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.4.1": {
           "color": "#5ad18a",
           "size": 26,
           "text": "1.97 MB for the whole take. Raw pixels: about 19 GB (1,507 × 2250 × 1400 × 4 bytes). Count-up and record-strip motion: 3.1b STUB.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         }
       },
       "steps": 2
@@ -658,7 +729,8 @@
           ],
           "gap": 20,
           "height": 708,
-          "min_width": 1600,
+          "max_width": 1600,
+          "min_width": 1408,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -675,9 +747,12 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "grow": 1,
+          "min_width": 0,
           "size": 26,
           "text": "Trouble 1 · nothing could read it",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1": {
           "children": [
@@ -688,16 +763,19 @@
           "widget": "column"
         },
         "root.1.0": {
+          "bold": true,
           "color": "#e8edf3",
           "size": 68,
           "text": "A take nobody could open",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1.1": {
           "color": "#8d99a8",
           "size": 30,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2": {
           "background": "#161d27",
@@ -719,13 +797,15 @@
           "color": "#f2706b",
           "size": 24,
           "text": "Before the reader",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1": {
           "color": "#f2706b",
           "size": 26,
           "text": "The writer shipped first. No reader, no verify, no export. The pipeline had no way to turn a take into video.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3": {
           "background": "#0b1016",
@@ -753,7 +833,8 @@
             }
           ],
           "text": "mixd vfl verify  TAKE",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.1": {
           "mono": true,
@@ -766,7 +847,8 @@
             }
           ],
           "text": "mixd vfl markers TAKE",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.2": {
           "mono": true,
@@ -779,7 +861,8 @@
             }
           ],
           "text": "mixd vfl export  TAKE --format bgra|y4m",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.4": {
           "background": "#161d27",
@@ -801,13 +884,15 @@
           "color": "#5ad18a",
           "size": 24,
           "text": "PR #191 · measured, then merged",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.4.1": {
           "color": "#5ad18a",
           "size": 26,
           "text": "450–842 export frames per second. Synthetic 60 s 4K30 takes; exporter only, peak 65 MiB. Merged 19 Nov, on the desks that evening.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         }
       },
       "steps": 3
@@ -846,7 +931,8 @@
           ],
           "gap": 20,
           "height": 708,
-          "min_width": 1600,
+          "max_width": 1600,
+          "min_width": 1408,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -863,9 +949,12 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "grow": 1,
+          "min_width": 0,
           "size": 26,
           "text": "Trouble 2 · the wrong file name",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1": {
           "children": [
@@ -876,16 +965,19 @@
           "widget": "column"
         },
         "root.1.0": {
+          "bold": true,
           "color": "#e8edf3",
           "size": 68,
           "text": "The pipeline still asked for capture.mkv",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1.1": {
           "color": "#8d99a8",
           "size": 30,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2": {
           "background": "#161d27",
@@ -907,13 +999,15 @@
           "color": "#f2706b",
           "size": 24,
           "text": "Every night, the recorder said no",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1": {
           "color": "#f2706b",
           "size": 26,
           "text": "comp.record.start rc 10: expected absolute path to a VFL directory; path without .vfl extension. Auto mode fell back to stills.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3": {
           "background": "#161d27",
@@ -935,13 +1029,15 @@
           "color": "#f0b45a",
           "size": 24,
           "text": "Quietly",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.1": {
           "color": "#f0b45a",
           "size": 26,
           "text": "Fallback kept the episode working, so nothing looked broken. Every night since the recorder shipped. 19 November: 4 of 4 takes fell back to stills.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         }
       },
       "steps": 2
@@ -986,7 +1082,8 @@
           ],
           "gap": 20,
           "height": 708,
-          "min_width": 1600,
+          "max_width": 1600,
+          "min_width": 1408,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -1003,9 +1100,12 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "grow": 1,
+          "min_width": 0,
           "size": 26,
           "text": "Trouble 3 · privacy",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1": {
           "children": [
@@ -1016,16 +1116,19 @@
           "widget": "column"
         },
         "root.1.0": {
+          "bold": true,
           "color": "#e8edf3",
           "size": 68,
           "text": "A whole-screen take shows everything",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1.1": {
           "color": "#8d99a8",
           "size": 30,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2": {
           "background": "#161d27",
@@ -1047,13 +1150,15 @@
           "color": "#3cc8d8",
           "size": 24,
           "text": "PR #193 · listed windows",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1": {
           "color": "#3cc8d8",
           "size": 26,
           "text": "Record only the named windows, over the wallpaper. Nothing else on the desk reaches the take.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3": {
           "background": "#161d27",
@@ -1075,13 +1180,15 @@
           "color": "#f2706b",
           "size": 24,
           "text": "First security review: FAIL",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.1": {
           "color": "#f2706b",
           "size": 26,
           "text": "An unlisted app's cursor could reach the take; listed windows not fenced to the recorded output. Fixed in round 2; round 3 reviews found no defects.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.4": {
           "background": "#161d27",
@@ -1103,13 +1210,15 @@
           "color": "#e8edf3",
           "size": 24,
           "text": "Historical status at authoring",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.4.1": {
           "color": "#e8edf3",
           "size": 26,
           "text": "At the time of writing, #193 was open and waiting for one more review.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         }
       },
       "steps": 2
@@ -1154,7 +1263,8 @@
           ],
           "gap": 20,
           "height": 708,
-          "min_width": 1600,
+          "max_width": 1600,
+          "min_width": 1408,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -1171,9 +1281,12 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "grow": 1,
+          "min_width": 0,
           "size": 26,
           "text": "The turning point · staging",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1": {
           "children": [
@@ -1184,16 +1297,19 @@
           "widget": "column"
         },
         "root.1.0": {
+          "bold": true,
           "color": "#e8edf3",
           "size": 68,
           "text": "One trial take, end to end",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1.1": {
           "color": "#8d99a8",
           "size": 30,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2": {
           "background": "#161d27",
@@ -1215,13 +1331,15 @@
           "color": "#5ad18a",
           "size": 24,
           "text": "Recorded on the staging desk",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1": {
           "color": "#5ad18a",
           "size": 26,
           "text": "197 frames at 30 fps; 0 dropped; about 174 KB. Verify: ok, complete, 3 markers. Export: exactly 197 × 2250 × 1400 × 4 bytes.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3": {
           "align": "center",
@@ -1242,6 +1360,8 @@
             "root.3.0.1"
           ],
           "gap": 6,
+          "grow": 1,
+          "min_width": 0,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1255,13 +1375,15 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "mixd vfl export",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.0.1": {
           "color": "#e8edf3",
           "size": 28,
           "text": "raw frames",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.1": {
           "children": [
@@ -1269,19 +1391,23 @@
             "root.3.1.1"
           ],
           "gap": 0,
+          "grow": 1,
+          "min_width": 0,
           "widget": "column"
         },
         "root.3.1.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.1.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.2": {
           "background": "#121821",
@@ -1290,6 +1416,8 @@
             "root.3.2.1"
           ],
           "gap": 6,
+          "grow": 1,
+          "min_width": 0,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1303,13 +1431,15 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "pipe",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.2.1": {
           "color": "#e8edf3",
           "size": 28,
           "text": "ffmpeg",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.3": {
           "children": [
@@ -1317,19 +1447,23 @@
             "root.3.3.1"
           ],
           "gap": 0,
+          "grow": 1,
+          "min_width": 0,
           "widget": "column"
         },
         "root.3.3.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.3.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.4": {
           "background": "#121821",
@@ -1338,6 +1472,8 @@
             "root.3.4.1"
           ],
           "gap": 6,
+          "grow": 1,
+          "min_width": 0,
           "outline": "#5ad18a",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1351,13 +1487,15 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "mp4",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.4.1": {
           "color": "#5ad18a",
           "size": 28,
           "text": "197 frames, 6.567 s",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.4": {
           "background": "#161d27",
@@ -1379,13 +1517,15 @@
           "color": "#e8edf3",
           "size": 24,
           "text": "17–20 November",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.4.1": {
           "color": "#e8edf3",
           "size": 26,
           "text": "Recorder (#162), then reader (#191), then gold and a trial take. The pipeline switched to .vfl: real assembly, a 4K take in 1.2 s. First nightly with recorded takes was still ahead.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         }
       },
       "steps": 2
@@ -1424,7 +1564,8 @@
           ],
           "gap": 20,
           "height": 708,
-          "min_width": 1600,
+          "max_width": 1600,
+          "min_width": 1408,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -1441,9 +1582,12 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "grow": 1,
+          "min_width": 0,
           "size": 26,
           "text": "Live · staging",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1": {
           "children": [
@@ -1454,16 +1598,19 @@
           "widget": "column"
         },
         "root.1.0": {
+          "bold": true,
           "color": "#e8edf3",
           "size": 68,
           "text": "The next two minutes recorded themselves",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1.1": {
           "color": "#8d99a8",
           "size": 30,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2": {
           "align": "center",
@@ -1486,6 +1633,8 @@
             "root.2.0.1"
           ],
           "gap": 6,
+          "grow": 1,
+          "min_width": 0,
           "outline": "#3cc8d8",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1499,13 +1648,15 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "Bus",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.0.1": {
           "color": "#3cc8d8",
           "size": 28,
           "text": "Term talks to compositor",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1": {
           "children": [
@@ -1513,19 +1664,23 @@
             "root.2.1.1"
           ],
           "gap": 0,
+          "grow": 1,
+          "min_width": 0,
           "widget": "column"
         },
         "root.2.1.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.2": {
           "background": "#121821",
@@ -1534,6 +1689,8 @@
             "root.2.2.1"
           ],
           "gap": 6,
+          "grow": 1,
+          "min_width": 0,
           "outline": "#3cc8d8",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1547,13 +1704,15 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "compositor",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.2.1": {
           "color": "#3cc8d8",
           "size": 28,
           "text": "records Term as .vfl",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.3": {
           "children": [
@@ -1561,19 +1720,23 @@
             "root.2.3.1"
           ],
           "gap": 0,
+          "grow": 1,
+          "min_width": 0,
           "widget": "column"
         },
         "root.2.3.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.3.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.4": {
           "background": "#121821",
@@ -1582,6 +1745,8 @@
             "root.2.4.1"
           ],
           "gap": 6,
+          "grow": 1,
+          "min_width": 0,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1595,13 +1760,15 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "media builder",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.4.1": {
           "color": "#e8edf3",
           "size": 28,
           "text": "verify, export, assemble",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.5": {
           "children": [
@@ -1609,19 +1776,23 @@
             "root.2.5.1"
           ],
           "gap": 0,
+          "grow": 1,
+          "min_width": 0,
           "widget": "column"
         },
         "root.2.5.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.5.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.6": {
           "background": "#121821",
@@ -1630,6 +1801,8 @@
             "root.2.6.1"
           ],
           "gap": 6,
+          "grow": 1,
+          "min_width": 0,
           "outline": "#5ad18a",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1643,13 +1816,15 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "this video",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.6.1": {
           "color": "#5ad18a",
           "size": 28,
           "text": "no screenshots",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3": {
           "background": "#161d27",
@@ -1671,13 +1846,15 @@
           "color": "#e8edf3",
           "size": 24,
           "text": "The same scripts the nightly episode uses",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.1": {
           "color": "#e8edf3",
           "size": 26,
           "text": "run.mix --mode record, then assemble.mix.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         }
       },
       "steps": 1
@@ -1722,7 +1899,8 @@
           ],
           "gap": 20,
           "height": 708,
-          "min_width": 1600,
+          "max_width": 1600,
+          "min_width": 1408,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -1739,9 +1917,12 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "grow": 1,
+          "min_width": 0,
           "size": 26,
           "text": "Loose ends",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1": {
           "children": [
@@ -1752,16 +1933,19 @@
           "widget": "column"
         },
         "root.1.0": {
+          "bold": true,
           "color": "#e8edf3",
           "size": 68,
           "text": "One found today, two known",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1.1": {
           "color": "#8d99a8",
           "size": 30,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2": {
           "background": "#161d27",
@@ -1783,13 +1967,15 @@
           "color": "#f0b45a",
           "size": 24,
           "text": "Found making this video",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1": {
           "color": "#f0b45a",
           "size": 26,
           "text": "record_busy: one take at a time. Older tutorials start their own recording inside a recorded take and are refused. New tutorials inspect the running take.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3": {
           "background": "#161d27",
@@ -1811,13 +1997,15 @@
           "color": "#f2706b",
           "size": 24,
           "text": "A closed pipe",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.1": {
           "color": "#f2706b",
           "size": 26,
           "text": "mixd vfl export exits 1 when the encoder stops reading early. Assembly accepts exactly that case for now.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.4": {
           "background": "#161d27",
@@ -1839,13 +2027,15 @@
           "color": "#3cc8d8",
           "size": 24,
           "text": "Chrome",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.4.1": {
           "color": "#3cc8d8",
           "size": 26,
           "text": "These source slides were rendered by headless Chrome. A deck app recorded live is planned to replace it.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         }
       },
       "steps": 2
@@ -1890,7 +2080,8 @@
           ],
           "gap": 20,
           "height": 708,
-          "min_width": 1600,
+          "max_width": 1600,
+          "min_width": 1408,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -1907,9 +2098,12 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "grow": 1,
+          "min_width": 0,
           "size": 26,
           "text": "Outcome · 20 November",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1": {
           "children": [
@@ -1920,16 +2114,19 @@
           "widget": "column"
         },
         "root.1.0": {
+          "bold": true,
           "color": "#e8edf3",
           "size": 68,
           "text": "Where it stands",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1.1": {
           "color": "#8d99a8",
           "size": 30,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2": {
           "background": "#161d27",
@@ -1951,13 +2148,15 @@
           "color": "#f0b45a",
           "size": 24,
           "text": "3.1b STUB · screenshot / callouts / Ken Burns",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1": {
           "color": "#f0b45a",
           "size": 26,
           "text": "Reference: assets/self-live.png. Live counters read from inside the take. Shot composition and slow zoom are deliberately deferred.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3": {
           "background": "#161d27",
@@ -1979,13 +2178,15 @@
           "color": "#5ad18a",
           "size": 24,
           "text": "Better",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3.1": {
           "color": "#5ad18a",
           "size": 26,
           "text": "Takes are real video again, recorded by the compositor. Still no ffmpeg on the desk. Every take is verified before use.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.4": {
           "background": "#161d27",
@@ -2007,13 +2208,15 @@
           "color": "#f2706b",
           "size": 24,
           "text": "The cost, and what is unknown",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.4.1": {
           "color": "#f2706b",
           "size": 26,
           "text": "Tonight's nightly was the first, with no record of it yet. The media builder still encodes with ffmpeg. Recorder cost on a desk was not benched.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         }
       },
       "steps": 2
@@ -2046,7 +2249,8 @@
           ],
           "gap": 20,
           "height": 708,
-          "min_width": 1600,
+          "max_width": 1600,
+          "min_width": 1408,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -2063,9 +2267,12 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "grow": 1,
+          "min_width": 0,
           "size": 26,
           "text": "Still owed",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1": {
           "children": [
@@ -2076,16 +2283,19 @@
           "widget": "column"
         },
         "root.1.0": {
+          "bold": true,
           "color": "#e8edf3",
           "size": 68,
           "text": "Next: Chrome leaves the pipeline",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1.1": {
           "color": "#8d99a8",
           "size": 30,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2": {
           "children": [
@@ -2109,15 +2319,21 @@
         },
         "root.2.0.0": {
           "color": "#3cc8d8",
+          "grow": 1,
+          "min_width": 0,
           "size": 31,
           "text": "●",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.0.1": {
           "color": "#e8edf3",
+          "grow": 1,
+          "min_width": 0,
           "size": 31,
           "text": "Merge listed windows (#193)",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1": {
           "align": "center",
@@ -2130,15 +2346,21 @@
         },
         "root.2.1.0": {
           "color": "#3cc8d8",
+          "grow": 1,
+          "min_width": 0,
           "size": 31,
           "text": "●",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1.1": {
           "color": "#e8edf3",
+          "grow": 1,
+          "min_width": 0,
           "size": 31,
           "text": "Quiet exit on a closed pipe",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.2": {
           "align": "center",
@@ -2151,15 +2373,21 @@
         },
         "root.2.2.0": {
           "color": "#3cc8d8",
+          "grow": 1,
+          "min_width": 0,
           "size": 31,
           "text": "●",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.2.1": {
           "color": "#e8edf3",
+          "grow": 1,
+          "min_width": 0,
           "size": 31,
           "text": "Bench the recorder on a desk",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.3": {
           "align": "center",
@@ -2172,15 +2400,21 @@
         },
         "root.2.3.0": {
           "color": "#3cc8d8",
+          "grow": 1,
+          "min_width": 0,
           "size": 31,
           "text": "●",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.3.1": {
           "color": "#e8edf3",
+          "grow": 1,
+          "min_width": 0,
           "size": 31,
           "text": "Motion and captions in the compositor",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.4": {
           "align": "center",
@@ -2193,15 +2427,21 @@
         },
         "root.2.4.0": {
           "color": "#3cc8d8",
+          "grow": 1,
+          "min_width": 0,
           "size": 31,
           "text": "●",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.4.1": {
           "color": "#e8edf3",
+          "grow": 1,
+          "min_width": 0,
           "size": 31,
           "text": "A deck app, recorded live",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         }
       },
       "steps": 1
@@ -2246,7 +2486,8 @@
           ],
           "gap": 20,
           "height": 708,
-          "min_width": 1600,
+          "max_width": 1600,
+          "min_width": 1408,
           "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
@@ -2263,9 +2504,12 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "grow": 1,
+          "min_width": 0,
           "size": 26,
           "text": "MixViu Adventures",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1": {
           "children": [
@@ -2276,16 +2520,19 @@
           "widget": "column"
         },
         "root.1.0": {
+          "bold": true,
           "color": "#e8edf3",
           "size": 68,
           "text": "MixViu",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.1.1": {
           "color": "#8d99a8",
           "size": 30,
           "text": "",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2": {
           "background": "#161d27",
@@ -2307,25 +2554,29 @@
           "color": "#e8edf3",
           "size": 24,
           "text": "The desk records itself",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.2.1": {
           "color": "#e8edf3",
           "size": 26,
           "text": "Recorded by the compositor, read back by mixd.",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.3": {
           "color": "#3cc8d8",
           "size": 26,
           "text": "github.com/mixviu/mixviu",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         },
         "root.4": {
           "color": "#f0b45a",
           "size": 26,
           "text": "3.1b STUB · cyclops draw, spin and underline motion",
-          "widget": "text"
+          "widget": "text",
+          "wrap": true
         }
       },
       "steps": 1

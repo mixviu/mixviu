@@ -4955,6 +4955,7 @@ dependencies = [
  "libc",
  "macros",
  "maildoc",
+ "media-vfl",
  "mimedb",
  "motion",
  "paths",
