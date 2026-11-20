@@ -1069,3 +1069,12 @@ fn composed_box_outlines_are_optional_typed_ports() {
         }
     }
 }
+
+#[test]
+fn radial_backgrounds_are_optional_bounded_and_strict() {
+    assert!(!resolve(&doc("root:{widget:column,children:[]}")).unwrap().nodes["root"].ports.contains_key("background_radials"));
+    assert!(resolve(&doc("root:{widget:column,children:[],background_radials:[{x:0.85,y:-0.1,rx:1200,ry:700,stop:0.6,color:\"#173048\"}]}" )).is_ok());
+    for r in ["[{}]","[{x:0,y:0,rx:0,ry:1,stop:1,color:\"#123456\"}]","[1]","[{x:0,y:0,rx:1,ry:1,stop:2,color:\"#123456\"}]"] {
+        assert!(resolve(&doc(&format!("root:{{widget:column,children:[],background_radials:{r}}}"))).is_err());
+    }
+}

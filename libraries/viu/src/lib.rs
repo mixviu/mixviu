@@ -93,5 +93,6 @@ pub mod dashboard;
 pub mod data_panels;
 pub mod network_map;
 mod numbers;
+mod backdrop;
 pub mod saved_state;
 mod spans;

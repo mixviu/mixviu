@@ -906,11 +906,13 @@ impl SceneView {
                         let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(ui.visuals().text_color()).to_array();
                         let number = node.ports.get("number").map(|spec| self.numbers.text(ui, &key, spec, node.ports.get("motion") != Some(&Value::Bool(false))));
                         if let Some(spans) = node.ports.get("spans") {
-                            let job = crate::spans::job(ui, spans, num(node,"size").unwrap_or(13.0), node.ports.get("mono") == Some(&Value::Bool(true)), Color32::from_rgba_unmultiplied(colour[0], colour[1], colour[2], colour[3]));
+                            let mut job = crate::spans::job(ui, spans, num(node,"size").unwrap_or(13.0), node.ports.get("mono") == Some(&Value::Bool(true)), Color32::from_rgba_unmultiplied(colour[0], colour[1], colour[2], colour[3]));
+                            job.halign = match text(node,"align") {"center"=>egui::Align::Center,"right"=>egui::Align::Max,_=>egui::Align::Min};
                             let label = egui::Label::new(job);
-                            ui.add(if node.ports.get("wrap") == Some(&Value::Bool(true)) {label.wrap()} else {label.extend()});
+                            let label=if node.ports.get("wrap") == Some(&Value::Bool(true)) {label.wrap()} else {label.extend()};
+                            if node.ports.get("fill")==Some(&Value::Bool(true)) {ui.add_sized(egui::vec2(ui.available_width(),0.),label);} else {ui.add(label);}
                         } else {
-                        let widget=Widget::new(&key,"label","",json!(number.as_deref().unwrap_or_else(||text(node,"text")))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono"),"colour":colour}));
+                        let widget=Widget::new(&key,"label","",json!(number.as_deref().unwrap_or_else(||text(node,"text")))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono"),"align":node.ports.get("align"),"fill":node.ports.get("fill"),"colour":colour}));
                         self.widgets.widget(ui,&widget,&json!({}));
                         }
                     }
@@ -1008,12 +1010,15 @@ impl SceneView {
                             return;
                         }
                         let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
+                        let radial_shape = ui.painter().add(egui::Shape::Noop);
+                        let frame_width = num(node,"width").or(num(node,"min_width")).or_else(|| (node.ports.get("fill")==Some(&Value::Bool(true))).then(||ui.available_width()));
                         let frame = egui::Frame::new()
-                            .fill(background)
+                            .fill(if node.ports.contains_key("background_radials") {Color32::TRANSPARENT} else {background})
                             .inner_margin(egui::Margin { left: node_padding(node, "padding_left") as i8, right: node_padding(node, "padding_right") as i8, top: node_padding(node, "padding_top") as i8, bottom: node_padding(node, "padding_bottom") as i8 })
                             .corner_radius(num(node, "radius").unwrap_or(0.0));
                         let response = frame
                             .show(ui, |ui| {
+                                if let Some(width)=frame_width { ui.set_min_width((width-node_padding(node,"padding_left")-node_padding(node,"padding_right")).max(0.)); }
                                 if let Some(height) = num(node, "height") {
                                     ui.set_min_height(height);
                                 }
@@ -1069,6 +1074,7 @@ impl SceneView {
                                 }
                             })
                             .response;
+                        if let Some(radials)=node.ports.get("background_radials") { ui.painter().set(radial_shape,crate::backdrop::shape(response.rect,background,radials)); }
                         if route.is_some_and(|(_, list, _)| text(list, "row") == id)
                             || node.ports.contains_key("on_click")
                         {
