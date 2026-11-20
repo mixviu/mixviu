@@ -2,12 +2,35 @@
 //! OSD acceptance through the real Bus, scene host, compositor and VFL reader.
 use super::*;
 
+fn osd_helper(action: &str, root: &Path, rest: &[&str], url: Option<&str>) -> Output {
+    assert_eq!(action, "call");
+    assert_eq!(rest.get(2), Some(&"osd"));
+    // Named supervised citizens send on their registered connection. Shell
+    // one-shot sends use an anonymous lane, even after noded_register.
+    let script = root.join("osd-call.mix");
+    fs::write(&script, format!(
+        "send \"osd\" {} timeout=10 body={}\nprint(json_encode({{rc:$rc,body:$result}}))\nexit(0)\n",
+        serde_json::to_string(rest[0]).unwrap(), serde_json::to_string(rest[1]).unwrap()
+    )).unwrap();
+    Command::new(binary("mixd"))
+        .arg("--serve")
+        .arg(script)
+        .args(["--name", rest.get(3).copied().unwrap_or("headless-osd-owner")])
+        .env("MIX_NODED_URL", url.unwrap())
+        .env("MIX_RUN", root.join("run"))
+        .env("MIX_ETC", root.join("etc"))
+        .env("MIX_VAR", root.join("var"))
+        .env("MIX_NODE_CONFIG", root.join("etc/node.conf.mix"))
+        .output()
+        .expect("named OSD caller")
+}
+
 pub(super) fn call(bus: &Bus, command: &str, args: Value) -> Value {
     call_rc(bus, command, args, 0)
 }
 
 fn call_rc(bus: &Bus, command: &str, args: Value, expected: i32) -> Value {
-    let output = helper(
+    let output = osd_helper(
         "call",
         &bus.root,
         &[command, &args.to_string(), "osd"],
@@ -26,7 +49,7 @@ fn call_rc(bus: &Bus, command: &str, args: Value, expected: i32) -> Value {
 pub(super) fn ready(bus: &Bus) {
     let deadline = Instant::now() + Duration::from_secs(20);
     loop {
-        let output = helper(
+        let output = osd_helper(
             "call",
             &bus.root,
             &["osd.list", "{}", "osd"],
@@ -198,7 +221,7 @@ fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
     let items = call(&bus, "osd.list", json!({}));
     assert_eq!(items["items"][0]["owner"], "local:headless-osd-owner");
     for command in ["osd.update", "osd.hide"] {
-        let output = helper(
+        let output = osd_helper(
             "call",
             &bus.root,
             &[command, "{\"id\":\"caption\"}", "osd", "other-osd-citizen"],
@@ -220,7 +243,7 @@ fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
         json!({"presses":999}),
         json!({}),
     ] {
-        let output = helper(
+        let output = osd_helper(
             "call",
             &bus.root,
             &["osd.pointer", &args.to_string(), "osd"],
