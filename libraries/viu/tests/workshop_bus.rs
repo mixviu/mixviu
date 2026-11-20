@@ -606,7 +606,13 @@ fn workshop_answers_during_discovery() {
         assert_eq!(info["discovering"], false);
         assert!(info["snapshot"]["services"].as_object().unwrap().len() >= count);
         if count == 200 {
-            assert!(host.discovery_measurements()["tick_model_bytes"]["n"].as_u64().unwrap() > 0, "numeric model guard must observe a published tick");
+            assert!(
+                host.discovery_measurements()["tick_model_bytes"]["n"]
+                    .as_u64()
+                    .unwrap()
+                    > 0,
+                "numeric model guard must observe a published tick"
+            );
         }
         eprintln!(
             "WORKSHOP_PROBE peers={count} {}",

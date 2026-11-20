@@ -968,7 +968,9 @@ impl Host {
                 probe.callbacks.push(done.elapsed.as_micros() as u64);
                 if done.command == "viu.tick" {
                     if let Some(model) = &done.model {
-                        probe.tick_model_bytes.push(serde_json::to_vec(model).expect("tick model JSON").len() as u64);
+                        probe
+                            .tick_model_bytes
+                            .push(serde_json::to_vec(model).expect("tick model JSON").len() as u64);
                     }
                 }
                 for line in done
@@ -2662,9 +2664,16 @@ pub mod test_support {
                 p.completed_per_pump
                     .push(p.discovery_steps - completed_before);
                 if let Some((pump_us, model_bytes)) = p.numeric_bounds {
-                    let measured_model_bytes = p.tick_model_bytes.iter().copied().max().unwrap_or(0);
-                    assert!(elapsed <= pump_us, "single pump hold: observed_us={elapsed}, standalone_bound_us={pump_us}, tick_model_bytes={measured_model_bytes}");
-                    assert!(measured_model_bytes <= model_bytes, "tick model bytes: observed_bytes={measured_model_bytes}, standalone_bound_bytes={model_bytes}, pump_us={elapsed}");
+                    let measured_model_bytes =
+                        p.tick_model_bytes.iter().copied().max().unwrap_or(0);
+                    assert!(
+                        elapsed <= pump_us,
+                        "single pump hold: observed_us={elapsed}, standalone_bound_us={pump_us}, tick_model_bytes={measured_model_bytes}"
+                    );
+                    assert!(
+                        measured_model_bytes <= model_bytes,
+                        "tick model bytes: observed_bytes={measured_model_bytes}, standalone_bound_bytes={model_bytes}, pump_us={elapsed}"
+                    );
                 }
             }
         }
@@ -2672,7 +2681,8 @@ pub mod test_support {
             self.host.discovery_probe = Some(DiscoveryProbe::default());
         }
         pub fn discovery_numeric_bounds(&mut self, pump_us: u64, model_bytes: u64) {
-            self.host.discovery_probe.as_mut().unwrap().numeric_bounds = Some((pump_us, model_bytes));
+            self.host.discovery_probe.as_mut().unwrap().numeric_bounds =
+                Some((pump_us, model_bytes));
         }
         pub fn profile_scene_apply(&mut self) {
             self.host.discovery_probe.as_mut().unwrap().profile_scene = true;
