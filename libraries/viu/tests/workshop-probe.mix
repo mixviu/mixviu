@@ -13,6 +13,25 @@ if $mode=="format" then
   print($r.stdout);print(run_argv_must(["git","diff"]))
   print(run_argv_must(["git","checkout","-q","--","."]))
   if not $r.ok then exit(1) end
+elif $mode=="negative" then
+  $paths=["apps/workshop/discovery.mix","apps/workshop/controller.mix","apps/workshop/work.mix"]
+  $original={}
+  for $path in $paths $original[$path]=read_file($path) end
+  try
+    for $case in ["expansion","scan"]
+      for $path in $paths write_file($path,$original[$path]) end
+      for $path in (if $case=="expansion" then $paths else ["apps/workshop/work.mix"] end)
+        write_file($path,run_argv_must(["git","show","be270734:"..$path]))
+      end
+      $r=run_argv(concat(slice($test,0,8),["discovery_turns_bound_expansion_and_blocked_admission_scans","--","--exact","--nocapture"]),{timeout:120,stderr:"stdout"})
+      print("NEGATIVE "..$case);print($r.stdout)
+      $expected=if $case=="expansion" then "list expanded in its receive turn" else "scanned the entire blocked queue" end
+      if $r.exit_code!=101 or not contains($r.stdout,$expected) then raise("PROBE","negative control did not fail at the work bound") end
+    end
+  finally
+    for $path in $paths write_file($path,$original[$path]) end
+    print(run_argv_must(["git","diff"]))
+  end
 elif $mode=="validate" then
   checked(["cargo","fmt","-p","lib-viu","--","--check"])
   checked(["cargo","clippy","-p","lib-viu","--features","test-support","--all-targets","--no-deps"])
