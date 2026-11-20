@@ -181,6 +181,9 @@ fn chunk_order_receipts_and_seek_across_chunks() {
     let mut r = Reader::open(&t.0).unwrap();
     assert_eq!(r.seek(11).unwrap().pixels, expected[11]);
     assert!(r.read().unwrap().is_none());
+    for target in (0..expected.len()).rev().chain(0..expected.len()) {
+        assert_eq!(r.seek(target as u64).unwrap().pixels, expected[target]);
+    }
     let receipt = t.0.join("chunk-000000.json");
     let intact = std::fs::read(&receipt).unwrap();
     std::fs::remove_file(t.0.join("complete.json")).unwrap();

@@ -180,6 +180,7 @@ pub struct Markers {
     seq: u64,
     last_time: u64,
     last_frame: u64,
+    row_offset: u64,
 }
 impl Markers {
     pub fn open(take: &Path) -> Result<Self, Error> {
@@ -198,6 +199,7 @@ impl Markers {
             seq: 0,
             last_time: 0,
             last_frame: 0,
+            row_offset: 0,
         })
     }
     pub fn read(&mut self) -> Result<Option<Value>, Error> {
@@ -205,6 +207,7 @@ impl Markers {
             return Ok(None);
         };
         let at = input.stream_position().unwrap_or(0);
+        self.row_offset = at;
         let Some(v) = line(input, &self.path, !self.complete)? else {
             return Ok(None);
         };
@@ -800,10 +803,7 @@ pub fn verify_with_options(path: &Path, require_complete: bool) -> Value {
                                     err(
                                         &m.path,
                                         None,
-                                        m.input
-                                            .as_mut()
-                                            .and_then(|f| f.stream_position().ok())
-                                            .unwrap_or(0),
+                                        m.row_offset,
                                         ErrorKind::Structure,
                                         "marker beyond take",
                                     )
