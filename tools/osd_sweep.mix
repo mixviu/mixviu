@@ -53,7 +53,7 @@ elif $mode=="tests" then
   -- Match the merge gate's test-pool invocation and prerequisites. OSD tests
   -- locate their own host and bundle; no OSD fixture variables are exported.
   checked(["cargo","build","--locked","-p","mix","--bin","mix"])
-  checked(["cargo","build","--locked","-p","noded","-p","testkit","--bins"])
+  checked(["cargo","build","--locked","-p","mixd","-p","noded","-p","testkit","--bins"])
   checked(["cargo","build","--locked","-p","viu","--bin","viu"])
   $mix=realpath("target/debug/mix")
   $r=run_argv(concat([$mix,"tools/ci/test_pool.mix","--","--locked"],$crates),
