@@ -161,7 +161,7 @@ fn record_cold_start_under_load_has_no_capture_drops() {
             });
         }
         let begin = Instant::now();
-        let starting = scope.spawn(|| bus.call("comp.record.start", json!({"request_id":"cold", "target":{"output":row["output"]}, "path":process.root.join("cold.vfl"), "max_seconds":10, "fps":30})));
+        let starting = scope.spawn(|| bus.call("comp.record.start", json!({"request_id":"cold", "target":{"output":row["output"]}, "path":process.root.join("cold.vfl"), "max_seconds":10, "fps":30, "cursor":false})));
         // Keep damage flowing during admission too. Otherwise an idle tick
         // can repay frame zero's debt before the Bus start reply is received,
         // hiding the very first-readback deferral in the bypassed build.
@@ -169,7 +169,7 @@ fn record_cold_start_under_load_has_no_capture_drops() {
             pattern.change_buffer();
             pattern.commit(true);
             pattern.pump();
-            thread::sleep(Duration::from_millis(5));
+            thread::sleep(Duration::from_millis(16));
         }
         let start = starting.join().unwrap();
         let start_ms = begin.elapsed().as_secs_f64() * 1000.0;
