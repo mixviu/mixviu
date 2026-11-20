@@ -59,8 +59,9 @@ Namespace identifies scene routing, not authenticated peer authority.
 Client cursor artwork, named shapes and hidden state are honoured only while
 pointer focus belongs to a listed window's surface tree (including its popups
 and subsurfaces) in the recorded view. Otherwise the compositor default image
-is drawn, including over another window of the same client. Drag icons are never included. An unknown cursor
-output draws no cursor, as does a cursor belonging to another output.
+is drawn, including over another window of the same client. Drag icons are never
+included. An unknown cursor output draws no cursor, as does a cursor belonging
+to another output.
 The live screen is unchanged, including windows covering listed content.
 
 Start refuses a window outside the target view as `window_not_on_output`,

@@ -51,9 +51,14 @@ pub fn service(state: &mut Loop, renderer: &mut GlesRenderer, output: &Output) {
                 world::comp::recording::cursor_focus_allowed(state, listed, output);
             plan.extend(
                 layer::POINTER,
-                seat::pointer::draw::scene::recording_element(state, renderer, size, allow_client_cursor)
-                    .into_iter()
-                    .map(DrawNode::Pointer),
+                seat::pointer::draw::scene::recording_element(
+                    state,
+                    renderer,
+                    size,
+                    allow_client_cursor,
+                )
+                .into_iter()
+                .map(DrawNode::Pointer),
             );
         }
         // Only the backdrop's Background roots, never panels or their popups.

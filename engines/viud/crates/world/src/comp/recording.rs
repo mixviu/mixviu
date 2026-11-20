@@ -59,21 +59,23 @@ pub fn on_output(state: &Loop, target: CaptureWindow, output: &Output) -> bool {
     })
 }
 
-pub fn cursor_focus_allowed(
-    state: &Loop,
-    listed: &[CaptureWindow],
-    output: &Output,
-) -> bool {
-    let Some(focus) = state.state.seat.seat.get_pointer().and_then(|p| p.current_focus()) else {
+pub fn cursor_focus_allowed(state: &Loop, listed: &[CaptureWindow], output: &Output) -> bool {
+    let Some(focus) = state
+        .state
+        .seat
+        .seat
+        .get_pointer()
+        .and_then(|p| p.current_focus())
+    else {
         return false;
     };
     listed.iter().any(|target| {
         if !on_output(state, *target, output) {
             return false;
         }
-        let Ok(window) = crate::window::draw::frame::scene::capture_window(
-            state, target.id, target.generation,
-        ) else {
+        let Ok(window) =
+            crate::window::draw::frame::scene::capture_window(state, target.id, target.generation)
+        else {
             return false;
         };
         // Includes the toplevel, its subsurfaces and PopupManager's popup trees.
