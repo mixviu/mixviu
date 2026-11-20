@@ -12,6 +12,12 @@ use viu::{app_host::test_support::Harness, bundle::Bundle};
 // The CBC diagnostic recipe enables this only for a measured control run.
 const PROFILE_INFO_HELPERS: bool = false;
 const PROFILE_TICK: bool = false;
+// Fable ruling D: this binary runs alone. Post-startup round-5 standalone
+// max pump was 387,676 us; 800,000 us gives just over 2x margin. Tick models
+// reached 2,398,986 bytes; 4 MiB gives 75% margin. These numeric guards are
+// independent of the unchanged 1 s call and 2 s owner-stall assertions.
+const MAX_STANDALONE_PUMP_US: u64 = 800_000;
+const MAX_TICK_MODEL_BYTES: u64 = 4 * 1024 * 1024;
 
 fn profile_tick(bundle: &mut Bundle) {
     bundle.program.source = bundle.program.source.replace(
@@ -544,6 +550,9 @@ fn workshop_answers_during_discovery() {
         }
         eprintln!("WORKSHOP_STARTUP {}", host.discovery_measurements());
         host.probe_discovery();
+        if count == 200 {
+            host.discovery_numeric_bounds(MAX_STANDALONE_PUMP_US, MAX_TICK_MODEL_BYTES);
+        }
         if PROFILE_TICK {
             host.profile_scene_apply();
         }
@@ -596,6 +605,9 @@ fn workshop_answers_during_discovery() {
         let info = call(&mut host, &rt, &caller, "workshop.info").1;
         assert_eq!(info["discovering"], false);
         assert!(info["snapshot"]["services"].as_object().unwrap().len() >= count);
+        if count == 200 {
+            assert!(host.discovery_measurements()["tick_model_bytes"]["n"].as_u64().unwrap() > 0, "numeric model guard must observe a published tick");
+        }
         eprintln!(
             "WORKSHOP_PROBE peers={count} {}",
             host.discovery_measurements()

@@ -966,6 +966,11 @@ impl Host {
             #[cfg(feature = "test-support")]
             if let Some(probe) = &mut self.discovery_probe {
                 probe.callbacks.push(done.elapsed.as_micros() as u64);
+                if done.command == "viu.tick" {
+                    if let Some(model) = &done.model {
+                        probe.tick_model_bytes.push(serde_json::to_vec(model).expect("tick model JSON").len() as u64);
+                    }
+                }
                 for line in done
                     .stdout
                     .lines()
@@ -2589,6 +2594,8 @@ pub mod test_support {
     }
     #[derive(Default)]
     pub struct DiscoveryProbe {
+        numeric_bounds: Option<(u64, u64)>,
+        tick_model_bytes: Vec<u64>,
         pub(super) profile_scene: bool,
         pub(super) steps: u64,
         pumps: Vec<u64>,
@@ -2654,10 +2661,18 @@ pub mod test_support {
                 p.per_pump.push(p.steps - before);
                 p.completed_per_pump
                     .push(p.discovery_steps - completed_before);
+                if let Some((pump_us, model_bytes)) = p.numeric_bounds {
+                    let measured_model_bytes = p.tick_model_bytes.iter().copied().max().unwrap_or(0);
+                    assert!(elapsed <= pump_us, "single pump hold: observed_us={elapsed}, standalone_bound_us={pump_us}, tick_model_bytes={measured_model_bytes}");
+                    assert!(measured_model_bytes <= model_bytes, "tick model bytes: observed_bytes={measured_model_bytes}, standalone_bound_bytes={model_bytes}, pump_us={elapsed}");
+                }
             }
         }
         pub fn probe_discovery(&mut self) {
             self.host.discovery_probe = Some(DiscoveryProbe::default());
+        }
+        pub fn discovery_numeric_bounds(&mut self, pump_us: u64, model_bytes: u64) {
+            self.host.discovery_probe.as_mut().unwrap().numeric_bounds = Some((pump_us, model_bytes));
         }
         pub fn profile_scene_apply(&mut self) {
             self.host.discovery_probe.as_mut().unwrap().profile_scene = true;
@@ -2673,6 +2688,7 @@ pub mod test_support {
         pub fn discovery_measurements(&self) -> Value {
             let p = self.host.discovery_probe.as_ref().unwrap();
             json!({"pump_us":distribution(&p.pumps),"steps_per_pump":distribution(&p.per_pump),
+                "tick_model_bytes":distribution(&p.tick_model_bytes),
                 "pump_cpu_us":distribution(&p.pump_cpu),
                 "callback_cpu_us":p.callback_cpu.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
                 "helper_cpu_us":p.helper_cpu.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),

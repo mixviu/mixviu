@@ -13,6 +13,23 @@ if $mode=="format" then
   print($r.stdout);print(run_argv_must(["git","diff"]))
   print(run_argv_must(["git","checkout","-q","--","."]))
   if not $r.ok then exit(1) end
+elif $mode=="numeric-negative" then
+  $path="libraries/viu/tests/workshop_bus.rs";$source=read_file($path)
+  try
+    for $case in ["pump","model"]
+      $needle=if $case=="pump" then "const MAX_STANDALONE_PUMP_US: u64 = 800_000;" else "const MAX_TICK_MODEL_BYTES: u64 = 4 * 1024 * 1024;" end
+      $lower=if $case=="pump" then "const MAX_STANDALONE_PUMP_US: u64 = 0;" else "const MAX_TICK_MODEL_BYTES: u64 = 1;" end
+      if not contains($source,$needle) then raise("PROBE","standalone numeric bound missing") end
+      write_file($path,replace($source,$needle,$lower))
+      $r=run_argv($test,{timeout:120,stderr:"stdout",max_output:64000000})
+      print("NUMERIC_NEGATIVE "..$case);print($r.stdout)
+      $expected=if $case=="pump" then "single pump hold: observed_us=" else "tick model bytes: observed_bytes=" end
+      if $r.exit_code!=101 or not contains($r.stdout,$expected) then raise("PROBE","numeric negative control missed its assertion") end
+    end
+  finally
+    write_file($path,$source)
+    print(run_argv_must(["git","diff"]))
+  end
 elif $mode=="tick-after" then
   checked(["cargo","test","-p","lib-viu","--features","test-support","--lib","view::binding_tests","--","--nocapture"])
   checked(["mix",script_path(),"tick"])
@@ -114,6 +131,7 @@ elif $mode=="negative" then
     print(run_argv_must(["git","diff"]))
   end
 elif $mode=="accept" then
+  checked(["mix",script_path(),"numeric-negative"])
   checked(["mix",script_path(),"binding-negative"])
   checked(["mix",script_path(),"negative"])
   checked(["mix",script_path(),"validate"])
