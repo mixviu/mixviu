@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Animation invalidations follow each output's refresh clock, not loop wakes.
-use std::{collections::BTreeMap, time::{Duration, Instant}};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, Instant},
+};
 
 #[derive(Default)]
 pub(super) struct MotionClock {
@@ -50,16 +53,31 @@ mod tests {
         let mut clock = MotionClock::default();
         let mut counts = BTreeMap::<String, usize>::new();
         for us in 0..1_000_000 {
-            let next = clock.step(start + Duration::from_micros(us), true,
-                [("fast".into(), Duration::from_millis(10)), ("slow".into(), Duration::from_millis(20))],
-                |key| *counts.entry(key.into()).or_default() += 1);
+            let next = clock.step(
+                start + Duration::from_micros(us),
+                true,
+                [
+                    ("fast".into(), Duration::from_millis(10)),
+                    ("slow".into(), Duration::from_millis(20)),
+                ],
+                |key| *counts.entry(key.into()).or_default() += 1,
+            );
             let expected = start + Duration::from_millis((us / 10_000 + 1) * 10);
-            assert_eq!(next, Some(expected), "unrelated wakes cannot postpone a tick");
+            assert_eq!(
+                next,
+                Some(expected),
+                "unrelated wakes cannot postpone a tick"
+            );
         }
         assert_eq!(counts["fast"], 100);
         assert_eq!(counts["slow"], 50);
         let end = start + Duration::from_secs(1);
-        assert_eq!(clock.step(end, false, [], |_| panic!("settled scene requested a frame")), None);
+        assert_eq!(
+            clock.step(end, false, [], |_| panic!(
+                "settled scene requested a frame"
+            )),
+            None
+        );
         assert!(clock.next.is_empty(), "no idle deadline");
         println!("MOTION_CLOCK requests fast=100/100 slow=50/50 idle=0");
     }

@@ -55,8 +55,8 @@
 //! published here, before the edge pass, and the dwell timer is a one-shot
 //! armed only while a dwell is pending ([`DwellTimer`]).
 
-mod sequence;
 mod motion_clock;
+mod sequence;
 mod session;
 
 use std::cell::Cell;
@@ -711,7 +711,9 @@ impl Bus {
             }
             let t = elapsed.min(end);
             if matches!(run.kind, MotionKind::Pointer { .. })
-                && elapsed < end && !self.motion_clock.due(now) {
+                && elapsed < end
+                && !self.motion_clock.due(now)
+            {
                 still.push(run);
                 continue;
             }
@@ -729,7 +731,8 @@ impl Bus {
                     let step =
                         policy_host::motion::geometry_frame_step(lp, *id, *generation, timeline, t);
                     if visual.is_none() && !matches!(step, policy_host::motion::Step::Moving) {
-                        lp.state.schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+                        lp.state
+                            .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
                     }
                     if visual.is_some() {
                         if !matches!(step, policy_host::motion::Step::Moving) {
@@ -750,23 +753,36 @@ impl Bus {
         self.motions = still;
         // Paused: wake at the earliest end time (1 ms past it, so float
         // rounding never wakes it a hair early), not every frame.
-        let outputs: Vec<_> = lp.inner.space_state().state.outputs().map(|output| {
-            let interval = output.current_mode().filter(|mode| mode.refresh > 0)
-                .map(|mode| Duration::from_secs_f64(1000.0 / f64::from(mode.refresh)))
-                .unwrap_or(Duration::from_micros(16_667));
-            (output.name(), interval)
-        }).collect();
+        let outputs: Vec<_> = lp
+            .inner
+            .space_state()
+            .state
+            .outputs()
+            .map(|output| {
+                let interval = output
+                    .current_mode()
+                    .filter(|mode| mode.refresh > 0)
+                    .map(|mode| Duration::from_secs_f64(1000.0 / f64::from(mode.refresh)))
+                    .unwrap_or(Duration::from_micros(16_667));
+                (output.name(), interval)
+            })
+            .collect();
         let active = lifecycle_active || !self.motions.is_empty();
-        let frame = self.motion_clock.step(now, active && !paused, outputs, |key| {
-            lp.state.redraw.request_pipe_silent(key, dispatcher::state::RedrawReason::WindowState);
-            lp.state.redraw.wake();
-        });
-        let end = self.motions
-                .iter()
-                .map(|run| {
-                    run.started + Duration::from_secs_f64(run.kind.end()) + Duration::from_millis(1)
-                })
-                .min();
+        let frame = self
+            .motion_clock
+            .step(now, active && !paused, outputs, |key| {
+                lp.state
+                    .redraw
+                    .request_pipe_silent(key, dispatcher::state::RedrawReason::WindowState);
+                lp.state.redraw.wake();
+            });
+        let end = self
+            .motions
+            .iter()
+            .map(|run| {
+                run.started + Duration::from_secs_f64(run.kind.end()) + Duration::from_millis(1)
+            })
+            .min();
         let next = frame.into_iter().chain(end).min();
         self.motion_timer.rearm(&self.handle, next, |_| {});
     }
@@ -1081,7 +1097,9 @@ impl Engine<'_> {
                 let step = policy_host::motion::geometry_frame_step(
                     self.lp, id, generation, &timeline, 0.0,
                 );
-                self.lp.state.schedule_redraw(dispatcher::state::RedrawReason::WindowState);
+                self.lp
+                    .state
+                    .schedule_redraw(dispatcher::state::RedrawReason::WindowState);
                 let kind = MotionKind::Window {
                     id,
                     generation,

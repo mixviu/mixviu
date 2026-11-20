@@ -134,7 +134,9 @@ fn frame_cpu_samples(process: &process::Process, begin_us: u64, end_us: u64) -> 
 }
 
 fn redraw_requests(process: &process::Process, begin: u64, end: u64) -> usize {
-    fs::read_to_string(process.root.join("frames.log")).unwrap().lines()
+    fs::read_to_string(process.root.join("frames.log"))
+        .unwrap()
+        .lines()
         .filter(|line| line.contains("stage=comp_redraw_request "))
         .filter(|line| (begin..end).contains(&trace_field(line, "start_us=")))
         .count()
@@ -142,7 +144,9 @@ fn redraw_requests(process: &process::Process, begin: u64, end: u64) -> usize {
 
 #[test]
 fn motion_redraws_follow_output_frames_and_settle_without_requests() {
-    if !process::record_available() { return; }
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("motion-redraw-clock");
     let mut process = process::spawn_size("motion-redraw-clock", &bus.url, MOTION_SIZE);
     bus.ready();
@@ -150,14 +154,19 @@ fn motion_redraws_follow_output_frames_and_settle_without_requests() {
     let _ = ppm(&bus, &process, "ready", None);
     let begin = monotonic_ns() / 1000;
     thread::scope(|scope| {
-        let motion = scope.spawn(|| bus.call("comp.motion.run", json!({"targets":[{"window":{
-            "id":row["id"], "generation":row["generation"],
-            "tracks":opacity_track(0.2,1.0),"duration_ms":1200
-        }}]})));
+        let motion = scope.spawn(|| {
+            bus.call(
+                "comp.motion.run",
+                json!({"targets":[{"window":{
+                    "id":row["id"], "generation":row["generation"],
+                    "tracks":opacity_track(0.2,1.0),"duration_ms":1200
+                }}]}),
+            )
+        });
         // Keep unrelated protocol and Bus events arriving between output ticks.
         while !motion.is_finished() {
             pattern.pump();
-            bus.call("comp.window.list", json!({}));
+            bus.call("comp.windows.list", json!({}));
         }
         assert_eq!(motion.join().unwrap()["status"], "completed");
     });
@@ -165,8 +174,10 @@ fn motion_redraws_follow_output_frames_and_settle_without_requests() {
     let requests = redraw_requests(&process, begin, end);
     let nominal_frames = ((end - begin) * 60).div_ceil(1_000_000) as usize;
     println!("MOTION_REDRAWS output=headless-0 frames={nominal_frames} requests={requests}");
-    assert!(requests <= 3 * nominal_frames + 8,
-        "animation wakes must follow output frames: {requests} requests for {nominal_frames} frames");
+    assert!(
+        requests <= 3 * nominal_frames + 8,
+        "animation wakes must follow output frames: {requests} requests for {nominal_frames} frames"
+    );
     assert!(!frame_cpu_samples(&process, begin, end).is_empty());
     // Drain the endpoint's already owed frame before checking a settled scene.
     let _ = ppm(&bus, &process, "settled", None);
