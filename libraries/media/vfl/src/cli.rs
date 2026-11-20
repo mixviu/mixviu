@@ -19,10 +19,12 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<(), Box<dyn std::
     let args: Vec<_> = args.into_iter().collect();
     let usage = || Usage;
     let command = args.first().and_then(|v| v.to_str()).ok_or_else(usage)?;
-    let path = PathBuf::from(args.get(1).ok_or_else(usage)?);
+    let require_complete = command == "verify" && args.iter().any(|a| a == "--require-complete");
+    let path_arg = if command == "verify" && args.get(1).is_some_and(|a| a == "--require-complete") { 2 } else { 1 };
+    let path = PathBuf::from(args.get(path_arg).ok_or_else(usage)?);
     let mut out = io::BufWriter::new(io::stdout().lock());
-    if command == "verify" && (args.len() == 2 || (args.len() == 3 && args[2] == "--require-complete")) {
-        let result = verify_with_options(&path, args.len() == 3);
+    if command == "verify" && (args.len() == 2 && !require_complete || args.len() == 3 && require_complete) {
+        let result = verify_with_options(&path, require_complete);
         writeln!(out, "{result}")?;
         out.flush()?;
         if result["ok"] != true {

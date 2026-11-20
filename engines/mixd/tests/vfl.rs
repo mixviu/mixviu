@@ -20,6 +20,7 @@ fn verify_schema_usage_codes_and_completion_policy() {
     }
     let o = invoke(&["vfl", "verify", path, "--require-complete"]);
     assert_eq!(o.status.code(), Some(0));
+    assert_eq!(invoke(&["vfl", "verify", "--require-complete", path]).status.code(), Some(0));
     std::fs::remove_file(p.join("complete.json")).unwrap();
     assert_eq!(invoke(&["vfl", "verify", path]).status.code(), Some(0));
     let o = invoke(&["vfl", "verify", path, "--require-complete"]);
@@ -34,6 +35,21 @@ fn verify_schema_usage_codes_and_completion_policy() {
     assert!(e["message"].is_string());
     let o = invoke(&["--personalities"]);
     assert!(!String::from_utf8_lossy(&o.stdout).lines().any(|l| l.starts_with("vfl ")));
+    std::fs::remove_dir_all(p).unwrap();
+}
+
+#[test]
+fn export_recovers_only_valid_frames_before_torn_record() {
+    let p = pipe_take("torn-export", 4);
+    std::fs::remove_file(p.join("complete.json")).unwrap();
+    let chunk = p.join("chunk-000000.bin");
+    let mut b = std::fs::read(&chunk).unwrap();
+    b.truncate(b.len() - 1);
+    std::fs::write(chunk, b).unwrap();
+    let o = Command::new(env!("CARGO_BIN_EXE_mixd"))
+        .args(["vfl", "export"]).arg(&p).output().unwrap();
+    assert_eq!(o.status.code(), Some(0), "{o:?}");
+    assert_eq!(o.stdout.len(), 127 * 4 * 4 * 4);
     std::fs::remove_dir_all(p).unwrap();
 }
 
