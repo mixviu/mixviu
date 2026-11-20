@@ -1262,6 +1262,10 @@ fn answer_start(s: &mut Session) {
 }
 
 fn assign_first_capture(s: &mut Session, mut recording: Recording, captured_us: u64) {
+    // Changes observed while frame zero was pending precede the take's origin.
+    // They cannot be lost recording slots. Keep normal supersession accounting
+    // for every signature deferred after this admission boundary.
+    s.deferred_signature = None;
     recording.t0_us = captured_us;
     s.recording = Some(recording);
 }
@@ -1921,7 +1925,9 @@ mod tests {
         let mut s = session.borrow_mut();
         let recording = s.recording.take().unwrap();
         let captured_us = recorder::bus::monotonic_us().unwrap();
+        s.deferred_signature = Some(vec![7]);
         assign_first_capture(&mut s, recording, captured_us);
+        assert!(!superseded(&mut s.deferred_signature, &[8]), "pre-origin changes are outside the take");
         s.recording
             .as_mut()
             .unwrap()
@@ -1941,6 +1947,11 @@ mod tests {
             marker["t_us"].as_u64().unwrap()
                 <= recorder::bus::monotonic_us().unwrap() - captured_us
         );
+        s.deferred_signature = Some(vec![8]);
+        assert!(superseded(&mut s.deferred_signature, &[9]));
+        s.recording.as_mut().unwrap().superseded_capture();
+        assert_eq!(s.recording.as_ref().unwrap().status()["dropped_capture"], 1,
+            "post-origin losses must still count");
         stop_stream(&mut s, false);
         while !finish_recording(&mut s) {
             std::thread::sleep(Duration::from_millis(5));
