@@ -48,6 +48,14 @@ pub struct Process {
 impl Drop for Process {
     fn drop(&mut self) {
         if thread::panicking() {
+            if let Ok(Some(status)) = self.child.try_wait() {
+                eprintln!(
+                    "viud child exit before cleanup: pid={} status={status} code={:?} signal={:?} core_dumped={} watchdog_fired={} OOM_plausible={} oom_before={} oom_after={}",
+                    self.child.id(), status.code(), status.signal(), status.core_dumped(),
+                    self.watchdog_fired.load(Ordering::SeqCst), status.signal() == Some(libc::SIGKILL),
+                    self.oom_before, oom_evidence()
+                );
+            }
             eprintln!(
                 "frame trace: {}",
                 fs::read_to_string(self.root.join("frames.log")).unwrap_or_default()
