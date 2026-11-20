@@ -1249,15 +1249,13 @@ fn capture_tick(lp: &mut Loop, session: &Rc<RefCell<Session>>) {
 }
 
 fn answer_start(s: &mut Session) {
-    if s.start.is_none() {
-        if let Some(recording) = s.recording.as_ref() {
+    if s.start.is_none() && let Some(recording) = s.recording.as_ref() {
             let reply = recording.started();
             s.start = Some(reply.clone());
             for answer in std::mem::take(&mut s.start_answers) {
                 answer(ControlReply::Body(reply.clone()));
             }
             event(s, "recording");
-        }
     }
 }
 
@@ -1595,18 +1593,29 @@ mod tests {
         // Lost callbacks are bounded even without record ticks or renderer
         // polls. Move the clock origin, not the real three-second limit.
         let s = pending_fixture("warm-lost", &root);
+        let replied = Rc::new(Cell::new(false));
+        let answer = replied.clone();
+        s.borrow_mut().start_answers.push(Box::new(move |reply| {
+            assert!(!matches!(reply, ControlReply::Body(_)));
+            answer.set(true);
+        }));
         let (_token, ready, fence) = submit_warm(&s, &mut renderer);
         assert!(screencopy::file::testing::forget_raw_answer());
         s.borrow_mut().warmup_started = Some(Instant::now() - crate::capture::DEADLINE);
         install_warmup_deadline(&s, events.handle());
         events.dispatch(Some(Duration::ZERO), &mut ()).unwrap();
         assert!(s.borrow().failed.is_some());
+        assert!(replied.get(), "the independent timer must answer the pending start");
         assert!(!s.borrow().pending);
         assert!(!ready.get());
         assert_eq!(s.borrow().warmup_errors.len(), 1);
         assert!(s.borrow().warmup_us >= 3_000_000);
         assert_eq!(fence.load(Ordering::Relaxed), 1);
         assert_eq!(screencopy::file::testing::read_count(), 0);
+        let past = PAST.with_borrow_mut(|p| p.get("warm-lost")).unwrap();
+        assert_eq!(past.status["warmup_errors"].as_array().unwrap().len(), 1);
+        assert_eq!(past.status["frames"], 0);
+        assert_eq!(past.status["readbacks"], 0);
         assert!(!warmup_answer(
             &s,
             &Cell::new(1),
