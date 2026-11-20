@@ -140,6 +140,7 @@ pub mod testing {
     }
     thread_local! {
         static STALL: RefCell<Option<Arc<AtomicUsize>>> = const { RefCell::new(None) };
+        static COLD_READS: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
         pub(super) static POLLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
     }
     pub fn poll_count() -> usize {
@@ -170,6 +171,23 @@ pub mod testing {
         let drops = Arc::new(AtomicUsize::new(0));
         STALL.with_borrow_mut(|slot| *slot = Some(drops.clone()));
         drops
+    }
+    /// Arm once in a fresh compositor. Exercise actual wall time and the
+    /// production budget charge, without changing normal frame accounting.
+    pub fn penalize_first_readback() {
+        COLD_READS.with(|reads| {
+            if reads.get().is_none() { reads.set(Some(0)); }
+        });
+    }
+    pub(super) fn completed_readback(cost: u64) -> u64 {
+        COLD_READS.with(|reads| {
+            let Some(n) = reads.get() else { return cost; };
+            reads.set(Some(n + 1));
+            let penalty = if n == 0 { 20_000 } else { 0 };
+            if penalty != 0 { std::thread::sleep(Duration::from_micros(penalty)); }
+            eprintln!("TEST_COLD_READBACK n={} penalty_us={penalty}", n + 1);
+            cost + penalty
+        })
     }
     pub(super) fn replace_fence(fence: SyncPoint) -> SyncPoint {
         STALL
@@ -780,6 +798,8 @@ fn complete_timed(
         None
     };
     if let Some(answer) = answer {
+        #[cfg(feature = "test-support")]
+        let readback_us = testing::completed_readback(readback_us);
         answer(Ok((
             width,
             height,

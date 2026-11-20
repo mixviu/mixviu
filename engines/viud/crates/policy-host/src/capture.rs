@@ -11,6 +11,8 @@ use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use std::time::{Duration, Instant};
 use world::state::Loop;
 
+pub(super) const DEADLINE: Duration = Duration::from_secs(3);
+
 pub fn start(
     lp: &mut Loop,
     spec: CaptureFrameSpec,
@@ -104,7 +106,7 @@ pub fn start(
     if lp
         .loop_handle
         .insert_source(
-            Timer::from_deadline(admitted + Duration::from_secs(3)),
+            Timer::from_deadline(admitted + DEADLINE),
             move |_, _, _| {
                 screencopy::file::fail(id, "capture deadline passed");
                 TimeoutAction::Drop

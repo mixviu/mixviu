@@ -49,7 +49,7 @@ pub struct Process {
     oom_before: String,
 }
 
-fn diagnostic_tail(path: impl AsRef<std::path::Path>) -> String {
+fn diagnostic_excerpt(path: impl AsRef<std::path::Path>) -> String {
     use std::io::{Read, Seek, SeekFrom};
     const LIMIT: usize = 16 * 1024;
     let Ok(mut file) = fs::File::open(path) else {
@@ -58,7 +58,8 @@ fn diagnostic_tail(path: impl AsRef<std::path::Path>) -> String {
     let mut head = Vec::new();
     let _ = file.by_ref().take(LIMIT as u64).read_to_end(&mut head);
     let length = file.metadata().map(|m| m.len()).unwrap_or(0);
-    if length <= LIMIT as u64 {
+    if length <= (2 * LIMIT) as u64 {
+        let _ = file.by_ref().take(LIMIT as u64).read_to_end(&mut head);
         return String::from_utf8_lossy(&head).into_owned();
     }
     let tail_start = (length.saturating_sub(LIMIT as u64)).max(LIMIT as u64);
@@ -91,9 +92,9 @@ impl Drop for Process {
             }
             eprintln!(
                 "frame trace: {}",
-                diagnostic_tail(self.root.join("frames.log"))
+                diagnostic_excerpt(self.root.join("frames.log"))
             );
-            eprintln!("viud log: {}", diagnostic_tail(self.root.join("viud.log")));
+            eprintln!("viud log: {}", diagnostic_excerpt(self.root.join("viud.log")));
         }
         let _ = self.stop.send(());
         if let Some(watchdog) = self.watchdog.take() {
@@ -127,7 +128,7 @@ impl Process {
                 status.signal() == Some(libc::SIGKILL),
                 self.oom_before,
                 oom_evidence(),
-                diagnostic_tail(self.root.join("viud.log"))
+                diagnostic_excerpt(self.root.join("viud.log"))
             );
         }
     }
@@ -299,6 +300,10 @@ fn spawn_options(options: Options<'_>) -> Process {
     let stderr = fs::File::create(&log).unwrap();
     let mut command = Command::new(binary);
     if label.starts_with("record-privacy-") {
+        command.env(paths::env::test::TEST_RECORD_FIXTURE, &root);
+    }
+    if label == "cold-record" {
+        fs::write(root.join("record-input"), "cold-readback").unwrap();
         command.env(paths::env::test::TEST_RECORD_FIXTURE, &root);
     }
     if label == "record-privacy-cursor-epoch" {

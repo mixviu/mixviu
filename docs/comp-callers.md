@@ -200,12 +200,22 @@ offscreen render. These are microseconds, not encoder latency.
 
 Before frame zero, start runs one throwaway capture for every target, warming
 the GPU readback and source pixel allocations outside the recording budget.
+The source pool is bounded and shared: region crops and stitched multi-target
+images have separate allocations, so warm-up does not promise to preallocate
+every later crop, stitch or resized frame.
 The first recorded capture follows immediately after warm-up. Status reports
 `warmup_done`, `warmup_us` (wall time including presentation/readback waits),
 and `warmup_errors` (target-indexed diagnostics). A warm-up error does not
 refuse start: the normal first capture is still attempted. Warm-up pixels and
 cost never enter the take's frame, drop or readback counters. These status
 fields remain available after stop.
+
+Warm-up has an independent three-second deadline, shared with ordinary frame
+capture. Ordinary warm-up errors allow the real first capture to proceed.
+Exhausting this deadline fails start immediately and preserves the warm-up
+diagnostic; it does not retry the same dark renderer for another three seconds.
+The finite warm-up interval is excluded from `max_seconds` before frame zero;
+the real first capture then retains the normal pre-frame start watchdog.
 
 Recording accepts either the canonical output id returned by comp.windows.list
 (e.g. `o_hdmi_a_1`) or its backend name (`HDMI-A-1`). Targets are normalised
