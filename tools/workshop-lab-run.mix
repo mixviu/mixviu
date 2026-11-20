@@ -1,0 +1,6 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+print(run_argv_must(["mix","lint","tools/workshop-delta-lab.mix"]))
+$r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_capture_diagnostic","--","--nocapture"],{timeout:600,stderr:"stdout",max_output:64000000})
+print($r.stdout)
+print({capture_rc:$r.exit_code})
+print(run_argv_must(["mix","tools/workshop-delta-lab.mix"],{timeout:600,stderr:"stdout",max_output:64000000}))
