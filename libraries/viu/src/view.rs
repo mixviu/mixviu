@@ -2350,7 +2350,7 @@ fn paint_outline(ui: &egui::Ui, node: &Node, rect: egui::Rect) {
     }) {
         ui.painter().rect_stroke(
             rect.shrink(0.5),
-            2.0,
+            num(node, "radius").unwrap_or(2.0),
             egui::Stroke::new(num(node, "outline_width").unwrap_or(1.0), outline),
             egui::StrokeKind::Inside,
         );

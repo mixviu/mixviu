@@ -1026,3 +1026,14 @@ fn number_tracks_have_bounded_options_and_no_legacy_defaults() {
     }
     assert!(resolve(&doc("root: {widget: \"text\", text: \"42\", number:{to:42}, spans:[]}")).is_err());
 }
+#[test]
+fn composed_box_outlines_are_optional_typed_ports() {
+    for family in ["row","column"] {
+        let plain = resolve(&doc(&format!("root: {{widget: \"{family}\", children:[]}}"))).unwrap();
+        assert!(!plain.nodes["root"].ports.contains_key("outline"));
+        assert!(resolve(&doc(&format!("root: {{widget: \"{family}\", children:[], outline:\"#f2706b\", outline_width:2, radius:14}}"))).is_ok());
+        for port in ["outline:1","outline_width:-1"] {
+            assert!(resolve(&doc(&format!("root: {{widget: \"{family}\", children:[], {port}}}"))).is_err());
+        }
+    }
+}

@@ -151,7 +151,11 @@ fn render_review_slide() {
         .with_context_setup(|ctx| viu::fonts::install(ctx, 400, 600))
         .wgpu()
         .build_ui(move |ui| {
-            view.show(ui);
+            let rect = ui.ctx().content_rect();
+            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+                ui.set_clip_rect(rect);
+                view.show(ui);
+            });
         });
     harness.run();
     let image = harness.render().expect("native offscreen render");
@@ -215,4 +219,14 @@ fn review_slide_cost_and_idle() {
     );
     settled.textures_delta.clear();
     println!("DECK_IDLE_REPAINT=none");
+}
+#[test]
+fn before_after_cards_paint_the_named_border_colours() {
+    let mut view = SceneView::new(include_str!("../../../apps/gallery/deck-pages/cards.scene.mix")).unwrap();
+    let ctx = egui::Context::default();
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {view.show(ui);});
+    out.textures_delta.clear();
+    for colour in [egui::Color32::from_rgb(90,43,43),egui::Color32::from_rgb(36,81,58)] {
+        assert!(out.shapes.iter().any(|s| matches!(&s.shape,egui::Shape::Rect(r) if r.stroke.color==colour && r.stroke.width==1.)));
+    }
 }
