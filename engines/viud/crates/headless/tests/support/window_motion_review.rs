@@ -761,9 +761,12 @@ fn exiting_window_never_reuses_old_output_or_pane_pixels() {
                 &mut process,
                 &label,
                 0xffffffff,
-                if panes { 300 } else { 1600 },
+                300,
                 200,
             );
+            if !panes {
+                bus.call("comp.window.place", place_args(&row, json!({"output":"headless-1","x":320,"y":200})));
+            }
             let source_output = if panes { "headless-0" } else { "headless-1" };
             let path = process.root.join("source.vfl");
             let start = bus.call("comp.record.start",json!({"request_id":"source","target":{"output":source_output},"path":path,"fps":30,"cursor":false,"max_seconds":10}));
@@ -771,7 +774,7 @@ fn exiting_window_never_reuses_old_output_or_pane_pixels() {
             if panes {
                 bus.call("comp.window.place", place_args(&row, json!({"x":900})));
             } else {
-                bus.call("comp.window.place", place_args(&row, json!({"x":300})));
+                bus.call("comp.window.place", place_args(&row, json!({"output":"headless-0","x":300})));
             }
             thread::sleep(Duration::from_millis(150));
             let (width, _, destination) = ppm(&bus, &process, "destination-shown", None);

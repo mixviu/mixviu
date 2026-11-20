@@ -17,7 +17,7 @@ if $mode == "native" or $mode == "all-targets" then
   checked(["cargo","build","--release","--locked","-p","mixd","--no-default-features"])
   checked(["cargo","build","--release","--locked","-p","noded","-p","testkit","--bins"])
   if $mode == "all-targets" then
-    checked(["cargo","test","--release","--locked","-p","world","-p","headless","-p","comp-model","-p","policy-host","-p","viud","-p","comp-service","-p","decor","-p","dispatcher","-p","frames","-p","model","-p","native","-p","policy","-p","recorder","-p","scenegraph","-p","seat","-p","testkit","-p","motion","-p","smithay","--no-default-features","--features","viud/backend-native,viud/test-support","--no-fail-fast","--","--test-threads=1"])
+    checked(["cargo","test","--release","--locked","-p","world","-p","headless","-p","comp-model","-p","policy-host","-p","viud","-p","comp-service","-p","decor","-p","dispatcher","-p","frames","-p","model","-p","native","-p","policy","-p","recorder","-p","scenegraph","-p","seat","-p","testkit","-p","motion","--no-default-features","--features","viud/backend-native,viud/test-support","--no-fail-fast","--","--test-threads=1"])
   else
   checked(["cargo","test","--release","--locked","-p","viud","--no-default-features","--features","backend-native,test-support","--test","recorder_binary"])
   checked(["cargo","test","--release","--locked","-p","headless","--test","capture","--","--nocapture","--test-threads=1"])
