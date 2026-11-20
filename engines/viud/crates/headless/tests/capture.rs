@@ -957,6 +957,8 @@ fn record_privacy_window_output_membership_and_marker_order() {
         .unwrap();
     let mut reader = media_vfl::reader::Reader::open(&path).unwrap();
     let mut saw_return = false;
+    assert!(outside_frames > left, "need stable off-output frames");
+    assert!(left < returned && returned < marker["frame"].as_u64().unwrap());
     while let Some(f) = reader.read().unwrap() {
         let present = f
             .pixels
