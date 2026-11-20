@@ -128,6 +128,7 @@ fn review_slide_cost_and_idle() {
     let source = source.replacen("\"root\":{", "\"root\":{\"enter\":\"up\",", 1);
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
+    ctx.set_pixels_per_point(2.4);
     let frame = |view: &mut SceneView, t| {
         ctx.run_ui(egui::RawInput {
             time: Some(t),
@@ -140,7 +141,7 @@ fn review_slide_cost_and_idle() {
     for i in 1..=1000 {
         let start = std::time::Instant::now();
         let mut out = frame(&mut view, i as f64 / 2000.);
-        let _ = ctx.tessellate(std::mem::take(&mut out.shapes), 2.4);
+        let _ = ctx.tessellate(std::mem::take(&mut out.shapes), out.pixels_per_point);
         out.textures_delta.clear();
         us.push(start.elapsed().as_secs_f64()*1e6);
     }
