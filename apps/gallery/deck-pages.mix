@@ -20,7 +20,7 @@ $samples = {
   rail:$d.row([$d.chip("before","","mut"),$d.chip("now","","acc"),$d.chip("next","","mut")],10)
 }
 for $name in keys($samples)
-  $tree = merge($d.column([$samples[$name],{widget:"column",children:[],min_width:1408,height:0}],0),{padding_top:72,padding_left:96,padding_right:96,padding_bottom:120,background:$t.colour.background,height:708,min_width:1600})
+  $tree = merge($d.column([$samples[$name],{widget:"column",children:[],min_width:$t.canvas.width-2*$t.space.side,height:0}],0),{padding_top:$t.space.top,padding_left:$t.space.side,padding_right:$t.space.side,padding_bottom:$t.space.bottom,background:$t.colour.background,height:$t.canvas.height-$t.space.top-$t.space.bottom,min_width:$t.canvas.width})
   write_file(path_join($out,$name..".scene.mix"),$d.scene($tree))
 end
 print("deck gallery: "..to_string(len(keys($samples))).." pages in "..$out)

@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 return {
   "canvas": {"width":1600,"height":900,"scale":2.4},
+  "motion": {"count_ms":1400,"count_delay_ms":200},
   "colour": {
     "background":"#0d1117","background2":"#121821","panel":"#161d27",
     "line":"#26303d","text":"#e8edf3","mut":"#8d99a8",

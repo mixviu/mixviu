@@ -346,8 +346,15 @@ fn check_layout_declarations(id: &str, node: &RawNode, out: &mut Vec<Diagnostic>
 }
 
 pub(crate) fn check_layout_bounds(id: &str, node: &Node, out: &mut Vec<Diagnostic>) {
-    if node.family == "text" && node.ports.contains_key("number") && node.ports.contains_key("spans") {
-        out.push(Diagnostic::error("text-content", node.line, format!("{id}: number and spans are mutually exclusive")));
+    if node.family == "text"
+        && node.ports.contains_key("number")
+        && node.ports.contains_key("spans")
+    {
+        out.push(Diagnostic::error(
+            "text-content",
+            node.line,
+            format!("{id}: number and spans are mutually exclusive"),
+        ));
     }
     for (min, max) in [("min_width", "max_width"), ("min_height", "max_height")] {
         if let (Some(low), Some(high)) = (

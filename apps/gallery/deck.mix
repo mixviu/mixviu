@@ -88,7 +88,7 @@ end
 fn deck_stat($number, $caption, $role, $animate=true)
   $text = deck_text($number,"stat",$role)
   $target = to_number($number)
-  if $animate and $target != nil then $text.number = {to:$target,ms:1400,delay_ms:200} end
+  if $animate and $target != nil then $text.number = {to:$target,ms:$tokens.motion.count_ms,delay_ms:$tokens.motion.count_delay_ms} end
   return column([$text,deck_text($caption,"stat_label","mut")],0)
 end
 fn mock($title, $items)
