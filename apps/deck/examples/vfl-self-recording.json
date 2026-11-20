@@ -344,7 +344,6 @@
             "root.3.0.0",
             "root.3.0.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#5a2b2b",
@@ -374,7 +373,6 @@
             "root.3.1.0",
             "root.3.1.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#26303d",
@@ -1146,7 +1144,6 @@
             "root.3.0.0",
             "root.3.0.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#24513a",
@@ -1241,7 +1238,6 @@
             "root.3.1.1",
             "root.3.1.2"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#26303d",
@@ -1632,7 +1628,6 @@
             "root.2.0",
             "root.2.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#5a2b2b",
@@ -1716,7 +1711,6 @@
             "root.4.0",
             "root.4.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#24513a",
@@ -2081,7 +2075,6 @@
             "root.2.0",
             "root.2.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#5a2b2b",
@@ -2111,7 +2104,6 @@
             "root.3.0",
             "root.3.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#26303d",
@@ -2482,7 +2474,6 @@
             "root.2.0",
             "root.2.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#26303d",
@@ -2512,7 +2503,6 @@
             "root.3.0",
             "root.3.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#5a2b2b",
@@ -2542,7 +2532,6 @@
             "root.4.0",
             "root.4.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#26303d",
@@ -2913,7 +2902,6 @@
             "root.2.0",
             "root.2.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#24513a",
@@ -3079,7 +3067,6 @@
             "root.4.0",
             "root.4.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#26303d",
@@ -3630,7 +3617,6 @@
             "root.3.0",
             "root.3.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#26303d",
@@ -4001,7 +3987,6 @@
             "root.2.0",
             "root.2.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#26303d",
@@ -4031,7 +4016,6 @@
             "root.3.0",
             "root.3.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#5a2b2b",
@@ -4061,7 +4045,6 @@
             "root.4.0",
             "root.4.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#26303d",
@@ -4432,7 +4415,6 @@
             "root.2.0",
             "root.2.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#26303d",
@@ -4462,7 +4444,6 @@
             "root.3.0",
             "root.3.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#24513a",
@@ -4492,7 +4473,6 @@
             "root.4.0",
             "root.4.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#5a2b2b",
@@ -5307,7 +5287,6 @@
             "root.2.0",
             "root.2.1"
           ],
-          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#26303d",
