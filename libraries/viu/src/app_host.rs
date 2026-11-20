@@ -3172,3 +3172,7 @@ mod tests {
         .drop_without_applying_deltas();
     }
 }
+
+#[cfg(test)]
+#[path = "app_host_model_tests.rs"]
+mod model_publication_tests;
