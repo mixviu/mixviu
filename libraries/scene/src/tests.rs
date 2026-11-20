@@ -960,3 +960,24 @@ fn template_instantiate_binds_item() {
             .unwrap();
     assert_eq!(result.ports["text"], json!("static"));
 }
+#[test]
+fn inline_spans_defaults_validation_and_bound_refusals() {
+    let plain = resolve(&doc("root: {widget: \"text\", text: \"plain\"}")).unwrap();
+    assert!(!plain.nodes["root"].ports.contains_key("spans"));
+    for spans in [
+        "[]",
+        "[{text: \"fn\", role: \"keyword\", color: \"#ff8fa3\", mono: true, strike: true, highlight: true}]",
+        "[{text: \"first\\nsecond\"}]",
+    ] {
+        assert!(resolve(&doc(&format!("root: {{widget: \"text\", text: \"\", spans: {spans}}}"))).is_ok());
+    }
+    for spans in ["{}", "[1]", "[{text: 1}]", "[{text: \"x\", role: \"typo\"}]", "[{text: \"x\", strike: 1}]", "[{text: \"x\", color: \"red\"}]", "[{text: \"x\", color: \"#xxxxxx\"}]", "[{text: \"x\", typo: true}]"] {
+        assert!(resolve(&doc(&format!("root: {{widget: \"text\", text: \"\", spans: {spans}}}"))).is_err(), "{spans}");
+    }
+    let port = crate::schema::port_for("text", "spans");
+    let huge = serde_json::json!([{"text":"x".repeat(65537)}]);
+    assert!(crate::bindings::coerce_port(&huge, port).is_err());
+    assert!(crate::bindings::coerce_port(&serde_json::json!(vec![serde_json::json!({"text":"x"});1025]), port).is_err());
+    assert!(crate::bindings::coerce_port(&serde_json::json!([{"text":"x","strike":false}]), port).is_ok());
+    assert!(crate::bindings::coerce_port(&serde_json::Value::Null, port).unwrap().is_none());
+}

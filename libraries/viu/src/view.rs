@@ -900,8 +900,14 @@ impl SceneView {
                     }
                     "text" => {
                         let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(ui.visuals().text_color()).to_array();
+                        if let Some(spans) = node.ports.get("spans") {
+                            let job = crate::spans::job(ui, spans, num(node,"size").unwrap_or(13.0), node.ports.get("mono") == Some(&Value::Bool(true)), Color32::from_rgba_unmultiplied(colour[0], colour[1], colour[2], colour[3]));
+                            let label = egui::Label::new(job);
+                            ui.add(if node.ports.get("wrap") == Some(&Value::Bool(true)) {label.wrap()} else {label.extend()});
+                        } else {
                         let widget=Widget::new(&key,"label","",json!(text(node,"text"))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono"),"colour":colour}));
                         self.widgets.widget(ui,&widget,&json!({}));
+                        }
                     }
                     "button" => {
                         let widget=Widget::new(&key,"button","",json!("Ready")).with_properties(json!({"text":text(node,"label")}));

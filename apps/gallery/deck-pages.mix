@@ -1,0 +1,26 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Generate standalone deck-scale gallery scenes. Run from any directory.
+$root = dirname(script_path())
+$d = require("deck.mix")
+$t = require("../../libraries/design/deck.tokens.mix")
+$out = args()[0] ?? path_join($root,"deck-pages")
+mkdir($out)
+$samples = {
+  typography:$d.column([$d.kicker("Deck components",[{text:"#198",role:"blue"}]),$d.headline("A scene is a slide","1600 × 900 logical pixels"),$d.deck_text("Readable at presentation scale","big","text"),$d.bullets(["Composition lives in Mix","Semantic inline runs"],"ok"),$d.deck_text("A caption below the content","caption","mut")],18),
+  cards:$d.row([$d.card("Before",[$d.deck_text("Still frames","big","bad")],"bad"),$d.card("After",[$d.deck_text("Native scenes","big","ok")],"ok")],40),
+  flow:$d.flow([{label:"source",text:"scene",role:"warn"},{label:"host",text:"viu",role:"acc",via:"resolve"},{label:"result",text:"frame",role:"ok",via:"paint"}]),
+  code:$d.code([[{text:"fn ",role:"keyword"},{text:"hello",role:"function"},{text:"()",role:"code"}],[{text:"  return ",role:"keyword"},{text:"\"hello\"",role:"string"}],[{text:"end",role:"keyword"}]]),
+  terminal:$d.terminal("Terminal",[[{text:"old command",role:"comment",strike:true}],[{text:"$ ",role:"acc"},{text:"mix deck.mix",role:"text"}],[{text:" ",role:"mut"}],[{text:"ready ▌",role:"ok"}]]),
+  tree:$d.tree([{text:"app",role:"warn",badge:"shield"},{text:"├─ render",role:"text"},{text:"└─ record",role:"ok",badge:"allow",allow:true}]),
+  chips:$d.column([$d.row([$d.chip("#198","Motion","blue"),$d.chip("Mix","Scene composition","acc")],12),$d.card("Group",[$d.row([$d.chip("code","inline runs","violet"),$d.chip("flow","nodes","warn")],12)],"mut")],28),
+  stat:$d.row([$d.deck_stat("1507","frames","text"),$d.deck_stat("0","dropped","ok")],40),
+  mock:$d.mock("Preview",["Slide 1","Slide 2","Slide 3"]),
+  brand:$d.brand("MixViu","The desk presents itself","20 November 2026"),
+  topic:$d.topic("03","Deck widgets","Scenes compose; Mix behaviours decide."),
+  rail:$d.row([$d.chip("before","","mut"),$d.chip("now","","acc"),$d.chip("next","","mut")],10)
+}
+for $name in keys($samples)
+  $tree = merge($d.column([$samples[$name]],0),{padding_top:72,padding_left:96,padding_right:96,padding_bottom:120,background:$t.colour.background,min_height:900,min_width:1600})
+  write_file(path_join($out,$name..".scene.mix"),$d.scene($tree))
+end
+print("deck gallery: "..to_string(len(keys($samples))).." pages in "..$out)

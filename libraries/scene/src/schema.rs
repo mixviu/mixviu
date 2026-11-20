@@ -300,6 +300,9 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         _ => return None,
     };
     let mut ports = family.to_vec();
+    if f == "text" {
+        ports.push(p("spans", "list", false, None));
+    }
     if f == "row" {
         ports.extend([
             Port {
@@ -437,6 +440,24 @@ pub(crate) fn check_port_value(
     out: &mut Vec<Diagnostic>,
 ) {
     let k = p.name;
+    if k == "spans" {
+        let valid = v.as_array().is_some_and(|runs| {
+            runs.len() <= 1024
+                && runs.iter().all(|run| {
+                    run.as_object().is_some_and(|o| {
+                        o.keys().all(|k| matches!(k.as_str(), "text" | "role" | "color" | "mono" | "strike" | "highlight"))
+                            && run["text"].as_str().is_some_and(|s| s.len() <= 65536)
+                            && run.get("role").is_none_or(|v| v.as_str().is_some_and(|r| ["text", "keyword", "function", "string", "comment", "value", "ok", "bad", "warn", "acc", "mut"].contains(&r)))
+                            && run.get("color").is_none_or(|v| v.as_str().is_some_and(|s| s.len() == 7 && s.starts_with('#') && s[1..].bytes().all(|b| b.is_ascii_hexdigit())))
+                            && ["mono", "strike", "highlight"].iter().all(|k| run.get(k).is_none_or(JsonValue::is_boolean))
+                    })
+                })
+                && runs.iter().filter_map(|r| r["text"].as_str()).map(str::len).sum::<usize>() <= 65536
+        });
+        if !valid {
+            out.push(Diagnostic::error("span-value", line, format!("invalid or unbounded inline spans on {id}")));
+        }
+    }
     let motion_error = match k {
         "enter" | "exit" => serde_json::from_value::<motion::scene::Entrance>(v.clone())
             .map_err(|e| e.to_string())
