@@ -40,7 +40,7 @@ impl Probe {
     fn start(process: &mut process::Process, app: &str) -> Self {
         let deadline = Instant::now() + Duration::from_secs(20);
         while !process.root.join("wayland-headless-test").exists() {
-            assert!(process.child.try_wait().unwrap().is_none(), "viud exited");
+            process.assert_running();
             assert!(Instant::now() < deadline, "socket timeout");
             thread::sleep(Duration::from_millis(10));
         }

@@ -18,9 +18,10 @@ mod_module_files = "deny"
 
 [features]
 # Forced source ordering for integration fixtures; never enabled by a backend.
-test-support = ["dep:paths"]
+test-support = ["dep:paths", "dep:dispatcher", "screencopy/test-support"]
 
 [dependencies]
+dispatcher = { workspace = true, optional = true }
 paths = { path = "../../../../libraries/paths", optional = true }
 recorder.workspace = true
 comp-model.workspace = true
@@ -41,6 +42,7 @@ screencopy = { workspace = true }
 [dev-dependencies]
 motion.workspace = true
 media-vfl = { path = "../../../../libraries/media/vfl" }
+wayland-protocols-wlr = { workspace = true, features = ["client"] }
 # Enable the fixture in test builds (also when the workspace builds viud).
 headless = { path = ".", features = ["test-support"] }
 screencopy = { workspace = true, features = ["test-support"] }
@@ -50,4 +52,4 @@ wayland-client = { version = "=0.31.15" }
 libc = { workspace = true }
 serde_json = { workspace = true }
 testkit = { workspace = true }
-wayland-protocols = { version = "=0.32.13", features = ["client"] }
+wayland-protocols = { version = "=0.32.13", features = ["client", "staging"] }

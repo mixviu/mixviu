@@ -37,7 +37,7 @@ fn egl_client_buffer_type_and_rendered_frame() {
         if UnixStream::connect(process.root.join("wayland-headless-test")).is_ok() {
             break;
         }
-        assert!(process.child.try_wait().unwrap().is_none(), "viud exited");
+        process.assert_running();
         assert!(Instant::now() < deadline, "headless socket timed out");
         thread::sleep(Duration::from_millis(10));
     }

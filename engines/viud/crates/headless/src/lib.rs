@@ -9,6 +9,8 @@
 extern crate model;
 
 mod frame;
+#[cfg(feature = "test-support")]
+mod record_fixture;
 pub mod wire;
 
 /// OSD paths injected by native integration fixtures. Keeping the feature in
