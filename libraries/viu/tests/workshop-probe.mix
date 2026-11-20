@@ -230,12 +230,20 @@ elif $mode=="validate" then
   checked(["cargo","clippy","-p","lib-viu","--features","test-support","--all-targets","--no-deps"])
   checked(["cargo","test","-p","lib-viu","--features","test-support","--all-targets","--no-fail-fast"])
   checked(["cargo","test","-p","lib-viu","--features","test-support","--doc"])
-elif $mode=="pool" then
+elif $mode=="pool" or $mode=="pool-normal" then
+  checked(["cargo","build","-p","mix"])
+  $check_env.MIX_TEST_MIX_EXE=realpath("target/debug/mix")
+  $serial_args=[]
+  if $mode=="pool-normal" then
+    $serial=realpath("target").."/workshop-normal-pool.mix"
+    write_file($serial,"serial_tests: []\n")
+    $serial_args=["--serial",$serial]
+  end
   for $iteration=1 to 12
     print("WORKSHOP_POOL_ITERATION "..$iteration)
     -- Keep the whole crate queued, with default intra-binary threading, so
     -- contention lasts into the 200-peer phase rather than just startup.
-    checked(["mix","tools/ci/test_pool.mix","--jobs","4","--","-p","lib-viu","--features","test-support","--","--nocapture"])
+    checked(concat(["mix","tools/ci/test_pool.mix","--jobs","4"],concat($serial_args,["--","-p","lib-viu","--features","test-support","--","--nocapture"])))
   end
 else
   checked(concat(slice($test,0,8),["--no-run"]))
