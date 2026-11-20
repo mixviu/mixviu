@@ -465,3 +465,16 @@ Clearing a bound spans value restores plain-text rendering.
 This is an incomplete deck port. The Quoin surface painter and full deck
 typography/motion parity still need validation; the application painter's
 support does not establish parity for every scene host.
+# Number tracks (deck port specimen)
+
+`text.number` is an optional object with required `to` and optional `from`
+(default 0), `ms` (1400), `delay_ms` (200), and `group` (true). It displays
+a rounded integer, with optional comma grouping. `number` and `spans` are
+mutually exclusive. Endpoints must be finite and within ±10^15; duration
+and delay must be within 0..60000 ms. Unknown fields refuse.
+
+The application scene painter samples a scalar track from the shared motion
+library with the deck's cubic count-up easing. The track begins when the
+node is first shown, restarts when its specification changes, and is removed
+when the node leaves. Disabled/reduced motion snaps to the target. Finished
+tracks request no further repaint. The compound stat and caption stay in Mix.

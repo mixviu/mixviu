@@ -111,6 +111,35 @@ fn malformed_bound_runs_refuse_before_rendering() {
 }
 
 #[test]
+fn number_text_samples_a_motion_scalar_track_and_settles_without_repaint() {
+    let nodes = json!({"root":{"widget":"text","text":"1,507","number":{"to":1507},"size":76}});
+    let source = format!("---\nscene: 1\nname: count\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+    let mut view = SceneView::new(&source).unwrap();
+    let ctx = egui::Context::default();
+    let track = motion::Track { property: motion::Property::Scalar, keyframes: vec![
+        motion::Keyframe {offset:0.,value:0.,easing:motion::Curve::Bezier{x1:1./3.,y1:1.,x2:2./3.,y2:1.}},
+        motion::Keyframe {offset:1.,value:1507.,easing:motion::Curve::Linear},
+    ]};
+    let timing = motion::Timing {duration:1.4,delay:0.2,fill:motion::Fill::Both,..Default::default()};
+    for t in [0.,0.2,0.9,1.6,2.,3.,4.,5.] {
+        let mut out = ctx.run_ui(egui::RawInput {time:Some(t),..Default::default()},|ui| {view.show(ui);});
+        out.textures_delta.clear();
+        let text = out.shapes.iter().find_map(|s| match &s.shape {egui::Shape::Text(t)=>Some(t.galley.job.text.as_str()),_=>None}).unwrap();
+        let actual = text.replace(',', "").parse::<f64>().unwrap();
+        assert_eq!(actual,track.sample_at(&timing,t).get(motion::Property::Scalar).round());
+        if t == 5. {
+            assert_eq!(text,"1,507");
+            assert!(out.viewport_output.values().all(|v|v.repaint_delay==std::time::Duration::MAX));
+        }
+    }
+    let source = source.replace("\"size\":76", "\"size\":76,\"motion\":false");
+    let mut view = SceneView::new(&source).unwrap();
+    let mut out = ctx.run_ui(egui::RawInput {time:Some(6.),..Default::default()},|ui| {view.show(ui);});
+    out.textures_delta.clear();
+    assert!(out.shapes.iter().any(|s|matches!(&s.shape,egui::Shape::Text(t) if t.galley.job.text=="1,507")));
+}
+
+#[test]
 #[ignore = "CBC offscreen review: stage slide.scene.mix in temp_dir()/mixviu-deck-review"]
 fn render_review_slide() {
     let dir = std::env::temp_dir().join("mixviu-deck-review");

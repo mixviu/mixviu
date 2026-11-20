@@ -1014,3 +1014,15 @@ fn inline_spans_defaults_validation_and_bound_refusals() {
             .is_none()
     );
 }
+#[test]
+fn number_tracks_have_bounded_options_and_no_legacy_defaults() {
+    let plain = resolve(&doc("root: {widget: \"text\", text: \"42\"}")).unwrap();
+    assert!(!plain.nodes["root"].ports.contains_key("number"));
+    for spec in ["{to:1507}", "{from:-10,to:0,ms:0,delay_ms:0,group:false}"] {
+        assert!(resolve(&doc(&format!("root: {{widget: \"text\", text: \"42\", number: {spec}}}"))).is_ok());
+    }
+    for spec in ["{}", "{to:true}", "{to:1,ms:-1}", "{to:1,delay_ms:60001}", "{to:1e16}", "{to:1,group:1}", "{to:1,typo:true}"] {
+        assert!(resolve(&doc(&format!("root: {{widget: \"text\", text: \"42\", number: {spec}}}"))).is_err(), "{spec}");
+    }
+    assert!(resolve(&doc("root: {widget: \"text\", text: \"42\", number:{to:42}, spans:[]}")).is_err());
+}

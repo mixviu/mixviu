@@ -32,6 +32,7 @@ pub struct Event {
 
 pub struct SceneView {
     motion: toolkit::scene_motion::SceneMotion,
+    numbers: crate::numbers::Numbers,
     motion_parent: Option<String>,
     collect_widget_rects: bool,
     widget_rects: Vec<crate::widget_rects::WidgetRect>,
@@ -124,6 +125,7 @@ impl SceneView {
         validate_controls(&tree)?;
         Ok(Self {
             motion: toolkit::scene_motion::SceneMotion::default(),
+            numbers: crate::numbers::Numbers::default(),
             motion_parent: None,
             frame: None,
             regions: BTreeMap::new(),
@@ -366,6 +368,7 @@ impl SceneView {
     }
     fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
         self.motion.begin(ui);
+        self.numbers.begin();
         if self.collect_widget_rects {
             self.widget_rects.clear();
             ui.ctx()
@@ -379,6 +382,7 @@ impl SceneView {
         let nodes = tree.nodes.into_iter().collect();
         self.node(ui, "root", &nodes, None, 0, &mut events);
         self.motion.end(ui);
+        self.numbers.end();
         for id in &self.overlays {
             let node = &nodes[id];
             if let Ok(widget) = Widget::decode(&node.ports["definition"]) {
@@ -900,12 +904,13 @@ impl SceneView {
                     }
                     "text" => {
                         let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(ui.visuals().text_color()).to_array();
+                        let number = node.ports.get("number").map(|spec| self.numbers.text(ui, &key, spec, node.ports.get("motion") != Some(&Value::Bool(false))));
                         if let Some(spans) = node.ports.get("spans") {
                             let job = crate::spans::job(ui, spans, num(node,"size").unwrap_or(13.0), node.ports.get("mono") == Some(&Value::Bool(true)), Color32::from_rgba_unmultiplied(colour[0], colour[1], colour[2], colour[3]));
                             let label = egui::Label::new(job);
                             ui.add(if node.ports.get("wrap") == Some(&Value::Bool(true)) {label.wrap()} else {label.extend()});
                         } else {
-                        let widget=Widget::new(&key,"label","",json!(text(node,"text"))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono"),"colour":colour}));
+                        let widget=Widget::new(&key,"label","",json!(number.as_deref().unwrap_or_else(||text(node,"text")))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono"),"colour":colour}));
                         self.widgets.widget(ui,&widget,&json!({}));
                         }
                     }

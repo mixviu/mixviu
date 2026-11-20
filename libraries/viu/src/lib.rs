@@ -94,3 +94,4 @@ pub mod data_panels;
 pub mod network_map;
 pub mod saved_state;
 mod spans;
+mod numbers;

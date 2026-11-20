@@ -85,8 +85,11 @@ fn tree($entries)
   end
   return column($items,0)
 end
-fn deck_stat($number, $caption, $role)
-  return column([deck_text($number,"stat",$role),deck_text($caption,"stat_label","mut")],0)
+fn deck_stat($number, $caption, $role, $animate=true)
+  $text = deck_text($number,"stat",$role)
+  $target = to_number($number)
+  if $animate and $target != nil then $text.number = {to:$target,ms:1400,delay_ms:200} end
+  return column([$text,deck_text($caption,"stat_label","mut")],0)
 end
 fn mock($title, $items)
   return merge(column([deck_text($title,"node_label","mut"),bullets($items,"acc")],6),{padding_x:20,padding_y:14,background:$tokens.colour.panel,radius:12})

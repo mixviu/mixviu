@@ -302,6 +302,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
     let mut ports = family.to_vec();
     if f == "text" {
         ports.push(p("spans", "list", false, None));
+        ports.push(p("number", "object", false, None));
     }
     if f == "row" {
         ports.extend([
@@ -440,6 +441,18 @@ pub(crate) fn check_port_value(
     out: &mut Vec<Diagnostic>,
 ) {
     let k = p.name;
+    if k == "number" {
+        let valid = v.as_object().is_some_and(|o| {
+            o.keys().all(|k| matches!(k.as_str(), "from" | "to" | "ms" | "delay_ms" | "group"))
+                && v["to"].as_f64().is_some_and(|n| n.is_finite() && n.abs() <= 1e15)
+                && v.get("from").is_none_or(|v| v.as_f64().is_some_and(|n| n.is_finite() && n.abs() <= 1e15))
+                && ["ms", "delay_ms"].iter().all(|k| v.get(k).is_none_or(|v| v.as_f64().is_some_and(|n| n.is_finite() && (0.0..=60000.0).contains(&n))))
+                && v.get("group").is_none_or(JsonValue::is_boolean)
+        });
+        if !valid {
+            out.push(Diagnostic::error("number-value", line, format!("invalid number track on {id}")));
+        }
+    }
     if k == "spans" {
         let valid = v.as_array().is_some_and(|runs| {
             runs.len() <= 1024
