@@ -17,6 +17,11 @@ pub struct CaptureFrameSpec {
     pub output: Option<String>,
     pub output_generation: Option<u64>,
     pub window: Option<CaptureWindow>,
+    /// Output-sized recording allowlist. None retains ordinary capture semantics.
+    pub listed_windows: Option<Vec<CaptureWindow>>,
+    /// Internal recording identity and first-frame fence, never caller supplied.
+    pub take_id: Option<String>,
+    pub force_capture: bool,
     pub region: Option<CaptureRegion>,
     pub cursor: bool,
     pub path: String,
@@ -177,17 +182,43 @@ pub fn parse_record(command: &str, args: &Value) -> Result<RecordCommand, Contro
                     .as_array()
                     .filter(|w| !w.is_empty() && w.len() <= 16)
                     .ok_or_else(|| invalid_argument("windows", "array", "1..=16 window targets"))?;
-                if target.len() != 1 {
-                    return Err(invalid_argument(
-                        "target",
-                        "exclusive windows target",
-                        "{windows:[{id,generation}]}",
-                    ));
-                }
-                for window in windows {
-                    targets.push(parse(
-                        &json!({"window":window,"path":path,"cursor":cursor}),
-                    )?);
+                if target.contains_key("output") {
+                    if target.contains_key("window") || target.contains_key("region") {
+                        return Err(invalid_argument(
+                            "target",
+                            "output and windows",
+                            "no window or region",
+                        ));
+                    }
+                    let mut capture = Value::Object(target.clone());
+                    capture.as_object_mut().unwrap().remove("windows");
+                    capture["path"] = json!(path);
+                    capture["cursor"] = json!(cursor);
+                    let mut spec = parse(&capture)?;
+                    let mut listed = Vec::new();
+                    for window in windows {
+                        let w = parse(&json!({"window":window,"path":path}))?
+                            .window
+                            .unwrap();
+                        if !listed.contains(&w) {
+                            listed.push(w);
+                        }
+                    }
+                    spec.listed_windows = Some(listed);
+                    targets.push(spec);
+                } else {
+                    if target.len() != 1 {
+                        return Err(invalid_argument(
+                            "target",
+                            "exclusive windows target",
+                            "{windows:[{id,generation}]}",
+                        ));
+                    }
+                    for window in windows {
+                        targets.push(parse(
+                            &json!({"window":window,"path":path,"cursor":cursor}),
+                        )?);
+                    }
                 }
             } else {
                 let mut capture = Value::Object(target.clone());
@@ -371,6 +402,9 @@ pub fn parse(args: &Value) -> Result<CaptureFrameSpec, ControlReply> {
         })
         .transpose()?;
     Ok(CaptureFrameSpec {
+        take_id: None,
+        force_capture: false,
+        listed_windows: None,
         output,
         output_generation,
         window,
@@ -407,6 +441,96 @@ pub fn reply(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn listed_output_arguments_have_typed_field_refusals() {
+        let args = json!({"request_id":"listed","target":{"output":"headless-0","windows":[{"id":1,"generation":2}]},"path":"/tmp/listed.vfl","max_seconds":60});
+        for (field, values) in [
+            (
+                "output",
+                vec![
+                    Value::Null,
+                    json!(7),
+                    json!(""),
+                    json!({}),
+                    json!(false),
+                    json!([]),
+                ],
+            ),
+            (
+                "output_generation",
+                vec![
+                    Value::Null,
+                    json!(1.5),
+                    json!(1.0),
+                    json!("1"),
+                    json!({}),
+                    json!(-1),
+                    json!(true),
+                ],
+            ),
+        ] {
+            for value in values {
+                let mut bad = args.clone();
+                bad["target"][field] = value;
+                let (rc, body) = parse_record("comp.record.start", &bad)
+                    .unwrap_err()
+                    .into_wire();
+                let body: Value = serde_json::from_str(&body).unwrap();
+                assert_eq!(rc, 10, "{bad}");
+                assert_eq!(body["error"], "invalid_value", "{bad}");
+                assert_eq!(body["path"], field, "{bad}");
+            }
+        }
+        for generation in [0, u64::MAX] {
+            let mut valid = args.clone();
+            valid["target"]["output_generation"] = json!(generation);
+            assert!(parse_record("comp.record.start", &valid).is_ok());
+        }
+        // Other target forms retain the shared parser's existing refusal.
+        for target in [
+            json!({"output":null}),
+            json!({"output":"headless-0","output_generation":1.5}),
+        ] {
+            let mut other = args.clone();
+            other["target"] = target;
+            let body = parse_record("comp.record.start", &other)
+                .unwrap_err()
+                .wire_json();
+            assert_eq!(body["error"], "invalid_value");
+        }
+    }
+
+    #[test]
+    fn output_with_windows_is_a_filtered_canvas_not_a_stitch() {
+        let mut args = json!({"request_id":"listed","target":{"output":"headless-0","output_generation":7,"windows":[{"id":1,"generation":2},{"id":1,"generation":2}]},"path":"/tmp/listed.vfl","max_seconds":60,"cursor":false});
+        let RecordCommand::Start { targets, .. } =
+            parse_record("comp.record.start", &args).unwrap()
+        else {
+            panic!()
+        };
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].output.as_deref(), Some("headless-0"));
+        assert_eq!(targets[0].output_generation, Some(7));
+        assert_eq!(targets[0].window, None);
+        assert_eq!(
+            targets[0].listed_windows,
+            Some(vec![CaptureWindow {
+                id: 1,
+                generation: 2
+            }])
+        );
+        assert!(!targets[0].cursor);
+        for windows in [
+            json!([]),
+            json!(null),
+            json!([{"id":1}]),
+            json!([{"id":1,"generation":2,"extra":true}]),
+        ] {
+            args["target"]["windows"] = windows;
+            assert!(parse_record("comp.record.start", &args).is_err());
+        }
+    }
 
     #[test]
     fn recording_path_error_names_the_fault() {
@@ -489,6 +613,9 @@ mod tests {
         assert_eq!(
             parse(&json!({"path": "/tmp/frame.png"})).unwrap(),
             CaptureFrameSpec {
+                take_id: None,
+                force_capture: false,
+                listed_windows: None,
                 output: None,
                 output_generation: None,
                 window: None,

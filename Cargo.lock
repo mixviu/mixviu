@@ -3134,6 +3134,7 @@ dependencies = [
 name = "frames"
 version = "0.1.2"
 dependencies = [
+ "comp-model",
  "dispatcher",
  "effects",
  "graphics",
@@ -3142,6 +3143,7 @@ dependencies = [
  "recorder",
  "render-gles",
  "scenegraph",
+ "screencopy",
  "seat",
  "slots",
  "smithay",
@@ -3782,6 +3784,7 @@ dependencies = [
  "comp-model",
  "crc32fast",
  "decor",
+ "dispatcher",
  "frames",
  "graphics",
  "headless",
@@ -3804,6 +3807,7 @@ dependencies = [
  "testkit",
  "wayland-client",
  "wayland-protocols",
+ "wayland-protocols-wlr",
  "world",
 ]
 
@@ -5888,6 +5892,8 @@ dependencies = [
  "mixtrayd",
  "monitord",
  "noded",
+ "paths",
+ "serde_json",
  "settingsd",
  "webd",
 ]
@@ -10809,6 +10815,7 @@ dependencies = [
  "ui",
  "wayland-client",
  "wayland-protocols",
+ "wayland-protocols-wlr",
 ]
 
 [[package]]

@@ -118,6 +118,13 @@ fn wake_readback() {
 #[cfg(feature = "test-support")]
 pub mod testing {
     use super::*;
+    /// Lose a callback without completing it, to exercise request-owner failure.
+    pub fn forget_raw_answer() -> bool {
+        PIXEL_ANSWERS.with_borrow_mut(|answers| {
+            let key = answers.keys().next().cloned();
+            key.is_some_and(|key| answers.remove(&key).is_some())
+        })
+    }
     use std::sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -234,6 +241,7 @@ pub fn pending_picture(output: &Output, cursor: bool) -> bool {
         requests.iter().any(|request| {
             request.output == output.name()
                 && request.spec.window.is_none()
+                && request.spec.listed_windows.is_none()
                 && request.spec.cursor == cursor
         })
     })
@@ -241,6 +249,10 @@ pub fn pending_picture(output: &Output, cursor: bool) -> bool {
 
 pub fn pending_windows() -> bool {
     REQUESTS.with_borrow(|requests| requests.iter().any(|request| request.spec.window.is_some()))
+}
+
+pub fn pending_listed() -> bool {
+    REQUESTS.with_borrow(|requests| requests.iter().any(|r| r.spec.listed_windows.is_some()))
 }
 
 /// Window requests never consume an output framebuffer, including the KMS tap.
@@ -381,7 +393,10 @@ pub fn fail_all(reason: &str) {
 }
 
 pub fn fail_windows(reason: &str) {
-    cancel(|request| request.spec.window.is_some(), reason);
+    cancel(
+        |request| request.spec.window.is_some() || request.spec.listed_windows.is_some(),
+        reason,
+    );
 }
 
 /// Share one snapshot between callers. Raw recording requests retain the PBO
@@ -399,6 +414,7 @@ pub fn service(
     let requests = take(|request| {
         request.output == output.name()
             && request.spec.window.is_none()
+            && request.spec.listed_windows.is_none()
             && request.spec.cursor == cursor
     });
     if requests.is_empty() {
@@ -480,6 +496,65 @@ pub fn service(
                 )
             })
             .map_err(capture_failed);
+        (request.answer)(result);
+    }
+}
+
+/// Filtered recordings never consume a presentation framebuffer. The builder
+/// returns None for an unchanged filtered scene, before any GPU readback.
+/// A zero-sized internal raw answer denotes a repeat; it is never a file image.
+pub fn service_listed(
+    renderer: &mut GlesRenderer,
+    output: &Output,
+    mut picture: impl FnMut(
+        &mut GlesRenderer,
+        &CaptureFrameSpec,
+    ) -> Result<
+        Option<smithay::backend::renderer::gles::GlesTexture>,
+        ControlReply,
+    >,
+) {
+    for request in take(|r| r.output == output.name() && r.spec.listed_windows.is_some()) {
+        let began = Instant::now();
+        let result = (|| {
+            let Some(mut texture) = picture(renderer, &request.spec)? else {
+                if let Some(answer) =
+                    PIXEL_ANSWERS.with_borrow_mut(|a| a.remove(&request.spec.path))
+                {
+                    answer(Ok((0, 0, Default::default(), 0)));
+                } else {
+                    return Err(capture_failed("unchanged listed scene has no raw answer"));
+                }
+                return Ok(Value::Null);
+            };
+            use smithay::backend::renderer::{Bind, Texture};
+            let size = (texture.size().w, texture.size().h).into();
+            let framebuffer = renderer
+                .bind(&mut texture)
+                .map_err(|e| capture_failed(e.to_string()))?;
+            let readback = Readback {
+                size,
+                origin_bottom_left: false,
+            };
+            let pixels = read_pixels(
+                renderer,
+                Source {
+                    framebuffer: &framebuffer,
+                    readback,
+                },
+            )
+            .map_err(capture_failed)?;
+            complete_timed(
+                &request.spec,
+                readback,
+                &pixels,
+                output,
+                CaptureSource::Offscreen,
+                began.elapsed().as_micros() as u64,
+                request.raw,
+            )
+            .map_err(capture_failed)
+        })();
         (request.answer)(result);
     }
 }
