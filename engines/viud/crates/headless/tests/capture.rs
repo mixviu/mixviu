@@ -142,6 +142,19 @@ fn record_cold_start_under_load_has_no_capture_drops() {
     pattern.wait_callback(0);
     bus.ready();
     let row = bus.window(&mut pattern);
+    // Fence presentation using Wayland, not a screenshot: mapping/listing can
+    // precede the first usable output frame, especially in the shared pool.
+    bus.call("comp.window.fullscreen", place_args(&row, json!({"output":"headless-0"})));
+    let configured = Instant::now() + Duration::from_secs(5);
+    while pattern.state.size != (320, 240) {
+        pattern.pump();
+        assert!(Instant::now() < configured, "fullscreen configure timed out");
+        thread::sleep(Duration::from_millis(2));
+    }
+    pattern.change_buffer();
+    let before = pattern.state.callbacks;
+    pattern.commit(true);
+    pattern.wait_callback(before);
     // No screenshot/readback readiness probe: this is a fresh compositor.
     struct StopLoaders(std::sync::Arc<std::sync::atomic::AtomicBool>);
     impl Drop for StopLoaders {
