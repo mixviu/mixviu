@@ -410,13 +410,19 @@ fn placing_last_track_resolves_reply_promptly() {
 }
 
 #[test]
-#[cfg_attr(not(feature = "lifecycle-tests"), ignore = "requires explicit lifecycle test barriers")]
+#[cfg_attr(
+    not(feature = "lifecycle-tests"),
+    ignore = "requires explicit lifecycle test barriers"
+)]
 fn minimised_then_destroyed_never_resurrects_pixels() {
     unseen_destroy(false, true);
 }
 
 #[test]
-#[cfg_attr(not(feature = "lifecycle-tests"), ignore = "requires explicit lifecycle test barriers")]
+#[cfg_attr(
+    not(feature = "lifecycle-tests"),
+    ignore = "requires explicit lifecycle test barriers"
+)]
 fn workspace_switch_and_destroy_in_one_tick_never_resurrects_pixels() {
     unseen_destroy(true, true);
     unseen_destroy(true, false);
@@ -561,7 +567,10 @@ fn place_during_active_run_removes_only_supplied_tracks_and_finish_preserves_the
 }
 
 #[test]
-#[cfg_attr(not(feature = "lifecycle-tests"), ignore = "requires explicit lifecycle test barriers")]
+#[cfg_attr(
+    not(feature = "lifecycle-tests"),
+    ignore = "requires explicit lifecycle test barriers"
+)]
 fn hide_then_destroy_before_lifecycle_tick_has_no_ghost_in_decoded_frames() {
     if !process::record_available() {
         return;
