@@ -152,7 +152,10 @@ fn bus_sweep_record_reference_play_and_decode_build_states() {
         let result=ok(c,"deck","deck.play",json!({"slides":["before","recorder"],"beats":[[0,3,11],[0,3,11]]})).await;
         assert_eq!(result["finished"],true);assert_eq!(result["playing"],false);
         tokio::time::sleep(Duration::from_millis(250)).await;
-        ok(c,"comp-deck","comp.record.stop",json!({"session":recording["session"]})).await;
+        let idle=ok(c,"comp-deck","comp.record.status",json!({"session":recording["session"]})).await;
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let stopped=ok(c,"comp-deck","comp.record.stop",json!({"session":recording["session"]})).await;
+        assert_eq!(idle["readbacks"],stopped["readbacks"],"a finished deck must not repaint an idle output");
         let state=ok(c,"deck","deck.state",json!({})).await;assert_eq!(state["slide"],"recorder");
     });
     let verify = Command::new(bin.join("mixd"))

@@ -90,3 +90,4 @@ on viu.call.cancelled
 end
 -- Admit commands before a deck is open; the bundle's scene is the empty state.
 send "viu-local" "scenes.model" body={generation:$ctx.generation,value:{presentation:{clock:false}}}
+if $rc!=0 then raise("DECK_STARTUP","native host refused the empty deck state") end
