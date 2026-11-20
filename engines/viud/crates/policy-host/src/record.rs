@@ -585,6 +585,7 @@ fn fail(session: &Rc<RefCell<Session>>, error: &str) {
     } else {
         let mut status = empty_status("failed", Some(error));
         status["session"] = json!(s.id);
+        warmup_status(&s, &mut status);
         let past = Past {
             id: s.id.clone(),
             params: s.params.clone(),
