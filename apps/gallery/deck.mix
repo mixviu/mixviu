@@ -8,12 +8,14 @@ fn deck_text($text, $style, $role)
 end
 fn inline($runs, $style, $mono)
   $styled = []
+  $plain = ""
   for $run in $runs
+    $plain = $plain .. $run.text
     $role = $run.role ?? "text"
     $semantic = if contains(["text","keyword","function","string","comment","value","ok","bad","warn","acc","mut"],$role) then $role else "text" end
     push($styled, merge($run, {role:$semantic,color:$tokens.colour[$role] ?? $tokens.colour.text}))
   end
-  return {widget:"text", text:"", spans:$styled, size:$tokens.type[$style], mono:$mono}
+  return {widget:"text", text:$plain, spans:$styled, size:$tokens.type[$style], mono:$mono}
 end
 fn column($items, $gap)
   return {widget:"column", children:$items, gap:$gap}
