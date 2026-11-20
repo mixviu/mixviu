@@ -197,6 +197,7 @@ pub mod testing {
         })
     }
     pub(super) fn trace(output: &Output, stage: &str) {
+        if REQUESTS.with_borrow(Vec::is_empty) { return; }
         if COLD_READS.get().is_some() && COLD_TRACE.get() < 12 {
             COLD_TRACE.set(COLD_TRACE.get() + 1);
             REQUESTS.with_borrow(|requests| {
@@ -256,6 +257,8 @@ pub fn reading(output: &Output) -> bool {
 
 /// Queued work needs a source render; a submitted PBO only needs polling.
 pub fn requested(output: &Output) -> bool {
+    #[cfg(feature = "test-support")]
+    testing::trace(output, "requested");
     REQUESTS.with_borrow(|requests| {
         requests
             .iter()
