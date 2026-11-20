@@ -277,6 +277,11 @@ impl Runtime {
                         eval.register("viu_markdown_html",crate::native_primitives::markdown_html());
                         eval.register("viu_palette",crate::native_primitives::palette());
                         eval.register("viu_instants",crate::native_primitives::instants());
+                        #[cfg(feature = "test-support")]
+                        eval.register("_viu_test_cpu",mix::sync_ext(|args| {
+                            if !args.is_empty(){return Err(failure("_viu_test_cpu takes no arguments"));}
+                            from_json(json!(crate::app_host::test_support::thread_cpu().as_secs_f64()))
+                        }));
 
                         eval.register("viu_app_dirs",crate::native_primitives::app_dirs(services.application_roots.clone()));
                         eval.register("viu_maildoc",crate::native_primitives::mail_document());

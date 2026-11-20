@@ -973,6 +973,22 @@ impl Host {
                     .entry(done.command.clone())
                     .or_default()
                     .push(done.cpu_elapsed.as_micros() as u64);
+                if done.command == "workshop.info"
+                    && done.reply.as_ref().is_some_and(|r| r.rc == 0)
+                {
+                    for line in done.stdout.lines() {
+                        if let Some(text) = line.strip_prefix("WORKSHOP_HELPER ") {
+                            let value: Value = serde_json::from_str(text).expect("helper probe JSON");
+                            let name = value["name"].as_str().unwrap().to_owned();
+                            probe.helper_cpu.entry(name.clone()).or_default().push(
+                                value["cpu_us"].as_f64().unwrap().round() as u64,
+                            );
+                            probe.helper_wall.entry(name).or_default().push(
+                                value["wall_us"].as_f64().unwrap().round() as u64,
+                            );
+                        }
+                    }
+                }
             }
             if let Some((code, message)) = self.ui_state.take_exit() {
                 if !message.is_empty() {
@@ -2524,6 +2540,8 @@ pub mod test_support {
         pub(super) callbacks: Vec<u64>,
         pub(super) by_command: BTreeMap<String, Vec<u64>>,
         pub(super) callback_cpu: BTreeMap<String, Vec<u64>>,
+        pub(super) helper_cpu: BTreeMap<String, Vec<u64>>,
+        pub(super) helper_wall: BTreeMap<String, Vec<u64>>,
         pump_cpu: Vec<u64>,
         pub(super) discovery_steps: u64,
         completed_per_pump: Vec<u64>,
@@ -2598,6 +2616,8 @@ pub mod test_support {
             json!({"pump_us":distribution(&p.pumps),"steps_per_pump":distribution(&p.per_pump),
                 "pump_cpu_us":distribution(&p.pump_cpu),
                 "callback_cpu_us":p.callback_cpu.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
+                "helper_cpu_us":p.helper_cpu.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
+                "helper_wall_us":p.helper_wall.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
                 "discovery_completions_per_pump":distribution(&p.completed_per_pump),
                 "calls_us":p.calls.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
                 "callback_us":distribution(&p.callbacks),

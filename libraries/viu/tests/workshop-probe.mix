@@ -36,6 +36,19 @@ elif $mode=="wire" then
   finally
     remove($old_path)
   end
+elif $mode=="helpers" then
+  $path="libraries/viu/tests/workshop_bus.rs";$source=read_file($path)
+  $needle="const PROFILE_INFO_HELPERS: bool = false;"
+  if not contains($source,$needle) then raise("PROBE","helper diagnostic switch missing") end
+  try
+    write_file($path,replace($source,$needle,"const PROFILE_INFO_HELPERS: bool = true;"))
+    $r=run_argv(["mix","tools/ci/test_pool.mix","--jobs","4","--","-p","lib-viu","--features","test-support","--","--nocapture"],{timeout:3600,stderr:"stdout",max_output:64000000,env:{TEST_POOL_RETRY_REPORT:""}})
+    print($r.stdout)
+  finally
+    write_file($path,$source)
+    print(run_argv_must(["git","diff"]))
+  end
+  if not $r.ok then exit($r.exit_code ?? 1) end
 elif $mode=="compare" then
   checked(concat(slice($test,0,8),["--no-run"]))
   $path="apps/workshop/counter.mix";$candidate=read_file($path);$candidate_ok=false

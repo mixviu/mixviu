@@ -9,6 +9,62 @@ use std::{
 };
 use viu::{app_host::test_support::Harness, bundle::Bundle};
 
+// The CBC diagnostic recipe enables this only for a measured control run.
+const PROFILE_INFO_HELPERS: bool = false;
+
+fn profile_info_helpers(bundle: &mut Bundle) -> tempfile::NamedTempFile {
+    let dir = bundle.program.path.parent().unwrap();
+    let source = std::fs::read_to_string(dir.join("controller.mix")).unwrap();
+    let before = r#"    send "viu-local" "native.saved" body=$saved.project($s)
+    if $rc==0 then $s.saved=$reply end
+    return result($s,$m.info($s,viu_context()))"#;
+    let after = r#"    $pc=_viu_test_cpu();$pw=monotonic()
+    $projection=$saved.project($s)
+    print("WORKSHOP_HELPER "..json_encode({name:"saved.project",cpu_us:(_viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+    $pc=_viu_test_cpu();$pw=monotonic()
+    send "viu-local" "native.saved" body=$projection
+    $saved_rc=$rc;$saved_reply=$reply
+    print("WORKSHOP_HELPER "..json_encode({name:"native.saved",cpu_us:(_viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+    if $saved_rc==0 then $s.saved=$saved_reply end
+    $pc=_viu_test_cpu();$pw=monotonic()
+    $info=$m.info($s,viu_context())
+    print("WORKSHOP_HELPER "..json_encode({name:"model.info",cpu_us:(_viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+    return result($s,$info)"#;
+    assert!(source.contains(before), "info helper probe must be installed");
+    let file = tempfile::Builder::new()
+        .prefix(".workshop-info-profile-")
+        .suffix(".mix")
+        .tempfile_in(dir)
+        .unwrap();
+    std::fs::write(file.path(), source.replacen(before, after, 1)).unwrap();
+    let path = serde_json::to_string(file.path().to_str().unwrap()).unwrap();
+    bundle.program.source = bundle.program.source.replace(
+        "require(\"controller.mix\")", &format!("require({path})"),
+    );
+    let before = r#"on workshop.info
+  $out=handle($state,$event);$state=$out.state
+  if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
+end"#;
+    let after = r#"on workshop.info
+  $pc=_viu_test_cpu();$pw=monotonic()
+  $out=handle($state,$event)
+  print("WORKSHOP_HELPER "..json_encode({name:"handle.inclusive",cpu_us:(_viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+  $pc=_viu_test_cpu();$pw=monotonic()
+  $state=$out.state
+  print("WORKSHOP_HELPER "..json_encode({name:"state.assign",cpu_us:(_viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+  if not $out.deferred then
+    $pc=_viu_test_cpu();$pw=monotonic()
+    $wire=$counter.wire($out.body)
+    print("WORKSHOP_HELPER "..json_encode({name:"counter.wire",cpu_us:(_viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000}))
+    reply($out.rc,$wire)
+    $wire=nil
+  end
+end"#;
+    assert!(bundle.program.source.contains(before), "info handler probe must be installed");
+    bundle.program.source = bundle.program.source.replacen(before, after, 1);
+    file
+}
+
 struct RefuseJobs(Arc<std::sync::atomic::AtomicUsize>);
 impl mix::BusHandler for RefuseJobs {
     fn send<'a>(
@@ -435,6 +491,7 @@ fn workshop_answers_during_discovery() {
         bundle.manifest.bus_url = Some(broker.url.clone());
         bundle.launch = json!({"headless":true});
         bundle.manifest.saved_version = None;
+        let _profile_module = PROFILE_INFO_HELPERS.then(|| profile_info_helpers(&mut bundle));
         // Probe only this fixture's discovery callbacks, without adding an
         // owner round-trip or changing the installed Workshop program.
         bundle.program.source = bundle.program.source.replace(
