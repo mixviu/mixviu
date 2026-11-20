@@ -494,6 +494,16 @@ fn workshop_answers_during_discovery() {
             "healthy results must appear before the silent peer finishes"
         );
         assert!(disconnected.load(std::sync::atomic::Ordering::Acquire));
+        for command in ["workshop.ping", "workshop.info"] {
+            let invalid = request(&rt, &caller, command, json!([]));
+            pump_until(&mut host, |_| invalid.is_finished());
+            let answer = rt.block_on(invalid).unwrap();
+            assert_eq!(answer.0, 10, "{command} must refuse non-object arguments");
+            assert_eq!(answer.1["error_code"], "ARGUMENT");
+        }
+        let info = call(&mut host, &rt, &caller, "workshop.info").1;
+        assert_eq!(info["discovering"], false);
+        assert!(info["snapshot"]["services"].as_object().unwrap().len() >= count);
         eprintln!(
             "WORKSHOP_PROBE peers={count} {}",
             host.discovery_measurements()
