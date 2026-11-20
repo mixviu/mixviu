@@ -1,0 +1,45 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Disposable discovery specimen; never land this file.
+fn difference($before,$after,$path=[])
+  if deep_eq($before,$after) then return [] end
+  if type($before)=="map" and type($after)=="map" then
+    $out=[]
+    for $k in keys($before)
+      if not has_key($after,$k) then push($out,{op:"remove",path:concat($path,[$k])}) end
+    end
+    for $k in keys($after)
+      if has_key($before,$k) then $out=concat($out,difference($before[$k],$after[$k],concat($path,[$k])))
+      else push($out,{op:"set",path:concat($path,[$k]),value:$after[$k]}) end
+    end
+    return $out
+  end
+  if type($before)=="list" and type($after)=="list" then
+    $prefix=0;$suffix=0
+    while $prefix<min(len($before),len($after)) and deep_eq($before[$prefix],$after[$prefix]) $prefix=$prefix+1 end
+    while $suffix<min(len($before),len($after))-$prefix and deep_eq($before[len($before)-1-$suffix],$after[len($after)-1-$suffix]) $suffix=$suffix+1 end
+    return [{op:"splice",path:$path,index:$prefix,remove:len($before)-$prefix-$suffix,items:slice($after,$prefix,len($after)-$suffix)}]
+  end
+  return [{op:"set",path:$path,value:$after}]
+end
+fn apply_one($value,$parts,$op)
+  if len($parts)>0 then
+    $k=$parts[0]
+    if len($parts)==1 and $op.op=="remove" then return delete($value,$k) end
+    $value[$k]=apply_one($value[$k],slice($parts,1),$op)
+    return $value
+  end
+  if $op.op=="set" then return $op.value end
+  if $op.op=="splice" then return concat(concat(slice($value,0,$op.index),$op.items),slice($value,$op.index+$op.remove)) end
+  raise("LAB","unknown operation")
+end
+$paths=sort(glob("target/workshop-model-captures/*.json"))
+$previous={}
+for $path in $paths
+  $next=json_parse(read_file($path));$start=monotonic();$ops=difference($previous,$next);$diff_ms=(monotonic()-$start)*1000
+  $start=monotonic();$replayed=$previous
+  for $op in $ops $replayed=apply_one($replayed,$op.path,$op) end
+  $apply_ms=(monotonic()-$start)*1000
+  if not deep_eq($replayed,$next) then raise("LAB","replay differs from full model") end
+  print({file:basename($path),full_bytes:byte_length(json_encode($next)),patch_bytes:byte_length(json_encode($ops)),operations:len($ops),diff_ms:$diff_ms,apply_ms:$apply_ms,equivalent:true})
+  $previous=$next
+end

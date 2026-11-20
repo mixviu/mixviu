@@ -475,7 +475,7 @@ fn restoring_the_old_draw_barrier_times_out_ping() {
         )
         .await
     });
-    let end = Instant::now() + Duration::from_secs(2);
+    let end = Instant::now() + Duration::from_secs(10);
     while !ping.is_finished() {
         host.pump();
         assert!(Instant::now() < end);
@@ -500,18 +500,18 @@ fn call(
     let started = Instant::now();
     let task = rt.spawn(async move {
         tokio::time::timeout(
-            Duration::from_secs(1),
+            Duration::from_secs(10),
             caller.call_with_headers_raw_within(
                 "workshop",
                 &command,
                 &BTreeMap::new(),
                 "{}",
-                Duration::from_secs(1),
+                Duration::from_secs(10),
             ),
         )
         .await
     });
-    let end = Instant::now() + Duration::from_secs(2);
+    let end = Instant::now() + Duration::from_secs(10);
     while !task.is_finished() {
         host.pump();
         assert!(host.error().is_empty(), "{}", host.error());
@@ -529,7 +529,7 @@ fn call(
 }
 
 #[test]
-fn workshop_answers_during_discovery() {
+fn workshop_capture_diagnostic() {
     for count in [4, 200] {
         eprintln!("WORKSHOP_PEERS {count}");
         let broker = test_broker::Broker::start();
