@@ -1,0 +1,69 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Execute the port's source with only process/network/Bus edges replaced.
+-- No host units are started and no public claim endpoint is contacted.
+$repo = dirname(dirname(dirname(dirname(script_path()))))
+$mix = env("MIX_TEST_MIX_EXE", mix_path("prefix") .. "/bin/mix")
+$tmp = "/tmp/toolsd-test-" .. uuid()
+fn check($ok, $label)
+  if not $ok then raise("TEST", $label) end
+  print("PASS " .. $label)
+end
+mkdir($tmp .. "/cred", {parents:true})
+try
+  write_file($tmp .. "/cred/tools_secret", "fixture-secret-never-export\n")
+  $reg = read_file($repo .. "/services/toolsd/scripts/lib/tools_registry.mix")
+  $webreg = read_file($repo .. "/services/webd/vhosts/apps/tools_registry.mix")
+  -- Header paths differ; executable declarations must stay identical.
+  check(substr($reg, index_of($reg, "$TOOLS_LABEL_CHARS")) == substr($webreg, index_of($webreg, "$TOOLS_LABEL_CHARS")), "shared registry parity")
+  $exec = read_file($repo .. "/services/toolsd/scripts/lib/tools_exec.mix")
+  $exec = join(filter(lines($exec), fn($l) = not starts_with($l, "include ")), "\n")
+  $drain = read_file($repo .. "/services/toolsd/scripts/toolsd_drain.mix")
+  $drain = join(filter(lines($drain), fn($l) = not starts_with($l, "include ")), "\n")
+  -- Preserve trust checking separately; fixture argv construction uses trusted
+  -- /usr/bin/true instead of requiring host whois/dig packages.
+  $prefix = read_file(dirname(script_path()) .. "/fixtures/drain.txt")
+  $source = $reg .. "\n" .. $exec .. "\n" .. $prefix .. "\n" .. replace(replace($drain, "http_post(", "fixture_http("), "run_argv(", "fixture_exec(")
+  $source = $source .. '\nif $claims != 8 or $reports != 8 or $executions != 5 then raise("TEST", "drain budget/revalidation") end\nprint("PASS drain eight-run budget, revalidation, argv, credential isolation and combined output cap")\n'
+  write_file($tmp .. "/drain.mix", replace($source, '\n', "
+"))
+  $r = run_argv([$mix, $tmp .. "/drain.mix"], {env:{TOOLS_BASE_URL:"https://queue.example.test", TOOLS_CA_FILE:"/fixture/ca.pem", CREDENTIALS_DIRECTORY:$tmp .. "/cred"}, timeout:30})
+  check($r.ok, "drain runtime: " .. $r.stdout .. $r.stderr)
+  check(not contains($r.stdout .. $r.stderr, "fixture-secret-never-export"), "credential absent from logs")
+  $wall = replace($source, "time()", "fixture_time()")
+  $wall = replace($wall, '$claims != 8 or $reports != 8 or $executions != 5', '$claims != 0 or $reports != 0 or $executions != 0')
+  write_file($tmp .. "/wall.mix", '$ticks=0\nfunction fixture_time()\n global $ticks\n $ticks=$ticks+600\n return $ticks\nend\n' .. $wall)
+  -- Raw fixture text uses literal newlines when assembled for Mix.
+  write_file($tmp .. "/wall.mix", replace(read_file($tmp .. "/wall.mix"), '\n', "\n"))
+  $r = run_argv([$mix, $tmp .. "/wall.mix"], {env:{TOOLS_BASE_URL:"https://queue.example.test", TOOLS_CA_FILE:"/fixture/ca.pem", CREDENTIALS_DIRECTORY:$tmp .. "/cred"}, timeout:10})
+  check($r.ok, "wall budget prevents another claim: " .. $r.stderr)
+  $literal = "$(id); echo injected | cat"
+  $r = run_argv(["/usr/bin/printf", "%s", $literal], {clear_env:true,timeout:2,max_output:1024})
+  check($r.ok and $r.stdout == $literal, "native argv never invokes a shell")
+  $r = run_argv(["/usr/bin/sleep", "2"], {clear_env:true,timeout:0.1,max_output:1024})
+  check($r.timed_out, "native process deadline enforced")
+  $wake = read_file($repo .. "/services/toolsd/scripts/toolsd.mix")
+  $wake = replace(replace(replace($wake, "on toolsd.wake", "function fixture_wake()"), "run_argv(", "fixture_start("), "reply(", "fixture_reply(")
+  $wake = read_file(dirname(script_path()) .. "/wake_fixture.mix") .. "\n" .. $wake .. '\nfixture_wake()\nif $starts != 1 then raise("TEST", "wake did not start drain") end\nprint("PASS wake starts only fixed drain, ignoring tool/target arguments")\n'
+  write_file($tmp .. "/wake.mix", replace($wake, '\n', "
+"))
+  $r = run_argv([$mix, $tmp .. "/wake.mix"], {clear_env:true, timeout:10})
+  check($r.ok, "wake runtime: " .. $r.stdout .. $r.stderr)
+  $layout = require("../../../share/layout/files.mix")
+  $roots = {prefix:"/srv/fixture",lib:"/srv/fixture/lib",etc:"/srv/fixture/etc",var:"/srv/fixture/var",run:"/srv/fixture/run",share:"/srv/fixture/share",cache:"/srv/fixture/cache"}
+  $layout.bundle($repo .. "/share/layout", $tmp .. "/bundle")
+  $plan = $layout.plan($tmp .. "/bundle", $roots)
+  $ours = filter($plan, fn($e) = contains($e.path, "/share/toolsd/units/"))
+  check(len($ours) == 6, "all six toolsd templates bundled and rendered")
+  for $e in $ours
+    check(not contains($e.text, "@{") and not contains($e.text, "/etc/mixos") and not contains($e.text, "=/run/toolsd"), "resolved roots " .. basename($e.path))
+    if ends_with($e.path, "/toolsd.service") then
+      check(contains($e.text, "MIX_NODED_URL=unix:///srv/fixture/run/noded/bus.sock") and not contains($e.text, "LoadCredential="), "wake socket and credential-free identity")
+    elif ends_with($e.path, "/toolsd-drain.service") then
+      check(contains($e.text, "LoadCredential=tools_secret:/srv/fixture/etc/toolsd/secret") and contains($e.text, "ReadWritePaths=/srv/fixture/run/toolsd"), "drain credential and lock roots")
+    elif ends_with($e.path, ".timer") then
+      check(contains($e.text, "OnUnitInactiveSec=5min") and contains($e.text, "OnBootSec=2min"), "five minute backstop")
+    end
+  end
+finally
+  remove_dir($tmp)
+end

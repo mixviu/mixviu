@@ -88,10 +88,11 @@ for $f in ["LICENSE-APACHE", "LICENSE-MIT", "NOTICE"] place($stage, $f, "share/m
 for $f in tracked("share/scenes") place($stage, $f, $f) end
 for $f in tracked("engines/viud/scripts") place($stage, $f, "share/viud/scripts/" .. substr($f, len("engines/viud/scripts/"))) end
 -- Mix services: their scripts install at <prefix>/lib/<service>/.
-for $svc in ["clipd", "notifyd", "exportd", "dlnad", "agentd", "peersd", "releasesd", "daylight"]
+for $svc in ["clipd", "notifyd", "exportd", "dlnad", "agentd", "peersd", "releasesd", "daylight", "toolsd"]
   $base = "services/" .. $svc .. "/scripts/"
   for $f in tracked($base) place($stage, $f, "lib/" .. $svc .. "/" .. substr($f, len($base))) end
 end
+place($stage, "services/webd/vhosts/apps/tools_registry.mix", "lib/toolsd/lib/tools_registry.mix")
 -- Every unit template the engines, their personalities, the Mix services and
 -- the apps carry (desk-specific drop-ins and session targets are the desk image's).
 -- sysusers/tmpfiles snippets are prefixed with their owner when not already.

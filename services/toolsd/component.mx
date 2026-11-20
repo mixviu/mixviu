@@ -1,0 +1,2 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+{schema:1, name:"toolsd", component:"toolsd", kind:"service", layer:"core", contract:"public", version:"0.1.0", program:"scripts/toolsd.mix"}
