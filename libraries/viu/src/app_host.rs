@@ -968,6 +968,11 @@ impl Host {
                 probe.callbacks.push(done.elapsed.as_micros() as u64);
                 if done.command == "viu.tick" {
                     if let Some(model) = &done.model {
+                        if probe.profile_scene {
+                            let dir = std::path::Path::new("target/workshop-model-captures");
+                            std::fs::create_dir_all(dir).unwrap();
+                            std::fs::write(dir.join(format!("{:06}.json", done.sequence)), serde_json::to_vec(model).unwrap()).unwrap();
+                        }
                         probe
                             .tick_model_bytes
                             .push(serde_json::to_vec(model).expect("tick model JSON").len() as u64);
@@ -976,7 +981,7 @@ impl Host {
                 for line in done
                     .stdout
                     .lines()
-                    .filter(|l| l.starts_with("WORKSHOP_BUILD "))
+                    .filter(|l| l.starts_with("WORKSHOP_BUILD ") || l.starts_with("WORKSHOP_DELTA "))
                 {
                     eprintln!("WORKSHOP_BUILD_CALLBACK {} {}", done.command, line);
                 }

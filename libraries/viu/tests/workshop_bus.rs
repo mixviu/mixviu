@@ -11,7 +11,7 @@ use viu::{app_host::test_support::Harness, bundle::Bundle};
 
 // The CBC diagnostic recipe enables this only for a measured control run.
 const PROFILE_INFO_HELPERS: bool = false;
-const PROFILE_TICK: bool = false;
+const PROFILE_TICK: bool = true;
 // Fable ruling D: this binary runs alone. Post-startup round-5 standalone
 // max pump was 387,676 us; 800,000 us gives just over 2x margin. Tick models
 // reached 2,398,986 bytes; 4 MiB gives 75% margin. These numeric guards are
@@ -29,12 +29,22 @@ fn profile_tick(bundle: &mut Bundle) {
     let replacement = r#"  $profile_value=$app_mode.project($projection,"workshop",$s.theme_choice)
   $profile_cpu=(viu_test_cpu()-$pc)*1000000;$profile_wall=(monotonic()-$pw)*1000000
   $profile_keys=[]
-  for $profile_key in keys($profile_value) if not deep_eq($profile_previous[$profile_key],$profile_value[$profile_key]) then push($profile_keys,$profile_key) end end
+  $profile_sizes={};$profile_delta=0
+  for $profile_key in keys($profile_value)
+    $profile_size=byte_length(json_encode($profile_value[$profile_key]));$profile_sizes[$profile_key]=$profile_size
+    if not deep_eq($profile_previous[$profile_key],$profile_value[$profile_key]) then push($profile_keys,$profile_key);$profile_delta=$profile_delta+$profile_size end
+  end
   print("WORKSHOP_BUILD "..json_encode({selected:$s.row_key,cpu_us:$profile_cpu,wall_us:$profile_wall,bytes:byte_length(json_encode($profile_value)),same:deep_eq($profile_previous,$profile_value),changed:$profile_keys}))
+  print("WORKSHOP_DELTA "..json_encode({phase:if $s.discovery!=nil then "discovery" else "steady" end,bytes:$profile_delta,sizes:$profile_sizes}))
   $profile_previous=$profile_value
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$profile_value}"#;
     assert!(bundle.program.source.contains(needle));
     bundle.program.source = bundle.program.source.replace(needle, replacement);
+    let needle = "  $state=$controller.notice($state,$event)";
+    assert!(bundle.program.source.contains(needle));
+    bundle.program.source = bundle.program.source.replace(needle, r#"  $nc=viu_test_cpu();$nw=monotonic()
+  $state=$controller.notice($state,$event)
+  print("WORKSHOP_BUILD "..json_encode({notice:$event.args.command,path:$event.args.args.path,payload_bytes:byte_length($event.body),cpu_us:(viu_test_cpu()-$nc)*1000000,wall_us:(monotonic()-$nw)*1000000}))"#);
 }
 
 fn profile_info_helpers(bundle: &mut Bundle) -> tempfile::NamedTempFile {
@@ -94,6 +104,24 @@ end"#;
         "info handler probe must be installed"
     );
     bundle.program.source = bundle.program.source.replacen(before, after, 1);
+    file
+}
+
+fn profile_notice(bundle: &mut Bundle) -> tempfile::NamedTempFile {
+    let dir = bundle.program.path.parent().unwrap();
+    let mut source = std::fs::read_to_string(dir.join("controller.mix")).unwrap();
+    let start = source.find("fn notice(").unwrap();
+    let end = source[start..].find("fn follow_up(").unwrap() + start;
+    let mut notice = source[start..end].to_owned();
+    for call in ["$discovery.begin($s,nil)", "$agents.refresh($s)", "$macros.enqueue($s,\"catalogues\",{},nil)", "$mesh_flow.refresh($s)", "$mesh_flow.ensure($s)", "$agents.refresh_node($s,$agents.local_name($s))", "$mesh_flow.observed($s,$event)"] {
+        assert!(notice.contains(call));
+        notice = notice.replace(&format!("$s={call}"), &format!(r#"$nc=viu_test_cpu();$nw=monotonic();$s={call};print("WORKSHOP_BUILD "..json_encode({{helper:{name},cpu_us:(viu_test_cpu()-$nc)*1000000,wall_us:(monotonic()-$nw)*1000000}}))"#, name=serde_json::to_string(call).unwrap()));
+    }
+    source.replace_range(start..end, &notice);
+    let file = tempfile::Builder::new().prefix(".workshop-notice-profile-").suffix(".mix").tempfile_in(dir).unwrap();
+    std::fs::write(file.path(), source).unwrap();
+    let path = serde_json::to_string(file.path().to_str().unwrap()).unwrap();
+    bundle.program.source = bundle.program.source.replace("require(\"controller.mix\")", &format!("require({path})"));
     file
 }
 
@@ -556,6 +584,7 @@ fn workshop_answers_during_discovery() {
         bundle.launch = json!({"headless":true});
         bundle.manifest.saved_version = None;
         let _profile_module = PROFILE_INFO_HELPERS.then(|| profile_info_helpers(&mut bundle));
+        let _notice_module = PROFILE_TICK.then(|| profile_notice(&mut bundle));
         if PROFILE_TICK {
             profile_tick(&mut bundle);
         }
