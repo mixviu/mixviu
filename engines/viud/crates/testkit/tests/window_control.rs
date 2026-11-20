@@ -52,7 +52,9 @@ fn hide_during_visual_run_holds_the_presented_sample() {
     // the placement cache still contains its original identity transform.
     let mut drawn_base = base;
     drawn_base.scale.center = true;
-    window.user_data().insert_if_missing(|| std::sync::Mutex::new(drawn_base));
+    window
+        .user_data()
+        .insert_if_missing(|| std::sync::Mutex::new(drawn_base));
     let started = std::time::Instant::now();
     let mut preset = motion::presets()
         .into_iter()
