@@ -171,10 +171,6 @@ impl Pattern {
         Self::create(stream, name, fullscreen, false, (200, 160))
     }
 
-    pub fn decorated(stream: UnixStream, name: &str) -> Self {
-        Self::create(stream, name, false, true, (200, 160))
-    }
-
     pub fn sized(stream: UnixStream, name: &str, size: (i32, i32), decorated: bool) -> Self {
         Self::create(stream, name, false, decorated, size)
     }
