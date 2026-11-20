@@ -53,7 +53,7 @@ slide("before","MixViu Adventures · before","Every night, a desk makes the take
 slide("recorder","The new recorder · PR #162","The compositor records itself, as .vfl",2,[
  entrance(merge($d.card("A TAKE IS A DIRECTORY: A LOSSLESS FRAME LOG, PURE RUST, NO FFMPEG",[record_strip()],"mut"),{fill:true}),0,0.5),
  entrance(merge($d.row([
-   merge($d.card("THIS VIDEO'S FIRST LIVE TAKE",[$d.row([slide_stat("1,507","frames in 50 s","text"),slide_stat("1,477","repeats","ok"),slide_stat("0","dropped","ok")],28)],"ok"),{grow:1}),
+   merge($d.card("THIS VIDEO'S FIRST LIVE TAKE, DESK7",[$d.row([slide_stat("1,507","frames in 50 s","text"),slide_stat("1,477","repeats","ok"),slide_stat("0","dropped","ok")],28)],"ok"),{grow:1}),
    merge($d.card("ON DISK",[slide_stat("1.97 MB","the whole take","ok"),$d.deck_text("Raw pixels for the same frames: about 19 GB (1,507 × 2250 × 1400 × 4 bytes).","caption","mut")],"mut"),{grow:1})
  ],40),{fill:true,align:"stretch"}),1)])
 slide("reader","Trouble 1 · nothing could read it","A take nobody could open",3,[
