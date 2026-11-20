@@ -1,0 +1,86 @@
+$d=require("../../gallery/deck.mix")
+$slides=[]
+fn entrance($node,$b,$delay=0,$anim="up")
+  return {node:$node,b:$b,delay:$delay,anim:$anim}
+end
+fn slide($id,$kicker,$title,$steps,$items)
+  $nodes={};$build={}
+  $children=[$d.kicker(upper($kicker),[]),merge($d.deck_text($title,"headline","text"),{size:56,bold:true})]
+  for $item in $items push($children,$item.node) end
+  $chapters=["before","recorder","reader",".mkv","privacy","turning point","live","loose ends","now","owed"]
+  $active={mkv:".mkv",turning:"turning point",watch:"live",found:"loose ends"}[$id] ?? $id
+  push($children,{widget:"column",children:[],grow:1})
+  if $id!="closing" then push($children,$d.chapter_rail($chapters,$active,"MIXVIU ADVENTURES · THE DESK RECORDS ITSELF")) end
+  $tree=merge($d.column($children,16),{background:"#0d1117",min_width:1600,height:836,padding_left:96,padding_right:96,padding_top:64})
+  $nodes=$d.flatten($tree,"root")
+  $build["root.0"]={b:0,anim:"left"};$build["root.1"]={b:0,delay:0.15,anim:"left"}
+  $i=2
+  for $item in $items $build["root."..to_string($i)]={b:$item.b,delay:$item.delay,anim:$item.anim};$i=$i+1 end
+  push($slides,{id:$id,steps:$steps,scene:$nodes,build:$build})
+end
+fn card($title,$body,$tone="text")
+  return merge($d.card(upper($title),[$d.deck_text($body,"caption","text")],$tone),{grow:1,fill:true})
+end
+-- A record-strip compound widget, composed from the 3.1 row/column/text ports.
+-- Counts remain settled constants until deterministic count-up is available.
+fn record_strip()
+  $cells=[]
+  for $i=0 to 23
+    $key=$i==0;$delta=contains([4,10,18],$i)
+    push($cells,{widget:"column",children:[],height:54,grow:if $key then 3 elif $delta then 2 else 1 end,radius:4,background:if $key then "#8b3035" elif $delta then "#75602c" else "#273449" end,outline:if $key then "#3cc8d8" elif $delta then "#f0b45a" else "#26303d" end,outline_width:1})
+  end
+  $legend=[]
+  for $x in [{label:"key frame: the whole picture",colour:"#8b3035"},{label:"delta: only the changed rectangles",colour:"#75602c"},{label:"repeat: nothing changed",colour:"#273449"}]
+    push($legend,$d.row([{widget:"column",children:[],height:18,min_width:18,radius:3,background:$x.colour},merge($d.deck_text($x.label,"caption","mut"),{size:22})],10))
+  end
+  return merge($d.column([merge($d.row($cells,4),{fill:true}),$d.row($legend,24)],10),{fill:true})
+end
+fn slide_stat($value,$caption,$role)
+  $node=$d.deck_stat($value,upper($caption),$role,false)
+  $node.children[0].size=60
+  return $node
+end
+$sting=$d.flatten(merge($d.brand("MixViu","Adventures · The desk records itself","20 November 2026"),{min_width:1600,height:708,padding_left:96,padding_top:72,padding_bottom:120,background:"#0d1117"}),"root")
+push($slides,{id:"sting",kind:"sting",steps:1,scene:$sting,build:{"root.0":{b:0,anim:"fade"},"root.1":{b:0,delay:0.5,anim:"up"},"root.2":{b:0,delay:1.2,anim:"up"}}})
+slide("before","MixViu Adventures · before","Every night, a desk makes the takes",2,[
+ entrance($d.card("THE NIGHTLY EPISODE'S TUTORIAL TAKES",[$d.flow([{label:"script",text:"tutorial steps"},{label:"over the Bus",text:"apps on a desk",role:"acc"},{label:"capture",text:"the screen"},{label:"media builder",text:"narrated video",role:"ok"}])],"text"),0,0.5),
+ entrance(merge($d.row([card("But the desks carry no ffmpeg","By design: no ffmpeg and no C or C++ tools on the desks. The first recorder design wrote through an ffmpeg subprocess, so on a desk it could not record.","bad"),merge($d.card("SO EVERY TAKE FELL BACK",[slide_stat("still screenshots","one per step, held while the narration plays","warn")],"mut"),{grow:1,fill:true})],40),{fill:true,align:"stretch"}),1)])
+slide("recorder","The new recorder · PR #162","The compositor records itself, as .vfl",2,[
+ entrance(merge($d.card("A TAKE IS A DIRECTORY: A LOSSLESS FRAME LOG, PURE RUST, NO FFMPEG",[record_strip()],"mut"),{fill:true}),0,0.5),
+ entrance(merge($d.row([
+   merge($d.card("THIS VIDEO'S FIRST LIVE TAKE",[$d.row([slide_stat("1,507","frames in 50 s","text"),slide_stat("1,477","repeats","ok"),slide_stat("0","dropped","ok")],28)],"ok"),{grow:1,fill:true}),
+   merge($d.card("ON DISK",[slide_stat("1.97 MB","the whole take","ok"),$d.deck_text("Raw pixels for the same frames: about 19 GB (1,507 × 2250 × 1400 × 4 bytes).","caption","mut")],"mut"),{grow:1,fill:true})
+ ],40),{fill:true,align:"stretch"}),1)])
+slide("reader","Trouble 1 · nothing could read it","A take nobody could open",3,[
+ entrance(card("Before the reader","The writer shipped first. No reader, no verify, no export. The pipeline had no way to turn a take into video.","bad"),0,0.5),
+ entrance($d.code([[{text:"mixd vfl verify  TAKE",role:"function"}],[{text:"mixd vfl markers TAKE",role:"function"}],[{text:"mixd vfl export  TAKE --format bgra|y4m",role:"function"}]]),1),
+ entrance(card("PR #191 · measured, then merged","450–842 export frames per second. Synthetic 60 s 4K30 takes; exporter only, peak 65 MiB. Merged 19 Nov, on the desks that evening.","ok"),2)])
+slide("mkv","Trouble 2 · the wrong file name","The pipeline still asked for capture.mkv",2,[
+ entrance(card("Every night, the recorder said no","comp.record.start rc 10: expected absolute path to a VFL directory; path without .vfl extension. Auto mode fell back to stills.","bad"),0,0.5),
+ entrance(card("Quietly","Fallback kept the episode working, so nothing looked broken. Every night since the recorder shipped. 19 November: 4 of 4 takes fell back to stills.","warn"),1)])
+slide("privacy","Trouble 3 · privacy","A whole-screen take shows everything",2,[
+ entrance(card("PR #193 · listed windows","Record only the named windows, over the wallpaper. Nothing else on the desk reaches the take.","acc"),0,0.5),
+ entrance(card("First security review: FAIL","An unlisted app's cursor could reach the take; listed windows not fenced to the recorded output. Fixed in round 2; round 3 reviews found no defects.","bad"),1),
+ entrance(card("Historical status at authoring","At the time of writing, #193 was open and waiting for one more review."),1,8.5)])
+slide("turning","The turning point · staging","One trial take, end to end",2,[
+ entrance(card("Recorded on the staging desk","197 frames at 30 fps; 0 dropped; about 174 KB. Verify: ok, complete, 3 markers. Export: exactly 197 × 2250 × 1400 × 4 bytes.","ok"),0,0.5),
+ entrance($d.flow([{label:"mixd vfl export",text:"raw frames"},{label:"pipe",text:"ffmpeg"},{label:"mp4",text:"197 frames, 6.567 s",role:"ok"}]),1,0.4),
+ entrance(card("17–20 November","Recorder (#162), then reader (#191), then gold and a trial take. The pipeline switched to .vfl: real assembly, a 4K take in 1.2 s. First nightly with recorded takes was still ahead."),1,5)])
+slide("watch","Live · staging","The next two minutes recorded themselves",1,[
+ entrance($d.flow([{label:"Bus",text:"Term talks to compositor",role:"acc"},{label:"compositor",text:"records Term as .vfl",role:"acc"},{label:"media builder",text:"verify, export, assemble"},{label:"this video",text:"no screenshots",role:"ok"}]),0,1),
+ entrance(card("The same scripts the nightly episode uses","run.mix --mode record, then assemble.mix."),0,0.5)])
+slide("found","Loose ends","One found today, two known",2,[
+ entrance(card("Found making this video","record_busy: one take at a time. Older tutorials start their own recording inside a recorded take and are refused. New tutorials inspect the running take.","warn"),0,0.5),
+ entrance(card("A closed pipe","mixd vfl export exits 1 when the encoder stops reading early. Assembly accepts exactly that case for now.","bad"),1),
+ entrance(card("Chrome","These source slides were rendered by headless Chrome. A deck app recorded live is planned to replace it.","acc"),1,6)])
+slide("now","Outcome · 20 November","Where it stands",2,[
+ entrance(card("Inside the take","Live counters read from inside the take.","acc"),0,0.5),
+ entrance(card("Better","Takes are real video again, recorded by the compositor. Still no ffmpeg on the desk. Every take is verified before use.","ok"),0,1.5),
+ entrance(card("The cost, and what is unknown","Tonight's nightly was the first, with no record of it yet. The media builder still encodes with ffmpeg. Recorder cost on a desk was not benched.","bad"),1)])
+slide("owed","Still owed","Next: Chrome leaves the pipeline",1,[
+ entrance($d.bullets(["Merge listed windows (#193)","Quiet exit on a closed pipe","Bench the recorder on a desk","Motion and captions in the compositor","A deck app, recorded live"],"acc"),0,1)])
+slide("closing","MixViu Adventures","MixViu",1,[
+ entrance(card("The desk records itself","Recorded by the compositor, read back by mixd."),0,1.2),
+ entrance($d.deck_text("github.com/mixviu/mixviu","caption","acc"),0,2),
+ entrance($d.deck_text("MixViu Adventures","caption","warn"),0,0.5)])
+write_file(path_join(dirname(script_path()),"vfl-self-recording.json"),json_encode({schema:"deck.v1",slides:$slides},true))

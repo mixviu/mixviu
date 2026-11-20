@@ -35,7 +35,7 @@ fn timing($raw,$where,$steps)
   $t={b:number($raw.b ?? 0,$where..".b",0,$steps-1,true),delay:number($raw.delay ?? 0,$where..".delay",0,60),stagger:number($raw.stagger ?? 0,$where..".stagger",0,60),anim:$raw.anim ?? "fade",child_anim:$raw.child_anim ?? "fade",until:nil}
   if $raw.until!=nil then $t.until=number($raw.until,$where..".until",$t.b,$steps-1,true) end
   for $key in ["anim","child_anim"]
-    if not contains(["fade","up","down","left","right"],$t[$key]) then fault("DECK_MOTION",$where.."."..$key,"unsupported entrance; 3.1b effects must be visibly stubbed") end
+    if not contains(["fade","up","down","left","right"],$t[$key]) then fault("DECK_MOTION",$where.."."..$key,"unsupported entrance; deferred effects must be documented outside slide artwork") end
   end
   return $t
 end

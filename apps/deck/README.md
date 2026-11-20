@@ -108,3 +108,25 @@ It is a reference adaptation, with visual differences from the HTML original.
 time sampling. `libraries/viu/tests/deck.rs` loads the real Mix behaviour and
 paints every reference step headlessly. Its explicit offscreen evidence test
 saves two 4K PNGs. Rust checks run on CBC only.
+
+The reference source is `examples/author.mix`; run it with Mix to regenerate
+`vfl-self-recording.json`. It uses the 3.1 composition constructors from
+`apps/gallery/deck.mix`, including cards, stats and chapter rail/footer, and
+a record-strip compound composition of cells and a legend. No deck format
+extension is needed. Unsupported shot/callout and extra motion are omitted
+from the artwork and listed in the PR, never labelled on a slide.
+
+Review captures use scene time **10 seconds**, beats **[0,3,15]**, for both
+`before` and `recorder`. Chrome uses animated seeking, not still build mode.
+HTML count-up has settled; the reference uses settled numeric values.
+
+Gallery-reference API audit: this PR changes `app_host` presentation handling,
+`bundle::Manifest.fullscreen`, and adds two `runtime::Local` command arms
+(`scene.validate`, `motion.seek`). The retired standalone Gallery-reference
+uses none of these: it constructs its own eframe host, imports only
+`runtime::{Program,Runtime}`, `view::SceneView`, widgets and icons, and sends
+neither new local command. Those imported APIs and implementations are
+unchanged against main; no changed file is path-included by that app.
+Its stale manifest therefore needs no dependent tests for this scoped change.
+It is not reactivated or brought into the workspace. The owning lib-viu and
+viu test targets, including the runtime tests, remain in the CBC scope.

@@ -30,7 +30,6 @@
           ],
           "gap": 28,
           "height": 708,
-          "max_width": 1600,
           "min_width": 1600,
           "padding_bottom": 120,
           "padding_left": 96,
@@ -41,22 +40,19 @@
           "color": "#3cc8d8",
           "size": 150,
           "text": "MixViu",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.1": {
           "color": "#8d99a8",
           "size": 40,
           "text": "Adventures · The desk records itself",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2": {
           "color": "#e8edf3",
           "size": 30,
           "text": "20 November 2026",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         }
       },
       "steps": 1
@@ -91,16 +87,16 @@
             "root.0",
             "root.1",
             "root.2",
-            "root.3"
+            "root.3",
+            "root.4",
+            "root.5"
           ],
-          "gap": 20,
-          "height": 708,
-          "max_width": 1600,
+          "gap": 16,
+          "height": 836,
           "min_width": 1600,
-          "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
-          "padding_top": 72,
+          "padding_top": 64,
           "widget": "column"
         },
         "root.0": {
@@ -114,32 +110,15 @@
         "root.0.0": {
           "color": "#8d99a8",
           "size": 26,
-          "text": "MixViu Adventures · before",
-          "widget": "text",
-          "wrap": true
+          "text": "MIXVIU ADVENTURES · BEFORE",
+          "widget": "text"
         },
         "root.1": {
-          "children": [
-            "root.1.0",
-            "root.1.1"
-          ],
-          "gap": 10,
-          "widget": "column"
-        },
-        "root.1.0": {
           "bold": true,
           "color": "#e8edf3",
-          "size": 68,
+          "size": 56,
           "text": "Every night, a desk makes the takes",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.1.1": {
-          "color": "#8d99a8",
-          "size": 30,
-          "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2": {
           "background": "#161d27",
@@ -160,9 +139,8 @@
         "root.2.0": {
           "color": "#e8edf3",
           "size": 24,
-          "text": "The nightly episode's tutorial takes",
-          "widget": "text",
-          "wrap": true
+          "text": "THE NIGHTLY EPISODE'S TUTORIAL TAKES",
+          "widget": "text"
         },
         "root.2.1": {
           "align": "center",
@@ -185,7 +163,6 @@
             "root.2.1.0.1"
           ],
           "gap": 6,
-          "grow": 1,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -199,15 +176,13 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "script",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.0.1": {
           "color": "#e8edf3",
           "size": 28,
           "text": "tutorial steps",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.1": {
           "children": [
@@ -215,22 +190,19 @@
             "root.2.1.1.1"
           ],
           "gap": 0,
-          "grow": 1,
           "widget": "column"
         },
         "root.2.1.1.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.1.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.2": {
           "background": "#121821",
@@ -239,7 +211,6 @@
             "root.2.1.2.1"
           ],
           "gap": 6,
-          "grow": 1,
           "outline": "#3cc8d8",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -253,15 +224,13 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "over the Bus",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.2.1": {
           "color": "#3cc8d8",
           "size": 28,
           "text": "apps on a desk",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.3": {
           "children": [
@@ -269,22 +238,19 @@
             "root.2.1.3.1"
           ],
           "gap": 0,
-          "grow": 1,
           "widget": "column"
         },
         "root.2.1.3.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.3.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.4": {
           "background": "#121821",
@@ -293,7 +259,6 @@
             "root.2.1.4.1"
           ],
           "gap": 6,
-          "grow": 1,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -307,15 +272,13 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "capture",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.4.1": {
           "color": "#e8edf3",
           "size": 28,
           "text": "the screen",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.5": {
           "children": [
@@ -323,22 +286,19 @@
             "root.2.1.5.1"
           ],
           "gap": 0,
-          "grow": 1,
           "widget": "column"
         },
         "root.2.1.5.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.5.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.6": {
           "background": "#121821",
@@ -347,7 +307,6 @@
             "root.2.1.6.1"
           ],
           "gap": 6,
-          "grow": 1,
           "outline": "#5ad18a",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -361,23 +320,22 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "media builder",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.6.1": {
           "color": "#5ad18a",
           "size": 28,
           "text": "narrated video",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3": {
-          "align": "center",
+          "align": "stretch",
           "children": [
             "root.3.0",
             "root.3.1"
           ],
-          "gap": 24,
+          "fill": true,
+          "gap": 40,
           "widget": "row"
         },
         "root.3.0": {
@@ -386,6 +344,7 @@
             "root.3.0.0",
             "root.3.0.1"
           ],
+          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#5a2b2b",
@@ -400,16 +359,14 @@
         "root.3.0.0": {
           "color": "#f2706b",
           "size": 24,
-          "text": "But the desks carry no ffmpeg",
-          "widget": "text",
-          "wrap": true
+          "text": "BUT THE DESKS CARRY NO FFMPEG",
+          "widget": "text"
         },
         "root.3.0.1": {
-          "color": "#f2706b",
+          "color": "#e8edf3",
           "size": 26,
-          "text": "By design: no ffmpeg and no C or C++ tools on the desks. The first recorder wrote through an ffmpeg subprocess.",
-          "widget": "text",
-          "wrap": true
+          "text": "By design: no ffmpeg and no C or C++ tools on the desks. The first recorder design wrote through an ffmpeg subprocess, so on a desk it could not record.",
+          "widget": "text"
         },
         "root.3.1": {
           "background": "#161d27",
@@ -417,6 +374,7 @@
             "root.3.1.0",
             "root.3.1.1"
           ],
+          "fill": true,
           "gap": 16,
           "grow": 1,
           "outline": "#26303d",
@@ -429,18 +387,299 @@
           "widget": "column"
         },
         "root.3.1.0": {
-          "color": "#f0b45a",
+          "color": "#8d99a8",
           "size": 24,
-          "text": "So every take fell back",
-          "widget": "text",
-          "wrap": true
+          "text": "SO EVERY TAKE FELL BACK",
+          "widget": "text"
         },
         "root.3.1.1": {
+          "children": [
+            "root.3.1.1.0",
+            "root.3.1.1.1"
+          ],
+          "gap": 0,
+          "widget": "column"
+        },
+        "root.3.1.1.0": {
           "color": "#f0b45a",
-          "size": 26,
-          "text": "Still screenshots: one per step, held while the narration plays.",
-          "widget": "text",
-          "wrap": true
+          "size": 60,
+          "text": "still screenshots",
+          "widget": "text"
+        },
+        "root.3.1.1.1": {
+          "color": "#8d99a8",
+          "size": 22,
+          "text": "ONE PER STEP, HELD WHILE THE NARRATION PLAYS",
+          "widget": "text"
+        },
+        "root.4": {
+          "children": [],
+          "grow": 1,
+          "widget": "column"
+        },
+        "root.5": {
+          "align": "center",
+          "children": [
+            "root.5.0",
+            "root.5.1"
+          ],
+          "fill": true,
+          "gap": 0,
+          "justify": "between",
+          "widget": "row"
+        },
+        "root.5.0": {
+          "align": "center",
+          "children": [
+            "root.5.0.0",
+            "root.5.0.1",
+            "root.5.0.2",
+            "root.5.0.3",
+            "root.5.0.4",
+            "root.5.0.5",
+            "root.5.0.6",
+            "root.5.0.7",
+            "root.5.0.8",
+            "root.5.0.9"
+          ],
+          "gap": 10,
+          "widget": "row"
+        },
+        "root.5.0.0": {
+          "background": "#3cc8d8",
+          "children": [
+            "root.5.0.0.0"
+          ],
+          "gap": 0,
+          "outline": "#3cc8d8",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.0.0": {
+          "bold": true,
+          "color": "#0d1117",
+          "mono": true,
+          "size": 19,
+          "text": "before",
+          "widget": "text"
+        },
+        "root.5.0.1": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.1.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.1.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "recorder",
+          "widget": "text"
+        },
+        "root.5.0.2": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.2.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.2.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "reader",
+          "widget": "text"
+        },
+        "root.5.0.3": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.3.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.3.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": ".mkv",
+          "widget": "text"
+        },
+        "root.5.0.4": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.4.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.4.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "privacy",
+          "widget": "text"
+        },
+        "root.5.0.5": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.5.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.5.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "turning point",
+          "widget": "text"
+        },
+        "root.5.0.6": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.6.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.6.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "live",
+          "widget": "text"
+        },
+        "root.5.0.7": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.7.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.7.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "loose ends",
+          "widget": "text"
+        },
+        "root.5.0.8": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.8.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.8.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "now",
+          "widget": "text"
+        },
+        "root.5.0.9": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.9.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.9.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "owed",
+          "widget": "text"
+        },
+        "root.5.1": {
+          "color": "#8d99a8",
+          "size": 16,
+          "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "widget": "text"
         }
       },
       "steps": 2
@@ -465,11 +704,6 @@
           "anim": "up",
           "b": 1,
           "delay": 0
-        },
-        "root.4": {
-          "anim": "right",
-          "b": 1,
-          "delay": 6
         }
       },
       "id": "recorder",
@@ -481,16 +715,15 @@
             "root.1",
             "root.2",
             "root.3",
-            "root.4"
+            "root.4",
+            "root.5"
           ],
-          "gap": 20,
-          "height": 708,
-          "max_width": 1600,
+          "gap": 16,
+          "height": 836,
           "min_width": 1600,
-          "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
-          "padding_top": 72,
+          "padding_top": 64,
           "widget": "column"
         },
         "root.0": {
@@ -504,32 +737,15 @@
         "root.0.0": {
           "color": "#8d99a8",
           "size": 26,
-          "text": "The new recorder · PR #162",
-          "widget": "text",
-          "wrap": true
+          "text": "THE NEW RECORDER · PR #162",
+          "widget": "text"
         },
         "root.1": {
-          "children": [
-            "root.1.0",
-            "root.1.1"
-          ],
-          "gap": 10,
-          "widget": "column"
-        },
-        "root.1.0": {
           "bold": true,
           "color": "#e8edf3",
-          "size": 68,
+          "size": 56,
           "text": "The compositor records itself, as .vfl",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.1.1": {
-          "color": "#8d99a8",
-          "size": 30,
-          "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2": {
           "background": "#161d27",
@@ -537,6 +753,7 @@
             "root.2.0",
             "root.2.1"
           ],
+          "fill": true,
           "gap": 16,
           "outline": "#26303d",
           "outline_width": 1,
@@ -548,105 +765,390 @@
           "widget": "column"
         },
         "root.2.0": {
-          "color": "#e8edf3",
+          "color": "#8d99a8",
           "size": 24,
-          "text": "A take is a directory",
-          "widget": "text",
-          "wrap": true
+          "text": "A TAKE IS A DIRECTORY: A LOSSLESS FRAME LOG, PURE RUST, NO FFMPEG",
+          "widget": "text"
         },
         "root.2.1": {
-          "color": "#e8edf3",
-          "size": 26,
-          "text": "A lossless frame log, pure Rust, no ffmpeg. Key frame: the whole picture. Delta: changed rectangles. Repeat: nothing changed.",
-          "widget": "text",
-          "wrap": true
+          "children": [
+            "root.2.1.0",
+            "root.2.1.1"
+          ],
+          "fill": true,
+          "gap": 10,
+          "widget": "column"
         },
-        "root.3": {
+        "root.2.1.0": {
           "align": "center",
           "children": [
-            "root.3.0",
-            "root.3.1",
-            "root.3.2"
+            "root.2.1.0.0",
+            "root.2.1.0.1",
+            "root.2.1.0.2",
+            "root.2.1.0.3",
+            "root.2.1.0.4",
+            "root.2.1.0.5",
+            "root.2.1.0.6",
+            "root.2.1.0.7",
+            "root.2.1.0.8",
+            "root.2.1.0.9",
+            "root.2.1.0.10",
+            "root.2.1.0.11",
+            "root.2.1.0.12",
+            "root.2.1.0.13",
+            "root.2.1.0.14",
+            "root.2.1.0.15",
+            "root.2.1.0.16",
+            "root.2.1.0.17",
+            "root.2.1.0.18",
+            "root.2.1.0.19",
+            "root.2.1.0.20",
+            "root.2.1.0.21",
+            "root.2.1.0.22",
+            "root.2.1.0.23"
           ],
-          "gap": 28,
+          "fill": true,
+          "gap": 4,
+          "widget": "row"
+        },
+        "root.2.1.0.0": {
+          "background": "#8b3035",
+          "children": [],
+          "grow": 3,
+          "height": 54,
+          "outline": "#3cc8d8",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.1": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.10": {
+          "background": "#75602c",
+          "children": [],
+          "grow": 2,
+          "height": 54,
+          "outline": "#f0b45a",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.11": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.12": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.13": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.14": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.15": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.16": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.17": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.18": {
+          "background": "#75602c",
+          "children": [],
+          "grow": 2,
+          "height": 54,
+          "outline": "#f0b45a",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.19": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.2": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.20": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.21": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.22": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.23": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.3": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.4": {
+          "background": "#75602c",
+          "children": [],
+          "grow": 2,
+          "height": 54,
+          "outline": "#f0b45a",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.5": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.6": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.7": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.8": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.0.9": {
+          "background": "#273449",
+          "children": [],
+          "grow": 1,
+          "height": 54,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "radius": 4,
+          "widget": "column"
+        },
+        "root.2.1.1": {
+          "align": "center",
+          "children": [
+            "root.2.1.1.0",
+            "root.2.1.1.1",
+            "root.2.1.1.2"
+          ],
+          "gap": 24,
+          "widget": "row"
+        },
+        "root.2.1.1.0": {
+          "align": "center",
+          "children": [
+            "root.2.1.1.0.0",
+            "root.2.1.1.0.1"
+          ],
+          "gap": 10,
+          "widget": "row"
+        },
+        "root.2.1.1.0.0": {
+          "background": "#8b3035",
+          "children": [],
+          "height": 18,
+          "min_width": 18,
+          "radius": 3,
+          "widget": "column"
+        },
+        "root.2.1.1.0.1": {
+          "color": "#8d99a8",
+          "size": 22,
+          "text": "key frame: the whole picture",
+          "widget": "text"
+        },
+        "root.2.1.1.1": {
+          "align": "center",
+          "children": [
+            "root.2.1.1.1.0",
+            "root.2.1.1.1.1"
+          ],
+          "gap": 10,
+          "widget": "row"
+        },
+        "root.2.1.1.1.0": {
+          "background": "#75602c",
+          "children": [],
+          "height": 18,
+          "min_width": 18,
+          "radius": 3,
+          "widget": "column"
+        },
+        "root.2.1.1.1.1": {
+          "color": "#8d99a8",
+          "size": 22,
+          "text": "delta: only the changed rectangles",
+          "widget": "text"
+        },
+        "root.2.1.1.2": {
+          "align": "center",
+          "children": [
+            "root.2.1.1.2.0",
+            "root.2.1.1.2.1"
+          ],
+          "gap": 10,
+          "widget": "row"
+        },
+        "root.2.1.1.2.0": {
+          "background": "#273449",
+          "children": [],
+          "height": 18,
+          "min_width": 18,
+          "radius": 3,
+          "widget": "column"
+        },
+        "root.2.1.1.2.1": {
+          "color": "#8d99a8",
+          "size": 22,
+          "text": "repeat: nothing changed",
+          "widget": "text"
+        },
+        "root.3": {
+          "align": "stretch",
+          "children": [
+            "root.3.0",
+            "root.3.1"
+          ],
+          "fill": true,
+          "gap": 40,
           "widget": "row"
         },
         "root.3.0": {
+          "background": "#161d27",
           "children": [
             "root.3.0.0",
             "root.3.0.1"
           ],
-          "gap": 0,
-          "grow": 1,
-          "widget": "column"
-        },
-        "root.3.0.0": {
-          "color": "#e8edf3",
-          "size": 76,
-          "text": "1507",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.3.0.1": {
-          "color": "#8d99a8",
-          "size": 22,
-          "text": "frames in 50 s",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.3.1": {
-          "children": [
-            "root.3.1.0",
-            "root.3.1.1"
-          ],
-          "gap": 0,
-          "grow": 1,
-          "widget": "column"
-        },
-        "root.3.1.0": {
-          "color": "#5ad18a",
-          "size": 76,
-          "text": "1477",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.3.1.1": {
-          "color": "#8d99a8",
-          "size": 22,
-          "text": "repeats",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.3.2": {
-          "children": [
-            "root.3.2.0",
-            "root.3.2.1"
-          ],
-          "gap": 0,
-          "grow": 1,
-          "widget": "column"
-        },
-        "root.3.2.0": {
-          "color": "#5ad18a",
-          "size": 76,
-          "text": "0",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.3.2.1": {
-          "color": "#8d99a8",
-          "size": 22,
-          "text": "dropped",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.4": {
-          "background": "#161d27",
-          "children": [
-            "root.4.0",
-            "root.4.1"
-          ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#24513a",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -656,19 +1158,401 @@
           "radius": 18,
           "widget": "column"
         },
-        "root.4.0": {
+        "root.3.0.0": {
           "color": "#5ad18a",
           "size": 24,
-          "text": "On disk",
-          "widget": "text",
-          "wrap": true
+          "text": "THIS VIDEO'S FIRST LIVE TAKE",
+          "widget": "text"
         },
-        "root.4.1": {
+        "root.3.0.1": {
+          "align": "center",
+          "children": [
+            "root.3.0.1.0",
+            "root.3.0.1.1",
+            "root.3.0.1.2"
+          ],
+          "gap": 28,
+          "widget": "row"
+        },
+        "root.3.0.1.0": {
+          "children": [
+            "root.3.0.1.0.0",
+            "root.3.0.1.0.1"
+          ],
+          "gap": 0,
+          "widget": "column"
+        },
+        "root.3.0.1.0.0": {
+          "color": "#e8edf3",
+          "size": 60,
+          "text": "1,507",
+          "widget": "text"
+        },
+        "root.3.0.1.0.1": {
+          "color": "#8d99a8",
+          "size": 22,
+          "text": "FRAMES IN 50 S",
+          "widget": "text"
+        },
+        "root.3.0.1.1": {
+          "children": [
+            "root.3.0.1.1.0",
+            "root.3.0.1.1.1"
+          ],
+          "gap": 0,
+          "widget": "column"
+        },
+        "root.3.0.1.1.0": {
           "color": "#5ad18a",
+          "size": 60,
+          "text": "1,477",
+          "widget": "text"
+        },
+        "root.3.0.1.1.1": {
+          "color": "#8d99a8",
+          "size": 22,
+          "text": "REPEATS",
+          "widget": "text"
+        },
+        "root.3.0.1.2": {
+          "children": [
+            "root.3.0.1.2.0",
+            "root.3.0.1.2.1"
+          ],
+          "gap": 0,
+          "widget": "column"
+        },
+        "root.3.0.1.2.0": {
+          "color": "#5ad18a",
+          "size": 60,
+          "text": "0",
+          "widget": "text"
+        },
+        "root.3.0.1.2.1": {
+          "color": "#8d99a8",
+          "size": 22,
+          "text": "DROPPED",
+          "widget": "text"
+        },
+        "root.3.1": {
+          "background": "#161d27",
+          "children": [
+            "root.3.1.0",
+            "root.3.1.1",
+            "root.3.1.2"
+          ],
+          "fill": true,
+          "gap": 16,
+          "grow": 1,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 28,
+          "padding_left": 32,
+          "padding_right": 32,
+          "padding_top": 28,
+          "radius": 18,
+          "widget": "column"
+        },
+        "root.3.1.0": {
+          "color": "#8d99a8",
+          "size": 24,
+          "text": "ON DISK",
+          "widget": "text"
+        },
+        "root.3.1.1": {
+          "children": [
+            "root.3.1.1.0",
+            "root.3.1.1.1"
+          ],
+          "gap": 0,
+          "widget": "column"
+        },
+        "root.3.1.1.0": {
+          "color": "#5ad18a",
+          "size": 60,
+          "text": "1.97 MB",
+          "widget": "text"
+        },
+        "root.3.1.1.1": {
+          "color": "#8d99a8",
+          "size": 22,
+          "text": "THE WHOLE TAKE",
+          "widget": "text"
+        },
+        "root.3.1.2": {
+          "color": "#8d99a8",
           "size": 26,
-          "text": "1.97 MB for the whole take. Raw pixels: about 19 GB (1,507 × 2250 × 1400 × 4 bytes). Count-up and record-strip motion: 3.1b STUB.",
-          "widget": "text",
-          "wrap": true
+          "text": "Raw pixels for the same frames: about 19 GB (1,507 × 2250 × 1400 × 4 bytes).",
+          "widget": "text"
+        },
+        "root.4": {
+          "children": [],
+          "grow": 1,
+          "widget": "column"
+        },
+        "root.5": {
+          "align": "center",
+          "children": [
+            "root.5.0",
+            "root.5.1"
+          ],
+          "fill": true,
+          "gap": 0,
+          "justify": "between",
+          "widget": "row"
+        },
+        "root.5.0": {
+          "align": "center",
+          "children": [
+            "root.5.0.0",
+            "root.5.0.1",
+            "root.5.0.2",
+            "root.5.0.3",
+            "root.5.0.4",
+            "root.5.0.5",
+            "root.5.0.6",
+            "root.5.0.7",
+            "root.5.0.8",
+            "root.5.0.9"
+          ],
+          "gap": 10,
+          "widget": "row"
+        },
+        "root.5.0.0": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.0.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.0.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "before",
+          "widget": "text"
+        },
+        "root.5.0.1": {
+          "background": "#3cc8d8",
+          "children": [
+            "root.5.0.1.0"
+          ],
+          "gap": 0,
+          "outline": "#3cc8d8",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.1.0": {
+          "bold": true,
+          "color": "#0d1117",
+          "mono": true,
+          "size": 19,
+          "text": "recorder",
+          "widget": "text"
+        },
+        "root.5.0.2": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.2.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.2.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "reader",
+          "widget": "text"
+        },
+        "root.5.0.3": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.3.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.3.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": ".mkv",
+          "widget": "text"
+        },
+        "root.5.0.4": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.4.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.4.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "privacy",
+          "widget": "text"
+        },
+        "root.5.0.5": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.5.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.5.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "turning point",
+          "widget": "text"
+        },
+        "root.5.0.6": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.6.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.6.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "live",
+          "widget": "text"
+        },
+        "root.5.0.7": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.7.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.7.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "loose ends",
+          "widget": "text"
+        },
+        "root.5.0.8": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.8.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.8.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "now",
+          "widget": "text"
+        },
+        "root.5.0.9": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.9.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.9.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "owed",
+          "widget": "text"
+        },
+        "root.5.1": {
+          "color": "#8d99a8",
+          "size": 16,
+          "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "widget": "text"
         }
       },
       "steps": 2
@@ -709,16 +1593,16 @@
             "root.1",
             "root.2",
             "root.3",
-            "root.4"
+            "root.4",
+            "root.5",
+            "root.6"
           ],
-          "gap": 20,
-          "height": 708,
-          "max_width": 1600,
+          "gap": 16,
+          "height": 836,
           "min_width": 1600,
-          "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
-          "padding_top": 72,
+          "padding_top": 64,
           "widget": "column"
         },
         "root.0": {
@@ -732,32 +1616,15 @@
         "root.0.0": {
           "color": "#8d99a8",
           "size": 26,
-          "text": "Trouble 1 · nothing could read it",
-          "widget": "text",
-          "wrap": true
+          "text": "TROUBLE 1 · NOTHING COULD READ IT",
+          "widget": "text"
         },
         "root.1": {
-          "children": [
-            "root.1.0",
-            "root.1.1"
-          ],
-          "gap": 10,
-          "widget": "column"
-        },
-        "root.1.0": {
           "bold": true,
           "color": "#e8edf3",
-          "size": 68,
+          "size": 56,
           "text": "A take nobody could open",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.1.1": {
-          "color": "#8d99a8",
-          "size": 30,
-          "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2": {
           "background": "#161d27",
@@ -765,7 +1632,9 @@
             "root.2.0",
             "root.2.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#5a2b2b",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -778,16 +1647,14 @@
         "root.2.0": {
           "color": "#f2706b",
           "size": 24,
-          "text": "Before the reader",
-          "widget": "text",
-          "wrap": true
+          "text": "BEFORE THE READER",
+          "widget": "text"
         },
         "root.2.1": {
-          "color": "#f2706b",
+          "color": "#e8edf3",
           "size": 26,
           "text": "The writer shipped first. No reader, no verify, no export. The pipeline had no way to turn a take into video.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3": {
           "background": "#0b1016",
@@ -815,8 +1682,7 @@
             }
           ],
           "text": "mixd vfl verify  TAKE",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3.1": {
           "mono": true,
@@ -829,8 +1695,7 @@
             }
           ],
           "text": "mixd vfl markers TAKE",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3.2": {
           "mono": true,
@@ -843,8 +1708,7 @@
             }
           ],
           "text": "mixd vfl export  TAKE --format bgra|y4m",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.4": {
           "background": "#161d27",
@@ -852,7 +1716,9 @@
             "root.4.0",
             "root.4.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#24513a",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -865,16 +1731,283 @@
         "root.4.0": {
           "color": "#5ad18a",
           "size": 24,
-          "text": "PR #191 · measured, then merged",
-          "widget": "text",
-          "wrap": true
+          "text": "PR #191 · MEASURED, THEN MERGED",
+          "widget": "text"
         },
         "root.4.1": {
-          "color": "#5ad18a",
+          "color": "#e8edf3",
           "size": 26,
           "text": "450–842 export frames per second. Synthetic 60 s 4K30 takes; exporter only, peak 65 MiB. Merged 19 Nov, on the desks that evening.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
+        },
+        "root.5": {
+          "children": [],
+          "grow": 1,
+          "widget": "column"
+        },
+        "root.6": {
+          "align": "center",
+          "children": [
+            "root.6.0",
+            "root.6.1"
+          ],
+          "fill": true,
+          "gap": 0,
+          "justify": "between",
+          "widget": "row"
+        },
+        "root.6.0": {
+          "align": "center",
+          "children": [
+            "root.6.0.0",
+            "root.6.0.1",
+            "root.6.0.2",
+            "root.6.0.3",
+            "root.6.0.4",
+            "root.6.0.5",
+            "root.6.0.6",
+            "root.6.0.7",
+            "root.6.0.8",
+            "root.6.0.9"
+          ],
+          "gap": 10,
+          "widget": "row"
+        },
+        "root.6.0.0": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.0.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.0.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "before",
+          "widget": "text"
+        },
+        "root.6.0.1": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.1.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.1.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "recorder",
+          "widget": "text"
+        },
+        "root.6.0.2": {
+          "background": "#3cc8d8",
+          "children": [
+            "root.6.0.2.0"
+          ],
+          "gap": 0,
+          "outline": "#3cc8d8",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.2.0": {
+          "bold": true,
+          "color": "#0d1117",
+          "mono": true,
+          "size": 19,
+          "text": "reader",
+          "widget": "text"
+        },
+        "root.6.0.3": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.3.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.3.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": ".mkv",
+          "widget": "text"
+        },
+        "root.6.0.4": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.4.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.4.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "privacy",
+          "widget": "text"
+        },
+        "root.6.0.5": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.5.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.5.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "turning point",
+          "widget": "text"
+        },
+        "root.6.0.6": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.6.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.6.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "live",
+          "widget": "text"
+        },
+        "root.6.0.7": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.7.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.7.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "loose ends",
+          "widget": "text"
+        },
+        "root.6.0.8": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.8.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.8.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "now",
+          "widget": "text"
+        },
+        "root.6.0.9": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.9.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.9.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "owed",
+          "widget": "text"
+        },
+        "root.6.1": {
+          "color": "#8d99a8",
+          "size": 16,
+          "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "widget": "text"
         }
       },
       "steps": 3
@@ -909,16 +2042,16 @@
             "root.0",
             "root.1",
             "root.2",
-            "root.3"
+            "root.3",
+            "root.4",
+            "root.5"
           ],
-          "gap": 20,
-          "height": 708,
-          "max_width": 1600,
+          "gap": 16,
+          "height": 836,
           "min_width": 1600,
-          "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
-          "padding_top": 72,
+          "padding_top": 64,
           "widget": "column"
         },
         "root.0": {
@@ -932,32 +2065,15 @@
         "root.0.0": {
           "color": "#8d99a8",
           "size": 26,
-          "text": "Trouble 2 · the wrong file name",
-          "widget": "text",
-          "wrap": true
+          "text": "TROUBLE 2 · THE WRONG FILE NAME",
+          "widget": "text"
         },
         "root.1": {
-          "children": [
-            "root.1.0",
-            "root.1.1"
-          ],
-          "gap": 10,
-          "widget": "column"
-        },
-        "root.1.0": {
           "bold": true,
           "color": "#e8edf3",
-          "size": 68,
+          "size": 56,
           "text": "The pipeline still asked for capture.mkv",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.1.1": {
-          "color": "#8d99a8",
-          "size": 30,
-          "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2": {
           "background": "#161d27",
@@ -965,7 +2081,9 @@
             "root.2.0",
             "root.2.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#5a2b2b",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -978,16 +2096,14 @@
         "root.2.0": {
           "color": "#f2706b",
           "size": 24,
-          "text": "Every night, the recorder said no",
-          "widget": "text",
-          "wrap": true
+          "text": "EVERY NIGHT, THE RECORDER SAID NO",
+          "widget": "text"
         },
         "root.2.1": {
-          "color": "#f2706b",
+          "color": "#e8edf3",
           "size": 26,
           "text": "comp.record.start rc 10: expected absolute path to a VFL directory; path without .vfl extension. Auto mode fell back to stills.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3": {
           "background": "#161d27",
@@ -995,7 +2111,9 @@
             "root.3.0",
             "root.3.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#26303d",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -1008,16 +2126,283 @@
         "root.3.0": {
           "color": "#f0b45a",
           "size": 24,
-          "text": "Quietly",
-          "widget": "text",
-          "wrap": true
+          "text": "QUIETLY",
+          "widget": "text"
         },
         "root.3.1": {
-          "color": "#f0b45a",
+          "color": "#e8edf3",
           "size": 26,
           "text": "Fallback kept the episode working, so nothing looked broken. Every night since the recorder shipped. 19 November: 4 of 4 takes fell back to stills.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
+        },
+        "root.4": {
+          "children": [],
+          "grow": 1,
+          "widget": "column"
+        },
+        "root.5": {
+          "align": "center",
+          "children": [
+            "root.5.0",
+            "root.5.1"
+          ],
+          "fill": true,
+          "gap": 0,
+          "justify": "between",
+          "widget": "row"
+        },
+        "root.5.0": {
+          "align": "center",
+          "children": [
+            "root.5.0.0",
+            "root.5.0.1",
+            "root.5.0.2",
+            "root.5.0.3",
+            "root.5.0.4",
+            "root.5.0.5",
+            "root.5.0.6",
+            "root.5.0.7",
+            "root.5.0.8",
+            "root.5.0.9"
+          ],
+          "gap": 10,
+          "widget": "row"
+        },
+        "root.5.0.0": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.0.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.0.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "before",
+          "widget": "text"
+        },
+        "root.5.0.1": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.1.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.1.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "recorder",
+          "widget": "text"
+        },
+        "root.5.0.2": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.2.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.2.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "reader",
+          "widget": "text"
+        },
+        "root.5.0.3": {
+          "background": "#3cc8d8",
+          "children": [
+            "root.5.0.3.0"
+          ],
+          "gap": 0,
+          "outline": "#3cc8d8",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.3.0": {
+          "bold": true,
+          "color": "#0d1117",
+          "mono": true,
+          "size": 19,
+          "text": ".mkv",
+          "widget": "text"
+        },
+        "root.5.0.4": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.4.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.4.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "privacy",
+          "widget": "text"
+        },
+        "root.5.0.5": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.5.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.5.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "turning point",
+          "widget": "text"
+        },
+        "root.5.0.6": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.6.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.6.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "live",
+          "widget": "text"
+        },
+        "root.5.0.7": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.7.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.7.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "loose ends",
+          "widget": "text"
+        },
+        "root.5.0.8": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.8.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.8.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "now",
+          "widget": "text"
+        },
+        "root.5.0.9": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.9.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.9.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "owed",
+          "widget": "text"
+        },
+        "root.5.1": {
+          "color": "#8d99a8",
+          "size": 16,
+          "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "widget": "text"
         }
       },
       "steps": 2
@@ -1058,16 +2443,16 @@
             "root.1",
             "root.2",
             "root.3",
-            "root.4"
+            "root.4",
+            "root.5",
+            "root.6"
           ],
-          "gap": 20,
-          "height": 708,
-          "max_width": 1600,
+          "gap": 16,
+          "height": 836,
           "min_width": 1600,
-          "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
-          "padding_top": 72,
+          "padding_top": 64,
           "widget": "column"
         },
         "root.0": {
@@ -1081,32 +2466,15 @@
         "root.0.0": {
           "color": "#8d99a8",
           "size": 26,
-          "text": "Trouble 3 · privacy",
-          "widget": "text",
-          "wrap": true
+          "text": "TROUBLE 3 · PRIVACY",
+          "widget": "text"
         },
         "root.1": {
-          "children": [
-            "root.1.0",
-            "root.1.1"
-          ],
-          "gap": 10,
-          "widget": "column"
-        },
-        "root.1.0": {
           "bold": true,
           "color": "#e8edf3",
-          "size": 68,
+          "size": 56,
           "text": "A whole-screen take shows everything",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.1.1": {
-          "color": "#8d99a8",
-          "size": 30,
-          "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2": {
           "background": "#161d27",
@@ -1114,7 +2482,9 @@
             "root.2.0",
             "root.2.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#26303d",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -1127,16 +2497,14 @@
         "root.2.0": {
           "color": "#3cc8d8",
           "size": 24,
-          "text": "PR #193 · listed windows",
-          "widget": "text",
-          "wrap": true
+          "text": "PR #193 · LISTED WINDOWS",
+          "widget": "text"
         },
         "root.2.1": {
-          "color": "#3cc8d8",
+          "color": "#e8edf3",
           "size": 26,
           "text": "Record only the named windows, over the wallpaper. Nothing else on the desk reaches the take.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3": {
           "background": "#161d27",
@@ -1144,7 +2512,9 @@
             "root.3.0",
             "root.3.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#5a2b2b",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -1157,16 +2527,14 @@
         "root.3.0": {
           "color": "#f2706b",
           "size": 24,
-          "text": "First security review: FAIL",
-          "widget": "text",
-          "wrap": true
+          "text": "FIRST SECURITY REVIEW: FAIL",
+          "widget": "text"
         },
         "root.3.1": {
-          "color": "#f2706b",
+          "color": "#e8edf3",
           "size": 26,
           "text": "An unlisted app's cursor could reach the take; listed windows not fenced to the recorded output. Fixed in round 2; round 3 reviews found no defects.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.4": {
           "background": "#161d27",
@@ -1174,7 +2542,9 @@
             "root.4.0",
             "root.4.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#26303d",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -1187,16 +2557,283 @@
         "root.4.0": {
           "color": "#e8edf3",
           "size": 24,
-          "text": "Historical status at authoring",
-          "widget": "text",
-          "wrap": true
+          "text": "HISTORICAL STATUS AT AUTHORING",
+          "widget": "text"
         },
         "root.4.1": {
           "color": "#e8edf3",
           "size": 26,
           "text": "At the time of writing, #193 was open and waiting for one more review.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
+        },
+        "root.5": {
+          "children": [],
+          "grow": 1,
+          "widget": "column"
+        },
+        "root.6": {
+          "align": "center",
+          "children": [
+            "root.6.0",
+            "root.6.1"
+          ],
+          "fill": true,
+          "gap": 0,
+          "justify": "between",
+          "widget": "row"
+        },
+        "root.6.0": {
+          "align": "center",
+          "children": [
+            "root.6.0.0",
+            "root.6.0.1",
+            "root.6.0.2",
+            "root.6.0.3",
+            "root.6.0.4",
+            "root.6.0.5",
+            "root.6.0.6",
+            "root.6.0.7",
+            "root.6.0.8",
+            "root.6.0.9"
+          ],
+          "gap": 10,
+          "widget": "row"
+        },
+        "root.6.0.0": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.0.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.0.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "before",
+          "widget": "text"
+        },
+        "root.6.0.1": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.1.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.1.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "recorder",
+          "widget": "text"
+        },
+        "root.6.0.2": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.2.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.2.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "reader",
+          "widget": "text"
+        },
+        "root.6.0.3": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.3.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.3.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": ".mkv",
+          "widget": "text"
+        },
+        "root.6.0.4": {
+          "background": "#3cc8d8",
+          "children": [
+            "root.6.0.4.0"
+          ],
+          "gap": 0,
+          "outline": "#3cc8d8",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.4.0": {
+          "bold": true,
+          "color": "#0d1117",
+          "mono": true,
+          "size": 19,
+          "text": "privacy",
+          "widget": "text"
+        },
+        "root.6.0.5": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.5.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.5.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "turning point",
+          "widget": "text"
+        },
+        "root.6.0.6": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.6.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.6.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "live",
+          "widget": "text"
+        },
+        "root.6.0.7": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.7.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.7.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "loose ends",
+          "widget": "text"
+        },
+        "root.6.0.8": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.8.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.8.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "now",
+          "widget": "text"
+        },
+        "root.6.0.9": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.9.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.9.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "owed",
+          "widget": "text"
+        },
+        "root.6.1": {
+          "color": "#8d99a8",
+          "size": 16,
+          "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "widget": "text"
         }
       },
       "steps": 2
@@ -1237,16 +2874,16 @@
             "root.1",
             "root.2",
             "root.3",
-            "root.4"
+            "root.4",
+            "root.5",
+            "root.6"
           ],
-          "gap": 20,
-          "height": 708,
-          "max_width": 1600,
+          "gap": 16,
+          "height": 836,
           "min_width": 1600,
-          "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
-          "padding_top": 72,
+          "padding_top": 64,
           "widget": "column"
         },
         "root.0": {
@@ -1260,32 +2897,15 @@
         "root.0.0": {
           "color": "#8d99a8",
           "size": 26,
-          "text": "The turning point · staging",
-          "widget": "text",
-          "wrap": true
+          "text": "THE TURNING POINT · STAGING",
+          "widget": "text"
         },
         "root.1": {
-          "children": [
-            "root.1.0",
-            "root.1.1"
-          ],
-          "gap": 10,
-          "widget": "column"
-        },
-        "root.1.0": {
           "bold": true,
           "color": "#e8edf3",
-          "size": 68,
+          "size": 56,
           "text": "One trial take, end to end",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.1.1": {
-          "color": "#8d99a8",
-          "size": 30,
-          "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2": {
           "background": "#161d27",
@@ -1293,7 +2913,9 @@
             "root.2.0",
             "root.2.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#24513a",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -1306,16 +2928,14 @@
         "root.2.0": {
           "color": "#5ad18a",
           "size": 24,
-          "text": "Recorded on the staging desk",
-          "widget": "text",
-          "wrap": true
+          "text": "RECORDED ON THE STAGING DESK",
+          "widget": "text"
         },
         "root.2.1": {
-          "color": "#5ad18a",
+          "color": "#e8edf3",
           "size": 26,
           "text": "197 frames at 30 fps; 0 dropped; about 174 KB. Verify: ok, complete, 3 markers. Export: exactly 197 × 2250 × 1400 × 4 bytes.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3": {
           "align": "center",
@@ -1336,7 +2956,6 @@
             "root.3.0.1"
           ],
           "gap": 6,
-          "grow": 1,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1350,15 +2969,13 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "mixd vfl export",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3.0.1": {
           "color": "#e8edf3",
           "size": 28,
           "text": "raw frames",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3.1": {
           "children": [
@@ -1366,22 +2983,19 @@
             "root.3.1.1"
           ],
           "gap": 0,
-          "grow": 1,
           "widget": "column"
         },
         "root.3.1.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3.1.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3.2": {
           "background": "#121821",
@@ -1390,7 +3004,6 @@
             "root.3.2.1"
           ],
           "gap": 6,
-          "grow": 1,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1404,15 +3017,13 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "pipe",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3.2.1": {
           "color": "#e8edf3",
           "size": 28,
           "text": "ffmpeg",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3.3": {
           "children": [
@@ -1420,22 +3031,19 @@
             "root.3.3.1"
           ],
           "gap": 0,
-          "grow": 1,
           "widget": "column"
         },
         "root.3.3.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3.3.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3.4": {
           "background": "#121821",
@@ -1444,7 +3052,6 @@
             "root.3.4.1"
           ],
           "gap": 6,
-          "grow": 1,
           "outline": "#5ad18a",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1458,15 +3065,13 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "mp4",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3.4.1": {
           "color": "#5ad18a",
           "size": 28,
           "text": "197 frames, 6.567 s",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.4": {
           "background": "#161d27",
@@ -1474,7 +3079,9 @@
             "root.4.0",
             "root.4.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#26303d",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -1487,16 +3094,283 @@
         "root.4.0": {
           "color": "#e8edf3",
           "size": 24,
-          "text": "17–20 November",
-          "widget": "text",
-          "wrap": true
+          "text": "17–20 NOVEMBER",
+          "widget": "text"
         },
         "root.4.1": {
           "color": "#e8edf3",
           "size": 26,
           "text": "Recorder (#162), then reader (#191), then gold and a trial take. The pipeline switched to .vfl: real assembly, a 4K take in 1.2 s. First nightly with recorded takes was still ahead.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
+        },
+        "root.5": {
+          "children": [],
+          "grow": 1,
+          "widget": "column"
+        },
+        "root.6": {
+          "align": "center",
+          "children": [
+            "root.6.0",
+            "root.6.1"
+          ],
+          "fill": true,
+          "gap": 0,
+          "justify": "between",
+          "widget": "row"
+        },
+        "root.6.0": {
+          "align": "center",
+          "children": [
+            "root.6.0.0",
+            "root.6.0.1",
+            "root.6.0.2",
+            "root.6.0.3",
+            "root.6.0.4",
+            "root.6.0.5",
+            "root.6.0.6",
+            "root.6.0.7",
+            "root.6.0.8",
+            "root.6.0.9"
+          ],
+          "gap": 10,
+          "widget": "row"
+        },
+        "root.6.0.0": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.0.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.0.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "before",
+          "widget": "text"
+        },
+        "root.6.0.1": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.1.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.1.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "recorder",
+          "widget": "text"
+        },
+        "root.6.0.2": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.2.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.2.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "reader",
+          "widget": "text"
+        },
+        "root.6.0.3": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.3.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.3.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": ".mkv",
+          "widget": "text"
+        },
+        "root.6.0.4": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.4.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.4.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "privacy",
+          "widget": "text"
+        },
+        "root.6.0.5": {
+          "background": "#3cc8d8",
+          "children": [
+            "root.6.0.5.0"
+          ],
+          "gap": 0,
+          "outline": "#3cc8d8",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.5.0": {
+          "bold": true,
+          "color": "#0d1117",
+          "mono": true,
+          "size": 19,
+          "text": "turning point",
+          "widget": "text"
+        },
+        "root.6.0.6": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.6.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.6.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "live",
+          "widget": "text"
+        },
+        "root.6.0.7": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.7.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.7.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "loose ends",
+          "widget": "text"
+        },
+        "root.6.0.8": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.8.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.8.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "now",
+          "widget": "text"
+        },
+        "root.6.0.9": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.9.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.9.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "owed",
+          "widget": "text"
+        },
+        "root.6.1": {
+          "color": "#8d99a8",
+          "size": 16,
+          "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "widget": "text"
         }
       },
       "steps": 2
@@ -1531,16 +3405,16 @@
             "root.0",
             "root.1",
             "root.2",
-            "root.3"
+            "root.3",
+            "root.4",
+            "root.5"
           ],
-          "gap": 20,
-          "height": 708,
-          "max_width": 1600,
+          "gap": 16,
+          "height": 836,
           "min_width": 1600,
-          "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
-          "padding_top": 72,
+          "padding_top": 64,
           "widget": "column"
         },
         "root.0": {
@@ -1554,32 +3428,15 @@
         "root.0.0": {
           "color": "#8d99a8",
           "size": 26,
-          "text": "Live · staging",
-          "widget": "text",
-          "wrap": true
+          "text": "LIVE · STAGING",
+          "widget": "text"
         },
         "root.1": {
-          "children": [
-            "root.1.0",
-            "root.1.1"
-          ],
-          "gap": 10,
-          "widget": "column"
-        },
-        "root.1.0": {
           "bold": true,
           "color": "#e8edf3",
-          "size": 68,
+          "size": 56,
           "text": "The next two minutes recorded themselves",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.1.1": {
-          "color": "#8d99a8",
-          "size": 30,
-          "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2": {
           "align": "center",
@@ -1602,7 +3459,6 @@
             "root.2.0.1"
           ],
           "gap": 6,
-          "grow": 1,
           "outline": "#3cc8d8",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1616,15 +3472,13 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "Bus",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.0.1": {
           "color": "#3cc8d8",
           "size": 28,
           "text": "Term talks to compositor",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1": {
           "children": [
@@ -1632,22 +3486,19 @@
             "root.2.1.1"
           ],
           "gap": 0,
-          "grow": 1,
           "widget": "column"
         },
         "root.2.1.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.2": {
           "background": "#121821",
@@ -1656,7 +3507,6 @@
             "root.2.2.1"
           ],
           "gap": 6,
-          "grow": 1,
           "outline": "#3cc8d8",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1670,15 +3520,13 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "compositor",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.2.1": {
           "color": "#3cc8d8",
           "size": 28,
           "text": "records Term as .vfl",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.3": {
           "children": [
@@ -1686,22 +3534,19 @@
             "root.2.3.1"
           ],
           "gap": 0,
-          "grow": 1,
           "widget": "column"
         },
         "root.2.3.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.3.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.4": {
           "background": "#121821",
@@ -1710,7 +3555,6 @@
             "root.2.4.1"
           ],
           "gap": 6,
-          "grow": 1,
           "outline": "#26303d",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1724,15 +3568,13 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "media builder",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.4.1": {
           "color": "#e8edf3",
           "size": 28,
           "text": "verify, export, assemble",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.5": {
           "children": [
@@ -1740,22 +3582,19 @@
             "root.2.5.1"
           ],
           "gap": 0,
-          "grow": 1,
           "widget": "column"
         },
         "root.2.5.0": {
           "color": "#8d99a8",
           "size": 40,
           "text": "→",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.5.1": {
           "color": "#8d99a8",
           "size": 18,
           "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.6": {
           "background": "#121821",
@@ -1764,7 +3603,6 @@
             "root.2.6.1"
           ],
           "gap": 6,
-          "grow": 1,
           "outline": "#5ad18a",
           "outline_width": 2,
           "padding_bottom": 18,
@@ -1778,15 +3616,13 @@
           "color": "#8d99a8",
           "size": 20,
           "text": "this video",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.6.1": {
           "color": "#5ad18a",
           "size": 28,
           "text": "no screenshots",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3": {
           "background": "#161d27",
@@ -1794,7 +3630,9 @@
             "root.3.0",
             "root.3.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#26303d",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -1807,16 +3645,283 @@
         "root.3.0": {
           "color": "#e8edf3",
           "size": 24,
-          "text": "The same scripts the nightly episode uses",
-          "widget": "text",
-          "wrap": true
+          "text": "THE SAME SCRIPTS THE NIGHTLY EPISODE USES",
+          "widget": "text"
         },
         "root.3.1": {
           "color": "#e8edf3",
           "size": 26,
           "text": "run.mix --mode record, then assemble.mix.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
+        },
+        "root.4": {
+          "children": [],
+          "grow": 1,
+          "widget": "column"
+        },
+        "root.5": {
+          "align": "center",
+          "children": [
+            "root.5.0",
+            "root.5.1"
+          ],
+          "fill": true,
+          "gap": 0,
+          "justify": "between",
+          "widget": "row"
+        },
+        "root.5.0": {
+          "align": "center",
+          "children": [
+            "root.5.0.0",
+            "root.5.0.1",
+            "root.5.0.2",
+            "root.5.0.3",
+            "root.5.0.4",
+            "root.5.0.5",
+            "root.5.0.6",
+            "root.5.0.7",
+            "root.5.0.8",
+            "root.5.0.9"
+          ],
+          "gap": 10,
+          "widget": "row"
+        },
+        "root.5.0.0": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.0.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.0.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "before",
+          "widget": "text"
+        },
+        "root.5.0.1": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.1.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.1.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "recorder",
+          "widget": "text"
+        },
+        "root.5.0.2": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.2.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.2.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "reader",
+          "widget": "text"
+        },
+        "root.5.0.3": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.3.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.3.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": ".mkv",
+          "widget": "text"
+        },
+        "root.5.0.4": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.4.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.4.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "privacy",
+          "widget": "text"
+        },
+        "root.5.0.5": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.5.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.5.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "turning point",
+          "widget": "text"
+        },
+        "root.5.0.6": {
+          "background": "#3cc8d8",
+          "children": [
+            "root.5.0.6.0"
+          ],
+          "gap": 0,
+          "outline": "#3cc8d8",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.6.0": {
+          "bold": true,
+          "color": "#0d1117",
+          "mono": true,
+          "size": 19,
+          "text": "live",
+          "widget": "text"
+        },
+        "root.5.0.7": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.7.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.7.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "loose ends",
+          "widget": "text"
+        },
+        "root.5.0.8": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.8.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.8.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "now",
+          "widget": "text"
+        },
+        "root.5.0.9": {
+          "background": "#0f151d",
+          "children": [
+            "root.5.0.9.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.5.0.9.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "owed",
+          "widget": "text"
+        },
+        "root.5.1": {
+          "color": "#8d99a8",
+          "size": 16,
+          "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "widget": "text"
         }
       },
       "steps": 1
@@ -1857,16 +3962,16 @@
             "root.1",
             "root.2",
             "root.3",
-            "root.4"
+            "root.4",
+            "root.5",
+            "root.6"
           ],
-          "gap": 20,
-          "height": 708,
-          "max_width": 1600,
+          "gap": 16,
+          "height": 836,
           "min_width": 1600,
-          "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
-          "padding_top": 72,
+          "padding_top": 64,
           "widget": "column"
         },
         "root.0": {
@@ -1880,32 +3985,15 @@
         "root.0.0": {
           "color": "#8d99a8",
           "size": 26,
-          "text": "Loose ends",
-          "widget": "text",
-          "wrap": true
+          "text": "LOOSE ENDS",
+          "widget": "text"
         },
         "root.1": {
-          "children": [
-            "root.1.0",
-            "root.1.1"
-          ],
-          "gap": 10,
-          "widget": "column"
-        },
-        "root.1.0": {
           "bold": true,
           "color": "#e8edf3",
-          "size": 68,
+          "size": 56,
           "text": "One found today, two known",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.1.1": {
-          "color": "#8d99a8",
-          "size": 30,
-          "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2": {
           "background": "#161d27",
@@ -1913,7 +4001,9 @@
             "root.2.0",
             "root.2.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#26303d",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -1926,16 +4016,14 @@
         "root.2.0": {
           "color": "#f0b45a",
           "size": 24,
-          "text": "Found making this video",
-          "widget": "text",
-          "wrap": true
+          "text": "FOUND MAKING THIS VIDEO",
+          "widget": "text"
         },
         "root.2.1": {
-          "color": "#f0b45a",
+          "color": "#e8edf3",
           "size": 26,
           "text": "record_busy: one take at a time. Older tutorials start their own recording inside a recorded take and are refused. New tutorials inspect the running take.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3": {
           "background": "#161d27",
@@ -1943,7 +4031,9 @@
             "root.3.0",
             "root.3.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#5a2b2b",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -1956,16 +4046,14 @@
         "root.3.0": {
           "color": "#f2706b",
           "size": 24,
-          "text": "A closed pipe",
-          "widget": "text",
-          "wrap": true
+          "text": "A CLOSED PIPE",
+          "widget": "text"
         },
         "root.3.1": {
-          "color": "#f2706b",
+          "color": "#e8edf3",
           "size": 26,
           "text": "mixd vfl export exits 1 when the encoder stops reading early. Assembly accepts exactly that case for now.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.4": {
           "background": "#161d27",
@@ -1973,7 +4061,9 @@
             "root.4.0",
             "root.4.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#26303d",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -1986,16 +4076,283 @@
         "root.4.0": {
           "color": "#3cc8d8",
           "size": 24,
-          "text": "Chrome",
-          "widget": "text",
-          "wrap": true
+          "text": "CHROME",
+          "widget": "text"
         },
         "root.4.1": {
-          "color": "#3cc8d8",
+          "color": "#e8edf3",
           "size": 26,
           "text": "These source slides were rendered by headless Chrome. A deck app recorded live is planned to replace it.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
+        },
+        "root.5": {
+          "children": [],
+          "grow": 1,
+          "widget": "column"
+        },
+        "root.6": {
+          "align": "center",
+          "children": [
+            "root.6.0",
+            "root.6.1"
+          ],
+          "fill": true,
+          "gap": 0,
+          "justify": "between",
+          "widget": "row"
+        },
+        "root.6.0": {
+          "align": "center",
+          "children": [
+            "root.6.0.0",
+            "root.6.0.1",
+            "root.6.0.2",
+            "root.6.0.3",
+            "root.6.0.4",
+            "root.6.0.5",
+            "root.6.0.6",
+            "root.6.0.7",
+            "root.6.0.8",
+            "root.6.0.9"
+          ],
+          "gap": 10,
+          "widget": "row"
+        },
+        "root.6.0.0": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.0.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.0.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "before",
+          "widget": "text"
+        },
+        "root.6.0.1": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.1.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.1.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "recorder",
+          "widget": "text"
+        },
+        "root.6.0.2": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.2.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.2.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "reader",
+          "widget": "text"
+        },
+        "root.6.0.3": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.3.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.3.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": ".mkv",
+          "widget": "text"
+        },
+        "root.6.0.4": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.4.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.4.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "privacy",
+          "widget": "text"
+        },
+        "root.6.0.5": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.5.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.5.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "turning point",
+          "widget": "text"
+        },
+        "root.6.0.6": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.6.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.6.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "live",
+          "widget": "text"
+        },
+        "root.6.0.7": {
+          "background": "#3cc8d8",
+          "children": [
+            "root.6.0.7.0"
+          ],
+          "gap": 0,
+          "outline": "#3cc8d8",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.7.0": {
+          "bold": true,
+          "color": "#0d1117",
+          "mono": true,
+          "size": 19,
+          "text": "loose ends",
+          "widget": "text"
+        },
+        "root.6.0.8": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.8.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.8.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "now",
+          "widget": "text"
+        },
+        "root.6.0.9": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.9.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.9.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "owed",
+          "widget": "text"
+        },
+        "root.6.1": {
+          "color": "#8d99a8",
+          "size": 16,
+          "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "widget": "text"
         }
       },
       "steps": 2
@@ -2036,16 +4393,16 @@
             "root.1",
             "root.2",
             "root.3",
-            "root.4"
+            "root.4",
+            "root.5",
+            "root.6"
           ],
-          "gap": 20,
-          "height": 708,
-          "max_width": 1600,
+          "gap": 16,
+          "height": 836,
           "min_width": 1600,
-          "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
-          "padding_top": 72,
+          "padding_top": 64,
           "widget": "column"
         },
         "root.0": {
@@ -2059,32 +4416,15 @@
         "root.0.0": {
           "color": "#8d99a8",
           "size": 26,
-          "text": "Outcome · 20 November",
-          "widget": "text",
-          "wrap": true
+          "text": "OUTCOME · 20 NOVEMBER",
+          "widget": "text"
         },
         "root.1": {
-          "children": [
-            "root.1.0",
-            "root.1.1"
-          ],
-          "gap": 10,
-          "widget": "column"
-        },
-        "root.1.0": {
           "bold": true,
           "color": "#e8edf3",
-          "size": 68,
+          "size": 56,
           "text": "Where it stands",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.1.1": {
-          "color": "#8d99a8",
-          "size": 30,
-          "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2": {
           "background": "#161d27",
@@ -2092,7 +4432,9 @@
             "root.2.0",
             "root.2.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#26303d",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -2103,18 +4445,16 @@
           "widget": "column"
         },
         "root.2.0": {
-          "color": "#f0b45a",
+          "color": "#3cc8d8",
           "size": 24,
-          "text": "3.1b STUB · screenshot / callouts / Ken Burns",
-          "widget": "text",
-          "wrap": true
+          "text": "INSIDE THE TAKE",
+          "widget": "text"
         },
         "root.2.1": {
-          "color": "#f0b45a",
+          "color": "#e8edf3",
           "size": 26,
-          "text": "Reference: assets/self-live.png. Live counters read from inside the take. Shot composition and slow zoom are deliberately deferred.",
-          "widget": "text",
-          "wrap": true
+          "text": "Live counters read from inside the take.",
+          "widget": "text"
         },
         "root.3": {
           "background": "#161d27",
@@ -2122,7 +4462,9 @@
             "root.3.0",
             "root.3.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#24513a",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -2135,16 +4477,14 @@
         "root.3.0": {
           "color": "#5ad18a",
           "size": 24,
-          "text": "Better",
-          "widget": "text",
-          "wrap": true
+          "text": "BETTER",
+          "widget": "text"
         },
         "root.3.1": {
-          "color": "#5ad18a",
+          "color": "#e8edf3",
           "size": 26,
           "text": "Takes are real video again, recorded by the compositor. Still no ffmpeg on the desk. Every take is verified before use.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.4": {
           "background": "#161d27",
@@ -2152,7 +4492,9 @@
             "root.4.0",
             "root.4.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#5a2b2b",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -2165,16 +4507,283 @@
         "root.4.0": {
           "color": "#f2706b",
           "size": 24,
-          "text": "The cost, and what is unknown",
-          "widget": "text",
-          "wrap": true
+          "text": "THE COST, AND WHAT IS UNKNOWN",
+          "widget": "text"
         },
         "root.4.1": {
-          "color": "#f2706b",
+          "color": "#e8edf3",
           "size": 26,
           "text": "Tonight's nightly was the first, with no record of it yet. The media builder still encodes with ffmpeg. Recorder cost on a desk was not benched.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
+        },
+        "root.5": {
+          "children": [],
+          "grow": 1,
+          "widget": "column"
+        },
+        "root.6": {
+          "align": "center",
+          "children": [
+            "root.6.0",
+            "root.6.1"
+          ],
+          "fill": true,
+          "gap": 0,
+          "justify": "between",
+          "widget": "row"
+        },
+        "root.6.0": {
+          "align": "center",
+          "children": [
+            "root.6.0.0",
+            "root.6.0.1",
+            "root.6.0.2",
+            "root.6.0.3",
+            "root.6.0.4",
+            "root.6.0.5",
+            "root.6.0.6",
+            "root.6.0.7",
+            "root.6.0.8",
+            "root.6.0.9"
+          ],
+          "gap": 10,
+          "widget": "row"
+        },
+        "root.6.0.0": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.0.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.0.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "before",
+          "widget": "text"
+        },
+        "root.6.0.1": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.1.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.1.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "recorder",
+          "widget": "text"
+        },
+        "root.6.0.2": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.2.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.2.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "reader",
+          "widget": "text"
+        },
+        "root.6.0.3": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.3.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.3.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": ".mkv",
+          "widget": "text"
+        },
+        "root.6.0.4": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.4.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.4.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "privacy",
+          "widget": "text"
+        },
+        "root.6.0.5": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.5.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.5.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "turning point",
+          "widget": "text"
+        },
+        "root.6.0.6": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.6.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.6.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "live",
+          "widget": "text"
+        },
+        "root.6.0.7": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.7.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.7.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "loose ends",
+          "widget": "text"
+        },
+        "root.6.0.8": {
+          "background": "#3cc8d8",
+          "children": [
+            "root.6.0.8.0"
+          ],
+          "gap": 0,
+          "outline": "#3cc8d8",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.8.0": {
+          "bold": true,
+          "color": "#0d1117",
+          "mono": true,
+          "size": 19,
+          "text": "now",
+          "widget": "text"
+        },
+        "root.6.0.9": {
+          "background": "#0f151d",
+          "children": [
+            "root.6.0.9.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.6.0.9.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "owed",
+          "widget": "text"
+        },
+        "root.6.1": {
+          "color": "#8d99a8",
+          "size": 16,
+          "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "widget": "text"
         }
       },
       "steps": 2
@@ -2203,16 +4812,16 @@
           "children": [
             "root.0",
             "root.1",
-            "root.2"
+            "root.2",
+            "root.3",
+            "root.4"
           ],
-          "gap": 20,
-          "height": 708,
-          "max_width": 1600,
+          "gap": 16,
+          "height": 836,
           "min_width": 1600,
-          "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
-          "padding_top": 72,
+          "padding_top": 64,
           "widget": "column"
         },
         "root.0": {
@@ -2226,32 +4835,15 @@
         "root.0.0": {
           "color": "#8d99a8",
           "size": 26,
-          "text": "Still owed",
-          "widget": "text",
-          "wrap": true
+          "text": "STILL OWED",
+          "widget": "text"
         },
         "root.1": {
-          "children": [
-            "root.1.0",
-            "root.1.1"
-          ],
-          "gap": 10,
-          "widget": "column"
-        },
-        "root.1.0": {
           "bold": true,
           "color": "#e8edf3",
-          "size": 68,
+          "size": 56,
           "text": "Next: Chrome leaves the pipeline",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.1.1": {
-          "color": "#8d99a8",
-          "size": 30,
-          "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2": {
           "children": [
@@ -2277,15 +4869,13 @@
           "color": "#3cc8d8",
           "size": 31,
           "text": "●",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.0.1": {
           "color": "#e8edf3",
           "size": 31,
           "text": "Merge listed windows (#193)",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1": {
           "align": "center",
@@ -2300,15 +4890,13 @@
           "color": "#3cc8d8",
           "size": 31,
           "text": "●",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.1.1": {
           "color": "#e8edf3",
           "size": 31,
           "text": "Quiet exit on a closed pipe",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.2": {
           "align": "center",
@@ -2323,15 +4911,13 @@
           "color": "#3cc8d8",
           "size": 31,
           "text": "●",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.2.1": {
           "color": "#e8edf3",
           "size": 31,
           "text": "Bench the recorder on a desk",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.3": {
           "align": "center",
@@ -2346,15 +4932,13 @@
           "color": "#3cc8d8",
           "size": 31,
           "text": "●",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.3.1": {
           "color": "#e8edf3",
           "size": 31,
           "text": "Motion and captions in the compositor",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.4": {
           "align": "center",
@@ -2369,15 +4953,282 @@
           "color": "#3cc8d8",
           "size": 31,
           "text": "●",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2.4.1": {
           "color": "#e8edf3",
           "size": 31,
           "text": "A deck app, recorded live",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
+        },
+        "root.3": {
+          "children": [],
+          "grow": 1,
+          "widget": "column"
+        },
+        "root.4": {
+          "align": "center",
+          "children": [
+            "root.4.0",
+            "root.4.1"
+          ],
+          "fill": true,
+          "gap": 0,
+          "justify": "between",
+          "widget": "row"
+        },
+        "root.4.0": {
+          "align": "center",
+          "children": [
+            "root.4.0.0",
+            "root.4.0.1",
+            "root.4.0.2",
+            "root.4.0.3",
+            "root.4.0.4",
+            "root.4.0.5",
+            "root.4.0.6",
+            "root.4.0.7",
+            "root.4.0.8",
+            "root.4.0.9"
+          ],
+          "gap": 10,
+          "widget": "row"
+        },
+        "root.4.0.0": {
+          "background": "#0f151d",
+          "children": [
+            "root.4.0.0.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.4.0.0.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "before",
+          "widget": "text"
+        },
+        "root.4.0.1": {
+          "background": "#0f151d",
+          "children": [
+            "root.4.0.1.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.4.0.1.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "recorder",
+          "widget": "text"
+        },
+        "root.4.0.2": {
+          "background": "#0f151d",
+          "children": [
+            "root.4.0.2.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.4.0.2.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "reader",
+          "widget": "text"
+        },
+        "root.4.0.3": {
+          "background": "#0f151d",
+          "children": [
+            "root.4.0.3.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.4.0.3.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": ".mkv",
+          "widget": "text"
+        },
+        "root.4.0.4": {
+          "background": "#0f151d",
+          "children": [
+            "root.4.0.4.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.4.0.4.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "privacy",
+          "widget": "text"
+        },
+        "root.4.0.5": {
+          "background": "#0f151d",
+          "children": [
+            "root.4.0.5.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.4.0.5.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "turning point",
+          "widget": "text"
+        },
+        "root.4.0.6": {
+          "background": "#0f151d",
+          "children": [
+            "root.4.0.6.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.4.0.6.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "live",
+          "widget": "text"
+        },
+        "root.4.0.7": {
+          "background": "#0f151d",
+          "children": [
+            "root.4.0.7.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.4.0.7.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "loose ends",
+          "widget": "text"
+        },
+        "root.4.0.8": {
+          "background": "#0f151d",
+          "children": [
+            "root.4.0.8.0"
+          ],
+          "gap": 0,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.4.0.8.0": {
+          "bold": false,
+          "color": "#8d99a8",
+          "mono": true,
+          "size": 19,
+          "text": "now",
+          "widget": "text"
+        },
+        "root.4.0.9": {
+          "background": "#3cc8d8",
+          "children": [
+            "root.4.0.9.0"
+          ],
+          "gap": 0,
+          "outline": "#3cc8d8",
+          "outline_width": 1,
+          "padding_bottom": 3,
+          "padding_left": 9,
+          "padding_right": 9,
+          "padding_top": 3,
+          "radius": 6,
+          "widget": "column"
+        },
+        "root.4.0.9.0": {
+          "bold": true,
+          "color": "#0d1117",
+          "mono": true,
+          "size": 19,
+          "text": "owed",
+          "widget": "text"
+        },
+        "root.4.1": {
+          "color": "#8d99a8",
+          "size": 16,
+          "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "widget": "text"
         }
       },
       "steps": 1
@@ -2418,16 +5269,15 @@
             "root.1",
             "root.2",
             "root.3",
-            "root.4"
+            "root.4",
+            "root.5"
           ],
-          "gap": 20,
-          "height": 708,
-          "max_width": 1600,
+          "gap": 16,
+          "height": 836,
           "min_width": 1600,
-          "padding_bottom": 120,
           "padding_left": 96,
           "padding_right": 96,
-          "padding_top": 72,
+          "padding_top": 64,
           "widget": "column"
         },
         "root.0": {
@@ -2441,32 +5291,15 @@
         "root.0.0": {
           "color": "#8d99a8",
           "size": 26,
-          "text": "MixViu Adventures",
-          "widget": "text",
-          "wrap": true
+          "text": "MIXVIU ADVENTURES",
+          "widget": "text"
         },
         "root.1": {
-          "children": [
-            "root.1.0",
-            "root.1.1"
-          ],
-          "gap": 10,
-          "widget": "column"
-        },
-        "root.1.0": {
           "bold": true,
           "color": "#e8edf3",
-          "size": 68,
+          "size": 56,
           "text": "MixViu",
-          "widget": "text",
-          "wrap": true
-        },
-        "root.1.1": {
-          "color": "#8d99a8",
-          "size": 30,
-          "text": "",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.2": {
           "background": "#161d27",
@@ -2474,7 +5307,9 @@
             "root.2.0",
             "root.2.1"
           ],
+          "fill": true,
           "gap": 16,
+          "grow": 1,
           "outline": "#26303d",
           "outline_width": 1,
           "padding_bottom": 28,
@@ -2487,30 +5322,31 @@
         "root.2.0": {
           "color": "#e8edf3",
           "size": 24,
-          "text": "The desk records itself",
-          "widget": "text",
-          "wrap": true
+          "text": "THE DESK RECORDS ITSELF",
+          "widget": "text"
         },
         "root.2.1": {
           "color": "#e8edf3",
           "size": 26,
           "text": "Recorded by the compositor, read back by mixd.",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.3": {
           "color": "#3cc8d8",
           "size": 26,
           "text": "github.com/mixviu/mixviu",
-          "widget": "text",
-          "wrap": true
+          "widget": "text"
         },
         "root.4": {
           "color": "#f0b45a",
           "size": 26,
-          "text": "3.1b STUB · cyclops draw, spin and underline motion",
-          "widget": "text",
-          "wrap": true
+          "text": "MixViu Adventures",
+          "widget": "text"
+        },
+        "root.5": {
+          "children": [],
+          "grow": 1,
+          "widget": "column"
         }
       },
       "steps": 1

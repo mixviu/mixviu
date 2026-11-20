@@ -336,8 +336,12 @@ fn render_reference_scenes() {
     let dir = std::env::temp_dir().join("mixviu-deck-app-review");
     std::fs::create_dir_all(&dir).unwrap();
     for id in ["before", "recorder"] {
+        // Match Chrome's #s=ID&t=10&beats=0,3,15. All supported
+        // entrances and the HTML count-up have settled by this scene time.
+        deck.call("deck.play", json!({"slides":[id],"beats":[[0,3,15]]}));
+        deck.call("viu.presentation", json!({"time":100}));
         let model = deck
-            .call("deck.goto", json!({"slide":id,"step":1}))
+            .call("viu.presentation", json!({"time":110}))
             .model
             .unwrap();
         let mut view = SceneView::with_model(
@@ -359,5 +363,6 @@ fn render_reference_scenes() {
         let path = dir.join(format!("viu-{id}.png"));
         image.save(&path).unwrap();
         println!("DECK_PNG={}", path.display());
+        println!("DECK_SAMPLE={id} time=10 beats=0,3,15");
     }
 }
