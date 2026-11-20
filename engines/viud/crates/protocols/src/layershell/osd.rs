@@ -63,13 +63,19 @@ pub fn authorized(client: &Client, _: &DisplayHandle) -> bool {
 #[derive(Debug)]
 pub struct Mark {
     pub badge: smithay::backend::renderer::element::Id,
+    live: Arc<AtomicBool>,
 }
 
-impl Default for Mark {
-    fn default() -> Self {
-        Self {
+impl Mark {
+    pub fn for_client(client: &Client) -> Option<Self> {
+        let connection = client.get_data::<Connection>()?;
+        Some(Self {
             badge: smithay::backend::renderer::element::Id::new(),
-        }
+            live: connection.live.clone(),
+        })
+    }
+    fn is_live(&self) -> bool {
+        self.live.load(Ordering::Acquire)
     }
 }
 
@@ -79,7 +85,7 @@ pub fn marked(
     let mut surface = surface.clone();
     loop {
         if smithay::wayland::compositor::with_states(&surface, |state| {
-            state.data_map.get::<Mark>().is_some()
+            state.data_map.get::<Mark>().is_some_and(Mark::is_live)
         }) {
             return true;
         }
@@ -132,7 +138,10 @@ mod tests {
             ordinary.get_credentials(&handle).unwrap().pid
         );
         assert!(authorized(&host, &handle));
+        let mark = Mark::for_client(&host).unwrap();
+        assert!(mark.is_live());
         drop(lease);
+        assert!(!mark.is_live(), "existing marks lose band and hit authority on revoke");
         assert!(!authorized(&host, &handle));
         let (server, _replacement) = std::os::unix::net::UnixStream::pair().unwrap();
         let (replacement, _lease) = insert_connection(&handle, server).unwrap();

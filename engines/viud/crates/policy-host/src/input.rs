@@ -204,22 +204,6 @@ fn payload(
         return ControlReply::refused("seat_unavailable", json!({"reason":"no_sources"}));
     }
     if seat == SeatKind::Agent {
-        // A stationary pointer may have a new surface/input region beneath
-        // it. Match the native button path: refresh before preflight/press,
-        // preserving implicit and explicit grabs (including chorded buttons).
-        if let InputOp::PointerButton { action, .. } = op
-            && target_window.is_none()
-            && press_states(*action).contains(&true)
-            && agent_pointer(lp).is_some_and(|pointer| !pointer.is_grabbed())
-            && let Some(position) = lp.inner.comp.injection.agent_pointer
-        {
-            let hit = match agent_hit(lp, None, position) {
-                Ok(hit) => hit,
-                Err(reply) => return reply,
-            };
-            let time = now_ms(lp);
-            agent_motion(lp, hit, position, time);
-        }
         let window = match op {
             InputOp::Targeted { id, generation, .. }
             | InputOp::PointerMove {
@@ -239,6 +223,25 @@ fn payload(
         let facts = agent_seat_facts(lp);
         if let Err(reply) = agent_preflight(op, &facts) {
             return reply;
+        }
+        // A stationary pointer may have a new surface/input region beneath
+        // it. Match the native button path: refresh after preflight, before press,
+        // preserving implicit and explicit grabs (including chorded buttons).
+        if let InputOp::PointerButton { action, .. } = op
+            && target_window.is_none()
+            && press_states(*action).contains(&true)
+            && agent_pointer(lp).is_some_and(|pointer| !pointer.is_grabbed())
+            && let Some(position) = lp.inner.comp.injection.agent_pointer
+        {
+            let hit = match agent_hit(lp, None, position) {
+                Ok(hit) => hit,
+                Err(reply) => return reply,
+            };
+            let current = agent_pointer(lp).and_then(|pointer| pointer.current_focus());
+            if hit.as_ref().map(|(surface, _)| surface) != current.as_ref() {
+                let time = now_ms(lp);
+                agent_motion(lp, hit, position, time);
+            }
         }
     }
     let time = now_ms(lp);

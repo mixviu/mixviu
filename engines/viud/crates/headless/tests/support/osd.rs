@@ -383,8 +383,8 @@ fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
     );
     wait(&mut pattern, Duration::from_millis(40));
     assert!(
-        pattern.state.pointer_buttons > buttons,
-        "exiting card must stop consuming input"
+        pattern.state.pointer_buttons == buttons,
+        "opaque exiting card must consume input until removal"
     );
     let fade = motion::presets()
         .into_iter()

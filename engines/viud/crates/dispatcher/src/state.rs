@@ -2804,7 +2804,7 @@ mod handler_impls {
                 smithay::wayland::compositor::with_states(surface.wl_surface(), |state| {
                     state
                         .data_map
-                        .insert_if_missing(protocols::layershell::osd::Mark::default);
+                        .insert_if_missing(|| protocols::layershell::osd::Mark::for_client(&surface.wl_surface().client().unwrap()).unwrap());
                 });
             }
             self.push_surface_event(

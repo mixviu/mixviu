@@ -14,11 +14,14 @@ mesh owners use `mesh:<citizen>@<peer>` from broker-stamped headers, never body 
 Local mutations use the broker's Unix ingress. Unadmitted legacy TCP calls
 have no attested peer identity and are refused, even with a registered name.
 Each caller has eight of the 32 slots (`CALLER_BUDGET_EXCEEDED`) and 30
-successful updates per one-second window (`RATE_LIMITED`). Failed validation
-does not spend the budget. Hide remains available at the update limit.
+successful mutations (show, update and hide) per one-second window (`RATE_LIMITED`). Failed validation
+does not spend the budget. Hide shares the mutation budget; expiry still removes items without a caller mutation.
 Caller authorisation belongs to the Bus authorisation work shared with
 `comp.record` and `comp.capture.frame`; surface authentication does not
 authorise the caller or endorse its content.
+Ownership prevents accidental cross-talk; names are self-chosen and can be reused after
+disconnect. Caps and rate limits provide fairness, not a security boundary until
+Bus admission supplies a real caller principal. Adoption of broker_principal is tracked.
 Future Bus allow/deny checks govern admission to these commands; the reducer's
 owner, slot and update limits still apply after admission. A grant does not
 allow one citizen to modify another citizen's items.
@@ -63,8 +66,8 @@ configured exit; explicit `exit:null` removes it immediately.
 input without changing keyboard focus. `backing` defaults to `"card"`.
 Click-through (`pointer_input:false`) requires explicit `backing:"none"`,
 which draws text without a card background. Updates validate the combined
-item, so switching back to a card also requires pointer input. Exiting items
-stop consuming input as soon as exit starts. Both choices appear in `osd.list`.
+item, so switching back to a card also requires pointer input. Opaque items retain input through the entire exit until removal, with no opacity threshold.
+Transparent backing requires pointer_input:false and never consumes input, including during exit. Both choices appear in `osd.list`.
 
 Validation precedes mutation. Refusals carry an `error_code`, including
 `INVALID_ARGS`, `INVALID_SCENE`, `INVALID_ANCHOR`, `INVALID_MOTION`,
