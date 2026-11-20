@@ -98,7 +98,11 @@ fn malformed_bound_runs_refuse_before_rendering() {
     let model = json!({"runs":[{"text":"x","role":"typo"}]});
     let mut document = scene::parse(&source).unwrap();
     document.model = Some(model.clone());
-    assert!(scene::lint(&document).iter().any(|d| d.code == "binding-type"));
+    assert!(
+        scene::lint(&document)
+            .iter()
+            .any(|d| d.code == "binding-type")
+    );
     let resolved = scene::resolve(&document).unwrap();
     assert!(!resolved.nodes["root"].ports.contains_key("spans"));
     // Bad bound values follow the shared binding fallback policy; they do
@@ -115,6 +119,7 @@ fn render_review_slide() {
     let mut harness = egui_kittest::Harness::builder()
         .with_size(egui::vec2(1600., 900.))
         .with_pixels_per_point(2.4)
+        .with_context_setup(|ctx| viu::fonts::install(ctx, 400, 600))
         .wgpu()
         .build_ui(move |ui| {
             view.show(ui);
@@ -130,20 +135,29 @@ fn render_review_slide() {
 #[test]
 #[ignore = "CBC release measurement; uses the same staged private review scene"]
 fn review_slide_cost_and_idle() {
-    let source = std::fs::read_to_string(
-        std::env::temp_dir().join("mixviu-deck-review/slide.scene.mix"),
-    ).unwrap();
+    let source =
+        std::fs::read_to_string(std::env::temp_dir().join("mixviu-deck-review/slide.scene.mix"))
+            .unwrap();
     assert!(source.contains("\"root\":{"));
     let source = source.replacen("\"root\":{", "\"root\":{\"enter\":\"up\",", 1);
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     ctx.set_pixels_per_point(2.4);
     let frame = |view: &mut SceneView, t| {
-        ctx.run_ui(egui::RawInput {
-            time: Some(t),
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600.,900.))),
-            ..Default::default()
-        }, |ui| { view.show(ui); })
+        ctx.run_ui(
+            egui::RawInput {
+                time: Some(t),
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1600., 900.),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                view.show(ui);
+            },
+        )
     };
     frame(&mut view, 0.).drop_without_applying_deltas();
     let mut us = Vec::new();
@@ -152,15 +166,24 @@ fn review_slide_cost_and_idle() {
         let mut out = frame(&mut view, i as f64 / 2000.);
         let _ = ctx.tessellate(std::mem::take(&mut out.shapes), out.pixels_per_point);
         out.textures_delta.clear();
-        us.push(start.elapsed().as_secs_f64()*1e6);
+        us.push(start.elapsed().as_secs_f64() * 1e6);
     }
     us.sort_by(f64::total_cmp);
-    println!("DECK_CPU_US median={:.3} p95={:.3} frames=1000; layout+paint+tessellation, no GPU", us[500],us[950]);
-    for t in [2.,3.,4.] {
+    println!(
+        "DECK_CPU_US median={:.3} p95={:.3} frames=1000; layout+paint+tessellation, no GPU",
+        us[500], us[950]
+    );
+    for t in [2., 3., 4.] {
         frame(&mut view, t).drop_without_applying_deltas();
     }
     let mut settled = frame(&mut view, 5.);
-    assert!(settled.viewport_output.values().all(|v| v.repaint_delay == std::time::Duration::MAX), "idle viewport scheduled a repaint");
+    assert!(
+        settled
+            .viewport_output
+            .values()
+            .all(|v| v.repaint_delay == std::time::Duration::MAX),
+        "idle viewport scheduled a repaint"
+    );
     settled.textures_delta.clear();
     println!("DECK_IDLE_REPAINT=none");
 }
