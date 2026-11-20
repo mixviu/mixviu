@@ -467,6 +467,17 @@ typography/motion parity still need validation; the application painter's
 support does not establish parity for every scene host.
 # Number tracks (deck port specimen)
 
+Rows and columns accept optional `background_radials`, up to four static
+elliptical colour fields over `background`. Each entry requires `x`, `y`
+(fractions of the box, -2..3), `rx`, `ry` (logical radii, >0..10000), `stop`
+(>0..1) and `color` (#RRGGBB). The first field is on top. Colour fades
+linearly to transparent at `stop` times the radius; omitted means no fields.
+This rectangular backdrop primitive is static and requests no repaint.
+Fixed/minimum, fill and allocated grow widths also constrain the painted
+frame, so its fill and outline cover the same box. Text `align` and `fill`
+apply to both plain labels and inline spans. Bold proportional labels use
+the theme's heading face, preserving the authored size.
+
 `text.number` is an optional object with required `to` and optional `from`
 (default 0), `ms` (1400), `delay_ms` (200), and `group` (true). It displays
 a rounded integer, with optional comma grouping. `number` and `spans` are

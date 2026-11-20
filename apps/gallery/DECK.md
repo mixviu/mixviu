@@ -21,7 +21,12 @@ The terminal sample is presentation data, not a PTY. Numeric stats use the
 generic `text.number` scalar track; captions remain ordinary text nodes.
 Completed and constant tracks request no frames. Card and flow outlines use
 the generic box outline ports. Cursor backgrounds, full-width code line
-highlights, exact type metrics and the rail's fixed placement remain work.
+highlights and exact type metrics remain work. `chapter_rail` composes
+chapter chips (including an active colour) and a series footer. A remaining
+space column can anchor that row above the canvas bottom margin. Static
+radial backdrops use the generic `background_radials` port; no new kind.
+The native font choice is theme-selected Inter and JetBrains Mono, rather
+than the HTML specimen's Fira Sans and FiraCode.
 Raster shots/callouts, other motion effects beyond the existing entrances,
 and Gallery navigation integration remain work.
 
