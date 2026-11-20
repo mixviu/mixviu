@@ -33,21 +33,33 @@ fn completed_map_entrance_releases_visual_properties_to_window_place() {
 
 #[test]
 fn restore_preserves_a_nonidentity_placement_anchor() {
-    if !process::record_available() { return; }
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("restore-anchor");
-    let mut process = process::spawn_preferences("restore-anchor", &bus.url,
-        json!({"window_motion":{"restore":{"preset":"pop","duration_ms":300}}}));
+    let mut process = process::spawn_preferences(
+        "restore-anchor",
+        &bus.url,
+        json!({"window_motion":{"restore":{"preset":"pop","duration_ms":300}}}),
+    );
     bus.ready();
-    let (mut client, row) = solid_window(&bus, &mut process, "restore-anchor", 0xffffffff, 300, 200);
-    bus.call("comp.window.place", place_args(&row, json!({"scale":{"factor":0.5,"anchor":{"x":0,"y":0}}})));
+    let (mut client, row) =
+        solid_window(&bus, &mut process, "restore-anchor", 0xffffffff, 300, 200);
+    bus.call(
+        "comp.window.place",
+        place_args(&row, json!({"scale":{"factor":0.5,"anchor":{"x":0,"y":0}}})),
+    );
     let (_, _, before) = ppm(&bus, &process, "before-restore", None);
     bus.call("comp.window.minimize", target(&row));
     thread::sleep(Duration::from_millis(100));
     bus.call("comp.window.restore", target(&row));
     thread::sleep(Duration::from_millis(500));
     let (width, _, after) = ppm(&bus, &process, "after-restore", None);
-    assert_eq!(rgb_at(&before, width, 320, 220), [255,255,255]);
-    assert_eq!(before, after, "restore must not change the settled placement");
+    assert_eq!(rgb_at(&before, width, 320, 220), [255, 255, 255]);
+    assert_eq!(
+        before, after,
+        "restore must not change the settled placement"
+    );
     let row = bus.window_for("restore-anchor", &mut [&mut client]);
     assert_eq!(row["scale"]["factor"].as_f64(), Some(0.5));
     assert_eq!(row["scale"]["anchor"]["x"].as_f64(), Some(0.0));
@@ -55,23 +67,34 @@ fn restore_preserves_a_nonidentity_placement_anchor() {
 
 #[test]
 fn hide_then_show_midrun_preserves_sampled_pixels() {
-    if !process::record_available() { return; }
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("hide-show-run");
-    let mut process = process::spawn(1,None,"hide-show-run",Some(&bus.url));
+    let mut process = process::spawn(1, None, "hide-show-run", Some(&bus.url));
     bus.ready();
-    let (mut client, row) = solid_window(&bus,&mut process,"hide-show-run",0xffffffff,300,200);
+    let (mut client, row) = solid_window(&bus, &mut process, "hide-show-run", 0xffffffff, 300, 200);
     thread::scope(|scope| {
         let run = scope.spawn(|| bus.call("comp.motion.run",json!({"targets":[{"window":{"id":row["id"],"generation":row["generation"],"preset":"fade","duration_ms":3000}}]})));
         thread::sleep(Duration::from_millis(150));
-        bus.call("comp.window.place",place_args(&row,json!({"visible":false})));
-        assert_eq!(run.join().unwrap()["status"],"superseded");
-        let hidden = bus.window_for("hide-show-run",&mut [&mut client]);
+        bus.call(
+            "comp.window.place",
+            place_args(&row, json!({"visible":false})),
+        );
+        assert_eq!(run.join().unwrap()["status"], "superseded");
+        let hidden = bus.window_for("hide-show-run", &mut [&mut client]);
         let opacity = hidden["opacity"].as_f64().unwrap();
         assert!(opacity > 0.0 && opacity < 0.9, "{hidden}");
-        bus.call("comp.window.place",place_args(&row,json!({"visible":true})));
-        let (width,_,pixels)=ppm(&bus,&process,"shown-held",None);
-        for (value,bg) in rgb_at(&pixels,width,350,250).into_iter().zip([18.0,20.0,25.0]) {
-            assert!((f64::from(value)-(bg+(255.0-bg)*opacity)).abs()<3.0);
+        bus.call(
+            "comp.window.place",
+            place_args(&row, json!({"visible":true})),
+        );
+        let (width, _, pixels) = ppm(&bus, &process, "shown-held", None);
+        for (value, bg) in rgb_at(&pixels, width, 350, 250)
+            .into_iter()
+            .zip([18.0, 20.0, 25.0])
+        {
+            assert!((f64::from(value) - (bg + (255.0 - bg) * opacity)).abs() < 3.0);
         }
     });
 }

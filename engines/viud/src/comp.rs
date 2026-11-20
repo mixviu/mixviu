@@ -111,12 +111,19 @@ mod authority_tests {
     fn human_motion_only_cancels_runs_with_geometry() {
         for geometry in [false, true] {
             let run = super::MotionKind::Window {
-                id: 1, generation: 1, from: [0.0;4],
-                to: [geometry.then_some(100.0),None,None,None],
-                timeline: motion::Timeline::new(0.0,1.0,motion::Easing::Linear),
-                visual: Some(motion::presets().into_iter().find(|p| p.name=="fade").unwrap()),
+                id: 1,
+                generation: 1,
+                from: [0.0; 4],
+                to: [geometry.then_some(100.0), None, None, None],
+                timeline: motion::Timeline::new(0.0, 1.0, motion::Easing::Linear),
+                visual: Some(
+                    motion::presets()
+                        .into_iter()
+                        .find(|p| p.name == "fade")
+                        .unwrap(),
+                ),
             };
-            assert_eq!(run.cancelled_by_human(),geometry);
+            assert_eq!(run.cancelled_by_human(), geometry);
         }
     }
 

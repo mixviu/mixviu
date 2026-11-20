@@ -828,7 +828,12 @@ fn apply_visual(lp: &mut Loop, id: SurfaceId, spec: &comp_model::request::PlaceS
     let old = lp.inner.comp.visual(id);
     let window = window_of(lp, id);
     let mut visual = window.as_ref().map_or(old, |window| {
-        world::comp::animation::prepare_place(window, old, spec.visible == Some(false), lp.inner.comp.clock.now())
+        world::comp::animation::prepare_place(
+            window,
+            old,
+            spec.visible == Some(false),
+            lp.inner.comp.clock.now(),
+        )
     });
     visual.update(spec);
     if spec.visible.is_some()

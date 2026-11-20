@@ -9752,6 +9752,7 @@ dependencies = [
  "image",
  "libc",
  "model",
+ "motion",
  "policy",
  "policy-host",
  "protocols",
