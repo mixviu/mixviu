@@ -829,6 +829,7 @@ impl BusHandler for Local {
                         return Ok((10,from_json(json!({"error_code":"stale_generation"}))?));
                     }
                     if self.model.borrow().is_some() || self.model_patch.borrow().is_some() {
+                        *self.error.borrow_mut()=Some("only one revisioned publication is allowed per callback".into());
                         return Err(failure("only one revisioned publication is allowed per callback"));
                     }
                     let patch=crate::model_patch::Patch::decode(body).map_err(|e|failure(&e))?;
@@ -843,12 +844,14 @@ impl BusHandler for Local {
                     }
                     if command == "scenes.model" {
                         if self.model_patch.borrow().is_some() || self.model_revision.borrow().is_some() {
-                            return Err(failure("only one revisioned publication is allowed per callback"));
+                            *self.error.borrow_mut()=Some("only one revisioned publication is allowed per callback".into());
+                        return Err(failure("only one revisioned publication is allowed per callback"));
                         }
                         let revision=if let Some(value)=body.get("revision") {
                             if !self.incremental_models {return Err(failure("owner does not support revisioned models"));}
                             let n=value.as_u64().filter(|n|*n>0 && *n<=crate::model_patch::MAX_REVISION).ok_or_else(||failure("revision must be a positive exact integer"))?;
-                            if self.model.borrow().is_some() {return Err(failure("only one revisioned publication is allowed per callback"));}
+                            if self.model.borrow().is_some() {*self.error.borrow_mut()=Some("only one revisioned publication is allowed per callback".into());
+                        return Err(failure("only one revisioned publication is allowed per callback"));}
                             Some(n)
                         } else {None};
                         if !body["value"].is_object() {

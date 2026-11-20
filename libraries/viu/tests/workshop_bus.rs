@@ -20,21 +20,18 @@ const MAX_STANDALONE_PUMP_US: u64 = 800_000;
 const MAX_TICK_MODEL_BYTES: u64 = 4 * 1024 * 1024;
 
 fn profile_tick(bundle: &mut Bundle) {
-    bundle.program.source = bundle.program.source.replace(
-        "$dirty=false\nfn publish_workshop",
-        "$dirty=false\n$profile_previous={}\nfn publish_workshop",
-    );
-    bundle.program.source = bundle.program.source.replace("fn publish_workshop($s)\n", "fn publish_workshop($s)\n  global $profile_previous\n  $pc=viu_test_cpu();$pw=monotonic()\n");
-    let needle = "  send \"viu-local\" \"scenes.model\" body={generation:$ctx.generation,value:$app_mode.project($projection,\"workshop\",$s.theme_choice)}";
-    let replacement = r#"  $profile_value=$app_mode.project($projection,"workshop",$s.theme_choice)
-  $profile_cpu=(viu_test_cpu()-$pc)*1000000;$profile_wall=(monotonic()-$pw)*1000000
-  $profile_keys=[]
-  for $profile_key in keys($profile_value) if not deep_eq($profile_previous[$profile_key],$profile_value[$profile_key]) then push($profile_keys,$profile_key) end end
-  print("WORKSHOP_BUILD "..json_encode({selected:$s.row_key,cpu_us:$profile_cpu,wall_us:$profile_wall,bytes:byte_length(json_encode($profile_value)),same:deep_eq($profile_previous,$profile_value),changed:$profile_keys}))
-  $profile_previous=$profile_value
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$profile_value}"#;
-    assert!(bundle.program.source.contains(needle));
-    bundle.program.source = bundle.program.source.replace(needle, replacement);
+    for (needle,replacement) in [
+        ("  $s=$saved.reconcile($s)","  $pc=viu_test_cpu();$pw=monotonic()\n  $s=$saved.reconcile($s)"),
+        ("  $projection=$frame.project($s,$presentation.project($s));$persist=$saved.project($s)",r#"  $pr=viu_test_cpu()
+  $presentation_value=$presentation.project($s);$presentation_cpu=(viu_test_cpu()-$pr)*1000000
+  $pr=viu_test_cpu();$projection=$frame.project($s,$presentation_value);$frame_cpu=(viu_test_cpu()-$pr)*1000000
+  $persist=$saved.project($s)"#),
+        ("  $body={generation:$ctx.generation,base:$publication.ack,revision:$revision,operations:$operations}",r#"  $body={generation:$ctx.generation,base:$publication.ack,revision:$revision,operations:$operations}
+  print("WORKSHOP_BUILD "..json_encode({cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000,presentation_cpu_us:$presentation_cpu,frame_cpu_us:$frame_cpu,full:$full,model_bytes:byte_length(json_encode($value)),patch_bytes:byte_length(json_encode($body)),operations:len($operations)}))"#),
+    ] {
+        assert!(bundle.program.source.contains(needle),"publication probe source drift: {needle}");
+        bundle.program.source=bundle.program.source.replace(needle,replacement);
+    }
 }
 
 fn profile_info_helpers(bundle: &mut Bundle) -> tempfile::NamedTempFile {
