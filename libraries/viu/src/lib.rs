@@ -55,6 +55,7 @@ pub mod raster_fit;
 #[cfg(test)]
 mod registry_tests;
 
+pub(crate) mod model_patch;
 pub mod rich;
 pub mod runtime;
 pub mod session;
@@ -66,7 +67,6 @@ pub mod thumbnail;
 pub mod timers;
 pub mod tree_table;
 pub mod view;
-pub(crate) mod model_patch;
 mod widget_rects;
 pub mod widgets;
 pub mod window_frame;

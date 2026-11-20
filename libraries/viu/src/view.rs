@@ -143,8 +143,8 @@ impl SceneView {
         let tree = scene::resolve(&document).map_err(|e| format!("{e:?}"))?;
         let lists = validate_templates(&tree).map_err(|e| e.to_string())?;
         validate_controls(&tree)?;
-        let bindings=scene::bindings::BindingSet::from_resolved(&tree);
-        let model_bytes=crate::model_patch::model_bytes(&tree.model);
+        let bindings = scene::bindings::BindingSet::from_resolved(&tree);
+        let model_bytes = crate::model_patch::model_bytes(&tree.model);
         Ok(Self {
             motion: toolkit::scene_motion::SceneMotion::default(),
             numbers: crate::numbers::Numbers::default(),
@@ -173,35 +173,63 @@ impl SceneView {
     pub fn model(&self) -> &Value {
         &self.tree.model
     }
-    #[cfg(feature="test-support")]
-    pub(crate) fn publication_equivalent(&self,other:&Self)->bool {
-        self.tree==other.tree && self.lists==other.lists && match (&self.frame,&other.frame) {
-            (Some(a),Some(b))=>a.publication_equivalent(b),(None,None)=>true,_=>false
-        }
+    #[cfg(feature = "test-support")]
+    pub(crate) fn publication_equivalent(&self, other: &Self) -> bool {
+        self.tree == other.tree
+            && self.lists == other.lists
+            && match (&self.frame, &other.frame) {
+                (Some(a), Some(b)) => a.publication_equivalent(b),
+                (None, None) => true,
+                _ => false,
+            }
     }
     /// Stage data edits and binding ports, validate, then commit the frame
     /// before the root. No fallible work follows the frame commit.
-    pub(crate) fn apply_model_patch(&mut self, patch:&crate::model_patch::Patch)->Result<(),String> {
-        let edit=crate::model_patch::Edit::apply(&mut self.tree.model,self.model_bytes,patch)?;
-        let mut displaced=BTreeMap::new();
-        let result=(|| {
-            let nodes=scene::bindings::prepare_model_roots(&self.tree,&self.bindings,&patch.roots()).map_err(|e|format!("{e:?}"))?;
-            for (id,node) in nodes {displaced.insert(id.clone(),self.tree.nodes.insert(id,node).unwrap());}
-            let lists=validate_templates(&self.tree).map_err(|e|e.to_string())?;
+    pub(crate) fn apply_model_patch(
+        &mut self,
+        patch: &crate::model_patch::Patch,
+    ) -> Result<(), String> {
+        let edit = crate::model_patch::Edit::apply(&mut self.tree.model, self.model_bytes, patch)?;
+        let mut displaced = BTreeMap::new();
+        let result = (|| {
+            let nodes =
+                scene::bindings::prepare_model_roots(&self.tree, &self.bindings, &patch.roots())
+                    .map_err(|e| format!("{e:?}"))?;
+            for (id, node) in nodes {
+                displaced.insert(id.clone(), self.tree.nodes.insert(id, node).unwrap());
+            }
+            let lists = validate_templates(&self.tree).map_err(|e| e.to_string())?;
             validate_controls(&self.tree)?;
             self.validate_hosted_overlays(&self.tree)?;
-            if let Some(frame)=self.frame.as_mut() {frame.apply_model_patch(patch)?;}
-            self.lists=lists;
+            if let Some(frame) = self.frame.as_mut() {
+                frame.apply_model_patch(patch)?;
+            }
+            self.lists = lists;
             Ok(())
         })();
         match result {
-            Ok(())=>{self.model_bytes=edit.bytes;self.revision+=1;Ok(())}
-            Err(error)=>{edit.rollback(&mut self.tree.model);for (id,node) in displaced {self.tree.nodes.insert(id,node);}Err(error)}
+            Ok(()) => {
+                self.model_bytes = edit.bytes;
+                self.revision += 1;
+                Ok(())
+            }
+            Err(error) => {
+                edit.rollback(&mut self.tree.model);
+                for (id, node) in displaced {
+                    self.tree.nodes.insert(id, node);
+                }
+                Err(error)
+            }
         }
     }
-    fn validate_hosted_overlays(&self,candidate:&ResolvedScene)->Result<(),String> {
+    fn validate_hosted_overlays(&self, candidate: &ResolvedScene) -> Result<(), String> {
         for id in &self.overlays {
-            if !candidate.nodes.get(id).and_then(|n|n.ports.get("definition")).is_some_and(|d|matches!(d["kind"].as_str(),Some("menubar"|"command-bar"))) {
+            if !candidate
+                .nodes
+                .get(id)
+                .and_then(|n| n.ports.get("definition"))
+                .is_some_and(|d| matches!(d["kind"].as_str(), Some("menubar" | "command-bar")))
+            {
                 return Err("hosted overlay control changed to an incompatible kind".into());
             }
         }
@@ -358,7 +386,7 @@ impl SceneView {
                 crate::app_host::test_support::thread_cpu(),
             )
         });
-        let model_bytes=validate_model_budget(&model)?;
+        let model_bytes = validate_model_budget(&model)?;
         #[cfg(feature = "test-support")]
         let validated = probe.map(|_| {
             (
@@ -421,7 +449,7 @@ impl SceneView {
         if let Some(frame) = self.frame.as_mut() {
             frame.apply_model(model)?;
         }
-        self.model_bytes=model_bytes;
+        self.model_bytes = model_bytes;
         self.tree = candidate;
         self.lists = lists;
         self.revision += 1;

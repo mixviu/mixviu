@@ -22,17 +22,29 @@ const MAX_STANDALONE_PUMP_US: u64 = 800_000;
 const MAX_TICK_MODEL_BYTES: u64 = 768 * 1024;
 
 fn profile_tick(bundle: &mut Bundle) {
-    for (needle,replacement) in [
-        ("  $s=$saved.reconcile($s)","  $pc=viu_test_cpu();$pw=monotonic()\n  $s=$saved.reconcile($s)"),
-        ("  $projection=$frame.project($s,$presentation.project($s));$persist=$saved.project($s)",r#"  $pr=viu_test_cpu()
+    for (needle, replacement) in [
+        (
+            "  $s=$saved.reconcile($s)",
+            "  $pc=viu_test_cpu();$pw=monotonic()\n  $s=$saved.reconcile($s)",
+        ),
+        (
+            "  $projection=$frame.project($s,$presentation.project($s));$persist=$saved.project($s)",
+            r#"  $pr=viu_test_cpu()
   $presentation_value=$presentation.project($s);$presentation_cpu=(viu_test_cpu()-$pr)*1000000
   $pr=viu_test_cpu();$projection=$frame.project($s,$presentation_value);$frame_cpu=(viu_test_cpu()-$pr)*1000000
-  $persist=$saved.project($s)"#),
-        ("  $body={generation:$ctx.generation,base:$publication.ack,revision:$revision,operations:$operations}",r#"  $body={generation:$ctx.generation,base:$publication.ack,revision:$revision,operations:$operations}
-  print("WORKSHOP_BUILD "..json_encode({cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000,presentation_cpu_us:$presentation_cpu,frame_cpu_us:$frame_cpu,full:$full,model_bytes:byte_length(json_encode($value)),patch_bytes:byte_length(json_encode($body)),operations:len($operations)}))"#),
+  $persist=$saved.project($s)"#,
+        ),
+        (
+            "  $body={generation:$ctx.generation,base:$publication.ack,revision:$revision,operations:$operations}",
+            r#"  $body={generation:$ctx.generation,base:$publication.ack,revision:$revision,operations:$operations}
+  print("WORKSHOP_BUILD "..json_encode({cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000,presentation_cpu_us:$presentation_cpu,frame_cpu_us:$frame_cpu,full:$full,model_bytes:byte_length(json_encode($value)),patch_bytes:byte_length(json_encode($body)),operations:len($operations)}))"#,
+        ),
     ] {
-        assert!(bundle.program.source.contains(needle),"publication probe source drift: {needle}");
-        bundle.program.source=bundle.program.source.replace(needle,replacement);
+        assert!(
+            bundle.program.source.contains(needle),
+            "publication probe source drift: {needle}"
+        );
+        bundle.program.source = bundle.program.source.replace(needle, replacement);
     }
 }
 
@@ -588,7 +600,9 @@ fn workshop_answers_during_discovery() {
         if PROFILE_TICK {
             host.profile_scene_apply();
         }
-        if VERIFY_INCREMENTAL {host.verify_incremental_publications();}
+        if VERIFY_INCREMENTAL {
+            host.verify_incremental_publications();
+        }
         let mut overlapping = false;
         let mut streamed = false;
         loop {

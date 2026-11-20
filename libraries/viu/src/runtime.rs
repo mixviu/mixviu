@@ -824,18 +824,23 @@ impl BusHandler for Local {
                         "offset":[values.get(motion::Property::Tx),values.get(motion::Property::Ty)]})
                 }
                 "scenes.model.patch" => {
-                    if !self.incremental_models {return Err(failure("owner does not support incremental models"));}
-                    if body["generation"].as_u64()!=Some(self.generation) {
-                        return Ok((10,from_json(json!({"error_code":"stale_generation"}))?));
+                    if !self.incremental_models {
+                        return Err(failure("owner does not support incremental models"));
+                    }
+                    if body["generation"].as_u64() != Some(self.generation) {
+                        return Ok((10, from_json(json!({"error_code":"stale_generation"}))?));
                     }
                     if self.model.borrow().is_some() || self.model_patch.borrow().is_some() {
-                        *self.error.borrow_mut()=Some("only one revisioned publication is allowed per callback".into());
-                        return Err(failure("only one revisioned publication is allowed per callback"));
+                        *self.error.borrow_mut() =
+                            Some("only one revisioned publication is allowed per callback".into());
+                        return Err(failure(
+                            "only one revisioned publication is allowed per callback",
+                        ));
                     }
-                    let patch=crate::model_patch::Patch::decode(body).map_err(|e|failure(&e))?;
-                    let revision=patch.revision;
-                    *self.model_revision.borrow_mut()=Some(revision);
-                    *self.model_patch.borrow_mut()=Some(patch);
+                    let patch = crate::model_patch::Patch::decode(body).map_err(|e| failure(&e))?;
+                    let revision = patch.revision;
+                    *self.model_revision.borrow_mut() = Some(revision);
+                    *self.model_patch.borrow_mut() = Some(patch);
                     json!({"queued":true,"revision":revision})
                 }
                 "scenes.ready" | "scenes.model" => {
@@ -843,23 +848,45 @@ impl BusHandler for Local {
                         return Ok((10, from_json(json!({"error_code":"stale_generation"}))?));
                     }
                     if command == "scenes.model" {
-                        if self.model_patch.borrow().is_some() || self.model_revision.borrow().is_some() {
-                            *self.error.borrow_mut()=Some("only one revisioned publication is allowed per callback".into());
-                        return Err(failure("only one revisioned publication is allowed per callback"));
+                        if self.model_patch.borrow().is_some()
+                            || self.model_revision.borrow().is_some()
+                        {
+                            *self.error.borrow_mut() = Some(
+                                "only one revisioned publication is allowed per callback".into(),
+                            );
+                            return Err(failure(
+                                "only one revisioned publication is allowed per callback",
+                            ));
                         }
-                        let revision=if let Some(value)=body.get("revision") {
-                            if !self.incremental_models {return Err(failure("owner does not support revisioned models"));}
-                            let n=value.as_u64().filter(|n|*n>0 && *n<=crate::model_patch::MAX_REVISION).ok_or_else(||failure("revision must be a positive exact integer"))?;
-                            if self.model.borrow().is_some() {*self.error.borrow_mut()=Some("only one revisioned publication is allowed per callback".into());
-                        return Err(failure("only one revisioned publication is allowed per callback"));}
+                        let revision = if let Some(value) = body.get("revision") {
+                            if !self.incremental_models {
+                                return Err(failure("owner does not support revisioned models"));
+                            }
+                            let n = value
+                                .as_u64()
+                                .filter(|n| *n > 0 && *n <= crate::model_patch::MAX_REVISION)
+                                .ok_or_else(|| {
+                                    failure("revision must be a positive exact integer")
+                                })?;
+                            if self.model.borrow().is_some() {
+                                *self.error.borrow_mut() = Some(
+                                    "only one revisioned publication is allowed per callback"
+                                        .into(),
+                                );
+                                return Err(failure(
+                                    "only one revisioned publication is allowed per callback",
+                                ));
+                            }
                             Some(n)
-                        } else {None};
+                        } else {
+                            None
+                        };
                         if !body["value"].is_object() {
                             return Err(failure("model must be a map"));
                         }
                         *self.model.borrow_mut() =
                             body.as_object_mut().and_then(|m| m.remove("value"));
-                        *self.model_revision.borrow_mut()=revision;
+                        *self.model_revision.borrow_mut() = revision;
                     }
                     json!({"ok":true})
                 }

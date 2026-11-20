@@ -361,27 +361,59 @@ pub fn prepare_model_roots(
     let mut diagnostics = Vec::new();
     for path in &set.order {
         let binding = &set.bindings[path];
-        if binding.reads_item || !binding.deps.iter().any(|dep| {
-            dep == "model" || dep.strip_prefix("model.").is_some_and(|p| roots.contains(p.split('.').next().unwrap()))
-        }) { continue; }
-        let Some((id, port)) = path.rsplit_once('.') else { continue; };
-        let Some(node) = tree.nodes.get(id) else { continue; };
+        if binding.reads_item
+            || !binding.deps.iter().any(|dep| {
+                dep == "model"
+                    || dep
+                        .strip_prefix("model.")
+                        .is_some_and(|p| roots.contains(p.split('.').next().unwrap()))
+            })
+        {
+            continue;
+        }
+        let Some((id, port)) = path.rsplit_once('.') else {
+            continue;
+        };
+        let Some(node) = tree.nodes.get(id) else {
+            continue;
+        };
         match evaluate_budgeted(binding, &tree.model, None, started, || {})
-            .and_then(|v| coerce_port(&v, port_for(&node.family, port))) {
-            Ok(value) => { updates.entry(id.into()).or_default().insert(port.into(),value); }
+            .and_then(|v| coerce_port(&v, port_for(&node.family, port)))
+        {
+            Ok(value) => {
+                updates
+                    .entry(id.into())
+                    .or_default()
+                    .insert(port.into(), value);
+            }
             Err(code) => diagnostics.push(Diagnostic::warning("binding-eval", node.line, code)),
         }
     }
-    let mut nodes=BTreeMap::new();
-    for (id,updates) in updates {
-        let old=&tree.nodes[&id];
-        let mut node=Node {family:old.family.clone(),line:old.line,is_template:old.is_template,
-            ports:old.ports.iter().filter(|(key,_)|!updates.contains_key(*key)).map(|(k,v)|(k.clone(),v.clone())).collect()};
-        for (port,value) in updates {set_port(&mut node.ports,&port,value);}
-        crate::check_layout_bounds(&id,&node,&mut diagnostics);
-        nodes.insert(id,node);
+    let mut nodes = BTreeMap::new();
+    for (id, updates) in updates {
+        let old = &tree.nodes[&id];
+        let mut node = Node {
+            family: old.family.clone(),
+            line: old.line,
+            is_template: old.is_template,
+            ports: old
+                .ports
+                .iter()
+                .filter(|(key, _)| !updates.contains_key(*key))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        };
+        for (port, value) in updates {
+            set_port(&mut node.ports, &port, value);
+        }
+        crate::check_layout_bounds(&id, &node, &mut diagnostics);
+        nodes.insert(id, node);
     }
-    if diagnostics.is_empty() {Ok(nodes)} else {Err(diagnostics)}
+    if diagnostics.is_empty() {
+        Ok(nodes)
+    } else {
+        Err(diagnostics)
+    }
 }
 
 fn too_large_for(value: &JsonValue, limit: usize) -> bool {
