@@ -51,7 +51,9 @@ static FRAME_REFUSALS: std::sync::LazyLock<std::sync::Mutex<FrameRefusalLogs>> =
     std::sync::LazyLock::new(Default::default);
 
 fn refusal_totals() -> serde_json::Value {
-    let frames = FRAME_REFUSALS.lock().expect("frame refusal counters poisoned");
+    let frames = FRAME_REFUSALS
+        .lock()
+        .expect("frame refusal counters poisoned");
     serde_json::json!({
         "frame_refusals": frames.values().map(mesh::DiagnosticLog::total).sum::<u64>(),
         "challenge_refusals": mesh::challenge_refusal_total(),
@@ -111,7 +113,13 @@ fn frame_refused(reason: &'static str, peer: &str, address: &str, posture: Admis
     frame_refused_at(reason, peer, address, posture, Instant::now());
 }
 
-fn frame_refused_at(reason: &'static str, peer: &str, address: &str, posture: AdmissionMode, now: Instant) {
+fn frame_refused_at(
+    reason: &'static str,
+    peer: &str,
+    address: &str,
+    posture: AdmissionMode,
+    now: Instant,
+) {
     tracing::debug!(
         event = "frame.refused",
         reason,
@@ -124,7 +132,10 @@ fn frame_refused_at(reason: &'static str, peer: &str, address: &str, posture: Ad
         let mut reasons = FRAME_REFUSALS
             .lock()
             .expect("frame refusal counters poisoned");
-        reasons.entry((peer.to_owned(), reason)).or_default().record(now)
+        reasons
+            .entry((peer.to_owned(), reason))
+            .or_default()
+            .record(now)
     };
     if let Some((count, total)) = count {
         tracing::info!(
@@ -5478,18 +5489,59 @@ mod tests {
     async fn refusal_totals_are_live_in_info() {
         let state = mesh_delivery_test_state().await;
         let before = super::refusal_totals()["frame_refusals"].as_u64().unwrap();
-        super::frame_refused("test-info", "info-peer", "192.0.2.1", config::node::AdmissionMode::Observe);
+        super::frame_refused(
+            "test-info",
+            "info-peer",
+            "192.0.2.1",
+            config::node::AdmissionMode::Observe,
+        );
         let mut challenge = bus::wire::BusMessage::new().with_header("id", "info-challenge");
-        challenge.body = serde_json::json!({"verifying_broker_node": "wrong", "mesh_fqdn": "example.test"}).to_string();
-        assert!(mesh::build_admit_response(&challenge, "local", &Some([9; 32]), "info-peer", "example.test", 1).is_none());
+        challenge.body =
+            serde_json::json!({"verifying_broker_node": "wrong", "mesh_fqdn": "example.test"})
+                .to_string();
+        assert!(
+            mesh::build_admit_response(
+                &challenge,
+                "local",
+                &Some([9; 32]),
+                "info-peer",
+                "example.test",
+                1
+            )
+            .is_none()
+        );
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
         let request = bus::wire::BusMessage::new().with_header("command", "noded.info");
-        super::handle_noded_command(&request, &tx, &state, &mut None, "anon-test", "192.0.2.1".parse().unwrap(), &mut crate::observe::Outcome::BrokerHandled).await;
+        super::handle_noded_command(
+            &request,
+            &tx,
+            &state,
+            &mut None,
+            "anon-test",
+            "192.0.2.1".parse().unwrap(),
+            &mut crate::observe::Outcome::BrokerHandled,
+        )
+        .await;
         let reply = bus::wire::parse(&rx.recv().await.unwrap()).unwrap();
         let info: serde_json::Value = serde_json::from_str(&reply.body).unwrap();
-        assert!(info["meta"]["refusal_totals"]["frame_refusals"].as_u64().unwrap() > before);
-        assert!(info["meta"]["refusal_totals"]["challenge_refusals"].as_u64().unwrap() <= mesh::challenge_refusal_total());
-        assert!(info["meta"]["refusal_totals"]["challenge_refusals"].as_u64().unwrap() > 0);
+        assert!(
+            info["meta"]["refusal_totals"]["frame_refusals"]
+                .as_u64()
+                .unwrap()
+                > before
+        );
+        assert!(
+            info["meta"]["refusal_totals"]["challenge_refusals"]
+                .as_u64()
+                .unwrap()
+                <= mesh::challenge_refusal_total()
+        );
+        assert!(
+            info["meta"]["refusal_totals"]["challenge_refusals"]
+                .as_u64()
+                .unwrap()
+                > 0
+        );
     }
 
     #[test]
@@ -5501,18 +5553,29 @@ mod tests {
                 self.0.lock().unwrap().extend_from_slice(bytes);
                 Ok(bytes.len())
             }
-            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
         }
         let output = Capture::default();
         let writer = output.clone();
-        let _guard = tracing_subscriber::fmt().without_time().with_ansi(false)
+        let _guard = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
             .with_max_level(tracing::Level::INFO)
-            .with_writer(move || writer.clone()).set_default();
+            .with_writer(move || writer.clone())
+            .set_default();
         let now = std::time::Instant::now();
         for second in 0..180 {
             for peer in ["coalesce-alpha", "coalesce-beta"] {
                 for reason in ["test-reason-one", "test-reason-two"] {
-                    super::frame_refused_at(reason, peer, "192.0.2.1", config::node::AdmissionMode::Observe, now + std::time::Duration::from_secs(second));
+                    super::frame_refused_at(
+                        reason,
+                        peer,
+                        "192.0.2.1",
+                        config::node::AdmissionMode::Observe,
+                        now + std::time::Duration::from_secs(second),
+                    );
                 }
             }
         }
@@ -5522,7 +5585,12 @@ mod tests {
         for peer in ["coalesce-alpha", "coalesce-beta"] {
             for reason in ["test-reason-one", "test-reason-two"] {
                 assert_eq!(logs[&(peer.to_owned(), reason)].total(), 180);
-                assert_eq!(text.lines().filter(|line| line.contains(peer) && line.contains(reason)).count(), 3);
+                assert_eq!(
+                    text.lines()
+                        .filter(|line| line.contains(peer) && line.contains(reason))
+                        .count(),
+                    3
+                );
             }
         }
     }
@@ -5688,7 +5756,10 @@ mod tests {
         assert_eq!(body["peers"][0]["name"], "beta");
         assert_eq!(body["peers"][0]["wg_ip"], "192.0.2.6");
         assert_eq!(body["peers"][0]["port"], 4300);
-        assert_eq!(body["peers"][0]["challenge_epoch"], serde_json::json!(mesh::peer_challenge_epoch("beta")));
+        assert_eq!(
+            body["peers"][0]["challenge_epoch"],
+            serde_json::json!(mesh::peer_challenge_epoch("beta"))
+        );
         assert_eq!(body["source"], "signed-inventory");
         assert_eq!(body["authority"]["epoch"], 7);
         assert_eq!(body["authority"]["hash"], "authority-hash");

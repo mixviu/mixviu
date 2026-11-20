@@ -268,16 +268,30 @@ async fn bridge_discovers_runtime_unix_socket_without_config_socket_key() {
     let node_config = dir.path().join("node.conf.mix");
     // Legacy TCP would fail: this test must reach the Unix broker.
     std::fs::write(&node_config, "wg_ip: '192.0.2.1'\nnoded: { port: 1 }").unwrap();
-    let mut child = Child(tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
-        .arg("bridge")
-        .env_remove("MIX_NODED_URL").env_remove("MIX_BUS_SOCKET")
-        .env("MIX_NODE_CONFIG", node_config).env("MIX_RUN", run_dir)
-        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap());
+    let mut child = Child(
+        tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
+            .arg("bridge")
+            .env_remove("MIX_NODED_URL")
+            .env_remove("MIX_BUS_SOCKET")
+            .env("MIX_NODE_CONFIG", node_config)
+            .env("MIX_RUN", run_dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
     let mut input = child.0.stdin.take().unwrap();
-    input.write_all(b"{\"id\":1,\"command\":\"indexd.stats\",\"body\":{}}\n").await.unwrap();
+    input
+        .write_all(b"{\"id\":1,\"command\":\"indexd.stats\",\"body\":{}}\n")
+        .await
+        .unwrap();
     drop(input);
     let mut lines = BufReader::new(child.0.stdout.take().unwrap()).lines();
-    let line = tokio::time::timeout(Duration::from_secs(5), lines.next_line()).await.unwrap().unwrap().unwrap();
+    let line = tokio::time::timeout(Duration::from_secs(5), lines.next_line())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
     let reply: Value = serde_json::from_str(&line).unwrap();
     assert_eq!(reply["rc"], 10);
     assert!(reply["error"].as_str().unwrap().contains("not found"));

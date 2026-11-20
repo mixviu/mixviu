@@ -152,7 +152,9 @@ pub fn build_admit_response(
         return None;
     }
     let challenge_epoch = body.get("inventory_epoch")?.as_u64()?;
-    CHALLENGE_EPOCHS.lock().expect("challenge epochs poisoned")
+    CHALLENGE_EPOCHS
+        .lock()
+        .expect("challenge epochs poisoned")
         .insert(expected_verifier.to_owned(), challenge_epoch);
     // The verifier owns the nonce and checks the proof against its own
     // authority. A rolling inventory publish must not strand valid members.
@@ -208,13 +210,21 @@ static CHALLENGE_EPOCHS: std::sync::LazyLock<Mutex<HashMap<String, u64>>> =
 /// Last matching admission challenge epoch observed from this configured peer.
 /// Diagnostic only: it is not an authenticated inventory or routing authority.
 pub fn peer_challenge_epoch(peer: &str) -> Option<u64> {
-    CHALLENGE_EPOCHS.lock().expect("challenge epochs poisoned").get(peer).copied()
+    CHALLENGE_EPOCHS
+        .lock()
+        .expect("challenge epochs poisoned")
+        .get(peer)
+        .copied()
 }
 
 /// Lifetime refused-challenge total, including suppressed diagnostics.
 pub fn challenge_refusal_total() -> u64 {
-    CHALLENGE_REFUSALS.lock().expect("challenge log counter poisoned")
-        .values().map(|log| log.total).sum()
+    CHALLENGE_REFUSALS
+        .lock()
+        .expect("challenge log counter poisoned")
+        .values()
+        .map(|log| log.total)
+        .sum()
 }
 
 /// Monotonic, reconnect-independent diagnostic coalescing state.
@@ -231,7 +241,10 @@ impl DiagnosticLog {
     pub fn record(&mut self, now: std::time::Instant) -> Option<(u64, u64)> {
         self.total += 1;
         self.pending += 1;
-        if self.last.is_some_and(|last| now.duration_since(last) < Duration::from_secs(60)) {
+        if self
+            .last
+            .is_some_and(|last| now.duration_since(last) < Duration::from_secs(60))
+        {
             return None;
         }
         self.last = Some(now);
@@ -239,7 +252,9 @@ impl DiagnosticLog {
     }
 
     /// Includes a trailing burst that has not produced another log line.
-    pub fn total(&self) -> u64 { self.total }
+    pub fn total(&self) -> u64 {
+        self.total
+    }
 }
 
 fn challenge_diagnostic(
@@ -255,9 +270,15 @@ fn challenge_diagnostic(
         &CHALLENGE_SKEW
     };
     let now = std::time::Instant::now();
-    let emission = counter.lock().expect("challenge log counter poisoned")
-        .entry(peer.to_owned()).or_default().record(now);
-    let Some((count, total)) = emission else { return; };
+    let emission = counter
+        .lock()
+        .expect("challenge log counter poisoned")
+        .entry(peer.to_owned())
+        .or_default()
+        .record(now);
+    let Some((count, total)) = emission else {
+        return;
+    };
     if refused {
         tracing::warn!(
             peer,
@@ -1472,7 +1493,10 @@ mod tests {
                 emissions.push((second, counts));
             }
         }
-        assert_eq!(emissions, vec![(0, (1, 1)), (60, (60, 61)), (120, (60, 121))]);
+        assert_eq!(
+            emissions,
+            vec![(0, (1, 1)), (60, (60, 61)), (120, (60, 121))]
+        );
         assert_eq!(log.total(), 180);
     }
 
@@ -1485,12 +1509,26 @@ mod tests {
                 "inventory_epoch": epoch,
                 "session_id": base64::engine::general_purpose::STANDARD.encode([1; 16]),
                 "server_nonce": base64::engine::general_purpose::STANDARD.encode([2; 32]),
-            }).to_string();
-            assert!(build_admit_response(&challenge, "local", &Some([9; 32]), peer, "example.test", 6).is_some());
+            })
+            .to_string();
+            assert!(
+                build_admit_response(&challenge, "local", &Some([9; 32]), peer, "example.test", 6)
+                    .is_some()
+            );
         }
         assert_eq!(super::peer_challenge_epoch("epoch-alpha"), Some(7));
         assert_eq!(super::peer_challenge_epoch("epoch-beta"), Some(8));
-        assert!(build_admit_response(&challenge, "local", &Some([9; 32]), "epoch-alpha", "example.test", 6).is_none());
+        assert!(
+            build_admit_response(
+                &challenge,
+                "local",
+                &Some([9; 32]),
+                "epoch-alpha",
+                "example.test",
+                6
+            )
+            .is_none()
+        );
         assert_eq!(super::peer_challenge_epoch("epoch-alpha"), Some(7));
         assert_eq!(super::peer_challenge_epoch("epoch-unknown"), None);
     }
@@ -1505,16 +1543,27 @@ mod tests {
                 self.0.lock().unwrap().extend_from_slice(bytes);
                 Ok(bytes.len())
             }
-            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
         }
         let output = Capture::default();
         let writer = output.clone();
-        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
-            .with_writer(move || writer.clone()).finish();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .finish();
         tracing::subscriber::with_default(subscriber, || {
             for _ in 0..100 {
                 for peer in ["refusal-alpha", "refusal-beta"] {
-                    super::challenge_diagnostic(true, peer, "example.test", 1, &serde_json::json!({}));
+                    super::challenge_diagnostic(
+                        true,
+                        peer,
+                        "example.test",
+                        1,
+                        &serde_json::json!({}),
+                    );
                 }
             }
         });

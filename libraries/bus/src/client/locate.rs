@@ -40,8 +40,9 @@ pub fn noded_url_with_config(node_config: Option<&std::path::Path>) -> String {
     }
     let source = match node_config {
         Some(path) => std::fs::read_to_string(path)
-            .map(|source| Some((path.to_owned(), source))).map_err(anyhow::Error::from),
-        None => config::node::NodeConfigSearch::capture().read().map_err(anyhow::Error::from),
+            .map(|source| Some((path.to_owned(), source)))
+            .map_err(anyhow::Error::from),
+        None => config::node::NodeConfigSearch::capture().read(),
     };
     let (path, source) = match source {
         Ok(Some(source)) => source,
