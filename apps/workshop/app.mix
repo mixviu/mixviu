@@ -12,13 +12,27 @@ try $launch=$app_launch catch $why $launcher=require("launch.mix");$launch=$laun
 $state.comp=$launch.comp ?? env("MIX_COMP_SERVICE","comp");$state.startup_macro=$launch.initial_macro
 $state.theme_choice.mode=$app_mode.load("workshop")
 $dirty=false
+$publication={revision:0,ack:0,pending:nil,model:nil,dirty:true}
+$model_publication=require("../../libraries/viu/mix/model-publication.mix")
 fn publish_workshop($s)
+  global $publication
+  if $publication.pending!=nil then $publication.dirty=true;return $s end
   $s=$saved.reconcile($s)
   $s.busy=$model.busy($s)
   if $s.quitting and not $s.busy then $s.window_close=true end
   $projection=$frame.project($s,$presentation.project($s));$persist=$saved.project($s)
   for $key in keys($persist) $projection[$key]=$persist[$key] end
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$app_mode.project($projection,"workshop",$s.theme_choice)}
+  $value=$app_mode.project($projection,"workshop",$s.theme_choice)
+  $full=$model_publication.requires_full($publication.model,$value)
+  $operations=if $full then [] else $model_publication.difference($publication.model,$value) end
+  if not $full and len($operations)==0 then $publication.dirty=false;return $s end
+  $publication.revision=$publication.revision+1;$revision=$publication.revision
+  $body={generation:$ctx.generation,base:$publication.ack,revision:$revision,operations:$operations}
+  if len($operations)>512 or byte_length(json_encode($body))>1048576 then $full=true end
+  if $full then send "viu-local" "scenes.model" body={generation:$ctx.generation,revision:$revision,value:$value}
+  else send "viu-local" "scenes.model.patch" body=$body end
+  if $rc==0 then $publication.pending={revision:$revision,model:$value};$publication.dirty=false
+  else $publication.model=nil;$publication.dirty=true end
   return $s
 end
 fn handle($s,$event)
@@ -26,6 +40,18 @@ fn handle($s,$event)
   catch $message, $error return $controller.refused($s,if contains(["BUSY","DISCONNECTED","ARGUMENT"],$error.code) then $error.code else "ARGUMENT" end,$message) end
 end
 $state=publish_workshop($state)
+on viu.model.applied
+  $a=$event.args
+  if $a.generation==$ctx.generation and $publication.pending!=nil and $a.revision==$publication.pending.revision then
+    $publication.ack=$a.revision;$publication.model=$publication.pending.model;$publication.pending=nil
+  end
+end
+on viu.model.refused
+  $a=$event.args
+  if $a.generation==$ctx.generation and $publication.pending!=nil and $a.revision==$publication.pending.revision then
+    $publication.model=nil;$publication.pending=nil;$publication.dirty=true
+  end
+end
 on workshop.ping
   $out=handle($state,$event);$state=$out.state
   if not $out.deferred then reply($out.rc,$counter.wire($out.body)) end
@@ -187,6 +213,7 @@ on viu.job.completed
   $state=$controller.follow_up($controller.received($state,$event.args));$dirty=true
 end
 on viu.tick
+  $dirty=$dirty or $publication.dirty
   $before=$state.discovery_revision;$job_error=$state.job_error
   $state=$controller.follow_up($state)
   if $before!=$state.discovery_revision or $job_error!=$state.job_error then $dirty=true end

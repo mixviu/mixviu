@@ -830,7 +830,7 @@ impl BusHandler for Local {
                     if self.model.borrow().is_some() || self.model_patch.borrow().is_some() {
                         return Err(failure("only one revisioned publication is allowed per callback"));
                     }
-                    let patch=crate::model_patch::Patch::decode(body).map_err(failure)?;
+                    let patch=crate::model_patch::Patch::decode(body).map_err(|e|failure(&e))?;
                     let revision=patch.revision;
                     *self.model_revision.borrow_mut()=Some(revision);
                     *self.model_patch.borrow_mut()=Some(patch);

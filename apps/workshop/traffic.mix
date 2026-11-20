@@ -55,5 +55,6 @@ fn observed($s,$frame)
   return retain($s,$frame)
 end
 fn rows($s,$limit,$filter)
+  if $filter=="" then return slice($s.traffic,max(0,len($s.traffic)-min($limit,1024))) end
   return reverse(take(filter(reverse($s.traffic),fn($row)=contains(json_encode($row),$filter)),min($limit,1024)))
 end
