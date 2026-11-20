@@ -91,3 +91,33 @@ async fn exclusive_writer_exhausts_bounded_busy_budget() {
     assert!(!dst.exists());
     writer.execute_batch("ROLLBACK").unwrap();
 }
+
+#[tokio::test]
+async fn retries_until_writer_releases_lock() {
+    let dir = TestDir::new("backup-retry");
+    let src = dir.path("source.db");
+    let dst = dir.path("copy.db");
+    let writer = Connection::open(&src).unwrap();
+    writer.execute_batch("CREATE TABLE t(x); BEGIN EXCLUSIVE; INSERT INTO t VALUES(7)").unwrap();
+    let release = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        writer.execute_batch("COMMIT").unwrap();
+    });
+    run(&format!("sqlbackup({src:?}, {dst:?}, {{retry_ms: 2000}})")).await.unwrap();
+    release.join().unwrap();
+    assert_eq!(Connection::open(dst).unwrap().query_row("SELECT x FROM t", [], |r| r.get::<_, i64>(0)).unwrap(), 7);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn refuses_symlink_destination_without_touching_target() {
+    let dir = TestDir::new("backup-symlink");
+    let src = dir.path("source.db");
+    let dst = dir.path("copy.db");
+    let target = dir.path("target");
+    Connection::open(&src).unwrap().execute_batch("CREATE TABLE t(x)").unwrap();
+    std::fs::write(&target, "keep").unwrap();
+    std::os::unix::fs::symlink(&target, &dst).unwrap();
+    assert_eq!(code(&format!("sqlbackup({src:?}, {dst:?}, {{overwrite: true}})")).await, "OPTION_INVALID");
+    assert_eq!(std::fs::read(target).unwrap(), b"keep");
+}
