@@ -30,6 +30,10 @@ function fixture_http_post($url,$body,$headers,$opts)
     if $opts.timeout > 15 or $opts.timeout > 60-$clock then raise("TEST","progress deadline") end
     $progress=$progress+1
     if env("TRACE_CASE") == "deadline" then
+      if $b.seq == 1 then
+        $clock=$clock+14
+        return {status:200}
+      end
       $clock=$clock+$opts.timeout
       return {status:500}
     end
