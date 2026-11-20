@@ -1107,7 +1107,31 @@ fn record_privacy_lock_is_blank_and_stops_callbacks() {
             thread::sleep(Duration::from_millis(10));
         }
     };
+    let marker_path = Path::new(start["recovery_path"].as_str().unwrap()).join("markers.jsonl");
+    let wait_recorded = |label: &str| {
+        let until = Instant::now() + Duration::from_secs(5);
+        loop {
+            let status = bus.call("comp.record.status", json!({"session":start["session"]}));
+            let marker = fs::read_to_string(&marker_path)
+                .unwrap_or_default()
+                .split_inclusive('\n')
+                .filter(|line| line.ends_with('\n'))
+                .map(|line| serde_json::from_str::<Value>(line).expect("complete marker row"))
+                .find(|m| m["label"] == label);
+            if marker.is_some_and(|m| {
+                status["frames"].as_u64().unwrap() > m["frame"].as_u64().unwrap() + 1
+            }) {
+                break;
+            }
+            assert!(
+                Instant::now() < until,
+                "no written {label} marker and subsequent tick: {status}"
+            );
+            thread::sleep(Duration::from_millis(20));
+        }
+    };
     wait("locked");
+    wait_recorded("locked");
     pump_patterns(&mut [&mut a]);
     let before = a.state.callbacks;
     a.commit(true);
@@ -1129,7 +1153,9 @@ fn record_privacy_lock_is_blank_and_stops_callbacks() {
     wait("unlocked");
     assert!(lock.wait().unwrap().success());
     pump_patterns(&mut [&mut a]);
-    thread::sleep(Duration::from_millis(200));
+    // The marker points at the transition's clock boundary. Keep recording
+    // until a later slot exists for the post-unlock decoded-pixel assertion.
+    wait_recorded("unlocked");
     let stop = bus.call("comp.record.stop", json!({"session":start["session"]}));
     assert_eq!(stop["error"], Value::Null);
     let markers: Vec<Value> = fs::read_to_string(path.join("markers.jsonl"))
@@ -1161,7 +1187,7 @@ fn record_privacy_lock_is_blank_and_stops_callbacks() {
                 .any(|p| p == 0xff11eecc_u32.to_le_bytes());
         }
     }
-    assert!(blank > 0 && returned);
+    assert!(blank > 0 && returned, "blank={blank}, returned={returned}, locked={locked}, unlocked={unlocked}, stop={stop}");
 }
 
 #[test]
