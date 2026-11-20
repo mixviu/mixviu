@@ -148,7 +148,7 @@ fn decoded_rgb(frame: &[u8]) -> Vec<u8> {
 }
 
 #[test]
-fn caption_records_motion_clicks_through_and_fades_to_empty() {
+fn caption_records_motion_consumes_clicks_and_fades_to_empty() {
     if !process::record_available() {
         return;
     }
@@ -219,7 +219,7 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         assert_eq!(after["pointer_presses"], items["pointer_presses"]);
         assert_eq!(after["items"][0]["scene"], items["items"][0]["scene"]);
     }
-    assert_eq!(items["items"][0]["pointer_input"], false);
+    assert_eq!(items["items"][0]["pointer_input"], true);
     let buttons = pattern.state.pointer_buttons;
     let received = call(&bus, "osd.list", json!({}))["pointer_presses"]
         .as_u64()
@@ -234,15 +234,14 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
     );
     wait(&mut pattern, Duration::from_millis(80));
     assert!(
-        pattern.state.pointer_buttons > buttons,
-        "passive OSD must pass pointer buttons to the client"
+        pattern.state.pointer_buttons == buttons,
+        "default opaque OSD must consume pointer buttons"
     );
-    assert_eq!(
+    assert!(
         call(&bus, "osd.list", json!({}))["pointer_presses"]
             .as_u64()
-            .unwrap(),
-        received,
-        "passive OSD must not observe a button"
+            .unwrap() > received,
+        "opaque OSD must observe the button"
     );
     // Headless has an agent seat and no human device sources. Establish its
     // independent keyboard focus before testing untargeted keys after an OSD click.
@@ -292,6 +291,11 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         "OSD pointer input must preserve the client's keyboard focus"
     );
     call(&bus, "osd.hide", json!({"id":"caption","exit":"fade"}));
+    wait(&mut pattern, Duration::from_millis(40));
+    let buttons = pattern.state.pointer_buttons;
+    bus.call("comp.input.pointer.button", json!({"seat":"agent","button":"left","action":"click"}));
+    wait(&mut pattern, Duration::from_millis(40));
+    assert!(pattern.state.pointer_buttons > buttons, "exiting card must stop consuming input");
     let fade = motion::presets()
         .into_iter()
         .find(|p| p.name == "fade")
@@ -474,6 +478,22 @@ fn caption_records_motion_clicks_through_and_fades_to_empty() {
         "host pixels cannot cover provenance"
     );
     call(&bus, "osd.hide", json!({"id":"badge-cover"}));
+    wait(&mut pattern, Duration::from_millis(100));
+
+    // Real renderer oracle: overflowing text in a tiny card must never escape
+    // its declared bounds (the compositor badge is outside this comparison).
+    call(&bus, "osd.show", json!({"id":"clip","scene":{"kind":"card","title":"LONG TITLE".repeat(100),"text":"LONG TEXT\n".repeat(500),"width":32,"height":24},"anchor":{"output":"headless-0","edge":"top-left","margin":100}}));
+    wait(&mut pattern, Duration::from_millis(150));
+    let (_, _, clipped) = ppm(&bus, &process, "osd-clipped", None);
+    for y in 20..height {
+        for x in 0..width {
+            if !(100..132).contains(&x) || !(100..124).contains(&y) {
+                assert_eq!(rgb(&clipped, width, x, y), rgb(&before, width, x, y), "text escaped card at {x},{y}");
+            }
+        }
+    }
+    call(&bus, "osd.update", json!({"id":"clip","pointer_input":false,"backing":"none"}));
+    call(&bus, "osd.hide", json!({"id":"clip"}));
     wait(&mut pattern, Duration::from_millis(100));
 
     let idle=bus.call("comp.record.start",json!({"request_id":"osd-idle","target":{"output":"headless-0"},"path":process.root.join("osd-idle.vfl"),"cursor":false,"max_seconds":3}));
