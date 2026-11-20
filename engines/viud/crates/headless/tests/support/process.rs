@@ -261,7 +261,9 @@ fn spawn_options(options: Options<'_>) -> Process {
             .env(paths::env::test::TEST_VIU_EXE, viu)
             .env("MIX_VIU_COMP_SERVICE", "comp-headless");
     } else {
-        command.env_remove("MIX_TEST_VIUD_OSD_BUNDLE");
+        command
+            .env_remove(paths::env::test::TEST_VIUD_OSD_BUNDLE)
+            .env_remove(paths::env::test::TEST_VIU_EXE);
     }
     if std::env::var_os(paths::env::test::TEST_PRE_DRAIN_CHILD).is_none() {
         command.env_remove(paths::env::test::TEST_PRE_DRAIN_FRAME);
@@ -397,7 +399,7 @@ pub fn spawn_4k(label: &str, bus: &str) -> Process {
         label,
         bus: Some(bus),
         size: "3840x2160",
-        osd: std::env::var("MIX_TEST_CAPTURE_OSD").as_deref() == Ok("1"),
+        osd: std::env::var(paths::env::test::TEST_CAPTURE_OSD).as_deref() == Ok("1"),
         ..Options::default()
     })
 }
