@@ -446,7 +446,7 @@ fn completion_read_failures_are_fatal_but_parse_and_false_are_recoverable() {
                 std::fs::remove_file(&p).unwrap();
                 std::fs::create_dir(&p).unwrap();
             }
-            _ => std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0)).unwrap(),
+            _ => std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).unwrap(),
         }
         // Root bypasses file mode bits; exercise the real open failure in an
         // unprivileged subprocess instead of silently skipping the case.
