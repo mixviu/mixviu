@@ -243,7 +243,7 @@ impl Pattern {
         // xdg-shell may initially offer 0x0 (the client's choice), before
         // viud places the first buffer and sends its decided size.
         if state.size == (0, 0) {
-            state.size = if fullscreen { (1280, 720) } else { (200, 160) };
+            state.size = if fullscreen { (1280, 720) } else { size };
         }
         let (w, h) = state.size;
         let buffer = buffer(&shm, &qh, w, h, |x, y| {
