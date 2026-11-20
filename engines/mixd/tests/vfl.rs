@@ -4,6 +4,39 @@ use std::{
     process::{Command, Stdio},
 };
 
+#[test]
+fn verify_schema_usage_codes_and_completion_policy() {
+    let p = pipe_take("verify-policy", 4);
+    let invoke = |args: &[&str]| Command::new(env!("CARGO_BIN_EXE_mixd")).args(args).output().unwrap();
+    let path = p.to_str().unwrap();
+    for args in [
+        vec!["vfl"], vec!["vfl", "verify", path, "--bogus"],
+        vec!["vfl", "export", path, "--from", "bad"],
+        vec!["vfl", "export", path, "--fps", "0"],
+    ] {
+        let o = invoke(&args);
+        assert_eq!(o.status.code(), Some(2), "{o:?}");
+        assert!(String::from_utf8_lossy(&o.stderr).contains("Exit codes:"));
+    }
+    let o = invoke(&["vfl", "verify", path, "--require-complete"]);
+    assert_eq!(o.status.code(), Some(0));
+    std::fs::remove_file(p.join("complete.json")).unwrap();
+    assert_eq!(invoke(&["vfl", "verify", path]).status.code(), Some(0));
+    let o = invoke(&["vfl", "verify", path, "--require-complete"]);
+    assert_eq!(o.status.code(), Some(1));
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    assert_eq!(v["valid_frames"], 128);
+    let e = &v["errors"][0];
+    assert_eq!(e["kind"], "structure");
+    assert!(e["file"].as_str().unwrap().ends_with("complete.json"));
+    assert!(e["chunk"].is_null());
+    assert!(e["offset"].is_u64());
+    assert!(e["message"].is_string());
+    let o = invoke(&["--personalities"]);
+    assert!(!String::from_utf8_lossy(&o.stdout).lines().any(|l| l.starts_with("vfl ")));
+    std::fs::remove_dir_all(p).unwrap();
+}
+
 // More output than a pipe can hold, so closing the reader necessarily reaches
 // the writer while it still has output left (without sleeps or timing races).
 fn pipe_take(name: &str, side: u32) -> std::path::PathBuf {

@@ -16,6 +16,7 @@ pub enum ErrorKind {
     Crc,
     Compression,
     Limit,
+    TornTail,
 }
 #[derive(Debug)]
 pub struct Error {
@@ -39,6 +40,23 @@ impl std::fmt::Display for Error {
     }
 }
 impl std::error::Error for Error {}
+impl Error {
+    fn json(&self) -> Value {
+        json!({"kind": format!("{:?}", self.kind).to_lowercase(), "file": self.file,
+            "chunk": self.chunk, "offset": self.offset, "message": self.message})
+    }
+}
+fn completion(path: &Path) -> Result<Option<Value>, Error> {
+    match std::fs::symlink_metadata(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(err(path, None, 0, ErrorKind::Io, e)),
+        Ok(_) => match json_file(path) {
+            Ok(v) => Ok(Some(v)),
+            Err(e) if e.kind == ErrorKind::Metadata => Ok(None),
+            Err(e) => Err(e),
+        },
+    }
+}
 fn err(
     path: &Path,
     chunk: Option<u64>,
@@ -167,7 +185,7 @@ impl Markers {
     pub fn open(take: &Path) -> Result<Self, Error> {
         json_file(&take.join("manifest.json"))?;
         let path = take.join("markers.jsonl");
-        let complete = json_file(&take.join("complete.json")).is_ok_and(|v| v["complete"] == true);
+        let complete = completion(&take.join("complete.json"))?.is_some_and(|v| v["complete"] == true);
         let input = match open(&path) {
             Ok(f) => Some(BufReader::new(f)),
             Err(_) if !complete && !path.exists() => None,
@@ -186,12 +204,14 @@ impl Markers {
         let Some(input) = &mut self.input else {
             return Ok(None);
         };
+        let at = input.stream_position().unwrap_or(0);
         let Some(v) = line(input, &self.path, !self.complete)? else {
             return Ok(None);
         };
-        let t = number(&v, "t_us", &self.path)?;
-        let frame = number(&v, "frame", &self.path)?;
-        if number(&v, "seq", &self.path)? != self.seq
+        let numeric = |key| number(&v, key, &self.path).map_err(|mut e| { e.offset = at; e });
+        let t = numeric("t_us")?;
+        let frame = numeric("frame")?;
+        if numeric("seq")? != self.seq
             || t < self.last_time
             || frame < self.last_frame
             || !v["label"].is_string()
@@ -200,7 +220,7 @@ impl Markers {
             return Err(err(
                 &self.path,
                 None,
-                input.stream_position().unwrap_or(0),
+                at,
                 ErrorKind::Structure,
                 "invalid marker or order",
             ));
@@ -216,16 +236,24 @@ pub struct Decoded<'a> {
     pub t_us: u64,
     pub pixels: &'a [u8],
 }
+#[derive(Clone)]
+struct KeyPosition {
+    chunk: u64,
+    offset: u64,
+    slot: u64,
+    crc: crc32fast::Hasher,
+    frame_offset: Option<u64>,
+}
 pub struct Reader {
     path: PathBuf,
-    pub width: u32,
-    pub height: u32,
-    pub fps: u32,
+    width: u32,
+    height: u32,
+    fps: u32,
     version: u64,
     /// Completion claimed by metadata; only `verify` reports validated completion.
-    pub complete: bool,
-    pub completion_file: Option<&'static str>,
-    pub origin: Option<Value>,
+    complete: bool,
+    completion_file: Option<&'static str>,
+    origin: Option<Value>,
     receipt: Option<Value>,
     raw: usize,
     pixels: Vec<u8>,
@@ -241,6 +269,12 @@ pub struct Reader {
     stopped: bool,
     last_kind: u8,
     frames: Option<BufReader<File>>,
+    keys: Vec<KeyPosition>,
+    scanned: u64,
+    poisoned: bool,
+    torn_tail: bool,
+    #[cfg(test)]
+    chunk_reads: Vec<u64>,
 }
 impl Reader {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
@@ -273,9 +307,10 @@ impl Reader {
             ));
         }
         let complete_path = path.join("complete.json");
-        let (receipt, completion_file, complete) = if complete_path.exists() {
-            match json_file(&complete_path) {
-                Ok(v) if v["complete"] == true => (Some(v), Some("complete.json"), true),
+        let completion_value = completion(&complete_path)?;
+        let (receipt, completion_file, complete) = if std::fs::symlink_metadata(&complete_path).is_ok() {
+            match completion_value {
+                Some(v) if v["complete"] == true => (Some(v), Some("complete.json"), true),
                 _ => (None, Some("complete.json"), false),
             }
         } else if path.join("interrupted.json").exists() {
@@ -383,8 +418,21 @@ impl Reader {
             stopped: false,
             last_kind: KEY,
             frames,
+            keys: Vec::new(),
+            scanned: 0,
+            poisoned: false,
+            torn_tail: false,
+            #[cfg(test)]
+            chunk_reads: vec![0; chunks as usize],
         })
     }
+    pub fn width(&self) -> u32 { self.width }
+    pub fn height(&self) -> u32 { self.height }
+    pub fn fps(&self) -> u32 { self.fps }
+    pub fn complete(&self) -> bool { self.complete }
+    pub fn completion_file(&self) -> Option<&'static str> { self.completion_file }
+    pub fn origin(&self) -> Option<&Value> { self.origin.as_ref() }
+    pub fn recoverable(&self) -> bool { self.torn_tail }
     fn chunk_path(&self) -> PathBuf {
         self.path.join(format!("chunk-{:06}.bin", self.chunk))
     }
@@ -486,6 +534,8 @@ impl Reader {
                 ));
             }
             let mut h = [0u8; 17];
+            #[cfg(test)]
+            { self.chunk_reads[self.chunk as usize] += 1; }
             let file = self
                 .file
                 .as_mut()
@@ -505,7 +555,7 @@ impl Reader {
                 .as_mut()
                 .unwrap()
                 .read_exact(&mut h[1..])
-                .map_err(|e| self.error(ErrorKind::Structure, e))?;
+                .map_err(|e| self.record_eof(e))?;
             let len = u32::from_le_bytes(h[..4].try_into().unwrap()) as usize;
             let slot = u64::from_le_bytes(h[8..16].try_into().unwrap());
             let kind = h[16];
@@ -529,7 +579,7 @@ impl Reader {
                 .as_mut()
                 .unwrap()
                 .read_exact(&mut self.payload)
-                .map_err(|e| self.error(ErrorKind::Structure, e))?;
+                .map_err(|e| self.record_eof(e))?;
             let mut crc = crc32fast::Hasher::new();
             crc.update(&h[8..]);
             crc.update(&self.payload);
@@ -584,6 +634,8 @@ impl Reader {
                     self.keyed = true;
                 }
             }
+            let frame_offset = self.frames.as_mut().map(|f| f.stream_position()).transpose()
+                .map_err(|e| self.error(ErrorKind::Io, e))?;
             if let Some(f) = &mut self.frames {
                 let p = self.path.join("frames.jsonl");
                 frame_row(f, &p, slot, self.fps, self.complete).map_err(|mut e| {
@@ -591,6 +643,11 @@ impl Reader {
                     e
                 })?;
             }
+            if kind == KEY && !self.keys.iter().any(|k| k.slot == slot) {
+                self.keys.push(KeyPosition { chunk: self.chunk, offset: self.offset, slot,
+                    crc: self.crc.clone(), frame_offset });
+            }
+            self.scanned = self.scanned.max(slot + 1);
             self.crc.update(&h);
             self.crc.update(&self.payload);
             self.offset += 17 + len as u64;
@@ -604,6 +661,7 @@ impl Reader {
     }
     /// Returns one borrowed frame; no frame history is retained. After an error the reader stops.
     pub fn read(&mut self) -> Result<Option<Decoded<'_>>, Error> {
+        if self.poisoned { return Err(self.error(ErrorKind::Structure, "reader poisoned")); }
         if self.stopped {
             return Ok(None);
         }
@@ -615,6 +673,11 @@ impl Reader {
             }
             Err(e) => {
                 self.stopped = true;
+                if e.kind == ErrorKind::TornTail && !self.complete {
+                    self.torn_tail = true;
+                    return Ok(None);
+                }
+                self.poisoned = true;
                 return Err(e);
             }
         }
@@ -627,63 +690,57 @@ impl Reader {
             pixels: &self.pixels,
         }))
     }
-    /// Locate the nearest earlier key with a bounded header scan, then decode forward.
-    /// The header scan checks CRCs and structure; decompression starts at the selected key.
+    fn record_eof(&self, e: std::io::Error) -> Error {
+        self.error(if e.kind() == std::io::ErrorKind::UnexpectedEof && self.chunk + 1 == self.chunks {
+            ErrorKind::TornTail
+        } else { ErrorKind::Io }, e)
+    }
+    /// Lazily index keys and their checksum/sidecar positions, then decode forward.
+    /// Any failed seek poisons this reader; reopen it to try again.
     pub fn seek(&mut self, target: u64) -> Result<Decoded<'_>, Error> {
-        let mut scan = Self::open(&self.path)?;
-        scan.pixels = Vec::new();
-        let mut key = (0, 0, 0);
-        loop {
-            let chunk = scan.chunk;
-            let offset = scan.offset;
-            if !scan.advance(false)? {
-                return Err(scan.error(ErrorKind::Structure, "seek beyond take"));
-            }
-            if scan.last_kind == KEY {
-                key = (
-                    scan.chunk,
-                    if chunk == scan.chunk { offset } else { 0 },
-                    scan.next - 1,
-                );
-            }
-            if scan.next - 1 == target {
-                break;
-            }
-        }
-        *self = Self::open(&self.path)?;
-        // Rebuild the current chunk checksum, then position at the selected key.
-        self.chunk = key.0;
-        self.next = key.2;
-        self.offset = key.1;
-        let mut f = BufReader::new(open(&self.chunk_path())?);
-        let mut remaining = key.1;
-        let mut buf = [0u8; 8192];
-        while remaining > 0 {
-            let n = remaining.min(buf.len() as u64) as usize;
-            f.read_exact(&mut buf[..n])
-                .map_err(|e| self.error(ErrorKind::Io, e))?;
-            self.crc.update(&buf[..n]);
-            remaining -= n as u64;
-        }
-        self.file = Some(f);
-        if let Some(f) = &mut self.frames {
-            for slot in 0..key.2 {
-                frame_row(
-                    f,
-                    &self.path.join("frames.jsonl"),
-                    slot,
-                    self.fps,
-                    self.complete,
-                )?;
-            }
-        }
-        self.replay_to(target)?;
+        if self.poisoned { return Err(self.error(ErrorKind::Structure, "reader poisoned")); }
+        self.poisoned = true;
+        self.seek_inner(target)?;
+        self.poisoned = false;
         Ok(Decoded {
             slot: target,
             t_us: (u128::from(target) * 1_000_000 / u128::from(self.fps)) as u64,
             pixels: &self.pixels,
         })
     }
+    fn position(&mut self, key: KeyPosition) -> Result<(), Error> {
+        self.chunk = key.chunk;
+        self.offset = key.offset;
+        self.next = key.slot;
+        self.crc = key.crc;
+        let mut f = BufReader::new(open(&self.chunk_path())?);
+        f.seek(std::io::SeekFrom::Start(key.offset)).map_err(|e| self.error(ErrorKind::Io, e))?;
+        self.file = Some(f);
+        if let (Some(f), Some(at)) = (&mut self.frames, key.frame_offset) {
+            f.seek(std::io::SeekFrom::Start(at)).map_err(|e| err(&self.path.join("frames.jsonl"), None, at, ErrorKind::Io, e))?;
+        }
+        self.stopped = false;
+        self.keyed = false;
+        Ok(())
+    }
+    fn seek_inner(&mut self, target: u64) -> Result<(), Error> {
+        if target >= self.scanned {
+            if let Some(key) = self.keys.iter().max_by_key(|k| k.slot).cloned() {
+                self.position(key)?;
+            }
+            while self.next <= target {
+                if !self.advance(false)? { return Err(self.error(ErrorKind::Structure, "seek beyond take")); }
+            }
+        }
+        let key = self.keys.iter().filter(|k| k.slot <= target).max_by_key(|k| k.slot).cloned()
+            .ok_or_else(|| self.error(ErrorKind::Structure, "seek beyond take"))?;
+        self.position(key)?;
+        while self.next <= target {
+            if !self.advance(true)? { return Err(self.error(ErrorKind::Structure, "unexpected EOF during seek replay")); }
+        }
+        Ok(())
+    }
+    #[cfg(test)]
     fn replay_to(&mut self, target: u64) -> Result<(), Error> {
         while self.next <= target {
             if self.read()?.is_none() {
@@ -694,27 +751,29 @@ impl Reader {
     }
 }
 
-pub fn verify(path: &Path) -> Value {
+pub fn verify(path: &Path) -> Value { verify_with_options(path, false) }
+pub fn verify_with_options(path: &Path, require_complete: bool) -> Value {
     let mut frames = 0u64;
     let mut markers = 0u64;
     let mut errors = Vec::new();
     let mut complete = false;
     let mut dropped = Value::Null;
+    let mut recoverable = false;
     match Reader::open(path) {
-        Err(e) => errors.push(e.to_string()),
+        Err(e) => errors.push(e.json()),
         Ok(mut r) => {
             loop {
                 match r.read() {
                     Ok(Some(_)) => frames += 1,
                     Ok(None) => break,
                     Err(e) => {
-                        errors.push(e.to_string());
+                        errors.push(e.json());
                         break;
                     }
                 }
             }
             match Markers::open(path) {
-                Err(e) => errors.push(e.to_string()),
+                Err(e) => errors.push(e.json()),
                 Ok(mut m) => loop {
                     match m.read() {
                         Ok(Some(v)) => {
@@ -730,7 +789,7 @@ pub fn verify(path: &Path) -> Value {
                                         ErrorKind::Structure,
                                         "marker beyond take",
                                     )
-                                    .to_string(),
+                                    .json(),
                                 );
                                 break;
                             }
@@ -738,13 +797,17 @@ pub fn verify(path: &Path) -> Value {
                         }
                         Ok(None) => break,
                         Err(e) => {
-                            errors.push(e.to_string());
+                            errors.push(e.json());
                             break;
                         }
                     }
                 },
             }
+            recoverable = r.torn_tail && errors.is_empty();
             complete = r.complete && errors.is_empty();
+            if require_complete && !complete {
+                errors.push(err(&path.join("complete.json"), None, 0, ErrorKind::Structure, "complete valid take required").json());
+            }
             if complete {
                 dropped = r
                     .receipt
@@ -754,12 +817,41 @@ pub fn verify(path: &Path) -> Value {
             }
         }
     }
-    json!({"ok":errors.is_empty(),"frames":frames,"dropped":dropped,"markers":markers,"complete":complete,"errors":errors})
+    json!({"ok":errors.is_empty(),"recoverable":recoverable,"valid_frames":frames,"frames":frames,"dropped":dropped,"markers":markers,"complete":complete,"errors":errors})
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cached_seeks_do_not_read_chunk_zero() {
+        let path = std::env::temp_dir().join(format!("vfl-index-{}", std::process::id()));
+        let mut w = crate::Writer::new(path.clone(), 2, 2, 1).unwrap();
+        w.origin(0).unwrap();
+        w.frame(crate::Frame { slot: 0, pixels: crate::Pixels::Bgra(vec![7;16].into()) }).unwrap();
+        w.finish(25, 0, 0, None, true).unwrap();
+        let p = path.join("chunk-000000.bin");
+        let b = std::fs::read(&p).unwrap();
+        let mut cut = 0;
+        for _ in 0..10 { cut += 17 + u32::from_le_bytes(b[cut..cut+4].try_into().unwrap()) as usize; }
+        for (n, bytes, next) in [(0, &b[..cut], 10), (1, &b[cut..], 25)] {
+            std::fs::write(path.join(format!("chunk-{n:06}.bin")), bytes).unwrap();
+            std::fs::write(path.join(format!("chunk-{n:06}.json")), json!({"bytes":bytes.len(),"crc32":crc32fast::hash(bytes),"next_frame":next}).to_string()).unwrap();
+        }
+        let cp = path.join("complete.json");
+        let mut c = json_file(&cp).unwrap();
+        c["chunks"] = json!(2);
+        std::fs::write(cp, c.to_string()).unwrap();
+        let mut r = Reader::open(&path).unwrap();
+        r.seek(24).unwrap();
+        let reads = r.chunk_reads[0];
+        for target in (10..25).rev().chain(10..25) {
+            assert_eq!(r.seek(target).unwrap().pixels, [7;16]);
+        }
+        assert_eq!(r.chunk_reads[0], reads);
+        for target in 0..25 { assert_eq!(r.seek(target).unwrap().pixels, [7;16]); }
+        std::fs::remove_dir_all(path).unwrap();
+    }
     #[test]
     fn seek_replay_reports_unexpected_eof() {
         let path = std::env::temp_dir().join(format!("vfl-seek-eof-{}", std::process::id()));

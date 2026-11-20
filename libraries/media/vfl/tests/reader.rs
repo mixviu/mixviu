@@ -73,7 +73,7 @@ fn roundtrip_all_kinds_dropped_interrupted_and_seek() {
     for complete in [true, false] {
         let (t, expected) = take(complete);
         let mut r = Reader::open(&t.0).unwrap();
-        assert_eq!(r.complete, complete);
+        assert_eq!(r.complete(), complete);
         for (i, p) in expected.iter().enumerate() {
             let f = r.read().unwrap().unwrap();
             assert_eq!(f.slot, i as u64);
@@ -155,7 +155,7 @@ fn v1_without_rectangles_and_missing_recovery_sidecars() {
         std::fs::remove_file(t.0.join(p)).unwrap();
     }
     let mut r = Reader::open(&t.0).unwrap();
-    assert!(!r.complete);
+    assert!(!r.complete());
     assert_eq!(r.read().unwrap().unwrap().pixels, [4; 16]);
     assert!(r.read().unwrap().is_some());
     assert!(r.read().unwrap().is_none());
@@ -328,7 +328,7 @@ fn advisory_receipts_never_hide_extra_frame_rows() {
                             .as_array()
                             .unwrap()
                             .iter()
-                            .any(|e| e.as_str().unwrap().contains("frames.jsonl"))
+                            .any(|e| e["file"].as_str().unwrap().contains("frames.jsonl"))
                     );
                 }
             }
@@ -376,9 +376,83 @@ fn interrupted_torn_binary_tail_stops_at_valid_prefix() {
     tear(&t.0.join("chunk-000000.bin"));
     assert_eq!(assert_seek_matches(&t.0, &expected), 11);
     let v = verify(&t.0);
-    assert_eq!(v["ok"], false, "{v}");
+    assert_eq!(v["ok"], true, "{v}");
+    assert_eq!(v["recoverable"], true);
     assert_eq!(v["complete"], false);
-    assert_eq!(v["frames"], 11);
+    assert_eq!(v["valid_frames"], 11);
+}
+#[test]
+fn writer_record_write_boundaries_recover_only_final_eof() {
+    // Five writer writes: length, CRC, slot, kind, payload. Include a
+    // partial payload as well as the boundary after the complete payload.
+    for boundary in [4, 8, 16, 17, 18, 0] {
+        let (t, expected) = take(false);
+        let p = t.0.join("chunk-000000.bin");
+        let mut b = std::fs::read(&p).unwrap();
+        let mut at = 0;
+        while b[at + 16] != media_vfl::RECT_DELTA {
+            at += 17 + u32::from_le_bytes(b[at..at+4].try_into().unwrap()) as usize;
+        }
+        let end = at + 17 + u32::from_le_bytes(b[at..at+4].try_into().unwrap()) as usize;
+        b.truncate(if boundary == 0 { end } else { at + boundary });
+        std::fs::write(&p, b).unwrap();
+        std::fs::remove_file(t.0.join("chunk-000000.json")).unwrap();
+        // Model the writer's ordering: binary record precedes sidecar append.
+        let rows = std::fs::read_to_string(t.0.join("frames.jsonl")).unwrap();
+        let n = if boundary == 0 { 3 } else { 2 };
+        std::fs::write(t.0.join("frames.jsonl"), rows.lines().take(n).collect::<Vec<_>>().join("\n") + "\n").unwrap();
+        let v = verify(&t.0);
+        assert_eq!(v["ok"], true, "{boundary}: {v}");
+        assert_eq!(v["recoverable"], boundary != 0, "{v}");
+        assert_eq!(v["valid_frames"], n);
+        let mut r = Reader::open(&t.0).unwrap();
+        assert_eq!(decoded(&mut r).0, expected[..n]);
+        assert_eq!(media_vfl::reader::verify_with_options(&t.0, true)["ok"], false);
+    }
+}
+#[test]
+fn completion_read_failures_are_fatal_but_parse_and_false_are_recoverable() {
+    use std::os::unix::fs::{symlink, PermissionsExt};
+    for case in 0..6 {
+        let (t, _) = take(true);
+        let p = t.0.join("complete.json");
+        match case {
+            0 => std::fs::write(&p, "{").unwrap(),
+            1 => json_edit(&p, |v| v["complete"] = json!(false)),
+            2 => std::fs::write(&p, vec![b' '; 1024*1024+1]).unwrap(),
+            3 => { std::fs::remove_file(&p).unwrap(); symlink("absent", &p).unwrap(); }
+            4 => { std::fs::remove_file(&p).unwrap(); std::fs::create_dir(&p).unwrap(); }
+            _ => std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0)).unwrap(),
+        }
+        // CBC runs unprivileged; a root test runner cannot exercise EACCES.
+        if case == 5 && unsafe { libc::geteuid() } == 0 { continue; }
+        assert_eq!(Reader::open(&t.0).is_ok(), case < 2, "case {case}");
+        assert_eq!(media_vfl::reader::Markers::open(&t.0).is_ok(), case < 2);
+        assert_eq!(media_vfl::reader::verify_with_options(&t.0, true)["ok"], false);
+    }
+}
+#[test]
+fn failed_seek_poisons_reads_and_future_seeks() {
+    let (t, _) = take(true);
+    let mut r = Reader::open(&t.0).unwrap();
+    assert!(r.seek(100).is_err());
+    assert!(r.read().is_err());
+    assert!(r.seek(0).is_err());
+}
+#[test]
+fn marker_errors_always_name_row_start() {
+    for tail in [
+        r#"{"seq":1,"frame":0,"label":"x","data":null}"#,
+        r#"{"seq":5,"t_us":0,"frame":0,"label":"x","data":null}"#,
+    ] {
+        let (t, _) = take(true);
+        let p = t.0.join("markers.jsonl");
+        let first = std::fs::read_to_string(&p).unwrap();
+        std::fs::write(&p, format!("{first}{tail}\n")).unwrap();
+        let mut m = media_vfl::reader::Markers::open(&t.0).unwrap();
+        m.read().unwrap();
+        assert_eq!(m.read().unwrap_err().offset, first.len() as u64);
+    }
 }
 #[test]
 fn complete_torn_sidecars_are_errors() {
