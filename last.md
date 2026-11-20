@@ -1,44 +1,222 @@
-# Workshop discovery diagnosis — 2026-11-21 (in progress)
+# PR #213 — Workshop discovery diagnosis (not fixed)
 
-Draft PR: https://github.com/mixviu/mixviu/pull/213 (mixviu-agent).
-Branch: `fix/workshop-discovery-flake`; diagnostic source head
-`08d9d547` (no production fix or deadline change yet).
+PR: https://github.com/mixviu/mixviu/pull/213, author `mixviu-agent`.
+Branch: `fix/workshop-discovery-flake`.
+Final tested code head: `f4c9dc081304aad741cdba3de92bdf3b71384f9d`.
+The receipt-only commit follows this source.
 
-CBC `20261121-002809-c0913dec-a1`, diagnostic head `eda759de`,
-standalone 200-peer sample (all times ms; median/p99/max):
+Merged main `0820aded` (Deck #204 and #210 included) in `b899402d`
+before the final checks. No deployment or merge of this PR.
 
-| Measurement | Median | p99 | Max |
-| --- | ---: | ---: | ---: |
-| Pump, including startup | 1.535 | 3.800 | 1157.516 |
-| Job notifications submitted per pump | 0 | 1 | 2 |
-| Evaluator callbacks | 5.656 | 524.240 | 605.728 |
-| workshop.ping (14 calls) | 443.289 | 513.485 | 513.485 |
-| workshop.info (14 calls) | 603.625 | 694.181 | 694.181 |
-| workshop.refresh (1 call) | 336.017 | 336.017 | 336.017 |
+Decision: the product-stall branch of the brief. Admission was limited to
+two jobs, but list expansion and blocked-queue inspection still scaled with
+the service count in one callback. Discovery now expands eight services per
+turn, reserves the global budget before expansion, and keeps the node's list
+unfinished until the last batch. Each launch inspects sixteen queued tasks
+and rotates the rest. Replies can run between turns. The regression checks
+all 201 services and a ready task behind 100 blocked entries.
 
-Standalone passed; concurrent 32-worker CPU load failed the five-second
-startup assertion before the first call (four-peer case), BUILD_RC=1.
-This is not a valid loaded 200-peer sample or a diagnosis of the reported
-one-second call timeout. No branch of decision step 2 has been selected.
+Batching alone did not cure the info timeout. Counter encoding also matched
+a large field-name regex against every object key. Exact-name membership
+cuts that cost while keeping the same wire fields and value predicate. The
+state-round-trip experiment still failed and was reverted; it is absent
+from the final change. The 1 s call timeout and 2 s owner-stall assertion
+remain unchanged. There is no new serial entry, retry or skip.
 
-Test-only instrumentation: `libraries/viu/src/app_host.rs` Harness and pump,
-`libraries/viu/src/runtime.rs` callback names, and
-`libraries/viu/tests/workshop_bus.rs` fixture/call helper. The later probes
-separate startup and steady discovery and preserve measurements on failure.
-`libraries/viu/tests/workshop-probe.mix` retains baseline and twelve-round
-actual four-binary pool recipes; Mix lint passes with no diagnostics.
+## Measurements
 
-Pending: separated standalone/loaded measurements, justified fix and
-regression if needed, CBC fmt/clippy/all lib-viu test targets, twelve green
-pool rounds. All CBC lock-refusal attempts (75) are non-executions, not
-failed tests. No full CI, deployment, retry, skip or serialisation.
+Each triple is median / p99 / max. Times are milliseconds; discovery
+completions are counts. Pump measurements below exclude the separately
+recorded initial scene mount. The evaluator runs on another thread: the
+completion count measures discovery job callbacks retired by a pump, not
+the number of service entries expanded inside a callback. The structural
+regression separately proves the eight-entry expansion bound.
 
-Earlier setup attempts: `20261121-002621-866f4133-a1` selected the engine
-instead of lib-viu; `20261121-002648-f3634e29-a1` caught private probe fields;
-`20261121-002718-76c7bcc2-a1` used the repository home's HEAD and was
-cancelled. None counts as evidence for the fix.
+Before the bounds, CBC `20261121-004418-0160ba49`, source `68903edf`:
+
+| 200-peer measurement | Standalone | Eight CPU loaders |
+| --- | --- | --- |
+| Pump holds | 1.687 / 3.469 / 269.862 | 0.746 / 2.246 / 70.547 |
+| Discovery completions per pump | 0 / 1 / 6 | 0 / 0 / 1 |
+| Evaluator callbacks | 5.482 / 473.060 / 664.589 | 5.510 / 1177.098 / 1177.098 |
+| workshop.ping | 436.375 / 717.830 / 717.830 (n=15) | 395.358 / 395.358 / 395.358 (n=1) |
+| workshop.info | 547.920 / 655.039 / 655.039 (n=15) | 825.986 / 825.986 / 825.986 (n=1) |
+| workshop.refresh | 335.150 / 335.150 / 335.150 (n=1) | 1004.405 / 1004.405 / 1004.405 (n=1, timeout) |
+
+The loaded sample stops at the failure; its single-call quantiles are not
+tail estimates. The initial 200-peer scene mount was 1267.516 ms standalone
+and 2027.538 ms loaded, with zero discovery completions. Earlier 32-loader
+CBC `20261121-002809-c0913dec-a1` failed startup before calls; it does not
+diagnose the reported RPC timeout.
+
+Thread-CPU follow-up `20261121-005558-7a65eb02-a1`, source `be270734`,
+measured job callback CPU max 49.665 ms standalone and 172.483 ms loaded.
+After batching, the same-worker standalone target run
+`20261121-010021-44bf3ce7-a1` measured max 9.985 ms. The eight-loader sample
+`20261121-010022-8d6fe210` passed but was insufficient acceptance: subsequent
+pool candidates `20261121-010911-60bf0ca7-a1` and
+`20261121-011557-1c30419a-a1` still failed on info. Those reds are retained.
+
+The encoder comparison changed only counter.mix between two fresh runs on
+the same worker and compiled source, after merging main. CBC
+`20261121-012915-63fbae2d-a1`, source `df45072b`:
+
+| 200-peer measurement | Regex encoder | Exact-name encoder |
+| --- | --- | --- |
+| Info thread CPU | 512.400 / 561.034 / 561.034 | 337.778 / 379.094 / 379.094 |
+| Pump holds | 1.743 / 4.782 / 189.067 | 1.740 / 5.953 / 110.858 |
+| Discovery completions per pump | 0 / 1 / 5 | 0 / 1 / 4 |
+| workshop.ping | 359.888 / 428.263 / 428.263 | 140.704 / 318.472 / 318.472 |
+| workshop.info | 586.361 / 934.801 / 934.801 (n=18) | 383.655 / 648.171 / 648.171 (n=22) |
+| workshop.refresh | 216.835 / 216.835 / 216.835 | 202.758 / 202.758 / 202.758 |
+
+CBC `20261121-012646-b39dacdd-a1` compared both encoders on the same
+20,025-byte, 200-service fixture, including all 26 counter names, maximum
+u64 values, ordinary digit strings and opaque headers/payloads. Output was
+byte-identical 3/3. Median encoding time was 35.811 ms before and 25.144 ms
+after (three samples; maxima 44.109 and 25.154 ms).
+
+### Round 3: helper CPU and rejected table experiment
+
+Status: **not fixed; PR remains draft**. Final tested code head
+`f4c9dc081304aad741cdba3de92bdf3b71384f9d`; the following commit updates
+this receipt only. Current main remains `0820aded`, already merged.
+
+Test-only per-helper probes run on the evaluator thread using
+`CLOCK_THREAD_CPUTIME_ID`; wall time uses monotonic time. CBC cbc3 job
+`20261121-022644-fbc42309-a1`, source `2fa53b47`, full-crate width-four
+pool, measured the retained array lookup. The 200-peer info call timed out
+at 1003.254 ms. Completed successful info callbacks (n=14):
+
+| Helper | CPU median / p99 / max ms | Wall median / p99 / max ms |
+| --- | --- | --- |
+| saved.project | 0.034 / 0.108 / 0.108 | 0.035 / 0.116 / 0.116 |
+| native.saved | 0.168 / 0.205 / 0.205 | 3.281 / 6.562 / 6.562 |
+| model.info | 1.581 / 1.852 / 1.852 | 1.586 / 1.857 / 1.857 |
+| handle.inclusive | 2.970 / 5.129 / 5.129 | 5.932 / 9.353 / 9.353 |
+| state.assign | 0.049 / 0.057 / 0.057 | 0.051 / 0.059 / 0.059 |
+| counter.wire | 296.927 / 397.609 / 397.609 | 297.115 / 397.693 / 397.693 |
+
+The handler includes the first three helpers; these are not additive rows.
+Whole info callback CPU was 300.729 / 403.639 / 403.639 ms. The incomplete
+timed-out callback is absent from these helper distributions. Pump wall was
+1.849 / 6.091 / 278.628 ms; CPU max 278.581 ms; discovery completions per
+pump 0 / 1 / 1. Ping wall was 219.544 / 483.736 / 483.736 ms (n=15);
+info 505.006 / 1003.254 / 1003.254 (n=15); refresh 227.259 ms (n=1).
+
+This points at encoding, not the state round trip. One candidate built a
+constant key table once per jq invocation and checked string type before
+membership. Same-worker before/after CBC `20261121-023255-74c991df-a1`,
+source `c8c24638`, changed only counter.mix between fresh owner processes.
+All three 20,025-byte fixture outputs were byte-identical; fixture medians
+24.984 -> 21.767 ms. Real 200-peer info CPU median **295.477 -> 304.088 ms**
+(n=21 each), p99/max 373.195 -> 340.087 ms; wall median 384.577 -> 364.586 ms,
+max 821.312 -> 741.685 ms. Median CPU did not improve, so the change was
+reverted in `644a5612`. Its subsequent diagnostic pool also failed:
+`20261121-023744-82e4b1d6-a1`, source `5cd181b4`, info 1005.597 ms.
+No unchanged acceptance retry followed.
+
+### What the long host holds mean
+
+Round 6 of strict soak `20261121-014417-85cb4bbf-a1` recorded a 288.008 ms
+pump (287.998 ms thread CPU) with zero discovery submissions. That log did
+not record the callback being retired, so exact retrospective attribution
+is unavailable. It must not be described as measured discovery expansion.
+
+The next cbc3 diagnostic added per-completion retirement timing:
+`20261121-022906-2cd20225-a1`, source `155ee9b6`, still using the retained
+array encoder. A 314.582 ms 200-peer pump spent 310.753 ms CPU / 310.844 ms
+wall retiring **viu.tick**. The finer scene probe in
+`20261121-023744-82e4b1d6-a1` (the subsequently rejected table candidate)
+measured scene application as 114.187 ms CPU / 114.197 ms wall inside a
+115.341 / 115.350 ms tick retirement (4-peer case); its early-failing
+200-peer case measured 58.614 / 58.620 ms inside 60.110 / 60.167 ms.
+
+`Host::pump` applies the model returned by the tick callback before servicing
+later work. `SceneView::apply_model` validates the model budget, reconstructs
+the binding set, reevaluates bindings, validates templates and controls,
+and applies the frame model. This is host-thread scene work, separate from
+the evaluator's callback CPU. The repeated tick-retirement holds and fine
+scene timings make scene application the best explanation for the earlier
+288 ms sample, **an inference rather than an exact attribution**.
+
+The remaining failure is consistent with substantial synchronous work on
+both threads: roughly 300 ms encoding, plus tick generation, scene
+application and queued notices. It is not established as pure CPU starvation
+and does not justify increasing the 1 s deadline. A repair needs a measured
+scene/binding breakdown and encoder traversal profile, then a correctness
+control for any reduced or deferred work. No speculative rendering change
+is retained here.
+
+The first helper submission `20261121-021915-82c7c21d-a1` did not reach tests:
+lib-mix's build-time host vocabulary assertion rejected `_viu_test_cpu`.
+Renaming the feature-gated hook to `viu_test_cpu` corrected the diagnostic.
+
+Final source checks: CBC `20261121-023857-83be4ef1-a1`, source
+`f4c9dc08`, BUILD_RC=0. Both negative controls fail at the required assertion
+(cargo 101); fmt, all-target clippy, all 55 lib-viu targets (632 passed,
+0 failed, 12 existing ignored), doctests (0 cases), counter contracts and
+empty worker diff pass. All five changed Mix files lint cleanly.
+
+Final-source standalone host attribution, CBC `20261121-024317-1c8dcd3b-a1`,
+BUILD_RC=0, is a diagnostic, not pool acceptance. In the 200-peer case,
+scene.apply viu.tick reached 222.952 ms CPU / 223.017 ms wall inside
+224.437 / 224.502 ms retirement; pump max 226.884 ms, CPU max 226.833 ms.
+Info CPU 294.449 / 370.460 / 370.460 ms; info wall
+388.903 / 809.436 / 809.436 ms (n=21). Scene application therefore
+accounts for almost all of a comparable long hold on the retained encoder.
+Relevant code: `libraries/viu/src/app_host.rs:1058`,
+`libraries/viu/src/view.rs:294`; test-only attribution at
+`libraries/viu/src/app_host.rs:961`, helper probe fixture at
+`libraries/viu/tests/workshop_bus.rs:15`.
+
+
+
+
+## Files and checks
+
+- `apps/workshop/discovery.mix:125`: resumable eight-service expansion.
+- `apps/workshop/controller.mix:260`: advance on owner follow-up.
+- `apps/workshop/work.mix:11`: sixteen-entry rotating admission scan.
+- `apps/workshop/counter.mix:26`: equivalent exact-name wire predicate.
+- `libraries/viu/src/app_host.rs:2535` and `libraries/viu/src/runtime.rs:131`:
+  opt-in test-support probes, including thread CPU time; off in normal builds.
+- `libraries/viu/tests/workshop_bus.rs:153`: bounded progress/fairness
+  regression; `:418` retains the 1 s call and 2 s owner checks; `:450` runs
+  the real 4/200-peer fixture, including malformed query refusals.
+- `libraries/viu/tests/workshop-probe.mix`: reproducible CBC wire, owner
+  comparison, negative controls, scoped checks and strict pool soak.
+
+Earlier scoped validation, before the helper probes: CBC
+`20261121-013259-c00b82a9-a1`, source `b303db87`, BUILD_RC=0:
+
+- Both negative controls fail with cargo 101 at the intended assertion:
+  old expansion gives "list expanded in its receive turn"; old scan gives
+  "scanned the entire blocked queue". Worker files are restored.
+- Existing exact-counter contracts pass, including opaque tool/permission
+  JSON and u64 precision.
+- cargo fmt and all-target clippy pass (existing warnings).
+- Every lib-viu test target passes: 55 binaries including the example,
+  632 passed, zero failed, 12 existing ignored; doctests pass (zero cases).
+- Worker diff is empty. Later changes add diagnostic probes; production
+  behaviour remains the measured bounds and array encoder.
+
+Strict twelve-round full-crate width-four soak `20261121-014417-85cb4bbf-a1`
+failed in round 6 after five green rounds (54 binaries each round, serial=0,
+retries disabled). Info reached 1001.341 ms; pump 1.855 / 5.904 / 288.008 ms;
+discovery completions 0 / 1 / 1. Completed info CPU was 295.967 / 314.156 /
+314.156 ms, discovery job callback CPU max 11.782 ms. This is not twelve
+green rounds. The later table experiment also failed and was reverted.
+No further unchanged soak was run; PR #213 remains draft, not ready.
+
+All five changed Mix files lint with zero errors, warnings or notes.
+No tools/ci.mix all, install, desktop restart or production action was run.
+Saved logs were read and the full evidence parsed, including expected
+negative-control failures. Quantiles and per-target receipts are retained
+in the private Workshop evidence directory.
 
 ---
+
 
 > Current naming: Mix `term`, Rust reference `term-rs`. See [runtime and migration](docs/ports/term-runtime.md). The receipts below retain historical branch, job and installed-file names.
 
