@@ -27,7 +27,8 @@ pub(crate) type NativeContext = Box<dyn FnOnce() -> Box<dyn std::any::Any> + Sen
 #[derive(Clone, Default)]
 pub struct Services {
     #[cfg(feature = "test-support")]
-    pub(crate) test_cpu_probe: bool,
+    #[doc(hidden)]
+    pub test_cpu_probe: bool,
     #[cfg(test)]
     pub(crate) registry_observer: Option<Arc<dyn Fn(Vec<String>) + Send + Sync>>,
     /// A caller-owned applications parent, chiefly for isolated embedded runs.
