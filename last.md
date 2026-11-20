@@ -1,3 +1,99 @@
+# PR #213 — test probe registration and final isolation validation
+
+PR: https://github.com/mixviu/mixviu/pull/213 (`mixviu-agent`).
+Branch: `fix/workshop-discovery-flake`.
+Final tested code head: `f8eb1c27f24c8d3b7d2dad144c7a3dd4ae835e1a`.
+The following commit records this receipt only.
+
+**Ready for review.** The registration mismatch is fixed; scoped checks, one full CI and the strict twelve-round isolated soak are green. The flake is resolved by the authorised isolation; incremental model publication remains structural follow-up work.
+
+Current main was fetched and merged first: already up to date at `6033d061`,
+including #196 and #210. All earlier measured gains, the workshop_bus serial
+entry and five negative controls remain. The 1 s call deadline, 2 s owner
+stall assertion, 200 peers, silent peer and disconnecting peer are unchanged.
+No retries, ignores, reduced peer count or pool budget were added.
+
+## Registration repair
+
+`libraries/viu/src/app_host.rs:2570` now registers `viu_test_cpu` from the
+existing test-support module. `runtime.rs:284` calls that helper only when
+the test-support-only `Services.test_cpu_probe` flag is enabled; its default
+is false. The feature-enabled host enables it at `app_host.rs:2075`.
+The registration literal is outside runtime.rs, the only file scanned by
+both vocabulary generators. The default runtime does not gain the hook.
+
+The exact live/generated registry test, lib-mix build generator and
+`tools/ci/lint_context.mix` are unchanged. Both source scanners produce the
+same **41 production names**, excluding the probe. The lint-context host,
+unknown-function, shell and remote-body controls pass. The unchanged exact
+registry test passes with default features and with test-support.
+
+## Scoped verification
+
+CBC `20261121-051153-e9b95699-a1`, BUILD_RC=0, tested code above:
+
+- fmt and all-target clippy pass in both feature configurations.
+- Default features: every lib-viu test target, **55 binaries, 627 passed,
+  zero failed, 12 existing ignored**; doctests pass (zero cases).
+- With test-support: every target, **55 binaries, 635 passed, zero failed,
+  12 existing ignored**; doctests pass (zero cases).
+- Counter precision / native-versus-jq equivalence and slow-path cases pass.
+- All five negative controls fail at their intended assertion (cargo 101),
+  with source restored. Numeric controls observed a **730 us** pump against
+  **0 us**, and **24,206 bytes** against **1 byte** (pump 10,803 us).
+  Expansion, queue scan and unrelated-binding controls also fail as intended.
+- All seven changed Mix files lint with zero errors, warnings or notes.
+  Worker source diff is empty after verification.
+
+Worker rustfmt job `20261121-050948-529f401c-a1` supplied the applied diff.
+An initial scoped attempt `20261121-051031-ea07b6e3-a1` was deliberately
+cancelled (143) before full CI to make the test-support flag public: external
+integration fixtures construct Services with struct-update syntax. The
+corrected source above was then checked completely. No normal test failure
+was retried, and no earlier full CI was repeated within this round.
+
+## Full CI and soak
+
+Exactly one authorised full `mix tools/ci.mix all`: CBC `20261121-053118-35178bee-a1`, **BUILD_RC=0**. The strict Mix and workspace pools passed, including the unchanged default-feature registry equality check; all later gates completed. Full CI's default-feature workshop_bus has zero tests, so it does not substitute for the feature-enabled soak.
+
+Strict twelve-round soak: CBC `20261121-060439-18c6e862-a1`, **BUILD_RC=0**, all **12/12 rounds green**. Each round ran all **54 lib-viu test binaries** (the scoped all-targets run also checks one example target), with the remaining binaries at **width four** and **workshop_bus alone** through the default serial list. The actual discovery test passed twelve times at 200 peers. Retained numeric guards observed a worst post-startup pump of **476986 us** and a largest tick model of **2670825 bytes** across those twelve 200-peer cases. Every round observed a tick model. No failed test was retried.
+
+Full-CI pool receipts:
+
+- `test_pool: 75 binaries; build+record 6 s, pool 24 s (8 at a time), serial 84 s (2 alone), doc-tests 0 s`
+- `test_pool: 526 binaries; build+record 204 s, pool 381 s (8 at a time), serial 201 s (2 alone), doc-tests 13 s`
+- `test_pool: 6 binaries; build+record 20 s, pool 35 s (8 at a time), serial 0 s (0 alone), doc-tests 1 s`
+
+
+## Bounds and structural follow-up
+
+The unchanged post-startup pump limit is **800,000 us**, just over twice the
+standalone maximum 387,676 us. The tick-model limit is **4,194,304 bytes**,
+about 75% above the standalone 2,398,986 bytes. Bases: CBC
+`20261121-033200-ed59f7bd-a1`. Each prints measured values on failure; the
+200-peer fixture must observe a tick model. Guards are installed at
+`libraries/viu/tests/workshop_bus.rs:554`, constants at `:19`, assertions at
+`libraries/viu/src/app_host.rs:2689`. All five controls and the validation
+commands are retained in `libraries/viu/tests/workshop-probe.mix:133`;
+the strict twelve-round pool starts at `:159`.
+
+Fable ruling D narrows the responsiveness claim to an uncontended core.
+Serial enrolment and its measured reason are at
+`tools/ci/serial-tests.conf.mix:11`. Structural work remains in the private
+incremental-model-publication brief. Round-5 figures: **2.1–2.4 MB** model,
+**213–278 ms Mix rebuild** and **226–323 ms scene apply** per tick standalone.
+Start that follow-up by attributing the **743.324 ms CPU / 743.674 ms wall
+workshop.notice** callback from `20261121-034520-3cacd411-a1`; its branch,
+payload and critical path remain unmeasured. Remove isolation only after the
+structural fix passes twelve normal width-four pool rounds.
+
+The ledger and TODO-workshop / TODO-viu record the current disposition.
+Earlier receipts below retain the before/after measurements and original
+red results; their readiness statements are historical. No merge or
+deployment was performed.
+
+---
+
 # PR #213 — Fable ruling D: discovery isolation
 
 PR: https://github.com/mixviu/mixviu/pull/213 (`mixviu-agent`).
