@@ -77,5 +77,6 @@ never splice values into the SQL string.
 
 ## See also
 
+- [sqlbackup](sqlbackup.md): consistent online copies of live databases and offline restore.
 - [io](io.md): the rest of the filesystem builtins.
 - [data](data.md): how Mix values cross serialization boundaries.
