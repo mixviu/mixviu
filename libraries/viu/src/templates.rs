@@ -45,6 +45,7 @@ fn nested_list(line: usize) -> Diagnostic {
 }
 
 fn prepare_lists(tree: &ResolvedScene) -> Result<PreparedLists, Diagnostic> {
+    if !tree.nodes.values().any(|node|node.family=="list") {return Ok(BTreeMap::new());}
     // Resolved expressions were already policy-checked by scene core.
     let set = BindingSet::from_resolved(tree);
     let mut evaluation = TemplateEvaluation::new(&tree.model);

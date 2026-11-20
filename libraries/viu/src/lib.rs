@@ -66,6 +66,7 @@ pub mod thumbnail;
 pub mod timers;
 pub mod tree_table;
 pub mod view;
+pub(crate) mod model_patch;
 mod widget_rects;
 pub mod widgets;
 pub mod window_frame;
