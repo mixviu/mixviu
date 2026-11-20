@@ -756,16 +756,12 @@ fn exiting_window_never_reuses_old_output_or_pane_pixels() {
             }] = json!(true);
             let mut process = process::spawn_preferences(&label, &bus.url, prefs);
             bus.ready();
-            let (mut client, row) = solid_window(
-                &bus,
-                &mut process,
-                &label,
-                0xffffffff,
-                300,
-                200,
-            );
+            let (mut client, row) = solid_window(&bus, &mut process, &label, 0xffffffff, 300, 200);
             if !panes {
-                bus.call("comp.window.place", place_args(&row, json!({"output":"headless-1","x":320,"y":200})));
+                bus.call(
+                    "comp.window.place",
+                    place_args(&row, json!({"output":"headless-1","x":320,"y":200})),
+                );
             }
             let source_output = if panes { "headless-0" } else { "headless-1" };
             let path = process.root.join("source.vfl");
@@ -774,7 +770,10 @@ fn exiting_window_never_reuses_old_output_or_pane_pixels() {
             if panes {
                 bus.call("comp.window.place", place_args(&row, json!({"x":900})));
             } else {
-                bus.call("comp.window.place", place_args(&row, json!({"output":"headless-0","x":300})));
+                bus.call(
+                    "comp.window.place",
+                    place_args(&row, json!({"output":"headless-0","x":300})),
+                );
             }
             thread::sleep(Duration::from_millis(150));
             let (width, _, destination) = ppm(&bus, &process, "destination-shown", None);
