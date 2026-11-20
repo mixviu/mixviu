@@ -186,7 +186,8 @@ impl Markers {
     pub fn open(take: &Path) -> Result<Self, Error> {
         json_file(&take.join("manifest.json"))?;
         let path = take.join("markers.jsonl");
-        let complete = completion(&take.join("complete.json"))?.is_some_and(|v| v["complete"] == true);
+        let complete =
+            completion(&take.join("complete.json"))?.is_some_and(|v| v["complete"] == true);
         let input = match open(&path) {
             Ok(f) => Some(BufReader::new(f)),
             Err(_) if !complete && !path.exists() => None,
@@ -211,7 +212,12 @@ impl Markers {
         let Some(v) = line(input, &self.path, !self.complete)? else {
             return Ok(None);
         };
-        let numeric = |key| number(&v, key, &self.path).map_err(|mut e| { e.offset = at; e });
+        let numeric = |key| {
+            number(&v, key, &self.path).map_err(|mut e| {
+                e.offset = at;
+                e
+            })
+        };
         let t = numeric("t_us")?;
         let frame = numeric("frame")?;
         if numeric("seq")? != self.seq
@@ -310,20 +316,21 @@ impl Reader {
         }
         let complete_path = path.join("complete.json");
         let completion_value = completion(&complete_path)?;
-        let (receipt, completion_file, complete) = if std::fs::symlink_metadata(&complete_path).is_ok() {
-            match completion_value {
-                Some(v) if v["complete"] == true => (Some(v), Some("complete.json"), true),
-                _ => (None, Some("complete.json"), false),
-            }
-        } else if path.join("interrupted.json").exists() {
-            (
-                json_file(&path.join("interrupted.json")).ok(),
-                Some("interrupted.json"),
-                false,
-            )
-        } else {
-            (None, None, false)
-        };
+        let (receipt, completion_file, complete) =
+            if std::fs::symlink_metadata(&complete_path).is_ok() {
+                match completion_value {
+                    Some(v) if v["complete"] == true => (Some(v), Some("complete.json"), true),
+                    _ => (None, Some("complete.json"), false),
+                }
+            } else if path.join("interrupted.json").exists() {
+                (
+                    json_file(&path.join("interrupted.json")).ok(),
+                    Some("interrupted.json"),
+                    false,
+                )
+            } else {
+                (None, None, false)
+            };
         let mut origin = match json_file(&path.join("origin.json")) {
             Ok(v) => Some(v),
             Err(e) if complete => return Err(e),
@@ -427,13 +434,27 @@ impl Reader {
             chunk_reads: vec![0; chunks as usize],
         })
     }
-    pub fn width(&self) -> u32 { self.width }
-    pub fn height(&self) -> u32 { self.height }
-    pub fn fps(&self) -> u32 { self.fps }
-    pub fn complete(&self) -> bool { self.complete }
-    pub fn completion_file(&self) -> Option<&'static str> { self.completion_file }
-    pub fn origin(&self) -> Option<&Value> { self.origin.as_ref() }
-    pub fn recoverable(&self) -> bool { self.torn_tail }
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+    pub fn fps(&self) -> u32 {
+        self.fps
+    }
+    pub fn complete(&self) -> bool {
+        self.complete
+    }
+    pub fn completion_file(&self) -> Option<&'static str> {
+        self.completion_file
+    }
+    pub fn origin(&self) -> Option<&Value> {
+        self.origin.as_ref()
+    }
+    pub fn recoverable(&self) -> bool {
+        self.torn_tail
+    }
     fn chunk_path(&self) -> PathBuf {
         self.path.join(format!("chunk-{:06}.bin", self.chunk))
     }
@@ -536,7 +557,9 @@ impl Reader {
             }
             let mut h = [0u8; 17];
             #[cfg(test)]
-            { self.chunk_reads[self.chunk as usize] += 1; }
+            {
+                self.chunk_reads[self.chunk as usize] += 1;
+            }
             let file = self
                 .file
                 .as_mut()
@@ -635,7 +658,11 @@ impl Reader {
                     self.keyed = true;
                 }
             }
-            let frame_offset = self.frames.as_mut().map(|f| f.stream_position()).transpose()
+            let frame_offset = self
+                .frames
+                .as_mut()
+                .map(|f| f.stream_position())
+                .transpose()
                 .map_err(|e| self.error(ErrorKind::Io, e))?;
             if let Some(f) = &mut self.frames {
                 let p = self.path.join("frames.jsonl");
@@ -645,8 +672,13 @@ impl Reader {
                 })?;
             }
             if kind == KEY && self.keys.last().is_none_or(|k| k.slot < slot) {
-                self.keys.push(KeyPosition { chunk: self.chunk, offset: self.offset, slot,
-                    crc: self.crc.clone(), frame_offset });
+                self.keys.push(KeyPosition {
+                    chunk: self.chunk,
+                    offset: self.offset,
+                    slot,
+                    crc: self.crc.clone(),
+                    frame_offset,
+                });
             }
             self.scanned = self.scanned.max(slot + 1);
             self.crc.update(&h);
@@ -661,7 +693,9 @@ impl Reader {
     }
     /// Returns one borrowed frame; no frame history is retained. After an error the reader stops.
     pub fn read(&mut self) -> Result<Option<Decoded<'_>>, Error> {
-        if self.poisoned { return Err(self.error(ErrorKind::Structure, "reader poisoned")); }
+        if self.poisoned {
+            return Err(self.error(ErrorKind::Structure, "reader poisoned"));
+        }
         if self.stopped {
             return Ok(None);
         }
@@ -697,21 +731,38 @@ impl Reader {
         }))
     }
     fn record_eof(&self, e: std::io::Error) -> Error {
-        self.error(if e.kind() == std::io::ErrorKind::UnexpectedEof && self.chunk + 1 == self.chunks {
-            ErrorKind::TornTail
-        } else { ErrorKind::Io }, e)
+        self.error(
+            if e.kind() == std::io::ErrorKind::UnexpectedEof && self.chunk + 1 == self.chunks {
+                ErrorKind::TornTail
+            } else {
+                ErrorKind::Io
+            },
+            e,
+        )
     }
     fn check_recovery_tail(&mut self) -> Result<(), Error> {
         let p = self.path.join("frames.jsonl");
         if let Some(f) = &mut self.frames {
             let mut slot = self.next;
             loop {
-                let at = f.stream_position().map_err(|e| err(&p, None, 0, ErrorKind::Io, e))?;
+                let at = f
+                    .stream_position()
+                    .map_err(|e| err(&p, None, 0, ErrorKind::Io, e))?;
                 let Some(v) = line(f, &p, true)? else { break };
-                if v["frame"] != slot || v["t_us"] != (u128::from(slot) * 1_000_000 / u128::from(self.fps)) as u64 {
-                    return Err(err(&p, None, at, ErrorKind::Structure, "frame timeline mismatch"));
+                if v["frame"] != slot
+                    || v["t_us"] != (u128::from(slot) * 1_000_000 / u128::from(self.fps)) as u64
+                {
+                    return Err(err(
+                        &p,
+                        None,
+                        at,
+                        ErrorKind::Structure,
+                        "frame timeline mismatch",
+                    ));
                 }
-                slot = slot.checked_add(1).ok_or_else(|| err(&p, None, at, ErrorKind::Limit, "slot overflow"))?;
+                slot = slot
+                    .checked_add(1)
+                    .ok_or_else(|| err(&p, None, at, ErrorKind::Limit, "slot overflow"))?;
             }
         }
         Ok(())
@@ -719,7 +770,9 @@ impl Reader {
     /// Lazily index keys and their checksum/sidecar positions, then decode forward.
     /// Any failed seek poisons this reader; reopen it to try again.
     pub fn seek(&mut self, target: u64) -> Result<Decoded<'_>, Error> {
-        if self.poisoned { return Err(self.error(ErrorKind::Structure, "reader poisoned")); }
+        if self.poisoned {
+            return Err(self.error(ErrorKind::Structure, "reader poisoned"));
+        }
         self.poisoned = true;
         self.seek_inner(target)?;
         self.poisoned = false;
@@ -735,10 +788,12 @@ impl Reader {
         self.next = key.slot;
         self.crc = key.crc;
         let mut f = BufReader::new(open(&self.chunk_path())?);
-        f.seek(std::io::SeekFrom::Start(key.offset)).map_err(|e| self.error(ErrorKind::Io, e))?;
+        f.seek(std::io::SeekFrom::Start(key.offset))
+            .map_err(|e| self.error(ErrorKind::Io, e))?;
         self.file = Some(f);
         if let (Some(f), Some(at)) = (&mut self.frames, key.frame_offset) {
-            f.seek(std::io::SeekFrom::Start(at)).map_err(|e| err(&self.path.join("frames.jsonl"), None, at, ErrorKind::Io, e))?;
+            f.seek(std::io::SeekFrom::Start(at))
+                .map_err(|e| err(&self.path.join("frames.jsonl"), None, at, ErrorKind::Io, e))?;
         }
         self.stopped = false;
         self.keyed = false;
@@ -750,14 +805,23 @@ impl Reader {
                 self.position(key)?;
             }
             while self.next <= target {
-                if !self.advance(false)? { return Err(self.error(ErrorKind::Structure, "seek beyond take")); }
+                if !self.advance(false)? {
+                    return Err(self.error(ErrorKind::Structure, "seek beyond take"));
+                }
             }
         }
-        let key = self.keys.iter().filter(|k| k.slot <= target).max_by_key(|k| k.slot).cloned()
+        let key = self
+            .keys
+            .iter()
+            .filter(|k| k.slot <= target)
+            .max_by_key(|k| k.slot)
+            .cloned()
             .ok_or_else(|| self.error(ErrorKind::Structure, "seek beyond take"))?;
         self.position(key)?;
         while self.next <= target {
-            if !self.advance(true)? { return Err(self.error(ErrorKind::Structure, "unexpected EOF during seek replay")); }
+            if !self.advance(true)? {
+                return Err(self.error(ErrorKind::Structure, "unexpected EOF during seek replay"));
+            }
         }
         Ok(())
     }
@@ -772,7 +836,9 @@ impl Reader {
     }
 }
 
-pub fn verify(path: &Path) -> Value { verify_with_options(path, false) }
+pub fn verify(path: &Path) -> Value {
+    verify_with_options(path, false)
+}
 pub fn verify_with_options(path: &Path, require_complete: bool) -> Value {
     let mut frames = 0u64;
     let mut markers = 0u64;
@@ -824,7 +890,16 @@ pub fn verify_with_options(path: &Path, require_complete: bool) -> Value {
             recoverable = r.torn_tail && errors.is_empty();
             complete = r.complete && errors.is_empty();
             if require_complete && !complete {
-                errors.push(err(&path.join("complete.json"), None, 0, ErrorKind::Structure, "complete valid take required").json());
+                errors.push(
+                    err(
+                        &path.join("complete.json"),
+                        None,
+                        0,
+                        ErrorKind::Structure,
+                        "complete valid take required",
+                    )
+                    .json(),
+                );
             }
             if complete {
                 dropped = r
@@ -846,15 +921,26 @@ mod tests {
         let path = std::env::temp_dir().join(format!("vfl-index-{}", std::process::id()));
         let mut w = crate::Writer::new(path.clone(), 2, 2, 1).unwrap();
         w.origin(0).unwrap();
-        w.frame(crate::Frame { slot: 0, pixels: crate::Pixels::Bgra(vec![7;16].into()) }).unwrap();
+        w.frame(crate::Frame {
+            slot: 0,
+            pixels: crate::Pixels::Bgra(vec![7; 16].into()),
+        })
+        .unwrap();
         w.finish(25, 0, 0, None, true).unwrap();
         let p = path.join("chunk-000000.bin");
         let b = std::fs::read(&p).unwrap();
         let mut cut = 0;
-        for _ in 0..10 { cut += 17 + u32::from_le_bytes(b[cut..cut+4].try_into().unwrap()) as usize; }
+        for _ in 0..10 {
+            cut += 17 + u32::from_le_bytes(b[cut..cut + 4].try_into().unwrap()) as usize;
+        }
         for (n, bytes, next) in [(0, &b[..cut], 10), (1, &b[cut..], 25)] {
             std::fs::write(path.join(format!("chunk-{n:06}.bin")), bytes).unwrap();
-            std::fs::write(path.join(format!("chunk-{n:06}.json")), json!({"bytes":bytes.len(),"crc32":crc32fast::hash(bytes),"next_frame":next}).to_string()).unwrap();
+            std::fs::write(
+                path.join(format!("chunk-{n:06}.json")),
+                json!({"bytes":bytes.len(),"crc32":crc32fast::hash(bytes),"next_frame":next})
+                    .to_string(),
+            )
+            .unwrap();
         }
         let cp = path.join("complete.json");
         let mut c = json_file(&cp).unwrap();
@@ -864,10 +950,12 @@ mod tests {
         r.seek(24).unwrap();
         let reads = r.chunk_reads[0];
         for target in (10..25).rev().chain(10..25) {
-            assert_eq!(r.seek(target).unwrap().pixels, [7;16]);
+            assert_eq!(r.seek(target).unwrap().pixels, [7; 16]);
         }
         assert_eq!(r.chunk_reads[0], reads);
-        for target in 0..25 { assert_eq!(r.seek(target).unwrap().pixels, [7;16]); }
+        for target in 0..25 {
+            assert_eq!(r.seek(target).unwrap().pixels, [7; 16]);
+        }
         std::fs::remove_dir_all(path).unwrap();
     }
     #[test]

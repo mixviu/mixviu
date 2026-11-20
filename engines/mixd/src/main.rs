@@ -112,7 +112,10 @@ fn main() -> ExitCode {
     match route(&args) {
         Route::Vfl => match media_vfl::cli::run(args.iter().skip(2).cloned()) {
             Ok(()) => ExitCode::SUCCESS,
-            Err(e) => { eprintln!("{e}"); ExitCode::from(media_vfl::cli::exit_code(e.as_ref())) }
+            Err(e) => {
+                eprintln!("{e}");
+                ExitCode::from(media_vfl::cli::exit_code(e.as_ref()))
+            }
         },
         Route::Personality(name) => run_personality(name),
         Route::List => {

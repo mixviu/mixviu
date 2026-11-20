@@ -394,28 +394,35 @@ fn writer_record_write_boundaries_recover_only_final_eof() {
         let mut b = std::fs::read(&p).unwrap();
         let mut at = 0;
         while b[at + 16] != media_vfl::RECT_DELTA {
-            at += 17 + u32::from_le_bytes(b[at..at+4].try_into().unwrap()) as usize;
+            at += 17 + u32::from_le_bytes(b[at..at + 4].try_into().unwrap()) as usize;
         }
-        let end = at + 17 + u32::from_le_bytes(b[at..at+4].try_into().unwrap()) as usize;
+        let end = at + 17 + u32::from_le_bytes(b[at..at + 4].try_into().unwrap()) as usize;
         b.truncate(if boundary == 0 { end } else { at + boundary });
         std::fs::write(&p, b).unwrap();
         std::fs::remove_file(t.0.join("chunk-000000.json")).unwrap();
         // Model the writer's ordering: binary record precedes sidecar append.
         let rows = std::fs::read_to_string(t.0.join("frames.jsonl")).unwrap();
         let n = if boundary == 0 { 3 } else { 2 };
-        std::fs::write(t.0.join("frames.jsonl"), rows.lines().take(n).collect::<Vec<_>>().join("\n") + "\n").unwrap();
+        std::fs::write(
+            t.0.join("frames.jsonl"),
+            rows.lines().take(n).collect::<Vec<_>>().join("\n") + "\n",
+        )
+        .unwrap();
         let v = verify(&t.0);
         assert_eq!(v["ok"], true, "{boundary}: {v}");
         assert_eq!(v["recoverable"], boundary != 0, "{v}");
         assert_eq!(v["valid_frames"], n);
         let mut r = Reader::open(&t.0).unwrap();
         assert_eq!(decoded(&mut r).0, expected[..n]);
-        assert_eq!(media_vfl::reader::verify_with_options(&t.0, true)["ok"], false);
+        assert_eq!(
+            media_vfl::reader::verify_with_options(&t.0, true)["ok"],
+            false
+        );
     }
 }
 #[test]
 fn completion_read_failures_are_fatal_but_parse_and_false_are_recoverable() {
-    use std::os::unix::fs::{symlink, PermissionsExt};
+    use std::os::unix::fs::{PermissionsExt, symlink};
     if let Some(p) = std::env::var_os("VFL_PERMISSION_TEST_TAKE") {
         let p = PathBuf::from(p);
         let e = Reader::open(&p).err().unwrap();
@@ -430,9 +437,15 @@ fn completion_read_failures_are_fatal_but_parse_and_false_are_recoverable() {
         match case {
             0 => std::fs::write(&p, "{").unwrap(),
             1 => json_edit(&p, |v| v["complete"] = json!(false)),
-            2 => std::fs::write(&p, vec![b' '; 1024*1024+1]).unwrap(),
-            3 => { std::fs::remove_file(&p).unwrap(); symlink("absent", &p).unwrap(); }
-            4 => { std::fs::remove_file(&p).unwrap(); std::fs::create_dir(&p).unwrap(); }
+            2 => std::fs::write(&p, vec![b' '; 1024 * 1024 + 1]).unwrap(),
+            3 => {
+                std::fs::remove_file(&p).unwrap();
+                symlink("absent", &p).unwrap();
+            }
+            4 => {
+                std::fs::remove_file(&p).unwrap();
+                std::fs::create_dir(&p).unwrap();
+            }
             _ => std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0)).unwrap(),
         }
         // Root bypasses file mode bits; exercise the real open failure in an
@@ -444,15 +457,24 @@ fn completion_read_failures_are_fatal_but_parse_and_false_are_recoverable() {
             let manifest = t.0.join("manifest.json");
             std::fs::set_permissions(manifest, std::fs::Permissions::from_mode(0o644)).unwrap();
             let output = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "completion_read_failures_are_fatal_but_parse_and_false_are_recoverable"])
-                .env("VFL_PERMISSION_TEST_TAKE", &t.0).uid(65534).gid(65534)
-                .output().unwrap();
+                .args([
+                    "--exact",
+                    "completion_read_failures_are_fatal_but_parse_and_false_are_recoverable",
+                ])
+                .env("VFL_PERMISSION_TEST_TAKE", &t.0)
+                .uid(65534)
+                .gid(65534)
+                .output()
+                .unwrap();
             assert!(output.status.success(), "{output:?}");
             continue;
         }
         assert_eq!(Reader::open(&t.0).is_ok(), case < 2, "case {case}");
         assert_eq!(media_vfl::reader::Markers::open(&t.0).is_ok(), case < 2);
-        assert_eq!(media_vfl::reader::verify_with_options(&t.0, true)["ok"], false);
+        assert_eq!(
+            media_vfl::reader::verify_with_options(&t.0, true)["ok"],
+            false
+        );
     }
 }
 #[test]
@@ -469,8 +491,12 @@ fn binary_tear_does_not_hide_other_damage_or_apply_to_earlier_chunks() {
         let (t, _) = take(complete);
         tear(&t.0.join("chunk-000000.bin"));
         use std::io::Write;
-        std::fs::OpenOptions::new().append(true).open(t.0.join("frames.jsonl"))
-            .unwrap().write_all(b"{bad}\n").unwrap();
+        std::fs::OpenOptions::new()
+            .append(true)
+            .open(t.0.join("frames.jsonl"))
+            .unwrap()
+            .write_all(b"{bad}\n")
+            .unwrap();
         let v = verify(&t.0);
         assert_eq!(v["ok"], false);
         assert_eq!(v["recoverable"], false);

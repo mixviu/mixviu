@@ -8,7 +8,9 @@ use std::{
 #[derive(Debug)]
 pub struct Usage;
 impl std::fmt::Display for Usage {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { f.write_str(USAGE) }
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(USAGE)
+    }
 }
 impl std::error::Error for Usage {}
 const USAGE: &str = "usage: mixd vfl verify TAKE [--require-complete] | markers TAKE | export TAKE [--from FRAME] [--to FRAME] [--format bgra|y4m] [--fps N (1-60)]\nExit codes: 0 success or streaming stdout BrokenPipe; 1 data or I/O error; 2 usage error.";
@@ -20,10 +22,17 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> Result<(), Box<dyn std::
     let usage = || Usage;
     let command = args.first().and_then(|v| v.to_str()).ok_or_else(usage)?;
     let require_complete = command == "verify" && args.iter().any(|a| a == "--require-complete");
-    let path_arg = if command == "verify" && args.get(1).is_some_and(|a| a == "--require-complete") { 2 } else { 1 };
+    let path_arg = if command == "verify" && args.get(1).is_some_and(|a| a == "--require-complete")
+    {
+        2
+    } else {
+        1
+    };
     let path = PathBuf::from(args.get(path_arg).ok_or_else(usage)?);
     let mut out = io::BufWriter::new(io::stdout().lock());
-    if command == "verify" && (args.len() == 2 && !require_complete || args.len() == 3 && require_complete) {
+    if command == "verify"
+        && (args.len() == 2 && !require_complete || args.len() == 3 && require_complete)
+    {
         let result = verify_with_options(&path, require_complete);
         writeln!(out, "{result}")?;
         out.flush()?;
