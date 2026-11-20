@@ -128,6 +128,7 @@ struct Host {
     owner_close_pending: bool,
     model: Value,
     model_revision: Option<(u64, u64)>,
+    model_revision_floor: Option<(u64,u64)>,
     model_refused: Option<u64>,
     model_bytes: usize,
     output: Option<String>,
@@ -159,6 +160,7 @@ impl Host {
             Ok(()) => {
                 self.model_refused = None;
                 self.model_revision = Some((generation, revision));
+                self.model_revision_floor=Some((generation,revision));
                 (
                     "viu.model.applied",
                     json!({"generation":generation,"revision":revision}),
@@ -1181,7 +1183,7 @@ impl Host {
                     let revision_error = done
                         .model_revision
                         .and_then(|revision| {
-                            self.model_revision.filter(|(generation, old)| {
+                            self.model_revision_floor.filter(|(generation, old)| {
                                 *generation == done.generation && revision <= *old
                             })
                         })
@@ -2382,6 +2384,7 @@ fn create_with_probe(
         owner_close_pending: false,
         model: json!({}),
         model_revision: None,
+        model_revision_floor: None,
         model_refused: None,
         model_bytes: 2,
         output: None,

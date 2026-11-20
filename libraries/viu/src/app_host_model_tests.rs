@@ -39,6 +39,9 @@ end
 on test.full
   send "viu-local" "scenes.model" body={generation:$ctx.generation,revision:$event.args.revision,value:{label:$event.args.label}}
 end
+on test.legacy
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:{label:"legacy"}}
+end
 on test.fail
   send "viu-local" "scenes.model.patch" body={generation:$ctx.generation,base:$event.args.base,revision:$event.args.revision,operations:[{op:"set",path:["label"],value:"must not escape failed callback"}]}
   raise("TEST","callback failed after publication")
@@ -128,4 +131,10 @@ end
     settle(&mut host, &ctx);
     assert_eq!(host.model_revision, Some((generation, 6)));
     assert_eq!(host.view.model()["label"], "recovered");
+    host.dispatch("test.legacy".into(),json!({}),BTreeMap::new(),None);
+    settle(&mut host,&ctx);assert_eq!(host.model_revision,None);
+    host.dispatch("test.full".into(),json!({"revision":1,"label":"must not reuse a retired revision"}),BTreeMap::new(),None);
+    settle(&mut host,&ctx);assert!(host.error.contains("revision must advance"));assert_eq!(host.view.model()["label"],"legacy");
+    host.dispatch("test.full".into(),json!({"revision":7,"label":"new base"}),BTreeMap::new(),None);
+    settle(&mut host,&ctx);assert!(host.error.is_empty());assert_eq!(host.model_revision,Some((generation,7)));
 }
