@@ -74,6 +74,7 @@ tokio = { version = "=1.54.1", features = ["rt", "time", "macros", "sync"] }
 egui = { version = "=0.37.0", default-features = false, features = ["default_fonts"] }
 
 [dev-dependencies]
+media-vfl = { path = "../media/vfl" }
 motion = { path = "../motion" }
 wayland-protocols-misc = { version = "=0.3.12", features = ["client"] }
 test-broker = { path = "../test-broker" }
