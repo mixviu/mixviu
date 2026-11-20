@@ -2,7 +2,7 @@
 //! OSD acceptance through the real Bus, scene host, compositor and VFL reader.
 use super::*;
 
-fn osd_helper(action: &str, root: &Path, rest: &[&str], url: Option<&str>) -> Output {
+fn osd_helper(action: &str, root: &Path, rest: &[&str], _url: Option<&str>) -> Output {
     assert_eq!(action, "call");
     assert_eq!(rest.get(2), Some(&"osd"));
     // Named supervised citizens send on their registered connection. Shell
@@ -16,7 +16,7 @@ fn osd_helper(action: &str, root: &Path, rest: &[&str], url: Option<&str>) -> Ou
         .arg("--serve")
         .arg(script)
         .args(["--name", rest.get(3).copied().unwrap_or("headless-osd-owner")])
-        .env("MIX_NODED_URL", url.unwrap())
+        .env("MIX_NODED_URL", format!("unix://{}", root.join("run/noded/bus.sock").display()))
         .env("MIX_RUN", root.join("run"))
         .env("MIX_ETC", root.join("etc"))
         .env("MIX_VAR", root.join("var"))
