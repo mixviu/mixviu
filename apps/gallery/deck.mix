@@ -70,9 +70,9 @@ end
 fn terminal($title, $lines)
   $items = [deck_text($title,"node_label","mut")]
   for $line in $lines
-    push($items,merge(inline($line,"terminal",true),{reserve_height:$tokens.space.terminal_row}))
+    push($items,merge(inline($line,"terminal",true),{min_height:$tokens.space.terminal_row,max_height:$tokens.space.terminal_row}))
   end
-  return merge(column($items,0),{padding_x:22,padding_y:18,background:$tokens.colour.code_background,radius:14})
+  return merge(column($items,0),{height:len($lines)*$tokens.space.terminal_row+64,padding_x:22,padding_y:18,background:$tokens.colour.code_background,radius:14})
 end
 fn tree($entries)
   $items = []

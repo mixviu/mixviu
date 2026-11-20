@@ -23,6 +23,7 @@ macro_rules! page {
             let mut output = ctx.run_ui(raw, |ui| {
                 view.show(ui);
             });
+            output.textures_delta.clear();
             assert!(!output.shapes.is_empty());
             let root = view.geometry["root"];
             for (id, rect) in &view.geometry {
@@ -94,7 +95,15 @@ fn inline_runs_keep_layout_colours_history_and_highlight() {
 fn malformed_bound_runs_refuse_before_rendering() {
     let nodes = json!({"root":{"widget":"text","text":"","spans":"= $model.runs"}});
     let source = format!("---\nscene: 1\nname: deck\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
-    assert!(SceneView::with_model(&source, json!({"runs":[{"text":"x","role":"typo"}]})).is_err());
+    let model = json!({"runs":[{"text":"x","role":"typo"}]});
+    let mut document = scene::parse(&source).unwrap();
+    document.model = Some(model.clone());
+    assert!(scene::lint(&document).iter().any(|d| d.code == "binding-type"));
+    let resolved = scene::resolve(&document).unwrap();
+    assert!(!resolved.nodes["root"].ports.contains_key("spans"));
+    // Bad bound values follow the shared binding fallback policy; they do
+    // not make an otherwise usable scene fail to open.
+    assert!(SceneView::with_model(&source, model).is_ok());
 }
 
 #[test]

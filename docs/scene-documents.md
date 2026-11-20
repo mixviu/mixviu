@@ -457,9 +457,10 @@ Each run requires `text` and may specify `role`, `color` (`#RRGGBB`), `mono`,
 An explicit colour overrides the role colour; otherwise the host resolves
 the semantic role through its active design. Size comes from the text node.
 There are at most 1024 runs and 65536 UTF-8 bytes across their text. Unknown
-fields, roles, invalid colours and wrong flag types refuse during resolution,
-including when supplied by a model binding. Clearing a bound spans value
-restores plain-text rendering.
+fields, roles, invalid colours and wrong flag types refuse literal resolution.
+Invalid bound values produce a `binding-type` diagnostic and retain the
+shared binding fallback behaviour; initial resolution omits the bad spans.
+Clearing a bound spans value restores plain-text rendering.
 
 This is an incomplete deck port. The Quoin surface painter and full deck
 typography/motion parity still need validation; the application painter's
