@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Launch the reviewed scene host as a direct compositor child.
-pub struct Host(std::process::Child);
+pub struct Host(std::process::Child, protocols::layershell::osd::Lease);
 
 fn next_delay(delay: std::time::Duration) -> std::time::Duration {
     (delay * 2).min(std::time::Duration::from_secs(30))
@@ -12,10 +12,11 @@ pub fn supervise<S: 'static>(
     handle: smithay::reexports::calloop::LoopHandle<'static, S>,
     headless: bool,
     comp: String,
+    display: smithay::reexports::wayland_server::DisplayHandle,
 ) {
     use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
     use std::time::{Duration, Instant};
-    let mut host = launch(headless, &comp);
+    let mut host = launch(headless, &comp, &display);
     let mut started = Instant::now();
     // Half-step seed: each failure doubles before scheduling its delay.
     let mut delay = Duration::from_millis(125);
@@ -43,7 +44,7 @@ pub fn supervise<S: 'static>(
                         }
                     }
                 } else if now >= retry {
-                    host = launch(headless, &comp);
+                    host = launch(headless, &comp, &display);
                     started = now;
                     if host.is_none() {
                         delay = next_delay(delay);
@@ -62,13 +63,18 @@ pub fn supervise<S: 'static>(
 
 impl Drop for Host {
     fn drop(&mut self) {
-        protocols::layershell::osd::unbind();
+        self.1.revoke();
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
 }
 
-pub fn launch(headless: bool, comp: &str) -> Option<Host> {
+pub fn launch(
+    headless: bool,
+    comp: &str,
+    display: &smithay::reexports::wayland_server::DisplayHandle,
+) -> Option<Host> {
+    use std::os::fd::AsRawFd;
     use std::os::unix::process::CommandExt;
     let executable = std::env::current_exe().ok()?;
     let bin = executable.parent()?;
@@ -87,18 +93,26 @@ pub fn launch(headless: bool, comp: &str) -> Option<Host> {
         return None;
     }
     let mut command = slots::library::process::child::hygiene::command(viu);
+    let (server, client) = std::os::unix::net::UnixStream::pair().ok()?;
+    let lease = protocols::layershell::osd::insert(display, server).ok()?;
+    let fd = client.as_raw_fd();
     command
         .arg("run")
         .arg(bundle)
         .arg("--comp")
         .arg(comp)
         .stdin(std::process::Stdio::null())
+        .env_remove("WAYLAND_DISPLAY")
+        .env("WAYLAND_SOCKET", fd.to_string())
         .env("MIX_VIU_COMP_SERVICE", comp);
     let parent = std::process::id() as libc::pid_t;
     // SAFETY: the child hook uses only async-signal-safe syscalls, no allocation.
     // The parent check closes the race where viud dies before prctl is armed.
     unsafe {
         command.pre_exec(move || {
+            if libc::fcntl(fd, libc::F_SETFD, 0) == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
             if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
                 return Err(std::io::Error::last_os_error());
             }
@@ -109,15 +123,7 @@ pub fn launch(headless: bool, comp: &str) -> Option<Host> {
         });
     }
     match slots::library::process::child::spawn::spawn_awaited(&mut command) {
-        Ok(mut child) => {
-            if !protocols::layershell::osd::bind(child.id() as i32) {
-                let _ = child.kill();
-                let _ = child.wait();
-                error!("OSD host identity could not be pinned");
-                return None;
-            }
-            Some(Host(child))
-        }
+        Ok(child) => Some(Host(child, lease)),
         Err(error) => {
             error!("OSD host launch failed: {error}");
             None

@@ -53,3 +53,4 @@ mimalloc.workspace = true
 [dev-dependencies]
 serde_json.workspace = true
 media-frame = { path = "../../libraries/media/frame" }
+paths = { path = "../../libraries/paths" }
