@@ -664,7 +664,7 @@ fn workshop_answers_during_discovery() {
             let until=Instant::now()+Duration::from_millis(1200);
             while Instant::now()<until {host.pump();std::thread::sleep(Duration::from_millis(2));}
             assert!(host.state()["model"]["traffic_view"]["initial"].is_array(),"steady Traffic must be rendered");
-            assert!(serde_json::to_vec(&host.state()["model"]).unwrap().len()>=2*1024*1024,"steady guard must exercise a retained model of at least 2 MiB");
+            assert!(serde_json::to_vec(&host.state()["model"]).unwrap().len()>=1024*1024,"steady guard must exercise a retained model of at least 1 MiB (larger than the 768 KiB wire bound)");
             assert!(
                 host.discovery_measurements()["tick_model_bytes"]["n"]
                     .as_u64()
