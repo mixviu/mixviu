@@ -9,6 +9,9 @@ try
   checked(["cargo", "clippy", "-p", "media-webm", "--all-targets", "--", "-D", "warnings"])
   checked(["cargo", "test", "-p", "media-webm", "--all-targets"])
   checked(["mix", "tools/foreign_gate.mix"])
+  if env("MEDIA_WEBM_SAMPLE", "") != "" then
+    checked(["cargo", "test", "--locked", "--profile", "release-fast", "-p", "media-webm", "--test", "oracle", "sample_4k", "--", "--ignored", "--exact"])
+  end
 finally
   print("BEGIN_WORKER_DIFF")
   print(run_argv_must(["git", "diff", "--", "libraries/media/webm", "Cargo.lock"]))
