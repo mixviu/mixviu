@@ -1,3 +1,114 @@
+# PR #220 round 3d — ordering fixed; stopped on an unchanged registry probe
+
+Semantic head: `ac71f084b19bd7ffefccf6bbec94fc82ca509d65`. This receipt commit
+also applies the worker's formatting-only diff. #220 remains **draft**.
+
+## Stop required by the clarified rule
+
+Default scoped verification, CBC **`20261121-193307-26c4119e-a1`**, source
+`ac71f084`, fails only `lib-viu/viu`:
+`decorations::tests::registry_with_decoration_global_is_detected`, at
+`libraries/viu/src/decorations.rs:267`, receives `None`, expected `Some(true)`.
+That unit binary reports **414 passed, 1 failed, 5 ignored**. The detector uses
+its existing 200 ms budget (`decorations.rs:16`); no diagnosis beyond the
+observed missing result is claimed. Both its implementation and test have an
+empty diff against `7ad2570f`. This PR did not write that behaviour.
+
+Per the clarified rule, work stops on this pre-existing failure: no retry,
+deadline change, serialisation change or repair to the detector. The scoped
+job therefore did not reach the test-support pool, its clippy pass, the normal
+scene-script run or env-registry. The PR is not ready. Saved log:
+`20261121-193308-cbc3-ac71f084b19b-20261121-193307-26c4119e-a1-1e924f65.log`.
+
+## Own failures fixed and checked
+
+`app_host.rs:405` now selects the already validated file theme until the
+session values map exists. It validates the requested choice before artifact
+use. Both real-host controls explicitly start with the initial `{}` snapshot.
+The info projection's callback identity is now available in production builds,
+rather than only under test-support. Report submission is bounded and
+nonblocking; a failed worker start is reported without aborting the app.
+
+CBC **`20261121-192812-431ecddb-a1`**, `db8e8dfb`, passes both host controls
+(3.40 s total), the standalone startup regression (1.79 s), and the settings
+source write control (7.47 s). Its later default build found our test-only
+command-field mistake; that is corrected in `93f67042` and the default build
+and clippy pass in the scoped job above.
+
+| CBC fixture measurement | Before | After ordering repair |
+|---|---:|---:|
+| Job | `20261121-175445-2c24d7dc-a1` | `20261121-192812-431ecddb-a1` |
+| Worst first-1.5 s call, from port appearance, 200 peers | 1,001.520 ms observed timeout | **635.092 ms**, zero failures |
+| First-pump wall / CPU | 2,502.676 / 2,501.943 ms | **346.110 / 346.063 ms** |
+| Bound | 750 ms | **750 ms unchanged** |
+
+Timeout durations are censored observations, not completed-reply latency.
+These are CBC fixture measurements, not post-PR desk measurements. The residual
+roughly 620–635 ms call and callback profile are a separate TODO-workshop item.
+
+The default scoped run passes all-target clippy for design, theme, toolkit,
+lib-viu, viu and settingsd. Its strict width-eight pool runs **100 binaries**
+and doc-tests; `app_mix` passes in that pool (65.2 s for the entire script
+collection). The new startup test is test-support-only, so **no width-eight
+startup pass is claimed**. The one registry-probe failure keeps the pool red.
+
+## Admission paths and controls
+
+| Path | Code / evidence |
+|---|---|
+| Requested contexts / startup | `libraries/design/src/compiler.rs:27`, `libraries/theme/src/theme.rs:310,391`, `app_host.rs:405`; normal host controls pass. |
+| Background and info/notice | `libraries/viu/src/design_validation.rs:57`, `app_host.rs:1546`; generic save uses the real editd writer and background file detection, with no editor save policy. |
+| Settings source write | Existing registry whole-source compiler retained; `services/settingsd/tests/transactions.rs:44` verifies bad unused context refuses before profile bytes change, plus valid-source control. |
+| Scene install / upgrade / Reset | Existing stage → validate → placement path; host whole-source admission at `engines/viu/src/store.rs:497`. Writer controls at `engines/viud/tests/scenes_test.mix:528,530,532`. Keep is no write. |
+| Bundle | `tools/apps_bundle.mix:42,50` and `app_host.rs:2611`; real bundle admits **616 files**, and the bad shipped unused-context control refuses before archive creation. |
+| Generic saves | Deliberate bypass, covered by the report worker. Separate ownership entry: `~/.viu/_doc/TODO-editd.md`, “Generic saves of theme and scene sources skip design validation”. |
+
+CBC **`20261121-193307-fc0b4314-a1`** passes six mutation controls: restoring
+the premature session read fails **both** hosts; removing info or visible
+notice surfacing fails their oracle; dropping background errors fails generic
+save reporting; weakening whole-source compilation fails the settings write
+control; bypassing staged scene validation fails the no-installation-write
+assertion. All mutations restore their sources.
+
+CBC **`20261121-193727-a82ae95d-a1`** passes the latency and first-use mutation
+controls: all-context runtime compilation produces two timeouts, worst
+1,001.311 ms, and the unchanged 750 ms assertion fails; compiling the wrong
+requested context fails the first-use oracle.
+
+CBC **`20261121-193727-a1cae432-a1`** passes actual bundle construction and
+the bad-shipped-context refusal, then rebuilds and validates the restored good
+source. Earlier bundle attempt `20261121-193452-8a93f325-a1` correctly refused
+the bad source but our driver expected its full diagnostic inside a truncated
+process-error wrapper. The corrected control checks the native diagnostic and
+the bundle refusal separately. No product change or waiver was used.
+
+## Five fresh staging baseline samples, gold `7ad2570f`
+
+Each row retains its own gold receipt, quiet JSON and raw probe result. Every
+receipt was re-read before the run: check_rc=2, no FAIL lines. All five quiet
+checks report zero busy samples and no headless browser; no busy run is
+included. Runs are outside the excluded nightly window.
+
+| Run id, 2026-11-21 UTC+10 | Ping max ms | Info max ms | Port ms |
+|---|---:|---:|---:|
+| `20261121-192827-1` | 477 | 378 | 103 |
+| `20261121-192843-2` | 461 | 377 | 102 |
+| `20261121-192859-3` | 467 | 409 | 105 |
+| `20261121-192915-4` | 509 | 368 | 102 |
+| `20261121-192930-5` | 462 | 376 | 102 |
+
+Each run has 45 ping and 45 info calls, zero failures and zero over one second.
+These are the requested **after-#216 baseline**, not the result of this PR.
+Post-merge gold carrying this PR still needs its own desk check. No deployment
+or merge occurred in this round.
+
+Changed Mix files lint cleanly; no new environment variable. Final source
+formatting was applied from CBC, and `git diff --check` passes. The fatal versus
+formal startup fallback decision remains separately recorded in TODO-viu.
+Two unverified refinements being reviewed when the stop arrived (single-read
+fallback diagnostic hashing and an additional cache-label control) are saved
+as a private patch, not mixed into this tested semantic head.
+
 # PR #220 round 3c — a+ implementation stopped on host startup failure
 
 Tested implementation head: `a698636482f56c0531f7cf5f3e60fc2e948e6da1`.

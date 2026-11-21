@@ -35,7 +35,9 @@ impl Validation {
             );
         }
         let digest = theme.source_digest().to_owned();
-        if self.seen.len() >= 128 { self.seen.clear(); }
+        if self.seen.len() >= 128 {
+            self.seen.clear();
+        }
         if self.seen.insert(digest.clone()) {
             if self.pending.len() >= 32 {
                 let retired = self.pending.remove(0);
@@ -53,7 +55,9 @@ impl Validation {
     /// Called only after a ready frame. Exactly one native worker per host;
     /// dropping the host closes its queue and never joins on the UI thread.
     pub fn after_frame(&mut self) {
-        if self.worker_error.is_some() { return; }
+        if self.worker_error.is_some() {
+            return;
+        }
         if self.sender.is_none() {
             let (tx, tasks) = mpsc::sync_channel::<Task>(4);
             let (answers, rx) = mpsc::channel();
@@ -142,7 +146,9 @@ impl Validation {
                 self.outstanding = self.outstanding.saturating_sub(1);
                 if let Some(error) = error {
                     tracing::warn!(source_digest=%digest, %error, "design background report");
-                    if self.errors.len() >= 64 { self.errors.pop_first(); }
+                    if self.errors.len() >= 64 {
+                        self.errors.pop_first();
+                    }
                     self.errors.insert(digest, error);
                 }
             }
@@ -154,7 +160,9 @@ impl Validation {
             tracing::warn!(source_digest = digest, error, "design context refused");
         }
         self.notice = error.into();
-        if self.errors.len() >= 64 { self.errors.pop_first(); }
+        if self.errors.len() >= 64 {
+            self.errors.pop_first();
+        }
         self.errors.insert(digest.into(), error.into());
     }
 
