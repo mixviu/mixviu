@@ -344,7 +344,7 @@ impl Audio {
         }
         writer.finalize()?;
         // hound does not append RIFF's word-alignment byte for odd PCM24 data.
-        if data_bytes % 2 != 0 {
+        if !data_bytes.is_multiple_of(2) {
             w.seek(SeekFrom::End(0))?;
             w.write_all(&[0])?;
             let end = w.stream_position()?;

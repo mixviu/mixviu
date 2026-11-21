@@ -42,7 +42,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(n) = args.get(4) {
                 a.resize(n.parse()?)?;
             }
-            if args[1] == "render" { let r = a.normalise(-14.0,-1.0)?; println!("{}",json!({"before":value(r.before),"after":value(r.after),"gain":r.gain_db,"shortfall":r.shortfall_lu,"capped":r.peak_limited})); }
+            if args[1] == "render" {
+                let r = a.normalise(-14.0, -1.0)?;
+                println!(
+                    "{}",
+                    json!({"before":value(r.before),"after":value(r.after),"gain":r.gain_db,"shortfall":r.shortfall_lu,"capped":r.peak_limited})
+                );
+            }
             write(&args[3], &a)?;
             println!("{}", value(a.measure()?));
         }
