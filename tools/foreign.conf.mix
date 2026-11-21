@@ -11,6 +11,14 @@
 --         shell is every server's login shell).
 foreign: {
   allow: {
+    "audio-codec-algorithms": {reason: "0.8.1 0BSD OR Apache-2.0; pure-Rust sample conversion via rubato", exit: "none needed: pure Rust"},
+    "audioadapter": {reason: "5.0.0 MIT OR Apache-2.0; pure-Rust buffer traits via rubato", exit: "none needed: pure Rust"},
+    "audioadapter-buffers": {reason: "5.1.0 MIT OR Apache-2.0; pure-Rust buffers via rubato", exit: "none needed: pure Rust"},
+    "audioadapter-sample": {reason: "5.2.0 MIT OR Apache-2.0; pure-Rust samples via rubato", exit: "none needed: pure Rust"},
+    "dasp_frame": {reason: "0.11.0 MIT OR Apache-2.0; pure-Rust frames via ebur128", exit: "none needed: pure Rust"},
+    "dasp_sample": {reason: "0.11.0 MIT OR Apache-2.0; pure-Rust samples via ebur128", exit: "none needed: pure Rust"},
+    "visibility": {reason: "0.1.1 Zlib OR MIT OR Apache-2.0; pure-Rust proc macro via rubato", exit: "none needed: pure Rust"},
+    "windowfunctions": {reason: "0.1.1 MIT; pure-Rust sinc windows via rubato", exit: "none needed: pure Rust"},
     "ebur128": {reason: "0.1.11 MIT; pure-Rust BS.1770 loudness and FIR true peak, no c-tests feature", exit: "none needed: pure Rust"},
     "rubato": {reason: "5.1.0 MIT OR Apache-2.0; pure-Rust sinc resampling, FFT disabled", exit: "none needed: pure Rust"},
     "hound": {reason: "3.5.1 Apache-2.0; pure-Rust WAV I/O", exit: "none needed: pure Rust"},
