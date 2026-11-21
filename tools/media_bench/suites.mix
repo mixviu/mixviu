@@ -229,7 +229,7 @@ fn episode($o)
   $episode_support.check_output($source,$o.out)
   $before=$episode_support.run_snapshot($source)
   write_file($o.out.."/original-before.json",json_encode($before))
-  $origins=unique([$source,$o["episode-run"],$o.episode_given ?? $o["episode-run"]])
+  $origins=unique([$source,$o["episode-run"],$o.episode_given ?? $o["episode-run"],$o.episode_joined ?? $o["episode-run"]])
   $copy=$episode_support.copy_run($source,$origins)
   $items=[]; $keep=$o.keep ?? false
   try

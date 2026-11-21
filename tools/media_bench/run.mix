@@ -8,6 +8,7 @@ for $key in ["suite","engine","corpus","out"]
 end
 $repo=dirname(dirname(dirname(script_path())))
 $o.episode_given=$o["episode-run"]
+$o.episode_joined=if $o.episode_given!=nil then path_join(trim(run_argv_must(["pwd"])), $o.episode_given) else nil end
 for $key in ["corpus","out","compare","episode-run"]
   if $o[$key]!=nil then $o[$key]=$core.absolute_path($o[$key],trim(run_argv_must(["pwd"]))) end
 end

@@ -28,7 +28,8 @@ fn absolute_path($raw,$cwd)
   safe_path($raw)
   $joined=path_join($cwd,$raw)
   if not starts_with($joined,"/") then raise("PATH","absolute working directory required") end
-  return safe_path($joined)
+  safe_path($joined)
+  return safe_path("/"..join(filter(split($joined,"/"),fn($p)=$p!="" and $p!="."),"/"))
 end
 fn concat_entry($path)
   -- Refuse quotes and every other filter/concat metacharacter, even for
