@@ -35,8 +35,8 @@ try
   $paused=$budget.defer_row($paused,{dropped_count:7},true)
   check($paused.dropped==7 and $paused.traffic_redaction==nil,"paused rows must keep upstream count")
   $quitting=$m.initial();$quitting.quitting=true
-  $quitting=$budget.defer_row($quitting,{payload:{secret:"hidden"}},false)
-  check($quitting.traffic_redaction==nil,"quit must refuse new raw rows")
+  $quitting=$budget.defer_row($quitting,{dropped_count:2,payload:{secret:"hidden"}},true)
+  check($quitting.traffic_redaction==nil and $quitting.dropped==2,"quit must refuse new raw rows")
   $paused=$m.initial();$paused=$budget.defer_row($paused,{seq:1},false);$paused.traffic_paused=true
   check(deep_eq($t.launch($paused),$paused),"pause must not launch redaction")
   $paused.traffic_paused=false;$paused.quitting=true
@@ -78,7 +78,7 @@ try
   $failed=$t.completed($work.state,{rc:10,body:{rows:[{seq:"must not display"}]}},$work.task.redaction_generation)
   check($failed.dropped==6 and $failed.traffic_redaction.bytes==0,"job failure must preserve upstream and count the row")
   $empty=$m.initial()
-  check(deep_eq($t.completed($empty,{rc:0,body:{}},"retired"),$empty),"nil reset queue must ignore late completion")
+  check(deep_eq($t.completed($empty,{rc:0,body:{}},$empty.traffic_generation),$empty),"nil reset queue must ignore late completion")
   $old=$budget.defer_row($m.initial(),{seq:"old"},false);$old_work=take_task($old)
   $reset=$m.initial();check($reset.traffic_redaction==nil,"model reset must clear raw queue")
   $reset=$budget.defer_row($reset,{seq:"new"},false);$new_work=take_task($reset)

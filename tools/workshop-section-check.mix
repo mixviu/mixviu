@@ -100,7 +100,7 @@ elif $mode=="round2-controls" then
   for $case in ["queue-negative","input-negative","job-negative","job-fifo","width-negative","section-negative"] checked(["mix",script_path(),$case]) end
   checked(["mix","libraries/viu/tests/workshop-probe.mix","review-controls"])
 elif $mode=="queue-negative" or $mode=="input-negative" or $mode=="job-negative" or $mode=="job-fifo" then
-  $cases=if $mode=="queue-negative" then ["admission","upstream","double","failure","rc","generation","native-generation","job-tag","rows","batch-rows","batch-bytes","body","quit","pause"] else [$mode] end
+  $cases=if $mode=="queue-negative" then ["admission","upstream","double","failure","rc","generation","native-generation","job-tag","rows","batch-rows","batch-bytes","body","nil-queue","quit","pause"] else [$mode] end
   for $case in $cases
     $p=if $case=="input-negative" then "apps/workshop/presentation.mix" elif $case=="native-generation" then "apps/workshop/controller.mix" elif $case=="job-tag" then "apps/workshop/work.mix" elif contains(["job-negative","job-fifo"],$case) then "apps/workshop/traffic-redact-job.mix" else "apps/workshop/traffic.mix" end
     $source=read_file($p)
@@ -116,6 +116,7 @@ elif $mode=="queue-negative" or $mode=="input-negative" or $mode=="job-negative"
     elif $case=="batch-rows" then $old='len($rows)>=64';$new='len($rows)>=65';$expected="batch row bound"
     elif $case=="batch-bytes" then $old='$bytes+$entry.bytes>262144';$new='$bytes+$entry.bytes>1048576';$expected="batch byte bound"
     elif $case=="body" then $old='type($d.body)!="map"';$new='false';$expected="cannot access field"
+    elif $case=="nil-queue" then $old='if $s.traffic_redaction==nil or $generation!=';$new='if $generation!=';$expected="cannot access field"
     elif $case=="quit" then $old='if $s.traffic_paused or $s.quitting then';$new='if $s.traffic_paused then';$expected="quit must refuse"
     elif $case=="pause" then $old='if $s.quitting or $s.traffic_paused or $q==nil';$new='if $s.quitting or $q==nil';$expected="pause must not launch"
     elif $case=="input-negative" then $old='tree:["snapshot","catalogues","agents","filter",';$new='tree:["snapshot","catalogues","agents",';$expected="section-dirty projection differs from full oracle"
