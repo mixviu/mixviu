@@ -16,8 +16,8 @@ fn format(tag:u16, bits:u16) -> Vec<u8> {
     f.extend((bits/8).to_le_bytes()); f.extend(bits.to_le_bytes()); f
 }
 #[test]
-fn extensible_narrow_valid_bits_are_refused() {
-    for valid in [16u16,24] {
+fn extensible_valid_bits_contract() {
+    for valid in [16u16,24,32] {
         let mut f = format(0xfffe,32);
         f.extend(22u16.to_le_bytes()); f.extend(valid.to_le_bytes()); f.extend(4u32.to_le_bytes());
         f.extend([1,0,0,0,0,0,16,0,128,0,0,170,0,56,155,113]);
@@ -28,7 +28,17 @@ fn extensible_narrow_valid_bits_are_refused() {
         assert_eq!(h.spec().bits_per_sample,valid);
         let raw:Vec<_> = h.samples::<i32>().collect();
         println!("hound valid={valid} container=32 raw={raw:?}");
-        assert!(matches!(Audio::read_wav(Cursor::new(b)),Err(Error::UnsupportedFormat)));
+        // Worker probe, hound 3.5.1: 16-in-32 is Unsupported, 24-in-32
+        // decodes the low 24 bits (zero for these left-aligned +/-0.25 values).
+        // Thus neither narrower case is safe to scale using spec().bits_per_sample.
+        match valid {
+            16 => assert!(raw.iter().all(|x| matches!(x,Err(hound::Error::Unsupported)))),
+            24 => assert_eq!(raw.into_iter().collect::<Result<Vec<_>,_>>().unwrap(),[0,0]),
+            32 => assert_eq!(raw.into_iter().collect::<Result<Vec<_>,_>>().unwrap(),[0x20000000,-0x20000000]),
+            _ => unreachable!(),
+        }
+        if valid == 32 { assert_eq!(Audio::read_wav(Cursor::new(b)).unwrap().samples(),[0.25,-0.25]); }
+        else { assert!(matches!(Audio::read_wav(Cursor::new(b)),Err(Error::UnsupportedFormat))); }
     }
 }
 #[test]
@@ -100,6 +110,14 @@ fn dc_gain_and_impulse_position() {
         let max=a.samples().iter().enumerate().max_by(|a,b|a.1.abs().total_cmp(&b.1.abs())).unwrap().0;
         assert_eq!(max,4800);
     }
+}
+#[test]
+fn pinned_rubato_contract_requires_an_extra_boundary_sample() {
+    use rubato::sinc_interpolator::{make_interpolator,SincInterpolator};
+    let sinc=make_interpolator::<f64>(512,1.0,None,256,rubato::WindowFunction::BlackmanHarris2);
+    let wave=vec![0.0;512];
+    assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(||sinc.get_sinc_interpolated(&wave,0,0))).is_err());
+    assert_eq!(sinc.get_sinc_interpolated(&vec![0.0;513],0,0),0.0);
 }
 #[test]
 fn finite_sample_peak_in_true_peak_mode_and_fir_tail() {

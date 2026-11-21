@@ -13,8 +13,8 @@ fn checked($cmd)
 end
 try
   checked(["cargo", "fmt", "-p", "media-audio"])
-  checked(["cargo", "test", "-p", "media-audio", "--all-targets"])
   checked(["cargo", "clippy", "-p", "media-audio", "--all-targets", "--", "-D", "warnings"])
+  checked(["cargo", "test", "-p", "media-audio", "--all-targets", "--", "--nocapture"])
   checked(["/opt/mix/bin/mix", "tools/foreign_gate.mix"])
   checked(["cargo", "build", "--profile", "release-fast", "-p", "media-audio", "--example", "audio_probe"])
   checked(["/opt/mix/bin/mix", "libraries/media/audio/dependencies.mix"])
@@ -23,6 +23,11 @@ try
   checked(["mkdir", "-p", $artifact])
   checked(["cp", "target/release-fast/examples/audio_probe", $artifact .. "/audio_probe"])
   print("AUDIO_ARTIFACT=" .. $artifact .. "/audio_probe")
+  for $cmd in ["measure", "normalise", "resample", "mix", "render", "sweep", "snr"]
+    $r = run_argv([$artifact .. "/audio_probe", $cmd])
+    if $r.ok or not contains($r.stderr, "usage:") or contains($r.stderr, "panicked") then raise("CLI_ARGS", $cmd) end
+  end
+  print("audio_probe: all seven subcommands refuse missing arguments without panic")
 finally
   print("AUDIO_DIFF_BEGIN")
   print(run_argv_must(["git", "diff"]))

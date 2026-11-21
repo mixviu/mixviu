@@ -1,15 +1,32 @@
 //! Requires the worker's ffmpeg; missing executable/filter is a failure.
 use media_audio::{Audio, WavFormat};
 use serde_json::Value;
-use std::{fs::File, io::{BufReader, BufWriter}, path::PathBuf, process::Command};
+use std::{
+    fs::File,
+    io::{BufReader, BufWriter},
+    path::PathBuf,
+    process::Command,
+};
 struct TempDir(PathBuf);
 impl TempDir {
     fn new() -> Self {
-        let path=std::env::temp_dir().join(format!("audio-oracle-{}-{}",std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
-        std::fs::create_dir(&path).unwrap(); Self(path)
+        let path = std::env::temp_dir().join(format!(
+            "audio-oracle-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&path).unwrap();
+        Self(path)
     }
 }
-impl Drop for TempDir { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
 fn ff(args: &[&str]) -> String {
     let o = Command::new("ffmpeg")
         .args(["-hide_banner", "-nostats", "-y"])
@@ -47,8 +64,11 @@ fn generated_tone_pink_noise_and_linear_loudnorm() {
         let mut a = Audio::new(48000, 2, samples).unwrap();
         let src = dir.join("source.wav");
         let dst = dir.join("linear.wav");
-        a.write_wav(BufWriter::new(File::create(&src).unwrap()), WavFormat::Float32)
-            .unwrap();
+        a.write_wav(
+            BufWriter::new(File::create(&src).unwrap()),
+            WavFormat::Float32,
+        )
+        .unwrap();
         let src = src.to_str().unwrap();
         let dst = dst.to_str().unwrap();
         let log = ff(&["-i", src, "-af", "ebur128=peak=true", "-f", "null", "-"]);
@@ -103,11 +123,13 @@ fn generated_tone_pink_noise_and_linear_loudnorm() {
 
 #[test]
 fn temporary_directory_is_removed_on_panic() {
-    let mut path=None;
-    let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let dir=TempDir::new(); path=Some(dir.0.clone());
-        std::fs::write(dir.0.join("partial.wav"),b"partial").unwrap();
+    let mut path = None;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let dir = TempDir::new();
+        path = Some(dir.0.clone());
+        std::fs::write(dir.0.join("partial.wav"), b"partial").unwrap();
         panic!("exercise unwind cleanup");
     }));
-    assert!(result.is_err()); assert!(!path.unwrap().exists());
+    assert!(result.is_err());
+    assert!(!path.unwrap().exists());
 }

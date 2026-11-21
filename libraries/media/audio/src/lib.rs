@@ -34,15 +34,27 @@ impl std::fmt::Display for Error {
             Self::Io(e) => write!(f, "audio I/O: {e}"),
             Self::Wav(e) => write!(f, "WAV decoding or encoding: {e}"),
             Self::InvalidHeader => f.write_str("invalid or truncated RIFF/WAVE header"),
-            Self::UnsupportedFormat => f.write_str("unsupported WAV encoding, channels or bit depth"),
+            Self::UnsupportedFormat => {
+                f.write_str("unsupported WAV encoding, channels or bit depth")
+            }
             Self::InvalidAudio => f.write_str("invalid audio rate, channels or sample value"),
             Self::SizeOverflow => f.write_str("audio buffer size overflows or cannot be allocated"),
-            Self::FormatMismatch => f.write_str("clip rate or channel count differs from destination"),
+            Self::FormatMismatch => {
+                f.write_str("clip rate or channel count differs from destination")
+            }
             Self::Measurement(e) => write!(f, "loudness measurement: {e}"),
-            Self::InputTooLarge { max_bytes } => write!(f, "WAV exceeds {max_bytes} byte input limit"),
-            Self::OutputTooLong { max_frames } => write!(f, "resampled audio exceeds {max_frames} frame limit"),
-            Self::InterpolationBounds => f.write_str("rubato interpolation index or phase outside its contract"),
-            Self::InvalidWritePosition => f.write_str("WAV output must be an empty stream positioned at zero"),
+            Self::InputTooLarge { max_bytes } => {
+                write!(f, "WAV exceeds {max_bytes} byte input limit")
+            }
+            Self::OutputTooLong { max_frames } => {
+                write!(f, "resampled audio exceeds {max_frames} frame limit")
+            }
+            Self::InterpolationBounds => {
+                f.write_str("rubato interpolation index or phase outside its contract")
+            }
+            Self::InvalidWritePosition => {
+                f.write_str("WAV output must be an empty stream positioned at zero")
+            }
             Self::Unmeasurable => f.write_str("audio has no measurable integrated loudness"),
         }
     }
@@ -55,7 +67,10 @@ impl From<std::io::Error> for Error {
 }
 impl From<hound::Error> for Error {
     fn from(e: hound::Error) -> Self {
-        match e { hound::Error::Unsupported => Self::UnsupportedFormat, e => Self::Wav(e) }
+        match e {
+            hound::Error::Unsupported => Self::UnsupportedFormat,
+            e => Self::Wav(e),
+        }
     }
 }
 impl From<ebur128::Error> for Error {
@@ -121,7 +136,9 @@ impl Audio {
         self.samples.len() / self.channels as usize
     }
     pub fn silence(rate: u32, channels: u16, frames: usize) -> Result<Self, Error> {
-        if rate == 0 || !(1..=2).contains(&channels) { return Err(Error::InvalidAudio); }
+        if rate == 0 || !(1..=2).contains(&channels) {
+            return Err(Error::InvalidAudio);
+        }
         let n = frames
             .checked_mul(channels as usize)
             .ok_or(Error::SizeOverflow)?;
@@ -168,7 +185,9 @@ impl Audio {
         if (self.rate, self.channels) != (clip.rate, clip.channels) {
             return Err(Error::FormatMismatch);
         }
-        if clip.frames() == 0 { return Ok(()); }
+        if clip.frames() == 0 {
+            return Ok(());
+        }
         let end = offset
             .checked_add(clip.frames())
             .ok_or(Error::SizeOverflow)?;
@@ -196,7 +215,11 @@ impl Audio {
     pub fn resample_48k(&self) -> Result<Self, Error> {
         let frames = usize::try_from((self.frames() as u128 * 48000).div_ceil(self.rate as u128))
             .map_err(|_| Error::SizeOverflow)?;
-        if frames > MAX_RESAMPLED_FRAMES { return Err(Error::OutputTooLong { max_frames: MAX_RESAMPLED_FRAMES }); }
+        if frames > MAX_RESAMPLED_FRAMES {
+            return Err(Error::OutputTooLong {
+                max_frames: MAX_RESAMPLED_FRAMES,
+            });
+        }
         if self.rate == 48000 {
             return Ok(self.clone());
         }
@@ -232,7 +255,12 @@ impl Audio {
                 for (p, (i, s)) in points.iter_mut().zip(nearest) {
                     // rubato 5.1.0 explicitly asserts index + nbr_points < len,
                     // even though the mathematical dot-product slice could end at len.
-                    if i < 0 || (i as usize).checked_add(pad).is_none_or(|end| end >= wave.len()) || !(0..256).contains(&s) {
+                    if i < 0
+                        || (i as usize)
+                            .checked_add(pad)
+                            .is_none_or(|end| end >= wave.len())
+                        || !(0..256).contains(&s)
+                    {
                         return Err(Error::InterpolationBounds);
                     }
                     *p = sinc.get_sinc_interpolated(&wave, i as usize, s as usize);
@@ -314,7 +342,9 @@ impl Audio {
         let max_bytes = max_bytes.min(MAX_WAV_BYTES);
         let mut bytes = Vec::new();
         r.take(max_bytes + 1).read_to_end(&mut bytes)?;
-        if bytes.len() as u64 > max_bytes { return Err(Error::InputTooLarge { max_bytes }); }
+        if bytes.len() as u64 > max_bytes {
+            return Err(Error::InputTooLarge { max_bytes });
+        }
         validate_riff(&bytes)?;
         let mut reader = hound::WavReader::new(Cursor::new(bytes))?;
         let spec = reader.spec();
@@ -340,7 +370,9 @@ impl Audio {
         let origin = w.stream_position()?;
         let end = w.seek(SeekFrom::End(0))?;
         w.seek(SeekFrom::Start(origin))?;
-        if origin != 0 || end != 0 { return Err(Error::InvalidWritePosition); }
+        if origin != 0 || end != 0 {
+            return Err(Error::InvalidWritePosition);
+        }
         let (sample_format, bits) = match format {
             WavFormat::Pcm16 => (hound::SampleFormat::Int, 16),
             WavFormat::Pcm24 => (hound::SampleFormat::Int, 24),
@@ -436,18 +468,24 @@ fn validate_riff(b: &[u8]) -> Result<(), Error> {
                     return Err(Error::UnsupportedFormat);
                 }
                 match u16at(b, start) {
-                    1 => {},
-                    3 if bits == 32 => {},
+                    1 => {}
+                    3 if bits == 32 => {}
                     0xfffe => {
-                        if n < 40 || u16at(b,start+16) != 22 { return Err(Error::InvalidHeader); }
-                        // Deliberately refuse narrower valid bits. hound exposes the
-                        // valid width but may decode the full (left-aligned) container.
-                        if u16at(b,start+18) != bits { return Err(Error::UnsupportedFormat); }
-                        let guid = &b[start+24..start+40];
-                        let pcm = [1,0,0,0,0,0,16,0,128,0,0,170,0,56,155,113];
-                        let float = [3,0,0,0,0,0,16,0,128,0,0,170,0,56,155,113];
-                        if guid != pcm && !(bits == 32 && guid == float) { return Err(Error::UnsupportedFormat); }
-                    },
+                        if n < 40 || u16at(b, start + 16) != 22 {
+                            return Err(Error::InvalidHeader);
+                        }
+                        // Deliberately refuse narrower valid bits: hound's exposed
+                        // valid width does not imply correct left-aligned decoding.
+                        if u16at(b, start + 18) != bits {
+                            return Err(Error::UnsupportedFormat);
+                        }
+                        let guid = &b[start + 24..start + 40];
+                        let pcm = [1, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113];
+                        let float = [3, 0, 0, 0, 0, 0, 16, 0, 128, 0, 0, 170, 0, 56, 155, 113];
+                        if guid != pcm && !(bits == 32 && guid == float) {
+                            return Err(Error::UnsupportedFormat);
+                        }
+                    }
                     _ => return Err(Error::UnsupportedFormat),
                 }
                 let a = c * (bits / 8);
