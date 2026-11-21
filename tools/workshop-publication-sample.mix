@@ -2,7 +2,10 @@
 $failed=0
 $path="libraries/viu/tests/workshop_bus.rs"
 $original=read_file($path)
-$instrumented=replace($original,"const PROFILE_PUBLICATIONS: bool = false;","const PROFILE_PUBLICATIONS: bool = true;")
+$instrumented=$original
+if contains($original,"const PROFILE_PUBLICATIONS: bool = false;") then
+  $instrumented=replace_must($original,"const PROFILE_PUBLICATIONS: bool = false;","const PROFILE_PUBLICATIONS: bool = true;")
+end
 if $instrumented!=$original then write_file($path,$instrumented) end
 for $sample=1 to 20
   print("WORKSHOP_SAMPLE_BEGIN "..$sample)

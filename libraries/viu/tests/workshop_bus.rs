@@ -25,7 +25,10 @@ const MAX_TICK_MODEL_BYTES: u64 = 768 * 1024;
 // Diagnostic only: leave the installed app and every guard unchanged.
 fn publication_probe(bundle: &mut Bundle) {
     bundle.program.source.insert_str(0, "$byte_probe={start:monotonic(),ticks:0,events:0,ack_ticks:0,ack_events:0,published_ticks:0,published_events:0}\n");
-    bundle.program.source = bundle.program.source.replace("global $publication", "global $publication, $byte_probe");
+    bundle.program.source = bundle
+        .program
+        .source
+        .replace("global $publication", "global $publication, $byte_probe");
     let source = bundle.program.source.clone();
     for line in source.lines().filter(|line| line.starts_with("on ")) {
         let increment = if line == "on viu.tick" {
@@ -47,7 +50,10 @@ fn publication_probe(bundle: &mut Bundle) {
   $byte_probe.published_ticks=$byte_probe.ticks;$byte_probe.published_events=$byte_probe.events
 "#;
     assert!(bundle.program.source.contains(needle));
-    bundle.program.source = bundle.program.source.replace(needle, &format!("{probe}{needle}"));
+    bundle.program.source = bundle
+        .program
+        .source
+        .replace(needle, &format!("{probe}{needle}"));
     bundle.program.source = bundle.program.source.replace(
         "    $publication.ack=$a.revision;",
         "    $byte_probe.ack_ticks=$byte_probe.ticks;$byte_probe.ack_events=$byte_probe.events\n    $publication.ack=$a.revision;",
