@@ -1,0 +1,156 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$core = require("core.mix")
+fn ff($args)
+  return concat(["ffmpeg","-nostdin","-y","-hide_banner","-threads","4","-filter_complex_threads","4","-filter_threads","4"],$args)
+end
+fn measure($argv,$o,$name)
+  return $core.speed($argv,$o.out.."/"..$name,$o.runs)
+end
+fn once($argv,$o,$name)
+  return $core.timed($argv,$o.out.."/"..$name)
+end
+fn capture_number($text,$pattern)
+  $m = re_find($text,$pattern)
+  if len($m) == 0 then raise("METRIC","missing numeric output: "..$pattern) end
+  return to_number($m[len($m)-1].groups[0])
+end
+fn quality($source,$encoded,$o,$name)
+  $vmaf = $o.out.."/"..$name..".vmaf.json"
+  $r = once(ff(["-i",$encoded,"-i",$source,"-t","2","-lavfi","[0:v]split=3[d1][d2][d3];[1:v]split=3[r1][r2][r3];[d1][r1]libvmaf=n_threads=4:log_fmt=json:log_path="..$vmaf.."[v];[d2][r2]ssim[s];[d3][r3]psnr[p]","-map","[v]","-map","[s]","-map","[p]","-an","-f","null","-"]),$o,$name)
+  $text = read_file($o.out.."/"..$name..".stderr")
+  return {vmaf:json_parse(read_file($vmaf)).pooled_metrics.vmaf.mean,ssim:capture_number($text,'All:([0-9.]+)'),psnr_db:capture_number($text,'average:([0-9.]+)')}
+end
+fn video_cases()
+  return [{codec:"libsvtav1",preset:"10",opts:["-preset","10"]},{codec:"libsvtav1",preset:"12",opts:["-preset","12"]},{codec:"libaom-av1",preset:"6",opts:["-cpu-used","6","-row-mt","1"]},{codec:"libaom-av1",preset:"8",opts:["-cpu-used","8","-row-mt","1"]},{codec:"librav1e",preset:"10",opts:["-speed","10"]}]
+end
+fn video($o)
+  $items = []; $curves = {}
+  for $case in video_cases()
+    $curve = []
+    for $q in [24,32,40,48]
+      $id = $case.codec.."-p"..$case.preset.."-q"..to_string($q)
+      $file = $o.out.."/"..$id..".ivf"
+      $rate = if $case.codec == "librav1e" then ["-qp",to_string($q*4)] else ["-crf",to_string($q),"-b:v","0"] end
+      $cmd = ff(concat(["-i",$o.corpus.."/ui-synth.mkv","-t","2","-an","-pix_fmt","yuv420p","-color_range","tv","-colorspace","bt709","-c:v",$case.codec,"-threads","4"],concat($case.opts,concat($rate,[$file]))))
+      $s = measure($cmd,$o,$id)
+      $m = quality($o.corpus.."/ui-synth.mkv",$file,$o,$id.."-quality")
+      $probe = once(["ffprobe","-v","error","-show_entries","format=size","-of","json",$file],$o,$id.."-probe")
+      $bytes = to_number(json_parse(read_file($o.out.."/"..$id.."-probe.stdout")).format.size)
+      $m.bitrate_bps = $bytes*8/2
+      $m.encode = $s; $m.fps = $core.summary(map($s.wall_samples_s,fn($t)=60/$t)); $m.frames = 60; $m.duration_s = 2
+      push($curve,{quality:$m.vmaf,rate:$m.bitrate_bps})
+      push($items,{id:$id,metrics:$m})
+    end
+    $curves[$case.codec.."-p"..$case.preset] = $curve
+  end
+  for $key in keys($curves)
+    $m = {}
+    try
+      $m.bd_rate_percent = $core.bd_rate($curves["libsvtav1-p10"],$curves[$key])
+    catch $error
+      $m.status = "unavailable"; $m.reason = $error
+    end
+    push($items,{id:$key.."-bd-rate-vs-svt-p10",metrics:$m})
+  end
+  return $items
+end
+fn decode($o)
+  $file = $o.out.."/decode-input.ivf"
+  $prep = once(ff(["-i",$o.corpus.."/ui-synth.mkv","-t","2","-an","-c:v","libsvtav1","-preset","12","-crf","32","-threads","4",$file]),$o,"prepare")
+  $s = measure(ff(["-c:v","libdav1d","-i",$file,"-an","-f","null","-"]),$o,"dav1d")
+  $checksum = once(ff(["-c:v","libdav1d","-i",$file,"-an","-f","framemd5",$o.out.."/frames.md5"]),$o,"checksum")
+  $frames = filter(split(read_file($o.out.."/frames.md5"),"\n"),fn($l)=trim($l)!="" and not starts_with($l,"#"))
+  if len($frames) != 60 then raise("DECODE","expected 60 frames") end
+  return [{id:"ui-synth-4k-dav1d",metrics:{decode:$s,fps:$core.summary(map($s.wall_samples_s,fn($t)=60/$t)),frames:len($frames),checksums:$frames,checksum_file:"frames.md5",duration_s:2,width:3840,height:2160}}]
+end
+fn audio_files($o)
+  $files = [$o.corpus.."/music-synth.wav"]
+  $inventory = []
+  -- Private discovery; cache path never enters the public manifest as a real home.
+  for $f in sort(glob((env("HOME") ?? "/home/user").."/.viu/media/runs/tts-cache/**/*.wav"))
+    $hash = split(run_argv_must(["sha256sum",$f])," ")[0]
+    push($inventory,{file:$f,sha256:$hash,selected:len($files)<21})
+    if len($files)<21 then push($files,$f) end
+  end
+  write_file($o.out.."/tts-inventory.json",json_encode($inventory))
+  return $files
+end
+fn rms($path,$o,$name,$filter)
+  $r = once(ff(["-i",$path,"-af",$filter..",astats=metadata=0:reset=0","-f","null","-"]),$o,$name)
+  return capture_number(read_file($o.out.."/"..$name..".stderr"),'RMS level dB: ([-0-9.]+)')
+end
+fn opus($o)
+  $items = []
+  for $source in audio_files($o)
+    $id = basename($source)
+    $hash = split(run_argv_must(["sha256sum",$source])," ")[0]
+    for $rate in [64,96,128]
+      $name = $id.."-"..to_string($rate)
+      $encoded = $o.out.."/"..$name..".opus"; $decoded = $o.out.."/"..$name..".wav"
+      $enc = measure(ff(["-i",$source,"-ar","48000","-ac","2","-c:a","libopus","-b:a",to_string($rate).."k",$encoded]),$o,$name.."-encode")
+      $dec = measure(ff(["-i",$encoded,"-ar","48000","-ac","2","-c:a","pcm_f32le",$decoded]),$o,$name.."-decode")
+      $reference = $o.out.."/"..$name.."-reference.wav"
+      $prep = once(ff(["-i",$source,"-ar","48000","-ac","2","-c:a","pcm_f32le",$reference]),$o,$name.."-reference")
+      $signal = rms($reference,$o,$name.."-signal","anull")
+      $diff = once(ff(["-i",$reference,"-i",$decoded,"-filter_complex","[0:a][1:a]amix=inputs=2:weights='1 -1':normalize=0,astats=reset=0","-f","null","-"]),$o,$name.."-error")
+      $noise = capture_number(read_file($o.out.."/"..$name.."-error.stderr"),'RMS level dB: ([-0-9.]+)')
+      -- Defined spectral metric: RMS dBFS of the difference of magnitude-only
+      -- inverse STFTs, Hann 1024, default 75% overlap. Not ViSQOL or listening parity.
+      $fft = "afftfilt=real='hypot(re,im)':imag=0:win_size=1024:win_func=hann"
+      $spectral = once(ff(["-i",$reference,"-i",$decoded,"-filter_complex","[0:a]"..$fft.."[r];[1:a]"..$fft.."[d];[r][d]amix=inputs=2:weights='1 -1':normalize=0,astats=reset=0","-f","null","-"]),$o,$name.."-spectral")
+      $sd = capture_number(read_file($o.out.."/"..$name.."-spectral.stderr"),'RMS level dB: ([-0-9.]+)')
+      push($items,{id:$name,metrics:{encode:$enc,decode:$dec,bitrate_kbps:$rate,source_sha256:$hash,pcm_snr_db:$signal-$noise,spectral_magnitude_error_dbfs:$sd,visqol:if which("visqol") == nil then "not_installed" else "installed; not invoked" end}})
+    end
+  end
+  return $items
+end
+fn loudness($o)
+  $items = []
+  for $source in audio_files($o)
+    $id = basename($source)
+    $eb = measure(ff(["-i",$source,"-af","ebur128=peak=true","-f","null","-"]),$o,$id.."-ebur128")
+    $text = read_file($o.out.."/"..$id.."-ebur128-1.stderr")
+    $first = measure(ff(["-i",$source,"-af","loudnorm=I=-14:TP=-1:LRA=11:print_format=json","-f","null","-"]),$o,$id.."-pass1")
+    $raw = read_file($o.out.."/"..$id.."-pass1-1.stderr")
+    $matches = re_find($raw,'(?s)\{\s*"input_i".*?\}')
+    if len($matches) == 0 then raise("LOUDNESS","missing loudnorm JSON") end
+    $m = json_parse($matches[0].match)
+    $filter = "loudnorm=I=-14:TP=-1:LRA=11:linear=true:measured_I="..$m.input_i..":measured_TP="..$m.input_tp..":measured_LRA="..$m.input_lra..":measured_thresh="..$m.input_thresh..":offset="..$m.target_offset..":print_format=json"
+    $second = measure(ff(["-i",$source,"-af",$filter,"-ar","48000","-ac","2","-c:a","pcm_s16le",$o.out.."/"..$id.."-normalised.wav"]),$o,$id.."-pass2")
+    push($items,{id:$id,metrics:{ebur128:$eb,integrated_lufs:capture_number($text,'I:\s+([-0-9.]+) LUFS'),true_peak_dbtp:capture_number($text,'Peak:\s+([-0-9.]+) dBFS'),loudnorm_pass1:$first,loudnorm_pass2:$second,loudnorm_input:$m}})
+  end
+  return $items
+end
+fn encode($o)
+  $items = []
+  for $kind in ["mp4-x264","webm-av1-opus"]
+    $opts = if $kind == "mp4-x264" then ["-c:v","libx264","-preset","medium","-crf","18","-profile:v","high","-r","30","-c:a","aac","-b:a","192k","-movflags","+faststart"] else ["-c:v","libsvtav1","-preset","10","-crf","32","-c:a","libopus","-b:a","128k"] end
+    $ext = if $kind == "mp4-x264" then ".mp4" else ".webm" end
+    $file = $o.out.."/"..$kind..$ext
+    $quality_source = $o.corpus.."/ui-synth.mkv"
+    $command = ff(concat(["-i",$o.corpus.."/ui-synth.mkv","-i",$o.corpus.."/music-synth.wav","-t","2","-map","0:v","-map","1:a","-pix_fmt","yuv420p","-threads","4"],concat($opts,[$file])))
+    if $kind == "mp4-x264" then
+      $pipeline = (env("HOME") ?? "/home/user").."/.viu/media/pipeline/assemble.mix"
+      if not is_file($pipeline) then raise("PIPELINE","assemble.mix missing; no substitute for the current route") end
+      $take = $o.out.."/take"
+      mkdir($take)
+      $still = once(ff(["-i",$o.corpus.."/ui-synth.mkv","-frames:v","1",$take.."/demo.png"]),$o,"prepare-still")
+      $wav = once(ff(["-i",$o.corpus.."/music-synth.wav","-t","2",$take.."/demo.wav"]),$o,"prepare-narration")
+      write_file($take.."/take.json",json_encode({mode:"stills"}))
+      write_file($take.."/actions.jsonl",json_encode({step:"demo",hold_s:2,still:$take.."/demo.png"}).."\n")
+      write_file($take.."/narration.json",json_encode({demo:{seconds:2,wav:$take.."/demo.wav"}}))
+      $command = ["env","MIXVIU_MEDIA_SCOPE=1","/usr/local/bin/mix",$pipeline,$take]
+      $file = $take.."/take.mp4"
+      $quality_source = $take.."/held-source.mkv"
+      $held = once(ff(["-loop","1","-framerate","30","-i",$take.."/demo.png","-t","2","-pix_fmt","yuv420p","-c:v","ffv1",$quality_source]),$o,"prepare-held-source")
+    end
+    $speed = measure($command,$o,$kind)
+    $m = quality($quality_source,$file,$o,$kind.."-quality")
+    $probe = once(["ffprobe","-v","error","-show_entries","format=size,duration","-of","json",$file],$o,$kind.."-probe")
+    $f = json_parse(read_file($o.out.."/"..$kind.."-probe.stdout")).format
+    $m.encode = $speed; $m.size_bytes = to_number($f.size); $m.duration_error_s = to_number($f.duration)-2
+    $m.route = if $kind == "mp4-x264" then "current assemble.mix stills route; two-second synthetic take" else "AV1 plus Opus WebM; two-second motion excerpt" end
+    push($items,{id:$kind,metrics:$m})
+  end
+  return $items
+end

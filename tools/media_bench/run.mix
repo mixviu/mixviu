@@ -1,0 +1,37 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$core = require("core.mix")
+$suites = require("suites.mix")
+$o = $core.options(args())
+for $key in ["suite","engine","corpus","out"]
+  if $o[$key] == nil then raise("ARGS","required --"..$key) end
+end
+$wait = {deck:"D1–D3",record:"R3",sync:"S1 + P1",assemble:"S2",playback:"P1"}
+if has_key($wait,$o.suite) then raise("DEFERRED",$o.suite.." waits for row "..$wait[$o.suite]) end
+if not contains(["av1enc","av1dec","opus","loudness","encode"],$o.suite) then raise("ARGS","unknown suite") end
+if not contains(["ffmpeg","rust"],$o.engine) then raise("ARGS","unknown engine") end
+if $o.variant != "default" then raise("ARGS","only default variant is defined; no silent fallback") end
+$core.guard()
+mkdir($o.out)
+$result = {suite:$o.suite,engine:$o.engine,variant:$o.variant,tool_versions:{mix:trim(run_argv_must(["/usr/local/bin/mix","--version"])),ffmpeg:run_argv_must(["ffmpeg","-version"]),time:run_argv_must(["/usr/bin/time","--version"])},host:trim(run_argv_must(["hostname"])),cpu_model:trim(run_argv_must(["lscpu"])),items:[]}
+if $o.engine == "rust" then
+  $result.items = [{id:$o.suite,metrics:{status:"not_built",reason:"L1/L2/L4/L5/S1 supply corpus-capable entry points; media-av1 first_numbers generates its own eight frames only"}}]
+else
+  $manifest = load_data("tools/media_bench/corpus/manifest.conf.mix")
+  for $entry in $manifest.items
+    if $entry.status == "generated" then
+      $actual = split(run_argv_must(["sha256sum",$o.corpus.."/"..$entry.file])," ")[0]
+      if $actual != $entry.sha256 then raise("CORPUS","checksum mismatch: "..$entry.id) end
+    end
+  end
+  if $o.suite == "av1enc" then $result.items = $suites.video($o)
+  elif $o.suite == "av1dec" then $result.items = $suites.decode($o)
+  elif $o.suite == "opus" then $result.items = $suites.opus($o)
+  elif $o.suite == "loudness" then $result.items = $suites.loudness($o)
+  elif $o.suite == "encode" then $result.items = $suites.encode($o)
+  end
+end
+$core.validate_result($result)
+$other = if $o.compare != nil then json_parse(read_file($o.compare.."/results.json")) else nil end
+write_file($o.out.."/results.json",json_encode($result).."\n")
+write_file($o.out.."/report.md",$core.report($result,$other))
+print($o.out.."/results.json")
