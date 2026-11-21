@@ -2624,7 +2624,10 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
             eprintln!("design admission refused: {error}");
             std::process::exit(1);
         }
-        println!("{}", json!({"valid":true,"source_sha":buildinfo::build_info!().git_sha_full}));
+        println!(
+            "{}",
+            json!({"valid":true,"source_sha":buildinfo::build_info!().git_sha_full})
+        );
         return Ok(());
     }
     if args.first().map(String::as_str) != Some("run") {

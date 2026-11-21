@@ -1,3 +1,83 @@
+# PR #220 round 3c — a+ implementation stopped on host startup failure
+
+Tested implementation head: `a698636482f56c0531f7cf5f3e60fc2e948e6da1`.
+This receipt commit also applies the final worker rustfmt diff; it makes no
+semantic repair after the failure. #220 remains draft and is **not ready**.
+
+Fable's correction is implemented at the loader: startup still logs a bad
+requested context and falls back to embedded Studio/Dark. Fatal versus formal
+fallback is recorded separately in `~/.viu/_doc/TODO-viu.md`, citing CBC
+`20261121-184422-5bc4c8cf-a1`. The generic editor save policy remains out of
+scope: `~/.viu/_doc/TODO-editd.md`, “Generic saves of theme and scene sources
+skip design validation”. Neither earlier ownership stop is reopened.
+
+## Red result and stop
+
+CBC **`20261121-192227-2f615926-a1`**, source `a6986364`, BUILD_RC=101,
+runs the new real-host controls. Both fail during startup, before their
+surfacing assertions, with **`invalid type: null, expected a map`**:
+
+- `startup_fallback_surfaces_in_app_info_and_painted_notice`
+- `generic_save_gets_late_report_and_bad_context_switch_is_refused`
+
+The source trace points to the new pre-use validation at
+`libraries/viu/src/app_host.rs:1327`: when the initial model supplies a theme
+choice, it calls `appearance::session_base` as soon as a session object exists.
+The session's initial snapshot is `{}` (`libraries/viu/src/session.rs:136`);
+`session_base` tries to decode its absent values as a map. The new validation
+therefore runs before the session snapshot is usable. This is a product-path
+failure in this implementation, not a reason to weaken the controls or change
+the startup fallback policy. Per the stop rule, no semantic fix was made.
+
+Saved log: `20261121-192227-cbc2-a698636482f5-20261121-192227-2f615926-a1-f13befb6.log`.
+The whole log was read. Rust tests finish red in 0.28 s; the 750 ms latency test
+is not reached. No after latency or successful app startup is claimed.
+
+## Implemented, but not yet accepted
+
+| Area / write path | Implementation and current verification |
+|---|---|
+| Synchronous requested context | `libraries/design/src/compiler.rs:27` adds `compile_design_context`; the public `compile_design` keeps whole-source semantics. Runtime theme/style projection uses the requested entry point. The new compiler control passes. |
+| Startup fallback | `libraries/theme/src/theme.rs:310` retains logged fallback plus source-addressed diagnostics; the loader control passes. The new host info/painted-notice control is red during startup as above. |
+| Context switch | `Theme::with_choice` validates a new context before returning an artifact; file-backed choices read the current source snapshot. The host pre-use check is the failing path above. Context refusal, return code and painted notice are not yet verified. |
+| Background report and hand edits | `libraries/viu/src/design_validation.rs` starts one native worker after a ready frame, checks source snapshots and file-byte changes, and reports without restyling. The generic-save control uses the actual editd router/writer; it is blocked by host startup before reaching its save assertions. |
+| Info and notice | `app_host.rs:1548` amends the app info reply; the host owns a dismissible rendered notice. These remain unverified end to end. |
+| `appearance.source` | The existing registry whole-source check is retained. `services/settingsd/tests/transactions.rs:44` adds a refusal-before-profile-write control and valid-source control; not run yet. |
+| Scene install / upgrade / Reset | The existing stage → `shell.scene.validate` → placement sequence remains. `engines/viu/src/store.rs:497` adds whole-source desk-theme admission to that validator. New writer refusal checks at `engines/viud/tests/scenes_test.mix:518` cover all three operations; not run yet. Keep performs no write. |
+| Bundle | `tools/apps_bundle.mix:39` calls the headless `viu --validate-design --embedded` path before admission and checks its source SHA. Bundle/env gate modes build the validator. No bundle admission run or negative control is claimed. |
+| Cache identities | Bounded whole-source admission cache uses authored-content digests. Background reports identify parsed content or file bytes, not paths/context names alone. First-use artifacts are synchronously validated. |
+
+The new timing contract is documented in `docs/design-validation.md`, linked
+from the scene guide. These are implementation changes on a draft branch,
+not a claim of completed or accepted behaviour. In particular, negative-control
+mutation runs and final resource/backlog review remain outstanding.
+
+## Checks and measurements
+
+| CBC job | Result |
+|---|---|
+| `20261121-190812-4795805d-a1`, `6f73c199` | `cargo check -p lib-viu --features test-support --all-targets` passes; worker fmt/lock diff applied locally. |
+| `20261121-191937-0e1886b8-a1`, `f635410f` | Requested-context compiler control passes (0.72 s); loader fallback control passes (0.23 s). New host fixture does not compile because the toolkit wrapper lacked `load_from`. That adapter mistake is corrected in `a6986364`; not a product runtime result. |
+| `20261121-192227-2f615926-a1`, `a6986364` | Host controls compile and both fail during startup as above. Worker fmt succeeds; its remaining three-line diff is applied with this receipt. |
+
+All changed Mix files (`tools/apps_bundle.mix`, `tools/cutover_gate.mix`,
+`engines/viud/tests/scenes_test.mix`) lint with zero diagnostics. No new `MIX_*`
+variable. The host fixture uses the explicit-path loader; the earlier probe
+used registered `MIX_ETC`. Generic writes run through editd without a new
+transport. `git diff --check` passes. No full CI run,
+all-target clippy, complete changed-crate test suites, width-eight pool, env
+registry or negative-control run is claimed after this stop.
+
+Before remains CBC `20261121-175445-2c24d7dc-a1`: two one-second timeouts.
+Round-2 lazy prototype worst calls remain 616.096–627.692 ms (five runs, CBC
+`20261121-175911-93071cbf-a1`). **Round-3c after is unavailable** because the
+host controls are red; the 750 ms bound is unchanged. The separate residual
+roughly 620 ms follow-up and callback profile remain in TODO-workshop.
+
+Desk n=0. The implementation never reached the all-green prerequisite, so no
+desk receipt eligibility check, quiet run or probe was started in this round.
+No deployment or merge occurred.
+
 # PR #220 round 3b — product failure in the startup theme loader
 
 Source head: `7b2ea1f6edf4396fdb460d22998d9fe30015306d`. This round's
