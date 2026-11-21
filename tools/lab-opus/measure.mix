@@ -15,7 +15,7 @@ for $set in ["opus_testvectors", "opus_newvectors"]
         $id = $set .. "-" .. $candidate .. "-" .. $ch .. "-" .. $v
         $stem = $root .. "/" .. $set .. "/testvector" .. $v
         $decoded = $root .. "/" .. $id .. ".pcm"
-        $r = invoke(["/usr/bin/time", "-v", $bin, "decode", $candidate, to_string($ch), $stem .. ".bit", $decoded], $id .. "-decode")
+        $r = invoke([$bin, "measure", $bin, "decode", $candidate, to_string($ch), $stem .. ".bit", $decoded], $id .. "-decode")
         if $r.ok then
           for $variant in ["", "m"]
             $args = [$root .. "/opus_compare"]
@@ -34,16 +34,16 @@ for $signal in ["sweep", "bursts"]
     $input = $root .. "/" .. $signal .. ".f32"
     $oracle = $root .. "/libopus-" .. $id
     for $repeat in [1,2,3]
-      invoke(["/usr/bin/time", "-v", "ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", "48000", "-ac", "2", "-i", $input, "-c:a", "libopus", "-b:a", to_string($rate), "-frame_duration", "20", $oracle .. ".ogg"], "oracle-encode-" .. $id .. "-" .. $repeat)
-      invoke(["/usr/bin/time", "-v", "ffmpeg", "-v", "error", "-y", "-c:a", "libopus", "-i", $oracle .. ".ogg", "-f", "s16le", $oracle .. ".pcm"], "oracle-decode-" .. $id .. "-" .. $repeat)
+      invoke([$bin, "measure", "ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", "48000", "-ac", "2", "-i", $input, "-c:a", "libopus", "-b:a", to_string($rate), "-frame_duration", "20", $oracle .. ".ogg"], "oracle-encode-" .. $id .. "-" .. $repeat)
+      invoke([$bin, "measure", "ffmpeg", "-v", "error", "-y", "-c:a", "libopus", "-i", $oracle .. ".ogg", "-f", "s16le", $oracle .. ".pcm"], "oracle-decode-" .. $id .. "-" .. $repeat)
     end
     for $candidate in ["rusty-opus", "opus-rs", "ruopus", "opus-decoder"]
       $out = $root .. "/" .. $candidate .. "-" .. $id
       for $repeat in [1,2,3]
-        invoke(["/usr/bin/time", "-v", $bin, "decode", $candidate, "2", $oracle .. ".ogg", $out .. "-reverse.pcm"], $candidate .. "-reverse-" .. $id .. "-" .. $repeat)
+        invoke([$bin, "measure", $bin, "decode", $candidate, "2", $oracle .. ".ogg", $out .. "-reverse.pcm"], $candidate .. "-reverse-" .. $id .. "-" .. $repeat)
         if $candidate != "opus-decoder" then
-          $e = invoke(["/usr/bin/time", "-v", $bin, "encode", $candidate, to_string($rate), $input, $out .. ".ogg"], $candidate .. "-encode-" .. $id .. "-" .. $repeat)
-          if $e.ok then invoke(["/usr/bin/time", "-v", "ffmpeg", "-v", "error", "-y", "-c:a", "libopus", "-i", $out .. ".ogg", "-f", "s16le", $out .. ".pcm"], $candidate .. "-forward-" .. $id .. "-" .. $repeat) end
+          $e = invoke([$bin, "measure", $bin, "encode", $candidate, to_string($rate), $input, $out .. ".ogg"], $candidate .. "-encode-" .. $id .. "-" .. $repeat)
+          if $e.ok then invoke([$bin, "measure", "ffmpeg", "-v", "error", "-y", "-c:a", "libopus", "-i", $out .. ".ogg", "-f", "s16le", $out .. ".pcm"], $candidate .. "-forward-" .. $id .. "-" .. $repeat) end
         end
       end
       if is_file($out .. ".pcm") then invoke([$bin, "metrics", $input, $out .. ".pcm", $oracle .. ".pcm"], $candidate .. "-metrics-" .. $id) end

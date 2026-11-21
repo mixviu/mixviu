@@ -5,6 +5,7 @@ edition = "2024"
 publish = false
 [workspace]
 [dependencies]
+libc = "0.2"
 rusty-opus = "=1.2.0"
 opus-rs = "=0.1.42"
 ruopus = "=0.1.2"
