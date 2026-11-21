@@ -1,0 +1,4 @@
+[Parsed_astats_1 @ 0x7be83c0020c0] RMS level dB: -20.165737
+[Parsed_astats_1 @ 0x7be83c0020c0] RMS level dB: -20.165556
+[Parsed_astats_1 @ 0x7be83c0020c0] Overall
+[Parsed_astats_1 @ 0x7be83c0020c0] RMS level dB: -20.165646

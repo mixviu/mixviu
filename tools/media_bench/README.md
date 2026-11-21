@@ -1,71 +1,101 @@
 # Media benchmark
 
-Run from the repository root, on the oracle host:
+Run from any working directory using the entry point's absolute path:
 
 ```
 mix tools/media_bench/corpus/generate.mix --corpus /var/tmp/media-bench/corpus
-mix tools/media_bench/run.mix --suite av1enc --engine ffmpeg --corpus /var/tmp/media-bench/corpus --out /var/tmp/media-bench/results/av1enc --runs 3
-mix tools/media_bench/run.mix --suite av1enc --engine rust --corpus /var/tmp/media-bench/corpus --out /var/tmp/media-bench/results/rust-av1enc --compare /var/tmp/media-bench/results/av1enc
+mix tools/media_bench/run.mix --suite av1enc --engine ffmpeg --corpus /var/tmp/media-bench/corpus --out /var/tmp/media-bench/bounded/av1enc --runs 3
+mix tools/media_bench/run.mix --suite av1dec --engine ffmpeg --variant sustained --corpus /var/tmp/media-bench/corpus --out /var/tmp/media-bench/sustained/av1dec --runs 3
+mix tools/media_bench/run.mix --suite episode --engine ffmpeg --variant sustained --episode-run /var/tmp/media-bench/existing-run --corpus /var/tmp/media-bench/corpus --out /var/tmp/media-bench/sustained/episode
 mix tools/media_bench/test.mix
 ```
 
-Keep all output outside this repository. The generator runs twice and refuses
-byte instability. `manifest.conf.mix` pins the generated files; `spec.mix` owns
-the complete argv. Font: DejaVu Sans at the explicit system path in the argv.
-The generator and ffmpeg versions affect hashes: a mismatch requires investigation,
-not automatic acceptance or overwriting the expected manifest.
+The supervisor runs the full sustained pass once from the merged head. Do not
+use the bounded workload to rule on sustained throughput. Round-1 BD-rate
+figures are void: their degenerate curves did not meet the overlap rules.
 
-The result has exactly seven top-level fields: `suite`, `engine`, `variant`,
-`tool_versions`, `host`, `cpu_model`, `items`. Every item has `id` and `metrics`.
-Metric maps carry units in their names. Each speed has separate `wall_s`,
-`cpu_s` (user plus system), and `peak_rss_kib`, each with median and nearest-rank
-p95. CPU/RSS come from GNU time around the tool **inside** its systemd scope;
-scope startup is excluded. Commands, counters, stdout and stderr are retained.
-FPS includes demux, codec startup and output I/O. FPS p95 is the percentile of
-the FPS samples, rather than the inverse of wall-time p95.
+Each result has exactly `suite`, `engine`, `variant`, `tool_versions`, `host`,
+`cpu_model`, and `items`. Items have `id` and `metrics`. Tool versions include
+the source commit and explicit VMAF model name/version. CPU model is the model
+name. Raw argv, stdout, stderr and GNU-time counters remain beside results.
+CPU seconds are user+system; peak RSS is KiB. Wall/CPU/RSS each have median and
+nearest-rank p95 over the repetitions. FPS has median and **p5**, the slow tail.
+Any speed whose median wall time is below one second is `below_resolution`;
+its speed/FPS ratios are excluded. `--compare DIR` reports ffmpeg/Rust for
+paired numeric metrics; dynamic loudnorm gain is also excluded. Comparison
+validation precedes writing successful results.
 
-The default video workload is the first **two seconds / 60 frames at 4K30**
-of the generated two-minute motion source. It measures a bounded codec
-specimen, including startup, and cannot establish episode throughput. The
-AV1 matrix includes SVT presets 8/9 (higher presets clamp to 9 at 4K), libaom 6/8 and librav1e 10 at four
-quality points each. BD-rate is the exact integral of piecewise-linear
-log(bitrate) versus VMAF over their common quality interval, relative to SVT
-preset 8. Inputs are trimmed to 60 frames with a shared 1/30 timebase. No overlap is reported explicitly. This is a linear BD-rate
-variant, not a cubic polynomial fit. IVF envelope bytes count towards bitrate.
+All measured processes run in a user systemd scope with MemoryMax=24G,
+CPUWeight=20 and nice 10. FFmpeg is asked for four threads; CPU affinity also
+limits every measured tool and its children to the same four allowed CPUs,
+including private pipeline scripts with larger internal thread pools. The
+recorded thread budget is four; it is a resource budget, not a count of every
+OS thread in codec worker pools. Future Rust adapters must use the same budget.
+The host guard refuses 23:30–03:00 local time, headless Chrome (including
+chrome-headless-shell), and build.mix/episode.mix invocations, including
+relative paths and invocations with flags. Each measured command rechecks it.
 
-The decode suite prepares its own SVT stream, uses libdav1d and saves all 60
-frame checksums. Audio uses the full generated music bed and the first 20
-sorted narration WAVs; every discovered narration WAV is hashed in the private
-`tts-inventory.json`. Files are resampled to 48 kHz stereo before PCM quality
-comparison. Opus is encoded at 64/96/128 kb/s. PCM SNR uses reference and
-error RMS. Spectral magnitude distance is RMS dBFS of the difference between
-two magnitude-only inverse STFTs (Hann 1024, overlap 75%); it is an explicitly
-defined distance, not a perceptual parity claim. ViSQOL availability is
-reported; it is not installed by the harness. Loudness runs ebur128 and
-both loudnorm passes, retaining the measured linear-mode parameters and
-normalised WAV. Check raw loudnorm output for dynamic fallback.
+The default video workload is 2 s / 60 frames, 3840x2160 at 30 fps. Sustained
+uses the full 120 s / 3600 frames. SVT p8/p9 use CRF 32/44/56/63; libaom
+cpu-used 6 uses CRF 36/46/56/63; librav1e speed 10 uses QP 80/140/200/250.
+Sustained adds librav1e speed 8. Higher SVT presets clamp at 4K; libaom 8
+duplicated 6 and is omitted. BD-rate is calculated on both PSNR and VMAF,
+using exact piecewise-linear log-rate integration over the common interval.
+Curves must be strictly monotonic in quality and rate, with at least 3 dB or
+3 VMAF overlap. Otherwise the metric is `unavailable` with reason and overlap
+bounds; unavailable is not parity. IVF envelope bytes count towards bitrate.
 
-`encode` invokes the **current private `assemble.mix`** on a synthetic
-two-second stills take, with generated narration, then separately makes an
-AV1/Opus motion WebM. It refuses a missing pipeline. This exercises the real
-stills route; VFL export and full episode/timeline assembly await S1/S2.
-Rust suites currently return `not_built`: the existing AV1 example accepts
-only its own generated eight-frame scene, not corpus input. No Rust build or
-new binary is introduced here. Only the `default` variant is defined.
+Quality uses explicit `vmaf_4k_v0.6.1`, falling back to explicitly recorded
+`vmaf_v0.6.1` only if the former is unavailable. Every input must have the
+workload geometry and enough decoded frames. Both branches are trimmed and
+aligned to a shared clock, scaled identically, converted to yuv420p with
+limited range and BT.709 matrix/primaries/transfer, then checked through
+showinfo. Unknown source colour metadata is interpreted using this declared
+content contract. Source and distorted stream probes are retained. A short
+stream is refused rather than padded by the metric filter. The held-source
+reference uses explicit BT.709 RGB-to-YUV conversion.
 
-`--compare DIR` requires a result of the same suite from the opposite engine.
-Tables show ffmpeg/Rust for every paired numeric metric, including medians
-and p95s. A missing metric or zero Rust denominator has an unavailable ratio.
-The item IDs and metric paths are the adapter contract for future Rust runners.
+Corpus generators run twice and require byte identity. The manifest pins
+the complete argv and SHA-256; generated media never enters git. Strict
+hashes depend on FFmpeg and the named DejaVu Sans font. Keep corpus and output
+outside the repository. Paths must use only ASCII letters/digits, underscore,
+dot, slash and hyphen, with no parent traversal or leading hyphen. Option
+values cannot start with `-`. These constraints protect filtergraph and concat
+interpolation. External tools use argv lists and path option terminators.
 
-Every measured command rechecks the nightly window and process guard. The
-guard refuses 23:30–03:00 local time, an active headless Chrome, or an episode
-`media/pipeline/build.mix`. It never kills an episode. Each command runs under
-`systemd-run --user --scope -p MemoryMax=24G -p CPUWeight=20 nice -n 10`.
-GNU time and a working user systemd manager are required. A command failure
-stops the run and points to retained raw evidence; incomplete runs have no
-success `results.json`.
+Narration selection is pinned on first use in private `tts-selection.json`
+under the corpus root (20 sorted cached demo WAVs); subsequent runs require
+the same hashes. Every discovered cache WAV is hashed in the private
+inventory. Selected files are materialised under `tts-ref/`; IDs derive from
+their relative corpus paths (`/` encoded as `__`), and duplicates/ambiguous
+separators are refused. The programme item concatenates every selected
+narration file after resampling to 48 kHz stereo. Loudness measures individual
+files, the music bed and that programme. It retains actual loudnorm mode,
+output and `linear_shortfall_lu = max(0, (-14-input_i)-(-1-input_tp))`.
+Dynamic fallback is oracle behaviour, never a gain-parity target.
 
-Deferred suites refuse with their owning row: `deck` D1–D3, `record` R3,
-`sync` S1/P1, `assemble` S2, `playback` P1. Synthetic UI and music are stand-ins;
-pending desk/episode corpus items are never silently substituted.
+Opus uses 64/96/128 kb/s libopus encode and explicitly selects libopus before
+each decode input, checking stderr for every repeat and quality decode. PCM
+SNR and spectral magnitude error are relative to reference RMS. The spectral
+metric uses magnitude-only inverse STFT differences (Hann 1024, 75% overlap),
+not a perceptual score. ViSQOL availability is recorded. Sustained speed uses
+only music plus programme narration, repeated ten times to get process times
+of seconds; the duration/repetition count is recorded. Quality compares one
+original programme duration, with proper codec-delay handling.
+
+`encode` invokes the private current assemble.mix stills route and separately
+makes motion AV1/Opus WebM. `episode --variant sustained --episode-run DIR`
+dereferences/copies an existing run into a new /var/tmp/media-bench directory,
+rebases copied metadata, runs assemble.mix on copied takes and build.mix on
+the copy, one repeat each. It never modifies the original. It refuses runs
+requiring fresh native desk recordings or lacking an assembly take. The
+two-second synthetic episode-copy path is covered by a separate local smoke
+receipt; it does not replace the commissioned full episode run.
+
+Rust AV1 stays `not_built` for L3b; other adapters await their owning rows.
+Deferred suites identify their rows: deck D1–D3, record R3, sync S1/P1,
+assemble S2, playback P1. The manifest resolves relative to this repository,
+not the caller's working directory. Tests run alongside existing tool tests;
+the real quality oracle is in `tools/ci.mix all`. Missing FFmpeg/capabilities
+print visible SKIP unless MIX_TEST_REQUIRE_FFMPEG=1, when they fail. Focused
+CBC must set that variable; tests without FFmpeg remain unconditional.

@@ -125,7 +125,7 @@
     {
       "id": "tts-ref",
       "status": "private",
-      "source": "/home/markc/.viu/media/runs/tts-cache",
+      "source": "{home}/.viu/media/runs/tts-cache",
       "generator": nil,
       "duration": nil,
       "format": "Chirp demo-text WAV; hub only",

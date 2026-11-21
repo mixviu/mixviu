@@ -103,6 +103,7 @@ fn stage_test($mix)
   -- CBC runs all; hosted CI runs test without the external media oracle.
   if $stage == "all" then
     $test_env.MIX_TEST_REQUIRE_FFMPEG = "1"
+    run_step([$mix, "tools/media_bench/oracle_test.mix"], $test_env)
   end
   run_step(["cargo", "fetch", "--locked"])
   -- The test binaries run in parallel (tools/ci/test_pool.mix, which adds
