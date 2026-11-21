@@ -27,10 +27,10 @@ the FPS samples, rather than the inverse of wall-time p95.
 The default video workload is the first **two seconds / 60 frames at 4K30**
 of the generated two-minute motion source. It measures a bounded codec
 specimen, including startup, and cannot establish episode throughput. The
-AV1 matrix includes SVT presets 10/12, libaom 6/8 and librav1e 10 at four
+AV1 matrix includes SVT presets 8/9 (higher presets clamp to 9 at 4K), libaom 6/8 and librav1e 10 at four
 quality points each. BD-rate is the exact integral of piecewise-linear
 log(bitrate) versus VMAF over their common quality interval, relative to SVT
-preset 10. No overlap is reported explicitly. This is a linear BD-rate
+preset 8. Inputs are trimmed to 60 frames with a shared 1/30 timebase. No overlap is reported explicitly. This is a linear BD-rate
 variant, not a cubic polynomial fit. IVF envelope bytes count towards bitrate.
 
 The decode suite prepares its own SVT stream, uses libdav1d and saves all 60

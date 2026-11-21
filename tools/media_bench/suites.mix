@@ -19,14 +19,19 @@ fn loudnorm_json($text)
   if len($matches) == 0 then raise("LOUDNESS","missing loudnorm JSON") end
   return json_parse($matches[0].match)
 end
+fn quality_graph($vmaf)
+  return "[0:v]trim=end_frame=60,settb=1/30,setpts=N,split=3[d1][d2][d3];[1:v]trim=end_frame=60,settb=1/30,setpts=N,split=3[r1][r2][r3];[d1][r1]libvmaf=n_threads=4:log_fmt=json:log_path="..$vmaf.."[v];[d2][r2]ssim[s];[d3][r3]psnr[p]"
+end
 fn quality($source,$encoded,$o,$name)
   $vmaf = $o.out.."/"..$name..".vmaf.json"
-  $r = once(ff(["-i",$encoded,"-i",$source,"-t","2","-lavfi","[0:v]split=3[d1][d2][d3];[1:v]split=3[r1][r2][r3];[d1][r1]libvmaf=n_threads=4:log_fmt=json:log_path="..$vmaf.."[v];[d2][r2]ssim[s];[d3][r3]psnr[p]","-map","[v]","-map","[s]","-map","[p]","-an","-f","null","-"]),$o,$name)
+  $r = once(ff(["-i",$encoded,"-i",$source,"-t","2","-lavfi",quality_graph($vmaf),"-map","[v]","-map","[s]","-map","[p]","-an","-f","null","-"]),$o,$name)
   $text = read_file($o.out.."/"..$name..".stderr")
-  return {vmaf:json_parse(read_file($vmaf)).pooled_metrics.vmaf.mean,ssim:capture_number($text,'All:([0-9.]+)'),psnr_db:capture_number($text,'average:([0-9.]+)')}
+  $data = json_parse(read_file($vmaf))
+  if len($data.frames) != 60 or contains($text,"not matching timebases") or contains($text,"non monotonically") then raise("QUALITY","comparison must align exactly 60 frames") end
+  return {vmaf:$data.pooled_metrics.vmaf.mean,ssim:capture_number($text,'All:([0-9.]+)'),psnr_db:if contains($text,"average:inf") then "infinite" else capture_number($text,'average:([0-9.]+)') end}
 end
 fn video_cases()
-  return [{codec:"libsvtav1",preset:"10",opts:["-preset","10"]},{codec:"libsvtav1",preset:"12",opts:["-preset","12"]},{codec:"libaom-av1",preset:"6",opts:["-cpu-used","6","-row-mt","1"]},{codec:"libaom-av1",preset:"8",opts:["-cpu-used","8","-row-mt","1"]},{codec:"librav1e",preset:"10",opts:["-speed","10"]}]
+  return [{codec:"libsvtav1",preset:"8",opts:["-preset","8"]},{codec:"libsvtav1",preset:"9",opts:["-preset","9"]},{codec:"libaom-av1",preset:"6",opts:["-cpu-used","6","-row-mt","1"]},{codec:"libaom-av1",preset:"8",opts:["-cpu-used","8","-row-mt","1"]},{codec:"librav1e",preset:"10",opts:["-speed","10"]}]
 end
 fn video($o)
   $items = []; $curves = {}
@@ -51,11 +56,11 @@ fn video($o)
   for $key in keys($curves)
     $m = {}
     try
-      $m.bd_rate_percent = $core.bd_rate($curves["libsvtav1-p10"],$curves[$key])
+      $m.bd_rate_percent = $core.bd_rate($curves["libsvtav1-p8"],$curves[$key])
     catch $error
       $m.status = "unavailable"; $m.reason = $error
     end
-    push($items,{id:$key.."-bd-rate-vs-svt-p10",metrics:$m})
+    push($items,{id:$key.."-bd-rate-vs-svt-p8",metrics:$m})
   end
   return $items
 end
