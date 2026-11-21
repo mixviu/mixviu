@@ -28,7 +28,7 @@ pub(crate) fn profile_apply(enabled: bool) {
     PROFILE_APPLY.set(enabled);
 }
 
-fn validate_model_budget(model: &Value) -> Result<(), String> {
+fn validate_model_budget(model: &Value) -> Result<usize, String> {
     if !model.is_object() {
         return Err("scene model must be an object".into());
     }
@@ -36,7 +36,7 @@ fn validate_model_budget(model: &Value) -> Result<(), String> {
     if bytes.len() > MAX_MODEL_BYTES {
         return Err("scene model exceeds 8 MiB data budget".into());
     }
-    Ok(())
+    Ok(bytes.len())
 }
 
 #[derive(Clone, Debug)]
@@ -56,6 +56,8 @@ pub struct SceneView {
     frame: Option<Box<SceneView>>,
     regions: BTreeMap<String, egui::Rect>,
     tree: ResolvedScene,
+    bindings: scene::bindings::BindingSet,
+    model_bytes: usize,
     lists: PreparedLists,
     pub revision: u64,
     pub geometry: BTreeMap<String, egui::Rect>,
@@ -143,6 +145,8 @@ impl SceneView {
         let tree = scene::resolve(&document).map_err(|e| format!("{e:?}"))?;
         let lists = validate_templates(&tree).map_err(|e| e.to_string())?;
         validate_controls(&tree)?;
+        let bindings = scene::bindings::BindingSet::from_resolved(&tree);
+        let model_bytes = crate::model_patch::model_bytes(&tree.model);
         Ok(Self {
             motion: toolkit::scene_motion::SceneMotion::default(),
             numbers: crate::numbers::Numbers::default(),
@@ -152,6 +156,8 @@ impl SceneView {
             frame: None,
             regions: BTreeMap::new(),
             tree,
+            bindings,
+            model_bytes,
             lists,
             revision: 0,
             geometry: BTreeMap::new(),
@@ -169,6 +175,88 @@ impl SceneView {
 
     pub fn model(&self) -> &Value {
         &self.tree.model
+    }
+    #[cfg(feature = "test-support")]
+    pub(crate) fn publication_equivalent(&self, other: &Self) -> bool {
+        self.tree == other.tree
+            && self.lists == other.lists
+            && match (&self.frame, &other.frame) {
+                (Some(a), Some(b)) => a.publication_equivalent(b),
+                (None, None) => true,
+                _ => false,
+            }
+    }
+    /// Stage data edits and binding ports, validate, then commit the frame
+    /// before the root. No fallible work follows the frame commit.
+    pub(crate) fn apply_model_patch(
+        &mut self,
+        patch: &crate::model_patch::Patch,
+    ) -> Result<(), String> {
+        #[cfg(feature = "test-support")]
+        let started = PROFILE_APPLY
+            .get()
+            .then(crate::app_host::test_support::thread_cpu);
+        let edit = crate::model_patch::Edit::apply(&mut self.tree.model, self.model_bytes, patch)?;
+        #[cfg(feature = "test-support")]
+        let edited = started.map(|_| crate::app_host::test_support::thread_cpu());
+        let mut displaced = BTreeMap::new();
+        let result = (|| {
+            let nodes =
+                scene::bindings::prepare_model_roots(&self.tree, &self.bindings, &patch.roots())
+                    .map_err(|e| format!("{e:?}"))?;
+            for (id, node) in nodes {
+                displaced.insert(id.clone(), self.tree.nodes.insert(id, node).unwrap());
+            }
+            #[cfg(feature = "test-support")]
+            let rebound = started.map(|_| crate::app_host::test_support::thread_cpu());
+            let lists = validate_templates(&self.tree).map_err(|e| e.to_string())?;
+            validate_controls(&self.tree)?;
+            self.validate_hosted_overlays(&self.tree)?;
+            #[cfg(feature = "test-support")]
+            let validated = started.map(|_| crate::app_host::test_support::thread_cpu());
+            if let Some(frame) = self.frame.as_mut() {
+                frame.apply_model_patch(patch)?;
+            }
+            self.lists = lists;
+            #[cfg(feature = "test-support")]
+            if let (Some(started), Some(edited), Some(rebound), Some(validated)) =
+                (started, edited, rebound, validated)
+            {
+                let end = crate::app_host::test_support::thread_cpu();
+                eprintln!(
+                    "WORKSHOP_PATCH {}",
+                    json!({"nodes":self.tree.nodes.len(),"model_bytes":edit.bytes,"edit_budget_cpu_us":(edited-started).as_micros(),"binding_copy_cpu_us":(rebound-edited).as_micros(),"templates_controls_cpu_us":(validated-rebound).as_micros(),"frame_commit_cpu_us":(end-validated).as_micros(),"total_cpu_us":(end-started).as_micros()})
+                );
+            }
+            Ok(())
+        })();
+        match result {
+            Ok(()) => {
+                self.model_bytes = edit.bytes;
+                self.revision += 1;
+                Ok(())
+            }
+            Err(error) => {
+                edit.rollback(&mut self.tree.model);
+                for (id, node) in displaced {
+                    self.tree.nodes.insert(id, node);
+                }
+                Err(error)
+            }
+        }
+    }
+    fn validate_hosted_overlays(&self, candidate: &ResolvedScene) -> Result<(), String> {
+        for id in &self.overlays {
+            if !candidate
+                .nodes
+                .get(id)
+                .and_then(|n| n.ports.get("definition"))
+                .is_some_and(|d| matches!(d["kind"].as_str(), Some("menubar" | "command-bar")))
+            {
+                return Err("hosted overlay control changed to an incompatible kind".into());
+            }
+        }
+        Ok(())
     }
     /// Mount independently resolved scenes, preserving every application ID.
     /// The frame authors the content rectangle; no app node is rewritten.
@@ -321,7 +409,7 @@ impl SceneView {
                 crate::app_host::test_support::thread_cpu(),
             )
         });
-        validate_model_budget(&model)?;
+        let model_bytes = validate_model_budget(&model)?;
         #[cfg(feature = "test-support")]
         let validated = probe.map(|_| {
             (
@@ -380,21 +468,11 @@ impl SceneView {
                 crate::app_host::test_support::thread_cpu(),
             )
         });
-        for id in &self.overlays {
-            if !candidate
-                .nodes
-                .get(id)
-                .and_then(|n| n.ports.get("definition"))
-                .is_some_and(|definition| {
-                    matches!(definition["kind"].as_str(), Some("menubar" | "command-bar"))
-                })
-            {
-                return Err("hosted overlay control changed to an incompatible kind".into());
-            }
-        }
+        self.validate_hosted_overlays(&candidate)?;
         if let Some(frame) = self.frame.as_mut() {
             frame.apply_model(model)?;
         }
+        self.model_bytes = model_bytes;
         self.tree = candidate;
         self.lists = lists;
         self.revision += 1;

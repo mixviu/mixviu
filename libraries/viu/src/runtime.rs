@@ -26,6 +26,8 @@ pub(crate) type NativeContext = Box<dyn FnOnce() -> Box<dyn std::any::Any> + Sen
 /// Supplying one does not create a Bus citizen, broker or global registry.
 #[derive(Clone, Default)]
 pub struct Services {
+    /// The owner supports revisioned model publications and acceptance events.
+    pub incremental_models: bool,
     #[cfg(feature = "test-support")]
     #[doc(hidden)]
     pub test_cpu_probe: bool,
@@ -139,6 +141,8 @@ pub struct Completion {
     pub generation: u64,
     pub sequence: u64,
     pub model: Option<Json>,
+    pub model_revision: Option<u64>,
+    pub(crate) model_patch: Option<crate::model_patch::Patch>,
     pub error: Option<String>,
     pub elapsed: Duration,
     pub stdout: String,
@@ -260,7 +264,7 @@ impl Runtime {
                     Request::Load(generation, program) => {
                         if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
                         // A fresh evaluator never retains old closures or module state.
-                        let local = Rc::new(Local { generation, model: RefCell::new(None), error: RefCell::new(None), reply: RefCell::new(None), backend: backend.clone(), requests: RefCell::new(BTreeMap::new()), active: RefCell::new(None), deferred: Cell::new(false), answers: RefCell::new(Vec::new()), identity: NEXT_RUNTIME.fetch_add(1,Ordering::Relaxed), prefs_deferred: RefCell::new(None), prefs_answers: RefCell::new(Vec::new()), is_request: Cell::new(false) });
+                        let local = Rc::new(Local { incremental_models:services.incremental_models, model_revision:RefCell::new(None), model_patch:RefCell::new(None), generation, model: RefCell::new(None), error: RefCell::new(None), reply: RefCell::new(None), backend: backend.clone(), requests: RefCell::new(BTreeMap::new()), active: RefCell::new(None), deferred: Cell::new(false), answers: RefCell::new(Vec::new()), identity: NEXT_RUNTIME.fetch_add(1,Ordering::Relaxed), prefs_deferred: RefCell::new(None), prefs_answers: RefCell::new(Vec::new()), is_request: Cell::new(false) });
                         let stdout = SharedBuf::new();
                         let stderr = SharedBuf::new();
                         let mut eval = Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
@@ -330,6 +334,7 @@ impl Runtime {
                         context["options"]=services.options.clone();
                         context["native_backend"]=json!(backend.is_some());
                         context["native_facilities"]=json!(services.calls.is_some());
+                        context["incremental_models"]=json!(services.incremental_models);
                         eval.register("viu_context", mix::sync_ext(move |_| from_json(context.clone())));
                         #[cfg(test)]
                         if let Some(observe) = &services.registry_observer { observe(eval.extension_names()); }
@@ -371,10 +376,11 @@ impl Runtime {
                     Some((_, _, local, out, err)) => (local.model.borrow_mut().take(), String::from_utf8_lossy(&out.take()).into_owned(), String::from_utf8_lossy(&err.take()).into_owned(), local.error.borrow_mut().take(),local.reply.borrow_mut().take()),
                     None => (None, String::new(), String::new(), None,None),
                 };
+                let (model_revision,mut model_patch)=current.as_ref().map(|(_,_,local,..)|(local.model_revision.borrow_mut().take(),local.model_patch.borrow_mut().take())).unwrap_or_default();
                 let result = result.and_then(|_| fault.map_or(Ok(()), |error| Err(RunFailure::Evaluation(error))));
                 let result=if current.as_ref().is_some_and(|(_,_,local,..)|local.prefs_deferred.borrow().is_some() && (reply.is_some() || local.deferred.get())) {Err(RunFailure::Evaluation("request cannot both reply and defer".into()))}else{result};
                 // Failed callbacks never publish a partial model to the UI.
-                if result.is_err() { model = None; reply=None; }
+                if result.is_err() { model = None; model_patch=None; reply=None; }
                 if (sequence == 0 && result.is_err()) || matches!(&result, Err(RunFailure::Deadline)) {
                     if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
                 }
@@ -396,7 +402,7 @@ impl Runtime {
                     command: probe_command,
                     #[cfg(feature = "test-support")]
                     cpu_elapsed: crate::app_host::test_support::thread_cpu().saturating_sub(cpu_start),
-                    generation, sequence, model, error: result.err().map(RunFailure::message), elapsed: start.elapsed(), stdout, stderr, behaviour_available: current.is_some(),reply,deferred,answers,deferred_token,deferred_answers };
+                    generation, sequence, model, model_revision, model_patch, error: result.err().map(RunFailure::message), elapsed: start.elapsed(), stdout, stderr, behaviour_available: current.is_some(),reply,deferred,answers,deferred_token,deferred_answers };
                 if results.send(completion).is_err() { break; }
                 wake();
             }
@@ -512,6 +518,9 @@ impl Runtime {
     pub fn has_capacity(&self) -> bool {
         self.tx.is_some() && self.queued.load(Ordering::Acquire) < self.capacity
     }
+    pub(crate) fn capacity(&self) -> usize {
+        self.capacity
+    }
 
     fn enqueue(&self, request: Request) -> Result<(), Refusal> {
         let tx = self.tx.as_ref().ok_or(Refusal::Closed)?;
@@ -595,6 +604,9 @@ pub fn to_json(value: &Value) -> MixResult<Json> {
 }
 
 struct Local {
+    incremental_models: bool,
+    model_revision: RefCell<Option<u64>>,
+    model_patch: RefCell<Option<crate::model_patch::Patch>>,
     prefs_deferred: RefCell<Option<String>>,
     prefs_answers: RefCell<Vec<DeferredAnswer>>,
     is_request: Cell<bool>,
@@ -820,16 +832,70 @@ impl BusHandler for Local {
                     json!({"opacity":values.get(motion::Property::Opacity),
                         "offset":[values.get(motion::Property::Tx),values.get(motion::Property::Ty)]})
                 }
+                "scenes.model.patch" => {
+                    if !self.incremental_models {
+                        return Err(failure("owner does not support incremental models"));
+                    }
+                    if body["generation"].as_u64() != Some(self.generation) {
+                        return Ok((10, from_json(json!({"error_code":"stale_generation"}))?));
+                    }
+                    if self.model.borrow().is_some() || self.model_patch.borrow().is_some() {
+                        *self.error.borrow_mut() =
+                            Some("only one revisioned publication is allowed per callback".into());
+                        return Err(failure(
+                            "only one revisioned publication is allowed per callback",
+                        ));
+                    }
+                    let patch = crate::model_patch::Patch::decode(body).map_err(|e| failure(&e))?;
+                    let revision = patch.revision;
+                    *self.model_revision.borrow_mut() = Some(revision);
+                    *self.model_patch.borrow_mut() = Some(patch);
+                    json!({"queued":true,"revision":revision})
+                }
                 "scenes.ready" | "scenes.model" => {
                     if body["generation"].as_u64() != Some(self.generation) {
                         return Ok((10, from_json(json!({"error_code":"stale_generation"}))?));
                     }
                     if command == "scenes.model" {
+                        if self.model_patch.borrow().is_some()
+                            || self.model_revision.borrow().is_some()
+                        {
+                            *self.error.borrow_mut() = Some(
+                                "only one revisioned publication is allowed per callback".into(),
+                            );
+                            return Err(failure(
+                                "only one revisioned publication is allowed per callback",
+                            ));
+                        }
+                        let revision = if let Some(value) = body.get("revision") {
+                            if !self.incremental_models {
+                                return Err(failure("owner does not support revisioned models"));
+                            }
+                            let n = value
+                                .as_u64()
+                                .filter(|n| *n > 0 && *n <= crate::model_patch::MAX_REVISION)
+                                .ok_or_else(|| {
+                                    failure("revision must be a positive exact integer")
+                                })?;
+                            if self.model.borrow().is_some() {
+                                *self.error.borrow_mut() = Some(
+                                    "only one revisioned publication is allowed per callback"
+                                        .into(),
+                                );
+                                return Err(failure(
+                                    "only one revisioned publication is allowed per callback",
+                                ));
+                            }
+                            Some(n)
+                        } else {
+                            None
+                        };
                         if !body["value"].is_object() {
                             return Err(failure("model must be a map"));
                         }
                         *self.model.borrow_mut() =
                             body.as_object_mut().and_then(|m| m.remove("value"));
+                        *self.model_revision.borrow_mut() = revision;
                     }
                     json!({"ok":true})
                 }

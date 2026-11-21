@@ -2,28 +2,104 @@
 -- Run through CBC, not on the developer desktop. All instrumentation is in
 -- lib-viu/test-support or the integration fixture, never the shipped app.
 $mode=$1 ?? "baseline"
+$check_env={TEST_POOL_RETRY_REPORT:""}
 $test=["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--nocapture"]
 fn checked($argv)
-  $r=run_argv($argv,{timeout:3600,stderr:"stdout",max_output:64000000,env:{TEST_POOL_RETRY_REPORT:""}})
+  $r=run_argv($argv,{timeout:3600,stderr:"stdout",max_output:64000000,env:$check_env})
   print($r.stdout)
   if not $r.ok then exit($r.exit_code ?? 1) end
 end
-if $mode=="format" then
-  $r=run_argv(["cargo","fmt","-p","lib-viu"],{timeout:600,stderr:"stdout"})
+if $mode=="review-controls" then
+  for $case in ["depth-negative","flush-negative","guard-negative","numeric-negative","binding-negative","negative","equivalence","incremental-negative"]
+    print("REVIEW_CONTROL "..$case)
+    checked(["mix",script_path(),$case])
+  end
+elif $mode=="guard-negative" then
+  $path="apps/workshop/counter.mix";$source=read_file($path)
+  $needle="if not needs_thaw($encoded) then return $encoded end"
+  $mutated=replace($source,$needle,"if not needs_thaw($encoded) then  return $encoded end")
+  if $mutated==$source then raise("PROBE","guard control did not change source") end
+  try
+    write_file($path,$mutated)
+    for $case in ["wire","compare"]
+      $r=run_argv(["mix",script_path(),$case],{timeout:600,stderr:"stdout",max_output:64000000})
+      print($r.stdout)
+      if $r.ok or not contains($r.stdout,$case.." mutation did not change source") then raise("PROBE","mutation guard did not refuse source drift: "..$case) end
+    end
+  finally
+    write_file($path,$source)
+    checked(["git","diff","--exit-code"])
+  end
+elif $mode=="format" then
+  $r=run_argv(["cargo","fmt","-p","lib-viu","-p","scene"],{timeout:600,stderr:"stdout"})
   print($r.stdout);print(run_argv_must(["git","diff"]))
   print(run_argv_must(["git","checkout","-q","--","."]))
   if not $r.ok then exit(1) end
+elif $mode=="equivalence" then
+  $path="libraries/viu/tests/workshop_bus.rs";$source=read_file($path)
+  $mutated=replace($source,"const VERIFY_INCREMENTAL: bool = false;","const VERIFY_INCREMENTAL: bool = true;")
+  if $source==$mutated then raise("PROBE","equivalence switch missing") end
+  try
+    write_file($path,$mutated)
+    checked($test)
+  finally
+    write_file($path,$source)
+  end
+elif $mode=="incremental-negative" then
+  for $case in ["wire","apply","equivalence","receipt"]
+    $path=if $case=="wire" then "apps/workshop/app.mix" elif $case=="apply" or $case=="receipt" then "libraries/viu/src/app_host.rs" else "libraries/scene/src/bindings.rs" end
+    $source=read_file($path)
+    if $case=="wire" then
+      $mutated=replace($source,'$full=$model_publication.requires_full($publication.model,$value)','$full=true')
+    elif $case=="apply" then
+      $needle="let result =\n            validate_overlays(&self.model).and_then(|_| self.view.apply_model_patch(patch));"
+      $mutated=replace($source,$needle,"let projected=self.projection(&self.model,ctx);let result=validate_overlays(&self.model).and_then(|_|self.view.apply_model(projected));")
+    elif $case=="receipt" then
+      $mutated=replace($source,"self.model_receipts\n            .push_back((generation, command.into(), body));","self.dispatch(command.into(),body,BTreeMap::new(),None);")
+    else
+      $mutated=replace($source,"if binding.reads_item\n            || !binding.deps.iter().any(|dep| {","if true || binding.reads_item\n            || !binding.deps.iter().any(|dep| {")
+    end
+    if $mutated==$source then raise("PROBE","incremental negative source drift: "..$case) end
+    try
+      write_file($path,$mutated)
+      $argv=if $case=="equivalence" then ["mix",script_path(),"equivalence"] elif $case=="receipt" then ["cargo","test","-p","lib-viu","--features","test-support","--lib","publication_receipt_survives_a_full_evaluator_mailbox","--","--nocapture"] else $test end
+      $r=run_argv($argv,{timeout:600,stderr:"stdout",max_output:64000000});print($r.stdout)
+      $expected=if $case=="wire" then "tick model bytes: observed_bytes=" elif $case=="apply" then "patch apply CPU: observed_us=" elif $case=="receipt" then "full mailbox must retain its acceptance" else "incremental publication differs from full rendered state" end
+      if $r.ok or not contains($r.stdout,$expected) then raise("PROBE","incremental negative missed its assertion: "..$case) end
+    finally
+      write_file($path,$source)
+      checked(["git","diff","--exit-code"])
+    end
+  end
+elif $mode=="depth-negative" then
+  $path="libraries/viu/mix/model-publication.mix";$source=read_file($path)
+  $mutated=replace($source,"$max_path_depth=8","$max_path_depth=32")
+  if $mutated==$source then raise("PROBE","depth bound source drift") end
+  try
+    write_file($path,$mutated)
+    $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--lib","mix_differ_publishes_deep_models_and_long_keys_without_refusal","--","--nocapture"],{timeout:600,stderr:"stdout",max_output:64000000});print($r.stdout)
+    if $r.exit_code!=101 or not contains($r.stdout,"recursion depth exceeded (limit 16)") then raise("PROBE","depth negative missed recursion assertion") end
+  finally write_file($path,$source);checked(["git","diff","--exit-code"]) end
+elif $mode=="flush-negative" then
+  $path="libraries/viu/src/app_host_model_tests.rs";$source=read_file($path)
+  $mutated=replace($source,"const FLUSH_PUBLICATION_BYTE_BOUND: u64 = 1024 * 1024;","const FLUSH_PUBLICATION_BYTE_BOUND: u64 = 1;")
+  if $mutated==$source then raise("PROBE","flush bound source drift") end
+  try
+    write_file($path,$mutated)
+    $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--lib","flush_publication_is_measured_by_the_byte_guard","--","--nocapture"],{timeout:120,stderr:"stdout",max_output:64000000});print($r.stdout)
+    if $r.exit_code!=101 or not contains($r.stdout,"tick model bytes: observed_bytes=") then raise("PROBE","flush negative missed byte assertion") end
+  finally write_file($path,$source);checked(["git","diff","--exit-code"]) end
 elif $mode=="numeric-negative" then
   $path="libraries/viu/tests/workshop_bus.rs";$source=read_file($path)
   try
-    for $case in ["pump","model"]
-      $needle=if $case=="pump" then "const MAX_STANDALONE_PUMP_US: u64 = 800_000;" else "const MAX_TICK_MODEL_BYTES: u64 = 4 * 1024 * 1024;" end
-      $lower=if $case=="pump" then "const MAX_STANDALONE_PUMP_US: u64 = 0;" else "const MAX_TICK_MODEL_BYTES: u64 = 1;" end
+    for $case in ["pump","model","apply"]
+      $needle=if $case=="pump" then "const MAX_STANDALONE_PUMP_US: u64 = 800_000;" elif $case=="apply" then "const MAX_PATCH_APPLY_CPU_US: u64 = 100_000;" else "const MAX_TICK_MODEL_BYTES: u64 = 768 * 1024;" end
+      $lower=if $case=="pump" then "const MAX_STANDALONE_PUMP_US: u64 = 0;" elif $case=="apply" then "const MAX_PATCH_APPLY_CPU_US: u64 = 0;" else "const MAX_TICK_MODEL_BYTES: u64 = 1;" end
       if not contains($source,$needle) then raise("PROBE","standalone numeric bound missing") end
       write_file($path,replace($source,$needle,$lower))
       $r=run_argv($test,{timeout:120,stderr:"stdout",max_output:64000000})
       print("NUMERIC_NEGATIVE "..$case);print($r.stdout)
-      $expected=if $case=="pump" then "single pump hold: observed_us=" else "tick model bytes: observed_bytes=" end
+      $expected=if $case=="pump" then "single pump hold: observed_us=" elif $case=="apply" then "patch apply CPU: observed_us=" else "tick model bytes: observed_bytes=" end
       if $r.exit_code!=101 or not contains($r.stdout,$expected) then raise("PROBE","numeric negative control missed its assertion") end
     end
   finally
@@ -45,11 +121,12 @@ elif $mode=="binding-negative" then
   finally
     write_file($path,$source)
   end
-elif $mode=="tick" then
+elif $mode=="tick" or $mode=="tick-alone" then
   $path="libraries/viu/tests/workshop_bus.rs";$source=read_file($path)
   try
     write_file($path,replace($source,"const PROFILE_TICK: bool = false;","const PROFILE_TICK: bool = true;"))
-    $r=run_argv(["mix",script_path(),"baseline"],{timeout:600,stderr:"stdout",max_output:64000000})
+    $argv=if $mode=="tick-alone" then $test else ["mix",script_path(),"baseline"] end
+    $r=run_argv($argv,{timeout:600,stderr:"stdout",max_output:64000000})
     print($r.stdout)
   finally
     write_file($path,$source)
@@ -61,7 +138,10 @@ elif $mode=="fast-compare" then
   checked(["mix",script_path(),"compare"])
 elif $mode=="wire" then
   $old_path=realpath("target").."/workshop-wire-old-"..pid()..".mix"
-  write_file($old_path,replace(read_file("apps/workshop/counter.mix"),"if not needs_thaw($encoded) then return $encoded end","if false then return $encoded end"))
+  $source=read_file("apps/workshop/counter.mix")
+  $mutated=replace($source,"if not needs_thaw($encoded) then return $encoded end","if false then return $encoded end")
+  if $mutated==$source then raise("PROBE","wire mutation did not change source") end
+  write_file($old_path,$mutated)
   try
     $old=require($old_path);$new=require(realpath("apps/workshop/counter.mix"))
     $value={snapshot:{identities:{},services:{}},title:"001",headers:{seq:"18446744073709551615"},payload:{count:"18446744073709551615"}}
@@ -98,9 +178,11 @@ elif $mode=="helpers" then
 elif $mode=="compare" then
   checked(concat(slice($test,0,8),["--no-run"]))
   $path="apps/workshop/counter.mix";$candidate=read_file($path);$candidate_ok=false
+  $mutated=replace($candidate,"if not needs_thaw($encoded) then return $encoded end","if false then return $encoded end")
+  if $mutated==$candidate then raise("PROBE","compare mutation did not change source") end
   try
     for $case in ["jq","native"]
-      write_file($path,if $case=="jq" then replace($candidate,"if not needs_thaw($encoded) then return $encoded end","if false then return $encoded end") else $candidate end)
+      write_file($path,if $case=="jq" then $mutated else $candidate end)
       print("OWNER_ENCODER "..$case)
       $r=run_argv($test,{timeout:120,stderr:"stdout",max_output:64000000});print($r.stdout)
       print({encoder:$case,rc:$r.exit_code})
@@ -147,6 +229,8 @@ elif $mode=="accept" then
   checked(["mix",script_path(),"validate"])
   checked(["git","diff","--exit-code"])
 elif $mode=="validate" then
+  checked(["cargo","build","-p","mix"])
+  $check_env.MIX_TEST_MIX_EXE=realpath("target/debug/mix")
   $context=require(realpath("tools/ci/lint_context.mix"))
   $vocabulary=$context.vocabulary("mix").host
   $generated=[]
@@ -159,19 +243,33 @@ elif $mode=="validate" then
   print({production_vocabulary:$vocabulary,test_hook_excluded:true})
   checked(["mix","tools/ci/lint_context_test.mix","mix"])
   checked(["mix","apps/workshop/counter-test.mix"])
-  checked(["cargo","fmt","-p","lib-viu","--","--check"])
+  checked(["cargo","fmt","-p","lib-viu","-p","scene","--","--check"])
+  checked(["cargo","clippy","-p","scene","--all-targets","--no-deps"])
+  checked(["cargo","test","-p","scene","--all-targets","--no-fail-fast"])
+  checked(["cargo","test","-p","scene","--doc"])
+  $base=trim(run_argv_must(["git","merge-base","HEAD","origin/main"]))
+  $changed=split(trim(run_argv_must(["git","diff","--name-only",$base,"HEAD"])),"\n")
+  for $path in $changed if ends_with($path,".mix") then checked(["mix","lint",$path]) end end
   checked(["cargo","clippy","-p","lib-viu","--all-targets","--no-deps"])
   checked(["cargo","test","-p","lib-viu","--all-targets","--no-fail-fast"])
   checked(["cargo","test","-p","lib-viu","--doc"])
   checked(["cargo","clippy","-p","lib-viu","--features","test-support","--all-targets","--no-deps"])
   checked(["cargo","test","-p","lib-viu","--features","test-support","--all-targets","--no-fail-fast"])
   checked(["cargo","test","-p","lib-viu","--features","test-support","--doc"])
-elif $mode=="pool" then
+elif $mode=="pool" or $mode=="pool-normal" then
+  checked(["cargo","build","-p","mix"])
+  $check_env.MIX_TEST_MIX_EXE=realpath("target/debug/mix")
+  $serial_args=[]
+  if $mode=="pool-normal" then
+    $serial=realpath("target").."/workshop-normal-pool.mix"
+    write_file($serial,"serial_tests: []\n")
+    $serial_args=["--serial",$serial]
+  end
   for $iteration=1 to 12
     print("WORKSHOP_POOL_ITERATION "..$iteration)
     -- Keep the whole crate queued, with default intra-binary threading, so
     -- contention lasts into the 200-peer phase rather than just startup.
-    checked(["mix","tools/ci/test_pool.mix","--jobs","4","--","-p","lib-viu","--features","test-support","--","--nocapture"])
+    checked(concat(["mix","tools/ci/test_pool.mix","--jobs","4"],concat($serial_args,["--","-p","lib-viu","--features","test-support","--","--nocapture"])))
   end
 else
   checked(concat(slice($test,0,8),["--no-run"]))

@@ -12,29 +12,40 @@ use viu::{app_host::test_support::Harness, bundle::Bundle};
 // The CBC diagnostic recipe enables this only for a measured control run.
 const PROFILE_INFO_HELPERS: bool = false;
 const PROFILE_TICK: bool = false;
+const VERIFY_INCREMENTAL: bool = false;
+const MAX_PATCH_APPLY_CPU_US: u64 = 100_000;
 // Fable ruling D: this binary runs alone. Post-startup round-5 standalone
 // max pump was 387,676 us; 800,000 us gives just over 2x margin. Tick models
 // reached 2,398,986 bytes; 4 MiB gives 75% margin. These numeric guards are
 // independent of the unchanged 1 s call and 2 s owner-stall assertions.
 const MAX_STANDALONE_PUMP_US: u64 = 800_000;
-const MAX_TICK_MODEL_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_TICK_MODEL_BYTES: u64 = 768 * 1024;
 
 fn profile_tick(bundle: &mut Bundle) {
-    bundle.program.source = bundle.program.source.replace(
-        "$dirty=false\nfn publish_workshop",
-        "$dirty=false\n$profile_previous={}\nfn publish_workshop",
-    );
-    bundle.program.source = bundle.program.source.replace("fn publish_workshop($s)\n", "fn publish_workshop($s)\n  global $profile_previous\n  $pc=viu_test_cpu();$pw=monotonic()\n");
-    let needle = "  send \"viu-local\" \"scenes.model\" body={generation:$ctx.generation,value:$app_mode.project($projection,\"workshop\",$s.theme_choice)}";
-    let replacement = r#"  $profile_value=$app_mode.project($projection,"workshop",$s.theme_choice)
-  $profile_cpu=(viu_test_cpu()-$pc)*1000000;$profile_wall=(monotonic()-$pw)*1000000
-  $profile_keys=[]
-  for $profile_key in keys($profile_value) if not deep_eq($profile_previous[$profile_key],$profile_value[$profile_key]) then push($profile_keys,$profile_key) end end
-  print("WORKSHOP_BUILD "..json_encode({selected:$s.row_key,cpu_us:$profile_cpu,wall_us:$profile_wall,bytes:byte_length(json_encode($profile_value)),same:deep_eq($profile_previous,$profile_value),changed:$profile_keys}))
-  $profile_previous=$profile_value
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$profile_value}"#;
-    assert!(bundle.program.source.contains(needle));
-    bundle.program.source = bundle.program.source.replace(needle, replacement);
+    for (needle, replacement) in [
+        (
+            "  $s=$saved.reconcile($s)",
+            "  $pc=viu_test_cpu();$pw=monotonic()\n  $s=$saved.reconcile($s)",
+        ),
+        (
+            "  $projection=$frame.project($s,$presentation.project($s));$persist=$saved.project($s)",
+            r#"  $pr=viu_test_cpu()
+  $presentation_value=$presentation.project($s);$presentation_cpu=(viu_test_cpu()-$pr)*1000000
+  $pr=viu_test_cpu();$projection=$frame.project($s,$presentation_value);$frame_cpu=(viu_test_cpu()-$pr)*1000000
+  $persist=$saved.project($s)"#,
+        ),
+        (
+            "  $body={generation:$ctx.generation,base:$publication.ack,revision:$revision,operations:$operations}",
+            r#"  $body={generation:$ctx.generation,base:$publication.ack,revision:$revision,operations:$operations}
+  print("WORKSHOP_BUILD "..json_encode({cpu_us:(viu_test_cpu()-$pc)*1000000,wall_us:(monotonic()-$pw)*1000000,presentation_cpu_us:$presentation_cpu,frame_cpu_us:$frame_cpu,full:$full,model_bytes:byte_length(json_encode($value)),patch_bytes:byte_length(json_encode($body)),operations:len($operations)}))"#,
+        ),
+    ] {
+        assert!(
+            bundle.program.source.contains(needle),
+            "publication probe source drift: {needle}"
+        );
+        bundle.program.source = bundle.program.source.replace(needle, replacement);
+    }
 }
 
 fn profile_info_helpers(bundle: &mut Bundle) -> tempfile::NamedTempFile {
@@ -555,6 +566,23 @@ fn workshop_answers_during_discovery() {
         bundle.manifest.bus_url = Some(broker.url.clone());
         bundle.launch = json!({"headless":true});
         bundle.manifest.saved_version = None;
+        if count == 200 {
+            bundle
+                .program
+                .source
+                .insert_str(0, "$fixture_traffic=require(\"traffic.mix\")\n");
+            // A deterministic large retained model, authored in Mix and
+            // injected only through this test owner's native event queue.
+            bundle.program.source.push_str(r#"
+on viu.test.retained_model
+  $state.traffic=[];$state.traffic_bytes=0
+  for $i=0 to 47
+    $state=$fixture_traffic.retain($state,{ts:to_string($i),direction:"local",command:"fixture.retained",payload:{text:$event.args.padding}})
+  end
+  $state=publish_workshop($state);$dirty=true
+end
+"#);
+        }
         let _profile_module = PROFILE_INFO_HELPERS.then(|| profile_info_helpers(&mut bundle));
         if PROFILE_TICK {
             profile_tick(&mut bundle);
@@ -584,9 +612,13 @@ fn workshop_answers_during_discovery() {
         host.probe_discovery();
         if count == 200 {
             host.discovery_numeric_bounds(MAX_STANDALONE_PUMP_US, MAX_TICK_MODEL_BYTES);
+            host.patch_cpu_bound(MAX_PATCH_APPLY_CPU_US);
         }
         if PROFILE_TICK {
             host.profile_scene_apply();
+        }
+        if VERIFY_INCREMENTAL {
+            host.verify_incremental_publications();
         }
         let mut overlapping = false;
         let mut streamed = false;
@@ -638,6 +670,59 @@ fn workshop_answers_during_discovery() {
         assert_eq!(info["discovering"], false);
         assert!(info["snapshot"]["services"].as_object().unwrap().len() >= count);
         if count == 200 {
+            eprintln!("WORKSHOP_DISCOVERY_PHASE {}", host.discovery_measurements());
+            host.probe_discovery();
+            let padding="{\"name\":\"example.command\",\"description\":\"Read state\",\"read_only\":true,\"args\":{}}\n".repeat(600);
+            host.owner_event("viu.test.retained_model", json!({"padding":padding}));
+            let until = Instant::now() + Duration::from_secs(5);
+            loop {
+                host.pump();
+                assert!(host.error().is_empty(), "{}", host.error());
+                let state = host.state();
+                let seeded = state["model"]["traffic_view"]["initial"][1][4]["collapse"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("fixture.retained"));
+                if seeded && serde_json::to_vec(&state["model"]).unwrap().len() >= 2 * 1024 * 1024 {
+                    break;
+                }
+                assert!(
+                    Instant::now() < until,
+                    "retained Traffic seed was not published"
+                );
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            // Full initialisation is outside the per-tick incremental budget,
+            // exactly as startup is. Every subsequent ordinary tick is guarded.
+            host.probe_discovery();
+            host.discovery_numeric_bounds(MAX_STANDALONE_PUMP_US, MAX_TICK_MODEL_BYTES);
+            host.patch_cpu_bound(MAX_PATCH_APPLY_CPU_US);
+            if PROFILE_TICK {
+                host.profile_scene_apply();
+            }
+            if VERIFY_INCREMENTAL {
+                host.verify_incremental_publications();
+            }
+            for _ in 0..8 {
+                assert_eq!(call(&mut host, &rt, &caller, "workshop.info").0, 0);
+                let until = Instant::now() + Duration::from_millis(250);
+                while Instant::now() < until {
+                    host.pump();
+                    std::thread::sleep(Duration::from_millis(2));
+                }
+            }
+            let until = Instant::now() + Duration::from_millis(1200);
+            while Instant::now() < until {
+                host.pump();
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            assert!(
+                host.state()["model"]["traffic_view"]["initial"].is_array(),
+                "steady Traffic must be rendered"
+            );
+            assert!(
+                serde_json::to_vec(&host.state()["model"]).unwrap().len() >= 2 * 1024 * 1024,
+                "steady guard must exercise a retained model of at least 2 MiB"
+            );
             assert!(
                 host.discovery_measurements()["tick_model_bytes"]["n"]
                     .as_u64()

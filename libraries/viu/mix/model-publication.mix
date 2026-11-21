@@ -1,0 +1,60 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Pure scene-data policy. Host inputs continue to use full publication.
+fn requires_full($before,$after)
+  if type($before)!="map" or type($after)!="map" then return true end
+  for $key in unique(concat(keys($before),keys($after)))
+    if byte_length($key)>256 and (has_key($before,$key)!=has_key($after,$key) or not deep_eq($before[$key],$after[$key])) then return true end
+    if starts_with($key,"__viu_") or contains(["presentation","native_root","native_windows","surfaces","appearance","theme_choice","window_settings","window_title","window_close","macros_open","native_overlays","native_focus","layer","local_theme","local_mode","theme_values","theme_refresh_key","settings_reload","keyboard_events","on_shortcut"],$key) then
+      if has_key($before,$key)!=has_key($after,$key) or not deep_eq($before[$key],$after[$key]) then return true end
+    end
+  end
+  return false
+end
+fn difference($before,$after,$path=[])
+  if deep_eq($before,$after) then return [] end
+  -- DEFAULT_RECURSION_LIMIT is 16: leave room for publisher/caller frames.
+  -- This also stays below the host's 32-component path limit, including
+  -- recursion through id-matched list entries below.
+  $max_path_depth=8
+  if len($path)>=$max_path_depth then return [{op:"set",path:$path,value:$after}] end
+  if type($before)=="map" and type($after)=="map" then
+    for $key in unique(concat(keys($before),keys($after)))
+      if byte_length($key)>256 and (has_key($before,$key)!=has_key($after,$key) or not deep_eq($before[$key],$after[$key])) then
+        return [{op:"set",path:$path,value:$after}]
+      end
+    end
+    $out=[]
+    for $key in keys($before)
+      if not has_key($after,$key) then push($out,{op:"remove",path:concat($path,[$key])}) end
+    end
+    for $key in keys($after)
+      if has_key($before,$key) then $out=concat($out,difference($before[$key],$after[$key],concat($path,[$key])))
+      else push($out,{op:"set",path:concat($path,[$key]),value:$after[$key]}) end
+    end
+    return $out
+  end
+  if type($before)=="list" and type($after)=="list" then
+    $out=[];$current=$before;$i=0
+    while $i<len($after)
+      if $i<len($current) and deep_eq($current[$i],$after[$i]) then $i=$i+1;continue end
+      $anchor=nil
+      for $j=$i+1 to len($current)-1
+        if deep_eq($current[$j],$after[$i]) then $anchor=$j;break end
+      end
+      if $anchor!=nil then
+        push($out,{op:"splice",path:$path,index:$i,remove:$anchor-$i,items:[]})
+        $current=concat(slice($current,0,$i),slice($current,$anchor))
+      elif $i<len($current) and type($current[$i])=="map" and type($after[$i])=="map" and $current[$i].id!=nil and $current[$i].id==$after[$i].id then
+        $out=concat($out,difference($current[$i],$after[$i],concat($path,[$i])))
+        $current[$i]=$after[$i];$i=$i+1
+      else
+        push($out,{op:"splice",path:$path,index:$i,remove:0,items:[$after[$i]]})
+        $current=concat(concat(slice($current,0,$i),[$after[$i]]),slice($current,$i));$i=$i+1
+      end
+      if len($out)>256 then return [{op:"set",path:$path,value:$after}] end
+    end
+    if len($current)>len($after) then push($out,{op:"splice",path:$path,index:len($after),remove:len($current)-len($after),items:[]}) end
+    return $out
+  end
+  return [{op:"set",path:$path,value:$after}]
+end

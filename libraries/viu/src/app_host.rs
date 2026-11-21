@@ -128,6 +128,11 @@ struct Host {
     active_scene: String,
     owner_close_pending: bool,
     model: Value,
+    model_revision: Option<(u64, u64)>,
+    model_revision_floor: Option<(u64, u64)>,
+    model_refused: Option<u64>,
+    model_bytes: usize,
+    model_receipts: std::collections::VecDeque<(u64, String, Value)>,
     output: Option<String>,
     outputs: BTreeMap<String, Value>,
     runtime: Runtime,
@@ -176,6 +181,129 @@ fn fullscreen_is_requested_once_after_context_creation() {
     }
 }
 impl Host {
+    fn publication_result(&mut self, generation: u64, revision: u64, result: Result<(), String>) {
+        let (command, body) = match result {
+            Ok(()) => {
+                self.model_refused = None;
+                self.model_revision = Some((generation, revision));
+                self.model_revision_floor = Some((generation, revision));
+                (
+                    "viu.model.applied",
+                    json!({"generation":generation,"revision":revision}),
+                )
+            }
+            Err(message) => {
+                self.model_refused = Some(generation);
+                self.error = message.clone();
+                (
+                    "viu.model.refused",
+                    json!({"generation":generation,"revision":revision,"message":message}),
+                )
+            }
+        };
+        self.model_receipts
+            .push_back((generation, command.into(), body));
+        self.flush_model_receipts();
+    }
+    fn flush_model_receipts(&mut self) {
+        while let Some((generation, command, body)) = self.model_receipts.front() {
+            if *generation != self.runtime.generation() {
+                self.model_receipts.pop_front();
+                continue;
+            }
+            let Ok(sequence) = self.runtime.notify(command.clone(), body.clone()) else {
+                break;
+            };
+            self.inflight.insert(sequence);
+            self.model_receipts.pop_front();
+        }
+    }
+    fn apply_incremental(
+        &mut self,
+        patch: &crate::model_patch::Patch,
+        ctx: &egui::Context,
+    ) -> Result<(), String> {
+        if self.model_refused == Some(patch.generation) {
+            return Err("model publication requires full resynchronisation".into());
+        }
+        if self.model_revision != Some((patch.generation, patch.base)) {
+            return Err("stale model base; publish a full model".into());
+        }
+        if !self.loaded
+            || self.no_window
+            || self.model["native_root"].is_object()
+            || self.model["surfaces"].is_object()
+        {
+            return Err("incremental publication requires a loaded ordinary root scene".into());
+        }
+        for key in patch.roots() {
+            if key.starts_with("__viu_")
+                || [
+                    "presentation",
+                    "native_root",
+                    "native_windows",
+                    "surfaces",
+                    "appearance",
+                    "theme_choice",
+                    "window_settings",
+                    "window_title",
+                    "window_close",
+                    "macros_open",
+                    "native_overlays",
+                    "native_focus",
+                    "layer",
+                    "local_theme",
+                    "local_mode",
+                    "theme_values",
+                    "theme_refresh_key",
+                    "settings_reload",
+                    "keyboard_events",
+                    "on_shortcut",
+                ]
+                .contains(&key.as_str())
+            {
+                return Err(format!("{key} requires full model publication"));
+            }
+        }
+        // Host settings may change independently of authored model data. A
+        // patch cannot retain derived ports from an older host projection.
+        let mut host_inputs = json!({"window_settings":self.model["window_settings"]});
+        self.project_host_fields(&mut host_inputs, ctx);
+        for key in [
+            "__viu_metrics",
+            "__viu_window_client",
+            "__viu_header_hosted",
+        ] {
+            if (key == "__viu_metrics" || self.framed) && host_inputs[key] != self.view.model()[key]
+            {
+                return Err("host projection changed; publish a full model".into());
+            }
+        }
+        let edit = crate::model_patch::Edit::apply(&mut self.model, self.model_bytes, patch)?;
+        #[cfg(feature = "test-support")]
+        crate::view::profile_apply(
+            self.discovery_probe
+                .as_ref()
+                .is_some_and(|p| p.profile_scene),
+        );
+        let result =
+            validate_overlays(&self.model).and_then(|_| self.view.apply_model_patch(patch));
+        #[cfg(feature = "test-support")]
+        crate::view::profile_apply(false);
+        if let Err(error) = result {
+            edit.rollback(&mut self.model);
+            return Err(error);
+        }
+        self.model_bytes = edit.bytes;
+        if let Some(saved) = &mut self.saved
+            && saved.announced
+        {
+            saved.apply(&self.model);
+        }
+        self.ready = true;
+        ctx.request_repaint();
+        Ok(())
+    }
     fn model_close_ready(&self) -> bool {
         self.model["window_close"] == true
             && self.wire_deliveries.is_empty()
@@ -227,6 +355,10 @@ impl Host {
             projected["window_close"] = model["window_close"].clone();
             projected["__viu_root_key"] = model["native_root"]["key"].clone();
         }
+        self.project_host_fields(&mut projected, ctx);
+        projected
+    }
+    fn project_host_fields(&self, projected: &mut Value, ctx: &egui::Context) {
         let style = ctx.global_style();
         projected["__viu_metrics"] = json!({
             "item_spacing_x":style.spacing.item_spacing.x,
@@ -236,7 +368,7 @@ impl Host {
 
         if self.framed {
             projected["__viu_window_client"] = json!(crate::window_frame::is_client(
-                &self.window_settings(&projected)
+                &self.window_settings(projected)
             ));
             projected["__viu_header_hosted"] = json!(
                 projected["__viu_window_client"] == false
@@ -244,7 +376,6 @@ impl Host {
                     && toolkit::titlebar::hosting::hosted(ctx)
             );
         }
-        projected
     }
     fn state(&self) -> Value {
         let geometry: serde_json::Map<String, Value> = self
@@ -651,6 +782,9 @@ impl eframe::App for Host {
 }
 impl Host {
     fn pump(&mut self, ctx: &egui::Context) {
+        // Acceptance is protocol state, not a lossy UI notification. Admit
+        // retained receipts before job/event producers refill the mailbox.
+        self.flush_model_receipts();
         self.wire_deliveries
             .retain(|s| s.load(std::sync::atomic::Ordering::Acquire) == 0);
         while let Ok(request) = self.local_clipboard.try_recv() {
@@ -985,7 +1119,12 @@ impl Host {
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
-        while let Some(done) = self.runtime.try_completion() {
+        // Bound retained receipts to the evaluator mailbox width. Leave
+        // further completions in its existing result queue under pressure.
+        while self.model_receipts.len() < self.runtime.capacity() {
+            let Some(done) = self.runtime.try_completion() else {
+                break;
+            };
             #[cfg(feature = "test-support")]
             let _retire_probe = self
                 .discovery_probe
@@ -994,7 +1133,12 @@ impl Host {
             #[cfg(feature = "test-support")]
             if let Some(probe) = &mut self.discovery_probe {
                 probe.callbacks.push(done.elapsed.as_micros() as u64);
-                if done.command == "viu.tick" {
+                if matches!(done.command.as_str(), "viu.tick" | "viu.model.applied") {
+                    if let Some(patch) = &done.model_patch {
+                        probe
+                            .tick_model_bytes
+                            .push(serde_json::to_vec(patch).expect("patch JSON").len() as u64);
+                    }
                     if let Some(model) = &done.model {
                         probe
                             .tick_model_bytes
@@ -1069,133 +1213,216 @@ impl Host {
             if let Some(error) = done.error.as_ref() {
                 eprintln!("viu callback {}: {error}", done.sequence);
                 self.error = error.clone();
-            } else if done.model.is_some() {
+            } else if done.model.is_some() || done.model_patch.is_some() {
                 self.error.clear();
+            }
+            if let Some(patch) = done.model_patch.as_ref() {
+                #[cfg(feature = "test-support")]
+                let patch_started = test_support::thread_cpu();
+                let result = self.apply_incremental(patch, ctx);
+                #[cfg(feature = "test-support")]
+                if let Some(probe) = self.discovery_probe.as_mut() {
+                    probe.patch_apply_cpu.push(
+                        test_support::thread_cpu()
+                            .saturating_sub(patch_started)
+                            .as_micros() as u64,
+                    );
+                    probe.retained_model_bytes.push(self.model_bytes as u64);
+                }
+                #[cfg(feature = "test-support")]
+                if result.is_ok()
+                    && self
+                        .discovery_probe
+                        .as_ref()
+                        .is_some_and(|p| p.verify_incremental)
+                {
+                    let model = self.projection(&self.model, ctx);
+                    let full = if self.framed {
+                        crate::gold_frame::mount(&self.active_scene, model)
+                    } else {
+                        SceneView::with_model(&self.active_scene, model)
+                    }
+                    .expect("full publication oracle");
+                    assert!(
+                        self.view.publication_equivalent(&full),
+                        "incremental publication differs from full rendered state"
+                    );
+                }
+                self.publication_result(done.generation, patch.revision, result);
+            } else if done.error.is_some()
+                && let Some(revision) = done.model_revision
+            {
+                self.publication_result(done.generation, revision, Err(self.error.clone()));
             }
             if self.error.is_empty() {
                 if let Some(model) = done.model {
-                    if self.no_window {
-                        self.ready = true;
-                        self.model = model;
+                    let revision_error = done
+                        .model_revision
+                        .and_then(|revision| {
+                            self.model_revision_floor.filter(|(generation, old)| {
+                                *generation == done.generation && revision <= *old
+                            })
+                        })
+                        .is_some();
+                    if revision_error {
+                        self.publication_result(
+                            done.generation,
+                            done.model_revision.unwrap(),
+                            Err("full publication revision must advance".into()),
+                        );
                     } else {
-                        self.session_dirty |= self.model["theme_choice"] != model["theme_choice"];
-                        let projected = self.projection(&model, ctx);
-                        let source = model["presentation"]["scene"]
-                            .as_str()
-                            .or_else(|| model["native_root"]["scene"].as_str())
-                            .unwrap_or(&self.scene_source)
-                            .to_owned();
-                        let appearance = if self.framed
-                            && self.session_appearance.is_none()
-                            && (!self.loaded || self.model["appearance"] != model["appearance"])
-                        {
-                            crate::appearance::resolve(&model["appearance"]).map(Some)
-                        } else {
-                            Ok(None)
-                        };
-                        let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
-                            crate::appearance::theme_choice(&model["theme_choice"])?;
-                            validate_overlays(&projected)?;
-                            if model["native_root"].is_object() {
-                                self.windows.validate(
-                                    &json!({"native_windows":[model["native_root"].clone()]}),
-                                )?;
-                            }
-                            self.windows.validate(&model)?;
-                            if self.loaded && self.active_scene == source {
-                                #[cfg(feature = "test-support")]
-                                let _apply_probe = self.discovery_probe.as_ref().map(|_| {
-                                    test_support::PhaseProbe::new(format!(
-                                        "scene.apply {}",
-                                        done.command
-                                    ))
-                                });
-                                #[cfg(feature = "test-support")]
-                                if self
-                                    .discovery_probe
-                                    .as_ref()
-                                    .is_some_and(|p| p.profile_scene)
-                                    && done.command == "viu.tick"
-                                {
-                                    eprintln!("WORKSHOP_DOCUMENT bytes={}", source.len());
-                                    crate::view::profile_apply(true);
-                                }
-                                let result = self.view.apply_model(projected);
-                                #[cfg(feature = "test-support")]
-                                crate::view::profile_apply(false);
-                                result
+                        if self.no_window {
+                            self.ready = true;
+                            self.model = model;
+                            self.model_bytes = if done.model_revision.is_some() {
+                                crate::model_patch::model_bytes(&self.model)
                             } else {
-                                (if self.framed {
-                                    crate::gold_frame::mount(&source, projected)
-                                } else {
-                                    SceneView::with_model(&source, projected)
-                                })
-                                .map(|view| {
-                                    self.view = view;
-                                    self.view.set_documents(self.documents.clone());
-                                    self.view.set_rasters(self.rasters.clone());
-                                    self.view.set_terminals(self.terminals.clone());
-                                    self.view.set_native_menus(self.native_drive);
-                                    self.loaded = true;
-                                    self.active_scene = source;
-                                })
+                                0
+                            };
+                            if let Some(revision) = done.model_revision {
+                                self.publication_result(done.generation, revision, Ok(()));
+                            } else {
+                                self.model_revision = None;
+                                self.model_refused = None;
                             }
-                        });
-                        match result {
-                            Ok(()) => {
-                                if self.model["theme_choice"] != model["theme_choice"] {
-                                    self.session_dirty = true;
+                        } else {
+                            self.session_dirty |=
+                                self.model["theme_choice"] != model["theme_choice"];
+                            let projected = self.projection(&model, ctx);
+                            let source = model["presentation"]["scene"]
+                                .as_str()
+                                .or_else(|| model["native_root"]["scene"].as_str())
+                                .unwrap_or(&self.scene_source)
+                                .to_owned();
+                            let appearance = if self.framed
+                                && self.session_appearance.is_none()
+                                && (!self.loaded || self.model["appearance"] != model["appearance"])
+                            {
+                                crate::appearance::resolve(&model["appearance"]).map(Some)
+                            } else {
+                                Ok(None)
+                            };
+                            let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
+                                crate::appearance::theme_choice(&model["theme_choice"])?;
+                                validate_overlays(&projected)?;
+                                if model["native_root"].is_object() {
+                                    self.windows.validate(
+                                        &json!({"native_windows":[model["native_root"].clone()]}),
+                                    )?;
                                 }
-                                if let Some(style) = appearance.expect("validated appearance") {
-                                    crate::appearance::install_style(
-                                        ctx,
-                                        &model["appearance"],
-                                        style,
-                                    );
-                                }
-                                self.ready = true;
-                                self.windows.sync(
-                                    ctx,
-                                    &self.app,
-                                    &model,
-                                    &self.documents,
-                                    self.native_drive,
-                                );
-                                if let Some(root) =
-                                    model.get("native_root").filter(|v| v.is_object())
-                                {
-                                    let key = root["key"].as_str().unwrap();
-                                    toolkit::drive::register_viewport(
-                                        ctx,
-                                        egui::ViewportId::ROOT,
-                                        key,
-                                        egui::ViewportId::ROOT,
-                                    );
-                                    let title = root["title"].as_str().unwrap();
-                                    if self.title != title {
-                                        self.title = title.into();
-                                        ctx.send_viewport_cmd(egui::ViewportCommand::Title(
-                                            title.into(),
-                                        ));
-                                        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(
-                                            egui::vec2(
-                                                root["size"][0].as_f64().unwrap() as f32,
-                                                root["size"][1].as_f64().unwrap() as f32,
-                                            ),
-                                        ));
+                                self.windows.validate(&model)?;
+                                if self.loaded && self.active_scene == source {
+                                    #[cfg(feature = "test-support")]
+                                    let _apply_probe = self.discovery_probe.as_ref().map(|_| {
+                                        test_support::PhaseProbe::new(format!(
+                                            "scene.apply {}",
+                                            done.command
+                                        ))
+                                    });
+                                    #[cfg(feature = "test-support")]
+                                    if self
+                                        .discovery_probe
+                                        .as_ref()
+                                        .is_some_and(|p| p.profile_scene)
+                                        && done.command == "viu.tick"
+                                    {
+                                        eprintln!("WORKSHOP_DOCUMENT bytes={}", source.len());
+                                        crate::view::profile_apply(true);
                                     }
-                                    self.model = self.projection(&model, ctx);
+                                    let result = self.view.apply_model(projected);
+                                    #[cfg(feature = "test-support")]
+                                    crate::view::profile_apply(false);
+                                    result
                                 } else {
-                                    self.model = model;
+                                    (if self.framed {
+                                        crate::gold_frame::mount(&source, projected)
+                                    } else {
+                                        SceneView::with_model(&source, projected)
+                                    })
+                                    .map(|view| {
+                                        self.view = view;
+                                        self.view.set_documents(self.documents.clone());
+                                        self.view.set_rasters(self.rasters.clone());
+                                        self.view.set_terminals(self.terminals.clone());
+                                        self.view.set_native_menus(self.native_drive);
+                                        self.loaded = true;
+                                        self.active_scene = source;
+                                    })
                                 }
-                                ctx.request_repaint();
-                                if let Some(saved) = &mut self.saved {
-                                    if saved.announced {
-                                        saved.apply(&self.model);
+                            });
+                            match result {
+                                Ok(()) => {
+                                    if self.model["theme_choice"] != model["theme_choice"] {
+                                        self.session_dirty = true;
+                                    }
+                                    if let Some(style) = appearance.expect("validated appearance") {
+                                        crate::appearance::install_style(
+                                            ctx,
+                                            &model["appearance"],
+                                            style,
+                                        );
+                                    }
+                                    self.ready = true;
+                                    self.windows.sync(
+                                        ctx,
+                                        &self.app,
+                                        &model,
+                                        &self.documents,
+                                        self.native_drive,
+                                    );
+                                    if let Some(root) =
+                                        model.get("native_root").filter(|v| v.is_object())
+                                    {
+                                        let key = root["key"].as_str().unwrap();
+                                        toolkit::drive::register_viewport(
+                                            ctx,
+                                            egui::ViewportId::ROOT,
+                                            key,
+                                            egui::ViewportId::ROOT,
+                                        );
+                                        let title = root["title"].as_str().unwrap();
+                                        if self.title != title {
+                                            self.title = title.into();
+                                            ctx.send_viewport_cmd(egui::ViewportCommand::Title(
+                                                title.into(),
+                                            ));
+                                            ctx.send_viewport_cmd(
+                                                egui::ViewportCommand::InnerSize(egui::vec2(
+                                                    root["size"][0].as_f64().unwrap() as f32,
+                                                    root["size"][1].as_f64().unwrap() as f32,
+                                                )),
+                                            );
+                                        }
+                                        self.model = self.projection(&model, ctx);
+                                    } else {
+                                        self.model = model;
+                                    }
+                                    self.model_bytes = if done.model_revision.is_some() {
+                                        crate::model_patch::model_bytes(&self.model)
+                                    } else {
+                                        0
+                                    };
+                                    if let Some(revision) = done.model_revision {
+                                        self.publication_result(done.generation, revision, Ok(()));
+                                    } else {
+                                        self.model_revision = None;
+                                        self.model_refused = None;
+                                    }
+                                    ctx.request_repaint();
+                                    if let Some(saved) = &mut self.saved {
+                                        if saved.announced {
+                                            saved.apply(&self.model);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    if let Some(revision) = done.model_revision {
+                                        self.publication_result(done.generation, revision, Err(e));
+                                    } else {
+                                        self.error = e;
                                     }
                                 }
                             }
-                            Err(e) => self.error = e,
                         }
                     }
                 }
@@ -2111,6 +2338,7 @@ fn create_with_probe(
     }));
     let (clipboard, local_clipboard) = crate::clipboard::Clipboard::channel(wake.clone());
     let services = crate::runtime::Services {
+        incremental_models: bundle.manifest.surface != "headless",
         #[cfg(feature = "test-support")]
         test_cpu_probe,
         clipboard: Some(clipboard),
@@ -2242,6 +2470,11 @@ fn create_with_probe(
         active_scene: String::new(),
         owner_close_pending: false,
         model: json!({}),
+        model_revision: None,
+        model_revision_floor: None,
+        model_refused: None,
+        model_bytes: 2,
+        model_receipts: std::collections::VecDeque::new(),
         output: None,
         outputs: BTreeMap::new(),
         runtime,
@@ -2655,6 +2888,10 @@ pub mod test_support {
     }
     #[derive(Default)]
     pub struct DiscoveryProbe {
+        patch_cpu_bound: Option<u64>,
+        pub(super) verify_incremental: bool,
+        pub(super) patch_apply_cpu: Vec<u64>,
+        pub(super) retained_model_bytes: Vec<u64>,
         numeric_bounds: Option<(u64, u64)>,
         pub(super) tick_model_bytes: Vec<u64>,
         pub(super) profile_scene: bool,
@@ -2722,6 +2959,13 @@ pub mod test_support {
                 p.per_pump.push(p.steps - before);
                 p.completed_per_pump
                     .push(p.discovery_steps - completed_before);
+                if let Some(bound) = p.patch_cpu_bound {
+                    let observed = p.patch_apply_cpu.iter().copied().max().unwrap_or(0);
+                    assert!(
+                        observed <= bound,
+                        "patch apply CPU: observed_us={observed}, bound_us={bound}"
+                    );
+                }
                 if let Some((pump_us, model_bytes)) = p.numeric_bounds {
                     let measured_model_bytes =
                         p.tick_model_bytes.iter().copied().max().unwrap_or(0);
@@ -2746,6 +2990,16 @@ pub mod test_support {
         pub fn profile_scene_apply(&mut self) {
             self.host.discovery_probe.as_mut().unwrap().profile_scene = true;
         }
+        pub fn verify_incremental_publications(&mut self) {
+            self.host
+                .discovery_probe
+                .as_mut()
+                .unwrap()
+                .verify_incremental = true;
+        }
+        pub fn patch_cpu_bound(&mut self, bound: u64) {
+            self.host.discovery_probe.as_mut().unwrap().patch_cpu_bound = Some(bound);
+        }
         pub fn record_call(&mut self, command: &str, elapsed: Duration) {
             if let Some(p) = &mut self.host.discovery_probe {
                 p.calls
@@ -2758,6 +3012,8 @@ pub mod test_support {
             let p = self.host.discovery_probe.as_ref().unwrap();
             json!({"pump_us":distribution(&p.pumps),"steps_per_pump":distribution(&p.per_pump),
                 "tick_model_bytes":distribution(&p.tick_model_bytes),
+                "patch_apply_cpu_us":distribution(&p.patch_apply_cpu),
+                "retained_model_bytes":distribution(&p.retained_model_bytes),
                 "pump_cpu_us":distribution(&p.pump_cpu),
                 "callback_cpu_us":p.callback_cpu.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
                 "helper_cpu_us":p.helper_cpu.iter().map(|(k,v)|(k.clone(),distribution(v))).collect::<BTreeMap<_,_>>(),
@@ -2792,6 +3048,12 @@ pub mod test_support {
         }
         pub fn error(&self) -> &str {
             &self.host.error
+        }
+        /// Owner event injection for authored integration fixtures. This does
+        /// not expose a Bus command or add a production evaluator primitive.
+        pub fn owner_event(&mut self, command: &str, args: Value) {
+            self.host
+                .dispatch(command.into(), args, BTreeMap::new(), None);
         }
         pub fn held(&self) -> Vec<String> {
             self.host
@@ -3150,3 +3412,7 @@ mod tests {
         .drop_without_applying_deltas();
     }
 }
+
+#[cfg(test)]
+#[path = "app_host_model_tests.rs"]
+mod model_publication_tests;
