@@ -92,12 +92,15 @@ pub(crate) fn menu(
         }
     });
 }
-pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui::Response {
+fn intrinsic_height(ui: &Ui) -> f32 {
     let vp = ui.ctx().viewport_id();
-    let limit = ui
+    ui
         .ctx()
         .data(|d| d.get_temp::<f32>(egui::Id::unique((vp, "viu.dock.intrinsic-height"))))
-        .unwrap_or(ui.available_height());
+        .unwrap_or(ui.available_height())
+}
+pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui::Response {
+    let limit = intrinsic_height(ui);
     ui.scope(|ui| {
         let start_y = ui.cursor().top();
         toolkit::bars::hairline(ui);
@@ -280,8 +283,9 @@ pub fn intent(value: &Value, action: &str, payload: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     #[test]
-    fn draw_reads_viewport_height_without_nested_context_lock() {
+    fn reads_viewport_height_without_nested_context_lock() {
         let (tx, rx) = std::sync::mpsc::channel();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let ctx = egui::Context::default();
             let output = ctx.run_ui(Default::default(), |ui| {
@@ -289,13 +293,14 @@ mod tests {
                 ui.ctx().data_mut(|d| d.insert_temp(
                     egui::Id::unique((vp, "viu.dock.intrinsic-height")), 90.0_f32,
                 ));
-                let value = serde_json::json!({"expanded":true,"items":[],"title":"Files","count":"0","size":"0","save_all":"Save all","actions":"Actions"});
-                super::draw(ui, "files", &value, &mut Vec::new());
+                started_tx.send(()).unwrap();
+                assert_eq!(super::intrinsic_height(ui), 90.0);
             });
             output.drop_without_applying_deltas();
             let _ = tx.send(());
         });
+        started_rx.recv_timeout(std::time::Duration::from_secs(2)).expect("file tile frame did not start");
         rx.recv_timeout(std::time::Duration::from_secs(2))
-            .expect("file tiles did not return successfully");
+            .expect("file tile height lookup did not return successfully");
     }
 }
