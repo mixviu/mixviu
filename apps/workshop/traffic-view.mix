@@ -6,7 +6,7 @@ fn project($s)
   global $workshop_traffic_projection
   try $cache=$workshop_traffic_projection catch $uninitialised $cache={rows:[],serial:0} end
   $previous=$cache.rows;$next=[]
-  $rows=if $s.dock_open then $traffic.rows($s,100,$s.traffic_filter) else [] end;$blocks=[];$table=[map(["Time (UTC)","Direction","From","Service","Command","rc","ms"],fn($v)={text:$v,small:true})];$index=0
+  $rows=if $s.dock_open then $traffic.rows($s,100,$s.traffic_filter) else [] end;$blocks=[];$table=[map(["Time (UTC)","Direction","From","Service","Command","rc","ms"],fn($v)={text:$v,small:true})]
   for $r in $rows
     $found=nil
     for $i=0 to len($previous)-1

@@ -66,6 +66,15 @@ elif $mode=="incremental-negative" then
       checked(["git","diff","--exit-code"])
     end
   end
+elif $mode=="flush-negative" then
+  $path="libraries/viu/src/app_host_model_tests.rs";$source=read_file($path)
+  $mutated=replace($source,"const FLUSH_PUBLICATION_BYTE_BOUND: u64 = 1024 * 1024;","const FLUSH_PUBLICATION_BYTE_BOUND: u64 = 1;")
+  if $mutated==$source then raise("PROBE","flush bound source drift") end
+  try
+    write_file($path,$mutated)
+    $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--lib","flush_publication_is_measured_by_the_byte_guard","--","--nocapture"],{timeout:120,stderr:"stdout",max_output:64000000});print($r.stdout)
+    if $r.exit_code!=101 or not contains($r.stdout,"tick model bytes: observed_bytes=") then raise("PROBE","flush negative missed byte assertion") end
+  finally write_file($path,$source);checked(["git","diff","--exit-code"]) end
 elif $mode=="numeric-negative" then
   $path="libraries/viu/tests/workshop_bus.rs";$source=read_file($path)
   try
@@ -224,7 +233,8 @@ elif $mode=="validate" then
   checked(["cargo","clippy","-p","scene","--all-targets","--no-deps"])
   checked(["cargo","test","-p","scene","--all-targets","--no-fail-fast"])
   checked(["cargo","test","-p","scene","--doc"])
-  $changed=split(trim(run_argv_must(["git","diff","--name-only","a3b1e286","HEAD"])),"\n")
+  $base=trim(run_argv_must(["git","merge-base","HEAD","origin/main"]))
+  $changed=split(trim(run_argv_must(["git","diff","--name-only",$base,"HEAD"])),"\n")
   for $path in $changed if ends_with($path,".mix") then checked(["mix","lint",$path]) end end
   checked(["cargo","clippy","-p","lib-viu","--all-targets","--no-deps"])
   checked(["cargo","test","-p","lib-viu","--all-targets","--no-fail-fast"])

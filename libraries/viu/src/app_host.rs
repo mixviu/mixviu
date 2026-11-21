@@ -1093,7 +1093,7 @@ impl Host {
         }
         // Bound retained receipts to the evaluator mailbox width. Leave
         // further completions in its existing result queue under pressure.
-        while self.model_receipts.len() < 32 {
+        while self.model_receipts.len() < self.runtime.capacity() {
             let Some(done) = self.runtime.try_completion() else {
                 break;
             };
@@ -1105,7 +1105,7 @@ impl Host {
             #[cfg(feature = "test-support")]
             if let Some(probe) = &mut self.discovery_probe {
                 probe.callbacks.push(done.elapsed.as_micros() as u64);
-                if done.command == "viu.tick" {
+                if matches!(done.command.as_str(), "viu.tick" | "viu.model.applied") {
                     if let Some(patch) = &done.model_patch {
                         probe
                             .tick_model_bytes
@@ -1255,6 +1255,7 @@ impl Host {
                                 self.publication_result(done.generation, revision, Ok(()));
                             } else {
                                 self.model_revision = None;
+                                self.model_refused = None;
                             }
                         } else {
                             self.session_dirty |=
@@ -1377,6 +1378,7 @@ impl Host {
                                         self.publication_result(done.generation, revision, Ok(()));
                                     } else {
                                         self.model_revision = None;
+                                self.model_refused = None;
                                     }
                                     ctx.request_repaint();
                                     if let Some(saved) = &mut self.saved {

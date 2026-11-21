@@ -59,6 +59,11 @@ impl Patch {
         if bytes(&value) > MAX_PATCH_BYTES {
             return Err("patch exceeds 1 MiB".into());
         }
+        let operations = value.get("operations").and_then(Value::as_array)
+            .ok_or("patch operations must be an array")?;
+        if operations.is_empty() || operations.len() > MAX_OPERATIONS {
+            return Err("patch requires 1..512 operations".into());
+        }
         let patch: Self = serde_json::from_value(value).map_err(|e| e.to_string())?;
         if patch.base == 0
             || patch.revision > MAX_REVISION
@@ -276,6 +281,38 @@ mod tests {
     fn patch(operations: Value) -> Patch {
         Patch::decode(json!({"generation":1,"base":1,"revision":2,"operations":operations}))
             .unwrap()
+    }
+    #[test]
+    fn decode_rejects_each_size_path_and_revision_limit() {
+        let op = json!({"op":"set","path":["a"],"value":0});
+        for operations in [
+            json!([{"op":"set","path":["a"],"value":"x".repeat(MAX_PATCH_BYTES)}]),
+            Value::Array(vec![op.clone(); MAX_OPERATIONS + 1]),
+            json!([{"op":"set","path":vec!["a";33],"value":0}]),
+            json!([{"op":"set","path":["é".repeat(129)],"value":0}]),
+        ] {
+            assert!(Patch::decode(json!({"generation":1,"base":1,"revision":2,"operations":operations})).is_err());
+        }
+        for (base, revision) in [(0,1),(1,3),(MAX_REVISION,MAX_REVISION+1)] {
+            assert!(Patch::decode(json!({"generation":1,"base":base,"revision":revision,"operations":[op.clone()]})).is_err());
+        }
+        // Check raw count before trying to deserialize deliberately malformed operations.
+        let error=Patch::decode(json!({"operations":vec![Value::Null;513]})).unwrap_err();
+        assert!(error.contains("1..512"));
+    }
+    #[test]
+    fn splice_range_and_intermediate_aggregate_overflow_restore_the_model() {
+        let initial=json!({"rows":[1,2],"padding":"x".repeat(crate::view::MAX_MODEL_BYTES-1024)});
+        for operations in [
+            json!([{"op":"set","path":["first"],"value":1},{"op":"splice","path":["rows"],"index":1,"remove":2,"items":[]}]),
+            json!([{"op":"set","path":["first"],"value":1},{"op":"set","path":["overflow"],"value":"x".repeat(2048)},{"op":"remove","path":["padding"]}]),
+        ] {
+            let mut model=initial.clone();
+            let size=bytes(&model);
+            assert!(Edit::apply(&mut model,size,&patch(operations)).is_err());
+            assert_eq!(model,initial);
+            assert_eq!(bytes(&model),size);
+        }
     }
     #[test]
     fn edits_account_exact_bytes_and_rollback_in_reverse_order() {

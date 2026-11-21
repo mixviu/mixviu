@@ -518,6 +518,7 @@ impl Runtime {
     pub fn has_capacity(&self) -> bool {
         self.tx.is_some() && self.queued.load(Ordering::Acquire) < self.capacity
     }
+    pub(crate) fn capacity(&self) -> usize { self.capacity }
 
     fn enqueue(&self, request: Request) -> Result<(), Refusal> {
         let tx = self.tx.as_ref().ok_or(Refusal::Closed)?;

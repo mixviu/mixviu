@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Pure scene-data policy. Host inputs continue to use full publication.
 fn requires_full($before,$after)
-  if type($before)!="map" then return true end
+  if type($before)!="map" or type($after)!="map" or long_changed_key($before,$after) then return true end
   for $key in unique(concat(keys($before),keys($after)))
     if starts_with($key,"__viu_") or contains(["presentation","native_root","native_windows","surfaces","appearance","theme_choice","window_settings","window_title","window_close","macros_open","native_overlays","native_focus","layer","local_theme","local_mode","theme_values","theme_refresh_key","settings_reload","keyboard_events","on_shortcut"],$key) then
       if has_key($before,$key)!=has_key($after,$key) or not deep_eq($before[$key],$after[$key]) then return true end
@@ -9,8 +9,26 @@ fn requires_full($before,$after)
   end
   return false
 end
+fn long_changed_key($before,$after)
+  if deep_eq($before,$after) then return false end
+  if type($before)=="map" or type($after)=="map" then
+    $a=if type($before)=="map" then $before else {} end
+    $b=if type($after)=="map" then $after else {} end
+    for $key in unique(concat(keys($a),keys($b)))
+      if has_key($a,$key)!=has_key($b,$key) or not deep_eq($a[$key],$b[$key]) then
+        if byte_length($key)>256 or long_changed_key($a[$key],$b[$key]) then return true end
+      end
+    end
+  elif type($before)=="list" and type($after)=="list" then
+    for $i=0 to max(len($before),len($after))-1
+      if long_changed_key($before[$i],$after[$i]) then return true end
+    end
+  end
+  return false
+end
 fn difference($before,$after,$path=[])
   if deep_eq($before,$after) then return [] end
+  if len($path)>=32 then return [{op:"set",path:$path,value:$after}] end
   if type($before)=="map" and type($after)=="map" then
     $out=[]
     for $key in keys($before)
