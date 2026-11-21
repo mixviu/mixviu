@@ -15,6 +15,7 @@ fn rpc($target,$command,$args)
   if $command=="shell.scenes.list" then return [] end
   if $command=="shell.props.get" then return {panels:{bottom:{mode:"docked",width_px:40,pages:[],declared:[]}}} end
   if $command=="shell.scene.validate" then
+    if type($args)=="map" and $args.write==true then raise("EDITOR_WRITE","editor validation must be read-only") end
     $source=type($args)=="map" ? $args.source : $args
     $loader.document($source)
     return {valid:true}

@@ -195,6 +195,9 @@ mod menu_tests {
         let rx = menu_frame(|ctx| {
             // Deliberately restore the old read-in-write: the watchdog must
             // reject it before egui's ten-second debug detector fires.
+            // This deliberately detached control retains its Context until
+            // epaint's detector panics (about ten seconds in debug builds).
+            // A later detector message in this binary's log is expected.
             ctx.data_mut(|d| {
                 d.insert_temp(
                     egui::Id::unique(("eframe.window-menu", ctx.viewport_id())),

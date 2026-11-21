@@ -95,7 +95,11 @@ pub(crate) fn menu(
 fn intrinsic_height(ui: &Ui) -> f32 {
     let vp = ui.ctx().viewport_id();
     ui.ctx()
-        .data(|d| d.get_temp::<f32>(egui::Id::unique((vp, "viu.dock.intrinsic-height"))))
+        .data(|d| {
+            #[cfg(test)]
+            tests::queue_writer(ui.ctx());
+            d.get_temp::<f32>(egui::Id::unique((vp, "viu.dock.intrinsic-height")))
+        })
         .unwrap_or(ui.available_height())
 }
 pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui::Response {
@@ -281,6 +285,103 @@ pub fn intent(value: &Value, action: &str, payload: &Value) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::{io::BufRead, sync::{Barrier, Arc, mpsc}, time::{Duration, Instant}};
+
+    thread_local! {
+        static CONTEND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+
+    // Called with the outer read held. A barrier starts the writer, then
+    // Linux's wait channel proves it has actually queued on the lock. Merely
+    // announcing an intent to write is insufficient for a read-in-read test.
+    pub(super) fn queue_writer(ctx: &egui::Context) {
+        if !CONTEND.with(|flag| flag.replace(false)) { return; }
+        let barrier = Arc::new(Barrier::new(2));
+        let start = barrier.clone();
+        let writer = ctx.clone();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            // SAFETY: gettid has no arguments or memory preconditions.
+            tx.send(unsafe { libc::gettid() }).unwrap();
+            start.wait();
+            writer.data_mut(|_| {});
+        });
+        let tid = rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        barrier.wait();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        loop {
+            let state = std::fs::read_to_string(format!("/proc/self/task/{tid}/wchan")).unwrap();
+            if state.contains("futex") { break; }
+            assert!(Instant::now() < deadline, "writer did not queue: {state}");
+            std::thread::yield_now();
+        }
+        println!("WRITER_QUEUED");
+    }
+
+    fn contending_frame(nested: bool) {
+        let ctx = egui::Context::default();
+        ctx.run_ui(Default::default(), |ui| {
+            let vp = ui.ctx().viewport_id();
+            ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique((vp, "viu.dock.intrinsic-height")), 90.0_f32));
+            CONTEND.with(|flag| flag.set(true));
+            if nested {
+                ui.ctx().data(|d| {
+                    queue_writer(ui.ctx());
+                    d.get_temp::<f32>(egui::Id::unique((ui.ctx().viewport_id(), "viu.dock.intrinsic-height")))
+                });
+            } else {
+                assert_eq!(super::intrinsic_height(ui), 90.0);
+            }
+        }).drop_without_applying_deltas();
+    }
+
+    // Isolate the deliberate deadlock so the watchdog can reap it before
+    // epaint's ten-second detector fires; no blocked thread survives the test.
+    fn contending_child(name: &str, should_finish: bool) {
+        let mut child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", name, "--ignored", "--nocapture"])
+            .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
+            .spawn().unwrap();
+        let stdout = child.stdout.take().unwrap();
+        let (tx, rx) = mpsc::channel();
+        let reader = std::thread::spawn(move || {
+            for line in std::io::BufReader::new(stdout).lines() {
+                if line.unwrap().contains("WRITER_QUEUED") { let _ = tx.send(()); }
+            }
+        });
+        let queued = rx.recv_timeout(Duration::from_secs(2));
+        let deadline = Instant::now() + if should_finish { Duration::from_secs(1) } else { Duration::from_millis(100) };
+        let status = loop {
+            if let Some(status) = child.try_wait().unwrap() { break Some(status); }
+            if Instant::now() >= deadline { break None; }
+            std::thread::yield_now();
+        };
+        if status.is_none() { child.kill().unwrap(); }
+        let output = child.wait_with_output().unwrap();
+        reader.join().unwrap();
+        assert!(queued.is_ok(), "writer never queued: {}", String::from_utf8_lossy(&output.stderr));
+        if should_finish {
+            assert!(status.is_some_and(|s| s.success()), "lookup blocked or failed: {}", String::from_utf8_lossy(&output.stderr));
+        } else {
+            assert!(status.is_none(), "nested read unexpectedly returned: {status:?}");
+        }
+    }
+
+    #[test]
+    fn viewport_height_with_queued_writer() {
+        contending_child("file_tiles::tests::queued_writer_child", true);
+    }
+    #[test]
+    fn nested_read_with_queued_writer_negative_control() {
+        contending_child("file_tiles::tests::nested_read_child", false);
+    }
+    #[test]
+    #[ignore = "subprocess fixture"]
+    fn queued_writer_child() { contending_frame(false); }
+    #[test]
+    #[ignore = "subprocess negative control"]
+    fn nested_read_child() { contending_frame(true); }
+
     #[test]
     fn reads_viewport_height_without_nested_context_lock() {
         let (tx, rx) = std::sync::mpsc::channel();
