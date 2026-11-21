@@ -9,7 +9,12 @@ fn checked($argv)
   print($r.stdout)
   if not $r.ok then exit($r.exit_code ?? 1) end
 end
-if $mode=="guard-negative" then
+if $mode=="review-controls" then
+  for $case in ["depth-negative","flush-negative","guard-negative","numeric-negative","binding-negative","negative","equivalence","incremental-negative"]
+    print("REVIEW_CONTROL "..$case)
+    checked(["mix",script_path(),$case])
+  end
+elif $mode=="guard-negative" then
   $path="apps/workshop/counter.mix";$source=read_file($path)
   $needle="if not needs_thaw($encoded) then return $encoded end"
   $mutated=replace($source,$needle,"if not needs_thaw($encoded) then  return $encoded end")
