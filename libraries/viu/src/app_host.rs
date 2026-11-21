@@ -211,6 +211,13 @@ impl Host {
                     "native_overlays",
                     "native_focus",
                     "layer",
+                    "local_theme",
+                    "local_mode",
+                    "theme_values",
+                    "theme_refresh_key",
+                    "settings_reload",
+                    "keyboard_events",
+                    "on_shortcut",
                 ]
                 .contains(&key.as_str())
             {

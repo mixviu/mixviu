@@ -3,7 +3,7 @@
 fn requires_full($before,$after)
   if type($before)!="map" then return true end
   for $key in unique(concat(keys($before),keys($after)))
-    if starts_with($key,"__viu_") or contains(["presentation","native_root","native_windows","surfaces","appearance","theme_choice","window_settings","window_title","window_close","macros_open","native_overlays","native_focus","layer"],$key) then
+    if starts_with($key,"__viu_") or contains(["presentation","native_root","native_windows","surfaces","appearance","theme_choice","window_settings","window_title","window_close","macros_open","native_overlays","native_focus","layer","local_theme","local_mode","theme_values","theme_refresh_key","settings_reload","keyboard_events","on_shortcut"],$key) then
       if has_key($before,$key)!=has_key($after,$key) or not deep_eq($before[$key],$after[$key]) then return true end
     end
   end

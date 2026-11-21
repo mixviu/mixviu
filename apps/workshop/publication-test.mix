@@ -25,6 +25,10 @@ for $pair in [
 end
 check($publication.requires_full(nil,{}),"first publish is full")
 check($publication.requires_full({appearance:{}},{appearance:{mode:"dark"}}),"appearance is a host input")
+for $key in ["local_theme","local_mode","theme_values","theme_refresh_key","settings_reload","keyboard_events","on_shortcut"]
+  $before={};$after={};$before[$key]=nil;$after[$key]="changed"
+  check($publication.requires_full($before,$after),"native host input requires full publication: "..$key)
+end
 check(not $publication.requires_full({shortcuts:[]},{shortcuts:[{id:"call"}]}),"shortcut data is incremental")
 $s=$m.initial()
 for $busy in [false,true]
