@@ -1,3 +1,54 @@
+# PR #220 round 3 — stopped at the desk write-path survey
+
+Code head remains `b098cb8cef32f5978b9a2b2868fac570599a723c`; this round
+changes this receipt only. [PR #220](https://github.com/mixviu/mixviu/pull/220)
+remains draft. Fable's a+ ruling is accepted, but not implemented: the required
+write-path survey found a boundary needing an additional ownership decision.
+No runtime validation was weakened before that boundary was resolved.
+
+## Write paths inspected
+
+| Path | Current owner and validation | Required work / disposition |
+|---|---|---|
+| Prefs appearance save | `apps/prefs/look.mix:121` sends `settings.apply`; `services/settingsd/src/authority.rs:180` uses `registry::apply` before the commit at line 336. `libraries/settings/src/registry/kind.rs:133` checks a source through `libraries/settings/src/resolve.rs:62`, which calls the all-context compiler at line 65. | Retain this whole-source check when adding a separate runtime per-context entry point. |
+| Scene install, upgrade and Reset | `engines/viud/scripts/lib/scenes.mix:1433` / `:1444` stage a copy; `:1457` calls `shell.scene.validate`; upgrade invokes Reset at `:2838`; Reset stages at `:2884`, before the swap at `:2926`. | The host validator at `engines/viu/src/store.rs:496` parses/resolves the scene and validates templates. It does not call the design compiler. Staging writes a private temporary copy before this check; installation placement follows validation. |
+| Keep | `docs/scene-documents.md:56` describes the edited-copy policy; line 59 explicitly says keeping requires no action. | There is no Keep write transaction to insert a check into. Do not invent one. |
+| Scene move | `engines/viud/scripts/lib/scenes.mix:2596` writes the rewritten scene before reconciliation at line 2597, with rollback at line 2607. | Also needs a check before the write under the proposed write-time rule. |
+| Scene Editor's Edit action, including edits to a kept copy | `share/scenes/editor/lib.mix:487` delegates to `plan_edit`; `:539` routes the file to Ced. `apps/ced/actions.mix:77` sends the generic document save (`:65` for Save All); `libraries/viu/src/documents.rs:560` emits `ServerOp::Save`, which becomes `edit.save` in `libraries/editor-model/src/mirror.rs:1635`. | **Stop boundary:** the actual writer is editd, not the scene loader or the design compiler. |
+| Generic editor write / Save As | `services/editd/src/actor.rs:1301` owns save. At `:1327` it serialises the buffer, then calls `files::save` at `:1333` or `:1380`. `services/editd/src/bus.rs:19` declares the save arguments; there is no source-validation policy or scene/design authority in that request. | Refusing invalid themes/scenes here needs a defined protected-file classification and validation owner. A Ced-only check would leave direct `edit.save` and Save As uncovered. |
+| Build/install bundle | `tools/apps_bundle.mix:88` copies shipped scenes into the bundle; its existing checks cover assets, environment and roots. | Add an explicit whole-source design check before admitting the bundle when this work resumes. No such check was added in this stopped round. |
+
+These are inspected paths, not a completed claim that every desk writer is
+covered. The survey stopped before implementation, as required by the brief.
+
+## Decision needed
+
+The a+ ruling specifies validation timing and context refusal. It does not
+specify how the generic text service identifies a protected live theme/scene,
+or which source validates a scene's inherited design references. Scene files
+and design-source documents have different grammars; calling the design
+compiler on every saved scene is not a valid implementation. Choosing a
+filename heuristic, adding a new save policy to editd, or enforcing only in
+Ced would each make a new ownership/scope decision. Resolve that boundary
+before changing runtime acceptance. This is a source-survey finding, not a
+newly executed product-failure test.
+
+## Evidence and checks
+
+No new CBC jobs, performance claims, compiler changes, tests or environment
+variables in round 3. Round-2 before remains red: CBC
+`20261121-175445-2c24d7dc-a1`, two one-second timeouts. The private lazy
+prototype remains the only after evidence: CBC `20261121-175911-93071cbf-a1`,
+five fresh runs, worst calls 616.096–627.692 ms. It is not landed a+ evidence.
+The 750 ms regression bound and all product deadlines are unchanged.
+
+The residual roughly 620 ms startup call is recorded as its own private
+Workshop follow-up, with the existing callback profile and the remaining
+critical-path attribution gap. Rust and Mix checks are not rerun for this
+documentation-only stop; `git diff --check` is the scoped check. Desk n=0:
+the round-3 condition to attempt baseline samples (everything else green)
+was not reached, so the receipt gate was not re-polled and no desk probe ran.
+
 # PR #220 round 2 — port-time regression and appearance policy prototypes
 
 Draft [PR #220](https://github.com/mixviu/mixviu/pull/220).
