@@ -1,0 +1,24 @@
+-- Focused worker checks only. Run via the native build service.
+fn checked($cmd)
+  $r = run_argv($cmd, {timeout: 7200, max_output: 16777216})
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then raise("CHECK", "command failed: " .. join($cmd, " ")) end
+end
+if contains(args(), "--fmt") then
+  try
+    checked(["cargo", "fmt", "-p", "media-av1"])
+    checked(["git", "diff", "--", "libraries/media/av1"])
+  finally
+    checked(["git", "checkout", "-q", "--", "libraries/media/av1"])
+  end
+else
+  checked(["cargo", "fmt", "-p", "media-av1", "--", "--check"])
+  for $features in [[], ["--features", "asm"]]
+    checked(["cargo", "clippy", "--locked", "-p", "media-av1", "--all-targets"] + $features + ["--", "-D", "warnings"])
+  end
+  for $features in [["--no-default-features"], ["--features", "asm"]]
+    checked(["cargo", "test", "--locked", "-p", "media-av1", "--all-targets"] + $features + ["--", "--nocapture"])
+  end
+  checked(["mix", "tools/foreign_gate.mix"])
+end
