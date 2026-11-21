@@ -80,42 +80,63 @@ on viu.test.second_full
   send "viu-local" "scenes.model" body={generation:$g,revision:4,value:{label:"second"}}
 end
 "#).unwrap();
-    let mut host=Harness::new(Bundle::load(dir.path(),&[]).unwrap());
+    let mut host = Harness::new(Bundle::load(dir.path(), &[]).unwrap());
     host.guard_workshop_publications();
     host.refuse_next_publication();
-    let end=Instant::now()+Duration::from_secs(5);
-    while host.state()["model"]["label"]!="recovered" {
+    let end = Instant::now() + Duration::from_secs(5);
+    while host.state()["model"]["label"] != "recovered" {
         host.pump();
-        assert!(host.error().is_empty() || host.error()=="injected publication refusal", "{}", host.error());
-        assert!(Instant::now()<end,"recovery full was not acknowledged");
+        assert!(
+            host.error().is_empty() || host.error() == "injected publication refusal",
+            "{}",
+            host.error()
+        );
+        assert!(Instant::now() < end, "recovery full was not acknowledged");
         std::thread::sleep(Duration::from_millis(2));
     }
-    assert_eq!(host.publication_summary()["refusals"],1);
-    assert_eq!(host.publication_summary()["full"],2);
+    assert_eq!(host.publication_summary()["refusals"], 1);
+    assert_eq!(host.publication_summary()["full"], 2);
     if CONTROL_SECOND_FULL {
-        host.owner_event("viu.test.second_full",json!({}));
-        pump_until(&mut host, |h| h.state()["model"]["label"]=="second");
+        host.owner_event("viu.test.second_full", json!({}));
+        pump_until(&mut host, |h| h.state()["model"]["label"] == "second");
         panic!("second full escaped the kind guard");
     }
 }
 
 #[test]
 fn workshop_notice_fixture_obeys_publication_protocol() {
-    let broker=test_broker::Broker::start();
-    let mut bundle=Bundle::load(&std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop"),&["--headless".into()]).unwrap();
-    bundle.manifest.bus_url=Some(broker.url.clone());
-    bundle.launch=json!({"headless":true});
-    bundle.manifest.saved_version=None;
-    let mut host=Harness::new(bundle);
+    let broker = test_broker::Broker::start();
+    let mut bundle = Bundle::load(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop"),
+        &["--headless".into()],
+    )
+    .unwrap();
+    bundle.manifest.bus_url = Some(broker.url.clone());
+    bundle.launch = json!({"headless":true});
+    bundle.manifest.saved_version = None;
+    let mut host = Harness::new(bundle);
     host.guard_workshop_publications();
     host.probe_discovery();
     pump_until(&mut host, |h| h.ready());
-    for command in ["noded.props.changed","agent.session.updated"].into_iter().cycle().take(20) {
-        host.owner_event("workshop.notice",json!({"command":command,"args":{}}));
+    for command in ["noded.props.changed", "agent.session.updated"]
+        .into_iter()
+        .cycle()
+        .take(20)
+    {
+        host.owner_event("workshop.notice", json!({"command":command,"args":{}}));
     }
-    pump_until(&mut host, |h| h.discovery_measurements()["commands_us"]["workshop.notice"]["n"].as_u64().unwrap_or(0)>=20 && h.publication_summary()["patches"].as_u64().unwrap_or(0)>0);
-    assert_eq!(host.publication_summary()["refusals"],0);
-    eprintln!("WORKSHOP_NOTICE_PUBLICATIONS {}",host.publication_summary());
+    pump_until(&mut host, |h| {
+        h.discovery_measurements()["commands_us"]["workshop.notice"]["n"]
+            .as_u64()
+            .unwrap_or(0)
+            >= 20
+            && h.publication_summary()["patches"].as_u64().unwrap_or(0) > 0
+    });
+    assert_eq!(host.publication_summary()["refusals"], 0);
+    eprintln!(
+        "WORKSHOP_NOTICE_PUBLICATIONS {}",
+        host.publication_summary()
+    );
 }
 
 fn profile_tick(bundle: &mut Bundle) {
@@ -774,25 +795,32 @@ end
             eprintln!("WORKSHOP_DISCOVERY_PHASE {}", host.discovery_measurements());
             host.probe_discovery();
             let padding="{\"name\":\"example.command\",\"description\":\"Read state\",\"read_only\":true,\"args\":{}}\n".repeat(600);
-            for offset in (0..48).step_by(8) {
-            host.owner_event("viu.test.retained_model", json!({"padding":padding,"offset":offset}));
             let until = Instant::now() + Duration::from_secs(5);
-            loop {
-                host.pump();
-                assert!(host.error().is_empty(), "{}", host.error());
-                let state = host.state();
-                let seeded = state["model"]["traffic_view"]["initial"][1][4]["collapse"]
-                    .as_str()
-                    .is_some_and(|text| text.contains("fixture.retained"));
-                if seeded && state["model"]["traffic_view"]["initial"].as_array().is_some_and(|rows| rows.len() >= offset + 9) {
-                    break;
-                }
-                assert!(
-                    Instant::now() < until,
-                    "retained Traffic seed was not published"
+            for offset in (0..48).step_by(8) {
+                host.owner_event(
+                    "viu.test.retained_model",
+                    json!({"padding":padding,"offset":offset}),
                 );
-                std::thread::sleep(Duration::from_millis(2));
-            }
+                loop {
+                    host.pump();
+                    assert!(host.error().is_empty(), "{}", host.error());
+                    let state = host.state();
+                    let seeded = state["model"]["traffic_view"]["initial"][1][4]["collapse"]
+                        .as_str()
+                        .is_some_and(|text| text.contains("fixture.retained"));
+                    if seeded
+                        && state["model"]["traffic_view"]["initial"]
+                            .as_array()
+                            .is_some_and(|rows| rows.len() >= offset + 9)
+                    {
+                        break;
+                    }
+                    assert!(
+                        Instant::now() < until,
+                        "retained Traffic seed was not published"
+                    );
+                    std::thread::sleep(Duration::from_millis(2));
+                }
             }
             // Retained rows were seeded as ordinary acknowledged patches.
             // Initialisation is outside the per-tick pump budget,
@@ -835,8 +863,15 @@ end
                 "numeric model guard must observe a published tick"
             );
         }
-        assert_eq!(host.publication_summary()["refusals"], 0, "200-peer run must not require recovery");
-        eprintln!("WORKSHOP_PUBLICATIONS peers={count} {}", host.publication_summary());
+        assert_eq!(
+            host.publication_summary()["refusals"],
+            0,
+            "200-peer run must not require recovery"
+        );
+        eprintln!(
+            "WORKSHOP_PUBLICATIONS peers={count} {}",
+            host.publication_summary()
+        );
         eprintln!(
             "WORKSHOP_PROBE peers={count} {}",
             host.discovery_measurements()

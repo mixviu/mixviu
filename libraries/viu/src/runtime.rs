@@ -843,7 +843,9 @@ impl BusHandler for Local {
                 }
                 "scenes.model.patch" => {
                     #[cfg(feature = "test-support")]
-                    self.publications.borrow_mut().push((command.into(), body.clone()));
+                    self.publications
+                        .borrow_mut()
+                        .push((command.into(), body.clone()));
                     if !self.incremental_models {
                         return Err(failure("owner does not support incremental models"));
                     }
@@ -869,7 +871,9 @@ impl BusHandler for Local {
                     }
                     if command == "scenes.model" {
                         #[cfg(feature = "test-support")]
-                        self.publications.borrow_mut().push((command.into(), body.clone()));
+                        self.publications
+                            .borrow_mut()
+                            .push((command.into(), body.clone()));
                         if self.model_patch.borrow().is_some()
                             || self.model_revision.borrow().is_some()
                         {

@@ -1228,17 +1228,26 @@ impl Host {
             #[cfg(feature = "test-support")]
             if let Some(audit) = &mut self.publication_audit {
                 for (command, body) in &done.publications {
-                    audit.observe(command, body, &self.model).unwrap_or_else(|error| panic!("{error}"));
+                    audit
+                        .observe(command, body, &self.model)
+                        .unwrap_or_else(|error| panic!("{error}"));
                 }
             }
             if let Some(patch) = done.model_patch.as_ref() {
                 #[cfg(feature = "test-support")]
                 let patch_started = test_support::thread_cpu();
                 #[cfg(feature = "test-support")]
-                let refuse = self.publication_audit.as_mut().is_some_and(|audit| std::mem::take(&mut audit.refuse_next));
+                let refuse = self
+                    .publication_audit
+                    .as_mut()
+                    .is_some_and(|audit| std::mem::take(&mut audit.refuse_next));
                 #[cfg(not(feature = "test-support"))]
                 let refuse = false;
-                let result = if refuse { Err("injected publication refusal".into()) } else { self.apply_incremental(patch, ctx) };
+                let result = if refuse {
+                    Err("injected publication refusal".into())
+                } else {
+                    self.apply_incremental(patch, ctx)
+                };
                 #[cfg(feature = "test-support")]
                 if let Some(probe) = self.discovery_probe.as_mut() {
                     probe.patch_apply_cpu.push(
@@ -3015,8 +3024,7 @@ pub mod test_support {
             self.host.publication_audit.as_ref().unwrap().summary()
         }
         pub fn discovery_numeric_bounds(&mut self, pump_us: u64) {
-            self.host.discovery_probe.as_mut().unwrap().numeric_bounds =
-                Some(pump_us);
+            self.host.discovery_probe.as_mut().unwrap().numeric_bounds = Some(pump_us);
         }
         pub fn profile_scene_apply(&mut self) {
             self.host.discovery_probe.as_mut().unwrap().profile_scene = true;
