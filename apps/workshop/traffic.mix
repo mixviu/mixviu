@@ -36,6 +36,7 @@ fn launch($s)
   return $work.enqueue($s,{owner:"traffic",op:"redact",job:"traffic-redact-job.mix",lane:"traffic",rows:$rows,redaction_generation:$s.traffic_generation})
 end
 fn expire($s)
+  if $s.traffic_redaction==nil then return $s end
   $active=$s.traffic_redaction.active
   if $active==nil or monotonic()<$active.deadline then return $s end
   $s.dropped=$counter.add($s.dropped,$active.count)

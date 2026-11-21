@@ -271,7 +271,7 @@ end
 fn follow_up($s)
   $failures=$s.admission_failures;$s.admission_failures=[]
   for $failure in $failures $s=received($s,$failure) end
-  $active=$s.traffic_redaction.active;$s=$traffic.expire($s)
+  $active=if $s.traffic_redaction==nil then nil else $s.traffic_redaction.active end;$s=$traffic.expire($s)
   if $active!=nil and $s.traffic_redaction.active==nil then $s=$projection.changed($s,["traffic"]) end
   $s=$traffic.launch($s)
   $before=$s.discovery_revision

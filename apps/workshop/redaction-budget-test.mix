@@ -95,6 +95,7 @@ try
   $failed=$t.completed($work.state,{rc:10,body:{rows:[{seq:"must not display"}]}},$work.task.redaction_generation)
   check($failed.dropped==6 and $failed.traffic_redaction.bytes==0,"job failure must preserve upstream and count the row")
   $empty=$m.initial()
+  check(deep_eq($t.expire($empty),$empty),"nil reset queue must not expire")
   check(deep_eq($t.completed($empty,{rc:0,body:{}},$empty.traffic_generation),$empty),"nil reset queue must ignore late completion")
   $old=$budget.defer_row($m.initial(),{seq:"old"},false);$old_work=take_task($old)
   $reset=$m.initial();check($reset.traffic_redaction==nil,"model reset must clear raw queue")
