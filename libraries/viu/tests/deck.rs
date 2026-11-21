@@ -35,16 +35,27 @@ fn authored_reference_nodes_resolve() {
 
 #[test]
 fn approved_cyclops_asset_paints_a_white_ring_and_red_eye() {
-    let source=include_str!("../../../apps/gallery/deck-pages/brand.scene.mix");
-    let mut view=SceneView::new(source).unwrap();
-    let mut harness=egui_kittest::Harness::builder().with_size(egui::vec2(1600.,900.))
-        .with_context_setup(viu::icons::install).wgpu().build_ui(move |ui| {view.show(ui);});
+    let source = include_str!("../../../apps/gallery/deck-pages/brand.scene.mix");
+    let mut view = SceneView::new(source).unwrap();
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(1600., 900.))
+        .with_context_setup(viu::icons::install)
+        .wgpu()
+        .build_ui(move |ui| {
+            view.show(ui);
+        });
     harness.run();
-    let pixels=harness.render().unwrap();
-    let eye=pixels.enumerate_pixels().filter(|(x,y,p)| *x<320 && *y<300 && p[0]>200 && p[1]<20 && p[2]<20).count();
-    let ring=pixels.enumerate_pixels().filter(|(x,y,p)| *x<320 && *y<300 && p[0]>240 && p[1]>240 && p[2]>240).count();
-    assert!(eye>500,"red eye pixels: {eye}");
-    assert!(ring>5000,"white ring pixels: {ring}");
+    let pixels = harness.render().unwrap();
+    let eye = pixels
+        .enumerate_pixels()
+        .filter(|(x, y, p)| *x < 320 && *y < 300 && p[0] > 200 && p[1] < 20 && p[2] < 20)
+        .count();
+    let ring = pixels
+        .enumerate_pixels()
+        .filter(|(x, y, p)| *x < 320 && *y < 300 && p[0] > 240 && p[1] > 240 && p[2] > 240)
+        .count();
+    assert!(eye > 500, "red eye pixels: {eye}");
+    assert!(ring > 5000, "white ring pixels: {ring}");
 }
 
 #[test]

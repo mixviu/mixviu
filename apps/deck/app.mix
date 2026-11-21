@@ -41,18 +41,19 @@ fn perform($id,$a)
         for $node in keys($candidate.deck.slides[$i].scene)
           $n=$candidate.deck.slides[$i].scene[$node]
           if $n.widget=="image" and not starts_with($n.src ?? "","icon:") and $n.src!="asset:cyclops" then
-            $r=viu_raster("deck",$n.src,$a.path,$scope)
+            try $r=viu_raster("deck",$n.src,$a.path,$scope)
+            catch $message raise("DECK_SCENE","slides("..$candidate.deck.slides[$i].id..").scene."..$node..".src: "..$message) end
             $candidate.deck.slides[$i].scene[$node].src=$r.handle
           end
         end
       end
-    for $slide in $candidate.deck.slides
-      $build={}
-      for $id in keys($slide.build) $build[$id]={hidden:false,opacity:1,offset:[0,0]} end
-      try send "viu-local" "scene.validate" body={source:$core.scene_source($slide),model:{build:$build}}
-      catch $message raise("DECK_SCENE","slides("..$slide.id..").scene: "..$message,{slide:$slide.id,field:"scene"}) end
-      if $rc!=0 then raise("DECK_SCENE","slides("..$slide.id..").scene: "..to_string($reply)) end
-    end
+      for $slide in $candidate.deck.slides
+        $build={}
+        for $id in keys($slide.build) $build[$id]={hidden:false,opacity:1,offset:[0,0]} end
+        try send "viu-local" "scene.validate" body={source:$core.scene_source($slide),model:{build:$build}}
+        catch $message raise("DECK_SCENE","slides("..$slide.id..").scene: "..$message,{slide:$slide.id,field:"scene"}) end
+        if $rc!=0 then raise("DECK_SCENE","slides("..$slide.id..").scene: "..to_string($reply)) end
+      end
     catch $message,$error
       viu_raster("close",$scope)
       raise($error.code ?? "DECK_SCENE",$message)
@@ -96,6 +97,8 @@ on viu.presentation
     show_deck()
   end
 end
+-- Accepted plays belong to the app, independently of the admission caller.
+on viu.call.cancelled return end
 -- Admit commands before a deck is open; the bundle's scene is the empty state.
 send "viu-local" "scenes.model" body={generation:$ctx.generation,value:{presentation:{clock:false}}}
 if $rc!=0 then raise("DECK_STARTUP","native host refused the empty deck state") end

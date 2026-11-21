@@ -385,17 +385,22 @@ mod tests {
 
     #[test]
     fn deck_admission_checks_format_and_dimensions_before_retaining() {
-        let dir=dir();
-        let deck=dir.path().join("deck.json");
-        let png=dir.path().join("large.png");
-        std::fs::write(&png,png_header(MAX_SIDE+1,1)).unwrap();
-        assert!(load_deck(&png,&deck).is_err());
-        let webp=dir.path().join("not-png.png");
-        image::RgbaImage::new(2,2).save_with_format(&webp,ImageFormat::WebP).unwrap();
-        assert!(load_deck(&webp,&deck).unwrap_err().contains("PNG or JPEG"));
-        let jpeg=dir.path().join("shot.jpg");
-        image::RgbImage::new(2,3).save(&jpeg).unwrap();
-        assert_eq!(load_deck(Path::new("shot.jpg"),&deck).unwrap().size,[2,3]);
+        let dir = dir();
+        let deck = dir.path().join("deck.json");
+        let png = dir.path().join("large.png");
+        std::fs::write(&png, png_header(MAX_SIDE + 1, 1)).unwrap();
+        assert!(load_deck(&png, &deck).is_err());
+        let webp = dir.path().join("not-png.png");
+        image::RgbaImage::new(2, 2)
+            .save_with_format(&webp, ImageFormat::WebP)
+            .unwrap();
+        assert!(load_deck(&webp, &deck).unwrap_err().contains("PNG or JPEG"));
+        let jpeg = dir.path().join("shot.jpg");
+        image::RgbImage::new(2, 3).save(&jpeg).unwrap();
+        assert_eq!(
+            load_deck(Path::new("shot.jpg"), &deck).unwrap().size,
+            [2, 3]
+        );
     }
 
     #[test]

@@ -57,7 +57,10 @@ impl Default for Images {
 }
 impl Images {
     pub fn scene() -> Self {
-        Self { capacity:64, ..Self::surface() }
+        Self {
+            capacity: 64,
+            ..Self::surface()
+        }
     }
     pub fn document() -> Self {
         Self {

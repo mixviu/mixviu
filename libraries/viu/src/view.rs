@@ -2276,14 +2276,21 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                 widget.validate_model(&tree.model)?;
             }
             "image" => {
+                for key in ["w","h"] {
+                    if num(node,key).is_some_and(|n| !(1.0..=16384.0).contains(&n)) {
+                        return Err(format!("image {id}: {key} must be 1..16384"));
+                    }
+                }
                 if text(node, "src")
                     .strip_prefix("icon:")
                     .and_then(crate::icons::Icon::from_name)
                     .is_none()
                     && !text(node, "src").starts_with("raster:")
-                    && text(node,"src")!="asset:cyclops"
+                    && text(node, "src") != "asset:cyclops"
                 {
-                    return Err(format!("image {id}: expected known icon: or retained raster: source"));
+                    return Err(format!(
+                        "image {id}: expected known icon: or retained raster: source"
+                    ));
                 }
             }
             "text" | "button" | "field" | "toggle" | "row" | "column" | "list" | "spacer"
