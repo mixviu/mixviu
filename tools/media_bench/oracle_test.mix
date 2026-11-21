@@ -1,0 +1,46 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$s=require("suites.mix")
+$c=require("core.mix")
+fn unavailable($what)
+  if env("MIX_TEST_REQUIRE_FFMPEG")=="1" then raise("ORACLE",$what) end
+  print("SKIP: "..$what)
+  exit(0)
+end
+if which("ffmpeg")==nil or which("ffprobe")==nil then unavailable("ffmpeg/ffprobe missing") end
+for $query in [{flag:"-filters",names:["libvmaf","ssim","psnr","scale","setparams","astats","amix","testsrc2","sine"]},{flag:"-encoders",names:["ffv1","pcm_s16le"]}]
+  $r=run_argv(["ffmpeg","-hide_banner",$query.flag])
+  if not $r.ok then unavailable("ffmpeg capability query failed") end
+  for $name in $query.names
+    if not contains($r.stdout,$name) then unavailable("ffmpeg lacks "..$name) end
+  end
+end
+$tmp=trim(run_argv_must(["mktemp","-d","/tmp/media-bench-oracle-XXXXXX"]))
+try
+  $o=merge($c.workload("default"),{out:$tmp,corpus:$tmp,variant:"default",oracle:true,runs:1,width:64,height:64})
+  try $model=$s.model_probe($o) catch $error unavailable("explicit VMAF models unavailable: "..$error) end
+  $o.model=$model.name
+  for $gain in [1,2]
+    $r=run_argv(["ffmpeg","-nostdin","-hide_banner","-f","lavfi","-i","sine=duration=1","-f","lavfi","-i","sine=duration=1,volume="..to_string($gain),"-filter_complex",$s.pcm_difference(),"-f","null","-"],{timeout:30})
+    if not $r.ok then raise("ORACLE",$r.stderr) end
+    if $gain==1 then
+      if not contains($r.stderr,"RMS level dB: -inf") then raise("ORACLE","identical PCM failed to cancel") end
+    elif abs($s.capture_number($r.stderr,'RMS level dB: ([-0-9.]+)')+21.073)>0.1 then raise("ORACLE","PCM RMS mismatch") end
+  end
+  $r=$s.once($s.ff(["-f","lavfi","-i","testsrc2=s=64x64:r=30:d=2.1","-c:v","ffv1",$tmp.."/source.mkv"]),$o,"source")
+  for $case in [{id:"same",filter:"trim=end_frame=60,settb=1/30,setpts=N"},{id:"shift",filter:"trim=start_frame=1:end_frame=61,settb=1/30,setpts=N"},{id:"short",filter:"trim=end_frame=59,settb=1/30,setpts=N"}]
+    $r=$s.once($s.ff(["-i",$tmp.."/source.mkv","-vf",$case.filter,"-c:v","ffv1",$tmp.."/"..$case.id..".nut"]),$o,$case.id.."-prepare")
+    $refused=false
+    try
+      $q=$s.quality($tmp.."/source.mkv",$tmp.."/"..$case.id..".nut",$o,$case.id)
+      if $case.id=="same" and ($q.ssim!=1 or $q.psnr_db!="infinite") then raise("TEST","identity changed") end
+      if $case.id=="shift" and $q.ssim>=0.99999 then raise("TEST","one-frame shift was not detected") end
+    catch $error
+      if $case.id!="short" then raise("ORACLE",$error) end
+      $refused=true
+    end
+    if $case.id=="short" and not $refused then raise("ORACLE","fewer than 60 frames accepted") end
+  end
+  print("PASS real quality(): identity, one-frame shift detected, short stream refused; PCM subtraction; explicit VMAF model "..$o.model)
+finally
+  run_argv_must(["rm","-rf","--",$tmp])
+end
