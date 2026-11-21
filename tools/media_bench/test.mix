@@ -1,5 +1,6 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $c = require("core.mix")
+$s = require("suites.mix")
 fn check($b)
   if not $b then raise("TEST","media bench assertion failed") end
 end
@@ -14,6 +15,7 @@ for $text in ["", "1 2 3", "1 2 bad 4", "Command exited with non-zero status 1\n
 end
 check($c.ratio(10,4)==2.5)
 check($c.ratio(10,0)==nil)
+check($s.loudnorm_json("log before\n{\"input_i\":\"-18\",\"output_i\":\"-14\"}\nlog after").output_i=="-14")
 $a = [{quality:70,rate:100},{quality:80,rate:200},{quality:90,rate:400},{quality:100,rate:800}]
 $b = map($a,fn($p)={quality:$p.quality,rate:$p.rate*1.25})
 check(abs($c.bd_rate($a,$b)-25)<0.000001)

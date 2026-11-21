@@ -14,6 +14,11 @@ fn capture_number($text,$pattern)
   if len($m) == 0 then raise("METRIC","missing numeric output: "..$pattern) end
   return to_number($m[len($m)-1].groups[0])
 end
+fn loudnorm_json($text)
+  $matches = re_find($text,'(?s)\{\s*"input_i".*?\}')
+  if len($matches) == 0 then raise("LOUDNESS","missing loudnorm JSON") end
+  return json_parse($matches[0].match)
+end
 fn quality($source,$encoded,$o,$name)
   $vmaf = $o.out.."/"..$name..".vmaf.json"
   $r = once(ff(["-i",$encoded,"-i",$source,"-t","2","-lavfi","[0:v]split=3[d1][d2][d3];[1:v]split=3[r1][r2][r3];[d1][r1]libvmaf=n_threads=4:log_fmt=json:log_path="..$vmaf.."[v];[d2][r2]ssim[s];[d3][r3]psnr[p]","-map","[v]","-map","[s]","-map","[p]","-an","-f","null","-"]),$o,$name)
@@ -115,12 +120,11 @@ fn loudness($o)
     $text = read_file($o.out.."/"..$id.."-ebur128-1.stderr")
     $first = measure(ff(["-i",$source,"-af","loudnorm=I=-14:TP=-1:LRA=11:print_format=json","-f","null","-"]),$o,$id.."-pass1")
     $raw = read_file($o.out.."/"..$id.."-pass1-1.stderr")
-    $matches = re_find($raw,'(?s)\{\s*"input_i".*?\}')
-    if len($matches) == 0 then raise("LOUDNESS","missing loudnorm JSON") end
-    $m = json_parse($matches[0].match)
+    $m = loudnorm_json($raw)
     $filter = "loudnorm=I=-14:TP=-1:LRA=11:linear=true:measured_I="..$m.input_i..":measured_TP="..$m.input_tp..":measured_LRA="..$m.input_lra..":measured_thresh="..$m.input_thresh..":offset="..$m.target_offset..":print_format=json"
     $second = measure(ff(["-i",$source,"-af",$filter,"-ar","48000","-ac","2","-c:a","pcm_s16le",$o.out.."/"..$id.."-normalised.wav"]),$o,$id.."-pass2")
-    push($items,{id:$id,metrics:{ebur128:$eb,integrated_lufs:capture_number($text,'I:\s+([-0-9.]+) LUFS'),true_peak_dbtp:capture_number($text,'Peak:\s+([-0-9.]+) dBFS'),loudnorm_pass1:$first,loudnorm_pass2:$second,loudnorm_input:$m}})
+    $output = loudnorm_json(read_file($o.out.."/"..$id.."-pass2-1.stderr"))
+    push($items,{id:$id,metrics:{ebur128:$eb,integrated_lufs:capture_number($text,'I:\s+([-0-9.]+) LUFS'),true_peak_dbtp:capture_number($text,'Peak:\s+([-0-9.]+) dBFS'),loudnorm_pass1:$first,loudnorm_pass2:$second,loudnorm_input:$m,loudnorm_output_lufs:to_number($output.output_i),loudnorm_output_dbtp:to_number($output.output_tp),loudnorm_mode:$output.normalization_type}})
   end
   return $items
 end
