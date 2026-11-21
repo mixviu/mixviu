@@ -1,4 +1,6 @@
-//! Requires the worker's ffmpeg; missing executable/filter is a failure.
+//! ffmpeg oracle. Hosted CI has no ffmpeg: the oracle is skipped there, and
+//! required (a missing ffmpeg fails) when MIX_TEST_REQUIRE_FFMPEG=1, which
+//! `tools/ci.mix all` sets on CBC. Same convention as engines/mixd/tests/vfl.rs.
 use media_audio::{Audio, WavFormat};
 use serde_json::Value;
 use std::{
@@ -36,11 +38,34 @@ fn ff(args: &[&str]) -> String {
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     String::from_utf8(o.stderr).unwrap()
 }
+/// True when the ffmpeg oracle can run. Absent ffmpeg skips the oracle unless
+/// MIX_TEST_REQUIRE_FFMPEG=1, which turns absence into a failure.
+fn oracle_available() -> bool {
+    match Command::new("ffmpeg").arg("-version").output() {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            assert_ne!(
+                std::env::var("MIX_TEST_REQUIRE_FFMPEG").as_deref(),
+                Ok("1"),
+                "ffmpeg required: loudness oracle cannot run"
+            );
+            eprintln!("SKIP: ffmpeg absent, loudness oracle not run");
+            false
+        }
+        Err(e) => panic!("cannot run ffmpeg: {e}"),
+        Ok(o) => {
+            assert!(o.status.success(), "ffmpeg probe failed: {o:?}");
+            true
+        }
+    }
+}
 fn number(s: &str) -> f64 {
     s.parse().unwrap()
 }
 #[test]
 fn generated_tone_pink_noise_and_linear_loudnorm() {
+    if !oracle_available() {
+        return;
+    }
     let temp = TempDir::new();
     let dir = &temp.0;
     for pink in [false, true] {
