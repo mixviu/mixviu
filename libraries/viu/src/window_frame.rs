@@ -172,7 +172,9 @@ mod menu_tests {
             });
             let _ = tx.send(());
         });
-        started_rx.recv_timeout(Duration::from_secs(2)).expect("menu frame did not start");
+        started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("menu frame did not start");
         rx
     }
 

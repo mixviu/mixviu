@@ -96,12 +96,7 @@ pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui:
     let vp = ui.ctx().viewport_id();
     let limit = ui
         .ctx()
-        .data(|d| {
-            d.get_temp::<f32>(egui::Id::unique((
-                vp,
-                "viu.dock.intrinsic-height",
-            )))
-        })
+        .data(|d| d.get_temp::<f32>(egui::Id::unique((vp, "viu.dock.intrinsic-height"))))
         .unwrap_or(ui.available_height());
     ui.scope(|ui| {
         let start_y = ui.cursor().top();
@@ -300,6 +295,7 @@ mod tests {
             output.drop_without_applying_deltas();
             let _ = tx.send(());
         });
-        rx.recv_timeout(std::time::Duration::from_secs(2)).expect("file tiles did not return successfully");
+        rx.recv_timeout(std::time::Duration::from_secs(2))
+            .expect("file tiles did not return successfully");
     }
 }
