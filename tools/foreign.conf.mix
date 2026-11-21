@@ -11,6 +11,8 @@
 --         shell is every server's login shell).
 foreign: {
   allow: {
+    "opus-pure": {reason: "0.2.3, BSD-3-Clause; pure-Rust Opus encoder/decoder, RFC 8251 conformance and bidirectional libopus spike passed; no build dependencies", exit: "none needed: pure Rust"},
+    "cranpose-opus-pure": {reason: "0.2.2, BSD-3-Clause; pure-Rust Opus fork, optional media-opus bench comparison, identical spike quality to opus-pure", exit: "remove bench feature when no longer useful"},
     "const-oid": {reason: "RustCrypto OID constants; pure Rust, no C, no build script or dependencies; MIT/Apache-2.0; mix reaches it only through digest oid under workspace feature unification (Mark, 2026-11-14)",
       exit: "none needed: pure-Rust constants"},
     "libsqlite3-sys": {reason: "SQLite; no pure-Rust equivalent yet",

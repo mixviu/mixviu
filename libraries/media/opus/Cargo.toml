@@ -1,0 +1,16 @@
+[package]
+name = "media-opus"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+bench-cranpose = ["dep:opus-bench"]
+
+[dependencies]
+opus-pure = "=0.2.3"
+opus-bench = { package = "cranpose-opus-pure", version = "=0.2.2", optional = true }
+
+[lints]
+workspace = true

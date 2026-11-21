@@ -1,0 +1,21 @@
+$root = args()[0]
+mkdir($root, {parents: true})
+for $item in [
+ {name:"opus_testvectors", sha:"94ac78ca4f74c4e43bc9fe4ec1ad0aa36f38ab90f45b0727c40dd1e96096e767"},
+ {name:"opus_testvectors-rfc8251", sha:"6b26a22f9ba87b2b836906a9bb7afec5f8e54d49553b1200382520ee6fedfa55"}
+]
+ $archive = $root .. "/" .. $item.name .. ".tar.gz"
+ if not is_file($archive) then
+  print(run_argv_must(["curl","-fL","--retry","2","https://opus-codec.org/static/testvectors/" .. $item.name .. ".tar.gz","-o",$archive], {timeout:300}))
+ end
+ $digest = fields(run_argv_must(["sha256sum",$archive]))[0]
+ if $digest != $item.sha then raise("OPUS_FIXTURE_HASH", "vector archive SHA256 mismatch") end
+ print(run_argv_must(["tar","xf",$archive,"-C",$root], {timeout:120}))
+end
+$source = $root .. "/opus_compare.c"
+print(run_argv_must(["curl","-fLs","https://raw.githubusercontent.com/xiph/opus/v1.5.2/src/opus_compare.c","-o",$source], {timeout:120}))
+if fields(run_argv_must(["sha256sum",$source]))[0] != "387e5486b93899b012065f1c71fe27d96eade36a7c0bd419f03945d124a110c7" then
+ raise("OPUS_ORACLE_HASH", "comparator source SHA256 mismatch")
+end
+print(run_argv_must(["cc","-O2",$source,"-lm","-o",$root .. "/opus_compare"], {timeout:120}))
+print("Opus test setup verified: IETF Trust BSD vectors and external C oracle; set OPUS_VECTOR_ROOT=" .. $root)
