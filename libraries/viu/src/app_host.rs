@@ -403,8 +403,18 @@ impl Host {
     /// validated startup input. Never decode the session's initial `{}` as a
     /// partially constructed settings snapshot.
     fn theme_base(&self) -> Result<toolkit::Theme, String> {
-        if let Some(session) = self.session.as_ref().filter(|session| session.snapshot["state"]["values"].is_object()) {
-            crate::appearance::session_base(&session.snapshot, &self.app, &self.file_theme, &self.last_ui).map(|value| value.0)
+        if let Some(session) = self
+            .session
+            .as_ref()
+            .filter(|session| session.snapshot["state"]["values"].is_object())
+        {
+            crate::appearance::session_base(
+                &session.snapshot,
+                &self.app,
+                &self.file_theme,
+                &self.last_ui,
+            )
+            .map(|value| value.0)
         } else {
             Ok(self.file_theme.clone())
         }
@@ -1071,15 +1081,13 @@ impl Host {
                     .ok_or("id required".into())
                     .and_then(|id| self.view.request_focus(id))
                     .map(|_| json!({"focused":true})),
-                "native.theme" => {
-                    crate::native_theme::choice(&request.args).and_then(|choice| {
-                        let base = self.theme_base()?;
-                        let theme = base.with_choice(&choice).map_err(|e| e.to_string())?;
-                        crate::appearance::install_theme(ctx, &theme)?;
-                        self.native_choice = request.args.clone();
-                        Ok(crate::native_theme::describe(&theme))
-                    })
-                }
+                "native.theme" => crate::native_theme::choice(&request.args).and_then(|choice| {
+                    let base = self.theme_base()?;
+                    let theme = base.with_choice(&choice).map_err(|e| e.to_string())?;
+                    crate::appearance::install_theme(ctx, &theme)?;
+                    self.native_choice = request.args.clone();
+                    Ok(crate::native_theme::describe(&theme))
+                }),
                 _ => Err("unknown native operation".into()),
             };
             if request.command == "native.theme" {

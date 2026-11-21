@@ -134,7 +134,7 @@ pub struct DeferredAnswer {
 
 #[derive(Debug)]
 pub struct Completion {
-    #[cfg(feature = "test-support")]
+    /// Callback identity is also used by production host reply projections.
     pub command: String,
     #[cfg(feature = "test-support")]
     pub cpu_elapsed: Duration,
@@ -253,7 +253,6 @@ impl Runtime {
                 let start = Instant::now();
                 #[cfg(feature = "test-support")]
                 let cpu_start = crate::app_host::test_support::thread_cpu();
-                #[cfg(feature = "test-support")]
                 let probe_command = match &request {
                     Request::Event(_, _, command, ..) => command.clone(),
                     Request::Load(..) => "load".into(),
@@ -398,7 +397,6 @@ impl Runtime {
                 let (mut deferred_token,mut deferred_answers)=current.as_ref().map(|(_,_,local,..)|(local.prefs_deferred.borrow_mut().take(),std::mem::take(&mut *local.prefs_answers.borrow_mut()))).unwrap_or_default();
                 if result.is_err(){deferred_token=None;deferred_answers.clear();}
                 let completion = Completion {
-                    #[cfg(feature = "test-support")]
                     command: probe_command,
                     #[cfg(feature = "test-support")]
                     cpu_elapsed: crate::app_host::test_support::thread_cpu().saturating_sub(cpu_start),

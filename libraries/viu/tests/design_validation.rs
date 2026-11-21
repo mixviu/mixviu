@@ -37,7 +37,11 @@ fn host(path: &Path, broker: &test_broker::Broker) -> Harness {
     bundle.launch = json!({"headless":true});
     bundle.manifest.saved_version = None;
     let host = Harness::with_theme_file(bundle, path);
-    assert_eq!(host.state()["session"], json!({}), "ordering control must start before session values exist");
+    assert_eq!(
+        host.state()["session"],
+        json!({}),
+        "ordering control must start before session values exist"
+    );
     host
 }
 
