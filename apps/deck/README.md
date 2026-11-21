@@ -59,6 +59,17 @@ the settled step and ignores entrance delays. Timed playback samples the
 entrance at `scene_time - beats[b] - delay`; it never restarts an entrance on
 each publication. Final playback freezes the last scene's end sample.
 
+For the reference title (`left`, beat 0.9, delay 0.15), both the native
+0.7-second preset and `oracle/reference/deck.js`/`anim.css` start at 1.05:
+opacity is 0 at 1.0/1.05, 0.287865 at 1.1 and 0.978681 at 1.5 seconds.
+The core/native-port test pins these samples. There is no extra lead in the
+entrance sampler. Live playback defines zero at its first `viu.presentation`
+timestamp and paints the resulting sample on the following draw. A recorder
+marker placed before `deck.play` is a different origin; its RPC/admission,
+first-frame and draw latency must be measured before treating a recording's
+1.1-second frame as app scene time 1.1. The historical recording did not log
+that correlation, so its precise wall-clock offset remains unproven.
+
 `anim` and `child_anim` support `fade`, `up`, `down`, `left`, `right`.
 `delay` and `stagger` are seconds, each in 0..60. A stagger container gives
 unconfigured direct children its beat and `delay + child_index * stagger`.
