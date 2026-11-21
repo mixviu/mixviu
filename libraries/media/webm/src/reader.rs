@@ -250,6 +250,16 @@ impl<'a> Demuxer<'a> {
     pub fn packets(&self) -> &[Packet<'a>] {
         &self.packets
     }
+    /// Presentation ticks after CodecDelay, rounded to the nearest container
+    /// tick (halves up), matching ffmpeg's packet time base conversion.
+    pub fn presentation_timestamp(&self, packet: &Packet<'_>) -> Result<i64> {
+        let track = self.tracks.iter().find(|t| t.number == packet.track)
+            .ok_or(Error::Invalid("packet track"))?;
+        let delay = (u128::from(track.codec_delay_ns) + u128::from(self.scale_ns) / 2)
+            / u128::from(self.scale_ns);
+        packet.timestamp.checked_sub(i64::try_from(delay).map_err(|_| Error::SizeOverflow)?)
+            .ok_or(Error::SizeOverflow)
+    }
     pub fn next_packet(&mut self) -> Option<Packet<'a>> {
         let p = self.packets.get(self.cursor)?.clone();
         self.cursor += 1;
