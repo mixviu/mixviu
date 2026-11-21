@@ -1,3 +1,151 @@
+# PR #220 round 4 — #223 merged; stopped on unchanged Monitor timeout
+
+PR: https://github.com/mixviu/mixviu/pull/220. Tested source head:
+`8f24eb9165657b2b9c9aa986d0263f4b8a08667a`. The final receipt commit changes
+only this record. Main `b36a00d6` contains #223, “separate decoration
+registry correctness from reply timing”. It merged without conflicts;
+Cargo.lock merged automatically. No implementation change or test waiver was
+needed for that merge. #220 remains **draft**, not ready.
+
+The normal test-support width-eight pool in CBC
+**`20261121-221042-1cbaffac-a1`** fails the pre-existing
+`monitor_mix_contracts_and_disabled_signal_paths_send_no_signals` at
+`libraries/viu/tests/monitor_policy.rs:20`: its existing ten-second completion
+wait returns `Timeout`; the binary finishes with one pass and one failure in
+10.11 s. The test file and `apps/monitor` have an empty diff against main.
+This test drives the Mix Runtime directly and does not use design compilation
+or an AppHost. The Runtime command metadata change in this PR was already
+present under test-support before this PR. No root cause beyond the observed
+missing completion is claimed. This was the ordinary 102-binary, width-eight
+pool, with its existing serial list, no retry or additional stress harness.
+
+Per round 4's stop rule, stopped without retrying, changing that wait or
+repairing Monitor. The candidate cache below is private and **not landed**.
+Our own startup and generic-save tests remain red in the pool as well; the
+750 ms bound and both production deadlines are unchanged.
+
+## Scoped CBC checks
+
+| CBC job | Result |
+|---|---|
+| `20261121-215515-59356def-a1` | Committed merged head: fmt has no diff; all-target clippy passes all six changed crates in default and test-support configurations. Default all-target width-eight pool passes all **102 binaries**, followed by passing doc-tests. Support pool runs all 102 binaries but fails our generic-save and startup tests. Both decoration registry tests pass in both pools. `app_mix` passes in both: **59.4 / 66.7 s** for the entire collection. |
+| `20261121-215517-6c8840dc-a1` | Six expected-red ordering/surfacing/report/write controls pass. |
+| `20261121-215518-d30c76c6-a1` | Real bundle plus bad-unused-context refusal pass. |
+| `20261121-215617-41811352-a1` | Standalone app-script budgets, real discovery oracle, forced-missing-section control, startup latency negative and first-use negative pass. |
+| `20261121-220809-ba36a941-a1` | Temporary requested-context trace; both host controls pass standalone. Repeated Studio/Dark compiles cost about **52 ms** each; exact contexts and source identities are retained in the log. |
+| `20261121-221042-1cbaffac-a1` | Private complete-artifact cache prototype: default clippy, all 102 default pool binaries and doc-tests pass; support clippy passes, but the support pool fails our two tests and the unchanged Monitor test above. `app_mix` passes **65.7 / 67.3 s**. The source patch is restored in the worker job. |
+| `20261121-221425-59de634c-a1` | Private cache positive/content/identity controls pass, including expected-red mutations. Earlier own control driver `20261121-221248-5d3eb4f7-a1` missed the identity mutation when another test could contend with the best-effort cache; running that mutation's single target makes reuse deterministic. No product test or deadline was weakened. |
+
+The red scoped job stops before support doc-tests, the normal scene-script
+run and env-registry. Those checks remain outstanding. Saved logs were read:
+`20261121-215516-cbc3-8f24eb916565-20261121-215515-59356def-a1-14bb9765.log`
+and
+`20261121-221042-cbc3-8f24eb916565-20261121-221042-1cbaffac-a1-6f53c68e.log`.
+
+Ten changed Mix files lint with zero errors, warnings or notes. No new
+environment variable. No `tools/ci.mix all`, merge or deployment was run;
+`pr_gate cbc` is the next full run.
+
+## Startup regression and controls
+
+Calls start when the Workshop Bus port appears, before host readiness, at 200
+peers. The first-1.5 s window, 750 ms bound, one-second call deadline and
+two-second owner-stall deadline remain unchanged.
+
+| Measurement | Original before | Merged source standalone | Width-eight pool |
+|---|---:|---:|---:|
+| CBC job | `20261121-175445-2c24d7dc-a1` | `20261121-215515-59356def-a1` | `20261121-215515-59356def-a1` |
+| Worst call | 1,001.520 ms observed timeout | **630.844 ms** | **1,003.475 ms observed timeout — FAIL** |
+| Call failures | 2 | **0** | **2** |
+| First-pump wall / CPU | 2,502.676 / 2,501.943 ms | **342.114 / 342.066 ms** | **1,185.220 / 746.197 ms** |
+| Whole fixture, measured before teardown | — | **1.742 s** | **3.212 s** |
+
+The before duration is censored by the call timeout, not a completed reply.
+The generic-save test in this pool also hits its one-second Workshop Bus
+timeout at `libraries/viu/tests/design_validation.rs:90`; its startup-fallback
+partner passes. These are this PR's failures, so they were investigated rather
+than used as a reason to stop.
+
+The trace led to a private, bounded 32-entry cache of complete successful
+context artifacts, keyed by authored-content digest and the full context. A
+contended cache is a miss and validates synchronously; the current source
+label is retained. Whole-source compilation is unchanged and uncached. This
+does not share partial compiler work across contexts (option c stays deferred).
+
+| Private cache prototype, CBC `20261121-221042-1cbaffac-a1` | Standalone | Normal width-eight support pool |
+|---|---:|---:|
+| Worst first-1.5 s call | **497.587 ms**, zero failures | **942.371 ms**, zero failures, **750 ms assertion fails** |
+| First-pump wall / CPU | **254.890 / 254.398 ms** | **482.388 / 481.885 ms** |
+| Whole fixture before teardown | **1.742 s** | **1.849 s** |
+
+The generic-save test still hits its Bus timeout in the prototype pool. The
+cache is insufficient for the required pool bound and is retained only as
+private evidence. Residual startup latency remains a separate TODO-workshop
+follow-up with the callback profile recorded in round 3d.
+
+CBC `20261121-215517-6c8840dc-a1` passes six expected-red mutation controls:
+the premature session read breaks both hosts; removing info or painted notice
+surfacing breaks its assertion; suppressing background errors breaks the
+generic-save report oracle; weakening whole-source compilation breaks settings
+write rejection; bypassing staged scene validation breaks refusal before
+installation. Sources are restored in finally.
+
+CBC `20261121-215617-41811352-a1` passes the real discovery full-projection
+oracle and its forced-missing-section control. The two changed Workshop scripts
+take **3.407514 s** (section) and **0.892133 s** (redaction) standalone, below
+five seconds each. The all-context-runtime mutation produces **two timeouts**,
+worst **1,001.330 ms**, and fails the unchanged startup bound; compiling a
+different context fails the first-use validation oracle. Inline forgotten-mark,
+drop-one-dependency and eager-redaction controls also run in app_mix.
+
+CBC `20261121-215518-d30c76c6-a1` passes actual bundle construction and the
+bad-shipped-unused-context control. The bundle rejects before creating its
+archive. The source is restored, rebuilt and admitted by the native validator.
+The admitted bundle contains **616 files**, **47,115,428 payload bytes** and
+**47,790,080 tar bytes**, SHA256
+`6a734888d940afac764eeccaab27fd3e5edac534a8b59b2811eba092f8d21b93`.
+
+## Write paths and the authorised editor bypass
+
+| Path | Validation / refusal-before-write evidence |
+|---|---|
+| Scene install | Existing staged `shell.scene.validate` path at `engines/viud/scripts/lib/scenes.mix:1457`; whole-source desk-theme check at `engines/viu/src/store.rs:497`; writer control at `engines/viud/tests/scenes_test.mix:528`. |
+| Scene upgrade | Same staged admission, writer control at `engines/viud/tests/scenes_test.mix:532`; installed tree remains unchanged on refusal. |
+| Reset or Keep | Reset uses the same validator, control at `engines/viud/tests/scenes_test.mix:530`; Keep writes nothing. |
+| `appearance.source` | Existing full compiler at `libraries/settings/src/resolve.rs:65`; `services/settingsd/tests/transactions.rs:44` checks rejection before profile bytes/revision change, with valid-source control. |
+| Build/install bundle | `tools/apps_bundle.mix:42` calls whole-source `viu --validate-design --embedded` and checks the build SHA before bundle admission. CLI at `libraries/viu/src/app_host.rs:2611`; actual bundle positive/negative job above. |
+| Generic `edit.save` | `services/editd/src/actor.rs:1301` is deliberately out of scope. Ownership is recorded in `~/.viu/_doc/TODO-editd.md`, “Generic saves of theme and scene sources skip design validation”. The real editd save → background file-change report → failed context switch test covers this bypass without editor policy or a filename heuristic. |
+
+In the committed implementation, the requested context is fully validated synchronously before first use
+(`libraries/design/src/compiler.rs:27`, `libraries/theme/src/theme.rs:391`).
+The initial session ordering guard is at `libraries/viu/src/app_host.rs:405`.
+Startup retains embedded Studio/Dark fallback and surfaces its compile error;
+late failures keep the current context and expose info/log/notice diagnostics.
+The report-only native worker starts after the first ready frame, with bounded
+nonblocking submission and content-digest identities. Timing is documented in
+`docs/design-validation.md`; fatal versus formal startup fallback remains a
+separate TODO-viu design decision.
+
+## Required n=5 desk baseline, gold `7ad2570f`
+
+These retained round-3d samples are the after-#216 baseline, not a desk result
+from this PR. Every sample records the full gold SHA
+`7ad2570fc71e3d7035fa642623578ac0570791c2`, its own re-read gate receipt
+(check_rc=2, no FAIL lines), quiet JSON and raw probe output. All quiet checks
+passed with zero busy samples; runs were outside the nightly exclusion.
+
+| Run id, 2026-11-21 UTC+10 | Ping max ms | Info max ms | Port ms |
+|---|---:|---:|---:|
+| `20261121-192827-1` | 477 | 378 | 103 |
+| `20261121-192843-2` | 461 | 377 | 102 |
+| `20261121-192859-3` | 467 | 409 | 105 |
+| `20261121-192915-4` | 509 | 368 | 102 |
+| `20261121-192930-5` | 462 | 376 | 102 |
+
+Each sample has 45 ping and 45 info calls, zero failures and zero calls over
+one second. The gold carrying #220 still needs its post-merge desk check.
+
+
 # PR #220 round 3d — ordering fixed; stopped on an unchanged registry probe
 
 Semantic head: `ac71f084b19bd7ffefccf6bbec94fc82ca509d65`. This receipt commit
