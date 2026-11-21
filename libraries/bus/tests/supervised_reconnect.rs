@@ -611,7 +611,11 @@ async fn connection_state_watch_publishes_disconnect_and_reconnect_edges() {
     let mut states = client.subscribe_state();
     assert_eq!(*states.borrow(), ConnState::Connected);
 
+    // abort() only requests cancellation; the listener lives in the acceptor
+    // task until the runtime drops it. Await the handle so the port is free
+    // before the rebind below (AddrInUse under the parallel pool otherwise).
     acceptor.abort();
+    let _ = acceptor.await;
     stub.drop_conn1.notify_one();
     tokio::time::timeout(Duration::from_secs(5), states.changed())
         .await
