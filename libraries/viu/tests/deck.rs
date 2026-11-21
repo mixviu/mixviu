@@ -304,10 +304,9 @@ fn play_replies_immediately_and_survives_caller_cancellation_past_180_seconds() 
     let end = deck.call("viu.presentation", json!({"time":3700}));
     let model = end.model.unwrap();
     assert_eq!(model["presentation"]["clock"], true);
-    assert_eq!(
-        deck.call("deck.state", json!({})).reply.unwrap().body["finished"],
-        false
-    );
+    let waiting = deck.call("deck.state", json!({})).reply.unwrap().body;
+    assert_eq!(waiting["finished"], false);
+    assert_eq!(waiting["playing"], true);
     deck.call("viu.call.cancelled", json!({"token":token}));
     let ack = deck.call(
         "viu.presentation",

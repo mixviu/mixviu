@@ -4,7 +4,7 @@
 $core=require("core.mix");$ctx=viu_context();$state={s:$core.fresh(),serial:0,scope:nil,finish_serial:nil}
 fn current_state()
   $out=$core.snapshot($state.s)
-  if $state.finish_serial!=nil then $out.finished=false end
+  if $state.finish_serial!=nil then $out.playing=true;$out.finished=false end
   return $out
 end
 fn show_deck()
