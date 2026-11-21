@@ -1378,8 +1378,13 @@ mod tests {
             (acquired, fired)
         });
         let (acquired, fired) = acquired;
-        fired.join().expect("hook thread finishes once the Context lock is free");
-        assert!(acquired, "the hook held the repaint mutex while waiting for the Context lock");
+        fired
+            .join()
+            .expect("hook thread finishes once the Context lock is free");
+        assert!(
+            acquired,
+            "the hook held the repaint mutex while waiting for the Context lock"
+        );
     }
 
     #[test]
