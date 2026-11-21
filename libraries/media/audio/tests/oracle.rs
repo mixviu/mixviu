@@ -173,9 +173,9 @@ fn limited_burst_true_peak_oracle() {
             level * (std::f64::consts::TAU * 6000.0 * n as f64 / 48000.0 + 0.4).sin()
         })
         .collect();
-    let rms = (samples.iter().map(|x| x*x).sum::<f64>() / samples.len() as f64).sqrt();
+    let rms = (samples.iter().map(|x| x * x).sum::<f64>() / samples.len() as f64).sqrt();
     let peak = samples.iter().map(|x| x.abs()).fold(0.0_f64, f64::max);
-    assert!((20.0*(peak/rms).log10() - 22.35).abs() < 0.01);
+    assert!((20.0 * (peak / rms).log10() - 22.35).abs() < 0.01);
     let mut a = Audio::new(48000, 1, samples).unwrap();
     let r = a.limit_true_peak(-1.0, Default::default()).unwrap();
     assert!(r.after.true_peak_dbtp <= -1.0);

@@ -131,3 +131,9 @@ signals, not copies of the EBU conformance media or a claim of full certificatio
 The oracle asserts ffmpeg really selected two-pass linear normalisation.
 
 Private corpus, SNR and speed results belong in the maintainer's hub.
+
+`mix libraries/media/audio/mutations.mix` is a separate CBC-only check. It
+requires a clean checkout, swaps global gain, no look-ahead, instant release
+and sample-only detection into the limiter one at a time, and requires the
+named locality/attack/release/4x test to fail. It restores the exact source
+bytes in a finally block. The normal tests must pass on the unmodified source.
