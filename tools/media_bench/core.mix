@@ -1,0 +1,230 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+fn options($argv)
+  $o = {runs:3, variant:"default",budget:"4",keep:false}
+  $i = 0
+  while $i < len($argv)
+    $k = replace($argv[$i], "--", "")
+    if not starts_with($argv[$i], "--") then raise("ARGS", "expected --option value") end
+    if $k=="keep" then
+      $o.keep=true; $i=$i+1
+    else
+      if $i+1>=len($argv) then raise("ARGS","expected option value") end
+      if not contains(["suite","engine","variant","corpus","out","runs","compare","episode-run","budget"], $k) then raise("ARGS", "unknown option " .. $k) end
+      if starts_with($argv[$i+1],"-") then raise("ARGS","option value cannot start with -") end
+      $o[$k] = $argv[$i+1]
+      $i = $i + 2
+    end
+  end
+  $o.runs = to_number($o.runs)
+  if $o.runs < 1 or floor($o.runs) != $o.runs then raise("ARGS", "runs must be a positive integer") end
+  if not contains(["4","unrestricted"],$o.budget) then raise("ARGS","budget must be 4 or unrestricted") end
+  return $o
+end
+fn safe_path($path)
+  if not re_match($path,'^(/|\./)?[A-Za-z0-9_][A-Za-z0-9_./-]*$') or contains($path,"..") then raise("PATH","unsafe path: "..$path) end
+  return $path
+end
+fn absolute_path($raw,$cwd)
+  safe_path($raw)
+  $joined=path_join($cwd,$raw)
+  if not starts_with($joined,"/") then raise("PATH","absolute working directory required") end
+  safe_path($joined)
+  return safe_path("/"..join(filter(split($joined,"/"),fn($p)=$p!="" and $p!="."),"/"))
+end
+fn concat_entry($path)
+  -- Refuse quotes and every other filter/concat metacharacter, even for
+  -- callers that did not pass through CLI path resolution.
+  safe_path($path)
+  if not starts_with($path,"/") then raise("PATH","concat paths must be absolute") end
+  return "file '"..$path.."'"
+end
+fn numeric($v)
+  if not re_match(to_string($v),'^-?[0-9]+(\.[0-9]+)?$') then raise("NUMBER","finite decimal required") end
+  return to_number($v)
+end
+fn workload($variant)
+  if not contains(["default","sustained"],$variant) then raise("ARGS","unknown variant") end
+  return {seconds:if $variant=="sustained" then 120 else 2 end,frames:if $variant=="sustained" then 3600 else 60 end,width:3840,height:2160,threads:4}
+end
+fn fps($speed,$frames)
+  $samples=sort(map($speed.wall_samples_s,fn($t)=$frames/$t))
+  return {median:summary($samples).median,p5:$samples[max(0,ceil(len($samples)*0.05)-1)],status:$speed.status}
+end
+fn bits_per_second($bytes,$seconds)
+  if $bytes<0 or $seconds<=0 then raise("BITRATE","invalid size or duration") end
+  return $bytes*8/$seconds
+end
+fn summary($xs)
+  if len($xs) == 0 then raise("STATS", "empty sample") end
+  $s = sort($xs)
+  $n = len($s)
+  $mid = floor($n / 2)
+  $median = if $n % 2 == 1 then $s[$mid] else ($s[$mid-1] + $s[$mid])/2 end
+  return {median:$median, p95:$s[ceil($n*0.95)-1]}
+end
+fn ratio($oracle, $rust)
+  if $rust == 0 then return nil end
+  return $oracle / $rust
+end
+-- Exact integral of piecewise linear log(rate) over overlapping quality.
+-- This deliberately avoids unstable cubic fits; requires four distinct points.
+fn curve_integral($points, $lo, $hi)
+  $p = sort_by($points, fn($a) = $a.quality)
+  $area = 0
+  for $i in range(1,len($p)-1)
+    $a = $p[$i-1]
+    $b = $p[$i]
+    if $b.quality <= $a.quality or $a.rate <= 0 or $b.rate <= 0 then raise("BDRATE", "invalid curve") end
+    $l = max($lo,$a.quality)
+    $h = min($hi,$b.quality)
+    if $h > $l then
+      $slope = (log($b.rate, exp(1))-log($a.rate, exp(1)))/($b.quality-$a.quality)
+      $area = $area + log($a.rate, exp(1))*($h-$l) + $slope*(pow($h-$a.quality,2)-pow($l-$a.quality,2))/2
+    end
+  end
+  return $area
+end
+fn bd_rate($reference, $test)
+  return bd_details($reference,$test).bd_rate_percent
+end
+fn monotonic_curve($points)
+  $p=sort_by($points,fn($x)=$x.quality)
+  for $i in range(1,len($p)-1)
+    if $p[$i].quality<=$p[$i-1].quality or $p[$i].rate<=$p[$i-1].rate or $p[$i-1].rate<=0 then raise("BDRATE","curve is not strictly monotonic in quality and rate") end
+  end
+  return $p
+end
+fn bd_details($reference,$test)
+  if len($reference) < 4 or len($test) < 4 then raise("BDRATE", "four rate points required") end
+  $a = monotonic_curve($reference)
+  $b = monotonic_curve($test)
+  $lo = max($a[0].quality,$b[0].quality)
+  $hi = min($a[len($a)-1].quality,$b[len($b)-1].quality)
+  if $hi-$lo < 3 then raise("BDRATE", "overlap less than 3 quality units: "..to_string($lo).." to "..to_string($hi)) end
+  return {bd_rate_percent:100*(exp((curve_integral($b,$lo,$hi)-curve_integral($a,$lo,$hi))/($hi-$lo))-1),overlap_lo:$lo,overlap_hi:$hi,status:"ok"}
+end
+fn bd_result($reference,$test)
+  $lo=nil; $hi=nil
+  for $curve in [$reference,$test]
+    for $point in $curve
+      if type($point.quality)!="number" or type($point.rate)!="number" then return {status:"unavailable",reason:"finite numeric quality/rate required",overlap_lo:nil,overlap_hi:nil} end
+    end
+  end
+  if len($reference)>0 and len($test)>0 then
+    $a=sort_by($reference,fn($x)=$x.quality); $b=sort_by($test,fn($x)=$x.quality)
+    $lo=max($a[0].quality,$b[0].quality); $hi=min($a[len($a)-1].quality,$b[len($b)-1].quality)
+  end
+  try return bd_details($reference,$test) catch $error return {status:"unavailable",reason:$error,overlap_lo:$lo,overlap_hi:$hi} end
+end
+fn guard_at($hhmm, $processes)
+  if $hhmm >= 2330 or $hhmm < 300 then raise("GUARD", "nightly window 23:30–03:00") end
+  for $line in split($processes,"\n")
+    -- Ignore command text embedded in agent briefs; inspect actual executable argv.
+    if re_match($line, '^[0-9]+ [^ ]*(chrome|chromium)[^ ]* .*--headless') or re_match($line,'^[0-9]+ [^ ]*chrome-headless-shell( |$)') or re_match($line, '^[0-9]+ ([^ ]*/)?mixd? (.*[ /])?(build|episode)\.mix( |$)') then
+      raise("GUARD", "episode build or headless Chrome: " .. $line)
+    end
+  end
+end
+fn guard()
+  $time = trim(run_argv_must(["date","+%H%M"]))
+  $p = run_argv(["pgrep","-a","."])
+  if $p.exit_code != 0 and $p.exit_code != 1 then raise("GUARD", $p.stderr) end
+  guard_at(to_number($time),$p.stdout)
+end
+fn scope_for($argv,$budget,$allowed)
+  $prefix=["systemd-run","--user","--scope","-p","MemoryMax=24G","-p","CPUWeight=20","nice","-n","10"]
+  if $budget=="unrestricted" then return concat($prefix,$argv) end
+  if $budget!="4" then raise("BUDGET","unknown budget") end
+  $cpus=[]
+  for $part in split(trim($allowed),",")
+    $ends=split($part,"-")
+    $first=to_number($ends[0]); $last=to_number($ends[len($ends)-1])
+    for $n in range($first,$last)
+      if len($cpus)<4 then push($cpus,to_string($n)) end
+    end
+  end
+  if len($cpus)<4 then raise("BUDGET","four allowed CPUs required") end
+  return concat($prefix,concat(["taskset","--cpu-list",join($cpus,",")],$argv))
+end
+fn scope($argv,$budget)
+  $allowed=if $budget=="4" then re_find(read_file("/proc/self/status"),'Cpus_allowed_list:\s*([^\n]+)')[0].groups[0] else "" end
+  return scope_for($argv,$budget,$allowed)
+end
+fn timed($argv, $base,$budget)
+  guard()
+  $cmd = scope(concat(["/usr/bin/time","-f","%e %U %S %M","-o",$base..".time"],$argv),$budget)
+  write_file($base..".command.json",json_encode($cmd))
+  $r = run_argv($cmd,{timeout:21600, stdout:{file:$base..".stdout"},stderr:{file:$base..".stderr"},env:{LC_ALL:"C"}})
+  if not $r.ok then raise("TOOL", "command failed; see "..$base..".stderr") end
+  return merge(process_time(read_file($base..".time")),{command:$cmd})
+end
+fn process_time($text)
+  $t = re_split(trim($text),"\\s+")
+  if len($t) != 4 then raise("TIME", "invalid process counters") end
+  for $v in $t
+    if not re_match($v,'^[0-9]+(\.[0-9]+)?$') then raise("TIME","invalid process counter") end
+  end
+  return {wall_s:to_number($t[0]), cpu_s:to_number($t[1])+to_number($t[2]), peak_rss_kib:to_number($t[3])}
+end
+fn speed($argv,$base,$runs,$budget)
+  $wall = []; $cpu = []; $rss = []; $cmds = []
+  for $n in range(1,$runs)
+    $r = timed($argv,$base.."-"..to_string($n),$budget)
+    push($wall,$r.wall_s); push($cpu,$r.cpu_s); push($rss,$r.peak_rss_kib); push($cmds,$r.command)
+  end
+  return {wall_s:summary($wall),cpu_s:summary($cpu),peak_rss_kib:summary($rss),wall_samples_s:$wall,commands:$cmds,budget:$budget,thread_budget:if $budget=="4" then 4 else "unrestricted" end,status:if summary($wall).median<1 then "below_resolution" else "ok" end}
+end
+fn validate_result($r)
+  if not deep_eq(sort(keys($r)), sort(["suite","engine","variant","tool_versions","host","cpu_model","items"])) then raise("SCHEMA", "unexpected result keys") end
+  $seen={}
+  for $item in $r.items
+    if not deep_eq(sort(keys($item)), ["id","metrics"]) then raise("SCHEMA", "invalid item") end
+    if has_key($seen,$item.id) then raise("SCHEMA","duplicate item id: "..$item.id) end
+    $seen[$item.id]=true
+  end
+end
+fn excluded($metrics,$path)
+  $m=$metrics
+  for $part in split($path,".")
+    if type($m)!="map" then return false end
+    if $m.status=="below_resolution" or $m.status=="unavailable" then return true end
+    if contains(["overlap_lo","overlap_hi","bd_rate_percent"],$part) then return true end
+    if $part=="loudnorm_gain_lu" and $metrics.loudnorm_mode!="linear" then return true end
+    $m=$m[$part]
+  end
+  return false
+end
+fn flatten($m,$prefix)
+  $out = {}
+  for $k in keys($m)
+    $name = if $prefix == "" then $k else $prefix.."."..$k end
+    if type($m[$k]) == "map" then
+      $out = merge($out,flatten($m[$k],$name))
+    elif type($m[$k]) == "number" or type($m[$k]) == "string" then
+      $out[$name] = $m[$k]
+    end
+  end
+  return $out
+end
+fn report($result,$other)
+  validate_result($result)
+  $text = "# Media bench: "..$result.suite.." / "..$result.engine.."\n\nOnly monotonic curves with >=3 VMAF / dB overlap count. Oracle-to-Rust = ffmpeg / rust; unavailable metrics, BD percentages/bounds, below_resolution speeds and non-linear gain are excluded. Wall/CPU/RSS p95 is nearest rank; fps.p5 is the slow tail.\n\n| Item | Metric | Value | Oracle-to-Rust |\n|---|---|---:|---:|\n"
+  for $item in $result.items
+    $peer = {}; $peer_metrics={}
+    if $other != nil then
+      if $other.suite != $result.suite or $other.engine == $result.engine then raise("COMPARE", "requires same suite and opposite engines") end
+      for $p in $other.items
+        if $p.id == $item.id then $peer = flatten($p.metrics,""); $peer_metrics=$p.metrics end
+      end
+    end
+    $metrics = flatten($item.metrics,"")
+    for $key in sort(keys($metrics))
+      $v = $metrics[$key]; $r = nil
+      if type($v) == "number" and type($peer[$key]) == "number" and not excluded($item.metrics,$key) and not excluded($peer_metrics,$key) then
+        $r = if $result.engine == "ffmpeg" then ratio($v,$peer[$key]) else ratio($peer[$key],$v) end
+      end
+      $text = $text.."| "..replace($item.id,"|","/").." | "..replace($key,"|","/").." | "..replace(to_string($v),"|","/").." | "..to_string($r).." |\n"
+    end
+  end
+  return $text
+end

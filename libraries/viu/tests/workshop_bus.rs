@@ -13,13 +13,131 @@ use viu::{app_host::test_support::Harness, bundle::Bundle};
 const PROFILE_INFO_HELPERS: bool = false;
 const PROFILE_TICK: bool = false;
 const VERIFY_INCREMENTAL: bool = false;
+const PROFILE_PUBLICATIONS: bool = false;
+const CONTROL_SECOND_FULL: bool = false;
 const MAX_PATCH_APPLY_CPU_US: u64 = 100_000;
 // Fable ruling D: this binary runs alone. Post-startup round-5 standalone
-// max pump was 387,676 us; 800,000 us gives just over 2x margin. Tick models
-// reached 2,398,986 bytes; 4 MiB gives 75% margin. These numeric guards are
-// independent of the unchanged 1 s call and 2 s owner-stall assertions.
+// max pump was 387,676 us; 800,000 us gives just over 2x margin.
+// Pump/apply bounds remain independent of the unchanged 1 s call and
+// 2 s owner-stall assertions. Publication bytes are telemetry under Fable A.
 const MAX_STANDALONE_PUMP_US: u64 = 800_000;
-const MAX_TICK_MODEL_BYTES: u64 = 768 * 1024;
+// Fable A (2026-11-22): bytes are telemetry; protocol kind and container rider guard publications.
+
+// Diagnostic only: leave the installed app and every guard unchanged.
+fn publication_probe(bundle: &mut Bundle) {
+    bundle.program.source.insert_str(0, "$byte_probe={start:monotonic(),ticks:0,events:0,ack_ticks:0,ack_events:0,published_ticks:0,published_events:0}\n");
+    bundle.program.source = bundle
+        .program
+        .source
+        .replace("global $publication", "global $publication, $byte_probe");
+    let source = bundle.program.source.clone();
+    for line in source.lines().filter(|line| line.starts_with("on ")) {
+        let increment = if line == "on viu.tick" {
+            "$byte_probe.ticks=$byte_probe.ticks+1;"
+        } else {
+            ""
+        };
+        bundle.program.source = bundle.program.source.replace(
+            &format!("{line}\n"),
+            &format!("{line}\n  {increment}$byte_probe.events=$byte_probe.events+1\n"),
+        );
+    }
+    let needle = "  if $full then send \"viu-local\" \"scenes.model\" body=";
+    let probe = r#"  $op_sizes=[]
+  for $op in $operations
+    push($op_sizes,{op:$op.op,path:$op.path,bytes:byte_length(json_encode($op)),items:len($op.items ?? []),remove:$op.remove ?? 0,index:$op.index ?? nil})
+  end
+  print("WORKSHOP_BUILD "..json_encode({revision:$revision,base:$publication.ack,full:$full,bytes:byte_length(json_encode(if $full then {generation:$ctx.generation,revision:$revision,value:$value} else $body end)),model_bytes:byte_length(json_encode($value)),operations:len($operations),op_sizes:$op_sizes,ticks:$byte_probe.ticks-$byte_probe.ack_ticks,events:$byte_probe.events-$byte_probe.ack_events,coalesced_ticks:$byte_probe.ticks-$byte_probe.published_ticks,coalesced_events:$byte_probe.events-$byte_probe.published_events,phase:if $s.discovery!=nil then "discovery" else "steady" end,since_start_ms:(monotonic()-$byte_probe.start)*1000}))
+  $byte_probe.published_ticks=$byte_probe.ticks;$byte_probe.published_events=$byte_probe.events
+"#;
+    assert!(bundle.program.source.contains(needle));
+    bundle.program.source = bundle
+        .program
+        .source
+        .replace(needle, &format!("{probe}{needle}"));
+    bundle.program.source = bundle.program.source.replace(
+        "    $publication.ack=$a.revision;",
+        "    $byte_probe.ack_ticks=$byte_probe.ticks;$byte_probe.ack_events=$byte_probe.events\n    $publication.ack=$a.revision;",
+    );
+}
+
+#[test]
+fn publication_refusal_allows_one_recovery_full() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("scene.mix"), "---\nscene: 1\nname: recovery\ncitizen: recovery\n---\n```mix\n{root:{widget:\"column\",children:[]}}\n```\n").unwrap();
+    std::fs::write(dir.path().join("app.mix"), r#"
+$g=viu_context().generation
+send "viu-local" "scenes.model" body={generation:$g,revision:1,value:{label:"initial"}}
+on viu.model.applied
+  if $event.args.revision==1 then
+    send "viu-local" "scenes.model.patch" body={generation:$g,base:1,revision:2,operations:[{op:"set",path:["label"],value:"patch"}]}
+  end
+end
+on viu.model.refused
+  send "viu-local" "scenes.model" body={generation:$g,revision:3,value:{label:"recovered"}}
+end
+on viu.test.second_full
+  send "viu-local" "scenes.model" body={generation:$g,revision:4,value:{label:"second"}}
+end
+"#).unwrap();
+    let mut host = Harness::new(Bundle::load(dir.path(), &[]).unwrap());
+    host.guard_workshop_publications();
+    host.refuse_next_publication();
+    let end = Instant::now() + Duration::from_secs(5);
+    while host.state()["model"]["label"] != "recovered" {
+        host.pump();
+        assert!(
+            host.error().is_empty() || host.error() == "injected publication refusal",
+            "{}",
+            host.error()
+        );
+        assert!(Instant::now() < end, "recovery full was not acknowledged");
+        std::thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(host.publication_summary()["refusals"], 1);
+    assert_eq!(host.publication_summary()["full"], 2);
+    if CONTROL_SECOND_FULL {
+        host.owner_event("viu.test.second_full", json!({}));
+        pump_until(&mut host, |h| h.state()["model"]["label"] == "second");
+        panic!("second full escaped the kind guard");
+    }
+}
+
+#[test]
+fn workshop_notice_fixture_obeys_publication_protocol() {
+    let broker = test_broker::Broker::start();
+    let mut bundle = Bundle::load(
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop"),
+        &["--headless".into()],
+    )
+    .unwrap();
+    bundle.manifest.bus_url = Some(broker.url.clone());
+    bundle.launch = json!({"headless":true});
+    bundle.manifest.saved_version = None;
+    let mut host = Harness::new(bundle);
+    host.guard_workshop_publications();
+    host.probe_discovery();
+    pump_until(&mut host, |h| h.ready());
+    for command in ["noded.props.changed", "agent.session.updated"]
+        .into_iter()
+        .cycle()
+        .take(20)
+    {
+        host.owner_event("workshop.notice", json!({"command":command,"args":{}}));
+    }
+    pump_until(&mut host, |h| {
+        h.discovery_measurements()["commands_us"]["workshop.notice"]["n"]
+            .as_u64()
+            .unwrap_or(0)
+            >= 20
+            && h.publication_summary()["patches"].as_u64().unwrap_or(0) > 0
+    });
+    assert_eq!(host.publication_summary()["refusals"], 0);
+    eprintln!(
+        "WORKSHOP_NOTICE_PUBLICATIONS {}",
+        host.publication_summary()
+    );
+}
 
 fn profile_tick(bundle: &mut Bundle) {
     for (needle, replacement) in [
@@ -575,13 +693,16 @@ fn workshop_answers_during_discovery() {
             // injected only through this test owner's native event queue.
             bundle.program.source.push_str(r#"
 on viu.test.retained_model
-  $state.traffic=[];$state.traffic_bytes=0
-  for $i=0 to 47
+  if $event.args.offset==0 then $state.traffic=[];$state.traffic_bytes=0 end
+  for $i=$event.args.offset to $event.args.offset+7
     $state=$fixture_traffic.retain($state,{ts:to_string($i),direction:"local",command:"fixture.retained",payload:{text:$event.args.padding}})
   end
-  $state=publish_workshop($state);$dirty=true
+  $state=changed_workshop($state);$dirty=true
 end
 "#);
+        }
+        if PROFILE_PUBLICATIONS {
+            publication_probe(&mut bundle);
         }
         let _profile_module = PROFILE_INFO_HELPERS.then(|| profile_info_helpers(&mut bundle));
         if PROFILE_TICK {
@@ -594,6 +715,7 @@ end
             "on viu.job.completed\n  if ($state.jobs[$event.args.tag.id].owner ?? nil)==\"discovery\" then print(\"WORKSHOP_DISCOVERY_STEP\") end",
         );
         let mut host = Harness::new(bundle);
+        host.guard_workshop_publications();
         host.probe_discovery();
         if PROFILE_TICK {
             host.profile_scene_apply();
@@ -611,7 +733,7 @@ end
         eprintln!("WORKSHOP_STARTUP {}", host.discovery_measurements());
         host.probe_discovery();
         if count == 200 {
-            host.discovery_numeric_bounds(MAX_STANDALONE_PUMP_US, MAX_TICK_MODEL_BYTES);
+            host.discovery_numeric_bounds(MAX_STANDALONE_PUMP_US);
             host.patch_cpu_bound(MAX_PATCH_APPLY_CPU_US);
         }
         if PROFILE_TICK {
@@ -673,28 +795,44 @@ end
             eprintln!("WORKSHOP_DISCOVERY_PHASE {}", host.discovery_measurements());
             host.probe_discovery();
             let padding="{\"name\":\"example.command\",\"description\":\"Read state\",\"read_only\":true,\"args\":{}}\n".repeat(600);
-            host.owner_event("viu.test.retained_model", json!({"padding":padding}));
             let until = Instant::now() + Duration::from_secs(5);
-            loop {
-                host.pump();
-                assert!(host.error().is_empty(), "{}", host.error());
-                let state = host.state();
-                let seeded = state["model"]["traffic_view"]["initial"][1][4]["collapse"]
-                    .as_str()
-                    .is_some_and(|text| text.contains("fixture.retained"));
-                if seeded && serde_json::to_vec(&state["model"]).unwrap().len() >= 2 * 1024 * 1024 {
-                    break;
-                }
-                assert!(
-                    Instant::now() < until,
-                    "retained Traffic seed was not published"
+            for offset in (0..48).step_by(8) {
+                let marker = format!("\"ts\": \"{}\"", offset + 7);
+                host.owner_event(
+                    "viu.test.retained_model",
+                    json!({"padding":padding,"offset":offset}),
                 );
-                std::thread::sleep(Duration::from_millis(2));
+                loop {
+                    host.pump();
+                    assert!(host.error().is_empty(), "{}", host.error());
+                    let state = host.state();
+                    // Ordinary observation rows can interleave with the seed.
+                    // Wait for this batch's actual final fixture row, not a
+                    // row count that unrelated observations could satisfy.
+                    let seeded = state["model"]["traffic_view"]["initial"]
+                        .as_array()
+                        .is_some_and(|rows| {
+                            rows.iter().any(|row| {
+                                row[4]["collapse"].as_str().is_some_and(|text| {
+                                    text.contains("fixture.retained") && text.contains(&marker)
+                                })
+                            })
+                        });
+                    if seeded {
+                        break;
+                    }
+                    assert!(
+                        Instant::now() < until,
+                        "retained Traffic seed was not published"
+                    );
+                    std::thread::sleep(Duration::from_millis(2));
+                }
             }
-            // Full initialisation is outside the per-tick incremental budget,
+            // Retained rows were seeded as ordinary acknowledged patches.
+            // Initialisation is outside the per-tick pump budget,
             // exactly as startup is. Every subsequent ordinary tick is guarded.
             host.probe_discovery();
-            host.discovery_numeric_bounds(MAX_STANDALONE_PUMP_US, MAX_TICK_MODEL_BYTES);
+            host.discovery_numeric_bounds(MAX_STANDALONE_PUMP_US);
             host.patch_cpu_bound(MAX_PATCH_APPLY_CPU_US);
             if PROFILE_TICK {
                 host.profile_scene_apply();
@@ -731,6 +869,15 @@ end
                 "numeric model guard must observe a published tick"
             );
         }
+        assert_eq!(
+            host.publication_summary()["refusals"],
+            0,
+            "200-peer run must not require recovery"
+        );
+        eprintln!(
+            "WORKSHOP_PUBLICATIONS peers={count} {}",
+            host.publication_summary()
+        );
         eprintln!(
             "WORKSHOP_PROBE peers={count} {}",
             host.discovery_measurements()
