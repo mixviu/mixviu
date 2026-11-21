@@ -13,6 +13,7 @@ use viu::{app_host::test_support::Harness, bundle::Bundle};
 const PROFILE_INFO_HELPERS: bool = false;
 const PROFILE_TICK: bool = false;
 const VERIFY_INCREMENTAL: bool = false;
+const PROFILE_PUBLICATIONS: bool = false;
 const MAX_PATCH_APPLY_CPU_US: u64 = 100_000;
 // Fable ruling D: this binary runs alone. Post-startup round-5 standalone
 // max pump was 387,676 us; 800,000 us gives just over 2x margin. Tick models
@@ -40,9 +41,7 @@ fn publication_probe(bundle: &mut Bundle) {
     let needle = "  if $full then send \"viu-local\" \"scenes.model\" body=";
     let probe = r#"  $op_sizes=[]
   for $op in $operations
-    $old=$publication.model
-    for $part in $op.path $old=$old[$part] end
-    push($op_sizes,{op:$op.op,path:$op.path,bytes:byte_length(json_encode($op)),old_bytes:byte_length(json_encode($old)),old_length:if contains(["list","map","string"],type($old)) then len($old) else nil end,items:len($op.items ?? []),remove:$op.remove ?? 0,index:$op.index ?? nil})
+    push($op_sizes,{op:$op.op,path:$op.path,bytes:byte_length(json_encode($op)),items:len($op.items ?? []),remove:$op.remove ?? 0,index:$op.index ?? nil})
   end
   print("WORKSHOP_BUILD "..json_encode({revision:$revision,base:$publication.ack,full:$full,bytes:byte_length(json_encode(if $full then {generation:$ctx.generation,revision:$revision,value:$value} else $body end)),model_bytes:byte_length(json_encode($value)),operations:len($operations),op_sizes:$op_sizes,ticks:$byte_probe.ticks-$byte_probe.ack_ticks,events:$byte_probe.events-$byte_probe.ack_events,coalesced_ticks:$byte_probe.ticks-$byte_probe.published_ticks,coalesced_events:$byte_probe.events-$byte_probe.published_events,phase:if $s.discovery!=nil then "discovery" else "steady" end,since_start_ms:(monotonic()-$byte_probe.start)*1000}))
   $byte_probe.published_ticks=$byte_probe.ticks;$byte_probe.published_events=$byte_probe.events
@@ -617,7 +616,9 @@ on viu.test.retained_model
 end
 "#);
         }
-        publication_probe(&mut bundle);
+        if PROFILE_PUBLICATIONS {
+            publication_probe(&mut bundle);
+        }
         let _profile_module = PROFILE_INFO_HELPERS.then(|| profile_info_helpers(&mut bundle));
         if PROFILE_TICK {
             profile_tick(&mut bundle);
