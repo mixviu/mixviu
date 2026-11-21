@@ -4,7 +4,7 @@ fn check($ok,$message) if not $ok then raise("REDACTION_TEST",$message) end end
 $path=path_join(dirname(script_path()),".redaction-budget-"..pid()..".mix")
 $source=read_file(path_join(dirname(script_path()),"traffic.mix"))
 -- This test double refuses any recursive redaction on the notice path.
-$blocked=replace($source,"fn redact($v)","fn redact($v)\n  raise(\"CALLBACK_BUDGET\",\"notice callback attempted redaction\")")
+$blocked=replace_must($source,'fn redact($v)',"fn redact($v)\n  raise(\"CALLBACK_BUDGET\",\"notice callback attempted redaction\")")
 if $blocked==$source then raise("PROBE","redaction budget source drift") end
 try
   write_file($path,$blocked);$budget=require($path)
@@ -32,7 +32,7 @@ try
   for $i=1 to 1025 $bounded=$budget.defer_row($bounded,{seq:$i,payload:{secret:"hidden"}},false) end
   check(len($bounded.traffic_redaction.waiting)==1024 and $bounded.dropped==1,"pending redaction rows must be bounded")
   -- Negative control deliberately restores eager notice work.
-  $eager=replace($blocked,"fn defer_row($s,$row,$observed)","fn defer_row(\$s,\$row,\$observed)\n  \$row=redact(\$row)")
+  $eager=replace_must($blocked,'fn defer_row($s,$row,$observed)',"fn defer_row(\$s,\$row,\$observed)\n  \$row=redact(\$row)")
   if $eager==$blocked then raise("PROBE","eager redaction control source drift") end
   $negative=$path..".negative.mix";write_file($negative,$eager)
   try
