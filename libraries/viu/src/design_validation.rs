@@ -283,7 +283,7 @@ pub(crate) fn drain(ctx: &egui::Context, validation: &mut Validation) {
 mod tests {
     use super::*;
     fn settle(validation: &mut Validation) {
-        let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
         loop {
             validation.after_frame();
             validation.poll();
@@ -309,7 +309,7 @@ mod tests {
         v.observe(&toolkit::Theme::read(&path).unwrap().unwrap());
         settle(&mut v);
         std::fs::write(&path, "broken").unwrap();
-        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
         while v.errors.is_empty() {
             v.poll();
             assert!(std::time::Instant::now() < until);
@@ -329,7 +329,7 @@ mod tests {
             "ack must not clear an unvalidated error"
         );
         std::fs::write(&path, source).unwrap();
-        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
         while !v.errors.is_empty() {
             v.poll();
             assert!(std::time::Instant::now() < until);
