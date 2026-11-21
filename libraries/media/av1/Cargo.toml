@@ -14,3 +14,7 @@ rav1e = { version = "=0.8.1", default-features = false, features = ["threading"]
 
 [lints]
 workspace = true
+
+[[example]]
+name = "av1enc"
+test = true

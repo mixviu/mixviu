@@ -9,12 +9,19 @@ the default has assembly disabled. Feed progressive 8-bit 4:2:0 Y4M on stdin.
 Options are `--speed` (default 10), `--qp` / `--quantizer` (100),
 `--threads` (1), `--tile-cols` / `--tile-rows` (1 each, counts rather
 than logarithms), and `--keyint` (240).
+`--help` prints usage. Use explicit row/column counts rather than a total
+`--tiles`: rav1e may adjust the grid for the frame size, so the summary
+reports the actual grid. Non-UTF-8 arguments are refused cleanly.
 
 The stream declares its fixed size and rational frame rate in the Y4M
 header. Missing/duplicate format fields, interlacing, high bit depth,
 full range, truncated frames, frame overrides and concatenated streams
 are refused. No frame-rate conversion or scaling is performed. Metadata
-lines are limited to 4096 bytes. Discard partial output after any error.
+lines are limited to 4096 bytes. Input is capped at 8192×4320 pixels
+(35,389,440 pixels; each dimension also fits IVF's u16 fields). Frames are
+read incrementally with a bounded reader; short input does not allocate a
+header-sized plane. Square/unspecified sample aspect (A1:1/A0:0) is accepted.
+Discard partial output after any error.
 The IVF header uses an unknown frame count (zero) on stdout; `--out`
 patches the exact count after success. Timestamps use the Y4M timebase.
 
@@ -22,13 +29,34 @@ One JSON line on stderr reports frames, total IVF bytes (including headers),
 encode seconds, requested settings, actual tiles and assembly status.
 Encode seconds includes frame preparation, submission and flush; it excludes
 input reads, encoder construction and output writes. Bench wall/CPU/RSS
-measurements must cover the whole process separately.
+measurements must cover the whole process separately. `encode_seconds` is
+diagnostic: speed rows compare whole-process wall time, both encoders fed
+the same Y4M pipe, with the Rust assembly build used.
+
+The summary includes `low_latency=true`, equal `min_keyint`/`max_keyint`,
+`actual_threads`, actual tile rows/columns and the pinned `rav1e_version`.
+For matching speed S, qp Q, fixed key interval K, threads T, and actual
+tile rows R / columns C, use this ffmpeg anchor (the tile options are counts):
+
+```text
+ffmpeg -i pipe:0 -c:v librav1e -speed S -qp Q -g K -keyint_min K -threads T -tile-rows R -tile-columns C -rav1e-params low_latency=true -f ivf encoded.ivf
+```
+
+The option names were checked against `ffmpeg -h encoder=librav1e`.
+Actual thread count is the explicitly sized encoder pool, not a CPU utilisation
+claim. Whole-process timing includes startup, input, encoding, muxing and output.
 
 `adapter_check.mix` runs focused worker clippy, all test targets for both
 assembly variants and the foreign gate. Its `--fmt` mode prints the worker's
 format diff and restores its checkout. The example tests generate Y4M,
 encode IVF, decode with ffmpeg/libdav1d, require five frames and PSNR above
-35 dB, and check refusal cases and IVF fields. Missing oracle tools fail.
+25 dB minimum per-frame luma PSNR on moving textured content, and check
+refusal cases and IVF fields. Plain `cargo test -p media-av1` runs these
+example tests too. A pure Rust encode/IVF test always runs. If ffmpeg or
+libdav1d is absent, the decoder oracle prints `SKIP: <what>` and returns,
+unless `MIX_TEST_REQUIRE_FFMPEG=1`, which makes absence fail. The focused
+worker script sets that variable to 1 and also scores testsrc2 with ffmpeg's
+`psnr` filter. The final fixture floor is calibrated below its measured minimum.
 No library API or dependency changes are needed: `prepare`, `submit` and
 `finish` already provide external frames in and packets out.
 

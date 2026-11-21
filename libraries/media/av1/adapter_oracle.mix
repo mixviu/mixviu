@@ -28,9 +28,22 @@ try
     if $stats.frames != 5 or $stats.bytes <= 32 or $stats.encode_seconds <= 0 or $stats.settings.fps_num != 30000 or $stats.settings.fps_den != 1001 then
       raise("ORACLE", "invalid adapter summary: " .. $encoded.stderr)
     end
+    if not $stats.settings.low_latency or $stats.settings.min_keyint != 2 or $stats.settings.max_keyint != 2 or $stats.settings.actual_threads != 1 or $stats.settings.actual_tile_cols != 1 or $stats.settings.actual_tile_rows != 1 or $stats.settings.rav1e_version != "0.8.1" then
+      raise("ORACLE", "anchor settings mismatch")
+    end
     $probe = checked(["ffprobe", "-v", "error", "-count_frames", "-show_entries", "stream=nb_read_frames,width,height", "-of", "json", $output], {timeout: 120})
     $stream = json_parse($probe.stdout).streams[0]
     if to_number($stream.nb_read_frames) != 5 or $stream.width != 64 or $stream.height != 48 then raise("ORACLE", "CLI decode mismatch") end
+    $scored = checked(["ffmpeg", "-v", "error", "-c:v", "libdav1d", "-i", $output, "-i", $source, "-lavfi", "psnr=stats_file=" .. $root .. "/psnr.txt", "-f", "null", "-"], {timeout: 120})
+    $minimum = 1000
+    $rows = read_lines($root .. "/psnr.txt")
+    if length($rows) != 5 then raise("ORACLE", "PSNR frame count mismatch") end
+    for $row in $rows
+      $score = to_number(split(split($row, "psnr_y:")[1], " ")[0])
+      if $score < $minimum then $minimum = $score end
+    end
+    print("testsrc2 minimum per-frame luma PSNR=" .. to_string($minimum) .. " dB")
+    if $minimum < 25 then raise("ORACLE", "PSNR below 25 dB fixture floor") end
     print("CLI oracle file_output=" .. to_string($file_output) .. " " .. trim($encoded.stderr))
   end
   for $text in ["", "YUV4MPEG2 W64 H48 F30:1 Ip C420\n", "YUV4MPEG2 W64 H48 F30:1 Ip C420\nFRAME\nshort", "YUV4MPEG2 W64 H48 F30:1 It C420\n"]

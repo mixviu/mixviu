@@ -5,6 +5,8 @@ use std::io::{self, BufRead, Read, Seek, SeekFrom, Write};
 use std::time::Instant;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+const MAX_PIXELS: usize = 8192 * 4320;
+const USAGE: &str = "Usage: av1enc [--speed 0..10] [--qp Q | --quantizer Q] [--threads 1..64] [--tile-cols C] [--tile-rows R] [--keyint K] [--out FILE]\nReads progressive 8-bit 420 Y4M stdin; writes IVF. Tile rows/columns are power-of-two counts (1..64), not logarithms. --help prints this usage.";
 
 #[derive(Debug)]
 struct Options {
@@ -15,6 +17,7 @@ struct Options {
     rows: usize,
     keyint: u64,
     out: Option<String>,
+    help: bool,
 }
 impl Options {
     fn parse(args: impl Iterator<Item = String>) -> Result<Self> {
@@ -26,9 +29,14 @@ impl Options {
             rows: 1,
             keyint: 240,
             out: None,
+            help: false,
         };
         let mut args = args;
         while let Some(flag) = args.next() {
+            if flag == "--help" {
+                o.help = true;
+                continue;
+            }
             let value = args
                 .next()
                 .ok_or_else(|| format!("missing value for {flag}"))?;
@@ -42,6 +50,10 @@ impl Options {
                 "--out" => o.out = Some(value),
                 _ => return Err(format!("unknown option {flag}").into()),
             }
+        }
+        if o.speed > 10 || !(1..=64).contains(&o.threads) || o.keyint == 0
+            || !o.cols.is_power_of_two() || !o.rows.is_power_of_two() || o.cols > 64 || o.rows > 64 {
+            return Err("invalid speed, threads, tile counts or key interval".into());
         }
         Ok(o)
     }
@@ -76,11 +88,15 @@ impl Header {
             return Err("expected YUV4MPEG2 header".into());
         }
         let (mut w, mut h, mut rate, mut chroma, mut interlace) = (None, None, None, None, None);
+        let mut aspect = None;
         for field in fields {
             if !field.is_ascii() {
                 return Err("non-ASCII Y4M field".into());
             }
             let (key, value) = field.split_at(1);
+            if matches!(key, "W" | "H" | "F") && !value.bytes().all(|b| b.is_ascii_digit() || (key == "F" && b == b':')) {
+                return Err("Y4M sizes and frame rate must be unsigned decimal digits".into());
+            }
             match key {
                 "W" if w.is_none() => w = Some(value.parse::<usize>()?),
                 "H" if h.is_none() => h = Some(value.parse::<usize>()?),
@@ -90,7 +106,8 @@ impl Header {
                 }
                 "C" if chroma.is_none() => chroma = Some(value),
                 "I" if interlace.is_none() => interlace = Some(value),
-                "A" => {}
+                "A" if aspect.is_none() && matches!(value, "1:1" | "0:0") => aspect = Some(value),
+                "X" if field.starts_with("XBITDEPTH=") && field != "XBITDEPTH=8" => return Err("Y4M requires 8-bit samples".into()),
                 "X" if field == "XCOLORRANGE=LIMITED" => {}
                 "X" if !field.starts_with("XCOLORRANGE=") => {}
                 _ => return Err(format!("unsupported or duplicate Y4M field {field}").into()),
@@ -113,8 +130,9 @@ impl Header {
             || !(16..=65535).contains(&s.height)
             || num == 0
             || den == 0
+            || s.width.checked_mul(s.height).is_none_or(|n| n > MAX_PIXELS)
         {
-            return Err("unsupported Y4M dimensions or frame rate".into());
+            return Err("unsupported Y4M dimensions or frame rate (pixel cap: 8192*4320)".into());
         }
         Ok(s)
     }
@@ -128,11 +146,10 @@ impl Header {
         }
         fn plane(reader: &mut impl Read, len: usize) -> Result<Vec<u8>> {
             let mut data = Vec::new();
-            data.try_reserve_exact(len)?;
-            data.resize(len, 0);
-            reader
-                .read_exact(&mut data)
+            reader.take(len as u64)
+                .read_to_end(&mut data)
                 .map_err(|e| format!("truncated Y4M frame: {e}"))?;
+            if data.len() != len { return Err("truncated Y4M frame".into()); }
             Ok(data)
         }
         let y = plane(reader, self.width * self.height)?;
@@ -156,15 +173,17 @@ fn ivf_header(out: &mut impl Write, h: Header) -> Result<()> {
     }
     Ok(())
 }
-fn packets(out: &mut impl Write, packets: Vec<Packet>) -> Result<u64> {
+fn packets(out: &mut impl Write, packets: Vec<Packet>) -> Result<(u64, u32)> {
     let mut bytes = 0;
+    let mut count = 0u32;
     for p in packets {
         out.write_all(&u32::try_from(p.data.len())?.to_le_bytes())?;
         out.write_all(&p.pts.to_le_bytes())?;
         out.write_all(&p.data)?;
         bytes += 12 + p.data.len() as u64;
+        count = count.checked_add(1).ok_or("IVF packet count overflow")?;
     }
-    Ok(bytes)
+    Ok((bytes, count))
 }
 
 struct Stats {
@@ -176,7 +195,6 @@ struct Stats {
 }
 fn encode(reader: &mut impl BufRead, out: &mut impl Write, o: &Options) -> Result<Stats> {
     let h = Header::parse(&line(reader)?.ok_or("empty Y4M input")?)?;
-    let mut frame = h.frame(reader)?.ok_or("empty Y4M input (no frames)")?;
     let mut encoder = Encoder::new(Settings {
         width: h.width,
         height: h.height,
@@ -189,6 +207,7 @@ fn encode(reader: &mut impl BufRead, out: &mut impl Write, o: &Options) -> Resul
         tile_rows: o.rows,
         key_interval: o.keyint,
     })?;
+    let mut frame = h.frame(reader)?.ok_or("empty Y4M input (no frames)")?;
     ivf_header(out, h)?;
     let mut stats = Stats {
         frames: 0,
@@ -197,12 +216,15 @@ fn encode(reader: &mut impl BufRead, out: &mut impl Write, o: &Options) -> Resul
         header: h,
         tiles: encoder.tiles(),
     };
+    let mut packet_count = 0u32;
     loop {
         let start = Instant::now();
         let prepared = encoder.prepare(&frame)?;
         let ready = encoder.submit(&prepared)?;
         stats.seconds += start.elapsed().as_secs_f64();
-        stats.bytes += packets(out, ready)?;
+        let (bytes, count) = packets(out, ready)?;
+        stats.bytes += bytes;
+        packet_count = packet_count.checked_add(count).ok_or("IVF packet count overflow")?;
         stats.frames = stats
             .frames
             .checked_add(1)
@@ -215,13 +237,18 @@ fn encode(reader: &mut impl BufRead, out: &mut impl Write, o: &Options) -> Resul
     let start = Instant::now();
     let ready = encoder.finish()?;
     stats.seconds += start.elapsed().as_secs_f64();
-    stats.bytes += packets(out, ready)?;
+    let (bytes, count) = packets(out, ready)?;
+    stats.bytes += bytes;
+    packet_count = packet_count.checked_add(count).ok_or("IVF packet count overflow")?;
+    if packet_count != stats.frames { return Err("encoded packet count differs from input frame count".into()); }
     out.flush()?;
     Ok(stats)
 }
 
 fn run() -> Result<()> {
-    let o = Options::parse(std::env::args().skip(1))?;
+    let args = std::env::args_os().skip(1).map(|s| s.into_string().map_err(|_| "non-UTF-8 argument")).collect::<std::result::Result<Vec<_>, _>>()?;
+    let o = Options::parse(args.into_iter())?;
+    if o.help { println!("{USAGE}"); return Ok(()); }
     let input = io::stdin();
     let s = if let Some(path) = &o.out {
         let mut output = io::BufWriter::new(std::fs::File::create(path)?);
@@ -238,7 +265,7 @@ fn run() -> Result<()> {
         )?
     };
     eprintln!(
-        "{{\"frames\":{},\"bytes\":{},\"encode_seconds\":{:.9},\"settings\":{{\"width\":{},\"height\":{},\"fps_num\":{},\"fps_den\":{},\"speed\":{},\"qp\":{},\"threads\":{},\"tile_cols\":{},\"tile_rows\":{},\"actual_tile_cols\":{},\"actual_tile_rows\":{},\"keyint\":{},\"asm\":{}}}}}",
+        "{{\"frames\":{},\"bytes\":{},\"encode_seconds\":{:.9},\"settings\":{{\"width\":{},\"height\":{},\"fps_num\":{},\"fps_den\":{},\"speed\":{},\"qp\":{},\"threads\":{},\"tile_cols\":{},\"tile_rows\":{},\"actual_tile_cols\":{},\"actual_tile_rows\":{},\"keyint\":{},\"asm\":{},\"low_latency\":true,\"min_keyint\":{},\"max_keyint\":{},\"actual_threads\":{},\"rav1e_version\":\"0.8.1\"}}}}",
         s.frames,
         s.bytes,
         s.seconds,
@@ -254,7 +281,7 @@ fn run() -> Result<()> {
         s.tiles.0,
         s.tiles.1,
         o.keyint,
-        cfg!(feature = "asm")
+        cfg!(feature = "asm"), o.keyint, o.keyint, o.threads
     );
     Ok(())
 }

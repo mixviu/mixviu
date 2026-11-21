@@ -1,6 +1,6 @@
 -- Focused worker checks only. Run via the native build service.
 fn checked($cmd)
-  $r = run_argv($cmd, {timeout: 7200, max_output: 16777216})
+  $r = run_argv($cmd, {timeout: 7200, max_output: 16777216, env: {MIX_TEST_REQUIRE_FFMPEG: "1"}})
   print($r.stdout)
   print($r.stderr)
   if not $r.ok then raise("CHECK", "command failed: " .. join($cmd, " ")) end
@@ -30,6 +30,7 @@ else
     checked($cmd)
     checked(["mix", "libraries/media/av1/adapter_oracle.mix"])
   end
+  checked(["cargo", "test", "--locked", "-p", "media-av1", "--", "--nocapture"])
   for $features in [["--no-default-features"], ["--features", "asm"]]
     $cmd = ["cargo", "test", "--locked", "-p", "media-av1", "--all-targets"]
     for $arg in $features
