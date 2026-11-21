@@ -11,7 +11,7 @@ for $pair in [["extra","macro_view"],["agents","agent_view"],["mesh","mesh_view"
   if not contains($v,$needle) then raise("PROBE","section source drift") end
   $v=replace($v,$needle,$replacement)
 end
-$v=replace($v,"fn project($s)","$section_previous={}\nfn project($s)\n  global $section_previous")
+$v=replace($v,"fn project($s)","fn project($s)\n  global $section_previous\n  try $previous=$section_previous catch $missing $section_previous={} end")
 $tv=replace($ts,"  $row=redact($row)","  $bytes_before=byte_length(json_encode($row));$pr=viu_test_cpu();$row=redact($row);print(\"REDACTION \"..json_encode({bytes:$bytes_before,us:(viu_test_cpu()-$pr)*1000000}))")
 try
   write_file($p,$v);write_file($t,$tv)
