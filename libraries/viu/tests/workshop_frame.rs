@@ -8,6 +8,74 @@ use std::{
 use viu::{bundle::Bundle, runtime::Runtime};
 
 #[test]
+fn traffic_redaction_job_returns_decoded_map_rows_through_native_jobs() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop");
+    let wake: viu::runtime::Wake = Arc::new(|| {});
+    let mut jobs = viu::jobs::Jobs::new(2, wake.clone());
+    let mut runtime = Runtime::new(8, wake, Some(jobs.backend(None)));
+    runtime.load(viu::runtime::Program {
+        path: root.join("app.mix"),
+        scene: "traffic-job-contract".into(),
+        citizen: "traffic-job-contract".into(),
+        source: r#"
+$traffic=require("traffic.mix");$model=require("model.mix");$controller=require("controller.mix");$work=require("work.mix")
+$state=$model.initial()
+for $seq=1 to 2
+  $state=$traffic.defer_row($state,{seq:$seq,payload:{token:"hidden",nested:[{password:"hidden",public:$seq}]}},false)
+end
+$state=$work.launch($traffic.launch($state))
+on viu.job.completed
+  $state=$controller.received($state,$event.args)
+  send "viu-local" "scenes.model" body={generation:viu_context().generation,value:{rows:$state.traffic}}
+end
+"#.into(),
+    }).unwrap();
+    let until = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        for result in jobs.poll() {
+            assert!(
+                result.tag["owner"].is_string(),
+                "Traffic Job must carry reset generation in native owner tag"
+            );
+            runtime
+                .notify(
+                    "viu.job.completed".into(),
+                    json!({"tag":result.tag,"rc":result.rc,"body":result.body}),
+                )
+                .unwrap();
+        }
+        if let Some(done) = runtime.try_completion() {
+            assert!(done.error.is_none(), "{:?}", done.error);
+            if let Some(model) = done.model {
+                let rows = model["rows"].as_array().expect("Traffic ring is a list");
+                assert_eq!(
+                    rows.len(),
+                    2,
+                    "real redaction Job must deliver decoded map rows"
+                );
+                for (i, row) in rows.iter().enumerate() {
+                    assert!(row.is_object());
+                    assert_eq!(
+                        row["seq"],
+                        i + 1,
+                        "native redaction batch must preserve FIFO"
+                    );
+                    assert_eq!(row["payload"]["token"], "[redacted]");
+                    assert_eq!(row["payload"]["nested"][0]["password"], "[redacted]");
+                    assert_eq!(row["payload"]["nested"][0]["public"], i + 1);
+                }
+                break;
+            }
+        }
+        assert!(
+            std::time::Instant::now() < until,
+            "native redaction Job stalled"
+        );
+        std::thread::sleep(Duration::from_millis(2));
+    }
+}
+
+#[test]
 fn accepted_publication_immediately_flushes_coalesced_input() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop");
     let bundle = Bundle::load(&root, &[]).unwrap();

@@ -1,3 +1,333 @@
+# PR #216 — round 3 app-test cost
+
+PR: https://github.com/mixviu/mixviu/pull/216, ready as `app/mixviu-agent`.
+Test source/checkpoint `29b85934`; product source remains `3674d978`.
+
+The strict merge gate `20261121-155510-c630ee17-a1` correctly failed
+`lib-viu/app_mix`: section-test exceeded its unchanged 20 s embedded deadline
+under the eight-wide workspace pool. This receipt preserves that red result.
+No gate retry, deadline increase, serial-list change or ignore was introduced.
+
+## Measure, then fix
+
+`tools/workshop-section-timing.mix:3` temporarily instruments the actual
+section script, runs it through the real app_mix harness with the opt-in
+native thread CPU probe, and restores it in finally. Wall time includes
+runtime setup through completion; CPU/phase counters cover evaluated source.
+The timing instrumentation itself adds a small cost; these are single samples.
+
+| Metric | Before, `4c6b11d5` | After, `2dae960b` |
+|---|---:|---:|
+| CBC job | `20261121-161610-502de042-a1` | `20261121-161718-42bc8936-a1` |
+| Real harness wall | 5.192 s | 3.208 s |
+| Evaluated source wall / thread CPU | 5.186 / 5.184 s | 3.203 / 3.202 s |
+| Full oracle calls / CPU | 155 / 1.994 s | 95 / 1.258 s |
+| Dirty projection calls / CPU | 155 / 2.103 s | 95 / 1.292 s |
+| Stored-model wraps / CPU | 299 / 0.844 s | 166 / 0.489 s |
+| Seed rotations / transition steps | 8 / 80 | 2 / 20 |
+| Nonempty fixture construction, wall / CPU | 1.124 / 1.122 ms | 1.096 / 1.094 ms |
+
+`apps/workshop/section-test.mix:23` keeps two distinct seed rotations; each
+still covers all ten event classes. The existing 35 nonempty input cases and
+their reversions remain byte-for-byte unchanged, including every row-key form.
+Pending-publication coalescing, clock advancement and forgotten-mark controls
+remain. Every transition still compares the whole presentation to the full
+oracle; no sampling or partial-section substitute was needed.
+`section-test.mix:15` wraps a candidate once and reuses that exact stored model
+after checking it against the wrapped oracle. All original assertions remain.
+
+`libraries/viu/tests/app_mix.rs:61` records each real script's wall time, so
+loaded results identify the slowest script rather than only the parent binary.
+The optional CPU probe is enabled only in test-support and only for the named
+timing environment variable; ordinary app tests retain the normal bindings.
+
+## Three strict width-eight runs
+
+All use the native `tools/ci/test_pool.mix --jobs 8`, selecting lib-viu with
+test-support and all targets. App_mix runs in the pool; the unchanged serial
+list leaves only workshop_bus alone. Retry controls are unset. Each run has
+55 binaries, 658 passed, zero failed and 12 existing ignores; all 57 app
+scripts and six Bus tests pass.
+
+| CBC job | Section-test wall | Slowest app script |
+|---|---:|---|
+| `20261121-161808-4792e530-a1` | 7.343 s | monitor/core-test.mix, 7.658 s |
+| `20261121-161823-feb766a1-a1` | 8.239 s | workshop/section-test.mix, 8.239 s |
+| `20261121-161823-e8b3fae0-a1` | 9.273 s | workshop/section-test.mix, 9.273 s |
+
+These script times include real runtime setup and completion. They exclude
+child process spawn/teardown; the parent app_mix binaries took 45.1 / 41.0 /
+44.6 s respectively. The original failure was a single script at 20.01 s,
+not the parent binary total.
+
+## Validation
+
+| Check | CBC job / result |
+|---|---|
+| Worker fmt, diff applied locally | `20261121-161727-5432d71d-a1`; applied in `29b85934` |
+| fmt check, all-target clippy, all 55 non-doc targets plus doctests, default | `20261121-162147-26fb7f5a-a1`: 648 passed, 0 failed, 12 existing ignored |
+| Same scoped checks with test-support | `20261121-162147-54adf583-a1`: 658 passed, 0 failed, 12 existing ignored |
+| All 35 external negative controls | `20261121-162147-18f14e5c-a1`: every intended assertion hit, outer rc 0 |
+| Inline eager-redaction and forgotten-mark controls, all 57 app scripts | Pass in both feature configurations and all three loaded runs |
+| Changed Mix lint | Both section-test.mix and workshop-section-timing.mix: zero errors, warnings or notes |
+| Diff and base | git diff --check clean; main still `6b4278c7`, already an ancestor; no merge needed |
+
+Clippy retains warnings in unchanged Rust files; none point at the changed
+Rust harness. Every job above ran against `29b85934` except the worker fmt
+and timing captures explicitly identified earlier. The final change after
+that checkpoint is this receipt only.
+
+All saved logs were read and audited. Initial timing-fixture mistakes were
+repaired without touching product code: `20261121-161453-8fc12c80-a1` lacked
+a separating source newline; `20261121-161532-8637ef11-a1` had not opted the
+test-support runtime into its CPU probe. The two simultaneous identical pool
+submissions `20261121-161808-52b7057a` and `20261121-161808-af5ec43e` returned
+75 (not run), because buildd refused joining different required slots. They
+were replaced with distinct Cargo argument orderings for independent runs.
+
+No `tools/ci.mix all`, workspace gate, normal-pool Workshop soak, PR merge or
+deployment in this round. The existing serial list is unchanged. These are
+scoped lib-viu pool checks, not a replacement for the eight-wide workspace
+merge gate; `pr_gate cbc` is the next full run.
+
+---
+
+# PR #216 — round 2 accepted review fixes
+
+PR: https://github.com/mixviu/mixviu/pull/216 (`app/mixviu-agent`), branch
+`feat/workshop-section-dirty`. Round-2 implementation: `3674d978`; complete
+validation checkpoint: `503122da`; final fixture checkpoint: `e1717e5f`.
+Only test orchestration/fixtures and documentation follow the implementation.
+Green: fmt, all-target clippy, all 55 non-doc targets plus doctests in both
+configurations, all 57 app scripts, six Workshop Bus tests and every negative
+control. Main is still `6b4278c7`, already an ancestor; no merge was needed.
+
+## Review response
+
+| Finding / adjudication | Resolution and checks |
+|---|---|
+| 1 — Gemini3, oversized admission | `apps/workshop/traffic.mix:16`: active bytes plus incoming encoded row are checked before eviction. Impossible admission drops only the incoming row. Real 8 MiB, active 4 MiB plus incoming 5 MiB, and combined row/byte caps are tested; admission and active-count controls fail as intended. |
+| 2 — Gemini4, upstream drops | `traffic.mix:9`: account upstream drops before pause/quit/rejection. Redacted `observed()` skips that accounting. Paused, evicted, rejected, failed and successful rows pin the exact count; upstream/double-count/rc/drop controls detect regressions. |
+| 3 — Gemini1, reset correctness | `model.mix:14` clears raw work and creates a Traffic generation. `work.mix:4` carries it in the native owner tag, including admission failures. `controller.mix:195` checks the returned tag before deleting a task, protecting reused job ids. Nil/reset/new-active/stale-result and reused-id cases pass; generation/native-tag/task-tag controls fail. Pause and quit prevent launches; quit prevents ingestion. |
+| 4 — Gemini2, malformed result | `traffic.mix:38`: guard a nil queue; reject non-map bodies, wrong batch lengths and non-map rows as counted batch drops. No partial malformed batch is retained. Malformed-body and isolated nil-queue controls pin both guards. |
+| 5 — honest section cost | `tools/workshop-section-check.mix:59` starts the timer before `inputs()`/`marks()`. Baseline preparation consumed up to 23% of a clean-tree sample's net saving, so mutations now advance revisions. The publisher compares only the reset epoch and three counters. Dead agent input and full catalogue comparisons are gone. Mutation marking is measured separately below. |
+| 6 — Gemini5/6, fixture gaps | `redaction-budget-test.mix` covers real8MiB admission, combined caps, batch bounds/FIFO, failure, pause/quit, reset and native tags. Only this script's embedded fixture receives a16MiB string allowance. `section-test.mix` wraps with frame, saved and app-mode projections (headless suppresses mode-file IO only), varies every declared cached input and command/macro/agent row keys, and coalesces multiple mutations before acknowledging the captured pending model. |
+| 7 — Gemini8, format restore | Format restores only `libraries/viu`, the package it formats, rather than the whole tree. Worker formatting at the final implementation produced no diff. |
+| 8 — GLM3, input closure | `presentation.mix:29` documents the transitive read closure and `dependencies()` names its fields. Mutation seams use that declaration to advance section revisions. `description()` reads command/snapshot/selection/tree, not `call`; call affects macro busy state. Height affects macro and freshly rebuilt placements, not retained Traffic widgets. Tests vary these inputs; removing `filter` from the closure fails the oracle. |
+| 9 — GLM2, real Job contract | `workshop_frame.rs:11` runs the real script through native Jobs and controller completion. It verifies a returned native generation tag, decoded map rows, exact redaction and FIFO. Malformed-reply and reversed-batch controls fail. JSON string replies remain correct: runtime parsing is retained, not replaced by an unencoded map. DeepSeek's BLOCKING interpretation is rejected as adjudicated. |
+| 10 — GLM3, throughput | One native Job takes up to64 rows /256KiB in order; one larger admissible row runs alone. Caps include the active batch and upstream accounting remains immediate. Before/after drop counts, backlog and notice-to-visible measurements are below. |
+| Rejected — Gemini quit blocking | `model.busy()` does not count Traffic jobs. No quit-blocking or MEDIUM-security claim is made; only the accepted reset/admission/launch correctness changes were implemented. |
+| Rejected — DeepSeek no-op/pending | Unreachable: `publish_workshop()` returns while a publication is pending, before computing a diff. Matching acceptance installs its captured model/inputs and flushes dirty state against that acknowledged model. The no-op branch was not changed. |
+
+## Honest 200-peer measurements
+
+Before: `d32f7d96`, CBC `20261121-145401-096d77e6-a1`.
+After: `3674d978`, CBC `20261121-151832-376d4fdc-a1`.
+Both run the real discovery/retained-body fixture with full-projection equality
+and unchanged response, owner-stall, wire and native apply guards. No soak.
+
+| Metric | Before | After |
+|---|---:|---:|
+| Inputs + marks, median / max | 0.865 /3.315ms | 0.087 /0.252ms |
+| Complete preparation + section projection, median / max (14 samples each) | 55.377 /122.704ms | 37.544 /176.717ms |
+| Full oracle projection, median / max | 61.492 /75.507ms | 63.303 /68.242ms |
+| Observed notice-to-owner-accepted-visible-model latency, median /p95 /max | 6,292.6 /7,419.9 /7,459.0ms | 1,135.3 /1,987.3 /2,174.8ms |
+| Visible observations /ingress at final sampled acceptance | 71 /149 | 122 /137 |
+| Not yet observed visible at that cutoff | 78 | 15 |
+| Raw waiting /active rows at that cutoff | 73 /1 | 0 /0 |
+| Reported drops at that cutoff | 0 | 0 |
+
+The after timer includes input preparation and counter comparison. Mutation-time
+marking is outside that publication timer and is not free:828 calls in the
+200-peer phase, median0.148ms, p950.414ms, max1.329ms, sum182.6ms. No aggregate
+CPU-saving claim follows from moving that work to mutation time.
+
+Four clean-tree after samples pair complete section cost28.833 /29.512 /30.818 /
+32.277ms with full projection63.303 /63.592 /65.122 /65.111ms at the same state
+and Mesh clock. The full oracle runs second and benefits from formatted Traffic
+row cache warming. Cold rebuilds can be slower than the warm oracle, as the
+176.717ms maximum shows. This is not a uniform or whole-tick speedup claim.
+
+Latency measures ingestion to an accepted publication containing that row/body,
+including correlated response bodies, not a frame physically drawn. Only the
+last100 filtered Traffic rows are displayed. Unseen observations are censored;
+they may remain queued or fall outside that window/the retained-model fixture
+replacement. The populations differ because observations arise from live test
+calls. The table therefore reports their counts and does not claim a matched
+payload latency experiment, a zero-drop stress budget or normal-pool enrolment.
+The after diagnostic's native patch CPU maximum is11,275us; wire max7,467 bytes.
+
+## Validation receipts
+
+| Check | Commit / CBC job | Result |
+|---|---|---|
+| Worker fmt, restored only the formatted package | `3674d978` / `20261121-151832-900e6eba-a1` | Pass, no diff |
+| Real native Jobs redaction | `3674d978` / `20261121-151832-f66a2775-a1` | Pass |
+| fmt check, all-target clippy, every test target and doctests, default | `503122da` / `20261121-152237-0590287a-a1` | 648 passed, 0 failed, 12 existing ignored; 55 non-doc targets plus doctests |
+| Same checks with test-support | `503122da` / `20261121-152237-d7307e0f-a1` | 658 passed, 0 failed, 12 existing ignored; all six Workshop Bus tests pass |
+| Original and round-2 controls | `503122da` / `20261121-152237-c0f95895-a1` | All 34 source mutations fail at their intended assertions; outer job rc 0 |
+| Final queue controls, including isolated nil-queue | `e1717e5f` / `20261121-153138-a74e76dd-a1` | All 15 queue mutations hit intended assertions, outer rc 0; 35 distinct external controls across these two runs |
+| All 57 app Mix scripts, final fixtures, default | `e1717e5f` / `20261121-153138-ee99fcf9-a1` | Pass |
+| All 57 app Mix scripts, final fixtures, test-support | `e1717e5f` / `20261121-153138-0d3df86e-a1` | Pass |
+| All 15 changed Mix files, including prior-round files | `e1717e5f` / local lint | Zero errors, warnings or notes; git diff --check clean |
+
+Clippy passes with warnings in unchanged Rust files; no diagnostics point at
+the changed Rust tests. Inline forgotten-mark and eager-redaction controls also
+pass within the app scripts. The final fixture-only changes isolate the nil
+guard from generation mismatch and check upstream accounting while quitting;
+they received both native app-script configurations and all queue controls.
+No Rust or product source changed after the complete validation checkpoint.
+
+Saved logs were read and audited. The original baseline probe
+`20261121-145159-424166e8-a1` counted only outer row ids; its latency population
+was corrected to include correlated responses and censoring before the accepted
+before/after capture. The first real-Job fixture used a nonexistent program path
+and failed to resolve rpc-job.mix in `20261121-150637-b9dffae2-a1`; using the
+existing application path fixed that fixture, and the real test passes in
+`20261121-150840-e615a2c4-a1` and `20261121-151832-f66a2775-a1`.
+The first control run `20261121-151156-ec5c318e-a1` stopped on its own missing
+source needle after its earlier controls had hit their assertions; the needle
+was corrected. Superseded checks at9928480f (`20261121-151357-0d4f6b01-a1` and
+`20261121-151357-33c97351-a1`) were cancelled with143 when the native-tag/reused-id
+fixture was added; they are not complete validation receipts.
+
+The serial entry is unchanged. No `tools/ci.mix all`, soak, merge or deployment
+was run in this round; `pr_gate cbc` is the next full run. Main freshness is
+checked before hand-off. Desk7's after probe remains conditional on a gold
+carrying this PR; the existing before and pending follow-up remain in the hub.
+
+---
+
+# PR #216 — Workshop section projection and notice redaction
+
+PR: https://github.com/mixviu/mixviu/pull/216, opened by `app/mixviu-agent`.
+Branch: `feat/workshop-section-dirty`, from merged #214 main `6b4278c7`.
+Current source checkpoint: `f0f6c0cf`; production behaviour is unchanged since
+`80e4ae38`, with later test/documentation changes. This receipt is a subsequent
+documentation commit. **Scoped checks pass; Workshop stays serial after the
+strict normal-pool failure recorded below. Ready for PR review.**
+
+## Behaviour and locations
+
+| File:line | Change |
+|---|---|
+| `apps/workshop/presentation.mix:33` | Section input signatures and dirty marks. Tree, macro and Traffic reuse unchanged acknowledged sections; Mesh and agent time-dependent values project each turn. Full `project()` remains the oracle. |
+| `apps/workshop/app.mix:17` | Candidate inputs are captured with the publication and commit on the matching applied receipt. Pending events coalesce against the acknowledged inputs/model; refusal re-projects from scratch. |
+| `apps/workshop/traffic.mix:8` | Notice rows enter private bounded pending state. One ordered native Job runs the unchanged recursive redactor; only redacted completion enters display/export retention. Pending work includes active bytes/rows in its 1,024-row / 8 MiB cap. |
+| `apps/workshop/controller.mix:192` | Redaction completion, correlation and existing visible drop accounting; admission at `:260` through the existing native Jobs path. No new daemon or transport. |
+| `libraries/viu/mix/model-publication.mix:13` | Direct differ calls reject changed non-map roots or long root keys instead of producing empty-path sets. |
+| `libraries/viu/src/app_host_model_tests.rs:107` | Real host at mailbox width eight retains eight receipts and pauses completion retirement. Restoring literal 32 fails the test. |
+| `docs/scene-model-publication.md:106` | Implementation/checks appendix heading and the asynchronous Traffic visibility/drop contract. |
+
+Traffic observation visibility is asynchronous. Overflow drops the oldest waiting
+row; failed redaction work drops its row. Both increment the existing visible
+drop count. Pending raw values are absent from Traffic display/filter/export.
+Direct `workshop.call` / `workshop.reply` semantics are unchanged; their Traffic
+copy still uses the original synchronous redactor. Closing the app can abandon
+pending diagnostic observations.
+
+## Measurements before changes
+
+The measurement-only `lab/workshop-section-measure` branch is not merged.
+CBC `20261121-140224-5181f254-a1` at lab `5055105a`, based on #214, passes the
+real 200-peer fixture. There are 17 projections in its 200-peer phase:
+
+| Section | Median CPU | Changed projections |
+|---|---:|---:|
+| Tree | 36.55 ms | 11/17 |
+| Macro | 0.299 ms | 1/17 |
+| Agent | 0.389 ms | 1/17 |
+| Mesh | 18.62 ms | 17/17 |
+| Traffic | 11.30 ms | 14/17 |
+
+These are callback projections, not uniform tick samples. Mesh clock output
+changes every projection. Redaction by encoded row size: <1 KiB, n82,
+median/max 1.712/3.068 ms; 1–16 KiB, n27, 3.574/39.347 ms; 16–64 KiB, n68,
+0.399/178.643 ms. An earlier diagnostic `20261121-140014-8a6b8b06-a1` reached
+228.964 ms for a 53,404-byte row. Shape matters; a byte threshold alone would
+not establish a time budget. Notice callbacks now perform zero recursive
+redaction; the same function runs in the native Job evaluator.
+
+## After measurements and limits
+
+Standalone six-test pass `20261121-140851-7c5640fd-a1` measured steady tick
+median 75.425 ms and notice CPU max 6.512 ms in the retained-body phase. Native
+apply reached 47.403 ms while delayed Traffic was still arriving. These are
+different retained states and cannot establish a paired whole-tick speedup.
+
+The paired diagnostic `20261121-141251-fdb97a25-a1` compares the same state and
+Mesh clock. With a clean tree, section projection took 40.10 / 51.55 / 53.47 /
+65.41 ms against full projection 69.95 / 76.66 / 78.65 / 80.98 ms. Full oracle
+comparisons succeeded until the run hit the unchanged native apply guard:
+118,166 us observed against 100,000 us. This red diagnostic remains reported;
+it is not a responsiveness pass. Instrumentation adds a full projection and
+changes how many delayed rows arrive before the next publication.
+
+## Validation receipts
+
+| CBC job | Result |
+|---|---|
+| `20261121-135818-65efb9b7-a1` | Baseline instrumentation caller error: diagnostic module/global cache scope; fixed before usable measurements. |
+| `20261121-135907-2851e274-a1` | Baseline fixture passed, but callback diagnostics were not forwarded; no section measurement claim. |
+| `20261121-140851-6444b063-a1` | Worker fmt diff applied locally; worker restored its own files. |
+| `20261121-140455-4792ad62-a1` | Initial host-width fixture failed to settle because its bootstrap published no model. Corrected, not hidden. |
+| `20261121-140851-7c5640fd-a1` | Corrected host width test, section/redaction/Traffic/publication Mix policies, and all six Workshop Bus tests pass. |
+| `20261121-141057-277a0c45-a1` | Literal-32 negative control triggers the host saturation assertion. Source restored. |
+| `20261121-141057-f7a67ce3-a1` | Full oracle after real discovery, steady and notice events passes at 200 peers. |
+| `20261121-141251-fc7cd5f6-a1` | Forgotten tree dirty mark triggers the real-fixture oracle assertion. Source restored. |
+| `20261121-141251-fdb97a25-a1` | Paired diagnostic red on unchanged native apply bound, detailed above. |
+| `20261121-141917-42b10066-a1` | Corrected generated property fixture passes through the real native app harness: all 57 app Mix scripts pass. |
+| `20261121-141057-6e4cb2de-a1` | Source787c32bd: fmt check, all-target clippy, all55 non-doc targets and doctests in default and test-support configurations pass. Parent-only totals:647/657 passed, zero failed,12 existing ignored per configuration. Child app-harness summaries excluded. |
+| `20261121-143113-d9c3858e-a1` | Final sourcef0f6c0cf: all57 embedded app Mix scripts, including wrapped-model/clock checks, and all six Workshop Bus tests pass. Only documentation changes follow. |
+| `20261121-142253-d58056ae-a1` | Redundant full repeat cancelled after the full scoped pass; final fixture changes received the focused native run above. Cancellation receipt143; not a test failure or pass. |
+
+All-target clippy exits0 with existing warnings in unchanged Rust files: library
+114 and unit target126 (110 duplicates), plus integration/dependency warnings.
+There are no diagnostics in the changed Rust test file. This is not a
+warnings-as-errors result. Saved logs were read and audited. All13 changed Mix
+files lint with zero errors, warnings or notes; git diff --check passes.
+
+The final standalone retained-body phase reaches4,052,371 model bytes, tick
+median86,569us, notice CPU max5,743us and native apply max68,520us. Delayed
+Traffic is still changing the model; this is not the baseline's retained state
+and no paired whole-tick speedup is claimed.
+
+The generated property test now uses eight seeds, one complete ten-event
+permutation each, plus a forgotten mark, wrapped acknowledged models and a
+clock-advance check. The original repeated 320-step version passes under the
+CLI but exceeded the embedded 20-second callback deadline in the loaded pool.
+Only duplicate permutation repeats were removed. Product deadlines, 200 peers,
+silent/departing peers and all existing numeric guards are unchanged.
+
+Redaction tests pin the existing substring-key semantics, deferred request/
+response correlation, FIFO, pending row bound and absence of raw Traffic output.
+A test double raises on recursive notice redaction; restoring eager work hits
+that assertion. Every changed Mix file has been linted; final lint has zero
+errors, warnings and notes.
+
+The independent GLM whole-path survey is recorded in the private hub with
+accepted checks and explicit scope corrections. Earlier GLM/DeepSeek attempts
+exhausted their reasoning budgets without a report and are not approvals.
+
+## Pool and desk disposition
+
+Initial strict normal-pool job `20261121-141302-0dbe7a6d-a1` stopped in round one
+on the new generated test's embedded deadline. Workshop Bus passed. A fresh
+strict twelve-round width-four no-serial/no-retry run after the fixture repair,
+`20261121-142018-d010b2ad-a1`, passed round one and failed round two on native
+apply: 105,920 us observed against the unchanged 100,000 us guard. Rounds 3–12
+did not run. All 54 binaries were queued at width four, with zero serial entries
+and no retry. Failure-phase notice CPU max was 5,840 us; tick median 80,530 us;
+wire max 157,462 bytes; retained model max 3,852,294 bytes. The one-second calls
+did not fail. **Workshop stays serial.** The conditional full CI is not triggered.
+
+Desk7 after measurement is pending the gold carrying this PR. Its recorded
+before is worst ping 482 ms in the first 1.3 seconds on gold `a3b1e286`.
+The private TODO-workshop records the exact probe and this pending follow-up.
+No PR merge, gold shipment or desk deployment has occurred in this task.
+
+---
+
 # PR #214 — rounds 2, 3 and 3b complete
 
 PR: https://github.com/mixviu/mixviu/pull/214 (ready). Validated source head: `3fa0291585fe731e545ca656916df967b8e12629`; the following receipt commit changes only this report. Base remains `a3b1e286` (#213); final fetch found no newer main commit. Workshop stays serial. No full CI or soak was run; `pr_gate cbc` remains the next full run.
