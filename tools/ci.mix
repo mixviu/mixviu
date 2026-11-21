@@ -102,6 +102,9 @@ fn stage_test($mix)
   -- CBC runs all; hosted CI runs test without the external media oracle.
   if $stage == "all" then
     $test_env.MIX_TEST_REQUIRE_FFMPEG = "1"
+    $vectors = env("HOME") .. "/.cache/mix/opus-vectors"
+    run_step([$mix, "tools/opus_test_setup.mix", $vectors])
+    $test_env.MIX_TEST_OPUS_VECTORS = realpath($vectors)
   end
   run_step(["cargo", "fetch", "--locked"])
   -- The test binaries run in parallel (tools/ci/test_pool.mix, which adds

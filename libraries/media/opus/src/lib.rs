@@ -1,8 +1,5 @@
 //! 48 kHz mono/stereo Opus packets. Encoding uses 20 ms frames; decoding accepts
 //! every legal Opus packet duration, including those in the RFC vector sets.
-#[cfg(feature = "bench-cranpose")]
-use opus_bench as codec;
-#[cfg(not(feature = "bench-cranpose"))]
 use opus_pure as codec;
 
 pub const SAMPLE_RATE: u32 = 48_000;
@@ -57,13 +54,16 @@ impl OpusHead {
 #[derive(Debug)]
 pub struct Packet {
     pub data: Vec<u8>,
-    /// Samples per channel to discard at the end, for container discard padding.
+    /// Samples per channel to discard at the end. Matroska DiscardPadding uses
+    /// nanoseconds: convert with samples * 1_000_000_000 / SAMPLE_RATE.
     pub discard_padding: u16,
 }
 pub trait Encoder {
     fn head(&self) -> &OpusHead;
     fn encode(&mut self, pcm: &[f32]) -> Result<Packet, Error>;
-    /// Flushes the codec lookahead. Idempotent, including for empty input.
+    /// Flushes lookahead after whole 20 ms input frames. Idempotent, including
+    /// for empty input. Callers padding a partial input frame must account for
+    /// that extra padding themselves; this API does not accept a true sample count.
     fn finish(&mut self) -> Result<Option<Packet>, Error>;
 }
 #[derive(Debug)]
@@ -171,6 +171,10 @@ pub struct OpusDecoder {
     channels: Channels,
 }
 impl OpusDecoder {
+    /// Range-coder state after the last packet, for RFC vector verification.
+    pub fn final_range(&self) -> u32 {
+        self.inner.final_range()
+    }
     pub fn new(channels: Channels) -> Result<Self, Error> {
         let inner = codec::OpusDecoder::new(SAMPLE_RATE as i32, channels.count())
             .map_err(|e| Error(e.to_string()))?;
@@ -192,6 +196,9 @@ impl Decoder for OpusDecoder {
             .inner
             .decode(packet.unwrap_or_default(), capacity, &mut pcm)
             .map_err(|e| Error(e.to_string()))?;
+        if n == 0 || n > capacity || (packet.is_none() && n != FRAME_SAMPLES) {
+            return Err(Error("invalid decoded frame length".into()));
+        }
         pcm.truncate(n * self.channels.count());
         if pcm.iter().any(|v| !v.is_finite()) {
             return Err(Error("non-finite decoder output".into()));

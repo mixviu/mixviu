@@ -2,15 +2,24 @@
 //! archive SHA256 before extraction; no vector data is committed here.
 use media_opus::{Channels, Decoder, OpusDecoder};
 use std::{fs, path::PathBuf, process::Command};
+mod support;
 
 #[test]
 fn rfc_vectors() {
-    let root = PathBuf::from(
-        std::env::var("OPUS_VECTOR_ROOT")
-            .expect("run tools/opus_test_setup.mix on the worker before this test"),
-    );
-    let work = std::env::temp_dir().join(format!("media-opus-vectors-{}", std::process::id()));
-    fs::create_dir(&work).unwrap();
+    let Some(root) = std::env::var_os("MIX_TEST_OPUS_VECTORS").map(PathBuf::from) else {
+        support::available(false, "MIX_TEST_OPUS_VECTORS is unset");
+        return;
+    };
+    if !support::available(Command::new(root.join("opus_compare")).output().is_ok(), "opus_compare is missing or cannot execute") { return; }
+    for set in ["opus_testvectors", "opus_newvectors"] {
+        for vector in 1..=12 {
+            for extension in ["bit", "dec"] {
+                if !support::available(root.join(set).join(format!("testvector{vector:02}.{extension}")).is_file(), "RFC vector fixture is missing") { return; }
+            }
+        }
+    }
+    let directory = support::TempDir::new("vectors");
+    let work = directory.path();
     for set in ["opus_testvectors", "opus_newvectors"] {
         for channels in [Channels::Mono, Channels::Stereo] {
             for vector in 1..=12 {
@@ -19,10 +28,16 @@ fn rfc_vectors() {
                 let mut decoder = OpusDecoder::new(channels).unwrap();
                 let mut at = 0;
                 let mut pcm = Vec::new();
+                let mut previous_lost = true;
                 while at < bytes.len() {
                     let n = u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+                    let expected_range = u32::from_be_bytes(bytes[at + 4..at + 8].try_into().unwrap());
                     at += 8; // payload length and encoder final range
                     let decoded = decoder.decode(Some(&bytes[at..at + n])).unwrap();
+                    if expected_range != 0 && n != 0 && !previous_lost {
+                        assert_eq!(decoder.final_range(), expected_range, "{set} {channels:?} {vector:02} packet offset {at}");
+                    }
+                    previous_lost = n == 0;
                     for v in decoded.pcm {
                         pcm.extend_from_slice(
                             &((v * 32768.).round_ties_even().clamp(-32768., 32767.) as i16)
@@ -63,5 +78,4 @@ fn rfc_vectors() {
             }
         }
     }
-    fs::remove_dir_all(work).unwrap();
 }

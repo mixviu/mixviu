@@ -1,5 +1,16 @@
 use media_opus::{Channels, Decoder, Encoder, FRAME_SAMPLES, OpusDecoder, OpusEncoder, Packet};
 use std::{fs, path::Path, process::Command};
+mod support;
+
+fn oracle_available() -> bool {
+    let version = Command::new("ffmpeg").arg("-version").output();
+    if !support::available(version.is_ok_and(|o| o.status.success()), "ffmpeg is missing or cannot execute") { return false; }
+    for kind in ["-encoders", "-decoders"] {
+        let probe = Command::new("ffmpeg").args(["-hide_banner", kind]).output();
+        if !support::available(probe.is_ok_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).lines().any(|line| line.split_whitespace().nth(1) == Some("libopus"))), &format!("ffmpeg libopus {kind} unavailable")) { return false; }
+    }
+    true
+}
 
 fn ffmpeg(args: &[&str]) {
     let output = Command::new("ffmpeg")
@@ -100,8 +111,9 @@ fn snr(a: &[f32], b: &[f32]) -> f64 {
 
 #[test]
 fn libopus_interop_and_container_timing() {
-    let work = std::env::temp_dir().join(format!("media-opus-interop-{}", std::process::id()));
-    fs::create_dir(&work).unwrap();
+    if !oracle_available() { return; }
+    let directory = support::TempDir::new("interop");
+    let work = directory.path();
     let source_path = work.join("source.f32");
     let candidate_path = work.join("candidate.ogg");
     let oracle_path = work.join("oracle.ogg");
@@ -197,5 +209,4 @@ fn libopus_interop_and_container_timing() {
             );
         }
     }
-    fs::remove_dir_all(work).unwrap();
 }

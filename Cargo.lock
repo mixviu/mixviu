@@ -1716,12 +1716,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cranpose-opus-pure"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "523f02377ea3cd16781316c395b04b07b70a021063eba41b0ac46255e007c005"
-
-[[package]]
 name = "crc32fast"
 version = "1.5.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5558,7 +5552,6 @@ version = "0.1.2"
 name = "media-opus"
 version = "0.1.2"
 dependencies = [
- "cranpose-opus-pure",
  "opus-pure",
 ]
 

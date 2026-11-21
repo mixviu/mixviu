@@ -11,6 +11,7 @@ fn header_flush_and_explicit_loss() {
         assert_eq!(head.mapping_family, 0);
         assert_eq!(head.stream_count, 1);
         assert_eq!(head.coupled_count, u8::from(channels == Channels::Stereo));
+        assert_eq!(head.bytes(), [79,112,117,115,72,101,97,100,1,channels.count() as u8,56,1,128,187,0,0,0,0,0]);
         let mut decoder = OpusDecoder::new(channels).unwrap();
         let mut samples = 0;
         for _ in 0..5 {
@@ -19,6 +20,8 @@ fn header_flush_and_explicit_loss() {
                 .unwrap();
             let output = decoder.decode(Some(&packet.data)).unwrap();
             assert!(!output.packet_lost);
+            assert_eq!(output.channels, channels);
+            assert_eq!(output.pcm.len(), FRAME_SAMPLES * channels.count());
             samples += output.pcm.len() / channels.count();
         }
         let tail = encoder.finish().unwrap().unwrap();
@@ -37,6 +40,61 @@ fn header_flush_and_explicit_loss() {
         assert!(lost.packet_lost);
         assert_eq!(lost.pcm.len(), FRAME_SAMPLES * channels.count());
         assert!(decoder.decode(Some(&[])).is_err());
+        let mut resumed = OpusEncoder::new(channels, 96_000).unwrap();
+        let packet = resumed.encode(&vec![0.1; FRAME_SAMPLES * channels.count()]).unwrap();
+        let output = decoder.decode(Some(&packet.data)).unwrap();
+        assert!(!output.packet_lost);
+        assert_eq!(output.pcm.len(), FRAME_SAMPLES * channels.count());
+    }
+}
+
+#[test]
+fn bitrate_controls_mean_payload_size() {
+    let mut low = OpusEncoder::new(Channels::Stereo, 64_000).unwrap();
+    let mut high = OpusEncoder::new(Channels::Stereo, 128_000).unwrap();
+    let mut seed = 0x5749_132au32;
+    let mut sizes = [0usize; 2];
+    for _ in 0..100 {
+        let frame: Vec<f32> = (0..FRAME_SAMPLES * 2).map(|_| {
+            seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+            (seed as i32 as f32 / i32::MAX as f32) * 0.35
+        }).collect();
+        sizes[0] += low.encode(&frame).unwrap().data.len();
+        sizes[1] += high.encode(&frame).unwrap().data.len();
+    }
+    assert!(sizes[1] > sizes[0] * 3 / 2, "128k payload {} must clearly exceed 64k {}", sizes[1], sizes[0]);
+}
+
+#[test]
+fn damaged_real_packets_with_interleaved_loss() {
+    for channels in [Channels::Mono, Channels::Stereo] {
+        let mut encoder = OpusEncoder::new(channels, 96_000).unwrap();
+        let pcm: Vec<f32> = (0..FRAME_SAMPLES * channels.count()).map(|i| (i as f32 * 0.037).sin() * 0.3).collect();
+        let prime = encoder.encode(&pcm).unwrap();
+        let packet = encoder.encode(&pcm).unwrap();
+        for cut in [1, packet.data.len()/2, packet.data.len()-1] {
+            let mut decoder = OpusDecoder::new(channels).unwrap();
+            decoder.decode(Some(&prime.data)).unwrap();
+            assert!(decoder.decode(None).unwrap().packet_lost);
+            if let Ok(out) = decoder.decode(Some(&packet.data[..cut])) {
+                assert!(out.pcm.iter().all(|v| v.is_finite()));
+            }
+            decoder.decode(None).unwrap();
+            let out = decoder.decode(Some(&packet.data)).unwrap();
+            assert!(!out.packet_lost);
+            assert_eq!(out.pcm.len(), FRAME_SAMPLES * channels.count());
+        }
+        for index in [0, packet.data.len()/2, packet.data.len()-1] {
+            let mut decoder = OpusDecoder::new(channels).unwrap();
+            decoder.decode(Some(&prime.data)).unwrap();
+            let mut damaged = packet.data.clone();
+            damaged[index] ^= 0x80;
+            if let Ok(out) = decoder.decode(Some(&damaged)) {
+                assert!(out.pcm.iter().all(|v| v.is_finite()));
+            }
+            assert!(decoder.decode(None).unwrap().packet_lost);
+            assert!(!decoder.decode(Some(&packet.data)).unwrap().packet_lost);
+        }
     }
 }
 
