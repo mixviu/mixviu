@@ -23,7 +23,7 @@ const MAX_TICK_MODEL_BYTES: u64 = 768 * 1024;
 
 // Diagnostic only: leave the installed app and every guard unchanged.
 fn publication_probe(bundle: &mut Bundle) {
-    bundle.program.source.insert_str(0, "$byte_probe={start:monotonic(),ticks:0,events:0}\n");
+    bundle.program.source.insert_str(0, "$byte_probe={start:monotonic(),ticks:0,events:0,ack_ticks:0,ack_events:0,published_ticks:0,published_events:0}\n");
     bundle.program.source = bundle.program.source.replace("global $publication", "global $publication, $byte_probe");
     let source = bundle.program.source.clone();
     for line in source.lines().filter(|line| line.starts_with("on ")) {
@@ -39,14 +39,19 @@ fn publication_probe(bundle: &mut Bundle) {
     }
     let needle = "  if $full then send \"viu-local\" \"scenes.model\" body=";
     let probe = r#"  $op_sizes=[]
-  for $op in $operations push($op_sizes,{op:$op.op,path:$op.path,bytes:byte_length(json_encode($op)),items:len($op.items ?? [])}) end
-  print("WORKSHOP_BUILD "..json_encode({revision:$revision,base:$publication.ack,full:$full,bytes:byte_length(json_encode(if $full then {generation:$ctx.generation,revision:$revision,value:$value} else $body end)),model_bytes:byte_length(json_encode($value)),operations:len($operations),op_sizes:$op_sizes,ticks:$byte_probe.ticks,events:$byte_probe.events,phase:if $s.discovery!=nil then "discovery" else "steady" end,since_start_ms:(monotonic()-$byte_probe.start)*1000}))
+  for $op in $operations
+    $old=$publication.model
+    for $part in $op.path $old=$old[$part] end
+    push($op_sizes,{op:$op.op,path:$op.path,bytes:byte_length(json_encode($op)),old_bytes:byte_length(json_encode($old)),old_length:len($old),items:len($op.items ?? []),remove:$op.remove ?? 0,index:$op.index ?? nil})
+  end
+  print("WORKSHOP_BUILD "..json_encode({revision:$revision,base:$publication.ack,full:$full,bytes:byte_length(json_encode(if $full then {generation:$ctx.generation,revision:$revision,value:$value} else $body end)),model_bytes:byte_length(json_encode($value)),operations:len($operations),op_sizes:$op_sizes,ticks:$byte_probe.ticks-$byte_probe.ack_ticks,events:$byte_probe.events-$byte_probe.ack_events,coalesced_ticks:$byte_probe.ticks-$byte_probe.published_ticks,coalesced_events:$byte_probe.events-$byte_probe.published_events,phase:if $s.discovery!=nil then "discovery" else "steady" end,since_start_ms:(monotonic()-$byte_probe.start)*1000}))
+  $byte_probe.published_ticks=$byte_probe.ticks;$byte_probe.published_events=$byte_probe.events
 "#;
     assert!(bundle.program.source.contains(needle));
     bundle.program.source = bundle.program.source.replace(needle, &format!("{probe}{needle}"));
     bundle.program.source = bundle.program.source.replace(
         "    $publication.ack=$a.revision;",
-        "    $byte_probe.ticks=0;$byte_probe.events=0\n    $publication.ack=$a.revision;",
+        "    $byte_probe.ack_ticks=$byte_probe.ticks;$byte_probe.ack_events=$byte_probe.events\n    $publication.ack=$a.revision;",
     );
 }
 
