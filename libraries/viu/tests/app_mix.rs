@@ -58,6 +58,7 @@ fn every_app_mix_test_runs_with_real_host_bindings() {
 }
 
 fn run_script(path: &std::path::Path) {
+    let started = std::time::Instant::now();
     let temporary = tempfile::tempdir().unwrap();
     let argv = if path.ends_with("dopus/core-test.mix") {
         vec![
@@ -107,4 +108,5 @@ fn run_script(path: &std::path::Path) {
         done.stderr
     );
     println!("{}: {}", path.display(), done.stdout);
+    println!("APP_SCRIPT_TIME {} {:.6}", path.display(), started.elapsed().as_secs_f64());
 }

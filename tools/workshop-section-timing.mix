@@ -1,0 +1,32 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC-only, temporary instrumentation through the real embedded harness.
+$path="apps/workshop/section-test.mix";$source=read_file($path)
+$prefix=<<EOF
+$stats={oracle:{n:0,cpu:0,wall:0},dirty:{n:0,cpu:0,wall:0},wrap:{n:0,cpu:0,wall:0}}
+$start_cpu=viu_test_cpu();$start_wall=monotonic()
+fn timed($kind,$call)
+  global $stats
+  $cpu=viu_test_cpu();$wall=monotonic();$value=$call()
+  $stats[$kind].cpu=$stats[$kind].cpu+viu_test_cpu()-$cpu
+  $stats[$kind].wall=$stats[$kind].wall+monotonic()-$wall
+  $stats[$kind].n=$stats[$kind].n+1
+  return $value
+end
+EOF
+$probe=replace($source,'$p.project($s,','oracle($s,')
+$probe=replace($probe,'$p.project_dirty($s,','dirty($s,')
+$probe=replace($probe,'fn wrap($s,$value)','fn unmeasured_wrap($s,$value)')
+$helpers=<<EOF
+fn oracle($s,$now) return timed("oracle",fn()=$p.project($s,$now)) end
+fn dirty($s,$last,$marks,$now) return timed("dirty",fn()=$p.project_dirty($s,$last,$marks,$now)) end
+fn wrap($s,$value) return timed("wrap",fn()=unmeasured_wrap($s,$value)) end
+EOF
+$probe=$prefix..$helpers..$probe
+$probe=replace_must($probe,'-- Nonempty read closures', 'print({phase:"seeds",cpu:viu_test_cpu()-$start_cpu,wall:monotonic()-$start_wall,stats:$stats})'.."\n-- Nonempty read closures")
+$probe=replace_must($probe,'$s=$p.changed($s,keys($s));$receipt=compare($s,nil,nil)', 'print({phase:"fixtures",cpu:viu_test_cpu()-$start_cpu,wall:monotonic()-$start_wall,stats:$stats})'.."\n"..'$s=$p.changed($s,keys($s));$receipt=compare($s,nil,nil)')
+$probe=$probe.."\n"..'print({phase:"total",cpu:viu_test_cpu()-$start_cpu,wall:monotonic()-$start_wall,stats:$stats})'
+try
+  write_file($path,$probe)
+  $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test","app_mix","--","--nocapture"],{env:{MIX_TEST_VIU_APP_SCRIPT:realpath($path)},timeout:600,stderr:"stdout",max_output:16000000});print($r.stdout)
+finally write_file($path,$source) end
+if not $r.ok then exit($r.exit_code ?? 1) end
