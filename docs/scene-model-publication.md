@@ -129,8 +129,10 @@ duplicate rows are matched by occurrence; their identities are interchangeable
 when an identical occurrence leaves the window. Filtering and placement changes
 continue to show complete redacted bodies.
 
-Workshop also compares presentation section inputs with the inputs captured by
-the last acknowledged publication. Unchanged tree, macro and Traffic sections
+Workshop compares section revision counters with the counters captured by
+the last acknowledged publication. Mutations mark the sections whose declared
+read closures they affect; the publisher compares no complete state subtrees.
+Unchanged tree, macro and Traffic sections
 reuse that model; pending publications do not advance the acknowledged inputs.
 Changes accumulated while awaiting acceptance are compared on the next flush.
 Mesh ages/animation and agent permission expiry labels continue to project each
@@ -143,8 +145,13 @@ in private state for one ordered native Job at a time, using the same recursive
 redaction function as before. Only a completely redacted result enters the
 Traffic ring, so display, filtering and export cannot expose a pending body.
 Observation visibility is asynchronous. Pending inputs are capped at 1,024 rows
-and 8 MiB including active work; overflow drops the oldest waiting rows, and
-failed Jobs drop their row. Both increment the existing visible drop count.
+and 8 MiB including active work. Admission rejects a row that cannot fit beside
+active work before evicting any waiting rows. Otherwise overflow drops only
+enough oldest waiting rows to make room. A Job takes up to64 rows /256 KiB in
+FIFO order; one larger admissible row runs alone. Failed or malformed results
+drop their batch. All local losses and upstream drop counts remain visible,
+including on pause or rejection. Reset clears private work and fences late
+completions by Traffic generation; pause and quit prevent new launches.
 This queue is separate from the existing bounded redacted display ring.
 
 The 200-peer private-Bus fixture keeps its original one-second calls, two-second

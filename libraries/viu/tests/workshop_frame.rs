@@ -51,7 +51,11 @@ end
                 );
                 for (i, row) in rows.iter().enumerate() {
                     assert!(row.is_object());
-                    assert_eq!(row["seq"], i + 1);
+                    assert_eq!(
+                        row["seq"],
+                        i + 1,
+                        "native redaction batch must preserve FIFO"
+                    );
                     assert_eq!(row["payload"]["token"], "[redacted]");
                     assert_eq!(row["payload"]["nested"][0]["password"], "[redacted]");
                     assert_eq!(row["payload"]["nested"][0]["public"], i + 1);

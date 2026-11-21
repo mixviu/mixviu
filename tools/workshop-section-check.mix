@@ -96,10 +96,13 @@ EOF
     if $mode=="oracle" and not $r.ok then exit($r.exit_code ?? 1) end
     if $mode=="section-negative" and ($r.ok or not contains($r.stdout,"section-dirty projection differs from full oracle")) then raise("PROBE","forgotten tree mark missed real-fixture oracle") end
   finally write_file($p,$source) end
-elif $mode=="queue-negative" or $mode=="input-negative" or $mode=="job-negative" then
+elif $mode=="round2-controls" then
+  for $case in ["queue-negative","input-negative","job-negative","job-fifo","width-negative","section-negative"] checked(["mix",script_path(),$case]) end
+  checked(["mix","libraries/viu/tests/workshop-probe.mix","review-controls"])
+elif $mode=="queue-negative" or $mode=="input-negative" or $mode=="job-negative" or $mode=="job-fifo" then
   $cases=if $mode=="queue-negative" then ["admission","upstream","double","failure","rc","generation","rows","batch-rows","batch-bytes","body","quit","pause"] else [$mode] end
   for $case in $cases
-    $p=if $case=="input-negative" then "apps/workshop/presentation.mix" elif $case=="job-negative" then "apps/workshop/traffic-redact-job.mix" else "apps/workshop/traffic.mix" end
+    $p=if $case=="input-negative" then "apps/workshop/presentation.mix" elif contains(["job-negative","job-fifo"],$case) then "apps/workshop/traffic-redact-job.mix" else "apps/workshop/traffic.mix" end
     $source=read_file($p)
     if $case=="admission" then $old='if $active_bytes+$bytes>8388608 then';$new='if false then';$expected="impossible row must preserve"
     elif $case=="upstream" then $old='if $observed then $s.dropped=';$new='if false then $s.dropped=';$expected="upstream counts must be counted once"
@@ -114,12 +117,13 @@ elif $mode=="queue-negative" or $mode=="input-negative" or $mode=="job-negative"
     elif $case=="quit" then $old='if $s.traffic_paused or $s.quitting then';$new='if $s.traffic_paused then';$expected="quit must refuse"
     elif $case=="pause" then $old='if $s.quitting or $s.traffic_paused or $q==nil';$new='if $s.quitting or $q==nil';$expected="pause must not launch"
     elif $case=="input-negative" then $old='tree:["snapshot","catalogues","agents","filter",';$new='tree:["snapshot","catalogues","agents",';$expected="section-dirty projection differs from full oracle"
+    elif $case=="job-fifo" then $old='map($event.args.rows,';$new='map(reverse($event.args.rows),';$expected="native redaction batch must preserve FIFO"
     else $old='reply(0,json_encode({rows:map($event.args.rows,fn($row)=$traffic.redact($row))}))';$new='reply(0,json_encode("malformed"))';$expected="real redaction Job must deliver decoded map rows" end
     $mutated=replace_must($source,$old,$new)
     try
       write_file($p,$mutated)
-      $argv=if $case=="job-negative" then ["cargo","test","-p","lib-viu","--test","workshop_frame","traffic_redaction_job_returns_decoded_map_rows_through_native_jobs","--","--nocapture"] else ["cargo","test","-p","lib-viu","--test","app_mix","--","--nocapture"] end
-      $env=if $case=="job-negative" then {} else {MIX_TEST_VIU_APP_SCRIPT:realpath(if $case=="input-negative" then "apps/workshop/section-test.mix" else "apps/workshop/redaction-budget-test.mix" end)} end
+      $argv=if contains(["job-negative","job-fifo"],$case) then ["cargo","test","-p","lib-viu","--test","workshop_frame","traffic_redaction_job_returns_decoded_map_rows_through_native_jobs","--","--nocapture"] else ["cargo","test","-p","lib-viu","--test","app_mix","--","--nocapture"] end
+      $env=if contains(["job-negative","job-fifo"],$case) then {} else {MIX_TEST_VIU_APP_SCRIPT:realpath(if $case=="input-negative" then "apps/workshop/section-test.mix" else "apps/workshop/redaction-budget-test.mix" end)} end
       $r=run_argv($argv,{timeout:600,env:$env,stderr:"stdout",max_output:16000000});print("CONTROL "..$case);print($r.stdout)
       if $r.ok or not contains($r.stdout,$expected) then raise("PROBE","negative control missed its assertion: "..$case) end
     finally write_file($p,$source) end
