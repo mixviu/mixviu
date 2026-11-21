@@ -1,0 +1,19 @@
+-- Focused worker driver: format and dependency diffs are returned before cleanup.
+fn checked($cmd)
+  $r = run_argv($cmd, {timeout: 3600, max_output: 16777216})
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then raise("CHECK", join($cmd, " ")) end
+end
+try
+  checked(["cargo", "fmt", "-p", "media-audio"])
+  checked(["cargo", "test", "-p", "media-audio", "--all-targets"])
+  checked(["cargo", "clippy", "-p", "media-audio", "--all-targets", "--", "-D", "warnings"])
+  checked(["/opt/mix/bin/mix", "tools/foreign_gate.mix"])
+  checked(["cargo", "build", "--release-fast", "-p", "media-audio", "--example", "audio_probe"])
+finally
+  print("AUDIO_DIFF_BEGIN")
+  print(run_argv_must(["git", "diff"]))
+  print("AUDIO_DIFF_END")
+  checked(["git", "checkout", "-q", "--", "."])
+end
