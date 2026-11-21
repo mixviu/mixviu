@@ -83,7 +83,13 @@ end
     let mut host=Harness::new(Bundle::load(dir.path(),&[]).unwrap());
     host.guard_workshop_publications();
     host.refuse_next_publication();
-    pump_until(&mut host, |h| h.state()["model"]["label"]=="recovered");
+    let end=Instant::now()+Duration::from_secs(5);
+    while host.state()["model"]["label"]!="recovered" {
+        host.pump();
+        assert!(host.error().is_empty() || host.error()=="injected publication refusal", "{}", host.error());
+        assert!(Instant::now()<end,"recovery full was not acknowledged");
+        std::thread::sleep(Duration::from_millis(2));
+    }
     assert_eq!(host.publication_summary()["refusals"],1);
     assert_eq!(host.publication_summary()["full"],2);
     if CONTROL_SECOND_FULL {

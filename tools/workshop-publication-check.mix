@@ -1,0 +1,56 @@
+-- CBC only. Fable A guards: real fixtures, exact controls, standalone soak.
+$mode=$1 ?? "focused"
+$test=["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus"]
+fn invoke($argv)
+  $r=run_argv($argv,{timeout:1200,stderr:"stdout",max_output:32000000,env:{TEST_POOL_RETRY_REPORT:""}})
+  print($r.stdout)
+  return $r
+end
+fn checked($argv)
+  $r=invoke($argv)
+  if not $r.ok then exit($r.exit_code ?? 124) end
+end
+if $mode=="controls" then
+  for $case in ["full","container","scalar","second-full"]
+    $path=if $case=="second-full" then "libraries/viu/tests/workshop_bus.rs" else "apps/workshop/app.mix" end
+    $source=read_file($path)
+    if $case=="full" then
+      $changed=replace_must($source,'$full=$model_publication.requires_full($publication.model,$value)','$full=true')
+    elif $case=="second-full" then
+      $changed=replace_must($source,"const CONTROL_SECOND_FULL: bool = false;","const CONTROL_SECOND_FULL: bool = true;")
+    else
+      $anchor='$operations=if $full then [] else $model_publication.difference($publication.model,$value) end'
+      $operation=if $case=="scalar" then '{op:"set",path:["control_scalar"],value:1}' else '{op:"set",path:["values"],value:$value.values}' end
+      $changed=replace_must($source,$anchor,$anchor.."\n  if not $full then $operations=concat($operations,["..$operation.."]) end")
+    end
+    try
+      write_file($path,$changed)
+      $name=if $case=="second-full" then "publication_refusal_allows_one_recovery_full" else "workshop_answers_during_discovery" end
+      $r=invoke(concat($test,[$name,"--","--exact","--nocapture"]))
+      print("PUBLICATION_CONTROL "..$case.." rc="..$r.exit_code)
+      if $case=="scalar" then
+        if not $r.ok or contains($r.stdout,"Workshop container rider:") then raise("CONTROL","scalar set must pass rider") end
+      elif $case=="container" then
+        for $field in ['Workshop container rider: path=["values"] value_type=map encoded_bytes=',"fallback=unknown","WORKSHOP_PUBLICATION_FAILURE","largest_publication","sections"]
+          if $r.ok or not contains($r.stdout,$field) then raise("CONTROL","container missed field: "..$field) end
+        end
+      else
+        $expected="Workshop publication kind: expected=scenes.model.patch actual=scenes.model"
+        if $r.ok or not contains($r.stdout,$expected) then raise("CONTROL","kind assertion missed: "..$case) end
+      end
+    finally write_file($path,$source) end
+  end
+elif $mode=="soak" then
+  for $sample=1 to 20
+    print("WORKSHOP_PROTOCOL_RUN "..$sample)
+    checked(concat($test,["--","--nocapture"]))
+  end
+elif $mode=="format" then
+  try
+    checked(["cargo","fmt","--all"])
+    print(run_argv_must(["git","diff"]))
+  finally print(run_argv_must(["git","checkout","-q","--","."])) end
+else
+  checked(["cargo","test","-p","lib-viu","--features","test-support","--lib","app_host::publication_audit","--","--nocapture"])
+  checked(concat($test,["--","--nocapture"]))
+end
