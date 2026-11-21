@@ -1,0 +1,26 @@
+-- CBC only. Mutate only this job's file, restore the exact bytes in finally.
+$path="libraries/media/audio/src/limiter.rs"
+$source=read_file($path)
+if trim(run_argv_must(["git","status","--porcelain"]))!="" then raise("DIRTY","mutation input") end
+$cases=[
+ {name:"global_gain",test:"limiter_locality_preserves_distant_bed_exactly",old:"        let attack_step =",new:"        let uniform = envelope.iter().copied().fold(1.0_f64, f64::min);\n        envelope.fill(uniform);\n        let attack_step ="},
+ {name:"no_lookahead",test:"lookahead_precedes_peak_with_bounded_slope",old:"for n in (0..frames.saturating_sub(1)).rev()",new:"for n in (0..0usize).rev()"},
+ {name:"instant_release",test:"release_has_one_hundred_ms_time_constant",old:"let release = (-1.0 / (self.rate as f64 * config.release_ms / 1000.0)).exp();",new:"let release = 0.0;"},
+ {name:"sample_only",test:"four_x_detection_is_local_not_a_global_rescue",old:"let mut envelope = self.detector_peaks()?;",new:"let mut envelope: Vec<f64> = self.samples.chunks_exact(channels).map(|frame| frame.iter().map(|x| x.abs()).fold(0.0_f64, f64::max)).collect();"}
+]
+try
+  for $case in $cases
+    if not contains($source,$case.old) then raise("ANCHOR",$case.name) end
+    write_file($path,replace($source,$case.old,$case.new))
+    $r=run_argv(["cargo","test","-p","media-audio","--test","limiter_r2",$case.test,"--","--exact","--nocapture"],{timeout:600,max_output:1000000,env:{MIX_TEST_REQUIRE_FFMPEG:"1"}})
+    print("MUTANT " .. $case.name .. " test=" .. $case.test .. " rc=" .. to_string($r.exit_code))
+    print($r.stdout)
+    print($r.stderr)
+    if $r.ok or not contains($r.stdout,"FAILED") or contains($r.stderr,"could not compile") then raise("SURVIVOR",$case.name) end
+    write_file($path,$source)
+  end
+finally
+  write_file($path,$source)
+  print(run_argv_must(["git","status","--porcelain"]))
+end
+print("All four mutants killed by their named tests; source restored")
