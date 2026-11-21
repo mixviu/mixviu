@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let r = a.normalise_to_target(-14.0, -1.0, Default::default())?;
                 println!(
                     "{}",
-                    json!({"before":value(r.before), "after":value(r.after), "gain":r.gain_db, "passes":r.passes, "max_gr":r.max_gain_reduction_db, "refused":r.refused, "target_reached":r.target_reached, "shortfall_lu":r.shortfall_lu})
+                    json!({"before":value(r.before), "after":value(r.after), "gain":r.gain_db, "passes":r.passes, "max_gr":r.max_gain_reduction_db, "applied_gr":r.applied_gain_reduction_db, "refused":r.refused, "target_reached":r.target_reached, "shortfall_lu":r.shortfall_lu})
                 );
             } else {
                 let r = a.limit_true_peak(-1.0, Default::default())?;

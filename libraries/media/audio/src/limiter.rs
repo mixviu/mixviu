@@ -30,6 +30,8 @@ pub struct TargetReport {
     /// Maximum reduction attempted, including a refused attempt.
     pub max_gain_reduction_db: f64,
     pub refused: bool,
+    /// Reduction actually applied; zero for static output or refusal.
+    pub applied_gain_reduction_db: f64,
     /// Explicit success status, including the bounded correction exhaustion case.
     pub target_reached: bool,
     pub shortfall_lu: f64,
@@ -57,6 +59,16 @@ impl Audio {
         ceiling_dbtp: f64,
         config: LimiterConfig,
     ) -> Result<LimitReport, Error> {
+        let mut candidate = self.clone();
+        let report = candidate.render_limiter(ceiling_dbtp, config)?;
+        if report.max_gain_reduction_db > 6.0 {
+            return Err(Error::ReductionLimit { required_db: report.max_gain_reduction_db });
+        }
+        *self = candidate;
+        Ok(report)
+    }
+
+    fn render_limiter(&mut self, ceiling_dbtp: f64, config: LimiterConfig) -> Result<LimitReport, Error> {
         config.validate()?;
         if !ceiling_dbtp.is_finite() || ceiling_dbtp > 0.0 {
             return Err(Error::InvalidAudio);
@@ -99,13 +111,14 @@ impl Audio {
                             value += self.samples[pos as usize * channels + c] * k;
                         }
                     }
+                    if !value.is_finite() { return Err(Error::InvalidAudio); }
                     peak = peak.max(value.abs());
                 }
             }
             envelope.push(if peak > ceiling { ceiling / peak } else { 1.0 });
         }
         let attack_step = 1.0 / (self.rate as f64 * config.lookahead_ms / 1000.0).max(1.0);
-        // Include the FIR support so even the earliest contributing sample is protected.
+        // Full offline reverse traversal supplies the look-ahead without a delay line.
         for n in (0..frames.saturating_sub(1)).rev() {
             envelope[n] = envelope[n].min(envelope[n + 1] + attack_step);
         }
@@ -152,6 +165,7 @@ impl Audio {
             passes: 0,
             max_gain_reduction_db: 0.0,
             refused: false,
+            applied_gain_reduction_db: 0.0,
             target_reached: (target_lufs - static_report.after.integrated_lufs).abs() <= 0.5,
             shortfall_lu: static_report.shortfall_lu,
         };
@@ -168,7 +182,7 @@ impl Audio {
             for x in &mut candidate.samples {
                 *x *= gain;
             }
-            let limited = candidate.limit_true_peak(ceiling_dbtp, config)?;
+            let limited = candidate.render_limiter(ceiling_dbtp, config)?;
             report.passes = pass;
             report.max_gain_reduction_db = report
                 .max_gain_reduction_db
@@ -180,6 +194,7 @@ impl Audio {
             let error = target_lufs - limited.after.integrated_lufs;
             if error.abs() <= 0.5 || pass == 3 {
                 report.after = limited.after;
+                report.applied_gain_reduction_db = limited.max_gain_reduction_db;
                 report.target_reached = error.abs() <= 0.5;
                 report.gain_db = gain_db;
                 report.shortfall_lu = error.max(0.0);

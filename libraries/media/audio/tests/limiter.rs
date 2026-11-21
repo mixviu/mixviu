@@ -47,6 +47,9 @@ fn refusal_returns_legacy_static_result() {
     let mut samples = a.samples().to_vec();
     samples[48000] = 30.0;
     a = Audio::new(48000, 2, samples).unwrap();
+    let mut direct = a.clone();
+    assert!(matches!(direct.limit_true_peak(-1.0, Default::default()), Err(media_audio::Error::ReductionLimit { .. })));
+    assert_eq!(direct, a);
     let mut b = a.clone();
     b.normalise(-14.0, -1.0).unwrap();
     let r = a
@@ -61,7 +64,7 @@ fn refusal_returns_legacy_static_result() {
 fn impulse_alignment_and_edges() {
     for position in [0, 2400, 4799] {
         let mut samples = vec![0.0; 4800];
-        samples[position] = 2.0;
+        samples[position] = 1.5;
         let mut a = Audio::new(48000, 1, samples).unwrap();
         a.limit_true_peak(-1.0, LimiterConfig::default()).unwrap();
         assert_eq!(a.frames(), 4800);
@@ -73,13 +76,21 @@ fn impulse_alignment_and_edges() {
 #[test]
 fn bounded_target_and_invalid_settings() {
     let base = tone(true);
-    let mut a = Audio::new(48000, 2, base.samples().iter().enumerate().map(|(i, &x)| {
-        if i / 2 % 48000 < 480 { x * 0.375 } else { x }
-    }).collect()).unwrap();
+    let mut a = Audio::new(
+        48000,
+        2,
+        base.samples()
+            .iter()
+            .enumerate()
+            .map(|(i, &x)| if i / 2 % 48000 < 480 { x * 0.5 } else { x })
+            .collect(),
+    )
+    .unwrap();
     let r = a
         .normalise_to_target(-14.0, -1.0, LimiterConfig::default())
         .unwrap();
     assert!(!r.refused, "{r:?}");
+    assert!(r.target_reached);
     assert!((r.after.integrated_lufs + 14.0).abs() <= 0.5, "{r:?}");
     assert!(r.after.true_peak_dbtp <= -1.0);
     assert!((1..=3).contains(&r.passes));
