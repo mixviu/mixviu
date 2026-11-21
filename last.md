@@ -1,41 +1,103 @@
-# Decoration deadline tests — PR #232
+# Decoration deadline tests — PR #232, round 2 green
 
-PR: https://github.com/mixviu/mixviu/pull/232 (draft).
-Tested code head: `02eb96f56e4b49e3d4fa230df34eaa63a30458d9`. Base: `e8e9da41729e`.
+PR: https://github.com/mixviu/mixviu/pull/232 — ready for review.
+Tested head: `57155d0534b4bec292be1b299718d91c191b591d`.
+Fetched `origin/main` was `e8e9da41729e`, already an ancestor of that head;
+`git merge origin/main` reported "Already up to date". No conflicts or source
+changes were needed. The subsequent commit updates this report only.
 
-Stopped under the requested rule on an unchanged test in the normal CBC pool.
-Do not mark ready: the requested 20 green loaded rounds are incomplete.
+CBC job `20261122-085959-bec2fb03-a1`: `BUILD_RC=0`, 1808 seconds.
+All Rust commands ran on CBC. No retries, ignores, serial-list changes or
+stress harness were added.
 
-## Change
+## Fresh loaded soak
 
-Both detectors retain `BUDGET = 200 ms`. A private seam takes the start instant
-and probe implementation; tests inspect the actual worker argument and assert
-exactly `now + BUDGET`. Separate five-second channel watchdogs cover the real
-silent registry and non-Wayland detector. No retry, ignore or serial-list change.
+Twenty rounds from the start on the tested head, each using:
 
-Source locations (viu / toolkit):
+```text
+mix tools/ci/test_pool.mix --jobs 8 -- --locked -p lib-viu -p toolkit --no-default-features --all-targets
+```
 
-| Property | Source |
-|---|---|
-| Production seam | `libraries/viu/src/decorations.rs:75`, `libraries/toolkit/src/decorations.rs:92` |
-| Exact deadline and 200 ms constant | `libraries/viu/src/decorations.rs:326`, `libraries/toolkit/src/decorations.rs:343` |
-| Real silent registry completion | `libraries/viu/src/decorations.rs:301`, `libraries/toolkit/src/decorations.rs:318` |
-| Wrong-deadline rejection control | `libraries/viu/src/decorations.rs:352`, `libraries/toolkit/src/decorations.rs:369` |
-| Worker ignores deadline; caller still returns None | `libraries/viu/src/decorations.rs:358`, `libraries/toolkit/src/decorations.rs:375` |
-| Hung operation rejected by same five-second watchdog | `libraries/viu/src/decorations.rs:372`, `libraries/toolkit/src/decorations.rs:389` |
+Each round ran all 80 selected binaries. All ten decoration tests in each crate
+passed every round: 400/400 test executions. In particular, all four original
+timing-path tests passed 20/20 each. The owned macros flake was allowed only if
+it was the sole failed test and sole failed binary; it did not occur.
 
-The blocked fixtures are released after the watchdog result, including failure
-paths. Their intentional indefinite waits do not leave permanent test workers.
+All rows below belong to job `20261122-085959-bec2fb03-a1`. Pool seconds exclude
+build/record (64 seconds in round 1, one second in subsequent rounds).
 
-## Measurements
+| Round | Decorations | Macros hits | Pool seconds |
+|---|---|---|---|
+| 1 | 20/20 | 0 | 79 |
+| 2 | 20/20 | 0 | 78 |
+| 3 | 20/20 | 0 | 79 |
+| 4 | 20/20 | 0 | 80 |
+| 5 | 20/20 | 0 | 81 |
+| 6 | 20/20 | 0 | 79 |
+| 7 | 20/20 | 0 | 78 |
+| 8 | 20/20 | 0 | 79 |
+| 9 | 20/20 | 0 | 79 |
+| 10 | 20/20 | 0 | 78 |
+| 11 | 20/20 | 0 | 78 |
+| 12 | 20/20 | 0 | 78 |
+| 13 | 20/20 | 0 | 80 |
+| 14 | 20/20 | 0 | 79 |
+| 15 | 20/20 | 0 | 79 |
+| 16 | 20/20 | 0 | 79 |
+| 17 | 20/20 | 0 | 78 |
+| 18 | 20/20 | 0 | 80 |
+| 19 | 20/20 | 0 | 78 |
+| 20 | 20/20 | 0 | 79 |
 
-CBC baseline job `20261122-073024-bd7c8334-a1`, no-default features.
-Instrumentation only records elapsed time immediately before the unchanged
-250 ms assertions. Twenty standalone runs per test completed. Seventeen complete
-normal eight-wide rounds passed. Round 18 recorded all four timing samples before
-cancellation at the stop below. Each round selected all 80 lib-viu/toolkit targets
-through the existing test pool; cancelled-round rc124 results are cancellation
-artefacts, not test findings.
+## Source-mutation controls
+
+The same CBC job ran both mutations separately in both crates, then restored
+the exact original source before starting the soak.
+
+| Mutation | lib-viu | toolkit |
+|---|---|---|
+| Production `now + BUDGET + 1 ms` | Equality test failed, rc101, 0.00 s | Equality test failed, rc101, 0.00 s |
+| Production `recv()` instead of `recv_timeout(...)` | Watchdog rejected it, rc101, 5.00 s | Watchdog rejected it, rc101, 5.00 s |
+
+Wrong-deadline mutations failed `probe_receives_exact_reply_deadline` with
+`assertion left == right failed`. Unbounded receives failed
+`worker_ignoring_deadline_cannot_hang_caller` with
+`caller waited for a stuck worker: Timeout`. These intentional failures are
+negative-control successes, not soak failures. The blocked fake worker is
+released after the watchdog result.
+
+## Formatting and clippy
+
+The same job passed `cargo fmt --all -- --check` and CI-form scoped
+`cargo clippy --locked -p lib-viu -p toolkit --all-targets`, without
+`-D warnings`, in all four configurations:
+
+- Default features.
+- `--no-default-features`.
+- `--features lib-viu/test-support`.
+- `--no-default-features --features lib-viu/test-support`.
+
+Round 1 also passed every target and explicit doc-tests in all four
+configurations, including all nine feature-gated `workshop_bus` tests in both
+test-support runs: job `20261122-073142-6352fc86-a1`.
+
+## Source locations
+
+| Property | lib-viu | toolkit |
+|---|---|---|
+| Production deadline seam | `libraries/viu/src/decorations.rs:75` | `libraries/toolkit/src/decorations.rs:92` |
+| Exact deadline and unchanged 200 ms constant | `libraries/viu/src/decorations.rs:326` | `libraries/toolkit/src/decorations.rs:343` |
+| Silent registry completion | `libraries/viu/src/decorations.rs:301` | `libraries/toolkit/src/decorations.rs:318` |
+| Wrong-deadline rejection fixture | `libraries/viu/src/decorations.rs:352` | `libraries/toolkit/src/decorations.rs:369` |
+| Worker ignoring deadline | `libraries/viu/src/decorations.rs:358` | `libraries/toolkit/src/decorations.rs:375` |
+| Hung-operation watchdog control | `libraries/viu/src/decorations.rs:372` | `libraries/toolkit/src/decorations.rs:389` |
+
+## Before/after and historical macros hit
+
+Baseline job `20261122-073024-bd7c8334-a1` measured the unchanged 250 ms
+assertions. Seventeen full eight-wide rounds passed; round 18 supplied all four
+timing samples before cancellation under round 1's stop rule. Cancelled pool
+rc124 results are cancellation artefacts, not findings.
 
 | Original test | Alone: breaches / samples; maximum | Loaded: breaches / samples; maximum |
 |---|---|---|
@@ -44,44 +106,23 @@ artefacts, not test findings.
 | lib-viu non-Wayland | 0/20; 0.228476 ms | 0/18; 0.006227 ms |
 | toolkit non-Wayland | 0/20; 0.096675 ms | 0/18; 0.010051 ms |
 
-No sample exceeded 250 ms, so measured excess is zero. This sample does not
-reproduce the original #231 failure (`20261122-072127-c8e2cd79-a1`, old
-`libraries/viu/src/decorations.rs:300`); it does not establish a flake frequency
-of zero under other scheduler loads. No artificial stress harness was used.
+No baseline sample exceeded 250 ms; excess was zero. This sample did not
+reproduce #231's original breach (`20261122-072127-c8e2cd79-a1`, old
+`libraries/viu/src/decorations.rs:300`) and does not establish zero flake risk.
+The fixed tests now assert exact deadline equality and five-second completion
+independently: zero failures in 20/20 fresh loaded iterations per test.
 
-Fixed job `20261122-073142-6352fc86-a1`: all four real timing-path tests passed
-in all eight loaded rounds (0/8 failures per test). Seven full rounds were green;
-round eight failed only the unchanged toolkit macros test below. Fixed tests
-assert deadline equality and completion, not a 250 ms wall-clock measurement.
+Round 1 job `20261122-073142-6352fc86-a1`, round 8, hit unchanged
+`macros::tests::closing_a_window_kills_its_group_and_reaps_the_leader` at
+`libraries/toolkit/src/macros.rs:1447`: "timed out waiting for the macro worker".
+The toolkit binary reported 415 passed, 1 failed, 2 ignored. viu-0c owns this
+flake; round 2 explicitly permits recording it and continuing. Fresh round 2
+hits: **none (0/20)**. No macros fix is claimed here.
 
-## Validation and stop
+Earlier job `20261122-072926-74499bdb-a1` returned rc75 without running;
+`20261122-073055-1920ec06-a1` found our formatting, applied before the tested
+code. No validation work remains for this brief.
 
-CBC `20261122-073142-6352fc86-a1` passed:
-
-- `cargo fmt --all -- --check`.
-- CI-form scoped `cargo clippy --locked -p lib-viu -p toolkit --all-targets`
-  without `-D warnings`, for default, no-default, default + lib-viu/test-support,
-  and no-default + lib-viu/test-support.
-- All 80 targets plus explicit doc-tests in each of those four configurations.
-  Both test-support runs included all nine `workshop_bus` tests under the
-  existing serial policy.
-- All new deadline/watchdog controls in both crates in those runs and the soak.
-
-Round eight of the subsequent normal no-default eight-wide soak failed
-`macros::tests::closing_a_window_kills_its_group_and_reaps_the_leader`:
-`libraries/toolkit/src/macros.rs:1447`, "timed out waiting for the macro worker".
-The test starts at `libraries/toolkit/src/macros.rs:1658`; that file has no diff
-from the base. The toolkit binary reported 415 passed, 1 failed, 2 ignored.
-Job returned `BUILD_RC=1`. No rerun or fix of that pre-existing failure was made.
-
-The baseline job was cancelled via CBC; cancellation receipt
-`20261122-073024-bd7c8334-a1` reports worker rc143. The 20-round goal and additional
-source-mutation runs (wrong production deadline; unbounded production receive)
-were not reached. Committed negative fixtures did pass; these further mutation
-checks remain pending. Earlier jobs: `20261122-072926-74499bdb-a1` rc75 did not run
-(worker interpreter path); `20261122-073055-1920ec06-a1` found our formatting,
-applied before the tested head.
-
-Full raw logs and harnesses are retained in the private evidence directory
-`_var/evidence/2026-11-22-decorations-timing/`. The private flake ledger,
-TODO-viu and TODO-toolkit record the evidence and stop.
+Full raw logs and harnesses are retained privately under
+`_var/evidence/2026-11-22-decorations-timing/`, with round 2 in `round2/`.
+The flake ledger and TODO-viu record the completed evidence.
