@@ -1025,10 +1025,10 @@ impl SceneView {
                         }
                     }
                     "image" => {
-                        if text(node,"src")=="asset:cyclops" {
+                        if text(node,"src")=="brand:cyclops" {
                             let w=num(node,"w").unwrap_or(200.0);
                             let h=num(node,"h").unwrap_or(w);
-                            ui.add(egui::Image::from_bytes("bytes://viu/cyclops.svg",include_bytes!("../assets/cyclops.svg").as_slice()).fit_to_exact_size(Vec2::new(w,h)));
+                            ui.add(egui::Image::from_bytes("bytes://viu/cyclops.svg",include_bytes!("../../../share/brand/logos/alien-cyclops.svg").as_slice()).fit_to_exact_size(Vec2::new(w,h)));
                         } else if let Some(icon)=text(node,"src").strip_prefix("icon:").and_then(crate::icons::Icon::from_name) {
                             let w=num(node,"w").or(num(node,"h")).unwrap_or(24.0);
                             let h=num(node,"h").unwrap_or(w);
@@ -2276,8 +2276,8 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                 widget.validate_model(&tree.model)?;
             }
             "image" => {
-                for key in ["w","h"] {
-                    if num(node,key).is_some_and(|n| !(1.0..=16384.0).contains(&n)) {
+                for key in ["w", "h"] {
+                    if num(node, key).is_some_and(|n| !(1.0..=16384.0).contains(&n)) {
                         return Err(format!("image {id}: {key} must be 1..16384"));
                     }
                 }
@@ -2286,7 +2286,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                     .and_then(crate::icons::Icon::from_name)
                     .is_none()
                     && !text(node, "src").starts_with("raster:")
-                    && text(node, "src") != "asset:cyclops"
+                    && text(node, "src") != "brand:cyclops"
                 {
                     return Err(format!(
                         "image {id}: expected known icon: or retained raster: source"

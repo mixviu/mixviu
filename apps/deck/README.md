@@ -42,7 +42,7 @@ pinned at open, so source replacement/removal cannot change a later goto.
 The shared store caps handles at 64 and resident pixels at 512 MiB; active
 and candidate decks share those budgets. Refused opens release candidate
 handles and preserve the active deck. Use `w` and `h` for the display size.
-The static `asset:cyclops` uses the approved intro geometry; draw, blink and
+The static `brand:cyclops` uses the approved intro geometry; draw, blink and
 spin remain separate motion work.
 
 Grow rows allocate each cell its weighted share of the remaining width.

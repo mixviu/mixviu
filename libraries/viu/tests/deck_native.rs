@@ -33,12 +33,14 @@ async fn ok(client: &NodedClient, service: &str, command: &str, body: Value) -> 
     value
 }
 async fn finished(client: &NodedClient, play: Value) -> Value {
-    let deadline=Instant::now()+Duration::from_secs(180);
+    let deadline = Instant::now() + Duration::from_secs(180);
     loop {
-        let state=ok(client,"deck","deck.state",json!({})).await;
-        assert_eq!(state["play_id"],play["play_id"]);
-        if state["finished"]==true { return state; }
-        assert!(Instant::now()<deadline,"play did not finish: {state}");
+        let state = ok(client, "deck", "deck.state", json!({})).await;
+        assert_eq!(state["play_id"], play["play_id"]);
+        if state["finished"] == true {
+            return state;
+        }
+        assert!(Instant::now() < deadline, "play did not finish: {state}");
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }

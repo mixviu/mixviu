@@ -39,7 +39,10 @@ fn approved_cyclops_asset_paints_a_white_ring_and_red_eye() {
     let mut view = SceneView::new(source).unwrap();
     let mut harness = egui_kittest::Harness::builder()
         .with_size(egui::vec2(1600., 900.))
-        .with_context_setup(viu::icons::install)
+        .with_context_setup(|ctx| {
+            viu::fonts::install(ctx,400,600);
+            viu::icons::install(ctx);
+        })
         .wgpu()
         .build_ui(move |ui| {
             view.show(ui);
@@ -90,6 +93,7 @@ fn nested_grow_cards_keep_the_right_edge_inside_the_canvas() {
     let mut view = SceneView::new(source).unwrap();
     let mut harness = egui_kittest::Harness::builder()
         .with_size(egui::vec2(1700., 950.))
+        .with_context_setup(|ctx| viu::fonts::install(ctx,400,600))
         .wgpu()
         .build_ui(move |ui| {
             ui.set_width(1600.);

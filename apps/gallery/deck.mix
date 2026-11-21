@@ -103,7 +103,7 @@ fn mock($title, $items)
   return merge(column([deck_text($title,"node_label","mut"),bullets($items,"acc")],6),{padding_left:20,padding_right:20,padding_top:14,padding_bottom:14,background:$tokens.colour.panel,radius:12})
 end
 fn brand($name, $tagline, $date)
-  return column([{widget:"image",src:"asset:cyclops",w:200,h:200},deck_text($name,"wordmark","acc"),deck_text($tagline,"tagline","mut"),deck_text($date,"date","text")],28)
+  return column([{widget:"image",src:"brand:cyclops",w:200,h:200},deck_text($name,"wordmark","acc"),deck_text($tagline,"tagline","mut"),deck_text($date,"date","text")],28)
 end
 fn topic($number, $title, $subtitle)
   return column([deck_text($number,"topic_no","acc"),deck_text($title,"topic_title","text"),deck_text($subtitle,"topic_sub","mut")],22)

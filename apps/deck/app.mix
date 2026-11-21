@@ -40,7 +40,7 @@ fn perform($id,$a)
       for $i=0 to len($candidate.deck.slides)-1
         for $node in keys($candidate.deck.slides[$i].scene)
           $n=$candidate.deck.slides[$i].scene[$node]
-          if $n.widget=="image" and not starts_with($n.src ?? "","icon:") and $n.src!="asset:cyclops" then
+          if $n.widget=="image" and not starts_with($n.src ?? "","icon:") and $n.src!="brand:cyclops" then
             try $r=viu_raster("deck",$n.src,$a.path,$scope)
             catch $message raise("DECK_SCENE","slides("..$candidate.deck.slides[$i].id..").scene."..$node..".src: "..$message) end
             $candidate.deck.slides[$i].scene[$node].src=$r.handle

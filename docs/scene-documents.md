@@ -213,12 +213,22 @@ widgets today. The ordinary app renderer has a separate implementation.
 | toggle | value:b!, label:s!, on_change:s? | `libraries/scene/src/schema.rs:217` |
 | list | rows:l!, row:s!, row_height:n!, gap:n=0, max_rows:n? (>=1), fill:b=false, hidden_if_empty:b=false, on_click:s?, on_context:s?, flow:s? (vertical/horizontal), align:s? | `libraries/scene/src/schema.rs:222` |
 | image | src:s!, w:n?, h:n?, color:s? | `libraries/scene/src/schema.rs:238` |
+
 | spacer | size:n? | `libraries/scene/src/schema.rs:243` |
 | control | definition:o!, on_intent:s? | `libraries/scene/src/schema.rs:244` |
 | grid | children:l!, columns:n! (integer 1..16), identity:s?, column_gap:n=12, row_gap:n=3, min_column_width:n=0 | `libraries/scene/src/schema.rs:248` |
 | dock | children:l!, placements:o!, clip:b?, on_change:s?, outline:s?, outline_width:n?, passthrough_single:b=false, focus_target:s? | `libraries/scene/src/schema.rs:256` |
 | band | children:l!, groups:o! | `libraries/scene/src/schema.rs:266` |
 | split | children:l!, ratio:n=0.5, axis:s=horizontal (horizontal/vertical), divider:n=6 (>=1), minimum:n=0.1, maximum:n=0.9, on_change:s?; ratio/minimum/maximum <=1 | `libraries/scene/src/schema.rs:270`, `libraries/scene/src/schema.rs:431` |
+
+The application SceneView accepts known `icon:` names, the bundled
+`brand:cyclops` SVG, and retained `raster:` handles supplied by its native
+raster store. Display dimensions are 1..16384 logical pixels. File paths are
+admitted by the owning app before painting: Deck confines PNG/JPEG files to
+the deck directory, decodes them under the existing raster budgets at open,
+and replaces paths with scoped handles. SceneView never opens authored paths
+on the render thread. `scene.validate {source, model?}` now performs the same
+SceneView validation as presentation/navigation, including painter support.
 
 `image.color` is optional and binding-capable, like `text.color`. Both use
 the shell renderer's colour resolver: hex colours or `panel.background`,
