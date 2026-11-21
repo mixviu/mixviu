@@ -136,8 +136,8 @@ fn startup_fallback_surfaces_in_app_info_and_painted_notice() {
     assert_eq!(host.design_info()["file_context"]["mode"], "dark");
     let answer = info(&mut host, &rt, &broker.url);
     assert!(
-        answer["design_validation"]["errors"]
-            .to_string()
+        answer["design_validation"]["errors"][design::source_digest(&bad_requested())]
+            .as_str().unwrap()
             .contains("missing.startup-control")
     );
     host.draw();
@@ -195,6 +195,11 @@ fn generic_save_gets_late_report_and_bad_context_switch_is_refused() {
         "valid-source negative control"
     );
     let active_before = host.active_context();
+    let (rc, error) = call(&mut host, &rt, &broker.url, "workshop.theme", json!({"scheme":"spoofed"}));
+    assert_ne!(rc, 0);
+    assert_eq!(error["error_code"], "ARGUMENT");
+    assert_eq!(host.design_info()["notice"], "");
+    assert_eq!(host.design_info()["errors"], json!({}));
     let sink = Arc::new(editd::events::testing::RecordingSink::default());
     let editor = {
         let _entered = rt.enter();
@@ -214,8 +219,8 @@ fn generic_save_gets_late_report_and_bad_context_switch_is_refused() {
     rt.block_on(generic_save(&editor, &path, &bad));
     host.draw();
     pump_until(&mut host, |h| {
-        h.design_info()["errors"]
-            .to_string()
+        h.design_info()["errors"][design::source_digest(&bad)]
+            .as_str().unwrap_or("")
             .contains("missing.late-control")
     });
     assert_eq!(host.active_context(), active_before);
@@ -239,6 +244,10 @@ fn generic_save_gets_late_report_and_bad_context_switch_is_refused() {
         json!({"scheme":"studio","mode":"light"}),
     );
     assert_ne!(rc, 0, "bad context switch must fail: {error}");
+    assert_eq!(error["error_code"], "DESIGN_VALIDATION");
+    let errors = host.design_info()["errors"].as_object().unwrap().clone();
+    assert_eq!(errors.len(), 1, "never attribute a refusal to the accepted source");
+    assert!(errors[&design::source_digest(&bad)].as_str().unwrap().contains("missing.late-control"));
     assert_eq!(host.active_context(), active_before);
     assert_eq!(host.design_info()["file_context"]["scheme"], "ocean");
     assert_eq!(host.design_info()["file_context"]["mode"], "light");
@@ -250,4 +259,8 @@ fn generic_save_gets_late_report_and_bad_context_switch_is_refused() {
     );
     host.draw();
     assert!(host.drawn_text().contains("missing.late-control"));
+    rt.block_on(generic_save(&editor, &path, design::EMBEDDED_DEFAULT_SOURCE));
+    pump_until(&mut host, |h| h.design_info()["errors"] == json!({}));
+    assert_eq!(host.active_context(), active_before, "repair report cannot restyle");
+    assert_eq!(info(&mut host, &rt, &broker.url)["design_validation"]["errors"], json!({}));
 }

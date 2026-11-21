@@ -37,6 +37,8 @@ pub fn theme_path() -> PathBuf {
 /// Why a theme could not be built.
 #[derive(Debug)]
 pub enum Error {
+    /// Failure tied to the exact authored bytes validated by this operation.
+    Validation { digest: String, error: Box<Error> },
     /// The text is neither a design document nor a selection-only file.
     Source(DesignSourceError),
     /// A selection names a scheme or mode the design does not have.
@@ -53,6 +55,7 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::Validation { error, .. } => error.fmt(f),
             Self::Source(error) => write!(f, "theme source: {error}"),
             Self::Selection { field, value } => write!(f, "unknown {field} {value:?}"),
             Self::Compile(diagnostics) => {
@@ -74,10 +77,27 @@ impl fmt::Display for Error {
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
+            Self::Validation { error, .. } => Some(error.as_ref()),
             Self::Source(error) => Some(error),
             Self::Read { error, .. } => Some(error),
             Self::Selection { .. } | Self::Compile(_) => None,
         }
+    }
+}
+
+impl Error {
+    /// The original error category, independent of source attribution.
+    pub fn kind(&self) -> &Self {
+        match self { Self::Validation { error, .. } => error.kind(), _ => self }
+    }
+    pub fn source_digest(&self) -> Option<&str> {
+        match self {
+            Self::Validation { digest, .. } => Some(digest),
+            _ => None,
+        }
+    }
+    fn at_source(self, source: &str) -> Self {
+        Self::Validation { digest: design::source_digest(source), error: Box::new(self) }
     }
 }
 
@@ -198,7 +218,9 @@ impl Theme {
     /// failure here is a broken build, not a runtime condition.
     pub fn for_context(context: DesignContext) -> Self {
         let document = embedded_document();
-        Self::compile(&document, context).expect("the embedded default design compiles")
+        let mut theme = Self::compile(&document, context).expect("the embedded default design compiles");
+        theme.source_digest = design::source_digest(design::EMBEDDED_DEFAULT_SOURCE);
+        theme
     }
 
     /// A theme from `source`: a full design document (its own `scheme:`,
@@ -208,6 +230,13 @@ impl Theme {
     /// `caption_side:`, resolved against the embedded design. `identity`
     /// names the source in diagnostics.
     pub fn from_source(identity: &str, source: &str) -> Result<Self, Error> {
+        Self::from_source_inner(identity, source).map(|mut theme| {
+            theme.source_digest = design::source_digest(source);
+            theme
+        }).map_err(|error| error.at_source(source))
+    }
+
+    fn from_source_inner(identity: &str, source: &str) -> Result<Self, Error> {
         let (document, selection) =
             match design::parse_design_source(SourceIdentity::new(identity), source) {
                 Ok(document) => {
@@ -268,6 +297,13 @@ impl Theme {
         source: &str,
         context: DesignContext,
     ) -> Result<Self, Error> {
+        Self::from_source_in_inner(identity, source, context).map(|mut theme| {
+            theme.source_digest = design::source_digest(source);
+            theme
+        }).map_err(|error| error.at_source(source))
+    }
+
+    fn from_source_in_inner(identity: &str, source: &str, context: DesignContext) -> Result<Self, Error> {
         let document = match design::parse_design_source(SourceIdentity::new(identity), source) {
             Ok(document) => document,
             Err(error) => {
@@ -320,9 +356,7 @@ impl Theme {
                 let mut fallback = Self::embedded();
                 fallback.load_error = Some(error.to_string());
                 fallback.source_path = Some(path.to_owned());
-                fallback.load_source_digest = std::fs::read_to_string(path)
-                    .ok()
-                    .map(|s| design::source_digest(&s));
+                fallback.load_source_digest = error.source_digest().map(str::to_owned);
                 fallback
             }
         }
@@ -406,8 +440,13 @@ impl Theme {
                     })?;
                     Self::from_source_in(&path.display().to_string(), &source, context)?
                 } else {
-                    Self::compile(&self.document, context)?
+                    Self::compile(&self.document, context).map_err(|error| Error::Validation {
+                        digest: self.source_digest.clone(), error: Box::new(error),
+                    })?
                 };
+                if self.source_path.is_none() {
+                    theme.source_digest = self.source_digest.clone();
+                }
                 theme.source_path = self.source_path.clone();
                 theme.decorations = self.decorations;
                 theme.captions = self.captions;
@@ -937,7 +976,7 @@ mod tests {
         let bad = Theme::from_source("test", "style: \"neon\"\n").unwrap_err();
         assert_eq!(bad.to_string(), "unknown style \"neon\"");
         assert!(matches!(
-            Theme::from_source("test", "decorations: \"both\"\n").unwrap_err(),
+            Theme::from_source("test", "decorations: \"both\"\n").unwrap_err().kind(),
             Error::Selection {
                 field: "decorations",
                 ..
@@ -978,12 +1017,12 @@ mod tests {
         ] {
             let error = Theme::from_source("test", &full(extra)).unwrap_err();
             assert!(
-                matches!(error, Error::Selection { field: f, .. } if f == field),
+                matches!(error.kind(), Error::Selection { field: f, .. } if *f == field),
                 "{extra}: {error}"
             );
         }
         assert!(matches!(
-            Theme::from_source("test", &full("style: 4\n")).unwrap_err(),
+            Theme::from_source("test", &full("style: 4\n")).unwrap_err().kind(),
             Error::Source(_)
         ));
     }
@@ -1019,9 +1058,9 @@ mod tests {
         assert_eq!(unknown.to_string(), "unknown scheme \"neon\"");
         let extra =
             Theme::from_source("test", "scheme: \"ocean\"\nsurface: \"#ffffff\"\n").unwrap_err();
-        assert!(matches!(extra, Error::Source(_)), "{extra}");
+        assert!(matches!(extra.kind(), Error::Source(_)), "{extra}");
         assert!(matches!(
-            Theme::from_source("test", "{{{").unwrap_err(),
+            Theme::from_source("test", "{{{").unwrap_err().kind(),
             Error::Source(_)
         ));
     }
@@ -1035,7 +1074,7 @@ mod tests {
         assert_eq!(Theme::read(&path).unwrap().unwrap().scheme(), Scheme::Stone);
         std::fs::write(&path, "mode: \"dusk\"\n").unwrap();
         assert!(matches!(
-            Theme::read(&path).unwrap_err(),
+            Theme::read(&path).unwrap_err().kind(),
             Error::Selection { field: "mode", .. }
         ));
     }

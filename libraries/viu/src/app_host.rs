@@ -419,6 +419,26 @@ impl Host {
             Ok(self.file_theme.clone())
         }
     }
+    fn checked_theme_choice(&mut self, choice: &toolkit::theme::Choice) -> Result<toolkit::Theme, String> {
+        let base = self.theme_base().map_err(|error| {
+            // Snapshot/adapter errors are surfaced, but are not compile refusals.
+            self.error = error.clone();
+            error
+        })?;
+        base.with_choice(choice).map_err(|error| {
+            let message = error.to_string();
+            if let Some(digest) = error.source_digest() {
+                self.design_validation.refused(digest, &message);
+            } else {
+                self.error = message.clone();
+            }
+            message
+        })
+    }
+    fn dismiss_design_notice(&mut self) {
+        if self.error == self.design_validation.notice { self.error.clear(); }
+        self.design_validation.notice.clear();
+    }
     fn dispatch(
         &mut self,
         command: String,
@@ -1082,23 +1102,23 @@ impl Host {
                     .and_then(|id| self.view.request_focus(id))
                     .map(|_| json!({"focused":true})),
                 "native.theme" => crate::native_theme::choice(&request.args).and_then(|choice| {
-                    let base = self.theme_base()?;
-                    let theme = base.with_choice(&choice).map_err(|e| e.to_string())?;
+                    let theme = self.checked_theme_choice(&choice)?;
                     crate::appearance::install_theme(ctx, &theme)?;
                     self.native_choice = request.args.clone();
                     Ok(crate::native_theme::describe(&theme))
                 }),
                 _ => Err("unknown native operation".into()),
             };
-            if request.command == "native.theme" {
-                if let Err(message) = &answer {
-                    self.design_validation
-                        .refused(self.file_theme.source_digest(), message);
-                }
-            }
             let _ = request.reply.send(match answer {
                 Ok(body) => (0, body),
-                Err(message) => (10, json!({"error_code":"ARGUMENT","message":message})),
+                Err(message) => {
+                    let code = if request.command == "native.theme"
+                        && crate::native_theme::choice(&request.args).is_ok()
+                        && self.design_validation.notice == message {
+                        "DESIGN_VALIDATION"
+                    } else { "ARGUMENT" };
+                    (10, json!({"error_code":code,"message":message}))
+                },
             });
         }
         for (_, image) in self.clipboard.drain() {
@@ -1325,27 +1345,18 @@ impl Host {
                                 Ok(None)
                             };
                             let mut refused_design = false;
-                            if let Err(error) = &appearance {
-                                refused_design = true;
-                                self.design_validation
-                                    .refused(self.file_theme.source_digest(), error);
-                            }
                             let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
                                 crate::appearance::theme_choice(&model["theme_choice"])?;
                                 if self.model["theme_choice"] != model["theme_choice"] {
-                                    let base = self.theme_base()?;
                                     let empty = json!({});
                                     let choice = if model["theme_choice"].is_null() {
                                         &empty
                                     } else {
                                         &model["theme_choice"]
                                     };
-                                    base.with_choice(&crate::native_theme::choice(choice)?)
+                                    self.checked_theme_choice(&crate::native_theme::choice(choice)?)
                                         .map_err(|error| {
-                                            refused_design = true;
-                                            let error = error.to_string();
-                                            self.design_validation
-                                                .refused(self.file_theme.source_digest(), &error);
+                                            refused_design = self.design_validation.notice == error;
                                             error
                                         })?;
                                 }
@@ -1796,9 +1807,24 @@ impl Host {
                                 );
                             }
                         }
-                        Err(error) => self
-                            .design_validation
-                            .refused(self.file_theme.source_digest(), &error),
+                        Err(error) => {
+                            // Classify the failing compile itself, never the
+                            // adapter's general String error or accepted file.
+                            let refusal = crate::appearance::session_base(
+                                &authored, &self.app, &self.file_theme, &self.last_ui,
+                            ).ok().and_then(|(base, _)| {
+                                let value = if self.model["theme_choice"].is_null() {
+                                    json!({})
+                                } else { self.model["theme_choice"].clone() };
+                                let choice = crate::native_theme::choice(&value).ok()?;
+                                base.with_choice(&choice).err()
+                            });
+                            if let Some(failure) = refusal.filter(|e| e.source_digest().is_some()) {
+                                self.design_validation.refused(failure.source_digest().unwrap(), &failure.to_string());
+                            } else {
+                                self.error = error;
+                            }
+                        },
                     }
                 }
                 if let Some(at) = session.deadline() {
@@ -2184,7 +2210,7 @@ impl Host {
                         ui.set_max_width(620.);
                         ui.label(&self.design_validation.notice);
                         if ui.small_button("Dismiss").clicked() {
-                            self.design_validation.notice.clear();
+                            self.dismiss_design_notice();
                         }
                     });
                 });
@@ -2610,7 +2636,7 @@ fn create_with_theme(
 pub fn run(mut args: Vec<String>) -> eframe::Result {
     if args.first().is_some_and(|arg| arg == "--validate-design") {
         let source = match args.get(1).map(String::as_str) {
-            Some("--embedded") => Ok(design::EMBEDDED_DEFAULT_SOURCE.to_owned()),
+            Some("--embedded") if args.len() == 2 => Ok(design::EMBEDDED_DEFAULT_SOURCE.to_owned()),
             Some(path) if args.len() == 2 => {
                 std::fs::read_to_string(path).map_err(|e| e.to_string())
             }
