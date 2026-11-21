@@ -1,0 +1,23 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Disposable CBC-only baseline instrumentation. Never production policy.
+$p="apps/workshop/presentation.mix";$t="apps/workshop/traffic.mix"
+$ps=read_file($p);$ts=read_file($t)
+$v=replace($ps,"  $rows=[]","  $pr=viu_test_cpu();$rows=[]")
+$v=replace($v,"  $side=$model.effective_dock($s)","  print(\"SECTION \"..json_encode({name:\"tree\",us:(viu_test_cpu()-$pr)*1000000,rows:len($rows),peers:len($s.snapshot.peers)}))\n  $side=$model.effective_dock($s)")
+for $pair in [["extra","macro_view"],["agents","agent_view"],["mesh","mesh_view"],["traffic","traffic_view"]]
+  $needle="$"..$pair[0].."=$"..$pair[1]..".project($s)"
+  $value="$"..$pair[0]
+  $replacement="$pr=viu_test_cpu();"..$needle..";print(\"SECTION \"..json_encode({name:\""..$pair[1].."\",us:(viu_test_cpu()-$pr)*1000000,changed:not deep_eq($section_previous[\""..$pair[1].."\"],"..$value.."),peers:len($s.snapshot.peers)}));$section_previous[\""..$pair[1].."\"]="..$value
+  if not contains($v,$needle) then raise("PROBE","section source drift") end
+  $v=replace($v,$needle,$replacement)
+end
+$v=replace($v,"fn project($s)","$section_previous={}\nfn project($s)\n  global $section_previous")
+$tv=replace($ts,"  $row=redact($row)","  $bytes_before=byte_length(json_encode($row));$pr=viu_test_cpu();$row=redact($row);print(\"REDACTION \"..json_encode({bytes:$bytes_before,us:(viu_test_cpu()-$pr)*1000000}))")
+try
+  write_file($p,$v);write_file($t,$tv)
+  $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--nocapture"],{timeout:1800,stderr:"stdout",max_output:64000000})
+  print($r.stdout)
+finally
+  write_file($p,$ps);write_file($t,$ts)
+end
+exit($r.exit_code ?? 1)
