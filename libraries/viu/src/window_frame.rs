@@ -127,13 +127,73 @@ pub fn client_of(ctx: &egui::Context) -> bool {
 pub fn request_menu(ctx: &egui::Context, position: Option<egui::Pos2>) {
     if client_of(ctx) && design::decorations::is_wayland() {
         if let Some(position) = position {
+            let vp = ctx.viewport_id();
             ctx.data_mut(|d| {
                 d.insert_temp(
-                    egui::Id::unique(("eframe.window-menu", ctx.viewport_id())),
+                    egui::Id::unique(("eframe.window-menu", vp)),
                     position,
                 )
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod menu_tests {
+    use std::{sync::{Arc, mpsc}, thread, time::Duration};
+
+    fn menu_frame(operation: impl FnOnce(&egui::Context) + Send + 'static) -> mpsc::Receiver<()> {
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || {
+            let resolver = design::decorations::Resolver::new(
+                || design::decorations::SessionFacts {
+                    wayland: true,
+                    desktops: "example".into(),
+                    decoration_global: None,
+                },
+                || None,
+                |_| {},
+            );
+            design::decorations::with_resolver(Arc::new(resolver), || {
+                let ctx = egui::Context::default();
+                let mut operation = Some(operation);
+                let output = ctx.run_ui(Default::default(), |ui| {
+                    if let Some(operation) = operation.take() {
+                        ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique("viu-window-client"), true));
+                        assert!(super::client_of(ui.ctx()));
+                        assert!(design::decorations::is_wayland());
+                        operation(ui.ctx());
+                    }
+                });
+                output.drop_without_applying_deltas();
+            });
+            let _ = tx.send(());
+        });
+        rx
+    }
+
+    #[test]
+    fn request_menu_returns_and_stores_position_in_current_viewport() {
+        let rx = menu_frame(|ctx| {
+            let position = egui::pos2(37.0, 53.0);
+            super::request_menu(ctx, Some(position));
+            let id = egui::Id::unique(("eframe.window-menu", ctx.viewport_id()));
+            assert_eq!(ctx.data(|d| d.get_temp::<egui::Pos2>(id)), Some(position));
+        });
+        rx.recv_timeout(Duration::from_secs(2)).expect("request_menu did not return successfully");
+    }
+
+    #[test]
+    fn nested_viewport_read_negative_control_times_out() {
+        let rx = menu_frame(|ctx| {
+            // Deliberately restore the old read-in-write: the watchdog must
+            // reject it before egui's ten-second debug detector fires.
+            ctx.data_mut(|d| d.insert_temp(
+                egui::Id::unique(("eframe.window-menu", ctx.viewport_id())),
+                egui::pos2(37.0, 53.0),
+            ));
+        });
+        assert!(matches!(rx.recv_timeout(Duration::from_millis(100)), Err(mpsc::RecvTimeoutError::Timeout)));
     }
 }
 
