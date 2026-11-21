@@ -1,3 +1,13 @@
+# Workshop publication byte guard — PR #226
+
+
+
+## PR #226 — per-publication byte guard investigation (2026-11-21)
+
+Branch fix/workshop-tick-bytes-guard, main baseline 5938fb02, diagnostic head 2b3283c9. https://github.com/mixviu/mixviu/pull/226 (draft, mixviu-agent). Main #225 evidence: 872845 bytes against 786432, job 20261121-230938-e7e02839-a1. Measurements queued: instrumented main batch 20261121-232506-1e33fb1c; untouched main batch 20261121-232507-b7bb107c. Each is 20 separate exact standalone tests without retries. No classification yet, no guard/deadline/serial-policy change. Cancelled setup submissions 232355-1390982e, 232405-8309e3b2, 232426-8b28c4d1 before running; not test results. Full before/after distributions and Fable disposition pending.
+
+## Earlier receipt
+
 # PR #216 — round 3 app-test cost
 
 PR: https://github.com/mixviu/mixviu/pull/216, ready as `app/mixviu-agent`.
