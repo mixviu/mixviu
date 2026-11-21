@@ -44,3 +44,7 @@ ffmpeg -v error -f lavfi -i sine=frequency=440:sample_rate=48000:duration=0.3 -c
 decoders. Missing tools/decoders fail. The ignored `sample_4k` test writes a
 10-second 3840x2160 25 fps sample and probe JSON when `MEDIA_WEBM_SAMPLE` is set.
 Run builds/tests only through the repository's worker build service.
+
+The foreign gate includes media-webm in the existing rav1e admission because
+its test-only media-av1 dependency supplies generated packets, including the
+permitted assembly feature. The library has no runtime dependencies.

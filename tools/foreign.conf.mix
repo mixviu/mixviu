@@ -19,7 +19,7 @@ foreign: {
       exit: "a pure-Rust rustls crypto provider when one is mature"}
   },
   admitted: {
-    "rav1e": {kind: "asm", via: "nasm", exit: "asm feature off (pure-Rust fallback)", only: ["media-av1"], by: "Mark", on: "2026-11-14"},
+    "rav1e": {kind: "asm", via: "nasm", exit: "asm feature off (pure-Rust fallback)", only: ["media-av1", "media-webm"], by: "Mark", on: "2026-11-14"},
     "pipewire-sys": {kind: "system", via: "pipewire (portald ScreenCast only)", exit: "a pure-Rust PipeWire native-protocol client once one can publish a video stream; until then OS interface", only: ["portald"], by: "Mark", on: "2026-11-12"},
     "libspa-sys": {kind: "vendored", via: "pipewire (portald ScreenCast only); runs bindgen; compiles generated SPA inline shims and src/{type-info,command,node-command,meta}.c", exit: "with pipewire-sys", only: ["portald"], by: "Mark", on: "2026-11-12"},
     "libspa": {kind: "vendored", via: "pipewire (portald ScreenCast only); compiles upstream tests/pod.c", exit: "with pipewire-sys", only: ["portald"], by: "Mark", on: "2026-11-12"}
