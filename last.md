@@ -1,3 +1,119 @@
+# PR #220 round 9 — scene-validation Bus contract
+
+PR: https://github.com/mixviu/mixviu/pull/220. Round starts at `9ddb753a`;
+semantic code head `1f197e50d121f2c1903aafb0296aebb5705631d1`.
+The following receipt/worker-format commit does not change runtime semantics.
+
+The gate finding is confirmed: `20261122-053223-dd3b457c-a1` failed
+`mix-services` at `scenes_boot_upgrade_test.mix`'s install alpha. The loader's
+staged request was a map, while the Bus fixture passed its raw JSON body to
+the AMP document parser. This was #220's compatibility bug. It is fixed in
+the fixture, rather than hidden by bypassing validation.
+
+## Contract choice and complete survey
+
+**Option (b): accept both shapes in every implementation.** Bare source means
+read-only validation; `{source, write?}` is also read-only when `write` is
+omitted or false. Only `write:true` adds whole-source desk-theme admission.
+This is simpler here than adding a second command or threading a header through
+the injected RPC interface: the production host and loader unit fake already
+accept both shapes. The two remaining fakes now parse the selected source.
+All existing read callers retain bare source. The accepted body union and write
+semantics are explicit in `docs/docs/spec/bus/commands.conf.mix:901` and
+`docs/design-validation.md:67`. No new command or request header was introduced.
+
+All production callers are in `engines/viud/scripts/lib/scenes.mix`:
+
+| Caller | File:line | Body / admission |
+|---|---|---|
+| `prepare_reload` | `engines/viud/scripts/lib/scenes.mix:68` | Bare candidate source; read-only. |
+| `remount` | `engines/viud/scripts/lib/scenes.mix:776` | Bare candidate source; read-only. |
+| `reload_group_once` | `engines/viud/scripts/lib/scenes.mix:1301` | Bare source with current model; read-only. |
+| `stage_from` | `engines/viud/scripts/lib/scenes.mix:1457` | `{source,write:true}`; shared install/upgrade/Reset staging, before placement/swap. |
+| `editor_candidate` | `engines/viud/scripts/lib/scenes.mix:2143` | Bare editor source; read-only. |
+
+For completeness, the staging fan-in is `stage` → `stage_from` at `:1439`;
+editor Reset at `:2412`; fork's new installation at `:2468`; promotion's
+replacement installation at `:2509`; upgrade at `:2817`; ordinary Reset at
+`:2884`; and install at `:2986`. Fork and promotion use the same staged
+installation/replacement path. This round does not change that existing
+fan-in. None of the four read-only callers goes through it.
+
+Every implementer and route (whole-repository search, including fixtures):
+
+| Implementer / route | File:line | Result |
+|---|---|---|
+| Native command parser | `engines/viu/src/command.rs:99` | Routes `shell.scene.validate` to `SceneCommand::Validate`; also advertised at `:200`. |
+| Native Bus dispatch | `engines/viu/src/runtime.rs:996`, `:1286`, `:1301` | Preserves raw body and parsed args for the store handler. |
+| Native store | `engines/viu/src/store.rs:496-507` | Already accepts both; write gate only for `args["write"] == true`. |
+| Loader unit fake | `engines/viud/tests/scenes_test.mix:42`, `:56` | Already selects map.source or bare source before document validation. |
+| Scene-editor Bus fake | `engines/viud/tests/fixtures/scene-editor/fake_shell.mix:69` | Fixed: normalises event.args/body, selects source, observes write flag. Its test-only admission refusal is `DESIGN_VALIDATION`. |
+| Editor reducer fake | `engines/viud/tests/editor_app_test.mix:17` | Fixed: selects map.source or bare source and parses the document instead of returning unconditional success. |
+
+Test callers / consumers:
+
+- `engines/viud/tests/scenes_boot_upgrade_test.mix:142-145` sends bare source,
+  maps with omitted/false write, and a broken map source over the real Bus.
+  `:146-157` drives the shipped loader's `stage_from` over that Bus: refusal
+  must carry `DESIGN_VALIDATION`, leave no installed/staged tree, and increment
+  the fake's write count; admission then allows all four installs. Existing
+  later automatic upgrade/reload flows use the same fixture and pass.
+- `engines/viud/tests/scenes_test.mix:530`, `:534`, `:538` assert explicit
+  write admission for install/Reset/upgrade; `:1461-1462` checks validation
+  before unload/load. Its injected handler is listed above.
+- `engines/viud/tests/editor_app_test.mix:40` drives install through the editor
+  planner and loader; `engines/viud/tests/scene_editor_e2e.mix` uses the shared
+  Bus fake through loader operations, not a separate validate handler.
+- `engines/viu/src/store_tests.rs:51` adds omitted/false map checks with an
+  actually bad desk theme; the same real-handler test covers bare source,
+  reload/remount and all three write refusals. Other direct Validate callers
+  are at `:67`, `:98`, `:110`, `:125`, `:136`, `:162`, `:392`, `:694`.
+- `engines/viud/tests/fixtures/scene-editor/loader-commands.json:65` is an
+  upstream validate-refusal example, not an implementation. Neither copy of
+  the frozen shell-commands fixture defines a validate handler.
+
+`libraries/viu/src/runtime.rs:809` implements the distinct local native
+`scene.validate {source,model?}` port used by Deck; it does not implement
+`shell.scene.validate` and its contract is unchanged. No other implementation
+or caller was found by the repository search.
+
+## Review response
+
+| Round-9 item | Disposition / evidence |
+|---|---|
+| 1 — survey every caller and implementer | **Done.** Complete list above, including native routing, injected fakes, Bus fake, editor tests and inert fixture example. |
+| 2 — least-surprising compatible contract | **Fixed with option (b).** Both body forms documented; bare/omitted/false write remain read-only. Existing production policy is unchanged. |
+| 3 — cross-Bus fixture coverage | **Fixed.** Real loader + private Bus + fixture shell pass write-refusal-before-placement and successful admission. Removing write:true or reverting raw-only parsing each fails its intended assertion. Real-store tests separately prove a bad desk theme does not block reload/remount. |
+| 4 — add the missed services stage and scoped checks | **Done.** Full command, CBC ids and results below. |
+
+## CBC validation
+
+Every validation ran through `cbc-build --worker any`. No local tests,
+`tools/ci.mix all`, desk run, deployment or merge.
+
+| CBC job | Result |
+|---|---|
+| `20261122-061028-eed4fce2-a1` (cbc3) | **rc 0.** Builds debug Mix, mixd, noded and settingsd; runs the full `mix tools/mix_services_test.mix --mix target/debug/mix --bin target/debug` stage exactly as requested. All five service groups pass, plus the real-Bus scene boot test (28.759 s parent wall; 23.544 s test work). Loader 597 assertions, editor backend, frozen fixture 258 assertions pass. Both new mutation controls fail at their intended assertions. Env registry: 278 names, 0 problems. All 15 changed Mix files: 0 errors/warnings/notes. |
+| `20261122-061028-64d5a0bc-a1` (cbc6) | **rc 0.** Six changed Rust crates (design, theme, toolkit, lib-viu, viu, settingsd): worker fmt applied; all-target clippy and every target plus doc-tests pass in both configurations. Both width-eight pools pass all 101 binaries, including app_mix (62.75 / 70.84 s). Nine Workshop tests pass alone after the support pool (14.70 s), including the unchanged 750 ms regression. No retries or known flakes. All 223 test-result records are ok; no pool error records. |
+| `20261122-061028-f7c3af4f-a1` (cbc3) | **rc 0.** Both-configuration lib-viu clippy and all six report tests pass; all 23 existing mutations fail their intended oracles (FIFO, front requeue, notice digest, disconnect/spawn accounting, repair, registration, pending counts, unregister, read/write admission, startup ordering/info/notice, background report, settings/staging admission, startup latency, first-use validation, permanent NOT_READY, failing-source digest and dismissal). Full-projection oracle passes; dropping one section dependency fails as intended. Every rewrite is checked and restored; final worker diff empty. |
+
+Cold standalone startup: **580.344 ms worst call**, zero failures, 200 peers, first 1.5 s from port appearance, unchanged **750 ms** bound. First pump wall **310.809 ms** / CPU **310.739 ms**; load callback wall **75.526 ms** / CPU **75.372 ms**. Whole guard **1.744127 s**. Evidence: WORKSHOP_STARTUP_PORT in `20261122-061028-64d5a0bc-a1`, beginning 2026-11-22 06:10:36 AEST. The guard also passes in workshop_bus alone after the pool.
+
+The original censored before remains 1,001.520 ms / two timeouts in
+`20261121-175445-2c24d7dc-a1`; round 8 was 661.214 ms. The five gold-7ad2570f
+desk baseline samples, full write-path list and out-of-scope generic editd
+save reference (`~/.viu/_doc/TODO-editd.md`, “Generic saves of theme and scene
+sources skip design validation”) remain in the retained receipts below.
+No cache, deadline, serial-list or design policy change was added this round.
+
+The new Bus coverage is against the fixture shell, with separate real-store
+coverage. It does not claim the first-gold check against the real desk host;
+that remains recorded in TODO-viud. Full logs/drivers are retained in private
+startup evidence `round9/`. Keep #220 ready; Opus's contract delta review is
+next, before another merge gate.
+
+---
+
 # PR #220 round 8 — delta fixes validated
 
 PR: https://github.com/mixviu/mixviu/pull/220. Code head after applying the

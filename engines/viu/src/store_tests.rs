@@ -49,7 +49,10 @@ fn bad_desk_theme_reload_child() {
     let mut store = SceneStore::default();
     let mut caller = mount("loader", 1);
     // Both envelope forms retain read-only semantics with a bad desk theme.
-    for args in [json!({"source":TOAST}), json!({"source":TOAST,"write":false})] {
+    for args in [
+        json!({"source":TOAST}),
+        json!({"source":TOAST,"write":false}),
+    ] {
         assert_eq!(
             store
                 .dispatch(SceneCommand::Validate, "", &args, &mut caller)
