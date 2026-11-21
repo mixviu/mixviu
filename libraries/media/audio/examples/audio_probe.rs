@@ -17,6 +17,13 @@ fn value(m: Loudness) -> Value {
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
+    let valid = match args.get(1).map(String::as_str) {
+        Some("measure" | "snr") => args.len() == 3,
+        Some("normalise" | "resample" | "sweep") => args.len() == 4,
+        Some("mix" | "render") => (4..=5).contains(&args.len()),
+        _ => false,
+    };
+    if !valid { return Err("usage: audio_probe measure|snr INPUT; normalise|resample INPUT OUTPUT; mix|render MANIFEST OUTPUT [FRAMES]; sweep OUTPUT RATE".into()); }
     match args.get(1).map(String::as_str) {
         Some("measure") => println!("{}", value(read(&args[2])?.measure()?)),
         Some("normalise") => {

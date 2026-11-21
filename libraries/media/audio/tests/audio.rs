@@ -143,6 +143,7 @@ fn true_peak_not_sample_peak_and_gain_cap() {
     assert!(r.peak_limited);
     assert!(r.shortfall_lu > 0.1);
     assert!(r.after.true_peak_dbtp <= -0.9999);
+    assert!(r.after.true_peak_dbtp >= -1.01);
 }
 #[test]
 fn resample_lengths_dc_and_tone() {
@@ -160,7 +161,7 @@ fn resample_lengths_dc_and_tone() {
             })
             .sum();
         assert!(
-            error / 46000.0 < 1e-8,
+            error / 46000.0 < 1e-12,
             "rate {rate} mse {}",
             error / 46000.0
         );
@@ -170,7 +171,7 @@ fn resample_lengths_dc_and_tone() {
             .unwrap()
             .resample_48k()
             .unwrap();
-        assert!((a.frames() as isize - (n as f64 * 48000.0 / 44100.0).ceil() as isize).abs() <= 1);
+        assert_eq!(a.frames(), (n * 48000usize).div_ceil(44100));
     }
 }
 

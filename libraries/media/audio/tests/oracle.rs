@@ -1,7 +1,15 @@
 //! Requires the worker's ffmpeg; missing executable/filter is a failure.
 use media_audio::{Audio, WavFormat};
 use serde_json::Value;
-use std::{fs::File, process::Command};
+use std::{fs::File, io::{BufReader, BufWriter}, path::PathBuf, process::Command};
+struct TempDir(PathBuf);
+impl TempDir {
+    fn new() -> Self {
+        let path=std::env::temp_dir().join(format!("audio-oracle-{}-{}",std::process::id(),std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos()));
+        std::fs::create_dir(&path).unwrap(); Self(path)
+    }
+}
+impl Drop for TempDir { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
 fn ff(args: &[&str]) -> String {
     let o = Command::new("ffmpeg")
         .args(["-hide_banner", "-nostats", "-y"])
@@ -16,8 +24,8 @@ fn number(s: &str) -> f64 {
 }
 #[test]
 fn generated_tone_pink_noise_and_linear_loudnorm() {
-    let dir = std::env::temp_dir().join(format!("audio-oracle-{}", std::process::id()));
-    std::fs::create_dir(&dir).unwrap();
+    let temp = TempDir::new();
+    let dir = &temp.0;
     for pink in [false, true] {
         let mut seed = 17u32;
         let mut rows = [0.0; 12];
@@ -39,7 +47,7 @@ fn generated_tone_pink_noise_and_linear_loudnorm() {
         let mut a = Audio::new(48000, 2, samples).unwrap();
         let src = dir.join("source.wav");
         let dst = dir.join("linear.wav");
-        a.write_wav(File::create(&src).unwrap(), WavFormat::Float32)
+        a.write_wav(BufWriter::new(File::create(&src).unwrap()), WavFormat::Float32)
             .unwrap();
         let src = src.to_str().unwrap();
         let dst = dst.to_str().unwrap();
@@ -82,7 +90,7 @@ fn generated_tone_pink_noise_and_linear_loudnorm() {
             second.contains("\"normalization_type\" : \"linear\""),
             "linear comparison must not silently become dynamic: {second}"
         );
-        let fm = Audio::read_wav(File::open(dst).unwrap())
+        let fm = Audio::read_wav(BufReader::new(File::open(dst).unwrap()))
             .unwrap()
             .measure()
             .unwrap();
@@ -91,5 +99,15 @@ fn generated_tone_pink_noise_and_linear_loudnorm() {
         assert!((r.after.integrated_lufs - fm.integrated_lufs).abs() <= 0.5);
         assert!((r.after.true_peak_dbtp - fm.true_peak_dbtp).abs() <= 0.3);
     }
-    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn temporary_directory_is_removed_on_panic() {
+    let mut path=None;
+    let result=std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let dir=TempDir::new(); path=Some(dir.0.clone());
+        std::fs::write(dir.0.join("partial.wav"),b"partial").unwrap();
+        panic!("exercise unwind cleanup");
+    }));
+    assert!(result.is_err()); assert!(!path.unwrap().exists());
 }

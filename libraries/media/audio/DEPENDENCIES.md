@@ -25,5 +25,8 @@ FFT feature is disabled: the implementation uses its public sinc interpolator.
 Transitive adapter crates remain dependencies of rubato even though this
 crate does not call its streaming adapters. `dependencies.mix` prints licences
 and repositories from the locked worker metadata, then the foreign gate checks
-the whole workspace. Strict packages explicitly cannot reach media-audio or
-its three direct dependencies.
+the whole workspace. Strict packages explicitly cannot reach media-audio,
+its three direct dependencies or any of the eight newly added transitive crates.
+The resampler uses rubato's lower-level public interpolator items rather than
+its streaming adapters. The exact `=5.1.0` pin protects their index/phase contract;
+any upgrade requires the bounds and analytic timing tests to be rechecked.
