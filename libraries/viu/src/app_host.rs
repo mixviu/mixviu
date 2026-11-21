@@ -1198,7 +1198,7 @@ impl Host {
                         if self.no_window {
                             self.ready = true;
                             self.model = model;
-                            self.model_bytes = crate::model_patch::model_bytes(&self.model);
+                            self.model_bytes = if done.model_revision.is_some() { crate::model_patch::model_bytes(&self.model) } else { 0 };
                             if let Some(revision) = done.model_revision {
                                 self.publication_result(done.generation, revision, Ok(()));
                             } else {
@@ -1316,7 +1316,7 @@ impl Host {
                                     } else {
                                         self.model = model;
                                     }
-                                    self.model_bytes = crate::model_patch::model_bytes(&self.model);
+                                    self.model_bytes = if done.model_revision.is_some() { crate::model_patch::model_bytes(&self.model) } else { 0 };
                                     if let Some(revision) = done.model_revision {
                                         self.publication_result(done.generation, revision, Ok(()));
                                     } else {
