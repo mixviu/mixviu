@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
     let valid = match args.get(1).map(String::as_str) {
         Some("measure" | "snr") => args.len() == 3,
-        Some("normalise" | "resample" | "sweep") => args.len() == 4,
+        Some("target" | "limit" | "normalise" | "resample" | "sweep") => args.len() == 4,
         Some("mix" | "render") => (4..=5).contains(&args.len()),
         _ => false,
     };
@@ -27,6 +27,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("usage: audio_probe measure|snr INPUT; normalise|resample INPUT OUTPUT; mix|render MANIFEST OUTPUT [FRAMES]; sweep OUTPUT RATE".into());
     }
     match args.get(1).map(String::as_str) {
+        Some("target" | "limit") => {
+            let mut a = read(&args[2])?;
+            if args[1] == "target" {
+                let r = a.normalise_to_target(-14.0, -1.0, Default::default())?;
+                println!("{}", json!({"before":value(r.before), "after":value(r.after), "gain":r.gain_db, "passes":r.passes, "max_gr":r.max_gain_reduction_db, "refused":r.refused, "shortfall_lu":r.shortfall_lu}));
+            } else {
+                let r = a.limit_true_peak(-1.0, Default::default())?;
+                println!("{}", json!({"after":value(r.after), "max_gr":r.max_gain_reduction_db}));
+            }
+            write(&args[3], &a)?;
+        }
         Some("measure") => println!("{}", value(read(&args[2])?.measure()?)),
         Some("normalise") => {
             let mut a = read(&args[2])?.resample_48k()?.map_channels(2)?;

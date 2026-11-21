@@ -6,6 +6,8 @@ use rubato::{
     sinc_interpolator::{SincInterpolator, make_interpolator},
 };
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+mod limiter;
+pub use limiter::{LimitReport, LimiterConfig, TargetReport};
 
 /// Standard RIFF maximum, enough for over three hours of stereo float32 at 48 kHz.
 pub const MAX_WAV_BYTES: u64 = u32::MAX as u64 + 8;

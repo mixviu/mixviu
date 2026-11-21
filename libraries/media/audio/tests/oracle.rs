@@ -158,3 +158,24 @@ fn temporary_directory_is_removed_on_panic() {
     assert!(result.is_err());
     assert!(!path.unwrap().exists());
 }
+
+#[test]
+fn limited_burst_true_peak_oracle() {
+    if !oracle_available() { return; }
+    let temp = TempDir::new();
+    // 6 kHz burst, 100:1 duty cycle: known 23 dB peak/RMS crest factor.
+    let samples = (0..48000*4).map(|n| {
+        let level = if n % 48000 < 480 { 1.6 } else { 0.0 };
+        level * (std::f64::consts::TAU*6000.0*n as f64/48000.0 + 0.4).sin()
+    }).collect();
+    let mut a = Audio::new(48000, 1, samples).unwrap();
+    let r = a.limit_true_peak(-1.0, Default::default()).unwrap();
+    assert!(r.after.true_peak_dbtp <= -1.0);
+    let path = temp.0.join("limited.wav");
+    a.write_wav(BufWriter::new(File::create(&path).unwrap()), WavFormat::Float32).unwrap();
+    let log = ff(&["-i", path.to_str().unwrap(), "-af", "ebur128=peak=true", "-f", "null", "-"]);
+    let summary = log.rsplit("Summary:").next().unwrap();
+    let peak = number(summary.split("Peak:").nth(1).unwrap().split_whitespace().next().unwrap());
+    println!("limited burst Rust={:?} ffmpeg TP={peak}", r.after);
+    assert!(peak <= -0.9);
+}
