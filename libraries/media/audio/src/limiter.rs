@@ -30,6 +30,8 @@ pub struct TargetReport {
     /// Maximum reduction attempted, including a refused attempt.
     pub max_gain_reduction_db: f64,
     pub refused: bool,
+    /// Explicit success status, including the bounded correction exhaustion case.
+    pub target_reached: bool,
     pub shortfall_lu: f64,
 }
 impl LimiterConfig {
@@ -150,6 +152,7 @@ impl Audio {
             passes: 0,
             max_gain_reduction_db: 0.0,
             refused: false,
+            target_reached: (target_lufs - static_report.after.integrated_lufs).abs() <= 0.5,
             shortfall_lu: static_report.shortfall_lu,
         };
         if !static_report.peak_limited {
@@ -177,6 +180,7 @@ impl Audio {
             let error = target_lufs - limited.after.integrated_lufs;
             if error.abs() <= 0.5 || pass == 3 {
                 report.after = limited.after;
+                report.target_reached = error.abs() <= 0.5;
                 report.gain_db = gain_db;
                 report.shortfall_lu = error.max(0.0);
                 *self = candidate;

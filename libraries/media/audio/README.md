@@ -59,11 +59,34 @@ loudness. LRA needs at least three seconds and enough programme variation.
 
 `normalise(-14.0, -1.0)` measures, applies static gain capped by the measured
 true-peak ceiling, then measures the output again. `GainReport` includes the
-actual gain, peak-limited flag and LU shortfall. There is no dynamics processor.
+actual gain, peak-limited flag and LU shortfall. This entry point remains static.
 Silence cannot be normalised and returns `Unmeasurable`. Absolute gating may
 change after gain; the reported output is measured rather than inferred.
 The true-peak ceiling refers to this meter, with oracle agreement assessed
 separately. Quantisation or later sample-rate conversion can change peaks.
+
+`normalise_to_target(target_lufs, ceiling_dbtp, LimiterConfig::default())`
+preserves the static path bit for bit whenever its measured peak permits the
+requested gain. Otherwise it renders target gain through `limit_true_peak`,
+remeasures and makes at most two corrective attempts, each from the original.
+`TargetReport` carries before/after LUFS, LRA and true peak, gain, pass count,
+maximum attempted reduction, refusal, shortfall and an explicit `target_reached`
+flag (±0.5 LU). Callers must check that flag: bounded corrections can exhaust.
+Any attempt beyond 6 dB reduction returns exactly the capped static output with
+`refused=true`, including when a corrective pass crosses the bound.
+
+The offline limiter uses four-phase 24-tap Hann-windowed sinc peak detection,
+linked across channels. Default look-ahead is 5 ms (valid 0.1–100 ms); release
+is 100 ms (valid 1–1000 ms). A backwards linear attack and forward exponential
+release anticipate peaks without moving any samples or changing duration.
+100 ms gives speech peaks time to recover between words without rapid envelope
+modulation. A final measured constant trim catches reconstruction overshoot
+from gain modulation; its reduction counts towards the 6 dB bound. A 0.02 dB
+margin protects float32 export rounding. This is peak limiting, not loudness AGC.
+Processing order is fixed and deterministic for a given binary and platform;
+cross-platform floating-point bit identity is not promised. The limiter uses
+one f64 envelope value per frame in addition to the audio; target normalisation
+also retains original, static fallback and current candidate audio buffers.
 
 ## Existing filter ownership
 
@@ -73,7 +96,7 @@ separately. Quantisation or later sample-rate conversion can change peaks.
 | stereo `aformat` | L5 mono duplication/stereo identity; S2 format negotiation |
 | `adelay` | L5 frame placement; S2 marker/hold timing and ms rounding |
 | `amix normalize=0` | L5 unnormalised sum; S2 input selection/duration policy |
-| `loudnorm I=-14:TP=-1` | L5 measured linear gain cap with shortfall; S2 policy for shortfall; dynamic mode is outside L5 |
+| `loudnorm I=-14:TP=-1` | L5 target gain with bounded limiting; S2 checks target_reached/refusal/shortfall |
 | `apad`, end `atrim` | L5 resize; S2 final duration |
 | ranged `atrim`, `asetpts` | S2 range selection and timestamp reset |
 | audio `concat`, `acrossfade` | S2 timeline execution/fade curves |
