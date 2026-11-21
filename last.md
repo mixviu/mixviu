@@ -1,3 +1,77 @@
+# PR #214 — incremental hosted model publication
+
+PR: https://github.com/mixviu/mixviu/pull/214 (`mixviu-agent`). Branch `feat/viu-incremental-model`, from #213's merged main `a3b1e286c561386719f429b13f1fb77ed5303ed4`. Tested native code `45a1618eddf4`; later changes document retained receipts and add their test-probe control. PR code/documentation head: `771fb8ecd1f9d27fc27f6a95129f28c86cf7a511`.. This receipt is a following documentation commit.
+
+Ready for review: incremental publication, Workshop conversion, equivalence, negative controls and all scoped gates pass. The wider normal-pool condition is NOT met: nine rounds passed, round ten missed the original one-second ping deadline. Workshop stays serial; no wider responsiveness claim is made.
+
+Workshop publishes ordered scene-data edits through the existing local native endpoint. Unchanged Traffic rows and action/menu projections are retained. Other apps keep whole-model publication. There is no new broker, transport, daemon, dependency or toolkit field in the scene contract.
+
+## Contract and implementation
+
+| Location | Change |
+| --- | --- |
+| `docs/scene-model-publication.md:1` | Toolkit-neutral contract, limits, recovery and fixture provenance. Proposed in the draft PR and private design note before bulk production code. |
+| `libraries/viu/src/model_patch.rs:58` | Strict generation/base/revision envelope; typed-path set/remove/splice; 1 MiB, 512 operations, depth 32, 256-byte keys, exact positive revisions. |
+| `libraries/viu/src/model_patch.rs:132` | Exact encoded-byte deltas, 8 MiB aggregate budget and moved-value rollback; no unchanged aggregate clone/serialisation. |
+| `libraries/scene/src/bindings.rs:353` | Cached dependency set prepares only affected root bindings and retains unaffected ports. |
+| `libraries/viu/src/view.rs:188` | Transactional root/frame/model/ports/template/control application and rollback. Hosted overlay invariant shared with full publication. |
+| `libraries/viu/src/runtime.rs:826` | Native local endpoint, opt-in owner capability, failed/conflicting-callback discard and queued publication metadata. |
+| `libraries/viu/src/app_host.rs:159` | Applied/refused receipts, base fence, refusal fence and full recovery; revision high-water prevents legacy opt-out/re-entry base reuse. |
+| `libraries/viu/src/app_host.rs:196` | Patch at the existing owner application point; host/style/window roots require full publication. Independently changed host metrics refuse the patch before mutation. |
+| `apps/workshop/app.mix:17` | One outstanding publication, retained acknowledged model, full fallback, no-op skip and refusal recovery. Acceptance immediately flushes coalesced input (`:47`). |
+| `libraries/viu/mix/model-publication.mix:1` | Generic pure Mix map/list differencing and host-input policy. |
+| `apps/workshop/traffic-view.mix:5` | Retained formatted rows and stable collapse ids; both placements keep complete redacted bodies. Actions/menus cache their complete policy inputs. |
+| `libraries/viu/tests/workshop_bus.rs:16` | 100 ms native apply guard and 768 KiB tick-publication guard; original 1 s call/2 s owner-stall checks retained. |
+| `libraries/viu/tests/workshop-probe.mix:12` | Wire/compare mutation guards and source-drift controls. Private TODO-workshop work entry removed, resolution cites #214. |
+
+Discovery stayed on the unmerged `lab/viu-incremental-model` branch. An independent different-family whole-specimen survey preceded derivation. The first capture mixed peer-count phases and is excluded from acceptance. Fresh diagnostic capture/replay `20261121-091529-dcb5cbe3-a1` reached 2.64 MB and compared a mounted frame; its later refetch assertion failed, so it establishes captured-state replay only. No relaxed lab deadline is acceptance evidence.
+
+## Before and after at 200 peers
+
+These are named fixture phases, not a paired same-payload speedup benchmark. The steady phase deliberately retains representative escaped JSON through the real Traffic retention code; it is additional to the original discovery/silent/departing-peer checks.
+
+| Measurement | Whole-model baseline | Derived incremental path |
+| --- | --- | --- |
+| Retained model | #213 ruling: 2.1–2.4 MB | Latest discovery 1.49 MB; deterministic steady phase 3.56 MB (earlier discovery reached 2.81 MB) |
+| Published per dirty tick | Whole 2.1–2.4 MB | Latest discovery max 380,127 bytes; steady max 8,857 bytes (earlier discovery max 411 KB) |
+| Mix build / diff | #213: 213–278 ms | Final phase probe: discovery 97–141 ms; steady 76–81 ms |
+| Native apply | #213: 226–323 ms | Latest discovery max 41.0 ms CPU; steady max 11.3 ms CPU |
+| Actual changed data shape | Changed top-level Traffic key retained most bytes | Final phase probe: discovery 54–168 edits / 40.6–392.8 KB; steady 7–15 edits / 1.5–6.8 KB, under 0.2% of a 3.55 MB model |
+
+Baseline receipts: `20261121-032412-ad76b5d7-a1` and `20261121-033200-ed59f7bd-a1` from #213. Reading the latter's full saved log gives a 2,399,127-byte native full apply: validation 59.345 ms, binding/diff/copy 132.207 ms, controls/templates 6.257 ms, frame 124.960 ms; total 322.769 ms CPU. New pre-derivation diagnostic job `20261121-090200-7896b668-a1` at 1.89 MB: Mix build 237.7 ms and native full apply 264.6 ms (47.6 validate, 109.0 binding/copy, 6.9 controls, 101.1 frame). Its instrumented one-second run failed and is diagnostic only.
+
+Earlier uninstrumented focused receipt `20261121-103204-1ec0d59f-a1`: retained 3,552,511 bytes, tick max 8,855 bytes, native max 10,289 us CPU; Mix tick median 81,615 / max 82,905 us CPU. All twelve Workshop tests passed. Final native code adds the small host-input comparison verified by `20261121-103841-d4396d3e-a1`.
+
+Latest uninstrumented native-code receipt `20261121-111901-f7f6f217-a1`, source 771fb8ec (same Rust as 45a1618e), passes all six Workshop Bus tests: discovery retained max 1,488,815 bytes, wire max 380,127 bytes, native apply max 40,987 us CPU, tick median 133,649 us CPU. The retained-body phase reaches 3,561,324 bytes, publishes max 8,857 bytes per tick, native apply max 11,298 us CPU, tick median 89,660 / max 92,031 us CPU, and eight one-second info calls max 114,866 us. This is the final-source uninstrumented result.
+
+Final phase probe `20261121-104543-0a10feb7-a1` on documentation head `a9dde3ab25bc` (same native code as 8aabdda7): steady Mix build/diff 76.1–80.9 ms, presentation 63.3–66.4 ms, frame projection 2.26–2.34 ms. Native root+frame 9.24–9.78 ms: edit/budget 0.052–0.205 ms, bindings/copy 3.44–3.73 ms, controls/templates 5.03–5.10 ms, frame 0.686–0.852 ms. Outer native host apply max 10.583 ms. Counting full model bytes in the diagnostic callback adds serialisation overhead; its ~189 ms total callback is not the uninstrumented ~82 ms callback.
+
+The historical 743.324 ms CPU notice in #213 has no retained payload/branch trace; its exact breakdown cannot be recovered. Fresh diagnostic job `20261121-091206-9e110876-a1` attributes 106 accepted 200-peer observations: counter extraction 323.3 ms total / 6.45 ms max; mesh add-event 156.5 ms / 2.15 ms; Traffic processing 2,746.2 ms / 175.7 ms. Traffic redaction is nested inside that last span: 2,473.2 ms / 166.6 ms, so those totals must not be added. This identifies the measured hot branch, not the historical event. No redaction semantics were changed.
+
+A three-green-round normal-pool attempt then exposed dropped acceptance under a full evaluator mailbox in round 4 (`20261121-103914-d277db38-a1`). The original Bus deadlines passed, but Workshop remained pending and the added retained-data seed never published. The owner now retains at most 32 acceptance/refusal receipts, flushes them before ordinary producers, and pauses completion retirement at that bound (`app_host.rs:183`). The deterministic mailbox-saturation test (`app_host_model_tests.rs:5`) passes with revision/recovery tests in `20261121-105826-ef5fb3a2-a1`. Restoring the old lossy dispatch fails its explicit retention assertion in `20261121-110041-11def735-a1`; all four source controls and the changed probe lint pass in that job. Native code under the final gates includes this fix.
+
+## Verification
+
+Scoped CBC `20261121-105828-6b4b9900-a1`, BUILD_RC=0, native source 45a1618e: scene all-targets 79 passed / 0 failed; lib-viu default 635 / 0 / 12 existing ignored and test-support 644 / 0 / 12, all 55 Cargo targets per configuration including the example. Doctests pass (zero cases). Fmt and all-target clippy pass for both changed crates and both lib-viu feature configurations. All nine changed Mix files lint cleanly; the later probe-control addition also lints cleanly in 20261121-110041-11def735-a1. Exact production vocabulary and counter precision/equivalence checks pass. The full saved log has been parsed, excluding child-process summaries from target totals.
+
+Native full/incremental equivalence compares resolved content, mounted frame and prepared template lists after actual hosted patches. Unit/owner tests cover typed list paths, exact byte accounting, reverse rollback, invalid controls/frame rollback, wrong generation/base, refusal fencing, full recovery, failed/conflicting callbacks, legacy publication and retired-base reuse, independent host metrics, coalesced input and idle acceptance.
+
+Equivalence and source controls before the receipt fix: `20261121-103942-750dab98-a1`, BUILD_RC=0, source 8aabdda7. Positive native oracle passed at 3.55 MB (max wire 53,231 bytes, native apply 19,485 us during continuing refetch). Forced full publication failed at 1,125,040 bytes against 786,432. Forced full application failed at 407,079 us against 100,000. Skipped binding updates failed rendered-state equivalence. Each control requires the intended assertion and restores source.
+
+After the receipt fix, `20261121-110005-caf9cb59-a1` passes fresh full/incremental rendered equivalence and the three source controls. Forced full publication fails at 1,021,121 bytes; full apply at 133,300 us; skipped bindings fails equivalence. `20261121-110041-11def735-a1` additionally proves the mailbox regression detects lost acceptance (and repeats all three controls).
+
+Numeric and probe-drift controls: `20261121-103314-6a801c89-a1`, BUILD_RC=0. Pump bound zero failed at 744 us; byte bound one failed at 376,969 bytes; native apply bound zero failed at 2,286 us. Both wire and compare source-drift controls refused their unchanged mutation. Later native guard changes do not alter these probes.
+
+Strict normal-pool attempt `20261121-105827-6852a295-a1`, source 45a1618e, BUILD_RC=1: nine complete green rounds; round ten failed `workshop.ping` at 1,004,407 us against the unchanged one-second deadline (`workshop_bus.rs:510`). Rounds eleven and twelve were not run. All ten rounds used 54 binaries, width four, zero serial targets and strict retry disabled. The nine completed steady phases retained 3.55 MB, published at most 8,857 bytes per tick and applied in at most 20,645 us CPU. In the failing discovery run, native apply max 86,828 us, wire max 375,795 bytes and pump max 112,838 us remained inside their 100,000 us / 786,432 bytes / 800,000 us guards. Its notice CPU max was 638,652 us and tick CPU max 481,610 us; these are per-command maxima, not proof of adjacent events. `tools/ci/serial-tests.conf.mix` is unchanged. The exact twelve-round condition was not satisfied and no retry result is substituted.
+
+Full `tools/ci.mix all` was not run: its requested trigger was removing Workshop from the serial list after 12/12 normal-pool rounds. That condition failed, so pool enrolment is unchanged. All changed-crate targets and the explicit positive/negative controls above passed.
+
+Earlier attempts are not combined into the final soak: `20261121-094901-2e1a4354-a1` failed an added natural-history minimum-size guess (all Bus deadlines met), which led to the deterministic fixture. Jobs `20261121-101255-c36ceafa-a1`, `20261121-103214-0babcb3e-a1` and `20261121-103215-281cc2d5-a1` were explicitly cancelled with rc143 when code changed; their partial rounds are not acceptance. No retry, ignore, reduced peer count, relaxed deadline or loosened numeric guard was introduced.
+
+No merge, production install or deployment. Earlier receipts below describe #213 and are historical.
+
+---
+
 # PR #213 round 8 — review fixes validated
 
 PR: https://github.com/mixviu/mixviu/pull/213; branch fix/workshop-discovery-flake.
