@@ -2,7 +2,7 @@
 $failed=0
 for $sample=1 to 20
   print("WORKSHOP_SAMPLE_BEGIN "..$sample)
-  $result=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--exact","--nocapture"])
+  $result=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--exact","--nocapture"],{timeout:1200,max_output:16000000})
   print($result.stdout)
   print($result.stderr)
   print("WORKSHOP_SAMPLE_END "..$sample.." rc="..$result.exit_code)
