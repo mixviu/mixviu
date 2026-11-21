@@ -76,9 +76,15 @@ fn timed($argv, $base)
   write_file($base..".command.json",json_encode($cmd))
   $r = run_argv($cmd,{timeout:21600, stdout:{file:$base..".stdout"},stderr:{file:$base..".stderr"},env:{LC_ALL:"C"}})
   if not $r.ok then raise("TOOL", "command failed; see "..$base..".stderr") end
-  $t = re_split(trim(read_file($base..".time")),"\\s+")
+  return merge(process_time(read_file($base..".time")),{command:$cmd})
+end
+fn process_time($text)
+  $t = re_split(trim($text),"\\s+")
   if len($t) != 4 then raise("TIME", "invalid process counters") end
-  return {wall_s:to_number($t[0]), cpu_s:to_number($t[1])+to_number($t[2]), peak_rss_kib:to_number($t[3]),command:$cmd}
+  for $v in $t
+    if not re_match($v,'^[0-9]+(\.[0-9]+)?$') then raise("TIME","invalid process counter") end
+  end
+  return {wall_s:to_number($t[0]), cpu_s:to_number($t[1])+to_number($t[2]), peak_rss_kib:to_number($t[3])}
 end
 fn speed($argv,$base,$runs)
   $wall = []; $cpu = []; $rss = []; $cmds = []
