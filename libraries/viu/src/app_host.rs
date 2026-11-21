@@ -398,6 +398,17 @@ impl Host {
         info["file_context"] = crate::native_theme::describe(&self.file_theme);
         info
     }
+
+    /// Before the first session delivery, the file theme is the complete
+    /// validated startup input. Never decode the session's initial `{}` as a
+    /// partially constructed settings snapshot.
+    fn theme_base(&self) -> Result<toolkit::Theme, String> {
+        if let Some(session) = self.session.as_ref().filter(|session| session.snapshot["state"]["values"].is_object()) {
+            crate::appearance::session_base(&session.snapshot, &self.app, &self.file_theme, &self.last_ui).map(|value| value.0)
+        } else {
+            Ok(self.file_theme.clone())
+        }
+    }
     fn dispatch(
         &mut self,
         command: String,
@@ -1061,19 +1072,8 @@ impl Host {
                     .and_then(|id| self.view.request_focus(id))
                     .map(|_| json!({"focused":true})),
                 "native.theme" => {
-                    let snapshot = self.session.as_ref().map(|s| s.snapshot.clone());
                     crate::native_theme::choice(&request.args).and_then(|choice| {
-                        let base = if let Some(snapshot) = snapshot {
-                            crate::appearance::session_base(
-                                &snapshot,
-                                &self.app,
-                                &self.file_theme,
-                                &self.last_ui,
-                            )?
-                            .0
-                        } else {
-                            self.file_theme.clone()
-                        };
+                        let base = self.theme_base()?;
                         let theme = base.with_choice(&choice).map_err(|e| e.to_string())?;
                         crate::appearance::install_theme(ctx, &theme)?;
                         self.native_choice = request.args.clone();
@@ -1325,17 +1325,7 @@ impl Host {
                             let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
                                 crate::appearance::theme_choice(&model["theme_choice"])?;
                                 if self.model["theme_choice"] != model["theme_choice"] {
-                                    let base = if let Some(session) = &self.session {
-                                        crate::appearance::session_base(
-                                            &session.snapshot,
-                                            &self.app,
-                                            &self.file_theme,
-                                            &self.last_ui,
-                                        )?
-                                        .0
-                                    } else {
-                                        self.file_theme.clone()
-                                    };
+                                    let base = self.theme_base()?;
                                     let empty = json!({});
                                     let choice = if model["theme_choice"].is_null() {
                                         &empty

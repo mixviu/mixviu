@@ -36,7 +36,9 @@ fn host(path: &Path, broker: &test_broker::Broker) -> Harness {
     bundle.manifest.bus_url = Some(broker.url.clone());
     bundle.launch = json!({"headless":true});
     bundle.manifest.saved_version = None;
-    Harness::with_theme_file(bundle, path)
+    let host = Harness::with_theme_file(bundle, path);
+    assert_eq!(host.state()["session"], json!({}), "ordering control must start before session values exist");
+    host
 }
 
 fn pump_until(host: &mut Harness, predicate: impl Fn(&Harness) -> bool) {
