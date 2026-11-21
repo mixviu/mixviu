@@ -301,13 +301,13 @@ mod tests {
         let writer = ctx.clone();
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
+            start.wait();
             // SAFETY: gettid has no arguments or memory preconditions.
             tx.send(unsafe { libc::gettid() }).unwrap();
-            start.wait();
             writer.data_mut(|_| {});
         });
-        let tid = rx.recv_timeout(Duration::from_secs(1)).unwrap();
         barrier.wait();
+        let tid = rx.recv_timeout(Duration::from_secs(1)).unwrap();
         let deadline = Instant::now() + Duration::from_secs(1);
         loop {
             let state = std::fs::read_to_string(format!("/proc/self/task/{tid}/wchan")).unwrap();

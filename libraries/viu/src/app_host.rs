@@ -3658,7 +3658,7 @@ mod tests {
             let user = std::thread::spawn(move || {
                 // Same registry operation as setup, concurrent with wake.
                 registry.lock().unwrap().push(egui::Context::default());
-                tx.send(()).unwrap();
+                let _ = tx.send(());
             });
             result_tx.send(rx.recv_timeout(Duration::from_millis(200)).is_ok()).unwrap();
             join_tx.send(user).unwrap();
