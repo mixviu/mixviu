@@ -2953,10 +2953,10 @@ pub mod test_support {
     }
     impl Drop for Harness {
         fn drop(&mut self) {
-            if std::thread::panicking() {
-                if let Some(audit) = &self.host.publication_audit {
-                    eprintln!("WORKSHOP_PUBLICATION_FAILURE {}", audit.summary());
-                }
+            if std::thread::panicking()
+                && let Some(audit) = &self.host.publication_audit
+            {
+                eprintln!("WORKSHOP_PUBLICATION_FAILURE {}", audit.summary());
             }
             if self.host.discovery_probe.is_some() {
                 eprintln!("WORKSHOP_PROBE {}", self.discovery_measurements());

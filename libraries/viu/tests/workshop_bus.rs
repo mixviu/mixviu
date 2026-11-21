@@ -811,11 +811,13 @@ end
                     // row count that unrelated observations could satisfy.
                     let seeded = state["model"]["traffic_view"]["initial"]
                         .as_array()
-                        .is_some_and(|rows| rows.iter().any(|row| {
-                            row[4]["collapse"].as_str().is_some_and(|text| {
-                                text.contains("fixture.retained") && text.contains(&marker)
+                        .is_some_and(|rows| {
+                            rows.iter().any(|row| {
+                                row[4]["collapse"].as_str().is_some_and(|text| {
+                                    text.contains("fixture.retained") && text.contains(&marker)
+                                })
                             })
-                        }));
+                        });
                     if seeded {
                         break;
                     }
