@@ -1,0 +1,36 @@
+$root = "/tmp/mixviu-opus-l2-spike"
+mkdir($root, {parents: true})
+fn invoke($args)
+  $r = run_argv($args, {timeout: 1800, max_output: 2000000})
+  print($args)
+  print($r.stdout)
+  print($r.stderr)
+  print("RC=" .. $r.exit_code)
+  return $r
+end
+for $name in ["rusty-opus", "opus-rs", "ruopus", "opus-decoder", "opus-wave", "opus-pure", "opus1", "opuscule", "ropus", "libopus-rs", "mousiki", "oporus", "symphonia-opus", "moosicbox_opus_native", "hiraku-opus", "ps-rusty-opus", "cranpose-opus-pure", "soundkit-opus", "filmcraft-opus", "oxideav-opus"]
+  $r = invoke(["curl", "-fLs", "https://crates.io/api/v1/crates/" .. $name, "-H", "User-Agent: mixviu-spike"])
+  if not $r.ok then continue end
+  write_file($root .. "/" .. $name .. ".json", $r.stdout)
+  $v = json_parse($r.stdout).versions[0]
+  $dir = $root .. "/trees/" .. $name
+  mkdir($dir .. "/src", {parents: true})
+  write_file($dir .. "/src/lib.rs", "")
+  write_file($dir .. "/Cargo.toml", "[package]\nname = \"tree-probe\"\nversion = \"0.0.0\"\nedition = \"2024\"\n[workspace]\n[dependencies]\n" .. $name .. " = \"=" .. $v.num .. "\"\n")
+  $t = invoke(["cargo", "tree", "--manifest-path", $dir .. "/Cargo.toml", "--edges", "normal,build"])
+  write_file($root .. "/tree-" .. $name .. ".txt", $t.stdout .. $t.stderr)
+end
+$b = invoke(["cargo", "build", "--release", "--manifest-path", "tools/lab-opus/Cargo.toml"])
+if not $b.ok then exit(1) end
+for $set in ["opus_testvectors", "opus_testvectors-rfc8251"]
+  $url = "https://opus-codec.org/static/testvectors/" .. $set .. ".tar.gz"
+  invoke(["curl", "-fL", "--retry", "2", $url, "-o", $root .. "/" .. $set .. ".tar.gz"])
+  invoke(["sha256sum", $root .. "/" .. $set .. ".tar.gz"])
+  invoke(["tar", "xf", $root .. "/" .. $set .. ".tar.gz", "-C", $root])
+end
+invoke(["curl", "-fLs", "https://raw.githubusercontent.com/xiph/opus/v1.5.2/src/opus_compare.c", "-o", $root .. "/opus_compare.c"])
+invoke(["cc", "-O2", $root .. "/opus_compare.c", "-lm", "-o", $root .. "/opus_compare"])
+invoke(["ls", "-l", $root])
+invoke(["ffmpeg", "-version"])
+invoke(["tools/lab-opus/target/release/opus-spike", "generate", $root])
+invoke(["tar", "czf", $root .. "/evidence.tgz", "-C", $root, ".", "--exclude=evidence.tgz"])

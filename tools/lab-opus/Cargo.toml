@@ -1,0 +1,11 @@
+[package]
+name = "opus-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+[workspace]
+[dependencies]
+rusty-opus = "=1.2.0"
+opus-rs = "=0.1.42"
+ruopus = "=0.1.2"
+opus-decoder = "=0.1.1"
