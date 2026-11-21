@@ -79,6 +79,9 @@ fn rms($path,$o,$name,$filter)
   $r = once(ff(["-i",$path,"-af",$filter..",astats=metadata=0:reset=0","-f","null","-"]),$o,$name)
   return capture_number(read_file($o.out.."/"..$name..".stderr"),'RMS level dB: ([-0-9.]+)')
 end
+fn pcm_difference()
+  return "[1:a]volume=-1[neg];[0:a][neg]amix=inputs=2:normalize=0,astats=reset=0"
+end
 fn opus($o)
   $items = []
   for $source in audio_files($o)
@@ -92,12 +95,12 @@ fn opus($o)
       $reference = $o.out.."/"..$name.."-reference.wav"
       $prep = once(ff(["-i",$source,"-ar","48000","-ac","2","-c:a","pcm_f32le",$reference]),$o,$name.."-reference")
       $signal = rms($reference,$o,$name.."-signal","anull")
-      $diff = once(ff(["-i",$reference,"-i",$decoded,"-filter_complex","[0:a][1:a]amix=inputs=2:weights='1 -1':normalize=0,astats=reset=0","-f","null","-"]),$o,$name.."-error")
+      $diff = once(ff(["-i",$reference,"-i",$decoded,"-filter_complex",pcm_difference(),"-f","null","-"]),$o,$name.."-error")
       $noise = capture_number(read_file($o.out.."/"..$name.."-error.stderr"),'RMS level dB: ([-0-9.]+)')
       -- Defined spectral metric: RMS dBFS of the difference of magnitude-only
       -- inverse STFTs, Hann 1024, default 75% overlap. Not ViSQOL or listening parity.
       $fft = "afftfilt=real='hypot(re,im)':imag=0:win_size=1024:win_func=hann"
-      $spectral = once(ff(["-i",$reference,"-i",$decoded,"-filter_complex","[0:a]"..$fft.."[r];[1:a]"..$fft.."[d];[r][d]amix=inputs=2:weights='1 -1':normalize=0,astats=reset=0","-f","null","-"]),$o,$name.."-spectral")
+      $spectral = once(ff(["-i",$reference,"-i",$decoded,"-filter_complex","[0:a]"..$fft.."[r];[1:a]"..$fft..",volume=-1[d];[r][d]amix=inputs=2:normalize=0,astats=reset=0","-f","null","-"]),$o,$name.."-spectral")
       $sd = capture_number(read_file($o.out.."/"..$name.."-spectral.stderr"),'RMS level dB: ([-0-9.]+)')
       push($items,{id:$name,metrics:{encode:$enc,decode:$dec,bitrate_kbps:$rate,source_sha256:$hash,pcm_snr_db:$signal-$noise,spectral_magnitude_error_dbfs:$sd,visqol:if which("visqol") == nil then "not_installed" else "installed; not invoked" end}})
     end

@@ -1,0 +1,16 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Focused CBC correctness oracle; ffmpeg is required, never silently skipped.
+$s = require("suites.mix")
+for $gain in [1,2]
+  $r = run_argv(["ffmpeg","-nostdin","-hide_banner","-f","lavfi","-i","sine=duration=1","-f","lavfi","-i","sine=duration=1,volume="..to_string($gain),"-filter_complex",$s.pcm_difference(),"-f","null","-"],{timeout:30})
+  if not $r.ok then raise("ORACLE",$r.stderr) end
+  if $gain == 1 then
+    if not contains($r.stderr,"RMS level dB: -inf") then raise("ORACLE","identical samples did not cancel") end
+  else
+    -- A sine of amplitude 4095/32768 has RMS -21.07 dBFS. Subtracting
+    -- twice that sine must leave one sine, not a three-sine sum.
+    $db = $s.capture_number($r.stderr,'RMS level dB: ([-0-9.]+)')
+    if abs($db+21.073)<0.1 then print("PASS PCM subtraction analytic RMS") else raise("ORACLE","incorrect subtraction RMS "..to_string($db)) end
+  end
+end
+print("PASS PCM subtraction zero and known-error oracles")
