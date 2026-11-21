@@ -186,7 +186,15 @@ fn raster_open_pins_pixels_and_refuses_unsafe_sources_before_navigation() {
     let pixels = harness.render().unwrap();
     assert_eq!(pixels.get_pixel(32, 32).0, [255, 0, 0, 255]);
     let outside = tempfile::NamedTempFile::new().unwrap();
-    assert_eq!(open(&mut deck, outside.path().to_str().unwrap()).rc, 10);
+    image::RgbaImage::new(2, 2)
+        .save_with_format(outside.path(), image::ImageFormat::Png)
+        .unwrap();
+    let refused = open(&mut deck, outside.path().to_str().unwrap());
+    assert_eq!(refused.rc, 10);
+    assert!(refused.body["message"]
+        .as_str()
+        .unwrap()
+        .contains("outside deck directory"));
     std::os::unix::fs::symlink(outside.path(), &png).unwrap();
     assert_eq!(open(&mut deck, "shot.png").rc, 10);
     std::fs::write(dir.path().join("bad.png"), b"not an image").unwrap();
