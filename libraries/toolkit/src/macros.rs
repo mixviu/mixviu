@@ -168,16 +168,7 @@ impl State {
             }
         }));
         let repaint = Arc::new(Mutex::new(None::<(egui::Context, egui::ViewportId)>));
-        let target = repaint.clone();
-        let change_hook: ::macros::session::ChangeHook = Arc::new(move || {
-            // Clone out and release the guard before calling into egui:
-            // request_repaint_of takes the Context lock, and show() takes this
-            // mutex while the UI thread holds that lock (ABBA deadlock).
-            let target = target.lock().unwrap().clone();
-            if let Some((ctx, viewport)) = target {
-                ctx.request_repaint_of(viewport);
-            }
-        });
+        let change_hook = repaint_hook(repaint.clone());
         session.observe_changes(&change_hook);
         Self {
             open: false,
@@ -1342,10 +1333,54 @@ fn window_state(ctx: &egui::Context, app: &str, open: bool) -> Option<WindowStat
     Some(state)
 }
 
+type RepaintTarget = Arc<Mutex<Option<(egui::Context, egui::ViewportId)>>>;
+
+/// The session change hook: repaint whichever viewport `show()` last installed.
+/// It clones the target out and releases the guard before calling into egui,
+/// because request_repaint_of takes the Context lock while show() takes this
+/// mutex from inside a frame (ABBA deadlock otherwise).
+fn repaint_hook(target: RepaintTarget) -> ::macros::session::ChangeHook {
+    Arc::new(move || {
+        let target = target.lock().unwrap().clone();
+        if let Some((ctx, viewport)) = target {
+            ctx.request_repaint_of(viewport);
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use egui_kittest::kittest::Queryable;
+
+    #[test]
+    fn repaint_hook_releases_its_mutex_while_waiting_for_the_context_lock() {
+        // The UI thread holds the Context write lock (memory_mut) while a
+        // session thread fires the hook. The hook must not hold the repaint
+        // mutex while it waits for that lock. Holding the guard across
+        // request_repaint_of, as before, keeps try_lock failing below.
+        let ctx = egui::Context::default();
+        let target: RepaintTarget = Arc::new(Mutex::new(Some((ctx.clone(), ctx.viewport_id()))));
+        let hook = repaint_hook(target.clone());
+        let acquired = ctx.memory_mut(|_| {
+            let fired = std::thread::spawn(move || hook());
+            // Let the hook reach the Context lock, then try the mutex for 2 s.
+            std::thread::sleep(Duration::from_millis(200));
+            let deadline = std::time::Instant::now() + Duration::from_secs(2);
+            let mut acquired = false;
+            while std::time::Instant::now() < deadline {
+                if target.try_lock().is_ok() {
+                    acquired = true;
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            (acquired, fired)
+        });
+        let (acquired, fired) = acquired;
+        fired.join().expect("hook thread finishes once the Context lock is free");
+        assert!(acquired, "the hook held the repaint mutex while waiting for the Context lock");
+    }
 
     #[test]
     fn notification_fallback_and_failed_save_never_reopen_a_closed_editor() {
