@@ -88,8 +88,12 @@ fn workshop_calls_from_port_appearance_at_200_peers() {
     let mut host = Harness::new(bundle);
     host.probe_discovery();
     let mut painted = false;
+    let mut first_pump = serde_json::Value::Null;
     while !calls.is_finished() {
         host.pump();
+        if first_pump.is_null() {
+            first_pump = host.discovery_measurements();
+        }
         if host.ready() && !painted {
             host.draw();
             painted = true;
@@ -110,7 +114,7 @@ fn workshop_calls_from_port_appearance_at_200_peers() {
     let failed = samples.iter().filter(|s| s["ok"] != true).count();
     eprintln!(
         "WORKSHOP_STARTUP_PORT {}",
-        json!({"peers":200,"window_us":1500000,"bound_us":STARTUP_CALL_BOUND_US,"worst_call_us":worst,"failed":failed,"whole_us":whole.elapsed().as_micros() as u64,"samples":samples,"host":host.discovery_measurements()})
+        json!({"peers":200,"window_us":1500000,"bound_us":STARTUP_CALL_BOUND_US,"worst_call_us":worst,"failed":failed,"whole_us":whole.elapsed().as_micros() as u64,"samples":samples,"first_pump":first_pump,"host":host.discovery_measurements()})
     );
     assert!(
         failed == 0 && worst <= STARTUP_CALL_BOUND_US,
