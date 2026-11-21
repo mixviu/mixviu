@@ -116,22 +116,40 @@ fn nested_grow_cards_keep_the_right_edge_inside_the_canvas() {
 
 #[test]
 fn a_natural_width_fixed_label_stays_visible_between_growing_cells() {
-    let source=format!("---\nscene: 1\nname: mixed\ncitizen: test\n---\n```mix\n{}\n```\n",json!({
-        "root":{"widget":"row","children":["a","arrow","b"]},
-        "a":{"widget":"column","grow":1,"children":[],"height":60},
-        "arrow":{"widget":"text","text":"arrow"},
-        "b":{"widget":"column","grow":1,"children":[],"height":60}
-    }));
-    let mut view=SceneView::new(&source).unwrap();
-    let ctx=egui::Context::default();
+    let source = format!(
+        "---\nscene: 1\nname: mixed\ncitizen: test\n---\n```mix\n{}\n```\n",
+        json!({
+            "root":{"widget":"row","children":["a","arrow","b"]},
+            "a":{"widget":"column","grow":1,"children":[],"height":60},
+            "arrow":{"widget":"text","text":"arrow"},
+            "b":{"widget":"column","grow":1,"children":[],"height":60}
+        })
+    );
+    let mut view = SceneView::new(&source).unwrap();
+    let ctx = egui::Context::default();
     for _ in 0..8 {
-        let out=ctx.run_ui(egui::RawInput {screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(600.,200.))),..Default::default()},|ui|{view.show(ui);});
-        let text=out.shapes.iter().find(|s| matches!(&s.shape,egui::Shape::Text(t) if t.galley.job.text=="arrow")).unwrap();
-        assert!(text.clip_rect.width()>0.);
+        let out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(600., 200.),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                view.show(ui);
+            },
+        );
+        let text = out
+            .shapes
+            .iter()
+            .find(|s| matches!(&s.shape,egui::Shape::Text(t) if t.galley.job.text=="arrow"))
+            .unwrap();
+        assert!(text.clip_rect.width() > 0.);
         out.drop_without_applying_deltas();
     }
-    assert!(view.geometry["arrow"].width()>0.);
-    assert!(view.geometry["b"].right()<=600.);
+    assert!(view.geometry["arrow"].width() > 0.);
+    assert!(view.geometry["b"].right() <= 600.);
 }
 
 #[test]

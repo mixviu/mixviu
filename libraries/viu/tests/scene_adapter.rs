@@ -311,7 +311,7 @@ fn unsupported_scene_content_refuses_at_load() {
         SceneView::new(&source)
             .err()
             .unwrap()
-            .contains("only known icon:")
+            .contains("expected known icon:")
     );
 }
 

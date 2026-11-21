@@ -1162,6 +1162,7 @@ impl SceneView {
                                         // Natural fixed cells (for example arrows) keep their width.
                                         // Cache that measurement so the grow budget includes it on the
                                         // settling pass, without a duplicate control/event traversal.
+                                        let row_id = ui.scope_id();
                                         let fixed: Vec<f32> = active.iter().map(|child| {
                                             let n = &nodes[*child];
                                             if num(n,"grow").unwrap_or(0.) > 0. { return 0.; }
@@ -1169,7 +1170,7 @@ impl SceneView {
                                                 if n.family == "control" {
                                                     Widget::decode(&n.ports["definition"]).and_then(|w|w.intrinsic_width(ui,&self.tree.model)).unwrap_or(0.)
                                                 } else {
-                                                    ui.ctx().data(|d|d.get_temp::<f32>(ui.id().with(("fixed-width",child)))).unwrap_or(0.)
+                                                    ui.ctx().data(|d|d.get_temp::<f32>(row_id.with(("fixed-width",child)))).unwrap_or(0.)
                                                 }
                                             })
                                         }).collect();
@@ -1178,12 +1179,12 @@ impl SceneView {
                                         let mut cells = |ui: &mut egui::Ui| for (i,child) in active.iter().enumerate() {
                                             let grow = num(&nodes[*child],"grow").unwrap_or(0.);
                                             let width = if grow > 0. { remaining*grow/weight } else { fixed[i] };
-                                            let cell = ui.id().with(("cross-size",child));
+                                            let cell = row_id.with(("cross-size",child));
                                             let height = ui.ctx().data(|d|d.get_temp::<f32>(cell)).unwrap_or(0.);
                                             let actual = if grow <= 0. {
                                                 let response = ui.allocate_ui(egui::vec2(width,height),|ui|self.node(ui,child,nodes,route,depth+1,events));
                                                 let measured = response.response.rect.width();
-                                                let width_key = ui.id().with(("fixed-width",child));
+                                                let width_key = row_id.with(("fixed-width",child));
                                                 let previous = ui.ctx().data(|d|d.get_temp::<f32>(width_key)).unwrap_or(0.);
                                                 if (previous-measured).abs() > 0.01 {
                                                     ui.ctx().data_mut(|d|d.insert_temp(width_key,measured));
