@@ -1,7 +1,7 @@
 # Decoration deadline tests — PR #232
 
 PR: https://github.com/mixviu/mixviu/pull/232 (draft).
-Tested code head: `02eb96f56e4b` (full SHA in git). Base: `e8e9da41729e`.
+Tested code head: `02eb96f56e4b49e3d4fa230df34eaa63a30458d9`. Base: `e8e9da41729e`.
 
 Stopped under the requested rule on an unchanged test in the normal CBC pool.
 Do not mark ready: the requested 20 green loaded rounds are incomplete.
@@ -31,9 +31,11 @@ paths. Their intentional indefinite waits do not leave permanent test workers.
 
 CBC baseline job `20261122-073024-bd7c8334-a1`, no-default features.
 Instrumentation only records elapsed time immediately before the unchanged
-250 ms assertions. Twenty standalone runs per test completed. Eighteen complete
-normal eight-wide rounds completed before cancellation at the stop below; each
-round selected all 80 lib-viu/toolkit targets through the existing test pool.
+250 ms assertions. Twenty standalone runs per test completed. Seventeen complete
+normal eight-wide rounds passed. Round 18 recorded all four timing samples before
+cancellation at the stop below. Each round selected all 80 lib-viu/toolkit targets
+through the existing test pool; cancelled-round rc124 results are cancellation
+artefacts, not test findings.
 
 | Original test | Alone: breaches / samples; maximum | Loaded: breaches / samples; maximum |
 |---|---|---|
