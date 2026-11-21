@@ -27,6 +27,6 @@ $probe=replace_must($probe,'$s=$p.changed($s,keys($s));$receipt=compare($s,nil,n
 $probe=$probe.."\n"..'print({phase:"total",cpu:viu_test_cpu()-$start_cpu,wall:monotonic()-$start_wall,stats:$stats})'
 try
   write_file($path,$probe)
-  $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test","app_mix","--","--nocapture"],{env:{MIX_TEST_VIU_APP_SCRIPT:realpath($path)},timeout:600,stderr:"stdout",max_output:16000000});print($r.stdout)
+  $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test","app_mix","--","--nocapture"],{env:{MIX_TEST_VIU_APP_SCRIPT:realpath($path),MIX_TEST_SECTION_TIMING:"1"},timeout:600,stderr:"stdout",max_output:16000000});print($r.stdout)
 finally write_file($path,$source) end
 if not $r.ok then exit($r.exit_code ?? 1) end

@@ -80,6 +80,8 @@ fn run_script(path: &std::path::Path) {
         }),
         None,
         viu::runtime::Services {
+            #[cfg(feature = "test-support")]
+            test_cpu_probe: std::env::var_os("MIX_TEST_SECTION_TIMING").is_some(),
             // Exercise the actual 8 MiB queue cap, rather than lowering it.
             // Other app scripts retain their ordinary 1 MiB string limit.
             max_string_bytes: path
