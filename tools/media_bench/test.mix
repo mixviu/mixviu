@@ -116,12 +116,19 @@ try
   $original=$tmp.."/run"; $alias=$tmp.."/linked"
   mkdir($original)
   run_argv_must(["ln","-s","--",$original,$alias])
+  for $out in [$original.."/new-evidence",$alias.."/new-evidence"]
+    $refused=false
+    try $ep.check_output($alias,$out) catch $e $refused=true end
+    check($refused)
+  end
+  $ep.check_output($alias,$tmp.."/outside-evidence")
   write_file($original.."/episode.mix",data_encode([{kind:"clip",path:$alias.."/take.mp4"}]))
   write_file($original.."/meta.json",json_encode({real:$original.."/file",alias:$alias.."/file",sibling:$original.."-other/file",alias_sibling:$alias.."-other/file",root:$alias}))
   write_file($original.."/actions.jsonl",json_encode({path:$alias.."/file"}).."\n")
   $before=$ep.run_snapshot($original)
   $copy=$ep.copy_run(realpath($alias),[$original,$alias])
   $meta=json_parse(read_file($copy.."/meta.json"))
+  check($ep.rebase_value($alias.."/file",[$alias.."/"],$copy)==$copy.."/file")
   check($meta.real==$copy.."/file" and $meta.alias==$copy.."/file" and $meta.root==$copy)
   check($meta.sibling==$original.."-other/file" and $meta.alias_sibling==$alias.."-other/file")
   check(load_data($copy.."/episode.mix")[0].path==$copy.."/take.mp4")

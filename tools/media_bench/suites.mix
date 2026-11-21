@@ -226,6 +226,7 @@ fn episode($o)
   $source=realpath($o["episode-run"] ?? "")
   if $source==nil or not is_file($source.."/episode.mix") then raise("EPISODE","--episode-run must name an existing run directory") end
   $core.safe_path($source)
+  $episode_support.check_output($source,$o.out)
   $before=$episode_support.run_snapshot($source)
   write_file($o.out.."/original-before.json",json_encode($before))
   $origins=unique([$source,$o["episode-run"],$o.episode_given ?? $o["episode-run"]])

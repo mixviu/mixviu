@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $core = require("core.mix")
 $suites = require("suites.mix")
+$episode_support=require("episode_support.mix")
 $o = $core.options(args())
 for $key in ["suite","engine","corpus","out"]
   if $o[$key] == nil then raise("ARGS","required --"..$key) end
@@ -17,6 +18,7 @@ if has_key($wait,$o.suite) then raise("DEFERRED",$o.suite.." waits for row "..$w
 if not contains(["av1enc","av1dec","opus","loudness","encode","episode"],$o.suite) then raise("ARGS","unknown suite") end
 if not contains(["ffmpeg","rust"],$o.engine) then raise("ARGS","unknown engine") end
 $core.guard()
+if $o.suite=="episode" then $episode_support.check_output($o["episode-run"] ?? "",$o.out) end
 mkdir($o.out)
 $cpu=re_find(read_file("/proc/cpuinfo"),'model name\s*:\s*([^\n]+)')[0].groups[0]
 $result = {suite:$o.suite,engine:$o.engine,variant:$o.variant,tool_versions:{mix:trim(run_argv_must(["/usr/local/bin/mix","--version"])),ffmpeg:run_argv_must(["ffmpeg","-version"]),time:run_argv_must(["/usr/bin/time","--version"]),source_commit:trim(run_argv_must(["git","-C",$repo,"rev-parse","HEAD"]))},host:trim(run_argv_must(["hostname"])),cpu_model:trim($cpu),items:[]}

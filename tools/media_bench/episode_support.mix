@@ -1,8 +1,24 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $core=require("core.mix")
+fn check_output($given,$out)
+  $source=realpath($given)
+  if $source==nil then raise("EPISODE","episode source does not exist") end
+  -- Resolve existing ancestors too: --out may not exist yet, and a parent
+  -- symlink must not redirect evidence writes into the original run.
+  $ancestor=$out; $suffix=[]
+  while realpath($ancestor)==nil
+    push($suffix,basename($ancestor))
+    $parent=dirname($ancestor)
+    if $parent==$ancestor then raise("EPISODE","cannot resolve output parent") end
+    $ancestor=$parent
+  end
+  $resolved=path_join(realpath($ancestor),join(reverse($suffix),"/"))
+  if $resolved==$source or starts_with($resolved,$source.."/") then raise("EPISODE","--out must be outside the original run") end
+end
 fn rebase_value($value,$origins,$copy)
   if type($value)=="string" then
-    for $origin in $origins
+    for $raw_origin in $origins
+      $origin=re_replace($raw_origin,'/+$',"")
       if $origin!="" and ($value==$origin or starts_with($value,$origin.."/")) then return $copy..substr($value,len($origin)) end
     end
   elif type($value)=="list" then
