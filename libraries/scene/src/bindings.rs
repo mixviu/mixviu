@@ -348,7 +348,6 @@ pub fn reevaluate_with_model_limit(
     })
 }
 
-/// Whether `value` serialises past the document limit (or not at all).
 /// Prepare affected nodes against an already staged model without cloning
 /// that model or the replaced ports. The caller owns validation and rollback.
 pub fn prepare_model_roots(
@@ -416,6 +415,7 @@ pub fn prepare_model_roots(
     }
 }
 
+/// Whether `value` serialises past the document limit (or not at all).
 fn too_large_for(value: &JsonValue, limit: usize) -> bool {
     serde_json::to_vec(value)
         .ok()

@@ -566,8 +566,11 @@ fn workshop_answers_during_discovery() {
         bundle.manifest.bus_url = Some(broker.url.clone());
         bundle.launch = json!({"headless":true});
         bundle.manifest.saved_version = None;
-        if count==200 {
-            bundle.program.source.insert_str(0,"$fixture_traffic=require(\"traffic.mix\")\n");
+        if count == 200 {
+            bundle
+                .program
+                .source
+                .insert_str(0, "$fixture_traffic=require(\"traffic.mix\")\n");
             // A deterministic large retained model, authored in Mix and
             // injected only through this test owner's native event queue.
             bundle.program.source.push_str(r#"
@@ -667,26 +670,38 @@ end
         assert_eq!(info["discovering"], false);
         assert!(info["snapshot"]["services"].as_object().unwrap().len() >= count);
         if count == 200 {
-            eprintln!("WORKSHOP_DISCOVERY_PHASE {}",host.discovery_measurements());
+            eprintln!("WORKSHOP_DISCOVERY_PHASE {}", host.discovery_measurements());
             host.probe_discovery();
             let padding="{\"name\":\"example.command\",\"description\":\"Read state\",\"read_only\":true,\"args\":{}}\n".repeat(600);
-            host.owner_event("viu.test.retained_model",json!({"padding":padding}));
-            let until=Instant::now()+Duration::from_secs(5);
+            host.owner_event("viu.test.retained_model", json!({"padding":padding}));
+            let until = Instant::now() + Duration::from_secs(5);
             loop {
-                host.pump();assert!(host.error().is_empty(),"{}",host.error());
-                let state=host.state();
-                let seeded=state["model"]["traffic_view"]["initial"][1][4]["collapse"].as_str().is_some_and(|text|text.contains("fixture.retained"));
-                if seeded && serde_json::to_vec(&state["model"]).unwrap().len()>=2*1024*1024 {break;}
-                assert!(Instant::now()<until,"retained Traffic seed was not published");
+                host.pump();
+                assert!(host.error().is_empty(), "{}", host.error());
+                let state = host.state();
+                let seeded = state["model"]["traffic_view"]["initial"][1][4]["collapse"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("fixture.retained"));
+                if seeded && serde_json::to_vec(&state["model"]).unwrap().len() >= 2 * 1024 * 1024 {
+                    break;
+                }
+                assert!(
+                    Instant::now() < until,
+                    "retained Traffic seed was not published"
+                );
                 std::thread::sleep(Duration::from_millis(2));
             }
             // Full initialisation is outside the per-tick incremental budget,
             // exactly as startup is. Every subsequent ordinary tick is guarded.
             host.probe_discovery();
-            host.discovery_numeric_bounds(MAX_STANDALONE_PUMP_US,MAX_TICK_MODEL_BYTES);
+            host.discovery_numeric_bounds(MAX_STANDALONE_PUMP_US, MAX_TICK_MODEL_BYTES);
             host.patch_cpu_bound(MAX_PATCH_APPLY_CPU_US);
-            if PROFILE_TICK {host.profile_scene_apply();}
-            if VERIFY_INCREMENTAL {host.verify_incremental_publications();}
+            if PROFILE_TICK {
+                host.profile_scene_apply();
+            }
+            if VERIFY_INCREMENTAL {
+                host.verify_incremental_publications();
+            }
             for _ in 0..8 {
                 assert_eq!(call(&mut host, &rt, &caller, "workshop.info").0, 0);
                 let until = Instant::now() + Duration::from_millis(250);

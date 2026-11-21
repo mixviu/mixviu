@@ -233,10 +233,10 @@ impl Host {
             return Err(error);
         }
         self.model_bytes = edit.bytes;
-        if let Some(saved) = &mut self.saved {
-            if saved.announced {
-                saved.apply(&self.model);
-            }
+        if let Some(saved) = &mut self.saved
+            && saved.announced
+        {
+            saved.apply(&self.model);
         }
         self.ready = true;
         ctx.request_repaint();
@@ -1173,10 +1173,10 @@ impl Host {
                     );
                 }
                 self.publication_result(done.generation, patch.revision, result);
-            } else if done.error.is_some() {
-                if let Some(revision) = done.model_revision {
-                    self.publication_result(done.generation, revision, Err(self.error.clone()));
-                }
+            } else if done.error.is_some()
+                && let Some(revision) = done.model_revision
+            {
+                self.publication_result(done.generation, revision, Err(self.error.clone()));
             }
             if self.error.is_empty() {
                 if let Some(model) = done.model {
@@ -1198,7 +1198,11 @@ impl Host {
                         if self.no_window {
                             self.ready = true;
                             self.model = model;
-                            self.model_bytes = if done.model_revision.is_some() { crate::model_patch::model_bytes(&self.model) } else { 0 };
+                            self.model_bytes = if done.model_revision.is_some() {
+                                crate::model_patch::model_bytes(&self.model)
+                            } else {
+                                0
+                            };
                             if let Some(revision) = done.model_revision {
                                 self.publication_result(done.generation, revision, Ok(()));
                             } else {
@@ -1316,7 +1320,11 @@ impl Host {
                                     } else {
                                         self.model = model;
                                     }
-                                    self.model_bytes = if done.model_revision.is_some() { crate::model_patch::model_bytes(&self.model) } else { 0 };
+                                    self.model_bytes = if done.model_revision.is_some() {
+                                        crate::model_patch::model_bytes(&self.model)
+                                    } else {
+                                        0
+                                    };
                                     if let Some(revision) = done.model_revision {
                                         self.publication_result(done.generation, revision, Ok(()));
                                     } else {
