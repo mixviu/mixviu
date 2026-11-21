@@ -1,39 +1,90 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $t=require("traffic.mix");$m=require("model.mix")
 fn check($ok,$message) if not $ok then raise("REDACTION_TEST",$message) end end
+fn take_task($s)
+  $s=$t.launch($s);$task=$s.queue[len($s.queue)-1];$s.queue=slice($s.queue,0,len($s.queue)-1)
+  return {state:$s,task:$task}
+end
+fn finish($work)
+  return $t.completed($work.state,{rc:0,body:{rows:map($work.task.rows,fn($row)=$t.redact($row))}},$work.task.redaction_generation)
+end
 $path=path_join(dirname(script_path()),".redaction-budget-"..pid()..".mix")
 $source=read_file(path_join(dirname(script_path()),"traffic.mix"))
--- This test double refuses any recursive redaction on the notice path.
 $blocked=replace_must($source,'fn redact($v)',"fn redact($v)\n  raise(\"CALLBACK_BUDGET\",\"notice callback attempted redaction\")")
-if $blocked==$source then raise("PROBE","redaction budget source drift") end
 try
   write_file($path,$blocked);$budget=require($path)
   $s=$m.initial();$rows=[]
-  for $i=1 to 64
-    $row={message_type:"request",correlation_id:to_string($i),from:"example",to:"service",payload:{password:"hidden",nested:[{Authorization:"secret",public:$i}]}}
+  for $i=1 to 65
+    $row={message_type:"request",correlation_id:to_string($i),from:"example",to:"service",dropped_count:1,payload:{password:"hidden",nested:[{Authorization:"secret",public:$i}]}}
     $s=$budget.defer_row($s,$row,true);push($rows,$row)
   end
-  check(len($s.traffic)==0,"pending bodies must not be exported")
-  check(len($s.traffic_redaction.waiting)==64,"callback work must be deferred")
-  for $row in $rows
-    $s=$t.launch($s);$task=$s.queue[len($s.queue)-1];$s.queue=slice($s.queue,0,len($s.queue)-1)
-    check(deep_eq($task.row,$row),"redaction must preserve arrival order")
-    $s=$t.completed($s,{rc:0,body:$t.redact($task.row)})
-  end
-  check($s.traffic_redaction.bytes==0 and len($t.rows($s,1024,""))==64,"drain must account for every row")
+  check(len($s.traffic)==0 and len($s.traffic_redaction.waiting)==65,"pending bodies must not be exported")
+  $work=take_task($s);check(len($work.task.rows)==64,"batch row bound must be64")
+  check(deep_eq($work.task.rows,slice($rows,0,64)),"batch must preserve FIFO order")
+  $s=finish($work);$s=finish(take_task($s))
+  check($s.dropped==65,"upstream counts must be counted once")
+  check($s.traffic_redaction.bytes==0 and len($t.rows($s,1024,""))==65,"drain must account for every row")
   for $row in $s.traffic
     check($row.payload.password=="[redacted]" and $row.payload.nested[0].Authorization=="[redacted]","complete recursive semantics before display/export")
   end
-  $s=$budget.defer_row($s,{message_type:"response",correlation_id:"1",from:"service",to:"example",rc:10,payload:{token:"reply secret"}},true)
-  $s=$t.launch($s);$task=$s.queue[len($s.queue)-1];$s.queue=slice($s.queue,0,len($s.queue)-1)
-  $s=$t.completed($s,{rc:0,body:$t.redact($task.row)})
-  check(len($s.traffic)==64 and $s.traffic[63].rc==10 and $s.traffic[63].response.payload.token=="[redacted]","deferred response must correlate without raw text")
+  $s=$budget.defer_row($s,{message_type:"response",correlation_id:"1",from:"service",to:"example",rc:10,dropped_count:3,payload:{token:"reply secret"}},true)
+  $s=finish(take_task($s))
+  check($s.dropped==68 and len($s.traffic)==65 and $s.traffic[64].rc==10 and $s.traffic[64].response.payload.token=="[redacted]","deferred response correlation must count upstream once")
+  $paused=$m.initial();$paused.traffic_paused=true
+  $paused=$budget.defer_row($paused,{dropped_count:7},true)
+  check($paused.dropped==7 and $paused.traffic_redaction==nil,"paused rows must keep upstream count")
+  $quitting=$m.initial();$quitting.quitting=true
+  $quitting=$budget.defer_row($quitting,{payload:{secret:"hidden"}},false)
+  check($quitting.traffic_redaction==nil,"quit must refuse new raw rows")
+  $paused=$m.initial();$paused=$budget.defer_row($paused,{seq:1},false);$paused.traffic_paused=true
+  check(deep_eq($t.launch($paused),$paused),"pause must not launch redaction")
+  $paused.traffic_paused=false;$paused.quitting=true
+  check(deep_eq($t.launch($paused),$paused),"quit must not launch redaction")
   $bounded=$m.initial()
-  for $i=1 to 1025 $bounded=$budget.defer_row($bounded,{seq:$i,payload:{secret:"hidden"}},false) end
-  check(len($bounded.traffic_redaction.waiting)==1024 and $bounded.dropped==1,"pending redaction rows must be bounded")
-  -- Negative control deliberately restores eager notice work.
+  for $i=1 to 64 $bounded=$budget.defer_row($bounded,{seq:$i,dropped_count:1},true) end
+  $work=take_task($bounded);$bounded=$work.state
+  for $i=65 to 1089 $bounded=$budget.defer_row($bounded,{seq:$i,dropped_count:1},true) end
+  check($bounded.traffic_redaction.active.count+len($bounded.traffic_redaction.waiting)==1024,"combined active and waiting row cap must hold")
+  check($bounded.dropped==1154,"evicted rows must keep all upstream counts")
+  -- Exercise the real8MiB cap; only this script's native fixture has a16MiB
+  -- string allowance. Production admission limits are never reduced for tests.
+  $mib="x";for $i=1 to 20 $mib=$mib..$mib end
+  $large=$mib..$mib..$mib..$mib
+  $bytes=$m.initial();$bytes=$budget.defer_row($bytes,{seq:0,payload:{text:$large}},false)
+  $work=take_task($bytes);$bytes=$work.state
+  for $seq in [1,2] $bytes=$budget.defer_row($bytes,{seq:$seq,payload:{text:$mib},dropped_count:2},true) end
+  $waiting=$bytes.traffic_redaction.waiting;$before=$bytes.dropped
+  $bytes=$budget.defer_row($bytes,{payload:{text:$large..$mib},dropped_count:5},true)
+  check(deep_eq($bytes.traffic_redaction.waiting,$waiting) and $bytes.dropped==$before+6,"impossible row must preserve valid waiting rows and upstream count")
+  $oversize=$large..$large..$mib;$before=$bytes.dropped
+  $bytes=$budget.defer_row($bytes,{payload:{text:$oversize},dropped_count:9},true)
+  check(deep_eq($bytes.traffic_redaction.waiting,$waiting) and $bytes.dropped==$before+10,"over8MiB row must drop only itself and preserve upstream")
+  $before=$bytes.dropped
+  $bytes=$budget.defer_row($bytes,{seq:3,payload:{text:$mib..$mib},dropped_count:4},true)
+  check($bytes.traffic_redaction.bytes<=8388608 and len($bytes.traffic_redaction.waiting)==2 and $bytes.traffic_redaction.waiting[0].row.seq==2 and $bytes.dropped==$before+5,"combined byte cap must evict only enough waiting rows")
+  check($work.state.traffic_redaction.active.count==1,"large first row must make progress alone")
+  $batch=$m.initial()
+  for $seq=1 to 3 $batch=$budget.defer_row($batch,{seq:$seq,payload:{text:substr($mib,0,102400)}},false) end
+  $batch=$t.launch($batch)
+  check($batch.traffic_redaction.active.count==2 and $batch.traffic_redaction.active.bytes<=262144 and len($batch.traffic_redaction.waiting)==1,"batch byte bound must leave the next row waiting")
+  $mib=nil;$large=nil;$oversize=nil;$waiting=nil;$bytes=nil;$work=nil
+  for $body in [nil,"malformed",{}, {rows:["malformed"]}]
+    $bad=$m.initial();$bad=$budget.defer_row($bad,{dropped_count:5},true);$work=take_task($bad)
+    $bad=$t.completed($work.state,{rc:0,body:$body},$work.task.redaction_generation)
+    check($bad.dropped==6 and $bad.traffic_redaction.bytes==0 and len($bad.traffic)==0,"malformed job body must count a drop without raising")
+  end
+  $failed=$m.initial();$failed=$budget.defer_row($failed,{dropped_count:5},true);$work=take_task($failed)
+  $failed=$t.completed($work.state,{rc:10,body:{rows:[{seq:"must not display"}]}},$work.task.redaction_generation)
+  check($failed.dropped==6 and $failed.traffic_redaction.bytes==0,"job failure must preserve upstream and count the row")
+  $empty=$m.initial()
+  check(deep_eq($t.completed($empty,{rc:0,body:{}},"retired"),$empty),"nil reset queue must ignore late completion")
+  $old=$budget.defer_row($m.initial(),{seq:"old"},false);$old_work=take_task($old)
+  $reset=$m.initial();check($reset.traffic_redaction==nil,"model reset must clear raw queue")
+  $reset=$budget.defer_row($reset,{seq:"new"},false);$new_work=take_task($reset)
+  $late=$t.completed($new_work.state,{rc:0,body:{rows:[{seq:"old"}]}},$old_work.task.redaction_generation)
+  check(deep_eq($late,$new_work.state),"stale completion must preserve the new generation")
+  $reset=finish($new_work);check(len($reset.traffic)==1 and $reset.traffic[0].seq=="new","reset ring must contain only new generation")
   $eager=replace_must($blocked,'fn defer_row($s,$row,$observed)',"fn defer_row(\$s,\$row,\$observed)\n  \$row=redact(\$row)")
-  if $eager==$blocked then raise("PROBE","eager redaction control source drift") end
   $negative=$path..".negative.mix";write_file($negative,$eager)
   try
     $bad=require($negative);$detected=false

@@ -72,12 +72,20 @@ fn run_script(path: &std::path::Path) {
     };
     mix::builtins::set_script_argv(argv);
     let (tx, rx) = mpsc::channel();
-    let mut runtime = Runtime::new(
+    let mut runtime = Runtime::with_services(
         8,
         Arc::new(move || {
             let _ = tx.send(());
         }),
         None,
+        viu::runtime::Services {
+            // Exercise the actual 8 MiB queue cap, rather than lowering it.
+            // Other app scripts retain their ordinary 1 MiB string limit.
+            max_string_bytes: path
+                .ends_with("workshop/redaction-budget-test.mix")
+                .then_some(16 * 1024 * 1024),
+            ..Default::default()
+        },
     );
     runtime
         .load(Program {

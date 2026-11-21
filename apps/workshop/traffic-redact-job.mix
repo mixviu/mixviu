@@ -2,5 +2,5 @@
 -- version: 0.1.0
 $traffic=require("traffic.mix")
 on job.run
-  reply(0,json_encode($traffic.redact($event.args.row)))
+  reply(0,json_encode({rows:map($event.args.rows,fn($row)=$traffic.redact($row))}))
 end

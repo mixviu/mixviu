@@ -18,7 +18,7 @@ fn observe_frame($s,$frame)
   $s=$t.launch($s)
   if $s.traffic_redaction!=nil and $s.traffic_redaction.active!=nil then
     $task=$s.queue[len($s.queue)-1];$s.queue=slice($s.queue,0,len($s.queue)-1)
-    $s=$t.completed($s,{rc:0,body:$t.redact($task.row)})
+    $s=$t.completed($s,{rc:0,body:{rows:map($task.rows,fn($row)=$t.redact($row))}},$task.redaction_generation)
   end
   return $s
 end

@@ -25,16 +25,29 @@ fn projected_rows($s)
   end
   return $rows
 end
--- State dependencies are marked at the publication boundary, including changes
--- coalesced while an owner receipt is outstanding. Inputs commit only on ack.
-fn subset($s,$names)
-  $out={};for $name in $names $out[$name]=$s[$name] end;return $out
+-- Read closure: tree.rows + description -> model.command/tree.find_row and
+-- agents.tree; macro-view -> macro.app/can_new -> model.busy; traffic-view ->
+-- traffic.rows/model.effective_dock. catalogues is shared by tree and macro but
+-- is never copied/compared here. Agent/Mesh clocks always project. call affects
+-- macro.can_new, not description; height/dock_height affect macro's editor and
+-- fresh placements, not traffic-view's retained widgets. Body/call controls,
+-- reveal/saved properties and placements are rebuilt outside these caches.
+fn dependencies()
+  return {tree:["snapshot","catalogues","agents","filter","row_key","expanded","selection"],macro:["macro_selected","document","catalogues","macro_draft","macro_saved_text","macro_target","macro_destination","macro_confirm_delete","window_height","dock_open","dock_side","dock_height","macro_message","row_key","dialog","quitting","discovery","call","macro_pending","activations"],traffic:["traffic","traffic_filter","dock_open","dock_side","window_width"]}
+end
+fn changed($s,$fields)
+  $deps=dependencies()
+  for $section in keys($deps)
+    if any($fields,fn($field)=contains($deps[$section],$field)) then $s.section_revision[$section]=$s.section_revision[$section]+1 end
+  end
+  return $s
 end
 fn inputs($s)
-  return {tree:subset($s,["snapshot","catalogues","agents","filter","row_key","expanded","selection"]),macro:subset($s,["macro_selected","document","catalogues","macro_draft","macro_saved_text","macro_target","macro_destination","macro_confirm_delete","window_height","dock_open","dock_side","dock_height","macro_message","row_key","selection","connected","dialog","quitting","busy","discovery","call","macro_pending","activations"]),agent:subset($s,["agents","row_key"]),traffic:subset($s,["traffic","traffic_filter","dock_open","dock_side","window_width"])}
+  return {epoch:$s.traffic_generation,tree:$s.section_revision.tree,macro:$s.section_revision.macro,traffic:$s.section_revision.traffic}
 end
 fn marks($before,$after)
-  $dirty={};for $key in keys($after) $dirty[$key]=$before==nil or not deep_eq($before[$key],$after[$key]) end
+  $fresh=$before==nil or $before.epoch!=$after.epoch
+  $dirty={};for $key in ["tree","macro","traffic"] $dirty[$key]=$fresh or $before[$key]!=$after[$key] end
   -- Permission expiry labels read wall time, as Mesh ages do.
   $dirty.agent=true
   return $dirty

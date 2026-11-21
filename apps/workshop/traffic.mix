@@ -6,10 +6,15 @@ $work=require("work.mix")
 -- returns the complete redacted value. Neither rows() nor presentation exports
 -- this queue. Notice callbacks perform no recursive redaction work.
 fn defer_row($s,$row,$observed)
-  if $s.traffic_paused then return $s end
+  if $observed then $s.dropped=$counter.add($s.dropped,$row.dropped_count ?? 0) end
+  if $s.traffic_paused or $s.quitting then return $s end
   $q=$s.traffic_redaction ?? {waiting:[],bytes:0,active:nil}
   $bytes=byte_length(json_encode($row))
-  while len($q.waiting)>0 and (len($q.waiting)+(if $q.active!=nil then 1 else 0 end)>=1024 or $q.bytes+$bytes>8388608)
+  $active_bytes=if $q.active==nil then 0 else $q.active.bytes end
+  -- Active work cannot be evicted. Reject impossible admission before touching
+  -- valid waiting rows, even when the incoming row alone exceeds the cap.
+  if $active_bytes+$bytes>8388608 then $s.dropped=$counter.add($s.dropped,1);return $s end
+  while len($q.waiting)>0 and (len($q.waiting)+(if $q.active!=nil then $q.active.count else 0 end)>=1024 or $q.bytes+$bytes>8388608)
     $q.bytes=$q.bytes-$q.waiting[0].bytes;$q.waiting=slice($q.waiting,1);$s.dropped=$s.dropped+1
   end
   if $q.bytes+$bytes>8388608 then $s.dropped=$s.dropped+1
@@ -18,18 +23,31 @@ fn defer_row($s,$row,$observed)
 end
 fn launch($s)
   $q=$s.traffic_redaction
-  if $q==nil or $q.active!=nil or len($q.waiting)==0 then return $s end
-  $entry=$q.waiting[0];$q.waiting=slice($q.waiting,1);$q.active={bytes:$entry.bytes,observed:$entry.observed}
+  if $s.quitting or $s.traffic_paused or $q==nil or $q.active!=nil or len($q.waiting)==0 then return $s end
+  -- Keep changes below the publisher's wire budget: at most 64 rows / 256 KiB.
+  -- One larger admissible row runs alone so it can always make progress.
+  $rows=[];$entries=[];$bytes=0
+  for $entry in $q.waiting
+    if len($rows)>=64 or (len($rows)>0 and $bytes+$entry.bytes>262144) then break end
+    push($rows,$entry.row);push($entries,{observed:$entry.observed});$bytes=$bytes+$entry.bytes
+  end
+  $q.waiting=slice($q.waiting,len($rows));$q.active={bytes:$bytes,count:len($rows),entries:$entries}
   $s.traffic_redaction=$q
-  return $work.enqueue($s,{owner:"traffic",op:"redact",job:"traffic-redact-job.mix",lane:"traffic",row:$entry.row})
+  return $work.enqueue($s,{owner:"traffic",op:"redact",job:"traffic-redact-job.mix",lane:"traffic",rows:$rows,redaction_generation:$s.traffic_generation})
 end
-fn completed($s,$d)
+fn completed($s,$d,$generation)
+  if $s.traffic_redaction==nil or $generation!=$s.traffic_generation then return $s end
   $active=$s.traffic_redaction.active
   if $active==nil then return $s end
   $s.traffic_redaction.active=nil;$s.traffic_redaction.bytes=$s.traffic_redaction.bytes-$active.bytes
-  if $d.rc!=0 then $s.dropped=$s.dropped+1;return $s end
-  if $active.observed then return observed($s,$d.body,true) end
-  return retain($s,$d.body,true)
+  if $d.rc!=0 or type($d.body)!="map" or type($d.body.rows)!="list" or len($d.body.rows)!=$active.count or any($d.body.rows,fn($row)=type($row)!="map") then
+    $s.dropped=$counter.add($s.dropped,$active.count);return $s
+  end
+  for $i=0 to $active.count-1
+    if $active.entries[$i].observed then $s=observed($s,$d.body.rows[$i],true)
+    else $s=retain($s,$d.body.rows[$i],true) end
+  end
+  return $s
 end
 fn redact($v)
   if type($v)=="map" then
@@ -64,7 +82,7 @@ fn clock_ms($v)
   catch $why return nil end
 end
 fn observed($s,$frame,$redacted=false)
-  $s.dropped=$counter.add($s.dropped,$frame.dropped_count ?? 0)
+  if not $redacted then $s.dropped=$counter.add($s.dropped,$frame.dropped_count ?? 0) end
   if $s.traffic_paused then return $s end
   if $frame.message_type=="response" and type($frame.correlation_id)=="string" then
     $index=nil
