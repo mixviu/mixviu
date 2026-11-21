@@ -1,3 +1,121 @@
+# PR #220 round 7 — CBC validation complete
+
+PR: https://github.com/mixviu/mixviu/pull/220. Validated code head:
+`f7d3c098fddab89cc91beea4f6766ff88827fb6c`. This receipt is a later docs-only
+commit. **All required scoped checks are green; keep #220 ready.** The
+round-6 review-response table below is retained as history; its pending
+validation statements are superseded by this receipt.
+
+All validation this round ran through `cbc-build --worker any`, including
+Mix scripts, lint and the environment registry. The episode service was
+inactive at the initial read-only check. No tests ran locally on cos/pve1.
+No `tools/ci.mix all`, merge, ship or deployment was performed.
+
+## Corrections derived from CBC
+
+The local parent-watch timeout is **not a finding**. `scenes_test.mix` passed
+597 assertions standalone and as one job in the ordinary width-eight pool,
+in both configurations. A temporary copy of the existing pool runner added
+the Mix script to its job list; the repository runner and serial list were
+unchanged. No watcher or deadline fix was needed; the false TODO-viud entry
+was removed, with the original observation and correction retained in the
+private journal.
+
+CBC caught two fixture issues added by this PR: the scene admission fixture
+wrote `theme.mix` instead of the native `THEME_FILE`, and the asynchronous
+repair test imposed an arbitrary five-second report wait under a contended
+unit-test pool. The fixture now uses the constant; report settling gets a
+30-second test-only limit. The diagnostic host fixture also drains outstanding
+jobs/callbacks before its Bus assertions (`app_host.rs:3242`,
+`tests/design_validation.rs:76`). Its actual Bus deadline is still one second.
+It does not make the startup latency claim: the separate port-appearance
+regression continues to start before readiness, with the unchanged 750 ms
+bound and one-second call deadline.
+
+An extra control showed that malformed Workshop arguments can be rejected in
+Mix before the native handler. The existing Bus test remains, and a new real
+native-handler fixture at `app_host_model_tests.rs:5` drives `native.theme`
+through the in-process backend. Its mutation control now detects false design
+notice surfacing. The fixture's initial reply-variable typo and a supplemental
+runner's library-only serial-selection mismatch were corrected. Worker fmt
+was applied; the final formatting diff is empty.
+
+## Validation receipts
+
+All identifiers below are CBC jobs. Full logs and drivers are retained in the
+private startup evidence directory under `round7/`.
+
+| Job | Evidence |
+|---|---|
+| `20261122-001422-730edbc3-a1` | Both compile corrections from round 6 accepted by all-target clippy; theme, worker and real host validation tests passed. Revealed the new scene fixture's wrong filename, subsequently corrected. |
+| `20261122-002653-a7a25cfc-a1` | Six changed Rust crates (`design`, `theme`, `toolkit`, `lib-viu`, `viu`, `settingsd`): fmt, all-target clippy both configurations; every all-target binary in width-eight pools (102 jobs including the scene script per configuration). Other five crates green in both; lib-viu default green. Support found our diagnostic fixture timeout and the separately owned Monitor timeout. Seven serial Workshop tests passed (15.08 s). |
+| `20261122-004510-0dd57b03-a1` | Final fixture correction: lib-viu every target passes both width-eight pools (57 jobs each, including scenes); seven Workshop tests run alone after the support pool and pass (16.13 s). Both real design hosts pass. Fmt and six-crate all-target clippy both configurations, plus all six crates' doc-tests both configurations, pass. Scene standalone and both pools pass 597 assertions. Env registry passes. Outer rc 2 came solely from the lint driver's obsolete two-dot main comparison selecting an absent unrelated file; corrected in the next job. No test failure or Monitor recurrence here. |
+| `20261122-005319-f2b4aa8a-a1` | Correct merge-base PR selection: all 11 changed Mix files lint with zero errors/warnings/notes; env registry 277 names, zero problems; rc 0. |
+| `20261122-001742-f01af327-a1` | Eighteen mutations each fail the intended oracle: repair, registration, unsolicited count, already-seen ack, unregister, reload-not-blocked, write admission, startup ordering, info, notice, background report, settings admission, staging, startup latency, first-use context, permanent NOT_READY, wrong digest and dismissal. Full projection oracle passes; missing-dependency control fails. Sources restored; driver rc 0. |
+| `20261122-003606-d9e9b5a1-a1` | Added native-handler test and full lib-viu unit target pass both configurations (420/421 passed, five ignored each), with all-target clippy. Native spoof-notice and CLI trailing-argument mutations prove their oracles. Section script 3.575234 s, redaction script 0.927884 s standalone, each below five seconds. Sources restored; rc 0. |
+| `20261122-003300-2d8c11ab-a1` | Forced restyling after refusal fails the installed-context comparison: actual Studio/Dark differs from retained Ocean/Light. Restored; control driver rc 0. |
+| `20261122-001759-bc3dcd92-a1` | Actual build/bundle admission accepts valid embedded source and rejects a planted bad unused context before archive creation. Normal validator rejects trailing arguments. Restored/rebuilt valid source passes; rc 0. |
+
+The final change after the six-crate run consists only of test-support/fixture
+code in lib-viu; that crate's complete targets, and the six crates' clippy and
+doc-tests, were rerun in the final job. Previously passing unaffected targets
+were not repeated. Every required target/configuration has green evidence.
+
+The known `monitor_policy.rs:20` completion timeout occurred in the first
+support pool above. It remains the separate `fix/monitor-completion-timeout`
+finding, under the round-5 carry-on instruction; no Monitor code was changed.
+It passed in the final pools. The exempt #226 byte guard did not fire in the
+final serial binary. Early rc 101/1 jobs are retained as fixture/control
+discovery evidence, not hidden or called green.
+
+## Startup result and retained desk baseline
+
+Final cold standalone guard: **646.081 ms worst call**, zero failures, against
+750 ms, at 200 peers during the first 1.5 seconds from port appearance.
+First pump: wall **350.127 ms**, CPU **350.055 ms**; load callback wall
+79.141 ms / CPU 79.110 ms. Evidence: job `20261122-004510-0dd57b03-a1`,
+`WORKSHOP_STARTUP_PORT` at the run beginning 2026-11-22 00:46:27 AEST.
+The same guard passes in the existing serial binary after the width-eight
+pool; its bound is unchanged. Round-5 standalone was 632.030 ms; the original
+before run `20261121-175445-2c24d7dc-a1` had 1,001.520 ms censored timeouts
+and two failures. No artifact cache was landed.
+
+The five real-desk samples on gold `7ad2570f` remain the after-#216 baseline,
+not measurements of #220: ping maxima 477/461/467/509/462 ms and info maxima
+378/377/409/368/376 ms, runs `20261121-192827-1`, `192843-2`, `192859-3`,
+`192915-4`, `192930-5`. Gold, quiet JSON and probe evidence remain in the
+preceding receipts. A gold carrying this PR still needs its post-merge desk
+check. The residual startup callback profile remains a separate TODO-workshop
+follow-up.
+
+## Review-response validation update
+
+The original file/line reasoning is in the round-6 table immediately below.
+Current outcomes:
+
+| Item | Outcome and validating evidence |
+|---|---|
+| 1 — reload/remount vs writes | Fixed. Native store fixture `engines/viu/src/store_tests.rs:13` passes; explicit staging checks and real scene loader pass. Reload-block and write-bypass mutations fail (`001742-f01af327`); final pools `004510-0dd57b03`. |
+| 2 — repaired reports | Fixed. Real generic save/break/report/repair clears errors and notice without restyling; final host tests pass. Repair-removal mutation fails (`001742-f01af327`). |
+| 3 — failing source digest | Fixed. Exact failing-byte keys and singleton error map pass; wrong-key mutation fails (`001742-f01af327`). |
+| 4 — genuine compile refusals only | Fixed. Bus malformed-argument control and direct native-handler fixture pass; spoof-notice mutation fails (`003606-d9e9b5a1`). Typed adapters and DESIGN_VALIDATION/ARGUMENT assertions pass in final targets. |
+| 5 — pending accounting | Fixed. Solicited/unsolicited/ack/disconnect tests pass; both accounting mutations fail (`001742-f01af327`). |
+| 6 — registration and bounds | Fixed. Pathless/file identity, path replacement, embedded reversion, deletion, bounded queues/history and counted retirement tests pass. Registration/unregister mutations fail (`001742-f01af327`). |
+| 7a — duplicated host error on Dismiss | Fixed. Dismissal preserves unrelated errors and clears the duplicate; mutation fails (`001742-f01af327`). |
+| 7b — base failure surfacing | Surfacing fixed; compile premise refuted as detailed below. Typed adapter failure test passes; it remains an ordinary host error, not a fake compile refusal. |
+| 7c — embedded CLI arity | Fixed. Real validator rejects extras; removing the guard admits them only under mutation (`003606-d9e9b5a1`). |
+| 7d — one-read digest | Fixed. Fallback retains the original operation's failing-byte digest; exact startup key and source-category tests pass in final targets. |
+
+Write paths remain: install/upgrade/Reset share staged `{source, write:true}`
+validation; read-only reload/remount omit it. `appearance.source` keeps full
+admission before profile writes. Bundle admission runs the explicit whole-source
+validator. Generic `edit.save` (`services/editd/src/actor.rs:1301`) remains out
+of scope, as recorded in `~/.viu/_doc/TODO-editd.md`, “Generic saves of theme
+and scene sources skip design validation”; its real write is covered by the
+background-report/refusal fixture.
+
+---
+
 # PR #220 round 6 — conformance fixes; stopped on the existing parent-watch timeout
 
 PR: https://github.com/mixviu/mixviu/pull/220.
