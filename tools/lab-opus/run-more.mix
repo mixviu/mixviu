@@ -1,2 +1,6 @@
-print(run_argv_must(["/opt/mix/bin/mix", "tools/lab-opus/run.mix"], {timeout: 1800, max_output: 2000000}))
-print(run_argv_must(["/opt/mix/bin/mix", "tools/lab-opus/measure-more.mix"], {timeout: 3600, max_output: 4000000}))
+for $script in ["run.mix","measure-more.mix"]
+ $r=run_argv(["/opt/mix/bin/mix", "tools/lab-opus/" .. $script], {timeout: 3600, max_output: 4000000})
+ print($r.stdout)
+ print($r.stderr)
+ if not $r.ok then exit(1) end
+end
