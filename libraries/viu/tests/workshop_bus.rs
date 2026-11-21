@@ -807,7 +807,7 @@ fn workshop_calls_from_port_appearance_at_200_peers() {
                 if port.elapsed() >= Duration::from_millis(1500) { break; }
                 let started = Instant::now();
                 let answer = sampler.call_with_headers_raw_within("workshop", command, &BTreeMap::new(), "{}", Duration::from_secs(1)).await;
-                samples.push(json!({"command":command,"start_us":started.duration_since(port).as_micros() as u64,"latency_us":started.elapsed().as_micros() as u64,"ok":answer.as_ref().is_ok_and(|(rc,_,_)| *rc == 0),"error":answer.err().map(|e|e.to_string())}));
+                samples.push(json!({"command":command,"start_us":started.duration_since(port).as_micros() as u64,"latency_us":started.elapsed().as_micros() as u64,"ok":answer.as_ref().is_ok_and(|(rc,_,_)| *rc == 0),"reply":answer.as_ref().ok().map(|(rc,body,_)|json!({"rc":rc,"body":body})),"error":answer.err().map(|e|e.to_string())}));
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }

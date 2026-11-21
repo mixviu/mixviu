@@ -9,6 +9,8 @@ use std::{
 };
 use viu::{app_host::test_support::Harness, bundle::Bundle};
 
+static HOST_FIXTURE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn bad_unused() -> String {
     let good = design::EMBEDDED_DEFAULT_SOURCE;
     let needle = "when: { scheme: \"studio\", mode: \"light\" },";
@@ -76,6 +78,7 @@ fn call(
     let client = rt
         .block_on(bus::SupervisedClient::connect_options("design-test", url).connect())
         .unwrap();
+    eprintln!("DESIGN_TEST_CALL {command}");
     let command = command.to_owned();
     let task = rt.spawn(async move {
         let reply = client
@@ -117,6 +120,7 @@ fn runtime() -> tokio::runtime::Runtime {
 
 #[test]
 fn startup_fallback_surfaces_in_app_info_and_painted_notice() {
+    let _fixture = HOST_FIXTURE.lock().unwrap_or_else(|e| e.into_inner());
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("theme.mix");
     std::fs::write(&path, bad_requested()).unwrap();
@@ -167,6 +171,7 @@ async fn generic_save(editd: &editd::Editd, path: &Path, text: &str) {
 
 #[test]
 fn generic_save_gets_late_report_and_bad_context_switch_is_refused() {
+    let _fixture = HOST_FIXTURE.lock().unwrap_or_else(|e| e.into_inner());
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("theme.mix");
     std::fs::write(&path, design::EMBEDDED_DEFAULT_SOURCE).unwrap();
