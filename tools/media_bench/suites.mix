@@ -1,0 +1,317 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$core = require("core.mix")
+$episode_support=require("episode_support.mix")
+fn ff($args)
+  return concat(["ffmpeg","-nostdin","-y","-hide_banner","-threads","4","-filter_complex_threads","4","-filter_threads","4"],$args)
+end
+fn measure($argv,$o,$name)
+  return $core.speed(budget_argv($argv,$o),$o.out.."/"..$name,$o.runs,$o.budget ?? "4")
+end
+fn budget_argv($argv,$o)
+  if ($o.budget ?? "4")=="4" then return $argv end
+  $out=$argv
+  for $i in range(0,len($out)-1)
+    if contains(["-threads","-filter_threads","-filter_complex_threads"],$out[$i]) then $out[$i+1]="0" end
+    $out[$i]=replace($out[$i],"n_threads=4","n_threads=0")
+  end
+  return $out
+end
+fn once($argv,$o,$name)
+  $argv=budget_argv($argv,$o)
+  if $o.oracle ?? false then
+    $r=run_argv($argv,{timeout:300,stdout:{file:$o.out.."/"..$name..".stdout"},stderr:{file:$o.out.."/"..$name..".stderr"},env:{LC_ALL:"C"}})
+    if not $r.ok then raise("ORACLE","command failed: "..$o.out.."/"..$name..".stderr") end
+    return $r
+  end
+  return $core.timed($argv,$o.out.."/"..$name,$o.budget ?? "4")
+end
+fn model_probe($o)
+  for $model in ["vmaf_4k_v0.6.1","vmaf_v0.6.1"]
+    $ok=false
+    try
+      $r=once(ff(["-f","lavfi","-i","color=s=64x64:d=0.04","-lavfi","[0:v]split[a][b];[a][b]libvmaf=model=version="..$model,"-f","null","-"]),$o,"probe-"..$model)
+      $ok=true
+    catch $error
+      $raw=read_file($o.out.."/probe-"..$model..".stderr")
+      if not contains($raw,"model") then raise("MODEL",$error) end
+    end
+    if $ok then return {name:$model,version:"0.6.1",requested:"vmaf_4k_v0.6.1",fallback:$model!="vmaf_4k_v0.6.1"} end
+  end
+  raise("MODEL","neither explicit VMAF model is available")
+end
+fn loudnorm_filter($m)
+  $values={}
+  for $key in ["input_i","input_tp","input_lra","input_thresh","target_offset"]
+    $values[$key]=$core.numeric($m[$key])
+  end
+  return "loudnorm=I=-14:TP=-1:LRA=11:linear=true:measured_I="..to_string($values.input_i)..":measured_TP="..to_string($values.input_tp)..":measured_LRA="..to_string($values.input_lra)..":measured_thresh="..to_string($values.input_thresh)..":offset="..to_string($values.target_offset)..":print_format=json"
+end
+fn item_id($path,$root)
+  $core.safe_path($path); $core.safe_path($root)
+  if not starts_with($path,$root.."/") then raise("ID","file is outside corpus") end
+  -- Preserve the relative path in IDs; encode / for a flat artifact namespace.
+  $relative=substr($path,len($root)+1)
+  if contains($relative,"__") then raise("ID","ambiguous artifact separator") end
+  return replace($relative,"/","__")
+end
+fn verify_libopus($o,$name)
+  for $n in range(1,$o.runs)
+    if not re_match(read_file($o.out.."/"..$name.."-"..to_string($n)..".stderr"),'opus \(libopus\)') then raise("DECODER","libopus not confirmed in decode stderr") end
+  end
+end
+fn capture_number($text,$pattern)
+  $m = re_find($text,$pattern)
+  if len($m) == 0 then raise("METRIC","missing numeric output: "..$pattern) end
+  return to_number($m[len($m)-1].groups[0])
+end
+fn loudnorm_json($text)
+  $matches = re_find($text,'(?s)\{\s*"input_i".*?\}')
+  if len($matches) == 0 then raise("LOUDNESS","missing loudnorm JSON") end
+  return json_parse($matches[len($matches)-1].match)
+end
+fn quality_graph($vmaf,$o)
+  $core.safe_path($vmaf)
+  $normal="trim=end_frame="..to_string($o.frames)..",settb=1/30,setpts=N,scale="..to_string($o.width)..":"..to_string($o.height)..":in_range=tv:out_range=tv:in_color_matrix=bt709:out_color_matrix=bt709,format=yuv420p,setparams=range=limited:colorspace=bt709:color_primaries=bt709:color_trc=bt709,showinfo,split=3"
+  return "[0:v]"..$normal.."[d1][d2][d3];[1:v]"..$normal.."[r1][r2][r3];[d1][r1]libvmaf=model=version="..$o.model..":n_threads=4:log_fmt=json:log_path="..$vmaf.."[v];[d2][r2]ssim[s];[d3][r3]psnr[p]"
+end
+fn quality($source,$encoded,$o,$name)
+  -- Verify declared stream geometry before normalising the comparison.
+  for $pair in [{id:"reference",path:$source},{id:"distorted",path:$encoded}]
+    $probe=once(["ffprobe","-v","error","-select_streams","v:0","-read_intervals","0%+"..to_string($o.seconds+1),"-count_frames","-show_entries","stream=width,height,pix_fmt,color_range,color_space,nb_read_frames","-of","json","-i",$pair.path],$o,$name.."-"..$pair.id.."-probe")
+    $stream=json_parse(read_file($o.out.."/"..$name.."-"..$pair.id.."-probe.stdout")).streams[0]
+    if to_number($stream.nb_read_frames)<$o.frames then raise("QUALITY","fewer frames than requested") end
+    if $stream.width!=$o.width or $stream.height!=$o.height then raise("QUALITY","input dimensions differ from workload") end
+  end
+  $vmaf = $o.out.."/"..$name..".vmaf.json"
+  $r = once(ff(["-i",$encoded,"-i",$source,"-t",to_string($o.seconds),"-lavfi",quality_graph($vmaf,$o),"-map","[v]","-map","[s]","-map","[p]","-an","-f","null","-"]),$o,$name)
+  $text = read_file($o.out.."/"..$name..".stderr")
+  $data = json_parse(read_file($vmaf))
+  if len(re_find($text,"fmt:yuv420p")) < 2*$o.frames or len(re_find($text,"color_range:tv color_space:bt709")) < 2*$o.frames then raise("QUALITY","normalised inputs do not match yuv420p / tv / BT.709") end
+  if len($data.frames) != $o.frames or contains($text,"not matching timebases") or contains($text,"non monotonically") then raise("QUALITY","comparison must align exactly the requested frame count") end
+  return {vmaf:$data.pooled_metrics.vmaf.mean,ssim:capture_number($text,'All:([-0-9.]+)'),psnr_db:if contains($text,"average:inf") then "infinite" else capture_number($text,'average:([-0-9.]+)') end,normalisation:"same dimensions; yuv420p; tv range; BT.709 matrix/primaries/transfer",model:$o.model,thread_budget:$o.threads}
+end
+fn video_cases($variant)
+  $cases=[{codec:"libsvtav1",preset:"8",opts:["-preset","8"],ladder:[56,61,66,70]},{codec:"libsvtav1",preset:"9",opts:["-preset","9"],ladder:[56,61,66,70]},{codec:"libaom-av1",preset:"6",opts:["-cpu-used","6","-row-mt","1"],ladder:[56,59,61,63]},{codec:"librav1e",preset:"10",opts:["-speed","10"],ladder:[200,220,240,255]}]
+  if $variant=="sustained" then push($cases,{codec:"librav1e",preset:"8",opts:["-speed","8"],ladder:[200,220,240,255]}) end
+  return $cases
+end
+fn video($o)
+  $items=[]; $vcurves={}; $pcurves={}
+  for $case in video_cases($o.variant)
+    $vc=[]; $pc=[]
+    for $q in $case.ladder
+      $id=$case.codec.."-p"..$case.preset.."-q"..to_string($q)
+      $file=$o.out.."/"..$id..".ivf"
+      $rate=if $case.codec=="librav1e" then ["-qp",to_string($q)] elif $case.codec=="libaom-av1" then ["-crf",to_string($q),"-qmin",to_string($q),"-qmax",to_string($q),"-b:v","0"] else ["-svtav1-params","crf="..to_string($q),"-b:v","0"] end
+      $cmd=ff(concat(["-i",$o.corpus.."/ui-synth.mkv","-t",to_string($o.seconds),"-an","-pix_fmt","yuv420p","-color_range","tv","-colorspace","bt709","-c:v",$case.codec,"-threads","4"],concat($case.opts,concat($rate,[$file]))))
+      $speed=measure($cmd,$o,$id)
+      $m=quality($o.corpus.."/ui-synth.mkv",$file,$o,$id.."-quality")
+      $probe=once(["ffprobe","-v","error","-show_entries","format=size","-of","json","-i",$file],$o,$id.."-probe")
+      $bytes=to_number(json_parse(read_file($o.out.."/"..$id.."-probe.stdout")).format.size)
+      $m.bitrate_bps=$core.bits_per_second($bytes,$o.seconds); $m.encode=$speed; $m.fps=$core.fps($speed,$o.frames); $m.frames=$o.frames; $m.duration_s=$o.seconds; $m.thread_budget=$o.threads
+      push($vc,{quality:$m.vmaf,rate:$m.bitrate_bps})
+      push($pc,{quality:$m.psnr_db,rate:$m.bitrate_bps})
+      push($items,{id:$id,metrics:$m})
+    end
+    $key=$case.codec.."-p"..$case.preset
+    $vcurves[$key]=$vc; $pcurves[$key]=$pc
+  end
+  for $key in keys($vcurves)
+    push($items,{id:$key.."-bd-rate-vs-svt-p8",metrics:{vmaf:$core.bd_result($vcurves["libsvtav1-p8"],$vcurves[$key]),psnr:$core.bd_result($pcurves["libsvtav1-p8"],$pcurves[$key])}})
+  end
+  return $items
+end
+fn decode($o)
+  $file = $o.out.."/decode-input.ivf"
+  $prep = once(ff(["-i",$o.corpus.."/ui-synth.mkv","-t",to_string($o.seconds),"-an","-c:v","libsvtav1","-preset","9","-crf","32","-threads","4",$file]),$o,"prepare")
+  $s = measure(ff(["-c:v","libdav1d","-i",$file,"-an","-f","null","-"]),$o,"dav1d")
+  $checksum = once(ff(["-c:v","libdav1d","-i",$file,"-an","-f","framemd5",$o.out.."/frames.md5"]),$o,"checksum")
+  $frames = filter(split(read_file($o.out.."/frames.md5"),"\n"),fn($l)=trim($l)!="" and not starts_with($l,"#"))
+  if len($frames) != $o.frames then raise("DECODE","expected the workload frame count") end
+  return [{id:"ui-synth-4k-dav1d",metrics:{decode:$s,fps:$core.fps($s,$o.frames),frames:len($frames),checksums:$frames,checksum_file:"frames.md5",duration_s:$o.seconds,width:$o.width,height:$o.height,thread_budget:$o.threads}}]
+end
+fn audio_files($o)
+  $files = [$o.corpus.."/music-synth.wav"]
+  $inventory = []
+  $cache=env("HOME").."/.viu/media/runs/tts-cache"
+  $selection=$o.corpus.."/tts-selection.json"
+  if not is_file($selection) then
+    $candidates=sort(glob($cache.."/**/*.wav"))
+    if len($candidates)<20 then raise("CORPUS","20 narration WAVs required") end
+    $selected=[]
+    for $f in slice($candidates,0,20)
+      $core.safe_path($f)
+      push($selected,{relative:substr($f,len($cache)+1),sha256:split(run_argv_must(["sha256sum","--",$f])," ")[0]})
+    end
+    write_file($selection,json_encode($selected))
+  end
+  $seen={}; $selected_paths={}
+  for $entry in json_parse(read_file($selection))
+    $relative=$entry.relative
+    $f=$cache.."/"..$relative
+    $core.safe_path($f)
+    $hash=split(run_argv_must(["sha256sum","--",$f])," ")[0]
+    if $hash!=$entry.sha256 then raise("CORPUS","pinned narration changed") end
+    $destination=$o.corpus.."/tts-ref/"..$relative
+    mkdir(dirname($destination))
+    run_argv_must(["cp","--",$f,$destination])
+    $id=item_id($destination,$o.corpus)
+    if has_key($seen,$id) then raise("ID","duplicate narration id") end
+    $seen[$id]=true
+    $selected_paths[$relative]=true
+    push($files,$destination)
+  end
+  $inventory=[]
+  for $f in sort(glob($cache.."/**/*.wav"))
+    $relative=substr($f,len($cache)+1)
+    push($inventory,{file:$relative,sha256:split(run_argv_must(["sha256sum","--",$f])," ")[0],selected:$selected_paths[$relative] ?? false})
+  end
+  write_file($o.out.."/tts-inventory.json",json_encode($inventory))
+  -- Programme: every narration WAV in this pinned corpus, in selection order.
+  $normalised=[]
+  for $f in slice($files,1,len($files))
+    $id=item_id($f,$o.corpus)
+    $wav=$o.out.."/programme-"..$id..".wav"
+    $r=once(ff(["-i",$f,"-ar","48000","-ac","2","-c:a","pcm_s16le",$wav]),$o,"programme-prepare-"..$id)
+    push($normalised,$core.concat_entry($wav))
+  end
+  $list=$o.out.."/programme.concat"
+  write_file($list,join($normalised,"\n").."\n")
+  $programme=$o.corpus.."/tts-programme.wav"
+  $r=once(ff(["-f","concat","-safe","0","-i",$list,"-c:a","pcm_s16le",$programme]),$o,"programme-concat")
+  if $o.variant=="sustained" then return [$files[0],$programme] end
+  push($files,$programme)
+  return $files
+end
+fn rms($path,$o,$name,$filter)
+  $r = once(ff(["-i",$path,"-af",$filter..",astats=metadata=0:reset=0","-f","null","-"]),$o,$name)
+  return capture_number(read_file($o.out.."/"..$name..".stderr"),'RMS level dB: ([-0-9.]+)')
+end
+fn pcm_difference()
+  return "[1:a]volume=-1[neg];[0:a][neg]amix=inputs=2:normalize=0,astats=reset=0"
+end
+fn opus($o)
+  $items = []
+  for $source in audio_files($o)
+    $id = item_id($source,$o.corpus)
+    $hash = split(run_argv_must(["sha256sum","--",$source])," ")[0]
+    for $rate in [64,96,128]
+      $name = $id.."-"..to_string($rate)
+      $encoded = $o.out.."/"..$name..".opus"; $decoded = $o.out.."/"..$name..".wav"
+      $loops=if $o.variant=="sustained" then 10 else 1 end
+      $enc = measure(ff(["-stream_loop",to_string($loops-1),"-i",$source,"-ar","48000","-ac","2","-c:a","libopus","-b:a",to_string($rate).."k",$encoded]),$o,$name.."-encode")
+      $dec = measure(ff(["-c:a","libopus","-i",$encoded,"-f","null","-"]),$o,$name.."-decode")
+      verify_libopus($o,$name.."-decode")
+      $probe=once(["ffprobe","-v","error","-show_entries","format=duration","-of","json","-i",$source],$o,$name.."-duration")
+      $duration=$core.numeric(json_parse(read_file($o.out.."/"..$name.."-duration.stdout")).format.duration)
+      $quality_decode=once(ff(["-c:a","libopus","-i",$encoded,"-t",to_string($duration),"-ar","48000","-ac","2","-c:a","pcm_f32le",$decoded]),$o,$name.."-quality-decode")
+      if not re_match(read_file($o.out.."/"..$name.."-quality-decode.stderr"),'opus \(libopus\)') then raise("DECODER","quality decode is not libopus") end
+      $reference = $o.out.."/"..$name.."-reference.wav"
+      $prep = once(ff(["-i",$source,"-ar","48000","-ac","2","-c:a","pcm_f32le",$reference]),$o,$name.."-reference")
+      $signal = rms($reference,$o,$name.."-signal","anull")
+      $diff = once(ff(["-i",$reference,"-i",$decoded,"-filter_complex",pcm_difference(),"-f","null","-"]),$o,$name.."-error")
+      $noise = capture_number(read_file($o.out.."/"..$name.."-error.stderr"),'RMS level dB: ([-0-9.]+)')
+      -- Defined spectral metric: RMS dBFS of the difference of magnitude-only
+      -- inverse STFTs, Hann 1024, default 75% overlap. Not ViSQOL or listening parity.
+      $fft = "afftfilt=real='hypot(re,im)':imag=0:win_size=1024:win_func=hann"
+      $spectral = once(ff(["-i",$reference,"-i",$decoded,"-filter_complex","[0:a]"..$fft.."[r];[1:a]"..$fft..",volume=-1[d];[r][d]amix=inputs=2:normalize=0,astats=reset=0","-f","null","-"]),$o,$name.."-spectral")
+      $sd = capture_number(read_file($o.out.."/"..$name.."-spectral.stderr"),'RMS level dB: ([-0-9.]+)')
+      push($items,{id:$name,metrics:{encode:$enc,decode:$dec,speed_repetitions:$loops,speed_audio_seconds:$duration*$loops,bitrate_kbps:$rate,source_sha256:$hash,pcm_snr_db:$signal-$noise,spectral_magnitude_error_db:$sd-$signal,thread_budget:$o.threads,visqol:if which("visqol") == nil then "not_installed" else "installed; not invoked" end}})
+    end
+  end
+  return $items
+end
+fn episode($o)
+  if $o.variant!="sustained" then raise("EPISODE","episode requires --variant sustained") end
+  $source=realpath($o["episode-run"] ?? "")
+  if $source==nil or not is_file($source.."/episode.mix") then raise("EPISODE","--episode-run must name an existing run directory") end
+  $core.safe_path($source)
+  $episode_support.check_output($source,$o.out)
+  $before=$episode_support.run_snapshot($source)
+  write_file($o.out.."/original-before.json",json_encode($before))
+  $origins=unique([$source,$o["episode-run"],$o.episode_given ?? $o["episode-run"],$o.episode_joined ?? $o["episode-run"]])
+  $copy=nil; $copy_consistent=false
+  $items=[]; $keep=$o.keep ?? false
+  try
+    $copied=$episode_support.copy_run($source,$origins,$before)
+    $copy=$copied.path; $copy_consistent=$copied.copy_consistent
+    write_file($o.out.."/copy-snapshot.json",json_encode($copied.snapshot))
+    for $part in load_data($copy.."/episode.mix")
+      if $part.native ?? false then raise("EPISODE","native desk recording is outside this harness; use an existing non-native run") end
+    end
+    $pipeline=env("HOME").."/.viu/media/pipeline"
+    $takes=$episode_support.take_entries($copy)
+    if len($takes)==0 then raise("EPISODE","copied run has no assemble.mix take; refusing a partial timing") end
+    $one=$o; $one.runs=1
+    for $take in $takes
+      $m=measure(["env","MIXVIU_MEDIA_SCOPE=1","/usr/local/bin/mix",$pipeline.."/assemble.mix",$take.path],$one,$take.id)
+      push($items,{id:$take.id,metrics:{speed:$m,copy:$copy,copy_kept:$keep}})
+    end
+    $m=measure(["env","MIXVIU_MEDIA_SCOPE=1","/usr/local/bin/mix",$pipeline.."/build.mix","--run",$copy],$one,"episode-build")
+    push($items,{id:"build",metrics:{speed:$m,copy:$copy,copy_kept:$keep}})
+  finally
+    try
+      $after=$episode_support.run_snapshot($source)
+      write_file($o.out.."/original-after.json",json_encode($after))
+      $unchanged=$before.sha256==$after.sha256
+      write_file($o.out.."/original-verification.json",json_encode({before:$before.sha256,after:$after.sha256,copy_consistent:$copy_consistent,original_untouched:$unchanged}))
+    finally
+      if $copy!=nil then $episode_support.remove_copy($copy,$keep) end
+    end
+  end
+  if not $unchanged then raise("EPISODE","original run metadata changed; see original-verification.json") end
+  for $i in range(0,len($items)-1)
+    $items[$i].metrics.original_untouched=$unchanged
+    $items[$i].metrics.copy_consistent=$copy_consistent
+  end
+  return $items
+end
+fn loudness($o)
+  $items = []
+  for $source in audio_files($o)
+    $id = item_id($source,$o.corpus)
+    $eb = measure(ff(["-i",$source,"-af","ebur128=peak=true","-f","null","-"]),$o,$id.."-ebur128")
+    $text = read_file($o.out.."/"..$id.."-ebur128-1.stderr")
+    $first = measure(ff(["-i",$source,"-af","loudnorm=I=-14:TP=-1:LRA=11:print_format=json","-f","null","-"]),$o,$id.."-pass1")
+    $raw = read_file($o.out.."/"..$id.."-pass1-1.stderr")
+    $m = loudnorm_json($raw)
+    $filter = loudnorm_filter($m)
+    $second = measure(ff(["-i",$source,"-af",$filter,"-ar","48000","-ac","2","-c:a","pcm_s16le",$o.out.."/"..$id.."-normalised.wav"]),$o,$id.."-pass2")
+    $output = loudnorm_json(read_file($o.out.."/"..$id.."-pass2-1.stderr"))
+    push($items,{id:$id,metrics:{ebur128:$eb,integrated_lufs:capture_number($text,'I:\s+([-0-9.]+) LUFS'),true_peak_dbtp:capture_number($text,'Peak:\s+([-0-9.]+) dBFS'),loudnorm_pass1:$first,loudnorm_pass2:$second,loudnorm_input:$m,loudnorm_output_lufs:to_number($output.output_i),loudnorm_output_dbtp:to_number($output.output_tp),loudnorm_mode:$output.normalization_type,linear_shortfall_lu:max(0,(-14-$core.numeric($m.input_i))-(-1-$core.numeric($m.input_tp))),loudnorm_gain_lu:if $output.normalization_type=="linear" then $core.numeric($output.output_i)-$core.numeric($m.input_i) else nil end,thread_budget:$o.threads}})
+  end
+  return $items
+end
+fn encode($o)
+  $items = []
+  for $kind in ["mp4-x264","webm-av1-opus"]
+    $opts = if $kind == "mp4-x264" then ["-c:v","libx264","-preset","medium","-crf","18","-profile:v","high","-r","30","-c:a","aac","-b:a","192k","-movflags","+faststart"] else ["-c:v","libsvtav1","-preset","9","-crf","32","-c:a","libopus","-b:a","128k"] end
+    $ext = if $kind == "mp4-x264" then ".mp4" else ".webm" end
+    $file = $o.out.."/"..$kind..$ext
+    $quality_source = $o.corpus.."/ui-synth.mkv"
+    $command = ff(concat(["-i",$o.corpus.."/ui-synth.mkv","-i",$o.corpus.."/music-synth.wav","-t",to_string($o.seconds),"-map","0:v","-map","1:a","-pix_fmt","yuv420p","-threads","4"],concat($opts,[$file])))
+    if $kind == "mp4-x264" then
+      $pipeline = (env("HOME") ?? "/home/user").."/.viu/media/pipeline/assemble.mix"
+      if not is_file($pipeline) then raise("PIPELINE","assemble.mix missing; no substitute for the current route") end
+      $take = $o.out.."/take"
+      mkdir($take)
+      $still = once(ff(["-i",$o.corpus.."/ui-synth.mkv","-frames:v","1",$take.."/demo.png"]),$o,"prepare-still")
+      $wav = once(ff(["-i",$o.corpus.."/music-synth.wav","-t",to_string($o.seconds),$take.."/demo.wav"]),$o,"prepare-narration")
+      write_file($take.."/take.json",json_encode({mode:"stills"}))
+      write_file($take.."/actions.jsonl",json_encode({step:"demo",hold_s:$o.seconds,still:$take.."/demo.png"}).."\n")
+      write_file($take.."/narration.json",json_encode({demo:{seconds:$o.seconds,wav:$take.."/demo.wav"}}))
+      $command = ["env","MIXVIU_MEDIA_SCOPE=1","/usr/local/bin/mix",$pipeline,$take]
+      $file = $take.."/take.mp4"
+      $quality_source = $take.."/held-source.mkv"
+      $held = once(ff(["-loop","1","-framerate","30","-i",$take.."/demo.png","-t",to_string($o.seconds),"-vf","scale=in_color_matrix=bt709:out_color_matrix=bt709:out_range=tv,format=yuv420p","-color_range","tv","-colorspace","bt709","-c:v","ffv1",$quality_source]),$o,"prepare-held-source")
+    end
+    $speed = measure($command,$o,$kind)
+    $m = quality($quality_source,$file,$o,$kind.."-quality")
+    $probe = once(["ffprobe","-v","error","-show_entries","format=size,duration","-of","json","-i",$file],$o,$kind.."-probe")
+    $f = json_parse(read_file($o.out.."/"..$kind.."-probe.stdout")).format
+    $m.encode = $speed; $m.size_bytes = to_number($f.size); $m.duration_error_s = to_number($f.duration)-$o.seconds
+    $m.route = if $kind == "mp4-x264" then "current assemble.mix stills route; workload-duration synthetic take" else "AV1 plus Opus WebM; workload-duration motion excerpt" end
+    push($items,{id:$kind,metrics:$m})
+  end
+  return $items
+end

@@ -1,0 +1,2 @@
+    I:         -18.0 LUFS
+    Peak:      -10.7 dBFS

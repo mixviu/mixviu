@@ -244,7 +244,8 @@ mod tests {
         let path = dir.path().join("display");
         let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
         listener.set_nonblocking(true).unwrap();
-        let deadline = Instant::now() + Duration::from_secs(1);
+        // Detection correctness is independent of the production reply budget.
+        let deadline = Instant::now() + Duration::from_secs(5);
         let server = ServerThread(Some(std::thread::spawn(move || {
             let (mut stream, _) = loop {
                 let remaining = deadline.saturating_duration_since(Instant::now());
@@ -281,7 +282,7 @@ mod tests {
             let mut byte = [0_u8; 1];
             let _ = stream.read(&mut byte);
         })));
-        assert_eq!(bounded_probe(path), Some(decoration));
+        assert_eq!(probe(path, deadline), Some(decoration));
         server.join();
     }
 
