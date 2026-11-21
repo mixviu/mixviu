@@ -1,183 +1,112 @@
-# PR #226 round 2 — rider stop, 2026-11-22
+# Workshop publication guard — PR #226 round 3
 
-**STOP: Fable ruling A's path-length-1 rider rejects legitimate publications.**
-PR https://github.com/mixviu/mixviu/pull/226 stays draft. Starting head
-`56c645700f9074a7d6413890f36bbfdc7066f51e`. No guard implementation,
-exemption or differ tuning follows. Opus must take this evidence back to Fable.
+PR: https://github.com/mixviu/mixviu/pull/226, branch
+`fix/workshop-tick-bytes-guard`, author mixviu-agent. Fable ruling A and its
+amended container-only rider (2026-11-22) are implemented. Final source
+`5b5f78e993af7f838d2253e123eba6104387e1ac`; the receipt commit follows.
+No merge, installation or deployment.
 
-The existing corrected-probe CBC batch already contains 20 standalone real
-runs with every operation path recorded: `20261121-234716-fee43dae-a1`,
-BUILD_RC=0, 20/20 green, source `000b1d10` (same application/differ as this
-head). Auditing that raw trace finds rider violations in **all 20 runs**.
-This is existing run evidence, not a newly executed round-2 batch. The stop
-condition is established before any new CBC submission, so no additional
-notice fixture, implementation, controls or acceptance soak was run.
+## Final behaviour
 
-Counts below include every patch callback in the 200-peer discovery and
-retained-data steady windows. Startup and deliberate seed initialisation are
-excluded. There are **zero root `set`s**, but these length-1 `set`s:
+The test observes actual `scenes.model` / `scenes.model.patch` commands at the
+native local endpoint, before decoding. After the initial full acknowledgement,
+another full requires a recorded owner refusal and consumes its single recovery
+permission. A patch consumes that permission too, so it cannot be saved for a
+later full. Normal 200-peer runs require zero refusals.
 
-| Path | Discovery | Steady |
-|---|---:|---:|
-| `["mesh_local_text"]` | 146 | 78 |
-| `["mesh_age"]` | 20 | 4 |
-| `["mesh_start_visible"]` | 20 | 0 |
-| `["mesh_empty"]` | 20 | 0 |
-| `["mesh_observing"]` | 20 | 0 |
-| `["mesh_inspector_title"]` | 20 | 0 |
+Root sets and whole top-level container sets are rejected. Top-level scalar
+sets remain allowed. A rider failure prints path, value type, encoded value
+bytes and the fallback inferred from before/after values: type change,
+over-256-operation list fallback, long-key parent, depth-8 collapse or unknown.
+The list diagnostic recomputes the differ's count with only the affected
+list's cap lifted; child limits and depth remain represented. At a length-1
+path the message explicitly says depth-8 collapse is unreachable. No operation
+field was added; `Patch::decode` and its unknown-field rejection are unchanged.
 
-These are flattened top-level **scalar fields**, not whole compound sections:
-`apps/workshop/mesh-view.mix:44` produces strings for `mesh_local_text`,
-`mesh_age`, `mesh_inspector_title`, and booleans for the other three.
-The scalar differ's ordinary terminal `set` is correct for these changes.
-No >256-operation fallback or depth collapse is needed to trigger the rider.
-The ruling explicitly defines the rider by path length, so this report does
-not reinterpret “section” to exempt scalars.
+768 KiB is telemetry, not an assertion. A test failure prints the largest
+publication's protocol kind, operation count, total JSON bytes and section
+bytes. For patches, section totals group encoded operations by their root key;
+envelope overhead remains in total bytes. The 800 ms pump, 100 ms steady apply
+CPU, one-second call and two-second owner-stall assertions remain unchanged.
 
-Concrete examples from sample 1, after the first full acknowledgement:
+The retained-model fixture still creates 48 representative rows and a model
+over 2 MiB. It seeds eight rows per acknowledged patch instead of deliberately
+forcing a second full. This is fixture preparation, not a production batch cap.
+It waits for each batch's actual final row, so ordinary observation rows cannot
+falsely satisfy its wait. The original five-second total seed deadline remains.
+No production Workshop script, differ limit, retry, ignore, serial entry,
+dependency or MIX_* variable changed. No new app `*-test.mix` was added.
 
-- Discovery revision 4/base 3, `workshop.refresh`, 2,217.712 ms:
-  `["mesh_local_text"]`, 108-byte `set` inside a 28,822-byte patch.
-- Steady revision 11/base 10, `viu.tick`, 9,307.594 ms:
-  `["mesh_local_text"]`, 111-byte `set` inside a 2,678-byte patch.
+## Validation
 
-The steady example alone activates the explicit legitimate-run stop rule.
-No new Rust check is needed to establish a recorded protocol operation's
-path length. The earlier round's green checks are historical, not new
-round-2 validation. The kind assertion, byte-telemetry conversion, revised
-negative controls and ready status remain **unimplemented/pending** until
-Fable refines the rider. The current 768 KiB assertion remains active.
+- Final seed-identity fixture: **20/20 complete binaries green, 160 tests**, CBC
+  `20261122-004550-a90bc0b5-a1`, source `fd1d33a3`. Later changes only format
+  that check and simplify an equivalent failure-print condition. The 200-peer
+  cases recorded 20 initial fulls, 380 patches and zero refusals; all 20 notice
+  fixtures passed. Discovery max 781,890 bytes; steady max 8,633. Guarded pump
+  max 135,577 us and apply CPU max 73,936 us. Largest publication including
+  seed preparation: 973,583-byte patch, 15 operations (Traffic 973,437 bytes,
+  mesh canvas 76). No amended-rider stop; scalar updates remain allowed.
+- Earlier complete soak, `20261122-003054-da1742fb-a1`, source `02482d2d`:
+  20/20 binaries green, 160 tests, including 20 notice fixtures and 20 recovery
+  fixtures. The 200-peer cases observed 20 initial fulls, 381 patches and zero
+  refusals. No amended-rider violation. Largest publication: 837,326-byte patch
+  in seed preparation, revision 12, 14 operations; Traffic 837,181 bytes and
+  mesh canvas 76 bytes. Discovery maximum 783,120 bytes; steady maximum 575,012
+  (the stronger final-row wait removes preparation/steady overlap).
+- Scoped CBC `20261122-003056-acc1a028-a1`, source `02482d2d`: all 55 non-doc
+  targets plus doctests in both configurations; 650 default / 663 test-support
+  passed, zero failed, 12 existing ignores each. Both strict eight-wide pools
+  include green `app_mix`. Fmt and both all-target clippy configurations pass.
+- Final source fmt, both all-target clippy configurations and all exact
+  controls pass in `20261122-004708-b1178927-a1` on `5b5f78e9`.
+- Env registry: 277 names, zero problems. Workspace Mix lint ratchet: zero
+  regressions; both changed Mix recipes lint with zero diagnostics.
 
-Private evidence: saved log
-`20261121-234718-cbc3-000b1d103a66-20261121-234716-fee43dae-a1-ea386d02.log`;
-`_var/workshop-byte-guard/r2-rider-audit.mix` reproduces the counts and first
-examples from that log; its JSON output is `r2-rider-audit.json` beside it.
-Only documentation changed in the public branch for this stop receipt.
+Exact controls (all sources restored by `finally`):
 
-Fable's separate monitoring disposition is recorded in TODO-workshop and
-the flake ledger: **post-#216 burst growth is not a defect, monitor**.
-Main's 781,513-byte legitimate discovery patch versus 480,075 bytes before
-#216 (and 896,750 bytes for a forced whole-model resend) defeats a single
-size threshold as a discriminator. Bound growth only against a measured
-Bus frame limit or a measured publish-latency tail; no new batch cap.
+1. Forced full after first acknowledgement fails at revision 2 with
+   `Workshop publication kind: expected=scenes.model.patch actual=scenes.model`.
+   It fails on kind even at approximately 24 KB, not on a size threshold.
+2. Forced top-level map set fails with
+   `Workshop container rider: path=["values"] value_type=map encoded_bytes=7504 fallback=unknown (depth-8 collapse unreachable at path length 1)`.
+   The driver requires the path/type, numeric bytes, fallback and largest-
+   publication diagnostic fields.
+3. A real injected owner refusal permits exactly one recovery full in the
+   positive fixture. A second full fails at revision 4 with the kind assertion;
+   the diagnostic retains two permitted fulls and one refusal.
+4. Forced top-level scalar set passes the complete discovery/steady test.
 
-## Round 1 receipt (historical)
+Initial exact controls also passed in `20261122-003053-508b0401-a1`. The pure
+fallback/scalar diagnostic unit and all eight Bus tests passed focused CBC
+`20261122-002624-a9a3e79d-a1`.
 
-# Workshop publication byte guard — PR #226
+## Evidence and monitoring
 
-PR: https://github.com/mixviu/mixviu/pull/226 (draft, author mixviu-agent).
-Branch: `fix/workshop-tick-bytes-guard`, base main `5938fb023d726c912c0dc88e806659e84a6fe1a7`.
-Validated diagnostic source: `000b1d103a66d223de893a4981e5bfd06b3d92bf`;
-formatted source: `cfcb54825fcf03c9c62f8ae1a5b6f7cca6141063`.
-The receipt commit is the PR head; no merge or deployment.
+Native command recorder: `libraries/viu/src/runtime.rs:139`; test policy and
+fallback inference: `libraries/viu/src/app_host_publication_audit.rs:18`,
+`:82`, `:116`, `:132`; failure print: `libraries/viu/src/app_host.rs:2955`.
+Real refusal and notice fixtures: `libraries/viu/tests/workshop_bus.rs:65`,
+`:107`; guards attach before the first owner pump. CBC recipes:
+`tools/workshop-publication-check.mix`. Superseded bound and ruling:
+`docs/scene-model-publication.md:165`.
 
-**Disposition: neither (i) nor (ii) established for the original failure; stop.**
-The requested untouched-main batch passed 20/20. A separate corrected-probe
-batch passed 20/20, as did the matching pre-#216 comparison. No ordinary
-publication crossed 786,432 bytes in these batches. We therefore cannot say
-whether #225's 872,845-byte publication was a justified patch or an oversized
-full/section publication. No production fix or guard proposal is selected.
-The guard's meaning and value remain unchanged; there is no change to send
-to Fable for approval. This does not unblock #220/#225 or establish a fix.
+Post-#216 growth is **not a defect, monitor**, per Fable: round 1 measured
+781,513-byte legitimate discovery patches on main versus 480,075 before #216;
+a forced whole resend was only 896,750 bytes. Bound growth only on a measured
+Bus frame limit or publish-latency tail; no new production batch cap. The flake
+ledger and TODO-workshop record the ruling, resolved scalar rider stop and
+validation. The original old-threshold failure's exact payload was not
+recovered; this PR replaces that wrong-unit test policy under Fable's ruling.
 
-## Measurements
+All Rust ran on CBC. Saved logs are indexed by these job IDs; private evidence
+under `_var/workshop-byte-guard/` retains both soak summaries and earlier round
+receipts. No full-workspace CI was run; the merge gate owns that run.
 
-Each batch ran `workshop_answers_during_discovery` exactly once per sample,
-20 samples, alone as the gate does. Samples are numbered in each job's log;
-failures are retained, never retried. The test's 4- and 200-peer cases remain.
-The comparison below uses 200 peers. The pre-#216 test was otherwise identical
-to main; its temporary diagnostic source was restored on that worker.
-
-| Batch | Commit | Failures | CBC job (attempt 1) |
-|---|---|---:|---|
-| Untouched main | `5938fb02` | 0/20 | `20261121-232507-b7bb107c-a1` |
-| Main, corrected probe | `000b1d10` | 0/20 | `20261121-234716-fee43dae-a1` |
-| Before #216, same corrected probe | `6b4278c7` | 0/20 | `20261121-234718-101836a7-a1` |
-
-Per-publication bytes across the guarded discovery/steady windows, excluding
-startup and deliberate retained-model initialisation:
-
-| Version / phase | n | Min | Median | p95 | p99 | Max |
-|---|---:|---:|---:|---:|---:|---:|
-| Main / discovery | 146 | 6,308 | 97,282 | 630,398 | 736,116 | 781,513 |
-| Before #216 / discovery | 161 | 3,620 | 272,860 | 402,911 | 465,240 | 480,075 |
-| Main / steady | 80 | 2,208 | 5,912 | 7,542 | 8,637 | 8,637 |
-| Before #216 / steady | 80 | 1,543 | 6,798 | 6,798 | 6,799 | 6,799 |
-
-All publications in these windows were patches. Full startup/seed
-publications are recorded separately in the same raw logs. The live
-`$s.discovery!=nil` phase is recorded too, so terminal discovery updates can
-be distinguished from the test's retained-data steady window.
-
-Untouched main's existing per-phase summaries report discovery maxima from
-387,529 to 759,849 bytes, and steady maxima from 7,227 to 8,413 bytes.
-They do not provide a pooled publication distribution without instrumentation.
-After-fix failure rate: **not applicable — no fix was made**. The second
-0/20 is a diagnostic batch, not a post-fix claim.
-
-#214 reported roughly 380 KB discovery maximum. Even pre-#216 now reaches
-480,075, so that historical sample was not a workload-independent ceiling.
-On the same worker, the corrected main probe's maximum is 1.63 times the
-pre-#216 maximum; its median is lower. #216 changed the tail/batching shape,
-not every publication uniformly.
-
-Main's largest sample is run 19, revision 9/base 8, a 781,513-byte patch,
-98 operations, at 7,592.689 ms. It records 107 events/1 tick since the last
-acknowledgement and 130 events/1 tick since the preceding publication build,
-including work accumulated while pending. Its retained model is 2,142,399
-bytes (patch 36.5%). Traffic accounts for 763,885 bytes: 13 inserted rows and
-one removal, with no whole-Traffic `set`; tree edits account for 14,229 bytes.
-This is a legitimate observed burst, just 4,919 bytes below the guard.
-It is not a trace of the original failing publication. Dividing by ticks
-would not help this one-tick burst.
-
-Every instrumented publication records revision/base, full/patch, bytes,
-operation count and individual operation paths/sizes/insertions/removals,
-retained-model size, both coalescence intervals, phase and time from start.
-Raw logs retain all records, including startup, seed and 4-peer publications.
-
-## Negative control and checks
-
-Forced `$full=true` in the existing publisher, restored after the run:
-`20261121-235128-7431ba86-a1`, driver BUILD_RC=0. The target failed as intended
-at `libraries/viu/src/app_host.rs:2976`, with 896,750 bytes against 786,432
-and pump 150,808 us. Thus the existing guard still rejects whole-model
-publication. A size close to #225's 872,845 bytes can also be a full model;
-the original payload type cannot be inferred from size alone.
-
-`20261121-234717-09781181-a1`, BUILD_RC=0: both all-target clippy configurations;
-54 test binaries plus doctests per configuration, strict width-eight pools,
-650 default / 660 test-support passed, zero failed, 12 existing ignored each.
-`app_mix` is green in both pools. Existing `workshop_bus` serial registration
-is unchanged; all six support tests passed. CBC rustfmt diff was applied.
-`20261122-000221-b7321e34-a1`, BUILD_RC=0: final fmt check and the remaining
-`terminal_ime_driver` example target in both configurations, bringing coverage
-to every 55 non-doc targets plus doctests per configuration. No new app test,
-MIX_* variable, dependency, retry, ignore, serial entry or deadline change.
-The 1 s call / 2 s owner-stall limits remain. Mix driver lint: zero diagnostics.
-
-Probe: `libraries/viu/tests/workshop_bus.rs:26`; opt-in
-`PROFILE_PUBLICATIONS` is false in ordinary checks. Driver:
-`tools/workshop-publication-sample.mix:1`. Unchanged byte guard:
-`libraries/viu/src/app_host.rs:2976`; publication/fallback:
-`apps/workshop/app.mix:30`; batched redaction: `apps/workshop/traffic.mix:24`.
-
-## Superseded diagnostics and evidence
-
-The initial probe encoded the entire previous Traffic list once per operation.
-That was excessive observer overhead. Main `20261121-232943-9bf5b600-a1`
-failed 13/20 calls; pre-#216 `20261121-233225-c88af4fb-a1` failed 14/20 calls.
-All failures were one-second ping/info deadlines, not the reported byte guard.
-These are retained diagnostic failures, not a main failure-rate estimate.
-The corrected probe removes old-target encoding and passes both 20-run batches.
-Unstarted setup submissions were cancelled at attempt zero, not retried tests:
-`232355-1390982e`, `232405-8309e3b2`, `232426-8b28c4d1`,
-`232506-1e33fb1c`, `232916-8b9a0b69`, `233242-788504a0` (20261121 prefix).
-
-Private evidence index (never copied into public source):
-`_var/workshop-byte-guard/` contains the Mix summariser and JSONL summaries;
-saved CBC logs are indexed by the job IDs above. Flake ledger and
-`TODO-workshop` retain the original failure and this unresolved disposition.
-Next evidence needed is a low-overhead trace of an actually over-bound
-ordinary publication, including its full/patch type and operation payloads.
-Do not change the unit or raise 768 KiB on the basis of these passing samples.
+The first implementation check `20261122-001725-d4e8e07e-a1` failed two new
+fixture assertions (expected refusal temporarily rejected, seed missing a
+Traffic dirty mark); both were fixed in this PR before the green validations.
+The first green soak was repeated after strengthening the seed wait; it was
+not a retry of a failed test. Superseded unstarted submissions were cancelled
+at attempt zero, not counted as test results. No pre-existing normal-shape
+failure was bypassed.
