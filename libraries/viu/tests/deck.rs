@@ -150,7 +150,11 @@ fn a_natural_width_fixed_label_stays_visible_between_growing_cells() {
     }
     assert!(view.geometry["arrow"].width() > 0.);
     // Text metrics and cell allocation round independently to device pixels.
-    assert!(view.geometry["b"].right() <= 600.5, "right={}", view.geometry["b"].right());
+    assert!(
+        view.geometry["b"].right() <= 600.5,
+        "right={}",
+        view.geometry["b"].right()
+    );
 }
 
 #[test]
