@@ -59,7 +59,10 @@ impl std::fmt::Display for Error {
                 f.write_str("WAV output must be an empty stream positioned at zero")
             }
             Self::Unmeasurable => f.write_str("audio has no measurable integrated loudness"),
-            Self::ReductionLimit { required_db } => write!(f, "limiter needs {required_db:.3} dB reduction, exceeding 6 dB"),
+            Self::ReductionLimit { required_db } => write!(
+                f,
+                "limiter needs {required_db:.3} dB reduction, exceeding 6 dB"
+            ),
         }
     }
 }

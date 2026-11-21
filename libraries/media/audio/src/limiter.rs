@@ -62,13 +62,19 @@ impl Audio {
         let mut candidate = self.clone();
         let report = candidate.render_limiter(ceiling_dbtp, config)?;
         if report.max_gain_reduction_db > 6.0 {
-            return Err(Error::ReductionLimit { required_db: report.max_gain_reduction_db });
+            return Err(Error::ReductionLimit {
+                required_db: report.max_gain_reduction_db,
+            });
         }
         *self = candidate;
         Ok(report)
     }
 
-    fn render_limiter(&mut self, ceiling_dbtp: f64, config: LimiterConfig) -> Result<LimitReport, Error> {
+    fn render_limiter(
+        &mut self,
+        ceiling_dbtp: f64,
+        config: LimiterConfig,
+    ) -> Result<LimitReport, Error> {
         config.validate()?;
         if !ceiling_dbtp.is_finite() || ceiling_dbtp > 0.0 {
             return Err(Error::InvalidAudio);
@@ -77,46 +83,10 @@ impl Audio {
         if ceiling == 0.0 {
             return Err(Error::InvalidAudio);
         }
-        let mut kernels = [[0.0; 24]; 4];
-        for (phase, kernel) in kernels.iter_mut().enumerate() {
-            for (tap, k) in kernel.iter_mut().enumerate() {
-                let x = tap as f64 - 11.0 - phase as f64 / 4.0;
-                let sinc = if x == 0.0 {
-                    1.0
-                } else {
-                    (std::f64::consts::PI * x).sin() / (std::f64::consts::PI * x)
-                };
-                *k = sinc * (0.5 + 0.5 * (std::f64::consts::PI * x / 12.0).cos());
-            }
-            let sum: f64 = kernel.iter().sum();
-            for k in kernel {
-                *k /= sum;
-            }
-        }
         let channels = self.channels as usize;
         let frames = self.frames();
-        let mut envelope = Vec::new();
-        envelope
-            .try_reserve_exact(frames)
-            .map_err(|_| Error::SizeOverflow)?;
-        for n in 0..frames {
-            let mut peak: f64 = 0.0;
-            for c in 0..channels {
-                peak = peak.max(self.samples[n * channels + c].abs());
-                for kernel in &kernels {
-                    let mut value = 0.0;
-                    for (tap, k) in kernel.iter().enumerate() {
-                        let pos = n as i128 + tap as i128 - 11;
-                        if pos >= 0 && pos < frames as i128 {
-                            value += self.samples[pos as usize * channels + c] * k;
-                        }
-                    }
-                    if !value.is_finite() { return Err(Error::InvalidAudio); }
-                    peak = peak.max(value.abs());
-                }
-            }
-            envelope.push(if peak > ceiling { ceiling / peak } else { 1.0 });
-        }
+        let mut envelope = self.detector_peaks()?;
+        for peak in &mut envelope { *peak = if *peak > ceiling { ceiling / *peak } else { 1.0 }; }
         let attack_step = 1.0 / (self.rate as f64 * config.lookahead_ms / 1000.0).max(1.0);
         // Full offline reverse traversal supplies the look-ahead without a delay line.
         for n in (0..frames.saturating_sub(1)).rev() {
@@ -133,7 +103,9 @@ impl Audio {
             }
         }
         let measured = self.measure()?;
-        let trim_db = (ceiling_dbtp - 0.02 - measured.true_peak_dbtp).min(0.0);
+        let reconstructed = self.detector_peaks()?.into_iter().fold(0.0_f64, f64::max);
+        let peak_db = measured.true_peak_dbtp.max(20.0 * reconstructed.log10());
+        let trim_db = (ceiling_dbtp - 0.02 - peak_db).min(0.0);
         if trim_db < 0.0 {
             let trim = 10.0_f64.powf(trim_db / 20.0);
             for x in &mut self.samples {
@@ -204,5 +176,53 @@ impl Audio {
             gain_db += error;
         }
         unreachable!()
+    }
+}
+
+impl Audio {
+    fn detector_peaks(&self) -> Result<Vec<f64>, Error> {
+        let mut kernels = [[0.0; 24]; 4];
+        for (phase, kernel) in kernels.iter_mut().enumerate() {
+            for (tap, k) in kernel.iter_mut().enumerate() {
+                let x = tap as f64 - 11.0 - phase as f64 / 4.0;
+                let sinc = if x == 0.0 {
+                    1.0
+                } else {
+                    (std::f64::consts::PI * x).sin() / (std::f64::consts::PI * x)
+                };
+                *k = sinc * (0.5 + 0.5 * (std::f64::consts::PI * x / 12.0).cos());
+            }
+            let sum: f64 = kernel.iter().sum();
+            for k in kernel {
+                *k /= sum;
+            }
+        }
+        let channels = self.channels as usize;
+        let frames = self.frames();
+        let mut envelope = Vec::new();
+        envelope
+            .try_reserve_exact(frames)
+            .map_err(|_| Error::SizeOverflow)?;
+        for n in 0..frames {
+            let mut peak: f64 = 0.0;
+            for c in 0..channels {
+                peak = peak.max(self.samples[n * channels + c].abs());
+                for kernel in &kernels {
+                    let mut value = 0.0;
+                    for (tap, k) in kernel.iter().enumerate() {
+                        let pos = n as i128 + tap as i128 - 11;
+                        if pos >= 0 && pos < frames as i128 {
+                            value += self.samples[pos as usize * channels + c] * k;
+                        }
+                    }
+                    if !value.is_finite() {
+                        return Err(Error::InvalidAudio);
+                    }
+                    peak = peak.max(value.abs());
+                }
+            }
+            envelope.push(peak);
+        }
+        Ok(envelope)
     }
 }

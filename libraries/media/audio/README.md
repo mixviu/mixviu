@@ -70,7 +70,7 @@ preserves the static path bit for bit whenever its measured peak permits the
 requested gain. Otherwise it renders target gain through `limit_true_peak`,
 remeasures and makes at most two corrective attempts, each from the original.
 `TargetReport` carries before/after LUFS, LRA and true peak, gain, pass count,
-maximum attempted reduction, refusal, shortfall and an explicit `target_reached`
+maximum attempted and final applied reduction, refusal, shortfall and an explicit `target_reached`
 flag (±0.5 LU). Callers must check that flag: bounded corrections can exhaust.
 Any attempt beyond 6 dB reduction returns exactly the capped static output with
 `refused=true`, including when a corrective pass crosses the bound.
@@ -83,6 +83,7 @@ release anticipate peaks without moving any samples or changing duration.
 modulation. A final measured constant trim catches reconstruction overshoot
 from gain modulation; its reduction counts towards the 6 dB bound. A 0.02 dB
 margin protects float32 export rounding. This is peak limiting, not loudness AGC.
+The direct limiter returns ReductionLimit without changing samples above 6 dB.
 Processing order is fixed and deterministic for a given binary and platform;
 cross-platform floating-point bit identity is not promised. The limiter uses
 one f64 envelope value per frame in addition to the audio; target normalisation
