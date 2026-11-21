@@ -50,13 +50,16 @@ claim. Whole-process timing includes startup, input, encoding, muxing and output
 assembly variants and the foreign gate. Its `--fmt` mode prints the worker's
 format diff and restores its checkout. The example tests generate Y4M,
 encode IVF, decode with ffmpeg/libdav1d, require five frames and PSNR above
-25 dB minimum per-frame luma PSNR on moving textured content, and check
+37 dB minimum per-frame luma PSNR on moving textured content, and check
 refusal cases and IVF fields. Plain `cargo test -p media-av1` runs these
 example tests too. A pure Rust encode/IVF test always runs. If ffmpeg or
 libdav1d is absent, the decoder oracle prints `SKIP: <what>` and returns,
 unless `MIX_TEST_REQUIRE_FFMPEG=1`, which makes absence fail. The focused
 worker script sets that variable to 1 and also scores testsrc2 with ffmpeg's
-`psnr` filter. The final fixture floor is calibrated below its measured minimum.
+`psnr` filter. At speed 10 / qp 100 the measured moving-texture minimum is 40.1456 dB,
+with a 37 dB floor (3.1456 dB margin). The testsrc2 minimum is 26.89 dB,
+with a 24 dB floor (2.89 dB margin); both asm variants give the same values.
+These are fixture correctness floors, not bench parity thresholds.
 No library API or dependency changes are needed: `prepare`, `submit` and
 `finish` already provide external frames in and packets out.
 

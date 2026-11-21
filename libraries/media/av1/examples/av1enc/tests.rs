@@ -122,10 +122,10 @@ fn round_trip_dav1d_psnr() {
             })
             .fold(f64::INFINITY, f64::min);
         eprintln!(
-            "av1enc oracle: frames=5 qp=100 speed=10 min_frame_luma_PSNR={psnr:.4} dB floor=25 dB asm={}",
+            "av1enc oracle: frames=5 qp=100 speed=10 min_frame_luma_PSNR={psnr:.4} dB floor=37 dB asm={}",
             cfg!(feature = "asm")
         );
-        assert!(psnr > 25.0, "min frame luma PSNR {psnr} <= 25 dB");
+        assert!(psnr > 37.0, "min frame luma PSNR {psnr} <= 37 dB");
     });
     std::fs::remove_dir_all(root).unwrap();
     if let Err(error) = result {

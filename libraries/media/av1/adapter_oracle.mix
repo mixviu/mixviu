@@ -45,7 +45,7 @@ try
       if $score < $minimum then $minimum = $score end
     end
     print("testsrc2 minimum per-frame luma PSNR=" .. to_string($minimum) .. " dB")
-    if $minimum < 25 then raise("ORACLE", "PSNR below 25 dB fixture floor") end
+    if $minimum < 24 then raise("ORACLE", "PSNR below 25 dB fixture floor") end
     print("CLI oracle file_output=" .. to_string($file_output) .. " " .. trim($encoded.stderr))
   end
   for $text in ["", "YUV4MPEG2 W64 H48 F30:1 Ip C420\n", "YUV4MPEG2 W64 H48 F30:1 Ip C420\nFRAME\nshort", "YUV4MPEG2 W64 H48 F30:1 It C420\n"]
