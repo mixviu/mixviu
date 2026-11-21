@@ -20,6 +20,11 @@ try
     end
     $encoded = checked($cmd, $opts)
     $stats = json_parse(trim($encoded.stderr))
+    $header = read_file_bytes($output, 32)
+    $expected_count = if $file_output then 5 else 0 end
+    if $header[24] != $expected_count or $header[25] != 0 or $header[26] != 0 or $header[27] != 0 or stat($output).size != $stats.bytes then
+      raise("ORACLE", "IVF count or byte summary mismatch")
+    end
     if $stats.frames != 5 or $stats.bytes <= 32 or $stats.encode_seconds <= 0 or $stats.settings.fps_num != 30000 or $stats.settings.fps_den != 1001 then
       raise("ORACLE", "invalid adapter summary: " .. $encoded.stderr)
     end
