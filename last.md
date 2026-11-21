@@ -1,3 +1,51 @@
+# PR #220 round 3b — product failure in the startup theme loader
+
+Source head: `7b2ea1f6edf4396fdb460d22998d9fe30015306d`. This round's
+public change is this receipt only; #220 stays draft. Generic Ced/editd saves
+are the authorised hand-edit bypass, covered by the planned background report.
+No Ced/editd save policy or filename heuristic is needed in this PR. The
+separate ownership follow-up is `~/.viu/_doc/TODO-editd.md`, **“Generic saves
+of theme and scene sources skip design validation”**. This supersedes the
+previous round's ownership stop.
+
+Before changing runtime semantics, the mandatory bad-requested-startup control
+found an existing product failure. CBC **`20261121-184422-5bc4c8cf-a1`**,
+source above, BUILD_RC=1, ran the real native `theme` loader with an isolated
+configuration root, using the existing registered `MIX_ETC` variable:
+
+| Case / run timestamp (2026-11-21, UTC+10) | Result |
+|---|---|
+| Valid source control, 19:00:04.719357795 | Parses, requested Ocean/Light compiles, `Theme::read` succeeds, `Theme::load` returns Ocean/Light. This proves the fixture root is read and the default is not returned unconditionally. |
+| Bad requested context, 19:00:06.574789891 | Source still parses. The existing Ocean/Light block references `missing.round3b.requested` in its base foreground. Requested-context compilation is fatal and `Theme::read` rejects it. **`Theme::load` logs the rejection and returns embedded Studio/Dark instead of failing startup.** |
+
+The fallback is explicit at `libraries/theme/src/theme.rs:297`–`:308`.
+`libraries/viu/src/app_host.rs:2431` calls it during host construction;
+`:1609` and `:2016` also use it for later reloads. The probe exercises that
+loader directly, not an entire rendered app or a desk. The startup caller
+trace establishes its relevance to the fatal-startup requirement.
+
+Per the unchanged stop rule, work stops on this product failure. No fallback
+repair, lazy compiler, background worker, bundle gate or new runtime contract
+was landed. The 750 ms bound and product deadlines remain unchanged. No new
+startup latency after measurement is claimed; the round-2 prototype numbers
+below remain the only lazy results. No scoped green suite is claimed.
+
+Private reproducible probe: evidence directory
+`2026-11-21-workshop-startup/round3b/startup-control.mix`. Saved CBC logs were
+read. Two own-fixture attempts precede the product result: job
+`20261121-184141-79d550ac-a1` failed before Rust ran because the temporary
+examples directory was absent; job `20261121-184303-8e9b9873-a1` reached its
+valid control, then rejected a duplicate `semantics` field in our bad fixture
+(BUILD_RC=101). Both mistakes were corrected; neither is product evidence.
+A queued cancellation of the second attempt acknowledged `state=queued` but
+the attempt later ran; the existing buildd cancellation audit remains open.
+
+No temporary Rust source was retained in the public tree. The private Mix
+driver lints cleanly, and `git diff --check` passes. Full fmt/clippy/test pools
+and env-registry are not rerun after this stop: no production code or env
+registry changed. Desk n=0; the everything-else-green condition was not reached,
+so no desk receipt poll or quiet/probe run was started in round 3b.
+
 # PR #220 round 3 — stopped at the desk write-path survey
 
 Code head remains `b098cb8cef32f5978b9a2b2868fac570599a723c`; this round
