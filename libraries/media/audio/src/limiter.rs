@@ -29,6 +29,7 @@ pub struct TargetReport {
     pub passes: u8,
     /// Maximum reduction attempted, including a refused attempt.
     pub max_gain_reduction_db: f64,
+    /// An attempt exceeded 6 dB; an earlier in-bound attempt may be retained.
     pub refused: bool,
     /// Reduction actually applied; zero for static output or refusal.
     pub applied_gain_reduction_db: f64,
@@ -87,7 +88,9 @@ impl Audio {
         let frames = self.frames();
         let mut envelope = self.detector_peaks()?;
         // Hold each intersample requirement over both adjacent source frames.
-        for n in (1..frames).rev() { envelope[n] = envelope[n].max(envelope[n-1]); }
+        for n in (1..frames).rev() {
+            envelope[n] = envelope[n].max(envelope[n - 1]);
+        }
         for peak in &mut envelope {
             *peak = if *peak > ceiling {
                 ceiling / *peak
@@ -107,7 +110,9 @@ impl Audio {
             gain = wanted.min(1.0 - (1.0 - gain) * release);
             // Finite release tail: below 0.0001 linear reduction, return exactly
             // to unity (under 0.00087 dB), preserving distant beds bit for bit.
-            if wanted == 1.0 && 1.0 - gain < 0.0001 { gain = 1.0; }
+            if wanted == 1.0 && 1.0 - gain < 0.0001 {
+                gain = 1.0;
+            }
             minimum = minimum.min(gain);
             for x in frame {
                 *x *= gain;
@@ -131,7 +136,8 @@ impl Audio {
 
     /// Static gain whenever feasible, otherwise bounded peak limiting, never AGC.
     /// Every attempt starts from the original, avoiding cumulative envelope damage.
-    /// Beyond 6 dB, returns exactly the legacy capped-static samples and a refusal.
+    /// A refusal retains the best in-bound attempt, or capped static if none exists.
+    /// Errors, including Unmeasurable, preserve input samples exactly.
     pub fn normalise_to_target(
         &mut self,
         target_lufs: f64,
@@ -145,12 +151,17 @@ impl Audio {
     }
 
     fn normalise_target_work(
-        &mut self, target_lufs: f64, ceiling_dbtp: f64, config: LimiterConfig,
+        &mut self,
+        target_lufs: f64,
+        ceiling_dbtp: f64,
+        config: LimiterConfig,
     ) -> Result<TargetReport, Error> {
         config.validate()?;
         let original = self.clone();
         let static_report = self.normalise(target_lufs, ceiling_dbtp)?;
-        if !static_report.after.integrated_lufs.is_finite() || static_report.after.integrated_lufs < -70.0 {
+        if !static_report.after.integrated_lufs.is_finite()
+            || static_report.after.integrated_lufs < -70.0
+        {
             return Err(Error::Unmeasurable);
         }
         let mut report = TargetReport {
@@ -179,6 +190,9 @@ impl Audio {
                 *x *= gain;
             }
             let limited = candidate.render_limiter(ceiling_dbtp, config)?;
+            if !limited.after.integrated_lufs.is_finite() || limited.after.integrated_lufs < -70.0 {
+                return Err(Error::Unmeasurable);
+            }
             report.passes = pass;
             report.max_gain_reduction_db = report
                 .max_gain_reduction_db
@@ -194,9 +208,6 @@ impl Audio {
                 report.refused = true;
                 return Ok(report);
             }
-            if !limited.after.integrated_lufs.is_finite() || limited.after.integrated_lufs < -70.0 {
-                return Err(Error::Unmeasurable);
-            }
             let error = target_lufs - limited.after.integrated_lufs;
             let mut accepted = report;
             accepted.after = limited.after;
@@ -204,7 +215,9 @@ impl Audio {
             accepted.target_reached = error.abs() <= 0.5;
             accepted.gain_db = gain_db;
             accepted.shortfall_lu = error.max(0.0);
-            if best.as_ref().is_none_or(|(_, prior)| error.abs() < (target_lufs-prior.after.integrated_lufs).abs()) {
+            if best.as_ref().is_none_or(|(_, prior)| {
+                error.abs() < (target_lufs - prior.after.integrated_lufs).abs()
+            }) {
                 best = Some((candidate, accepted));
             }
             if error.abs() <= 0.2 || pass == 3 {

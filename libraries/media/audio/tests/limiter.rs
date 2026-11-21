@@ -65,7 +65,7 @@ fn refusal_returns_legacy_static_result() {
 }
 
 #[test]
-fn corrective_pass_refusal_and_tiny_buffers() {
+fn tiny_buffers_preserve_samples() {
     for samples in [vec![], vec![0.0], vec![0.4], vec![0.2, 0.3]] {
         let mut audio = Audio::new(48000, 1, samples.clone()).unwrap();
         audio.limit_true_peak(-1.0, Default::default()).unwrap();
