@@ -263,4 +263,5 @@ fn generic_save_gets_late_report_and_bad_context_switch_is_refused() {
     pump_until(&mut host, |h| h.design_info()["errors"] == json!({}));
     assert_eq!(host.active_context(), active_before, "repair report cannot restyle");
     assert_eq!(info(&mut host, &rt, &broker.url)["design_validation"]["errors"], json!({}));
+    assert_eq!(host.design_info()["notice"], "");
 }

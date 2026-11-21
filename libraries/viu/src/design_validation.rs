@@ -156,17 +156,23 @@ impl Validation {
             match receiver.try_recv() {
                 Ok(report) => {
                     if report.solicited { self.outstanding = self.outstanding.saturating_sub(1); }
-                    if let Some(retired) = report.retired { self.errors.remove(&retired); }
+                    if let Some(retired) = report.retired { self.clear_error(&retired); }
                     if let Some(error) = report.error {
                         tracing::warn!(source_digest=%report.digest, %error, "design background report");
                         self.record(report.digest, error);
                     } else {
-                        self.errors.remove(&report.digest);
+                        self.clear_error(&report.digest);
                     }
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => { self.disconnected(); break; }
             }
+        }
+    }
+
+    fn clear_error(&mut self, digest: &str) {
+        if let Some(error) = self.errors.remove(digest) && self.notice == error {
+            self.notice.clear();
         }
     }
 
@@ -191,11 +197,11 @@ pub(crate) fn observe(ctx: &egui::Context, theme: &toolkit::Theme) {
     ctx.data_mut(|data| {
         // Installation order matters: the last installation is the current
         // source, including a change from a file back to embedded defaults.
-        data.insert_temp(egui::Id::unique("viu-design-report-input"), theme.clone());
+        data.insert_temp(egui::Id::unique("viu-design-report-input"), Some(theme.clone()));
     });
 }
 pub(crate) fn drain(ctx: &egui::Context, validation: &mut Validation) {
-    if let Some(theme) = ctx.data_mut(|data| data.remove_temp::<toolkit::Theme>(egui::Id::unique("viu-design-report-input"))) {
+    if let Some(theme) = ctx.data_mut(|data| data.remove_temp::<Option<toolkit::Theme>>(egui::Id::unique("viu-design-report-input"))).flatten() {
         validation.observe(&theme);
     }
 }

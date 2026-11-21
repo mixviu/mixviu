@@ -15,12 +15,24 @@ blocking the rendering thread. A background error is logged and retained in
 does not abort, restyle or interrupt an app. A switch attempt that fails also
 returns a refusal and shows a dismissible notice. Information retains the
 diagnostic after the notice is dismissed.
+Malformed choice arguments return `ARGUMENT` without creating a design notice
+or error entry. A compile refusal returns `DESIGN_VALIDATION`. Adapter failures
+remain ordinary host errors. A repaired source clears its report and notice;
+repair alone does not restyle the running app.
 
 The worker observes installed source snapshots and checks file-backed sources
 for content changes. Hand edits, including generic editor saves, are a bypass
 of write-time admission. They receive the background report without an
 automatic restyle. A later context choice reads and validates the current
 file snapshot before use. No save policy is imposed on the generic editor.
+The observation identity includes both the source-byte digest and its optional
+file path. A host watches its current file only; switching to another file or
+embedded defaults unregisters the former path. Deletion means embedded defaults,
+as at startup. The native task queue has four slots, the reply queue eight,
+the pending queue 32, the observation history 128 and the diagnostic map 64.
+`pending` counts submitted acknowledgements, not spontaneous file reports.
+`skipped` counts unprocessed sources and `evicted` counts retired history or
+diagnostic entries, so a bounded queue's degradation is visible in app info.
 Scene hand edits retain the scene loader's existing parse/resolve diagnostics
 and last-good scene behaviour; a scene document is not a design-source grammar.
 
@@ -36,16 +48,20 @@ Write-time gates retain whole-source validation:
 - `appearance.source` is admitted by the settings registry before the profile
   is written. A bad unused context refuses the entire source.
 - Scene install, upgrade and Reset validate their private staged candidates
-  through `shell.scene.validate` before replacing the installed tree. The host
-  also admits the current desk design source in full. Keep retains the existing
-  copy and performs no write.
+  through `shell.scene.validate {source, write:true}` before replacing the
+  installed tree. Only that explicit staging call also admits the current desk
+  design source in full. Read-only validation, reload and remount are independent
+  of errors in unused desk-theme contexts. Scene parsing validates the scene
+  being written; it is not a design-source grammar. Keep performs no write.
 - `tools/apps_bundle.mix` runs the sibling `viu --validate-design --embedded`
   before admitting the bundle and requires the validator's source commit to
   match the bundle. The validator is a headless compiler path. Build `viu`
   beside the bundle's `mix`; the bundle and environment gate modes do this.
 
 Admission results have a bounded cache keyed by the digest of authored content.
-Parsed-source digests include programmatic edits and exclude diagnostic labels.
-File monitoring uses source-byte digests. A path or a context name alone never
+Admission's parsed-document digests include programmatic edits and exclude
+diagnostic labels. Runtime diagnostics use source-byte digests consistently:
+the failing snapshot supplies its own digest, never the last accepted theme.
+File parsing, compilation and fallback attribution share one read. A path or a context name alone never
 identifies a cached validation result. Call and owner-stall deadlines are
 unchanged by this policy.

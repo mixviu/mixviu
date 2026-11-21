@@ -419,21 +419,19 @@ impl Host {
             Ok(self.file_theme.clone())
         }
     }
-    fn checked_theme_choice(&mut self, choice: &toolkit::theme::Choice) -> Result<toolkit::Theme, String> {
-        let base = self.theme_base().map_err(|error| {
-            // Snapshot/adapter errors are surfaced, but are not compile refusals.
-            self.error = error.clone();
-            error
-        })?;
-        base.with_choice(choice).map_err(|error| {
-            let message = error.to_string();
-            if let Some(digest) = error.source_digest() {
-                self.design_validation.refused(digest, &message);
-            } else {
-                self.error = message.clone();
-            }
-            message
-        })
+    fn surface_theme_failure(&mut self, failure: &crate::native_theme::Failure) {
+        match failure {
+            crate::native_theme::Failure::Design { digest, message } => self.design_validation.refused(digest, message),
+            crate::native_theme::Failure::Adapter(message) => self.error = message.clone(),
+            crate::native_theme::Failure::Argument(_) => {},
+        }
+    }
+    fn checked_theme_choice(&mut self, choice: &toolkit::theme::Choice) -> Result<toolkit::Theme, crate::native_theme::Failure> {
+        use crate::native_theme::Failure;
+        let result = self.theme_base().map_err(Failure::Adapter)
+            .and_then(|base| base.with_choice(choice).map_err(Failure::from));
+        if let Err(error) = &result { self.surface_theme_failure(error); }
+        result
     }
     fn dismiss_design_notice(&mut self) {
         if self.error == self.design_validation.notice { self.error.clear(); }
@@ -1040,6 +1038,7 @@ impl Host {
 
         self.deferred.retain(|_, token| self.calls.contains(token));
         while let Ok(request) = self.local_ui.requests.try_recv() {
+            let mut error_code = "ARGUMENT";
             let answer = match request.command.as_str() {
                 // This match services only the in-process LocalUi channel,
                 // never external Bus requests. The query cannot mutate input.
@@ -1102,7 +1101,10 @@ impl Host {
                     .and_then(|id| self.view.request_focus(id))
                     .map(|_| json!({"focused":true})),
                 "native.theme" => crate::native_theme::choice(&request.args).and_then(|choice| {
-                    let theme = self.checked_theme_choice(&choice)?;
+                    let theme = self.checked_theme_choice(&choice).map_err(|error| {
+                        error_code = error.code();
+                        error.to_string()
+                    })?;
                     crate::appearance::install_theme(ctx, &theme)?;
                     self.native_choice = request.args.clone();
                     Ok(crate::native_theme::describe(&theme))
@@ -1111,14 +1113,7 @@ impl Host {
             };
             let _ = request.reply.send(match answer {
                 Ok(body) => (0, body),
-                Err(message) => {
-                    let code = if request.command == "native.theme"
-                        && crate::native_theme::choice(&request.args).is_ok()
-                        && self.design_validation.notice == message {
-                        "DESIGN_VALIDATION"
-                    } else { "ARGUMENT" };
-                    (10, json!({"error_code":code,"message":message}))
-                },
+                Err(message) => (10, json!({"error_code":error_code,"message":message})),
             });
         }
         for (_, image) in self.clipboard.drain() {
@@ -1356,8 +1351,8 @@ impl Host {
                                     };
                                     self.checked_theme_choice(&crate::native_theme::choice(choice)?)
                                         .map_err(|error| {
-                                            refused_design = self.design_validation.notice == error;
-                                            error
+                                            refused_design = matches!(error, crate::native_theme::Failure::Design { .. });
+                                            error.to_string()
                                         })?;
                                 }
                                 validate_overlays(&projected)?;
@@ -1724,7 +1719,7 @@ impl Host {
                         authored["state"]["lost"] = Value::Bool(false);
                     }
                     let installed = if refresh_key.is_none() || key_changed {
-                        crate::appearance::install_session_choice(
+                        crate::appearance::checked_session_choice(
                             ctx,
                             &authored,
                             &self.app,
@@ -1808,21 +1803,9 @@ impl Host {
                             }
                         }
                         Err(error) => {
-                            // Classify the failing compile itself, never the
-                            // adapter's general String error or accepted file.
-                            let refusal = crate::appearance::session_base(
-                                &authored, &self.app, &self.file_theme, &self.last_ui,
-                            ).ok().and_then(|(base, _)| {
-                                let value = if self.model["theme_choice"].is_null() {
-                                    json!({})
-                                } else { self.model["theme_choice"].clone() };
-                                let choice = crate::native_theme::choice(&value).ok()?;
-                                base.with_choice(&choice).err()
-                            });
-                            if let Some(failure) = refusal.filter(|e| e.source_digest().is_some()) {
-                                self.design_validation.refused(failure.source_digest().unwrap(), &failure.to_string());
-                            } else {
-                                self.error = error;
+                            match &error {
+                                crate::native_theme::Failure::Design { digest, message } => self.design_validation.refused(digest, message),
+                                _ => self.error = error.to_string(),
                             }
                         },
                     }

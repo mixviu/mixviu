@@ -524,12 +524,18 @@ try
   $installed_before = tree_digest($s.root .. "/example")
   try
     write_file($template_path, $valid_template .. "\n-- BROKEN startup admission control\n")
+    $mark = log_mark()
     $s = $l.request($s, "install", {template:$origin, name:"bad-admission"})
     check($s.rc != 0 and not exists($s.root .. "/bad-admission"), "bad install writes no installation")
+    check(len(filter(since($mark, "shell.scene.validate"), fn($r) = $r.body.write == true)) > 0, "install requests explicit write admission")
+    $mark = log_mark()
     $s = $l.request($s, "reset", {name:"example"})
     check($s.rc != 0 and tree_digest($s.root .. "/example") == $installed_before, "bad Reset keeps installed bytes")
+    check(len(filter(since($mark, "shell.scene.validate"), fn($r) = $r.body.write == true)) > 0, "Reset requests explicit write admission")
+    $mark = log_mark()
     $s = $l.request($s, "upgrade", {})
     check($s.upgrades.example != nil and tree_digest($s.root .. "/example") == $installed_before, "bad upgrade keeps installed bytes")
+    check(len(filter(since($mark, "shell.scene.validate"), fn($r) = $r.body.write == true)) > 0, "upgrade requests explicit write admission")
   finally
     write_file($template_path, $valid_template)
   end
