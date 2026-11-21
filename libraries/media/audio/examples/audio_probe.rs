@@ -31,10 +31,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let mut a = read(&args[2])?;
             if args[1] == "target" {
                 let r = a.normalise_to_target(-14.0, -1.0, Default::default())?;
-                println!("{}", json!({"before":value(r.before), "after":value(r.after), "gain":r.gain_db, "passes":r.passes, "max_gr":r.max_gain_reduction_db, "refused":r.refused, "shortfall_lu":r.shortfall_lu}));
+                println!(
+                    "{}",
+                    json!({"before":value(r.before), "after":value(r.after), "gain":r.gain_db, "passes":r.passes, "max_gr":r.max_gain_reduction_db, "refused":r.refused, "shortfall_lu":r.shortfall_lu})
+                );
             } else {
                 let r = a.limit_true_peak(-1.0, Default::default())?;
-                println!("{}", json!({"after":value(r.after), "max_gr":r.max_gain_reduction_db}));
+                println!(
+                    "{}",
+                    json!({"after":value(r.after), "max_gr":r.max_gain_reduction_db})
+                );
             }
             write(&args[3], &a)?;
         }
