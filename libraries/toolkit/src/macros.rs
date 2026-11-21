@@ -170,8 +170,12 @@ impl State {
         let repaint = Arc::new(Mutex::new(None::<(egui::Context, egui::ViewportId)>));
         let target = repaint.clone();
         let change_hook: ::macros::session::ChangeHook = Arc::new(move || {
-            if let Some((ctx, viewport)) = &*target.lock().unwrap() {
-                ctx.request_repaint_of(*viewport);
+            // Clone out and release the guard before calling into egui:
+            // request_repaint_of takes the Context lock, and show() takes this
+            // mutex while the UI thread holds that lock (ABBA deadlock).
+            let target = target.lock().unwrap().clone();
+            if let Some((ctx, viewport)) = target {
+                ctx.request_repaint_of(viewport);
             }
         });
         session.observe_changes(&change_hook);
