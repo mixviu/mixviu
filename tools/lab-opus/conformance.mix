@@ -1,6 +1,8 @@
 $root="/tmp/mixviu-opus-l2-spike"
 $bin="tools/lab-opus/target/release/opus-spike"
 $candidates=["opus-pure","cranpose-opus-pure","hiraku-opus","ps-rusty-opus","mousiki","oporus","moosicbox_opus_native","opuscule","filmcraft-opus","opus-wave","symphonia-opus","oxideav-opus"]
+$only=env("OPUS_CANDIDATE","")
+if $only!="" then $candidates=[$only] end
 for $set in ["opus_testvectors","opus_newvectors"]
  for $candidate in $candidates
   for $ch in [1,2]

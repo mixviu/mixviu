@@ -19,6 +19,7 @@ for $signal in ["sweep", "bursts"]
       invoke([$bin, "measure", "ffmpeg", "-v", "error", "-y", "-c:a", "libopus", "-i", $oracle .. ".ogg", "-f", "s16le", $oracle .. ".pcm"], "oracle-decode-" .. $id .. "-" .. $repeat)
     end
     for $candidate in ["rusty-opus", "opus-rs", "ruopus", "opus-decoder", "opus-pure", "cranpose-opus-pure", "hiraku-opus", "ps-rusty-opus", "mousiki", "oporus", "moosicbox_opus_native", "opuscule", "filmcraft-opus",  "opus-wave", "symphonia-opus", "oxideav-opus"]
+      if env("OPUS_CANDIDATE","")!="" and $candidate!=env("OPUS_CANDIDATE") then continue end
       $out = $root .. "/" .. $candidate .. "-" .. $id
       for $repeat in [1,2,3]
         invoke([$bin, "measure", $bin, "decode", $candidate, "2", $oracle .. ".ogg", $out .. "-reverse.pcm"], $candidate .. "-reverse-" .. $id .. "-" .. $repeat)
