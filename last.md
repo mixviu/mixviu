@@ -1,3 +1,178 @@
+# PR #220 round 2 — port-time regression and appearance policy prototypes
+
+Draft [PR #220](https://github.com/mixviu/mixviu/pull/220).
+Measured test checkpoint `6f181ca6`; final fixture `8b59d53a`.
+Production compiler policy remains unchanged.
+Only the regression test and this receipt land in round 2. The three compiler
+variants are private, temporary CBC prototypes, awaiting a ruling.
+
+## A regression that includes startup
+
+`libraries/viu/tests/workshop_startup.rs:17` registers 200 peers and starts an
+independent Bus client before constructing the native host. It detects the
+Workshop port with the real service-list API (line 63), then alternates ping
+and info calls whose starts fall within the next 1.5 s (line 69). It does not
+wait for `host.ready()`. The native host pumps and draws its first ready frame;
+the first pump's CPU and wall are recorded separately (line 91).
+
+The bound is 750,000 us (line 14), leaving 250 ms below the unchanged one-second
+call deadline. No retry or widened call deadline is used; failed calls fail
+the regression too. The prototypes' slowest successful call is 630,427 us,
+leaving 119,573 us (19%) below the selected bound. The bound was set before
+those measurements.
+
+**Expected before red:** CBC `20261121-175445-2c24d7dc-a1`, test source
+`1bd4f587`, worst observed call 1,001,520 us, two calls timed out, test wall
+3.40 s. The first pump used 2,501,943 us CPU / 2,502,676 us wall. Failed call
+durations are censored at the unchanged timeout; they are not completed reply
+latencies. This is the actual product path, and serves as the unchanged-source
+negative control against the fast prototypes.
+
+Correction to round 1: its 200-peer fixture followed a four-peer case in the
+same process. Its 1.30–1.31 s first pump was not fully cold. Round 2 uses one
+200-peer case per fresh test process. Each prototype sample launches a new
+test executable; compilation time is outside the reported test measurement.
+The renderer uses the real native headless frame path, not physical presentation.
+
+## Five fresh runs of each option
+
+All samples: CBC `20261121-175911-93071cbf-a1`, same worker and checkpoint.
+Times below are milliseconds. Calls are initiated during the first 1.5 s
+from port appearance; first-pump time is a different interval and is not
+added to call latency. The last column includes timeouts for (c), marked †.
+
+| Option / sample | First pump CPU | First pump wall | Worst call |
+|---|---:|---:|---:|
+| a / 1 | 336.804 | 336.947 | 619.661 |
+| a / 2 | 341.398 | 342.041 | 621.754 |
+| a / 3 | 337.977 | 339.070 | 627.692 |
+| a / 4 | 336.803 | 336.938 | 618.903 |
+| a / 5 | 335.289 | 335.367 | 616.096 |
+| b / 1 | 339.076 | 339.592 | 622.505 |
+| b / 2 | 342.590 | 344.567 | 630.427 |
+| b / 3 | 339.346 | 339.414 | 621.980 |
+| b / 4 | 340.605 | 340.652 | 622.490 |
+| b / 5 | 339.788 | 339.819 | 622.736 |
+| c / 1 | 2531.990 | 2532.812 | 1001.450† |
+| c / 2 | 2520.937 | 2521.848 | 1001.436† |
+| c / 3 | 2521.550 | 2522.322 | 1001.550† |
+| c / 4 | 2591.881 | 2594.974 | 1001.567† |
+| c / 5 | 2527.401 | 2528.304 | 1001.436† |
+
+(a) and (b) have no failed calls. Every (c) sample has two timeouts; † is a
+lower-bound observation, not a successful completed-call maximum. There is
+no responsiveness pass for (c). Whole fixture work is 1.775–1.857 s for (a),
+4.508–4.570 s for (b), and 4.170–4.280 s for (c); process/test teardown adds
+about 0.05 s. No new or widened app `*-test.mix` file is introduced.
+
+### a — lazy context compilation
+
+Anchor: `libraries/design/src/compiler.rs:63`. Private snapshot
+`compiler-lazy.rs:63` substitutes the requested context for the enumeration
+of all reachable contexts. Structural validation, v0 equivalence and the full
+requested-context compile remain synchronous. Other contexts compile and
+validate on their first use. This is a policy change, not a production fix.
+
+An invalid requested context returns Fatal before its artifact can be used.
+A resolved error confined to another context is postponed until that context
+is requested. Current-context values are validated before rendering, but the
+source has not passed today's all-context acceptance contract when the first
+frame is prepared.
+
+### b — full validation after the first native frame, on a worker
+
+Anchors: `libraries/design/src/compiler.rs:17`,
+`libraries/viu/tests/workshop_startup.rs:98`. Private snapshot
+`compiler-split.rs:3910` compiles the requested context synchronously;
+`:3980` starts one native worker only after `host.draw()` returns. Full
+validation jobs then run sequentially on that worker. The fixture joins the
+worker after collecting startup calls (`:3995`), so late failures cannot be
+lost when the process exits. All six full-validation jobs in each sample
+succeeded; each job took roughly 0.60–0.64 s wall.
+
+The initial resolve was already on the native host thread, not the Mix
+evaluator thread. This prototype removes the host's blocking full compile
+from the first frame's critical path. It still validates each requested
+context synchronously before use. Cross-context source errors can be found
+after that frame. The lab reports them as `SPLIT_LATE_ERROR`; it has no
+rollback, quarantine or live-owner refusal protocol. Thus a frame from a
+source later rejected globally can already exist. Choosing late-error
+behaviour needs a ruling and a design; none is silently supplied here.
+
+### c — share colour-primitive conversion, keep all-context validation
+
+Anchor: `libraries/design/src/colour.rs:539`; private snapshot
+`colour-shared.rs:1290`. `compile_primitives` reads only the authored colour
+map. The prototype reuses the converted map and its identical diagnostics
+for exact-equal input maps across contexts, in a bounded 128-entry thread
+cache. It does not reuse whole context results, omit any context, or delay
+validation. All current full-source checks still precede artifact return.
+
+All 337 design tests passed, zero failed, eight existing ignores, in the
+same CBC job. This bounded sharing is not enough: startup remains red.
+It does not establish that every possible semantics-preserving compiler
+optimisation is exhausted. A broader factoring of context compilation is
+further design work, not implemented in this round.
+
+## Error timing control, checks and desk gate
+
+CBC `20261121-181540-5864df8a-a1` injects a missing foreground reference
+only into the existing Studio/light modifier, leaving active Studio/dark
+and the Ocean/light v0-equivalence context valid. Baseline and (c) reject
+the source synchronously even when dark is requested. (a) and (b) accept
+dark, and reject light when light is requested. The after-frame worker in (b)
+then reports full_ok=false / SPLIT_LATE_ERROR (578,224 us wall in this control).
+This pins the changed error timing; it does not supply a late-error recovery
+protocol. All four controls pass their intended assertions.
+
+Two own control-fixture failures are retained: `20261121-180429-2f5325c9-a1`
+used a mode-only fault that also broke v0 equivalence;
+`20261121-181333-2938d58f-a1` then created a duplicate Studio/light block.
+The final fixture edits that existing block. A queued cancellation was
+requested for the first job, but its attempt still ran; its red result is
+retained. No product repair was made in response to either fixture failure.
+
+Scoped CBC `20261121-180106-e09c5cb2-a1` covers fmt, all-target clippy and all 55
+lib-viu test binaries plus doctests in both configurations. Default is green.
+Both width-eight app_mix runs pass. Test-support is red only in the new
+startup test: my five-second whole-fixture assertion fired under pooled
+contention before printing its latency result (5.84 s). This was my fixture
+error, corrected in `8b59d53a`; the standalone budget was not a universal
+loaded-run deadline. No product deadline or numeric latency bound changed.
+
+Final CBC `20261121-181507-9c287e33-a1`: fmt and default/support all-target
+clippy pass; all test-support targets and doctests are rerun, with app_mix
+green in the strict width-eight pool. Only workshop_startup remains red, now
+at the intended 750 ms call assertion. Its final standalone test wall is
+4.21 s (reported whole work 4.149 s); first pump 2.488 s wall / 2.487 s CPU,
+worst observed call 1.002 s, two timeouts. Its pooled work is 6.425 s, reported
+without the inappropriate whole-fixture guard. The full test-support suite
+is deliberately **not green** while the startup defect remains. The receipt
+driver recognises the expected before-red; it does not ignore or waive the
+test. Workshop serial policy is unchanged.
+
+Env registry: 277 names, 0 problems. No new `MIX_*` variable. Changed and private
+Mix tools lint cleanly; literal worker-source heredocs have a documented
+non-interpolation lint pragma. No tools/ci.mix all or local Rust execution.
+
+
+The private desk runner now accepts `desk7.check_rc` 0 or 2 and rejects any
+`desk7.after` line starting with `FAIL`. It retains the take-window exclusion,
+quiet check, receipt reread and SHA/quiet/probe evidence per run.
+
+At **2026-11-21 18:24:31 AEST**, after the measurements and error controls,
+the required `7ad2570fc71e3d7035fa642623578ac0570791c2` receipt still did not
+exist. The corrected gate was closed. Desk samples: **n=0, not run**. No
+quiet check or remote probe was started against an unverified build. Per
+the stop rule, no waiting/polling for gold follows this check; desk numbers
+and quiet JSON do not exist for this round.
+
+No compiler policy has landed, no PR merge or deployment occurred, and #220
+stays draft. A ruling is needed before deriving (a), defining (b)'s late-error
+behaviour, or pursuing a broader (c) redesign.
+
+---
+
 # PR #220 — Workshop startup investigation (draft)
 
 [PR #220](https://github.com/mixviu/mixviu/pull/220), branch
