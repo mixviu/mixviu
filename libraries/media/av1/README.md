@@ -1,5 +1,37 @@
 # AV1 packet encoder
 
+## Bench example
+
+`cargo build -p media-av1 --example av1enc --release` builds an example,
+not an installed binary. Add `--features asm` for the assembly variant;
+the default has assembly disabled. Feed progressive 8-bit 4:2:0 Y4M on stdin.
+`--out encoded.ivf` selects a file; otherwise IVF goes to stdout.
+Options are `--speed` (default 10), `--qp` / `--quantizer` (100),
+`--threads` (1), `--tile-cols` / `--tile-rows` (1 each, counts rather
+than logarithms), and `--keyint` (240).
+
+The stream declares its fixed size and rational frame rate in the Y4M
+header. Missing/duplicate format fields, interlacing, high bit depth,
+full range, truncated frames, frame overrides and concatenated streams
+are refused. No frame-rate conversion or scaling is performed. Metadata
+lines are limited to 4096 bytes. Discard partial output after any error.
+The IVF header uses an unknown frame count (zero) on stdout; `--out`
+patches the exact count after success. Timestamps use the Y4M timebase.
+
+One JSON line on stderr reports frames, total IVF bytes (including headers),
+encode seconds, requested settings, actual tiles and assembly status.
+Encode seconds includes frame preparation, submission and flush; it excludes
+input reads, encoder construction and output writes. Bench wall/CPU/RSS
+measurements must cover the whole process separately.
+
+`adapter_check.mix` runs focused worker clippy, all test targets for both
+assembly variants and the foreign gate. Its `--fmt` mode prints the worker's
+format diff and restores its checkout. The example tests generate Y4M,
+encode IVF, decode with ffmpeg/libdav1d, require five frames and PSNR above
+35 dB, and check refusal cases and IVF fields. Missing oracle tools fail.
+No library API or dependency changes are needed: `prepare`, `submit` and
+`finish` already provide external frames in and packets out.
+
 `media-av1` pins rav1e **0.8.1**, default features disabled. Only threading and
 optional asm are enabled. `cargo test -p media-av1 --no-default-features` tests
 the pure-Rust default; --features asm opts into nasm-built x86 kernels.

@@ -170,4 +170,5 @@ fn main() {
 }
 
 #[cfg(test)]
+#[path = "av1enc/tests.rs"]
 mod tests;
