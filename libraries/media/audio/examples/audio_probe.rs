@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
         Some("resample") => write(&args[3], &read(&args[2])?.resample_48k()?)?,
-        Some("mix") => {
+        Some("mix") | Some("render") => {
             // JSON [{path,offset}] frame offsets at 48k; caller owns timeline policy.
             let clips: Value = serde_json::from_reader(File::open(&args[2])?)?;
             let mut a = Audio::silence(48000, 2, 0)?;
@@ -42,6 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(n) = args.get(4) {
                 a.resize(n.parse()?)?;
             }
+            if args[1] == "render" { let r = a.normalise(-14.0,-1.0)?; println!("{}",json!({"before":value(r.before),"after":value(r.after),"gain":r.gain_db,"shortfall":r.shortfall_lu,"capped":r.peak_limited})); }
             write(&args[3], &a)?;
             println!("{}", value(a.measure()?));
         }

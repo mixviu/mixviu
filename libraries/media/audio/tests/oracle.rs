@@ -30,7 +30,7 @@ fn generated_tone_pink_noise_and_linear_loudnorm() {
                     rows[idx] = (seed as f64 / u32::MAX as f64 - 0.5) * 0.025;
                     rows.iter().sum::<f64>()
                 } else {
-                    10.0_f64.powf(-23.0 / 20.0)
+                    10.0_f64.powf((if n < 48000 * 10 { -23.0 } else { -24.0 }) / 20.0)
                         * (std::f64::consts::TAU * 1000.0 * n as f64 / 48000.0).sin()
                 };
                 [s, s]

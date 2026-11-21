@@ -182,3 +182,23 @@ fn downsample_rejects_aliases() {
     let energy=a.samples()[1000..47000].iter().map(|s|s*s).sum::<f64>()/46000.0;
     assert!(energy<1e-12,"alias energy {energy}");
 }
+
+#[test]
+fn pink_spectrum_at_known_k_weighted_level() {
+    // Equal power per octave (31.25 Hz..16 kHz), deterministic random phases.
+    // Independent BS.1770 48k transfer-function energy predicts -23 LUFS;
+    // no measurement of the implementation is used to calibrate the fixture.
+    fn power(f: f64, b: [f64;3], a: [f64;3]) -> f64 {
+        let w=std::f64::consts::TAU*f/48000.0;
+        let norm=|c:[f64;3]| { let re=c[0]+c[1]*w.cos()+c[2]*(2.0*w).cos(); let im=-c[1]*w.sin()-c[2]*(2.0*w).sin(); re*re+im*im };
+        norm(b)/norm(a)
+    }
+    let freqs:Vec<_>=(0..10).map(|k|31.25*2.0_f64.powi(k)).collect();
+    let energy: f64=freqs.iter().map(|&f|power(f,[1.53512485958697,-2.69169618940638,1.19839281085285],[1.0,-1.69065929318241,0.73248077421585])*power(f,[1.0,-2.0,1.0],[1.0,-1.99004745483398,0.99007225036621])).sum();
+    let amplitude=(10.0_f64.powf((-23.0+0.691)/10.0)/energy).sqrt();
+    let mut seed=73u32;
+    let phases:Vec<_>=freqs.iter().map(|_| {seed=seed.wrapping_mul(1664525).wrapping_add(1013904223);std::f64::consts::TAU*seed as f64/u32::MAX as f64}).collect();
+    let samples=(0..48000*12).flat_map(|n| { let s=amplitude*freqs.iter().zip(&phases).map(|(f,p)|(std::f64::consts::TAU*f*n as f64/48000.0+p).sin()).sum::<f64>();[s,s] }).collect();
+    let m=Audio::new(48000,2,samples).unwrap().measure().unwrap();
+    assert!((m.integrated_lufs+23.0).abs()<0.1,"{m:?}");
+}

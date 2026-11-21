@@ -148,7 +148,8 @@ impl Audio {
         let end = offset
             .checked_add(clip.frames())
             .ok_or(Error::SizeOverflow)?;
-        end.checked_mul(self.channels as usize).ok_or(Error::SizeOverflow)?;
+        end.checked_mul(self.channels as usize)
+            .ok_or(Error::SizeOverflow)?;
         let start = offset
             .checked_mul(self.channels as usize)
             .ok_or(Error::SizeOverflow)?;
@@ -213,7 +214,9 @@ impl Audio {
                     interp_cubic((t * 256.0).fract(), &points);
             }
         }
-        if out.samples.iter().any(|x| !x.is_finite()) { return Err(Error::InvalidAudio); }
+        if out.samples.iter().any(|x| !x.is_finite()) {
+            return Err(Error::InvalidAudio);
+        }
         Ok(out)
     }
     /// BS.1770 integrated gating and Tech 3342 LRA. True peak uses ebur128's
@@ -307,9 +310,13 @@ impl Audio {
         };
         let scale = 2.0_f64.powi(bits - 1);
         let block_align = self.channels as u32 * (bits as u32 / 8);
-        self.rate.checked_mul(block_align).ok_or(Error::SizeOverflow)?;
+        self.rate
+            .checked_mul(block_align)
+            .ok_or(Error::SizeOverflow)?;
         let data_bytes = self.frames() as u64 * block_align as u64;
-        if data_bytes > u32::MAX as u64 - 128 { return Err(Error::SizeOverflow); }
+        if data_bytes > u32::MAX as u64 - 128 {
+            return Err(Error::SizeOverflow);
+        }
         if self.samples.iter().any(|&s| {
             if sample_format == hound::SampleFormat::Float {
                 !(s as f32).is_finite()
