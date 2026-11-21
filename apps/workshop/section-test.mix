@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
-$m=require("model.mix");$p=require("presentation.mix");$t=require("traffic.mix")
+$m=require("model.mix");$p=require("presentation.mix");$t=require("traffic.mix");$frame=require("frame.mix")
 fn check($ok,$message) if not $ok then raise("SECTION_TEST",$message) end end
 $s=$m.initial();$s.busy=$m.busy($s);$last=nil;$inputs=nil
 -- Exercise discovery, steady traffic and UI edits in different orders.
@@ -23,9 +23,12 @@ for $round=0 to 7
     $candidate=$p.project_dirty($s,$last,$dirty,1000000)
     $oracle=$p.project($s,1000000)
     check(deep_eq($candidate,$oracle),"section-dirty projection differs from full oracle")
-    $last=$candidate;$inputs=$next
+    $last=if $step==9 then $frame.project($s,$candidate) else $candidate end;$inputs=$next
   end
 end
+$clocked=$p.project_dirty($s,$last,$p.marks($inputs,$inputs),1001000)
+check(deep_eq($clocked,$p.project($s,1001000)),"time-dependent sections must match the clock-advanced oracle")
+check($clocked.mesh_canvas.initial.now_ms!=$last.mesh_canvas.initial.now_ms,"Mesh time must advance with unchanged state")
 -- A forgotten tree mark must be observable by the identical oracle check.
 $s.filter="definitely-missing";$candidate=$p.project_dirty($s,$last,{tree:false,macro:true,agent:true,traffic:true},1000000)
 check(not deep_eq($candidate,$p.project($s,1000000)),"forgotten dirty mark escaped the oracle")
