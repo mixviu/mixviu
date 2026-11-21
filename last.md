@@ -2513,3 +2513,62 @@ Final saved logs read:
 - `20261110-075834-cbc3-5948680add0a-20261110-075833-ad85bf35-a1-fe1707d8.log`
 - `20261110-082608-cbc3-5948680add0a-20261110-075835-7a306a11-a1-74ceae22.log`
 - `20261110-082616-cbc3-5948680add0a-20261110-080720-35129d8b-a1-dd628ada.log`
+# Window menu nested Context lock — 2026-11-22
+
+PR: https://github.com/mixviu/mixviu/pull/230 (mixviu-agent).
+Code head: 2a84985f7ed205e385f4bd1cb062a938dea58600.
+
+Survey covers all Rust files in libraries/viu (including tests), enumerating
+Context/Ui data, memory, input, options, graphics, fonts, output, style and
+pass-state closures and tracing helper calls. Lines below refer to the code head.
+
+| Site | Outer / inner lock | Disposition |
+| --- | --- | --- |
+| src/window_frame.rs:131, request_menu | Context write (`data_mut`) / read (`viewport_id`) before fix | Hoist viewport to :130. |
+| src/file_tiles.rs:98, intrinsic_height (called by draw) | Context read (`data`) / read (`viewport_id`) before fix | Hoist viewport to :96. Read recursion can deadlock behind a waiting writer. |
+| src/window_frame.rs:198, negative control | Context write / read | Intentional test-only reproduction, bounded by timeout. |
+| src/media_gallery.rs:115, State::new(ui.ctx()) | Context write / none synchronously | Context clone only; pool repaint callback runs later, outside this closure. |
+| src/network_map.rs:525, ui.scope_id() | Context write / none | Ui-local identifier; motion/geometry/colour helpers do not take Context. |
+| src/view.rs:740 and src/widgets.rs:1586, ui.layer_id() | Context write / none | Ui-local painter layer identifier. |
+| src/app_host.rs:1972, self.view.text_input_active() | Context read / none | Stored widget state, including optional frame state; no Context access. Unchanged. |
+| src/app_host.rs:3243-3245, wake callback | contexts mutex / Context write (`request_repaint`) | Existing separate lock-order risk; deferred to host wake brief after #220. Unchanged. |
+
+No other production nested Context acquisition found. In particular,
+`app_host.rs` has no synchronous read/write Context closure re-entry in this
+revision. Its :3396 repaint callback only records the viewport under a test
+mutex. The :3243 contexts/repaint order is tracked separately in the private
+host wake brief. Helpers in the remaining closures operate on supplied data:
+focus_key/local_choice_key/state_id, key_name, emit, parse_colour and chooser
+constructors do not re-enter Context. Calls after a closure (including
+unwrap_or_else fallbacks) run after its guard is released.
+
+Tests added: menu frame completion and expected viewport temp position;
+intentional original nested-call timeout control; file tile viewport-height lookup completion and expected cached height.
+The menu fixture injects Wayland through the existing thread-local resolver
+and explicitly stores client=true. It waits for the worker to reach the
+operation before timing the negative control. Each test has a maximum bound
+below five seconds; no new MIX_* variable. No app_host.rs edits.
+
+CBC jobs:
+
+| Job | Result |
+| --- | --- |
+| 20261122-023220-081b9a35-a1 | fmt diff generated and restored on worker, applied locally. |
+| 20261122-023330-2625cbe5-a1 | second fmt diff generated and restored, applied locally. |
+| 20261122-023411-269e10d2-a1 | fmt check passes. Extra `-D warnings` clippy fails on existing Mix and test-broker warnings; this is stricter than normal CI, not a stop finding. |
+| 20261122-023444-10411753-a1 | Normal all-target clippy passes default/no-default. Default 55-binary pool passes (app_mix 49.1 s). Extra no-default pool fails only our full-draw file tile watchdog (417 passed, 1 failed, 5 ignored in unit target). Replaced full paint with direct height lookup and asserted cached value; no budget increase. |
+| 20261122-023954-40464c40-a1 | Earlier head: test-support clippy and all 55 binaries pass; app_mix 47.2 s in width-eight pool; workshop_bus six tests pass alone in 21.35 s. |
+| 20261122-024211-9952b7eb-a1 | Earlier head: standalone menu pair 0.11 s; file tile test and default/test-support doc-tests pass. |
+| 20261122-024707-f2da91f3-a1 | Final test refinement formatted on CBC, diff applied locally. |
+| 20261122-024736-f3606036-a1 | rc 0: fmt check, all-target clippy, standalone corrected no-default height regression (0.00 s), default 55-binary pool and doc-tests pass; app_mix 44.7 s in width-eight pool. |
+| 20261122-024736-a9405970-a1 | rc 0: test-support all-target clippy, all 55 binaries and doc-tests pass; app_mix 44.3 s in width-eight pool, workshop_bus six tests alone in 19.3 s. |
+
+Default and test-support are the required configurations. workshop_bus uses
+the existing serial-tests configuration and app_mix remains in the pool.
+Final required scoped checks are green on the code head above, without retries.
+PR marked ready; the subsequent report commit changes only this file.
+Saved CBC logs read: 20261122-024737-cbc3-2a84985f7ed2-20261122-024736-f3606036-a1-cdf45928.log
+and 20261122-024737-cbc6-2a84985f7ed2-20261122-024736-a9405970-a1-b53dcdaa.log.
+The full extra no-default pool was not repeated after the test refinement; its
+sole failure was addressed and the corrected regression passes standalone.
+No pre-existing failure occurred under the required normal CBC configurations.
