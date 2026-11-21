@@ -1,3 +1,74 @@
+# PR #220 round 6 — conformance fixes; stopped on the existing parent-watch timeout
+
+PR: https://github.com/mixviu/mixviu/pull/220.
+Code head: `00b902a76860c5f09192918ccedc758fd592c30d`.
+This receipt is a later documentation-only commit. **Round 6 is not green.**
+The preceding round-5 green receipt below applies to its earlier head only.
+
+The normal standalone command `mix engines/viud/tests/scenes_test.mix`
+failed at `engines/viud/tests/scenes_test.mix:1672`:
+`parent-watch checks completed within 25 seconds`. The enclosing invocation
+reported 28.276 seconds, rc 1, with empty child stderr. Evidence receipt:
+`2026-11-22T00:11:34+10:00`, `round6/standalone-scenes.json` in the private
+startup evidence directory. This was one ordinary standalone run, not a
+stress harness. The deadline/assertion and child watcher are from `e6ca02e2`
+(#59), verified against `origin/main`. The child file has no branch diff;
+the failing parent block is unchanged. The child uses the unchanged
+`watch_anchor` helper, not scene staging. Per the stop rule, no retry,
+deadline change or watcher fix was attempted here. Recorded in TODO-viud.
+
+Two CBC attempts exposed mistakes in this round's code; both were corrected:
+
+| CBC job | Result and disposition |
+|---|---|
+| `20261122-000659-2b405fba-a1` | rc 101: the new `remove_temp::<Theme>` required `Default`; replaced with an `Option<Theme>` slot. |
+| `20261122-001014-b880fb4c-a1` | rc 101: new scene fixture used nonexistent `paths::env_names`; corrected to `paths::env::ETC`. Worker formatting was applied locally. |
+
+The latter job was already in progress when the standalone failure was
+collected. It stopped in all-target clippy before reaching test execution.
+The corrections after that attempt have **not** been validated on CBC.
+Both changed Mix files lint with zero errors, warnings and notes, and
+`git diff --check` passed. No environment variable was added.
+
+## Review responses
+
+Each claim was checked against head `4963e613` and the supplied review files.
+“Fixed” below means implemented, with tests added; it does **not** claim a
+passing run. All new tests and mutation controls still need validation.
+
+| Item | Response | Code and evidence |
+|---|---|---|
+| 1 — scene reload/remount blocked by desk theme | Fixed; confirmed. Full desk admission is confined to explicit staged writes. | `engines/viu/src/store.rs:499`: only `{source, write:true}` checks the theme; ordinary validate still parses/resolves the scene. `engines/viud/scripts/lib/scenes.mix:1457`: shared install/upgrade/Reset staging supplies the flag. Real native-store regression at `engines/viu/src/store_tests.rs:13` uses isolated process configuration, bad unused theme context, reload/batch/remount handler calls, write refusals, and repaired-theme/bad-scene controls. Routing assertions for each write path at `engines/viud/tests/scenes_test.mix:530`. Unvalidated. |
+| 2 — repaired source remains in info | Fixed; confirmed. | `libraries/viu/src/design_validation.rs:234`: successful results clear the digest; changed file bytes retire the previous digest and matching notice. Real edit.save fixture now breaks, reports, refuses, repairs, then asserts cleared app info without restyling (`libraries/viu/tests/design_validation.rs:178`). Unvalidated. |
+| 3 — errors attributed to accepted source; mixed digest identities | Fixed; confirmed. | `libraries/theme/src/theme.rs:41,239,304`: source failures carry the digest of the exact authored bytes. File rereads and in-memory choices preserve that identity. `libraries/viu/src/native_theme.rs:5`, `app_host.rs:422`: typed failure carries its own failing digest. Background uses the same source-byte digest. Integration tests assert exact keys and exactly one error (`tests/design_validation.rs:139,229,263`). Unvalidated. |
+| 4 — malformed arguments/general session errors become design notices | Fixed; confirmed. | `libraries/viu/src/native_theme.rs:5`: separate Argument, Adapter and Design failures. `appearance.rs:111` propagates the original typed compile failure without rereading/recompiling it for classification; `app_host.rs:422` records only Design. The native reply uses DESIGN_VALIDATION for compile refusals and ARGUMENT for malformed choices. Bus malformed-choice control asserts no notice/errors. Unit refusal/dismissal test at `app_host_model_tests.rs:5`. Unvalidated. |
+| 5 — outstanding credit leaks/unsolicited decrements/disconnect | Fixed; confirmed. | `design_validation.rs:48,130,205`: every received task returns an acknowledgement, including already-seen file bytes; spontaneous scans are tagged unsolicited; disconnect clears outstanding/pending and counts skipped work. Tests `accounting_distinguishes_unsolicited_ack_and_disconnect` and `file_registration_repair_deletion_and_replacement` cover credits and ack-only reports. Unvalidated. |
+| 6 — path dedup, unregister, deletion, bounds and silent loss | Fixed; confirmed. | Observation identity is `(source-byte digest, optional path)` (`design_validation.rs:102`). One current-file slot replaces the unbounded files map, unregistering on path/embedded changes. Missing files mean embedded defaults. Replies use `sync_channel(8)`; tasks 4, pending 32, seen 128, errors 64. Skipped/evicted counters expose retirement. Tests at `design_validation.rs:299,400` cover identical pathless/file bytes, edits, repair, deletion, another path, embedded reversion and capacity accounting. Unvalidated. |
+| 7a — Dismiss leaves duplicate host error | Fixed; confirmed. | `app_host.rs:445` clears self.error only when it duplicates the notice; unrelated errors survive. Shared UI dismissal function is covered by `app_host_model_tests.rs:5`. Unvalidated. |
+| 7b — pre-use theme_base failure not surfaced | Fixed surfacing; compile premise refuted. | `app_host.rs:405` calls `appearance::session_base`, which decodes values and chooses an already validated base; it does not itself return a design-compile error. `app_host.rs:431` now surfaces its adapter failure as an ordinary host error, without a false design refusal. Typed adapter surfacing is covered at `app_host_model_tests.rs:5`. Unvalidated. |
+| 7c — embedded CLI ignores trailing arguments | Fixed; confirmed. | `app_host.rs:2638` requires exactly two arguments for --embedded. CLI execution and negative control remain pending. |
+| 7d — fallback digest obtained by a second read | Fixed; confirmed. | `theme.rs:361` takes the digest from the original read/compile error; no second read. Source-labelled constructor errors carry their exact byte digest; existing source-category tests inspect `Error::kind()` so their original category checks remain. Startup fallback test asserts the exact failing-byte key. Unvalidated. |
+
+## Remaining validation
+
+Resume with the corrected code head above: focused tests and new negative
+controls first, then fmt, all-target clippy, every changed-crate target and
+doc tests in both configurations, width-eight app_mix, workshop_bus alone
+with the unchanged 750 ms guard, environment registry and all changed-Mix
+lint. Existing controls must be adapted to the new typed refusal/worker
+implementation, with rewrite assertions and restoration in finally blocks.
+No full CI run was submitted. No new readiness sign-off or PR reply was made
+because this round is red; the existing PR ready flag was left unchanged.
+
+The previous numbers are retained as **round-5 evidence**, not measurements
+of this head: startup worst call 632.030 ms; serial binary wall 15.14 s;
+five desk baseline samples on gold `7ad2570f` appear in the preceding receipt.
+Artifact caching is still omitted. Generic edit.save remains out of scope,
+as recorded in TODO-editd under “Generic saves of theme and scene sources
+skip design validation”.
+
+---
+
 # PR #220 round 5 — startup guard uses the existing serial binary
 
 PR: https://github.com/mixviu/mixviu/pull/220. Tested source head:
