@@ -103,6 +103,8 @@ Native validation, binding application and rendered equivalence remain required.
 
 
 
+### Implementation and checks
+
 The sender retains projected rows and formats only changed rows. Building
 the complete projection and then diffing it saves transport bytes but retains
 the Mix build cost. Traffic row retention needs particular care: positional
