@@ -135,6 +135,8 @@ pub struct DeferredAnswer {
 #[derive(Debug)]
 pub struct Completion {
     #[cfg(feature = "test-support")]
+    pub publications: Vec<(String, Json)>,
+    #[cfg(feature = "test-support")]
     pub command: String,
     #[cfg(feature = "test-support")]
     pub cpu_elapsed: Duration,
@@ -264,7 +266,7 @@ impl Runtime {
                     Request::Load(generation, program) => {
                         if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
                         // A fresh evaluator never retains old closures or module state.
-                        let local = Rc::new(Local { incremental_models:services.incremental_models, model_revision:RefCell::new(None), model_patch:RefCell::new(None), generation, model: RefCell::new(None), error: RefCell::new(None), reply: RefCell::new(None), backend: backend.clone(), requests: RefCell::new(BTreeMap::new()), active: RefCell::new(None), deferred: Cell::new(false), answers: RefCell::new(Vec::new()), identity: NEXT_RUNTIME.fetch_add(1,Ordering::Relaxed), prefs_deferred: RefCell::new(None), prefs_answers: RefCell::new(Vec::new()), is_request: Cell::new(false) });
+                        let local = Rc::new(Local { #[cfg(feature = "test-support")] publications:RefCell::new(Vec::new()), incremental_models:services.incremental_models, model_revision:RefCell::new(None), model_patch:RefCell::new(None), generation, model: RefCell::new(None), error: RefCell::new(None), reply: RefCell::new(None), backend: backend.clone(), requests: RefCell::new(BTreeMap::new()), active: RefCell::new(None), deferred: Cell::new(false), answers: RefCell::new(Vec::new()), identity: NEXT_RUNTIME.fetch_add(1,Ordering::Relaxed), prefs_deferred: RefCell::new(None), prefs_answers: RefCell::new(Vec::new()), is_request: Cell::new(false) });
                         let stdout = SharedBuf::new();
                         let stderr = SharedBuf::new();
                         let mut eval = Evaluator::with_output(Box::new(stdout.clone()), Box::new(stderr.clone()));
@@ -398,6 +400,8 @@ impl Runtime {
                 let (mut deferred_token,mut deferred_answers)=current.as_ref().map(|(_,_,local,..)|(local.prefs_deferred.borrow_mut().take(),std::mem::take(&mut *local.prefs_answers.borrow_mut()))).unwrap_or_default();
                 if result.is_err(){deferred_token=None;deferred_answers.clear();}
                 let completion = Completion {
+                    #[cfg(feature = "test-support")]
+                    publications: current.as_ref().map(|(_,_,local,..)|local.publications.borrow_mut().drain(..).collect()).unwrap_or_default(),
                     #[cfg(feature = "test-support")]
                     command: probe_command,
                     #[cfg(feature = "test-support")]
@@ -604,6 +608,8 @@ pub fn to_json(value: &Value) -> MixResult<Json> {
 }
 
 struct Local {
+    #[cfg(feature = "test-support")]
+    publications: RefCell<Vec<(String, Json)>>,
     incremental_models: bool,
     model_revision: RefCell<Option<u64>>,
     model_patch: RefCell<Option<crate::model_patch::Patch>>,
@@ -833,6 +839,8 @@ impl BusHandler for Local {
                         "offset":[values.get(motion::Property::Tx),values.get(motion::Property::Ty)]})
                 }
                 "scenes.model.patch" => {
+                    #[cfg(feature = "test-support")]
+                    self.publications.borrow_mut().push((command.into(), body.clone()));
                     if !self.incremental_models {
                         return Err(failure("owner does not support incremental models"));
                     }
@@ -857,6 +865,8 @@ impl BusHandler for Local {
                         return Ok((10, from_json(json!({"error_code":"stale_generation"}))?));
                     }
                     if command == "scenes.model" {
+                        #[cfg(feature = "test-support")]
+                        self.publications.borrow_mut().push((command.into(), body.clone()));
                         if self.model_patch.borrow().is_some()
                             || self.model_revision.borrow().is_some()
                         {

@@ -40,7 +40,12 @@ pub(crate) fn validate_overlays(model: &Value) -> Result<(), String> {
     }
     Ok(())
 }
+#[cfg(feature = "test-support")]
+#[path = "app_host_publication_audit.rs"]
+mod publication_audit;
 struct Host {
+    #[cfg(feature = "test-support")]
+    publication_audit: Option<publication_audit::Audit>,
     initial_fullscreen: bool,
     widget_command: String,
     widget_requests: Vec<Request>,
@@ -182,6 +187,10 @@ fn fullscreen_is_requested_once_after_context_creation() {
 }
 impl Host {
     fn publication_result(&mut self, generation: u64, revision: u64, result: Result<(), String>) {
+        #[cfg(feature = "test-support")]
+        if let Some(audit) = &mut self.publication_audit {
+            audit.receipt(revision, &result);
+        }
         let (command, body) = match result {
             Ok(()) => {
                 self.model_refused = None;
@@ -1216,10 +1225,20 @@ impl Host {
             } else if done.model.is_some() || done.model_patch.is_some() {
                 self.error.clear();
             }
+            #[cfg(feature = "test-support")]
+            if let Some(audit) = &mut self.publication_audit {
+                for (command, body) in &done.publications {
+                    audit.observe(command, body, &self.model).unwrap_or_else(|error| panic!("{error}"));
+                }
+            }
             if let Some(patch) = done.model_patch.as_ref() {
                 #[cfg(feature = "test-support")]
                 let patch_started = test_support::thread_cpu();
-                let result = self.apply_incremental(patch, ctx);
+                #[cfg(feature = "test-support")]
+                let refuse = self.publication_audit.as_mut().is_some_and(|audit| std::mem::take(&mut audit.refuse_next));
+                #[cfg(not(feature = "test-support"))]
+                let refuse = false;
+                let result = if refuse { Err("injected publication refusal".into()) } else { self.apply_incremental(patch, ctx) };
                 #[cfg(feature = "test-support")]
                 if let Some(probe) = self.discovery_probe.as_mut() {
                     probe.patch_apply_cpu.push(
@@ -2465,6 +2484,8 @@ fn create_with_probe(
         legacy_draw_barrier: false,
         #[cfg(feature = "test-support")]
         discovery_probe: None,
+        #[cfg(feature = "test-support")]
+        publication_audit: None,
         scene_source: bundle.scene,
         loaded: false,
         active_scene: String::new(),
@@ -2892,7 +2913,7 @@ pub mod test_support {
         pub(super) verify_incremental: bool,
         pub(super) patch_apply_cpu: Vec<u64>,
         pub(super) retained_model_bytes: Vec<u64>,
-        numeric_bounds: Option<(u64, u64)>,
+        numeric_bounds: Option<u64>,
         pub(super) tick_model_bytes: Vec<u64>,
         pub(super) profile_scene: bool,
         pub(super) steps: u64,
@@ -2923,6 +2944,11 @@ pub mod test_support {
     }
     impl Drop for Harness {
         fn drop(&mut self) {
+            if std::thread::panicking() {
+                if let Some(audit) = &self.host.publication_audit {
+                    eprintln!("WORKSHOP_PUBLICATION_FAILURE {}", audit.summary());
+                }
+            }
             if self.host.discovery_probe.is_some() {
                 eprintln!("WORKSHOP_PROBE {}", self.discovery_measurements());
             }
@@ -2966,16 +2992,12 @@ pub mod test_support {
                         "patch apply CPU: observed_us={observed}, bound_us={bound}"
                     );
                 }
-                if let Some((pump_us, model_bytes)) = p.numeric_bounds {
+                if let Some(pump_us) = p.numeric_bounds {
                     let measured_model_bytes =
                         p.tick_model_bytes.iter().copied().max().unwrap_or(0);
                     assert!(
                         elapsed <= pump_us,
                         "single pump hold: observed_us={elapsed}, standalone_bound_us={pump_us}, tick_model_bytes={measured_model_bytes}"
-                    );
-                    assert!(
-                        measured_model_bytes <= model_bytes,
-                        "tick model bytes: observed_bytes={measured_model_bytes}, standalone_bound_bytes={model_bytes}, pump_us={elapsed}"
                     );
                 }
             }
@@ -2983,9 +3005,18 @@ pub mod test_support {
         pub fn probe_discovery(&mut self) {
             self.host.discovery_probe = Some(DiscoveryProbe::default());
         }
-        pub fn discovery_numeric_bounds(&mut self, pump_us: u64, model_bytes: u64) {
+        pub fn guard_workshop_publications(&mut self) {
+            self.host.publication_audit = Some(super::publication_audit::Audit::default());
+        }
+        pub fn refuse_next_publication(&mut self) {
+            self.host.publication_audit.as_mut().unwrap().refuse_next = true;
+        }
+        pub fn publication_summary(&self) -> Value {
+            self.host.publication_audit.as_ref().unwrap().summary()
+        }
+        pub fn discovery_numeric_bounds(&mut self, pump_us: u64) {
             self.host.discovery_probe.as_mut().unwrap().numeric_bounds =
-                Some((pump_us, model_bytes));
+                Some(pump_us);
         }
         pub fn profile_scene_apply(&mut self) {
             self.host.discovery_probe.as_mut().unwrap().profile_scene = true;

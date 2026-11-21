@@ -155,10 +155,8 @@ fn receipt_limit_tracks_configured_runtime_width() {
 }
 
 #[cfg(feature = "test-support")]
-const FLUSH_PUBLICATION_BYTE_BOUND: u64 = 1024 * 1024;
-#[cfg(feature = "test-support")]
 #[test]
-fn flush_publication_is_measured_by_the_byte_guard() {
+fn flush_publication_is_measured_by_protocol_guard() {
     let bundle = review_bundle(
         r#"
 $g=viu_context().generation
@@ -172,7 +170,8 @@ end
     );
     let mut host = test_support::Harness::new(bundle);
     host.probe_discovery();
-    host.discovery_numeric_bounds(u64::MAX, FLUSH_PUBLICATION_BYTE_BOUND);
+    host.guard_workshop_publications();
+    host.discovery_numeric_bounds(u64::MAX);
     let end = Instant::now() + Duration::from_secs(10);
     loop {
         host.pump();
