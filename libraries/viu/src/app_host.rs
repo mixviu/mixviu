@@ -3169,6 +3169,9 @@ pub mod test_support {
                 )
                 .drop_without_applying_deltas();
         }
+        pub fn active_context(&self) -> Value {
+            crate::native_theme::describe(&crate::appearance::session_theme(&self.ctx))
+        }
         pub fn design_info(&self) -> Value {
             self.host.design_info()
         }

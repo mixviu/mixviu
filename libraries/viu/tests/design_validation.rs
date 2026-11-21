@@ -127,7 +127,9 @@ fn startup_fallback_surfaces_in_app_info_and_painted_notice() {
     let broker = test_broker::Broker::start();
     let rt = runtime();
     let mut host = host(&path, &broker);
-    pump_until(&mut host, Harness::ready);
+    pump_until(&mut host, |h| h.ready() && h.state()["session"]["state"]["lost"] == true);
+    assert_eq!(host.active_context()["scheme"], "studio");
+    assert_eq!(host.active_context()["mode"], "dark");
     assert_eq!(host.design_info()["file_context"]["scheme"], "studio");
     assert_eq!(host.design_info()["file_context"]["mode"], "dark");
     let answer = info(&mut host, &rt, &broker.url);
@@ -189,6 +191,7 @@ fn generic_save_gets_late_report_and_bad_context_switch_is_refused() {
         json!({}),
         "valid-source negative control"
     );
+    let active_before = host.active_context();
     let sink = Arc::new(editd::events::testing::RecordingSink::default());
     let editor = {
         let _entered = rt.enter();
@@ -212,6 +215,7 @@ fn generic_save_gets_late_report_and_bad_context_switch_is_refused() {
             .to_string()
             .contains("missing.late-control")
     });
+    assert_eq!(host.active_context(), active_before);
     assert_eq!(host.design_info()["file_context"]["scheme"], "ocean");
     assert_eq!(host.design_info()["file_context"]["mode"], "light");
     assert_eq!(
@@ -232,6 +236,7 @@ fn generic_save_gets_late_report_and_bad_context_switch_is_refused() {
         json!({"scheme":"studio","mode":"light"}),
     );
     assert_ne!(rc, 0, "bad context switch must fail: {error}");
+    assert_eq!(host.active_context(), active_before);
     assert_eq!(host.design_info()["file_context"]["scheme"], "ocean");
     assert_eq!(host.design_info()["file_context"]["mode"], "light");
     assert!(
