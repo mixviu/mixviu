@@ -1,3 +1,104 @@
+# PR #220 — Workshop startup investigation (draft)
+
+[PR #220](https://github.com/mixviu/mixviu/pull/220), branch
+`fix/workshop-startup-spike`, starts from #216's merged `7ad2570f`.
+Implementation checkpoint: `1b42391d`; fixture follow-up: `d2150068`.
+This is incomplete: no startup repair or desk improvement is claimed.
+
+## Measurements before product changes
+
+Untouched main, CBC `20261121-172151-2c445536-a1`, passes the real 200-peer
+fixture. Across discovery, worst ping / info are 289,758 / 351,010 us;
+load callback CPU is 80,697 us, initial pump CPU / wall 1,265,019 /
+1,265,768 us. These cover different intervals, not a summed critical path.
+
+CBC `20261121-172329-1a2e0482-a1` runs five fresh fixture processes with
+section-dirty and five with full projection, on the same worker and source.
+Temporary native tracing records callback sequence, command, CPU/wall,
+full/patch bytes and in-flight sequence ids. Publication tracing records
+presentation/frame CPU, full versus patch and bytes. Discovery completion
+traces record operation, queued/active jobs and service count.
+
+The first full model is **24,182 bytes** in every 200-peer sample. Its ACK
+(sequence 1) precedes the first notice (sequence 2). That notice takes
+653,826–661,497 us wall across the dirty samples, with 11,116–18,021 us CPU.
+The theme callback (sequence 3) publishes a 969-byte patch; the first ping
+(sequence 7) follows those callbacks. This fixture already has a small,
+acknowledged first model; a smaller-first-model fix is not supported here.
+
+The table is each sample's **whole-discovery** worst call, not a first-1.5 s
+measurement. Instrumentation adds work and affects scheduling; the populations
+and callback counts differ. It does not establish a speedup or regression.
+
+| Sample timestamp (2026-11-21, UTC+10) | Projection | Ping max us | Info max us |
+|---|---|---:|---:|
+| 17:23:31 | dirty | 304190 | 368136 |
+| 17:24:08 | dirty | 357205 | 264461 |
+| 17:24:29 | dirty | 299501 | 123959 |
+| 17:24:51 | dirty | 327311 | 401178 |
+| 17:25:13 | dirty | 292291 | 320937 |
+| 17:25:34 | full | 443370 | 392593 |
+| 17:25:59 | full | 389066 | 292550 |
+| 17:26:19 | full | 312756 | 265406 |
+| 17:26:42 | full | 299597 | 269342 |
+| 17:27:04 | full | 225140 | 334908 |
+
+Mount probe `20261121-172947-4f6d01e1-a1`: at 200 peers the application
+scene parse/resolve/templates/controls/bindings take 3365/5171/368/673/300 us
+CPU; the frame takes 287/1700/110/573/89 us. Native scene construction is
+small compared with initial host retirement.
+
+Host-phase probe `20261121-173133-0678f994-a1`: at 200 peers cumulative CPU
+is 615801 us after appearance resolution, 632650 us after mounting,
+632720 us after style installation and 632724 us after window sync.
+The dominant initial native phase is appearance resolution. The compiler
+validates all reachable design contexts; cache reuse is being prototyped
+outside this branch. No compiler policy or scene contract was changed.
+
+## Accepted hardening implemented
+
+- `tools/workshop-section-timing.mix:16`: all instrumentation rewrites refuse
+  source drift. Line 30 uses a unique sibling temporary file, so a killed run
+  cannot overwrite the tracked test.
+- `apps/workshop/traffic.mix:38`: a five-second active deadline releases lost
+  batches as dropped, preserves waiting rows and rotates the generation before
+  another batch starts. Traffic Jobs themselves have a four-second timeout
+  (`work.mix:20`). Paused active completions count every admitted row as dropped.
+- `apps/workshop/controller.mix:192`: every native task completion is fenced
+  before retirement. Unproven non-Traffic completion marks are conservative.
+- `apps/workshop/app.mix:43`: simple Bus, viewport, theme, keymap, layout and
+  connection events declare their writes. Complex execution/UI/restore paths
+  remain conservative; the all-event narrowing requested by the brief is open.
+- `apps/workshop/section-test.mix:37`: event steps mark only their writes and
+  assert retained-section reuse. Additional input cases cover connected, busy,
+  jobs, queue, dropped and pause. A source-mutated missing-filter dependency
+  must disagree with the same full oracle.
+- `redaction-budget-test.mix` covers pause during an active batch, live/expired
+  deadlines, queue progress, late completions, nil queues and all-owner fencing.
+
+## Validation and remaining work
+
+| CBC job | Result |
+|---|---|
+| `20261121-172406-9af27c7b-a1` | Hardened timing tool passes, 3.173 s standalone. |
+| `20261121-172631-ebf2365c-a1` | **Red**: my first expiry implementation read a nil queue. Fmt/clippy/app_mix passed; frame and Bus tests exposed the defect. Fixed by `1b42391d`, with a nil-queue regression. The original result is retained. |
+| `20261121-173311-a62ec201-a1` | Corrected checkpoint passes six Bus tests, seven frame tests, real-fixture full-projection oracle and env registry (277 names, zero problems). Section 3.545 s and redaction 0.920 s standalone, below 5 s. |
+
+No new `MIX_*` name. All changed Mix sources lint cleanly. No Rust builds ran
+locally. No full workspace CI, merge, gold shipment or desk probe from this PR.
+Product call/stall deadlines stay at 1 s / 2 s; serial enrolment is unchanged.
+
+Historical desk before values remain 482/340 ms ping/info on `a3b1e286` and
+537/422 ms on `6b4278c7` (one run each). Desk after: **not measured**.
+The required `7ad2570f` gold receipt is absent at the latest check. Do not
+probe a different build or roll the desk back. The startup repair, absolute
+first-1.5-second trace and first-paint measurements, standalone latency bound
+with negative control, final width-eight validation and five quiet desk samples
+remain required before review. After a carrying gold ships, five more quiet desk
+samples and the TODO-workshop before/after update remain required.
+
+---
+
 # PR #216 — round 3 app-test cost
 
 PR: https://github.com/mixviu/mixviu/pull/216, ready as `app/mixviu-agent`.
