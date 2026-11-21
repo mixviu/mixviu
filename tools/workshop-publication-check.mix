@@ -31,12 +31,14 @@ if $mode=="controls" then
       if $case=="scalar" then
         if not $r.ok or contains($r.stdout,"Workshop container rider:") then raise("CONTROL","scalar set must pass rider") end
       elif $case=="container" then
+        if not re_match($r.stdout,"encoded_bytes=[0-9]+ fallback=unknown") then raise("CONTROL","container must print numeric encoded bytes and fallback") end
         for $field in ['Workshop container rider: path=["values"] value_type=map encoded_bytes=',"fallback=unknown","WORKSHOP_PUBLICATION_FAILURE","largest_publication","sections"]
           if $r.ok or not contains($r.stdout,$field) then raise("CONTROL","container missed field: "..$field) end
         end
       else
         $expected="Workshop publication kind: expected=scenes.model.patch actual=scenes.model"
         if $r.ok or not contains($r.stdout,$expected) then raise("CONTROL","kind assertion missed: "..$case) end
+        if $case=="second-full" and (not contains($r.stdout,'"full":2') or not contains($r.stdout,'"refusals":1')) then raise("CONTROL","second full must fail after exactly one permitted recovery") end
       end
     finally write_file($path,$source) end
   end

@@ -17,9 +17,9 @@ const PROFILE_PUBLICATIONS: bool = false;
 const CONTROL_SECOND_FULL: bool = false;
 const MAX_PATCH_APPLY_CPU_US: u64 = 100_000;
 // Fable ruling D: this binary runs alone. Post-startup round-5 standalone
-// max pump was 387,676 us; 800,000 us gives just over 2x margin. Tick models
-// reached 2,398,986 bytes; 4 MiB gives 75% margin. These numeric guards are
-// independent of the unchanged 1 s call and 2 s owner-stall assertions.
+// max pump was 387,676 us; 800,000 us gives just over 2x margin.
+// Pump/apply bounds remain independent of the unchanged 1 s call and
+// 2 s owner-stall assertions. Publication bytes are telemetry under Fable A.
 const MAX_STANDALONE_PUMP_US: u64 = 800_000;
 // Fable A (2026-11-22): bytes are telemetry; protocol kind and container rider guard publications.
 

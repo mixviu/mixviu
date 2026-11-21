@@ -134,6 +134,7 @@ pub struct DeferredAnswer {
 
 #[derive(Debug)]
 pub struct Completion {
+    /// Test-only records from the actual local send command, before decoding.
     #[cfg(feature = "test-support")]
     pub publications: Vec<(String, Json)>,
     #[cfg(feature = "test-support")]
@@ -383,6 +384,8 @@ impl Runtime {
                 let result=if current.as_ref().is_some_and(|(_,_,local,..)|local.prefs_deferred.borrow().is_some() && (reply.is_some() || local.deferred.get())) {Err(RunFailure::Evaluation("request cannot both reply and defer".into()))}else{result};
                 // Failed callbacks never publish a partial model to the UI.
                 if result.is_err() { model = None; model_patch=None; reply=None; }
+                #[cfg(feature = "test-support")]
+                let publications=current.as_ref().map(|(_,_,local,..)|local.publications.borrow_mut().drain(..).collect()).unwrap_or_default();
                 if (sequence == 0 && result.is_err()) || matches!(&result, Err(RunFailure::Deadline)) {
                     if let Some((_, mut old, ..)) = current.take() { old.close_native_events(); }
                 }
@@ -401,7 +404,7 @@ impl Runtime {
                 if result.is_err(){deferred_token=None;deferred_answers.clear();}
                 let completion = Completion {
                     #[cfg(feature = "test-support")]
-                    publications: current.as_ref().map(|(_,_,local,..)|local.publications.borrow_mut().drain(..).collect()).unwrap_or_default(),
+                    publications,
                     #[cfg(feature = "test-support")]
                     command: probe_command,
                     #[cfg(feature = "test-support")]
