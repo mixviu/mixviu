@@ -210,3 +210,45 @@ fn roundtrip_and_oracles() {
 }
 #[test]
 fn negative_inputs() {
+    let audio = Demuxer::new(include_bytes!("fixtures/sine.webm")).unwrap();
+    let v = video();
+    let bytes = mux(&v, 64, 48, &audio);
+    for n in 0..bytes.len() {
+        assert!(
+            Demuxer::new(&bytes[..n]).is_err(),
+            "accepted truncation {n}"
+        );
+    }
+    for n in 0..bytes.len() {
+        let mut b = bytes.clone();
+        b[n] = 0xff;
+        let _ = Demuxer::new(&b);
+    }
+    // Small, structurally valid file with one hostile SimpleBlock.
+    let mut w = Writer::new(
+        Cursor::new(Vec::new()),
+        Video {
+            width: 32,
+            height: 32,
+            codec_private: av1_config(&v[0].data).unwrap(),
+        },
+        None,
+    )
+    .unwrap();
+    w.packet(1, 0, 40, true, &[0x11]).unwrap();
+    let mut b = w.finish().unwrap().into_inner();
+    let at = b
+        .windows(5)
+        .position(|x| x == [0x81, 0, 0, 0x80, 0x11])
+        .unwrap();
+    b[at + 3] |= 2;
+    assert!(matches!(
+        Demuxer::new(&b),
+        Err(media_webm::Error::UnsupportedLacing)
+    ));
+    assert!(matches!(
+        Demuxer::new(&[0; 16]),
+        Err(media_webm::Error::SizeOverflow)
+    ));
+}
+
