@@ -21,6 +21,35 @@ const MAX_PATCH_APPLY_CPU_US: u64 = 100_000;
 const MAX_STANDALONE_PUMP_US: u64 = 800_000;
 const MAX_TICK_MODEL_BYTES: u64 = 768 * 1024;
 
+// Diagnostic only: leave the installed app and every guard unchanged.
+fn publication_probe(bundle: &mut Bundle) {
+    bundle.program.source.insert_str(0, "$byte_probe={start:monotonic(),ticks:0,events:0}\n");
+    bundle.program.source = bundle.program.source.replace("global $publication", "global $publication, $byte_probe");
+    let source = bundle.program.source.clone();
+    for line in source.lines().filter(|line| line.starts_with("on ")) {
+        let increment = if line == "on viu.tick" {
+            "$byte_probe.ticks=$byte_probe.ticks+1;"
+        } else {
+            ""
+        };
+        bundle.program.source = bundle.program.source.replace(
+            &format!("{line}\n"),
+            &format!("{line}\n  {increment}$byte_probe.events=$byte_probe.events+1\n"),
+        );
+    }
+    let needle = "  if $full then send \"viu-local\" \"scenes.model\" body=";
+    let probe = r#"  $op_sizes=[]
+  for $op in $operations push($op_sizes,{op:$op.op,path:$op.path,bytes:byte_length(json_encode($op)),items:len($op.items ?? [])}) end
+  print("WORKSHOP_BUILD "..json_encode({revision:$revision,base:$publication.ack,full:$full,bytes:byte_length(json_encode(if $full then {generation:$ctx.generation,revision:$revision,value:$value} else $body end)),model_bytes:byte_length(json_encode($value)),operations:len($operations),op_sizes:$op_sizes,ticks:$byte_probe.ticks,events:$byte_probe.events,phase:if $s.discovery!=nil then "discovery" else "steady" end,since_start_ms:(monotonic()-$byte_probe.start)*1000}))
+"#;
+    assert!(bundle.program.source.contains(needle));
+    bundle.program.source = bundle.program.source.replace(needle, &format!("{probe}{needle}"));
+    bundle.program.source = bundle.program.source.replace(
+        "    $publication.ack=$a.revision;",
+        "    $byte_probe.ticks=0;$byte_probe.events=0\n    $publication.ack=$a.revision;",
+    );
+}
+
 fn profile_tick(bundle: &mut Bundle) {
     for (needle, replacement) in [
         (
@@ -583,6 +612,7 @@ on viu.test.retained_model
 end
 "#);
         }
+        publication_probe(&mut bundle);
         let _profile_module = PROFILE_INFO_HELPERS.then(|| profile_info_helpers(&mut bundle));
         if PROFILE_TICK {
             profile_tick(&mut bundle);

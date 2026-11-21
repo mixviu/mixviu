@@ -1,0 +1,12 @@
+-- Twenty independent standalone samples; failures are recorded, never retried.
+$failed=0
+for $sample=1 to 20
+  print("WORKSHOP_SAMPLE_BEGIN "..$sample)
+  $result=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--exact","--nocapture"])
+  print($result.stdout)
+  print($result.stderr)
+  print("WORKSHOP_SAMPLE_END "..$sample.." rc="..$result.exit_code)
+  if not $result.ok then $failed=$failed+1 end
+end
+print("WORKSHOP_SAMPLE_FAILURES "..$failed.."/20")
+if $failed>0 then exit(1) end
