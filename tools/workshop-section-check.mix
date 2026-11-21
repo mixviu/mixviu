@@ -132,7 +132,9 @@ elif $mode=="queue-negative" or $mode=="input-negative" or $mode=="job-negative"
   end
 elif $mode=="validate" then
   checked(["cargo","fmt","-p","lib-viu","--","--check"])
-  for $feature in [[],["--features","test-support"]]
+  $configuration=$2 ?? "both"
+  $configurations=if $configuration=="default" then [[]] elif $configuration=="support" then [["--features","test-support"]] else [[],["--features","test-support"]] end
+  for $feature in $configurations
     checked(concat(["cargo","clippy","-p","lib-viu","--all-targets","--no-deps"],$feature))
     checked(concat(["cargo","test","-p","lib-viu","--all-targets","--no-fail-fast"],$feature))
     checked(concat(["cargo","test","-p","lib-viu","--doc"],$feature))
