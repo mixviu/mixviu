@@ -189,6 +189,7 @@ end
 fn received($s,$d)
   $task=$s.jobs[$d.tag.id]
   if $task==nil then return $s end
+  if $d.tag.owner!=$task.generation then return $s end
   -- Check the returned native tag before deleting a task: a reset can reuse an
   -- id while an old completion is still queued, so current task metadata alone
   -- cannot establish which generation produced the result.
@@ -197,10 +198,9 @@ fn received($s,$d)
   if $task.owner=="traffic" then return $projection.changed($traffic.completed($s,$d,$d.tag.owner),["traffic"]) end
   -- Mark semantic owners at mutation time, including admission failures handled
   -- by follow_up. No large projection input is compared in the publisher.
-  if $task.owner=="mesh" then $s=$projection.changed($s,["macro_pending"])
-  elif $task.owner=="activation" then $s=$projection.changed($s,["activations"])
-  elif $task.owner=="call" then $s=$projection.changed($s,["call","traffic"])
-  else $s=$projection.changed($s,keys($s)) end
+  -- These owners can follow up into other owners; retain conservative marks
+  -- until the complete mutation closure is pinned by the projection oracle.
+  $s=$projection.changed($s,keys($s))
   if $task.owner=="discovery" then
     $before=$s.discovery!=nil;$s=$discovery.received($s,$task,$d)
     if $before and $s.discovery==nil and $s.snapshot.error==nil then $s=$agents.discovered($s);$s=$macros.enqueue($s,"catalogues",{},nil) end
@@ -271,6 +271,8 @@ end
 fn follow_up($s)
   $failures=$s.admission_failures;$s.admission_failures=[]
   for $failure in $failures $s=received($s,$failure) end
+  $active=$s.traffic_redaction.active;$s=$traffic.expire($s)
+  if $active!=nil and $s.traffic_redaction.active==nil then $s=$projection.changed($s,["traffic"]) end
   $s=$traffic.launch($s)
   $before=$s.discovery_revision
   $s=$discovery.expire($s)

@@ -41,6 +41,23 @@ try
   check(deep_eq($t.launch($paused),$paused),"pause must not launch redaction")
   $paused.traffic_paused=false;$paused.quitting=true
   check(deep_eq($t.launch($paused),$paused),"quit must not launch redaction")
+  $work=take_task($budget.defer_row($m.initial(),{seq:1},false));$work.state.traffic_paused=true
+  $paused=finish($work)
+  check($paused.dropped==1 and len($paused.traffic)==0 and $paused.traffic_redaction.bytes==0,"paused active completion must count every admitted row")
+  $work=take_task($budget.defer_row($m.initial(),{seq:1},false))
+  check(deep_eq($t.expire($work.state),$work.state),"live batch must not expire early")
+  $lost=$work.state;$lost.traffic_redaction.active.deadline=0;$lost.jobs.lost=$work.task
+  $lost=$budget.defer_row($lost,{seq:2},false);$lost=$t.expire($lost)
+  check($lost.dropped==1 and $lost.traffic_redaction.active==nil and len($lost.jobs)==0 and len($lost.traffic_redaction.waiting)==1,"lost completion must release batch and preserve waiting rows")
+  $next=take_task($lost)
+  $late=$t.completed($next.state,{rc:0,body:{rows:[{seq:1}]}},$work.task.generation)
+  check(deep_eq($late,$next.state),"expired completion must not consume the next batch")
+  $lost=finish($next)
+  check(len($lost.traffic)==1 and $lost.traffic[0].seq==2 and $lost.traffic_redaction.bytes==0,"waiting row must progress after expiry")
+  for $owner in ["mesh","activation","call","discovery"]
+    $fenced=$m.initial();$fenced.jobs.example={owner:$owner,generation:"current"}
+    check(deep_eq($controller.received($fenced,{tag:{id:"example",owner:"stale"}}),$fenced),"every owner must reject stale task generations")
+  end
   $bounded=$m.initial()
   for $i=1 to 64 $bounded=$budget.defer_row($bounded,{seq:$i,dropped_count:1},true) end
   $work=take_task($bounded);$bounded=$work.state
