@@ -88,7 +88,10 @@ impl std::error::Error for Error {
 impl Error {
     /// The original error category, independent of source attribution.
     pub fn kind(&self) -> &Self {
-        match self { Self::Validation { error, .. } => error.kind(), _ => self }
+        match self {
+            Self::Validation { error, .. } => error.kind(),
+            _ => self,
+        }
     }
     pub fn source_digest(&self) -> Option<&str> {
         match self {
@@ -97,7 +100,10 @@ impl Error {
         }
     }
     fn at_source(self, source: &str) -> Self {
-        Self::Validation { digest: design::source_digest(source), error: Box::new(self) }
+        Self::Validation {
+            digest: design::source_digest(source),
+            error: Box::new(self),
+        }
     }
 }
 
@@ -218,7 +224,8 @@ impl Theme {
     /// failure here is a broken build, not a runtime condition.
     pub fn for_context(context: DesignContext) -> Self {
         let document = embedded_document();
-        let mut theme = Self::compile(&document, context).expect("the embedded default design compiles");
+        let mut theme =
+            Self::compile(&document, context).expect("the embedded default design compiles");
         theme.source_digest = design::source_digest(design::EMBEDDED_DEFAULT_SOURCE);
         theme
     }
@@ -230,10 +237,12 @@ impl Theme {
     /// `caption_side:`, resolved against the embedded design. `identity`
     /// names the source in diagnostics.
     pub fn from_source(identity: &str, source: &str) -> Result<Self, Error> {
-        Self::from_source_inner(identity, source).map(|mut theme| {
-            theme.source_digest = design::source_digest(source);
-            theme
-        }).map_err(|error| error.at_source(source))
+        Self::from_source_inner(identity, source)
+            .map(|mut theme| {
+                theme.source_digest = design::source_digest(source);
+                theme
+            })
+            .map_err(|error| error.at_source(source))
     }
 
     fn from_source_inner(identity: &str, source: &str) -> Result<Self, Error> {
@@ -297,13 +306,19 @@ impl Theme {
         source: &str,
         context: DesignContext,
     ) -> Result<Self, Error> {
-        Self::from_source_in_inner(identity, source, context).map(|mut theme| {
-            theme.source_digest = design::source_digest(source);
-            theme
-        }).map_err(|error| error.at_source(source))
+        Self::from_source_in_inner(identity, source, context)
+            .map(|mut theme| {
+                theme.source_digest = design::source_digest(source);
+                theme
+            })
+            .map_err(|error| error.at_source(source))
     }
 
-    fn from_source_in_inner(identity: &str, source: &str, context: DesignContext) -> Result<Self, Error> {
+    fn from_source_in_inner(
+        identity: &str,
+        source: &str,
+        context: DesignContext,
+    ) -> Result<Self, Error> {
         let document = match design::parse_design_source(SourceIdentity::new(identity), source) {
             Ok(document) => document,
             Err(error) => {
@@ -441,7 +456,8 @@ impl Theme {
                     Self::from_source_in(&path.display().to_string(), &source, context)?
                 } else {
                     Self::compile(&self.document, context).map_err(|error| Error::Validation {
-                        digest: self.source_digest.clone(), error: Box::new(error),
+                        digest: self.source_digest.clone(),
+                        error: Box::new(error),
                     })?
                 };
                 if self.source_path.is_none() {
@@ -976,7 +992,9 @@ mod tests {
         let bad = Theme::from_source("test", "style: \"neon\"\n").unwrap_err();
         assert_eq!(bad.to_string(), "unknown style \"neon\"");
         assert!(matches!(
-            Theme::from_source("test", "decorations: \"both\"\n").unwrap_err().kind(),
+            Theme::from_source("test", "decorations: \"both\"\n")
+                .unwrap_err()
+                .kind(),
             Error::Selection {
                 field: "decorations",
                 ..
@@ -1022,7 +1040,9 @@ mod tests {
             );
         }
         assert!(matches!(
-            Theme::from_source("test", &full("style: 4\n")).unwrap_err().kind(),
+            Theme::from_source("test", &full("style: 4\n"))
+                .unwrap_err()
+                .kind(),
             Error::Source(_)
         ));
     }

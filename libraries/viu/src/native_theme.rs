@@ -9,19 +9,32 @@ pub(crate) enum Failure {
 }
 impl Failure {
     pub fn code(&self) -> &'static str {
-        match self { Self::Design { .. } => "DESIGN_VALIDATION", Self::Argument(_) => "ARGUMENT", Self::Adapter(_) => "APPEARANCE" }
+        match self {
+            Self::Design { .. } => "DESIGN_VALIDATION",
+            Self::Argument(_) => "ARGUMENT",
+            Self::Adapter(_) => "APPEARANCE",
+        }
     }
 }
 impl From<toolkit::theme::Error> for Failure {
     fn from(error: toolkit::theme::Error) -> Self {
         if let Some(digest) = error.source_digest() {
-            Self::Design { digest: digest.into(), message: error.to_string() }
-        } else { Self::Adapter(error.to_string()) }
+            Self::Design {
+                digest: digest.into(),
+                message: error.to_string(),
+            }
+        } else {
+            Self::Adapter(error.to_string())
+        }
     }
 }
 impl std::fmt::Display for Failure {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self { Self::Argument(message) | Self::Adapter(message) | Self::Design { message, .. } => message.fmt(f) }
+        match self {
+            Self::Argument(message) | Self::Adapter(message) | Self::Design { message, .. } => {
+                message.fmt(f)
+            }
+        }
     }
 }
 pub fn choice(value: &Value) -> Result<toolkit::theme_menu::Choice, String> {

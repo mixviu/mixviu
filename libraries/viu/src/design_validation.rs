@@ -2,7 +2,11 @@
 //! Host-owned, report-only design validation. No Mix evaluator runs here.
 use design::{DesignContext, DesignSourceDocument};
 use serde_json::{Value, json};
-use std::{collections::{BTreeMap, BTreeSet}, path::PathBuf, sync::{Arc, mpsc}};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    path::PathBuf,
+    sync::{Arc, mpsc},
+};
 
 type Observation = (String, Option<PathBuf>);
 type Task = (Observation, Arc<DesignSourceDocument>, DesignContext);
@@ -48,34 +52,59 @@ fn scan(path: &std::path::Path, previous: &mut Option<String>, solicited: bool) 
             let digest = design::source_digest(&source);
             if previous.as_ref() == Some(&digest) {
                 // Ack only: no new validation result to erase a prior failure.
-                return solicited.then(|| Report { solicited, digest: String::new(), retired: None, error: None });
+                return solicited.then(|| Report {
+                    solicited,
+                    digest: String::new(),
+                    retired: None,
+                    error: None,
+                });
             }
             let error = toolkit::Theme::from_source("design-report", &source)
                 .map_err(|e| e.to_string())
-                .and_then(|theme| check(&theme.source_document(), theme.context().clone()).map_or(Ok(()), Err))
+                .and_then(|theme| {
+                    check(&theme.source_document(), theme.context().clone()).map_or(Ok(()), Err)
+                })
                 .err();
             (digest, error)
         }
         // Removing the file restores the embedded theme, just like Theme::read.
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound =>
-            (design::source_digest(design::EMBEDDED_DEFAULT_SOURCE), None),
-        Err(error) => (design::source_digest(&format!("{}:{error}", path.display())), Some(error.to_string())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            (design::source_digest(design::EMBEDDED_DEFAULT_SOURCE), None)
+        }
+        Err(error) => (
+            design::source_digest(&format!("{}:{error}", path.display())),
+            Some(error.to_string()),
+        ),
     };
-    if previous.as_ref() == Some(&digest) && !solicited { return None; }
-    let retired = previous.replace(digest.clone()).filter(|old| old != &digest);
-    Some(Report { solicited, digest, retired, error })
+    if previous.as_ref() == Some(&digest) && !solicited {
+        return None;
+    }
+    let retired = previous
+        .replace(digest.clone())
+        .filter(|old| old != &digest);
+    Some(Report {
+        solicited,
+        digest,
+        retired,
+        error,
+    })
 }
 
 impl Validation {
     pub fn observe(&mut self, theme: &toolkit::Theme) {
         if let Some(error) = theme.load_error() {
-            self.refused(theme.load_source_digest().unwrap_or("unreadable-source"), error);
+            self.refused(
+                theme.load_source_digest().unwrap_or("unreadable-source"),
+                error,
+            );
         }
         let path = theme.source_path().map(std::path::Path::to_owned);
         let changed_path = path != self.current_path;
         self.current_path = path.clone();
         let key = (theme.source_digest().to_owned(), path);
-        if !changed_path && self.seen.contains(&key) { return; }
+        if !changed_path && self.seen.contains(&key) {
+            return;
+        }
         if self.seen.len() >= SEEN_LIMIT && !self.seen.contains(&key) {
             self.seen.pop_first();
             self.evicted += 1;
@@ -87,44 +116,67 @@ impl Validation {
             self.skipped += 1;
             tracing::warn!("design report queue full; retired source counted in info");
         }
-        self.pending.push((key, theme.source_document(), theme.context().clone()));
+        self.pending
+            .push((key, theme.source_document(), theme.context().clone()));
     }
 
     /// Called only after a ready frame. The worker may block on its bounded
     /// reply queue; the rendering thread only ever uses try_send/try_recv.
     pub fn after_frame(&mut self) {
-        if self.worker_error.is_some() { return; }
+        if self.worker_error.is_some() {
+            return;
+        }
         if self.sender.is_none() {
             let (tx, tasks) = mpsc::sync_channel::<Task>(4);
             let (answers, rx) = mpsc::sync_channel(8);
-            let worker = std::thread::Builder::new().name("design-report".into()).spawn(move || {
-                let mut file: Option<(PathBuf, Option<String>)> = None;
-                loop {
-                    let report = match tasks.recv_timeout(std::time::Duration::from_millis(500)) {
-                        Ok(((digest, path), document, context)) => {
-                            if let Some(path) = path {
-                                let retired = if file.as_ref().map(|f| &f.0) != Some(&path) {
+            let worker = std::thread::Builder::new()
+                .name("design-report".into())
+                .spawn(move || {
+                    let mut file: Option<(PathBuf, Option<String>)> = None;
+                    loop {
+                        let report = match tasks.recv_timeout(std::time::Duration::from_millis(500))
+                        {
+                            Ok(((digest, path), document, context)) => {
+                                if let Some(path) = path {
+                                    let retired = if file.as_ref().map(|f| &f.0) != Some(&path) {
+                                        let retired = file.take().and_then(|f| f.1);
+                                        file = Some((path, None));
+                                        retired
+                                    } else {
+                                        None
+                                    };
+                                    let (path, previous) = file.as_mut().unwrap();
+                                    // Every received task acknowledges exactly once, even
+                                    // if a prior spontaneous scan already saw these bytes.
+                                    let mut report = scan(path, previous, true);
+                                    if let Some(report) = &mut report
+                                        && retired.is_some()
+                                    {
+                                        report.retired = retired;
+                                    }
+                                    report
+                                } else {
                                     let retired = file.take().and_then(|f| f.1);
-                                    file = Some((path, None));
-                                    retired
-                                } else { None };
-                                let (path, previous) = file.as_mut().unwrap();
-                                // Every received task acknowledges exactly once, even
-                                // if a prior spontaneous scan already saw these bytes.
-                                let mut report = scan(path, previous, true);
-                                if let Some(report) = &mut report && retired.is_some() { report.retired = retired; }
-                                report
-                            } else {
-                                let retired = file.take().and_then(|f| f.1);
-                                Some(Report { solicited: true, digest, retired, error: check(&document, context) })
+                                    Some(Report {
+                                        solicited: true,
+                                        digest,
+                                        retired,
+                                        error: check(&document, context),
+                                    })
+                                }
                             }
+                            Err(mpsc::RecvTimeoutError::Timeout) => file
+                                .as_mut()
+                                .and_then(|(path, previous)| scan(path, previous, false)),
+                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        };
+                        if let Some(report) = report
+                            && answers.send(report).is_err()
+                        {
+                            break;
                         }
-                        Err(mpsc::RecvTimeoutError::Timeout) => file.as_mut().and_then(|(path, previous)| scan(path, previous, false)),
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                    };
-                    if let Some(report) = report && answers.send(report).is_err() { break; }
-                }
-            });
+                    }
+                });
             if let Err(error) = worker {
                 self.worker_error = Some(error.to_string());
                 self.skipped += self.pending.len();
@@ -152,11 +204,17 @@ impl Validation {
 
     pub fn poll(&mut self) {
         loop {
-            let Some(receiver) = &self.receiver else { break; };
+            let Some(receiver) = &self.receiver else {
+                break;
+            };
             match receiver.try_recv() {
                 Ok(report) => {
-                    if report.solicited { self.outstanding = self.outstanding.saturating_sub(1); }
-                    if let Some(retired) = report.retired { self.clear_error(&retired); }
+                    if report.solicited {
+                        self.outstanding = self.outstanding.saturating_sub(1);
+                    }
+                    if let Some(retired) = report.retired {
+                        self.clear_error(&retired);
+                    }
                     if let Some(error) = report.error {
                         tracing::warn!(source_digest=%report.digest, %error, "design background report");
                         self.record(report.digest, error);
@@ -165,13 +223,18 @@ impl Validation {
                     }
                 }
                 Err(mpsc::TryRecvError::Empty) => break,
-                Err(mpsc::TryRecvError::Disconnected) => { self.disconnected(); break; }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.disconnected();
+                    break;
+                }
             }
         }
     }
 
     fn clear_error(&mut self, digest: &str) {
-        if let Some(error) = self.errors.remove(digest) && self.notice == error {
+        if let Some(error) = self.errors.remove(digest)
+            && self.notice == error
+        {
             self.notice.clear();
         }
     }
@@ -184,7 +247,9 @@ impl Validation {
         self.errors.insert(digest, error);
     }
     pub fn refused(&mut self, digest: &str, error: &str) {
-        if self.notice != error { tracing::warn!(source_digest=digest, error, "design context refused"); }
+        if self.notice != error {
+            tracing::warn!(source_digest = digest, error, "design context refused");
+        }
         self.notice = error.into();
         self.record(digest.into(), error.into());
     }
@@ -197,11 +262,19 @@ pub(crate) fn observe(ctx: &egui::Context, theme: &toolkit::Theme) {
     ctx.data_mut(|data| {
         // Installation order matters: the last installation is the current
         // source, including a change from a file back to embedded defaults.
-        data.insert_temp(egui::Id::unique("viu-design-report-input"), Some(theme.clone()));
+        data.insert_temp(
+            egui::Id::unique("viu-design-report-input"),
+            Some(theme.clone()),
+        );
     });
 }
 pub(crate) fn drain(ctx: &egui::Context, validation: &mut Validation) {
-    if let Some(theme) = ctx.data_mut(|data| data.remove_temp::<Option<toolkit::Theme>>(egui::Id::unique("viu-design-report-input"))).flatten() {
+    if let Some(theme) = ctx
+        .data_mut(|data| {
+            data.remove_temp::<Option<toolkit::Theme>>(egui::Id::unique("viu-design-report-input"))
+        })
+        .flatten()
+    {
         validation.observe(&theme);
     }
 }
@@ -214,7 +287,9 @@ mod tests {
         loop {
             validation.after_frame();
             validation.poll();
-            if validation.info()["pending"] == 0 { return; }
+            if validation.info()["pending"] == 0 {
+                return;
+            }
             assert!(std::time::Instant::now() < until, "{}", validation.info());
             std::thread::sleep(std::time::Duration::from_millis(2));
         }
@@ -241,11 +316,18 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         assert!(v.errors.contains_key(&design::source_digest("broken")));
-        assert_eq!(v.info()["pending"], 0, "spontaneous report has no task credit");
+        assert_eq!(
+            v.info()["pending"],
+            0,
+            "spontaneous report has no task credit"
+        );
         // Re-observe bytes already polled: task still gets exactly one ack.
         v.observe(&toolkit::Theme::load_from(&path));
         settle(&mut v);
-        assert!(v.errors.contains_key(&design::source_digest("broken")), "ack must not clear an unvalidated error");
+        assert!(
+            v.errors.contains_key(&design::source_digest("broken")),
+            "ack must not clear an unvalidated error"
+        );
         std::fs::write(&path, source).unwrap();
         let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
         while !v.errors.is_empty() {
@@ -256,7 +338,10 @@ mod tests {
         std::fs::remove_file(&path).unwrap();
         std::thread::sleep(std::time::Duration::from_millis(550));
         v.poll();
-        assert!(v.errors.is_empty(), "missing theme means embedded, not a design error");
+        assert!(
+            v.errors.is_empty(),
+            "missing theme means embedded, not a design error"
+        );
         // Another path replaces the registration rather than extending a map.
         std::fs::write(&other, source).unwrap();
         v.observe(&toolkit::Theme::read(&other).unwrap().unwrap());
@@ -277,13 +362,31 @@ mod tests {
     #[test]
     fn accounting_distinguishes_unsolicited_ack_and_disconnect() {
         let (answers, rx) = mpsc::sync_channel(8);
-        let mut v = Validation { receiver: Some(rx), outstanding: 2, ..Default::default() };
+        let mut v = Validation {
+            receiver: Some(rx),
+            outstanding: 2,
+            ..Default::default()
+        };
         v.refused("repaired", "bad");
-        answers.send(Report { solicited: false, digest: "repaired".into(), retired: None, error: None }).unwrap();
+        answers
+            .send(Report {
+                solicited: false,
+                digest: "repaired".into(),
+                retired: None,
+                error: None,
+            })
+            .unwrap();
         v.poll();
         assert!(v.errors.is_empty());
         assert_eq!(v.outstanding, 2);
-        answers.send(Report { solicited: true, digest: String::new(), retired: None, error: None }).unwrap();
+        answers
+            .send(Report {
+                solicited: true,
+                digest: String::new(),
+                retired: None,
+                error: None,
+            })
+            .unwrap();
         v.poll();
         assert_eq!(v.outstanding, 1);
         drop(answers);
@@ -312,7 +415,9 @@ mod tests {
         }
         assert!(v.evicted > 0);
         assert!(v.seen.len() <= SEEN_LIMIT);
-        for i in 0..80 { v.refused(&format!("bad-{i}"), "failure"); }
+        for i in 0..80 {
+            v.refused(&format!("bad-{i}"), "failure");
+        }
         assert_eq!(v.errors.len(), ERROR_LIMIT);
     }
 }

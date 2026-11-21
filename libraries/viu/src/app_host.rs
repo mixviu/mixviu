@@ -421,20 +421,31 @@ impl Host {
     }
     fn surface_theme_failure(&mut self, failure: &crate::native_theme::Failure) {
         match failure {
-            crate::native_theme::Failure::Design { digest, message } => self.design_validation.refused(digest, message),
+            crate::native_theme::Failure::Design { digest, message } => {
+                self.design_validation.refused(digest, message)
+            }
             crate::native_theme::Failure::Adapter(message) => self.error = message.clone(),
-            crate::native_theme::Failure::Argument(_) => {},
+            crate::native_theme::Failure::Argument(_) => {}
         }
     }
-    fn checked_theme_choice(&mut self, choice: &toolkit::theme::Choice) -> Result<toolkit::Theme, crate::native_theme::Failure> {
+    fn checked_theme_choice(
+        &mut self,
+        choice: &toolkit::theme::Choice,
+    ) -> Result<toolkit::Theme, crate::native_theme::Failure> {
         use crate::native_theme::Failure;
-        let result = self.theme_base().map_err(Failure::Adapter)
+        let result = self
+            .theme_base()
+            .map_err(Failure::Adapter)
             .and_then(|base| base.with_choice(choice).map_err(Failure::from));
-        if let Err(error) = &result { self.surface_theme_failure(error); }
+        if let Err(error) = &result {
+            self.surface_theme_failure(error);
+        }
         result
     }
     fn dismiss_design_notice(&mut self) {
-        if self.error == self.design_validation.notice { self.error.clear(); }
+        if self.error == self.design_validation.notice {
+            self.error.clear();
+        }
         self.design_validation.notice.clear();
     }
     fn dispatch(
@@ -1349,11 +1360,16 @@ impl Host {
                                     } else {
                                         &model["theme_choice"]
                                     };
-                                    self.checked_theme_choice(&crate::native_theme::choice(choice)?)
-                                        .map_err(|error| {
-                                            refused_design = matches!(error, crate::native_theme::Failure::Design { .. });
-                                            error.to_string()
-                                        })?;
+                                    self.checked_theme_choice(&crate::native_theme::choice(
+                                        choice,
+                                    )?)
+                                    .map_err(|error| {
+                                        refused_design = matches!(
+                                            error,
+                                            crate::native_theme::Failure::Design { .. }
+                                        );
+                                        error.to_string()
+                                    })?;
                                 }
                                 validate_overlays(&projected)?;
                                 if model["native_root"].is_object() {
@@ -1802,11 +1818,11 @@ impl Host {
                                 );
                             }
                         }
-                        Err(error) => {
-                            match &error {
-                                crate::native_theme::Failure::Design { digest, message } => self.design_validation.refused(digest, message),
-                                _ => self.error = error.to_string(),
+                        Err(error) => match &error {
+                            crate::native_theme::Failure::Design { digest, message } => {
+                                self.design_validation.refused(digest, message)
                             }
+                            _ => self.error = error.to_string(),
                         },
                     }
                 }

@@ -9,18 +9,30 @@ fn design_refusals_are_typed_and_dismissal_clears_only_the_duplicate() {
     assert_eq!(host.design_validation.info()["errors"], json!({}));
     assert!(host.design_validation.notice.is_empty());
     host.surface_theme_failure(&Failure::Adapter("session decode failed".into()));
-    assert_eq!(host.error, "session decode failed", "pre-use base failure must be surfaced");
+    assert_eq!(
+        host.error, "session decode failed",
+        "pre-use base failure must be surfaced"
+    );
     assert_eq!(host.design_validation.info()["errors"], json!({}));
     let digest = design::source_digest("failed source");
-    let refusal = Failure::Design { digest: digest.clone(), message: "compile failed".into() };
+    let refusal = Failure::Design {
+        digest: digest.clone(),
+        message: "compile failed".into(),
+    };
     assert_eq!(refusal.code(), "DESIGN_VALIDATION");
     host.surface_theme_failure(&refusal);
-    assert_eq!(host.design_validation.info()["errors"][&digest], "compile failed");
+    assert_eq!(
+        host.design_validation.info()["errors"][&digest],
+        "compile failed"
+    );
     host.error = host.design_validation.notice.clone();
     host.dismiss_design_notice();
     assert!(host.error.is_empty());
     assert!(host.design_validation.notice.is_empty());
-    assert_eq!(host.design_validation.info()["errors"][&digest], "compile failed");
+    assert_eq!(
+        host.design_validation.info()["errors"][&digest],
+        "compile failed"
+    );
     host.surface_theme_failure(&refusal);
     host.error = "unrelated error".into();
     host.dismiss_design_notice();

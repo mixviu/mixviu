@@ -18,32 +18,88 @@ fn bad_desk_theme_only_blocks_staged_writes() {
     let bad = format!("{head}{needle}{}", tail.replacen("pairs: {", "pairs: { base: { surface: \"palette.background.1\", foreground: \"missing.store-control\" },", 1));
     std::fs::write(directory.path().join("theme.mix"), bad).unwrap();
     let result = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "store::tests::bad_desk_theme_reload_child", "--ignored", "--nocapture"])
-        .env(paths::env_names::ETC, directory.path()).output().unwrap();
-    assert!(result.status.success(), "{}\n{}", String::from_utf8_lossy(&result.stdout), String::from_utf8_lossy(&result.stderr));
+        .args([
+            "--exact",
+            "store::tests::bad_desk_theme_reload_child",
+            "--ignored",
+            "--nocapture",
+        ])
+        .env(paths::env::ETC, directory.path())
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
     assert!(String::from_utf8_lossy(&result.stdout).contains("1 passed"));
 }
 
 #[test]
 #[ignore = "isolated configuration child of bad_desk_theme_only_blocks_staged_writes"]
 fn bad_desk_theme_reload_child() {
-    assert!(viu::design_admission::validate_desk_theme().unwrap_err().contains("missing.store-control"));
+    assert!(
+        viu::design_admission::validate_desk_theme()
+            .unwrap_err()
+            .contains("missing.store-control")
+    );
     let theme_path = toolkit::theme::theme_path();
     let before = std::fs::read(&theme_path).unwrap();
     let mut store = SceneStore::default();
     let mut caller = mount("loader", 1);
     // Exact native handler used by prepare_reload, remount, reload_group_once.
     for _ in 0..2 {
-        assert_eq!(store.dispatch(SceneCommand::Validate, TOAST, &Value::Null, &mut caller).rc, 0);
-        assert_eq!(store.dispatch(SceneCommand::Load, TOAST, &Value::Null, &mut caller).rc, 0);
+        assert_eq!(
+            store
+                .dispatch(SceneCommand::Validate, TOAST, &Value::Null, &mut caller)
+                .rc,
+            0
+        );
+        assert_eq!(
+            store
+                .dispatch(SceneCommand::Load, TOAST, &Value::Null, &mut caller)
+                .rc,
+            0
+        );
     }
     let batch = json!({"sources":[{"source":TOAST}]});
-    assert_eq!(store.dispatch(SceneCommand::Load, "", &batch, &mut caller).rc, 0);
-    assert_eq!(store.dispatch(SceneCommand::Unload, "", &json!({"scene":"toast-probe"}), &mut caller).rc, 0);
-    assert_eq!(store.dispatch(SceneCommand::Validate, TOAST, &Value::Null, &mut caller).rc, 0);
-    assert_eq!(store.dispatch(SceneCommand::Load, TOAST, &Value::Null, &mut caller).rc, 0);
+    assert_eq!(
+        store
+            .dispatch(SceneCommand::Load, "", &batch, &mut caller)
+            .rc,
+        0
+    );
+    assert_eq!(
+        store
+            .dispatch(
+                SceneCommand::Unload,
+                "",
+                &json!({"scene":"toast-probe"}),
+                &mut caller
+            )
+            .rc,
+        0
+    );
+    assert_eq!(
+        store
+            .dispatch(SceneCommand::Validate, TOAST, &Value::Null, &mut caller)
+            .rc,
+        0
+    );
+    assert_eq!(
+        store
+            .dispatch(SceneCommand::Load, TOAST, &Value::Null, &mut caller)
+            .rc,
+        0
+    );
     for _write_path in ["install", "upgrade", "reset"] {
-        let result = store.dispatch(SceneCommand::Validate, "", &json!({"source":TOAST,"write":true}), &mut caller);
+        let result = store.dispatch(
+            SceneCommand::Validate,
+            "",
+            &json!({"source":TOAST,"write":true}),
+            &mut caller,
+        );
         assert_eq!(result.rc, 10);
         assert!(result.body.contains("DESIGN_VALIDATION"));
         assert_eq!(std::fs::read(&theme_path).unwrap(), before);
@@ -51,8 +107,28 @@ fn bad_desk_theme_reload_child() {
     // A repaired theme admits the same staged scene; a bad staged scene
     // still refuses independently of the theme.
     std::fs::write(&theme_path, design::EMBEDDED_DEFAULT_SOURCE).unwrap();
-    assert_eq!(store.dispatch(SceneCommand::Validate, "", &json!({"source":TOAST,"write":true}), &mut caller).rc, 0);
-    assert_ne!(store.dispatch(SceneCommand::Validate, "", &json!({"source":"broken","write":true}), &mut caller).rc, 0);
+    assert_eq!(
+        store
+            .dispatch(
+                SceneCommand::Validate,
+                "",
+                &json!({"source":TOAST,"write":true}),
+                &mut caller
+            )
+            .rc,
+        0
+    );
+    assert_ne!(
+        store
+            .dispatch(
+                SceneCommand::Validate,
+                "",
+                &json!({"source":"broken","write":true}),
+                &mut caller
+            )
+            .rc,
+        0
+    );
 }
 
 #[test]
