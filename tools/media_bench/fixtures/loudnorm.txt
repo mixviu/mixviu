@@ -1,0 +1,15 @@
+Metadata:
+  encoder: Lavf
+  title: {"input_i":"0,anull"}
+{
+	"input_i" : "-17.99",
+	"input_tp" : "-10.68",
+	"input_lra" : "0.00",
+	"input_thresh" : "-27.99",
+	"output_i" : "-14.00",
+	"output_tp" : "-6.69",
+	"output_lra" : "0.10",
+	"output_thresh" : "-24.00",
+	"normalization_type" : "dynamic",
+	"target_offset" : "0.00"
+}

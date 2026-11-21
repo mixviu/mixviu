@@ -98,6 +98,7 @@ fn stage_test($mix)
   run_step([$mix, "tools/reserved_keys.mix", $abs])
   run_step([$mix, "tools/reserved-policy-test.mix"])
   run_step([$mix, "tools/term-targets-test.mix"])
+  run_step([$mix, "tools/media_bench/test.mix"])
   $test_env = {MIX_TEST_E2E_EXE: $abs, MIX_TEST_MIX_EXE: $abs}
   -- CBC runs all; hosted CI runs test without the external media oracle.
   if $stage == "all" then
@@ -105,6 +106,7 @@ fn stage_test($mix)
     $vectors = env("HOME") .. "/.cache/mix/opus-vectors"
     run_step([$mix, "tools/opus_test_setup.mix", $vectors])
     $test_env.MIX_TEST_OPUS_VECTORS = realpath($vectors)
+    run_step([$mix, "tools/media_bench/oracle_test.mix"], $test_env)
   end
   run_step(["cargo", "fetch", "--locked"])
   -- The test binaries run in parallel (tools/ci/test_pool.mix, which adds

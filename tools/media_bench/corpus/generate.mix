@@ -1,0 +1,23 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$core = require("../core.mix")
+$spec = require("spec.mix")
+$o = $core.options(args())
+if $o.corpus == nil then raise("ARGS","--corpus DIR required") end
+$o.corpus=$core.absolute_path($o.corpus,trim(run_argv_must(["pwd"])))
+mkdir($o.corpus)
+$entries = []
+for $g in $spec.generators()
+  $hashes = []
+  for $n in [1,2]
+    $path = $o.corpus.."/"..to_string($n).."-"..$g.file
+    $argv = concat(["ffmpeg","-nostdin","-y","-hide_banner"],concat($g.args,[$path]))
+    $timing = $core.timed($argv,$o.corpus.."/generate-"..$g.id.."-"..to_string($n),$o.budget)
+    push($hashes,split(run_argv_must(["sha256sum","--",$path])," ")[0])
+  end
+  if $hashes[0] != $hashes[1] then raise("CORPUS","byte stability failed for "..$g.id.."; retain both files for decoded-frame investigation") end
+  run_argv_must(["mv","--",$o.corpus.."/1-"..$g.file,$o.corpus.."/"..$g.file])
+  run_argv_must(["rm","--",$o.corpus.."/2-"..$g.file])
+  push($entries,{id:$g.id,file:$g.file,generator:concat(["ffmpeg","-nostdin","-y","-hide_banner"],concat($g.args,["{corpus}/"..$g.file])),duration:$g.duration,format:$g.format,description:$g.description,sha256:$hashes[0],checksum:"file sha256; two independently generated files identical"})
+  print($g.id.." "..$hashes[0])
+end
+write_file($o.corpus.."/generated.json",json_encode({items:$entries}).."\n")
