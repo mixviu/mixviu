@@ -16,6 +16,7 @@ use viu::{
     runtime::{Completion, Program, Runtime, from_json, to_json},
 };
 
+#[track_caller]
 fn done(runtime: &Runtime, rx: &mpsc::Receiver<()>) -> Completion {
     rx.recv_timeout(Duration::from_secs(10)).unwrap();
     let result = runtime.try_completion().unwrap();
