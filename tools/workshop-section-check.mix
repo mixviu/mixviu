@@ -15,8 +15,12 @@ elif $mode=="oracle" or $mode=="section-negative" then
   $needle="  $projection=$frame.project($s,$presentation.project_dirty($s,$publication.model,$sections));$persist=$saved.project($s)"
   $replacement=<<EOF
   $clock=require("mesh.mix");$now=$clock.now_ms()
+  $pc=viu_test_cpu()
   $candidate=$presentation.project_dirty($s,$publication.model,$sections,$now)
-  if not deep_eq($candidate,$presentation.project($s,$now)) then raise("SECTION_ORACLE","section-dirty projection differs from full oracle") end
+  $section_cpu=(viu_test_cpu()-$pc)*1000000;$pc=viu_test_cpu()
+  $oracle=$presentation.project($s,$now)
+  print("WORKSHOP_BUILD "..json_encode({section_cpu_us:$section_cpu,full_cpu_us:(viu_test_cpu()-$pc)*1000000,dirty:$sections,rows:len($candidate.tree.initial.rows)}))
+  if not deep_eq($candidate,$oracle) then raise("SECTION_ORACLE","section-dirty projection differs from full oracle") end
   $projection=$frame.project($s,$candidate);$persist=$saved.project($s)
 EOF
   if $mode=="section-negative" then $replacement="  \$sections.tree=false\n"..$replacement end

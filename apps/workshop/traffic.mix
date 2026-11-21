@@ -9,7 +9,7 @@ fn defer_row($s,$row,$observed)
   if $s.traffic_paused then return $s end
   $q=$s.traffic_redaction ?? {waiting:[],bytes:0,active:nil}
   $bytes=byte_length(json_encode($row))
-  while len($q.waiting)>0 and (len($q.waiting)>=1024 or $q.bytes+$bytes>8388608)
+  while len($q.waiting)>0 and (len($q.waiting)+(if $q.active!=nil then 1 else 0 end)>=1024 or $q.bytes+$bytes>8388608)
     $q.bytes=$q.bytes-$q.waiting[0].bytes;$q.waiting=slice($q.waiting,1);$s.dropped=$s.dropped+1
   end
   if $q.bytes+$bytes>8388608 then $s.dropped=$s.dropped+1

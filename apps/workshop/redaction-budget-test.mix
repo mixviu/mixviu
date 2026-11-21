@@ -24,6 +24,13 @@ try
   for $row in $s.traffic
     check($row.payload.password=="[redacted]" and $row.payload.nested[0].Authorization=="[redacted]","complete recursive semantics before display/export")
   end
+  $s=$budget.defer_row($s,{message_type:"response",correlation_id:"1",from:"service",to:"example",rc:10,payload:{token:"reply secret"}},true)
+  $s=$t.launch($s);$task=$s.queue[len($s.queue)-1];$s.queue=slice($s.queue,0,len($s.queue)-1)
+  $s=$t.completed($s,{rc:0,body:$t.redact($task.row)})
+  check(len($s.traffic)==64 and $s.traffic[63].rc==10 and $s.traffic[63].response.payload.token=="[redacted]","deferred response must correlate without raw text")
+  $bounded=$m.initial()
+  for $i=1 to 1025 $bounded=$budget.defer_row($bounded,{seq:$i,payload:{secret:"hidden"}},false) end
+  check(len($bounded.traffic_redaction.waiting)==1024 and $bounded.dropped==1,"pending redaction rows must be bounded")
   -- Negative control deliberately restores eager notice work.
   $eager=replace($blocked,"fn defer_row($s,$row,$observed)","fn defer_row(\$s,\$row,\$observed)\n  \$row=redact(\$row)")
   if $eager==$blocked then raise("PROBE","eager redaction control source drift") end
