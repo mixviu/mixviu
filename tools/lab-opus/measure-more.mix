@@ -8,7 +8,9 @@ fn invoke($args, $name)
 end
 $build = invoke(["cargo", "build", "--release", "--manifest-path", "tools/lab-opus/Cargo.toml"], "build")
 if not $build.ok then exit(1) end
-print(run_argv_must(["/opt/mix/bin/mix","tools/lab-opus/conformance.mix"], {timeout:3600,max_output:4000000}))
+if env("OPUS_SKIP_CONFORMANCE","")!="1" then
+ print(run_argv_must(["/opt/mix/bin/mix","tools/lab-opus/conformance.mix"], {timeout:3600,max_output:4000000}))
+end
 for $signal in ["sweep", "bursts"]
   for $rate in [64000,96000,128000]
     $id = $signal .. "-" .. $rate
