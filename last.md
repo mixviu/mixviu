@@ -2523,3 +2523,5 @@ Final saved logs read:
 - `20261110-075834-cbc3-5948680add0a-20261110-075833-ad85bf35-a1-fe1707d8.log`
 - `20261110-082608-cbc3-5948680add0a-20261110-075835-7a306a11-a1-74ceae22.log`
 - `20261110-082616-cbc3-5948680add0a-20261110-080720-35129d8b-a1-dd628ada.log`
+
+Probe refined before execution to distinguish ticks/events since acknowledgement from ticks/events since previous publication (including changes while pending), and record previous operation-target bytes/length. Diagnostic source cf96b82b. Active jobs: untouched main 20261121-232507-b7bb107c; instrumented main 20261121-232943-9bf5b600; instrumented pre-#216 6b4278c7 20261121-233225-c88af4fb; fmt/clippy/default+support width-eight checks 20261121-233242-788504a0. Earlier instrumented submissions 232506-1e33fb1c and 232916-8b9a0b69 cancelled before execution, attempt=0. No test result or retry in those cancellations. Probe snippet exercised locally in Mix with absent/scalar/list operation targets. All Rust remains on CBC.
