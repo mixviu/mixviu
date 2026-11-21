@@ -4,7 +4,7 @@ $p="apps/workshop/presentation.mix";$t="apps/workshop/traffic.mix"
 $ps=read_file($p);$ts=read_file($t)
 $h="libraries/viu/src/app_host.rs";$hs=read_file($h)
 $v=replace($ps,"  $rows=[]","  $pr=viu_test_cpu();$rows=[]")
-$v=replace($v,"  $side=$model.effective_dock($s)","  print(\"SECTION \"..json_encode({name:\"tree\",us:(viu_test_cpu()-$pr)*1000000,rows:len($rows),peers:len($s.snapshot.peers)}))\n  $side=$model.effective_dock($s)")
+$v=replace($v,"  $side=$model.effective_dock($s)","  print(\"SECTION \"..json_encode({name:\"tree\",us:(viu_test_cpu()-$pr)*1000000,changed:not deep_eq($section_previous.tree,$rows),rows:len($rows),peers:len($s.snapshot.peers)}));$section_previous.tree=$rows\n  $side=$model.effective_dock($s)")
 for $pair in [["extra","macro_view"],["agents","agent_view"],["mesh","mesh_view"],["traffic","traffic_view"]]
   $needle="$"..$pair[0].."=$"..$pair[1]..".project($s)"
   $value="$"..$pair[0]
