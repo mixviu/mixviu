@@ -1159,10 +1159,54 @@ impl SceneView {
                                         ui.horizontal(|ui| {if let Some(first)=active.first(){self.node(ui,first,nodes,route,depth+1,events);ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{for child in active.iter().skip(1).rev(){self.node(ui,child,nodes,route,depth+1,events);}});}});
                                     } else if children(node).any(|child|nodes.get(child).is_some_and(|n|num(n,"grow").unwrap_or(0.)>0.)) {
                                         let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
-                                        let fixed:Vec<_>=active.iter().map(|child|{let n=&nodes[*child];if num(n,"grow").unwrap_or(0.)>0.{0.}else{num(n,"width").or(num(n,"min_width")).unwrap_or_else(||if n.family=="control"{Widget::decode(&n.ports["definition"]).and_then(|w|w.intrinsic_width(ui,&self.tree.model)).unwrap_or(0.)}else{0.})}}).collect();
-                                        let weight:f32=active.iter().map(|child|num(&nodes[*child],"grow").unwrap_or(0.).max(0.)).sum();
-                                        let remaining=(ui.available_width()-fixed.iter().sum::<f32>()-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.);
-                                        let mut cells=|ui:&mut egui::Ui|for (i,child) in active.iter().enumerate(){let grow=num(&nodes[*child],"grow").unwrap_or(0.);let width=if grow>0.{remaining*grow/weight}else{fixed[i]};let cell=ui.id().with(("cross-size",child));let height=ui.ctx().data(|d|d.get_temp::<f32>(cell)).unwrap_or(0.);let (rect,_)=ui.allocate_exact_size(egui::vec2(width,height),Sense::hover());let mut cell_ui=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));cell_ui.set_min_width(width);cell_ui.set_max_width(width);cell_ui.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(rect.min,egui::pos2(rect.right(),ui.clip_rect().bottom()))));self.node(&mut cell_ui,child,nodes,route,depth+1,events);let actual=cell_ui.min_rect().height();if (height-actual).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cell,actual));ui.ctx().request_repaint();}};
+                                        // Natural fixed cells (for example arrows) keep their width.
+                                        // Cache that measurement so the grow budget includes it on the
+                                        // settling pass, without a duplicate control/event traversal.
+                                        let fixed: Vec<f32> = active.iter().map(|child| {
+                                            let n = &nodes[*child];
+                                            if num(n,"grow").unwrap_or(0.) > 0. { return 0.; }
+                                            num(n,"width").or(num(n,"min_width")).unwrap_or_else(|| {
+                                                if n.family == "control" {
+                                                    Widget::decode(&n.ports["definition"]).and_then(|w|w.intrinsic_width(ui,&self.tree.model)).unwrap_or(0.)
+                                                } else {
+                                                    ui.ctx().data(|d|d.get_temp::<f32>(ui.id().with(("fixed-width",child)))).unwrap_or(0.)
+                                                }
+                                            })
+                                        }).collect();
+                                        let weight: f32 = active.iter().map(|child|num(&nodes[*child],"grow").unwrap_or(0.).max(0.)).sum();
+                                        let remaining = (ui.available_width()-fixed.iter().sum::<f32>()-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.);
+                                        let mut cells = |ui: &mut egui::Ui| for (i,child) in active.iter().enumerate() {
+                                            let grow = num(&nodes[*child],"grow").unwrap_or(0.);
+                                            let width = if grow > 0. { remaining*grow/weight } else { fixed[i] };
+                                            let cell = ui.id().with(("cross-size",child));
+                                            let height = ui.ctx().data(|d|d.get_temp::<f32>(cell)).unwrap_or(0.);
+                                            let actual = if grow <= 0. {
+                                                let response = ui.allocate_ui(egui::vec2(width,height),|ui|self.node(ui,child,nodes,route,depth+1,events));
+                                                let measured = response.response.rect.width();
+                                                let width_key = ui.id().with(("fixed-width",child));
+                                                let previous = ui.ctx().data(|d|d.get_temp::<f32>(width_key)).unwrap_or(0.);
+                                                if (previous-measured).abs() > 0.01 {
+                                                    ui.ctx().data_mut(|d|d.insert_temp(width_key,measured));
+                                                    ui.ctx().request_repaint();
+                                                }
+                                                response.response.rect.height()
+                                            } else {
+                                                // A child's intrinsic minimum must not advance the row
+                                                // cursor beyond its weighted allocation. Unbreakable
+                                                // nested content is clipped to that cell's horizontal edge.
+                                                let (rect,_) = ui.allocate_exact_size(egui::vec2(width,height),Sense::hover());
+                                                let mut cell_ui = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
+                                                cell_ui.set_min_width(width);
+                                                cell_ui.set_max_width(width);
+                                                cell_ui.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(rect.min,egui::pos2(rect.right(),ui.clip_rect().bottom()))));
+                                                self.node(&mut cell_ui,child,nodes,route,depth+1,events);
+                                                cell_ui.min_rect().height()
+                                            };
+                                            if (height-actual).abs() > 0.01 {
+                                                ui.ctx().data_mut(|d|d.insert_temp(cell,actual));
+                                                ui.ctx().request_repaint();
+                                            }
+                                        };
                                         if text(node,"align")=="center" {egui::Grid::new((&key,"cross-center")).num_columns(active.len()).min_col_width(0.).min_row_height(0.).spacing(ui.spacing().item_spacing).striped(false).show(ui,|ui|cells(ui));} else {ui.horizontal_top(|ui|cells(ui));}
                                     } else if text(node,"align")=="end" {
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
