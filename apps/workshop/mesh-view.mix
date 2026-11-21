@@ -1,8 +1,8 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $mesh=require("mesh.mix");$counter=require("counter.mix");$actions=require("actions.mix")
 fn count_cell($v) return {text:to_string($v),mono:true} end
-fn project($s)
-  $now=$mesh.now_ms();$m=$s.mesh;$snap=$mesh.snapshot($m,$now);$nodes=[];$links={}
+fn project($s,$now=nil)
+  $now=$now ?? $mesh.now_ms();$m=$s.mesh;$snap=$mesh.snapshot($m,$now);$nodes=[];$links={}
   for $n in $m.nodes
     push($nodes,{id:$n.name,label:$n.name,detail:$n.wg_ip,primary:$n.self,failed:$mesh.ping_failed($m,$n.name),accessible:$n.name..(if $n.self then " · this node" else " · mesh peer" end),out_label:"Filter Traffic with "..$n.name.." · Out",in_label:"Filter Traffic with "..$n.name.." · In"})
   end
