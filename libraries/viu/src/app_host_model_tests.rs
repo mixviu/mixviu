@@ -112,7 +112,7 @@ fn receipt_limit_tracks_configured_runtime_width() {
             if let Some(tx) = self.0.take() { let _ = tx.send(()); }
         }
     }
-    let bundle = review_bundle("on test.noop\nend\non viu.model.applied\nend\n");
+    let bundle = review_bundle("send \"viu-local\" \"scenes.model\" body={generation:viu_context().generation,value:{label:\"ready\"}}\non test.noop\nend\non viu.model.applied\nend\n");
     let program = bundle.program.clone();
     let mut host = create(bundle, Arc::new(|| {}));
     let (entered_tx, entered_rx) = mpsc::channel();

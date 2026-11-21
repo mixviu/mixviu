@@ -15,7 +15,7 @@ fn description($s)
   end
   return "Select a service and command to inspect its signature."
 end
-fn project($s)
+fn projected_rows($s)
   $rows=[]
   for $r in $tree.rows($s)
     $label=$r.label
@@ -23,10 +23,35 @@ fn project($s)
     elif $r.kind=="agents_node" then $n=$s.agents.nodes[$r.node] ?? {}; $label=$label.."  · "..to_string(len(filter($n.sessions ?? [],fn($r)=$r.status!="ended"))) end
     push($rows,{key:$r.key,cells:[$label],bold:$r.badge=="question",toggle_label:(if $r.expanded then "Collapse " else "Expand " end)..$r.label,depth:$r.depth,branch:$r.children>0,selected:$r.selected,focused:false,expanded:$r.expanded,icon:if $r.kind=="service" then "server" else nil end,mono:$r.kind=="command",weak:contains(["agents_down","no_peers","agents_ended"],$r.kind),error:$r.kind=="error",tooltip:$r.error ?? $r.label})
   end
+  return $rows
+end
+-- State dependencies are marked at the publication boundary, including changes
+-- coalesced while an owner receipt is outstanding. Inputs commit only on ack.
+fn subset($s,$names)
+  $out={};for $name in $names $out[$name]=$s[$name] end;return $out
+end
+fn inputs($s)
+  return {tree:subset($s,["snapshot","catalogues","agents","filter","row_key","expanded","selection"]),macro:subset($s,["macro_selected","document","catalogues","macro_draft","macro_saved_text","macro_target","macro_destination","macro_confirm_delete","window_height","dock_open","dock_side","dock_height","macro_message","row_key","selection","connected","dialog","quitting","busy","discovery","call","macro_pending","activations"]),agent:subset($s,["agents","row_key"]),traffic:subset($s,["traffic","traffic_filter","dock_open","dock_side","window_width"])}
+end
+fn marks($before,$after)
+  $dirty={};for $key in keys($after) $dirty[$key]=$before==nil or not deep_eq($before[$key],$after[$key]) end
+  -- Permission expiry labels read wall time, as Mesh ages do.
+  $dirty.agent=true
+  return $dirty
+end
+fn retained($old,$prefix)
+  $out={};for $key in keys($old) if starts_with($key,$prefix) then $out[$key]=$old[$key] end end;return $out
+end
+fn project($s,$now=nil) return project_dirty($s,nil,{tree:true,macro:true,agent:true,traffic:true},$now) end
+fn project_dirty($s,$old,$dirty,$now=nil)
+  $rows=if $old!=nil and not $dirty.tree then $old.tree.initial.rows else projected_rows($s) end
   $side=$model.effective_dock($s)
   $placement=if $s.dock_open then {edge:$side,native_panel:true,name:if $side=="right" then "traffic-right" else "traffic-bottom" end,fraction:if $side=="right" then $s.dock_width else $s.dock_height end,reference_extent:if $side!="right" and $s.window_width>=640 then $s.window_height else nil end,resizable:true,minimum:if $side=="right" then 0.2 else 0.12 end,maximum:0.5} else {edge:"bottom",native_panel:true,name:"traffic-collapsed",size:"design.collapsed_dock"} end
-  $values={body:$s.body,reply:$s.answer,filter:$s.filter,description:description($s),"traffic-state":$s.observe.." · "..to_string($s.dropped).." dropped","traffic-pause":$s.traffic_paused,"traffic-filter":$s.traffic_filter}
-  $extra=$macro_view.project($s);$agents=$agent_view.project($s);$mesh=$mesh_view.project($s);$traffic=$traffic_view.project($s)
+  $values={body:$s.body,reply:$s.answer,filter:$s.filter,description:if $old!=nil and not $dirty.tree then $old.values.description else description($s) end,"traffic-state":$s.observe.." · "..to_string($s.dropped).." dropped","traffic-pause":$s.traffic_paused,"traffic-filter":$s.traffic_filter}
+  $extra=if $old!=nil and not $dirty.macro then retained($old,"macro_") else $macro_view.project($s) end
+  $agents=if $old!=nil and not $dirty.agent then retained($old,"agent_") else $agent_view.project($s) end
+  $mesh=$mesh_view.project($s,$now)
+  $traffic=if $old!=nil and not $dirty.traffic then retained($old,"traffic_") else $traffic_view.project($s) end
   for $key in keys($mesh) $extra[$key]=$mesh[$key] end
   for $key in keys($traffic) $extra[$key]=$traffic[$key] end
   for $key in keys($agents) $extra[$key]=$agents[$key] end

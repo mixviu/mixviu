@@ -189,6 +189,7 @@ fn received($s,$d)
   $task=$s.jobs[$d.tag.id]
   if $task==nil then return $s end
   $s.jobs=delete($s.jobs,$d.tag.id)
+  if $task.owner=="traffic" then return $traffic.completed($s,$d) end
   if $task.owner=="discovery" then
     $before=$s.discovery!=nil;$s=$discovery.received($s,$task,$d)
     if $before and $s.discovery==nil and $s.snapshot.error==nil then $s=$agents.discovered($s);$s=$macros.enqueue($s,"catalogues",{},nil) end
@@ -249,13 +250,14 @@ fn notice($s,$event)
   elif ends_with($cmd,".action.executed") or ends_with($cmd,".macros.finished") then
     if ends_with($cmd,".macros.finished") then $s.macro_message=json_encode($a);$s.traffic_filter="" end
     $stamp=now_iso();$stamp=if len($stamp)>=23 then substr($stamp,11,12) else $stamp end
-    $s=$traffic.retain($s,{ts:$stamp,direction:"topic",from:$headers.from,service:$headers.from,command:$cmd,payload:$a})
+    $s=$traffic.defer_row($s,{ts:$stamp,direction:"topic",from:$headers.from,service:$headers.from,command:$cmd,payload:$a},false)
   end
   return $s
 end
 fn follow_up($s)
   $failures=$s.admission_failures;$s.admission_failures=[]
   for $failure in $failures $s=received($s,$failure) end
+  $s=$traffic.launch($s)
   $s=$discovery.expire($s)
   $s=$discovery.advance($s)
   if $s.refetch and monotonic()>=$s.refresh_after and not $m.busy($s) and $s.connected and not $s.quitting then $s.refetch=false;$s=$discovery.begin($s,nil) end

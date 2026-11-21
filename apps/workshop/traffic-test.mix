@@ -14,7 +14,13 @@ check(len($s.traffic)==1024 and $s.dropped==8,"bounded ring with drop count")
 $s.traffic_paused=true;$s=$t.retain($s,{seq:9999});check($s.traffic[1023].seq==1030,"pause")
 $flow=require("mesh-flow.mix");$s=$m.initial();$s.subscription="test-sub";$s.mesh.observer="workshop"
 fn observe_frame($s,$frame)
-  return $flow.observed($s,{headers:{type:"event",subscription_id:"test-sub"},args:{args:$frame},body:json_encode({args:$frame})})
+  $s=$flow.observed($s,{headers:{type:"event",subscription_id:"test-sub"},args:{args:$frame},body:json_encode({args:$frame})})
+  $s=$t.launch($s)
+  if $s.traffic_redaction!=nil and $s.traffic_redaction.active!=nil then
+    $task=$s.queue[len($s.queue)-1];$s.queue=slice($s.queue,0,len($s.queue)-1)
+    $s=$t.completed($s,{rc:0,body:$t.redact($task.row)})
+  end
+  return $s
 end
 $frame={message_type:"request",correlation_id:"discovery-1",from:"workshop",to:"peer",command:"HELP",payload:{headers:{workshop_job_owner:"discovery",workshop_discovery_generation:"1"}}}
 $s=observe_frame($s,$frame)

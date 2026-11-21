@@ -1,6 +1,36 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Bounded observation ring and redaction, adapted from gold inspector/workshop.rs.
 $counter=require("counter.mix")
+$work=require("work.mix")
+-- Raw inputs stay in this private, bounded queue until an isolated native Job
+-- returns the complete redacted value. Neither rows() nor presentation exports
+-- this queue. Notice callbacks perform no recursive redaction work.
+fn defer_row($s,$row,$observed)
+  if $s.traffic_paused then return $s end
+  $q=$s.traffic_redaction ?? {waiting:[],bytes:0,active:nil}
+  $bytes=byte_length(json_encode($row))
+  while len($q.waiting)>0 and (len($q.waiting)>=1024 or $q.bytes+$bytes>8388608)
+    $q.bytes=$q.bytes-$q.waiting[0].bytes;$q.waiting=slice($q.waiting,1);$s.dropped=$s.dropped+1
+  end
+  if $q.bytes+$bytes>8388608 then $s.dropped=$s.dropped+1
+  else $q.waiting=push($q.waiting,{row:$row,observed:$observed,bytes:$bytes});$q.bytes=$q.bytes+$bytes end
+  $s.traffic_redaction=$q;return $s
+end
+fn launch($s)
+  $q=$s.traffic_redaction
+  if $q==nil or $q.active!=nil or len($q.waiting)==0 then return $s end
+  $entry=$q.waiting[0];$q.waiting=slice($q.waiting,1);$q.active={bytes:$entry.bytes,observed:$entry.observed}
+  $s.traffic_redaction=$q
+  return $work.enqueue($s,{owner:"traffic",op:"redact",job:"traffic-redact-job.mix",lane:"traffic",row:$entry.row})
+end
+fn completed($s,$d)
+  $active=$s.traffic_redaction.active
+  if $active==nil then return $s end
+  $s.traffic_redaction.active=nil;$s.traffic_redaction.bytes=$s.traffic_redaction.bytes-$active.bytes
+  if $d.rc!=0 then $s.dropped=$s.dropped+1;return $s end
+  if $active.observed then return observed($s,$d.body,true) end
+  return retain($s,$d.body,true)
+end
 fn redact($v)
   if type($v)=="map" then
     for $key in keys($v)
@@ -10,9 +40,9 @@ fn redact($v)
   elif type($v)=="list" then $v=map($v,fn($item)=redact($item)) end
   return $v
 end
-fn retain($s,$row)
+fn retain($s,$row,$redacted=false)
   if $s.traffic_paused then return $s end
-  $row=redact($row)
+  if not $redacted then $row=redact($row) end
   if not has_key($row,"service") then $row.service=$row.to end
   $bytes=byte_length(json_encode($row))
   if $bytes>8388608 then $s.dropped=$s.dropped+1;return $s end
@@ -33,7 +63,7 @@ fn clock_ms($v)
     return (($h*60+$m)*60+$s)*1000+$ms
   catch $why return nil end
 end
-fn observed($s,$frame)
+fn observed($s,$frame,$redacted=false)
   $s.dropped=$counter.add($s.dropped,$frame.dropped_count ?? 0)
   if $s.traffic_paused then return $s end
   if $frame.message_type=="response" and type($frame.correlation_id)=="string" then
@@ -48,11 +78,11 @@ fn observed($s,$frame)
       $mesh=contains(["mesh_out","mesh_in"],$row.direction) or contains(["mesh_out","mesh_in"],$frame.direction)
       $start=clock_ms($row.ts);$end=clock_ms($frame.ts)
       if not $mesh and $start!=nil and $end!=nil then $row.ms=($end+86400000-$start)%86400000 end
-      $row.response=$frame;return retain($s,$row)
+      $row.response=$frame;return retain($s,$row,$redacted)
     end
     $frame.service=$frame.from
   elif $frame.message_type=="request" then $frame.pending=true end
-  return retain($s,$frame)
+  return retain($s,$frame,$redacted)
 end
 fn rows($s,$limit,$filter)
   if $filter=="" then return slice($s.traffic,max(0,len($s.traffic)-min($limit,1024))) end

@@ -1,0 +1,26 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC-only recipes for the section projection/redaction change.
+$mode=$1 ?? "focused"
+fn checked($argv)
+  $r=run_argv($argv,{timeout:7200,stderr:"stdout",max_output:64000000});print($r.stdout)
+  if not $r.ok then exit($r.exit_code ?? 1) end
+end
+if $mode=="format" then
+  try
+    checked(["cargo","fmt","-p","lib-viu"])
+    checked(["git","diff"])
+  finally print(run_argv_must(["git","checkout","-q","--","."])) end
+elif $mode=="width-negative" then
+  $p="libraries/viu/src/app_host.rs";$source=read_file($p)
+  $changed=replace($source,"while self.model_receipts.len() < self.runtime.capacity() {","while self.model_receipts.len() < 32 {")
+  if $changed==$source then raise("PROBE","receipt control source drift") end
+  try
+    write_file($p,$changed)
+    $r=run_argv(["cargo","test","-p","lib-viu","--lib","receipt_limit_tracks_configured_runtime_width","--","--nocapture"],{timeout:600,stderr:"stdout",max_output:16000000});print($r.stdout)
+    if $r.ok or not contains($r.stdout,"width-eight receipt saturation must pause completion retirement") then raise("PROBE","literal-32 receipt control missed assertion") end
+  finally write_file($p,$source) end
+else
+  checked(["cargo","test","-p","lib-viu","--lib","receipt_limit_tracks_configured_runtime_width","--","--nocapture"])
+  for $path in ["apps/workshop/section-test.mix","apps/workshop/redaction-budget-test.mix","apps/workshop/traffic-test.mix","apps/workshop/publication-test.mix"] checked(["mix",$path]) end
+  checked(["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","--","--nocapture"])
+end

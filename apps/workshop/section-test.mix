@@ -1,0 +1,30 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m=require("model.mix");$p=require("presentation.mix");$t=require("traffic.mix")
+fn check($ok,$message) if not $ok then raise("SECTION_TEST",$message) end end
+$s=$m.initial();$s.busy=$m.busy($s);$last=nil;$inputs=nil
+-- Exercise discovery, steady traffic and UI edits in different orders.
+for $round=0 to 7
+  for $step=0 to 39
+    $key=($step*17+$round)%10
+    if $key==0 then
+      $name="peer-"..to_string($step);$s.snapshot.nodes=push($s.snapshot.nodes,{name:$name,local:false,services:[]})
+    elif $key==1 then $s.filter=if $s.filter=="" then "peer" else "" end
+    elif $key==2 then $s.dock_open=not $s.dock_open
+    elif $key==3 then $s.dock_side=if $s.dock_side=="right" then "bottom" else "right" end
+    elif $key==4 then $s=$t.retain($s,{command:"notice",payload:{token:"secret",data:$step}})
+    elif $key==5 then $s.window_width=if $s.window_width<640 then 1300 else 500 end
+    elif $key==6 then $s.expanded=if len($s.expanded)==0 then ["nodes"] else [] end
+    elif $key==7 then $s.body=to_string($step)
+    elif $key==8 then $s.row_key=if $s.row_key==nil then "nodes:mesh" else nil end
+    else $s.macro_pending=1-$s.macro_pending end
+    $s.busy=$m.busy($s);$next=$p.inputs($s);$dirty=$p.marks($inputs,$next)
+    $candidate=$p.project_dirty($s,$last,$dirty,1000000)
+    $oracle=$p.project($s,1000000)
+    check(deep_eq($candidate,$oracle),"section-dirty projection differs from full oracle")
+    $last=$candidate;$inputs=$next
+  end
+end
+-- A forgotten tree mark must be observable by the identical oracle check.
+$s.filter="definitely-missing";$candidate=$p.project_dirty($s,$last,{tree:false,macro:true,agent:true,traffic:true},1000000)
+check(not deep_eq($candidate,$p.project($s,1000000)),"forgotten dirty mark escaped the oracle")
+print("Workshop section oracle PASS")

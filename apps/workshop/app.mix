@@ -12,7 +12,7 @@ try $launch=$app_launch catch $why $launcher=require("launch.mix");$launch=$laun
 $state.comp=$launch.comp ?? env("MIX_COMP_SERVICE","comp");$state.startup_macro=$launch.initial_macro
 $state.theme_choice.mode=$app_mode.load("workshop")
 $dirty=false
-$publication={revision:0,ack:0,pending:nil,model:nil,dirty:true}
+$publication={revision:0,ack:0,pending:nil,model:nil,inputs:nil,dirty:true}
 $model_publication=require("../../libraries/viu/mix/model-publication.mix")
 fn publish_workshop($s)
   global $publication
@@ -20,7 +20,8 @@ fn publish_workshop($s)
   $s=$saved.reconcile($s)
   $s.busy=$model.busy($s)
   if $s.quitting and not $s.busy then $s.window_close=true end
-  $projection=$frame.project($s,$presentation.project($s));$persist=$saved.project($s)
+  $inputs=$presentation.inputs($s);$sections=$presentation.marks($publication.inputs,$inputs)
+  $projection=$frame.project($s,$presentation.project_dirty($s,$publication.model,$sections));$persist=$saved.project($s)
   for $key in keys($persist) $projection[$key]=$persist[$key] end
   $value=$app_mode.project($projection,"workshop",$s.theme_choice)
   if not ($ctx.incremental_models ?? false) then
@@ -29,13 +30,13 @@ fn publish_workshop($s)
   end
   $full=$model_publication.requires_full($publication.model,$value)
   $operations=if $full then [] else $model_publication.difference($publication.model,$value) end
-  if not $full and len($operations)==0 then $publication.dirty=false;return $s end
+  if not $full and len($operations)==0 then $publication.inputs=$inputs;$publication.dirty=false;return $s end
   $publication.revision=$publication.revision+1;$revision=$publication.revision
   $body={generation:$ctx.generation,base:$publication.ack,revision:$revision,operations:$operations}
   if len($operations)>512 or byte_length(json_encode($body))>1048576 then $full=true end
   if $full then send "viu-local" "scenes.model" body={generation:$ctx.generation,revision:$revision,value:$value}
   else send "viu-local" "scenes.model.patch" body=$body end
-  if $rc==0 then $publication.pending={revision:$revision,model:$value};$publication.dirty=false
+  if $rc==0 then $publication.pending={revision:$revision,model:$value,inputs:$inputs};$publication.dirty=false
   else $publication.model=nil;$publication.dirty=true end
   return $s
 end
@@ -47,7 +48,7 @@ $state=publish_workshop($state)
 on viu.model.applied
   $a=$event.args
   if $a.generation==$ctx.generation and $publication.pending!=nil and $a.revision==$publication.pending.revision then
-    $publication.ack=$a.revision;$publication.model=$publication.pending.model;$publication.pending=nil
+    $publication.ack=$a.revision;$publication.model=$publication.pending.model;$publication.inputs=$publication.pending.inputs;$publication.pending=nil
     if $publication.dirty then $state=publish_workshop($state) end
   end
 end

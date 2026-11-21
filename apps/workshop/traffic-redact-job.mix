@@ -1,0 +1,5 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$traffic=require("traffic.mix")
+on job.run
+  reply(0,json_encode($traffic.redact($event.args.row)))
+end

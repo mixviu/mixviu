@@ -1,0 +1,35 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$t=require("traffic.mix");$m=require("model.mix")
+fn check($ok,$message) if not $ok then raise("REDACTION_TEST",$message) end end
+$path=path_join(dirname(script_path()),".redaction-budget-"..pid()..".mix")
+$source=read_file(path_join(dirname(script_path()),"traffic.mix"))
+-- This test double refuses any recursive redaction on the notice path.
+$blocked=replace($source,"fn redact($v)","fn redact($v)\n  raise(\"CALLBACK_BUDGET\",\"notice callback attempted redaction\")")
+try
+  write_file($path,$blocked);$budget=require($path)
+  $s=$m.initial();$rows=[]
+  for $i=1 to 64
+    $row={message_type:"request",correlation_id:to_string($i),from:"example",to:"service",payload:{password:"hidden",nested:[{Authorization:"secret",public:$i}]}}
+    $s=$budget.defer_row($s,$row,true);push($rows,$row)
+  end
+  check(len($s.traffic)==0,"pending bodies must not be exported")
+  check(len($s.traffic_redaction.waiting)==64,"callback work must be deferred")
+  for $row in $rows
+    $s=$t.launch($s);$task=$s.queue[len($s.queue)-1];$s.queue=slice($s.queue,0,len($s.queue)-1)
+    check(deep_eq($task.row,$row),"redaction must preserve arrival order")
+    $s=$t.completed($s,{rc:0,body:$t.redact($task.row)})
+  end
+  check($s.traffic_redaction.bytes==0 and len($t.rows($s,1024,""))==64,"drain must account for every row")
+  for $row in $s.traffic
+    check($row.payload.password=="[redacted]" and $row.payload.nested[0].Authorization=="[redacted]","complete recursive semantics before display/export")
+  end
+  -- Negative control deliberately restores eager notice work.
+  $eager=replace($blocked,"fn defer_row($s,$row,$observed)","fn defer_row($s,$row,$observed)\n  $row=redact($row)")
+  $negative=$path..".negative.mix";write_file($negative,$eager)
+  try
+    $bad=require($negative);$detected=false
+    try $bad.defer_row($m.initial(),$rows[0],true) catch $why, $error $detected=$error.code=="CALLBACK_BUDGET" end
+    check($detected,"eager redaction negative control must fail callback budget")
+  finally remove($negative) end
+finally remove($path) end
+print("Workshop notice redaction budget PASS")
