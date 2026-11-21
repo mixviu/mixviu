@@ -3484,10 +3484,7 @@ impl crate::layer::LayerProgram for LayerHost {
         self.contexts.lock().unwrap().push(ctx.clone());
         if let Some(bundle) = self.bundle.take() {
             let contexts = self.contexts.clone();
-            self.host = Some(create(
-                bundle,
-                contexts_wake(contexts),
-            ));
+            self.host = Some(create(bundle, contexts_wake(contexts)));
         }
         if let Some(host) = &self.host {
             let _ = crate::appearance::install_theme(ctx, &host.file_theme);
@@ -3646,7 +3643,8 @@ mod tests {
         use std::time::Duration;
         let ctx = egui::Context::default();
         for _ in 0..3 {
-            ctx.run_ui(Default::default(), |_| {}).drop_without_applying_deltas();
+            ctx.run_ui(Default::default(), |_| {})
+                .drop_without_applying_deltas();
         }
         let contexts = Arc::new(Mutex::new(vec![ctx.clone()]));
         let registry = contexts.clone();
@@ -3660,7 +3658,9 @@ mod tests {
                 registry.lock().unwrap().push(egui::Context::default());
                 let _ = tx.send(());
             });
-            result_tx.send(rx.recv_timeout(Duration::from_millis(200)).is_ok()).unwrap();
+            result_tx
+                .send(rx.recv_timeout(Duration::from_millis(200)).is_ok())
+                .unwrap();
             join_tx.send(user).unwrap();
         });
         let wake = if held_guard {
@@ -3677,7 +3677,11 @@ mod tests {
         worker.join().unwrap();
         // The negative control releases both locks after its bounded wait;
         // no detached deadlock or delayed epaint detector panic remains.
-        join_rx.recv_timeout(Duration::from_secs(2)).unwrap().join().unwrap();
+        join_rx
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .join()
+            .unwrap();
         completed
     }
 

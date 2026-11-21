@@ -285,7 +285,11 @@ pub fn intent(value: &Value, action: &str, payload: &Value) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::{io::BufRead, sync::{Barrier, Arc, mpsc}, time::{Duration, Instant}};
+    use std::{
+        io::BufRead,
+        sync::{Arc, Barrier, mpsc},
+        time::{Duration, Instant},
+    };
 
     thread_local! {
         static CONTEND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -295,7 +299,9 @@ mod tests {
     // Linux's wait channel proves it has actually queued on the lock. Merely
     // announcing an intent to write is insufficient for a read-in-read test.
     pub(super) fn queue_writer(ctx: &egui::Context) {
-        if !CONTEND.with(|flag| flag.replace(false)) { return; }
+        if !CONTEND.with(|flag| flag.replace(false)) {
+            return;
+        }
         let barrier = Arc::new(Barrier::new(2));
         let start = barrier.clone();
         let writer = ctx.clone();
@@ -311,7 +317,9 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(1);
         loop {
             let state = std::fs::read_to_string(format!("/proc/self/task/{tid}/wchan")).unwrap();
-            if state.contains("futex") { break; }
+            if state.contains("futex") {
+                break;
+            }
             assert!(Instant::now() < deadline, "writer did not queue: {state}");
             std::thread::yield_now();
         }
@@ -322,17 +330,26 @@ mod tests {
         let ctx = egui::Context::default();
         ctx.run_ui(Default::default(), |ui| {
             let vp = ui.ctx().viewport_id();
-            ui.ctx().data_mut(|d| d.insert_temp(egui::Id::unique((vp, "viu.dock.intrinsic-height")), 90.0_f32));
+            ui.ctx().data_mut(|d| {
+                d.insert_temp(
+                    egui::Id::unique((vp, "viu.dock.intrinsic-height")),
+                    90.0_f32,
+                )
+            });
             CONTEND.with(|flag| flag.set(true));
             if nested {
                 ui.ctx().data(|d| {
                     queue_writer(ui.ctx());
-                    d.get_temp::<f32>(egui::Id::unique((ui.ctx().viewport_id(), "viu.dock.intrinsic-height")))
+                    d.get_temp::<f32>(egui::Id::unique((
+                        ui.ctx().viewport_id(),
+                        "viu.dock.intrinsic-height",
+                    )))
                 });
             } else {
                 assert_eq!(super::intrinsic_height(ui), 90.0);
             }
-        }).drop_without_applying_deltas();
+        })
+        .drop_without_applying_deltas();
     }
 
     // Isolate the deliberate deadlock so the watchdog can reap it before
@@ -340,30 +357,56 @@ mod tests {
     fn contending_child(name: &str, should_finish: bool) {
         let mut child = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", name, "--ignored", "--nocapture"])
-            .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
-            .spawn().unwrap();
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
         let stdout = child.stdout.take().unwrap();
         let (tx, rx) = mpsc::channel();
         let reader = std::thread::spawn(move || {
             for line in std::io::BufReader::new(stdout).lines() {
-                if line.unwrap().contains("WRITER_QUEUED") { let _ = tx.send(()); }
+                if line.unwrap().contains("WRITER_QUEUED") {
+                    let _ = tx.send(());
+                }
             }
         });
         let queued = rx.recv_timeout(Duration::from_secs(2));
-        let deadline = Instant::now() + if should_finish { Duration::from_secs(1) } else { Duration::from_millis(100) };
+        let deadline = Instant::now()
+            + if should_finish {
+                Duration::from_secs(1)
+            } else {
+                Duration::from_millis(100)
+            };
         let status = loop {
-            if let Some(status) = child.try_wait().unwrap() { break Some(status); }
-            if Instant::now() >= deadline { break None; }
+            if let Some(status) = child.try_wait().unwrap() {
+                break Some(status);
+            }
+            if Instant::now() >= deadline {
+                break None;
+            }
             std::thread::yield_now();
         };
-        if status.is_none() { child.kill().unwrap(); }
+        if status.is_none() {
+            child.kill().unwrap();
+        }
         let output = child.wait_with_output().unwrap();
         reader.join().unwrap();
-        assert!(queued.is_ok(), "writer never queued: {}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            queued.is_ok(),
+            "writer never queued: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         if should_finish {
-            assert!(status.is_some_and(|s| s.success()), "lookup blocked or failed: {}", String::from_utf8_lossy(&output.stderr));
+            assert!(
+                status.is_some_and(|s| s.success()),
+                "lookup blocked or failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         } else {
-            assert!(status.is_none(), "nested read unexpectedly returned: {status:?}");
+            assert!(
+                status.is_none(),
+                "nested read unexpectedly returned: {status:?}"
+            );
         }
     }
 
@@ -377,10 +420,14 @@ mod tests {
     }
     #[test]
     #[ignore = "subprocess fixture"]
-    fn queued_writer_child() { contending_frame(false); }
+    fn queued_writer_child() {
+        contending_frame(false);
+    }
     #[test]
     #[ignore = "subprocess negative control"]
-    fn nested_read_child() { contending_frame(true); }
+    fn nested_read_child() {
+        contending_frame(true);
+    }
 
     #[test]
     fn reads_viewport_height_without_nested_context_lock() {
