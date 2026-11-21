@@ -1,3 +1,139 @@
+# PR #220 round 5 — startup guard uses the existing serial binary
+
+PR: https://github.com/mixviu/mixviu/pull/220. Tested source head:
+`97fd1a0432a2` (full SHA in the CBC receipts). This receipt commit also applies
+any worker formatting diff; no cache implementation is added.
+
+Scoped checks are **green**; #220 is ready for review. The serial list is
+unchanged and the artifact cache is left out.
+
+The port-appearance regression now lives at
+`libraries/viu/tests/workshop_bus.rs:753`; `workshop_startup.rs` is removed.
+The existing Fable ruling D serial entry already describes Workshop deadlines
+at 200 peers on an uncontended core. It remains accurate and is untouched.
+The width-eight gate runs the seven-test binary alone after its parallel pool.
+Calls still start at port appearance, before readiness, for the first 1.5 s.
+The 750 ms bound, one-second call and two-second owner-stall deadlines remain
+unchanged. This placement follows Opus's round-5 decision, not a new serial-list
+exception.
+
+The two design host fixtures run under a fixture-local mutex; each still
+starts with an empty initial session snapshot and exercises the real host.
+The generic-save fixture now pumps without repeatedly painting during its
+pending Bus call (`libraries/viu/tests/design_validation.rs:94`). Painting is
+still explicit at the visible-notice oracle. Its actual one-second Bus deadline,
+the generic editd write and the reporting/refusal assertions are retained.
+
+## Cache decision: leave it out
+
+The private prototype caps the number of retained successful artifacts at 32,
+but has no retained-byte or per-entry size bound. Its full-context key contains
+an owned, uncapped `app: Option<String>` (`libraries/design/src/context.rs:666`),
+and it retains complete variable-size artifacts. A finite entry count alone
+does not establish the requested memory bound. Therefore the conjunction of
+round 5's admission conditions is not satisfied and the cache is not landed.
+The earlier content/digest/source-label mutation evidence remains recorded in
+round 4; there is no new cache path or cache validation bypass in this head.
+A bounded-byte cache and its contention oracle would be separate follow-up
+work. No deeper shared compiler work is folded into this PR.
+
+## Scoped checks and measurements
+
+| CBC job | Result |
+|---|---|
+| `20261121-230115-aed3d22a-a1`, `02f97084` | Six changed crates: fmt, both all-target clippy configurations, every all-target test binary in both configurations, and doc-tests pass. Strict width-eight pools: **101 binaries each**. app_mix passes **65.1 / 67.8 s**. Seven Workshop tests pass in the existing serial slot. Scene loader **594 assertions**, env registry **277 names / zero problems**. |
+| `20261121-232235-b82aca14-a1`, `97fd1a04` | Final additions are test-support-only: installed-context accessor and assertions. Both all-target clippy configurations pass; all **101** support test binaries and doc-tests pass again in the strict width-eight shape, with workshop_bus alone. app_mix **69.6 s**; normal scenes and env registry pass again. Worker formatting diff applied locally. Default code/tests are unchanged from the prior green receipt. |
+
+The installed-context oracle at `libraries/viu/src/app_host.rs:3172` verifies
+Studio/Dark startup fallback and compares the active context before and after
+background reporting and a refused switch (`design_validation.rs:221,242`).
+The file-theme fixture explicitly waits for the settings follower to report
+absence before exercising the file write: its initial empty profile is not
+file authority. Both ordering controls still begin with the initial `{}`
+session snapshot.
+
+The original six-test `workshop_bus` takes **14.36 s** standalone (**14.845 s**
+including the prebuilt Cargo invocation), CBC `20261121-222713-a9863938-a1`,
+source `0a80b45c`. The seven-test binary now passes in **15.14 s**
+(**15.647 s** including Cargo), CBC `20261121-224318-415e3d2e-a1`: an
+increase of **0.78 s** in test wall time. Its startup worst call is
+**479.581 ms**, zero failures. Both measurements use the same worker.
+
+Moving into a shared test binary exposed our oracle mistake: bounded pre-ready
+`rc=10, NOT_READY` replies are deliberate host behaviour. Sampling still starts
+at port appearance, but counts these replies separately before the first
+success and requires a successful app reply within the sampled calls. Other
+errors and timeouts still fail. Permanent NOT_READY fails its new mutation
+control, rather than satisfying the latency test.
+
+The cold, individually selected startup regression passes in CBC
+`20261121-232235-b82aca14-a1`: worst call **632.030 ms**, zero failures,
+whole fixture **1.775 s**, first-pump wall/CPU **344.387/343.987 ms**. The original before
+remains CBC `20261121-175445-2c24d7dc-a1`: two timeouts, observed worst
+1,001.520 ms (censored by timeout), first-pump wall/CPU 2,502.676/2,501.943 ms.
+These are CBC fixture results, not post-PR desk measurements.
+
+CBC `20261121-232236-e05f4f6e-a1` passes the six ordering, surfacing,
+background-report and pre-write mutation controls. CBC
+`20261121-224335-6c066d18-a1` passes real discovery oracle and its
+missing-section control, first-use validation control and the unchanged latency
+control: restored all-context compilation produces two timeouts, observed
+worst **1,001.453 ms**. Section and redaction scripts take **3.595308 s**
+and **0.920560 s** standalone. CBC `20261121-224403-42bc0cbe-a1` forces
+permanent NOT_READY: calls stay bounded (worst 366.003 ms) but no successful
+app reply arrives, so the startup test correctly fails. All mutations restore
+their sources. Inline reuse/dependency/redaction controls also run in app_mix.
+
+CBC `20261121-222740-b2f86e2a-a1`, source `8e194bd9` (same product code,
+before the final fixture repairs), passes actual 616-file bundle admission
+and planted bad-unused-context refusal before archive creation.
+
+Ten changed Mix files lint with zero errors, warnings or notes. No new
+environment variable; no `tools/ci.mix all`, merge or deployment. `pr_gate cbc`
+is the next full run. Monitor remains owned by `fix/monitor-completion-timeout`;
+its known timeout is the sole authorised pre-existing-failure exception.
+
+## Admission paths and retained desk baseline
+
+| Write path | Owner and evidence |
+|---|---|
+| Scene install / upgrade / Reset | Stage → `shell.scene.validate` at `engines/viud/scripts/lib/scenes.mix:1457`; whole-source desk-theme admission at `engines/viu/src/store.rs:497`. Refusal-before-write controls at `engines/viud/tests/scenes_test.mix:528,530,532`. Keep writes nothing. |
+| `appearance.source` | Existing whole-source compile at `libraries/settings/src/resolve.rs:65`; refusal before profile bytes/revision change at `services/settingsd/tests/transactions.rs:44`, with valid-source control. |
+| Build/install bundle | `tools/apps_bundle.mix:42`, native validator at `libraries/viu/src/app_host.rs:2611`; actual archive admission and planted bad-unused-context refusal. |
+| Generic `edit.save` | `services/editd/src/actor.rs:1301` stays out of scope, per `~/.viu/_doc/TODO-editd.md`, “Generic saves of theme and scene sources skip design validation”. Real editd save → report → refused switch is tested; no editor policy or filename heuristic. |
+
+The n=5 after-#216 desk baseline on gold
+`7ad2570fc71e3d7035fa642623578ac0570791c2` is retained from round 3d. Each
+sample has a re-read receipt (check_rc=2, no FAIL lines), quiet JSON with zero
+busy samples and raw probe output. All runs were outside the nightly exclusion.
+
+| Run id, 2026-11-21 UTC+10 | Ping max ms | Info max ms | Port ms |
+|---|---:|---:|---:|
+| `20261121-192827-1` | 477 | 378 | 103 |
+| `20261121-192843-2` | 461 | 377 | 102 |
+| `20261121-192859-3` | 467 | 409 | 105 |
+| `20261121-192915-4` | 509 | 368 | 102 |
+| `20261121-192930-5` | 462 | 376 | 102 |
+
+Each sample has 45 ping and 45 info calls, zero failures and zero calls over
+one second. Gold carrying #220 still needs its post-merge desk check. Startup
+residual cost and fatal-versus-formal fallback remain separate TODO follow-ups.
+
+
+CBC `20261121-232534-e19a996b-a1` passes the installed-context mutation
+control: replacing the active context with Studio/Dark after refusal fails
+the comparison with the prior Ocean/Light context. An earlier control driver,
+`20261121-232437-21e8f2ba-a1`, saw that intended failure but wrongly expected
+the expression name in Rust assertion output. The corrected driver checks the
+actual comparison and both contexts; no product assertion was changed.
+
+Earlier own fixture failures and diagnostics are retained in
+`20261121-222740-3303f2ac-a1`, `20261121-224317-13823ab6-a1` and
+`20261121-224053-aeba2809-a1`: pre-ready replies were incorrectly counted
+as failures, and the generic-save test did not wait for file-theme authority.
+They are superseded by the green runs above. No pre-existing failure or known
+Monitor timeout recurred in the accepted final runs.
+
 # PR #220 round 4 — #223 merged; stopped on unchanged Monitor timeout
 
 PR: https://github.com/mixviu/mixviu/pull/220. Tested source head:

@@ -127,7 +127,9 @@ fn startup_fallback_surfaces_in_app_info_and_painted_notice() {
     let broker = test_broker::Broker::start();
     let rt = runtime();
     let mut host = host(&path, &broker);
-    pump_until(&mut host, |h| h.ready() && h.state()["session"]["state"]["lost"] == true);
+    pump_until(&mut host, |h| {
+        h.ready() && h.state()["session"]["state"]["lost"] == true
+    });
     assert_eq!(host.active_context()["scheme"], "studio");
     assert_eq!(host.active_context()["mode"], "dark");
     assert_eq!(host.design_info()["file_context"]["scheme"], "studio");
@@ -181,9 +183,10 @@ fn generic_save_gets_late_report_and_bad_context_switch_is_refused() {
     let rt = runtime();
     let mut host = host(&path, &broker);
     // No settingsd is registered in this fixture. Wait for its absence to
-    // select the file theme, rather than the follower\u0027s initial empty profile.
+    // select the file theme, rather than the initial empty profile.
     pump_until(&mut host, |h| {
-        h.ready() && h.design_info()["pending"] == 0
+        h.ready()
+            && h.design_info()["pending"] == 0
             && h.state()["session"]["state"]["lost"] == true
     });
     assert_eq!(
