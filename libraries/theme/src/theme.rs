@@ -152,6 +152,10 @@ impl Overlay {
 /// The resolved design for one context, and how its windows are framed.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Theme {
+    document: std::sync::Arc<DesignSourceDocument>,
+    source_digest: String,
+    load_error: Option<String>,
+    load_source_digest: Option<String>,
     ui: settings::model::CommonUi,
     context: DesignContext,
     design: UnstampedResolvedDesign,
@@ -296,7 +300,12 @@ impl Theme {
     /// [`Theme::read`].
     pub fn load() -> Self {
         let path = theme_path();
-        match Self::read(&path) {
+        Self::load_from(&path)
+    }
+
+    /// The same logged fallback as [`Self::load`], with an explicit source path.
+    pub fn load_from(path: &Path) -> Self {
+        match Self::read(path) {
             Ok(Some(theme)) => theme,
             Ok(None) => Self::embedded(),
             Err(error) => {
@@ -305,13 +314,16 @@ impl Theme {
                     "toolkit: theme {}: {error}; using the embedded theme",
                     path.display()
                 );
-                Self::embedded()
+                let mut fallback = Self::embedded();
+                fallback.load_error = Some(error.to_string());
+                fallback.load_source_digest = std::fs::read_to_string(path).ok().map(|s| design::source_digest(&s));
+                fallback
             }
         }
     }
 
     pub fn compile(document: &DesignSourceDocument, context: DesignContext) -> Result<Self, Error> {
-        match design::compile_design(document, context.clone()) {
+        match design::compile_design_context(document, context.clone()) {
             DesignCompileResult::Success(success) => {
                 // A design that authors no style family takes the embedded
                 // design's style for its scheme and style axis.
@@ -320,6 +332,10 @@ impl Theme {
                     None => Self::for_context(context.clone()).style,
                 };
                 Ok(Self {
+                    document: std::sync::Arc::new(document.clone()),
+                    source_digest: design::document_digest(document),
+                    load_error: None,
+                    load_source_digest: None,
                     ui: settings::model::CommonUi::default(),
                     context,
                     design: success.candidate,
@@ -335,6 +351,24 @@ impl Theme {
             }
             DesignCompileResult::Fatal(failure) => Err(Error::Compile(failure.diagnostics)),
         }
+    }
+
+    /// The immutable authored source whose requested context was validated.
+    pub fn source_document(&self) -> std::sync::Arc<DesignSourceDocument> {
+        self.document.clone()
+    }
+
+    pub fn source_digest(&self) -> &str {
+        &self.source_digest
+    }
+
+    /// Non-fatal file-load failure retained when startup uses the embedded look.
+    pub fn load_error(&self) -> Option<&str> {
+        self.load_error.as_deref()
+    }
+
+    pub fn load_source_digest(&self) -> Option<&str> {
+        self.load_source_digest.as_deref()
     }
 
     /// This (session) theme with an app's own choice laid over it, as the
@@ -597,6 +631,33 @@ fn embedded_document() -> DesignSourceDocument {
         design::EMBEDDED_DEFAULT_SOURCE,
     )
     .expect("the embedded default design parses")
+}
+
+#[cfg(test)]
+mod startup_fallback_tests {
+    use super::*;
+
+    #[test]
+    fn requested_failure_keeps_logged_embedded_fallback_and_diagnostic() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("source.mix");
+        let good = design::EMBEDDED_DEFAULT_SOURCE;
+        std::fs::write(&path, good).unwrap();
+        let valid = Theme::load_from(&path);
+        assert_eq!(valid.scheme(), Scheme::Ocean);
+        assert_eq!(valid.mode(), Mode::Light);
+        assert!(valid.load_error().is_none());
+        let needle = "when: { scheme: \"ocean\", mode: \"light\" },\n        semantics: {\n          pairs: {";
+        assert_eq!(good.matches(needle).count(), 1);
+        let bad = good.replace(needle, &format!("{needle} base: {{ surface: \"palette.background.1\", foreground: \"missing.startup-control\" }},"));
+        std::fs::write(&path, &bad).unwrap();
+        assert!(Theme::read(&path).is_err());
+        let fallback = Theme::load_from(&path);
+        assert_eq!(fallback.scheme(), Scheme::Studio);
+        assert_eq!(fallback.mode(), Mode::Dark);
+        assert!(fallback.load_error().unwrap().contains("missing.startup-control"));
+        assert_eq!(fallback.load_source_digest(), Some(design::source_digest(&bad).as_str()));
+    }
 }
 
 /// The selection in a file that holds only selection keys, each a string.

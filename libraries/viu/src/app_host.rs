@@ -103,6 +103,7 @@ struct Host {
     retain_window_on_loss: bool,
     app: String,
     file_theme: toolkit::Theme,
+    design_validation: crate::design_validation::Validation,
     last_ui: settings::model::CommonUi,
     session_dirty: bool,
     session_key: Value,
@@ -389,7 +390,7 @@ impl Host {
                 )
             })
             .collect();
-        json!({"ready":self.ready,"model":self.view.model(),"revision":self.view.revision,"geometry":geometry,"outputs":self.outputs,"stats":self.ui_state.stats(),"error":self.error,"session":self.session.as_ref().map(|session| &session.snapshot)})
+        json!({"ready":self.ready,"model":self.view.model(),"revision":self.view.revision,"geometry":geometry,"outputs":self.outputs,"stats":self.ui_state.stats(),"error":self.error,"design_validation":self.design_validation.info(),"session":self.session.as_ref().map(|session| &session.snapshot)})
     }
     fn dispatch(
         &mut self,
@@ -782,6 +783,7 @@ impl eframe::App for Host {
 }
 impl Host {
     fn pump(&mut self, ctx: &egui::Context) {
+        self.design_validation.poll();
         // Acceptance is protocol state, not a lossy UI notification. Admit
         // retained receipts before job/event producers refill the mailbox.
         self.flush_model_receipts();
@@ -1074,6 +1076,11 @@ impl Host {
                 }
                 _ => Err("unknown native operation".into()),
             };
+            if request.command == "native.theme" {
+                if let Err(message) = &answer {
+                    self.design_validation.refused(self.file_theme.source_digest(), message);
+                }
+            }
             let _ = request.reply.send(match answer {
                 Ok(body) => (0, body),
                 Err(message) => (10, json!({"error_code":"ARGUMENT","message":message})),
@@ -1485,11 +1492,14 @@ impl Host {
                 } else {
                     (0, self.state())
                 };
-                let body = self
+                let mut body = self
                     .close_replies
                     .remove(&reply)
                     .filter(|_| answer.0 == 0)
                     .unwrap_or(answer.1);
+                if done.command == format!("{}.info", self.service) && body.is_object() {
+                    body["design_validation"] = self.design_validation.info();
+                }
                 self.calls.complete(&reply, answer.0, body);
             }
             if !done.behaviour_available {
@@ -1606,7 +1616,7 @@ impl Host {
                         toolkit::drive::set_service(ctx, None);
                     }
                     if n.command == "theme.changed" {
-                        self.file_theme = toolkit::Theme::load();
+                        self.reload_file_theme();
                         self.session_dirty = true;
                     }
                     if let Some(session) = &mut self.session {
@@ -1741,7 +1751,7 @@ impl Host {
                                 );
                             }
                         }
-                        Err(error) => self.error = error,
+                        Err(error) => self.design_validation.refused(self.file_theme.source_digest(), &error),
                     }
                 }
                 if let Some(at) = session.deadline() {
@@ -2013,7 +2023,7 @@ impl Host {
                 let reload = self.model["settings_reload"].as_u64().unwrap_or(0);
                 if reload != self.settings_reload {
                     self.settings_reload = reload;
-                    self.file_theme = toolkit::Theme::load();
+                    self.reload_file_theme();
                     if let Some(session) = &mut self.session {
                         session.hint("theme.changed", &json!({}));
                     }
@@ -2117,6 +2127,21 @@ impl Host {
         self.settle(ui.ctx());
         if !self.error.is_empty() {
             ui.colored_label(egui::Color32::RED, &self.error);
+        }
+        if !self.design_validation.notice.is_empty() {
+            ui.label(&self.design_validation.notice);
+        }
+        if self.ready && self.view.current_revision_drawn() {
+            crate::design_validation::drain(ui.ctx(), &mut self.design_validation);
+            self.design_validation.after_frame();
+        }
+    }
+
+    fn reload_file_theme(&mut self) {
+        let candidate = toolkit::Theme::load();
+        self.design_validation.observe(&candidate);
+        if candidate.load_error().is_none() {
+            self.file_theme = candidate;
         }
     }
 }
@@ -2369,6 +2394,9 @@ fn create_with_probe(
         .map(std::path::PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
+    let file_theme = toolkit::Theme::load();
+    let mut design_validation = crate::design_validation::Validation::default();
+    design_validation.observe(&file_theme);
     Host {
         initial_fullscreen: bundle.manifest.fullscreen,
         widget_command: format!("{}.widgets", bundle.manifest.app()),
@@ -2428,7 +2456,8 @@ fn create_with_probe(
         focus_serial: Value::Null,
         facilities,
         app: bundle.manifest.app().to_owned(),
-        file_theme: toolkit::Theme::load(),
+        file_theme,
+        design_validation,
         last_ui: settings::model::CommonUi::default(),
         session_dirty: false,
         session_key: Value::Null,

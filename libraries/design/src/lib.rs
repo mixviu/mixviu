@@ -74,7 +74,20 @@ pub use colour_model::{
     FocusRingProvenance, LinearRgba, NON_TEXT_NAMES, ResolvedColours, ResolvedNonTextColour,
     ResolvedPair, TEXT_PAIR_NAMES, contrast_ratio,
 };
-pub use compiler::compile_design;
+pub use compiler::{compile_design, compile_design_context};
+
+/// Identity of source bytes for admission and runtime diagnostics.
+pub fn source_digest(source: &str) -> String {
+    use sha2::Digest;
+    format!("{:x}", sha2::Sha256::digest(source.as_bytes()))
+}
+
+/// Identity of authored content, including programmatic edits to parsed sources.
+/// Paths and diagnostic labels are deliberately excluded. This is a digest of
+/// the parsed content rather than formatting, so whitespace edits share identity.
+pub fn document_digest(document: &DesignSourceDocument) -> String {
+    source_digest(&format!("{:?}{:?}{:?}", document.legacy, document.v1, document.presentation))
+}
 pub use context::{
     AccentChoice, CaptionSide, Colour8, Contrast, Decorations, DesignContext, MenuSide, MenuStyle,
     Mode, RequestedDecorations, Scheme, Style, Swatch, Tints, WindowStyle,

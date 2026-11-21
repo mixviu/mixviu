@@ -51,7 +51,7 @@ pub fn resolve(value: &Value) -> Result<crate::appearance::ResolvedAppearance, S
         design::EMBEDDED_DEFAULT_SOURCE,
     )
     .map_err(|e| format!("{e:?}"))?;
-    let compiled = design::compile_design(&document, context.clone());
+    let compiled = design::compile_design_context(&document, context.clone());
     let DesignCompileResult::Success(compiled) = compiled else {
         return Err("embedded native design did not compile".into());
     };
