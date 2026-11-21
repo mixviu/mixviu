@@ -37,6 +37,9 @@ if len($g.errors) != 0 or len($g.rest) != 1 or $g.opts.mix == nil or $g.opts.ass
 end
 $out = $g.rest[0]
 $mix = realpath($g.opts.mix) ?? raise("USAGE", "no such mix: " .. $g.opts.mix)
+$viu = path_join(dirname($mix), "viu")
+if not is_file($viu) then raise("DESIGN_VALIDATOR", "build viu beside the bundle's mix before admission") end
+$design_receipt = json_parse(trim(run_argv_must([$viu, "--validate-design", "--embedded"], {timeout:30})))
 mkdir($g.opts.assets, {parents: true})
 $store = realpath($g.opts.assets) ?? raise("ASSETS", "cannot create the asset store at " .. $g.opts.assets)
 $gold = "/opt/mix/share"
@@ -44,6 +47,9 @@ if trim(run_argv_must(["git", "status", "--porcelain", "--untracked-files=no"]))
   raise("DIRTY", "apps.tar is built from a committed tree")
 end
 $sha = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
+if $design_receipt.valid != true or $design_receipt.source_sha != $sha then
+  raise("DESIGN_VALIDATOR", "bundle requires whole-source admission by viu built from this commit")
+end
 $mix_sha = json_parse(run_argv_must([$mix, "--version", "--json"], {clear_env: true})).git_sha_full
 if $mix_sha != $sha then
   raise("ENV_MX_COMMIT", "bundle mix commit " .. to_string($mix_sha) .. " differs from HEAD " .. $sha)

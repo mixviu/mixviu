@@ -103,6 +103,7 @@ struct Host {
     retain_window_on_loss: bool,
     app: String,
     file_theme: toolkit::Theme,
+    design_validation: crate::design_validation::Validation,
     last_ui: settings::model::CommonUi,
     session_dirty: bool,
     session_key: Value,
@@ -389,7 +390,34 @@ impl Host {
                 )
             })
             .collect();
-        json!({"ready":self.ready,"model":self.view.model(),"revision":self.view.revision,"geometry":geometry,"outputs":self.outputs,"stats":self.ui_state.stats(),"error":self.error,"session":self.session.as_ref().map(|session| &session.snapshot)})
+        json!({"ready":self.ready,"model":self.view.model(),"revision":self.view.revision,"geometry":geometry,"outputs":self.outputs,"stats":self.ui_state.stats(),"error":self.error,"design_validation":self.design_validation.info(),"session":self.session.as_ref().map(|session| &session.snapshot)})
+    }
+
+    fn design_info(&self) -> Value {
+        let mut info = self.design_validation.info();
+        info["file_context"] = crate::native_theme::describe(&self.file_theme);
+        info
+    }
+
+    /// Before the first session delivery, the file theme is the complete
+    /// validated startup input. Never decode the session's initial `{}` as a
+    /// partially constructed settings snapshot.
+    fn theme_base(&self) -> Result<toolkit::Theme, String> {
+        if let Some(session) = self
+            .session
+            .as_ref()
+            .filter(|session| session.snapshot["state"]["values"].is_object())
+        {
+            crate::appearance::session_base(
+                &session.snapshot,
+                &self.app,
+                &self.file_theme,
+                &self.last_ui,
+            )
+            .map(|value| value.0)
+        } else {
+            Ok(self.file_theme.clone())
+        }
     }
     fn dispatch(
         &mut self,
@@ -782,6 +810,7 @@ impl eframe::App for Host {
 }
 impl Host {
     fn pump(&mut self, ctx: &egui::Context) {
+        self.design_validation.poll();
         // Acceptance is protocol state, not a lossy UI notification. Admit
         // retained receipts before job/event producers refill the mailbox.
         self.flush_model_receipts();
@@ -1052,28 +1081,21 @@ impl Host {
                     .ok_or("id required".into())
                     .and_then(|id| self.view.request_focus(id))
                     .map(|_| json!({"focused":true})),
-                "native.theme" => {
-                    let snapshot = self.session.as_ref().map(|s| s.snapshot.clone());
-                    crate::native_theme::choice(&request.args).and_then(|choice| {
-                        let base = if let Some(snapshot) = snapshot {
-                            crate::appearance::session_base(
-                                &snapshot,
-                                &self.app,
-                                &self.file_theme,
-                                &self.last_ui,
-                            )?
-                            .0
-                        } else {
-                            self.file_theme.clone()
-                        };
-                        let theme = base.with_choice(&choice).map_err(|e| e.to_string())?;
-                        crate::appearance::install_theme(ctx, &theme)?;
-                        self.native_choice = request.args.clone();
-                        Ok(crate::native_theme::describe(&theme))
-                    })
-                }
+                "native.theme" => crate::native_theme::choice(&request.args).and_then(|choice| {
+                    let base = self.theme_base()?;
+                    let theme = base.with_choice(&choice).map_err(|e| e.to_string())?;
+                    crate::appearance::install_theme(ctx, &theme)?;
+                    self.native_choice = request.args.clone();
+                    Ok(crate::native_theme::describe(&theme))
+                }),
                 _ => Err("unknown native operation".into()),
             };
+            if request.command == "native.theme" {
+                if let Err(message) = &answer {
+                    self.design_validation
+                        .refused(self.file_theme.source_digest(), message);
+                }
+            }
             let _ = request.reply.send(match answer {
                 Ok(body) => (0, body),
                 Err(message) => (10, json!({"error_code":"ARGUMENT","message":message})),
@@ -1302,8 +1324,31 @@ impl Host {
                             } else {
                                 Ok(None)
                             };
+                            let mut refused_design = false;
+                            if let Err(error) = &appearance {
+                                refused_design = true;
+                                self.design_validation
+                                    .refused(self.file_theme.source_digest(), error);
+                            }
                             let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
                                 crate::appearance::theme_choice(&model["theme_choice"])?;
+                                if self.model["theme_choice"] != model["theme_choice"] {
+                                    let base = self.theme_base()?;
+                                    let empty = json!({});
+                                    let choice = if model["theme_choice"].is_null() {
+                                        &empty
+                                    } else {
+                                        &model["theme_choice"]
+                                    };
+                                    base.with_choice(&crate::native_theme::choice(choice)?)
+                                        .map_err(|error| {
+                                            refused_design = true;
+                                            let error = error.to_string();
+                                            self.design_validation
+                                                .refused(self.file_theme.source_digest(), &error);
+                                            error
+                                        })?;
+                                }
                                 validate_overlays(&projected)?;
                                 if model["native_root"].is_object() {
                                     self.windows.validate(
@@ -1417,7 +1462,14 @@ impl Host {
                                 }
                                 Err(e) => {
                                     if let Some(revision) = done.model_revision {
-                                        self.publication_result(done.generation, revision, Err(e));
+                                        self.publication_result(
+                                            done.generation,
+                                            revision,
+                                            Err(e.clone()),
+                                        );
+                                        if refused_design {
+                                            self.error = e;
+                                        }
                                     } else {
                                         self.error = e;
                                     }
@@ -1485,11 +1537,14 @@ impl Host {
                 } else {
                     (0, self.state())
                 };
-                let body = self
+                let mut body = self
                     .close_replies
                     .remove(&reply)
                     .filter(|_| answer.0 == 0)
                     .unwrap_or(answer.1);
+                if done.command == format!("{}.info", self.service) && body.is_object() {
+                    body["design_validation"] = self.design_info();
+                }
                 self.calls.complete(&reply, answer.0, body);
             }
             if !done.behaviour_available {
@@ -1606,7 +1661,7 @@ impl Host {
                         toolkit::drive::set_service(ctx, None);
                     }
                     if n.command == "theme.changed" {
-                        self.file_theme = toolkit::Theme::load();
+                        self.reload_file_theme();
                         self.session_dirty = true;
                     }
                     if let Some(session) = &mut self.session {
@@ -1741,7 +1796,9 @@ impl Host {
                                 );
                             }
                         }
-                        Err(error) => self.error = error,
+                        Err(error) => self
+                            .design_validation
+                            .refused(self.file_theme.source_digest(), &error),
                     }
                 }
                 if let Some(at) = session.deadline() {
@@ -2013,7 +2070,7 @@ impl Host {
                 let reload = self.model["settings_reload"].as_u64().unwrap_or(0);
                 if reload != self.settings_reload {
                     self.settings_reload = reload;
-                    self.file_theme = toolkit::Theme::load();
+                    self.reload_file_theme();
                     if let Some(session) = &mut self.session {
                         session.hint("theme.changed", &json!({}));
                     }
@@ -2118,6 +2175,36 @@ impl Host {
         if !self.error.is_empty() {
             ui.colored_label(egui::Color32::RED, &self.error);
         }
+        if !self.design_validation.notice.is_empty() {
+            egui::Area::new(egui::Id::unique("viu-design-notice"))
+                .anchor(egui::Align2::CENTER_BOTTOM, [0., -12.])
+                .order(egui::Order::Foreground)
+                .show(ui.ctx(), |ui| {
+                    egui::Frame::popup(ui.style()).show(ui, |ui| {
+                        ui.set_max_width(620.);
+                        ui.label(&self.design_validation.notice);
+                        if ui.small_button("Dismiss").clicked() {
+                            self.design_validation.notice.clear();
+                        }
+                    });
+                });
+        }
+        if self.ready && self.view.current_revision_drawn() {
+            crate::design_validation::drain(ui.ctx(), &mut self.design_validation);
+            self.design_validation.after_frame();
+        }
+    }
+
+    fn reload_file_theme(&mut self) {
+        let candidate = toolkit::Theme::load();
+        self.accept_file_theme(candidate);
+    }
+
+    fn accept_file_theme(&mut self, candidate: toolkit::Theme) {
+        self.design_validation.observe(&candidate);
+        if candidate.load_error().is_none() {
+            self.file_theme = candidate;
+        }
     }
 }
 
@@ -2157,6 +2244,21 @@ fn create_with_probe(
     bundle: Bundle,
     wake: crate::runtime::Wake,
     #[cfg(feature = "test-support")] test_cpu_probe: bool,
+) -> Host {
+    create_with_theme(
+        bundle,
+        wake,
+        #[cfg(feature = "test-support")]
+        test_cpu_probe,
+        None,
+    )
+}
+
+fn create_with_theme(
+    bundle: Bundle,
+    wake: crate::runtime::Wake,
+    #[cfg(feature = "test-support")] test_cpu_probe: bool,
+    file_theme: Option<toolkit::Theme>,
 ) -> Host {
     let headless = bundle.manifest.surface == "headless" && bundle.startup.is_some();
     let service = bundle.manifest.service.clone();
@@ -2369,6 +2471,9 @@ fn create_with_probe(
         .map(std::path::PathBuf::from)
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
+    let file_theme = file_theme.unwrap_or_else(toolkit::Theme::load);
+    let mut design_validation = crate::design_validation::Validation::default();
+    design_validation.observe(&file_theme);
     Host {
         initial_fullscreen: bundle.manifest.fullscreen,
         widget_command: format!("{}.widgets", bundle.manifest.app()),
@@ -2428,7 +2533,8 @@ fn create_with_probe(
         focus_serial: Value::Null,
         facilities,
         app: bundle.manifest.app().to_owned(),
-        file_theme: toolkit::Theme::load(),
+        file_theme,
+        design_validation,
         last_ui: settings::model::CommonUi::default(),
         session_dirty: false,
         session_key: Value::Null,
@@ -2502,6 +2608,26 @@ fn create_with_probe(
 }
 
 pub fn run(mut args: Vec<String>) -> eframe::Result {
+    if args.first().is_some_and(|arg| arg == "--validate-design") {
+        let source = match args.get(1).map(String::as_str) {
+            Some("--embedded") => Ok(design::EMBEDDED_DEFAULT_SOURCE.to_owned()),
+            Some(path) if args.len() == 2 => {
+                std::fs::read_to_string(path).map_err(|e| e.to_string())
+            }
+            _ => Err("usage: viu --validate-design FILE|--embedded".into()),
+        };
+        if let Err(error) =
+            source.and_then(|source| crate::design_admission::validate_source(&source))
+        {
+            eprintln!("design admission refused: {error}");
+            std::process::exit(1);
+        }
+        println!(
+            "{}",
+            json!({"valid":true,"source_sha":buildinfo::build_info!().git_sha_full})
+        );
+        return Ok(());
+    }
     if args.first().map(String::as_str) != Some("run") {
         if let Err(error) = crate::debug::init("warn", &mut args) {
             eprintln!("viu: {error}");
@@ -2930,11 +3056,17 @@ pub mod test_support {
     }
     impl Harness {
         pub fn new(bundle: Bundle) -> Self {
+            Self::with_theme(bundle, None)
+        }
+        pub fn with_theme_file(bundle: Bundle, path: &std::path::Path) -> Self {
+            Self::with_theme(bundle, Some(toolkit::Theme::load_from(path)))
+        }
+        fn with_theme(bundle: Bundle, theme: Option<toolkit::Theme>) -> Self {
             let ctx = egui::Context::default();
             crate::appearance::install(&ctx);
             toolkit::drive::install(&ctx, bundle.manifest.app());
             Self {
-                host: create_with_probe(bundle, Arc::new(|| {}), true),
+                host: create_with_theme(bundle, Arc::new(|| {}), true, theme),
                 ctx,
             }
         }
@@ -3036,6 +3168,45 @@ pub mod test_support {
                     |ui| self.host.frame(ui),
                 )
                 .drop_without_applying_deltas();
+        }
+        pub fn design_info(&self) -> Value {
+            self.host.design_info()
+        }
+        pub fn reload_theme_file(&mut self, path: &std::path::Path) {
+            self.host.accept_file_theme(toolkit::Theme::load_from(path));
+            self.host.session_dirty = true;
+        }
+        pub fn drawn_text(&mut self) -> String {
+            fn text(shape: &egui::Shape, output: &mut String) {
+                match shape {
+                    egui::Shape::Text(text) => {
+                        output.push_str(&text.galley.job.text);
+                        output.push('\n');
+                    }
+                    egui::Shape::Vec(shapes) => {
+                        for shape in shapes {
+                            text(shape, output);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let output = self.ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1100., 760.),
+                    )),
+                    ..Default::default()
+                },
+                |ui| self.host.frame(ui),
+            );
+            let mut painted = String::new();
+            for shape in &output.shapes {
+                text(&shape.shape, &mut painted);
+            }
+            output.drop_without_applying_deltas();
+            painted
         }
         pub fn ready(&self) -> bool {
             self.host.ready && self.host.bus.client().is_some()

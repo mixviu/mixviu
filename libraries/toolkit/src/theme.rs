@@ -40,6 +40,9 @@ impl Theme {
     pub fn load() -> Self {
         Self(theme::Theme::load())
     }
+    pub fn load_from(path: &Path) -> Self {
+        Self(theme::Theme::load_from(path))
+    }
     pub fn with_choice(&self, choice: &Choice) -> Result<Self, Error> {
         self.0.with_choice(choice).map(Self)
     }

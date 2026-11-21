@@ -119,6 +119,7 @@ pub fn install_session_choice(
     Ok(ui)
 }
 pub fn install_theme(ctx: &egui::Context, theme: &toolkit::Theme) -> Result<(), String> {
+    crate::design_validation::observe(ctx, theme);
     toolkit::install(ctx, theme);
     let editor_palette = editor::Palette::from_theme(theme);
     // Normal clients have the same presentation in debug and release builds.
@@ -198,6 +199,7 @@ pub fn local_choice(ctx: &egui::Context, value: &Value) -> Result<(), String> {
         .data(|d| d.get_temp::<toolkit::Theme>(egui::Id::unique("viu-session-theme")))
         .unwrap_or_else(toolkit::Theme::load);
     let theme = theme.with_choice(&choice).map_err(|e| e.to_string())?;
+    crate::design_validation::observe(ctx, &theme);
     toolkit::install(ctx, &theme);
     let palette = editor::Palette::from_theme(&theme);
     let chrome = toolkit::chrome::Chrome::of(ctx);
