@@ -4,10 +4,25 @@ mod support;
 
 fn oracle_available() -> bool {
     let version = Command::new("ffmpeg").arg("-version").output();
-    if !support::available(version.is_ok_and(|o| o.status.success()), "ffmpeg is missing or cannot execute") { return false; }
+    if !support::available(
+        version.is_ok_and(|o| o.status.success()),
+        "ffmpeg is missing or cannot execute",
+    ) {
+        return false;
+    }
     for kind in ["-encoders", "-decoders"] {
         let probe = Command::new("ffmpeg").args(["-hide_banner", kind]).output();
-        if !support::available(probe.is_ok_and(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).lines().any(|line| line.split_whitespace().nth(1) == Some("libopus"))), &format!("ffmpeg libopus {kind} unavailable")) { return false; }
+        if !support::available(
+            probe.is_ok_and(|o| {
+                o.status.success()
+                    && String::from_utf8_lossy(&o.stdout)
+                        .lines()
+                        .any(|line| line.split_whitespace().nth(1) == Some("libopus"))
+            }),
+            &format!("ffmpeg libopus {kind} unavailable"),
+        ) {
+            return false;
+        }
     }
     true
 }
@@ -111,7 +126,9 @@ fn snr(a: &[f32], b: &[f32]) -> f64 {
 
 #[test]
 fn libopus_interop_and_container_timing() {
-    if !oracle_available() { return; }
+    if !oracle_available() {
+        return;
+    }
     let directory = support::TempDir::new("interop");
     let work = directory.path();
     let source_path = work.join("source.f32");

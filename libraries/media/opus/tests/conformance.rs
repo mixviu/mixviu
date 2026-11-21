@@ -10,11 +10,23 @@ fn rfc_vectors() {
         support::available(false, "MIX_TEST_OPUS_VECTORS is unset");
         return;
     };
-    if !support::available(Command::new(root.join("opus_compare")).output().is_ok(), "opus_compare is missing or cannot execute") { return; }
+    if !support::available(
+        Command::new(root.join("opus_compare")).output().is_ok(),
+        "opus_compare is missing or cannot execute",
+    ) {
+        return;
+    }
     for set in ["opus_testvectors", "opus_newvectors"] {
         for vector in 1..=12 {
             for extension in ["bit", "dec"] {
-                if !support::available(root.join(set).join(format!("testvector{vector:02}.{extension}")).is_file(), "RFC vector fixture is missing") { return; }
+                if !support::available(
+                    root.join(set)
+                        .join(format!("testvector{vector:02}.{extension}"))
+                        .is_file(),
+                    "RFC vector fixture is missing",
+                ) {
+                    return;
+                }
             }
         }
     }
@@ -31,11 +43,16 @@ fn rfc_vectors() {
                 let mut previous_lost = true;
                 while at < bytes.len() {
                     let n = u32::from_be_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
-                    let expected_range = u32::from_be_bytes(bytes[at + 4..at + 8].try_into().unwrap());
+                    let expected_range =
+                        u32::from_be_bytes(bytes[at + 4..at + 8].try_into().unwrap());
                     at += 8; // payload length and encoder final range
                     let decoded = decoder.decode(Some(&bytes[at..at + n])).unwrap();
                     if expected_range != 0 && n != 0 && !previous_lost {
-                        assert_eq!(decoder.final_range(), expected_range, "{set} {channels:?} {vector:02} packet offset {at}");
+                        assert_eq!(
+                            decoder.final_range(),
+                            expected_range,
+                            "{set} {channels:?} {vector:02} packet offset {at}"
+                        );
                     }
                     previous_lost = n == 0;
                     for v in decoded.pcm {
