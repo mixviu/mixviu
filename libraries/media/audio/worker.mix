@@ -10,7 +10,7 @@ try
   checked(["cargo", "test", "-p", "media-audio", "--all-targets"])
   checked(["cargo", "clippy", "-p", "media-audio", "--all-targets", "--", "-D", "warnings"])
   checked(["/opt/mix/bin/mix", "tools/foreign_gate.mix"])
-  checked(["cargo", "build", "--release-fast", "-p", "media-audio", "--example", "audio_probe"])
+  checked(["cargo", "build", "--profile", "release-fast", "-p", "media-audio", "--example", "audio_probe"])
 finally
   print("AUDIO_DIFF_BEGIN")
   print(run_argv_must(["git", "diff"]))
