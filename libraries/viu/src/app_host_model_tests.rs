@@ -131,10 +131,25 @@ end
     settle(&mut host, &ctx);
     assert_eq!(host.model_revision, Some((generation, 6)));
     assert_eq!(host.view.model()["label"], "recovered");
-    host.dispatch("test.legacy".into(),json!({}),BTreeMap::new(),None);
-    settle(&mut host,&ctx);assert_eq!(host.model_revision,None);
-    host.dispatch("test.full".into(),json!({"revision":1,"label":"must not reuse a retired revision"}),BTreeMap::new(),None);
-    settle(&mut host,&ctx);assert!(host.error.contains("revision must advance"));assert_eq!(host.view.model()["label"],"legacy");
-    host.dispatch("test.full".into(),json!({"revision":7,"label":"new base"}),BTreeMap::new(),None);
-    settle(&mut host,&ctx);assert!(host.error.is_empty());assert_eq!(host.model_revision,Some((generation,7)));
+    host.dispatch("test.legacy".into(), json!({}), BTreeMap::new(), None);
+    settle(&mut host, &ctx);
+    assert_eq!(host.model_revision, None);
+    host.dispatch(
+        "test.full".into(),
+        json!({"revision":1,"label":"must not reuse a retired revision"}),
+        BTreeMap::new(),
+        None,
+    );
+    settle(&mut host, &ctx);
+    assert!(host.error.contains("revision must advance"));
+    assert_eq!(host.view.model()["label"], "legacy");
+    host.dispatch(
+        "test.full".into(),
+        json!({"revision":7,"label":"new base"}),
+        BTreeMap::new(),
+        None,
+    );
+    settle(&mut host, &ctx);
+    assert!(host.error.is_empty());
+    assert_eq!(host.model_revision, Some((generation, 7)));
 }

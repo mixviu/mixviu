@@ -567,11 +567,11 @@ fn workshop_answers_during_discovery() {
         bundle.launch = json!({"headless":true});
         bundle.manifest.saved_version = None;
         if count==200 {
+            bundle.program.source.insert_str(0,"$fixture_traffic=require(\"traffic.mix\")\n");
             // A deterministic large retained model, authored in Mix and
             // injected only through this test owner's native event queue.
             bundle.program.source.push_str(r#"
 on viu.test.retained_model
-  $fixture_traffic=require("traffic.mix")
   $state.traffic=[];$state.traffic_bytes=0
   for $i=0 to 47
     $state=$fixture_traffic.retain($state,{ts:to_string($i),direction:"local",command:"fixture.retained",payload:{text:$event.args.padding}})
