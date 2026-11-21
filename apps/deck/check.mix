@@ -1,0 +1,34 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run on an owned CBC checkout only, through cbc-build.mix --commit SHA.
+$mode=args()[0] ?? "check"
+if $mode=="fmt" then
+  try
+    print(run_argv_must(["cargo","fmt","--all"]))
+    print(run_argv_must(["git","diff"]))
+  finally
+    run_argv_must(["git","checkout","-q","--","."])
+  end
+  exit(0)
+end
+if $mode!="check" and $mode!="focused" then raise("USAGE","check|focused|fmt (CBC only)") end
+$tests=if $mode=="focused" then ["cargo","test","-p","lib-viu","--test","deck","--test","deck_spans","--test","scene_adapter","--no-fail-fast"] else ["cargo","test","-p","lib-viu","-p","viu","--no-fail-fast"] end
+$output="/tmp/deck-gallery-check-"..to_string(pid())
+$failed=false
+for $cmd in [
+  $tests,
+  ["cargo","clippy","-p","lib-viu","-p","viu","--all-targets"],
+  ["cargo","fmt","--all","--","--check"],
+  ["mix","apps/deck/core-test.mix"],
+  ["mix","lint","apps/deck/app.mix"],
+  ["mix","apps/deck/examples/author.mix"],
+  ["git","diff","--exit-code","--","apps/deck/examples/vfl-self-recording.json"],
+  ["mix","apps/gallery/deck-pages.mix",$output],
+  ["diff","-qr","apps/gallery/deck-pages",$output]
+]
+  print(json_encode({check:$cmd}))
+  $r=run_argv($cmd,{timeout:2400,stderr:"stdout"})
+  print($r.stdout)
+  print("CHECK_RC="..to_string($r.exit_code))
+  if $r.exit_code!=0 then $failed=true end
+end
+if $failed then exit(1) end

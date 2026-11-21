@@ -32,6 +32,18 @@ async fn ok(client: &NodedClient, service: &str, command: &str, body: Value) -> 
     assert_eq!(rc, 0, "{command}: {value}");
     value
 }
+async fn finished(client: &NodedClient, play: Value) -> Value {
+    let deadline = Instant::now() + Duration::from_secs(180);
+    loop {
+        let state = ok(client, "deck", "deck.state", json!({})).await;
+        assert_eq!(state["play_id"], play["play_id"]);
+        if state["finished"] == true {
+            return state;
+        }
+        assert!(Instant::now() < deadline, "play did not finish: {state}");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
 #[test]
 #[ignore = "requires CBC-built viud backend-headless, viu, mixd and render node"]
 fn bus_sweep_record_reference_play_and_decode_build_states() {
@@ -150,6 +162,7 @@ fn bus_sweep_record_reference_play_and_decode_build_states() {
         tokio::time::sleep(Duration::from_millis(800)).await;
         let recording=ok(c,"comp-deck","comp.record.start",json!({"request_id":"deck-reference","target":{"output":"headless-0"},"path":path,"fps":10,"cursor":false,"max_seconds":40})).await;
         let result=ok(c,"deck","deck.play",json!({"slides":["before","recorder"],"beats":[[0,3,11],[0,3,11]]})).await;
+        let result=finished(c,result).await;
         assert_eq!(result["finished"],true);assert_eq!(result["playing"],false);
         tokio::time::sleep(Duration::from_millis(250)).await;
         let idle=ok(c,"comp-deck","comp.record.status",json!({"session":recording["session"]})).await;
@@ -164,6 +177,7 @@ fn bus_sweep_record_reference_play_and_decode_build_states() {
         let full_path=evidence.join("full-reference.vfl");
         let full=ok(c,"comp-deck","comp.record.start",json!({"request_id":"deck-full-reference","target":{"output":"headless-0"},"path":full_path,"fps":10,"cursor":false,"max_seconds":180})).await;
         let completed=ok(c,"deck","deck.play",json!({"beats":beats})).await;
+        let completed=finished(c,completed).await;
         assert_eq!(completed["slide"],"closing");assert_eq!(completed["finished"],true);
         tokio::time::sleep(Duration::from_millis(250)).await;
         ok(c,"comp-deck","comp.record.stop",json!({"session":full["session"]})).await;

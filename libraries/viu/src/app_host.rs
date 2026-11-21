@@ -41,6 +41,7 @@ pub(crate) fn validate_overlays(model: &Value) -> Result<(), String> {
     Ok(())
 }
 struct Host {
+    initial_fullscreen: bool,
     widget_command: String,
     widget_requests: Vec<Request>,
     require_bus: bool,
@@ -154,6 +155,30 @@ struct Host {
     last_viewport: Option<[f32; 3]>,
     notice_command: Option<String>,
     saved: Option<crate::saved_state::Saved>,
+}
+
+fn request_initial_fullscreen(ctx: &egui::Context, pending: &mut bool) {
+    if std::mem::take(pending) {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(true));
+    }
+}
+
+#[test]
+fn fullscreen_is_requested_once_after_context_creation() {
+    let ctx = egui::Context::default();
+    let mut pending = true;
+    for expected in [true, false] {
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            request_initial_fullscreen(ui.ctx(), &mut pending)
+        });
+        assert_eq!(
+            output.viewport_output.values().any(|v| v
+                .commands
+                .contains(&egui::ViewportCommand::Fullscreen(true))),
+            expected
+        );
+        output.drop_without_applying_deltas();
+    }
 }
 impl Host {
     fn publication_result(&mut self, generation: u64, revision: u64, result: Result<(), String>) {
@@ -677,6 +702,9 @@ impl Host {
 }
 impl eframe::App for Host {
     fn logic(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        // Request after the surface exists: restored geometry can override the
+        // initial viewport builder on Wayland.
+        request_initial_fullscreen(ctx, &mut self.initial_fullscreen);
         if self.framed
             && self.model["window_close"] != true
             && ctx.input(|i| i.viewport().close_requested())
@@ -2342,6 +2370,7 @@ fn create_with_probe(
         .unwrap_or_else(std::env::temp_dir)
         .join("viu-captures");
     Host {
+        initial_fullscreen: bundle.manifest.fullscreen,
         widget_command: format!("{}.widgets", bundle.manifest.app()),
         widget_requests: Vec::new(),
         require_bus: bundle.manifest.require_bus,

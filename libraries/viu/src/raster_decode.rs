@@ -148,6 +148,40 @@ pub fn load(path: &Path) -> Result<Decoded, String> {
     decode_bytes(&bytes, &path.display().to_string())
 }
 
+/// Deck assets are pinned at open. Check the opened file, not just a lexical
+/// path, so symlinks and concurrent renames cannot escape the deck directory.
+pub fn load_deck(path: &Path, deck: &Path) -> Result<Decoded, String> {
+    use std::os::fd::AsRawFd;
+    let base = deck
+        .parent()
+        .ok_or("deck directory required")?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base.join(path)
+    };
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)
+        .map_err(|e| e.to_string())?;
+    let fd = std::path::PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()));
+    let actual = fd.canonicalize().map_err(|e| e.to_string())?;
+    if !actual.starts_with(&base) {
+        return Err("image outside deck directory".into());
+    }
+    let bytes = read_bounded(&fd)?;
+    if !matches!(
+        image::guess_format(&bytes),
+        Ok(ImageFormat::Png | ImageFormat::Jpeg)
+    ) {
+        return Err("deck image must be PNG or JPEG".into());
+    }
+    decode_bytes(&bytes, "deck image")
+}
+
 /// Discover a bounded, non-recursive slideshow source on the decode worker.
 /// The cap counts all entries, including skipped files, to bound traversal.
 pub fn list_folder(path: &Path) -> Result<Vec<PathBuf>, String> {
@@ -347,6 +381,26 @@ mod tests {
         );
         assert!(check_dimensions(8192, 4096).is_ok());
         assert!(check_dimensions(MAX_SIDE, 1).is_ok());
+    }
+
+    #[test]
+    fn deck_admission_checks_format_and_dimensions_before_retaining() {
+        let dir = dir();
+        let deck = dir.path().join("deck.json");
+        let png = dir.path().join("large.png");
+        std::fs::write(&png, png_header(MAX_SIDE + 1, 1)).unwrap();
+        assert!(load_deck(&png, &deck).is_err());
+        let webp = dir.path().join("not-png.png");
+        image::RgbaImage::new(2, 2)
+            .save_with_format(&webp, ImageFormat::WebP)
+            .unwrap();
+        assert!(load_deck(&webp, &deck).unwrap_err().contains("PNG or JPEG"));
+        let jpeg = dir.path().join("shot.jpg");
+        image::RgbImage::new(2, 3).save(&jpeg).unwrap();
+        assert_eq!(
+            load_deck(Path::new("shot.jpg"), &deck).unwrap().size,
+            [2, 3]
+        );
     }
 
     #[test]
