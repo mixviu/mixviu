@@ -1,6 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $c = require("core.mix")
 $s = require("suites.mix")
+$ep=require("episode_support.mix")
 fn check($b)
   if not $b then raise("TEST","media bench assertion failed") end
 end
@@ -81,5 +82,58 @@ end
 $refused=false
 try $c.bd_rate($a,[{quality:110,rate:100},{quality:120,rate:200},{quality:130,rate:400},{quality:140,rate:800}]) catch $error $refused=true end
 check($refused)
-check(contains(join($c.scope(["ffmpeg"])," "),"MemoryMax=24G -p CPUWeight=20 nice -n 10 taskset --cpu-list"))
+check(contains(join($c.scope_for(["ffmpeg"],"4","2-5")," "),"nice -n 10 taskset --cpu-list 2,3,4,5 ffmpeg"))
+check(not contains($c.scope_for(["ffmpeg"],"unrestricted","0-1"),"taskset"))
+check($c.options(["--budget","unrestricted","--keep"]).keep)
+check($c.options([]).budget=="4")
+check(ends_with($c.absolute_path("./out","/tmp/work"),"out"))
+for $cwd in ["/tmp/has'quote","/tmp/has:colon","/tmp/has space"]
+  $refused=false
+  try $c.absolute_path("out",$cwd) catch $e $refused=true end
+  check($refused)
+end
+$refused=false
+try $c.concat_entry("/tmp/has'quote.wav") catch $e $refused=true end
+check($refused)
+check($c.concat_entry("/tmp/normal.wav")=="file '/tmp/normal.wav'")
+for $line in ["42 mix build.mix","42 /usr/local/bin/mix episode.mix","42 mix ./build.mix","42 mix --flag build.mix"]
+  $refused=false
+  try $c.guard_at(1600,$line) catch $e $refused=true end
+  check($refused)
+end
+for $line in ["42 mix rebuild.mix","42 mix episode.mix.old","42 other build.mix"]
+  $c.guard_at(1600,$line)
+end
+check(deep_eq($s.budget_argv(["ffmpeg","-threads","4","n_threads=4"],{budget:"4"}),["ffmpeg","-threads","4","n_threads=4"]))
+check(deep_eq($s.budget_argv(["ffmpeg","-threads","4","n_threads=4"],{budget:"unrestricted"}),["ffmpeg","-threads","0","n_threads=0"]))
+check($c.excluded({curve:{status:"unavailable",overlap_lo:1}},"curve.overlap_lo"))
+check($c.excluded({curve:{status:"ok",bd_rate_percent:10}},"curve.bd_rate_percent"))
+check(not contains($c.report($r,nil),"Round-1"))
+-- Copy/rebase/snapshot tests use files only, never a media pipeline or live CPU mask.
+$tmp=trim(run_argv_must(["mktemp","-d","/tmp/media-bench-episode-test-XXXXXX"]))
+$copy=nil
+try
+  $original=$tmp.."/run"; $alias=$tmp.."/linked"
+  mkdir($original)
+  run_argv_must(["ln","-s","--",$original,$alias])
+  write_file($original.."/episode.mix",data_encode([{kind:"clip",path:$alias.."/take.mp4"}]))
+  write_file($original.."/meta.json",json_encode({real:$original.."/file",alias:$alias.."/file",sibling:$original.."-other/file",alias_sibling:$alias.."-other/file",root:$alias}))
+  write_file($original.."/actions.jsonl",json_encode({path:$alias.."/file"}).."\n")
+  $before=$ep.run_snapshot($original)
+  $copy=$ep.copy_run(realpath($alias),[$original,$alias])
+  $meta=json_parse(read_file($copy.."/meta.json"))
+  check($meta.real==$copy.."/file" and $meta.alias==$copy.."/file" and $meta.root==$copy)
+  check($meta.sibling==$original.."-other/file" and $meta.alias_sibling==$alias.."-other/file")
+  check(load_data($copy.."/episode.mix")[0].path==$copy.."/take.mp4")
+  check(json_parse(trim(read_file($copy.."/actions.jsonl"))).path==$copy.."/file")
+  check($ep.take_entries($copy)[0].id=="assemble-root")
+  check($before.sha256==$ep.run_snapshot($original).sha256)
+  write_file($original.."/new-file","changed")
+  check($before.sha256!=$ep.run_snapshot($original).sha256)
+  $ep.remove_copy($copy,true); check(is_dir($copy))
+  $ep.remove_copy($copy,false); check(not is_dir($copy)); $copy=nil
+finally
+  if $copy!=nil then $ep.remove_copy($copy,false) end
+  run_argv_must(["rm","-rf","--",$tmp])
+end
 print("PASS media bench: statistics, schema, ratios, BD-rate, host guard and scope")

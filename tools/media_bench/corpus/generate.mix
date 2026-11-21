@@ -3,7 +3,7 @@ $core = require("../core.mix")
 $spec = require("spec.mix")
 $o = $core.options(args())
 if $o.corpus == nil then raise("ARGS","--corpus DIR required") end
-$o.corpus=path_join(trim(run_argv_must(["pwd"])), $core.safe_path($o.corpus))
+$o.corpus=$core.absolute_path($o.corpus,trim(run_argv_must(["pwd"])))
 mkdir($o.corpus)
 $entries = []
 for $g in $spec.generators()
@@ -11,7 +11,7 @@ for $g in $spec.generators()
   for $n in [1,2]
     $path = $o.corpus.."/"..to_string($n).."-"..$g.file
     $argv = concat(["ffmpeg","-nostdin","-y","-hide_banner"],concat($g.args,[$path]))
-    $timing = $core.timed($argv,$o.corpus.."/generate-"..$g.id.."-"..to_string($n))
+    $timing = $core.timed($argv,$o.corpus.."/generate-"..$g.id.."-"..to_string($n),$o.budget)
     push($hashes,split(run_argv_must(["sha256sum","--",$path])," ")[0])
   end
   if $hashes[0] != $hashes[1] then raise("CORPUS","byte stability failed for "..$g.id.."; retain both files for decoded-frame investigation") end

@@ -1,18 +1,29 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $core = require("core.mix")
+$episode_support=require("episode_support.mix")
 fn ff($args)
   return concat(["ffmpeg","-nostdin","-y","-hide_banner","-threads","4","-filter_complex_threads","4","-filter_threads","4"],$args)
 end
 fn measure($argv,$o,$name)
-  return $core.speed($argv,$o.out.."/"..$name,$o.runs)
+  return $core.speed(budget_argv($argv,$o),$o.out.."/"..$name,$o.runs,$o.budget ?? "4")
+end
+fn budget_argv($argv,$o)
+  if ($o.budget ?? "4")=="4" then return $argv end
+  $out=$argv
+  for $i in range(0,len($out)-1)
+    if contains(["-threads","-filter_threads","-filter_complex_threads"],$out[$i]) then $out[$i+1]="0" end
+    $out[$i]=replace($out[$i],"n_threads=4","n_threads=0")
+  end
+  return $out
 end
 fn once($argv,$o,$name)
+  $argv=budget_argv($argv,$o)
   if $o.oracle ?? false then
     $r=run_argv($argv,{timeout:300,stdout:{file:$o.out.."/"..$name..".stdout"},stderr:{file:$o.out.."/"..$name..".stderr"},env:{LC_ALL:"C"}})
     if not $r.ok then raise("ORACLE","command failed: "..$o.out.."/"..$name..".stderr") end
     return $r
   end
-  return $core.timed($argv,$o.out.."/"..$name)
+  return $core.timed($argv,$o.out.."/"..$name,$o.budget ?? "4")
 end
 fn model_probe($o)
   for $model in ["vmaf_4k_v0.6.1","vmaf_v0.6.1"]
@@ -148,7 +159,6 @@ fn audio_files($o)
     if has_key($seen,$id) then raise("ID","duplicate narration id") end
     $seen[$id]=true
     $selected_paths[$relative]=true
-    push($inventory,{file:$relative,sha256:$hash,selected:true})
     push($files,$destination)
   end
   $inventory=[]
@@ -163,7 +173,7 @@ fn audio_files($o)
     $id=item_id($f,$o.corpus)
     $wav=$o.out.."/programme-"..$id..".wav"
     $r=once(ff(["-i",$f,"-ar","48000","-ac","2","-c:a","pcm_s16le",$wav]),$o,"programme-prepare-"..$id)
-    push($normalised,"file '"..$wav.."'")
+    push($normalised,$core.concat_entry($wav))
   end
   $list=$o.out.."/programme.concat"
   write_file($list,join($normalised,"\n").."\n")
@@ -216,26 +226,39 @@ fn episode($o)
   $source=realpath($o["episode-run"] ?? "")
   if $source==nil or not is_file($source.."/episode.mix") then raise("EPISODE","--episode-run must name an existing run directory") end
   $core.safe_path($source)
-  $copy=trim(run_argv_must(["mktemp","-d","/var/tmp/media-bench/episode-XXXXXX"]))
-  run_argv_must(["cp","-aL","--reflink=auto","--",$source.."/.",$copy],{timeout:600})
-  -- Rebase references in copied metadata, never in the original.
-  for $file in concat(glob($copy.."/**/*.json"),concat(glob($copy.."/**/*.jsonl"),glob($copy.."/**/*.mix")))
-    write_file($file,replace(read_file($file),$source,$copy))
+  $before=$episode_support.run_snapshot($source)
+  write_file($o.out.."/original-before.json",json_encode($before))
+  $origins=unique([$source,$o["episode-run"],$o.episode_given ?? $o["episode-run"]])
+  $copy=$episode_support.copy_run($source,$origins)
+  $items=[]; $keep=$o.keep ?? false
+  try
+    for $part in load_data($copy.."/episode.mix")
+      if $part.native ?? false then raise("EPISODE","native desk recording is outside this harness; use an existing non-native run") end
+    end
+    $pipeline=env("HOME").."/.viu/media/pipeline"
+    $takes=$episode_support.take_entries($copy)
+    if len($takes)==0 then raise("EPISODE","copied run has no assemble.mix take; refusing a partial timing") end
+    $one=$o; $one.runs=1
+    for $take in $takes
+      $m=measure(["env","MIXVIU_MEDIA_SCOPE=1","/usr/local/bin/mix",$pipeline.."/assemble.mix",$take.path],$one,$take.id)
+      push($items,{id:$take.id,metrics:{speed:$m,copy:$copy,copy_kept:$keep}})
+    end
+    $m=measure(["env","MIXVIU_MEDIA_SCOPE=1","/usr/local/bin/mix",$pipeline.."/build.mix","--run",$copy],$one,"episode-build")
+    push($items,{id:"build",metrics:{speed:$m,copy:$copy,copy_kept:$keep}})
+  finally
+    try
+      $after=$episode_support.run_snapshot($source)
+      write_file($o.out.."/original-after.json",json_encode($after))
+      $unchanged=$before.sha256==$after.sha256
+      write_file($o.out.."/original-verification.json",json_encode({before:$before.sha256,after:$after.sha256,original_untouched:$unchanged}))
+    finally
+      $episode_support.remove_copy($copy,$keep)
+    end
   end
-  for $part in load_data($copy.."/episode.mix")
-    if $part.native ?? false then raise("EPISODE","native desk recording is outside this harness; use an existing clip-only run") end
+  if not $unchanged then raise("EPISODE","original run metadata changed; see original-verification.json") end
+  for $i in range(0,len($items)-1)
+    $items[$i].metrics.original_untouched=$unchanged
   end
-  $pipeline=env("HOME").."/.viu/media/pipeline"
-  $items=[]; $takes=glob($copy.."/**/actions.jsonl")
-  if len($takes)==0 then raise("EPISODE","copied run has no assemble.mix take; refusing a partial timing") end
-  $one=$o; $one.runs=1
-  for $file in $takes
-    $take=dirname($file); $id="assemble-"..replace(substr($take,len($copy)+1),"/","__")
-    $m=measure(["env","MIXVIU_MEDIA_SCOPE=1","/usr/local/bin/mix",$pipeline.."/assemble.mix",$take],$one,$id)
-    push($items,{id:$id,metrics:{speed:$m,copy:$copy,original_untouched:true}})
-  end
-  $m=measure(["env","MIXVIU_MEDIA_SCOPE=1","/usr/local/bin/mix",$pipeline.."/build.mix","--run",$copy],$one,"episode-build")
-  push($items,{id:"build",metrics:{speed:$m,copy:$copy,original_untouched:true}})
   return $items
 end
 fn loudness($o)

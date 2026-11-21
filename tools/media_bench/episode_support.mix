@@ -1,0 +1,71 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$core=require("core.mix")
+fn rebase_value($value,$origins,$copy)
+  if type($value)=="string" then
+    for $origin in $origins
+      if $origin!="" and ($value==$origin or starts_with($value,$origin.."/")) then return $copy..substr($value,len($origin)) end
+    end
+  elif type($value)=="list" then
+    return map($value,fn($v)=rebase_value($v,$origins,$copy))
+  elif type($value)=="map" then
+    $out={}
+    for $key in keys($value)
+      $out[$key]=rebase_value($value[$key],$origins,$copy)
+    end
+    return $out
+  end
+  return $value
+end
+fn run_snapshot($root)
+  $raw=run_argv_must(["find",$root,"(","-type","f","-o","-type","l",")","-print0"],{timeout:600})
+  $files=[]
+  for $path in sort(filter(split($raw,"\0"),fn($p)=$p!=""))
+    $s=stat($path,{follow_symlinks:false})
+    push($files,{path:substr($path,len($root)+1),size:$s.size,mtime:$s.mtime,mtime_nsec:$s.mtime_nsec,symlink:$s.is_symlink})
+  end
+  $hash=split(run_argv_must(["sha256sum"],{stdin:json_encode($files)})," ")[0]
+  return {sha256:$hash,files:$files}
+end
+fn remove_copy($copy,$keep)
+  if $keep then return end
+  if not starts_with($copy,"/var/tmp/media-bench/episode-") then raise("EPISODE","refusing to remove a non-bench copy") end
+  run_argv_must(["rm","-rf","--",$copy],{timeout:600})
+end
+fn copy_run($source,$origins)
+  mkdir("/var/tmp/media-bench")
+  $copy=trim(run_argv_must(["mktemp","-d","/var/tmp/media-bench/episode-XXXXXX"]))
+  try
+    run_argv_must(["cp","-aL","--reflink=auto","--",$source.."/.",$copy],{timeout:600})
+    for $file in sort(concat(glob($copy.."/**/*.json"),concat(glob($copy.."/**/*.jsonl"),glob($copy.."/**/*.mix"))))
+      if ends_with($file,".jsonl") then
+        $lines=[]
+        for $line in split(read_file($file),"\n")
+          if trim($line)!="" then push($lines,json_encode(rebase_value(json_parse($line),$origins,$copy))) end
+        end
+        write_file($file,join($lines,"\n").."\n")
+      elif ends_with($file,".json") then
+        write_file($file,json_encode(rebase_value(json_parse(read_file($file)),$origins,$copy)))
+      else
+        write_file($file,data_encode(rebase_value(load_data($file),$origins,$copy)))
+      end
+    end
+  catch $error
+    remove_copy($copy,false)
+    raise("EPISODE",$error)
+  end
+  return $copy
+end
+fn take_entries($copy)
+  $out=[]; $seen={}
+  for $file in sort(glob($copy.."/**/actions.jsonl"))
+    $take=dirname($file)
+    $relative=if $take==$copy then "root" else substr($take,len($copy)+1) end
+    $id="assemble-"..$core.safe_path($relative)
+    if contains($relative,"__") then raise("ID","ambiguous take separator") end
+    $id=replace($id,"/","__")
+    if has_key($seen,$id) then raise("ID","duplicate take id") end
+    $seen[$id]=true
+    push($out,{id:$id,path:$take})
+  end
+  return $out
+end

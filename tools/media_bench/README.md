@@ -6,7 +6,7 @@ Run from any working directory using the entry point's absolute path:
 mix tools/media_bench/corpus/generate.mix --corpus /var/tmp/media-bench/corpus
 mix tools/media_bench/run.mix --suite av1enc --engine ffmpeg --corpus /var/tmp/media-bench/corpus --out /var/tmp/media-bench/bounded/av1enc --runs 3
 mix tools/media_bench/run.mix --suite av1dec --engine ffmpeg --variant sustained --corpus /var/tmp/media-bench/corpus --out /var/tmp/media-bench/sustained/av1dec --runs 3
-mix tools/media_bench/run.mix --suite episode --engine ffmpeg --variant sustained --episode-run /var/tmp/media-bench/existing-run --corpus /var/tmp/media-bench/corpus --out /var/tmp/media-bench/sustained/episode
+mix tools/media_bench/run.mix --suite episode --engine ffmpeg --variant sustained --budget unrestricted --episode-run DIR --corpus /var/tmp/media-bench/corpus --out /var/tmp/media-bench/sustained/episode
 mix tools/media_bench/test.mix
 ```
 
@@ -26,11 +26,13 @@ paired numeric metrics; dynamic loudnorm gain is also excluded. Comparison
 validation precedes writing successful results.
 
 All measured processes run in a user systemd scope with MemoryMax=24G,
-CPUWeight=20 and nice 10. FFmpeg is asked for four threads; CPU affinity also
-limits every measured tool and its children to the same four allowed CPUs,
-including private pipeline scripts with larger internal thread pools. The
-recorded thread budget is four; it is a resource budget, not a count of every
-OS thread in codec worker pools. Future Rust adapters must use the same budget.
+CPUWeight=20 and nice 10. `--budget 4` is the default: FFmpeg requests four
+threads and tools inherit affinity to four allowed CPUs. `--budget unrestricted`
+adds no affinity restriction and requests automatic FFmpeg/filter threading
+(thread count 0). The budget is recorded in every result's tool_versions and
+item metrics, and in every speed distribution. It is a resource policy, not
+a count of every OS thread. The sustained production point and episode suite
+must use `--budget unrestricted`; future Rust adapters must match that budget.
 The host guard refuses 23:30–03:00 local time, headless Chrome (including
 chrome-headless-shell), and build.mix/episode.mix invocations, including
 relative paths and invocations with flags. Each measured command rechecks it.
@@ -74,6 +76,8 @@ narration file after resampling to 48 kHz stereo. Loudness measures individual
 files, the music bed and that programme. It retains actual loudnorm mode,
 output and `linear_shortfall_lu = max(0, (-14-input_i)-(-1-input_tp))`.
 Dynamic fallback is oracle behaviour, never a gain-parity target.
+`linear_shortfall_lu == 0` does not mean loudnorm ran linear; `loudnorm_mode`
+is the record of what actually ran.
 
 Opus uses 64/96/128 kb/s libopus encode and explicitly selects libopus before
 each decode input, checking stderr for every repeat and quality decode. PCM
@@ -87,11 +91,22 @@ original programme duration, with proper codec-delay handling.
 `encode` invokes the private current assemble.mix stills route and separately
 makes motion AV1/Opus WebM. `episode --variant sustained --episode-run DIR`
 dereferences/copies an existing run into a new /var/tmp/media-bench directory,
-rebases copied metadata, runs assemble.mix on copied takes and build.mix on
-the copy, one repeat each. It never modifies the original. It refuses runs
+rebases metadata against both the real source and the argument path, with path
+boundaries so sibling prefixes remain intact, then runs assemble.mix on copied
+takes and build.mix on the copy, one repeat each. Before/after SHA-256 snapshots
+of the original's file list, sizes and nanosecond mtimes determine
+`original_untouched`; a change fails the run. The copy is removed on success
+or failure unless `--keep` is given; verification and timing files stay in
+`--out`. It refuses runs
 requiring fresh native desk recordings or lacking an assembly take. The
 two-second synthetic episode-copy path is covered by a separate local smoke
 receipt; it does not replace the commissioned full episode run.
+
+No clip-only default `--episode-run` is available: the 2026-11-21 inventory
+found 18 episode plans under `{home}/.viu/media/runs`, all containing deck/sting
+parts and/or native parts. No default is invented. Non-native mixed plans
+with assembly takes exist (including `2026-11-15-bus-sniffer` and `2026-11-20`),
+but they are not clip-only; an operator must choose a run explicitly.
 
 Rust AV1 stays `not_built` for L3b; other adapters await their owning rows.
 Deferred suites identify their rows: deck D1–D3, record R3, sync S1/P1,

@@ -1,22 +1,41 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 fn options($argv)
-  $o = {runs:3, variant:"default"}
+  $o = {runs:3, variant:"default",budget:"4",keep:false}
   $i = 0
   while $i < len($argv)
     $k = replace($argv[$i], "--", "")
-    if not starts_with($argv[$i], "--") or $i + 1 >= len($argv) then raise("ARGS", "expected --option value") end
-    if not contains(["suite","engine","variant","corpus","out","runs","compare","episode-run"], $k) then raise("ARGS", "unknown option " .. $k) end
-    if starts_with($argv[$i+1],"-") then raise("ARGS","option value cannot start with -") end
-    $o[$k] = $argv[$i+1]
-    $i = $i + 2
+    if not starts_with($argv[$i], "--") then raise("ARGS", "expected --option value") end
+    if $k=="keep" then
+      $o.keep=true; $i=$i+1
+    else
+      if $i+1>=len($argv) then raise("ARGS","expected option value") end
+      if not contains(["suite","engine","variant","corpus","out","runs","compare","episode-run","budget"], $k) then raise("ARGS", "unknown option " .. $k) end
+      if starts_with($argv[$i+1],"-") then raise("ARGS","option value cannot start with -") end
+      $o[$k] = $argv[$i+1]
+      $i = $i + 2
+    end
   end
   $o.runs = to_number($o.runs)
   if $o.runs < 1 or floor($o.runs) != $o.runs then raise("ARGS", "runs must be a positive integer") end
+  if not contains(["4","unrestricted"],$o.budget) then raise("ARGS","budget must be 4 or unrestricted") end
   return $o
 end
 fn safe_path($path)
-  if not re_match($path,'^/?[A-Za-z0-9_][A-Za-z0-9_./-]*$') or contains($path,"..") then raise("PATH","unsafe path: "..$path) end
+  if not re_match($path,'^(/|\./)?[A-Za-z0-9_][A-Za-z0-9_./-]*$') or contains($path,"..") then raise("PATH","unsafe path: "..$path) end
   return $path
+end
+fn absolute_path($raw,$cwd)
+  safe_path($raw)
+  $joined=path_join($cwd,$raw)
+  if not starts_with($joined,"/") then raise("PATH","absolute working directory required") end
+  return safe_path($joined)
+end
+fn concat_entry($path)
+  -- Refuse quotes and every other filter/concat metacharacter, even for
+  -- callers that did not pass through CLI path resolution.
+  safe_path($path)
+  if not starts_with($path,"/") then raise("PATH","concat paths must be absolute") end
+  return "file '"..$path.."'"
 end
 fn numeric($v)
   if not re_match(to_string($v),'^-?[0-9]+(\.[0-9]+)?$') then raise("NUMBER","finite decimal required") end
@@ -100,7 +119,7 @@ fn guard_at($hhmm, $processes)
   if $hhmm >= 2330 or $hhmm < 300 then raise("GUARD", "nightly window 23:30–03:00") end
   for $line in split($processes,"\n")
     -- Ignore command text embedded in agent briefs; inspect actual executable argv.
-    if re_match($line, '^[0-9]+ [^ ]*(chrome|chromium)[^ ]* .*--headless') or re_match($line,'^[0-9]+ [^ ]*chrome-headless-shell( |$)') or re_match($line, '^[0-9]+ [^ ]*mix(d)? .*(^| |/)(build|episode)\.mix( |$)') then
+    if re_match($line, '^[0-9]+ [^ ]*(chrome|chromium)[^ ]* .*--headless') or re_match($line,'^[0-9]+ [^ ]*chrome-headless-shell( |$)') or re_match($line, '^[0-9]+ [^ ]*mix(d)? (.*[ /])?(build|episode)\.mix( |$)') then
       raise("GUARD", "episode build or headless Chrome: " .. $line)
     end
   end
@@ -111,8 +130,10 @@ fn guard()
   if $p.exit_code != 0 and $p.exit_code != 1 then raise("GUARD", $p.stderr) end
   guard_at(to_number($time),$p.stdout)
 end
-fn scope($argv)
-  $allowed=re_find(read_file("/proc/self/status"),'Cpus_allowed_list:\s*([^\n]+)')[0].groups[0]
+fn scope_for($argv,$budget,$allowed)
+  $prefix=["systemd-run","--user","--scope","-p","MemoryMax=24G","-p","CPUWeight=20","nice","-n","10"]
+  if $budget=="unrestricted" then return concat($prefix,$argv) end
+  if $budget!="4" then raise("BUDGET","unknown budget") end
   $cpus=[]
   for $part in split(trim($allowed),",")
     $ends=split($part,"-")
@@ -122,11 +143,15 @@ fn scope($argv)
     end
   end
   if len($cpus)<4 then raise("BUDGET","four allowed CPUs required") end
-  return concat(["systemd-run","--user","--scope","-p","MemoryMax=24G","-p","CPUWeight=20","nice","-n","10","taskset","--cpu-list",join($cpus,",")],$argv)
+  return concat($prefix,concat(["taskset","--cpu-list",join($cpus,",")],$argv))
 end
-fn timed($argv, $base)
+fn scope($argv,$budget)
+  $allowed=if $budget=="4" then re_find(read_file("/proc/self/status"),'Cpus_allowed_list:\s*([^\n]+)')[0].groups[0] else "" end
+  return scope_for($argv,$budget,$allowed)
+end
+fn timed($argv, $base,$budget)
   guard()
-  $cmd = scope(concat(["/usr/bin/time","-f","%e %U %S %M","-o",$base..".time"],$argv))
+  $cmd = scope(concat(["/usr/bin/time","-f","%e %U %S %M","-o",$base..".time"],$argv),$budget)
   write_file($base..".command.json",json_encode($cmd))
   $r = run_argv($cmd,{timeout:21600, stdout:{file:$base..".stdout"},stderr:{file:$base..".stderr"},env:{LC_ALL:"C"}})
   if not $r.ok then raise("TOOL", "command failed; see "..$base..".stderr") end
@@ -140,13 +165,13 @@ fn process_time($text)
   end
   return {wall_s:to_number($t[0]), cpu_s:to_number($t[1])+to_number($t[2]), peak_rss_kib:to_number($t[3])}
 end
-fn speed($argv,$base,$runs)
+fn speed($argv,$base,$runs,$budget)
   $wall = []; $cpu = []; $rss = []; $cmds = []
   for $n in range(1,$runs)
-    $r = timed($argv,$base.."-"..to_string($n))
+    $r = timed($argv,$base.."-"..to_string($n),$budget)
     push($wall,$r.wall_s); push($cpu,$r.cpu_s); push($rss,$r.peak_rss_kib); push($cmds,$r.command)
   end
-  return {wall_s:summary($wall),cpu_s:summary($cpu),peak_rss_kib:summary($rss),wall_samples_s:$wall,commands:$cmds,thread_budget:4,status:if summary($wall).median<1 then "below_resolution" else "ok" end}
+  return {wall_s:summary($wall),cpu_s:summary($cpu),peak_rss_kib:summary($rss),wall_samples_s:$wall,commands:$cmds,budget:$budget,thread_budget:if $budget=="4" then 4 else "unrestricted" end,status:if summary($wall).median<1 then "below_resolution" else "ok" end}
 end
 fn validate_result($r)
   if not deep_eq(sort(keys($r)), sort(["suite","engine","variant","tool_versions","host","cpu_model","items"])) then raise("SCHEMA", "unexpected result keys") end
@@ -161,7 +186,8 @@ fn excluded($metrics,$path)
   $m=$metrics
   for $part in split($path,".")
     if type($m)!="map" then return false end
-    if $m.status=="below_resolution" then return true end
+    if $m.status=="below_resolution" or $m.status=="unavailable" then return true end
+    if contains(["overlap_lo","overlap_hi","bd_rate_percent"],$part) then return true end
     if $part=="loudnorm_gain_lu" and $metrics.loudnorm_mode!="linear" then return true end
     $m=$m[$part]
   end
@@ -181,7 +207,7 @@ fn flatten($m,$prefix)
 end
 fn report($result,$other)
   validate_result($result)
-  $text = "# Media bench: "..$result.suite.." / "..$result.engine.."\n\nRound-1 BD figures are VOID. Only monotonic curves with >=3 VMAF / dB overlap count. Sustained run pending merged head. Oracle-to-Rust = ffmpeg / rust; below_resolution speeds and non-linear gain are excluded. Wall/CPU/RSS p95 is nearest rank; fps.p5 is the slow tail.\n\n| Item | Metric | Value | Oracle-to-Rust |\n|---|---|---:|---:|\n"
+  $text = "# Media bench: "..$result.suite.." / "..$result.engine.."\n\nOnly monotonic curves with >=3 VMAF / dB overlap count. Oracle-to-Rust = ffmpeg / rust; unavailable metrics, BD percentages/bounds, below_resolution speeds and non-linear gain are excluded. Wall/CPU/RSS p95 is nearest rank; fps.p5 is the slow tail.\n\n| Item | Metric | Value | Oracle-to-Rust |\n|---|---|---:|---:|\n"
   for $item in $result.items
     $peer = {}; $peer_metrics={}
     if $other != nil then
