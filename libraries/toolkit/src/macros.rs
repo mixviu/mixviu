@@ -1336,9 +1336,10 @@ fn window_state(ctx: &egui::Context, app: &str, open: bool) -> Option<WindowStat
 type RepaintTarget = Arc<Mutex<Option<(egui::Context, egui::ViewportId)>>>;
 
 /// The session change hook: repaint whichever viewport `show()` last installed.
-/// It clones the target out and releases the guard before calling into egui,
-/// because request_repaint_of takes the Context lock while show() takes this
-/// mutex from inside a frame (ABBA deadlock otherwise).
+/// It clones the target out and releases the guard before calling into egui.
+/// request_repaint_of takes the Context write lock and can wait on it. If the
+/// wait ends in a panic (epaint's debug detector) while the guard is held, the
+/// mutex is poisoned and every later show() fails.
 fn repaint_hook(target: RepaintTarget) -> ::macros::session::ChangeHook {
     Arc::new(move || {
         let target = target.lock().unwrap().clone();
@@ -1354,10 +1355,12 @@ mod tests {
     use egui_kittest::kittest::Queryable;
 
     #[test]
-    fn repaint_hook_releases_its_mutex_while_waiting_for_the_context_lock() {
-        // The UI thread holds the Context write lock (memory_mut) while a
-        // session thread fires the hook. The hook must not hold the repaint
-        // mutex while it waits for that lock. Holding the guard across
+    fn repaint_hook_does_not_hold_its_mutex_while_waiting_for_the_context_lock() {
+        // Hygiene, not the #228 failure itself (that was the nested Context
+        // read in scene_motion's end pass): a hook that waits on the Context
+        // lock must not hold the repaint mutex meanwhile, or a panic in that
+        // wait poisons it. The Context write lock is held here (memory_mut)
+        // while another thread fires the hook. Holding the guard across
         // request_repaint_of, as before, keeps try_lock failing below.
         let ctx = egui::Context::default();
         let target: RepaintTarget = Arc::new(Mutex::new(Some((ctx.clone(), ctx.viewport_id()))));
