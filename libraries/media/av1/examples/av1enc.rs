@@ -51,8 +51,14 @@ impl Options {
                 _ => return Err(format!("unknown option {flag}").into()),
             }
         }
-        if o.speed > 10 || !(1..=64).contains(&o.threads) || o.keyint == 0
-            || !o.cols.is_power_of_two() || !o.rows.is_power_of_two() || o.cols > 64 || o.rows > 64 {
+        if o.speed > 10
+            || !(1..=64).contains(&o.threads)
+            || o.keyint == 0
+            || !o.cols.is_power_of_two()
+            || !o.rows.is_power_of_two()
+            || o.cols > 64
+            || o.rows > 64
+        {
             return Err("invalid speed, threads, tile counts or key interval".into());
         }
         Ok(o)
@@ -94,7 +100,11 @@ impl Header {
                 return Err("non-ASCII Y4M field".into());
             }
             let (key, value) = field.split_at(1);
-            if matches!(key, "W" | "H" | "F") && !value.bytes().all(|b| b.is_ascii_digit() || (key == "F" && b == b':')) {
+            if matches!(key, "W" | "H" | "F")
+                && !value
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (key == "F" && b == b':'))
+            {
                 return Err("Y4M sizes and frame rate must be unsigned decimal digits".into());
             }
             match key {
@@ -107,7 +117,9 @@ impl Header {
                 "C" if chroma.is_none() => chroma = Some(value),
                 "I" if interlace.is_none() => interlace = Some(value),
                 "A" if aspect.is_none() && matches!(value, "1:1" | "0:0") => aspect = Some(value),
-                "X" if field.starts_with("XBITDEPTH=") && field != "XBITDEPTH=8" => return Err("Y4M requires 8-bit samples".into()),
+                "X" if field.starts_with("XBITDEPTH=") && field != "XBITDEPTH=8" => {
+                    return Err("Y4M requires 8-bit samples".into());
+                }
                 "X" if field == "XCOLORRANGE=LIMITED" => {}
                 "X" if !field.starts_with("XCOLORRANGE=") => {}
                 _ => return Err(format!("unsupported or duplicate Y4M field {field}").into()),
@@ -146,10 +158,13 @@ impl Header {
         }
         fn plane(reader: &mut impl Read, len: usize) -> Result<Vec<u8>> {
             let mut data = Vec::new();
-            reader.take(len as u64)
+            reader
+                .take(len as u64)
                 .read_to_end(&mut data)
                 .map_err(|e| format!("truncated Y4M frame: {e}"))?;
-            if data.len() != len { return Err("truncated Y4M frame".into()); }
+            if data.len() != len {
+                return Err("truncated Y4M frame".into());
+            }
             Ok(data)
         }
         let y = plane(reader, self.width * self.height)?;
@@ -224,7 +239,9 @@ fn encode(reader: &mut impl BufRead, out: &mut impl Write, o: &Options) -> Resul
         stats.seconds += start.elapsed().as_secs_f64();
         let (bytes, count) = packets(out, ready)?;
         stats.bytes += bytes;
-        packet_count = packet_count.checked_add(count).ok_or("IVF packet count overflow")?;
+        packet_count = packet_count
+            .checked_add(count)
+            .ok_or("IVF packet count overflow")?;
         stats.frames = stats
             .frames
             .checked_add(1)
@@ -239,16 +256,26 @@ fn encode(reader: &mut impl BufRead, out: &mut impl Write, o: &Options) -> Resul
     stats.seconds += start.elapsed().as_secs_f64();
     let (bytes, count) = packets(out, ready)?;
     stats.bytes += bytes;
-    packet_count = packet_count.checked_add(count).ok_or("IVF packet count overflow")?;
-    if packet_count != stats.frames { return Err("encoded packet count differs from input frame count".into()); }
+    packet_count = packet_count
+        .checked_add(count)
+        .ok_or("IVF packet count overflow")?;
+    if packet_count != stats.frames {
+        return Err("encoded packet count differs from input frame count".into());
+    }
     out.flush()?;
     Ok(stats)
 }
 
 fn run() -> Result<()> {
-    let args = std::env::args_os().skip(1).map(|s| s.into_string().map_err(|_| "non-UTF-8 argument")).collect::<std::result::Result<Vec<_>, _>>()?;
+    let args = std::env::args_os()
+        .skip(1)
+        .map(|s| s.into_string().map_err(|_| "non-UTF-8 argument"))
+        .collect::<std::result::Result<Vec<_>, _>>()?;
     let o = Options::parse(args.into_iter())?;
-    if o.help { println!("{USAGE}"); return Ok(()); }
+    if o.help {
+        println!("{USAGE}");
+        return Ok(());
+    }
     let input = io::stdin();
     let s = if let Some(path) = &o.out {
         let mut output = io::BufWriter::new(std::fs::File::create(path)?);
@@ -281,7 +308,10 @@ fn run() -> Result<()> {
         s.tiles.0,
         s.tiles.1,
         o.keyint,
-        cfg!(feature = "asm"), o.keyint, o.keyint, o.threads
+        cfg!(feature = "asm"),
+        o.keyint,
+        o.keyint,
+        o.threads
     );
     Ok(())
 }

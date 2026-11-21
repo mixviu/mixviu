@@ -76,7 +76,9 @@ fn ivf_fields_and_packets() {
 
 #[test]
 fn round_trip_dav1d_psnr() {
-    if !has_dav1d() { return; }
+    if !has_dav1d() {
+        return;
+    }
     let root = std::env::temp_dir().join(format!(
         "av1enc-oracle-{}-{}",
         std::process::id(),
@@ -106,11 +108,19 @@ fn round_trip_dav1d_psnr() {
             raw.len(),
             "decoded frame count must be five"
         );
-        let psnr = raw.chunks_exact(64 * 48 * 3 / 2).zip(decoded.stdout.chunks_exact(64 * 48 * 3 / 2))
-            .map(|(a,b)| {
-                let mse = a[..64*48].iter().zip(&b[..64*48]).map(|(a,b)| (f64::from(*a)-f64::from(*b)).powi(2)).sum::<f64>() / (64*48) as f64;
+        let psnr = raw
+            .chunks_exact(64 * 48 * 3 / 2)
+            .zip(decoded.stdout.chunks_exact(64 * 48 * 3 / 2))
+            .map(|(a, b)| {
+                let mse = a[..64 * 48]
+                    .iter()
+                    .zip(&b[..64 * 48])
+                    .map(|(a, b)| (f64::from(*a) - f64::from(*b)).powi(2))
+                    .sum::<f64>()
+                    / (64 * 48) as f64;
                 10.0 * (255.0 * 255.0 / mse).log10()
-            }).fold(f64::INFINITY, f64::min);
+            })
+            .fold(f64::INFINITY, f64::min);
         eprintln!(
             "av1enc oracle: frames=5 qp=100 speed=10 min_frame_luma_PSNR={psnr:.4} dB floor=25 dB asm={}",
             cfg!(feature = "asm")
@@ -125,7 +135,11 @@ fn round_trip_dav1d_psnr() {
 
 fn has_dav1d() -> bool {
     let missing = |what: &str| {
-        assert_ne!(std::env::var("MIX_TEST_REQUIRE_FFMPEG").as_deref(), Ok("1"), "required oracle missing: {what}");
+        assert_ne!(
+            std::env::var("MIX_TEST_REQUIRE_FFMPEG").as_deref(),
+            Ok("1"),
+            "required oracle missing: {what}"
+        );
         eprintln!("SKIP: {what}");
         false
     };
@@ -134,9 +148,15 @@ fn has_dav1d() -> bool {
         Err(e) => panic!("cannot probe ffmpeg: {e}"),
         Ok(o) => assert!(o.status.success(), "ffmpeg probe failed"),
     }
-    let o = Command::new("ffmpeg").args(["-hide_banner", "-decoders"]).output().unwrap();
+    let o = Command::new("ffmpeg")
+        .args(["-hide_banner", "-decoders"])
+        .output()
+        .unwrap();
     assert!(o.status.success(), "ffmpeg decoder probe failed");
-    if !String::from_utf8_lossy(&o.stdout).split_whitespace().any(|s| s == "libdav1d") {
+    if !String::from_utf8_lossy(&o.stdout)
+        .split_whitespace()
+        .any(|s| s == "libdav1d")
+    {
         return missing("ffmpeg libdav1d decoder");
     }
     true
@@ -151,13 +171,20 @@ fn specimen() -> (Vec<u8>, Vec<u8>) {
             for x in 0..64 {
                 let moving_x = (x + t * 5) % 64;
                 let texture = ((moving_x * 7 + y * 11) % 31) as u8;
-                let base = if (moving_x / 8 + y / 8) % 2 == 0 { 50 } else { 150 };
+                let base = if (moving_x / 8 + y / 8) % 2 == 0 {
+                    50
+                } else {
+                    150
+                };
                 pixels.extend_from_slice(&[base + texture, base, 200 - texture, 255]);
             }
         }
         let frame = media_frame::Bgra::new(64, 48, pixels).unwrap().to_yuv420();
         y4m.extend_from_slice(b"FRAME\n");
-        for p in [&frame.y, &frame.u, &frame.v] { y4m.extend(p); raw.extend(p); }
+        for p in [&frame.y, &frame.u, &frame.v] {
+            y4m.extend(p);
+            raw.extend(p);
+        }
     }
     (y4m, raw)
 }
@@ -171,9 +198,9 @@ fn encode_without_external_tools() {
     assert_eq!(stats.bytes, out.len() as u64);
     let mut offset = 32;
     for pts in 0u64..5 {
-        let len = u32::from_le_bytes(out[offset..offset+4].try_into().unwrap()) as usize;
+        let len = u32::from_le_bytes(out[offset..offset + 4].try_into().unwrap()) as usize;
         assert!(len > 0);
-        assert_eq!(&out[offset+4..offset+12], &pts.to_le_bytes());
+        assert_eq!(&out[offset + 4..offset + 12], &pts.to_le_bytes());
         offset += 12 + len;
     }
     assert_eq!(offset, out.len());
@@ -186,11 +213,40 @@ fn cap_and_options() {
     let h = Header::parse(&HEADER.replace("W64 H48", "W8192 H4320")).unwrap();
     // Maximum permitted header with EOF must not preallocate a full plane.
     assert!(h.frame(&mut b"FRAME\n".as_slice()).is_err());
-    let o = Options::parse(["--speed", "8", "--qp", "77", "--threads", "2", "--tile-cols", "2", "--tile-rows", "4", "--keyint", "12", "--out", "out.ivf"].into_iter().map(str::to_owned)).unwrap();
-    assert_eq!((o.speed,o.qp,o.threads,o.cols,o.rows,o.keyint), (8,77,2,2,4,12));
+    let o = Options::parse(
+        [
+            "--speed",
+            "8",
+            "--qp",
+            "77",
+            "--threads",
+            "2",
+            "--tile-cols",
+            "2",
+            "--tile-rows",
+            "4",
+            "--keyint",
+            "12",
+            "--out",
+            "out.ivf",
+        ]
+        .into_iter()
+        .map(str::to_owned),
+    )
+    .unwrap();
+    assert_eq!(
+        (o.speed, o.qp, o.threads, o.cols, o.rows, o.keyint),
+        (8, 77, 2, 2, 4, 12)
+    );
     assert_eq!(o.out.as_deref(), Some("out.ivf"));
     assert!(Options::parse(["--help".into()].into_iter()).unwrap().help);
-    for (flag,value) in [("--speed","11"),("--threads","0"),("--tile-cols","3"),("--tile-rows","0"),("--keyint","0")] {
-        assert!(Options::parse([flag.into(),value.into()].into_iter()).is_err());
+    for (flag, value) in [
+        ("--speed", "11"),
+        ("--threads", "0"),
+        ("--tile-cols", "3"),
+        ("--tile-rows", "0"),
+        ("--keyint", "0"),
+    ] {
+        assert!(Options::parse([flag.into(), value.into()].into_iter()).is_err());
     }
 }
