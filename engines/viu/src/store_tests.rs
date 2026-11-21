@@ -16,7 +16,7 @@ fn bad_desk_theme_only_blocks_staged_writes() {
     let needle = "when: { scheme: \"studio\", mode: \"light\" },";
     let (head, tail) = source.split_once(needle).unwrap();
     let bad = format!("{head}{needle}{}", tail.replacen("pairs: {", "pairs: { base: { surface: \"palette.background.1\", foreground: \"missing.store-control\" },", 1));
-    std::fs::write(directory.path().join("theme.mix"), bad).unwrap();
+    std::fs::write(directory.path().join(toolkit::theme::THEME_FILE), bad).unwrap();
     let result = std::process::Command::new(std::env::current_exe().unwrap())
         .args([
             "--exact",
