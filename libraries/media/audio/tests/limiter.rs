@@ -112,18 +112,29 @@ fn bounded_target_and_invalid_settings() {
 #[test]
 fn intersample_peak_nondefault_timing_and_right_channel_trigger() {
     for rate in [44100, 48000, 96000] {
-        let source: Vec<_> = (0..rate).flat_map(|n| {
-            let s = (std::f64::consts::TAU * 0.25 * n as f64 + std::f64::consts::FRAC_PI_4).sin();
-            [s * 0.05, s * 1.05]
-        }).collect();
+        let source: Vec<_> = (0..rate)
+            .flat_map(|n| {
+                let s =
+                    (std::f64::consts::TAU * 0.25 * n as f64 + std::f64::consts::FRAC_PI_4).sin();
+                [s * 0.05, s * 1.05]
+            })
+            .collect();
         let mut a = Audio::new(rate, 2, source.clone()).unwrap();
         let before = a.measure().unwrap();
         assert!(before.true_peak_dbtp > before.sample_peak_dbfs + 1.0);
-        let r = a.limit_true_peak(-1.0, LimiterConfig { lookahead_ms: 8.0, release_ms: 75.0 }).unwrap();
+        let r = a
+            .limit_true_peak(
+                -1.0,
+                LimiterConfig {
+                    lookahead_ms: 8.0,
+                    release_ms: 75.0,
+                },
+            )
+            .unwrap();
         assert!(r.after.true_peak_dbtp <= -1.0);
         assert!(r.max_gain_reduction_db > 0.5);
         for (input, output) in source.chunks_exact(2).zip(a.samples().chunks_exact(2)) {
-            assert!((output[0]/input[0] - output[1]/input[1]).abs() < 1e-12);
+            assert!((output[0] / input[0] - output[1] / input[1]).abs() < 1e-12);
         }
     }
 }

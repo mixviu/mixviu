@@ -86,7 +86,13 @@ impl Audio {
         let channels = self.channels as usize;
         let frames = self.frames();
         let mut envelope = self.detector_peaks()?;
-        for peak in &mut envelope { *peak = if *peak > ceiling { ceiling / *peak } else { 1.0 }; }
+        for peak in &mut envelope {
+            *peak = if *peak > ceiling {
+                ceiling / *peak
+            } else {
+                1.0
+            };
+        }
         let attack_step = 1.0 / (self.rate as f64 * config.lookahead_ms / 1000.0).max(1.0);
         // Full offline reverse traversal supplies the look-ahead without a delay line.
         for n in (0..frames.saturating_sub(1)).rev() {
@@ -209,16 +215,24 @@ impl Audio {
                 peak = peak.max(self.samples[n * channels + c].abs());
                 for kernel in &kernels {
                     let mut value = 0.0;
+                    let mut reflected = 0.0;
                     for (tap, k) in kernel.iter().enumerate() {
                         let pos = n as i128 + tap as i128 - 11;
                         if pos >= 0 && pos < frames as i128 {
                             value += self.samples[pos as usize * channels + c] * k;
                         }
+                        // Resamplers may mirror boundaries rather than zero-pad.
+                        // Protect both reconstructions, especially the first burst.
+                        let period = 2 * frames.saturating_sub(1) as i128;
+                        let r = if period == 0 { 0 } else { pos.rem_euclid(period) };
+                        let r = if r >= frames as i128 { period - r } else { r };
+                        reflected += self.samples[r as usize * channels + c] * k;
                     }
-                    if !value.is_finite() {
+                    if !value.is_finite() || !reflected.is_finite() {
                         return Err(Error::InvalidAudio);
                     }
                     peak = peak.max(value.abs());
+                    peak = peak.max(reflected.abs());
                 }
             }
             envelope.push(peak);
