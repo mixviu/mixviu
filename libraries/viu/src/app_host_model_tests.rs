@@ -2,6 +2,24 @@
 use super::*;
 
 #[test]
+fn malformed_native_theme_has_no_design_notice() {
+    let bundle = review_bundle(r#"
+send "viu-local" "native.theme" body={scheme:"spoofed"}
+if $rc == 0 or $body.error_code != "ARGUMENT" then raise("TEST","malformed native choice must be ARGUMENT") end
+send "viu-local" "scenes.model" body={generation:viu_context().generation,value:{label:"native argument refused"}}
+on viu.model.applied
+end
+"#);
+    let mut host = create(bundle, Arc::new(|| {}));
+    let ctx = egui::Context::default();
+    settle(&mut host, &ctx);
+    assert!(host.error.is_empty(), "{}", host.error);
+    assert_eq!(host.model["label"], "native argument refused");
+    assert!(host.design_validation.notice.is_empty());
+    assert_eq!(host.design_validation.info()["errors"], json!({}));
+}
+
+#[test]
 fn design_refusals_are_typed_and_dismissal_clears_only_the_duplicate() {
     use crate::native_theme::Failure;
     let mut host = create(review_bundle("on test.noop\nend\n"), Arc::new(|| {}));
