@@ -1,19 +1,21 @@
 # Incremental model publication
 
-Workshop currently rebuilds and publishes its complete scene model on each dirty
-tick. The host then validates and copies that model, including unchanged data.
+Workshop previously rebuilt and published its complete scene model on each dirty
+tick. The host then validated and copied that model, including unchanged data.
 Whole-model `scenes.model` publication remains supported for every app.
 
 ## Discovery
 
 The disposable `lab/viu-incremental-model` specimen starts at PR #213's merge.
-CBC job `20261121-090653-fae26aac-a1` captured real private-Bus Workshop models
-with 200 peers. Late models were about 2.25 MB; the Traffic control held most
-of the bytes. Replacing changed top-level keys would still send almost all of
-that data. Nested map edits and list splices replayed the captures exactly:
-late patches were 5.9–11.7 KB, and representative discovery patches 168–301 KB.
-Mix diffing took about 2–3 ms and data replay under 0.5 ms. These are diagnostic
-data-replay results, not native rendering or responsiveness acceptance.
+The first capture mixed peer-count phases and is excluded from acceptance
+evidence. A fresh 200-peer capture in CBC job `20261121-091529-dcb5cbe3-a1`
+reached 2.64 MB, mostly retained Traffic bodies. Top-level replacement still
+sent almost all those bytes; nested map edits and list splices replayed the
+captured data exactly. The largest patch was 386.5 KB. Native mounted-frame
+replay reached 146.9 ms versus 428.5 ms for a full apply. That diagnostic capture
+later failed its refetch assertion; its replay establishes only a captured
+state comparison, not responsiveness. The independent whole-specimen survey
+identified that limit before production derivation.
 
 Instrumentation itself adds cost. The original one-second fixture failed in
 the initial instrumented runs. The separate capture specimen uses longer
@@ -70,6 +72,8 @@ not applied. The host later sends `viu.model.applied` with `generation` and
 `revision`, or `viu.model.refused` with those fields and `message`. Acceptance
 means validated model state, not a frame drawn on a display. Workshop keeps
 one publication outstanding and coalesces changes until that receipt arrives.
+Acceptance immediately flushes any queued input; refusal schedules a full
+resynchronisation on the next tick.
 
 At most one revisioned publication may be queued per callback, including a
 mixture of full and incremental sends. Conflicting sends fault the callback
@@ -105,9 +109,12 @@ when an identical occurrence leaves the window. Filtering and placement changes
 continue to show complete redacted bodies.
 
 The 200-peer private-Bus fixture keeps its original one-second calls, two-second
-owner stall check, silent peer and departing peer. A bounded steady read phase
-also requires a full retained model larger than 1 MiB, above the 768 KiB tick
-wire bound. Native incremental apply CPU is bounded at 100 ms. Controls force
+owner stall check, silent peer and departing peer. After those checks, a native
+owner event retains 48 representative escaped JSON bodies through the real
+Traffic retention code, producing a model larger than 2 MiB. Seed publication
+is initialisation, outside the per-tick guard. Eight further one-second reads
+and ordinary ticks enforce a 768 KiB publication bound and 100 ms native
+incremental apply CPU bound against that retained model. Controls force
 full publication, full application and skipped binding updates to prove the
 byte/time/equivalence checks detect regressions. Fresh full native scene/frame
 and prepared-template state are compared with incremental state in the
