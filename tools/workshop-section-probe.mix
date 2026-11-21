@@ -2,6 +2,7 @@
 -- Disposable CBC-only baseline instrumentation. Never production policy.
 $p="apps/workshop/presentation.mix";$t="apps/workshop/traffic.mix"
 $ps=read_file($p);$ts=read_file($t)
+$h="libraries/viu/src/app_host.rs";$hs=read_file($h)
 $v=replace($ps,"  $rows=[]","  $pr=viu_test_cpu();$rows=[]")
 $v=replace($v,"  $side=$model.effective_dock($s)","  print(\"SECTION \"..json_encode({name:\"tree\",us:(viu_test_cpu()-$pr)*1000000,rows:len($rows),peers:len($s.snapshot.peers)}))\n  $side=$model.effective_dock($s)")
 for $pair in [["extra","macro_view"],["agents","agent_view"],["mesh","mesh_view"],["traffic","traffic_view"]]
@@ -14,10 +15,10 @@ end
 $v=replace($v,"fn project($s)","fn project($s)\n  global $section_previous\n  try $previous=$section_previous catch $missing $section_previous={} end")
 $tv=replace($ts,"  $row=redact($row)","  $bytes_before=byte_length(json_encode($row));$pr=viu_test_cpu();$row=redact($row);print(\"REDACTION \"..json_encode({bytes:$bytes_before,us:(viu_test_cpu()-$pr)*1000000}))")
 try
-  write_file($p,$v);write_file($t,$tv)
+  write_file($p,$v);write_file($t,$tv);write_file($h,replace($hs,"if self.forward_output {","if true {"))
   $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--nocapture"],{timeout:1800,stderr:"stdout",max_output:64000000})
   print($r.stdout)
 finally
-  write_file($p,$ps);write_file($t,$ts)
+  write_file($p,$ps);write_file($t,$ts);write_file($h,$hs)
 end
 exit($r.exit_code ?? 1)
