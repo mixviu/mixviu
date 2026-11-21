@@ -20,7 +20,7 @@ and stereo, 48 kHz decode rate, CodecDelay from pre-skip and 80 ms SeekPreRoll.
 
 The reader borrows payloads, indexes packet headers and validates cue targets.
 Timestamps are signed container ticks before CodecDelay; `scale_ns` gives their
-unit. Seek takes container ticks and selects a video keyframe through Cues.
+unit. `presentation_timestamp` subtracts CodecDelay in container ticks. Seek takes container ticks and selects a video keyframe through Cues.
 Audio preroll and subtracting CodecDelay are playback responsibilities.
 SimpleBlock and unlaced BlockGroup are supported; all lacing is refused.
 Unknown element IDs are skipped. Unknown-sized Segment is supported, but

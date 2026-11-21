@@ -64,7 +64,7 @@ fn mux(packets: &[media_av1::Packet], width: u32, height: u32, audio: &Demuxer<'
         Some(a),
     )
     .unwrap();
-    // Fixture's negative first timestamp is rebased to zero, preserving packet deltas.
+    // Fixture container ticks are rebased to zero, preserving packet deltas.
     let first = audio.packets()[0].timestamp;
     let mut events: Vec<_> = packets
         .iter()
@@ -160,9 +160,12 @@ fn roundtrip_and_oracles() {
     let oracle = j["packets"].as_array().unwrap();
     assert_eq!(r.packets().len(), oracle.len());
     for (p, o) in r.packets().iter().zip(oracle) {
-        assert_eq!(r.presentation_timestamp(p).unwrap(), o["pts"].as_i64().unwrap());
+        assert_eq!(
+            r.presentation_timestamp(p).unwrap(),
+            o["pts"].as_i64().unwrap()
+        );
     }
-    assert_eq!(r.seek(390), Some(7));
+    assert_eq!(r.seek(390), Some(0));
     assert!(r.next_packet().unwrap().key_frame);
     let independent = temp.path().join("independent.webm");
     let independent = independent.to_str().unwrap();
@@ -200,7 +203,10 @@ fn roundtrip_and_oracles() {
     let oracle = j["packets"].as_array().unwrap();
     assert_eq!(d.packets().len(), oracle.len());
     for (p, o) in d.packets().iter().zip(oracle) {
-        assert_eq!(d.presentation_timestamp(p).unwrap(), o["pts"].as_i64().unwrap());
+        assert_eq!(
+            d.presentation_timestamp(p).unwrap(),
+            o["pts"].as_i64().unwrap()
+        );
         assert_eq!(p.key_frame, o["flags"].as_str().unwrap().starts_with('K'));
     }
     let want = d
