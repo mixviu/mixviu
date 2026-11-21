@@ -676,7 +676,7 @@ on viu.test.retained_model
   for $i=$event.args.offset to $event.args.offset+7
     $state=$fixture_traffic.retain($state,{ts:to_string($i),direction:"local",command:"fixture.retained",payload:{text:$event.args.padding}})
   end
-  $state=publish_workshop($state);$dirty=true
+  $state=changed_workshop($state);$dirty=true
 end
 "#);
         }
