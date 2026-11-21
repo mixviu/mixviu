@@ -1679,9 +1679,13 @@ mod tests {
         wait_until_or(
             || std::fs::read_to_string(&child_file).is_ok_and(|s| !s.trim().is_empty()),
             || {
+                // The full status carries failed_to_start and its error (for
+                // example ETXTBSY on the freshly written stub), which
+                // running_title() would collapse to None.
                 format!(
-                    "start: running {:?}, parent file {:?}, child file {:?}",
-                    state.running_title(),
+                    "start: status {}, run message {:?}, parent file {:?}, child file {:?}",
+                    state.engine.status(),
+                    state.run_message,
                     std::fs::read_to_string(&parent_file).ok(),
                     std::fs::read_to_string(&child_file).ok()
                 )
@@ -1697,6 +1701,9 @@ mod tests {
             .trim()
             .parse()
             .unwrap();
+        // Captured before the drop (no clone: it would keep the Session and
+        // its Runner alive and change the teardown under test).
+        let before_drop = format!("{:?}", state.engine.runner_status());
         drop(state);
         // ESRCH for the leader proves it is no longer even a zombie. Do not
         // waitpid before this: stealing the manager's reap would break its
@@ -1709,7 +1716,7 @@ mod tests {
             },
             || {
                 format!(
-                    "leader reap: parent {parent} stat {}, child {child} stat {}",
+                    "leader reap: runner before drop {before_drop}, parent {parent} stat {}, child {child} stat {}",
                     proc_stat(parent),
                     proc_stat(child)
                 )
