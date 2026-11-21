@@ -1,0 +1,56 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$core = require("core.mix")
+$suites = require("suites.mix")
+$episode_support=require("episode_support.mix")
+$o = $core.options(args())
+for $key in ["suite","engine","corpus","out"]
+  if $o[$key] == nil then raise("ARGS","required --"..$key) end
+end
+$repo=dirname(dirname(dirname(script_path())))
+$o.episode_given=$o["episode-run"]
+$o.episode_joined=if $o.episode_given!=nil then path_join(trim(run_argv_must(["pwd"])), $o.episode_given) else nil end
+for $key in ["corpus","out","compare","episode-run"]
+  if $o[$key]!=nil then $o[$key]=$core.absolute_path($o[$key],trim(run_argv_must(["pwd"]))) end
+end
+$o=merge($o,$core.workload($o.variant))
+if $o.budget=="unrestricted" then $o.threads=0 end
+$wait = {deck:"D1–D3",record:"R3",sync:"S1 + P1",assemble:"S2",playback:"P1"}
+if has_key($wait,$o.suite) then raise("DEFERRED",$o.suite.." waits for row "..$wait[$o.suite]) end
+if not contains(["av1enc","av1dec","opus","loudness","encode","episode"],$o.suite) then raise("ARGS","unknown suite") end
+if not contains(["ffmpeg","rust"],$o.engine) then raise("ARGS","unknown engine") end
+$core.guard()
+if $o.suite=="episode" then $episode_support.create_output($o["episode-run"] ?? "",$o.out)
+else mkdir($o.out) end
+$cpu=re_find(read_file("/proc/cpuinfo"),'model name\s*:\s*([^\n]+)')[0].groups[0]
+$result = {suite:$o.suite,engine:$o.engine,variant:$o.variant,tool_versions:{mix:trim(run_argv_must(["/usr/local/bin/mix","--version"])),ffmpeg:run_argv_must(["ffmpeg","-version"]),time:run_argv_must(["/usr/bin/time","--version"]),source_commit:trim(run_argv_must(["git","-C",$repo,"rev-parse","HEAD"]))},host:trim(run_argv_must(["hostname"])),cpu_model:trim($cpu),items:[]}
+$result.tool_versions.budget=$o.budget
+if $o.engine == "rust" then
+  $result.items = [{id:$o.suite,metrics:{status:"not_built",reason:"L1/L2/L4/L5/S1 supply corpus-capable entry points; media-av1 first_numbers generates its own eight frames only"}}]
+else
+  if contains(["av1enc","encode"],$o.suite) then
+    $model=$suites.model_probe($o); $o.model=$model.name; $result.tool_versions.vmaf_model=$model
+  end
+  $manifest = load_data($repo.."/tools/media_bench/corpus/manifest.conf.mix")
+  for $entry in $manifest.items
+    if $entry.status == "generated" then
+      $actual = split(run_argv_must(["sha256sum","--",$o.corpus.."/"..$entry.file])," ")[0]
+      if $actual != $entry.sha256 then raise("CORPUS","checksum mismatch: "..$entry.id) end
+    end
+  end
+  if $o.suite == "av1enc" then $result.items = $suites.video($o)
+  elif $o.suite == "av1dec" then $result.items = $suites.decode($o)
+  elif $o.suite == "opus" then $result.items = $suites.opus($o)
+  elif $o.suite == "loudness" then $result.items = $suites.loudness($o)
+  elif $o.suite == "encode" then $result.items = $suites.encode($o)
+  elif $o.suite == "episode" then $result.items = $suites.episode($o)
+  end
+end
+for $i in range(0,len($result.items)-1)
+  $result.items[$i].metrics.budget=$o.budget
+end
+$core.validate_result($result)
+$other = if $o.compare != nil then json_parse(read_file($o.compare.."/results.json")) else nil end
+$report=$core.report($result,$other)
+write_file($o.out.."/report.md",$report)
+write_file($o.out.."/results.json",json_encode($result).."\n")
+print($o.out.."/results.json")

@@ -1,0 +1,20 @@
+-- Twenty independent standalone samples; failures are recorded, never retried.
+$failed=0
+$path="libraries/viu/tests/workshop_bus.rs"
+$original=read_file($path)
+$instrumented=$original
+if contains($original,"const PROFILE_PUBLICATIONS: bool = false;") then
+  $instrumented=replace_must($original,"const PROFILE_PUBLICATIONS: bool = false;","const PROFILE_PUBLICATIONS: bool = true;")
+end
+if $instrumented!=$original then write_file($path,$instrumented) end
+for $sample=1 to 20
+  print("WORKSHOP_SAMPLE_BEGIN "..$sample)
+  $result=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--exact","--nocapture"],{timeout:1200,max_output:16000000})
+  print($result.stdout)
+  print($result.stderr)
+  print("WORKSHOP_SAMPLE_END "..$sample.." rc="..$result.exit_code)
+  if not $result.ok then $failed=$failed+1 end
+end
+print("WORKSHOP_SAMPLE_FAILURES "..$failed.."/20")
+if $instrumented!=$original then write_file($path,$original) end
+if $failed>0 then exit(1) end
