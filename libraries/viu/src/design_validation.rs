@@ -3,7 +3,7 @@
 use design::{DesignContext, DesignSourceDocument};
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     path::PathBuf,
     sync::{Arc, mpsc},
 };
@@ -26,11 +26,12 @@ const ERROR_LIMIT: usize = 64;
 #[derive(Default)]
 pub(crate) struct Validation {
     seen: BTreeSet<Observation>,
-    pending: Vec<Task>,
+    pending: VecDeque<Task>,
     sender: Option<mpsc::SyncSender<Task>>,
     receiver: Option<mpsc::Receiver<Report>>,
     errors: BTreeMap<String, String>,
     pub notice: String,
+    notice_digest: Option<String>,
     outstanding: usize,
     worker_error: Option<String>,
     skipped: usize,
@@ -90,57 +91,13 @@ fn scan(path: &std::path::Path, previous: &mut Option<String>, solicited: bool) 
     })
 }
 
-impl Validation {
-    pub fn observe(&mut self, theme: &toolkit::Theme) {
-        if let Some(error) = theme.load_error() {
-            self.refused(
-                theme.load_source_digest().unwrap_or("unreadable-source"),
-                error,
-            );
-        }
-        let path = theme.source_path().map(std::path::Path::to_owned);
-        let changed_path = path != self.current_path;
-        self.current_path = path.clone();
-        let key = (theme.source_digest().to_owned(), path);
-        if !changed_path && self.seen.contains(&key) {
-            return;
-        }
-        if self.seen.len() >= SEEN_LIMIT && !self.seen.contains(&key) {
-            self.seen.pop_first();
-            self.evicted += 1;
-        }
-        self.seen.insert(key.clone());
-        if self.pending.len() >= PENDING_LIMIT {
-            let retired = self.pending.remove(0);
-            self.seen.remove(&retired.0);
-            self.skipped += 1;
-            tracing::warn!("design report queue full; retired source counted in info");
-        }
-        self.pending
-            .push((key, theme.source_document(), theme.context().clone()));
-    }
 
-    /// Called only after a ready frame. The worker may block on its bounded
-    /// reply queue; the rendering thread only ever uses try_send/try_recv.
-    pub fn after_frame(&mut self) {
-        if self.worker_error.is_some() {
-            return;
-        }
-        if self.sender.is_none() {
-            let (tx, tasks) = mpsc::sync_channel::<Task>(4);
-            let (answers, rx) = mpsc::sync_channel(8);
-            let worker = std::thread::Builder::new()
-                .name("design-report".into())
-                .spawn(move || {
-                    let mut file: Option<(PathBuf, Option<String>)> = None;
-                    loop {
-                        let report = match tasks.recv_timeout(std::time::Duration::from_millis(500))
-                        {
-                            Ok(((digest, path), document, context)) => {
+fn process_task(task: Task, file: &mut Option<(PathBuf, Option<String>)>) -> Option<Report> {
+    let ((digest, path), document, context) = task;
                                 if let Some(path) = path {
                                     let retired = if file.as_ref().map(|f| &f.0) != Some(&path) {
                                         let retired = file.take().and_then(|f| f.1);
-                                        file = Some((path, None));
+                                        *file = Some((path, None));
                                         retired
                                     } else {
                                         None
@@ -164,7 +121,59 @@ impl Validation {
                                         error: check(&document, context),
                                     })
                                 }
-                            }
+}
+
+impl Validation {
+    pub fn observe(&mut self, theme: &toolkit::Theme) {
+        if let Some(error) = theme.load_error() {
+            self.refused(
+                theme.load_source_digest().unwrap_or("unreadable-source"),
+                error,
+            );
+        }
+        if self.worker_error.is_some() {
+            self.skipped += 1;
+            return;
+        }
+        let path = theme.source_path().map(std::path::Path::to_owned);
+        let changed_path = path != self.current_path;
+        self.current_path = path.clone();
+        let key = (theme.source_digest().to_owned(), path);
+        if !changed_path && self.seen.contains(&key) {
+            return;
+        }
+        if self.seen.len() >= SEEN_LIMIT && !self.seen.contains(&key) {
+            self.seen.pop_first();
+            self.evicted += 1;
+        }
+        self.seen.insert(key.clone());
+        if self.pending.len() >= PENDING_LIMIT {
+            let retired = self.pending.pop_front().unwrap();
+            self.seen.remove(&retired.0);
+            self.skipped += 1;
+            tracing::warn!("design report queue full; retired source counted in info");
+        }
+        self.pending
+            .push_back((key, theme.source_document(), theme.context().clone()));
+    }
+
+    /// Called only after a ready frame. The worker may block on its bounded
+    /// reply queue; the rendering thread only ever uses try_send/try_recv.
+    pub fn after_frame(&mut self) {
+        if self.worker_error.is_some() {
+            return;
+        }
+        if self.sender.is_none() {
+            let (tx, tasks) = mpsc::sync_channel::<Task>(4);
+            let (answers, rx) = mpsc::sync_channel(8);
+            let worker = std::thread::Builder::new()
+                .name("design-report".into())
+                .spawn(move || {
+                    let mut file: Option<(PathBuf, Option<String>)> = None;
+                    loop {
+                        let report = match tasks.recv_timeout(std::time::Duration::from_millis(500))
+                        {
+                            Ok(task) => process_task(task, &mut file),
                             Err(mpsc::RecvTimeoutError::Timeout) => file
                                 .as_mut()
                                 .and_then(|(path, previous)| scan(path, previous, false)),
@@ -186,11 +195,18 @@ impl Validation {
             self.sender = Some(tx);
             self.receiver = Some(rx);
         }
-        for task in std::mem::take(&mut self.pending) {
+        while let Some(task) = self.pending.pop_front() {
             match self.sender.as_ref().unwrap().try_send(task) {
                 Ok(()) => self.outstanding += 1,
-                Err(mpsc::TrySendError::Full(task)) => self.pending.push(task),
-                Err(mpsc::TrySendError::Disconnected(_)) => self.disconnected(),
+                Err(mpsc::TrySendError::Full(task)) => {
+                    self.pending.push_front(task);
+                    break;
+                }
+                Err(mpsc::TrySendError::Disconnected(_)) => {
+                    self.skipped += 1; // the popped task is no longer in pending
+                    self.disconnected();
+                    break;
+                }
             }
         }
     }
@@ -232,11 +248,15 @@ impl Validation {
     }
 
     fn clear_error(&mut self, digest: &str) {
-        if let Some(error) = self.errors.remove(digest)
-            && self.notice == error
-        {
-            self.notice.clear();
+        self.errors.remove(digest);
+        if self.notice_digest.as_deref() == Some(digest) {
+            self.dismiss();
         }
+    }
+
+    pub fn dismiss(&mut self) {
+        self.notice.clear();
+        self.notice_digest = None;
     }
 
     fn record(&mut self, digest: String, error: String) {
@@ -251,6 +271,7 @@ impl Validation {
             tracing::warn!(source_digest = digest, error, "design context refused");
         }
         self.notice = error.into();
+        self.notice_digest = Some(digest.into());
         self.record(digest.into(), error.into());
     }
     pub fn info(&self) -> Value {
@@ -282,6 +303,79 @@ pub(crate) fn drain(ctx: &egui::Context, validation: &mut Validation) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fifo_before_first_frame_and_full_channel_keeps_latest_registration() {
+        let dir = tempfile::tempdir().unwrap();
+        let old_path = dir.path().join("theme.mix");
+        let new_path = dir.path().join("other.mix");
+        for path in [&old_path, &new_path] { std::fs::write(path, "mode: dark").unwrap(); }
+        let old = toolkit::Theme::read(&old_path).unwrap().unwrap();
+        for latest in [toolkit::Theme::embedded(), toolkit::Theme::read(&new_path).unwrap().unwrap()] {
+            // Hold the worker receiver to make Full deterministic, including
+            // before the first frame. Use the real worker task processor below.
+            let (tx, tasks) = mpsc::sync_channel(4);
+            let (answers, rx) = mpsc::sync_channel(8);
+            let mut v = Validation { sender: Some(tx.clone()), receiver: Some(rx), outstanding: 4, ..Default::default() };
+            for _ in 0..4 { tx.send(((old.source_digest().into(), Some(old_path.clone())), old.source_document(), old.context().clone())).unwrap(); }
+            v.observe(&old);
+            v.observe(&latest);
+            v.after_frame();
+            assert_eq!(v.pending.len(), 2, "Full must return without spinning or losing work");
+            let mut file = None;
+            for _ in 0..4 { answers.send(process_task(tasks.try_recv().unwrap(), &mut file).unwrap()).unwrap(); }
+            v.poll();
+            v.after_frame();
+            for _ in 0..2 { answers.send(process_task(tasks.try_recv().unwrap(), &mut file).unwrap()).unwrap(); }
+            v.poll();
+            assert_eq!(file.as_ref().map(|f| f.0.as_path()), latest.source_path(), "worker must retain the latest registration");
+            assert_eq!(v.info()["pending"], 0);
+        }
+    }
+
+    #[test]
+    fn repair_clears_notice_by_digest_after_different_background_diagnostic() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("theme.mix");
+        std::fs::write(&path, "broken").unwrap();
+        let rejected = toolkit::Theme::load_from(&path);
+        let mut v = Validation::default();
+        v.refused(rejected.load_source_digest().unwrap(), rejected.load_error().unwrap());
+        let display = v.notice.clone();
+        let (answers, rx) = mpsc::sync_channel(8);
+        v.receiver = Some(rx);
+        let mut previous = None;
+        let report = scan(&path, &mut previous, false).unwrap();
+        assert_ne!(report.error.as_ref().unwrap(), &display, "fixture must exercise differing source labels/formatting");
+        answers.send(report).unwrap();
+        v.poll();
+        assert_eq!(v.notice, display);
+        std::fs::write(&path, "mode: dark").unwrap();
+        answers.send(scan(&path, &mut previous, false).unwrap()).unwrap();
+        v.poll();
+        assert!(v.errors.is_empty());
+        assert!(v.notice.is_empty(), "repair must clear the refusal notice by digest");
+        assert!(v.notice_digest.is_none());
+    }
+
+    #[test]
+    fn disconnected_send_counts_popped_task_and_spawn_failure_never_queues() {
+        let theme = toolkit::Theme::embedded();
+        let (tx, tasks) = mpsc::sync_channel(4);
+        drop(tasks);
+        let mut v = Validation { sender: Some(tx), outstanding: 3, ..Default::default() };
+        v.observe(&theme);
+        v.after_frame();
+        assert_eq!(v.skipped, 4, "include the popped task as well as in-flight work");
+        assert_eq!(v.info()["pending"], 0);
+        let mut failed = Validation { worker_error: Some("spawn failed".into()), ..Default::default() };
+        for _ in 0..5 { failed.observe(&theme); }
+        failed.after_frame();
+        failed.poll();
+        assert_eq!(failed.skipped, 5);
+        assert_eq!(failed.info()["pending"], 0);
+        assert!(failed.receiver.is_none());
+    }
     fn settle(validation: &mut Validation) {
         let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
         loop {

@@ -446,7 +446,7 @@ impl Host {
         if self.error == self.design_validation.notice {
             self.error.clear();
         }
-        self.design_validation.notice.clear();
+        self.design_validation.dismiss();
     }
     fn dispatch(
         &mut self,
@@ -1116,7 +1116,10 @@ impl Host {
                         error_code = error.code();
                         error.to_string()
                     })?;
-                    crate::appearance::install_theme(ctx, &theme)?;
+                    crate::appearance::install_theme(ctx, &theme).map_err(|message| {
+                        error_code = crate::native_theme::Failure::Adapter(message.clone()).code();
+                        message
+                    })?;
                     self.native_choice = request.args.clone();
                     Ok(crate::native_theme::describe(&theme))
                 }),
