@@ -91,36 +91,35 @@ fn scan(path: &std::path::Path, previous: &mut Option<String>, solicited: bool) 
     })
 }
 
-
 fn process_task(task: Task, file: &mut Option<(PathBuf, Option<String>)>) -> Option<Report> {
     let ((digest, path), document, context) = task;
-                                if let Some(path) = path {
-                                    let retired = if file.as_ref().map(|f| &f.0) != Some(&path) {
-                                        let retired = file.take().and_then(|f| f.1);
-                                        *file = Some((path, None));
-                                        retired
-                                    } else {
-                                        None
-                                    };
-                                    let (path, previous) = file.as_mut().unwrap();
-                                    // Every received task acknowledges exactly once, even
-                                    // if a prior spontaneous scan already saw these bytes.
-                                    let mut report = scan(path, previous, true);
-                                    if let Some(report) = &mut report
-                                        && retired.is_some()
-                                    {
-                                        report.retired = retired;
-                                    }
-                                    report
-                                } else {
-                                    let retired = file.take().and_then(|f| f.1);
-                                    Some(Report {
-                                        solicited: true,
-                                        digest,
-                                        retired,
-                                        error: check(&document, context),
-                                    })
-                                }
+    if let Some(path) = path {
+        let retired = if file.as_ref().map(|f| &f.0) != Some(&path) {
+            let retired = file.take().and_then(|f| f.1);
+            *file = Some((path, None));
+            retired
+        } else {
+            None
+        };
+        let (path, previous) = file.as_mut().unwrap();
+        // Every received task acknowledges exactly once, even
+        // if a prior spontaneous scan already saw these bytes.
+        let mut report = scan(path, previous, true);
+        if let Some(report) = &mut report
+            && retired.is_some()
+        {
+            report.retired = retired;
+        }
+        report
+    } else {
+        let retired = file.take().and_then(|f| f.1);
+        Some(Report {
+            solicited: true,
+            digest,
+            retired,
+            error: check(&document, context),
+        })
+    }
 }
 
 impl Validation {
@@ -309,32 +308,65 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let old_path = dir.path().join("theme.mix");
         let new_path = dir.path().join("other.mix");
-        for path in [&old_path, &new_path] { std::fs::write(path, "mode: dark").unwrap(); }
+        for path in [&old_path, &new_path] {
+            std::fs::write(path, "mode: dark").unwrap();
+        }
         let old = toolkit::Theme::read(&old_path).unwrap().unwrap();
-        for latest in [toolkit::Theme::embedded(), toolkit::Theme::read(&new_path).unwrap().unwrap()] {
-          for full in [false, true] {
-            // Hold the worker receiver to make Full deterministic, including
-            // before the first frame. Use the real worker task processor below.
-            let (tx, tasks) = mpsc::sync_channel(4);
-            let (answers, rx) = mpsc::sync_channel(8);
-            let initial = if full { 4 } else { 0 };
-            let mut v = Validation { sender: Some(tx.clone()), receiver: Some(rx), outstanding: initial, ..Default::default() };
-            for _ in 0..initial { tx.send(((old.source_digest().into(), Some(old_path.clone())), old.source_document(), old.context().clone())).unwrap(); }
-            v.observe(&old);
-            v.observe(&latest);
-            v.after_frame();
-            let mut file = None;
-            if full {
-                assert_eq!(v.pending.len(), 2, "Full must return without spinning or losing work");
-                for _ in 0..initial { answers.send(process_task(tasks.try_recv().unwrap(), &mut file).unwrap()).unwrap(); }
-                v.poll();
+        for latest in [
+            toolkit::Theme::embedded(),
+            toolkit::Theme::read(&new_path).unwrap().unwrap(),
+        ] {
+            for full in [false, true] {
+                // Hold the worker receiver to make Full deterministic, including
+                // before the first frame. Use the real worker task processor below.
+                let (tx, tasks) = mpsc::sync_channel(4);
+                let (answers, rx) = mpsc::sync_channel(8);
+                let initial = if full { 4 } else { 0 };
+                let mut v = Validation {
+                    sender: Some(tx.clone()),
+                    receiver: Some(rx),
+                    outstanding: initial,
+                    ..Default::default()
+                };
+                for _ in 0..initial {
+                    tx.send((
+                        (old.source_digest().into(), Some(old_path.clone())),
+                        old.source_document(),
+                        old.context().clone(),
+                    ))
+                    .unwrap();
+                }
+                v.observe(&old);
+                v.observe(&latest);
                 v.after_frame();
+                let mut file = None;
+                if full {
+                    assert_eq!(
+                        v.pending.len(),
+                        2,
+                        "Full must return without spinning or losing work"
+                    );
+                    for _ in 0..initial {
+                        answers
+                            .send(process_task(tasks.try_recv().unwrap(), &mut file).unwrap())
+                            .unwrap();
+                    }
+                    v.poll();
+                    v.after_frame();
+                }
+                for _ in 0..2 {
+                    answers
+                        .send(process_task(tasks.try_recv().unwrap(), &mut file).unwrap())
+                        .unwrap();
+                }
+                v.poll();
+                assert_eq!(
+                    file.as_ref().map(|f| f.0.as_path()),
+                    latest.source_path(),
+                    "worker must retain the latest registration"
+                );
+                assert_eq!(v.info()["pending"], 0);
             }
-            for _ in 0..2 { answers.send(process_task(tasks.try_recv().unwrap(), &mut file).unwrap()).unwrap(); }
-            v.poll();
-            assert_eq!(file.as_ref().map(|f| f.0.as_path()), latest.source_path(), "worker must retain the latest registration");
-            assert_eq!(v.info()["pending"], 0);
-          }
         }
     }
 
@@ -345,21 +377,33 @@ mod tests {
         std::fs::write(&path, "broken").unwrap();
         let rejected = toolkit::Theme::load_from(&path);
         let mut v = Validation::default();
-        v.refused(rejected.load_source_digest().unwrap(), rejected.load_error().unwrap());
+        v.refused(
+            rejected.load_source_digest().unwrap(),
+            rejected.load_error().unwrap(),
+        );
         let display = v.notice.clone();
         let (answers, rx) = mpsc::sync_channel(8);
         v.receiver = Some(rx);
         let mut previous = None;
         let report = scan(&path, &mut previous, false).unwrap();
-        assert_ne!(report.error.as_ref().unwrap(), &display, "fixture must exercise differing source labels/formatting");
+        assert_ne!(
+            report.error.as_ref().unwrap(),
+            &display,
+            "fixture must exercise differing source labels/formatting"
+        );
         answers.send(report).unwrap();
         v.poll();
         assert_eq!(v.notice, display);
         std::fs::write(&path, "mode: dark").unwrap();
-        answers.send(scan(&path, &mut previous, false).unwrap()).unwrap();
+        answers
+            .send(scan(&path, &mut previous, false).unwrap())
+            .unwrap();
         v.poll();
         assert!(v.errors.is_empty());
-        assert!(v.notice.is_empty(), "repair must clear the refusal notice by digest");
+        assert!(
+            v.notice.is_empty(),
+            "repair must clear the refusal notice by digest"
+        );
         assert!(v.notice_digest.is_none());
     }
 
@@ -368,13 +412,25 @@ mod tests {
         let theme = toolkit::Theme::embedded();
         let (tx, tasks) = mpsc::sync_channel(4);
         drop(tasks);
-        let mut v = Validation { sender: Some(tx), outstanding: 3, ..Default::default() };
+        let mut v = Validation {
+            sender: Some(tx),
+            outstanding: 3,
+            ..Default::default()
+        };
         v.observe(&theme);
         v.after_frame();
-        assert_eq!(v.skipped, 4, "include the popped task as well as in-flight work");
+        assert_eq!(
+            v.skipped, 4,
+            "include the popped task as well as in-flight work"
+        );
         assert_eq!(v.info()["pending"], 0);
-        let mut failed = Validation { worker_error: Some("spawn failed".into()), ..Default::default() };
-        for _ in 0..5 { failed.observe(&theme); }
+        let mut failed = Validation {
+            worker_error: Some("spawn failed".into()),
+            ..Default::default()
+        };
+        for _ in 0..5 {
+            failed.observe(&theme);
+        }
         failed.after_frame();
         failed.poll();
         assert_eq!(failed.skipped, 5);

@@ -33,6 +33,12 @@ the pending queue 32, the observation history 128 and the diagnostic map 64.
 `pending` counts submitted acknowledgements, not spontaneous file reports.
 `skipped` counts unprocessed sources and `evicted` counts retired history or
 diagnostic entries, so a bounded queue's degradation is visible in app info.
+Pending observations are delivered in FIFO order. A full worker channel puts
+the unsent observation back at the front and ends submission for that frame;
+newer sources cannot overtake it. Worker failure counts subsequent observations
+as skipped instead of leaving a permanently pending queue. A refusal notice
+belongs to its source digest, so a successful repair clears it even when the
+background report used a different diagnostic label or format.
 Scene hand edits retain the scene loader's existing parse/resolve diagnostics
 and last-good scene behaviour; a scene document is not a design-source grammar.
 
