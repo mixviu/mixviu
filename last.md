@@ -1,3 +1,65 @@
+# PR #220 round 8 — delta fixes validated
+
+PR: https://github.com/mixviu/mixviu/pull/220. Code head after applying the
+CBC formatting diff and docs: `04fbb7d11d3d38f8b4491df7022bad8bfdc173f3`.
+Validated semantic source `645099509bdcc13927bb4e738710d9e8f04888c3`;
+the difference is worker formatting and documentation. **Scoped checks and
+every control are green. Keep #220 ready.**
+
+## Delta response table
+
+Claims were checked against the actual `6beb499e` source before changes.
+No change was made to the expression rejected by Opus. Fable's already
+approved write/reload and repair-report requirements remain intact.
+
+| Item | Response | Code and evidence |
+|---|---|---|
+| 1 — ordering | **Fixed; LIFO premise refuted in the supplied head.** `6beb499e:design_validation.rs:189-195` uses a finite `for task in mem::take(...)`, not `pop()`. But continuing after Full permits a later task to overtake a deferred earlier task if the channel opens between attempts. | `libraries/viu/src/design_validation.rs:197-205`: VecDeque, pop_front, Full → push_front then break. Oldest retirement also uses pop_front. The real worker task processor is shared with the deterministic channel test at line 307: startup file → embedded/other file before the first frame, tested with both empty and full channels; final file slot must be the latest. LIFO and wrong-end requeue mutations both fail that assertion, CBC `20261122-011734-aecc456e-a1`. |
+| 2 — stale notice after repair | **Fixed.** The stored Display/Debug diagnostics can differ; message equality is not source identity. | `design_validation.rs:34,249-259,273`: notice_digest owns the notice, clear_error clears it by digest independently of the map's diagnostic text; Dismiss clears both notice and its digest. Test at line 374 refuses before scanning, proves diagnostics differ, then repairs and asserts empty notice and errors. Its mutation fails, job `011734-aecc456e-a1`. |
+| 3a — popped disconnected task not counted | **Fixed.** | `design_validation.rs:204-208`: count the popped task before disconnected() counts the remaining queue and in-flight tasks. Test at line 411 starts with three outstanding tasks and one pending task, expects skipped=4 and pending=0. Removing the increment fails, job `011734-aecc456e-a1`. |
+| 3b — observations after spawn failure remain pending | **Fixed.** | `design_validation.rs:133-136`: observations after worker_error increment skipped and return without queueing. The same test injects the spawn-failure state with no receiver, observes five times and asserts skipped=5/pending=0. Removing that guard fails, job `011734-aecc456e-a1`. |
+| 4 — DeepSeek move/compile claim | **Rejected/refuted; unchanged.** A pattern binding no fields does not move this scrutinee. | `libraries/viu/src/app_host.rs:1370-1374` still uses matches!(error, Failure::Design { .. }) followed by error.to_string(). Round-7 all-target clippy in both configurations: `20261122-004510-0dd57b03-a1`; additional both-configuration clippy/unit evidence: `20261122-003606-d9e9b5a1-a1`. Round-8 clippy and test runs below compile the same expression again. No &error workaround was added. |
+| 5 / GLM NIT 1 — install adapter error labelled ARGUMENT | **Fixed; small and in this PR.** | `app_host.rs:1119-1122`: install_theme errors now select Failure::Adapter's APPEARANCE code. This path does not create a compile-refusal notice. Both-configuration clippy and all targets pass. |
+| 5 / GLM NIT 2 — Full retry spins | **Premise refuted; backpressure strengthened with item 1.** | The actual base's finite mem::take loop at `6beb499e:design_validation.rs:189-195` cannot retry a requeued task in that invocation. New FIFO submission now breaks immediately on Full anyway. The full-channel test proves submission returns with two pending tasks, then verifies the worker's final registration after capacity opens. No GLM item deferred. |
+
+## CBC receipts
+
+Every validation ran via `cbc-build --worker any`, including Mix scripts.
+No local Rust or Mix tests, full CI invocation, merge, deployment or desk run.
+
+| CBC job | Result |
+|---|---|
+| `20261122-011629-dfe01858-a1` | rc 0. Fmt and six-crate all-target clippy both configurations; lib-viu every target in both width-eight pools (57 jobs including the scene script); app_mix green; all six crates' doc-tests both configurations; scene standalone and both pools 597 assertions; env registry 277 names/0 problems; all 11 changed Mix files lint clean. Seven Workshop tests pass alone after the support pool, 14.86 s. This source precedes only the additional empty-channel test variant. |
+| `20261122-011734-aecc456e-a1` | rc 0 on final semantic source. Both-configuration clippy and all six report tests, including empty/full task channels, pass. Twenty-three mutations fail their intended oracles: the five new FIFO/front-requeue/notice/disconnect/post-spawn controls plus all eighteen previous controls. Full-projection oracle passes and the drop-one-dependency control fails. Sources restored; worker formatting diff applied locally. |
+| `20261122-011809-72437585-a1` | All other five changed crates' default targets and doc-tests pass in width-eight pool shape. Outer rc 1 is a subsequent **runner feature-selection error**, not a test failure: lib-viu/test-support cannot be enabled without selecting lib-viu. Corrected support selection is below; passing default targets were not repeated. |
+| `20261122-012626-e8ea2505-a2` | rc 0. Corrected all-six-crate support selection: all 101 target binaries pass in width-eight shape, then all seven Workshop tests pass alone (15.02 s); doc-tests pass. No retry of a failing test. |
+| `20261122-011828-40d1772e-a1` | rc 0. Native malformed-argument spoof-notice and CLI trailing-argument mutation controls pass. Standalone app scripts: section 3.604153 s, redaction 0.921918 s, both below five seconds. Sources restored. |
+| `20261122-011829-e256055c` | rc 0. Forced restyle after refusal fails the installed-context oracle (Studio/Dark vs retained Ocean/Light). Source restored. |
+| `20261122-011830-44f5da40` | rc 0. Actual bundle accepts valid source; planted bad unused context is refused before archive creation. Trailing arguments rejected; restored/rebuilt source passes. |
+
+All changed Rust crates (`design`, `theme`, `toolkit`, `lib-viu`, `viu`,
+`settingsd`) have both-configuration target evidence above. The final test
+variant itself passes both configurations in the control job and in the full
+support pool. The existing serial list is untouched. Neither the known Monitor
+timeout nor the #226 byte guard fired in these scoped checks. No MIX_* variable
+was added, no deadline widened, and no new cache or worker was introduced.
+
+Cold startup worst call: **661.214 ms**, zero failures, unchanged **750 ms**
+bound, 200 peers, calls starting at port appearance for the first 1.5 seconds.
+First pump wall **353.916 ms**, CPU **353.829 ms**; load callback wall
+97.407 ms / CPU 97.181 ms. Evidence: `WORKSHOP_STARTUP_PORT` in
+`20261122-011629-dfe01858-a1`. The guard also passes in the serial binary after
+the pool. Round 7 was 646.081 ms; original before was the censored
+1,001.520 ms/two-timeout run `20261121-175445-2c24d7dc-a1`.
+
+The five gold-7ad2570f desk baseline samples, residual startup follow-up,
+write-path list and out-of-scope generic edit.save reference to TODO-editd
+remain in the earlier receipts. No artifact cache was landed. Full logs,
+drivers and formatter patch are retained under private startup evidence
+`round8/`. `pr_gate cbc` remains the next full run.
+
+---
+
 # PR #220 round 7 — CBC validation complete
 
 PR: https://github.com/mixviu/mixviu/pull/220. Validated code head:
