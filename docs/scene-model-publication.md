@@ -76,7 +76,10 @@ not applied. The host later sends `viu.model.applied` with `generation` and
 means validated model state, not a frame drawn on a display. Workshop keeps
 one publication outstanding and coalesces changes until that receipt arrives.
 Acceptance immediately flushes any queued input; refusal schedules a full
-resynchronisation on the next tick.
+resynchronisation on the next tick. The owner retains acceptance/refusal
+receipts when its evaluator mailbox is full and admits them before ordinary
+event producers. Receipt retention is bounded at the mailbox width (32);
+further completions remain in the existing result queue until receipts drain.
 
 At most one revisioned publication may be queued per callback, including a
 mixture of full and incremental sends. Conflicting sends fault the callback
