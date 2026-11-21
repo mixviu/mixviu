@@ -669,7 +669,8 @@ end
         if count == 200 {
             eprintln!("WORKSHOP_DISCOVERY_PHASE {}",host.discovery_measurements());
             host.probe_discovery();
-            host.owner_event("viu.test.retained_model",json!({"padding":"x".repeat(48*1024)}));
+            let padding="{\"name\":\"example.command\",\"description\":\"Read state\",\"read_only\":true,\"args\":{}}\n".repeat(600);
+            host.owner_event("viu.test.retained_model",json!({"padding":padding}));
             let until=Instant::now()+Duration::from_secs(5);
             loop {
                 host.pump();assert!(host.error().is_empty(),"{}",host.error());
