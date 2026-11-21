@@ -178,7 +178,12 @@ fn generic_save_gets_late_report_and_bad_context_switch_is_refused() {
     let broker = test_broker::Broker::start();
     let rt = runtime();
     let mut host = host(&path, &broker);
-    pump_until(&mut host, |h| h.ready() && h.design_info()["pending"] == 0);
+    // No settingsd is registered in this fixture. Wait for its absence to
+    // select the file theme, rather than the follower\u0027s initial empty profile.
+    pump_until(&mut host, |h| {
+        h.ready() && h.design_info()["pending"] == 0
+            && h.state()["session"]["state"]["lost"] == true
+    });
     assert_eq!(
         host.design_info()["errors"],
         json!({}),
