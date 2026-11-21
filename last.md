@@ -1,3 +1,109 @@
+# PR #216 — round 2 accepted review fixes
+
+PR: https://github.com/mixviu/mixviu/pull/216 (`app/mixviu-agent`), branch
+`feat/workshop-section-dirty`. Round-2 implementation: `3674d978`; complete
+validation checkpoint: `503122da`; final fixture checkpoint: `e1717e5f`.
+Only test orchestration/fixtures and documentation follow the implementation.
+Green: fmt, all-target clippy, all 55 non-doc targets plus doctests in both
+configurations, all 57 app scripts, six Workshop Bus tests and every negative
+control. Main is still `6b4278c7`, already an ancestor; no merge was needed.
+
+## Review response
+
+| Finding / adjudication | Resolution and checks |
+|---|---|
+| 1 — Gemini3, oversized admission | `apps/workshop/traffic.mix:16`: active bytes plus incoming encoded row are checked before eviction. Impossible admission drops only the incoming row. Real 8 MiB, active 4 MiB plus incoming 5 MiB, and combined row/byte caps are tested; admission and active-count controls fail as intended. |
+| 2 — Gemini4, upstream drops | `traffic.mix:9`: account upstream drops before pause/quit/rejection. Redacted `observed()` skips that accounting. Paused, evicted, rejected, failed and successful rows pin the exact count; upstream/double-count/rc/drop controls detect regressions. |
+| 3 — Gemini1, reset correctness | `model.mix:14` clears raw work and creates a Traffic generation. `work.mix:4` carries it in the native owner tag, including admission failures. `controller.mix:195` checks the returned tag before deleting a task, protecting reused job ids. Nil/reset/new-active/stale-result and reused-id cases pass; generation/native-tag/task-tag controls fail. Pause and quit prevent launches; quit prevents ingestion. |
+| 4 — Gemini2, malformed result | `traffic.mix:38`: guard a nil queue; reject non-map bodies, wrong batch lengths and non-map rows as counted batch drops. No partial malformed batch is retained. Malformed-body and isolated nil-queue controls pin both guards. |
+| 5 — honest section cost | `tools/workshop-section-check.mix:59` starts the timer before `inputs()`/`marks()`. Baseline preparation consumed up to 23% of a clean-tree sample's net saving, so mutations now advance revisions. The publisher compares only the reset epoch and three counters. Dead agent input and full catalogue comparisons are gone. Mutation marking is measured separately below. |
+| 6 — Gemini5/6, fixture gaps | `redaction-budget-test.mix` covers real8MiB admission, combined caps, batch bounds/FIFO, failure, pause/quit, reset and native tags. Only this script's embedded fixture receives a16MiB string allowance. `section-test.mix` wraps with frame, saved and app-mode projections (headless suppresses mode-file IO only), varies every declared cached input and command/macro/agent row keys, and coalesces multiple mutations before acknowledging the captured pending model. |
+| 7 — Gemini8, format restore | Format restores only `libraries/viu`, the package it formats, rather than the whole tree. Worker formatting at the final implementation produced no diff. |
+| 8 — GLM3, input closure | `presentation.mix:29` documents the transitive read closure and `dependencies()` names its fields. Mutation seams use that declaration to advance section revisions. `description()` reads command/snapshot/selection/tree, not `call`; call affects macro busy state. Height affects macro and freshly rebuilt placements, not retained Traffic widgets. Tests vary these inputs; removing `filter` from the closure fails the oracle. |
+| 9 — GLM2, real Job contract | `workshop_frame.rs:11` runs the real script through native Jobs and controller completion. It verifies a returned native generation tag, decoded map rows, exact redaction and FIFO. Malformed-reply and reversed-batch controls fail. JSON string replies remain correct: runtime parsing is retained, not replaced by an unencoded map. DeepSeek's BLOCKING interpretation is rejected as adjudicated. |
+| 10 — GLM3, throughput | One native Job takes up to64 rows /256KiB in order; one larger admissible row runs alone. Caps include the active batch and upstream accounting remains immediate. Before/after drop counts, backlog and notice-to-visible measurements are below. |
+| Rejected — Gemini quit blocking | `model.busy()` does not count Traffic jobs. No quit-blocking or MEDIUM-security claim is made; only the accepted reset/admission/launch correctness changes were implemented. |
+| Rejected — DeepSeek no-op/pending | Unreachable: `publish_workshop()` returns while a publication is pending, before computing a diff. Matching acceptance installs its captured model/inputs and flushes dirty state against that acknowledged model. The no-op branch was not changed. |
+
+## Honest 200-peer measurements
+
+Before: `d32f7d96`, CBC `20261121-145401-096d77e6-a1`.
+After: `3674d978`, CBC `20261121-151832-376d4fdc-a1`.
+Both run the real discovery/retained-body fixture with full-projection equality
+and unchanged response, owner-stall, wire and native apply guards. No soak.
+
+| Metric | Before | After |
+|---|---:|---:|
+| Inputs + marks, median / max | 0.865 /3.315ms | 0.087 /0.252ms |
+| Complete preparation + section projection, median / max (14 samples each) | 55.377 /122.704ms | 37.544 /176.717ms |
+| Full oracle projection, median / max | 61.492 /75.507ms | 63.303 /68.242ms |
+| Observed notice-to-owner-accepted-visible-model latency, median /p95 /max | 6,292.6 /7,419.9 /7,459.0ms | 1,135.3 /1,987.3 /2,174.8ms |
+| Visible observations /ingress at final sampled acceptance | 71 /149 | 122 /137 |
+| Not yet observed visible at that cutoff | 78 | 15 |
+| Raw waiting /active rows at that cutoff | 73 /1 | 0 /0 |
+| Reported drops at that cutoff | 0 | 0 |
+
+The after timer includes input preparation and counter comparison. Mutation-time
+marking is outside that publication timer and is not free:828 calls in the
+200-peer phase, median0.148ms, p950.414ms, max1.329ms, sum182.6ms. No aggregate
+CPU-saving claim follows from moving that work to mutation time.
+
+Four clean-tree after samples pair complete section cost28.833 /29.512 /30.818 /
+32.277ms with full projection63.303 /63.592 /65.122 /65.111ms at the same state
+and Mesh clock. The full oracle runs second and benefits from formatted Traffic
+row cache warming. Cold rebuilds can be slower than the warm oracle, as the
+176.717ms maximum shows. This is not a uniform or whole-tick speedup claim.
+
+Latency measures ingestion to an accepted publication containing that row/body,
+including correlated response bodies, not a frame physically drawn. Only the
+last100 filtered Traffic rows are displayed. Unseen observations are censored;
+they may remain queued or fall outside that window/the retained-model fixture
+replacement. The populations differ because observations arise from live test
+calls. The table therefore reports their counts and does not claim a matched
+payload latency experiment, a zero-drop stress budget or normal-pool enrolment.
+The after diagnostic's native patch CPU maximum is11,275us; wire max7,467 bytes.
+
+## Validation receipts
+
+| Check | Commit / CBC job | Result |
+|---|---|---|
+| Worker fmt, restored only the formatted package | `3674d978` / `20261121-151832-900e6eba-a1` | Pass, no diff |
+| Real native Jobs redaction | `3674d978` / `20261121-151832-f66a2775-a1` | Pass |
+| fmt check, all-target clippy, every test target and doctests, default | `503122da` / `20261121-152237-0590287a-a1` | 648 passed, 0 failed, 12 existing ignored; 55 non-doc targets plus doctests |
+| Same checks with test-support | `503122da` / `20261121-152237-d7307e0f-a1` | 658 passed, 0 failed, 12 existing ignored; all six Workshop Bus tests pass |
+| Original and round-2 controls | `503122da` / `20261121-152237-c0f95895-a1` | All 34 source mutations fail at their intended assertions; outer job rc 0 |
+| Final queue controls, including isolated nil-queue | `e1717e5f` / `20261121-153138-a74e76dd-a1` | All 15 queue mutations hit intended assertions, outer rc 0; 35 distinct external controls across these two runs |
+| All 57 app Mix scripts, final fixtures, default | `e1717e5f` / `20261121-153138-ee99fcf9-a1` | Pass |
+| All 57 app Mix scripts, final fixtures, test-support | `e1717e5f` / `20261121-153138-0d3df86e-a1` | Pass |
+| All 15 changed Mix files, including prior-round files | `e1717e5f` / local lint | Zero errors, warnings or notes; git diff --check clean |
+
+Clippy passes with warnings in unchanged Rust files; no diagnostics point at
+the changed Rust tests. Inline forgotten-mark and eager-redaction controls also
+pass within the app scripts. The final fixture-only changes isolate the nil
+guard from generation mismatch and check upstream accounting while quitting;
+they received both native app-script configurations and all queue controls.
+No Rust or product source changed after the complete validation checkpoint.
+
+Saved logs were read and audited. The original baseline probe
+`20261121-145159-424166e8-a1` counted only outer row ids; its latency population
+was corrected to include correlated responses and censoring before the accepted
+before/after capture. The first real-Job fixture used a nonexistent program path
+and failed to resolve rpc-job.mix in `20261121-150637-b9dffae2-a1`; using the
+existing application path fixed that fixture, and the real test passes in
+`20261121-150840-e615a2c4-a1` and `20261121-151832-f66a2775-a1`.
+The first control run `20261121-151156-ec5c318e-a1` stopped on its own missing
+source needle after its earlier controls had hit their assertions; the needle
+was corrected. Superseded checks at9928480f (`20261121-151357-0d4f6b01-a1` and
+`20261121-151357-33c97351-a1`) were cancelled with143 when the native-tag/reused-id
+fixture was added; they are not complete validation receipts.
+
+The serial entry is unchanged. No `tools/ci.mix all`, soak, merge or deployment
+was run in this round; `pr_gate cbc` is the next full run. Main freshness is
+checked before hand-off. Desk7's after probe remains conditional on a gold
+carrying this PR; the existing before and pending follow-up remain in the hub.
+
+---
+
 # PR #216 — Workshop section projection and notice redaction
 
 PR: https://github.com/mixviu/mixviu/pull/216, opened by `app/mixviu-agent`.
