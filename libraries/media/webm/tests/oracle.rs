@@ -18,6 +18,28 @@ fn run(program: &str, args: &[&str]) -> Vec<u8> {
     );
     o.stdout
 }
+/// True when the ffmpeg oracle can run. Hosted CI has no ffmpeg, so absence
+/// skips the oracle half unless MIX_TEST_REQUIRE_FFMPEG=1 (set by
+/// `tools/ci.mix all` on CBC), which turns it into a failure. Same convention
+/// as engines/mixd/tests/vfl.rs.
+fn oracle_available() -> bool {
+    match Command::new("ffmpeg").arg("-version").output() {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            assert_ne!(
+                std::env::var("MIX_TEST_REQUIRE_FFMPEG").as_deref(),
+                Ok("1"),
+                "ffmpeg required: WebM oracle cannot run"
+            );
+            eprintln!("SKIP: ffmpeg absent, WebM oracle not run (round trip still checked)");
+            false
+        }
+        Err(e) => panic!("cannot run ffmpeg: {e}"),
+        Ok(o) => {
+            assert!(o.status.success(), "ffmpeg probe failed: {o:?}");
+            true
+        }
+    }
+}
 fn required_capabilities() {
     for (option, names) in [
         ("-decoders", &["av1", "opus"][..]),
@@ -95,7 +117,10 @@ fn mux(packets: &[VideoPacket], width: u32, height: u32, audio: &Demuxer<'_>) ->
 }
 #[test]
 fn roundtrip_and_oracles() {
-    required_capabilities();
+    let oracle = oracle_available();
+    if oracle {
+        required_capabilities();
+    }
     let audio = Demuxer::new(include_bytes!("fixtures/sine.webm")).unwrap();
     let v = video();
     let bytes = mux(&v, 64, 48, &audio);
@@ -127,6 +152,9 @@ fn roundtrip_and_oracles() {
     }
     assert_eq!(d.seek(399), Some(200));
     assert!(d.next_packet().unwrap().key_frame);
+    if !oracle {
+        return;
+    }
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("ours.webm");
     std::fs::write(&path, bytes).unwrap();
