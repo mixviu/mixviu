@@ -20,7 +20,7 @@ try
   $r=run_argv(["ffmpeg","-nostdin","-hide_banner","-f","lavfi","-i","testsrc2=s=64x64:r=30:d=2,settb=1/30","-f","lavfi","-i","testsrc2=s=64x64:r=30:d=120,settb=1/1000","-lavfi",$s.quality_graph($path),"-map","[v]","-map","[s]","-map","[p]","-f","null","-"],{timeout:30})
   if not $r.ok then raise("ORACLE",$r.stderr) end
   $v=json_parse(read_file($path))
-  if len($v.frames)!=60 or $v.pooled_metrics.vmaf.mean<99 or contains($r.stderr,"not matching timebases") or contains($r.stderr,"non monotonically") then raise("ORACLE","quality frame alignment failed") end
+  if len($v.frames)!=60 or not contains($r.stderr,"All:1.000000") or not contains($r.stderr,"average:inf") or contains($r.stderr,"not matching timebases") or contains($r.stderr,"non monotonically") then raise("ORACLE","quality frame alignment failed: "..json_encode({frames:len($v.frames),vmaf:$v.pooled_metrics.vmaf.mean,stderr:$r.stderr})) end
   print("PASS quality alignment: 60 identical frames, different input timebases and durations")
 finally
   run_argv_must(["rm","-rf","--",$tmp])
