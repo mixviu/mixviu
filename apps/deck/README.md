@@ -141,6 +141,10 @@ time sampling. `libraries/viu/tests/deck.rs` loads the real Mix behaviour and
 paints every reference step headlessly. Its explicit offscreen evidence test
 saves two 4K PNGs. Rust checks run on CBC only.
 
+`mix apps/deck/check.mix check` is the scoped CBC driver: all lib-viu/viu
+test targets, all-target clippy, fmt, core policy and gallery regeneration.
+Its `fmt` mode returns a worker diff and restores the owned checkout.
+
 The reference source is `examples/author.mix`; run it with Mix to regenerate
 `vfl-self-recording.json`. It uses the 3.1 composition constructors from
 `apps/gallery/deck.mix`, including cards, stats and chapter rail/footer, and
