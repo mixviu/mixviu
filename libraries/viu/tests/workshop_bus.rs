@@ -42,7 +42,7 @@ fn publication_probe(bundle: &mut Bundle) {
   for $op in $operations
     $old=$publication.model
     for $part in $op.path $old=$old[$part] end
-    push($op_sizes,{op:$op.op,path:$op.path,bytes:byte_length(json_encode($op)),old_bytes:byte_length(json_encode($old)),old_length:len($old),items:len($op.items ?? []),remove:$op.remove ?? 0,index:$op.index ?? nil})
+    push($op_sizes,{op:$op.op,path:$op.path,bytes:byte_length(json_encode($op)),old_bytes:byte_length(json_encode($old)),old_length:if contains(["list","map","string"],type($old)) then len($old) else nil end,items:len($op.items ?? []),remove:$op.remove ?? 0,index:$op.index ?? nil})
   end
   print("WORKSHOP_BUILD "..json_encode({revision:$revision,base:$publication.ack,full:$full,bytes:byte_length(json_encode(if $full then {generation:$ctx.generation,revision:$revision,value:$value} else $body end)),model_bytes:byte_length(json_encode($value)),operations:len($operations),op_sizes:$op_sizes,ticks:$byte_probe.ticks-$byte_probe.ack_ticks,events:$byte_probe.events-$byte_probe.ack_events,coalesced_ticks:$byte_probe.ticks-$byte_probe.published_ticks,coalesced_events:$byte_probe.events-$byte_probe.published_events,phase:if $s.discovery!=nil then "discovery" else "steady" end,since_start_ms:(monotonic()-$byte_probe.start)*1000}))
   $byte_probe.published_ticks=$byte_probe.ticks;$byte_probe.published_events=$byte_probe.events
