@@ -36,8 +36,9 @@ chrome-headless-shell), and build.mix/episode.mix invocations, including
 relative paths and invocations with flags. Each measured command rechecks it.
 
 The default video workload is 2 s / 60 frames, 3840x2160 at 30 fps. Sustained
-uses the full 120 s / 3600 frames. SVT p8/p9 use CRF 32/44/56/63; libaom
-cpu-used 6 uses CRF 36/46/56/63; librav1e speed 10 uses QP 80/140/200/250.
+uses the full 120 s / 3600 frames. SVT p8/p9 use native CRF 56/61/66/70 through svtav1-params (the top-level
+FFmpeg CRF flag stops at 63); libaom cpu-used 6 uses CRF 56/59/61/63 with
+qmin=qmax at each point; librav1e speed 10 uses QP 200/220/240/255.
 Sustained adds librav1e speed 8. Higher SVT presets clamp at 4K; libaom 8
 duplicated 6 and is omitted. BD-rate is calculated on both PSNR and VMAF,
 using exact piecewise-linear log-rate integration over the common interval.

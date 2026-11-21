@@ -30,6 +30,10 @@ fn fps($speed,$frames)
   $samples=sort(map($speed.wall_samples_s,fn($t)=$frames/$t))
   return {median:summary($samples).median,p5:$samples[max(0,ceil(len($samples)*0.05)-1)],status:$speed.status}
 end
+fn bits_per_second($bytes,$seconds)
+  if $bytes<0 or $seconds<=0 then raise("BITRATE","invalid size or duration") end
+  return $bytes*8/$seconds
+end
 fn summary($xs)
   if len($xs) == 0 then raise("STATS", "empty sample") end
   $s = sort($xs)

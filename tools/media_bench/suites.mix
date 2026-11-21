@@ -76,12 +76,12 @@ fn quality($source,$encoded,$o,$name)
   $text = read_file($o.out.."/"..$name..".stderr")
   $data = json_parse(read_file($vmaf))
   if len(re_find($text,"fmt:yuv420p")) < 2*$o.frames or len(re_find($text,"color_range:tv color_space:bt709")) < 2*$o.frames then raise("QUALITY","normalised inputs do not match yuv420p / tv / BT.709") end
-  if len($data.frames) != $o.frames or contains($text,"not matching timebases") or contains($text,"non monotonically") then raise("QUALITY","comparison must align exactly 60 frames") end
+  if len($data.frames) != $o.frames or contains($text,"not matching timebases") or contains($text,"non monotonically") then raise("QUALITY","comparison must align exactly the requested frame count") end
   return {vmaf:$data.pooled_metrics.vmaf.mean,ssim:capture_number($text,'All:([-0-9.]+)'),psnr_db:if contains($text,"average:inf") then "infinite" else capture_number($text,'average:([-0-9.]+)') end,normalisation:"same dimensions; yuv420p; tv range; BT.709 matrix/primaries/transfer",model:$o.model,thread_budget:$o.threads}
 end
 fn video_cases($variant)
-  $cases=[{codec:"libsvtav1",preset:"8",opts:["-preset","8"],ladder:[32,44,56,63]},{codec:"libsvtav1",preset:"9",opts:["-preset","9"],ladder:[32,44,56,63]},{codec:"libaom-av1",preset:"6",opts:["-cpu-used","6","-row-mt","1"],ladder:[36,46,56,63]},{codec:"librav1e",preset:"10",opts:["-speed","10"],ladder:[80,140,200,250]}]
-  if $variant=="sustained" then push($cases,{codec:"librav1e",preset:"8",opts:["-speed","8"],ladder:[80,140,200,250]}) end
+  $cases=[{codec:"libsvtav1",preset:"8",opts:["-preset","8"],ladder:[56,61,66,70]},{codec:"libsvtav1",preset:"9",opts:["-preset","9"],ladder:[56,61,66,70]},{codec:"libaom-av1",preset:"6",opts:["-cpu-used","6","-row-mt","1"],ladder:[56,59,61,63]},{codec:"librav1e",preset:"10",opts:["-speed","10"],ladder:[200,220,240,255]}]
+  if $variant=="sustained" then push($cases,{codec:"librav1e",preset:"8",opts:["-speed","8"],ladder:[200,220,240,255]}) end
   return $cases
 end
 fn video($o)
@@ -91,13 +91,13 @@ fn video($o)
     for $q in $case.ladder
       $id=$case.codec.."-p"..$case.preset.."-q"..to_string($q)
       $file=$o.out.."/"..$id..".ivf"
-      $rate=if $case.codec=="librav1e" then ["-qp",to_string($q)] else ["-crf",to_string($q),"-b:v","0"] end
+      $rate=if $case.codec=="librav1e" then ["-qp",to_string($q)] elif $case.codec=="libaom-av1" then ["-crf",to_string($q),"-qmin",to_string($q),"-qmax",to_string($q),"-b:v","0"] else ["-svtav1-params","crf="..to_string($q),"-b:v","0"] end
       $cmd=ff(concat(["-i",$o.corpus.."/ui-synth.mkv","-t",to_string($o.seconds),"-an","-pix_fmt","yuv420p","-color_range","tv","-colorspace","bt709","-c:v",$case.codec,"-threads","4"],concat($case.opts,concat($rate,[$file]))))
       $speed=measure($cmd,$o,$id)
       $m=quality($o.corpus.."/ui-synth.mkv",$file,$o,$id.."-quality")
       $probe=once(["ffprobe","-v","error","-show_entries","format=size","-of","json","-i",$file],$o,$id.."-probe")
       $bytes=to_number(json_parse(read_file($o.out.."/"..$id.."-probe.stdout")).format.size)
-      $m.bitrate_bps=$bytes*8/$o.seconds; $m.encode=$speed; $m.fps=$core.fps($speed,$o.frames); $m.frames=$o.frames; $m.duration_s=$o.seconds; $m.thread_budget=$o.threads
+      $m.bitrate_bps=$core.bits_per_second($bytes,$o.seconds); $m.encode=$speed; $m.fps=$core.fps($speed,$o.frames); $m.frames=$o.frames; $m.duration_s=$o.seconds; $m.thread_budget=$o.threads
       push($vc,{quality:$m.vmaf,rate:$m.bitrate_bps})
       push($pc,{quality:$m.psnr_db,rate:$m.bitrate_bps})
       push($items,{id:$id,metrics:$m})
@@ -116,7 +116,7 @@ fn decode($o)
   $s = measure(ff(["-c:v","libdav1d","-i",$file,"-an","-f","null","-"]),$o,"dav1d")
   $checksum = once(ff(["-c:v","libdav1d","-i",$file,"-an","-f","framemd5",$o.out.."/frames.md5"]),$o,"checksum")
   $frames = filter(split(read_file($o.out.."/frames.md5"),"\n"),fn($l)=trim($l)!="" and not starts_with($l,"#"))
-  if len($frames) != $o.frames then raise("DECODE","expected 60 frames") end
+  if len($frames) != $o.frames then raise("DECODE","expected the workload frame count") end
   return [{id:"ui-synth-4k-dav1d",metrics:{decode:$s,fps:$core.fps($s,$o.frames),frames:len($frames),checksums:$frames,checksum_file:"frames.md5",duration_s:$o.seconds,width:$o.width,height:$o.height,thread_budget:$o.threads}}]
 end
 fn audio_files($o)
@@ -282,7 +282,7 @@ fn encode($o)
     $probe = once(["ffprobe","-v","error","-show_entries","format=size,duration","-of","json","-i",$file],$o,$kind.."-probe")
     $f = json_parse(read_file($o.out.."/"..$kind.."-probe.stdout")).format
     $m.encode = $speed; $m.size_bytes = to_number($f.size); $m.duration_error_s = to_number($f.duration)-$o.seconds
-    $m.route = if $kind == "mp4-x264" then "current assemble.mix stills route; two-second synthetic take" else "AV1 plus Opus WebM; two-second motion excerpt" end
+    $m.route = if $kind == "mp4-x264" then "current assemble.mix stills route; workload-duration synthetic take" else "AV1 plus Opus WebM; workload-duration motion excerpt" end
     push($items,{id:$kind,metrics:$m})
   end
   return $items

@@ -39,7 +39,7 @@ check($c.bd_result($a,$badcurve).status=="unavailable")
 $tiny=map($a,fn($p)={quality:98+($p.quality-70)/100,rate:$p.rate})
 check($c.bd_result($a,$tiny).status=="unavailable")
 check($c.fps({wall_samples_s:[1,2,4],status:"ok"},60).p5==15)
-check(60*8/2==240)
+check($c.bits_per_second(60,2)==240)
 check($s.item_id("/corpus/a/same.wav","/corpus")!=$s.item_id("/corpus/b/same.wav","/corpus"))
 for $path in ["/tmp/x:y","/tmp/x;y","/tmp/x,y","/tmp/x[y]","/tmp/x'y","-input","../input"]
   $refused=false
