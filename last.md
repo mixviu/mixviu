@@ -1,3 +1,114 @@
+# PR #216 — Workshop section projection and notice redaction
+
+PR: https://github.com/mixviu/mixviu/pull/216, opened by `app/mixviu-agent`.
+Branch: `feat/workshop-section-dirty`, from merged #214 main `6b4278c7`.
+Current source checkpoint: `f0f6c0cf`; production behaviour is unchanged since
+`80e4ae38`, with later test/documentation changes. This receipt is a subsequent
+documentation commit. **Draft: scoped validation and strict soak still pending.**
+
+## Behaviour and locations
+
+| File:line | Change |
+|---|---|
+| `apps/workshop/presentation.mix:33` | Section input signatures and dirty marks. Tree, macro and Traffic reuse unchanged acknowledged sections; Mesh and agent time-dependent values project each turn. Full `project()` remains the oracle. |
+| `apps/workshop/app.mix:17` | Candidate inputs are captured with the publication and commit on the matching applied receipt. Pending events coalesce against the acknowledged inputs/model; refusal re-projects from scratch. |
+| `apps/workshop/traffic.mix:8` | Notice rows enter private bounded pending state. One ordered native Job runs the unchanged recursive redactor; only redacted completion enters display/export retention. Pending work includes active bytes/rows in its 1,024-row / 8 MiB cap. |
+| `apps/workshop/controller.mix:192` | Redaction completion, correlation and existing visible drop accounting; admission at `:260` through the existing native Jobs path. No new daemon or transport. |
+| `libraries/viu/mix/model-publication.mix:13` | Direct differ calls reject changed non-map roots or long root keys instead of producing empty-path sets. |
+| `libraries/viu/src/app_host_model_tests.rs:107` | Real host at mailbox width eight retains eight receipts and pauses completion retirement. Restoring literal 32 fails the test. |
+| `docs/scene-model-publication.md:106` | Implementation/checks appendix heading and the asynchronous Traffic visibility/drop contract. |
+
+Traffic observation visibility is asynchronous. Overflow drops the oldest waiting
+row; failed redaction work drops its row. Both increment the existing visible
+drop count. Pending raw values are absent from Traffic display/filter/export.
+Direct `workshop.call` / `workshop.reply` semantics are unchanged; their Traffic
+copy still uses the original synchronous redactor. Closing the app can abandon
+pending diagnostic observations.
+
+## Measurements before changes
+
+The measurement-only `lab/workshop-section-measure` branch is not merged.
+CBC `20261121-140224-5181f254-a1` at lab `5055105a`, based on #214, passes the
+real 200-peer fixture. There are 17 projections in its 200-peer phase:
+
+| Section | Median CPU | Changed projections |
+|---|---:|---:|
+| Tree | 36.55 ms | 11/17 |
+| Macro | 0.299 ms | 1/17 |
+| Agent | 0.389 ms | 1/17 |
+| Mesh | 18.62 ms | 17/17 |
+| Traffic | 11.30 ms | 14/17 |
+
+These are callback projections, not uniform tick samples. Mesh clock output
+changes every projection. Redaction by encoded row size: <1 KiB, n82,
+median/max 1.712/3.068 ms; 1–16 KiB, n27, 3.574/39.347 ms; 16–64 KiB, n68,
+0.399/178.643 ms. An earlier diagnostic `20261121-140014-8a6b8b06-a1` reached
+228.964 ms for a 53,404-byte row. Shape matters; a byte threshold alone would
+not establish a time budget. Notice callbacks now perform zero recursive
+redaction; the same function runs in the native Job evaluator.
+
+## After measurements and limits
+
+Standalone six-test pass `20261121-140851-7c5640fd-a1` measured steady tick
+median 75.425 ms and notice CPU max 6.512 ms in the retained-body phase. Native
+apply reached 47.403 ms while delayed Traffic was still arriving. These are
+different retained states and cannot establish a paired whole-tick speedup.
+
+The paired diagnostic `20261121-141251-fdb97a25-a1` compares the same state and
+Mesh clock. With a clean tree, section projection took 40.10 / 51.55 / 53.47 /
+65.41 ms against full projection 69.95 / 76.66 / 78.65 / 80.98 ms. Full oracle
+comparisons succeeded until the run hit the unchanged native apply guard:
+118,166 us observed against 100,000 us. This red diagnostic remains reported;
+it is not a responsiveness pass. Instrumentation adds a full projection and
+changes how many delayed rows arrive before the next publication.
+
+## Validation receipts
+
+| CBC job | Result |
+|---|---|
+| `20261121-135818-65efb9b7-a1` | Baseline instrumentation caller error: diagnostic module/global cache scope; fixed before usable measurements. |
+| `20261121-135907-2851e274-a1` | Baseline fixture passed, but callback diagnostics were not forwarded; no section measurement claim. |
+| `20261121-140851-6444b063-a1` | Worker fmt diff applied locally; worker restored its own files. |
+| `20261121-140455-4792ad62-a1` | Initial host-width fixture failed to settle because its bootstrap published no model. Corrected, not hidden. |
+| `20261121-140851-7c5640fd-a1` | Corrected host width test, section/redaction/Traffic/publication Mix policies, and all six Workshop Bus tests pass. |
+| `20261121-141057-277a0c45-a1` | Literal-32 negative control triggers the host saturation assertion. Source restored. |
+| `20261121-141057-f7a67ce3-a1` | Full oracle after real discovery, steady and notice events passes at 200 peers. |
+| `20261121-141251-fc7cd5f6-a1` | Forgotten tree dirty mark triggers the real-fixture oracle assertion. Source restored. |
+| `20261121-141251-fdb97a25-a1` | Paired diagnostic red on unchanged native apply bound, detailed above. |
+| `20261121-141917-42b10066-a1` | Corrected generated property fixture passes through the real native app harness: all 57 app Mix scripts pass. |
+
+The generated property test now uses eight seeds, one complete ten-event
+permutation each, plus a forgotten mark, wrapped acknowledged models and a
+clock-advance check. The original repeated 320-step version passes under the
+CLI but exceeded the embedded 20-second callback deadline in the loaded pool.
+Only duplicate permutation repeats were removed. Product deadlines, 200 peers,
+silent/departing peers and all existing numeric guards are unchanged.
+
+Redaction tests pin the existing substring-key semantics, deferred request/
+response correlation, FIFO, pending row bound and absence of raw Traffic output.
+A test double raises on recursive notice redaction; restoring eager work hits
+that assertion. Every changed Mix file has been linted; final lint has zero
+errors, warnings and notes.
+
+The independent GLM whole-path survey is recorded in the private hub with
+accepted checks and explicit scope corrections. Earlier GLM/DeepSeek attempts
+exhausted their reasoning budgets without a report and are not approvals.
+
+## Pool and desk disposition
+
+Initial strict normal-pool job `20261121-141302-0dbe7a6d-a1` stopped in round one
+on the new generated test's embedded deadline. Workshop Bus passed. A fresh
+strict twelve-round width-four no-serial/no-retry run after the fixture repair
+is in progress as `20261121-142018-d010b2ad`. Workshop remains serial pending
+12/12; the conditional full CI has not been triggered.
+
+Desk7 after measurement is pending the gold carrying this PR. Its recorded
+before is worst ping 482 ms in the first 1.3 seconds on gold `a3b1e286`.
+The private TODO-workshop records the exact probe and this pending follow-up.
+No PR merge, gold shipment or desk deployment has occurred in this task.
+
+---
+
 # PR #214 — rounds 2, 3 and 3b complete
 
 PR: https://github.com/mixviu/mixviu/pull/214 (ready). Validated source head: `3fa0291585fe731e545ca656916df967b8e12629`; the following receipt commit changes only this report. Base remains `a3b1e286` (#213); final fetch found no newer main commit. Workshop stays serial. No full CI or soak was run; `pr_gate cbc` remains the next full run.
