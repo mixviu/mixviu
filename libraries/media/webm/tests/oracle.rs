@@ -66,6 +66,7 @@ fn mux(packets: &[media_av1::Packet], width: u32, height: u32, audio: &Demuxer<'
     .unwrap();
     // Fixture container ticks are rebased to zero, preserving packet deltas.
     let first = audio.packets()[0].timestamp;
+    let video_end = (packets.last().unwrap().pts + 1) * 40;
     let mut events: Vec<_> = packets
         .iter()
         .map(|p| (p.pts * 40, 1, p.key_frame, p.data.as_slice(), 40))
@@ -74,7 +75,9 @@ fn mux(packets: &[media_av1::Packet], width: u32, height: u32, audio: &Demuxer<'
         audio
             .packets()
             .iter()
-            .map(|p| ((p.timestamp - first) as u64, 2, true, p.data, 20)),
+            .map(|p| ((p.timestamp - first) as u64, 2, true, p.data, 20))
+            .filter(|e| e.0 < video_end)
+            .map(|e| (e.0, e.1, e.2, e.3, e.4.min(video_end - e.0))),
     );
     events.sort_by_key(|e| e.0);
     for (t, track, key, b, d) in events {
