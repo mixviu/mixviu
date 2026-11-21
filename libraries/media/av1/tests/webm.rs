@@ -134,7 +134,18 @@ fn sample_4k() {
 fn generate_webm_fixture() {
     let path = std::env::var("MEDIA_AV1_FIXTURE").expect("MEDIA_AV1_FIXTURE required");
     let v = video(64, 48, 10);
-    let mut w = Writer::new(Cursor::new(Vec::new()), Video { width:64, height:48, codec_private:av1_config(&v[0].data).unwrap() }, None).unwrap();
-    for p in v { w.packet(1,p.pts*40,40,p.key_frame,&p.data).unwrap(); }
-    std::fs::write(path,w.finish().unwrap().into_inner()).unwrap();
+    let mut w = Writer::new(
+        Cursor::new(Vec::new()),
+        Video {
+            width: 64,
+            height: 48,
+            codec_private: av1_config(&v[0].data).unwrap(),
+        },
+        None,
+    )
+    .unwrap();
+    for p in v {
+        w.packet(1, p.pts * 40, 40, p.key_frame, &p.data).unwrap();
+    }
+    std::fs::write(path, w.finish().unwrap().into_inner()).unwrap();
 }

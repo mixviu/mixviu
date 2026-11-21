@@ -19,19 +19,40 @@ fn run(program: &str, args: &[&str]) -> Vec<u8> {
     o.stdout
 }
 fn required_capabilities() {
-    for (option, names) in [("-decoders", & ["av1", "opus"][..]), ("-encoders", &["libaom-av1", "libopus"][..]), ("-muxers", &["webm", "null"][..])] {
+    for (option, names) in [
+        ("-decoders", &["av1", "opus"][..]),
+        ("-encoders", &["libaom-av1", "libopus"][..]),
+        ("-muxers", &["webm", "null"][..]),
+    ] {
         let output = run("ffmpeg", &["-v", "error", option]);
         let output = String::from_utf8(output).unwrap();
         for name in names {
-            assert!(output.lines().any(|l| l.split_whitespace().nth(1).is_some_and(|n| n.split(',').any(|n| n == *name))), "required ffmpeg capability {option} {name} unavailable");
+            assert!(
+                output.lines().any(|l| l
+                    .split_whitespace()
+                    .nth(1)
+                    .is_some_and(|n| n.split(',').any(|n| n == *name))),
+                "required ffmpeg capability {option} {name} unavailable"
+            );
         }
     }
 }
-struct VideoPacket { data:Vec<u8>, pts:u64, key_frame:bool }
+struct VideoPacket {
+    data: Vec<u8>,
+    pts: u64,
+    key_frame: bool,
+}
 fn video() -> Vec<VideoPacket> {
-    let d=Demuxer::new(include_bytes!("fixtures/rav1e.webm")).unwrap();
-    assert_eq!(d.packets().iter().filter(|p|p.key_frame).count(),2);
-    d.packets().iter().map(|p|VideoPacket { data:p.data.to_vec(), pts:p.timestamp as u64/40, key_frame:p.key_frame }).collect()
+    let d = Demuxer::new(include_bytes!("fixtures/rav1e.webm")).unwrap();
+    assert_eq!(d.packets().iter().filter(|p| p.key_frame).count(), 2);
+    d.packets()
+        .iter()
+        .map(|p| VideoPacket {
+            data: p.data.to_vec(),
+            pts: p.timestamp as u64 / 40,
+            key_frame: p.key_frame,
+        })
+        .collect()
 }
 fn mux(packets: &[VideoPacket], width: u32, height: u32, audio: &Demuxer<'_>) -> Vec<u8> {
     let at = audio.tracks.iter().find(|t| t.kind == 2).unwrap();
@@ -82,7 +103,15 @@ fn roundtrip_and_oracles() {
     let at = d.tracks.iter().find(|t| t.kind == 2).unwrap();
     assert_eq!(at.codec_delay_ns, 6_500_000);
     assert_eq!(at.seek_pre_roll_ns, 80_000_000);
-    assert_eq!(at.codec_private, audio.tracks.iter().find(|t| t.kind == 2).unwrap().codec_private);
+    assert_eq!(
+        at.codec_private,
+        audio
+            .tracks
+            .iter()
+            .find(|t| t.kind == 2)
+            .unwrap()
+            .codec_private
+    );
     let vp: Vec<_> = d.packets().iter().filter(|p| p.track == 1).collect();
     assert_eq!(vp.len(), v.len());
     for (a, b) in vp.iter().zip(&v) {
@@ -125,7 +154,19 @@ fn roundtrip_and_oracles() {
     assert_eq!(s["color_primaries"], "bt709");
     assert_eq!(s["color_range"], "tv");
     assert_eq!(j["format"]["duration"], "0.400000");
-    let pts = run("ffprobe", &["-v", "error", "-select_streams", "a", "-show_packets", "-of", "json", path]);
+    let pts = run(
+        "ffprobe",
+        &[
+            "-v",
+            "error",
+            "-select_streams",
+            "a",
+            "-show_packets",
+            "-of",
+            "json",
+            path,
+        ],
+    );
     let pts: serde_json::Value = serde_json::from_slice(&pts).unwrap();
     assert_eq!(pts["packets"][0]["pts"], -7);
     run(
@@ -251,4 +292,3 @@ fn negative_inputs() {
         Err(media_webm::Error::SizeOverflow)
     ));
 }
-

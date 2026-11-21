@@ -92,10 +92,14 @@ mod tests {
     use super::*;
     #[test]
     fn all_vint_lengths_and_empty_uint() {
-        assert_eq!(uint(&[]).unwrap(),0);
+        assert_eq!(uint(&[]).unwrap(), 0);
         for n in 1..=8 {
-            let mut b=vec![0;n]; b[0]=1<<(8-n);b[n-1]|=1;
-            let mut p=0;assert_eq!(vint(&b,&mut p,false).unwrap(),(1,false));assert_eq!(p,n);
+            let mut b = vec![0; n];
+            b[0] = 1 << (8 - n);
+            b[n - 1] |= 1;
+            let mut p = 0;
+            assert_eq!(vint(&b, &mut p, false).unwrap(), (1, false));
+            assert_eq!(p, n);
         }
     }
 }

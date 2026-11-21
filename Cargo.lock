@@ -5541,6 +5541,7 @@ name = "media-av1"
 version = "0.1.2"
 dependencies = [
  "media-frame",
+ "media-webm",
  "rav1e",
 ]
 
@@ -5563,8 +5564,6 @@ dependencies = [
 name = "media-webm"
 version = "0.1.2"
 dependencies = [
- "media-av1",
- "media-frame",
  "serde_json",
  "tempfile",
 ]

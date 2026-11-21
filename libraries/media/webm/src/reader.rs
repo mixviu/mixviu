@@ -123,10 +123,7 @@ impl<'a> Demuxer<'a> {
                                 _ => {}
                             }
                         }
-                        if t.number == 0
-                            || t.codec.is_empty()
-                            || !track_numbers.insert(t.number)
-                        {
+                        if t.number == 0 || t.codec.is_empty() || !track_numbers.insert(t.number) {
                             return Err(Error::Invalid("invalid track"));
                         }
                         d.tracks.push(t);
@@ -138,7 +135,9 @@ impl<'a> Demuxer<'a> {
                     for c in children(e.data) {
                         let c = c?;
                         if c.id == 0xe7 {
-                            base = Some(i64::try_from(uint(c.data)?).map_err(|_| Error::SizeOverflow)?);
+                            base = Some(
+                                i64::try_from(uint(c.data)?).map_err(|_| Error::SizeOverflow)?,
+                            );
                         }
                     }
                     let base = base.ok_or(Error::Invalid("Cluster missing Timestamp"))?;
@@ -209,15 +208,14 @@ impl<'a> Demuxer<'a> {
                 _ => {}
             }
         }
-        if d.tracks.is_empty()
-            || d.packets
-                .iter()
-                .any(|p| !track_numbers.contains(&p.track))
-        {
+        if d.tracks.is_empty() || d.packets.iter().any(|p| !track_numbers.contains(&p.track)) {
             return Err(Error::Invalid("missing packet track"));
         }
         // Validate cue targets now; seek never trusts an arbitrary byte offset.
-        d.cues.retain(|cue| d.keyframes.contains_key(&(cue.cluster_position, cue.track, cue.timestamp)));
+        d.cues.retain(|cue| {
+            d.keyframes
+                .contains_key(&(cue.cluster_position, cue.track, cue.timestamp))
+        });
         Ok(d)
     }
     fn block(&mut self, b: &'a [u8], base: i64, key: Option<bool>, cluster: u64) -> Result<()> {
@@ -235,7 +233,9 @@ impl<'a> Demuxer<'a> {
             .ok_or(Error::SizeOverflow)?;
         let key_frame = key.unwrap_or(hdr[2] & 128 != 0);
         if key_frame && timestamp >= 0 {
-            self.keyframes.entry((cluster, track, timestamp as u64)).or_insert(self.packets.len());
+            self.keyframes
+                .entry((cluster, track, timestamp as u64))
+                .or_insert(self.packets.len());
         }
         self.packets.push(Packet {
             track,
@@ -277,7 +277,9 @@ impl<'a> Demuxer<'a> {
             .iter()
             .filter(|c| c.track == video && c.timestamp <= timestamp)
             .max_by_key(|c| c.timestamp)?;
-        self.cursor = *self.keyframes.get(&(cue.cluster_position, video, cue.timestamp))?;
+        self.cursor = *self
+            .keyframes
+            .get(&(cue.cluster_position, video, cue.timestamp))?;
         Some(cue.timestamp)
     }
 }
