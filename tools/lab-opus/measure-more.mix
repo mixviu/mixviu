@@ -9,7 +9,7 @@ end
 $build = invoke(["cargo", "build", "--release", "--manifest-path", "tools/lab-opus/Cargo.toml"], "build")
 if not $build.ok then exit(1) end
 for $set in ["opus_testvectors", "opus_newvectors"]
-  for $candidate in ["opus-pure", "cranpose-opus-pure", "hiraku-opus", "ps-rusty-opus", "mousiki", "oporus", "moosicbox_opus_native", "opuscule", "filmcraft-opus", "opus1", "opus-wave"]
+  for $candidate in ["opus-pure", "cranpose-opus-pure", "hiraku-opus", "ps-rusty-opus", "mousiki", "oporus", "moosicbox_opus_native", "opuscule", "filmcraft-opus", "opus1", "opus-wave", "symphonia-opus"]
     for $ch in [1,2]
       for $v in ["01","02","03","04","05","06","07","08","09","10","11","12"]
         $id = $set .. "-" .. $candidate .. "-" .. $ch .. "-" .. $v
@@ -37,11 +37,11 @@ for $signal in ["sweep", "bursts"]
       invoke([$bin, "measure", "ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", "48000", "-ac", "2", "-i", $input, "-c:a", "libopus", "-b:a", to_string($rate), "-frame_duration", "20", $oracle .. ".ogg"], "oracle-encode-" .. $id .. "-" .. $repeat)
       invoke([$bin, "measure", "ffmpeg", "-v", "error", "-y", "-c:a", "libopus", "-i", $oracle .. ".ogg", "-f", "s16le", $oracle .. ".pcm"], "oracle-decode-" .. $id .. "-" .. $repeat)
     end
-    for $candidate in ["opus-pure", "cranpose-opus-pure", "hiraku-opus", "ps-rusty-opus", "mousiki", "oporus", "moosicbox_opus_native", "opuscule", "filmcraft-opus", "opus1", "opus-wave"]
+    for $candidate in ["opus-pure", "cranpose-opus-pure", "hiraku-opus", "ps-rusty-opus", "mousiki", "oporus", "moosicbox_opus_native", "opuscule", "filmcraft-opus", "opus1", "opus-wave", "symphonia-opus"]
       $out = $root .. "/" .. $candidate .. "-" .. $id
       for $repeat in [1,2,3]
         invoke([$bin, "measure", $bin, "decode", $candidate, "2", $oracle .. ".ogg", $out .. "-reverse.pcm"], $candidate .. "-reverse-" .. $id .. "-" .. $repeat)
-        if not contains(["moosicbox_opus_native","opuscule","filmcraft-opus"], $candidate) then
+        if not contains(["symphonia-opus","moosicbox_opus_native","opuscule","filmcraft-opus"], $candidate) then
           $e = invoke([$bin, "measure", $bin, "encode", $candidate, to_string($rate), $input, $out .. ".ogg"], $candidate .. "-encode-" .. $id .. "-" .. $repeat)
           if $e.ok then invoke([$bin, "measure", "ffmpeg", "-v", "error", "-y", "-c:a", "libopus", "-i", $out .. ".ogg", "-f", "s16le", $out .. ".pcm"], $candidate .. "-forward-" .. $id .. "-" .. $repeat) end
         end
