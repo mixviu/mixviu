@@ -73,9 +73,23 @@ fn limiter_locality_preserves_distant_bed_exactly() {
 #[test]
 fn lookahead_precedes_peak_with_bounded_slope() {
     // Abrupt onset, with a nonzero pilot so pre-burst gain is observable.
-    let mut a = Audio::new(48000, 2, (0..192000).flat_map(|n| {
-        [0.01, if (96000..96960).contains(&n) { 1.3 } else { 0.01 }]
-    }).collect()).unwrap();
+    let mut a = Audio::new(
+        48000,
+        2,
+        (0..192000)
+            .flat_map(|n| {
+                [
+                    0.01,
+                    if (96000..96960).contains(&n) {
+                        1.3
+                    } else {
+                        0.01
+                    },
+                ]
+            })
+            .collect(),
+    )
+    .unwrap();
     a.limit_true_peak(-1.0, Default::default()).unwrap();
     assert!(gain(&a, 95990) < gain(&a, 95800) - 0.001);
     let step = 1.0 / (48000.0 * 0.005);
@@ -91,7 +105,11 @@ fn release_has_one_hundred_ms_time_constant() {
         .map(|n| 1.0 - gain(&a, n))
         .fold(0.0_f64, f64::max);
     let remaining = 1.0 - gain(&a, 96960 + 4800);
-    println!("release ratio={} expected={} tolerance=0.025", remaining/maximum, (-1.0_f64).exp());
+    println!(
+        "release ratio={} expected={} tolerance=0.025",
+        remaining / maximum,
+        (-1.0_f64).exp()
+    );
     // The 128-frame fade-out advances recovery by at most 2.67 ms.
     assert!(
         (remaining / maximum - (-1.0_f64).exp()).abs() < 0.025,

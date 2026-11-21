@@ -31,7 +31,7 @@ pub struct TargetReport {
     pub max_gain_reduction_db: f64,
     /// An attempt exceeded 6 dB; an earlier in-bound attempt may be retained.
     pub refused: bool,
-    /// Reduction actually applied; zero for static output or refusal.
+    /// Reduction actually applied; zero when static output is returned.
     pub applied_gain_reduction_db: f64,
     /// Explicit success status, including the bounded correction exhaustion case.
     pub target_reached: bool,
