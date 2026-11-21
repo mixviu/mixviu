@@ -91,7 +91,12 @@ fn call(
         client.close().await;
         reply
     });
-    pump_until(host, |_| task.is_finished());
+    // Bus admission does not require repeatedly painting the fixture while
+    // its one-second call is pending. Paint explicitly at the notice oracle.
+    while !task.is_finished() {
+        host.pump();
+        std::thread::sleep(Duration::from_millis(2));
+    }
     let (rc, body, _) = rt.block_on(task).unwrap();
     (rc, serde_json::from_str(&body).unwrap())
 }
