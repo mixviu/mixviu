@@ -14,7 +14,8 @@ end
 try
   checked(["cargo", "fmt", "-p", "media-audio"])
   checked(["cargo", "clippy", "-p", "media-audio", "--all-targets", "--", "-D", "warnings"])
-  checked(["cargo", "test", "-p", "media-audio", "--all-targets", "--", "--nocapture"])
+  -- the focused driver requires the ffmpeg oracle (hosted CI skips it)
+  checked(["env", "MIX_TEST_REQUIRE_FFMPEG=1", "cargo", "test", "-p", "media-audio", "--all-targets", "--", "--nocapture"])
   checked(["/opt/mix/bin/mix", "tools/foreign_gate.mix"])
   checked(["cargo", "build", "--profile", "release-fast", "-p", "media-audio", "--example", "audio_probe"])
   checked(["/opt/mix/bin/mix", "libraries/media/audio/dependencies.mix"])
