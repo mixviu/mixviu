@@ -22,7 +22,7 @@ fn target_error_is_transactional() {
     let mut a = burst_mix();
     let original = a.clone();
     assert!(a.normalise_to_target(-14.0, -10000.0, Default::default()).is_err());
-    assert_eq!(a, original);
+    assert!(a == original, "input was modified");
 }
 #[test]
 fn unmeasurable_target_preserves_input() {
@@ -30,7 +30,7 @@ fn unmeasurable_target_preserves_input() {
         Audio::new(48000, 1, vec![1e-12; 48000]).unwrap()] {
         let original = a.clone();
         assert!(matches!(a.normalise_to_target(-80.0, -1.0, Default::default()), Err(Error::Unmeasurable)));
-        assert_eq!(a, original);
+        assert!(a == original, "input was modified");
     }
 }
 #[test]

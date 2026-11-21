@@ -165,7 +165,8 @@ fn limited_burst_true_peak_oracle() {
         return;
     }
     let temp = TempDir::new();
-    // 6 kHz burst, 100:1 duty cycle: known 23 dB peak/RMS crest factor.
+    // 6 kHz burst, 1% duty: analytic crest 23.01 dB; discrete sample crest
+    // is 22.35 dB at this phase (sample peaks do not equal sine amplitude).
     let samples = (0..48000 * 4)
         .map(|n| {
             let level = if n % 48000 < 480 { 1.6 } else { 0.0 };

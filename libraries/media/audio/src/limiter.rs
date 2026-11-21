@@ -79,13 +79,15 @@ impl Audio {
         if !ceiling_dbtp.is_finite() || ceiling_dbtp > 0.0 {
             return Err(Error::InvalidAudio);
         }
-        let ceiling = 10.0_f64.powf((ceiling_dbtp - 0.02) / 20.0);
+        let ceiling = 10.0_f64.powf((ceiling_dbtp - 0.04) / 20.0);
         if ceiling == 0.0 {
             return Err(Error::InvalidAudio);
         }
         let channels = self.channels as usize;
         let frames = self.frames();
         let mut envelope = self.detector_peaks()?;
+        // Hold each intersample requirement over both adjacent source frames.
+        for n in (1..frames).rev() { envelope[n] = envelope[n].max(envelope[n-1]); }
         for peak in &mut envelope {
             *peak = if *peak > ceiling {
                 ceiling / *peak
@@ -103,6 +105,9 @@ impl Audio {
         let mut minimum: f64 = 1.0;
         for (frame, wanted) in self.samples.chunks_exact_mut(channels).zip(envelope) {
             gain = wanted.min(1.0 - (1.0 - gain) * release);
+            // Finite release tail: below 0.0001 linear reduction, return exactly
+            // to unity (under 0.00087 dB), preserving distant beds bit for bit.
+            if wanted == 1.0 && 1.0 - gain < 0.0001 { gain = 1.0; }
             minimum = minimum.min(gain);
             for x in frame {
                 *x *= gain;
@@ -133,9 +138,21 @@ impl Audio {
         ceiling_dbtp: f64,
         config: LimiterConfig,
     ) -> Result<TargetReport, Error> {
+        let mut working = self.clone();
+        let report = working.normalise_target_work(target_lufs, ceiling_dbtp, config)?;
+        *self = working;
+        Ok(report)
+    }
+
+    fn normalise_target_work(
+        &mut self, target_lufs: f64, ceiling_dbtp: f64, config: LimiterConfig,
+    ) -> Result<TargetReport, Error> {
         config.validate()?;
         let original = self.clone();
         let static_report = self.normalise(target_lufs, ceiling_dbtp)?;
+        if !static_report.after.integrated_lufs.is_finite() || static_report.after.integrated_lufs < -70.0 {
+            return Err(Error::Unmeasurable);
+        }
         let mut report = TargetReport {
             before: static_report.before,
             after: static_report.after,
@@ -151,6 +168,7 @@ impl Audio {
             return Ok(report);
         }
         let mut gain_db = target_lufs - report.before.integrated_lufs;
+        let mut best: Option<(Self, TargetReport)> = None;
         for pass in 1..=3 {
             let gain = 10.0_f64.powf(gain_db / 20.0);
             let mut candidate = original.clone();
@@ -166,18 +184,35 @@ impl Audio {
                 .max_gain_reduction_db
                 .max(limited.max_gain_reduction_db);
             if limited.max_gain_reduction_db > 6.0 {
+                if let Some((audio, mut accepted)) = best {
+                    accepted.refused = true;
+                    accepted.passes = pass;
+                    accepted.max_gain_reduction_db = report.max_gain_reduction_db;
+                    *self = audio;
+                    return Ok(accepted);
+                }
                 report.refused = true;
                 return Ok(report);
             }
+            if !limited.after.integrated_lufs.is_finite() || limited.after.integrated_lufs < -70.0 {
+                return Err(Error::Unmeasurable);
+            }
             let error = target_lufs - limited.after.integrated_lufs;
-            if error.abs() <= 0.5 || pass == 3 {
-                report.after = limited.after;
-                report.applied_gain_reduction_db = limited.max_gain_reduction_db;
-                report.target_reached = error.abs() <= 0.5;
-                report.gain_db = gain_db;
-                report.shortfall_lu = error.max(0.0);
-                *self = candidate;
-                return Ok(report);
+            let mut accepted = report;
+            accepted.after = limited.after;
+            accepted.applied_gain_reduction_db = limited.max_gain_reduction_db;
+            accepted.target_reached = error.abs() <= 0.5;
+            accepted.gain_db = gain_db;
+            accepted.shortfall_lu = error.max(0.0);
+            if best.as_ref().is_none_or(|(_, prior)| error.abs() < (target_lufs-prior.after.integrated_lufs).abs()) {
+                best = Some((candidate, accepted));
+            }
+            if error.abs() <= 0.2 || pass == 3 {
+                let (audio, mut accepted) = best.expect("an in-bound attempt was recorded");
+                accepted.passes = pass;
+                accepted.max_gain_reduction_db = report.max_gain_reduction_db;
+                *self = audio;
+                return Ok(accepted);
             }
             gain_db += error;
         }

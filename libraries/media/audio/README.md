@@ -72,23 +72,36 @@ remeasures and makes at most two corrective attempts, each from the original.
 `TargetReport` carries before/after LUFS, LRA and true peak, gain, pass count,
 maximum attempted and final applied reduction, refusal, shortfall and an explicit `target_reached`
 flag (±0.5 LU). Callers must check that flag: bounded corrections can exhaust.
-Any attempt beyond 6 dB reduction returns exactly the capped static output with
-`refused=true`, including when a corrective pass crosses the bound.
+Normalisation is transactional: on any error, input samples are unchanged.
+Silence, near-silence below the absolute gate, or an unmeasurable rendered
+attempt returns typed `Error::Unmeasurable` without applying gain.
+While passes remain, acceptance requires ±0.2 LU to leave meter-parity margin;
+`target_reached` still means ±0.5 LU. If an attempt exceeds 6 dB, `refused=true`
+records the refused attempt, with its reduction in `max_gain_reduction_db`.
+The best earlier in-bound attempt (smallest absolute target error) is kept;
+its actual reduction is `applied_gain_reduction_db`. Capped static output is
+used only when no limiting attempt is in bounds. Exhaustion also keeps the best attempt.
 
 The offline limiter uses four-phase 24-tap Hann-windowed sinc peak detection,
-linked across channels. Default look-ahead is 5 ms (valid 0.1–100 ms); release
+linked across channels. `lookahead_ms` specifies a unity-to-zero slope,
+not a fixed window or delay: `attack_step = 1 / (rate * lookahead_ms / 1000)`.
+A reduction to gain g starts approximately `(1-g)*lookahead_ms` before the
+peak, plus FIR support. The default slope duration is 5 ms (valid 0.1–100 ms); release
 is 100 ms (valid 1–1000 ms). A backwards linear attack and forward exponential
 release anticipate peaks without moving any samples or changing duration.
 100 ms gives speech peaks time to recover between words without rapid envelope
-modulation. The detector checks zero-padded and reflected file boundaries. A final constant
+modulation. A release tail below 0.0001 linear reduction (0.00087 dB) snaps
+to exact unity so distant quiet beds remain bit-identical. The detector checks zero-padded and reflected file boundaries. A final constant
 trim, verified by the detector and meter, catches reconstruction overshoot
 from gain modulation; its reduction counts towards the 6 dB bound. A 0.02 dB
-margin protects float32 export rounding. This is peak limiting, not loudness AGC.
+final margin protects float32 export rounding; detection uses a 0.04 dB
+margin to leave room for modulation before a global safety trim is needed. This is peak limiting, not loudness AGC.
 The direct limiter returns ReductionLimit without changing samples above 6 dB.
 Processing order is fixed and deterministic for a given binary and platform;
 cross-platform floating-point bit identity is not promised. The limiter uses
 one f64 envelope value per frame in addition to the audio; target normalisation
-also retains original, static fallback and current candidate audio buffers.
+also retains a transactional work copy, original, current candidate and best
+in-bound attempt. Callers must bound input duration/memory accordingly.
 
 ## Existing filter ownership
 
