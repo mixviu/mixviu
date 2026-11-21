@@ -1,0 +1,156 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- CBC-only recipes for the section projection/redaction change.
+$mode=$1 ?? "focused"
+fn checked($argv)
+  $r=run_argv($argv,{timeout:7200,stderr:"stdout",max_output:64000000});print($r.stdout)
+  if not $r.ok then exit($r.exit_code ?? 1) end
+end
+if $mode=="format" then
+  try
+    checked(["cargo","fmt","-p","lib-viu"])
+    checked(["git","diff"])
+  finally print(run_argv_must(["git","checkout","-q","--","libraries/viu"])) end
+elif $mode=="measure" then
+  $app="apps/workshop/app.mix";$traffic="apps/workshop/traffic.mix";$presentation_path="apps/workshop/presentation.mix"
+  $app_source=read_file($app);$traffic_source=read_file($traffic);$presentation_source=read_file($presentation_path)
+  $probe_presentation=$presentation_source
+  if contains($presentation_source,'fn changed($s,$fields)') then
+    $probe_presentation=replace_must($probe_presentation,'fn changed($s,$fields)',"fn changed(\$s,\$fields)\n  \$mark_start=viu_test_cpu()")
+    $probe_presentation=replace_must($probe_presentation,"  return \$s\nend\nfn inputs", "  print(\"WORKSHOP_BUILD \"..json_encode({kind:\"mark\",cpu_us:(viu_test_cpu()-\$mark_start)*1000000}))\n  return \$s\nend\nfn inputs")
+  end
+  $helpers=<<EOF
+fn probe_stamp($row)
+  global $traffic_measure
+  try $measurement=$traffic_measure catch $missing $measurement={serial:0,times:{}} end
+  $measurement.serial=$measurement.serial+1;$id=to_string($measurement.serial);$measurement.times[$id]=monotonic();$traffic_measure=$measurement
+  $row._measure_id=$id;return $row
+end
+fn probe_visible($s)
+  if not $s.dock_open then return [] end
+  $visible=[]
+  for $row in rows($s,100,$s.traffic_filter)
+    if $row._measure_id!=nil then push($visible,$row._measure_id) end
+    if type($row.response)=="map" and $row.response._measure_id!=nil then push($visible,$row.response._measure_id) end
+  end
+  return $visible
+end
+fn probe_stats($s)
+  global $traffic_measure
+  try $measurement=$traffic_measure catch $missing $measurement={serial:0,times:{}} end
+  $queue=$s.traffic_redaction ?? {waiting:[],active:nil}
+  return {ingress:$measurement.serial,not_yet_visible:len($measurement.times),waiting:len($queue.waiting),active:if $queue.active==nil then 0 else $queue.active.count ?? 1 end,dropped:$s.dropped}
+end
+fn probe_ack($ids,$dropped)
+  global $traffic_measure
+  try $measurement=$traffic_measure catch $missing return end
+  $now=monotonic()
+  for $id in $ids
+    if $id!=nil and $measurement.times[$id]!=nil then
+      print("WORKSHOP_BUILD "..json_encode({kind:"visible",latency_ms:($now-$measurement.times[$id])*1000,dropped:$dropped}))
+      $measurement.times=delete($measurement.times,$id)
+    end
+  end
+  $traffic_measure=$measurement
+end
+EOF
+  $probe_traffic=$traffic_source.."\n"..$helpers
+  $probe_traffic=replace_must($probe_traffic,'fn defer_row($s,$row,$observed)',"fn defer_row(\$s,\$row,\$observed)\n  \$row=probe_stamp(\$row)")
+  $probe_app=replace_must($app_source,'$model_publication=require',"\$traffic_measure_probe=require(\"traffic.mix\")\n\$model_publication=require")
+  $probe_app=replace_must($probe_app,'  $inputs=$presentation.inputs($s);$sections=$presentation.marks($publication.inputs,$inputs)',"  \$section_start=viu_test_cpu()\n  \$inputs=\$presentation.inputs(\$s);\$sections=\$presentation.marks(\$publication.inputs,\$inputs)\n  \$inputs_cpu=(viu_test_cpu()-\$section_start)*1000000")
+  $replacement=<<EOF
+  $clock=require("mesh.mix");$now=$clock.now_ms()
+  $candidate=$presentation.project_dirty($s,$publication.model,$sections,$now)
+  $section_cpu=(viu_test_cpu()-$section_start)*1000000;$pc=viu_test_cpu()
+  $oracle=$presentation.project($s,$now)
+  print("WORKSHOP_BUILD "..json_encode({kind:"section",inputs_cpu_us:$inputs_cpu,total_section_cpu_us:$section_cpu,full_cpu_us:(viu_test_cpu()-$pc)*1000000,dirty:$sections,rows:len($candidate.tree.initial.rows),queue:$traffic_measure_probe.probe_stats($s)}))
+  if not deep_eq($candidate,$oracle) then raise("SECTION_ORACLE","section-dirty projection differs from full oracle") end
+  $projection=$frame.project($s,$candidate);$persist=$saved.project($s)
+EOF
+  $probe_app=replace_must($probe_app,'  $projection=$frame.project($s,$presentation.project_dirty($s,$publication.model,$sections));$persist=$saved.project($s)',$replacement)
+  $probe_app=replace_must($probe_app,'$publication.pending={revision:$revision,model:$value,inputs:$inputs}','$publication.pending={revision:$revision,model:$value,inputs:$inputs,visible:$traffic_measure_probe.probe_visible($s)}')
+  $probe_app=replace_must($probe_app,'    $publication.ack=$a.revision;',"    \$traffic_measure_probe.probe_ack(\$publication.pending.visible,\$state.dropped)\n    print(\"WORKSHOP_BUILD \"..json_encode({kind:\"queue\",stats:\$traffic_measure_probe.probe_stats(\$state)}))\n    \$publication.ack=\$a.revision;")
+  try
+    write_file($app,$probe_app);write_file($traffic,$probe_traffic);write_file($presentation_path,$probe_presentation)
+    $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--nocapture"],{timeout:600,stderr:"stdout",max_output:64000000});print($r.stdout)
+  finally write_file($app,$app_source);write_file($traffic,$traffic_source);write_file($presentation_path,$presentation_source) end
+  if not $r.ok then exit($r.exit_code ?? 1) end
+elif $mode=="oracle" or $mode=="section-negative" then
+  $p="apps/workshop/app.mix";$source=read_file($p)
+  $needle="  $projection=$frame.project($s,$presentation.project_dirty($s,$publication.model,$sections));$persist=$saved.project($s)"
+  $replacement=<<EOF
+  $clock=require("mesh.mix");$now=$clock.now_ms()
+  $candidate=$presentation.project_dirty($s,$publication.model,$sections,$now)
+  $section_cpu=(viu_test_cpu()-$section_start)*1000000;$pc=viu_test_cpu()
+  $oracle=$presentation.project($s,$now)
+  print("WORKSHOP_BUILD "..json_encode({section_cpu_us:$section_cpu,full_cpu_us:(viu_test_cpu()-$pc)*1000000,dirty:$sections,rows:len($candidate.tree.initial.rows)}))
+  if not deep_eq($candidate,$oracle) then raise("SECTION_ORACLE","section-dirty projection differs from full oracle") end
+  $projection=$frame.project($s,$candidate);$persist=$saved.project($s)
+EOF
+  if $mode=="section-negative" then $replacement="  \$sections.tree=false\n"..$replacement end
+  $changed=replace($source,$needle,$replacement)
+  if $changed==$source then raise("PROBE","section oracle source drift") end
+  $changed=replace_must($changed,'  $inputs=$presentation.inputs($s);',"  \$section_start=viu_test_cpu()\n  \$inputs=\$presentation.inputs(\$s);")
+  try
+    write_file($p,$changed)
+    $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--nocapture"],{timeout:600,stderr:"stdout",max_output:16000000});print($r.stdout)
+    if $mode=="oracle" and not $r.ok then exit($r.exit_code ?? 1) end
+    if $mode=="section-negative" and ($r.ok or not contains($r.stdout,"section-dirty projection differs from full oracle")) then raise("PROBE","forgotten tree mark missed real-fixture oracle") end
+  finally write_file($p,$source) end
+elif $mode=="round2-controls" then
+  for $case in ["queue-negative","input-negative","job-negative","job-fifo","width-negative","section-negative"] checked(["mix",script_path(),$case]) end
+  checked(["mix","libraries/viu/tests/workshop-probe.mix","review-controls"])
+elif $mode=="queue-negative" or $mode=="input-negative" or $mode=="job-negative" or $mode=="job-fifo" then
+  $cases=if $mode=="queue-negative" then ["admission","upstream","double","failure","rc","generation","native-generation","job-tag","rows","batch-rows","batch-bytes","body","nil-queue","quit","pause"] else [$mode] end
+  for $case in $cases
+    $p=if $case=="input-negative" then "apps/workshop/presentation.mix" elif $case=="native-generation" then "apps/workshop/controller.mix" elif $case=="job-tag" then "apps/workshop/work.mix" elif contains(["job-negative","job-fifo"],$case) then "apps/workshop/traffic-redact-job.mix" else "apps/workshop/traffic.mix" end
+    $source=read_file($p)
+    if $case=="admission" then $old='if $active_bytes+$bytes>8388608 then';$new='if false then';$expected="impossible row must preserve"
+    elif $case=="upstream" then $old='if $observed then $s.dropped=';$new='if false then $s.dropped=';$expected="upstream counts must be counted once"
+    elif $case=="double" then $old='if not $redacted then $s.dropped=';$new='if true then $s.dropped=';$expected="upstream counts must be counted once"
+    elif $case=="failure" then $old='$s.dropped=$counter.add($s.dropped,$active.count)';$new='$s.dropped=$counter.add($s.dropped,0)';$expected="malformed job body must count"
+    elif $case=="rc" then $old='$d.rc!=0 or type($d.body)';$new='false or type($d.body)';$expected="job failure must preserve upstream"
+    elif $case=="generation" then $old='$generation!=$s.traffic_generation';$new='false';$expected="stale completion must preserve"
+    elif $case=="native-generation" then $old='if $task.owner=="traffic" and ($d.tag.owner!=$task.redaction_generation';$new='if false and ($d.tag.owner!=$task.redaction_generation';$expected="stale native tag must not retire a reused job id"
+    elif $case=="job-tag" then $old='$task.generation=if $task.owner=="traffic" then $task.redaction_generation else $s.generation end';$new='$task.generation=$s.generation';$expected="Job task must carry current Traffic generation"
+    elif $case=="rows" then $old='then $q.active.count else 0 end)>=1024';$new='then 1 else 0 end)>=1024';$expected="combined active and waiting row cap"
+    elif $case=="batch-rows" then $old='len($rows)>=64';$new='len($rows)>=65';$expected="batch row bound"
+    elif $case=="batch-bytes" then $old='$bytes+$entry.bytes>262144';$new='$bytes+$entry.bytes>1048576';$expected="batch byte bound"
+    elif $case=="body" then $old='type($d.body)!="map"';$new='false';$expected="cannot access field"
+    elif $case=="nil-queue" then $old='if $s.traffic_redaction==nil or $generation!=';$new='if $generation!=';$expected="cannot access field"
+    elif $case=="quit" then $old='if $s.traffic_paused or $s.quitting then';$new='if $s.traffic_paused then';$expected="quit must refuse"
+    elif $case=="pause" then $old='if $s.quitting or $s.traffic_paused or $q==nil';$new='if $s.quitting or $q==nil';$expected="pause must not launch"
+    elif $case=="input-negative" then $old='tree:["snapshot","catalogues","agents","filter",';$new='tree:["snapshot","catalogues","agents",';$expected="section-dirty projection differs from full oracle"
+    elif $case=="job-fifo" then $old='map($event.args.rows,';$new='map(reverse($event.args.rows),';$expected="native redaction batch must preserve FIFO"
+    else $old='reply(0,json_encode({rows:map($event.args.rows,fn($row)=$traffic.redact($row))}))';$new='reply(0,json_encode("malformed"))';$expected="real redaction Job must deliver decoded map rows" end
+    $mutated=replace_must($source,$old,$new)
+    try
+      write_file($p,$mutated)
+      $argv=if contains(["job-negative","job-fifo"],$case) then ["cargo","test","-p","lib-viu","--test","workshop_frame","traffic_redaction_job_returns_decoded_map_rows_through_native_jobs","--","--nocapture"] else ["cargo","test","-p","lib-viu","--test","app_mix","--","--nocapture"] end
+      $env=if contains(["job-negative","job-fifo"],$case) then {} else {MIX_TEST_VIU_APP_SCRIPT:realpath(if $case=="input-negative" then "apps/workshop/section-test.mix" else "apps/workshop/redaction-budget-test.mix" end)} end
+      $r=run_argv($argv,{timeout:600,env:$env,stderr:"stdout",max_output:16000000});print("CONTROL "..$case);print($r.stdout)
+      if $r.ok or not contains($r.stdout,$expected) then raise("PROBE","negative control missed its assertion: "..$case) end
+    finally write_file($p,$source) end
+  end
+elif $mode=="validate" then
+  checked(["cargo","fmt","-p","lib-viu","--","--check"])
+  $configuration=$2 ?? "both"
+  $configurations=if $configuration=="default" then [[]] elif $configuration=="support" then [["--features","test-support"]] else [[],["--features","test-support"]] end
+  for $feature in $configurations
+    checked(concat(["cargo","clippy","-p","lib-viu","--all-targets","--no-deps"],$feature))
+    checked(concat(["cargo","test","-p","lib-viu","--all-targets","--no-fail-fast"],$feature))
+    checked(concat(["cargo","test","-p","lib-viu","--doc"],$feature))
+  end
+elif $mode=="width-negative" then
+  $p="libraries/viu/src/app_host.rs";$source=read_file($p)
+  $changed=replace($source,"while self.model_receipts.len() < self.runtime.capacity() {","while self.model_receipts.len() < 32 {")
+  if $changed==$source then raise("PROBE","receipt control source drift") end
+  try
+    write_file($p,$changed)
+    $r=run_argv(["cargo","test","-p","lib-viu","--lib","receipt_limit_tracks_configured_runtime_width","--","--nocapture"],{timeout:600,stderr:"stdout",max_output:16000000});print($r.stdout)
+    if $r.ok or not contains($r.stdout,"width-eight receipt saturation must pause completion retirement") then raise("PROBE","literal-32 receipt control missed assertion") end
+  finally write_file($p,$source) end
+else
+  checked(["cargo","test","-p","lib-viu","--lib","receipt_limit_tracks_configured_runtime_width","--","--nocapture"])
+  for $path in ["apps/workshop/section-test.mix","apps/workshop/redaction-budget-test.mix","apps/workshop/traffic-test.mix","apps/workshop/publication-test.mix"] checked(["mix",$path]) end
+  checked(["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","--","--nocapture"])
+end

@@ -102,7 +102,7 @@ fn observed($s,$event)
   $a.subscription_id=$headers.subscription_id
   $a.dropped_count=$counter.extract($event.body,["args","dropped_count"])
   $s.mesh=$mesh.add_event($s.mesh,$a,$mesh.now_ms())
-  $traffic=require("traffic.mix");$s=$traffic.observed($s,$a)
+  $traffic=require("traffic.mix");$s=$traffic.defer_row($s,$a,true)
   if $s.mesh.topology_needed then $s.mesh.topology_needed=false;$s=refresh($s) end
   return $s
 end
