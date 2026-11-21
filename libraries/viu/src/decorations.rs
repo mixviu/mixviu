@@ -292,8 +292,8 @@ mod tests {
         // Explicit backend injection makes this independent of the worker's
         // environment. This path opens no socket and launches no process.
         // This module never starts a process: no child processes by construction.
-        let result = within_test_deadline(|| automatic(&detect(false)))
-            .expect("non-Wayland detection hung");
+        let result =
+            within_test_deadline(|| automatic(&detect(false))).expect("non-Wayland detection hung");
         assert_eq!((result.mode, result.reason), (Decorations::Server, "rule1"));
     }
 
