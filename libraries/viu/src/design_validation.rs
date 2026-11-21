@@ -312,24 +312,29 @@ mod tests {
         for path in [&old_path, &new_path] { std::fs::write(path, "mode: dark").unwrap(); }
         let old = toolkit::Theme::read(&old_path).unwrap().unwrap();
         for latest in [toolkit::Theme::embedded(), toolkit::Theme::read(&new_path).unwrap().unwrap()] {
+          for full in [false, true] {
             // Hold the worker receiver to make Full deterministic, including
             // before the first frame. Use the real worker task processor below.
             let (tx, tasks) = mpsc::sync_channel(4);
             let (answers, rx) = mpsc::sync_channel(8);
-            let mut v = Validation { sender: Some(tx.clone()), receiver: Some(rx), outstanding: 4, ..Default::default() };
-            for _ in 0..4 { tx.send(((old.source_digest().into(), Some(old_path.clone())), old.source_document(), old.context().clone())).unwrap(); }
+            let initial = if full { 4 } else { 0 };
+            let mut v = Validation { sender: Some(tx.clone()), receiver: Some(rx), outstanding: initial, ..Default::default() };
+            for _ in 0..initial { tx.send(((old.source_digest().into(), Some(old_path.clone())), old.source_document(), old.context().clone())).unwrap(); }
             v.observe(&old);
             v.observe(&latest);
             v.after_frame();
-            assert_eq!(v.pending.len(), 2, "Full must return without spinning or losing work");
             let mut file = None;
-            for _ in 0..4 { answers.send(process_task(tasks.try_recv().unwrap(), &mut file).unwrap()).unwrap(); }
-            v.poll();
-            v.after_frame();
+            if full {
+                assert_eq!(v.pending.len(), 2, "Full must return without spinning or losing work");
+                for _ in 0..initial { answers.send(process_task(tasks.try_recv().unwrap(), &mut file).unwrap()).unwrap(); }
+                v.poll();
+                v.after_frame();
+            }
             for _ in 0..2 { answers.send(process_task(tasks.try_recv().unwrap(), &mut file).unwrap()).unwrap(); }
             v.poll();
             assert_eq!(file.as_ref().map(|f| f.0.as_path()), latest.source_path(), "worker must retain the latest registration");
             assert_eq!(v.info()["pending"], 0);
+          }
         }
     }
 
