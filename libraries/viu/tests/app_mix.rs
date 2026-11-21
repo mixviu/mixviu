@@ -58,6 +58,7 @@ fn every_app_mix_test_runs_with_real_host_bindings() {
 }
 
 fn run_script(path: &std::path::Path) {
+    let started = std::time::Instant::now();
     let temporary = tempfile::tempdir().unwrap();
     let argv = if path.ends_with("dopus/core-test.mix") {
         vec![
@@ -72,12 +73,22 @@ fn run_script(path: &std::path::Path) {
     };
     mix::builtins::set_script_argv(argv);
     let (tx, rx) = mpsc::channel();
-    let mut runtime = Runtime::new(
+    let mut runtime = Runtime::with_services(
         8,
         Arc::new(move || {
             let _ = tx.send(());
         }),
         None,
+        viu::runtime::Services {
+            #[cfg(feature = "test-support")]
+            test_cpu_probe: std::env::var_os("MIX_TEST_SECTION_TIMING").is_some(),
+            // Exercise the actual 8 MiB queue cap, rather than lowering it.
+            // Other app scripts retain their ordinary 1 MiB string limit.
+            max_string_bytes: path
+                .ends_with("workshop/redaction-budget-test.mix")
+                .then_some(16 * 1024 * 1024),
+            ..Default::default()
+        },
     );
     runtime
         .load(Program {
@@ -99,4 +110,9 @@ fn run_script(path: &std::path::Path) {
         done.stderr
     );
     println!("{}: {}", path.display(), done.stdout);
+    println!(
+        "APP_SCRIPT_TIME {} {:.6}",
+        path.display(),
+        started.elapsed().as_secs_f64()
+    );
 }

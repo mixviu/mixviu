@@ -5,6 +5,7 @@ $m=require("model.mix");$tree=require("tree.mix");$work=require("work.mix");$dis
 $macros=require("macro.mix")
 $agents=require("agents.mix");$traffic=require("traffic.mix");$mesh=require("mesh.mix");$mesh_flow=require("mesh-flow.mix");$counter=require("counter.mix")
 $saved=require("saved.mix")
+$projection=require("presentation.mix")
 fn result($s,$body) return {state:$s,rc:0,body:$body,deferred:false} end
 fn refused($s,$code,$message) return {state:$s,rc:10,body:{error_code:$code,message:$message},deferred:false} end
 fn guard($s) return $s.dialog!=nil or $s.quitting end
@@ -188,7 +189,18 @@ end
 fn received($s,$d)
   $task=$s.jobs[$d.tag.id]
   if $task==nil then return $s end
+  -- Check the returned native tag before deleting a task: a reset can reuse an
+  -- id while an old completion is still queued, so current task metadata alone
+  -- cannot establish which generation produced the result.
+  if $task.owner=="traffic" and ($d.tag.owner!=$task.redaction_generation or $d.tag.owner!=$s.traffic_generation) then return $s end
   $s.jobs=delete($s.jobs,$d.tag.id)
+  if $task.owner=="traffic" then return $projection.changed($traffic.completed($s,$d,$d.tag.owner),["traffic"]) end
+  -- Mark semantic owners at mutation time, including admission failures handled
+  -- by follow_up. No large projection input is compared in the publisher.
+  if $task.owner=="mesh" then $s=$projection.changed($s,["macro_pending"])
+  elif $task.owner=="activation" then $s=$projection.changed($s,["activations"])
+  elif $task.owner=="call" then $s=$projection.changed($s,["call","traffic"])
+  else $s=$projection.changed($s,keys($s)) end
   if $task.owner=="discovery" then
     $before=$s.discovery!=nil;$s=$discovery.received($s,$task,$d)
     if $before and $s.discovery==nil and $s.snapshot.error==nil then $s=$agents.discovered($s);$s=$macros.enqueue($s,"catalogues",{},nil) end
@@ -222,6 +234,9 @@ fn received($s,$d)
 end
 fn notice($s,$event)
   $cmd=$event.args.command;$a=$event.args.args;$headers=$event.headers
+  if $cmd=="noded.observe.event" then $s=$projection.changed($s,["traffic"])
+  elif ends_with($cmd,".action.executed") or ends_with($cmd,".macros.finished") then $s=$projection.changed($s,["traffic","macro_message","traffic_filter"])
+  else $s=$projection.changed($s,keys($s)) end
   if $cmd=="bus.connected" then
     $s.connected=true;$s.status="Connected"
     for $topic in ["noded.props.changed","agent.session.updated","agent.session.ended","agent.permission.requested",viu_context().citizen..".macros.finished"]
@@ -249,15 +264,18 @@ fn notice($s,$event)
   elif ends_with($cmd,".action.executed") or ends_with($cmd,".macros.finished") then
     if ends_with($cmd,".macros.finished") then $s.macro_message=json_encode($a);$s.traffic_filter="" end
     $stamp=now_iso();$stamp=if len($stamp)>=23 then substr($stamp,11,12) else $stamp end
-    $s=$traffic.retain($s,{ts:$stamp,direction:"topic",from:$headers.from,service:$headers.from,command:$cmd,payload:$a})
+    $s=$traffic.defer_row($s,{ts:$stamp,direction:"topic",from:$headers.from,service:$headers.from,command:$cmd,payload:$a},false)
   end
   return $s
 end
 fn follow_up($s)
   $failures=$s.admission_failures;$s.admission_failures=[]
   for $failure in $failures $s=received($s,$failure) end
+  $s=$traffic.launch($s)
+  $before=$s.discovery_revision
   $s=$discovery.expire($s)
   $s=$discovery.advance($s)
   if $s.refetch and monotonic()>=$s.refresh_after and not $m.busy($s) and $s.connected and not $s.quitting then $s.refetch=false;$s=$discovery.begin($s,nil) end
+  if $before!=$s.discovery_revision then $s=$projection.changed($s,["snapshot","discovery"]) end
   return $work.launch($s)
 end

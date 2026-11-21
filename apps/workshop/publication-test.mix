@@ -24,6 +24,13 @@ for $pair in [
   check(deep_eq($value,$pair[1]),"ordered patch replay differs from full data")
 end
 check($publication.requires_full(nil,{}),"first publish is full")
+$long="";for $i=1 to 257 $long=$long.."x" end
+$long_root={};$long_root[$long]=true
+for $pair in [[{},$long_root],[$long_root,{}],[{a:1},[]],[1,{a:1}]]
+  $refused=false
+  try $publication.difference($pair[0],$pair[1]) catch $why, $error $refused=$error.code=="FULL_REQUIRED" end
+  check($refused,"differ must refuse invalid root edits itself")
+end
 check($publication.requires_full({appearance:{}},{appearance:{mode:"dark"}}),"appearance is a host input")
 for $key in ["local_theme","local_mode","theme_values","theme_refresh_key","settings_reload","keyboard_events","on_shortcut"]
   $before={};$after={};$before[$key]=nil;$after[$key]="changed"

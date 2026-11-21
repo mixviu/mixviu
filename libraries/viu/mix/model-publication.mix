@@ -12,6 +12,12 @@ fn requires_full($before,$after)
 end
 fn difference($before,$after,$path=[])
   if deep_eq($before,$after) then return [] end
+  if len($path)==0 then
+    if type($before)!="map" or type($after)!="map" then raise("FULL_REQUIRED","Root replacement requires full publication") end
+    for $key in unique(concat(keys($before),keys($after)))
+      if byte_length($key)>256 and (has_key($before,$key)!=has_key($after,$key) or not deep_eq($before[$key],$after[$key])) then raise("FULL_REQUIRED","Changed long root key requires full publication") end
+    end
+  end
   -- DEFAULT_RECURSION_LIMIT is 16: leave room for publisher/caller frames.
   -- This also stays below the host's 32-component path limit, including
   -- recursion through id-matched list entries below.

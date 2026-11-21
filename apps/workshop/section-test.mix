@@ -1,0 +1,91 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m=require("model.mix");$p=require("presentation.mix");$t=require("traffic.mix");$frame=require("frame.mix")
+$saved=require("saved.mix");$app_mode=require("../../libraries/viu/mix/app-mode.mix")
+fn check($ok,$message) if not $ok then raise("SECTION_TEST",$message) end end
+fn wrap($s,$value)
+  $value=$frame.project($s,$value);$persist=$saved.project($s)
+  for $key in keys($persist) $value[$key]=$persist[$key] end
+  -- Same stored value as app.mix; headless suppresses only mode-file IO.
+  return $app_mode.project($value,"workshop",$s.theme_choice,true)
+end
+fn compare($s,$last,$inputs)
+  $next=$p.inputs($s);$candidate=$p.project_dirty($s,$last,$p.marks($inputs,$next),1000000)
+  $oracle=$p.project($s,1000000)
+  check(deep_eq($candidate,$oracle),"section-dirty projection differs from full oracle")
+  $stored=wrap($s,$candidate)
+  check(deep_eq($stored,wrap($s,$oracle)),"stored model differs from full wrapped oracle")
+  return {model:$stored,inputs:$next}
+end
+$s=$m.initial();$s.busy=$m.busy($s);$last=nil;$inputs=nil
+-- Exercise discovery, steady traffic and UI edits in different orders.
+for $round=0 to 1
+  -- Two seed rotations each cover all ten event classes, in different orders.
+  -- Keep margin under the unchanged embedded deadline in the eight-wide pool.
+  for $step=0 to 9
+    $key=($step*17+$round)%10
+    if $key==0 then
+      $name="peer-"..to_string($step);$s.snapshot.nodes=push($s.snapshot.nodes,{name:$name,local:false,services:[]})
+    elif $key==1 then $s.filter=if $s.filter=="" then "peer" else "" end
+    elif $key==2 then $s.dock_open=not $s.dock_open
+    elif $key==3 then $s.dock_side=if $s.dock_side=="right" then "bottom" else "right" end
+    elif $key==4 then $s=$t.retain($s,{command:"notice",payload:{token:"secret",data:$step}})
+    elif $key==5 then $s.window_width=if $s.window_width<640 then 1300 else 500 end
+    elif $key==6 then $s.expanded=if len($s.expanded)==0 then ["nodes"] else [] end
+    elif $key==7 then $s.body=to_string($step)
+    elif $key==8 then $s.row_key=if $s.row_key==nil then "nodes:mesh" else nil end
+    else $s.macro_pending=1-$s.macro_pending end
+    $s=$p.changed($s,keys($s));$s.busy=$m.busy($s);$next=$p.inputs($s);$dirty=$p.marks($inputs,$next)
+    $candidate=$p.project_dirty($s,$last,$dirty,1000000)
+    $oracle=$p.project($s,1000000)
+    check(deep_eq($candidate,$oracle),"section-dirty projection differs from full oracle")
+    $last=wrap($s,$candidate);$inputs=$next
+  end
+end
+-- Nonempty read closures, including command, macro and agent row variants.
+$s=$m.initial();$s.saved_ready=true;$s.saved_restore.done=true
+$s.snapshot.nodes=[{name:"local",local:true,services:["echo"],info:{version:"1"}}]
+$s.snapshot.identities.echo={name:"echo",version:"1"}
+$s.snapshot.services.echo={Ok:[{name:"echo",args:"{}",description:"Read state",read_only:true},{name:"other",args:"text",description:"Other command",read_only:false}]}
+$s.selection={service:"echo",command:"echo"}
+$s.catalogues={global:{macros:[{id:"example",title:"Example",tier:"user-global",targets:["echo"]}]},echo:{macros:[],running:true}}
+$s.expanded=["nodes","node:local","service:local:echo","macros:global","agents","agents:node:local"]
+$s.macro_selected=["global","example"];$s.document={id:"example",text:"print(1)",tier:"user-global",path:"/home/user/example.mix"}
+$s.agents.nodes.local={available:true,error:nil,sessions:[{session:"s1",node:"local",agent:"example",cwd:"/home/user",status:"ready",title:nil,open_permissions:0,permissions:[]}],instances:{agents:[{agent:"example",roots:["/home/user"]}],live:1,max_live:2}}
+$s.agents.selected={node:"local",session:"s1"}
+$s=$t.retain($s,{seq:1,payload:{token:"hidden",public:"visible"}})
+$s=$p.changed($s,keys($s));$receipt=compare($s,nil,nil)
+$new_agents=$s.agents;$new_agents.nodes.local.sessions[0].title="Changed title"
+$new_catalogues=$s.catalogues;$new_catalogues.global.macros[0].title="Changed macro"
+$new_snapshot=$s.snapshot;$new_snapshot.services.echo.Ok[0].description="Changed signature"
+for $case in [
+  ["filter","absent"],["snapshot",$new_snapshot],["catalogues",$new_catalogues],["agents",$new_agents],
+  ["selection",{service:"echo",command:"other"}],["macro_selected",nil],
+  ["document",{id:"example",text:"print(2)",tier:"user-global",path:"/home/user/changed.mix"}],
+  ["macro_draft","print(3)"],["macro_saved_text","print(4)"],["macro_target","echo"],["macro_destination","echo"],
+  ["macro_confirm_delete",true],["macro_message","changed"],["macro_pending",1],["call",{}],["discovery",{}],["activations",[1]],
+  ["window_height",900],["dock_height",0.4],["dock_width",0.4],["window_width",1300],
+  ["dock_side","right"],["dock_open",false],["traffic_filter","absent"],["traffic",[]],
+  ["dialog","about"],["quitting",true],["expanded",[]],
+  ["row_key","command:local:echo:echo"],["row_key","service:local:echo"],["row_key","node:local"],
+  ["row_key","macro:global:example"],["row_key","agents:new:local"],["row_key","agent:local:s1"],["row_key","agents:node:local"]
+]
+  $field=$case[0];$old=$s[$field];$s[$field]=$case[1];$s=$p.changed($s,[$field]);$s.busy=$m.busy($s)
+  $receipt=compare($s,$receipt.model,$receipt.inputs)
+  $s[$field]=$old;$s=$p.changed($s,[$field]);$s.busy=$m.busy($s)
+  $receipt=compare($s,$receipt.model,$receipt.inputs)
+end
+-- Capture a pending publication, then coalesce several mutations without
+-- advancing its acknowledgement. The eventual ack installs only that capture.
+$s.filter="echo";$s=$p.changed($s,["filter"]);$pending=compare($s,$receipt.model,$receipt.inputs)
+$s.filter="";$s.macro_draft="coalesced";$s=$p.changed($s,["filter","macro_draft"])
+$s.row_key="command:local:echo:echo";$s.window_height=880;$s=$p.changed($s,["row_key","window_height"])
+$s.traffic_filter="absent";$s=$p.changed($s,["traffic_filter"])
+$receipt=compare($s,$pending.model,$pending.inputs)
+$last=$receipt.model;$inputs=$receipt.inputs
+$clocked=$p.project_dirty($s,$last,$p.marks($inputs,$inputs),1001000)
+check(deep_eq($clocked,$p.project($s,1001000)),"time-dependent sections must match the clock-advanced oracle")
+check($clocked.mesh_canvas.initial.now_ms!=$last.mesh_canvas.initial.now_ms,"Mesh time must advance with unchanged state")
+-- A forgotten tree mark must be observable by the identical oracle check.
+$s.filter="definitely-missing";$s=$p.changed($s,["filter"]);$candidate=$p.project_dirty($s,$last,{tree:false,macro:true,agent:true,traffic:true},1000000)
+check(not deep_eq($candidate,$p.project($s,1000000)),"forgotten dirty mark escaped the oracle")
+print("Workshop section oracle PASS")
