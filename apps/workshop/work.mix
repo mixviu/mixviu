@@ -17,7 +17,7 @@ fn launch($s)
     $job_path=if $task.job!=nil then path_join(dirname($path),$task.job) else $path end
     $accepted=false
     try
-      send "viu-local" "jobs.start" id=$id owner=$task.generation path=$job_path source=read_file($job_path) command="job.run" args=$task timeout_seconds=(if contains(["discovery","subscription"],$task.owner) then 4 else 180 end)
+      send "viu-local" "jobs.start" id=$id owner=$task.generation path=$job_path source=read_file($job_path) command="job.run" args=$task timeout_seconds=(if contains(["discovery","subscription","traffic"],$task.owner) then 4 else 180 end)
       $accepted=$rc==0
     catch $why $accepted=false end
     $admitted=$admitted+1
