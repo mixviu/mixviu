@@ -15,10 +15,16 @@ if contains(args(), "--fmt") then
 else
   checked(["cargo", "fmt", "-p", "media-av1", "--", "--check"])
   for $features in [[], ["--features", "asm"]]
-    checked(["cargo", "clippy", "--locked", "-p", "media-av1", "--all-targets"] + $features + ["--", "-D", "warnings"])
+    $cmd = ["cargo", "clippy", "--locked", "-p", "media-av1", "--all-targets"]
+    for $arg in $features do push($cmd, $arg) end
+    for $arg in ["--", "-D", "warnings"] do push($cmd, $arg) end
+    checked($cmd)
   end
   for $features in [["--no-default-features"], ["--features", "asm"]]
-    checked(["cargo", "test", "--locked", "-p", "media-av1", "--all-targets"] + $features + ["--", "--nocapture"])
+    $cmd = ["cargo", "test", "--locked", "-p", "media-av1", "--all-targets"]
+    for $arg in $features do push($cmd, $arg) end
+    for $arg in ["--", "--nocapture"] do push($cmd, $arg) end
+    checked($cmd)
   end
   checked(["mix", "tools/foreign_gate.mix"])
 end
