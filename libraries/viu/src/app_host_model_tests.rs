@@ -152,4 +152,28 @@ end
     settle(&mut host, &ctx);
     assert!(host.error.is_empty());
     assert_eq!(host.model_revision, Some((generation, 7)));
+    let mut style = (*ctx.global_style()).clone();
+    style.spacing.item_spacing.x += 1.0;
+    ctx.set_global_style(style);
+    host.dispatch(
+        "test.patch".into(),
+        json!({"base":7,"revision":8,"label":"must not retain old host metrics"}),
+        BTreeMap::new(),
+        None,
+    );
+    settle(&mut host, &ctx);
+    assert!(host.error.contains("host projection changed"));
+    assert_eq!(host.model_revision, Some((generation, 7)));
+    assert_eq!(host.view.model()["label"], "new base");
+    host.dispatch(
+        "test.full".into(),
+        json!({"revision":9,"label":"new host projection"}),
+        BTreeMap::new(),
+        None,
+    );
+    settle(&mut host, &ctx);
+    assert!(host.error.is_empty());
+    assert_eq!(host.model_revision, Some((generation, 9)));
+    assert_eq!(host.view.model()["__viu_metrics"]["item_spacing_x"],
+        json!(ctx.global_style().spacing.item_spacing.x));
 }

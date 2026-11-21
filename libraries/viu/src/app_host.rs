@@ -224,6 +224,17 @@ impl Host {
                 return Err(format!("{key} requires full model publication"));
             }
         }
+        // Host settings may change independently of authored model data. A
+        // patch cannot retain derived ports from an older host projection.
+        let mut host_inputs = json!({"window_settings":self.model["window_settings"]});
+        self.project_host_fields(&mut host_inputs, ctx);
+        for key in ["__viu_metrics", "__viu_window_client", "__viu_header_hosted"] {
+            if (key == "__viu_metrics" || self.framed)
+                && host_inputs[key] != self.view.model()[key]
+            {
+                return Err("host projection changed; publish a full model".into());
+            }
+        }
         let edit = crate::model_patch::Edit::apply(&mut self.model, self.model_bytes, patch)?;
         #[cfg(feature = "test-support")]
         crate::view::profile_apply(
@@ -300,6 +311,10 @@ impl Host {
             projected["window_close"] = model["window_close"].clone();
             projected["__viu_root_key"] = model["native_root"]["key"].clone();
         }
+        self.project_host_fields(&mut projected, ctx);
+        projected
+    }
+    fn project_host_fields(&self, projected: &mut Value, ctx: &egui::Context) {
         let style = ctx.global_style();
         projected["__viu_metrics"] = json!({
             "item_spacing_x":style.spacing.item_spacing.x,
@@ -309,7 +324,7 @@ impl Host {
 
         if self.framed {
             projected["__viu_window_client"] = json!(crate::window_frame::is_client(
-                &self.window_settings(&projected)
+                &self.window_settings(projected)
             ));
             projected["__viu_header_hosted"] = json!(
                 projected["__viu_window_client"] == false
@@ -317,7 +332,6 @@ impl Host {
                     && toolkit::titlebar::hosting::hosted(ctx)
             );
         }
-        projected
     }
     fn state(&self) -> Value {
         let geometry: serde_json::Map<String, Value> = self
