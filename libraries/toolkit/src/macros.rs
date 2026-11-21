@@ -1707,7 +1707,13 @@ mod tests {
                 (unsafe { libc::kill(parent, 0) }) == -1
                     && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
             },
-            || format!("leader reap: parent {parent} stat {}, child {child} stat {}", proc_stat(parent), proc_stat(child)),
+            || {
+                format!(
+                    "leader reap: parent {parent} stat {}, child {child} stat {}",
+                    proc_stat(parent),
+                    proc_stat(child)
+                )
+            },
         );
         let mut status = 0;
         // SAFETY: the leader is already gone; this must report ECHILD.
