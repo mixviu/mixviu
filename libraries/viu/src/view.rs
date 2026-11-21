@@ -49,6 +49,7 @@ pub struct SceneView {
     motion: toolkit::scene_motion::SceneMotion,
     numbers: crate::numbers::Numbers,
     backdrops: crate::backdrop::Backdrops,
+    scene_images: crate::image_view::Images,
     motion_parent: Option<String>,
     collect_widget_rects: bool,
     widget_rects: Vec<crate::widget_rects::WidgetRect>,
@@ -101,6 +102,7 @@ impl SceneView {
         self.widgets.raster_states()
     }
     pub fn set_rasters(&mut self, rasters: crate::raster::Rasters) {
+        self.scene_images.set_rasters(Some(rasters.clone()));
         self.widgets.set_rasters(rasters.clone());
         if let Some(frame) = self.frame.as_mut() {
             frame.set_rasters(rasters);
@@ -145,6 +147,7 @@ impl SceneView {
             motion: toolkit::scene_motion::SceneMotion::default(),
             numbers: crate::numbers::Numbers::default(),
             backdrops: crate::backdrop::Backdrops::default(),
+            scene_images: crate::image_view::Images::surface(),
             motion_parent: None,
             frame: None,
             regions: BTreeMap::new(),
@@ -456,6 +459,7 @@ impl SceneView {
         self.motion.begin(ui);
         self.numbers.begin();
         self.backdrops.begin();
+        self.scene_images.begin();
         if self.collect_widget_rects {
             self.widget_rects.clear();
             ui.ctx()
@@ -471,6 +475,7 @@ impl SceneView {
         self.motion.end(ui);
         self.numbers.end();
         self.backdrops.end();
+        self.scene_images.finish();
         for id in &self.overlays {
             let node = &nodes[id];
             if let Ok(widget) = Widget::decode(&node.ports["definition"]) {
@@ -1023,7 +1028,14 @@ impl SceneView {
                         if let Some(icon)=text(node,"src").strip_prefix("icon:").and_then(crate::icons::Icon::from_name) {
                             let w=num(node,"w").or(num(node,"h")).unwrap_or(24.0);
                             let h=num(node,"h").unwrap_or(w);
-                            ui.add(crate::icons::image_of(ui.ctx(),icon,w,ui.visuals().text_color()).fit_to_exact_size(Vec2::new(w,h)));
+                            let colour=if icon==crate::icons::Icon::Cyclops {Color32::WHITE}else{ui.visuals().text_color()};
+                            ui.add(crate::icons::image_of(ui.ctx(),icon,w,colour).fit_to_exact_size(Vec2::new(w,h)));
+                        } else if text(node,"src").starts_with("raster:") {
+                            let w=num(node,"w").unwrap_or(320.0);
+                            let h=num(node,"h").unwrap_or(180.0);
+                            ui.allocate_ui(Vec2::new(w,h), |ui| {
+                                self.scene_images.draw(ui,id,&json!({"phase":"ready","handle":text(node,"src")}));
+                            });
                         }
                     }
                     "spacer" => {
@@ -1147,7 +1159,7 @@ impl SceneView {
                                         let fixed:Vec<_>=active.iter().map(|child|{let n=&nodes[*child];if num(n,"grow").unwrap_or(0.)>0.{0.}else{num(n,"width").or(num(n,"min_width")).unwrap_or_else(||if n.family=="control"{Widget::decode(&n.ports["definition"]).and_then(|w|w.intrinsic_width(ui,&self.tree.model)).unwrap_or(0.)}else{0.})}}).collect();
                                         let weight:f32=active.iter().map(|child|num(&nodes[*child],"grow").unwrap_or(0.).max(0.)).sum();
                                         let remaining=(ui.available_width()-fixed.iter().sum::<f32>()-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.);
-                                        let mut cells=|ui:&mut egui::Ui|for (i,child) in active.iter().enumerate(){let grow=num(&nodes[*child],"grow").unwrap_or(0.);let width=if grow>0.{remaining*grow/weight}else{fixed[i]};let cell=ui.id().with(("cross-size",child));let height=ui.ctx().data(|d|d.get_temp::<f32>(cell)).unwrap_or(0.);let response=ui.allocate_ui(egui::vec2(width,height),|ui|{ui.set_min_width(width);self.node(ui,child,nodes,route,depth+1,events);});let actual=response.response.rect.height();if (height-actual).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cell,actual));ui.ctx().request_repaint();}};
+                                        let mut cells=|ui:&mut egui::Ui|for (i,child) in active.iter().enumerate(){let grow=num(&nodes[*child],"grow").unwrap_or(0.);let width=if grow>0.{remaining*grow/weight}else{fixed[i]};let cell=ui.id().with(("cross-size",child));let height=ui.ctx().data(|d|d.get_temp::<f32>(cell)).unwrap_or(0.);let (rect,_)=ui.allocate_exact_size(egui::vec2(width,height),Sense::hover());let mut cell_ui=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));cell_ui.set_min_width(width);cell_ui.set_max_width(width);cell_ui.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(rect.min,egui::pos2(rect.right(),ui.clip_rect().bottom()))));self.node(&mut cell_ui,child,nodes,route,depth+1,events);let actual=cell_ui.min_rect().height();if (height-actual).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cell,actual));ui.ctx().request_repaint();}};
                                         if text(node,"align")=="center" {egui::Grid::new((&key,"cross-center")).num_columns(active.len()).min_col_width(0.).min_row_height(0.).spacing(ui.spacing().item_spacing).striped(false).show(ui,|ui|cells(ui));} else {ui.horizontal_top(|ui|cells(ui));}
                                     } else if text(node,"align")=="end" {
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
@@ -2264,7 +2276,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                 if text(node, "src")
                     .strip_prefix("icon:")
                     .and_then(crate::icons::Icon::from_name)
-                    .is_none()
+                    .is_none() && !text(node,"src").starts_with("raster:")
                 {
                     return Err(format!("image {id}: only known icon: sources supported"));
                 }

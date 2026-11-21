@@ -148,6 +148,25 @@ pub fn load(path: &Path) -> Result<Decoded, String> {
     decode_bytes(&bytes, &path.display().to_string())
 }
 
+/// Deck assets are pinned at open. Check the opened file, not just a lexical
+/// path, so symlinks and concurrent renames cannot escape the deck directory.
+pub fn load_deck(path: &Path, deck: &Path) -> Result<Decoded, String> {
+    use std::os::fd::AsRawFd;
+    let base = deck.parent().ok_or("deck directory required")?
+        .canonicalize().map_err(|e| e.to_string())?;
+    let path = if path.is_absolute() { path.to_path_buf() } else { base.join(path) };
+    let file = OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK)
+        .open(path).map_err(|e| e.to_string())?;
+    let fd = std::path::PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()));
+    let actual = fd.canonicalize().map_err(|e| e.to_string())?;
+    if !actual.starts_with(&base) { return Err("image outside deck directory".into()); }
+    let bytes = read_bounded(&fd)?;
+    if !matches!(image::guess_format(&bytes), Ok(ImageFormat::Png | ImageFormat::Jpeg)) {
+        return Err("deck image must be PNG or JPEG".into());
+    }
+    decode_bytes(&bytes, "deck image")
+}
+
 /// Discover a bounded, non-recursive slideshow source on the decode worker.
 /// The cap counts all entries, including skipped files, to bound traversal.
 pub fn list_folder(path: &Path) -> Result<Vec<PathBuf>, String> {

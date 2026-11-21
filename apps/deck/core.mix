@@ -140,7 +140,6 @@ fn play($s,$args)
       if $t<=$prev then fault("DECK_BEATS",$w,"times must strictly increase") end
       $prev=$t
     end
-    if $beats[0]!=0 then fault("DECK_BEATS",$w,"first beat must be zero") end
     push($queue,{slide:$idx,beats:$beats});$i=$i+1
   end
   $s.queue=$queue;$s.playing=true;$s.timed=true;$s.epoch=nil;$s.elapsed=0;$s.finished=false;$s.slide=$queue[0].slide;$s.step=0;$s.beats=$queue[0].beats
@@ -168,7 +167,7 @@ end
 fn build_state($s)
   loaded($s);$out={};$slide=$s.deck.slides[$s.slide]
   for $id in keys($slide.build)
-    $t=$slide.build[$id];$active=$s.step>=$t.b and ($t.until==nil or $s.step<=$t.until)
+    $t=$slide.build[$id];$active=$s.step>=$t.b and ($t.until==nil or $s.step<=$t.until) and (not $s.timed or $s.elapsed>=$s.beats[$t.b])
     $out[$id]={hidden:$t.until!=nil and not $active,opacity:if $active then 1 else 0 end,offset:[0,0],anim:$t.anim,age:nil}
     if $s.timed and $active then
       $out[$id].age=$s.elapsed-$s.beats[$t.b]-$t.delay
@@ -177,5 +176,5 @@ fn build_state($s)
   return $out
 end
 fn snapshot($s)
-  return {path:$s.path,slide:if $s.deck==nil then nil else $s.deck.slides[$s.slide].id end,step:$s.step,playing:$s.playing,elapsed:$s.elapsed,finished:$s.finished}
+  return {path:$s.path,slide:if $s.deck==nil then nil else $s.deck.slides[$s.slide].id end,step:$s.step,playing:$s.playing,elapsed:$s.elapsed,finished:$s.finished,play_id:$s.play_id}
 end

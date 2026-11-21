@@ -1,7 +1,7 @@
 -- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
-$core=require("core.mix");$ctx=viu_context();$state={s:$core.fresh(),owed:nil,serial:0,finish_serial:nil}
+$core=require("core.mix");$ctx=viu_context();$state={s:$core.fresh(),owed:nil,serial:0,finish_serial:nil,scope:nil}
 fn cancel_play()
   $state.finish_serial=nil
   if $state.owed!=nil then viu_reply("finish",$state.owed,{rc:10,body:{error_code:"DECK_INTERRUPTED",message:"presentation interrupted by command"}});$state.owed=nil end
@@ -39,11 +39,30 @@ fn perform($id,$a)
     if type($a.path)!="string" or not starts_with($a.path,"/") then raise("DECK_PATH","open.path: absolute path required") end
     $deck=if ends_with($a.path,".json") then json_parse(read_file($a.path)) else load_data($a.path) end
     $candidate=$core.opened($state.s,$deck,$a.path)
+    $scope=viu_raster("begin","")
+    try
+      for $i=0 to len($candidate.deck.slides)-1
+        for $node in keys($candidate.deck.slides[$i].scene)
+          $n=$candidate.deck.slides[$i].scene[$node]
+          if $n.widget=="image" and not starts_with($n.src ?? "","icon:") then
+            $r=viu_raster("deck",$n.src,$a.path,$scope)
+            $candidate.deck.slides[$i].scene[$node].src=$r.handle
+          end
+        end
+      end
     for $slide in $candidate.deck.slides
-      try send "viu-local" "scene.validate" body={source:$core.scene_source($slide)}
+      $build={}
+      for $id in keys($slide.build) $build[$id]={hidden:false,opacity:1,offset:[0,0]} end
+      try send "viu-local" "scene.validate" body={source:$core.scene_source($slide),model:{build:$build}}
       catch $message raise("DECK_SCENE","slides("..$slide.id..").scene: "..$message,{slide:$slide.id,field:"scene"}) end
       if $rc!=0 then raise("DECK_SCENE","slides("..$slide.id..").scene: "..to_string($reply)) end
     end
+    catch $message,$error
+      viu_raster("close",$scope)
+      raise($error.code ?? "DECK_SCENE",$message)
+    end
+    if $state.scope!=nil then viu_raster("close",$state.scope) end
+    $state.scope=$scope
   elif $id=="deck.goto" then $core.check_fields($a,["slide","step"],"goto");$candidate=$core.seek($state.s,$a.slide,$a.step ?? 0)
   elif $id=="deck.next" then $core.check_fields($a,[],"next");$candidate=$core.advance($state.s,1)
   elif $id=="deck.prev" then $core.check_fields($a,[],"prev");$candidate=$core.advance($state.s,-1)
@@ -51,8 +70,7 @@ fn perform($id,$a)
   else raise("UNKNOWN_ACTION","unknown deck action") end
   cancel_play();$state.finish_serial=nil;$state.s=$candidate;show_deck()
   if $id=="deck.play" then
-    $state.owed=$event.headers["viu-call"]
-    if $state.owed!=nil then viu_reply("hold",$state.owed,{}) end
+    $state.s.play_id=$state.serial
   end
   return $core.snapshot($state.s)
 end

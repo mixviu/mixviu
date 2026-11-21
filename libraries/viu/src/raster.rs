@@ -213,6 +213,14 @@ impl Rasters {
                 ));
             };
             let result = match op.as_str() {
+                "deck" => {
+                    let [mix::value::Value::String(deck), mix::value::Value::String(scope)] = rest else {
+                        return Err(fail("deck image expects deck path and scope".into()));
+                    };
+                    let _lane = rasters.lane.lock().map_err(|_| fail("decode lane poisoned".into()))?;
+                    let decoded = raster_decode::load_deck(Path::new(value), Path::new(deck)).map_err(fail)?;
+                    rasters.insert(decoded, Some(scope)).map_err(fail)?
+                }
                 "load" => {
                     let scope = match rest {
                         [] => None,
