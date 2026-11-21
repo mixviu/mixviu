@@ -4,7 +4,9 @@ fn check($ok,$message) if not $ok then raise("SECTION_TEST",$message) end end
 $s=$m.initial();$s.busy=$m.busy($s);$last=nil;$inputs=nil
 -- Exercise discovery, steady traffic and UI edits in different orders.
 for $round=0 to 7
-  for $step=0 to 39
+  -- Multiplication by 17 permutes all ten event classes once per round.
+  -- Avoid repeating that identical permutation four times in one callback.
+  for $step=0 to 9
     $key=($step*17+$round)%10
     if $key==0 then
       $name="peer-"..to_string($step);$s.snapshot.nodes=push($s.snapshot.nodes,{name:$name,local:false,services:[]})

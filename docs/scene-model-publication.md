@@ -129,6 +129,24 @@ duplicate rows are matched by occurrence; their identities are interchangeable
 when an identical occurrence leaves the window. Filtering and placement changes
 continue to show complete redacted bodies.
 
+Workshop also compares presentation section inputs with the inputs captured by
+the last acknowledged publication. Unchanged tree, macro and Traffic sections
+reuse that model; pending publications do not advance the acknowledged inputs.
+Changes accumulated while awaiting acceptance are compared on the next flush.
+Mesh ages/animation and agent permission expiry labels continue to project each
+turn. The full presentation projection remains an independent callable oracle.
+The Mix differ refuses root replacements and changed root keys over 256 bytes;
+callers use full publication for those cases.
+
+Traffic notice callbacks perform no recursive redaction. They enqueue raw rows
+in private state for one ordered native Job at a time, using the same recursive
+redaction function as before. Only a completely redacted result enters the
+Traffic ring, so display, filtering and export cannot expose a pending body.
+Observation visibility is asynchronous. Pending inputs are capped at 1,024 rows
+and 8 MiB including active work; overflow drops the oldest waiting rows, and
+failed Jobs drop their row. Both increment the existing visible drop count.
+This queue is separate from the existing bounded redacted display ring.
+
 The 200-peer private-Bus fixture keeps its original one-second calls, two-second
 owner stall check, silent peer and departing peer. After those checks, a native
 owner event retains 48 representative escaped JSON bodies through the real
