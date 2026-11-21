@@ -48,6 +48,7 @@ on viu.model.applied
   $a=$event.args
   if $a.generation==$ctx.generation and $publication.pending!=nil and $a.revision==$publication.pending.revision then
     $publication.ack=$a.revision;$publication.model=$publication.pending.model;$publication.pending=nil
+    if $publication.dirty then $state=publish_workshop($state) end
   end
 end
 on viu.model.refused

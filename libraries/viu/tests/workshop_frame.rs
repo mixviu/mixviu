@@ -8,6 +8,26 @@ use std::{
 use viu::{bundle::Bundle, runtime::Runtime};
 
 #[test]
+fn accepted_publication_immediately_flushes_coalesced_input() {
+    let root=PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop");
+    let bundle=Bundle::load(&root,&[]).unwrap();
+    let (tx,rx)=mpsc::channel();
+    let mut runtime=Runtime::with_services(8,Arc::new(move||{let _=tx.send(());}),None,viu::runtime::Services{incremental_models:true,..Default::default()});
+    runtime.load(bundle.program).unwrap();
+    rx.recv_timeout(Duration::from_secs(10)).unwrap();
+    let first=runtime.try_completion().unwrap();assert!(first.error.is_none(),"{:?}",first.error);assert_eq!(first.model_revision,Some(1));
+    runtime.notify("workshop.filter".into(),json!({"text":"queued input"})).unwrap();
+    rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    let pending=runtime.try_completion().unwrap();assert!(pending.error.is_none(),"{:?}",pending.error);assert_eq!(pending.model_revision,None);
+    runtime.notify("viu.model.applied".into(),json!({"generation":first.generation,"revision":1})).unwrap();
+    rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    let flushed=runtime.try_completion().unwrap();assert!(flushed.error.is_none(),"{:?}",flushed.error);assert_eq!(flushed.model_revision,Some(2),"coalesced input must not wait for another tick");
+    runtime.notify("viu.model.applied".into(),json!({"generation":first.generation,"revision":2})).unwrap();
+    rx.recv_timeout(Duration::from_secs(5)).unwrap();
+    let quiet=runtime.try_completion().unwrap();assert!(quiet.error.is_none(),"{:?}",quiet.error);assert_eq!(quiet.model_revision,None,"acceptance must not start an idle publication loop");
+}
+
+#[test]
 fn workshop_topic_bursts_project_once_and_idle_ticks_do_not_project() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop");
     let bundle = Bundle::load(&root, &[]).unwrap();
