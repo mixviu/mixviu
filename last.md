@@ -1,3 +1,50 @@
+# PR #214 — rounds 2, 3 and 3b complete
+
+PR: https://github.com/mixviu/mixviu/pull/214 (ready). Validated source head: `3fa0291585fe731e545ca656916df967b8e12629`; the following receipt commit changes only this report. Base remains `a3b1e286` (#213); final fetch found no newer main commit. Workshop stays serial. No full CI or soak was run; `pr_gate cbc` remains the next full run.
+
+The differ now collapses at eight path components, below Mix's call-depth limit of 16 including publisher frames. Changed long root keys use full publication; changed long nested keys replace their parent subtree. Keys inside replacement values remain ordinary data. The recursive long-key walker is gone. The fixture's shared data is initialised outside callback scopes; nested add/change/remove and matched-ID list cases now execute successfully.
+
+## Validation receipts
+
+| CBC job | Result |
+|---|---|
+| `20261121-121747-7465b4f7-a1` | Worker formatting at d31be7e9: clean, no diff. |
+| `20261121-121928-832f1c97` | Corrected native deep/long-key fixture at ae5bef1c: 1 passed, no refused sends or recursion errors. |
+| `20261121-122002-113007cc-a1` | Final source 3fa02915: BUILD_RC=0. Fmt check; all-target clippy for scene and lib-viu in both configurations; scene 79 passed; all 55 lib-viu targets in each configuration: default 640 passed / 0 failed / 12 ignored, test-support 650 / 0 / 12. Child-process summaries excluded from totals. Doctests pass (zero cases). All nine changed .mix files lint with zero errors, warnings or notes. Production host vocabulary and exact counter/wire equivalence checks pass. |
+| `20261121-122003-79412edd-a1` | Final source 3fa02915: BUILD_RC=0. All 15 negative controls hit their intended assertion: depth 1, flush bytes 1, mutation guards 2, numeric bounds 3, binding work 1, discovery work/expiry 3, incremental wire/apply/equivalence/receipt 4. Positive native full/incremental equivalence passes. Every mutation is restored; drift checks pass. |
+| `20261121-122113-026613aa-a1` | Final source 3fa02915: BUILD_RC=0. All six Workshop Bus tests pass standalone, one test thread; original deadlines unchanged. |
+
+Saved CBC logs were read and audited. The depth control restores 32 and fails with recursion depth exceeded (limit 16). Flush control observes 101 bytes against 1. Numeric controls observe pump 731 us against 0, wire 14,372 bytes against 1, and apply 2,750 us against 0. Forced full publication observes 790,234 bytes against 786,432; forced full application observes 105,771 us against 100,000. Skipping bindings fails rendered equivalence; dropping receipts fails mailbox-retention assertion. Both wire/compare source-drift controls refuse their unchanged mutation.
+
+## Before / after measurements
+
+#213's reported baseline at 200 peers was 2.1–2.4 MB published per tick, Mix rebuild 213–278 ms and native apply 226–323 ms. The new standalone retained-body fixture is a different, larger retained state: 3,552,515 bytes maximum, steady publication 8,855 bytes maximum and native patch apply 10,825 us CPU maximum; tick CPU median 82,361 us. Discovery publication maximum is 406,088 bytes and patch apply maximum 44,261 us CPU. These are scoped standalone measurements, not evidence that Workshop can leave the serial pool. The earlier nine-green/round-ten-miss normal-pool result below remains the disposition.
+
+Round 2 red (`20261121-121016-808e91e7-a1`) exposed the recursive walker defect and led to the bounded design ruling. Round 3 red (`20261121-121804-71f4ed93-a1`) was our callback-local fixture variable, corrected in ae5bef1c under round 3b's authority. Neither red run substitutes for the final green receipts above.
+
+## Review response (round-1 findings, accepted in rounds 2–3)
+
+| Finding | Resolution and evidence |
+|---|---|
+| 1. Fable contract status, receipts and narrative | `docs/scene-model-publication.md:1`: v1, provisional; exactly one applied/refused receipt or generation ends; configured-width retention is non-normative; discovery moved to appendix. |
+| 2. Gemini differ path limits | `libraries/viu/mix/model-publication.mix:3`: changed root long keys require full publication; nested long path keys collapse at their parent; named depth bound 8 leaves caller frames below Mix's limit 16. Native 40-deep maps and matched-ID lists, root/nested 300-byte keys, and nested add/change/remove pass without refused sends. Restoring depth 32 fails the native test with the intended recursion error. |
+| 3. Gemini direct decode/edit limit tests | `libraries/viu/src/model_patch.rs:288`: direct tests cover >1 MiB, >512 operations, >32 components, >256 UTF-8 bytes, zero/nonconsecutive/oversized revisions, invalid splice removal, and exact rollback on middle-operation aggregate overflow. |
+| 4. Gemini probe base | `libraries/viu/tests/workshop-probe.mix:250`: validate derives its base with `git merge-base HEAD origin/main`. |
+| 5. Gemini dead index | `apps/workshop/traffic-view.mix:9`: removed the unused index initialisation. |
+| 6. GLM splice wording | `docs/scene-model-publication.md:34`: append at index == len with remove == 0 is explicitly allowed. |
+| 7. GLM terminal revision | `docs/scene-model-publication.md:37`: MAX revision ends revisioned publication for that generation; recovery uses a new generation or legacy full, which does not reopen the sequence. Native fencing test covers terminal full refusal and legacy recovery. |
+| 8. GLM receipt bound | `libraries/viu/src/app_host.rs:1096`: derives retention from `Runtime::capacity()`; width-eight test passes. Contract states that saturation pauses replies and all other completion retirement. |
+| 9. GLM flush byte guard | `libraries/viu/src/app_host.rs:1108`: counts publications from applied handlers as well as ticks. Positive flush test passes; lowering its bound to one byte fails the byte assertion. |
+| 10. GLM template early exit | `libraries/viu/src/templates.rs:49`: chose the structural predicate: no declared template roots and no reads_item bindings. Documented this choice. |
+| 11. DeepSeek dotted root | `libraries/viu/src/view_binding_tests.rs:12`: patching literal key a.b read via model index syntax produces the same tree as full publication and updates the text. Binding logic unchanged. |
+| 12. DeepSeek raw operation count | `libraries/viu/src/model_patch.rs:58`: raw operations length is checked before deserialisation; malformed 513-element input verifies ordering. |
+| 13. DeepSeek legacy resynchronisation | `libraries/viu/src/app_host.rs:1258`: both successful legacy full paths clear the refusal fence; native fencing test verifies it. |
+
+Fable's four deferred items are recorded with the ruling's wording in private TODO-viu.md / TODO-workshop.md: host-supplied full-publication keys, integer capability version, section-dirty projection, and a Traffic redaction budget. Mix's recursion-limit decision is recorded separately in TODO-mix.md. None is implemented here.
+
+
+---
+
 # PR #214 — incremental hosted model publication
 
 PR: https://github.com/mixviu/mixviu/pull/214 (`mixviu-agent`). Branch `feat/viu-incremental-model`, from #213's merged main `a3b1e286c561386719f429b13f1fb77ed5303ed4`. Tested native code `45a1618eddf4`; later changes document retained receipts and add their test-probe control. PR code/documentation head: `771fb8ecd1f9d27fc27f6a95129f28c86cf7a511`.. This receipt is a following documentation commit.
