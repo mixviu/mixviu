@@ -72,9 +72,11 @@ for $case in [
   ["row_key","command:local:echo:echo"],["row_key","service:local:echo"],["row_key","node:local"],
   ["row_key","macro:global:example"],["row_key","agents:new:local"],["row_key","agent:local:s1"],["row_key","agents:node:local"]
 ]
-  $field=$case[0];$old=$s[$field];$s[$field]=$case[1];$s=$p.changed($s,[$field]);$s.busy=$m.busy($s)
+  $field=$case[0];$old=$s[$field];$s[$field]=$case[1];$s=$p.changed($s,[$field])
+  if $field!="busy" then $s.busy=$m.busy($s) end
   $receipt=compare($s,$receipt.model,$receipt.inputs)
-  $s[$field]=$old;$s=$p.changed($s,[$field]);$s.busy=$m.busy($s)
+  $s[$field]=$old;$s=$p.changed($s,[$field])
+  if $field!="busy" then $s.busy=$m.busy($s) end
   $receipt=compare($s,$receipt.model,$receipt.inputs)
 end
 -- Capture a pending publication, then coalesce several mutations without
