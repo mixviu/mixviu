@@ -10,6 +10,31 @@ if $mode=="format" then
     checked(["cargo","fmt","-p","lib-viu"])
     checked(["git","diff"])
   finally print(run_argv_must(["git","checkout","-q","--","."])) end
+elif $mode=="oracle" or $mode=="section-negative" then
+  $p="apps/workshop/app.mix";$source=read_file($p)
+  $needle="  $projection=$frame.project($s,$presentation.project_dirty($s,$publication.model,$sections));$persist=$saved.project($s)"
+  $replacement=<<EOF
+  $clock=require("mesh.mix");$now=$clock.now_ms()
+  $candidate=$presentation.project_dirty($s,$publication.model,$sections,$now)
+  if not deep_eq($candidate,$presentation.project($s,$now)) then raise("SECTION_ORACLE","section-dirty projection differs from full oracle") end
+  $projection=$frame.project($s,$candidate);$persist=$saved.project($s)
+EOF
+  if $mode=="section-negative" then $replacement="  \$sections.tree=false\n"..$replacement end
+  $changed=replace($source,$needle,$replacement)
+  if $changed==$source then raise("PROBE","section oracle source drift") end
+  try
+    write_file($p,$changed)
+    $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--nocapture"],{timeout:600,stderr:"stdout",max_output:16000000});print($r.stdout)
+    if $mode=="oracle" and not $r.ok then exit($r.exit_code ?? 1) end
+    if $mode=="section-negative" and ($r.ok or not contains($r.stdout,"section-dirty projection differs from full oracle")) then raise("PROBE","forgotten tree mark missed real-fixture oracle") end
+  finally write_file($p,$source) end
+elif $mode=="validate" then
+  checked(["cargo","fmt","-p","lib-viu","--","--check"])
+  for $feature in [[],["--features","test-support"]]
+    checked(concat(["cargo","clippy","-p","lib-viu","--all-targets","--no-deps"],$feature))
+    checked(concat(["cargo","test","-p","lib-viu","--all-targets","--no-fail-fast"],$feature))
+    checked(concat(["cargo","test","-p","lib-viu","--doc"],$feature))
+  end
 elif $mode=="width-negative" then
   $p="libraries/viu/src/app_host.rs";$source=read_file($p)
   $changed=replace($source,"while self.model_receipts.len() < self.runtime.capacity() {","while self.model_receipts.len() < 32 {")

@@ -109,21 +109,29 @@ fn receipt_limit_tracks_configured_runtime_width() {
     struct Release(Option<mpsc::Sender<()>>);
     impl Drop for Release {
         fn drop(&mut self) {
-            if let Some(tx) = self.0.take() { let _ = tx.send(()); }
+            if let Some(tx) = self.0.take() {
+                let _ = tx.send(());
+            }
         }
     }
-    let bundle = review_bundle("send \"viu-local\" \"scenes.model\" body={generation:viu_context().generation,value:{label:\"ready\"}}\non test.noop\nend\non viu.model.applied\nend\n");
+    let bundle = review_bundle(
+        "send \"viu-local\" \"scenes.model\" body={generation:viu_context().generation,value:{label:\"ready\"}}\non test.noop\nend\non viu.model.applied\nend\n",
+    );
     let program = bundle.program.clone();
     let mut host = create(bundle, Arc::new(|| {}));
     let (entered_tx, entered_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();
     let release_rx = Mutex::new(Some(release_rx));
-    host.runtime = Runtime::new(8, Arc::new(move || {
-        if let Some(rx) = release_rx.lock().unwrap().take() {
-            let _ = entered_tx.send(());
-            let _ = rx.recv();
-        }
-    }), None);
+    host.runtime = Runtime::new(
+        8,
+        Arc::new(move || {
+            if let Some(rx) = release_rx.lock().unwrap().take() {
+                let _ = entered_tx.send(());
+                let _ = rx.recv();
+            }
+        }),
+        None,
+    );
     let release = Release(Some(release_tx));
     host.runtime.load(program).unwrap();
     entered_rx.recv_timeout(Duration::from_secs(10)).unwrap();
@@ -135,7 +143,10 @@ fn receipt_limit_tracks_configured_runtime_width() {
     assert_eq!(host.model_receipts.len(), 8);
     let ctx = egui::Context::default();
     host.pump(&ctx);
-    assert!(!host.ready, "width-eight receipt saturation must pause completion retirement");
+    assert!(
+        !host.ready,
+        "width-eight receipt saturation must pause completion retirement"
+    );
     assert_eq!(host.model_receipts.len(), 8);
     drop(release);
     settle(&mut host, &ctx);
