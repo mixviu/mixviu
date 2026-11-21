@@ -64,7 +64,10 @@ send "viu-local" "scenes.model.patch" body={
 The first implementation targets model data in an ordinary root scene, as used
 by Workshop. Scene source, host appearance, window topology and projected
 multi-surface models continue to use full publication. The app must publish a
-full model when switching those inputs. Other apps need no conversion.
+full model when switching those inputs. A change to independently derived host
+layout metrics also refuses a patch and requires full resynchronisation. That
+comparison reads only the small host-input projection. Other apps need no
+conversion.
 
 `viu_context().incremental_models` advertises owner support. Without it, an app
 continues using legacy full publication. A successful local send means queued,
