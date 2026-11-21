@@ -791,8 +791,14 @@ impl BusHandler for Local {
                     let source = body["source"]
                         .as_str()
                         .ok_or_else(|| failure("source required"))?;
-                    let document = scene::parse(source).map_err(|e| failure(&format!("{e:?}")))?;
-                    scene::resolve(&document).map_err(|e| failure(&format!("{e:?}")))?;
+                    crate::view::SceneView::with_model(
+                        source,
+                        body["model"]
+                            .as_object()
+                            .map(|_| body["model"].clone())
+                            .unwrap_or_else(|| json!({})),
+                    )
+                    .map_err(|e| failure(&e))?;
                     json!({"valid":true})
                 }
                 "motion.seek" => {

@@ -11,6 +11,7 @@ use viu::{
 };
 
 struct Deck {
+    rasters: viu::raster::Rasters,
     runtime: Runtime,
     wakes: mpsc::Receiver<()>,
     calls: viu::calls::Calls,
@@ -31,10 +32,196 @@ fn authored_reference_nodes_resolve() {
         assert!(!source.contains("STUB"));
     }
 }
+
+#[test]
+fn approved_cyclops_asset_paints_a_white_ring_and_red_eye() {
+    let source = include_str!("../../../apps/gallery/deck-pages/brand.scene.mix");
+    let mut view = SceneView::new(source).unwrap();
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(1600., 900.))
+        .with_context_setup(|ctx| {
+            viu::fonts::install(ctx, 400, 600);
+            viu::icons::install(ctx);
+        })
+        .wgpu()
+        .build_ui(move |ui| {
+            view.show(ui);
+        });
+    harness.run();
+    let pixels = harness.render().unwrap();
+    let eye = pixels
+        .enumerate_pixels()
+        .filter(|(x, y, p)| *x < 320 && *y < 300 && p[0] > 200 && p[1] < 20 && p[2] < 20)
+        .count();
+    let ring = pixels
+        .enumerate_pixels()
+        .filter(|(x, y, p)| *x < 320 && *y < 300 && p[0] > 240 && p[1] > 240 && p[2] > 240)
+        .count();
+    assert!(eye > 500, "red eye pixels: {eye}");
+    assert!(ring > 5000, "white ring pixels: {ring}");
+}
+
+#[test]
+fn entrance_uses_the_oracle_beat_plus_delay_without_an_extra_lead() {
+    let mut deck = Deck::new();
+    deck.open();
+    deck.call(
+        "deck.play",
+        json!({"slides":["before"],"beats":[[0.9,3,5]]}),
+    );
+    deck.call("viu.presentation", json!({"time":100}));
+    for at in [1.0, 1.05, 1.1, 1.5] {
+        let model = deck
+            .call("viu.presentation", json!({"time":100.0+at}))
+            .model
+            .unwrap();
+        let values = motion::scene::Entrance::Name("left".into())
+            .playback(0., 0, false)
+            .sample(at - 0.9 - 0.15);
+        let actual = model["build"]["root.1"]["opacity"].as_f64().unwrap();
+        assert!((actual - values.get(motion::Property::Opacity)).abs() < 1e-6);
+        println!(
+            "ENTRANCE time={at} beat=0.9 delay=0.15 age={} opacity={actual}",
+            at - 1.05
+        );
+    }
+}
+
+#[test]
+fn nested_grow_cards_keep_the_right_edge_inside_the_canvas() {
+    let source = include_str!("../../../apps/gallery/deck-pages/nested_grow.scene.mix");
+    let mut view = SceneView::new(source).unwrap();
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(1700., 950.))
+        .with_context_setup(|ctx| viu::fonts::install(ctx, 400, 600))
+        .wgpu()
+        .build_ui(move |ui| {
+            ui.set_width(1600.);
+            view.show(ui);
+        });
+    harness.run();
+    let pixels = harness.render().unwrap();
+    // The gallery canvas ends at 1600 (+ the harness's panel margin). The
+    // overlong code/flow must never paint its red/cyan/green content here.
+    for x in 1620..1690 {
+        for y in 20..700 {
+            let p = pixels.get_pixel(x, y).0;
+            assert!(
+                p[0] < 40 && p[1] < 40 && p[2] < 40,
+                "overflow at {x},{y}: {p:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_natural_width_fixed_label_stays_visible_between_growing_cells() {
+    let source = format!(
+        "---\nscene: 1\nname: mixed\ncitizen: test\n---\n```mix\n{}\n```\n",
+        json!({
+            "root":{"widget":"row","children":["a","arrow","b"]},
+            "a":{"widget":"column","grow":1,"children":[],"height":60},
+            "arrow":{"widget":"text","text":"arrow"},
+            "b":{"widget":"column","grow":1,"children":[],"height":60}
+        })
+    );
+    let mut view = SceneView::new(&source).unwrap();
+    let ctx = egui::Context::default();
+    for _ in 0..8 {
+        let out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(600., 200.),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                view.show(ui);
+            },
+        );
+        let text = out
+            .shapes
+            .iter()
+            .find(|s| matches!(&s.shape,egui::Shape::Text(t) if t.galley.job.text=="arrow"))
+            .unwrap();
+        assert!(text.clip_rect.width() > 0.);
+        out.drop_without_applying_deltas();
+    }
+    assert!(view.geometry["arrow"].width() > 0.);
+    // Text metrics and cell allocation round independently to device pixels.
+    assert!(
+        view.geometry["b"].right() <= 600.5,
+        "right={}",
+        view.geometry["b"].right()
+    );
+}
+
+#[test]
+fn raster_open_pins_pixels_and_refuses_unsafe_sources_before_navigation() {
+    let mut deck = Deck::new();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("deck.json");
+    let png = dir.path().join("shot.png");
+    image::RgbaImage::from_pixel(16, 16, image::Rgba([255, 0, 0, 255]))
+        .save(&png)
+        .unwrap();
+    let open = |deck: &mut Deck, src: &str| {
+        std::fs::write(&path,json!({"schema":"deck.v1","slides":[{"id":"shot","steps":1,"scene":{"root":{"widget":"image","src":src,"w":64,"h":64}}}]}).to_string()).unwrap();
+        deck.call("deck.open", json!({"path":path})).reply.unwrap()
+    };
+    assert_eq!(open(&mut deck, "shot.png").rc, 0);
+    std::fs::remove_file(&png).unwrap();
+    let done = deck.call("deck.goto", json!({"slide":"shot"}));
+    assert_eq!(done.reply.unwrap().rc, 0);
+    let model = done.model.unwrap();
+    let mut view = SceneView::with_model(
+        model["presentation"]["scene"].as_str().unwrap(),
+        model.clone(),
+    )
+    .unwrap();
+    view.set_rasters(deck.rasters.clone());
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(100., 100.))
+        .wgpu()
+        .build_ui(move |ui| {
+            view.show(ui);
+        });
+    harness.run();
+    let pixels = harness.render().unwrap();
+    assert_eq!(pixels.get_pixel(32, 32).0, [255, 0, 0, 255]);
+    let outside = tempfile::NamedTempFile::new().unwrap();
+    image::RgbaImage::new(2, 2)
+        .save_with_format(outside.path(), image::ImageFormat::Png)
+        .unwrap();
+    let refused = open(&mut deck, outside.path().to_str().unwrap());
+    assert_eq!(refused.rc, 10);
+    assert!(
+        refused.body["message"]
+            .as_str()
+            .unwrap()
+            .contains("outside deck directory")
+    );
+    std::os::unix::fs::symlink(outside.path(), &png).unwrap();
+    assert_eq!(open(&mut deck, "shot.png").rc, 10);
+    std::fs::write(dir.path().join("bad.png"), b"not an image").unwrap();
+    assert_eq!(open(&mut deck, "bad.png").rc, 10);
+    std::fs::File::create(dir.path().join("large.png"))
+        .unwrap()
+        .set_len(32 * 1024 * 1024 + 1)
+        .unwrap();
+    assert_eq!(open(&mut deck, "large.png").rc, 10);
+    assert_eq!(
+        deck.rasters.bytes(),
+        16 * 16 * 4,
+        "refused opens retain the active deck only"
+    );
+}
 impl Deck {
     fn new() -> Self {
         let (tx, wakes) = mpsc::channel();
         let calls = viu::calls::Calls::default();
+        let rasters = viu::raster::Rasters::default();
         let mut runtime = Runtime::with_services(
             8,
             Arc::new(move || {
@@ -43,6 +230,7 @@ impl Deck {
             None,
             viu::runtime::Services {
                 calls: Some(calls.clone()),
+                rasters: Some(rasters.clone()),
                 ..Default::default()
             },
         );
@@ -56,6 +244,7 @@ impl Deck {
             })
             .unwrap();
         let s = Self {
+            rasters,
             runtime,
             wakes,
             calls,
@@ -85,52 +274,50 @@ impl Deck {
 }
 
 #[test]
-fn retained_play_waits_for_final_draw_and_cancellation_disarms_it() {
-    for cancel in [false, true] {
-        let mut deck = Deck::new();
-        deck.open();
-        let (tx, mut rx) = tokio::sync::oneshot::channel();
-        let token = deck
-            .calls
-            .begin(tx, Arc::new(std::sync::atomic::AtomicBool::new(false)))
-            .unwrap();
-        deck.runtime
-            .event_with_headers(
-                "deck.play".into(),
-                json!({"slides":["sting"],"beats":[[0,1]]}),
-                std::collections::BTreeMap::from([("viu-call".into(), token.clone())]),
-            )
-            .unwrap();
-        let start = deck.next();
-        assert_eq!(start.reply.unwrap().rc, 0);
-        deck.call("viu.presentation", json!({"time":100}));
-        let end = deck.call("viu.presentation", json!({"time":101}));
-        assert!(end.deferred_answers.is_empty());
-        let model = end.model.unwrap();
-        assert_eq!(model["presentation"]["clock"], true);
-        assert!(matches!(
-            rx.try_recv(),
-            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
-        ));
-        let ack = if cancel {
-            drop(rx);
-            deck.call("viu.call.cancelled", json!({"token":token}))
-        } else {
-            let ack = deck.call(
-                "viu.presentation",
-                json!({"time":101.1,"serial":model["presentation"]["serial"]}),
-            );
-            assert_eq!(rx.try_recv().unwrap().0, 0);
-            ack
-        };
-        assert_eq!(ack.model.unwrap()["presentation"]["clock"], false);
-        assert!(
-            deck.call("viu.presentation", json!({"time":102}))
-                .model
-                .is_none()
-        );
-    }
+fn play_replies_immediately_and_survives_caller_cancellation_past_180_seconds() {
+    let mut deck = Deck::new();
+    deck.open();
+    let (tx, _rx) = tokio::sync::oneshot::channel();
+    let token = deck
+        .calls
+        .begin(tx, Arc::new(std::sync::atomic::AtomicBool::new(false)))
+        .unwrap();
+    deck.runtime
+        .event_with_headers(
+            "deck.play".into(),
+            json!({"slides":["sting"],"beats":[[0.9,3600]]}),
+            std::collections::BTreeMap::from([("viu-call".into(), token.clone())]),
+        )
+        .unwrap();
+    let start = deck.next();
+    let reply = start.reply.unwrap();
+    assert_eq!(reply.rc, 0);
+    assert!(reply.body["play_id"].as_u64().is_some());
+    assert!(start.deferred_answers.is_empty());
+    deck.call("viu.presentation", json!({"time":100}));
+    deck.call("viu.call.cancelled", json!({"token":token}));
+    deck.call("viu.presentation", json!({"time":281}));
+    assert_eq!(
+        deck.call("deck.state", json!({})).reply.unwrap().body["playing"],
+        true
+    );
+    let end = deck.call("viu.presentation", json!({"time":3700}));
+    let model = end.model.unwrap();
+    assert_eq!(model["presentation"]["clock"], true);
+    let waiting = deck.call("deck.state", json!({})).reply.unwrap().body;
+    assert_eq!(waiting["finished"], false);
+    assert_eq!(waiting["playing"], true);
+    deck.call("viu.call.cancelled", json!({"token":token}));
+    let ack = deck.call(
+        "viu.presentation",
+        json!({"time":3700.1,"serial":model["presentation"]["serial"]}),
+    );
+    assert_eq!(ack.model.unwrap()["presentation"]["clock"], false);
+    let state = deck.call("deck.state", json!({})).reply.unwrap().body;
+    assert_eq!(state["finished"], true);
+    assert_eq!(state["play_id"], reply.body["play_id"]);
 }
+
 fn frame(model: Value) -> (SceneView, egui::FullOutput) {
     let ctx = egui::Context::default();
     let mut view = SceneView::with_model(
@@ -189,13 +376,19 @@ fn play_samples_delays_and_freezes_the_last_sample() {
         (102., 1, true),
         (104., 0, true),
         (106., 1, true),
-        (108., 1, false),
+        (108., 1, true),
     ] {
         let done = deck.call("viu.presentation", json!({"time":at}));
         let model = done.model.unwrap();
         assert_eq!(model["presentation"]["clock"], clock);
-        let mut out = frame(model).1;
+        let mut out = frame(model.clone()).1;
         out.textures_delta.clear();
+        if at == 108. {
+            deck.call(
+                "viu.presentation",
+                json!({"time":108.1,"serial":model["presentation"]["serial"]}),
+            );
+        }
         let state = deck.call("deck.state", json!({})).reply.unwrap().body;
         assert_eq!(state["step"], step);
     }

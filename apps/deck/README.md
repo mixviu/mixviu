@@ -33,6 +33,21 @@ No executable source or converter is involved. The top-level object is:
 Each `scene` is the node map from a scene document's strict-data fence.
 The app supplies the envelope. Ordinary scene schema validation still applies.
 Scene data cannot contain bindings or `on_*` handlers, including nested data.
+Image nodes accept known `icon:` names or PNG/JPEG paths, relative to the deck
+directory or absolute within it (including `assets/`). Open checks the opened
+file's resolved path; outside paths and escaping symlinks refuse. Files must
+be regular and at most 32 MiB, dimensions at most 16,384 per side and 32 Mi
+pixels. The raster decoder downsizes to 3,840 on the long side. Pixels are
+pinned at open, so source replacement/removal cannot change a later goto.
+The shared store caps handles at 64 and resident pixels at 512 MiB; active
+and candidate decks share those budgets. Refused opens release candidate
+handles and preserve the active deck. Use `w` and `h` for the display size.
+The static `brand:cyclops` uses the approved intro geometry; draw, blink and
+spin remain separate motion work.
+
+Grow rows allocate each cell its weighted share of the remaining width.
+Nested content wraps where supported and clips at its cell edge when it
+cannot wrap; it cannot move the next card outside the canvas.
 `kind` defaults to `slide`; `sting` accepts a composed brand slide with the same
 timing contract. A sting needs no HTML or separate renderer.
 
@@ -43,6 +58,17 @@ its step range. Unlisted nodes are always visible. Manual navigation samples
 the settled step and ignores entrance delays. Timed playback samples the
 entrance at `scene_time - beats[b] - delay`; it never restarts an entrance on
 each publication. Final playback freezes the last scene's end sample.
+
+For the reference title (`left`, beat 0.9, delay 0.15), both the native
+0.7-second preset and `oracle/reference/deck.js`/`anim.css` start at 1.05:
+opacity is 0 at 1.0/1.05, 0.287865 at 1.1 and 0.978681 at 1.5 seconds.
+The core/native-port test pins these samples. There is no extra lead in the
+entrance sampler. Live playback defines zero at its first `viu.presentation`
+timestamp and paints the resulting sample on the following draw. A recorder
+marker placed before `deck.play` is a different origin; its RPC/admission,
+first-frame and draw latency must be measured before treating a recording's
+1.1-second frame as app scene time 1.1. The historical recording did not log
+that correlation, so its precise wall-clock offset remains unproven.
 
 `anim` and `child_anim` support `fade`, `up`, `down`, `left`, `right`.
 `delay` and `stagger` are seconds, each in 0..60. A stagger container gives
@@ -67,25 +93,31 @@ All commands target service `deck`. Parameters are objects.
 | `deck.goto` | `{slide, step?}` | Slide ID, optional step (default zero) |
 | `deck.next` | `{}` | Next step, then next slide |
 | `deck.prev` | `{}` | Previous step, then previous slide |
-| `deck.play` | `{slides?, beats}` | Retained reply at the end of the last scene |
-| `deck.state` | `{}` | `{path, slide, step, playing, elapsed, finished}` |
+| `deck.play` | `{slides?, beats}` | Immediate state with a `play_id` |
+| `deck.state` | `{}` | `{path, slide, step, playing, elapsed, finished, play_id}` |
 | `deck.actions` | `{}` | Typed action catalogue |
 | `deck.execute` | `{id, params?}` | Same command path as the direct verbs |
 
 `slides` is an ordered list of slide IDs; omitted means all slides. `beats` is
 one list per selected scene. Each list contains exactly `steps + 1` times:
 every build's start and an explicit scene end. Times strictly increase and
-start at zero. For a two-step slide, `[[0, 3.2, 8.0]]` shows step zero at zero,
+are nonnegative. For a two-step slide, `[[0, 3.2, 8.0]]` shows step zero at zero,
 step one at 3.2 seconds and ends at eight seconds. No narration duration is
-guessed. A new valid open/navigation/play interrupts the previous retained
-reply with `DECK_INTERRUPTED`; a refused command leaves playback alone.
+guessed. `[[0.9,3.2,8.0]]` leaves configured builds unrevealed until 0.9
+seconds; unlisted background/structure nodes remain visible. No empty build
+step is needed. Poll `deck.state` until the returned `play_id` finishes; a
+different ID or a nonfinished stopped state means another command replaced
+the play. A valid open/navigation/play interrupts playback; refused commands
+leave it alone. Caller cancellation does not stop an accepted play. The host's
+180-second reply limit only covers command admission, so a play can contain
+multiple scenes of up to 3,600 seconds each.
 
 The generic host's `presentation.clock` drives `viu.presentation {time,serial}`
 from the render clock. Mix samples elapsed time from that clock, never from
-timers or a separate video clock. Only playing or awaiting the final drawn
-serial requests another frame. Final serial acknowledgement is a client draw
-acknowledgement; compositor recording/presentation acceptance is separate
-evidence and must not be inferred from it.
+timers or a separate video clock. Playing or awaiting the final drawn serial
+requests another frame. `finished` waits for that serial's client draw
+acknowledgement; compositor recording and presentation acceptance are separate
+evidence. Caller cancellation cannot disarm this final draw.
 
 The generic presentation model also accepts `presentation.scene` (a complete
 scene document) and `presentation.size` (two logical dimensions). This mounts
@@ -108,6 +140,10 @@ It is a reference adaptation, with visual differences from the HTML original.
 time sampling. `libraries/viu/tests/deck.rs` loads the real Mix behaviour and
 paints every reference step headlessly. Its explicit offscreen evidence test
 saves two 4K PNGs. Rust checks run on CBC only.
+
+`mix apps/deck/check.mix check` is the scoped CBC driver: all lib-viu/viu
+test targets, all-target clippy, fmt, core policy and gallery regeneration.
+Its `fmt` mode returns a worker diff and restores the owned checkout.
 
 The reference source is `examples/author.mix`; run it with Mix to regenerate
 `vfl-self-recording.json`. It uses the 3.1 composition constructors from
