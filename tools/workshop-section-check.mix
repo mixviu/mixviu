@@ -16,25 +16,36 @@ elif $mode=="measure" then
   $helpers=<<EOF
 fn probe_stamp($row)
   global $traffic_measure
-  try $p=$traffic_measure catch $missing $p={serial:0,times:{}} end
-  $p.serial=$p.serial+1;$id=to_string($p.serial);$p.times[$id]=monotonic();$traffic_measure=$p
+  try $measurement=$traffic_measure catch $missing $measurement={serial:0,times:{}} end
+  $measurement.serial=$measurement.serial+1;$id=to_string($measurement.serial);$measurement.times[$id]=monotonic();$traffic_measure=$measurement
   $row._measure_id=$id;return $row
 end
 fn probe_visible($s)
   if not $s.dock_open then return [] end
-  return map(rows($s,100,$s.traffic_filter),fn($r)=$r._measure_id)
+  $visible=[]
+  for $row in rows($s,100,$s.traffic_filter)
+    if $row._measure_id!=nil then push($visible,$row._measure_id) end
+    if type($row.response)=="map" and $row.response._measure_id!=nil then push($visible,$row.response._measure_id) end
+  end
+  return $visible
+end
+fn probe_stats($s)
+  global $traffic_measure
+  try $measurement=$traffic_measure catch $missing $measurement={serial:0,times:{}} end
+  $queue=$s.traffic_redaction ?? {waiting:[],active:nil}
+  return {ingress:$measurement.serial,not_yet_visible:len($measurement.times),waiting:len($queue.waiting),active:if $queue.active==nil then 0 else $queue.active.count ?? 1 end,dropped:$s.dropped}
 end
 fn probe_ack($ids,$dropped)
   global $traffic_measure
-  try $p=$traffic_measure catch $missing return end
+  try $measurement=$traffic_measure catch $missing return end
   $now=monotonic()
   for $id in $ids
-    if $id!=nil and $p.times[$id]!=nil then
-      print("WORKSHOP_BUILD "..json_encode({kind:"visible",latency_ms:($now-$p.times[$id])*1000,dropped:$dropped}))
-      $p.times=delete($p.times,$id)
+    if $id!=nil and $measurement.times[$id]!=nil then
+      print("WORKSHOP_BUILD "..json_encode({kind:"visible",latency_ms:($now-$measurement.times[$id])*1000,dropped:$dropped}))
+      $measurement.times=delete($measurement.times,$id)
     end
   end
-  $traffic_measure=$p
+  $traffic_measure=$measurement
 end
 EOF
   $probe_traffic=$traffic_source.."\n"..$helpers
@@ -46,13 +57,13 @@ EOF
   $candidate=$presentation.project_dirty($s,$publication.model,$sections,$now)
   $section_cpu=(viu_test_cpu()-$section_start)*1000000;$pc=viu_test_cpu()
   $oracle=$presentation.project($s,$now)
-  print("WORKSHOP_BUILD "..json_encode({kind:"section",inputs_cpu_us:$inputs_cpu,total_section_cpu_us:$section_cpu,full_cpu_us:(viu_test_cpu()-$pc)*1000000,dirty:$sections,rows:len($candidate.tree.initial.rows),dropped:$s.dropped}))
+  print("WORKSHOP_BUILD "..json_encode({kind:"section",inputs_cpu_us:$inputs_cpu,total_section_cpu_us:$section_cpu,full_cpu_us:(viu_test_cpu()-$pc)*1000000,dirty:$sections,rows:len($candidate.tree.initial.rows),queue:$traffic_measure_probe.probe_stats($s)}))
   if not deep_eq($candidate,$oracle) then raise("SECTION_ORACLE","section-dirty projection differs from full oracle") end
   $projection=$frame.project($s,$candidate);$persist=$saved.project($s)
 EOF
   $probe_app=replace_must($probe_app,'  $projection=$frame.project($s,$presentation.project_dirty($s,$publication.model,$sections));$persist=$saved.project($s)',$replacement)
   $probe_app=replace_must($probe_app,'$publication.pending={revision:$revision,model:$value,inputs:$inputs}','$publication.pending={revision:$revision,model:$value,inputs:$inputs,visible:$traffic_measure_probe.probe_visible($s)}')
-  $probe_app=replace_must($probe_app,'    $publication.ack=$a.revision;',"    \$traffic_measure_probe.probe_ack(\$publication.pending.visible,\$state.dropped)\n    \$publication.ack=\$a.revision;")
+  $probe_app=replace_must($probe_app,'    $publication.ack=$a.revision;',"    \$traffic_measure_probe.probe_ack(\$publication.pending.visible,\$state.dropped)\n    print(\"WORKSHOP_BUILD \"..json_encode({kind:\"queue\",stats:\$traffic_measure_probe.probe_stats(\$state)}))\n    \$publication.ack=\$a.revision;")
   try
     write_file($app,$probe_app);write_file($traffic,$probe_traffic)
     $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--test","workshop_bus","workshop_answers_during_discovery","--","--nocapture"],{timeout:600,stderr:"stdout",max_output:64000000});print($r.stdout)
