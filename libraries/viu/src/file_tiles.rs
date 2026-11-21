@@ -93,11 +93,12 @@ pub(crate) fn menu(
     });
 }
 pub fn draw(ui: &mut Ui, id: &str, v: &Value, events: &mut Vec<Intent>) -> egui::Response {
+    let vp = ui.ctx().viewport_id();
     let limit = ui
         .ctx()
         .data(|d| {
             d.get_temp::<f32>(egui::Id::unique((
-                ui.ctx().viewport_id(),
+                vp,
                 "viu.dock.intrinsic-height",
             )))
         })
@@ -278,5 +279,27 @@ pub fn intent(value: &Value, action: &str, payload: &Value) -> bool {
             })
         }),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn draw_reads_viewport_height_without_nested_context_lock() {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let ctx = egui::Context::default();
+            let output = ctx.run_ui(Default::default(), |ui| {
+                let vp = ui.ctx().viewport_id();
+                ui.ctx().data_mut(|d| d.insert_temp(
+                    egui::Id::unique((vp, "viu.dock.intrinsic-height")), 90.0_f32,
+                ));
+                let value = serde_json::json!({"expanded":true,"items":[],"title":"Files","count":"0","size":"0","save_all":"Save all","actions":"Actions"});
+                super::draw(ui, "files", &value, &mut Vec::new());
+            });
+            output.drop_without_applying_deltas();
+            let _ = tx.send(());
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(2)).expect("file tiles did not return successfully");
     }
 }
