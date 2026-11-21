@@ -675,7 +675,9 @@ pub fn install(ctx: &Context) {
         "scene surface motion",
         std::sync::Arc::new(|ui| {
             let ctx = ui.ctx().clone();
-            let key = egui::Id::unique(("scene-surfaces", ctx.viewport_id()));
+            let viewport = ctx.viewport_id();
+            let key = egui::Id::unique(("scene-surfaces", viewport));
+            let disabled_key = egui::Id::unique(("motion-disabled-surfaces", viewport));
             let shared = ctx.data_mut(|d| {
                 let state = d
                     .get_temp::<std::sync::Arc<std::sync::Mutex<SceneMotion>>>(key)
@@ -702,13 +704,12 @@ pub fn install(ctx: &Context) {
                 if !has_paint {
                     continue;
                 }
+                // Never call into ctx inside a ctx closure: egui's lock is not
+                // read-recursive, so a nested read (viewport_id) blocks behind
+                // any writer that queued in between, e.g. a request_repaint
+                // from another thread, and both threads deadlock.
                 let disabled = ctx
-                    .data(|d| {
-                        d.get_temp::<std::collections::HashSet<LayerId>>(egui::Id::unique((
-                            "motion-disabled-surfaces",
-                            ctx.viewport_id(),
-                        )))
-                    })
+                    .data(|d| d.get_temp::<std::collections::HashSet<LayerId>>(disabled_key))
                     .is_some_and(|ids| ids.contains(&layer));
                 let mut capture = state.capture(
                     ui,
