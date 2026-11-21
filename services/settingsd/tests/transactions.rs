@@ -41,6 +41,31 @@ fn request(authority: &Authority, id: &str, mode: &str) -> ApplyRequest {
 }
 
 #[test]
+fn unused_design_context_is_refused_before_profile_write() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut state = authority(dir.path());
+    let good = design::EMBEDDED_DEFAULT_SOURCE;
+    let needle = "when: { scheme: \"studio\", mode: \"light\" },";
+    assert_eq!(good.matches(needle).count(), 1);
+    let (before_source, after) = good.split_once(needle).unwrap();
+    let pairs = "semantics: {\n          pairs: {";
+    assert!(after.find(pairs).unwrap() < after.find("when:").unwrap());
+    let bad = format!("{before_source}{needle}{}", after.replacen(pairs, &format!("{pairs} base: {{ surface: \"palette.background.1\", foreground: \"missing.write-control\" }},"), 1));
+    let before = std::fs::read(dir.path().join("desktop.conf.mix")).unwrap();
+    let revision = state.accepted.revision;
+    let mut edit = request(&state, "invalid-context-source", "dark");
+    edit.changes.insert("appearance.source".into(), json!(bad));
+    assert!(state.validate(&edit).is_err());
+    assert!(state.apply(edit).is_err());
+    assert_eq!(state.accepted.revision, revision);
+    assert_eq!(std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(), before);
+    let mut valid = request(&state, "valid-context-source", "dark");
+    valid.changes.insert("appearance.source".into(), json!(good));
+    assert!(state.apply(valid).is_ok(), "valid-source negative control");
+    assert_ne!(state.accepted.revision, revision);
+}
+
+#[test]
 fn retired_top_panel_writes_are_described_and_refused_atomically() {
     let dir = tempfile::tempdir().unwrap();
     let mut state = authority(dir.path());

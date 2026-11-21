@@ -37,6 +37,9 @@ if len($g.errors) != 0 or len($g.rest) != 1 or $g.opts.mix == nil or $g.opts.ass
 end
 $out = $g.rest[0]
 $mix = realpath($g.opts.mix) ?? raise("USAGE", "no such mix: " .. $g.opts.mix)
+$viu = path_join(dirname($mix), "viu")
+if not is_file($viu) then raise("DESIGN_VALIDATOR", "build viu beside the bundle's mix before admission") end
+run_argv_must([$viu, "--validate-design", "--embedded"], {timeout:30})
 mkdir($g.opts.assets, {parents: true})
 $store = realpath($g.opts.assets) ?? raise("ASSETS", "cannot create the asset store at " .. $g.opts.assets)
 $gold = "/opt/mix/share"

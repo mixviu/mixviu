@@ -156,6 +156,7 @@ pub struct Theme {
     source_digest: String,
     load_error: Option<String>,
     load_source_digest: Option<String>,
+    source_path: Option<PathBuf>,
     ui: settings::model::CommonUi,
     context: DesignContext,
     design: UnstampedResolvedDesign,
@@ -292,7 +293,9 @@ impl Theme {
                 });
             }
         };
-        Self::from_source(&path.display().to_string(), &source).map(Some)
+        let mut theme = Self::from_source(&path.display().to_string(), &source)?;
+        theme.source_path = Some(path.to_owned());
+        Ok(Some(theme))
     }
 
     /// The shared theme file ([`theme_path`]), or the embedded default when
@@ -316,7 +319,10 @@ impl Theme {
                 );
                 let mut fallback = Self::embedded();
                 fallback.load_error = Some(error.to_string());
-                fallback.load_source_digest = std::fs::read_to_string(path).ok().map(|s| design::source_digest(&s));
+                fallback.source_path = Some(path.to_owned());
+                fallback.load_source_digest = std::fs::read_to_string(path)
+                    .ok()
+                    .map(|s| design::source_digest(&s));
                 fallback
             }
         }
@@ -336,6 +342,7 @@ impl Theme {
                     source_digest: design::document_digest(document),
                     load_error: None,
                     load_source_digest: None,
+                    source_path: None,
                     ui: settings::model::CommonUi::default(),
                     context,
                     design: success.candidate,
@@ -371,24 +378,32 @@ impl Theme {
         self.load_source_digest.as_deref()
     }
 
+    pub fn source_path(&self) -> Option<&Path> { self.source_path.as_deref() }
+
     /// This (session) theme with an app's own choice laid over it, as the
     /// Theme menu ([`crate::theme_menu`]) makes it. With no colour axis
-    /// chosen (scheme, style, mode) the design is this theme's own, so a
-    /// custom session design stays intact; else it is the embedded design in
-    /// the chosen axes (each axis left `None` keeps this theme's), at this
-    /// theme's contrast. Decorations and caption side overlay either way.
+    /// chosen the current artifact is retained. A chosen colour axis compiles
+    /// this source in the new context before use; a failure leaves `self`
+    /// intact. Each axis left `None` keeps this theme's selection.
     /// The session's theme file is never touched.
     pub fn with_choice(&self, choice: &Choice) -> Result<Self, Error> {
         let mut theme =
             if choice.scheme.is_none() && choice.style.is_none() && choice.mode.is_none() {
                 self.clone()
             } else {
-                let mut theme = Self::for_context(DesignContext {
+                let context = DesignContext {
                     scheme: choice.scheme.unwrap_or(self.scheme()),
                     mode: choice.mode.unwrap_or(self.mode()),
                     style: choice.style.unwrap_or(self.context.style),
                     ..self.context.clone()
-                });
+                };
+                let mut theme = if let Some(path) = &self.source_path {
+                    let source = std::fs::read_to_string(path).map_err(|error| Error::Read {path:path.clone(), error})?;
+                    Self::from_source_in(&path.display().to_string(), &source, context)?
+                } else {
+                    Self::compile(&self.document, context)?
+                };
+                theme.source_path = self.source_path.clone();
                 theme.decorations = self.decorations;
                 theme.captions = self.captions;
                 theme.menu_style = self.menu_style;
@@ -655,8 +670,16 @@ mod startup_fallback_tests {
         let fallback = Theme::load_from(&path);
         assert_eq!(fallback.scheme(), Scheme::Studio);
         assert_eq!(fallback.mode(), Mode::Dark);
-        assert!(fallback.load_error().unwrap().contains("missing.startup-control"));
-        assert_eq!(fallback.load_source_digest(), Some(design::source_digest(&bad).as_str()));
+        assert!(
+            fallback
+                .load_error()
+                .unwrap()
+                .contains("missing.startup-control")
+        );
+        assert_eq!(
+            fallback.load_source_digest(),
+            Some(design::source_digest(&bad).as_str())
+        );
     }
 }
 

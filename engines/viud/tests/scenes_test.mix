@@ -516,6 +516,23 @@ try
   $s.scenes.example.model = {text:"edited"}
   $s = $l.request($s, "reset", {name:"example"})
   check($s.rc == 0 and $s.scenes.example.model.text == "default" and is_dir($s.response.recovery), "reset restores defaults and backs up")
+  -- Startup a+: each existing admission path must reject a bad staged source
+  -- before touching the installed tree. The preceding Reset is the good control.
+  $origin = $s.desired.origins.example
+  $template_path = $s.templates .. "/" .. $origin .. "/scene.mix"
+  $valid_template = read_file($template_path)
+  $installed_before = tree_digest($s.root .. "/example")
+  try
+    write_file($template_path, $valid_template .. "\n-- BROKEN startup admission control\n")
+    $s = $l.request($s, "install", {template:$origin, name:"bad-admission"})
+    check($s.rc != 0 and not exists($s.root .. "/bad-admission"), "bad install writes no installation")
+    $s = $l.request($s, "reset", {name:"example"})
+    check($s.rc != 0 and tree_digest($s.root .. "/example") == $installed_before, "bad Reset keeps installed bytes")
+    $s = $l.request($s, "upgrade", {})
+    check($s.upgrades.example != nil and tree_digest($s.root .. "/example") == $installed_before, "bad upgrade keeps installed bytes")
+  finally
+    write_file($template_path, $valid_template)
+  end
   $s.panels = {right:{pages:["scene-example", "other"], page:"other", mode:"hidden", visible:false}}
   $host_state.panels = $s.panels
   $s = $l.request($s, "open", {name:"example"})

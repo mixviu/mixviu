@@ -494,6 +494,7 @@ impl SceneStore {
         let name = args["scene"].as_str().unwrap_or_default();
         match kind {
             SceneCommand::Validate => {
+                viu::design_admission::validate_desk_theme().map_err(|error| json!({"error_code":"DESIGN_VALIDATION","error":error}))?;
                 let document = scene::parse(body).map_err(|d| json!({"diagnostics":d}))?;
                 check_size(&document)?;
                 let diagnostics = scene::lint(&document);

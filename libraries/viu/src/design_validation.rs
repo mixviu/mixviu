@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Host-owned, report-only design validation. No Mix evaluator runs here.
-use std::{collections::{BTreeMap, BTreeSet}, sync::{Arc, mpsc}};
 use design::{DesignContext, DesignSourceDocument};
 use serde_json::{Value, json};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::{Arc, mpsc},
+};
 
-type Task = (String, Arc<DesignSourceDocument>, DesignContext);
+type Task = (String, Arc<DesignSourceDocument>, DesignContext, Option<std::path::PathBuf>);
 
 #[derive(Default)]
 pub(crate) struct Validation {
-    seen: BTreeSet<(String, DesignContext)>,
+    seen: BTreeSet<String>,
     pending: Vec<Task>,
     sender: Option<mpsc::Sender<Task>>,
     receiver: Option<mpsc::Receiver<(String, Option<String>)>>,
@@ -20,18 +23,14 @@ pub(crate) struct Validation {
 impl Validation {
     pub fn observe(&mut self, theme: &toolkit::Theme) {
         if let Some(error) = theme.load_error() {
-            self.refused(theme.load_source_digest().unwrap_or("unreadable-source"), error);
+            self.refused(
+                theme.load_source_digest().unwrap_or("unreadable-source"),
+                error,
+            );
         }
-        let key = (theme.source_digest().to_owned(), theme.context().clone());
-        if self.seen.insert(key.clone()) {
-            self.pending.push((key.0, theme.source_document(), key.1));
-        }
-    }
-
-    pub fn observe_document(&mut self, document: Arc<DesignSourceDocument>, context: DesignContext) {
-        let digest = design::document_digest(&document);
-        if self.seen.insert((digest.clone(), context.clone())) {
-            self.pending.push((digest, document, context));
+        let digest = theme.source_digest().to_owned();
+        if self.seen.insert(digest.clone()) {
+            self.pending.push((digest, theme.source_document(), theme.context().clone(), theme.source_path().map(std::path::Path::to_owned)));
         }
     }
 
@@ -41,20 +40,54 @@ impl Validation {
         if self.sender.is_none() {
             let (tx, tasks) = mpsc::channel::<Task>();
             let (answers, rx) = mpsc::channel();
-            std::thread::Builder::new().name("design-report".into()).spawn(move || {
-                for (digest, document, context) in tasks {
-                    let error = match design::compile_design(&document, context) {
-                        design::DesignCompileResult::Success(_) => None,
-                        design::DesignCompileResult::Fatal(failure) => Some(format!("{:?}", failure.diagnostics)),
-                    };
-                    if answers.send((digest, error)).is_err() { break; }
-                }
-            }).expect("start design report worker");
+            std::thread::Builder::new()
+                .name("design-report".into())
+                .spawn(move || {
+                    let mut files = BTreeMap::<std::path::PathBuf, String>::new();
+                    loop {
+                        match tasks.recv_timeout(std::time::Duration::from_millis(500)) {
+                            Ok((digest, document, context, path)) => {
+                                if let Some(path) = path {
+                                    files.entry(path).or_default();
+                                } else {
+                                    let error = match design::compile_design(&document, context) {
+                                        design::DesignCompileResult::Success(_) => None,
+                                        design::DesignCompileResult::Fatal(failure) => Some(format!("{:?}", failure.diagnostics)),
+                                    };
+                                    if answers.send((digest, error)).is_err() { break; }
+                                    continue;
+                                }
+                            }
+                            Err(mpsc::RecvTimeoutError::Timeout) => {},
+                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        }
+                        for (path, previous) in &mut files {
+                            let read = std::fs::read_to_string(path);
+                            let digest = match &read {
+                                Ok(source) => design::source_digest(source),
+                                Err(error) => design::source_digest(&format!("{}:{error}", path.display())),
+                            };
+                            if *previous == digest { continue; }
+                            *previous = digest.clone();
+                            let error = read.map_err(|e| e.to_string()).and_then(|source| {
+                                let theme = toolkit::Theme::from_source("design-report", &source).map_err(|e| e.to_string())?;
+                                match design::compile_design(&theme.source_document(), theme.context().clone()) {
+                                    design::DesignCompileResult::Success(_) => Ok(()),
+                                    design::DesignCompileResult::Fatal(failure) => Err(format!("{:?}", failure.diagnostics)),
+                                }
+                            }).err();
+                            if answers.send((digest, error)).is_err() { return; }
+                        }
+                    }
+                })
+                .expect("start design report worker");
             self.sender = Some(tx);
             self.receiver = Some(rx);
         }
         for task in self.pending.drain(..) {
-            if self.sender.as_ref().unwrap().send(task).is_ok() { self.outstanding += 1; }
+            if self.sender.as_ref().unwrap().send(task).is_ok() {
+                self.outstanding += 1;
+            }
         }
     }
 
@@ -72,7 +105,7 @@ impl Validation {
 
     pub fn refused(&mut self, digest: &str, error: &str) {
         if self.notice != error {
-            tracing::warn!(source_digest=digest, error, "design context refused");
+            tracing::warn!(source_digest = digest, error, "design context refused");
         }
         self.notice = error.into();
         self.errors.insert(digest.into(), error.into());
@@ -95,6 +128,14 @@ pub(crate) fn observe(ctx: &egui::Context, theme: &toolkit::Theme) {
 }
 
 pub(crate) fn drain(ctx: &egui::Context, validation: &mut Validation) {
-    let inputs = ctx.data_mut(|data| data.remove_temp::<BTreeMap<String, toolkit::Theme>>(egui::Id::unique("viu-design-report-inputs"))).unwrap_or_default();
-    for theme in inputs.values() { validation.observe(theme); }
+    let inputs = ctx
+        .data_mut(|data| {
+            data.remove_temp::<BTreeMap<String, toolkit::Theme>>(egui::Id::unique(
+                "viu-design-report-inputs",
+            ))
+        })
+        .unwrap_or_default();
+    for theme in inputs.values() {
+        validation.observe(theme);
+    }
 }

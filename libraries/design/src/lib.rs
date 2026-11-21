@@ -86,7 +86,10 @@ pub fn source_digest(source: &str) -> String {
 /// Paths and diagnostic labels are deliberately excluded. This is a digest of
 /// the parsed content rather than formatting, so whitespace edits share identity.
 pub fn document_digest(document: &DesignSourceDocument) -> String {
-    source_digest(&format!("{:?}{:?}{:?}", document.legacy, document.v1, document.presentation))
+    source_digest(&format!(
+        "{:?}{:?}{:?}",
+        document.legacy, document.v1, document.presentation
+    ))
 }
 pub use context::{
     AccentChoice, CaptionSide, Colour8, Contrast, Decorations, DesignContext, MenuSide, MenuStyle,

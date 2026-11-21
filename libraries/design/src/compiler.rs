@@ -137,17 +137,60 @@ mod context_validation_tests {
 
     #[test]
     fn requested_context_is_validated_but_unused_failure_is_deferred() {
-        let mut document = crate::parse_design_source(SourceIdentity::new("context-control"), crate::EMBEDDED_DEFAULT_SOURCE).unwrap();
+        let mut document = crate::parse_design_source(
+            SourceIdentity::new("context-control"),
+            crate::EMBEDDED_DEFAULT_SOURCE,
+        )
+        .unwrap();
         let before = crate::document_digest(&document);
         let mut pair = document.v1.semantics.pairs["base"].clone();
-        let crate::PairSource::Authored(ref mut pair_value) = pair else { panic!("authored base"); };
+        let crate::PairSource::Authored(ref mut pair_value) = pair else {
+            panic!("authored base");
+        };
         pair_value.foreground = "missing.context-control".into();
-        let block = document.v1.modifiers.iter_mut().find(|m| m.when.get(&ModifierAxis::Scheme).is_some_and(|v| v == "studio") && m.when.get(&ModifierAxis::Mode).is_some_and(|v| v == "light")).unwrap();
+        let block = document
+            .v1
+            .modifiers
+            .iter_mut()
+            .find(|m| {
+                m.when
+                    .get(&ModifierAxis::Scheme)
+                    .is_some_and(|v| v == "studio")
+                    && m.when
+                        .get(&ModifierAxis::Mode)
+                        .is_some_and(|v| v == "light")
+            })
+            .unwrap();
         block.semantics.pairs.insert("base".into(), pair);
-        assert_ne!(before, crate::document_digest(&document), "same label cannot reuse a different source's validation");
-        assert!(matches!(compile_design_context(&document, DesignContext::default()), DesignCompileResult::Success(_)));
-        assert!(matches!(compile_design(&document, DesignContext::default()), DesignCompileResult::Fatal(_)), "write-time whole-source negative control");
-        assert!(matches!(compile_design_context(&document, DesignContext { mode: Mode::Light, ..Default::default() }), DesignCompileResult::Fatal(_)), "first use must not bypass validation");
+        assert_ne!(
+            before,
+            crate::document_digest(&document),
+            "same label cannot reuse a different source's validation"
+        );
+        assert!(matches!(
+            compile_design_context(&document, DesignContext::default()),
+            DesignCompileResult::Success(_)
+        ));
+        assert!(
+            matches!(
+                compile_design(&document, DesignContext::default()),
+                DesignCompileResult::Fatal(_)
+            ),
+            "write-time whole-source negative control"
+        );
+        assert!(
+            matches!(
+                compile_design_context(
+                    &document,
+                    DesignContext {
+                        mode: Mode::Light,
+                        ..Default::default()
+                    }
+                ),
+                DesignCompileResult::Fatal(_)
+            ),
+            "first use must not bypass validation"
+        );
     }
 }
 
