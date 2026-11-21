@@ -2,91 +2,276 @@ use crate::{Error, Result, children, element, uint, vint};
 
 #[derive(Debug, Default)]
 pub struct Track<'a> {
-    pub number:u64, pub kind:u64, pub codec:&'a str, pub codec_private:&'a [u8],
-    pub codec_delay_ns:u64, pub seek_pre_roll_ns:u64,
+    pub number: u64,
+    pub kind: u64,
+    pub codec: &'a str,
+    pub codec_private: &'a [u8],
+    pub codec_delay_ns: u64,
+    pub seek_pre_roll_ns: u64,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Packet<'a> {
-    pub track:u64,
+    pub track: u64,
     /// Signed container ticks, before subtracting CodecDelay. Multiply by scale_ns.
-    pub timestamp:i64, pub key_frame:bool, pub data:&'a [u8],
+    pub timestamp: i64,
+    pub key_frame: bool,
+    pub data: &'a [u8],
 }
 #[derive(Debug)]
-pub struct Cue { pub timestamp:u64, pub track:u64, pub cluster_position:u64 }
+pub struct Cue {
+    pub timestamp: u64,
+    pub track: u64,
+    pub cluster_position: u64,
+}
 /// Zero-copy finite-file reader. Metadata/index storage is bounded by input
 /// length. Unknown IDs are skipped without recursion; unsupported lacing fails.
 pub struct Demuxer<'a> {
-    pub tracks:Vec<Track<'a>>, pub cues:Vec<Cue>, pub scale_ns:u64,
-    pub duration:Option<f64>, packets:Vec<Packet<'a>>, clusters:Vec<u64>, cursor:usize,
+    pub tracks: Vec<Track<'a>>,
+    pub cues: Vec<Cue>,
+    pub scale_ns: u64,
+    pub duration: Option<f64>,
+    packets: Vec<Packet<'a>>,
+    clusters: Vec<u64>,
+    cursor: usize,
 }
 impl<'a> Demuxer<'a> {
-    pub fn new(input:&'a [u8])->Result<Self> {
-        let mut p=0; let header=element(input,&mut p)?;
-        if header.id!=0x1a45dfa3 {return Err(Error::Invalid("missing EBML header"));}
-        let mut webm=false;
-        for e in children(header.data) {let e=e?; if e.id==0x4282 {webm=e.data==b"webm";} }
-        if !webm {return Err(Error::Invalid("not WebM"));}
-        let segment=element(input,&mut p)?;
-        if segment.id!=0x18538067 || p!=input.len() {return Err(Error::Invalid("expected one Segment"));}
-        let mut d=Self {tracks:Vec::new(),cues:Vec::new(),scale_ns:1_000_000,duration:None,packets:Vec::new(),clusters:Vec::new(),cursor:0};
-        for e in children(segment.data) {
-            let e=e?;
-            match e.id {
-                0x1549a966 => for c in children(e.data) { let c=c?; match c.id {
-                    0x2ad7b1 => { d.scale_ns=uint(c.data)?; if d.scale_ns==0 {return Err(Error::Invalid("zero scale"));} },
-                    0x4489 => {let v=match c.data.len() {4=>f32::from_be_bytes(c.data.try_into().map_err(|_|Error::Truncated)?) as f64,8=>f64::from_be_bytes(c.data.try_into().map_err(|_|Error::Truncated)?),_=>return Err(Error::Invalid("float size"))}; if !v.is_finite() || v<0.0 {return Err(Error::Invalid("duration"));} d.duration=Some(v);}, _=>{} }
-                },
-                0x1654ae6b => for c in children(e.data) {let c=c?; if c.id!=0xae {continue;} let mut t=Track::default();
-                    for f in children(c.data) {let f=f?; match f.id {
-                        0xd7=>t.number=uint(f.data)?,0x83=>t.kind=uint(f.data)?,0x86=>t.codec=std::str::from_utf8(f.data).map_err(|_|Error::Invalid("codec UTF-8"))?,0x63a2=>t.codec_private=f.data,0x56aa=>t.codec_delay_ns=uint(f.data)?,0x56bb=>t.seek_pre_roll_ns=uint(f.data)?,_=>{}
-                    }}
-                    if t.number==0 || t.codec.is_empty() || d.tracks.iter().any(|x|x.number==t.number) {return Err(Error::Invalid("invalid track"));} d.tracks.push(t);
-                },
-                0x1f43b675 => {
-                    let mut base=0;
-                    // Timestamp may occur after a block in a valid master.
-                    for c in children(e.data) {let c=c?; if c.id==0xe7 {base=i64::try_from(uint(c.data)?).map_err(|_|Error::SizeOverflow)?;} }
-                    for c in children(e.data) {let c=c?; match c.id {
-                        0xa3=>d.block(c.data,base,None,e.start as u64)?,
-                        0xa0=>{let mut block=None;let mut reference=false;
-                            for f in children(c.data) {let f=f?; match f.id {0xa1=>block=Some(f.data),0xfb=>reference=true,_=>{}}}
-                            d.block(block.ok_or(Error::Invalid("BlockGroup missing Block"))?,base,Some(!reference),e.start as u64)?;
-                        },_=>{}
-                    }}
-                },
-                0x1c53bb6b => for c in children(e.data) {let c=c?; if c.id!=0xbb {continue;} let mut time=None;let mut positions=Vec::new();
-                    for f in children(c.data) {let f=f?; match f.id {
-                        0xb3=>time=Some(uint(f.data)?),
-                        0xb7=>{let mut track=0;let mut pos=None;for v in children(f.data) {let v=v?;match v.id {0xf7=>track=uint(v.data)?,0xf1=>pos=Some(uint(v.data)?),_=>{}}} positions.push((track,pos.ok_or(Error::Invalid("cue position"))?));},_=>{}
-                    }}
-                    for (track,pos) in positions {d.cues.push(Cue{timestamp:time.ok_or(Error::Invalid("cue time"))?,track,cluster_position:pos});}
-                },_=>{}
+    pub fn new(input: &'a [u8]) -> Result<Self> {
+        let mut p = 0;
+        let header = element(input, &mut p)?;
+        if header.id != 0x1a45dfa3 {
+            return Err(Error::Invalid("missing EBML header"));
+        }
+        let mut webm = false;
+        for e in children(header.data) {
+            let e = e?;
+            if e.id == 0x4282 {
+                webm = e.data == b"webm";
             }
         }
-        if d.tracks.is_empty() || d.packets.iter().any(|p|!d.tracks.iter().any(|t|t.number==p.track)) {return Err(Error::Invalid("missing packet track"));}
+        if !webm {
+            return Err(Error::Invalid("not WebM"));
+        }
+        let segment = element(input, &mut p)?;
+        if segment.id != 0x18538067 || p != input.len() {
+            return Err(Error::Invalid("expected one Segment"));
+        }
+        let mut d = Self {
+            tracks: Vec::new(),
+            cues: Vec::new(),
+            scale_ns: 1_000_000,
+            duration: None,
+            packets: Vec::new(),
+            clusters: Vec::new(),
+            cursor: 0,
+        };
+        for e in children(segment.data) {
+            let e = e?;
+            match e.id {
+                0x1549a966 => {
+                    for c in children(e.data) {
+                        let c = c?;
+                        match c.id {
+                            0x2ad7b1 => {
+                                d.scale_ns = uint(c.data)?;
+                                if d.scale_ns == 0 {
+                                    return Err(Error::Invalid("zero scale"));
+                                }
+                            }
+                            0x4489 => {
+                                let v = match c.data.len() {
+                                    4 => f32::from_be_bytes(
+                                        c.data.try_into().map_err(|_| Error::Truncated)?,
+                                    ) as f64,
+                                    8 => f64::from_be_bytes(
+                                        c.data.try_into().map_err(|_| Error::Truncated)?,
+                                    ),
+                                    _ => return Err(Error::Invalid("float size")),
+                                };
+                                if !v.is_finite() || v < 0.0 {
+                                    return Err(Error::Invalid("duration"));
+                                }
+                                d.duration = Some(v);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                0x1654ae6b => {
+                    for c in children(e.data) {
+                        let c = c?;
+                        if c.id != 0xae {
+                            continue;
+                        }
+                        let mut t = Track::default();
+                        for f in children(c.data) {
+                            let f = f?;
+                            match f.id {
+                                0xd7 => t.number = uint(f.data)?,
+                                0x83 => t.kind = uint(f.data)?,
+                                0x86 => {
+                                    t.codec = std::str::from_utf8(f.data)
+                                        .map_err(|_| Error::Invalid("codec UTF-8"))?
+                                }
+                                0x63a2 => t.codec_private = f.data,
+                                0x56aa => t.codec_delay_ns = uint(f.data)?,
+                                0x56bb => t.seek_pre_roll_ns = uint(f.data)?,
+                                _ => {}
+                            }
+                        }
+                        if t.number == 0
+                            || t.codec.is_empty()
+                            || d.tracks.iter().any(|x| x.number == t.number)
+                        {
+                            return Err(Error::Invalid("invalid track"));
+                        }
+                        d.tracks.push(t);
+                    }
+                }
+                0x1f43b675 => {
+                    let mut base = 0;
+                    // Timestamp may occur after a block in a valid master.
+                    for c in children(e.data) {
+                        let c = c?;
+                        if c.id == 0xe7 {
+                            base = i64::try_from(uint(c.data)?).map_err(|_| Error::SizeOverflow)?;
+                        }
+                    }
+                    for c in children(e.data) {
+                        let c = c?;
+                        match c.id {
+                            0xa3 => d.block(c.data, base, None, e.start as u64)?,
+                            0xa0 => {
+                                let mut block = None;
+                                let mut reference = false;
+                                for f in children(c.data) {
+                                    let f = f?;
+                                    match f.id {
+                                        0xa1 => block = Some(f.data),
+                                        0xfb => reference = true,
+                                        _ => {}
+                                    }
+                                }
+                                d.block(
+                                    block.ok_or(Error::Invalid("BlockGroup missing Block"))?,
+                                    base,
+                                    Some(!reference),
+                                    e.start as u64,
+                                )?;
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                0x1c53bb6b => {
+                    for c in children(e.data) {
+                        let c = c?;
+                        if c.id != 0xbb {
+                            continue;
+                        }
+                        let mut time = None;
+                        let mut positions = Vec::new();
+                        for f in children(c.data) {
+                            let f = f?;
+                            match f.id {
+                                0xb3 => time = Some(uint(f.data)?),
+                                0xb7 => {
+                                    let mut track = 0;
+                                    let mut pos = None;
+                                    for v in children(f.data) {
+                                        let v = v?;
+                                        match v.id {
+                                            0xf7 => track = uint(v.data)?,
+                                            0xf1 => pos = Some(uint(v.data)?),
+                                            _ => {}
+                                        }
+                                    }
+                                    positions
+                                        .push((track, pos.ok_or(Error::Invalid("cue position"))?));
+                                }
+                                _ => {}
+                            }
+                        }
+                        for (track, pos) in positions {
+                            d.cues.push(Cue {
+                                timestamp: time.ok_or(Error::Invalid("cue time"))?,
+                                track,
+                                cluster_position: pos,
+                            });
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        if d.tracks.is_empty()
+            || d.packets
+                .iter()
+                .any(|p| !d.tracks.iter().any(|t| t.number == p.track))
+        {
+            return Err(Error::Invalid("missing packet track"));
+        }
         // Validate cue targets now; seek never trusts an arbitrary byte offset.
         for cue in &d.cues {
-            let valid=d.packets.iter().zip(&d.clusters).any(|(p,c)|*c==cue.cluster_position && p.track==cue.track && p.key_frame && p.timestamp>=0 && p.timestamp as u64==cue.timestamp);
-            if !valid {return Err(Error::Invalid("cue does not target a keyframe"));}
+            let valid = d.packets.iter().zip(&d.clusters).any(|(p, c)| {
+                *c == cue.cluster_position
+                    && p.track == cue.track
+                    && p.key_frame
+                    && p.timestamp >= 0
+                    && p.timestamp as u64 == cue.timestamp
+            });
+            if !valid {
+                return Err(Error::Invalid("cue does not target a keyframe"));
+            }
         }
         Ok(d)
     }
-    fn block(&mut self,b:&'a [u8],base:i64,key:Option<bool>,cluster:u64)->Result<()> {
-        let mut p=0; let (track,unknown)=vint(b,&mut p,false)?;
-        if unknown || track==0 {return Err(Error::Invalid("block track"));}
-        let hdr=b.get(p..p+3).ok_or(Error::Truncated)?;
-        if hdr[2]&6!=0 {return Err(Error::UnsupportedLacing);}
-        let timestamp=base.checked_add(i16::from_be_bytes([hdr[0],hdr[1]]) as i64).ok_or(Error::SizeOverflow)?;
-        self.packets.push(Packet {track,timestamp,key_frame:key.unwrap_or(hdr[2]&128!=0),data:&b[p+3..]}); self.clusters.push(cluster); Ok(())
+    fn block(&mut self, b: &'a [u8], base: i64, key: Option<bool>, cluster: u64) -> Result<()> {
+        let mut p = 0;
+        let (track, unknown) = vint(b, &mut p, false)?;
+        if unknown || track == 0 {
+            return Err(Error::Invalid("block track"));
+        }
+        let hdr = b.get(p..p + 3).ok_or(Error::Truncated)?;
+        if hdr[2] & 6 != 0 {
+            return Err(Error::UnsupportedLacing);
+        }
+        let timestamp = base
+            .checked_add(i16::from_be_bytes([hdr[0], hdr[1]]) as i64)
+            .ok_or(Error::SizeOverflow)?;
+        self.packets.push(Packet {
+            track,
+            timestamp,
+            key_frame: key.unwrap_or(hdr[2] & 128 != 0),
+            data: &b[p + 3..],
+        });
+        self.clusters.push(cluster);
+        Ok(())
     }
-    pub fn packets(&self)->&[Packet<'a>] {&self.packets}
-    pub fn next_packet(&mut self)->Option<Packet<'a>> {let p=self.packets.get(self.cursor)?.clone();self.cursor+=1;Some(p)}
+    pub fn packets(&self) -> &[Packet<'a>] {
+        &self.packets
+    }
+    pub fn next_packet(&mut self) -> Option<Packet<'a>> {
+        let p = self.packets.get(self.cursor)?.clone();
+        self.cursor += 1;
+        Some(p)
+    }
     /// Position at the video keyframe at or before a container tick. None before
     /// the first cue, or if the file has no video cue. Audio preroll is the caller's job.
-    pub fn seek(&mut self,timestamp:u64)->Option<u64> {
-        let video=self.tracks.iter().find(|t|t.kind==1)?.number;
-        let cue=self.cues.iter().filter(|c|c.track==video && c.timestamp<=timestamp).max_by_key(|c|c.timestamp)?;
-        let index=self.packets.iter().zip(&self.clusters).position(|(p,c)|*c==cue.cluster_position && p.track==video && p.key_frame && p.timestamp>=0 && p.timestamp as u64==cue.timestamp)?;
-        self.cursor=index; Some(cue.timestamp)
+    pub fn seek(&mut self, timestamp: u64) -> Option<u64> {
+        let video = self.tracks.iter().find(|t| t.kind == 1)?.number;
+        let cue = self
+            .cues
+            .iter()
+            .filter(|c| c.track == video && c.timestamp <= timestamp)
+            .max_by_key(|c| c.timestamp)?;
+        let index = self.packets.iter().zip(&self.clusters).position(|(p, c)| {
+            *c == cue.cluster_position
+                && p.track == video
+                && p.key_frame
+                && p.timestamp >= 0
+                && p.timestamp as u64 == cue.timestamp
+        })?;
+        self.cursor = index;
+        Some(cue.timestamp)
     }
 }

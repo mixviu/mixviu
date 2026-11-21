@@ -19,45 +19,70 @@ impl std::fmt::Display for Error {
 }
 impl std::error::Error for Error {}
 impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self { Self::Io(e) }
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(e)
+    }
 }
 type Result<T> = std::result::Result<T, Error>;
 
 fn vint(b: &[u8], p: &mut usize, id: bool) -> Result<(u64, bool)> {
     let first = *b.get(*p).ok_or(Error::Truncated)?;
     let n = first.leading_zeros() as usize + 1;
-    if n > if id { 4 } else { 8 } { return Err(Error::SizeOverflow); }
+    if n > if id { 4 } else { 8 } {
+        return Err(Error::SizeOverflow);
+    }
     let end = p.checked_add(n).ok_or(Error::SizeOverflow)?;
     let bytes = b.get(*p..end).ok_or(Error::Truncated)?;
-    let mut v = if id { first as u64 } else { (first & (0xff >> n)) as u64 };
-    for byte in &bytes[1..] { v = (v << 8) | *byte as u64; }
+    let mut v = if id {
+        first as u64
+    } else {
+        (first as u64) & (0xffu64 >> n)
+    };
+    for byte in &bytes[1..] {
+        v = (v << 8) | *byte as u64;
+    }
     *p = end;
-    Ok((v, !id && v == (1u64 << (7*n)) - 1))
+    Ok((v, !id && v == (1u64 << (7 * n)) - 1))
 }
-struct Element<'a> { id: u64, data: &'a [u8], start: usize }
+struct Element<'a> {
+    id: u64,
+    data: &'a [u8],
+    start: usize,
+}
 fn element<'a>(b: &'a [u8], p: &mut usize) -> Result<Element<'a>> {
     let start = *p;
-    let (id, _) = vint(b,p,true)?;
-    let (size, unknown) = vint(b,p,false)?;
+    let (id, _) = vint(b, p, true)?;
+    let (size, unknown) = vint(b, p, false)?;
     let body = *p;
-    if unknown && id != 0x18538067 { return Err(Error::Invalid("unknown size only supported for Segment")); }
-    let end = if unknown { b.len() } else {
-        body.checked_add(usize::try_from(size).map_err(|_| Error::SizeOverflow)?).ok_or(Error::SizeOverflow)?
+    if unknown && id != 0x18538067 {
+        return Err(Error::Invalid("unknown size only supported for Segment"));
+    }
+    let end = if unknown {
+        b.len()
+    } else {
+        body.checked_add(usize::try_from(size).map_err(|_| Error::SizeOverflow)?)
+            .ok_or(Error::SizeOverflow)?
     };
     let data = b.get(body..end).ok_or(Error::Truncated)?;
     *p = end;
     Ok(Element { id, data, start })
 }
 fn uint(b: &[u8]) -> Result<u64> {
-    if b.is_empty() || b.len()>8 { return Err(Error::SizeOverflow); }
-    Ok(b.iter().fold(0, |v,b| (v<<8) | *b as u64))
+    if b.is_empty() || b.len() > 8 {
+        return Err(Error::SizeOverflow);
+    }
+    Ok(b.iter().fold(0, |v, b| (v << 8) | *b as u64))
 }
-fn children(b: &[u8]) -> impl Iterator<Item=Result<Element<'_>>> {
-    let mut p=0;
+fn children(b: &[u8]) -> impl Iterator<Item = Result<Element<'_>>> {
+    let mut p = 0;
     std::iter::from_fn(move || {
-        if p==b.len() { return None; }
-        let r=element(b,&mut p);
-        if r.is_err() { p=b.len(); }
+        if p == b.len() {
+            return None;
+        }
+        let r = element(b, &mut p);
+        if r.is_err() {
+            p = b.len();
+        }
         Some(r)
     })
 }

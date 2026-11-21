@@ -26,6 +26,9 @@ fn mux(packets:&[media_av1::Packet],width:u32,height:u32,audio:&Demuxer<'_>)->Ve
 }
 #[test]
 fn roundtrip_and_oracles() {
+    let version=run("ffprobe",&["-v","error","-show_program_version","-of","json"]);
+    let version:serde_json::Value=serde_json::from_slice(&version).unwrap();
+    assert!(version["program_version"]["version"].as_str().unwrap().trim_start_matches('n').starts_with("9."),"ffmpeg 9 oracle required");
     let audio=Demuxer::new(include_bytes!("fixtures/sine.webm")).unwrap();
     let v=video(64,48,10); let bytes=mux(&v,64,48,&audio);
     let mut d=Demuxer::new(&bytes).unwrap();
@@ -50,6 +53,14 @@ fn roundtrip_and_oracles() {
     let oracle=j["packets"].as_array().unwrap();assert_eq!(r.packets().len(),oracle.len());
     for (p,o) in r.packets().iter().zip(oracle) {assert_eq!(p.timestamp,o["pts"].as_i64().unwrap());}
     assert_eq!(r.seek(390),Some(7));assert!(r.next_packet().unwrap().key_frame);
+    let independent=temp.path().join("independent.webm");let independent=independent.to_str().unwrap();
+    run("ffmpeg",&["-v","error","-f","lavfi","-i","testsrc2=size=64x48:rate=25:duration=0.4","-f","lavfi","-i","sine=frequency=440:sample_rate=48000:duration=0.3","-c:v","libaom-av1","-cpu-used","8","-g","5","-c:a","libopus",independent]);
+    let bytes=std::fs::read(independent).unwrap();let mut d=Demuxer::new(&bytes).unwrap();
+    let probe=run("ffprobe",&["-v","error","-show_packets","-of","json",independent]);let j:serde_json::Value=serde_json::from_slice(&probe).unwrap();
+    let oracle=j["packets"].as_array().unwrap();assert_eq!(d.packets().len(),oracle.len());
+    for (p,o) in d.packets().iter().zip(oracle) {assert_eq!(p.timestamp,o["pts"].as_i64().unwrap());assert_eq!(p.key_frame,o["flags"].as_str().unwrap().starts_with('K'));}
+    let want=d.packets().iter().filter(|p|p.track==1 && p.key_frame && p.timestamp<=300).map(|p|p.timestamp).max().unwrap() as u64;
+    assert_eq!(d.seek(300),Some(want));assert_eq!(d.next_packet().unwrap().timestamp,want as i64);
 }
 #[test]
 fn negative_inputs() {

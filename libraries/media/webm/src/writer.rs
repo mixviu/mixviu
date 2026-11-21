@@ -33,7 +33,7 @@ pub struct Writer<W> {
 }
 impl<W:Write+Seek> Writer<W> {
     pub fn new(mut out:W, video:Video, audio:Option<Opus>)->Result<Self> {
-        if out.stream_position()? != 0 || video.width==0 || video.height==0
+        if out.stream_position()? != 0 || out.seek(SeekFrom::End(0))? != 0 || video.width==0 || video.height==0
             || video.codec_private.len()<4 || video.codec_private[0]!=0x81
             || audio.as_ref().is_some_and(|a| !(1..=2).contains(&a.channels)) {
             return Err(Error::Invalid("invalid target or track configuration"));
