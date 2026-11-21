@@ -94,8 +94,7 @@ pub(crate) fn menu(
 }
 fn intrinsic_height(ui: &Ui) -> f32 {
     let vp = ui.ctx().viewport_id();
-    ui
-        .ctx()
+    ui.ctx()
         .data(|d| d.get_temp::<f32>(egui::Id::unique((vp, "viu.dock.intrinsic-height"))))
         .unwrap_or(ui.available_height())
 }
@@ -290,16 +289,21 @@ mod tests {
             let ctx = egui::Context::default();
             let output = ctx.run_ui(Default::default(), |ui| {
                 let vp = ui.ctx().viewport_id();
-                ui.ctx().data_mut(|d| d.insert_temp(
-                    egui::Id::unique((vp, "viu.dock.intrinsic-height")), 90.0_f32,
-                ));
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(
+                        egui::Id::unique((vp, "viu.dock.intrinsic-height")),
+                        90.0_f32,
+                    )
+                });
                 started_tx.send(()).unwrap();
                 assert_eq!(super::intrinsic_height(ui), 90.0);
             });
             output.drop_without_applying_deltas();
             let _ = tx.send(());
         });
-        started_rx.recv_timeout(std::time::Duration::from_secs(2)).expect("file tile frame did not start");
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("file tile frame did not start");
         rx.recv_timeout(std::time::Duration::from_secs(2))
             .expect("file tile height lookup did not return successfully");
     }
