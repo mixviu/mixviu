@@ -90,7 +90,7 @@ try
     end
   end
   write_file($tmp .. "/client.mix", '$body = json_parse($3)
-send $1 $2 body=json_encode($body) timeout=10
+send $1 $2 body=(type($body) == "string" ? $body : json_encode($body)) timeout=10
 $v = $result
 if type($v) == "string" then
   try $v = json_parse($v) catch $ignored end
@@ -135,10 +135,26 @@ print("PASS legacy app-call and scene runtime absence on the real Bus")
   wait_service("fakeshell")
   $children.loader = start("scenes", $loader_script)
   wait_service("scenes")
+  -- Cross the real Bus boundary: read validation retains the bare-source
+  -- contract, while stage_from must explicitly request write admission.
+  check(call("fakeshell", "fake.validation", {refuse_writes:true}).rc == 0, "arm write admission refusal")
+  $source = fixture_source("alpha", "old")
+  check(call("fakeshell", "shell.scene.validate", $source).rc == 0, "bare source stays read-only during write refusal")
+  check(call("fakeshell", "shell.scene.validate", {source:$source}).rc == 0, "map without write stays read-only")
+  check(call("fakeshell", "shell.scene.validate", {source:$source, write:false}).rc == 0, "explicit read map stays read-only")
+  check(call("fakeshell", "shell.scene.validate", {source:fixture_source("alpha", "BROKEN"), write:false}).rc == 10, "map source still gets scene validation")
+  $refused = call("scenes", "scenes.install", {template:"alpha"})
+  check($refused.rc == 10 and $refused.value.context.upstream.error_code == "DESIGN_VALIDATION", "stage_from carries write admission through the Bus: " .. json_encode($refused))
+  check(not is_dir($tmp .. "/scenes/alpha") and len(glob($tmp .. "/scenes/.stage-*")) == 0, "write refusal leaves no installation or staged copy")
+  $validation = call("fakeshell", "fake.state").value
+  check($validation.write_validations == 1 and $validation.read_validations == 4, "fake observed each request shape and the staged write")
+  check(call("fakeshell", "fake.validation", {refuse_writes:false}).rc == 0, "allow validated writes")
   for $name in ["alpha", "beta", "gamma", "removed"]
     $r = call("scenes", "scenes.install", {template:$name})
     check($r.rc == 0, "install " .. $name .. ": " .. json_encode($r))
   end
+  check(call("fakeshell", "fake.state").value.write_validations == 5, "every install requests write admission")
+  print("PASS scene validation Bus contract: bare/map reads; staged write refusal before placement; admitted installs")
   stop($children.loader)
   stop($children.host)
   $children.host = nil

@@ -48,6 +48,15 @@ fn bad_desk_theme_reload_child() {
     let before = std::fs::read(&theme_path).unwrap();
     let mut store = SceneStore::default();
     let mut caller = mount("loader", 1);
+    // Both envelope forms retain read-only semantics with a bad desk theme.
+    for args in [json!({"source":TOAST}), json!({"source":TOAST,"write":false})] {
+        assert_eq!(
+            store
+                .dispatch(SceneCommand::Validate, "", &args, &mut caller)
+                .rc,
+            0
+        );
+    }
     // Exact native handler used by prepare_reload, remount, reload_group_once.
     for _ in 0..2 {
         assert_eq!(

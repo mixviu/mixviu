@@ -900,8 +900,9 @@
   },
   "shell.scene.validate": {
     "params": {
-      "body": "raw scene document"
+      "body": "raw scene document (read-only), or {source:string,write?:bool}; omitted write means false"
     },
+    "admission": "write:true additionally validates all desk-theme contexts; only install, upgrade and Reset request it. Reload and remount use read-only validation. Refused admission returns rc 10 DESIGN_VALIDATION before placement.",
     "reply": "{scene:string,valid:true,diagnostics:Diagnostic[]}",
     "source": "engines/viu/src/store.rs:483"
   },

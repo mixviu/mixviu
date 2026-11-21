@@ -64,6 +64,13 @@ Write-time gates retain whole-source validation:
   match the bundle. The validator is a headless compiler path. Build `viu`
   beside the bundle's `mix`; the bundle and environment gate modes do this.
 
+The `shell.scene.validate` Bus body accepts either bare scene source or
+`{source, write?}`. Bare source and an omitted or false `write` are read-only;
+only `write:true` opts into whole-source desk-theme admission. Both forms still
+parse and validate the scene. The native host and all test hosts implement
+both forms; the boot-upgrade test crosses the Bus with the staging envelope
+and checks that a refused write leaves no installed tree or staging copy.
+
 Admission results have a bounded cache keyed by the digest of authored content.
 Admission's parsed-document digests include programmatic edits and exclude
 diagnostic labels. Runtime diagnostics use source-byte digests consistently:

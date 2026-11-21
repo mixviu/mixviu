@@ -17,7 +17,7 @@ $OWNER = env("FAKE_SHELL_OWNER", "scenes")
 $ME = serve_name() ?? "fakeshell"
 if $ME == "shell" then raise("FAKE_SHELL", "serve this fake under another name; shell.props.get is reserved for a citizen named shell") end
 $EDGES = ["left", "right", "top", "bottom"]
-$st = {generation:1, revision:1, counter:0, published:"", scenes:{}, dialog:nil, panels:{}}
+$st = {generation:1, revision:1, counter:0, published:"", scenes:{}, dialog:nil, panels:{}, refuse_writes:false, read_validations:0, write_validations:0}
 for each $edge in $EDGES
   $st.panels[$edge] = {visible:false, pinned:false, mode:"hidden", page:nil, pages:[], declared:[], width_px:$edge == "bottom" ? 52 : 400, output:"FAKE-1"}
 end
@@ -68,11 +68,24 @@ end
 
 on shell.scene.validate
   note("shell.scene.validate")
-  if contains($event.body, "BROKEN") then
+  -- Bare source is read-only; the staged-write envelope opts into admission.
+  $a = $event.args ?? $event.body
+  $source = type($a) == "map" ? $a.source : $a
+  $write = type($a) == "map" and $a.write == true
+  if $write then
+    $st.write_validations = $st.write_validations + 1
+    if $st.refuse_writes then
+      refuse("DESIGN_VALIDATION", "fixture write admission refused")
+      return
+    end
+  else
+    $st.read_validations = $st.read_validations + 1
+  end
+  if contains($source, "BROKEN") then
     reply(10, json_encode({error_code:"scene_invalid", message:"invalid document", diagnostics:[{line:7, code:"mix-parse", severity:"Error", message:"parse"}]}))
     return
   end
-  $loader.document($event.body)
+  $loader.document($source)
   reply(0, json_encode({diagnostics:[]}))
 end
 
@@ -240,6 +253,11 @@ end
 
 on fake.state
   reply(0, json_encode($st))
+end
+
+on fake.validation
+  $st.refuse_writes = req().refuse_writes == true
+  reply(0, json_encode({refuse_writes:$st.refuse_writes}))
 end
 
 $st.published = json_encode({dialog:$st.dialog, panels:$st.panels})
