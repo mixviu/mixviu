@@ -3239,6 +3239,12 @@ pub mod test_support {
         pub fn ready(&self) -> bool {
             self.host.ready && self.host.bus.client().is_some()
         }
+        pub fn callbacks_idle(&self) -> bool {
+            self.host.inflight.is_empty()
+                && self.host.ui_inflight.is_empty()
+                && self.host.jobs.pending() == 0
+                && self.host.job_results.is_empty()
+        }
         pub fn windowed(&mut self) {
             self.host.headless = false;
         }

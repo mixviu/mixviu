@@ -75,6 +75,15 @@ fn call(
     command: &str,
     args: Value,
 ) -> (u8, Value) {
+    // This fixture asserts diagnostic contents, not cold-start latency (the
+    // port-appearance regression owns that claim). Drain discovery first;
+    // retain the real one-second Bus call deadline below.
+    let until = Instant::now() + Duration::from_secs(30);
+    while !host.callbacks_idle() {
+        host.pump();
+        assert!(Instant::now() < until, "fixture callbacks did not drain");
+        std::thread::sleep(Duration::from_millis(2));
+    }
     let client = rt
         .block_on(bus::SupervisedClient::connect_options("design-test", url).connect())
         .unwrap();
