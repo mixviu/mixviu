@@ -114,9 +114,10 @@ multiple scenes of up to 3,600 seconds each.
 
 The generic host's `presentation.clock` drives `viu.presentation {time,serial}`
 from the render clock. Mix samples elapsed time from that clock, never from
-timers or a separate video clock. Only playing requests another frame.
-`finished` means the end sample was published; compositor recording and
-presentation acceptance are separate evidence.
+timers or a separate video clock. Playing or awaiting the final drawn serial
+requests another frame. `finished` waits for that serial's client draw
+acknowledgement; compositor recording and presentation acceptance are separate
+evidence. Caller cancellation cannot disarm this final draw.
 
 The generic presentation model also accepts `presentation.scene` (a complete
 scene document) and `presentation.size` (two logical dimensions). This mounts

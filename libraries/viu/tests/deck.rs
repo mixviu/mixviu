@@ -295,7 +295,12 @@ fn play_replies_immediately_and_survives_caller_cancellation_past_180_seconds() 
         true
     );
     let end = deck.call("viu.presentation", json!({"time":3700}));
-    assert_eq!(end.model.unwrap()["presentation"]["clock"], false);
+    let model=end.model.unwrap();
+    assert_eq!(model["presentation"]["clock"],true);
+    assert_eq!(deck.call("deck.state",json!({})).reply.unwrap().body["finished"],false);
+    deck.call("viu.call.cancelled",json!({"token":token}));
+    let ack=deck.call("viu.presentation",json!({"time":3700.1,"serial":model["presentation"]["serial"]}));
+    assert_eq!(ack.model.unwrap()["presentation"]["clock"],false);
     let state = deck.call("deck.state", json!({})).reply.unwrap().body;
     assert_eq!(state["finished"], true);
     assert_eq!(state["play_id"], reply.body["play_id"]);
@@ -359,13 +364,16 @@ fn play_samples_delays_and_freezes_the_last_sample() {
         (102., 1, true),
         (104., 0, true),
         (106., 1, true),
-        (108., 1, false),
+        (108., 1, true),
     ] {
         let done = deck.call("viu.presentation", json!({"time":at}));
         let model = done.model.unwrap();
         assert_eq!(model["presentation"]["clock"], clock);
-        let mut out = frame(model).1;
+        let mut out = frame(model.clone()).1;
         out.textures_delta.clear();
+        if at==108. {
+            deck.call("viu.presentation",json!({"time":108.1,"serial":model["presentation"]["serial"]}));
+        }
         let state = deck.call("deck.state", json!({})).reply.unwrap().body;
         assert_eq!(state["step"], step);
     }

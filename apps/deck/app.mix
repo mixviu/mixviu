@@ -1,7 +1,12 @@
 -- host: viu
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- version: 0.1.0
-$core=require("core.mix");$ctx=viu_context();$state={s:$core.fresh(),serial:0,scope:nil}
+$core=require("core.mix");$ctx=viu_context();$state={s:$core.fresh(),serial:0,scope:nil,finish_serial:nil}
+fn current_state()
+  $out=$core.snapshot($state.s)
+  if $state.finish_serial!=nil then $out.finished=false end
+  return $out
+end
 fn show_deck()
   if $state.s.deck==nil then return end
   $build=$core.build_state($state.s)
@@ -13,7 +18,7 @@ fn show_deck()
     end
   end
   $state.serial=$state.serial+1
-  $model={build:$build,presentation:{scene:$core.scene_source($state.s.deck.slides[$state.s.slide]),size:[1600,900],clock:$state.s.playing,serial:$state.serial}}
+  $model={build:$build,presentation:{scene:$core.scene_source($state.s.deck.slides[$state.s.slide]),size:[1600,900],clock:$state.s.playing or $state.finish_serial!=nil,serial:$state.serial}}
   send "viu-local" "scenes.model" body={generation:$ctx.generation,value:$model}
   if $rc!=0 then raise("DECK_PRESENT","native model refused") end
 end
@@ -29,7 +34,7 @@ fn actions()
   return $rows
 end
 fn perform($id,$a)
-  if $id=="deck.state" then $core.check_fields($a,[],"state");return $core.snapshot($state.s) end
+  if $id=="deck.state" then $core.check_fields($a,[],"state");return current_state() end
   if $id=="deck.open" then
     $core.check_fields($a,["path"],"open")
     if type($a.path)!="string" or not starts_with($a.path,"/") then raise("DECK_PATH","open.path: absolute path required") end
@@ -65,11 +70,11 @@ fn perform($id,$a)
   elif $id=="deck.prev" then $core.check_fields($a,[],"prev");$candidate=$core.advance($state.s,-1)
   elif $id=="deck.play" then $candidate=$core.play($state.s,$a)
   else raise("UNKNOWN_ACTION","unknown deck action") end
-  $state.s=$candidate;show_deck()
+  $state.finish_serial=nil;$state.s=$candidate;show_deck()
   if $id=="deck.play" then
     $state.s.play_id=$state.serial
   end
-  return $core.snapshot($state.s)
+  return current_state()
 end
 fn answer($id,$args)
   try reply(0,json_encode(perform($id,$args)))
@@ -92,8 +97,11 @@ on deck.execute
   catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
 end
 on viu.presentation
-  if $state.s.playing then
+  if $state.finish_serial!=nil and $event.args.serial==$state.finish_serial then
+    $state.finish_serial=nil;show_deck()
+  elif $state.s.playing then
     $state.s=$core.sample($state.s,$event.args.time)
+    if $state.s.finished then $state.finish_serial=$state.serial+1 end
     show_deck()
   end
 end
