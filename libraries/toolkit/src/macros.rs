@@ -1441,13 +1441,23 @@ mod tests {
         (temp, roots, entry)
     }
 
-    fn wait_until(mut predicate: impl FnMut() -> bool) {
+    #[track_caller]
+    fn wait_until(predicate: impl FnMut() -> bool) {
+        wait_until_or(predicate, String::new);
+    }
+
+    /// Like wait_until, but a timeout reports the caller's line and `state()`.
+    #[track_caller]
+    fn wait_until_or(mut predicate: impl FnMut() -> bool, state: impl FnOnce() -> String) {
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
         while !predicate() {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "timed out waiting for the macro worker"
-            );
+            if std::time::Instant::now() >= deadline {
+                panic!(
+                    "timed out waiting for the macro worker at {}: {}",
+                    std::panic::Location::caller(),
+                    state()
+                );
+            }
             std::thread::sleep(Duration::from_millis(5));
         }
     }
@@ -1662,8 +1672,22 @@ mod tests {
         state.run(entry.clone(), &egui::Context::default());
         let parent_file = entry.path.with_extension("mix.parent");
         let child_file = entry.path.with_extension("mix.child");
-        wait_until(|| std::fs::read_to_string(&child_file).is_ok_and(|s| !s.trim().is_empty()));
-        let parent: i32 = std::fs::read_to_string(parent_file)
+        let proc_stat = |pid: i32| {
+            std::fs::read_to_string(format!("/proc/{pid}/stat"))
+                .unwrap_or_else(|e| format!("<{e}>"))
+        };
+        wait_until_or(
+            || std::fs::read_to_string(&child_file).is_ok_and(|s| !s.trim().is_empty()),
+            || {
+                format!(
+                    "start: running {:?}, parent file {:?}, child file {:?}",
+                    state.running_title(),
+                    std::fs::read_to_string(&parent_file).ok(),
+                    std::fs::read_to_string(&child_file).ok()
+                )
+            },
+        );
+        let parent: i32 = std::fs::read_to_string(&parent_file)
             .unwrap()
             .trim()
             .parse()
@@ -1677,11 +1701,14 @@ mod tests {
         // ESRCH for the leader proves it is no longer even a zombie. Do not
         // waitpid before this: stealing the manager's reap would break its
         // WNOWAIT reservation and could turn group cleanup into a PID race.
-        wait_until(|| {
-            // SAFETY: signal zero only probes the test-owned process.
-            (unsafe { libc::kill(parent, 0) }) == -1
-                && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
-        });
+        wait_until_or(
+            || {
+                // SAFETY: signal zero only probes the test-owned process.
+                (unsafe { libc::kill(parent, 0) }) == -1
+                    && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+            },
+            || format!("leader reap: parent {parent} stat {}, child {child} stat {}", proc_stat(parent), proc_stat(child)),
+        );
         let mut status = 0;
         // SAFETY: the leader is already gone; this must report ECHILD.
         assert_eq!(
@@ -1692,13 +1719,14 @@ mod tests {
             io::Error::last_os_error().raw_os_error(),
             Some(libc::ECHILD)
         );
-        wait_until(
+        wait_until_or(
             || match std::fs::read_to_string(format!("/proc/{child}/stat")) {
                 Ok(stat) => stat
                     .rsplit_once(") ")
                     .is_some_and(|(_, tail)| tail.starts_with('Z')),
                 Err(error) => error.kind() == io::ErrorKind::NotFound,
             },
+            || format!("descendant: child {child} stat {}", proc_stat(child)),
         );
     }
 
