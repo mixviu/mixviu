@@ -1,0 +1,44 @@
+-- Focused worker driver: format and dependency diffs are returned before cleanup.
+-- CBC only. Refuse dirty input; cleanup is restricted to formatter/lock paths
+-- and the exact HEAD this job started with, never `git checkout -- .`.
+$base_sha = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
+if trim(run_argv_must(["git", "status", "--porcelain"])) != "" then
+  raise("DIRTY", "focused checks require a clean CBC checkout; no cleanup authorised")
+end
+fn checked($cmd)
+  $r = run_argv($cmd, {timeout: 3600, max_output: 16777216})
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then raise("CHECK", join($cmd, " ")) end
+end
+try
+  checked(["cargo", "fmt", "-p", "media-audio"])
+  checked(["cargo", "clippy", "-p", "media-audio", "--all-targets", "--", "-D", "warnings"])
+  -- the focused driver requires the ffmpeg oracle (hosted CI skips it)
+  checked(["env", "MIX_TEST_REQUIRE_FFMPEG=1", "cargo", "test", "-p", "media-audio", "--all-targets", "--", "--nocapture"])
+  checked(["/opt/mix/bin/mix", "tools/foreign_gate.mix"])
+  checked(["cargo", "build", "--profile", "release-fast", "-p", "media-audio", "--example", "audio_probe"])
+  checked(["/opt/mix/bin/mix", "libraries/media/audio/dependencies.mix"])
+  $sha = trim(run_argv_must(["git", "rev-parse", "HEAD"]))
+  $artifact = "/tmp/media-audio-" .. $sha
+  checked(["mkdir", "-p", $artifact])
+  checked(["cp", "target/release-fast/examples/audio_probe", $artifact .. "/audio_probe"])
+  print("AUDIO_ARTIFACT=" .. $artifact .. "/audio_probe")
+  for $cmd in ["measure", "normalise", "resample", "mix", "render", "sweep", "snr"]
+    $r = run_argv([$artifact .. "/audio_probe", $cmd])
+    if $r.ok or not contains($r.stderr, "usage:") or contains($r.stderr, "panicked") then raise("CLI_ARGS", $cmd) end
+  end
+  print("audio_probe: all seven subcommands refuse missing arguments without panic")
+finally
+  print("AUDIO_DIFF_BEGIN")
+  print(run_argv_must(["git", "diff"]))
+  print("AUDIO_DIFF_END")
+  if trim(run_argv_must(["git", "rev-parse", "HEAD"])) != $base_sha then raise("HEAD_CHANGED", "refusing cleanup") end
+  $changed = filter(split(trim(run_argv_must(["git", "diff", "--name-only"])), "\n"), fn($p) = $p != "")
+  for $p in $changed
+    if $p != "Cargo.lock" and not (starts_with($p, "libraries/media/audio/") and ends_with($p, ".rs")) then
+      raise("UNEXPECTED_DIFF", "refusing cleanup of " .. $p)
+    end
+  end
+  if len($changed) > 0 then checked(concat(["git", "checkout", "-q", "--"], $changed)) end
+end
