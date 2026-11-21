@@ -533,6 +533,8 @@ try
   finally
     write_file($template_path, $valid_template)
   end
+  $s = $l.request($s, "upgrade", {})
+  check($s.upgrades.example == nil, "valid upgrade clears the admission refusal")
   $s.panels = {right:{pages:["scene-example", "other"], page:"other", mode:"hidden", visible:false}}
   $host_state.panels = $s.panels
   $s = $l.request($s, "open", {name:"example"})

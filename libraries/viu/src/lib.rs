@@ -26,9 +26,9 @@ mod cuboids;
 
 pub mod debug;
 mod debug_recent;
+pub mod design_admission;
 mod design_style;
 mod design_validation;
-pub mod design_admission;
 pub mod documents;
 pub mod editor;
 pub mod elide;

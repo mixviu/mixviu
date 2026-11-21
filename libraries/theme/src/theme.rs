@@ -378,7 +378,9 @@ impl Theme {
         self.load_source_digest.as_deref()
     }
 
-    pub fn source_path(&self) -> Option<&Path> { self.source_path.as_deref() }
+    pub fn source_path(&self) -> Option<&Path> {
+        self.source_path.as_deref()
+    }
 
     /// This (session) theme with an app's own choice laid over it, as the
     /// Theme menu ([`crate::theme_menu`]) makes it. With no colour axis
@@ -398,7 +400,10 @@ impl Theme {
                     ..self.context.clone()
                 };
                 let mut theme = if let Some(path) = &self.source_path {
-                    let source = std::fs::read_to_string(path).map_err(|error| Error::Read {path:path.clone(), error})?;
+                    let source = std::fs::read_to_string(path).map_err(|error| Error::Read {
+                        path: path.clone(),
+                        error,
+                    })?;
                     Self::from_source_in(&path.display().to_string(), &source, context)?
                 } else {
                     Self::compile(&self.document, context)?

@@ -4944,6 +4944,7 @@ dependencies = [
  "design",
  "ed25519-dalek",
  "edit",
+ "editd",
  "editor",
  "editor-model",
  "eframe",

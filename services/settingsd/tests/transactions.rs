@@ -58,9 +58,14 @@ fn unused_design_context_is_refused_before_profile_write() {
     assert!(state.validate(&edit).is_err());
     assert!(state.apply(edit).is_err());
     assert_eq!(state.accepted.revision, revision);
-    assert_eq!(std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(), before);
+    assert_eq!(
+        std::fs::read(dir.path().join("desktop.conf.mix")).unwrap(),
+        before
+    );
     let mut valid = request(&state, "valid-context-source", "dark");
-    valid.changes.insert("appearance.source".into(), json!(good));
+    valid
+        .changes
+        .insert("appearance.source".into(), json!(good));
     assert!(state.apply(valid).is_ok(), "valid-source negative control");
     assert_ne!(state.accepted.revision, revision);
 }

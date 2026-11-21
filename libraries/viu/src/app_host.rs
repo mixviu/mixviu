@@ -1319,22 +1319,37 @@ impl Host {
                             let mut refused_design = false;
                             if let Err(error) = &appearance {
                                 refused_design = true;
-                                self.design_validation.refused(self.file_theme.source_digest(), error);
+                                self.design_validation
+                                    .refused(self.file_theme.source_digest(), error);
                             }
                             let result = appearance.as_ref().map_err(Clone::clone).and_then(|_| {
                                 crate::appearance::theme_choice(&model["theme_choice"])?;
                                 if self.model["theme_choice"] != model["theme_choice"] {
                                     let base = if let Some(session) = &self.session {
-                                        crate::appearance::session_base(&session.snapshot, &self.app, &self.file_theme, &self.last_ui)?.0
-                                    } else { self.file_theme.clone() };
+                                        crate::appearance::session_base(
+                                            &session.snapshot,
+                                            &self.app,
+                                            &self.file_theme,
+                                            &self.last_ui,
+                                        )?
+                                        .0
+                                    } else {
+                                        self.file_theme.clone()
+                                    };
                                     let empty = json!({});
-                                    let choice = if model["theme_choice"].is_null() { &empty } else { &model["theme_choice"] };
-                                    base.with_choice(&crate::native_theme::choice(choice)?).map_err(|error| {
-                                        refused_design = true;
-                                        let error = error.to_string();
-                                        self.design_validation.refused(self.file_theme.source_digest(), &error);
-                                        error
-                                    })?;
+                                    let choice = if model["theme_choice"].is_null() {
+                                        &empty
+                                    } else {
+                                        &model["theme_choice"]
+                                    };
+                                    base.with_choice(&crate::native_theme::choice(choice)?)
+                                        .map_err(|error| {
+                                            refused_design = true;
+                                            let error = error.to_string();
+                                            self.design_validation
+                                                .refused(self.file_theme.source_digest(), &error);
+                                            error
+                                        })?;
                                 }
                                 validate_overlays(&projected)?;
                                 if model["native_root"].is_object() {
@@ -1449,8 +1464,14 @@ impl Host {
                                 }
                                 Err(e) => {
                                     if let Some(revision) = done.model_revision {
-                                        self.publication_result(done.generation, revision, Err(e.clone()));
-                                        if refused_design { self.error = e; }
+                                        self.publication_result(
+                                            done.generation,
+                                            revision,
+                                            Err(e.clone()),
+                                        );
+                                        if refused_design {
+                                            self.error = e;
+                                        }
                                     } else {
                                         self.error = e;
                                     }
@@ -2164,7 +2185,9 @@ impl Host {
                     egui::Frame::popup(ui.style()).show(ui, |ui| {
                         ui.set_max_width(620.);
                         ui.label(&self.design_validation.notice);
-                        if ui.small_button("Dismiss").clicked() { self.design_validation.notice.clear(); }
+                        if ui.small_button("Dismiss").clicked() {
+                            self.design_validation.notice.clear();
+                        }
                     });
                 });
         }
@@ -2224,7 +2247,13 @@ fn create_with_probe(
     wake: crate::runtime::Wake,
     #[cfg(feature = "test-support")] test_cpu_probe: bool,
 ) -> Host {
-    create_with_theme(bundle, wake, #[cfg(feature = "test-support")] test_cpu_probe, None)
+    create_with_theme(
+        bundle,
+        wake,
+        #[cfg(feature = "test-support")]
+        test_cpu_probe,
+        None,
+    )
 }
 
 fn create_with_theme(
@@ -2584,14 +2613,18 @@ pub fn run(mut args: Vec<String>) -> eframe::Result {
     if args.first().is_some_and(|arg| arg == "--validate-design") {
         let source = match args.get(1).map(String::as_str) {
             Some("--embedded") => Ok(design::EMBEDDED_DEFAULT_SOURCE.to_owned()),
-            Some(path) if args.len() == 2 => std::fs::read_to_string(path).map_err(|e| e.to_string()),
+            Some(path) if args.len() == 2 => {
+                std::fs::read_to_string(path).map_err(|e| e.to_string())
+            }
             _ => Err("usage: viu --validate-design FILE|--embedded".into()),
         };
-        if let Err(error) = source.and_then(|source| crate::design_admission::validate_source(&source)) {
+        if let Err(error) =
+            source.and_then(|source| crate::design_admission::validate_source(&source))
+        {
             eprintln!("design admission refused: {error}");
             std::process::exit(1);
         }
-        println!("design admission: all contexts valid");
+        println!("{}", json!({"valid":true,"source_sha":buildinfo::build_info!().git_sha_full}));
         return Ok(());
     }
     if args.first().map(String::as_str) != Some("run") {
@@ -3135,7 +3168,9 @@ pub mod test_support {
                 )
                 .drop_without_applying_deltas();
         }
-        pub fn design_info(&self) -> Value { self.host.design_info() }
+        pub fn design_info(&self) -> Value {
+            self.host.design_info()
+        }
         pub fn reload_theme_file(&mut self, path: &std::path::Path) {
             self.host.accept_file_theme(toolkit::Theme::load_from(path));
             self.host.session_dirty = true;
@@ -3143,14 +3178,32 @@ pub mod test_support {
         pub fn drawn_text(&mut self) -> String {
             fn text(shape: &egui::Shape, output: &mut String) {
                 match shape {
-                    egui::Shape::Text(text) => { output.push_str(&text.galley.job.text); output.push('\n'); }
-                    egui::Shape::Vec(shapes) => for shape in shapes { text(shape, output); },
+                    egui::Shape::Text(text) => {
+                        output.push_str(&text.galley.job.text);
+                        output.push('\n');
+                    }
+                    egui::Shape::Vec(shapes) => {
+                        for shape in shapes {
+                            text(shape, output);
+                        }
+                    }
                     _ => {}
                 }
             }
-            let output = self.ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1100., 760.))), ..Default::default() }, |ui| self.host.frame(ui));
+            let output = self.ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1100., 760.),
+                    )),
+                    ..Default::default()
+                },
+                |ui| self.host.frame(ui),
+            );
             let mut painted = String::new();
-            for shape in &output.shapes { text(&shape.shape, &mut painted); }
+            for shape in &output.shapes {
+                text(&shape.shape, &mut painted);
+            }
             output.drop_without_applying_deltas();
             painted
         }

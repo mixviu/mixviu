@@ -7,7 +7,12 @@ use std::{
     sync::{Arc, mpsc},
 };
 
-type Task = (String, Arc<DesignSourceDocument>, DesignContext, Option<std::path::PathBuf>);
+type Task = (
+    String,
+    Arc<DesignSourceDocument>,
+    DesignContext,
+    Option<std::path::PathBuf>,
+);
 
 #[derive(Default)]
 pub(crate) struct Validation {
@@ -30,7 +35,12 @@ impl Validation {
         }
         let digest = theme.source_digest().to_owned();
         if self.seen.insert(digest.clone()) {
-            self.pending.push((digest, theme.source_document(), theme.context().clone(), theme.source_path().map(std::path::Path::to_owned)));
+            self.pending.push((
+                digest,
+                theme.source_document(),
+                theme.context().clone(),
+                theme.source_path().map(std::path::Path::to_owned),
+            ));
         }
     }
 
@@ -52,31 +62,51 @@ impl Validation {
                                 } else {
                                     let error = match design::compile_design(&document, context) {
                                         design::DesignCompileResult::Success(_) => None,
-                                        design::DesignCompileResult::Fatal(failure) => Some(format!("{:?}", failure.diagnostics)),
+                                        design::DesignCompileResult::Fatal(failure) => {
+                                            Some(format!("{:?}", failure.diagnostics))
+                                        }
                                     };
-                                    if answers.send((digest, error)).is_err() { break; }
+                                    if answers.send((digest, error)).is_err() {
+                                        break;
+                                    }
                                     continue;
                                 }
                             }
-                            Err(mpsc::RecvTimeoutError::Timeout) => {},
+                            Err(mpsc::RecvTimeoutError::Timeout) => {}
                             Err(mpsc::RecvTimeoutError::Disconnected) => break,
                         }
                         for (path, previous) in &mut files {
                             let read = std::fs::read_to_string(path);
                             let digest = match &read {
                                 Ok(source) => design::source_digest(source),
-                                Err(error) => design::source_digest(&format!("{}:{error}", path.display())),
-                            };
-                            if *previous == digest { continue; }
-                            *previous = digest.clone();
-                            let error = read.map_err(|e| e.to_string()).and_then(|source| {
-                                let theme = toolkit::Theme::from_source("design-report", &source).map_err(|e| e.to_string())?;
-                                match design::compile_design(&theme.source_document(), theme.context().clone()) {
-                                    design::DesignCompileResult::Success(_) => Ok(()),
-                                    design::DesignCompileResult::Fatal(failure) => Err(format!("{:?}", failure.diagnostics)),
+                                Err(error) => {
+                                    design::source_digest(&format!("{}:{error}", path.display()))
                                 }
-                            }).err();
-                            if answers.send((digest, error)).is_err() { return; }
+                            };
+                            if *previous == digest {
+                                continue;
+                            }
+                            *previous = digest.clone();
+                            let error = read
+                                .map_err(|e| e.to_string())
+                                .and_then(|source| {
+                                    let theme =
+                                        toolkit::Theme::from_source("design-report", &source)
+                                            .map_err(|e| e.to_string())?;
+                                    match design::compile_design(
+                                        &theme.source_document(),
+                                        theme.context().clone(),
+                                    ) {
+                                        design::DesignCompileResult::Success(_) => Ok(()),
+                                        design::DesignCompileResult::Fatal(failure) => {
+                                            Err(format!("{:?}", failure.diagnostics))
+                                        }
+                                    }
+                                })
+                                .err();
+                            if answers.send((digest, error)).is_err() {
+                                return;
+                            }
                         }
                     }
                 })
