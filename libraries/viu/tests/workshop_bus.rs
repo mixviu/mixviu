@@ -802,16 +802,23 @@ fn workshop_calls_from_port_appearance_at_200_peers() {
         }
         let port = Instant::now();
         let mut samples = Vec::new();
+        let mut answered = false;
         while port.elapsed() < Duration::from_millis(1500) {
             for command in ["workshop.ping", "workshop.info"] {
                 if port.elapsed() >= Duration::from_millis(1500) { break; }
                 let started = Instant::now();
                 let answer = sampler.call_with_headers_raw_within("workshop", command, &BTreeMap::new(), "{}", Duration::from_secs(1)).await;
-                samples.push(json!({"command":command,"start_us":started.duration_since(port).as_micros() as u64,"latency_us":started.elapsed().as_micros() as u64,"ok":answer.as_ref().is_ok_and(|(rc,_,_)| *rc == 0),"reply":answer.as_ref().ok().map(|(rc,body,_)|json!({"rc":rc,"body":body})),"error":answer.err().map(|e|e.to_string())}));
+                // NOT_READY is the existing bounded pre-load reply, not a
+                // completed app query. Keep sampling without waiting for ready.
+                let ok = answer.as_ref().is_ok_and(|(rc, body, _)| {
+                    *rc == 0 || (!answered && *rc == 10 && serde_json::from_str::<serde_json::Value>(body).ok().is_some_and(|value| value["error_code"] == "NOT_READY"))
+                });
+                answered |= answer.as_ref().is_ok_and(|(rc, _, _)| *rc == 0);
+                samples.push(json!({"command":command,"start_us":started.duration_since(port).as_micros() as u64,"latency_us":started.elapsed().as_micros() as u64,"ok":ok,"reply":answer.as_ref().ok().filter(|(rc,_,_)| *rc != 0).map(|(rc,body,_)|json!({"rc":rc,"body":body})),"error":answer.err().map(|e|e.to_string())}));
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
-        samples
+        (samples, answered)
     });
     let mut bundle = Bundle::load(
         &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop"),
@@ -840,7 +847,7 @@ fn workshop_calls_from_port_appearance_at_200_peers() {
         // rather than treating eight-wide CPU contention as a fixture fault.
         std::thread::sleep(Duration::from_millis(2));
     }
-    let samples = rt.block_on(calls).unwrap();
+    let (samples, answered) = rt.block_on(calls).unwrap();
     let worst = samples
         .iter()
         .map(|s| s["latency_us"].as_u64().unwrap())
@@ -852,7 +859,7 @@ fn workshop_calls_from_port_appearance_at_200_peers() {
         json!({"peers":200,"window_us":1500000,"bound_us":STARTUP_CALL_BOUND_US,"worst_call_us":worst,"failed":failed,"whole_us":whole.elapsed().as_micros() as u64,"samples":samples,"first_pump":first_pump,"host":host.discovery_measurements()})
     );
     assert!(
-        failed == 0 && worst <= STARTUP_CALL_BOUND_US,
+        failed == 0 && answered && worst <= STARTUP_CALL_BOUND_US,
         "startup call regression: worst_us={worst}, bound_us={STARTUP_CALL_BOUND_US}, failed={failed}"
     );
     for task in tasks {
