@@ -1,0 +1,45 @@
+-- Focused worker checks only. Run via the native build service.
+fn checked($cmd)
+  $r = run_argv($cmd, {timeout: 7200, max_output: 16777216, env: {MIX_TEST_REQUIRE_FFMPEG: "1"}})
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then raise("CHECK", "command failed: " .. join($cmd, " ")) end
+end
+if contains(args(), "--fmt") then
+  try
+    checked(["cargo", "fmt", "-p", "media-av1"])
+    checked(["git", "diff", "--", "libraries/media/av1"])
+  finally
+    checked(["git", "checkout", "-q", "--", "libraries/media/av1"])
+  end
+else
+  checked(["cargo", "fmt", "-p", "media-av1", "--", "--check"])
+  for $features in [[], ["--features", "asm"]]
+    $cmd = ["cargo", "clippy", "--locked", "-p", "media-av1", "--all-targets"]
+    for $arg in $features
+      push($cmd, $arg)
+    end
+    for $arg in ["--", "-D", "warnings"]
+      push($cmd, $arg)
+    end
+    checked($cmd)
+    $cmd = ["cargo", "build", "--locked", "-p", "media-av1", "--example", "av1enc"]
+    for $arg in $features
+      push($cmd, $arg)
+    end
+    checked($cmd)
+    checked(["mix", "libraries/media/av1/adapter_oracle.mix"])
+  end
+  checked(["cargo", "test", "--locked", "-p", "media-av1", "--", "--nocapture"])
+  for $features in [["--no-default-features"], ["--features", "asm"]]
+    $cmd = ["cargo", "test", "--locked", "-p", "media-av1", "--all-targets"]
+    for $arg in $features
+      push($cmd, $arg)
+    end
+    for $arg in ["--", "--nocapture"]
+      push($cmd, $arg)
+    end
+    checked($cmd)
+  end
+  checked(["mix", "tools/foreign_gate.mix"])
+end
