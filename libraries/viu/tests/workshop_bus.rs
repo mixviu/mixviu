@@ -797,6 +797,7 @@ end
             let padding="{\"name\":\"example.command\",\"description\":\"Read state\",\"read_only\":true,\"args\":{}}\n".repeat(600);
             let until = Instant::now() + Duration::from_secs(5);
             for offset in (0..48).step_by(8) {
+                let marker = format!("\"ts\": \"{}\"", offset + 7);
                 host.owner_event(
                     "viu.test.retained_model",
                     json!({"padding":padding,"offset":offset}),
@@ -805,14 +806,17 @@ end
                     host.pump();
                     assert!(host.error().is_empty(), "{}", host.error());
                     let state = host.state();
-                    let seeded = state["model"]["traffic_view"]["initial"][1][4]["collapse"]
-                        .as_str()
-                        .is_some_and(|text| text.contains("fixture.retained"));
-                    if seeded
-                        && state["model"]["traffic_view"]["initial"]
-                            .as_array()
-                            .is_some_and(|rows| rows.len() >= offset + 9)
-                    {
+                    // Ordinary observation rows can interleave with the seed.
+                    // Wait for this batch's actual final fixture row, not a
+                    // row count that unrelated observations could satisfy.
+                    let seeded = state["model"]["traffic_view"]["initial"]
+                        .as_array()
+                        .is_some_and(|rows| rows.iter().any(|row| {
+                            row[4]["collapse"].as_str().is_some_and(|text| {
+                                text.contains("fixture.retained") && text.contains(&marker)
+                            })
+                        }));
+                    if seeded {
                         break;
                     }
                     assert!(
