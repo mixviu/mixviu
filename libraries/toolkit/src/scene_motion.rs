@@ -709,9 +709,7 @@ pub fn install(ctx: &Context) {
                 // any writer that queued in between, e.g. a request_repaint
                 // from another thread, and both threads deadlock.
                 let disabled = ctx
-                    .data(|d| {
-                        d.get_temp::<std::collections::HashSet<LayerId>>(disabled_key)
-                    })
+                    .data(|d| d.get_temp::<std::collections::HashSet<LayerId>>(disabled_key))
                     .is_some_and(|ids| ids.contains(&layer));
                 let mut capture = state.capture(
                     ui,
