@@ -6,6 +6,8 @@ use rubato::{
     sinc_interpolator::{SincInterpolator, make_interpolator},
 };
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+mod limiter;
+pub use limiter::{LimitReport, LimiterConfig, TargetReport};
 
 /// Standard RIFF maximum, enough for over three hours of stereo float32 at 48 kHz.
 pub const MAX_WAV_BYTES: u64 = u32::MAX as u64 + 8;
@@ -27,6 +29,7 @@ pub enum Error {
     InterpolationBounds,
     InvalidWritePosition,
     Unmeasurable,
+    ReductionLimit { required_db: f64 },
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -56,6 +59,10 @@ impl std::fmt::Display for Error {
                 f.write_str("WAV output must be an empty stream positioned at zero")
             }
             Self::Unmeasurable => f.write_str("audio has no measurable integrated loudness"),
+            Self::ReductionLimit { required_db } => write!(
+                f,
+                "limiter needs {required_db:.3} dB reduction, exceeding 6 dB"
+            ),
         }
     }
 }
