@@ -1,7 +1,11 @@
 //! In-memory narration primitives. Offsets and lengths are frames, never scalar samples.
 //! Finite f64 interleaved samples preserve PCM32 precision and unclipped mix headroom.
-use rubato::{WindowFunction, sinc_interpolator::{make_interpolator, SincInterpolator}, interpolation::{get_nearest_times_4, interp_cubic}};
-use std::io::{Cursor, Read, Seek, Write};
+use rubato::{
+    WindowFunction,
+    interpolation::{get_nearest_times_4, interp_cubic},
+    sinc_interpolator::{SincInterpolator, make_interpolator},
+};
+use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 
 #[derive(Debug)]
 pub enum Error {
@@ -144,6 +148,7 @@ impl Audio {
         let end = offset
             .checked_add(clip.frames())
             .ok_or(Error::SizeOverflow)?;
+        end.checked_mul(self.channels as usize).ok_or(Error::SizeOverflow)?;
         let start = offset
             .checked_mul(self.channels as usize)
             .ok_or(Error::SizeOverflow)?;
@@ -172,28 +177,43 @@ impl Audio {
         }
         let ratio = 48000.0 / self.rate as f64;
         let sinc = make_interpolator::<f64>(512, ratio, None, 256, WindowFunction::BlackmanHarris2);
-        let frames = usize::try_from((self.frames() as u128 * 48000).div_ceil(self.rate as u128)).map_err(|_| Error::SizeOverflow)?;
+        let frames = usize::try_from((self.frames() as u128 * 48000).div_ceil(self.rate as u128))
+            .map_err(|_| Error::SizeOverflow)?;
         let mut out = Self::silence(48000, self.channels, frames)?;
         let pad = sinc.nbr_points();
-        let len = self.frames().checked_add(2 * pad).ok_or(Error::SizeOverflow)?;
+        let len = self
+            .frames()
+            .checked_add(2 * pad)
+            .ok_or(Error::SizeOverflow)?;
         let mut wave = Vec::new();
-        wave.try_reserve_exact(len).map_err(|_| Error::SizeOverflow)?;
+        wave.try_reserve_exact(len)
+            .map_err(|_| Error::SizeOverflow)?;
         wave.resize(len, 0.0);
         for c in 0..self.channels as usize {
-            for (n, frame) in self.samples.chunks_exact(self.channels as usize).enumerate() { wave[n + pad] = frame[c]; }
+            for (n, frame) in self
+                .samples
+                .chunks_exact(self.channels as usize)
+                .enumerate()
+            {
+                wave[n + pad] = frame[c];
+            }
             for n in 0..frames {
                 let pos = n as f64 * self.rate as f64 / 48000.0 + pad as f64;
                 let t = pos - (pad / 2) as f64 + 1.0 - 1.0 / 256.0;
-                let mut nearest = [(0isize,0isize);4];
-                get_nearest_times_4(t,256,&mut nearest);
-                let mut points = [0.0;4];
-                for (p,(i,s)) in points.iter_mut().zip(nearest) {
-                    if i < 0 || i as usize + pad >= wave.len() || !(0..256).contains(&s) { return Err(Error::SizeOverflow); }
-                    *p = sinc.get_sinc_interpolated(&wave,i as usize,s as usize);
+                let mut nearest = [(0isize, 0isize); 4];
+                get_nearest_times_4(t, 256, &mut nearest);
+                let mut points = [0.0; 4];
+                for (p, (i, s)) in points.iter_mut().zip(nearest) {
+                    if i < 0 || i as usize + pad >= wave.len() || !(0..256).contains(&s) {
+                        return Err(Error::SizeOverflow);
+                    }
+                    *p = sinc.get_sinc_interpolated(&wave, i as usize, s as usize);
                 }
-                out.samples[n * self.channels as usize + c] = interp_cubic((t * 256.0).fract(),&points);
+                out.samples[n * self.channels as usize + c] =
+                    interp_cubic((t * 256.0).fract(), &points);
             }
         }
+        if out.samples.iter().any(|x| !x.is_finite()) { return Err(Error::InvalidAudio); }
         Ok(out)
     }
     /// BS.1770 integrated gating and Tech 3342 LRA. True peak uses ebur128's
@@ -278,7 +298,7 @@ impl Audio {
         Self::new(spec.sample_rate, spec.channels, samples)
     }
     /// Integer output is rounded; out-of-range samples are refused, never clipped.
-    pub fn write_wav(&self, w: impl Write + Seek, format: WavFormat) -> Result<(), Error> {
+    pub fn write_wav(&self, mut w: impl Write + Seek, format: WavFormat) -> Result<(), Error> {
         let (sample_format, bits) = match format {
             WavFormat::Pcm16 => (hound::SampleFormat::Int, 16),
             WavFormat::Pcm24 => (hound::SampleFormat::Int, 24),
@@ -286,6 +306,10 @@ impl Audio {
             WavFormat::Float32 => (hound::SampleFormat::Float, 32),
         };
         let scale = 2.0_f64.powi(bits - 1);
+        let block_align = self.channels as u32 * (bits as u32 / 8);
+        self.rate.checked_mul(block_align).ok_or(Error::SizeOverflow)?;
+        let data_bytes = self.frames() as u64 * block_align as u64;
+        if data_bytes > u32::MAX as u64 - 128 { return Err(Error::SizeOverflow); }
         if self.samples.iter().any(|&s| {
             if sample_format == hound::SampleFormat::Float {
                 !(s as f32).is_finite()
@@ -296,7 +320,7 @@ impl Audio {
             return Err(Error::InvalidAudio);
         }
         let mut writer = hound::WavWriter::new(
-            w,
+            &mut w,
             hound::WavSpec {
                 channels: self.channels,
                 sample_rate: self.rate,
@@ -312,6 +336,15 @@ impl Audio {
             }
         }
         writer.finalize()?;
+        // hound does not append RIFF's word-alignment byte for odd PCM24 data.
+        if data_bytes % 2 != 0 {
+            w.seek(SeekFrom::End(0))?;
+            w.write_all(&[0])?;
+            let end = w.stream_position()?;
+            w.seek(SeekFrom::Start(4))?;
+            w.write_all(&((end - 8) as u32).to_le_bytes())?;
+            w.seek(SeekFrom::Start(end))?;
+        }
         Ok(())
     }
 }

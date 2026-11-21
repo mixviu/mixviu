@@ -5606,7 +5606,6 @@ dependencies = [
 name = "media-audio"
 version = "0.1.2"
 dependencies = [
- "audioadapter-buffers",
  "ebur128",
  "hound",
  "rubato",

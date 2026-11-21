@@ -16,6 +16,10 @@ fn tone(rate: u32, seconds: usize, db: f64, channels: u16) -> Audio {
 }
 #[test]
 fn formats_and_malformed_headers() {
+    let a = Audio::new(48000,1,vec![0.25]).unwrap();
+    let mut b = Cursor::new(Vec::new()); a.write_wav(&mut b,WavFormat::Pcm24).unwrap();
+    assert_eq!(Audio::read_wav(Cursor::new(b.into_inner())).unwrap(),a);
+    assert!(Audio::new(u32::MAX,2,vec![0.0;2]).unwrap().write_wav(Cursor::new(Vec::new()),WavFormat::Pcm32).is_err());
     for f in [
         WavFormat::Pcm16,
         WavFormat::Pcm24,
@@ -88,6 +92,7 @@ fn mapping_placement_padding_and_headroom() {
         Err(Error::SizeOverflow)
     ));
     assert!(out.place(&a.map_channels(2).unwrap(), 0).is_err());
+    assert!(Audio::silence(48000,2,0).unwrap().place(&a.map_channels(2).unwrap(),usize::MAX/2).is_err());
 }
 #[test]
 fn tech3341_reference_tone_and_gain() {
@@ -156,4 +161,24 @@ fn resample_lengths_dc_and_tone() {
             .unwrap();
         assert!((a.frames() as isize - (n as f64 * 48000.0 / 44100.0).ceil() as isize).abs() <= 1);
     }
+}
+
+#[test]
+fn tech3342_range_and_gates() {
+    // Equal long plateaux separated by 10 LU: 10th/95th percentiles -> 10 LU.
+    let mut a=tone(48000,20,-20.0,2);
+    a.place(&tone(48000,20,-30.0,2),a.frames()).unwrap();
+    assert!((a.measure().unwrap().range_lu-10.0).abs()<0.2);
+    // Silence and a tone 40 LU below programme are removed by the relative gate.
+    let mut a=Audio::silence(48000,2,48000*5).unwrap();
+    a.place(&tone(48000,20,-23.0,2),48000*5).unwrap();
+    a.place(&tone(48000,5,-63.0,2),48000*25).unwrap();
+    assert!((a.measure().unwrap().integrated_lufs+23.0).abs()<0.15);
+}
+
+#[test]
+fn downsample_rejects_aliases() {
+    let a=Audio::new(96000,1,(0..96000).map(|n|0.5*(std::f64::consts::TAU*30000.0*n as f64/96000.0).sin()).collect()).unwrap().resample_48k().unwrap();
+    let energy=a.samples()[1000..47000].iter().map(|s|s*s).sum::<f64>()/46000.0;
+    assert!(energy<1e-12,"alias energy {energy}");
 }
