@@ -157,12 +157,26 @@ This queue is separate from the existing bounded redacted display ring.
 The 200-peer private-Bus fixture keeps its original one-second calls, two-second
 owner stall check, silent peer and departing peer. After those checks, a native
 owner event retains 48 representative escaped JSON bodies through the real
-Traffic retention code, producing a model larger than 2 MiB. Seed publication
-is initialisation, outside the per-tick guard. Eight further one-second reads
-and ordinary ticks enforce a 768 KiB publication bound and 100 ms native
-incremental apply CPU bound against that retained model. Controls force
-full publication, full application and skipped binding updates to prove the
-byte/time/equivalence checks detect regressions. Fresh full native scene/frame
+Traffic retention code, producing a model larger than 2 MiB. The fixture seeds
+eight rows at a time through ordinary acknowledged patches; this is fixture
+preparation, not a production batch cap. Eight further one-second reads and
+ordinary ticks retain the 100 ms native apply CPU and 800 ms pump bounds.
+
+The 768 KiB per-publication assertion is **superseded by Fable ruling A,
+2026-11-22 (PR #226)**. Bytes are telemetry: legitimate discovery patches
+reached 781,513 bytes after #216 versus 480,075 before it, while a forced
+whole-model resend was only 896,750 bytes. After the initial full model is
+acknowledged, protocol publications must be `scenes.model.patch`; one full
+resynchronisation is allowed directly after a recorded refusal, with zero
+refusals expected in the 200-peer run. A patch may not set the root or a
+top-level map/list wholesale. Top-level scalar sets remain legitimate under
+Fable’s amended container-only rider. Violations report path, value type,
+encoded bytes and the fallback inferred from old/new data, without wire fields.
+Any failed fixture also prints the largest publication’s actual protocol kind,
+operation count, bytes and bytes by top-level section. No production batch cap
+was added. Controls force a full resend, a whole-section map set and a second
+full after one refusal; a forced scalar set is a passing control. Full-apply
+and skipped-binding controls retain the time/equivalence checks. Fresh full native scene/frame
 and prepared-template state are compared with incremental state in the
 equivalence recipe.
 
