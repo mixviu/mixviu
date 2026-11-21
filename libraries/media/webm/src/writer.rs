@@ -393,10 +393,8 @@ pub fn av1_config(packet: &[u8]) -> Result<Vec<u8>> {
             if bits.get(1)? != 0 || bits.get(1)? != 0 {
                 return Err(Error::Invalid("requires 8-bit non-monochrome"));
             }
-            if bits.get(1)? != 0 {
-                if bits.get(24)? == 0x01_0d_00 {
-                    return Err(Error::Invalid("sRGB identity colour is not Main 4:2:0"));
-                }
+            if bits.get(1)? != 0 && bits.get(24)? == 0x01_0d_00 {
+                return Err(Error::Invalid("sRGB identity colour is not Main 4:2:0"));
             }
             bits.get(1)?;
             let chroma = bits.get(2)?;
