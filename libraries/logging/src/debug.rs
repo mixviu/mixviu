@@ -33,6 +33,7 @@ pub(crate) const FAILURE_TARGET: &str = "logging::failure";
 const WORKSPACE_TARGETS: &[&str] = &[
     "media_av1",
     "media_frame",
+    "media_opus",
     "media_vfl",
     "viu_gallery",
     "viu_dopus",

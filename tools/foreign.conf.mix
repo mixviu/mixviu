@@ -11,6 +11,7 @@
 --         shell is every server's login shell).
 foreign: {
   allow: {
+    "opus-pure": {reason: "0.2.3, BSD-3-Clause; pure-Rust Opus encoder/decoder, RFC 8251 conformance and bidirectional libopus spike passed; no build dependencies", exit: "none needed: pure Rust"},
     "const-oid": {reason: "RustCrypto OID constants; pure Rust, no C, no build script or dependencies; MIT/Apache-2.0; mix reaches it only through digest oid under workspace feature unification (Mark, 2026-11-14)",
       exit: "none needed: pure-Rust constants"},
     "libsqlite3-sys": {reason: "SQLite; no pure-Rust equivalent yet",
@@ -68,7 +69,7 @@ foreign: {
   },
   -- Tier 2: desktop-only crates the shell must never reach, pure Rust or not.
   -- A trailing * matches a prefix.
-  strict_forbid: ["media-av1", "rav1e", "pipewire*", "libspa*", "lib-viu", "viu", "viu-engine", "rio-vt", "teletypewriter", "simdutf", "egui*", "eframe", "epaint", "emath", "ecolor", "winit*", "wgpu*", "naga",
+  strict_forbid: ["media-opus", "opus-pure", "media-av1", "rav1e", "pipewire*", "libspa*", "lib-viu", "viu", "viu-engine", "rio-vt", "teletypewriter", "simdutf", "egui*", "eframe", "epaint", "emath", "ecolor", "winit*", "wgpu*", "naga",
     "glow", "glutin*", "smithay*", "wayland-*", "x11*", "xkbcommon*", "calloop-wayland-source",
     "iced*", "bevy*", "vello*", "gpui*", "tiny-skia*", "softbuffer", "arboard", "accesskit*"],
   -- Shared libraries a built strict binary must not need (DT_NEEDED prefix).

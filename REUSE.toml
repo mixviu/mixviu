@@ -14,3 +14,9 @@ path = ["libraries/icons/assets/**"]
 precedence = "override"
 SPDX-FileCopyrightText = ["2026 Lucide Icons and Contributors", "2013-present Cole Bemis"]
 SPDX-License-Identifier = "ISC AND MIT"
+
+[[annotations]]
+path = ["provenance/opus-codecs.LICENSE"]
+precedence = "override"
+SPDX-FileCopyrightText = ["2026 Stephen Berry", "2026 restsend.com", "2001-2023 Xiph.Org, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo, Mozilla, Amazon"]
+SPDX-License-Identifier = "BSD-3-Clause"
