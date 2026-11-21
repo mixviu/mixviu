@@ -1,0 +1,38 @@
+-- Executable-level oracle, called on the worker by adapter_check.mix.
+$root = trim(run_argv_must(["mktemp", "-d", "/tmp/av1enc-cli-XXXXXX"]))
+fn checked($cmd, $opts)
+  $r = run_argv($cmd, $opts)
+  if not $r.ok then raise("ORACLE", join($cmd, " ") .. ": " .. $r.stderr) end
+  return $r
+end
+try
+  $source = $root .. "/source.y4m"
+  $made = checked(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x48:rate=30000/1001", "-frames:v", "5", "-pix_fmt", "yuv420p", "-f", "yuv4mpegpipe", $source], {timeout: 120})
+  for $file_output in [false, true]
+    $output = $root .. "/encoded.ivf"
+    $cmd = ["target/debug/examples/av1enc", "--speed", "10", "--quantizer", "100", "--threads", "1", "--tile-cols", "1", "--tile-rows", "1", "--keyint", "2"]
+    $opts = {stdin: {file: $source}, timeout: 120}
+    if $file_output then
+      push($cmd, "--out")
+      push($cmd, $output)
+    else
+      $opts.stdout = {file: $output}
+    end
+    $encoded = checked($cmd, $opts)
+    $stats = json_parse(trim($encoded.stderr))
+    if $stats.frames != 5 or $stats.bytes <= 32 or $stats.encode_seconds <= 0 or $stats.settings.fps_num != 30000 or $stats.settings.fps_den != 1001 then
+      raise("ORACLE", "invalid adapter summary: " .. $encoded.stderr)
+    end
+    $probe = checked(["ffprobe", "-v", "error", "-count_frames", "-show_entries", "stream=nb_read_frames,width,height", "-of", "json", $output], {timeout: 120})
+    $stream = json_parse($probe.stdout).streams[0]
+    if to_number($stream.nb_read_frames) != 5 or $stream.width != 64 or $stream.height != 48 then raise("ORACLE", "CLI decode mismatch") end
+    print("CLI oracle file_output=" .. to_string($file_output) .. " " .. trim($encoded.stderr))
+  end
+  for $text in ["", "YUV4MPEG2 W64 H48 F30:1 Ip C420\n", "YUV4MPEG2 W64 H48 F30:1 Ip C420\nFRAME\nshort", "YUV4MPEG2 W64 H48 F30:1 It C420\n"]
+    $bad = run_argv(["target/debug/examples/av1enc"], {stdin: $text, timeout: 120})
+    if $bad.ok or not contains($bad.stderr, "av1enc:") or contains($bad.stderr, "panicked") then raise("ORACLE", "CLI refusal failed") end
+  end
+finally
+  $removed = run_argv(["rm", "-rf", "--", $root])
+  if not $removed.ok then raise("CLEANUP", $removed.stderr) end
+end

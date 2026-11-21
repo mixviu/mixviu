@@ -23,6 +23,12 @@ else
       push($cmd, $arg)
     end
     checked($cmd)
+    $cmd = ["cargo", "build", "--locked", "-p", "media-av1", "--example", "av1enc"]
+    for $arg in $features
+      push($cmd, $arg)
+    end
+    checked($cmd)
+    checked(["mix", "libraries/media/av1/adapter_oracle.mix"])
   end
   for $features in [["--no-default-features"], ["--features", "asm"]]
     $cmd = ["cargo", "test", "--locked", "-p", "media-av1", "--all-targets"]
