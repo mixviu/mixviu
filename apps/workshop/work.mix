@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 $path=path_join(dirname(script_path()),"rpc-job.mix");$source=read_file($path);$counter=require("counter.mix")
 fn enqueue($s,$task)
-  $task.generation=$s.generation;$task.queued=monotonic();$s.queue=push($s.queue,$task)
+  $task.generation=if $task.owner=="traffic" then $task.redaction_generation else $s.generation end;$task.queued=monotonic();$s.queue=push($s.queue,$task)
   return $s
 end
 fn launch($s)
@@ -26,7 +26,7 @@ fn launch($s)
       if $task.attempts<3 then $task.retry_at=$now+1;push($waiting,$task)
       else
         $s.jobs[$id]=$task
-        $s.admission_failures=push($s.admission_failures,{tag:{id:$id},rc:20,body:{transport_error:"jobs.start refused after 3 attempts"}})
+        $s.admission_failures=push($s.admission_failures,{tag:{id:$id,owner:$task.generation},rc:20,body:{transport_error:"jobs.start refused after 3 attempts"}})
         $s.job_error="jobs.start refused after 3 attempts: "..($task.service ?? $task.topic ?? $task.owner)
       end
       continue

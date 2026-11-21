@@ -1,8 +1,9 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
-$t=require("traffic.mix");$m=require("model.mix")
+$t=require("traffic.mix");$m=require("model.mix");$controller=require("controller.mix")
 fn check($ok,$message) if not $ok then raise("REDACTION_TEST",$message) end end
 fn take_task($s)
   $s=$t.launch($s);$task=$s.queue[len($s.queue)-1];$s.queue=slice($s.queue,0,len($s.queue)-1)
+  check($task.generation==$s.traffic_generation,"Job task must carry current Traffic generation")
   return {state:$s,task:$task}
 end
 fn finish($work)
@@ -83,6 +84,11 @@ try
   $reset=$budget.defer_row($reset,{seq:"new"},false);$new_work=take_task($reset)
   $late=$t.completed($new_work.state,{rc:0,body:{rows:[{seq:"old"}]}},$old_work.task.redaction_generation)
   check(deep_eq($late,$new_work.state),"stale completion must preserve the new generation")
+  $reused=$new_work.state;$reused.jobs.reused=$new_work.task
+  $late=$controller.received($reused,{tag:{id:"reused",owner:$old_work.task.generation},rc:0,body:{rows:[{seq:"old"}]}})
+  check(deep_eq($late,$reused),"stale native tag must not retire a reused job id")
+  $current=$controller.received($reused,{tag:{id:"reused",owner:$new_work.task.generation},rc:0,body:{rows:[{seq:"new"}]}})
+  check(len($current.traffic)==1 and $current.traffic[0].seq=="new","current native tag must deliver its row")
   $reset=finish($new_work);check(len($reset.traffic)==1 and $reset.traffic[0].seq=="new","reset ring must contain only new generation")
   $eager=replace_must($blocked,'fn defer_row($s,$row,$observed)',"fn defer_row(\$s,\$row,\$observed)\n  \$row=redact(\$row)")
   $negative=$path..".negative.mix";write_file($negative,$eager)

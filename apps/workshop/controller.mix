@@ -189,8 +189,12 @@ end
 fn received($s,$d)
   $task=$s.jobs[$d.tag.id]
   if $task==nil then return $s end
+  -- Check the returned native tag before deleting a task: a reset can reuse an
+  -- id while an old completion is still queued, so current task metadata alone
+  -- cannot establish which generation produced the result.
+  if $task.owner=="traffic" and ($d.tag.owner!=$task.redaction_generation or $d.tag.owner!=$s.traffic_generation) then return $s end
   $s.jobs=delete($s.jobs,$d.tag.id)
-  if $task.owner=="traffic" then return $projection.changed($traffic.completed($s,$d,$task.redaction_generation),["traffic"]) end
+  if $task.owner=="traffic" then return $projection.changed($traffic.completed($s,$d,$d.tag.owner),["traffic"]) end
   -- Mark semantic owners at mutation time, including admission failures handled
   -- by follow_up. No large projection input is compared in the publisher.
   if $task.owner=="mesh" then $s=$projection.changed($s,["macro_pending"])

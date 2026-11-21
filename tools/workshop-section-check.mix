@@ -100,9 +100,9 @@ elif $mode=="round2-controls" then
   for $case in ["queue-negative","input-negative","job-negative","job-fifo","width-negative","section-negative"] checked(["mix",script_path(),$case]) end
   checked(["mix","libraries/viu/tests/workshop-probe.mix","review-controls"])
 elif $mode=="queue-negative" or $mode=="input-negative" or $mode=="job-negative" or $mode=="job-fifo" then
-  $cases=if $mode=="queue-negative" then ["admission","upstream","double","failure","rc","generation","rows","batch-rows","batch-bytes","body","quit","pause"] else [$mode] end
+  $cases=if $mode=="queue-negative" then ["admission","upstream","double","failure","rc","generation","native-generation","job-tag","rows","batch-rows","batch-bytes","body","quit","pause"] else [$mode] end
   for $case in $cases
-    $p=if $case=="input-negative" then "apps/workshop/presentation.mix" elif contains(["job-negative","job-fifo"],$case) then "apps/workshop/traffic-redact-job.mix" else "apps/workshop/traffic.mix" end
+    $p=if $case=="input-negative" then "apps/workshop/presentation.mix" elif $case=="native-generation" then "apps/workshop/controller.mix" elif $case=="job-tag" then "apps/workshop/work.mix" elif contains(["job-negative","job-fifo"],$case) then "apps/workshop/traffic-redact-job.mix" else "apps/workshop/traffic.mix" end
     $source=read_file($p)
     if $case=="admission" then $old='if $active_bytes+$bytes>8388608 then';$new='if false then';$expected="impossible row must preserve"
     elif $case=="upstream" then $old='if $observed then $s.dropped=';$new='if false then $s.dropped=';$expected="upstream counts must be counted once"
@@ -110,6 +110,8 @@ elif $mode=="queue-negative" or $mode=="input-negative" or $mode=="job-negative"
     elif $case=="failure" then $old='$s.dropped=$counter.add($s.dropped,$active.count)';$new='$s.dropped=$counter.add($s.dropped,0)';$expected="malformed job body must count"
     elif $case=="rc" then $old='$d.rc!=0 or type($d.body)';$new='false or type($d.body)';$expected="job failure must preserve upstream"
     elif $case=="generation" then $old='$generation!=$s.traffic_generation';$new='false';$expected="stale completion must preserve"
+    elif $case=="native-generation" then $old='if $task.owner=="traffic" and ($d.tag.owner!=$task.redaction_generation';$new='if false and ($d.tag.owner!=$task.redaction_generation';$expected="stale native tag must not retire a reused job id"
+    elif $case=="job-tag" then $old='$task.generation=if $task.owner=="traffic" then $task.redaction_generation else $s.generation end';$new='$task.generation=$s.generation';$expected="Job task must carry current Traffic generation"
     elif $case=="rows" then $old='then $q.active.count else 0 end)>=1024';$new='then 1 else 0 end)>=1024';$expected="combined active and waiting row cap"
     elif $case=="batch-rows" then $old='len($rows)>=64';$new='len($rows)>=65';$expected="batch row bound"
     elif $case=="batch-bytes" then $old='$bytes+$entry.bytes>262144';$new='$bytes+$entry.bytes>1048576';$expected="batch byte bound"

@@ -33,6 +33,10 @@ end
     let until = std::time::Instant::now() + Duration::from_secs(10);
     loop {
         for result in jobs.poll() {
+            assert!(
+                result.tag["owner"].is_string(),
+                "Traffic Job must carry reset generation in native owner tag"
+            );
             runtime
                 .notify(
                     "viu.job.completed".into(),
