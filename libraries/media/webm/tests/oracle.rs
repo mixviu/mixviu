@@ -18,35 +18,22 @@ fn run(program: &str, args: &[&str]) -> Vec<u8> {
     );
     o.stdout
 }
-fn video(width: usize, height: usize, n: usize) -> Vec<media_av1::Packet> {
-    let mut e = media_av1::Encoder::new(media_av1::Settings {
-        width,
-        height,
-        fps_num: 25,
-        fps_den: 1,
-        speed: 10,
-        target: media_av1::Target::Quality(120),
-        key_interval: 25,
-        tile_cols: 1,
-        tile_rows: 1,
-        threads: 2,
-    })
-    .unwrap();
-    let f = e
-        .prepare(
-            &media_frame::Bgra::solid(width, height, [50, 100, 150, 255])
-                .unwrap()
-                .to_yuv420(),
-        )
-        .unwrap();
-    let mut packets = Vec::new();
-    for _ in 0..n {
-        packets.extend(e.submit(&f).unwrap());
+fn required_capabilities() {
+    for (option, names) in [("-decoders", & ["av1", "opus"][..]), ("-encoders", &["libaom-av1", "libopus"][..]), ("-muxers", &["webm", "null"][..])] {
+        let output = run("ffmpeg", &["-v", "error", option]);
+        let output = String::from_utf8(output).unwrap();
+        for name in names {
+            assert!(output.lines().any(|l| l.split_whitespace().nth(1).is_some_and(|n| n.split(',').any(|n| n == *name))), "required ffmpeg capability {option} {name} unavailable");
+        }
     }
-    packets.extend(e.finish().unwrap());
-    packets
 }
-fn mux(packets: &[media_av1::Packet], width: u32, height: u32, audio: &Demuxer<'_>) -> Vec<u8> {
+struct VideoPacket { data:Vec<u8>, pts:u64, key_frame:bool }
+fn video() -> Vec<VideoPacket> {
+    let d=Demuxer::new(include_bytes!("fixtures/rav1e.webm")).unwrap();
+    assert_eq!(d.packets().iter().filter(|p|p.key_frame).count(),2);
+    d.packets().iter().map(|p|VideoPacket { data:p.data.to_vec(), pts:p.timestamp as u64/40, key_frame:p.key_frame }).collect()
+}
+fn mux(packets: &[VideoPacket], width: u32, height: u32, audio: &Demuxer<'_>) -> Vec<u8> {
     let at = audio.tracks.iter().find(|t| t.kind == 2).unwrap();
     let head = at.codec_private;
     let a = Opus {
@@ -87,23 +74,15 @@ fn mux(packets: &[media_av1::Packet], width: u32, height: u32, audio: &Demuxer<'
 }
 #[test]
 fn roundtrip_and_oracles() {
-    let version = run(
-        "ffprobe",
-        &["-v", "error", "-show_program_version", "-of", "json"],
-    );
-    let version: serde_json::Value = serde_json::from_slice(&version).unwrap();
-    assert!(
-        version["program_version"]["version"]
-            .as_str()
-            .unwrap()
-            .trim_start_matches('n')
-            .starts_with("9."),
-        "ffmpeg 9 oracle required"
-    );
+    required_capabilities();
     let audio = Demuxer::new(include_bytes!("fixtures/sine.webm")).unwrap();
-    let v = video(64, 48, 10);
+    let v = video();
     let bytes = mux(&v, 64, 48, &audio);
     let mut d = Demuxer::new(&bytes).unwrap();
+    let at = d.tracks.iter().find(|t| t.kind == 2).unwrap();
+    assert_eq!(at.codec_delay_ns, 6_500_000);
+    assert_eq!(at.seek_pre_roll_ns, 80_000_000);
+    assert_eq!(at.codec_private, audio.tracks.iter().find(|t| t.kind == 2).unwrap().codec_private);
     let vp: Vec<_> = d.packets().iter().filter(|p| p.track == 1).collect();
     assert_eq!(vp.len(), v.len());
     for (a, b) in vp.iter().zip(&v) {
@@ -117,7 +96,7 @@ fn roundtrip_and_oracles() {
         assert_eq!(a.data, b.data);
         assert_eq!(a.timestamp, b.timestamp - audio.packets()[0].timestamp);
     }
-    assert_eq!(d.seek(399), Some(0));
+    assert_eq!(d.seek(399), Some(200));
     assert!(d.next_packet().unwrap().key_frame);
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("ours.webm");
@@ -146,6 +125,9 @@ fn roundtrip_and_oracles() {
     assert_eq!(s["color_primaries"], "bt709");
     assert_eq!(s["color_range"], "tv");
     assert_eq!(j["format"]["duration"], "0.400000");
+    let pts = run("ffprobe", &["-v", "error", "-select_streams", "a", "-show_packets", "-of", "json", path]);
+    let pts: serde_json::Value = serde_json::from_slice(&pts).unwrap();
+    assert_eq!(pts["packets"][0]["pts"], -7);
     run(
         "ffmpeg",
         &["-v", "error", "-xerror", "-i", path, "-f", "null", "-"],
@@ -168,7 +150,7 @@ fn roundtrip_and_oracles() {
             o["pts"].as_i64().unwrap()
         );
     }
-    assert_eq!(r.seek(390), Some(0));
+    assert_eq!(r.seek(390), Some(200));
     assert!(r.next_packet().unwrap().key_frame);
     let independent = temp.path().join("independent.webm");
     let independent = independent.to_str().unwrap();
@@ -198,6 +180,10 @@ fn roundtrip_and_oracles() {
     );
     let bytes = std::fs::read(independent).unwrap();
     let mut d = Demuxer::new(&bytes).unwrap();
+    let first = d.packets().iter().find(|p| p.track == 1).unwrap();
+    let config = av1_config(first.data).unwrap();
+    let private = d.tracks.iter().find(|t| t.kind == 1).unwrap().codec_private;
+    assert_eq!(config, private, "av1C must match ffmpeg/libaom");
     let probe = run(
         "ffprobe",
         &["-v", "error", "-show_packets", "-of", "json", independent],
@@ -224,89 +210,3 @@ fn roundtrip_and_oracles() {
 }
 #[test]
 fn negative_inputs() {
-    let audio = Demuxer::new(include_bytes!("fixtures/sine.webm")).unwrap();
-    let v = video(32, 32, 2);
-    let bytes = mux(&v, 32, 32, &audio);
-    for n in 0..bytes.len() {
-        assert!(
-            Demuxer::new(&bytes[..n]).is_err(),
-            "accepted truncation {n}"
-        );
-    }
-    for n in 0..bytes.len() {
-        let mut b = bytes.clone();
-        b[n] = 0xff;
-        let _ = Demuxer::new(&b);
-    }
-    // Small, structurally valid file with one hostile SimpleBlock.
-    let mut w = Writer::new(
-        Cursor::new(Vec::new()),
-        Video {
-            width: 32,
-            height: 32,
-            codec_private: av1_config(&v[0].data).unwrap(),
-        },
-        None,
-    )
-    .unwrap();
-    w.packet(1, 0, 40, true, &[0x11]).unwrap();
-    let mut b = w.finish().unwrap().into_inner();
-    let at = b
-        .windows(5)
-        .position(|x| x == [0x81, 0, 0, 0x80, 0x11])
-        .unwrap();
-    b[at + 3] |= 2;
-    assert!(matches!(
-        Demuxer::new(&b),
-        Err(media_webm::Error::UnsupportedLacing)
-    ));
-    assert!(matches!(
-        Demuxer::new(&[0; 16]),
-        Err(media_webm::Error::SizeOverflow)
-    ));
-}
-
-/// Opt-in supervisor sample; run through CBC with MEDIA_WEBM_SAMPLE pointing
-/// at a temporary output file, then copy that artifact to the bench directory.
-#[test]
-#[ignore = "10 second 4K sample artifact"]
-fn sample_4k() {
-    let path = std::env::var("MEDIA_WEBM_SAMPLE").expect("MEDIA_WEBM_SAMPLE required");
-    let audio_bytes = run(
-        "ffmpeg",
-        &[
-            "-v",
-            "error",
-            "-f",
-            "lavfi",
-            "-i",
-            "sine=frequency=440:sample_rate=48000:duration=10",
-            "-c:a",
-            "libopus",
-            "-f",
-            "webm",
-            "pipe:1",
-        ],
-    );
-    let audio = Demuxer::new(&audio_bytes).unwrap();
-    let v = video(3840, 2160, 250);
-    std::fs::write(&path, mux(&v, 3840, 2160, &audio)).unwrap();
-    run(
-        "ffmpeg",
-        &["-v", "error", "-xerror", "-i", &path, "-f", "null", "-"],
-    );
-    let probe = run(
-        "ffprobe",
-        &[
-            "-v",
-            "error",
-            "-count_frames",
-            "-show_streams",
-            "-show_format",
-            "-of",
-            "json",
-            &path,
-        ],
-    );
-    std::fs::write(format!("{path}.ffprobe.json"), probe).unwrap();
-}

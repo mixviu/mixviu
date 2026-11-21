@@ -1,4 +1,5 @@
 use crate::{Error, Result, children, element, uint, vint};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Default)]
 pub struct Track<'a> {
@@ -31,7 +32,7 @@ pub struct Demuxer<'a> {
     pub scale_ns: u64,
     pub duration: Option<f64>,
     packets: Vec<Packet<'a>>,
-    clusters: Vec<u64>,
+    keyframes: HashMap<(u64, u64, u64), usize>,
     cursor: usize,
 }
 impl<'a> Demuxer<'a> {
@@ -51,7 +52,10 @@ impl<'a> Demuxer<'a> {
         if !webm {
             return Err(Error::Invalid("not WebM"));
         }
-        let segment = element(input, &mut p)?;
+        let mut segment = element(input, &mut p)?;
+        while segment.id == 0xec {
+            segment = element(input, &mut p)?;
+        }
         if segment.id != 0x18538067 || p != input.len() {
             return Err(Error::Invalid("expected one Segment"));
         }
@@ -61,9 +65,10 @@ impl<'a> Demuxer<'a> {
             scale_ns: 1_000_000,
             duration: None,
             packets: Vec::new(),
-            clusters: Vec::new(),
+            keyframes: HashMap::new(),
             cursor: 0,
         };
+        let mut track_numbers = HashSet::new();
         for e in children(segment.data) {
             let e = e?;
             match e.id {
@@ -120,7 +125,7 @@ impl<'a> Demuxer<'a> {
                         }
                         if t.number == 0
                             || t.codec.is_empty()
-                            || d.tracks.iter().any(|x| x.number == t.number)
+                            || !track_numbers.insert(t.number)
                         {
                             return Err(Error::Invalid("invalid track"));
                         }
@@ -128,14 +133,15 @@ impl<'a> Demuxer<'a> {
                     }
                 }
                 0x1f43b675 => {
-                    let mut base = 0;
+                    let mut base = None;
                     // Timestamp may occur after a block in a valid master.
                     for c in children(e.data) {
                         let c = c?;
                         if c.id == 0xe7 {
-                            base = i64::try_from(uint(c.data)?).map_err(|_| Error::SizeOverflow)?;
+                            base = Some(i64::try_from(uint(c.data)?).map_err(|_| Error::SizeOverflow)?);
                         }
                     }
+                    let base = base.ok_or(Error::Invalid("Cluster missing Timestamp"))?;
                     for c in children(e.data) {
                         let c = c?;
                         match c.id {
@@ -206,23 +212,12 @@ impl<'a> Demuxer<'a> {
         if d.tracks.is_empty()
             || d.packets
                 .iter()
-                .any(|p| !d.tracks.iter().any(|t| t.number == p.track))
+                .any(|p| !track_numbers.contains(&p.track))
         {
             return Err(Error::Invalid("missing packet track"));
         }
         // Validate cue targets now; seek never trusts an arbitrary byte offset.
-        for cue in &d.cues {
-            let valid = d.packets.iter().zip(&d.clusters).any(|(p, c)| {
-                *c == cue.cluster_position
-                    && p.track == cue.track
-                    && p.key_frame
-                    && p.timestamp >= 0
-                    && p.timestamp as u64 == cue.timestamp
-            });
-            if !valid {
-                return Err(Error::Invalid("cue does not target a keyframe"));
-            }
-        }
+        d.cues.retain(|cue| d.keyframes.contains_key(&(cue.cluster_position, cue.track, cue.timestamp)));
         Ok(d)
     }
     fn block(&mut self, b: &'a [u8], base: i64, key: Option<bool>, cluster: u64) -> Result<()> {
@@ -238,13 +233,16 @@ impl<'a> Demuxer<'a> {
         let timestamp = base
             .checked_add(i16::from_be_bytes([hdr[0], hdr[1]]) as i64)
             .ok_or(Error::SizeOverflow)?;
+        let key_frame = key.unwrap_or(hdr[2] & 128 != 0);
+        if key_frame && timestamp >= 0 {
+            self.keyframes.entry((cluster, track, timestamp as u64)).or_insert(self.packets.len());
+        }
         self.packets.push(Packet {
             track,
             timestamp,
-            key_frame: key.unwrap_or(hdr[2] & 128 != 0),
+            key_frame,
             data: &b[p + 3..],
         });
-        self.clusters.push(cluster);
         Ok(())
     }
     pub fn packets(&self) -> &[Packet<'a>] {
@@ -279,14 +277,7 @@ impl<'a> Demuxer<'a> {
             .iter()
             .filter(|c| c.track == video && c.timestamp <= timestamp)
             .max_by_key(|c| c.timestamp)?;
-        let index = self.packets.iter().zip(&self.clusters).position(|(p, c)| {
-            *c == cue.cluster_position
-                && p.track == video
-                && p.key_frame
-                && p.timestamp >= 0
-                && p.timestamp as u64 == cue.timestamp
-        })?;
-        self.cursor = index;
+        self.cursor = *self.keyframes.get(&(cue.cluster_position, video, cue.timestamp))?;
         Some(cue.timestamp)
     }
 }

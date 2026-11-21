@@ -68,7 +68,7 @@ fn element<'a>(b: &'a [u8], p: &mut usize) -> Result<Element<'a>> {
     Ok(Element { id, data, start })
 }
 fn uint(b: &[u8]) -> Result<u64> {
-    if b.is_empty() || b.len() > 8 {
+    if b.len() > 8 {
         return Err(Error::SizeOverflow);
     }
     Ok(b.iter().fold(0, |v, b| (v << 8) | *b as u64))

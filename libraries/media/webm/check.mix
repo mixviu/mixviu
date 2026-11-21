@@ -1,3 +1,7 @@
+-- WORKER ONLY: this script prints and restores its own formatting/lock changes.
+if not starts_with(trim(run_argv_must(["git", "rev-parse", "--show-toplevel"])), "/build/") then
+  raise("WORKER_ONLY", "check.mix must run inside a CBC worker checkout")
+end
 fn checked($cmd)
   $r = run_argv($cmd, {timeout: 7200, max_output: 16777216})
   print($r.stdout)
@@ -5,16 +9,16 @@ fn checked($cmd)
   if not $r.ok then raise("CHECK", join($cmd, " ") .. " failed") end
 end
 try
-  checked(["cargo", "fmt", "-p", "media-webm"])
-  checked(["cargo", "clippy", "-p", "media-webm", "--all-targets", "--", "-D", "warnings"])
-  checked(["cargo", "test", "-p", "media-webm", "--all-targets"])
+  checked(["cargo", "fmt", "-p", "media-webm", "-p", "media-av1"])
+  checked(["cargo", "clippy", "-p", "media-webm", "-p", "media-av1", "--all-targets", "--", "-D", "warnings"])
+  checked(["cargo", "test", "-p", "media-webm", "-p", "media-av1", "--all-targets"])
   checked(["mix", "tools/foreign_gate.mix"])
   if env("MEDIA_WEBM_SAMPLE", "") != "" then
-    checked(["cargo", "test", "--locked", "--profile", "release-fast", "-p", "media-webm", "--test", "oracle", "sample_4k", "--", "--ignored", "--exact"])
+    checked(["cargo", "test", "--locked", "--profile", "release-fast", "-p", "media-av1", "--features", "asm", "--test", "webm", "sample_4k", "--", "--ignored", "--exact"])
   end
 finally
   print("BEGIN_WORKER_DIFF")
-  print(run_argv_must(["git", "diff", "--", "libraries/media/webm", "Cargo.lock"]))
+  print(run_argv_must(["git", "diff", "--", "libraries/media/webm", "libraries/media/av1", "Cargo.lock"]))
   print("END_WORKER_DIFF")
-  checked(["git", "checkout", "-q", "--", "libraries/media/webm", "Cargo.lock"])
+  checked(["git", "checkout", "-q", "--", "libraries/media/webm", "libraries/media/av1", "Cargo.lock"])
 end

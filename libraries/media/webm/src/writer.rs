@@ -202,6 +202,8 @@ impl<W: Write + Seek> Writer<W> {
     }
     fn write_packet(&mut self, track: u8, t: u64, d: u64, key: bool, data: &[u8]) -> Result<()> {
         if !(track == 1 || track == 2 && self.audio)
+            || t > i64::MAX as u64
+            || track == 1 && self.cues.is_empty() && !key
             || t < self.last
             || data.is_empty()
             || data.len() as u64 >= (1 << 56) - 16
@@ -233,6 +235,9 @@ impl<W: Write + Seek> Writer<W> {
         Ok(())
     }
     pub fn finish(mut self) -> Result<W> {
+        if self.cues.is_empty() {
+            return Err(Error::Invalid("video keyframe required"));
+        }
         if self.failed {
             return Err(Error::Invalid("writer failed; discard output"));
         }
@@ -389,7 +394,9 @@ pub fn av1_config(packet: &[u8]) -> Result<Vec<u8>> {
                 return Err(Error::Invalid("requires 8-bit non-monochrome"));
             }
             if bits.get(1)? != 0 {
-                bits.get(24)?;
+                if bits.get(24)? == 0x01_0d_00 {
+                    return Err(Error::Invalid("sRGB identity colour is not Main 4:2:0"));
+                }
             }
             bits.get(1)?;
             let chroma = bits.get(2)?;
