@@ -1,3 +1,68 @@
+# PR #226 round 2 — rider stop, 2026-11-22
+
+**STOP: Fable ruling A's path-length-1 rider rejects legitimate publications.**
+PR https://github.com/mixviu/mixviu/pull/226 stays draft. Starting head
+`56c645700f9074a7d6413890f36bbfdc7066f51e`. No guard implementation,
+exemption or differ tuning follows. Opus must take this evidence back to Fable.
+
+The existing corrected-probe CBC batch already contains 20 standalone real
+runs with every operation path recorded: `20261121-234716-fee43dae-a1`,
+BUILD_RC=0, 20/20 green, source `000b1d10` (same application/differ as this
+head). Auditing that raw trace finds rider violations in **all 20 runs**.
+This is existing run evidence, not a newly executed round-2 batch. The stop
+condition is established before any new CBC submission, so no additional
+notice fixture, implementation, controls or acceptance soak was run.
+
+Counts below include every patch callback in the 200-peer discovery and
+retained-data steady windows. Startup and deliberate seed initialisation are
+excluded. There are **zero root `set`s**, but these length-1 `set`s:
+
+| Path | Discovery | Steady |
+|---|---:|---:|
+| `["mesh_local_text"]` | 146 | 78 |
+| `["mesh_age"]` | 20 | 4 |
+| `["mesh_start_visible"]` | 20 | 0 |
+| `["mesh_empty"]` | 20 | 0 |
+| `["mesh_observing"]` | 20 | 0 |
+| `["mesh_inspector_title"]` | 20 | 0 |
+
+These are flattened top-level **scalar fields**, not whole compound sections:
+`apps/workshop/mesh-view.mix:44` produces strings for `mesh_local_text`,
+`mesh_age`, `mesh_inspector_title`, and booleans for the other three.
+The scalar differ's ordinary terminal `set` is correct for these changes.
+No >256-operation fallback or depth collapse is needed to trigger the rider.
+The ruling explicitly defines the rider by path length, so this report does
+not reinterpret “section” to exempt scalars.
+
+Concrete examples from sample 1, after the first full acknowledgement:
+
+- Discovery revision 4/base 3, `workshop.refresh`, 2,217.712 ms:
+  `["mesh_local_text"]`, 108-byte `set` inside a 28,822-byte patch.
+- Steady revision 11/base 10, `viu.tick`, 9,307.594 ms:
+  `["mesh_local_text"]`, 111-byte `set` inside a 2,678-byte patch.
+
+The steady example alone activates the explicit legitimate-run stop rule.
+No new Rust check is needed to establish a recorded protocol operation's
+path length. The earlier round's green checks are historical, not new
+round-2 validation. The kind assertion, byte-telemetry conversion, revised
+negative controls and ready status remain **unimplemented/pending** until
+Fable refines the rider. The current 768 KiB assertion remains active.
+
+Private evidence: saved log
+`20261121-234718-cbc3-000b1d103a66-20261121-234716-fee43dae-a1-ea386d02.log`;
+`_var/workshop-byte-guard/r2-rider-audit.mix` reproduces the counts and first
+examples from that log; its JSON output is `r2-rider-audit.json` beside it.
+Only documentation changed in the public branch for this stop receipt.
+
+Fable's separate monitoring disposition is recorded in TODO-workshop and
+the flake ledger: **post-#216 burst growth is not a defect, monitor**.
+Main's 781,513-byte legitimate discovery patch versus 480,075 bytes before
+#216 (and 896,750 bytes for a forced whole-model resend) defeats a single
+size threshold as a discriminator. Bound growth only against a measured
+Bus frame limit or a measured publish-latency tail; no new batch cap.
+
+## Round 1 receipt (historical)
+
 # Workshop publication byte guard — PR #226
 
 PR: https://github.com/mixviu/mixviu/pull/226 (draft, author mixviu-agent).
