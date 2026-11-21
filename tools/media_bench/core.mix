@@ -120,7 +120,7 @@ fn guard_at($hhmm, $processes)
   if $hhmm >= 2330 or $hhmm < 300 then raise("GUARD", "nightly window 23:30–03:00") end
   for $line in split($processes,"\n")
     -- Ignore command text embedded in agent briefs; inspect actual executable argv.
-    if re_match($line, '^[0-9]+ [^ ]*(chrome|chromium)[^ ]* .*--headless') or re_match($line,'^[0-9]+ [^ ]*chrome-headless-shell( |$)') or re_match($line, '^[0-9]+ [^ ]*mix(d)? (.*[ /])?(build|episode)\.mix( |$)') then
+    if re_match($line, '^[0-9]+ [^ ]*(chrome|chromium)[^ ]* .*--headless') or re_match($line,'^[0-9]+ [^ ]*chrome-headless-shell( |$)') or re_match($line, '^[0-9]+ ([^ ]*/)?mixd? (.*[ /])?(build|episode)\.mix( |$)') then
       raise("GUARD", "episode build or headless Chrome: " .. $line)
     end
   end

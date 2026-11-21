@@ -96,12 +96,12 @@ $refused=false
 try $c.concat_entry("/tmp/has'quote.wav") catch $e $refused=true end
 check($refused)
 check($c.concat_entry("/tmp/normal.wav")=="file '/tmp/normal.wav'")
-for $line in ["42 mix build.mix","42 /usr/local/bin/mix episode.mix","42 mix ./build.mix","42 mix --flag build.mix"]
+for $line in ["42 mix build.mix","42 /usr/local/bin/mix episode.mix","42 mix ./build.mix","42 mix --flag build.mix","42 mixd build.mix","42 /opt/mix/bin/mixd episode.mix"]
   $refused=false
   try $c.guard_at(1600,$line) catch $e $refused=true end
   check($refused)
 end
-for $line in ["42 mix rebuild.mix","42 mix episode.mix.old","42 other build.mix"]
+for $line in ["42 mix rebuild.mix","42 mix episode.mix.old","42 other build.mix","42 remix episode.mix","42 tmix build.mix"]
   $c.guard_at(1600,$line)
 end
 check(deep_eq($s.budget_argv(["ffmpeg","-threads","4","n_threads=4"],{budget:"4"}),["ffmpeg","-threads","4","n_threads=4"]))
@@ -122,11 +122,19 @@ try
     check($refused)
   end
   $ep.check_output($alias,$tmp.."/outside-evidence")
+  $ep.create_output($alias,$tmp.."/outside-evidence")
+  check(realpath($tmp.."/outside-evidence")!=nil)
+  run_argv_must(["ln","-s","--",$original.."/missing",$tmp.."/dangling"])
+  $refused=false
+  try $ep.create_output($alias,$tmp.."/dangling/new") catch $e $refused=true end
+  check($refused and not is_dir($original.."/missing"))
   write_file($original.."/episode.mix",data_encode([{kind:"clip",path:$alias.."/take.mp4"}]))
   write_file($original.."/meta.json",json_encode({real:$original.."/file",alias:$alias.."/file",alias_dot:$tmp.."/./linked/file",sibling:$original.."-other/file",alias_sibling:$alias.."-other/file",root:$alias}))
   write_file($original.."/actions.jsonl",json_encode({path:$alias.."/file"}).."\n")
   $before=$ep.run_snapshot($original)
-  $copy=$ep.copy_run(realpath($alias),[$original,$alias,$tmp.."/./linked"])
+  $copied=$ep.copy_run(realpath($alias),[$original,$alias,$tmp.."/./linked"],$before)
+  $copy=$copied.path
+  check($copied.copy_consistent and $copied.snapshot.content_sha256==$before.content_sha256)
   $meta=json_parse(read_file($copy.."/meta.json"))
   check($ep.rebase_value($alias.."/file",[$alias.."/"],$copy)==$copy.."/file")
   check($meta.real==$copy.."/file" and $meta.alias==$copy.."/file" and $meta.root==$copy)
@@ -140,6 +148,17 @@ try
   check($before.sha256!=$ep.run_snapshot($original).sha256)
   $ep.remove_copy($copy,true); check(is_dir($copy))
   $ep.remove_copy($copy,false); check(not is_dir($copy)); $copy=nil
+  -- Restore the source's bytes and mtime after a transient copy-time change:
+  -- the original before/after check passes, but copy consistency must fail.
+  run_argv_must(["cp","-p","--",$original.."/new-file",$tmp.."/saved"])
+  $before=$ep.run_snapshot($original)
+  write_file($original.."/new-file","mutated")
+  $refused=false
+  try $ep.copy_run($original,[$original],$before) catch $e
+    $refused=contains(to_string($e),"source changed during copy")
+  end
+  run_argv_must(["cp","-p","--",$tmp.."/saved",$original.."/new-file"])
+  check($refused and $before.sha256==$ep.run_snapshot($original).sha256)
 finally
   if $copy!=nil then $ep.remove_copy($copy,false) end
   run_argv_must(["rm","-rf","--",$tmp])

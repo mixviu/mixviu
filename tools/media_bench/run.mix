@@ -19,8 +19,8 @@ if has_key($wait,$o.suite) then raise("DEFERRED",$o.suite.." waits for row "..$w
 if not contains(["av1enc","av1dec","opus","loudness","encode","episode"],$o.suite) then raise("ARGS","unknown suite") end
 if not contains(["ffmpeg","rust"],$o.engine) then raise("ARGS","unknown engine") end
 $core.guard()
-if $o.suite=="episode" then $episode_support.check_output($o["episode-run"] ?? "",$o.out) end
-mkdir($o.out)
+if $o.suite=="episode" then $episode_support.create_output($o["episode-run"] ?? "",$o.out)
+else mkdir($o.out) end
 $cpu=re_find(read_file("/proc/cpuinfo"),'model name\s*:\s*([^\n]+)')[0].groups[0]
 $result = {suite:$o.suite,engine:$o.engine,variant:$o.variant,tool_versions:{mix:trim(run_argv_must(["/usr/local/bin/mix","--version"])),ffmpeg:run_argv_must(["ffmpeg","-version"]),time:run_argv_must(["/usr/bin/time","--version"]),source_commit:trim(run_argv_must(["git","-C",$repo,"rev-parse","HEAD"]))},host:trim(run_argv_must(["hostname"])),cpu_model:trim($cpu),items:[]}
 $result.tool_versions.budget=$o.budget

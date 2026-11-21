@@ -7,6 +7,9 @@ fn check_output($given,$out)
   -- symlink must not redirect evidence writes into the original run.
   $ancestor=$out; $suffix=[]
   while realpath($ancestor)==nil
+    $entry=nil
+    try $entry=stat($ancestor,{follow_symlinks:false}) catch $error end
+    if $entry!=nil and $entry.is_symlink then raise("EPISODE","--out has a dangling symlink component") end
     push($suffix,basename($ancestor))
     $parent=dirname($ancestor)
     if $parent==$ancestor then raise("EPISODE","cannot resolve output parent") end
@@ -14,6 +17,13 @@ fn check_output($given,$out)
   end
   $resolved=path_join(realpath($ancestor),join(reverse($suffix),"/"))
   if $resolved==$source or starts_with($resolved,$source.."/") then raise("EPISODE","--out must be outside the original run") end
+end
+fn create_output($given,$out)
+  check_output($given,$out)
+  mkdir($out)
+  $resolved=realpath($out)
+  if $resolved==nil then raise("EPISODE","cannot resolve created output directory") end
+  check_output($given,$resolved)
 end
 fn rebase_value($value,$origins,$copy)
   if type($value)=="string" then
@@ -34,24 +44,31 @@ fn rebase_value($value,$origins,$copy)
 end
 fn run_snapshot($root)
   $raw=run_argv_must(["find",$root,"(","-type","f","-o","-type","l",")","-print0"],{timeout:600})
-  $files=[]
+  $files=[]; $content=[]
   for $path in sort(filter(split($raw,"\0"),fn($p)=$p!=""))
     $s=stat($path,{follow_symlinks:false})
-    push($files,{path:substr($path,len($root)+1),size:$s.size,mtime:$s.mtime,mtime_nsec:$s.mtime_nsec,symlink:$s.is_symlink})
+    $relative=substr($path,len($root)+1)
+    $digest=substr(run_argv_must(["sha256sum","--zero","--",$path],{timeout:600}),0,64)
+    push($files,{path:$relative,size:$s.size,mtime:$s.mtime,mtime_nsec:$s.mtime_nsec,symlink:$s.is_symlink,sha256:$digest})
+    push($content,{path:$relative,size:stat($path).size,sha256:$digest})
   end
   $hash=split(run_argv_must(["sha256sum"],{stdin:json_encode($files)})," ")[0]
-  return {sha256:$hash,files:$files}
+  $content_hash=split(run_argv_must(["sha256sum"],{stdin:json_encode($content)})," ")[0]
+  return {sha256:$hash,files:$files,content_sha256:$content_hash,content:$content}
 end
 fn remove_copy($copy,$keep)
   if $keep then return end
   if not starts_with($copy,"/var/tmp/media-bench/episode-") then raise("EPISODE","refusing to remove a non-bench copy") end
   run_argv_must(["rm","-rf","--",$copy],{timeout:600})
 end
-fn copy_run($source,$origins)
+fn copy_run($source,$origins,$before)
   mkdir("/var/tmp/media-bench")
   $copy=trim(run_argv_must(["mktemp","-d","/var/tmp/media-bench/episode-XXXXXX"]))
   try
     run_argv_must(["cp","-aL","--reflink=auto","--",$source.."/.",$copy],{timeout:600})
+    -- Compare the unmodified copy: rebasing below intentionally changes files.
+    $snapshot=run_snapshot($copy)
+    if $snapshot.content_sha256!=$before.content_sha256 then raise("EPISODE","source changed during copy") end
     for $file in sort(concat(glob($copy.."/**/*.json"),concat(glob($copy.."/**/*.jsonl"),glob($copy.."/**/*.mix"))))
       if ends_with($file,".jsonl") then
         $lines=[]
@@ -69,7 +86,7 @@ fn copy_run($source,$origins)
     remove_copy($copy,false)
     raise("EPISODE",$error)
   end
-  return $copy
+  return {path:$copy,snapshot:$snapshot,copy_consistent:true}
 end
 fn take_entries($copy)
   $out=[]; $seen={}

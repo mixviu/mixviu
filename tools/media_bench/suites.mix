@@ -230,9 +230,12 @@ fn episode($o)
   $before=$episode_support.run_snapshot($source)
   write_file($o.out.."/original-before.json",json_encode($before))
   $origins=unique([$source,$o["episode-run"],$o.episode_given ?? $o["episode-run"],$o.episode_joined ?? $o["episode-run"]])
-  $copy=$episode_support.copy_run($source,$origins)
+  $copy=nil; $copy_consistent=false
   $items=[]; $keep=$o.keep ?? false
   try
+    $copied=$episode_support.copy_run($source,$origins,$before)
+    $copy=$copied.path; $copy_consistent=$copied.copy_consistent
+    write_file($o.out.."/copy-snapshot.json",json_encode($copied.snapshot))
     for $part in load_data($copy.."/episode.mix")
       if $part.native ?? false then raise("EPISODE","native desk recording is outside this harness; use an existing non-native run") end
     end
@@ -251,14 +254,15 @@ fn episode($o)
       $after=$episode_support.run_snapshot($source)
       write_file($o.out.."/original-after.json",json_encode($after))
       $unchanged=$before.sha256==$after.sha256
-      write_file($o.out.."/original-verification.json",json_encode({before:$before.sha256,after:$after.sha256,original_untouched:$unchanged}))
+      write_file($o.out.."/original-verification.json",json_encode({before:$before.sha256,after:$after.sha256,copy_consistent:$copy_consistent,original_untouched:$unchanged}))
     finally
-      $episode_support.remove_copy($copy,$keep)
+      if $copy!=nil then $episode_support.remove_copy($copy,$keep) end
     end
   end
   if not $unchanged then raise("EPISODE","original run metadata changed; see original-verification.json") end
   for $i in range(0,len($items)-1)
     $items[$i].metrics.original_untouched=$unchanged
+    $items[$i].metrics.copy_consistent=$copy_consistent
   end
   return $items
 end
