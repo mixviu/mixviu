@@ -4,7 +4,8 @@ PR: https://github.com/mixviu/mixviu/pull/216, opened by `app/mixviu-agent`.
 Branch: `feat/workshop-section-dirty`, from merged #214 main `6b4278c7`.
 Current source checkpoint: `f0f6c0cf`; production behaviour is unchanged since
 `80e4ae38`, with later test/documentation changes. This receipt is a subsequent
-documentation commit. **Draft: scoped validation and strict soak still pending.**
+documentation commit. **Scoped checks pass; Workshop stays serial after the
+strict normal-pool failure recorded below. Ready for PR review.**
 
 ## Behaviour and locations
 
@@ -76,6 +77,20 @@ changes how many delayed rows arrive before the next publication.
 | `20261121-141251-fc7cd5f6-a1` | Forgotten tree dirty mark triggers the real-fixture oracle assertion. Source restored. |
 | `20261121-141251-fdb97a25-a1` | Paired diagnostic red on unchanged native apply bound, detailed above. |
 | `20261121-141917-42b10066-a1` | Corrected generated property fixture passes through the real native app harness: all 57 app Mix scripts pass. |
+| `20261121-141057-6e4cb2de-a1` | Source787c32bd: fmt check, all-target clippy, all55 non-doc targets and doctests in default and test-support configurations pass. Parent-only totals:647/657 passed, zero failed,12 existing ignored per configuration. Child app-harness summaries excluded. |
+| `20261121-143113-d9c3858e-a1` | Final sourcef0f6c0cf: all57 embedded app Mix scripts, including wrapped-model/clock checks, and all six Workshop Bus tests pass. Only documentation changes follow. |
+| `20261121-142253-d58056ae-a1` | Redundant full repeat cancelled after the full scoped pass; final fixture changes received the focused native run above. Cancellation receipt143; not a test failure or pass. |
+
+All-target clippy exits0 with existing warnings in unchanged Rust files: library
+114 and unit target126 (110 duplicates), plus integration/dependency warnings.
+There are no diagnostics in the changed Rust test file. This is not a
+warnings-as-errors result. Saved logs were read and audited. All13 changed Mix
+files lint with zero errors, warnings or notes; git diff --check passes.
+
+The final standalone retained-body phase reaches4,052,371 model bytes, tick
+median86,569us, notice CPU max5,743us and native apply max68,520us. Delayed
+Traffic is still changing the model; this is not the baseline's retained state
+and no paired whole-tick speedup is claimed.
 
 The generated property test now uses eight seeds, one complete ten-event
 permutation each, plus a forgotten mark, wrapped acknowledged models and a
@@ -98,9 +113,13 @@ exhausted their reasoning budgets without a report and are not approvals.
 
 Initial strict normal-pool job `20261121-141302-0dbe7a6d-a1` stopped in round one
 on the new generated test's embedded deadline. Workshop Bus passed. A fresh
-strict twelve-round width-four no-serial/no-retry run after the fixture repair
-is in progress as `20261121-142018-d010b2ad`. Workshop remains serial pending
-12/12; the conditional full CI has not been triggered.
+strict twelve-round width-four no-serial/no-retry run after the fixture repair,
+`20261121-142018-d010b2ad-a1`, passed round one and failed round two on native
+apply: 105,920 us observed against the unchanged 100,000 us guard. Rounds 3–12
+did not run. All 54 binaries were queued at width four, with zero serial entries
+and no retry. Failure-phase notice CPU max was 5,840 us; tick median 80,530 us;
+wire max 157,462 bytes; retained model max 3,852,294 bytes. The one-second calls
+did not fail. **Workshop stays serial.** The conditional full CI is not triggered.
 
 Desk7 after measurement is pending the gold carrying this PR. Its recorded
 before is worst ping 482 ms in the first 1.3 seconds on gold `a3b1e286`.
