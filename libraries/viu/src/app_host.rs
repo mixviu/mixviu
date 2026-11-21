@@ -131,7 +131,7 @@ struct Host {
     model_revision_floor: Option<(u64, u64)>,
     model_refused: Option<u64>,
     model_bytes: usize,
-    model_receipts: VecDeque<(u64, String, Value)>,
+    model_receipts: std::collections::VecDeque<(u64, String, Value)>,
     output: Option<String>,
     outputs: BTreeMap<String, Value>,
     runtime: Runtime,
@@ -176,7 +176,8 @@ impl Host {
                 )
             }
         };
-        self.model_receipts.push_back((generation, command.into(), body));
+        self.model_receipts
+            .push_back((generation, command.into(), body));
         self.flush_model_receipts();
     }
     fn flush_model_receipts(&mut self) {
@@ -1093,7 +1094,9 @@ impl Host {
         // Bound retained receipts to the evaluator mailbox width. Leave
         // further completions in its existing result queue under pressure.
         while self.model_receipts.len() < 32 {
-            let Some(done) = self.runtime.try_completion() else { break };
+            let Some(done) = self.runtime.try_completion() else {
+                break;
+            };
             #[cfg(feature = "test-support")]
             let _retire_probe = self
                 .discovery_probe
@@ -2440,7 +2443,7 @@ fn create_with_probe(
         model_revision_floor: None,
         model_refused: None,
         model_bytes: 2,
-        model_receipts: VecDeque::new(),
+        model_receipts: std::collections::VecDeque::new(),
         output: None,
         outputs: BTreeMap::new(),
         runtime,

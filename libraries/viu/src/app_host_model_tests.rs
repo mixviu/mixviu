@@ -3,10 +3,18 @@ use super::*;
 
 #[test]
 fn publication_receipt_survives_a_full_evaluator_mailbox() {
-    use std::sync::{Mutex, atomic::{AtomicBool, Ordering}, mpsc};
+    use std::sync::{
+        Mutex,
+        atomic::{AtomicBool, Ordering},
+        mpsc,
+    };
     struct Release(Option<mpsc::Sender<()>>);
     impl Drop for Release {
-        fn drop(&mut self) { if let Some(tx) = self.0.take() { let _ = tx.send(()); } }
+        fn drop(&mut self) {
+            if let Some(tx) = self.0.take() {
+                let _ = tx.send(());
+            }
+        }
     }
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop");
     let mut bundle = Bundle::load(&root, &["--headless".into()]).unwrap();
@@ -31,33 +39,46 @@ end
     let (release_tx, release_rx) = mpsc::channel();
     let release_rx = Mutex::new(release_rx);
     let blocked = AtomicBool::new(false);
+    let mut host = create(
+        bundle,
+        Arc::new(move || {
+            if !blocked.swap(true, Ordering::SeqCst) {
+                let _ = entered_tx.send(());
+                let _ = release_rx.lock().unwrap().recv();
+            }
+        }),
+    );
     let release = Release(Some(release_tx));
-    let mut host = create(bundle, Arc::new(move || {
-        if !blocked.swap(true, Ordering::SeqCst) {
-            let _ = entered_tx.send(());
-            let _ = release_rx.lock().unwrap().recv();
-        }
-    }));
     entered_rx.recv_timeout(Duration::from_secs(10)).unwrap();
     let ctx = egui::Context::default();
     host.pump(&ctx);
     let generation = host.runtime.generation();
     let mut queued = 0;
-    while host.runtime.notify("test.noop".into(), json!({})).is_ok() { queued += 1; }
+    while host.runtime.notify("test.noop".into(), json!({})).is_ok() {
+        queued += 1;
+    }
     assert!(queued > 0);
     host.publication_result(generation, 2, Ok(()));
-    assert_eq!(host.model_receipts.len(), 1, "full mailbox must retain its acceptance");
+    assert_eq!(
+        host.model_receipts.len(),
+        1,
+        "full mailbox must retain its acceptance"
+    );
     drop(release);
     settle(&mut host, &ctx);
     assert!(host.model_receipts.is_empty());
-    assert_eq!(host.view.model()["label"], "2", "retained acceptance must reach the evaluator");
+    assert_eq!(
+        host.view.model()["label"],
+        "2",
+        "retained acceptance must reach the evaluator"
+    );
 }
 
 fn settle(host: &mut Host, ctx: &egui::Context) {
     let end = Instant::now() + Duration::from_secs(5);
     loop {
         host.pump(ctx);
-        if host.ready && host.inflight.is_empty() {
+        if host.ready && host.inflight.is_empty() && host.model_receipts.is_empty() {
             break;
         }
         assert!(
