@@ -20,6 +20,8 @@ for $cmd in [
   ["cargo","fmt","--all","--","--check"],
   ["mix","apps/deck/core-test.mix"],
   ["mix","lint","apps/deck/app.mix"],
+  ["mix","apps/deck/examples/author.mix"],
+  ["git","diff","--exit-code","--","apps/deck/examples/vfl-self-recording.json"],
   ["mix","apps/gallery/deck-pages.mix",$output],
   ["diff","-qr","apps/gallery/deck-pages",$output]
 ]
