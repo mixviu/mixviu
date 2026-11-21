@@ -6,6 +6,8 @@ fn checked($cmd, $opts)
   return $r
 end
 try
+  $help = checked(["target/debug/examples/av1enc", "--help"], {timeout: 120})
+  if not contains($help.stdout, "Usage: av1enc") or $help.stderr != "" then raise("ORACLE", "help output mismatch") end
   $source = $root .. "/source.y4m"
   $made = checked(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc2=size=64x48:rate=30000/1001", "-frames:v", "5", "-pix_fmt", "yuv420p", "-f", "yuv4mpegpipe", $source], {timeout: 120})
   for $file_output in [false, true]
