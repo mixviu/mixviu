@@ -1,0 +1,43 @@
+$root="/tmp/mixviu-opus-l2-spike"
+$bin="tools/lab-opus/target/release/opus-spike"
+$candidates=["opus-pure","cranpose-opus-pure","hiraku-opus","ps-rusty-opus","mousiki","oporus","moosicbox_opus_native","opuscule","filmcraft-opus","opus1","opus-wave","symphonia-opus","oxideav-opus"]
+for $set in ["opus_testvectors","opus_newvectors"]
+ for $candidate in $candidates
+  for $ch in [1,2]
+   $jobs=[]
+   $ids=[]
+   for $v in ["01","02","03","04","05","06","07","08","09","10","11","12"]
+    $id=$set .. "-" .. $candidate .. "-" .. $ch .. "-" .. $v
+    push($ids,$id)
+    push($jobs,[$bin,"measure",$bin,"decode",$candidate,to_string($ch),$root .. "/" .. $set .. "/testvector" .. $v .. ".bit",$root .. "/" .. $id .. ".pcm"])
+   end
+   $results=run_parallel($jobs,{max:4,timeout:900})
+   $compare=[]
+   $compare_ids=[]
+   for $i in range(0,len($ids)-1)
+    $id=$ids[$i]
+    $r=$results[$i]
+    write_file($root .. "/" .. $id .. "-decode.log",json_encode($r))
+    print($id .. " RC=" .. $r.exit_code)
+    if $r.ok then
+     $v=split($id,"-")[-1]
+     for $suffix in ["","m"]
+      $ref=$root .. "/" .. $set .. "/testvector" .. $v .. $suffix .. ".dec"
+      if is_file($ref) then
+       $argv=[$root .. "/opus_compare"]
+       if $ch==2 then push($argv,"-s") end
+       push($compare,concat($argv,["-r","48000",$ref,$root .. "/" .. $id .. ".pcm"]))
+       push($compare_ids,$id .. "-compare" .. $suffix)
+      end
+     end
+    end
+   end
+   if len($compare)==0 then continue end
+   $results=run_parallel($compare,{max:4,timeout:900})
+   for $i in range(0,len($compare_ids)-1)
+    write_file($root .. "/" .. $compare_ids[$i] .. ".log",json_encode($results[$i]))
+    print($compare_ids[$i] .. " RC=" .. $results[$i].exit_code .. " " .. $results[$i].stderr)
+   end
+  end
+ end
+end

@@ -33,4 +33,4 @@ invoke(["cc", "-O2", $root .. "/opus_compare.c", "-lm", "-o", $root .. "/opus_co
 invoke(["ls", "-l", $root])
 invoke(["ffmpeg", "-version"])
 invoke(["tools/lab-opus/target/release/opus-spike", "generate", $root])
-invoke(["tar", "czf", $root .. "/evidence.tgz", "-C", $root, ".", "--exclude=evidence.tgz"])
+invoke(["tar", "czf", $root .. "/evidence.tgz", "--exclude=evidence.tgz", "-C", $root, "."])

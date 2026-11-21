@@ -8,26 +8,7 @@ fn invoke($args, $name)
 end
 $build = invoke(["cargo", "build", "--release", "--manifest-path", "tools/lab-opus/Cargo.toml"], "build")
 if not $build.ok then exit(1) end
-for $set in ["opus_testvectors", "opus_newvectors"]
-  for $candidate in ["opus-pure", "cranpose-opus-pure", "hiraku-opus", "ps-rusty-opus", "mousiki", "oporus", "moosicbox_opus_native", "opuscule", "filmcraft-opus", "opus1", "opus-wave", "symphonia-opus"]
-    for $ch in [1,2]
-      for $v in ["01","02","03","04","05","06","07","08","09","10","11","12"]
-        $id = $set .. "-" .. $candidate .. "-" .. $ch .. "-" .. $v
-        $stem = $root .. "/" .. $set .. "/testvector" .. $v
-        $decoded = $root .. "/" .. $id .. ".pcm"
-        $r = invoke([$bin, "measure", $bin, "decode", $candidate, to_string($ch), $stem .. ".bit", $decoded], $id .. "-decode")
-        if $r.ok then
-          for $variant in ["", "m"]
-            $args = [$root .. "/opus_compare"]
-            if $ch == 2 then push($args, "-s") end
-            $args = concat($args, ["-r", "48000", $stem .. $variant .. ".dec", $decoded])
-            invoke($args, $id .. "-compare" .. $variant)
-          end
-        end
-      end
-    end
-  end
-end
+print(run_argv_must(["/opt/mix/bin/mix","tools/lab-opus/conformance.mix"], {timeout:3600,max_output:4000000}))
 for $signal in ["sweep", "bursts"]
   for $rate in [64000,96000,128000]
     $id = $signal .. "-" .. $rate
@@ -37,7 +18,7 @@ for $signal in ["sweep", "bursts"]
       invoke([$bin, "measure", "ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", "48000", "-ac", "2", "-i", $input, "-c:a", "libopus", "-b:a", to_string($rate), "-frame_duration", "20", $oracle .. ".ogg"], "oracle-encode-" .. $id .. "-" .. $repeat)
       invoke([$bin, "measure", "ffmpeg", "-v", "error", "-y", "-c:a", "libopus", "-i", $oracle .. ".ogg", "-f", "s16le", $oracle .. ".pcm"], "oracle-decode-" .. $id .. "-" .. $repeat)
     end
-    for $candidate in ["opus-pure", "cranpose-opus-pure", "hiraku-opus", "ps-rusty-opus", "mousiki", "oporus", "moosicbox_opus_native", "opuscule", "filmcraft-opus", "opus1", "opus-wave", "symphonia-opus"]
+    for $candidate in ["opus-pure", "cranpose-opus-pure", "hiraku-opus", "ps-rusty-opus", "mousiki", "oporus", "moosicbox_opus_native", "opuscule", "filmcraft-opus", "opus1", "opus-wave", "symphonia-opus", "oxideav-opus"]
       $out = $root .. "/" .. $candidate .. "-" .. $id
       for $repeat in [1,2,3]
         invoke([$bin, "measure", $bin, "decode", $candidate, "2", $oracle .. ".ogg", $out .. "-reverse.pcm"], $candidate .. "-reverse-" .. $id .. "-" .. $repeat)
