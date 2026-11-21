@@ -83,7 +83,7 @@ new revision sequence. Legacy full publication still needs no revision.
 
 ## Appendix: implementation, discovery and checks (non-normative)
 
-## Discovery
+### Discovery
 
 The disposable `lab/viu-incremental-model` specimen starts at PR #213's merge.
 The first capture mixed peer-count phases and is excluded from acceptance
