@@ -1378,7 +1378,7 @@ impl Host {
                                         self.publication_result(done.generation, revision, Ok(()));
                                     } else {
                                         self.model_revision = None;
-                                self.model_refused = None;
+                                        self.model_refused = None;
                                     }
                                     ctx.request_repaint();
                                     if let Some(saved) = &mut self.saved {

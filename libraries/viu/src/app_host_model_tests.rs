@@ -2,17 +2,24 @@
 use super::*;
 
 fn review_bundle(source: &str) -> Bundle {
-    let root=PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop");
-    let mut bundle=Bundle::load(&root,&["--headless".into()]).unwrap();
-    bundle.manifest.bus=false;bundle.manifest.require_bus=false;bundle.manifest.follow_settings=false;
-    bundle.manifest.saved_version=None;bundle.manifest.frame=None;bundle.manifest.tick_ms=None;bundle.manifest.native_drive=false;
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/workshop");
+    let mut bundle = Bundle::load(&root, &["--headless".into()]).unwrap();
+    bundle.manifest.bus = false;
+    bundle.manifest.require_bus = false;
+    bundle.manifest.follow_settings = false;
+    bundle.manifest.saved_version = None;
+    bundle.manifest.frame = None;
+    bundle.manifest.tick_ms = None;
+    bundle.manifest.native_drive = false;
     bundle.scene="---\nscene: 1\nname: review\ncitizen: test\n---\n```mix\nroot: {widget: \"text\", text: \"= $model.label ?? \\\"data\\\"\"}\n```\n".into();
-    bundle.program.source=source.into();bundle
+    bundle.program.source = source.into();
+    bundle
 }
 
 #[test]
 fn mix_differ_publishes_deep_models_and_long_keys_without_refusal() {
-    let bundle=review_bundle(r#"
+    let bundle = review_bundle(
+        r#"
 $ctx=viu_context();$pub=require("../../libraries/viu/mix/model-publication.mix")
 $before=0;$after=1
 for $i=1 to 40 $before={child:$before};$after={child:$after} end
@@ -36,29 +43,33 @@ end
 on viu.model.refused
   raise("TEST","publication was refused by the owner")
 end
-"#);
-    let mut host=create(bundle,Arc::new(||{}));let ctx=egui::Context::default();
-    settle(&mut host,&ctx);
-    for (command,revision) in [("test.deep",2),("test.long",3)] {
-        host.dispatch(command.into(),json!({}),BTreeMap::new(),None);settle(&mut host,&ctx);
-        assert!(host.error.is_empty(),"{}",host.error);
-        assert_eq!(host.model_revision.unwrap().1,revision);
+"#,
+    );
+    let mut host = create(bundle, Arc::new(|| {}));
+    let ctx = egui::Context::default();
+    settle(&mut host, &ctx);
+    for (command, revision) in [("test.deep", 2), ("test.long", 3)] {
+        host.dispatch(command.into(), json!({}), BTreeMap::new(), None);
+        settle(&mut host, &ctx);
+        assert!(host.error.is_empty(), "{}", host.error);
+        assert_eq!(host.model_revision.unwrap().1, revision);
     }
-    assert_eq!(host.model["é".repeat(150)],true);
+    assert_eq!(host.model["é".repeat(150)], true);
 }
 
 #[test]
 fn receipt_limit_tracks_configured_runtime_width() {
-    let runtime=Runtime::new(8,Arc::new(||{}),None);
-    assert_eq!(runtime.capacity(),8);
+    let runtime = Runtime::new(8, Arc::new(|| {}), None);
+    assert_eq!(runtime.capacity(), 8);
 }
 
-#[cfg(feature="test-support")]
+#[cfg(feature = "test-support")]
 const FLUSH_PUBLICATION_BYTE_BOUND: u64 = 1024 * 1024;
-#[cfg(feature="test-support")]
+#[cfg(feature = "test-support")]
 #[test]
 fn flush_publication_is_measured_by_the_byte_guard() {
-    let bundle=review_bundle(r#"
+    let bundle = review_bundle(
+        r#"
 $g=viu_context().generation
 send "viu-local" "scenes.model" body={generation:$g,revision:1,value:{label:"initial"}}
 on viu.model.applied
@@ -66,12 +77,21 @@ on viu.model.applied
     send "viu-local" "scenes.model.patch" body={generation:$g,base:1,revision:2,operations:[{op:"set",path:["label"],value:"flushed"}]}
   end
 end
-"#);
-    let mut host=test_support::Harness::new(bundle);host.probe_discovery();
-    host.discovery_numeric_bounds(u64::MAX,FLUSH_PUBLICATION_BYTE_BOUND);
-    let end=Instant::now()+Duration::from_secs(10);
-    loop { host.pump();if host.state()["model"]["label"]=="flushed" {break;}assert!(Instant::now()<end);std::thread::sleep(Duration::from_millis(1)); }
-    assert_eq!(host.discovery_measurements()["tick_model_bytes"]["n"],1);
+"#,
+    );
+    let mut host = test_support::Harness::new(bundle);
+    host.probe_discovery();
+    host.discovery_numeric_bounds(u64::MAX, FLUSH_PUBLICATION_BYTE_BOUND);
+    let end = Instant::now() + Duration::from_secs(10);
+    loop {
+        host.pump();
+        if host.state()["model"]["label"] == "flushed" {
+            break;
+        }
+        assert!(Instant::now() < end);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(host.discovery_measurements()["tick_model_bytes"]["n"], 1);
 }
 
 #[test]
@@ -325,16 +345,26 @@ end
     settle(&mut host, &ctx);
     assert!(host.error.is_empty());
     assert_eq!(host.model_revision, Some((generation, 9)));
-    host.dispatch("test.full".into(),json!({"revision":crate::model_patch::MAX_REVISION,"label":"terminal"}),BTreeMap::new(),None);
-    settle(&mut host,&ctx);
-    host.dispatch("test.full".into(),json!({"revision":crate::model_patch::MAX_REVISION,"label":"refused"}),BTreeMap::new(),None);
-    settle(&mut host,&ctx);
+    host.dispatch(
+        "test.full".into(),
+        json!({"revision":crate::model_patch::MAX_REVISION,"label":"terminal"}),
+        BTreeMap::new(),
+        None,
+    );
+    settle(&mut host, &ctx);
+    host.dispatch(
+        "test.full".into(),
+        json!({"revision":crate::model_patch::MAX_REVISION,"label":"refused"}),
+        BTreeMap::new(),
+        None,
+    );
+    settle(&mut host, &ctx);
     assert!(host.error.contains("revision must advance"));
-    assert_eq!(host.view.model()["label"],"terminal");
-    host.dispatch("test.legacy".into(),json!({}),BTreeMap::new(),None);
-    settle(&mut host,&ctx);
+    assert_eq!(host.view.model()["label"], "terminal");
+    host.dispatch("test.legacy".into(), json!({}), BTreeMap::new(), None);
+    settle(&mut host, &ctx);
     assert!(host.error.is_empty());
-    assert_eq!(host.model_refused,None);
+    assert_eq!(host.model_refused, None);
     assert_eq!(
         host.view.model()["__viu_metrics"]["item_spacing_x"],
         json!(ctx.global_style().spacing.item_spacing.x)

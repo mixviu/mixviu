@@ -10,12 +10,13 @@ fn patch(operations: Value) -> crate::model_patch::Patch {
 
 #[test]
 fn dotted_root_index_read_matches_full_publication() {
-    let source="---\nscene: 1\nname: dotted\ncitizen: test\n---\n```mix\nroot: {widget: \"text\", text: '= $model[\"a.b\"]'}\n```\n";
-    let mut view=SceneView::with_model(source,json!({"a.b":"before"})).unwrap();
-    view.apply_model_patch(&patch(json!([{"op":"set","path":["a.b"],"value":"after"}]))).unwrap();
-    let full=SceneView::with_model(source,json!({"a.b":"after"})).unwrap();
-    assert_eq!(view.tree,full.tree);
-    assert_eq!(view.tree.nodes["root"].ports["text"],json!("after"));
+    let source = "---\nscene: 1\nname: dotted\ncitizen: test\n---\n```mix\nroot: {widget: \"text\", text: '= $model[\"a.b\"]'}\n```\n";
+    let mut view = SceneView::with_model(source, json!({"a.b":"before"})).unwrap();
+    view.apply_model_patch(&patch(json!([{"op":"set","path":["a.b"],"value":"after"}])))
+        .unwrap();
+    let full = SceneView::with_model(source, json!({"a.b":"after"})).unwrap();
+    assert_eq!(view.tree, full.tree);
+    assert_eq!(view.tree.nodes["root"].ports["text"], json!("after"));
 }
 
 #[test]
