@@ -16,14 +16,22 @@ else
   checked(["cargo", "fmt", "-p", "media-av1", "--", "--check"])
   for $features in [[], ["--features", "asm"]]
     $cmd = ["cargo", "clippy", "--locked", "-p", "media-av1", "--all-targets"]
-    for $arg in $features do push($cmd, $arg) end
-    for $arg in ["--", "-D", "warnings"] do push($cmd, $arg) end
+    for $arg in $features
+      push($cmd, $arg)
+    end
+    for $arg in ["--", "-D", "warnings"]
+      push($cmd, $arg)
+    end
     checked($cmd)
   end
   for $features in [["--no-default-features"], ["--features", "asm"]]
     $cmd = ["cargo", "test", "--locked", "-p", "media-av1", "--all-targets"]
-    for $arg in $features do push($cmd, $arg) end
-    for $arg in ["--", "--nocapture"] do push($cmd, $arg) end
+    for $arg in $features
+      push($cmd, $arg)
+    end
+    for $arg in ["--", "--nocapture"]
+      push($cmd, $arg)
+    end
     checked($cmd)
   end
   checked(["mix", "tools/foreign_gate.mix"])
