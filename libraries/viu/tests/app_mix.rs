@@ -110,5 +110,9 @@ fn run_script(path: &std::path::Path) {
         done.stderr
     );
     println!("{}: {}", path.display(), done.stdout);
-    println!("APP_SCRIPT_TIME {} {:.6}", path.display(), started.elapsed().as_secs_f64());
+    println!(
+        "APP_SCRIPT_TIME {} {:.6}",
+        path.display(),
+        started.elapsed().as_secs_f64()
+    );
 }
