@@ -160,11 +160,18 @@ fn request_initial_fullscreen(ctx: &egui::Context, pending: &mut bool) {
 
 #[test]
 fn fullscreen_is_requested_once_after_context_creation() {
-    let ctx=egui::Context::default();
-    let mut pending=true;
-    for expected in [true,false] {
-        let output=ctx.run_ui(egui::RawInput::default(),|ui| request_initial_fullscreen(ui.ctx(),&mut pending));
-        assert_eq!(output.viewport_output.values().any(|v| v.commands.contains(&egui::ViewportCommand::Fullscreen(true))),expected);
+    let ctx = egui::Context::default();
+    let mut pending = true;
+    for expected in [true, false] {
+        let output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            request_initial_fullscreen(ui.ctx(), &mut pending)
+        });
+        assert_eq!(
+            output.viewport_output.values().any(|v| v
+                .commands
+                .contains(&egui::ViewportCommand::Fullscreen(true))),
+            expected
+        );
         output.drop_without_applying_deltas();
     }
 }

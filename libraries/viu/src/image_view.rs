@@ -56,6 +56,9 @@ impl Default for Images {
     }
 }
 impl Images {
+    pub fn scene() -> Self {
+        Self { capacity:64, ..Self::surface() }
+    }
     pub fn document() -> Self {
         Self {
             decoder: crate::thumbnail::Decoder::with_decoder("viu-document-decode", |path| {
@@ -434,6 +437,12 @@ impl Images {
             }
         }
         if let Some(texture) = self.slots.get(id).and_then(|s| s.texture.as_ref()) {
+            if let Some(size) = value["scene_size"].as_array() {
+                return ui.add(egui::Image::new(texture).fit_to_exact_size(egui::vec2(
+                    size[0].as_f64().unwrap() as f32,
+                    size[1].as_f64().unwrap() as f32,
+                )));
+            }
             let natural = self
                 .slots
                 .get(id)

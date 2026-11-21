@@ -109,7 +109,6 @@ macro_rules! icons {
 }
 
 icons! {
-    Cyclops => "cyclops",
     Accessibility => "accessibility",
     AppWindow => "app-window",
     ArrowDown => "arrow-down",

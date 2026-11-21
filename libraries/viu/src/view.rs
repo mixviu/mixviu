@@ -147,7 +147,7 @@ impl SceneView {
             motion: toolkit::scene_motion::SceneMotion::default(),
             numbers: crate::numbers::Numbers::default(),
             backdrops: crate::backdrop::Backdrops::default(),
-            scene_images: crate::image_view::Images::surface(),
+            scene_images: crate::image_view::Images::scene(),
             motion_parent: None,
             frame: None,
             regions: BTreeMap::new(),
@@ -1025,16 +1025,19 @@ impl SceneView {
                         }
                     }
                     "image" => {
-                        if let Some(icon)=text(node,"src").strip_prefix("icon:").and_then(crate::icons::Icon::from_name) {
+                        if text(node,"src")=="asset:cyclops" {
+                            let w=num(node,"w").unwrap_or(200.0);
+                            let h=num(node,"h").unwrap_or(w);
+                            ui.add(egui::Image::from_bytes("bytes://viu/cyclops.svg",include_bytes!("../assets/cyclops.svg").as_slice()).fit_to_exact_size(Vec2::new(w,h)));
+                        } else if let Some(icon)=text(node,"src").strip_prefix("icon:").and_then(crate::icons::Icon::from_name) {
                             let w=num(node,"w").or(num(node,"h")).unwrap_or(24.0);
                             let h=num(node,"h").unwrap_or(w);
-                            let colour=if icon==crate::icons::Icon::Cyclops {Color32::WHITE}else{ui.visuals().text_color()};
-                            ui.add(crate::icons::image_of(ui.ctx(),icon,w,colour).fit_to_exact_size(Vec2::new(w,h)));
+                            ui.add(crate::icons::image_of(ui.ctx(),icon,w,ui.visuals().text_color()).fit_to_exact_size(Vec2::new(w,h)));
                         } else if text(node,"src").starts_with("raster:") {
                             let w=num(node,"w").unwrap_or(320.0);
                             let h=num(node,"h").unwrap_or(180.0);
                             ui.allocate_ui(Vec2::new(w,h), |ui| {
-                                self.scene_images.draw(ui,id,&json!({"phase":"ready","handle":text(node,"src")}));
+                                self.scene_images.draw(ui,id,&json!({"phase":"ready","handle":text(node,"src"),"scene_size":[w,h]}));
                             });
                         }
                     }
@@ -2276,9 +2279,11 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                 if text(node, "src")
                     .strip_prefix("icon:")
                     .and_then(crate::icons::Icon::from_name)
-                    .is_none() && !text(node,"src").starts_with("raster:")
+                    .is_none()
+                    && !text(node, "src").starts_with("raster:")
+                    && text(node,"src")!="asset:cyclops"
                 {
-                    return Err(format!("image {id}: only known icon: sources supported"));
+                    return Err(format!("image {id}: expected known icon: or retained raster: source"));
                 }
             }
             "text" | "button" | "field" | "toggle" | "row" | "column" | "list" | "spacer"
