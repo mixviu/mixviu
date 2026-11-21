@@ -24,6 +24,10 @@ $ctx=viu_context();$pub=require("../../libraries/viu/mix/model-publication.mix")
 $before=0;$after=1
 for $i=1 to 40 $before={child:$before};$after={child:$after} end
 $key="";for $i=1 to 150 $key=$key.."é" end
+$nested={};$nested[$key]=true
+$nested_model={nested:$nested};$changed=$nested_model;$changed.nested[$key]=false
+$list_before={id:"leaf",value:0};$list_after={id:"leaf",value:1}
+for $i=1 to 40 $list_before={id:to_string($i),rows:[$list_before]};$list_after={id:to_string($i),rows:[$list_after]} end
 fn publish_review($old,$next,$base,$full,$depth)
   if $pub.requires_full($old,$next)!=$full then raise("TEST","unexpected full-publication decision") end
   if $full then
@@ -44,23 +48,18 @@ on test.long
   publish_review($after,$next,2,true,0)
 end
 on test.nested.seed
-  $nested={};$nested[$key]=true
-  $next={nested:$nested}
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,revision:4,value:$next}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,revision:4,value:$nested_model}
 end
 on test.nested.change
-  $changed=$next;$changed.nested[$key]=false
-  publish_review($next,$changed,4,false,1)
+  publish_review($nested_model,$changed,4,false,1)
 end
 on test.nested.remove
   publish_review($changed,{nested:{}},5,false,1)
 end
 on test.nested.add
-  publish_review({nested:{}},$next,6,false,1)
+  publish_review({nested:{}},$nested_model,6,false,1)
 end
 on test.list.seed
-  $list_before={id:"leaf",value:0};$list_after={id:"leaf",value:1}
-  for $i=1 to 40 $list_before={id:to_string($i),rows:[$list_before]};$list_after={id:to_string($i),rows:[$list_after]} end
   send "viu-local" "scenes.model" body={generation:$ctx.generation,revision:8,value:$list_before}
 end
 on test.list.change
