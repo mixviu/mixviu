@@ -159,6 +159,7 @@ pub const XDG_RUNTIME_DIR: &str = "XDG_RUNTIME_DIR";
 /// Names reserved for tests.
 pub mod test {
 pub const TEST_REQUIRE_FFMPEG: &str = "MIX_TEST_REQUIRE_FFMPEG";
+pub const TEST_OPUS_VECTORS: &str = "MIX_TEST_OPUS_VECTORS";
 pub const TEST_STRICT_FONT: &str = "MIX_TEST_STRICT_FONT";
 pub const TEST_VIUD_AGENT_SEAT_ALLOW: &str = "MIX_TEST_VIUD_AGENT_SEAT_ALLOW";
 pub const TEST_PRE_DRAIN_FRAME: &str = "MIX_TEST_PRE_DRAIN_FRAME";
