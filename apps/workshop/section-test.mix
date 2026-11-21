@@ -34,7 +34,9 @@ for $round=0 to 1
     elif $key==7 then $s.body=to_string($step)
     elif $key==8 then $s.row_key=if $s.row_key==nil then "nodes:mesh" else nil end
     else $s.macro_pending=1-$s.macro_pending end
-    $s=$p.changed($s,keys($s));$s.busy=$m.busy($s);$next=$p.inputs($s);$dirty=$p.marks($inputs,$next)
+    $fields=[["snapshot"],["filter"],["dock_open"],["dock_side"],["traffic"],["window_width"],["expanded"],["body"],["row_key"],["macro_pending"]][$key]
+    $s=$p.changed($s,$fields);$s.busy=$m.busy($s);$next=$p.inputs($s);$dirty=$p.marks($inputs,$next)
+    if $last!=nil and $key==7 then check(not $dirty.tree and not $dirty.macro and not $dirty.traffic,"body edit must reuse all retained sections") end
     $candidate=$p.project_dirty($s,$last,$dirty,1000000)
     $oracle=$p.project($s,1000000)
     check(deep_eq($candidate,$oracle),"section-dirty projection differs from full oracle")
@@ -66,12 +68,15 @@ for $case in [
   ["window_height",900],["dock_height",0.4],["dock_width",0.4],["window_width",1300],
   ["dock_side","right"],["dock_open",false],["traffic_filter","absent"],["traffic",[]],
   ["dialog","about"],["quitting",true],["expanded",[]],
+  ["connected",true],["busy",true],["jobs",{example:{owner:"subscription"}}],["queue",[{owner:"subscription"}]],["dropped",7],["traffic_paused",true],
   ["row_key","command:local:echo:echo"],["row_key","service:local:echo"],["row_key","node:local"],
   ["row_key","macro:global:example"],["row_key","agents:new:local"],["row_key","agent:local:s1"],["row_key","agents:node:local"]
 ]
-  $field=$case[0];$old=$s[$field];$s[$field]=$case[1];$s=$p.changed($s,[$field]);$s.busy=$m.busy($s)
+  $field=$case[0];$old=$s[$field];$s[$field]=$case[1];$s=$p.changed($s,[$field])
+  if $field!="busy" then $s.busy=$m.busy($s) end
   $receipt=compare($s,$receipt.model,$receipt.inputs)
-  $s[$field]=$old;$s=$p.changed($s,[$field]);$s.busy=$m.busy($s)
+  $s[$field]=$old;$s=$p.changed($s,[$field])
+  if $field!="busy" then $s.busy=$m.busy($s) end
   $receipt=compare($s,$receipt.model,$receipt.inputs)
 end
 -- Capture a pending publication, then coalesce several mutations without
@@ -88,4 +93,13 @@ check($clocked.mesh_canvas.initial.now_ms!=$last.mesh_canvas.initial.now_ms,"Mes
 -- A forgotten tree mark must be observable by the identical oracle check.
 $s.filter="definitely-missing";$s=$p.changed($s,["filter"]);$candidate=$p.project_dirty($s,$last,{tree:false,macro:true,agent:true,traffic:true},1000000)
 check(not deep_eq($candidate,$p.project($s,1000000)),"forgotten dirty mark escaped the oracle")
+-- Remove one declared dependency, then use the same real mutation and marks.
+$path=path_join(dirname(script_path()),".section-dependency-"..pid()..".mix")
+try
+  write_file($path,replace_must(read_file(path_join(dirname(script_path()),"presentation.mix")),',"filter","row_key"',',"row_key"'))
+  $missing=require($path);$s.filter="";$s=$p.changed($s,["filter"]);$receipt=compare($s,nil,nil)
+  $s.filter="definitely-missing";$s=$missing.changed($s,["filter"])
+  $candidate=$missing.project_dirty($s,$receipt.model,$missing.marks($receipt.inputs,$missing.inputs($s)),1000000)
+  check(not deep_eq($candidate,$p.project($s,1000000)),"drop-one-dependency control must fail the full oracle")
+finally remove($path) end
 print("Workshop section oracle PASS")

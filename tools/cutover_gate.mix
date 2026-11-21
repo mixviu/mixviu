@@ -141,13 +141,15 @@ if $mode == "builtins" then
 end
 if $mode == "bundle" then
   -- Light check of the apps.tar step with a debug mix; prints the summary.
-  $b = gate_step(["cargo", "build", "--locked", "-p", "mix"], "6")
+  $b = gate_step(["cargo", "build", "--locked", "-p", "mix", "-p", "viu", "--bins"], "6")
   if not $b.ok then exit(1) end
   $r = gate_step(["target/debug/mix", "tools/apps_bundle.mix", "/tmp/cutover-apps-check.tar", "--mix", "target/debug/mix", "--assets", args()[1] ?? asset_store()], "6")
   exit(if $r.ok then 0 else 1 end)
 end
 if $mode == "env-mx" then
   $b = gate_step(["cargo", "build", "--release", "--locked", "-p", "mix", "--bin", "mix"], "2")
+  if not $b.ok then exit(1) end
+  $b = gate_step(["cargo", "build", "--release", "--locked", "-p", "viu", "--bin", "viu"], "2")
   if not $b.ok then exit(1) end
   $bundle = realpath(".") .. "/target/env-mx-check.tar"
   try

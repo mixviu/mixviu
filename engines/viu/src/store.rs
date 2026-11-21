@@ -494,7 +494,14 @@ impl SceneStore {
         let name = args["scene"].as_str().unwrap_or_default();
         match kind {
             SceneCommand::Validate => {
-                let document = scene::parse(body).map_err(|d| json!({"diagnostics":d}))?;
+                // Only explicit staged writes admit the whole desk source.
+                // Reload/remount validation is read-only and independent of it.
+                if args["write"] == true {
+                    viu::design_admission::validate_desk_theme()
+                        .map_err(|error| json!({"error_code":"DESIGN_VALIDATION","error":error}))?;
+                }
+                let source = args["source"].as_str().unwrap_or(body);
+                let document = scene::parse(source).map_err(|d| json!({"diagnostics":d}))?;
                 check_size(&document)?;
                 let diagnostics = scene::lint(&document);
                 let tree = scene::resolve(&document).map_err(|d| json!({"diagnostics":d}))?;

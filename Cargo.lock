@@ -2163,6 +2163,7 @@ version = "0.1.2"
 dependencies = [
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "strict",
 ]
 
@@ -5009,6 +5010,7 @@ dependencies = [
  "design",
  "ed25519-dalek",
  "edit",
+ "editd",
  "editor",
  "editor-model",
  "eframe",

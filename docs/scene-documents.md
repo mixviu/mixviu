@@ -1,5 +1,8 @@
 # Scene documents: P0 grammar and P1 reload
 
+Design source admission and runtime context errors follow
+[Design validation timing](design-validation.md).
+
 Baseline: `881e405162dc42a20361cce53a68ffe1f7225c39` (2026-11-09).
 This describes the parser, loader and generic `viu --host` separately: accepting
 a port does not prove that every renderer implements it. The schema is in

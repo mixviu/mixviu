@@ -106,19 +106,31 @@ pub fn install_session_choice(
     last_ui: &settings::model::CommonUi,
     choice: &Value,
 ) -> Result<settings::model::CommonUi, String> {
-    let (base, ui) = session_base(snapshot, app, file, last_ui)?;
+    checked_session_choice(ctx, snapshot, app, file, last_ui, choice).map_err(|e| e.to_string())
+}
+pub(crate) fn checked_session_choice(
+    ctx: &egui::Context,
+    snapshot: &Value,
+    app: &str,
+    file: &toolkit::Theme,
+    last_ui: &settings::model::CommonUi,
+    choice: &Value,
+) -> Result<settings::model::CommonUi, crate::native_theme::Failure> {
+    use crate::native_theme::Failure;
+    let (base, ui) = session_base(snapshot, app, file, last_ui).map_err(Failure::Adapter)?;
     let empty = serde_json::json!({});
     let choice = if choice.is_null() { &empty } else { choice };
     let theme = base
-        .with_choice(&crate::native_theme::choice(choice)?)
-        .map_err(|e| e.to_string())?;
-    install_theme(ctx, &theme)?;
+        .with_choice(&crate::native_theme::choice(choice).map_err(Failure::Argument)?)
+        .map_err(Failure::from)?;
+    install_theme(ctx, &theme).map_err(Failure::Adapter)?;
     ctx.data_mut(|d| {
         d.remove::<Value>(local_choice_key());
     });
     Ok(ui)
 }
 pub fn install_theme(ctx: &egui::Context, theme: &toolkit::Theme) -> Result<(), String> {
+    crate::design_validation::observe(ctx, theme);
     toolkit::install(ctx, theme);
     let editor_palette = editor::Palette::from_theme(theme);
     // Normal clients have the same presentation in debug and release builds.
@@ -198,6 +210,7 @@ pub fn local_choice(ctx: &egui::Context, value: &Value) -> Result<(), String> {
         .data(|d| d.get_temp::<toolkit::Theme>(egui::Id::unique("viu-session-theme")))
         .unwrap_or_else(toolkit::Theme::load);
     let theme = theme.with_choice(&choice).map_err(|e| e.to_string())?;
+    crate::design_validation::observe(ctx, &theme);
     toolkit::install(ctx, &theme);
     let palette = editor::Palette::from_theme(&theme);
     let chrome = toolkit::chrome::Chrome::of(ctx);

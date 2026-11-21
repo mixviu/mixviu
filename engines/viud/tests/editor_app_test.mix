@@ -14,7 +14,11 @@ fn rpc($target,$command,$args)
   if $target=="scenes" then raise("SELF_RPC","recursive loader RPC") end
   if $command=="shell.scenes.list" then return [] end
   if $command=="shell.props.get" then return {panels:{bottom:{mode:"docked",width_px:40,pages:[],declared:[]}}} end
-  if $command=="shell.scene.validate" then return {valid:true} end
+  if $command=="shell.scene.validate" then
+    $source=type($args)=="map" ? $args.source : $args
+    $loader.document($source)
+    return {valid:true}
+  end
   if $command=="apps.launch" then return {launched:true,args:$args} end
   if $command=="scene-editor.show" then return {shown:true,args:$args} end
   if $command=="scene-editor.quit" then return {quitting:true} end

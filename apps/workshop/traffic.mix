@@ -31,15 +31,33 @@ fn launch($s)
     if len($rows)>=64 or (len($rows)>0 and $bytes+$entry.bytes>262144) then break end
     push($rows,$entry.row);push($entries,{observed:$entry.observed});$bytes=$bytes+$entry.bytes
   end
-  $q.waiting=slice($q.waiting,len($rows));$q.active={bytes:$bytes,count:len($rows),entries:$entries}
+  $q.waiting=slice($q.waiting,len($rows));$q.active={bytes:$bytes,count:len($rows),entries:$entries,deadline:monotonic()+5}
   $s.traffic_redaction=$q
   return $work.enqueue($s,{owner:"traffic",op:"redact",job:"traffic-redact-job.mix",lane:"traffic",rows:$rows,redaction_generation:$s.traffic_generation})
+end
+fn expire($s)
+  if $s.traffic_redaction==nil then return $s end
+  $active=$s.traffic_redaction.active
+  if $active==nil or monotonic()<$active.deadline then return $s end
+  $s.dropped=$counter.add($s.dropped,$active.count)
+  $s.traffic_redaction.bytes=$s.traffic_redaction.bytes-$active.bytes;$s.traffic_redaction.active=nil
+  -- Fence a late completion before another batch can use the active slot.
+  $s.traffic_generation=uuid()
+  $s.queue=filter($s.queue,fn($task)=$task.owner!="traffic")
+  for $id in keys($s.jobs)
+    if $s.jobs[$id].owner=="traffic" then $s.jobs=delete($s.jobs,$id) end
+  end
+  $s.admission_failures=filter($s.admission_failures,fn($d)=$s.jobs[$d.tag.id]!=nil)
+  $s.job_error="Traffic redaction batch expired"
+  return $s
 end
 fn completed($s,$d,$generation)
   if $s.traffic_redaction==nil or $generation!=$s.traffic_generation then return $s end
   $active=$s.traffic_redaction.active
   if $active==nil then return $s end
   $s.traffic_redaction.active=nil;$s.traffic_redaction.bytes=$s.traffic_redaction.bytes-$active.bytes
+  -- Already-admitted rows completed while paused count as dropped.
+  if $s.traffic_paused then $s.dropped=$counter.add($s.dropped,$active.count);return $s end
   if $d.rc!=0 or type($d.body)!="map" or type($d.body.rows)!="list" or len($d.body.rows)!=$active.count or any($d.body.rows,fn($row)=type($row)!="map") then
     $s.dropped=$counter.add($s.dropped,$active.count);return $s
   end

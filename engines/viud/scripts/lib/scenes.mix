@@ -1454,7 +1454,7 @@ fn stage_from($s, $src, $name, $panel)
     $c = candidate($s, $name, $dst)
     if $s.library_checked == nil then $s.library_checked = {} end
     for $lib in library_roots($s) $s = check_library($s, $lib) end
-    $validation = $s.io.rpc($s.host, "shell.scene.validate", $c.source)
+    $validation = $s.io.rpc($s.host, "shell.scene.validate", {source:$c.source, write:true})
     if type($validation) != "map" then fail("SCENES_SNAPSHOT", "missing scene validation receipt", {}) end
     if $c.behaviour_digest != "" then $s.io.check($dst .. "/behaviour.mix", {lint:"deny"}) end
   catch $message, $error
