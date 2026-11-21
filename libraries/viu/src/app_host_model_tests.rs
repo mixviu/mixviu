@@ -174,6 +174,8 @@ end
     settle(&mut host, &ctx);
     assert!(host.error.is_empty());
     assert_eq!(host.model_revision, Some((generation, 9)));
-    assert_eq!(host.view.model()["__viu_metrics"]["item_spacing_x"],
-        json!(ctx.global_style().spacing.item_spacing.x));
+    assert_eq!(
+        host.view.model()["__viu_metrics"]["item_spacing_x"],
+        json!(ctx.global_style().spacing.item_spacing.x)
+    );
 }

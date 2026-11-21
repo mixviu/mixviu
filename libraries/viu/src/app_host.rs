@@ -228,9 +228,12 @@ impl Host {
         // patch cannot retain derived ports from an older host projection.
         let mut host_inputs = json!({"window_settings":self.model["window_settings"]});
         self.project_host_fields(&mut host_inputs, ctx);
-        for key in ["__viu_metrics", "__viu_window_client", "__viu_header_hosted"] {
-            if (key == "__viu_metrics" || self.framed)
-                && host_inputs[key] != self.view.model()[key]
+        for key in [
+            "__viu_metrics",
+            "__viu_window_client",
+            "__viu_header_hosted",
+        ] {
+            if (key == "__viu_metrics" || self.framed) && host_inputs[key] != self.view.model()[key]
             {
                 return Err("host projection changed; publish a full model".into());
             }
