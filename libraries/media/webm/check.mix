@@ -4,9 +4,14 @@ fn checked($cmd)
   print($r.stderr)
   if not $r.ok then raise("CHECK", join($cmd, " ") .. " failed") end
 end
-checked(["cargo", "fmt", "-p", "media-webm"])
-checked(["cargo", "generate-lockfile", "--offline"])
-print(run_argv_must(["git", "diff", "--", "libraries/media/webm", "Cargo.lock"]))
-checked(["cargo", "clippy", "-p", "media-webm", "--all-targets", "--", "-D", "warnings"])
-checked(["cargo", "test", "-p", "media-webm", "--all-targets"])
-checked(["mix", "tools/foreign_gate.mix"])
+try
+  checked(["cargo", "fmt", "-p", "media-webm"])
+  checked(["cargo", "clippy", "-p", "media-webm", "--all-targets", "--", "-D", "warnings"])
+  checked(["cargo", "test", "-p", "media-webm", "--all-targets"])
+  checked(["mix", "tools/foreign_gate.mix"])
+finally
+  print("BEGIN_WORKER_DIFF")
+  print(run_argv_must(["git", "diff", "--", "libraries/media/webm", "Cargo.lock"]))
+  print("END_WORKER_DIFF")
+  checked(["git", "checkout", "-q", "--", "libraries/media/webm", "Cargo.lock"])
+end
