@@ -14,16 +14,25 @@ fn header_flush_and_explicit_loss() {
         let mut decoder = OpusDecoder::new(channels).unwrap();
         let mut samples = 0;
         for _ in 0..5 {
-            let packet = encoder.encode(&vec![0.1; FRAME_SAMPLES * channels.count()]).unwrap();
+            let packet = encoder
+                .encode(&vec![0.1; FRAME_SAMPLES * channels.count()])
+                .unwrap();
             let output = decoder.decode(Some(&packet.data)).unwrap();
             assert!(!output.packet_lost);
             samples += output.pcm.len() / channels.count();
         }
         let tail = encoder.finish().unwrap().unwrap();
         samples += decoder.decode(Some(&tail.data)).unwrap().pcm.len() / channels.count();
-        assert_eq!(samples - usize::from(head.pre_skip) - usize::from(tail.discard_padding), 5 * FRAME_SAMPLES);
+        assert_eq!(
+            samples - usize::from(head.pre_skip) - usize::from(tail.discard_padding),
+            5 * FRAME_SAMPLES
+        );
         assert!(encoder.finish().unwrap().is_none());
-        assert!(encoder.encode(&vec![0.; FRAME_SAMPLES * channels.count()]).is_err());
+        assert!(
+            encoder
+                .encode(&vec![0.; FRAME_SAMPLES * channels.count()])
+                .is_err()
+        );
         let lost = decoder.decode(None).unwrap();
         assert!(lost.packet_lost);
         assert_eq!(lost.pcm.len(), FRAME_SAMPLES * channels.count());

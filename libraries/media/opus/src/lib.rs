@@ -91,8 +91,11 @@ impl OpusEncoder {
             return Err(Error("bitrate must be 6000..=512000 bits/second".into()));
         }
         let mut inner = codec::OpusEncoder::new(
-            SAMPLE_RATE as i32, channels.count(), codec::Application::Audio,
-        ).map_err(|e| Error(e.to_string()))?;
+            SAMPLE_RATE as i32,
+            channels.count(),
+            codec::Application::Audio,
+        )
+        .map_err(|e| Error(e.to_string()))?;
         inner.bitrate_bps = bitrate as i32;
         let pre_skip = u16::try_from(inner.lookahead())
             .map_err(|_| Error("encoder lookahead exceeds OpusHead".into()))?;
@@ -100,36 +103,64 @@ impl OpusEncoder {
             return Err(Error("encoder lookahead exceeds one frame".into()));
         }
         Ok(Self {
-            inner, channels,
-            head: OpusHead { channels: channels.count() as u8, pre_skip,
-                input_sample_rate: SAMPLE_RATE, output_gain: 0, mapping_family: 0,
-                stream_count: 1, coupled_count: u8::from(channels == Channels::Stereo) },
-            submitted: false, closed: false,
+            inner,
+            channels,
+            head: OpusHead {
+                channels: channels.count() as u8,
+                pre_skip,
+                input_sample_rate: SAMPLE_RATE,
+                output_gain: 0,
+                mapping_family: 0,
+                stream_count: 1,
+                coupled_count: u8::from(channels == Channels::Stereo),
+            },
+            submitted: false,
+            closed: false,
         })
     }
     fn frame(&mut self, pcm: &[f32]) -> Result<Packet, Error> {
         let mut data = vec![0; 4000];
-        let n = self.inner.encode(pcm, FRAME_SAMPLES, &mut data)
+        let n = self
+            .inner
+            .encode(pcm, FRAME_SAMPLES, &mut data)
             .map_err(|e| Error(e.to_string()))?;
         data.truncate(n);
-        Ok(Packet { data, discard_padding: 0 })
+        Ok(Packet {
+            data,
+            discard_padding: 0,
+        })
     }
 }
 impl Encoder for OpusEncoder {
-    fn head(&self) -> &OpusHead { &self.head }
+    fn head(&self) -> &OpusHead {
+        &self.head
+    }
     fn encode(&mut self, pcm: &[f32]) -> Result<Packet, Error> {
-        if self.closed { return Err(Error("encoder is closed".into())); }
-        if pcm.len() != FRAME_SAMPLES * self.channels.count() || pcm.iter().any(|v| !v.is_finite()) {
-            return Err(Error("expected one finite 20 ms interleaved PCM frame".into()));
+        if self.closed {
+            return Err(Error("encoder is closed".into()));
+        }
+        if pcm.len() != FRAME_SAMPLES * self.channels.count() || pcm.iter().any(|v| !v.is_finite())
+        {
+            return Err(Error(
+                "expected one finite 20 ms interleaved PCM frame".into(),
+            ));
         }
         let result = self.frame(pcm);
-        if result.is_err() { self.closed = true; } else { self.submitted = true; }
+        if result.is_err() {
+            self.closed = true;
+        } else {
+            self.submitted = true;
+        }
         result
     }
     fn finish(&mut self) -> Result<Option<Packet>, Error> {
-        if self.closed { return Ok(None); }
+        if self.closed {
+            return Ok(None);
+        }
         self.closed = true;
-        if !self.submitted || self.head.pre_skip == 0 { return Ok(None); }
+        if !self.submitted || self.head.pre_skip == 0 {
+            return Ok(None);
+        }
         let mut packet = self.frame(&vec![0.; FRAME_SAMPLES * self.channels.count()])?;
         packet.discard_padding = (FRAME_SAMPLES - usize::from(self.head.pre_skip)) as u16;
         Ok(Some(packet))
@@ -151,12 +182,24 @@ impl Decoder for OpusDecoder {
         if packet.is_some_and(|p| p.is_empty() || p.len() > 65_535) {
             return Err(Error("empty or oversized Opus packet".into()));
         }
-        let capacity = if packet.is_none() { FRAME_SAMPLES } else { 5760 };
+        let capacity = if packet.is_none() {
+            FRAME_SAMPLES
+        } else {
+            5760
+        };
         let mut pcm = vec![0.; capacity * self.channels.count()];
-        let n = self.inner.decode(packet.unwrap_or_default(), capacity, &mut pcm)
+        let n = self
+            .inner
+            .decode(packet.unwrap_or_default(), capacity, &mut pcm)
             .map_err(|e| Error(e.to_string()))?;
         pcm.truncate(n * self.channels.count());
-        if pcm.iter().any(|v| !v.is_finite()) { return Err(Error("non-finite decoder output".into())); }
-        Ok(Decoded { pcm, channels: self.channels, packet_lost: packet.is_none() })
+        if pcm.iter().any(|v| !v.is_finite()) {
+            return Err(Error("non-finite decoder output".into()));
+        }
+        Ok(Decoded {
+            pcm,
+            channels: self.channels,
+            packet_lost: packet.is_none(),
+        })
     }
 }
