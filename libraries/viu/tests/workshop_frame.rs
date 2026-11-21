@@ -14,7 +14,7 @@ fn traffic_redaction_job_returns_decoded_map_rows_through_native_jobs() {
     let mut jobs = viu::jobs::Jobs::new(2, wake.clone());
     let mut runtime = Runtime::new(8, wake, Some(jobs.backend(None)));
     runtime.load(viu::runtime::Program {
-        path: root.join("traffic-job-contract.mix"),
+        path: root.join("app.mix"),
         scene: "traffic-job-contract".into(),
         citizen: "traffic-job-contract".into(),
         source: r#"
@@ -33,13 +33,22 @@ end
     let until = std::time::Instant::now() + Duration::from_secs(10);
     loop {
         for result in jobs.poll() {
-            runtime.notify("viu.job.completed".into(), json!({"tag":result.tag,"rc":result.rc,"body":result.body})).unwrap();
+            runtime
+                .notify(
+                    "viu.job.completed".into(),
+                    json!({"tag":result.tag,"rc":result.rc,"body":result.body}),
+                )
+                .unwrap();
         }
         if let Some(done) = runtime.try_completion() {
             assert!(done.error.is_none(), "{:?}", done.error);
             if let Some(model) = done.model {
                 let rows = model["rows"].as_array().expect("Traffic ring is a list");
-                assert_eq!(rows.len(), 2, "real redaction Job must deliver decoded map rows");
+                assert_eq!(
+                    rows.len(),
+                    2,
+                    "real redaction Job must deliver decoded map rows"
+                );
                 for (i, row) in rows.iter().enumerate() {
                     assert!(row.is_object());
                     assert_eq!(row["seq"], i + 1);
@@ -50,7 +59,10 @@ end
                 break;
             }
         }
-        assert!(std::time::Instant::now() < until, "native redaction Job stalled");
+        assert!(
+            std::time::Instant::now() < until,
+            "native redaction Job stalled"
+        );
         std::thread::sleep(Duration::from_millis(2));
     }
 }
