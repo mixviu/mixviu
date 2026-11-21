@@ -23,20 +23,48 @@ fn mix_differ_publishes_deep_models_and_long_keys_without_refusal() {
 $ctx=viu_context();$pub=require("../../libraries/viu/mix/model-publication.mix")
 $before=0;$after=1
 for $i=1 to 40 $before={child:$before};$after={child:$after} end
+$key="";for $i=1 to 150 $key=$key.."é" end
+fn publish_review($old,$next,$base,$full,$depth)
+  if $pub.requires_full($old,$next)!=$full then raise("TEST","unexpected full-publication decision") end
+  if $full then
+    send "viu-local" "scenes.model" body={generation:$ctx.generation,revision:$base+1,value:$next}
+  else
+    $ops=$pub.difference($old,$next)
+    if len($ops)!=1 or len($ops[0].path)!=$depth then raise("TEST","path was not collapsed at the expected parent") end
+    send "viu-local" "scenes.model.patch" body={generation:$ctx.generation,base:$base,revision:$base+1,operations:$ops}
+  end
+  if $rc!=0 then raise("TEST","publication send was refused") end
+end
 send "viu-local" "scenes.model" body={generation:$ctx.generation,revision:1,value:$before}
 on test.deep
-  if $pub.requires_full($before,$after) then raise("TEST","deep model should use a bounded patch") end
-  $ops=$pub.difference($before,$after)
-  if len($ops[0].path)!=32 then raise("TEST","deep path was not collapsed") end
-  send "viu-local" "scenes.model.patch" body={generation:$ctx.generation,base:1,revision:2,operations:$ops}
-  if $rc!=0 then raise("TEST","deep patch was refused") end
+  publish_review($before,$after,1,false,8)
 end
 on test.long
-  $key="";for $i=1 to 150 $key=$key.."é" end
   $next=$after;$next[$key]=true
-  if not $pub.requires_full($after,$next) then raise("TEST","300-byte key needs a full publication") end
-  send "viu-local" "scenes.model" body={generation:$ctx.generation,revision:3,value:$next}
-  if $rc!=0 then raise("TEST","long-key full was refused") end
+  publish_review($after,$next,2,true,0)
+end
+on test.nested.seed
+  $nested={};$nested[$key]=true
+  $next={nested:$nested}
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,revision:4,value:$next}
+end
+on test.nested.change
+  $changed=$next;$changed.nested[$key]=false
+  publish_review($next,$changed,4,false,1)
+end
+on test.nested.remove
+  publish_review($changed,{nested:{}},5,false,1)
+end
+on test.nested.add
+  publish_review({nested:{}},$next,6,false,1)
+end
+on test.list.seed
+  $list_before={id:"leaf",value:0};$list_after={id:"leaf",value:1}
+  for $i=1 to 40 $list_before={id:to_string($i),rows:[$list_before]};$list_after={id:to_string($i),rows:[$list_after]} end
+  send "viu-local" "scenes.model" body={generation:$ctx.generation,revision:8,value:$list_before}
+end
+on test.list.change
+  publish_review($list_before,$list_after,8,false,8)
 end
 on viu.model.applied
 end
@@ -48,13 +76,32 @@ end
     let mut host = create(bundle, Arc::new(|| {}));
     let ctx = egui::Context::default();
     settle(&mut host, &ctx);
-    for (command, revision) in [("test.deep", 2), ("test.long", 3)] {
+    for (command, revision) in [
+        ("test.deep", 2),
+        ("test.long", 3),
+        ("test.nested.seed", 4),
+        ("test.nested.change", 5),
+        ("test.nested.remove", 6),
+        ("test.nested.add", 7),
+        ("test.list.seed", 8),
+        ("test.list.change", 9),
+    ] {
         host.dispatch(command.into(), json!({}), BTreeMap::new(), None);
         settle(&mut host, &ctx);
         assert!(host.error.is_empty(), "{}", host.error);
         assert_eq!(host.model_revision.unwrap().1, revision);
+        if revision == 3 {
+            assert_eq!(host.model["é".repeat(150)], true);
+        }
+        if revision == 5 {
+            assert_eq!(host.model["nested"]["é".repeat(150)], false);
+        }
     }
-    assert_eq!(host.model["é".repeat(150)], true);
+    let mut leaf = &host.model;
+    for _ in 0..40 {
+        leaf = &leaf["rows"][0];
+    }
+    assert_eq!(leaf["value"], 1);
 }
 
 #[test]

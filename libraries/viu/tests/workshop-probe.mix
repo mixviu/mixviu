@@ -66,6 +66,15 @@ elif $mode=="incremental-negative" then
       checked(["git","diff","--exit-code"])
     end
   end
+elif $mode=="depth-negative" then
+  $path="libraries/viu/mix/model-publication.mix";$source=read_file($path)
+  $mutated=replace($source,"$max_path_depth=8","$max_path_depth=32")
+  if $mutated==$source then raise("PROBE","depth bound source drift") end
+  try
+    write_file($path,$mutated)
+    $r=run_argv(["cargo","test","-p","lib-viu","--features","test-support","--lib","mix_differ_publishes_deep_models_and_long_keys_without_refusal","--","--nocapture"],{timeout:600,stderr:"stdout",max_output:64000000});print($r.stdout)
+    if $r.exit_code!=101 or not contains($r.stdout,"recursion depth exceeded (limit 16)") then raise("PROBE","depth negative missed recursion assertion") end
+  finally write_file($path,$source);checked(["git","diff","--exit-code"]) end
 elif $mode=="flush-negative" then
   $path="libraries/viu/src/app_host_model_tests.rs";$source=read_file($path)
   $mutated=replace($source,"const FLUSH_PUBLICATION_BYTE_BOUND: u64 = 1024 * 1024;","const FLUSH_PUBLICATION_BYTE_BOUND: u64 = 1;")
