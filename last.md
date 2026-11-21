@@ -11,6 +11,9 @@ Untouched main, CBC `20261121-172151-2c445536-a1`, passes the real 200-peer
 fixture. Across discovery, worst ping / info are 289,758 / 351,010 us;
 load callback CPU is 80,697 us, initial pump CPU / wall 1,265,019 /
 1,265,768 us. These cover different intervals, not a summed critical path.
+The fixture starts its first Bus call only after `host.ready()`, so it excludes
+the initial native hold. The requested regression must start at port appearance
+and measure the first 1.5 s; the existing passing calls cannot prove that bound.
 
 CBC `20261121-172329-1a2e0482-a1` runs five fresh fixture processes with
 section-dirty and five with full projection, on the same worker and source.
@@ -54,6 +57,11 @@ is 615801 us after appearance resolution, 632650 us after mounting,
 The dominant initial native phase is appearance resolution. The compiler
 validates all reachable design contexts; cache reuse is being prototyped
 outside this branch. No compiler policy or scene contract was changed.
+Cache prototype `20261121-173525-12520251-a1` (private lab only) passes five
+fresh 200-peer processes, but initial pump wall remains 1,302,588–1,310,278 us.
+Identical inputs hit the cache; other startup contexts each still compile for
+about 0.6 s. It does not solve cold startup and is not derived into this PR.
+
 
 ## Accepted hardening implemented
 
@@ -83,6 +91,8 @@ outside this branch. No compiler policy or scene contract was changed.
 | `20261121-172406-9af27c7b-a1` | Hardened timing tool passes, 3.173 s standalone. |
 | `20261121-172631-ebf2365c-a1` | **Red**: my first expiry implementation read a nil queue. Fmt/clippy/app_mix passed; frame and Bus tests exposed the defect. Fixed by `1b42391d`, with a nil-queue regression. The original result is retained. |
 | `20261121-173311-a62ec201-a1` | Corrected checkpoint passes six Bus tests, seven frame tests, real-fixture full-projection oracle and env registry (277 names, zero problems). Section 3.545 s and redaction 0.920 s standalone, below 5 s. |
+| `20261121-173704-d78b968d-a1` | Final d2150068: fmt and all-target clippy in default/support, all54 lib-viu test binaries plus doctests in both configurations, strict width-eight pool with app_mix green; env registry277/0. Pool213/220s; no retry. |
+| `20261121-174916-5f98f09d-a1` | Final standalone section3.566s / redaction0.926s, both below5s. |
 
 No new `MIX_*` name. All changed Mix sources lint cleanly. No Rust builds ran
 locally. No full workspace CI, merge, gold shipment or desk probe from this PR.
@@ -93,7 +103,7 @@ Historical desk before values remain 482/340 ms ping/info on `a3b1e286` and
 The required `7ad2570f` gold receipt is absent at the latest check. Do not
 probe a different build or roll the desk back. The startup repair, absolute
 first-1.5-second trace and first-paint measurements, standalone latency bound
-with negative control, final width-eight validation and five quiet desk samples
+with negative control, revalidation of any later repair and five quiet desk samples
 remain required before review. After a carrying gold ships, five more quiet desk
 samples and the TODO-workshop before/after update remain required.
 
