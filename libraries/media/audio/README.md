@@ -80,7 +80,8 @@ linked across channels. Default look-ahead is 5 ms (valid 0.1–100 ms); release
 is 100 ms (valid 1–1000 ms). A backwards linear attack and forward exponential
 release anticipate peaks without moving any samples or changing duration.
 100 ms gives speech peaks time to recover between words without rapid envelope
-modulation. A final measured constant trim catches reconstruction overshoot
+modulation. The detector checks zero-padded and reflected file boundaries. A final constant
+trim, verified by the detector and meter, catches reconstruction overshoot
 from gain modulation; its reduction counts towards the 6 dB bound. A 0.02 dB
 margin protects float32 export rounding. This is peak limiting, not loudness AGC.
 The direct limiter returns ReductionLimit without changing samples above 6 dB.

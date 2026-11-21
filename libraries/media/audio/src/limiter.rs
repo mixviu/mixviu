@@ -224,7 +224,11 @@ impl Audio {
                         // Resamplers may mirror boundaries rather than zero-pad.
                         // Protect both reconstructions, especially the first burst.
                         let period = 2 * frames.saturating_sub(1) as i128;
-                        let r = if period == 0 { 0 } else { pos.rem_euclid(period) };
+                        let r = if period == 0 {
+                            0
+                        } else {
+                            pos.rem_euclid(period)
+                        };
                         let r = if r >= frames as i128 { period - r } else { r };
                         reflected += self.samples[r as usize * channels + c] * k;
                     }

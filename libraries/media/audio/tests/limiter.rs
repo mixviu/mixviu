@@ -63,6 +63,23 @@ fn refusal_returns_legacy_static_result() {
     assert!(r.shortfall_lu > 0.5);
     assert_eq!(a, b);
 }
+
+#[test]
+fn corrective_pass_refusal_and_tiny_buffers() {
+    let mut a = tone(true);
+    let mut legacy = a.clone();
+    legacy.normalise(-14.0, -1.0).unwrap();
+    let r = a.normalise_to_target(-14.0, -1.0, Default::default()).unwrap();
+    assert!(r.refused && r.passes > 1, "{r:?}");
+    assert!(!r.target_reached);
+    assert_eq!(r.applied_gain_reduction_db, 0.0);
+    assert_eq!(a, legacy);
+    for samples in [vec![], vec![0.0], vec![0.4]] {
+        let mut audio = Audio::new(48000, 1, samples.clone()).unwrap();
+        audio.limit_true_peak(-1.0, Default::default()).unwrap();
+        assert_eq!(audio.samples(), samples);
+    }
+}
 #[test]
 fn impulse_alignment_and_edges() {
     for position in [0, 2400, 4799] {

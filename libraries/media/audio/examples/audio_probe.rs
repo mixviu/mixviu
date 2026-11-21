@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => false,
     };
     if !valid {
-        return Err("usage: audio_probe measure|snr INPUT; normalise|resample INPUT OUTPUT; mix|render MANIFEST OUTPUT [FRAMES]; sweep OUTPUT RATE".into());
+        return Err("usage: audio_probe measure|snr INPUT; target|limit|normalise|resample INPUT OUTPUT; mix|render MANIFEST OUTPUT [FRAMES]; sweep OUTPUT RATE".into());
     }
     match args.get(1).map(String::as_str) {
         Some("target" | "limit") => {
