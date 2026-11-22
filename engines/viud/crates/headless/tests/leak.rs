@@ -86,7 +86,10 @@ fn check(mode: &str) {
     assert!(!gone(pid, root), "handshake must name a live broker");
     if mode == "group-kill" {
         // SAFETY: the fixture has its own process group, created above.
-        assert_eq!(unsafe { libc::kill(-(parent.0.id() as i32), libc::SIGKILL) }, 0);
+        assert_eq!(
+            unsafe { libc::kill(-(parent.0.id() as i32), libc::SIGKILL) },
+            0
+        );
     } else if mode != "panic" && mode != "normal" {
         parent.0.kill().unwrap();
     } else if mode == "panic" {
@@ -103,7 +106,9 @@ fn check(mode: &str) {
             "negative control unexpectedly passed the leak oracle"
         );
         // SAFETY: this is the exact live broker from our fixture handshake.
-        unsafe { libc::kill(pid as i32, libc::SIGKILL); }
+        unsafe {
+            libc::kill(pid as i32, libc::SIGKILL);
+        }
         assert!(
             within(pid, root, Duration::from_secs(2)),
             "control cleanup failed"

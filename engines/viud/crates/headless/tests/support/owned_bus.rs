@@ -78,8 +78,14 @@ impl OwnedBus {
         let mut command = Command::new(bin);
         command
             .args([
-                "serve", "--listen", &format!("127.0.0.1:{port}"),
-                "--node", "headless-test", "--no-monitor", "--no-log", "--mesh-config",
+                "serve",
+                "--listen",
+                &format!("127.0.0.1:{port}"),
+                "--node",
+                "headless-test",
+                "--no-monitor",
+                "--no-log",
+                "--mesh-config",
             ])
             .arg(self.root.join("etc/mesh.conf.mix"))
             .env_clear()
@@ -110,12 +116,21 @@ impl OwnedBus {
         let broker = self.broker.as_mut().unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
         // This unique socket can only be created by the child we just spawned.
-        while std::os::unix::net::UnixStream::connect(self.root.join("run/noded/bus.sock")).is_err() {
-            assert!(broker.0.try_wait().unwrap().is_none(), "noded exited: {}", fs::read_to_string(self.root.join("noded.log")).unwrap());
+        while std::os::unix::net::UnixStream::connect(self.root.join("run/noded/bus.sock")).is_err()
+        {
+            assert!(
+                broker.0.try_wait().unwrap().is_none(),
+                "noded exited: {}",
+                fs::read_to_string(self.root.join("noded.log")).unwrap()
+            );
             assert!(Instant::now() < deadline, "noded readiness timeout");
             std::thread::yield_now();
         }
-        fs::write(self.root.join("bus.json"), serde_json::json!({"pid":broker.0.id(),"url":self.url}).to_string()).unwrap();
+        fs::write(
+            self.root.join("bus.json"),
+            serde_json::json!({"pid":broker.0.id(),"url":self.url}).to_string(),
+        )
+        .unwrap();
     }
 }
 
@@ -158,7 +173,10 @@ fn owner_process() {
     let mesh = root.path().join("etc/mesh.conf.mix");
     fs::write(&mesh, r#"{"node_name":"headless-test","peers":[]}"#).unwrap();
     drop(listener);
-    println!("BUS_READY {}", serde_json::json!({"root":root.path(),"url":format!("ws://127.0.0.1:{port}/ws"),"port":port}));
+    println!(
+        "BUS_READY {}",
+        serde_json::json!({"root":root.path(),"url":format!("ws://127.0.0.1:{port}/ws"),"port":port})
+    );
     std::io::stdout().flush().unwrap();
     std::io::stdin().read_to_end(&mut Vec::new()).unwrap();
     drop(root);
