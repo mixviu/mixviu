@@ -1,6 +1,14 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Run on an owned CBC checkout only, through cbc-build.mix --commit SHA.
 $mode=args()[0] ?? "check"
+if $mode=="evidence" then
+  for $test in ["sting::chrome_entrance_contact_sheet","sting::gallery_contact_sheet"]
+    $r=run_argv(["cargo","test","-p","lib-viu","--test","deck",$test,"--","--ignored","--nocapture"],{timeout:2400,stderr:"stdout",max_output:64000000})
+    print($r.stdout)
+    if $r.exit_code!=0 then exit($r.exit_code ?? 1) end
+  end
+  exit(0)
+end
 if $mode=="fmt" then
   try
     print(run_argv_must(["cargo","fmt","--all"]))

@@ -36,3 +36,27 @@ fn drawing_primitives_and_bound_paint_are_validated() {
         assert!(!result.is_empty(), "{bad}");
     }
 }
+
+#[test]
+fn hostile_drawing_ports_are_refused_at_the_boundary() {
+    let p=serde_json::json!({"kind":"arc","centre":[50,50],"radius":[20,20],"colour":"#ffffff","width":5,"start":0,"sweep":180});
+    for (field,bad) in [
+        ("dash_length",serde_json::json!(0)),("dash_length",serde_json::json!(10001)),
+        ("radius",serde_json::json!([1e-40,1e-40])),("sweep",serde_json::json!(1e-40)),
+        ("centre",serde_json::json!([10001,0])),("width",serde_json::json!(-1)),
+        ("width",serde_json::json!(10001)),("effects",serde_json::json!([{"preset":"float","delay":61}])),
+        ("effects",serde_json::json!([{"preset":"float"},{"preset":"float"},{"preset":"float"},{"preset":"float"},{"preset":"float"}])),
+    ] {
+        let mut primitive=p.clone();primitive[field]=bad;
+        assert!(crate::drawing::validate(&serde_json::json!([primitive])).is_err(),"{field}");
+    }
+    assert!(crate::drawing::validate(&serde_json::json!(vec![p;65])).is_err());
+    let shadow=serde_json::json!({"colour":[242,70,70,77],"offset":[0,30],"blur":70});
+    for (field,bad) in [("blur",serde_json::json!(-1)),("blur",serde_json::json!(201)),("blur",serde_json::Value::Null),("offset",serde_json::json!([1001,0])),("colour",serde_json::json!([256,0,0,0]))] {
+        let mut s=shadow.clone();s[field]=bad;assert!(crate::drawing::validate_shadow(&s).is_err());
+    }
+    for bad in [serde_json::json!(1e308),serde_json::json!(-3601),serde_json::Value::Null] {
+        assert!(crate::bindings::coerce_port(&bad,crate::schema::port_for("drawing","sample_time")).is_err());
+    }
+    assert!(crate::bindings::coerce_port(&serde_json::json!(101),crate::schema::port_for("text","letter_spacing")).is_err());
+}

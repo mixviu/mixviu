@@ -4,6 +4,27 @@ use std::collections::BTreeMap;
 mod safety;
 #[path = "primitives.rs"]
 mod primitives;
+#[path = "fonts.rs"]
+mod fonts;
+
+#[test]
+#[ignore = "explicit CBC gallery visual evidence"]
+fn gallery_contact_sheet() {
+    let dir=std::env::temp_dir().join("mixviu-deck-sting-r2");std::fs::create_dir_all(&dir).unwrap();
+    let mut sheet=image::RgbaImage::new(3200,1800);
+    let pages=std::fs::read_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/gallery/deck-pages")).unwrap();
+    let mut pages=pages.map(|p|p.unwrap().path()).collect::<Vec<_>>();pages.sort();
+    for (index,path) in pages.iter().enumerate() {
+        let mut view=SceneView::new(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let mut harness=egui_kittest::Harness::builder().with_size(egui::vec2(1600.,900.)).with_context_setup(|ctx| {viu::fonts::install(ctx,400,600);viu::icons::install(ctx);}).wgpu().build_ui(move|ui| {view.show(ui);});
+        harness.run();let image=harness.render().unwrap();
+        let image=image::imageops::resize(&image,800,450,image::imageops::FilterType::Lanczos3);
+        image::imageops::replace(&mut sheet,&image,(index%4) as i64*800,(index/4) as i64*450);
+        println!("GALLERY_ROW {index} {}",path.file_name().unwrap().to_string_lossy());
+    }
+    sheet.save(dir.join("gallery.png")).unwrap();
+    println!("GALLERY_CONTACT_SHEET={}",dir.join("gallery.png").display());
+}
 
 const TIMES: [f64; 9] = [0.1, 0.3, 0.6, 0.9, 1.2, 1.5, 2., 92. / 30., 172. / 30.];
 fn render(model: Value) -> (image::RgbaImage, BTreeMap<String, egui::Rect>) {
