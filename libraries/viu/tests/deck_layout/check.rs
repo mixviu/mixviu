@@ -293,7 +293,7 @@ fn themed_plain_colours_and_bold_are_painted() {
             v.show(ui);
         });
         o.textures_delta.clear();
-        let mut found=std::collections::BTreeSet::new();
+        let mut found = std::collections::BTreeSet::new();
         for s in o.shapes {
             if let egui::Shape::Text(t) = s.shape {
                 let wanted = match t.galley.job.text.as_str() {
@@ -312,7 +312,7 @@ fn themed_plain_colours_and_bold_are_painted() {
                 );
             }
         }
-        assert_eq!(found.len(),3);
+        assert_eq!(found.len(), 3);
     }
 }
 

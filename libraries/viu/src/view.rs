@@ -587,12 +587,21 @@ impl SceneView {
         self.show_content(ui)
     }
     fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
-        let font_state=ui.fonts(|f|{
-            use std::hash::{Hash,Hasher};let mut hash=std::collections::hash_map::DefaultHasher::new();
-            for (name,data) in &f.definitions().font_data{name.hash(&mut hash);std::sync::Arc::as_ptr(data).hash(&mut hash);}
-            for (family,names) in &f.definitions().families{family.hash(&mut hash);names.hash(&mut hash);}hash.finish()
+        let font_state = ui.fonts(|f| {
+            use std::hash::{Hash, Hasher};
+            let mut hash = std::collections::hash_map::DefaultHasher::new();
+            for (name, data) in &f.definitions().font_data {
+                name.hash(&mut hash);
+                std::sync::Arc::as_ptr(data).hash(&mut hash);
+            }
+            for (family, names) in &f.definitions().families {
+                family.hash(&mut hash);
+                names.hash(&mut hash);
+            }
+            hash.finish()
         });
-        ui.ctx().data_mut(|d|d.insert_temp(egui::Id::new("scene-font-state"),font_state));
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::new("scene-font-state"), font_state));
         self.motion.begin(ui);
         self.numbers.begin();
         self.backdrops.begin();
@@ -1603,7 +1612,7 @@ impl SceneView {
                     || num(node, "basis").unwrap_or(0.) > 0.)
                     .then(|| allocated.width().max(num(node, "min_width").unwrap_or(0.)))
             }) {
-                response.rect.max.x = response.rect.min.x + constrained_width(node,width);
+                response.rect.max.x = response.rect.min.x + constrained_width(node, width);
             }
         }
         if node.family != "dock" {
@@ -2911,7 +2920,11 @@ fn color(s: &str) -> Option<Color32> {
 }
 
 fn text_baseline(ui: &egui::Ui, node: &Node) -> f32 {
-    let cache = natural_size_key(node).with(("baseline", ui.pixels_per_point().to_bits(),font_state_key(ui)));
+    let cache = natural_size_key(node).with((
+        "baseline",
+        ui.pixels_per_point().to_bits(),
+        font_state_key(ui),
+    ));
     if let Some(v) = measure_get::<f32>(ui, cache) {
         return v;
     }
@@ -2956,7 +2969,11 @@ fn bounded_layout(value: f32, maximum: f32) -> f32 {
         maximum.max(0.)
     }
 }
-fn constrained_width(node:&Node,value:f32)->f32{bounded_layout(value,1e6).max(num(node,"min_width").unwrap_or(0.)).min(num(node,"max_width").unwrap_or(1e6))}
+fn constrained_width(node: &Node, value: f32) -> f32 {
+    bounded_layout(value, 1e6)
+        .max(num(node, "min_width").unwrap_or(0.))
+        .min(num(node, "max_width").unwrap_or(1e6))
+}
 
 // One bounded cache per value type and context. Hash borrowed content directly;
 // never debug-format the ports map or retain a new Context entry per text value.
@@ -3089,7 +3106,11 @@ fn intrinsic_text_width(
         return 0.;
     }
     if node.family == "text" {
-        let cache = natural_size_key(node).with(("text-widths", ui.pixels_per_point().to_bits(),font_state_key(ui)));
+        let cache = natural_size_key(node).with((
+            "text-widths",
+            ui.pixels_per_point().to_bits(),
+            font_state_key(ui),
+        ));
         let sizes = measure_get::<(f32, f32)>(ui, cache).unwrap_or_else(|| {
             let runs = measurement_runs(node, false);
             let bold = node.ports.get("bold") == Some(&Value::Bool(true));
@@ -3135,31 +3156,49 @@ fn intrinsic_text_width(
             measure_put(ui, cache, result);
             result
         });
-        return (if words { sizes.1 } else { sizes.0 }).max(num(node,"min_width").unwrap_or(0.))
+        return (if words { sizes.1 } else { sizes.0 })
+            .max(num(node, "min_width").unwrap_or(0.))
             .min(num(node, "max_width").unwrap_or(1e6));
     }
 
-    let constrain=|v:f32|bounded_layout(v,1e6).max(num(node,"min_width").unwrap_or(0.)).min(num(node,"max_width").unwrap_or(1e6));
+    let constrain = |v: f32| {
+        bounded_layout(v, 1e6)
+            .max(num(node, "min_width").unwrap_or(0.))
+            .min(num(node, "max_width").unwrap_or(1e6))
+    };
     let explicit = num(node, "width").or(num(node, "w"));
     if let Some(width) = explicit {
         return constrain(width);
     }
     if node.family == "control" {
-        let key=natural_size_key(node).with(("control-width",ui.pixels_per_point().to_bits(),font_state_key(ui)));
-        if let Some(width)=measure_get::<f32>(ui,key){return constrain(width);}
-        let width=Widget::decode(&node.ports["definition"]).ok().and_then(|w|w.intrinsic_width(ui,model).ok());
-        if let Some(width)=width{measure_put(ui,key,width);}
+        let key = natural_size_key(node).with((
+            "control-width",
+            ui.pixels_per_point().to_bits(),
+            font_state_key(ui),
+        ));
+        if let Some(width) = measure_get::<f32>(ui, key) {
+            return constrain(width);
+        }
+        let width = Widget::decode(&node.ports["definition"])
+            .ok()
+            .and_then(|w| w.intrinsic_width(ui, model).ok());
+        if let Some(width) = width {
+            measure_put(ui, key, width);
+        }
         return constrain(width.unwrap_or(80.));
     }
     if !matches!(node.family.as_str(), "column" | "row" | "grid") {
-        let width=match node.family.as_str() {
+        let width = match node.family.as_str() {
             "image" => image_extent(node).x,
             "drawing" => num(node, "w").unwrap_or(280.),
             "spacer" => num(node, "size").unwrap_or(8.),
             "field" => ui.spacing().text_edit_width,
             _ => {
-                let key =
-                    natural_size_key(node).with(("button-width", ui.pixels_per_point().to_bits(),font_state_key(ui)));
+                let key = natural_size_key(node).with((
+                    "button-width",
+                    ui.pixels_per_point().to_bits(),
+                    font_state_key(ui),
+                ));
                 if let Some(v) = measure_get::<f32>(ui, key) {
                     return constrain(v);
                 }
@@ -3246,7 +3285,14 @@ fn image_extent(node: &Node) -> egui::Vec2 {
     } else {
         200.
     };
-    let w = num(node, "w").or_else(||text(node,"src").starts_with("icon:").then(||num(node,"h")).flatten()).unwrap_or(default);
+    let w = num(node, "w")
+        .or_else(|| {
+            text(node, "src")
+                .starts_with("icon:")
+                .then(|| num(node, "h"))
+                .flatten()
+        })
+        .unwrap_or(default);
     egui::vec2(
         w,
         num(node, "h").unwrap_or(if text(node, "src").starts_with("raster:") {
@@ -3264,7 +3310,11 @@ fn prepare_measurements(
     alive: &mut BTreeSet<String>,
 ) {
     for (id, node) in nodes {
-        if node.family=="control" {let key=node.ports["definition"]["id"].as_str().unwrap_or(id);let value=model["values"].get(key).cloned().unwrap_or(Value::Null);node.ports.insert("__measure_value".into(),value);}
+        if node.family == "control" {
+            let key = node.ports["definition"]["id"].as_str().unwrap_or(id);
+            let value = model["values"].get(key).cloned().unwrap_or(Value::Null);
+            node.ports.insert("__measure_value".into(), value);
+        }
         let name = format!("{scene}/{id}");
         alive.insert(name.clone());
         let hash = if let Some((old, hash)) = memo.get(&name).filter(|(old, _)| old == &*node) {
@@ -3293,7 +3343,11 @@ fn record_measurement_work() {
     #[cfg(test)]
     MEASUREMENT_WORK.set(MEASUREMENT_WORK.get() + 1);
 }
-fn font_state_key(ui:&egui::Ui)->u64{ui.ctx().data(|d|d.get_temp::<u64>(egui::Id::new("scene-font-state"))).unwrap_or(0)}
+fn font_state_key(ui: &egui::Ui) -> u64 {
+    ui.ctx()
+        .data(|d| d.get_temp::<u64>(egui::Id::new("scene-font-state")))
+        .unwrap_or(0)
+}
 fn measurement_runs(node: &Node, first_line: bool) -> Value {
     let mut left = 4096;
     let mut out = Vec::new();
