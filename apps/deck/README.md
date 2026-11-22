@@ -13,11 +13,15 @@ The host binds scenes against the context's loaded families before replacing
 the current scene. Model patches use that bound set, with no filesystem stats.
 Missing or unknown families refuse there rather than substituting; the painter
 also checks binding before drawing. Structural parsing alone does not bind fonts.
+Paint-time resolution guards every named family against the bound context,
+falling back to Proportional for sans runs and Monospace for mono runs.
 
 `cargo test -p lib-viu --test deck deck_font_identity -- --nocapture` (CBC only) paints
 the roles and compares their glyph atlas coordinates with isolated faces,
-reporting the files' internal PostScript names. Its renamed-file control checks
-the production scene refusal against the context's bound families. This is the
+reporting the files' internal PostScript names. The positive check uses the
+production installer without replacing its fonts. Its visible fallback-glyph
+probe excludes format characters. The renamed-file control uses the same
+installer and checks production scene refusal against the bound families. This is the
 font acceptance check; no SSIM claim is made. `tools/deck_font_probe.mix` prints
 the source episode's 16 sections and adjacent sting to PDF using supplied
 templates, then records pdffonts output and hashes. See

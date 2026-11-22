@@ -75,6 +75,26 @@ fn unregistered_font_family_refuses_before_paint() {
 }
 
 #[test]
+fn bound_font_and_mono_font_refuse_unknown_or_absent_families_without_panicking() {
+    let absent = tempfile::tempdir().unwrap();
+    let ctx = egui::Context::default();
+    viu::fonts::install_with_font_directory(&ctx, 400, 600, absent.path());
+    for (port, name) in [("font", "unknown"), ("font", "Liberation Sans"), ("mono_font", "unknown"), ("mono_font", "Noto Sans Mono")] {
+        let nodes = json!({"root":{"widget":"text","text":"hello",port:format!("= $model.{port}")}});
+        let source = format!("---\nscene: 1\nname: bound\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+        let mut view = SceneView::with_model(&source, json!({port:"heading"})).unwrap();
+        // Rebinding before context admission must also be safe to show.
+        view.apply_model(json!({port:name})).unwrap();
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            assert!(view.bind_fonts(ui.ctx()).unwrap_err().contains("not bound"));
+            view.show(ui);
+        });
+        assert!(!out.shapes.is_empty());
+        out.drop_without_applying_deltas();
+    }
+}
+
+#[test]
 fn bound_fonts_survive_file_removal_and_invalid_font_patches_preserve_the_scene() {
     let temp = tempfile::tempdir().unwrap();
     for file in toolkit::fonts::optional::FILES {

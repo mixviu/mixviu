@@ -117,10 +117,16 @@ pub fn medium(size: f32) -> FontId {
 /// family is not bound yet: fonts installed with [`install`] bind from the
 /// next frame, and egui refuses an unbound family.
 pub fn bound(ctx: &egui::Context, font: FontId) -> FontId {
+    bound_or(ctx, font, FontFamily::Proportional)
+}
+
+/// Resolve against the context's loaded families, retaining the caller's
+/// sans or mono role when a requested family is unavailable.
+pub fn bound_or(ctx: &egui::Context, font: FontId, fallback: FontFamily) -> FontId {
     if ctx.fonts(|f| f.definitions().families.contains_key(&font.family)) {
         font
     } else {
-        FontId::new(font.size, FontFamily::Proportional)
+        FontId::new(font.size, fallback)
     }
 }
 

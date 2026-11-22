@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use egui::{Color32, FontDefinitions, FontFamily, FontId};
+use egui::{Color32, FontFamily, FontId};
 use serde_json::{Value, json};
 use std::{
     path::PathBuf,
     sync::{Arc, mpsc},
     time::Duration,
 };
-use toolkit::fonts::optional::{FILES, register};
+use toolkit::fonts::optional::FILES;
 use viu::{
     runtime::{Completion, Program, Runtime},
     view::SceneView,
@@ -582,18 +582,16 @@ fn render_reference_scenes() {
 }
 
 fn identity(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
-    let mut defs = FontDefinitions::default();
-    register(&mut defs, dir)?;
     let ctx = egui::Context::default();
     viu::fonts::install(&ctx, 400, 600);
-    ctx.set_fonts(defs);
     let sans_bytes = std::fs::read(dir.join(FILES[0]))?;
     let noto_bytes = std::fs::read(dir.join(FILES[3]))?;
     let sans = swash::FontRef::from_index(&sans_bytes, 0).unwrap();
     let noto = swash::FontRef::from_index(&noto_bytes, 0).unwrap();
+    // Alphabetic characters exclude format characters such as soft hyphen.
     let fallback_text = (0x20..=0xffff)
         .filter_map(char::from_u32)
-        .find(|&c| !c.is_control() && sans.charmap().map(c) == 0 && noto.charmap().map(c) != 0)
+        .find(|&c| c.is_alphabetic() && sans.charmap().map(c) == 0 && noto.charmap().map(c) != 0)
         .expect("Noto supplies a glyph absent from Liberation")
         .to_string();
     let roles = [
@@ -669,8 +667,13 @@ fn identity(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
                 .map(|g| (g.chr, g.uv_rect, g.advance_width))
                 .collect::<Vec<_>>()
         };
+        let actual_glyphs = glyphs(actual);
+        assert!(!actual_glyphs.is_empty(), "{role}: no glyphs painted");
+        if role == "glyph fallback" {
+            assert!(actual_glyphs.iter().all(|(_, uv, _)| uv.size[0] > 0 && uv.size[1] > 0), "fallback must rasterise a visible glyph");
+        }
         assert_eq!(
-            glyphs(actual),
+            actual_glyphs,
             glyphs(&expected),
             "{role}: actual raster face differs"
         );
@@ -700,12 +703,8 @@ fn deck_font_identity_and_missing_bundle_control() {
         std::fs::copy(dir.join(file), temp.path().join(file)).unwrap();
     }
     std::fs::rename(temp.path().join(FILES[0]), temp.path().join("absent.ttf")).unwrap();
-    let mut defs = FontDefinitions::default();
-    // Same failed optional installation as production; rejection must come from
-    // the scene admission path, not from propagating register() in this test.
-    let _ = register(&mut defs, temp.path());
     let ctx = egui::Context::default();
-    ctx.set_fonts(defs);
+    viu::fonts::install_with_font_directory(&ctx, 400, 600, temp.path());
     let source = "---\nscene: 1\nname: missing-font\ncitizen: deck\n---\n```mix\n{root:{widget:\"text\",text:\"heading\",font:\"Liberation Sans\"}}\n```\n";
     let mut view = SceneView::new(source).unwrap();
     let mut refusal = None;
