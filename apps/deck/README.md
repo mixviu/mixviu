@@ -10,7 +10,7 @@ can select them by family name. Scene text accepts `font` and CSS `weight`;
 deck supplies its sans/mono families for every text node, including spans.
 An absent bundle refuses deck scene validation rather than substituting.
 
-`cargo test -p lib-viu --test deck_fonts -- --nocapture` (CBC only) paints
+`cargo test -p lib-viu --test deck deck_font_identity -- --nocapture` (CBC only) paints
 the roles and compares their glyph atlas coordinates with isolated faces,
 reporting the files' internal PostScript names. Its renamed-file control
 must fail. This is the font acceptance check; no SSIM claim is made.
