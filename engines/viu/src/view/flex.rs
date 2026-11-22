@@ -261,7 +261,7 @@ impl<'a> Builder<'a> {
         Some(match node.family.as_str() {
             "text" => {
                 let style = self.text_style(flag(node, "mono"));
-                number(node, "line_height")
+                number(node, "line_height").map(|v|v.clamp(0.1,4096.))
                     .unwrap_or_else(|| style.line(style.size(number(node, "size"))))
             }
             "image" => number(node, "h").unwrap_or(16.0),
@@ -564,7 +564,7 @@ impl<'a> Builder<'a> {
                     elide: flag(node, "elide"),
                     wrap: flag(node, "wrap"),
                     max_lines: number(node, "max_lines").unwrap_or(3.0) as usize,
-                    line_height: number(node, "line_height"),
+                    line_height: number(node, "line_height").map(|v|v.clamp(0.1,4096.)),
                 };
                 self.tree
                     .new_leaf_with_context(style, meta(Some(leaf)))

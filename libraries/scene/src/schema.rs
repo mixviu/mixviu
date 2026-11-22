@@ -396,7 +396,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         ports.push(pn("outline_width", false, None));
         ports.push(p("scroll", "bool", false, None));
         let mut justify = p("justify", "string", false, None);
-        justify.enum_values = &["start", "center", "end", "between", "around", "evenly"];
+        justify.enum_values = if f=="column" {&["start","center"]}else{&["start", "center", "end", "between", "around", "evenly"]};
         ports.extend([
             justify,
             p("bar", "string", false, None),
@@ -632,6 +632,10 @@ pub(crate) fn check_port_value(
             line,
             format!("{k} on {id}: {message}"),
         ));
+    }
+    let ceiling=match k {"line_height"=>Some(4096.),"basis"=>Some(1e6),"grow"|"shrink"=>Some(1000.),_=>None};
+    if ceiling.is_some_and(|limit|v.as_f64().is_some_and(|n|!n.is_finite() || n>limit)) {
+        out.push(Diagnostic::error("port-max",line,format!("port {k} on {id} exceeds its finite layout ceiling")));
     }
     if ["ratio", "minimum", "maximum"].contains(&k) && v.as_f64().is_some_and(|n| n > 1.0) {
         out.push(Diagnostic::error(

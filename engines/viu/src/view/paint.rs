@@ -372,7 +372,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                             },
                         );
                         let line_height =
-                            number(&node, "line_height").unwrap_or_else(|| styles.line(mono, size));
+                            number(&node, "line_height").map(|v|v.clamp(0.1,4096.)).unwrap_or_else(|| styles.line(mono, size));
                         for (i, line) in lines.iter().enumerate() {
                             let (align, x) = match port_text(&node, "align") {
                                 "center" => (Align2::CENTER_CENTER, rect.center().x),
