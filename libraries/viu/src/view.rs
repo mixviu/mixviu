@@ -792,7 +792,9 @@ impl SceneView {
         if capture.is_some() {
             self.motion_parent = Some(key.clone());
         }
-        let paint_start=ui.ctx().graphics_mut(|g|g.entry(layer.unwrap_or(ui.layer_id())).next_idx());
+        let paint_start = ui
+            .ctx()
+            .graphics_mut(|g| g.entry(layer.unwrap_or(ui.layer_id())).next_idx());
         ui.scope_builder(
             egui::UiBuilder::new().layer_id(layer.unwrap_or(ui.layer_id())),
             |ui| {

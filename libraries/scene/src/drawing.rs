@@ -46,7 +46,7 @@ pub fn validate(value: &serde_json::Value) -> Result<(), String> {
             s.len() == 7 && s.starts_with('#') && s[1..].bytes().all(|b| b.is_ascii_hexdigit())
         };
         if !["arc", "ellipse", "bar"].contains(&p.kind.as_str())
-            || (p.kind == "arc" && (p.radius[0]*p.sweep.to_radians().abs()<=f32::MIN_POSITIVE))
+            || (p.kind == "arc" && (p.radius[0] * p.sweep.to_radians().abs() <= f32::MIN_POSITIVE))
             || !colour(&p.colour)
             || p.end_colour.as_ref().is_some_and(|s| !colour(s))
             || !p
@@ -60,8 +60,8 @@ pub fn validate(value: &serde_json::Value) -> Result<(), String> {
             || p.sweep.abs() > 360.
             || p.effects.len() > 4
             || p.dash_length
-                .is_some_and(|n| !n.is_finite() || n<=0. || n>10000.)
-            || (p.kind != "arc" && p.effects.iter().any(|e|e.preset=="draw"))
+                .is_some_and(|n| !n.is_finite() || n <= 0. || n > 10000.)
+            || (p.kind != "arc" && p.effects.iter().any(|e| e.preset == "draw"))
             || p.effects.iter().any(|e| {
                 !["draw", "pop", "blink", "float"].contains(&e.preset.as_str())
                     || !e.delay.is_finite()

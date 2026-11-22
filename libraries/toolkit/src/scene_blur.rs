@@ -12,6 +12,46 @@ struct Cached {
     // be reused while an entry refers to them.
     _sources:Vec<egui::epaint::ClippedShape>,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn repeated_frame_hits_before_atlas_or_raster_and_budget_is_bounded() {
+        let ctx=egui::Context::default();
+        for i in 0..3 {
+            ctx.run_ui(egui::RawInput {time:Some(i as f64),..Default::default()},|ui| {
+                let layer=ui.layer_id();
+                let start=ui.ctx().graphics_mut(|g|g.entry(layer).next_idx());
+                ui.label("A paused blurred sample");
+                apply(ui,"label",layer,start,2.);
+            }).drop_without_applying_deltas();
+        }
+        let shared=cache(&ctx);let c=shared.lock().unwrap();
+        assert!(c.hits>=1,"hits={} rasters={}",c.hits,c.rasterizations);
+        assert_eq!(c.atlas_reads,c.rasterizations);
+        assert!(c.rasterizations<=2);
+        assert!(c.entries.iter().map(|(_,c)|c.pixels).sum::<usize>()<=PIXELS);
+    }
+    #[test]
+    fn stable_ids_and_texture_labels_are_not_allocators() {
+        assert_eq!(egui::Id::unique("sample"),egui::Id::unique("sample"));
+        let ctx=egui::Context::default();
+        let a=ctx.load_texture("same-label",egui::ColorImage::filled([1,1],Color32::RED),Default::default());
+        let b=ctx.load_texture("same-label",egui::ColorImage::filled([1,1],Color32::BLUE),Default::default());
+        assert_ne!(a.id(),b.id());
+    }
+    #[test]
+    fn hostile_filter_bounds_return_without_allocating() {
+        let ctx=egui::Context::default();
+        ctx.run_ui(egui::RawInput::default(),|ui| {
+            for sigma in [f32::NAN,f32::INFINITY,-1.,0.,201.] {
+                apply(ui,"hostile",ui.layer_id(),ShapeIdx(0),sigma);
+            }
+        }).drop_without_applying_deltas();
+        assert_eq!(cache(&ctx).lock().unwrap().rasterizations,0);
+    }
+}
 #[derive(Default)]
 struct Cache {
     entries:std::collections::VecDeque<(egui::Id,Cached)>,

@@ -1,5 +1,7 @@
 use super::*;
 use std::collections::BTreeMap;
+#[path = "safety.rs"]
+mod safety;
 
 const TIMES: [f64; 9] = [0.1, 0.3, 0.6, 0.9, 1.2, 1.5, 2., 92. / 30., 172. / 30.];
 fn render(model: Value) -> (image::RgbaImage, BTreeMap<String, egui::Rect>) {
@@ -86,12 +88,14 @@ fn animate_check(images: &[image::RgbaImage], logo: egui::Rect) -> Result<(), St
     let ring = |i| coloured(&images[i], logo, false) as f64;
     let eye = |i| coloured(&images[i], logo, true) as f64;
     let fraction = ring(1) / ring(8);
+    if !(0.01..0.2).contains(&(ring(0)/ring(8))) {return Err("ring start cap missing or already complete at 0.1".into());}
     if !(0.01..0.5).contains(&fraction) {
         return Err(format!("ring at 0.3 must be partial: {fraction}"));
     }
     if eye(1) < 500. {
         return Err("eye has not popped at 0.3".into());
     }
+    if eye(0)>eye(1)*0.4 {return Err("eye is instant rather than popping".into());}
     if eye(7) / eye(8) > 0.18 {
         return Err("eye did not close at blink".into());
     }
@@ -287,8 +291,8 @@ fn chrome_entrance_contact_sheet() {
         f(&chrome),
         f(&native)
     );
-    assert!((f(&chrome) - f(&native)).abs() < 0.04);
-    let path = out.join("chrome-native-contact-sheet.png");
-    sheet.save(&path).unwrap();
-    println!("STING_CONTACT_SHEET={}", path.display());
+    assert!((f(&chrome) - f(&native)).abs() < 0.005);
+    let start=|images:&[image::RgbaImage]|coloured(&images[0],logo,false) as f64/coloured(&images[8],logo,false) as f64;
+    println!("STING_ORACLE ring_start chrome={} native={}",start(&chrome),start(&native));
+    assert!((start(&chrome)-start(&native)).abs()<0.005);
 }
