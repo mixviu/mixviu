@@ -453,6 +453,9 @@ pub(crate) fn check_port_value(
     out: &mut Vec<Diagnostic>,
 ) {
     let k = p.name;
+    if k == "sample_time" && v.as_f64().is_none_or(|n| !n.is_finite() || n.abs()>3600.) {
+        out.push(Diagnostic::error("motion-value",line,"sample_time must be finite within +/-3600 seconds"));
+    }
     if k == "shadow" {
         if let Err(message) = crate::drawing::validate_shadow(v) {
             out.push(Diagnostic::error("drawing-value", line, message));
@@ -550,7 +553,7 @@ pub(crate) fn check_port_value(
                         o.keys().all(|k| {
                             matches!(
                                 k.as_str(),
-                                "text" | "role" | "color" | "mono" | "strike" | "highlight"
+                                "text" | "role" | "color" | "mono" | "strike" | "highlight" | "bold"
                             )
                         }) && run["text"].as_str().is_some_and(|s| s.len() <= 65536)
                             && run.get("role").is_none_or(|v| {
@@ -569,7 +572,7 @@ pub(crate) fn check_port_value(
                                         && s[1..].bytes().all(|b| b.is_ascii_hexdigit())
                                 })
                             })
-                            && ["mono", "strike", "highlight"]
+                            && ["mono", "strike", "highlight", "bold"]
                                 .iter()
                                 .all(|k| run.get(k).is_none_or(JsonValue::is_boolean))
                     })

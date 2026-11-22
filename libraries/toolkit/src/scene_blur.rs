@@ -7,9 +7,43 @@ use std::hash::{Hash, Hasher};
 struct Cached {
     signature: u64,
     texture: TextureHandle,
+    pixels:usize,
+    // Retain the layout jobs used as font identities: their pointers cannot
+    // be reused while an entry refers to them.
+    _sources:Vec<egui::epaint::ClippedShape>,
+}
+#[derive(Default)]
+struct Cache {
+    entries:std::collections::VecDeque<(egui::Id,Cached)>,
+    pass:u64,
+    spent:usize,
+    hits:usize,
+    rasterizations:usize,
+    atlas_reads:usize,
+}
+const PIXELS:usize=8*1024*1024;
+fn cache(ctx:&egui::Context)->std::sync::Arc<std::sync::Mutex<Cache>> {
+    let key=egui::Id::unique("scene-blur-budget-v1");
+    ctx.data_mut(|d| {
+        if let Some(c)=d.get_temp::<std::sync::Arc<std::sync::Mutex<Cache>>>(key) {return c}
+        let c=std::sync::Arc::new(std::sync::Mutex::new(Cache::default()));
+        d.insert_temp(key,c.clone());c
+    })
+}
+fn hash_shape(shape:&Shape, hash:&mut impl Hasher) {
+    match shape {
+        Shape::Text(t)=> {
+            (std::sync::Arc::as_ptr(&t.galley.job) as usize).hash(hash);
+            for n in [t.pos.x,t.pos.y,t.angle,t.opacity_factor,t.underline.width] {n.to_bits().hash(hash);}
+            t.fallback_color.hash(hash);t.override_text_color.hash(hash);t.underline.color.hash(hash);
+        }
+        Shape::Vec(shapes)=>for s in shapes {hash_shape(s,hash)},
+        other=>format!("{other:?}").hash(hash),
+    }
 }
 
-pub(super) fn apply(ui: &egui::Ui, layer: LayerId, start: ShapeIdx, sigma: f32) {
+pub(super) fn apply(ui: &egui::Ui, node:&str, layer: LayerId, start: ShapeIdx, sigma: f32) {
+    if !sigma.is_finite() || !(0.3..=200.).contains(&sigma) {return}
     let shapes = ui.ctx().graphics_mut(|g| {
         g.entry(layer)
             .all_entries()
@@ -25,25 +59,24 @@ pub(super) fn apply(ui: &egui::Ui, layer: LayerId, start: ShapeIdx, sigma: f32) 
         return;
     }
     rect = rect.expand(sigma * 3.);
+    if !rect.is_finite() || !rect.is_positive() {return}
     let ppp = ui
         .pixels_per_point()
         .min(2047. / rect.width())
         .min(2047. / rect.height());
     let size = (rect.size() * ppp).ceil();
-    if size.x > 4096. || size.y > 2048. || size.x * size.y > 4_194_304. {
+    if !ppp.is_finite() || ppp<=0. || !size.is_finite() || size.x<1. || size.y<1. || size.x > 4096. || size.y > 2048. || size.x * size.y > 4_194_304. {
         return;
     }
     let width = size.x as u32;
     let height = size.y as u32;
-    let meshes = ui.ctx().tessellate(shapes, ppp);
-    if meshes.iter().any(|p| !matches!(&p.primitive,egui::epaint::Primitive::Mesh(m) if m.texture_id==egui::TextureId::Managed(0))) {return}
-    let atlas = ui.ctx().fonts(|f| f.image());
     let mut hash = std::collections::hash_map::DefaultHasher::new();
-    atlas.pixels.hash(&mut hash);
     for v in [sigma, ppp, rect.min.x, rect.min.y, rect.max.x, rect.max.y] {
         v.to_bits().hash(&mut hash);
     }
-    for p in &meshes {
+    let mut clip=Rect::NOTHING;
+    for p in &shapes {
+        clip=clip.union(p.clip_rect);
         for v in [
             p.clip_rect.min.x,
             p.clip_rect.min.y,
@@ -52,23 +85,29 @@ pub(super) fn apply(ui: &egui::Ui, layer: LayerId, start: ShapeIdx, sigma: f32) 
         ] {
             v.to_bits().hash(&mut hash);
         }
-        let egui::epaint::Primitive::Mesh(m) = &p.primitive else {
-            unreachable!()
-        };
-        m.indices.hash(&mut hash);
-        for v in &m.vertices {
-            for f in [v.pos.x, v.pos.y, v.uv.x, v.uv.y] {
-                f.to_bits().hash(&mut hash);
-            }
-            v.color.to_array().hash(&mut hash);
-        }
+        hash_shape(&p.shape,&mut hash);
+        format!("{:?}",p.transform_after_tessellation).hash(&mut hash);
     }
     let signature = hash.finish();
-    let key = egui::Id::unique(("scene-gaussian", layer, start.0));
-    let old = ui.ctx().data_mut(|d| d.get_temp::<Cached>(key));
-    let cached = if let Some(c) = old.filter(|c| c.signature == signature) {
+    let key = ui.scope_id().with(("scene-gaussian",node));
+    let shared=cache(ui.ctx());
+    let old={
+        let mut cache=shared.lock().unwrap_or_else(|e|e.into_inner());
+        let pass=ui.ctx().cumulative_pass_nr();
+        if cache.pass!=pass {cache.pass=pass;cache.spent=0;}
+        let pixels=width as usize*height as usize;
+        if cache.spent+pixels>PIXELS {return}
+        cache.spent+=pixels;
+        let found=cache.entries.iter().position(|(id,c)|*id==key && c.signature==signature);
+        found.and_then(|i|cache.entries.remove(i)).map(|(_,entry)| {cache.hits+=1;entry})
+    };
+    let cached = if let Some(c) = old {
         c
     } else {
+        let meshes = ui.ctx().tessellate(shapes.clone(), ppp);
+        if meshes.iter().any(|p| !matches!(&p.primitive,egui::epaint::Primitive::Mesh(m) if m.texture_id==egui::TextureId::Managed(0))) {return}
+        let atlas = ui.ctx().fonts(|f| f.image());
+        {let mut c=shared.lock().unwrap_or_else(|e|e.into_inner());c.atlas_reads+=1;c.rasterizations+=1;}
         let mut pixels = vec![[0f32; 4]; (width * height) as usize];
         let edge = |a: egui::Pos2, b: egui::Pos2, p: egui::Pos2| {
             (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)
@@ -160,7 +199,7 @@ pub(super) fn apply(ui: &egui::Ui, layer: LayerId, start: ShapeIdx, sigma: f32) 
             .into_iter()
             .flat_map(|p| p.map(|n| (n.clamp(0., 1.) * 255.).round() as u8))
             .collect();
-        let image = image::RgbaImage::from_raw(width, height, rgba).unwrap();
+        let Some(image) = image::RgbaImage::from_raw(width, height, rgba) else {return};
         let image = image::imageops::fast_blur(&image, sigma * ppp);
         let pixels = image
             .pixels()
@@ -169,18 +208,25 @@ pub(super) fn apply(ui: &egui::Ui, layer: LayerId, start: ShapeIdx, sigma: f32) 
         let image = egui::ColorImage::new([width as usize, height as usize], pixels);
         Cached {
             signature,
+            pixels:width as usize*height as usize,
+            _sources:shapes,
             texture: ui
                 .ctx()
-                .load_texture("scene-gaussian", image, Default::default()),
+                .load_texture(format!("scene-gaussian-{key:?}"), image, Default::default()),
         }
     };
     let shape = Shape::image(
         cached.texture.id(),
-        rect,
+        Rect::from_min_size(rect.min,size/ppp),
         Rect::from_min_max(egui::Pos2::ZERO, egui::pos2(1., 1.)),
         Color32::WHITE,
     );
-    ui.ctx().data_mut(|d| d.insert_temp(key, cached));
+    {
+        let mut cache=shared.lock().unwrap_or_else(|e|e.into_inner());
+        cache.entries.retain(|(id,_)|*id!=key);
+        while cache.entries.len()>=8 || cache.entries.iter().map(|(_,c)|c.pixels).sum::<usize>()+cached.pixels>PIXELS {cache.entries.pop_front();}
+        cache.entries.push_back((key,cached));
+    }
     ui.ctx().graphics_mut(|g| {
         let list = g.entry(layer);
         let end = list.next_idx().0;
@@ -188,7 +234,7 @@ pub(super) fn apply(ui: &egui::Ui, layer: LayerId, start: ShapeIdx, sigma: f32) 
             list.mutate_shape(ShapeIdx(i), |s| s.shape = Shape::Noop);
         }
         if start.0 < end {
-            list.mutate_shape(start, |s| s.shape = shape);
+            list.mutate_shape(start, |s| {s.shape = shape;s.clip_rect=clip;});
         }
     });
 }

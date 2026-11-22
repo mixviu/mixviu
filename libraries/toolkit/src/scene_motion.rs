@@ -605,13 +605,14 @@ fn transform(shape: &mut ClippedShape, rect: Rect, values: &motion::Values) {
 }
 
 /// Apply a deterministic, externally clocked paint effect without changing layout.
-pub fn paint_effect(ui: &Ui, layer: LayerId, start: ShapeIdx, rect: Rect, spec: &Value) {
+pub fn paint_effect(ui: &Ui, node: &str, layer: LayerId, start: ShapeIdx, rect: Rect, spec: &Value) {
     let Some(name) = spec["preset"].as_str() else {
         return;
     };
     let Some(time) = spec["time"].as_f64() else {
         return;
     };
+    if !time.is_finite() {return}
     static TABLE: std::sync::OnceLock<Vec<Preset>> = std::sync::OnceLock::new();
     let Some(preset) = TABLE
         .get_or_init(motion::presets)
@@ -624,6 +625,7 @@ pub fn paint_effect(ui: &Ui, layer: LayerId, start: ShapeIdx, rect: Rect, spec: 
     let scale = values.get(Property::Scale) as f32;
     let clip = values.get(Property::ClipRight) as f32;
     let blur = values.get(Property::Blur) as f32;
+    if scale==1. && clip<=0. && blur<=0.3 {return}
     let bounds = ui.ctx().graphics_mut(|g| {
         g.entry(layer)
             .all_entries()
@@ -655,8 +657,8 @@ pub fn paint_effect(ui: &Ui, layer: LayerId, start: ShapeIdx, rect: Rect, spec: 
             });
         }
     });
-    if blur > 0.05 {
-        scene_blur::apply(ui, layer, start, blur);
+    if blur > 0.3 {
+        scene_blur::apply(ui, node, layer, start, blur);
     }
 }
 

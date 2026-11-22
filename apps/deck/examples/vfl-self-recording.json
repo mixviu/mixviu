@@ -30,24 +30,6 @@
         "root": {
           "align": "center",
           "background": "#0d1117",
-          "background_radials": [
-            {
-              "color": "#173048",
-              "rx": 1200,
-              "ry": 700,
-              "stop": 0.6,
-              "x": 0.85,
-              "y": -0.1
-            },
-            {
-              "color": "#1a2433",
-              "rx": 900,
-              "ry": 600,
-              "stop": 0.6,
-              "x": -0.1,
-              "y": 1.1
-            }
-          ],
           "children": [
             "root.0",
             "root.1",
@@ -193,10 +175,12 @@
           "size": 34,
           "spans": [
             {
+              "bold": true,
               "color": "#e8edf3",
               "text": "MIX"
             },
             {
+              "bold": false,
               "color": "#3cc8d8",
               "text": "VIU"
             }

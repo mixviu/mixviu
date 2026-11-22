@@ -792,6 +792,7 @@ impl SceneView {
         if capture.is_some() {
             self.motion_parent = Some(key.clone());
         }
+        let paint_start=ui.ctx().graphics_mut(|g|g.entry(layer.unwrap_or(ui.layer_id())).next_idx());
         ui.scope_builder(
             egui::UiBuilder::new().layer_id(layer.unwrap_or(ui.layer_id())),
             |ui| {
@@ -804,12 +805,9 @@ impl SceneView {
         if let Some(spec) = node.ports.get("paint_effect") {
             toolkit::scene_motion::paint_effect(
                 ui,
+                &key,
                 layer.unwrap_or(ui.layer_id()),
-                if layer.is_some() {
-                    egui::layers::ShapeIdx(0)
-                } else {
-                    start
-                },
+                paint_start,
                 painted_rect,
                 spec,
             );
@@ -1126,7 +1124,7 @@ impl SceneView {
                         }
                     }
                     "drawing" => {
-                        crate::drawing::show(ui, node);
+                        crate::drawing::show(ui, &key, node);
                     }
                     "image" => {
                         if text(node,"src")=="brand:cyclops" {

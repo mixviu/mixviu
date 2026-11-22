@@ -3,7 +3,7 @@ use egui::{Color32, Pos2, Shape, Stroke, Vec2};
 use motion::Property;
 use scene::{Node, drawing::Primitive};
 
-pub fn show(ui: &mut egui::Ui, node: &Node) {
+pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
     let n = |key: &str, default| {
         node.ports
             .get(key)
@@ -17,13 +17,18 @@ pub fn show(ui: &mut egui::Ui, node: &Node) {
         .get("sample_time")
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(10.);
-    let Ok(primitives) = serde_json::from_value::<Vec<Primitive>>(node.ports["primitives"].clone())
+    let Some(raw) = node.ports.get("primitives") else { return };
+    if scene::drawing::validate(raw).is_err() || !time.is_finite() || time.abs()>3600. {return}
+    let Ok(primitives) = serde_json::from_value::<Vec<Primitive>>(raw.clone())
     else {
         return;
     };
     static TABLE: std::sync::OnceLock<Vec<motion::Preset>> = std::sync::OnceLock::new();
     let table = TABLE.get_or_init(motion::presets);
     let mut shapes = Vec::new();
+    let mut shadow_shapes = Vec::new();
+    let mut float_offset = None;
+    let mut sampled = Vec::new();
     for p in primitives {
         let mut scale = 1.;
         let mut sy = 1.;
@@ -32,7 +37,7 @@ pub fn show(ui: &mut egui::Ui, node: &Node) {
         let mut opacity = 1.;
         let mut fraction = 1.;
         for e in &p.effects {
-            let preset = table.iter().find(|a| a.name == e.preset).unwrap();
+            let Some(preset) = table.iter().find(|a| a.name == e.preset) else { return };
             let v = preset.sample(time - e.delay);
             scale *= v.get(Property::Scale) as f32;
             sx *= v.get(Property::ScaleX) as f32;
@@ -41,16 +46,17 @@ pub fn show(ui: &mut egui::Ui, node: &Node) {
             opacity *= v.get(Property::Opacity) as f32;
             if e.preset == "draw" {
                 let length = p.radius[0] * p.sweep.to_radians().abs();
-                fraction *= (1.
-                    - p.dash_length.unwrap_or(length) * v.get(Property::DashOffset) as f32
-                        / 1000.
-                        / length)
+                if !length.is_finite() || length<=0. {return}
+                fraction *= (p.dash_length.unwrap_or(length)
+                    * (1. - v.get(Property::DashOffset) as f32 / 1000.) / length)
                     .clamp(0., 1.);
             }
         }
         let centre = rect.min + Vec2::new(p.centre[0], p.centre[1] + dy);
         let radius = Vec2::new(p.radius[0] * scale * sx, p.radius[1] * scale * sy);
-        let rgb = u32::from_str_radix(&p.colour[1..], 16).unwrap();
+        let Some(rgb) = parse_colour(&p.colour) else {return};
+        let opacity=opacity.clamp(0.,1.);
+        sampled.push([scale,sx,sy,opacity,fraction,dy]);
         let colour = Color32::from_rgb((rgb >> 16) as u8, (rgb >> 8) as u8, rgb as u8)
             .gamma_multiply(opacity.clamp(0., 1.));
         let shape = if p.kind == "arc" {
@@ -75,32 +81,33 @@ pub fn show(ui: &mut egui::Ui, node: &Node) {
             let end = p
                 .end_colour
                 .as_ref()
-                .map(|c| u32::from_str_radix(&c[1..], 16).unwrap())
+                .and_then(|c| parse_colour(c))
                 .unwrap_or(rgb);
             let end = Color32::from_rgb((end >> 16) as u8, (end >> 8) as u8, end as u8)
                 .gamma_multiply(opacity);
             let mut mesh = egui::Mesh::default();
             // Rounded horizontal gradient, tessellated as narrow strips.
-            for i in 0..260 {
-                let x = r.left() + r.width() * i as f32 / 260.;
-                let edge = (x - r.left()).min(r.right() - x).min(radius.y);
+            let strips=r.width().ceil().clamp(1.,2048.) as usize;
+            for i in 0..strips {
+                let x = r.left() + r.width() * i as f32 / strips as f32;
+                let mid=x+r.width()/strips as f32/2.;
+                let edge = (mid - r.left()).min(r.right() - mid).min(radius.y);
                 let h = (radius.y * radius.y - (radius.y - edge).powi(2))
                     .max(0.)
                     .sqrt();
-                let c = egui::ecolor::tint_color_towards(colour, end);
-                let t = i as f32 / 259.;
+                let t = (i as f32+0.5)/strips as f32;
                 let a = colour.to_array();
                 let b = end.to_array();
                 let c = Color32::from_rgba_premultiplied(
                     (a[0] as f32 * (1. - t) + b[0] as f32 * t) as u8,
                     (a[1] as f32 * (1. - t) + b[1] as f32 * t) as u8,
                     (a[2] as f32 * (1. - t) + b[2] as f32 * t) as u8,
-                    c.a(),
+                    colour.a(),
                 );
                 mesh.add_colored_rect(
                     egui::Rect::from_min_max(
                         egui::pos2(x, centre.y - h),
-                        egui::pos2(x + r.width() / 260., centre.y + h),
+                        egui::pos2(x + r.width() / strips as f32, centre.y + h),
                     ),
                     c,
                 );
@@ -109,20 +116,34 @@ pub fn show(ui: &mut egui::Ui, node: &Node) {
         } else {
             Shape::ellipse_filled(centre, radius, colour)
         };
+        // A common float is a translation of the whole silhouette. Cache
+        // its unshifted alpha and move the shadow quad, not the raster.
+        let common=dy;
+        if float_offset.is_none() {float_offset=Some(common)}
+        if float_offset.is_some_and(|v|v!=common) {float_offset=Some(f32::NAN)}
+        if node.ports.contains_key("shadow") {shadow_shapes.push(shape.clone());}
         shapes.push(shape);
     }
+    if node.ports.contains_key("shadow") {
+    let dy=float_offset.filter(|n|n.is_finite()).unwrap_or(0.);
+    for shape in &mut shadow_shapes {shape.translate(Vec2::new(0.,-dy));}
+    if float_offset.is_some_and(|n|n.is_finite()) {for sample in &mut sampled {sample[5]=0.;}}
     paint_shadow(
         ui,
+        id,
         rect,
         node.ports.get("shadow"),
-        &shapes,
-        format!(
-            "{rect:?}:{time}:{}:{}",
-            node.ports["primitives"],
-            node.ports.get("shadow").unwrap_or(&serde_json::Value::Null)
-        ),
+        &shadow_shapes,
+        format!("{rect:?}:{raw}:{sampled:?}:{}", node.ports.get("shadow").unwrap_or(&serde_json::Value::Null)),
+        Vec2::new(0.,dy),
     );
+    }
     ui.painter().extend(shapes);
+}
+fn parse_colour(text:&str)->Option<u32> {
+    let hex=text.strip_prefix('#')?;
+    if hex.len()!=6 {return None}
+    u32::from_str_radix(hex,16).ok()
 }
 
 #[derive(Clone)]
@@ -132,28 +153,28 @@ struct ShadowCache {
 }
 fn paint_shadow(
     ui: &egui::Ui,
+    id: &str,
     rect: egui::Rect,
     spec: Option<&serde_json::Value>,
     shapes: &[Shape],
     signature: String,
+    translation:Vec2,
 ) {
     let Some(spec) = spec else { return };
+    if scene::drawing::validate_shadow(spec).is_err() {return}
     let Ok(shadow) = serde_json::from_value::<scene::drawing::Shadow>(spec.clone()) else {
         return;
     };
     let pad = (shadow.blur * 3.).ceil();
     let width = (rect.width() + pad * 2.).ceil() as u32;
     let height = (rect.height() + pad * 2.).ceil() as u32;
-    if width > 2048 || height > 2048 {
+    if width == 0 || height == 0 || width > 2048 || height > 2048 {
         return;
     }
-    let Some(mut mask) = tiny_skia::Pixmap::new(width, height) else {
-        return;
-    };
     let origin = rect.min - Vec2::splat(pad);
-    let key = ui.scope_id().with("drawing-shadow");
+    let key = ui.scope_id().with(("drawing-shadow",id));
     let draw = |texture: &egui::TextureHandle| {
-        let pos = origin + Vec2::new(shadow.offset[0], shadow.offset[1]);
+        let pos = origin + Vec2::new(shadow.offset[0], shadow.offset[1])+translation;
         ui.painter().image(
             texture.id(),
             egui::Rect::from_min_size(pos, Vec2::new(width as f32, height as f32)),
@@ -169,6 +190,7 @@ fn paint_shadow(
         draw(&cache.texture);
         return;
     }
+    let Some(mut mask) = tiny_skia::Pixmap::new(width, height) else {return};
     let input = shapes
         .iter()
         .cloned()
@@ -209,14 +231,14 @@ fn paint_shadow(
             }
         }
     }
-    let image = image::RgbaImage::from_raw(width, height, mask.data().to_vec()).unwrap();
-    let mut blurred = image::imageops::fast_blur(&image, shadow.blur);
+    let Some(image) = image::RgbaImage::from_raw(width, height, mask.data().to_vec()) else {return};
+    let mut blurred = if shadow.blur>0. {image::imageops::fast_blur(&image, shadow.blur)} else {image};
     for pixel in blurred.pixels_mut() {
         *pixel = image::Rgba([
             shadow.colour[0] as u8,
             shadow.colour[1] as u8,
             shadow.colour[2] as u8,
-            (pixel[3] as f32 * shadow.colour[3] as f32 / 255.).round() as u8,
+            (pixel[3] as f32 * shadow.colour[3] / 255.).round() as u8,
         ]);
     }
     let image = egui::ColorImage::from_rgba_unmultiplied(
@@ -225,7 +247,7 @@ fn paint_shadow(
     );
     let texture = ui
         .ctx()
-        .load_texture("drawing-shadow", image, Default::default());
+        .load_texture(format!("drawing-shadow-{key:?}"), image, Default::default());
     draw(&texture);
     ui.ctx()
         .data_mut(|d| d.insert_temp(key, ShadowCache { signature, texture }));

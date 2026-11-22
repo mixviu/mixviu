@@ -39,7 +39,7 @@ pub(crate) fn job(
             TextFormat {
                 font_id: if mono || run["mono"] == true {
                     FontId::new(size, FontFamily::Monospace)
-                } else if bold {
+                } else if run["bold"].as_bool().unwrap_or(bold) {
                     toolkit::fonts::bound(ui.ctx(), toolkit::fonts::heading(size))
                 } else {
                     FontId::new(size, FontFamily::Proportional)

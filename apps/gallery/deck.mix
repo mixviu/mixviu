@@ -113,12 +113,12 @@ fn sting($title, $subtitle)
   $ring={kind:"arc",centre:[140,140],radius:[142*$k,142*$k],start:63.21,sweep:-306.42,dash_length:770*$k,effects:$effects}
   $eye={kind:"ellipse",centre:[140,140],effects:[{preset:"pop",delay:0.05},{preset:"blink"},{preset:"float"}]}
   $logo={widget:"drawing",w:280,h:280,shadow:$shadow,primitives:[merge($ring,{width:74.15*$k,colour:"#000000"}),merge($ring,{width:68*$k,colour:"#ffffff"}),merge($eye,{radius:[49.08*$k,49.08*$k],colour:"#000000"}),merge($eye,{radius:[46*$k,46*$k],colour:"#ff0000"})]}
-  $brandline={widget:"text",text:"MIXVIU",spans:[{text:"MIX",color:$tokens.colour.text},{text:"VIU",color:$tokens.colour.acc}],size:34,bold:true,letter_spacing:10.88,align:"center"}
+  $brandline={widget:"text",text:"MIXVIU",spans:[{text:"MIX",color:$tokens.colour.text,bold:true},{text:"VIU",color:$tokens.colour.acc,bold:false}],size:34,bold:true,letter_spacing:10.88,align:"center"}
   $heading={widget:"text",text:$title,size:104,bold:true,letter_spacing:-2.08,color:$tokens.colour.text,align:"center"}
   $sub={widget:"text",text:$subtitle,size:36,mono:true,letter_spacing:1.44,color:$tokens.colour.acc,align:"center"}
   $bar={widget:"drawing",w:260,h:8,primitives:[{kind:"bar",centre:[130,4],radius:[130,4],colour:$tokens.colour.acc,end_colour:$tokens.colour.blue}]}
   -- CSS line boxes: 280 + 28 + 41 + 22 + 109.2 + 22 + 43.2 + 30 + 8.
-  return merge(column([$logo,{widget:"spacer",size:28},$brandline,{widget:"spacer",size:22},$heading,{widget:"spacer",size:22},$sub,{widget:"spacer",size:30},$bar],0),{align:"center",min_width:1600,height:900,padding_top:138,padding_bottom:40,background:$tokens.colour.background,background_radials:$tokens.backdrop})
+  return merge(column([$logo,{widget:"spacer",size:28},$brandline,{widget:"spacer",size:22},$heading,{widget:"spacer",size:22},$sub,{widget:"spacer",size:30},$bar],0),{align:"center",min_width:1600,height:900,padding_top:138,padding_bottom:40,background:$tokens.colour.background})
 end
 fn topic($number, $title, $subtitle)
   return column([deck_text($number,"topic_no","acc"),deck_text($title,"topic_title","text"),deck_text($subtitle,"topic_sub","mut")],22)
