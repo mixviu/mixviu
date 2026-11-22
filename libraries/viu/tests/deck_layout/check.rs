@@ -62,6 +62,17 @@ fn a_minimum_width_does_not_cap_natural_content() {
 }
 
 #[test]
+fn shrinking_compounds_wrap_inside_their_shared_row() {
+    let rects = geometry(
+        r##"{root:{widget:"row",fill:true,gap:8,children:["a","arrow","b"]},a:{widget:"column",shrink:1,padding:14,children:["one"]},b:{widget:"column",shrink:1,padding:14,children:["two"]},arrow:{widget:"text",text:"→",size:40},one:{widget:"text",text:"A long heading with several separate words",size:40,wrap:true},two:{widget:"text",text:"Another heading that must wrap within its column",size:40,wrap:true}}"##,
+    );
+    assert!(rects["one"].height() > 50., "{rects:?}");
+    assert!(rects["two"].height() > 50., "{rects:?}");
+    assert!((rects["root"].right() - rects["b"].right()).abs() < 1., "{rects:?}");
+    assert!(rects["a"].right() + 7. < rects["arrow"].left(), "{rects:?}");
+}
+
+#[test]
 fn wrapped_compound_tags_move_as_whole_cells() {
     let rects = geometry(
         r##"{root:{widget:"row",fill:true,wrap:true,gap:8,children:["a","b","c"]},a:{widget:"column",min_width:600,children:["one"]},b:{widget:"column",min_width:600,children:["two"]},c:{widget:"column",min_width:600,children:["three"]},one:{widget:"text",text:"First tag"},two:{widget:"text",text:"Second tag"},three:{widget:"text",text:"Third tag"}}"##,
