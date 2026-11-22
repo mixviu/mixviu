@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: MIT OR Apache-2.0
+use super::*;
+
+#[test]
+#[ignore = "explicit CBC evidence; DECK_LAYOUT_INPUT and DECK_LAYOUT_OUTPUT required"]
+fn render_layout_steps() {
+    let path = PathBuf::from(std::env::var_os("DECK_LAYOUT_INPUT").expect("DECK_LAYOUT_INPUT"));
+    let out = PathBuf::from(std::env::var_os("DECK_LAYOUT_OUTPUT").expect("DECK_LAYOUT_OUTPUT"));
+    std::fs::create_dir_all(&out).unwrap();
+    let document: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let mut deck = Deck::new();
+    assert_eq!(deck.call("deck.open",json!({"path":path})).reply.unwrap().rc,0);
+    for slide in document["slides"].as_array().unwrap() {
+        let id = slide["id"].as_str().unwrap();
+        for step in 0..slide["steps"].as_u64().unwrap() {
+            let model = deck.call("deck.goto",json!({"slide":id,"step":step})).model.unwrap();
+            let mut view = SceneView::with_model(model["presentation"]["scene"].as_str().unwrap(),model.clone()).unwrap();
+            view.set_rasters(deck.rasters.clone());
+            let rects = Arc::new(std::sync::Mutex::new(json!({})));
+            let captured = rects.clone();
+            let mut harness = egui_kittest::Harness::builder()
+                .with_size(egui::vec2(1600.,900.)).with_pixels_per_point(2.4)
+                .with_context_setup(|ctx| { viu::fonts::install(ctx,400,600); viu::icons::install(ctx); })
+                .wgpu().build_ui(move |ui| {
+                    let mut canvas=ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1600.,900.))));
+                    view.show(&mut canvas);
+                    *captured.lock().unwrap() = view.geometry.iter().map(|(k,r)| (k.clone(),json!([r.left()*2.4,r.top()*2.4,r.width()*2.4,r.height()*2.4]))).collect();
+                });
+            harness.run();
+            harness.render().unwrap().save(out.join(format!("{id}-{step}.png"))).unwrap();
+            std::fs::write(out.join(format!("{id}-{step}.json")),serde_json::to_vec_pretty(&*rects.lock().unwrap()).unwrap()).unwrap();
+        }
+    }
+}

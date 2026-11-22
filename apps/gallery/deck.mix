@@ -38,11 +38,32 @@ end
 fn kicker($text, $prs)
   $items = [deck_text($text,"kicker","mut")]
   for $pr in $prs
-    $pill=chip($pr.text,"",$pr.role ?? "acc")
-    $pill.children[0].weight=600
+    $pill=pr_pill($pr.text,$pr.role ?? "acc")
     push($items,$pill)
   end
   return row($items,16)
+end
+fn pr_pill($text,$role="acc")
+  return merge(column([merge(deck_text($text,"pr","background"),{weight:600})],0),{padding_left:14,padding_right:14,padding_top:4,padding_bottom:4,background:$tokens.colour[$role],radius:8})
+end
+fn compact_card($title,$items,$tone="mut")
+  $node=card($title,$items,$tone)
+  $node.padding_left=$tokens.space.compact_card_x
+  $node.padding_right=$tokens.space.compact_card_x
+  $node.padding_top=$tokens.space.compact_card_y
+  $node.padding_bottom=$tokens.space.compact_card_y
+  $node.gap=8
+  $node.children[0]=merge($node.children[0],{size:21,weight:500,letter_spacing:1.68})
+  return $node
+end
+fn compact_chip($text,$caption,$role="text")
+  $node=chip($text,$caption,$role)
+  $node.padding_left=10;$node.padding_right=10
+  $node.padding_top=4;$node.padding_bottom=4
+  $node.gap=6
+  $node.children[0].size=20
+  $node.children[1].size=17
+  return $node
 end
 fn headline($text, $small)
   return column([deck_text($text,"headline","text"),deck_text($small,"small","mut")],10)
@@ -93,7 +114,7 @@ fn deck_stat($number, $caption, $role, $animate=true)
   $text = deck_text($number,"stat",$role)
   $target = to_number($number)
   if $animate and $target != nil then $text.number = {to:$target,ms:$tokens.motion.count_ms,delay_ms:$tokens.motion.count_delay_ms} end
-  return column([$text,deck_text($caption,"stat_label","mut")],0)
+  return column([$text,merge(deck_text(upper($caption),"stat_label","mut"),{letter_spacing:$tokens.type.stat_label*0.06})],0)
 end
 fn chapter_rail($chapters,$active,$series)
   $chips=[]

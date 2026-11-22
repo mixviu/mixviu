@@ -13,6 +13,8 @@ use viu::{
 };
 #[path = "deck_sting/check.rs"]
 mod sting;
+#[path = "deck_layout/check.rs"]
+mod layout;
 
 struct Deck {
     rasters: viu::raster::Rasters,

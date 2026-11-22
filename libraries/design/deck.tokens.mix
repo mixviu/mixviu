@@ -17,11 +17,11 @@ return {
     "headline":68,"small":30,"kicker":26,"panel_title":24,"big":34,
     "list":31,"caption":26,"node":28,"node_label":20,"arrow":40,
     "arrow_label":18,"code":25,"terminal":26,"tree":29,"badge":20,
-    "chip":24,"chip_caption":21,"stat":76,"stat_label":22,"mock":27,
+    "chip":24,"chip_caption":21,"pr":26,"stat":76,"stat_label":22,"mock":27,
     "wordmark":150,"tagline":40,"date":30,"topic_no":34,
     "topic_title":120,"topic_sub":38,"rail":19,"rail_compact":17,"series_footer":16
   },
   "space": {"top":72,"side":96,"bottom":120,"columns":40,"card_x":32,
     "card_y":28,"card_radius":18,"flow":18,"chip":12,"terminal_row":38,
-    "tree_row":50.75,"rail_bottom":44,"content_bottom":800,"rail_x":9,"rail_y":3,"rail_radius":6,"rail_gap":10}
+    "tree_row":50.75,"rail_bottom":44,"content_bottom":800,"rail_x":9,"rail_y":3,"rail_radius":6,"rail_gap":10,"compact_card_x":18,"compact_card_y":14}
 }
