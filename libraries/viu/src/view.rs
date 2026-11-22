@@ -2272,10 +2272,10 @@ fn validate_controls(
             for port in ["font", "mono_font"] {
                 if let Some(name) = node.ports.get(port).and_then(Value::as_str) {
                     let family = toolkit::fonts::optional::family(name, weight);
-                    if let egui::FontFamily::Name(name) = family {
-                        if !families.contains(name.as_ref()) {
-                            return Err(format!("required font family not bound: {name}"));
-                        }
+                    if let egui::FontFamily::Name(name) = family
+                        && !families.contains(name.as_ref())
+                    {
+                        return Err(format!("required font family not bound: {name}"));
                     }
                 }
             }
