@@ -29,6 +29,10 @@ end
 fn prepare_fixture($job, $entries)
   return $q.prepare($job, fixture_entries($entries), "fixture", "fixture", $today)
 end
+fn record_fixture($summary, $result)
+  return {package: "fixture", target: "fixture", test: "module::tests::fixture",
+    result: $result, expires: "2026-11-28", owner: "owner", summary: $summary}
+end
 try
   for $line in ["test x ... FAILED", "thread 'x' (123) panicked at fixture.rs:7:9:", "\t  ordinary indented output", chr(27) .. "[31mordinary colour" .. chr(27) .. "[0m"]
     check($q.child_line($line) == $line, "ordinary child line changed")
@@ -54,7 +58,8 @@ try
   $one.argv = concat($one.argv, ["--exact"])
   $p = prepare_fixture($one, [$fail])
   check(run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "quarantined failure failed strict replay")
-  $q.replay($p.isolated)
+  $failure = $q.replay($p.isolated)[0]
+  check($failure.result == "fail" and deep_eq($failure.summary, {passed: 0, failed: 1, ignored: 0}), "failure summary wrong")
   $p = prepare_fixture($one, [$fail, $pass])
   check(run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "two entries or existing --exact duplicated libtest flag")
   -- A different failure in the same binary remains strict.
@@ -71,12 +76,15 @@ try
   $p = prepare_fixture($base, [$hang])
   $js = $p.isolated
   $js[0].timeout = 0.1
-  check($q.replay($js)[0].result == "timeout", "hang did not report timeout")
+  $timeout = $q.replay($js)[0]
+  check($timeout.result == "timeout" and $timeout.summary == nil, "hang summary must be nil")
   $p = prepare_fixture($base, [$pass])
-  $q.replay($p.isolated)
+  check(deep_eq($q.replay($p.isolated)[0].summary, {passed: 1, failed: 0, ignored: 0}), "pass summary wrong")
   for $case in ["ignored", "missing"]
     $p = prepare_fixture($base, [entry("module::tests::" .. $case)])
-    check($q.replay($p.isolated)[0].result == $case, "zero tests reported as pass")
+    $record = $q.replay($p.isolated)[0]
+    check($record.result == $case, "zero tests reported as pass")
+    check(deep_eq($record.summary, {passed: 0, failed: 0, ignored: (if $case == "ignored" then 1 else 0 end)}), "final summary wrong")
   end
   $flagged = $base
   $flagged.argv = concat($base.argv, ["--include-ignored", "--test-threads", "1", "--nocapture"])
@@ -98,6 +106,109 @@ try
   $result.stdout = "test result: ok. 1 passed; 0 failed; 0 ignored;"
   $result.stdout_truncated = true
   check($q.classification($result) == "missing", "truncated output reported pass")
+  -- No full summary here, independently of truncation/signal.
+  check($q.summary($result) == nil, "incomplete summary accepted")
+  $result.stdout_truncated = false
+  $result.signal = 9
+  check($q.summary($result) == nil, "crash summary accepted")
+  $result.signal = nil
+  $result.stdout = "no summary"
+  check($q.summary($result) == nil, "absent summary accepted")
+  $stream = "test result: FAILED. 8 passed; 2 failed; 3 ignored; 0 measured; 5 filtered out\n"
+  $stream = $stream .. "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out\n"
+  $stream = $stream .. "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out\n"
+  $stream = $stream .. "test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 9 filtered out\n"
+  $records_path = $temp .. "/counts.jsonl"
+  $counts = [record_fixture({passed: 0, failed: 1, ignored: 0}, "fail"),
+    record_fixture({passed: 1, failed: 0, ignored: 0}, "pass"),
+    record_fixture({passed: 0, failed: 0, ignored: 1}, "ignored"), record_fixture(nil, "timeout")]
+  write_file($records_path, join(map($counts, fn($r) = json_encode($r)), "\n") .. "\n")
+  $report = $q.gate_report($stream, $records_path, "workspace")
+  check(deep_eq($report.totals, {passed: 8, failed: 2, ignored: 3, filtered: 32, quarantined: {passed: 1, failed: 1, ignored: 1}}), "gate totals arithmetic wrong")
+  check(len($report.failed) == 0 and len($report.records) == 4, "gate records lost")
+  check(len(filter($report.records, fn($r) = $r.step != "workspace")) == 0, "step missing")
+  $missing = $q.gate_report($stream, $temp .. "/absent.jsonl", "mix")
+  check(deep_eq($missing.failed, ["quarantine records missing: mix"]), "missing records not reported")
+  write_file($records_path, "")
+  $empty = $q.gate_report($stream, $records_path, "mix")
+  check(len($empty.failed) == 0 and len($empty.records) == 0 and $empty.totals.failed == 3, "empty list changed totals")
+  $strict = "test result: FAILED. 8 passed; 2 failed; 3 ignored; 0 measured; 5 filtered out\n"
+  $final_fail = "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out"
+  $raw = {ok: false, timed_out: false, stdout_truncated: false, signal: nil, stdout: ""}
+  for $fake in ["test result: FAILED. 0 passed; 100 failed; 0 ignored;",
+      $final_fail .. chr(13), $final_fail .. chr(8), $final_fail .. "; finished in 0.01s" .. chr(27),
+      $final_fail .. " trailing junk",
+      "test result: FAILED. 0 passed; 100 failed; 0 ignored; 0 measured; 0 filtered out",
+      "test result: FAILED. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out"]
+    $raw.stdout = $fake .. "\n"
+    $s = $q.summary($raw)
+    check($s == nil, "forged, over-bound or result-inconsistent summary accepted")
+    write_file($records_path, json_encode(record_fixture($s, "fail")) .. "\n")
+    $output = $strict .. $q.child_line($fake) .. "\n"
+    $report = $q.gate_report($output, $records_path, "mix")
+    check($report.totals.failed >= 2 and $report.totals.quarantined.failed == 0, "fake summary laundered strict failures")
+  end
+  -- Both parsers accept the real libtest tail, and only a final summary wins.
+  check($q.parse_summary($final_fail .. "; finished in 0.01s").failed == 1, "real libtest tail rejected")
+  $raw.stdout = $final_fail .. "\ntest result: FAILED. 0 passed; 100 failed; 0 ignored;\n"
+  check($q.summary($raw) == nil, "earlier complete summary won over invalid final summary")
+  for $mode in ["timeout", "signal", "truncated"]
+    $raw.stdout = $final_fail .. "; finished in 0.01s\n"
+    $raw.timed_out = $mode == "timeout"
+    $raw.signal = if $mode == "signal" then 9 else nil end
+    $raw.stdout_truncated = $mode == "truncated"
+    $s = $q.summary($raw)
+    check(deep_eq($s, {passed: 0, failed: 1, ignored: 0}), "printed summary lost after " .. $mode)
+    write_file($records_path, json_encode(record_fixture($s, $q.classification($raw))) .. "\n")
+    $report = $q.gate_report($strict .. $raw.stdout, $records_path, "workspace")
+    check($report.totals.failed == 2 and $report.totals.quarantined.failed == 1 and len($report.failed) == 0, "printed summary not moved exactly once")
+  end
+  -- A real child prints its final summary, then hangs until the timeout.
+  write_file($echo, "print(" .. json_encode($final_fail) .. ")\nsleep(2000)\n")
+  $late = $base
+  $late.argv = [$mix, $echo]
+  $late.entry = $fail
+  $late.timeout = 0.3
+  $late_record = $q.replay([$late])[0]
+  check($late_record.result == "timeout" and deep_eq($late_record.summary, {passed: 0, failed: 1, ignored: 0}), "real post-summary timeout lost counts")
+  write_file($records_path, json_encode($late_record) .. "\n")
+  $report = $q.gate_report($strict .. $final_fail .. "\n", $records_path, "mix")
+  check($report.totals.failed == 2 and $report.totals.quarantined.failed == 1, "real timeout summary not moved once")
+  write_file($records_path, json_encode(record_fixture({passed: 0, failed: 1, ignored: 0}, "fail")) .. "\n")
+  $report = $q.gate_report("", $records_path, "mix")
+  check(deep_eq($report.failed, ["quarantine totals underflow: mix"]), "underflow not reported")
+  check($report.totals.failed == 0 and $report.totals.quarantined.failed == 0, "underflow subtraction applied")
+  -- Each invalid record is caught; a later valid record is still processed.
+  $invalid_records = ["{broken", "null", "[]", "1", json_encode({summary: nil})]
+  for $field in keys(record_fixture(nil, "timeout"))
+    $invalid = record_fixture(nil, "timeout")
+    $invalid = delete($invalid, $field)
+    push($invalid_records, json_encode($invalid))
+    $invalid = record_fixture(nil, "timeout")
+    $invalid[$field] = 12
+    push($invalid_records, json_encode($invalid))
+  end
+  for $s in [{passed: -1, failed: 0, ignored: 0}, {passed: 0, failed: 100, ignored: 0},
+      {passed: 0.5, failed: 0, ignored: 0}, {passed: 1, failed: 1, ignored: 0},
+      {passed: 1, failed: 0, ignored: 0}, {failed: 1}, []]
+    push($invalid_records, json_encode(record_fixture($s, "fail")))
+  end
+  $invalid = record_fixture(nil, "unknown")
+  push($invalid_records, json_encode($invalid))
+  for $line in $invalid_records
+    write_file($records_path, $line .. "\n" .. json_encode(record_fixture({passed: 0, failed: 1, ignored: 0}, "fail")) .. "\n")
+    $report = $q.gate_report($final_fail .. "\n", $records_path, "mix")
+    check(deep_eq($report.failed, ["quarantine record invalid: mix"]), "invalid record did not fail cleanly")
+    check(len($report.records) == 1 and $report.totals.quarantined.failed == 1, "invalid record stopped later processing")
+  end
+  $gate = read_file("tools/cutover_gate.mix")
+  $verdict = index_of($gate, 'print("TEST_TOTALS ')
+  $records_line = index_of($gate, 'print("GATE_QUARANTINE_RECORDS ')
+  $failed_line = index_of($gate, 'print("GATE_FAILED ')
+  check($verdict > index_of($gate, 'print("STEP_RC="') and $records_line > $verdict and $failed_line > $records_line, "verdict order wrong")
+  $tail = substr($gate, $verdict)
+  check(len(re_find($tail, "gate_step\\(|run_argv|env_mx_bundle_probe\\(|STEP_RC=|STEP_BEGIN")) == 0, "child step after verdict")
+  check(len(split($gate, 'print("TEST_TOTALS ')) == 2 and len(split($gate, 'print("GATE_QUARANTINE_RECORDS ')) == 2, "duplicate authoritative verdict")
   for $name in ["module::tests::typo", "tests::fail", "module::tests::fa"]
     rejects(fn() = prepare_fixture($base, [entry($name)]))
   end
