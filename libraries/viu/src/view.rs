@@ -55,7 +55,7 @@ pub struct SceneView {
     widget_rects: Vec<crate::widget_rects::WidgetRect>,
     frame: Option<Box<SceneView>>,
     regions: BTreeMap<String, egui::Rect>,
-    stretch_heights: BTreeMap<String,f32>,
+    stretch_heights: BTreeMap<String, f32>,
     tree: ResolvedScene,
     bindings: scene::bindings::BindingSet,
     model_bytes: usize,
@@ -1459,12 +1459,16 @@ impl SceneView {
                 }
             })
             .response;
-        if let Some(height)=self.stretch_heights.get(id).copied() {
-            response.rect.max.y=response.rect.max.y.max(response.rect.min.y+height);
+        if let Some(height) = self.stretch_heights.get(id).copied() {
+            response.rect.max.y = response.rect.max.y.max(response.rect.min.y + height);
         }
-        if matches!(node.family.as_str(),"column"|"row") {
-            if let Some(width)=num(node,"width").or_else(||(node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0.).then(||allocated.width().max(num(node,"min_width").unwrap_or(0.)))) {
-                response.rect.max.x=response.rect.min.x+width;
+        if matches!(node.family.as_str(), "column" | "row") {
+            if let Some(width) = num(node, "width").or_else(|| {
+                (node.ports.get("fill") == Some(&Value::Bool(true))
+                    || num(node, "grow").unwrap_or(0.) > 0.)
+                    .then(|| allocated.width().max(num(node, "min_width").unwrap_or(0.)))
+            }) {
+                response.rect.max.x = response.rect.min.x + width;
             }
         }
         if node.family != "dock" {
