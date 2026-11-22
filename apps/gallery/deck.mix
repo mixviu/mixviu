@@ -6,7 +6,7 @@ $tokens = require("../../libraries/design/deck.tokens.mix")
 fn deck_text($text, $style, $role)
   $mono=contains(["date","chip","rail","rail_compact","series_footer","code","terminal","tree"],$style)
   $weight=if contains(["headline","topic_title","wordmark","stat","panel_title"],$style) then 700 else 400 end
-  return {widget:"text", text:$text, size:$tokens.type[$style], color:$tokens.colour[$role],font:if $mono then "Noto Sans Mono" else "Liberation Sans" end,mono:$mono,weight:$weight}
+  return {widget:"text", text:$text, size:$tokens.type[$style], color:$tokens.colour[$role],font:if $mono then "Noto Sans Mono" else "Liberation Sans" end,mono_font:"Noto Sans Mono",mono:$mono,weight:$weight}
 end
 fn inline($runs, $style, $mono)
   $styled = []
@@ -99,7 +99,7 @@ fn chapter_rail($chapters,$active,$series)
   $chips=[]
   for $name in $chapters
     $current=$name==$active
-    push($chips,merge(column([merge(deck_text($name,"rail",if $current then "background" else "mut" end),{mono:true,bold:$current,weight:if $current then 700 else 400 end,size:$tokens.type.rail})],0),{padding_left:$tokens.space.rail_x,padding_right:$tokens.space.rail_x,padding_top:$tokens.space.rail_y,padding_bottom:$tokens.space.rail_y,radius:$tokens.space.rail_radius,background:if $current then $tokens.colour.acc else $tokens.colour.rail end,outline:if $current then $tokens.colour.acc else $tokens.colour.line end,outline_width:1}))
+    push($chips,merge(column([merge(deck_text($name,"rail",if $current then "background" else "mut" end),{mono:true,mono_font:"Noto Sans Mono",bold:$current,weight:if $current then 700 else 400 end,size:$tokens.type.rail})],0),{padding_left:$tokens.space.rail_x,padding_right:$tokens.space.rail_x,padding_top:$tokens.space.rail_y,padding_bottom:$tokens.space.rail_y,radius:$tokens.space.rail_radius,background:if $current then $tokens.colour.acc else $tokens.colour.rail end,outline:if $current then $tokens.colour.acc else $tokens.colour.line end,outline_width:1}))
   end
   return merge(row([row($chips,$tokens.space.rail_gap),merge(deck_text($series,"rail","mut"),{size:$tokens.type.series_footer})],0),{fill:true,justify:"between"})
 end

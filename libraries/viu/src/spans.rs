@@ -43,7 +43,7 @@ pub(crate) fn job(
             FontId::new(
                 size,
                 if mono || run["mono"] == true {
-                    mono_name.map_or(FontFamily::Monospace, |name| {
+                    mono_name.or(mono.then_some(name)).map_or(FontFamily::Monospace, |name| {
                         toolkit::fonts::optional::family(name, weight)
                     })
                 } else {
