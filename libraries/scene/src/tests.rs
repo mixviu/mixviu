@@ -451,9 +451,11 @@ fn numeric_port_boundaries_are_table_driven() {
             let negative = numeric_probe(family, port.name, -1.0);
             if port.name == "letter_spacing" {
                 assert!(!negative.iter().any(|d| d.severity == Severity::Error));
-                assert!(numeric_probe(family, port.name, -101.0)
-                    .iter()
-                    .any(|d| d.code == "port-min"));
+                assert!(
+                    numeric_probe(family, port.name, -101.0)
+                        .iter()
+                        .any(|d| d.code == "port-min")
+                );
                 continue;
             }
             if port.name == "row_height" {
