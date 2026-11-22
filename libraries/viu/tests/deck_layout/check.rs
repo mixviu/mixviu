@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
 
-fn geometry(source: &str) -> std::collections::BTreeMap<String, egui::Rect> {
+pub(super) fn geometry(source: &str) -> std::collections::BTreeMap<String, egui::Rect> {
     let mut view = SceneView::new(&format!(
         "---\nscene: 1\nname: layout-test\ncitizen: test\n---\n```mix\n{source}\n```\n"
     ))
@@ -182,18 +182,6 @@ fn all_hidden_flex_children_leave_a_finite_empty_row() {
 }
 
 #[test]
-fn between_keeps_a_nested_date_at_the_right_edge() {
-    let rects = geometry(
-        r##"{root:{widget:"row",fill:true,justify:"between",children:["chips","date"]},chips:{widget:"row",children:["chip"]},chip:{widget:"text",text:"#210 #215 #214"},date:{widget:"column",padding_right:9,children:["label"]},label:{widget:"text",text:"21 NOV 2026",wrap:true}}"##,
-    );
-    assert!(rects["label"].left() > rects["chips"].right() + 100.);
-    assert!(
-        (rects["root"].right() - 9. - rects["label"].right()).abs() < 1.,
-        "{rects:?}"
-    );
-}
-
-#[test]
 fn grid_intrinsics_cannot_move_the_next_column() {
     let rects = geometry(
         r##"{root:{widget:"grid",columns:2,column_gap:40,children:["left","right"]},left:{widget:"column",fill:true,children:["wide"]},wide:{widget:"text",text:"a_very_long_unbroken_value_that_is_wider_than_the_first_grid_cell_and_must_not_move_the_second_cell",size:30},right:{widget:"column",fill:true,children:["label"]},label:{widget:"text",text:"Right column"}}"##,
@@ -286,34 +274,6 @@ fn wrapped_text_obeys_its_maximum_width() {
     output.textures_delta.clear();
     let rect = view.geometry["root"];
     assert!(rect.width() <= 80. && rect.height() > 40., "{rect:?}");
-}
-
-#[test]
-fn column_justify_centres_the_content() {
-    let mut view = SceneView::new("---\nscene: 1\nname: centre\ncitizen: test\n---\n```mix\n{root:{widget:\"column\",height:400,justify:\"center\",children:[\"a\"]},a:{widget:\"text\",text:\"Centred\",size:30}}\n```\n").unwrap();
-    let ctx = egui::Context::default();
-    viu::fonts::install(&ctx, 400, 600);
-    for _ in 0..4 {
-        let mut output = ctx.run_ui(
-            egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(600., 600.),
-                )),
-                ..Default::default()
-            },
-            |ui| {
-                view.show(ui);
-            },
-        );
-        output.textures_delta.clear();
-    }
-    let root = view.geometry["root"];
-    let text = view.geometry["a"];
-    assert!(
-        (root.center().y - text.center().y).abs() < 1.,
-        "{root:?} {text:?}"
-    );
 }
 
 #[test]
