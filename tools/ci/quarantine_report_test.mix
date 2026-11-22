@@ -1,0 +1,48 @@
+-- Exercise actual processes and assert the public stdout record contract.
+$mix = realpath("/proc/self/exe")
+$test = path_join(dirname(realpath(script_path())), "quarantine_test.mix")
+$q = require("quarantine.mix")
+-- Validate the real list without constraining its size to zero. Every fixture
+-- run uses its own temporary policy, so a list-only first-entry PR stays valid.
+$q.load("tools/ci/quarantine.conf.mix")
+$temp = trim(run_argv_must(["mktemp", "-d", "/var/tmp/quarantine-report-XXXXXX"]))
+try
+  $empty_root = $temp .. "/empty"
+  $one_root = $temp .. "/one"
+  for $root in [$empty_root, $one_root]
+    mkdir($root .. "/tools/ci", {parents: true})
+  end
+  $empty = $empty_root .. "/tools/ci/quarantine.conf.mix"
+  write_file($empty, data_encode({entries: []}))
+  $one = $one_root .. "/tools/ci/quarantine.conf.mix"
+  $policy = load_data("tools/ci/quarantine.conf.mix")
+  $policy.entries = [{package: "lib-viu", target: "viu",
+    test: "annotation::document::tests::hit_finds_the_topmost_object", owner: "fixture-owner",
+    ledger: "fixture ledger", evidence: "fixture job and 20 rounds", brief: "fixture fix",
+    cosign: "fixture co-sign", added: date_format(time(), "%Y-%m-%d", {utc: true}),
+    expires: date_format(time() + 604800, "%Y-%m-%d", {utc: true})}]
+  write_file($one, data_encode($policy))
+  for $root in [$empty_root, $one_root]
+    $r = run_argv([$mix, $test], {cwd: $root, timeout: 5, stderr: "stdout"})
+    print($r.stdout)
+    if not $r.ok then raise("TEST", "quarantine fixtures failed or exceeded 5 seconds") end
+    $records = map(filter(lines($r.stdout), fn($l) = starts_with($l, "GATE_QUARANTINE ")),
+      fn($l) = json_parse(substr($l, len("GATE_QUARANTINE "))))
+    if not deep_eq(map($records, fn($r) = $r.result), ["fail", "timeout", "pass"]) then
+      raise("TEST", "quarantine records missing or wrong: " .. json_encode($records))
+    end
+    for $record in $records
+      if not deep_eq(sort(keys($record)), sort(["package", "target", "test", "result", "expires", "owner"])) then
+        raise("TEST", "record schema changed")
+      end
+    end
+    for $message in ["QUARANTINE expired:", "QUARANTINE over 10 days old:", "QUARANTINE second entry within 14 days:"]
+      if not contains($r.stdout, $message) then raise("TEST", "missing warning " .. $message) end
+    end
+    if contains($r.stdout, "FLAKY") then raise("TEST", "quarantined result became FLAKY") end
+  end
+  print("quarantine fixture suites: empty and one-entry policy copies PASS")
+  print("quarantine report contract: PASS")
+finally
+  remove_dir($temp)
+end
