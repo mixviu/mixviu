@@ -21,9 +21,9 @@ fn manual_wrap_and_between_clip_painted_shapes_to_cells() {
 
 #[test]
 fn shrink_and_basis_only_rows_keep_main_centred_cross_placement() {
-    let plain = geometry(r#"{root:{widget:"row",children:["a","b"]},a:{widget:"column",width:100,height:80,children:[]},b:{widget:"column",width:120,height:20,children:[]}}"#);
+    let plain = geometry(r#"{root:{widget:"row",children:["a","b"]},a:{widget:"column",min_width:100,height:80,children:[]},b:{widget:"column",min_width:120,height:20,children:[]}}"#);
     for port in ["shrink:1", "basis:120"] {
-        let g = geometry(&format!(r#"{{root:{{widget:"row",children:["a","b"]}},a:{{widget:"column",width:100,height:80,children:[]}},b:{{widget:"column",width:120,height:20,{port},children:[]}}}}"#));
+        let g = geometry(&format!(r#"{{root:{{widget:"row",children:["a","b"]}},a:{{widget:"column",min_width:100,height:80,children:[]}},b:{{widget:"column",min_width:120,height:20,{port},children:[]}}}}"#));
         for child in ["a", "b"] {
             assert!((g[child].top() - plain[child].top()).abs() < 1., "{port} {g:?} {plain:?}");
         }
