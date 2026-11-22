@@ -17,9 +17,9 @@ pub struct Primitive {
     #[serde(default)]
     pub sweep: f32,
     #[serde(default)]
-    pub effects: Vec<Effect>,
+    pub dash_length: Option<f32>,
     #[serde(default)]
-    pub shadow: Option<Shadow>,
+    pub effects: Vec<Effect>,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -45,9 +45,16 @@ pub fn validate(value: &serde_json::Value) -> Result<(), String> {
             || !p.centre.iter().chain(p.radius.iter()).chain([&p.width, &p.start, &p.sweep]).all(|n| n.is_finite() && n.abs() <= 10000.)
             || p.radius.iter().any(|n| *n <= 0.) || p.width < 0. || p.sweep.abs() > 360.
             || p.effects.len() > 4
-            || p.effects.iter().any(|e| !["draw", "pop", "blink", "float", "under"].contains(&e.preset.as_str()) || !e.delay.is_finite() || !(0. ..=60.).contains(&e.delay))
-            || p.shadow.is_some_and(|s| !(0. ..=200.).contains(&s.blur) || !s.offset.iter().all(|n| n.is_finite() && n.abs() <= 1000.))
+            || p.dash_length.is_some_and(|n| !n.is_finite() || !(0. ..=10000.).contains(&n))
+            || p.effects.iter().any(|e| !["draw", "pop", "blink", "float"].contains(&e.preset.as_str()) || !e.delay.is_finite() || !(0. ..=60.).contains(&e.delay))
         { return Err("invalid bounded drawing primitive".into()); }
+    }
+    Ok(())
+}
+pub fn validate_shadow(value: &serde_json::Value) -> Result<(), String> {
+    let s: Shadow = serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+    if !(0. ..=200.).contains(&s.blur) || !s.offset.iter().all(|n| n.is_finite() && n.abs() <= 1000.) {
+        return Err("invalid drawing shadow".into());
     }
     Ok(())
 }

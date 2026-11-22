@@ -6,10 +6,11 @@ use scene::{Node, drawing::Primitive};
 pub fn show(ui: &mut egui::Ui, node: &Node) {
     let n = |key: &str, default| node.ports.get(key).and_then(serde_json::Value::as_f64).unwrap_or(default) as f32;
     let (rect, _) = ui.allocate_exact_size(Vec2::new(n("w", 280.), n("h", 280.)), egui::Sense::hover());
-    let time = n("sample_time", 10.) as f64;
+    let time = node.ports.get("sample_time").and_then(serde_json::Value::as_f64).unwrap_or(10.);
     let Ok(primitives) = serde_json::from_value::<Vec<Primitive>>(node.ports["primitives"].clone()) else { return };
     static TABLE: std::sync::OnceLock<Vec<motion::Preset>> = std::sync::OnceLock::new();
     let table = TABLE.get_or_init(motion::presets);
+    let mut shapes=Vec::new();
     for p in primitives {
         let mut scale = 1.;
         let mut sy = 1.;
@@ -25,7 +26,10 @@ pub fn show(ui: &mut egui::Ui, node: &Node) {
             sy *= v.get(Property::ScaleY) as f32;
             dy += v.get(Property::Ty) as f32;
             opacity *= v.get(Property::Opacity) as f32;
-            if e.preset == "draw" { fraction *= 1.-v.get(Property::DashOffset) as f32/1000.; }
+            if e.preset == "draw" {
+                let length=p.radius[0]*p.sweep.to_radians().abs();
+                fraction *= (1.-p.dash_length.unwrap_or(length)*v.get(Property::DashOffset) as f32/1000./length).clamp(0.,1.);
+            }
         }
         let centre = rect.min + Vec2::new(p.centre[0], p.centre[1]+dy);
         let radius = Vec2::new(p.radius[0]*scale*sx, p.radius[1]*scale*sy);
@@ -60,20 +64,49 @@ pub fn show(ui: &mut egui::Ui, node: &Node) {
         } else {
             Shape::ellipse_filled(centre,radius,colour)
         };
-        if let Some(shadow)=p.shadow {
-            let mut shadow_shape=shape.clone();
-            egui::epaint::shape_transform::adjust_colors(&mut shadow_shape,|c| *c=Color32::from_rgba_unmultiplied(shadow.colour[0],shadow.colour[1],shadow.colour[2],shadow.colour[3]).gamma_multiply(opacity));
-            // Gaussian convolution of the alpha silhouette, sampled symmetrically.
-            let mut total=0.;
-            for y in -8..=8 { for x in -8..=8 { total+=(-((x*x+y*y) as f32)/18.).exp(); } }
-            for y in -8..=8 { for x in -8..=8 {
-                let weight=(-((x*x+y*y) as f32)/18.).exp()/total;
-                let mut s=shadow_shape.clone();
-                s.translate(Vec2::new(shadow.offset[0]+x as f32*shadow.blur/6.,shadow.offset[1]+y as f32*shadow.blur/6.));
-                egui::epaint::shape_transform::adjust_colors(&mut s,|c| *c=c.gamma_multiply(weight));
-                ui.painter().add(s);
-            } }
-        }
-        ui.painter().add(shape);
+        shapes.push(shape);
     }
+    paint_shadow(ui, rect, node.ports.get("shadow"), &shapes);
+    ui.painter().extend(shapes);
+}
+
+fn paint_shadow(ui: &egui::Ui, rect: egui::Rect, spec: Option<&serde_json::Value>, shapes: &[Shape]) {
+    let Some(spec)=spec else { return };
+    let Ok(shadow)=serde_json::from_value::<scene::drawing::Shadow>(spec.clone()) else { return };
+    let pad=(shadow.blur*3.).ceil();
+    let width=(rect.width()+pad*2.).ceil() as u32;
+    let height=(rect.height()+pad*2.).ceil() as u32;
+    if width>2048 || height>2048 { return }
+    let Some(mut mask)=tiny_skia::Pixmap::new(width,height) else { return };
+    let origin=rect.min-Vec2::splat(pad);
+    let input=shapes.iter().cloned().map(|shape| egui::epaint::ClippedShape {clip_rect:egui::Rect::EVERYTHING,shape}).collect();
+    for primitive in ui.ctx().tessellate(input,1.) {
+        let egui::epaint::Primitive::Mesh(mesh)=primitive.primitive else { continue };
+        for triangle in mesh.indices.chunks_exact(3) {
+            let mut path=tiny_skia::PathBuilder::new();
+            let mut alpha=0.;
+            for (i,index) in triangle.iter().enumerate() {
+                let v=mesh.vertices[*index as usize];
+                let p=v.pos-origin;
+                if i==0 {path.move_to(p.x,p.y)} else {path.line_to(p.x,p.y)}
+                alpha+=v.color.a() as f32/255./3.;
+            }
+            path.close();
+            let mut paint=tiny_skia::Paint::default();
+            paint.set_color_rgba8(255,255,255,(alpha*255.).round() as u8);
+            if let Some(path)=path.finish() {mask.fill_path(&path,&paint,tiny_skia::FillRule::Winding,tiny_skia::Transform::identity(),None);}
+        }
+    }
+    let image=image::RgbaImage::from_raw(width,height,mask.data().to_vec()).unwrap();
+    let mut blurred=image::imageops::blur(&image,shadow.blur/2.);
+    for pixel in blurred.pixels_mut() {
+        *pixel=image::Rgba([shadow.colour[0],shadow.colour[1],shadow.colour[2],(pixel[3] as f32*shadow.colour[3] as f32/255.).round() as u8]);
+    }
+    let image=egui::ColorImage::from_rgba_unmultiplied([width as usize,height as usize],blurred.as_raw());
+    let key=ui.id().with("drawing-shadow");
+    let mut texture=ui.ctx().data_mut(|d| d.get_temp::<egui::TextureHandle>(key)).unwrap_or_else(||ui.ctx().load_texture("drawing-shadow",image.clone(),Default::default()));
+    texture.set(image,Default::default());
+    let pos=origin+Vec2::new(shadow.offset[0],shadow.offset[1]);
+    ui.painter().image(texture.id(),egui::Rect::from_min_size(pos,Vec2::new(width as f32,height as f32)),egui::Rect::from_min_max(Pos2::ZERO,egui::pos2(1.,1.)),Color32::WHITE);
+    ui.ctx().data_mut(|d|d.insert_temp(key,texture));
 }

@@ -45,8 +45,8 @@ fn slide_stat($value,$caption,$role)
   $node.children[0].size=52
   return $node
 end
-=.flatten(.sting("The desk records itself","MixViu Adventures"),"root")
-push(,{id:"sting",kind:"sting",steps:1,scene:,build:{"root.2":{b:0,delay:0.5,anim:"fade"},"root.4":{b:0,delay:0.8,anim:"zoom"},"root.6":{b:0,delay:1.3,anim:"wipe"},"root.8":{b:0,delay:1.6,anim:"wipe"}}})
+$sting=$d.flatten($d.sting("The desk records itself","MixViu Adventures"),"root")
+push($slides,{id:"sting",kind:"sting",steps:1,scene:$sting,build:{"root.2":{b:0,delay:0.5,anim:"fade"},"root.4":{b:0,delay:0.8,anim:"zoom"},"root.6":{b:0,delay:1.3,anim:"wipe"},"root.8":{b:0,delay:1.6,anim:"wipe"}}})
 slide("before","MixViu Adventures · before","Every night, a desk makes the takes",2,[
  entrance($d.card("THE NIGHTLY EPISODE'S TUTORIAL TAKES",[$d.flow([{label:"script",text:"tutorial steps"},{label:"over the Bus",text:"apps on a desk",role:"acc"},{label:"capture",text:"the screen"},{label:"media builder",text:"narrated video",role:"ok"}])],"text"),0,0.5),
  entrance(merge($d.row([card("But the desks carry no ffmpeg","By design: no ffmpeg and no C or C++ tools on the desks. The first recorder design wrote through an ffmpeg subprocess, so on a desk it could not record.","bad"),merge($d.card("SO EVERY TAKE FELL BACK",[slide_stat("still screenshots","one per step, held while the narration plays","warn")],"mut"),{grow:1})],40),{fill:true,align:"stretch"}),1)])
