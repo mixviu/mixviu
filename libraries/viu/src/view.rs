@@ -2969,11 +2969,21 @@ fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, v
 
 #[cfg(test)]
 mod measurement_cache_tests {
+    use serde_json::{json,Value};
+    #[test]
+    fn three_hundred_texts_do_no_measurement_or_shaping_work_after_settling(){
+        let mut nodes=serde_json::Map::new();let mut children=Vec::new();
+        for i in 0..300{let id=format!("text-{i}");children.push(id.clone());nodes.insert(id,json!({"widget":"text","text":format!("Measured label {i}"),"size":14}));}
+        nodes.insert("root".into(),json!({"widget":"grid","columns":3,"content_columns":true,"children":children}));
+        let source=format!("---\nscene: 1\nname: cache-300\ncitizen: test\n---\n```mix\n{}\n```\n",Value::Object(nodes));
+        let mut view=super::SceneView::new(&source).unwrap();let ctx=egui::Context::default();
+        for frame in 0..12{super::MEASUREMENT_WORK.set(0);let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();if frame>4{assert_eq!(super::MEASUREMENT_WORK.get(),0,"frame {frame}");}}
+    }
     #[test]
     fn changing_content_cannot_grow_measurement_storage_without_bound() {
         let ctx = egui::Context::default();
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-            for i in 0..4096 {
+            for i in 0..8192 {
                 super::measure_put(ui, egui::Id::new(i), i as f32);
             }
             let count = ctx.data_mut(|d| {
@@ -2982,7 +2992,7 @@ mod measurement_cache_tests {
                 )
                 .len()
             });
-            assert!(count <= 4096);
+            assert_eq!(count,4096);
         });
         output.textures_delta.clear();
     }
