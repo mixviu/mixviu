@@ -1364,6 +1364,31 @@ impl SceneView {
                                             x+=size.x+gap;
                                         }
                                         ui.allocate_space(egui::vec2(available,height));
+                                    } else if children(node).any(|child|nodes.get(child).is_some_and(|n|num(n,"shrink").unwrap_or(0.)>0.)) {
+                                        let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();
+                                        let natural:Vec<f32>=active.iter().map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,false,0)).collect();
+                                        let minimum:Vec<f32>=active.iter().map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,true,0)).collect();
+                                        let mut widths=natural.clone();
+                                        let available=ui.available_width()-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32;
+                                        for _ in 0..active.len() {
+                                            let excess=(widths.iter().sum::<f32>()-available).max(0.);
+                                            if excess<0.01 {break;}
+                                            let weights:Vec<f32>=active.iter().enumerate().map(|(i,c)|if widths[i]>minimum[i]+0.01 {num(&nodes[*c],"shrink").unwrap_or(0.)*(natural[i]-node_padding(&nodes[*c],"padding_left")-node_padding(&nodes[*c],"padding_right")).max(0.)}else{0.}).collect();
+                                            let total=weights.iter().sum::<f32>();if total<=0. {break;}
+                                            for i in 0..widths.len() {widths[i]=(widths[i]-excess*weights[i]/total).max(minimum[i]);}
+                                        }
+                                        let row_id=ui.scope_id();
+                                        let mut cells=|ui:&mut egui::Ui| for (child,width) in active.iter().zip(widths.iter()) {
+                                            let cache=row_id.with(("shrink-height",child));
+                                            let height=ui.ctx().data(|d|d.get_temp::<f32>(cache)).unwrap_or(0.);
+                                            let (rect,_)=ui.allocate_exact_size(egui::vec2(*width,height),Sense::hover());
+                                            let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
+                                            cell.set_width(*width);
+                                            self.node(&mut cell,child,nodes,route,depth+1,events);
+                                            let actual=cell.min_rect().height();
+                                            if (actual-height).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cache,actual));ui.ctx().request_repaint();}
+                                        };
+                                        egui::Grid::new((&key,"shrink-center")).num_columns(active.len()).min_col_width(0.).min_row_height(0.).spacing(ui.spacing().item_spacing).show(ui,|ui|cells(ui));
                                     } else if children(node).any(|child|nodes.get(child).is_some_and(|n|num(n,"grow").unwrap_or(0.)>0.)) {
                                         let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
                                         // Natural fixed cells (for example arrows) keep their width.
@@ -2771,6 +2796,24 @@ fn color(s: &str) -> Option<Color32> {
         byte(4)?,
         if s.len() == 8 { byte(6)? } else { 255 },
     ))
+}
+
+// Text-only compounds can reserve their max-content width, then shrink towards
+// their longest word without traversing controls or producing duplicate events.
+fn intrinsic_text_width(ui:&egui::Ui,node:&Node,nodes:&BTreeMap<String,Node>,words:bool,depth:usize)->f32 {
+    if depth>32 {return 0.;}
+    if node.family=="text" {
+        let source=text(node,"text");
+        let pieces:Vec<&str>=if words {source.split_whitespace().collect()}else{vec![source]};
+        return pieces.iter().map(|s| {
+            let mut job=crate::spans::job(ui,&json!([{"text":s}]),num(node,"size").unwrap_or(13.),node.ports.get("mono")==Some(&Value::Bool(true)),false,Color32::WHITE,(node.ports.get("font").and_then(Value::as_str),num(node,"weight").unwrap_or(400.),node.ports.get("mono_font").and_then(Value::as_str)));
+            for section in &mut job.sections {section.format.extra_letter_spacing=num(node,"letter_spacing").unwrap_or(0.);}
+            ui.fonts_mut(|fonts|fonts.layout_job(job)).size().x
+        }).fold(0.0_f32,f32::max);
+    }
+    let widths:Vec<f32>=children(node).filter_map(|c|nodes.get(c)).map(|n|intrinsic_text_width(ui,n,nodes,words,depth+1)).collect();
+    let content=if node.family=="row" {widths.iter().sum::<f32>()+num(node,"gap").unwrap_or(0.)*widths.len().saturating_sub(1) as f32}else{widths.into_iter().fold(0.0_f32,f32::max)};
+    content+node_padding(node,"padding_left")+node_padding(node,"padding_right")
 }
 
 fn node_padding(node: &Node, side: &str) -> f32 {
