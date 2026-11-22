@@ -1,0 +1,13 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Test-only stand-in for Mix, launched by the macros runner in toolkit's
+# macros tests (runner_fixture). Checked in rather than written at test time:
+# exec'ing a freshly written file races concurrent forks in the test binary,
+# which can still hold its write descriptor (ETXTBSY), see the macros crate's
+# dropping_a_runner_requests_termination_and_the_manager_reaps.
+# $1 is the macro path; the PIDs are written beside it.
+printf '%s\n' "$$" > "$1.parent"
+/bin/sleep 120 &
+child=$!
+printf '%s\n' "$child" > "$1.child"
+wait "$child"
