@@ -2173,10 +2173,12 @@
             "root.3.2"
           ],
           "gap": 0,
-          "padding_bottom": 26,
-          "padding_left": 30,
-          "padding_right": 30,
-          "padding_top": 26,
+          "outline": "#26303d",
+          "outline_width": 1,
+          "padding_bottom": 27,
+          "padding_left": 31,
+          "padding_right": 31,
+          "padding_top": 27,
           "radius": 16,
           "widget": "column"
         },

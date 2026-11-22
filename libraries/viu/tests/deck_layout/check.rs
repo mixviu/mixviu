@@ -109,8 +109,9 @@ fn render_layout_steps() {
             "---\nscene: 1\nname: layout-input\ncitizen: deck\n---\n```mix\n{}\n```\n",
             slide["scene"]
         );
-        let parsed=scene::parse(&source).unwrap_or_else(|error|panic!("{}: {error:?}",slide["id"]));
-        scene::resolve(&parsed).unwrap_or_else(|error|panic!("{}: {error:?}",slide["id"]));
+        let parsed =
+            scene::parse(&source).unwrap_or_else(|error| panic!("{}: {error:?}", slide["id"]));
+        scene::resolve(&parsed).unwrap_or_else(|error| panic!("{}: {error:?}", slide["id"]));
     }
     let mut deck = Deck::new();
     let opened = deck.call("deck.open", json!({"path":path})).reply.unwrap();
