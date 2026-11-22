@@ -1,0 +1,21 @@
+-- Exercise actual processes and assert the public stdout record contract.
+$mix = realpath("/proc/self/exe")
+$test = path_join(dirname(realpath(script_path())), "quarantine_test.mix")
+$r = run_argv([$mix, $test], {timeout: 5, stderr: "stdout"})
+print($r.stdout)
+if not $r.ok then raise("TEST", "quarantine fixtures failed or exceeded 5 seconds") end
+$records = map(filter(lines($r.stdout), fn($l) = starts_with($l, "GATE_QUARANTINE ")),
+  fn($l) = json_parse(substr($l, len("GATE_QUARANTINE "))))
+if not deep_eq(map($records, fn($r) = $r.result), ["fail", "timeout", "pass"]) then
+  raise("TEST", "quarantine records missing or wrong: " .. json_encode($records))
+end
+for $record in $records
+  if not deep_eq(sort(keys($record)), sort(["package", "target", "test", "result", "expires", "owner"])) then
+    raise("TEST", "record schema changed")
+  end
+end
+for $message in ["QUARANTINE expired:", "QUARANTINE over 10 days old:", "QUARANTINE second entry within 14 days:"]
+  if not contains($r.stdout, $message) then raise("TEST", "missing warning " .. $message) end
+end
+if contains($r.stdout, "FLAKY") then raise("TEST", "quarantined result became FLAKY") end
+print("quarantine report contract: PASS")

@@ -1,0 +1,98 @@
+-- Quarantine policy shared by the pool and fixture-only tests.
+fn bad($message)
+  raise("QUARANTINE", "quarantine: " .. $message)
+end
+
+fn day($s)
+  if type($s) != "string" or not re_match($s, '^\d{4}-\d{2}-\d{2}$') then bad("bad date " .. to_string($s)) end
+  $t = date_parse($s .. "T00:00:00Z")
+  if $t == nil or date_format($t, "%Y-%m-%d", {utc: true}) != $s then bad("bad date " .. $s) end
+  return $t / 86400
+end
+
+fn checked($entries, $today)
+  if type($entries) != "list" then bad("entries must be a list") end
+  if len($entries) > 5 then bad("at most 5 entries") end
+  $seen = {}
+  $packages = {}
+  for $e in $entries
+    if type($e) != "map" then bad("entry must be a map") end
+    for $field in ["package", "target", "test", "owner", "ledger", "evidence", "brief", "added", "expires", "cosign"]
+      if type($e[$field]) != "string" or trim($e[$field]) == "" then bad("missing/non-string field " .. $field) end
+    end
+    $added = day($e.added)
+    $expires = day($e.expires)
+    if $expires <= $added or $expires - $added > 14 then bad("expiry must be 1..14 days after added") end
+    if $added > $today then bad("added date is in the future") end
+    $key = json_encode([$e.package, $e.target, $e.test])
+    if has_key($seen, $key) then bad("duplicate " .. $key) end
+    $seen[$key] = true
+    $packages[$e.package] = ($packages[$e.package] ?? 0) + 1
+    if $packages[$e.package] > 2 then bad("at most 2 entries per package: " .. $e.package) end
+    if $expires <= $today then
+      print("::warning::QUARANTINE expired: " .. $key .. "; runs strict (expires " .. $e.expires .. ")")
+    end
+    if $today - $added > 10 then print("::warning::QUARANTINE over 10 days old: " .. $key) end
+  end
+  for $pkg in keys($packages)
+    $es = filter($entries, fn($e) = $e.package == $pkg)
+    if len($es) == 2 and abs(day($es[0].added) - day($es[1].added)) <= 14 then
+      print("::warning::QUARANTINE second entry within 14 days: " .. $pkg)
+    end
+  end
+  return $entries
+end
+
+fn load($path)
+  $data = load_data($path)
+  if not has_key($data, "entries") then bad("missing entries in " .. $path) end
+  return checked($data.entries, floor(time() / 86400))
+end
+
+-- Exact line parsing: no substring matches, and benchmarks are not tests.
+fn names($output)
+  return map(filter(lines($output), fn($l) = ends_with($l, ": test")), fn($l) = substr($l, 0, len($l) - 6))
+end
+
+fn specs($jobs)
+  return map($jobs, fn($j) = {argv: $j.argv, env: $j.env, cwd: $j.cwd,
+    clear_env: $j.clear_env ?? true, timeout: $j.timeout, max_output: $j.max_output,
+    stdout: $j.stdout, stderr: $j.stderr})
+end
+
+fn prepare($job, $entries, $package, $target, $today)
+  $es = filter($entries, fn($e) = $e.package == $package and $e.target == $target)
+  $strict = $job
+  $isolated = []
+  if len($es) == 0 then return {strict: $strict, isolated: []} end
+  -- List from the executable, without cargo's harness filters or flags.
+  $listing = $job
+  $listing.argv = concat($job.executable, ["--list", "--format", "terse"])
+  $listing.timeout = 10
+  $r = run_parallel(specs([$listing]), {max: 1})[0]
+  if not $r.ok or $r.stdout_truncated then bad("cannot list " .. $package .. "/" .. $target) end
+  $names = names($r.stdout)
+  for $e in $es
+    if not contains($names, $e.test) then bad("unknown full test name " .. $package .. "/" .. $target .. ": " .. $e.test) end
+    if day($e.expires) > $today then
+      $strict.argv = concat($strict.argv, ["--skip", $e.test, "--exact"])
+      $one = $job
+      $one.argv = concat($job.executable, [$e.test, "--exact"])
+      $one.timeout = 60
+      $one.entry = $e
+      push($isolated, $one)
+    end
+  end
+  return {strict: $strict, isolated: $isolated}
+end
+
+fn replay($jobs)
+  for $j in $jobs
+    $r = run_parallel(specs([$j]), {max: 1})[0]
+    print($r.stdout)
+    $e = $j.entry
+    print("GATE_QUARANTINE " .. json_encode({package: $e.package, target: $e.target,
+      test: $e.test, result: (if $r.timed_out then "timeout" elif $r.ok then "pass" else "fail" end),
+      expires: $e.expires, owner: $e.owner}))
+  end
+end

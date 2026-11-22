@@ -1,0 +1,81 @@
+-- Fixture-only policy/replay tests. Each process finishes within 5 seconds.
+$q = require("quarantine.mix")
+$mix = realpath("/proc/self/exe")
+$fixture = path_join(dirname(realpath(script_path())), "quarantine_fixture.mix")
+$today = $q.day("2026-11-22")
+fn entry($test)
+  return {package: "fixture", target: "fixture", test: $test, owner: "owner",
+    ledger: "ledger", evidence: "20 rounds, job", brief: "fix", cosign: "Fable",
+    added: "2026-11-21", expires: "2026-11-28"}
+end
+fn check($ok, $why)
+  if not $ok then raise("TEST", $why) end
+end
+fn rejects($f)
+  $caught = false
+  try
+    $f()
+  catch $err
+    $caught = true
+  end
+  check($caught, "expected validation failure")
+end
+$base = {argv: [$mix, $fixture], executable: [$mix, $fixture], env: {}, cwd: cwd(),
+  timeout: 1, max_output: 64000, stdout: "capture", stderr: "stdout"}
+$fail = entry("module::tests::fail")
+$pass = entry("module::tests::pass")
+$hang = entry("module::tests::hang")
+-- Select only the failing test in strict replay; quarantine skips it exactly.
+$one = $base
+$one.argv = concat($one.argv, [$fail.test, "--exact"])
+$p = $q.prepare($one, [$fail], "fixture", "fixture", $today)
+check(run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "quarantined failure failed strict replay")
+$q.replay($p.isolated)
+-- A different failure in the same binary remains strict.
+$other = $base
+$other.argv = concat($other.argv, ["module::tests::other_fail", "--exact"])
+$p = $q.prepare($other, [$fail], "fixture", "fixture", $today)
+check(not run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "another failure masked")
+$p = $q.prepare($base, [$hang], "fixture", "fixture", $today)
+$js = $p.isolated
+$js[0].timeout = 0.1
+$q.replay($js)
+$p = $q.prepare($base, [$pass], "fixture", "fixture", $today)
+$q.replay($p.isolated)
+for $name in ["module::tests::typo", "tests::fail", "module::tests::fa"]
+  rejects(fn() = $q.prepare($base, [entry($name)], "fixture", "fixture", $today))
+end
+$expired = $fail
+$expired.added = "2026-11-08"
+$expired.expires = "2026-11-22"
+$q.checked([$expired], $today)
+$p = $q.prepare($one, [$expired], "fixture", "fixture", $today)
+check(len($p.isolated) == 0 and not run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "expired test not strict")
+$long = $fail
+$long.expires = "2026-12-06"
+rejects(fn() = $q.checked([$long], $today))
+$bad = $fail
+$bad.added = "2026-02-30"
+rejects(fn() = $q.checked([$bad], $today))
+for $field in keys($fail)
+  $missing = $fail
+  $missing = delete($missing, $field)
+  rejects(fn() = $q.checked([$missing], $today))
+end
+rejects(fn() = $q.checked([$fail, $fail], $today))
+rejects(fn() = $q.checked([$fail, $pass, $hang], $today))
+$six = []
+for $i = 1 to 6
+  $e = $fail
+  $e.package = to_string($i)
+  push($six, $e)
+end
+rejects(fn() = $q.checked($six, $today))
+check(len($q.checked([$fail, $pass], $today)) == 2, "two entries rejected")
+check(len($q.load("tools/ci/quarantine.conf.mix")) == 0, "real list must stay empty")
+-- Missing executable proves empty entries perform no listing or extra run.
+$empty = $base
+$empty.executable = ["/no/such/executable"]
+$p = $q.prepare($empty, [], "fixture", "fixture", $today)
+check(deep_eq($p.strict, $empty) and len($p.isolated) == 0, "empty list changed replay")
+print("quarantine fixtures: PASS")

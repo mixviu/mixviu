@@ -6,6 +6,7 @@
 /.github/                         @markc
 /tools/ci.mix                     @markc
 /tools/ci/                        @markc
+/tools/ci/quarantine.conf.mix     @markc
 /deny.toml                        @markc
 
 # mixd and its network personalities

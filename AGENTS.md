@@ -54,3 +54,17 @@ Foreign code has three exclusive policy lists in tools/foreign.conf.mix:
 allow (strict crates may reach it), debt (existing code to remove; only shrinks),
 and admitted (deliberately accepted for named non-strict workspace members).
 The foreign gate rejects other members reaching admitted code and stale entries.
+
+Flaky-test quarantine is governed by the maintainer's decision
+2026-11-22-flake-quarantine.md. The strict-data list is
+tools/ci/quarantine.conf.mix (Tier 2), initially empty. Entries name one exact
+libtest test, still run with a timeout and report GATE_QUARANTINE records on
+every gate path; failures do not block, retry or create FLAKY records. Expired
+entries run strict. Additions are separate list-only PRs requiring a ledger,
+failing unchanged-head job, at least 20 comparable rounds with under 10%
+failures, owner, fix brief and Fable co-sign. Never widen an entry; remove it
+with its fix and soak. Default expiry is 7 days, maximum 14; one 7-day renewal
+needs Fable and fresh evidence, a second needs Mark. Caps: 5 total, 2 per
+package. Passes never remove entries. Hub consumers retain the records in the
+gate summary/comment and quarantine.jsonl, and append failures to the ledger;
+gold excludes quarantined failures from its stop count.
