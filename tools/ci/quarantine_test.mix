@@ -20,64 +20,95 @@ fn rejects($f)
   end
   check($caught, "expected validation failure")
 end
-$base = {argv: [$mix, $fixture], executable: [$mix, $fixture], env: {}, cwd: cwd(),
-  timeout: 1, max_output: 64000, stdout: "capture", stderr: "stdout"}
-$fail = entry("module::tests::fail")
-$pass = entry("module::tests::pass")
-$hang = entry("module::tests::hang")
--- Select only the failing test in strict replay; quarantine skips it exactly.
-$one = $base
-$one.argv = concat($one.argv, [$fail.test, "--exact"])
-$p = $q.prepare($one, [$fail], "fixture", "fixture", $today)
-check(run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "quarantined failure failed strict replay")
-$q.replay($p.isolated)
-$p = $q.prepare($one, [$fail, $pass], "fixture", "fixture", $today)
-check(run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "two entries or existing --exact duplicated libtest flag")
--- A different failure in the same binary remains strict.
-$other = $base
-$other.argv = concat($other.argv, ["module::tests::other_fail", "--exact"])
-$p = $q.prepare($other, [$fail], "fixture", "fixture", $today)
-check(not run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "another failure masked")
-$p = $q.prepare($base, [$hang], "fixture", "fixture", $today)
-$js = $p.isolated
-$js[0].timeout = 0.1
-$q.replay($js)
-$p = $q.prepare($base, [$pass], "fixture", "fixture", $today)
-$q.replay($p.isolated)
-for $name in ["module::tests::typo", "tests::fail", "module::tests::fa"]
-  rejects(fn() = $q.prepare($base, [entry($name)], "fixture", "fixture", $today))
+$temp = trim(run_argv_must(["mktemp", "-d", "/var/tmp/quarantine-test-XXXXXX"]))
+fn fixture_entries($entries)
+  $path = $temp .. "/fixture.conf.mix"
+  write_file($path, data_encode({entries: $entries}))
+  return $q.load($path, $today)
 end
-$expired = $fail
-$expired.added = "2026-11-08"
-$expired.expires = "2026-11-22"
-$q.checked([$expired], $today)
-$p = $q.prepare($one, [$expired], "fixture", "fixture", $today)
-check(len($p.isolated) == 0 and not run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "expired test not strict")
-$long = $fail
-$long.expires = "2026-12-06"
-rejects(fn() = $q.checked([$long], $today))
-$bad = $fail
-$bad.added = "2026-02-30"
-rejects(fn() = $q.checked([$bad], $today))
-for $field in keys($fail)
-  $missing = $fail
-  $missing = delete($missing, $field)
-  rejects(fn() = $q.checked([$missing], $today))
+fn prepare_fixture($job, $entries)
+  return $q.prepare($job, fixture_entries($entries), "fixture", "fixture", $today)
 end
-rejects(fn() = $q.checked([$fail, $fail], $today))
-rejects(fn() = $q.checked([$fail, $pass, $hang], $today))
-$six = []
-for $i = 1 to 6
-  $e = $fail
-  $e.package = to_string($i)
-  push($six, $e)
+try
+  -- Real policy is validation-only; a list-only PR may add its first entry.
+  $q.load("tools/ci/quarantine.conf.mix")
+  $base = {argv: [$mix, $fixture], executable: [$mix, $fixture], env: {}, cwd: cwd(),
+    timeout: 1, max_output: 64000, stdout: "capture", stderr: "stdout"}
+  $fail = entry("module::tests::fail")
+  $pass = entry("module::tests::pass")
+  $hang = entry("module::tests::hang")
+  -- Select only the failing test in strict replay; quarantine skips it exactly.
+  $one = $base
+  $one.argv = concat($one.argv, [$fail.test, "--exact"])
+  $p = prepare_fixture($one, [$fail])
+  check(run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "quarantined failure failed strict replay")
+  $q.replay($p.isolated)
+  $p = prepare_fixture($one, [$fail, $pass])
+  check(run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "two entries or existing --exact duplicated libtest flag")
+  -- A different failure in the same binary remains strict.
+  $other = $base
+  $other.argv = concat($other.argv, ["module::tests::other_fail", "--exact"])
+  $p = prepare_fixture($other, [$fail])
+  check(not run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "another failure masked")
+  $p = prepare_fixture($base, [$hang])
+  $js = $p.isolated
+  $js[0].timeout = 0.1
+  $q.replay($js)
+  $p = prepare_fixture($base, [$pass])
+  $q.replay($p.isolated)
+  for $name in ["module::tests::typo", "tests::fail", "module::tests::fa"]
+    rejects(fn() = prepare_fixture($base, [entry($name)]))
+  end
+  $expired = $fail
+  $expired.added = "2026-11-08"
+  $expired.expires = "2026-11-22"
+  fixture_entries([$expired])
+  $p = prepare_fixture($one, [$expired])
+  check(len($p.isolated) == 0 and not run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "expired test not strict")
+  $long = $fail
+  $long.expires = "2026-12-06"
+  rejects(fn() = fixture_entries([$long]))
+  $bad = $fail
+  $bad.added = "2026-02-30"
+  rejects(fn() = fixture_entries([$bad]))
+  $future = $fail
+  $future.added = "2026-11-23"
+  $future.expires = "2026-11-30"
+  rejects(fn() = fixture_entries([$future]))
+  $metadata = {workspace_members: ["fixture-id", "unselected-id"], packages: [
+    {id: "fixture-id", name: "fixture"}, {id: "unselected-id", name: "unselected"},
+    {id: "dependency-id", name: "dependency"}]}
+  $q.validate_packages(fixture_entries([$fail]), $metadata)
+  $unselected = $fail
+  $unselected.package = "unselected"
+  $q.validate_packages(fixture_entries([$unselected]), $metadata)
+  for $package in ["fxiture", "dependency"]
+    $unknown = $fail
+    $unknown.package = $package
+    rejects(fn() = $q.validate_packages(fixture_entries([$unknown]), $metadata))
+  end
+  for $field in keys($fail)
+    $missing = $fail
+    $missing = delete($missing, $field)
+    rejects(fn() = fixture_entries([$missing]))
+  end
+  rejects(fn() = fixture_entries([$fail, $fail]))
+  rejects(fn() = fixture_entries([$fail, $pass, $hang]))
+  $six = []
+  for $i = 1 to 6
+    $e = $fail
+    $e.package = to_string($i)
+    push($six, $e)
+  end
+  rejects(fn() = fixture_entries($six))
+  check(len(fixture_entries([$fail, $pass])) == 2, "two entries rejected")
+  check(len(fixture_entries([])) == 0, "empty fixture did not load")
+  -- Missing executable proves empty entries perform no listing or extra run.
+  $empty = $base
+  $empty.executable = ["/no/such/executable"]
+  $p = prepare_fixture($empty, [])
+  check(deep_eq($p.strict, $empty) and len($p.isolated) == 0, "empty list changed replay")
+  print("quarantine fixtures: PASS")
+finally
+  remove_dir($temp)
 end
-rejects(fn() = $q.checked($six, $today))
-check(len($q.checked([$fail, $pass], $today)) == 2, "two entries rejected")
-check(len($q.load("tools/ci/quarantine.conf.mix")) == 0, "real list must stay empty")
--- Missing executable proves empty entries perform no listing or extra run.
-$empty = $base
-$empty.executable = ["/no/such/executable"]
-$p = $q.prepare($empty, [], "fixture", "fixture", $today)
-check(deep_eq($p.strict, $empty) and len($p.isolated) == 0, "empty list changed replay")
-print("quarantine fixtures: PASS")

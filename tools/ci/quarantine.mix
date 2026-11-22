@@ -43,10 +43,18 @@ fn checked($entries, $today)
   return $entries
 end
 
-fn load($path)
+fn load($path, $today = floor(time() / 86400))
   $data = load_data($path)
   if not has_key($data, "entries") then bad("missing entries in " .. $path) end
-  return checked($data.entries, floor(time() / 86400))
+  return checked($data.entries, $today)
+end
+
+fn validate_packages($entries, $metadata)
+  -- metadata.packages can contain non-members; membership is authoritative.
+  $members = map(filter($metadata.packages, fn($p) = contains($metadata.workspace_members, $p.id)), fn($p) = $p.name)
+  for $e in $entries
+    if not contains($members, $e.package) then bad("unknown workspace package " .. $e.package) end
+  end
 end
 
 -- Exact line parsing: no substring matches, and benchmarks are not tests.

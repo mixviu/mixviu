@@ -124,6 +124,7 @@ $recorder = path_join(dirname(realpath(script_path())), "test_record.mix")
 -- The recorder records programs under the target directory (cargo's test
 -- binaries) and runs anything else, i.e. rustdoc's doc-test executables.
 $metadata = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1", "--no-deps"], {timeout: 600, max_output: 64000000}))
+$quarantine.validate_packages($quarantined, $metadata)
 $meta_target = $metadata.target_directory
 
 -- Retry-once policy (see header). Decided before anything runs.
