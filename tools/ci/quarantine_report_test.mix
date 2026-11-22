@@ -92,11 +92,33 @@ try
   check(not re_match($r.stdout, "(?m)^test_pool: quarantine records:"), "pool advertised default records")
   check(contains($r.stdout, "GATE_QUARANTINE "), "default run did not print records")
   check(len(glob($temp .. "/defaults/mix-quarantine-*")) == 0, "default output directory leaked")
-  for $destination in [$temp .. "/.", $temp .. "/..", $temp .. "/", $temp, "/proc/quarantine-records.jsonl"]
+  -- Run the pool's actual finally block with nil paths and with a real
+  -- remove_dir failure (a file where a directory was expected).
+  $cleanup_body = split(read_file($dir .. "/test_pool.mix"), "\nfinally\n")[1]
+  for $bad_private in [false, true]
+    $private = $temp .. "/cleanup-file"
+    $record_dir = $temp .. "/cleanup-records"
+    if $bad_private then
+      write_file($private, "not a directory")
+      mkdir($record_dir)
+    end
+    $cleanup_script = $temp .. "/cleanup.mix"
+    write_file($cleanup_script, '$quarantine_private = ' .. json_encode(if $bad_private then $private else nil end) .. "\n" ..
+      '$rec_dir = ' .. json_encode(if $bad_private then $record_dir else nil end) .. "\ntry\n  exit(0)\nfinally\n" .. $cleanup_body)
+    $r = run_argv([$mix, $cleanup_script], {timeout: 5})
+    check($r.ok and $r.stdout == "", "cleanup changed exit status or wrote stdout: " .. $r.stdout .. $r.stderr)
+    check(contains($r.stderr, "::warning::could not remove " .. $private) == $bad_private, "private cleanup warning missing or spurious: " .. $r.stderr)
+    check(not exists($record_dir), "private cleanup failure skipped recorded-environment cleanup")
+  end
+  for $destination in ["..", $temp .. "/.", $temp .. "/..", $temp .. "/", $temp, "/proc/quarantine-records.jsonl"]
     write_file($temp .. "/calls", "")
     $r = run_argv([$mix, $dir .. "/test_pool.mix", "--quarantine-out", $destination, "--", "--lib"],
       {cwd: $repo, timeout: 20, stderr: "stdout", env: {PATH: $repo .. "/bin:" .. env("PATH"), FIXTURE_CALLS: $temp .. "/calls"}})
     check(not $r.ok and contains($r.stdout, "quarantine: record"), "bad record destination accepted: " .. $r.stdout)
+    if $destination == ".." then
+      check(contains($r.stdout, "record basename must name a file"), "basename refusal reason masked: " .. $r.stdout)
+    end
+    check(not contains($r.stdout, "could not remove") and not contains($r.stdout, "run_argv:") and not contains($r.stdout, "remove_dir:"), "cleanup masked record refusal: " .. $r.stdout)
     check(read_file($temp .. "/calls") == "", "test ran before record path refusal")
   end
   -- Exercise the real gate's outer catch after it has started its checks.

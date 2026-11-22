@@ -36,6 +36,8 @@ end
 try
   -- Clean standalone test stages have no target directory yet.
   $q.outside($temp .. "/records", nil)
+  -- The old nil .. "/" comparison wrongly refused this relative path.
+  $q.outside("nil/records", nil)
   rejects(fn() = $q.outside($temp .. "/records", $temp))
   for $path in ["", $temp .. "/.", $temp .. "/..", $temp .. "/", $temp, "/proc/quarantine-records.jsonl"]
     rejects(fn() = $q.record_path($path, "/not-the-checkout", nil))
@@ -43,6 +45,7 @@ try
   check($q.record_path($temp .. "/records", "/not-the-checkout", nil) == $temp .. "/records", "valid record path rejected")
   check(len(glob($temp .. "/mix-quarantine-probe-*")) == 0, "writability probe leaked")
   $no_target = $q.private_dir($temp, "/not-the-checkout", realpath($temp .. "/absent-target"))
+  check(trim(run_argv_must(["stat", "-c", "%a", $no_target])) == "700", "private directory permissions must be 0700")
   remove_dir($no_target)
   -- Real process result: a renamed/missing key must not silently mean false.
   $loud = $temp .. "/loud.mix"

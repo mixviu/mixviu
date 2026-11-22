@@ -444,7 +444,15 @@ try
     exit(1)
   end
 finally
-  if $quarantine_private != nil then remove_dir($quarantine_private) end
-  $cleanup = run_argv(["rm", "-rf", $rec_dir])
-  if not $cleanup.ok then print("::warning::could not remove " .. $rec_dir .. " (it holds recorded environments)") end
+  if $quarantine_private != nil then
+    try
+      remove_dir($quarantine_private)
+    catch $err
+      eprint("::warning::could not remove " .. $quarantine_private .. ": " .. to_string($err))
+    end
+  end
+  if $rec_dir != nil then
+    $cleanup = run_argv(["rm", "-rf", $rec_dir])
+    if not $cleanup.ok then eprint("::warning::could not remove " .. $rec_dir .. " (it holds recorded environments)") end
+  end
 end
