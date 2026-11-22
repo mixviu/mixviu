@@ -127,6 +127,7 @@ fn a_natural_width_fixed_label_stays_visible_between_growing_cells() {
     );
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     for _ in 0..8 {
         let out = ctx.run_ui(
             egui::RawInput {
@@ -462,6 +463,7 @@ fn settled_manual_slide_arms_no_repaint() {
     )
     .unwrap();
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     for i in 0..6 {
         let mut out = ctx.run_ui(
             egui::RawInput {
@@ -585,6 +587,7 @@ fn identity(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut defs = FontDefinitions::default();
     register(&mut defs, dir)?;
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     ctx.set_fonts(defs);
     let roles = [
         ("sans heading", "Heading", "Liberation Sans", 700, FILES[1]),
@@ -626,6 +629,8 @@ fn identity(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
         let mut db = fontdb::Database::new();
         db.load_font_file(dir.join(file))?;
         let face = db.faces().next().expect("one face");
+        let expected_name = if file == FILES[0] { "LiberationSans" } else { file.strip_suffix(".ttf").unwrap() };
+        assert_eq!(face.post_script_name, expected_name, "{role}: file identity");
         println!("FONT_IDENTITY {role}: {}", face.post_script_name);
     }
     Ok(())

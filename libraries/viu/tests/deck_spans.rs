@@ -7,6 +7,7 @@ macro_rules! page {
         #[test]
         fn $name() {
             let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
             viu::fonts::install(&ctx, 400, 600);
             let mut view = SceneView::new(include_str!(concat!(
                 "../../../apps/gallery/deck-pages/",
@@ -66,6 +67,7 @@ fn source() -> String {
 #[test]
 fn inline_runs_keep_layout_colours_history_and_highlight() {
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     let mut view = SceneView::new(&source()).unwrap();
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
         view.show(ui);
@@ -117,6 +119,7 @@ fn number_text_samples_a_motion_scalar_track_and_settles_without_repaint() {
     let source = format!("---\nscene: 1\nname: count\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     let track = motion::Track {
         property: motion::Property::Scalar,
         keyframes: vec![
@@ -304,6 +307,7 @@ fn before_after_cards_paint_the_named_border_colours() {
     ))
     .unwrap();
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
         view.show(ui);
     });
@@ -321,6 +325,7 @@ fn a_constant_number_track_never_arms_animation_frames() {
     let source = format!("---\nscene: 1\nname: count\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     for t in [0., 0.01, 0.02] {
         let mut out = ctx.run_ui(
             egui::RawInput {
@@ -401,6 +406,7 @@ fn unequal_growing_boxes_and_arrow_share_the_row_centre() {
     let nodes = json!({"root":{"widget":"row","align":"center","min_width":600,"children":["a","arrow","b"]},"a":{"widget":"column","grow":1,"height":60,"children":[]},"arrow":{"widget":"text","text":"→","min_width":40},"b":{"widget":"column","grow":1,"height":140,"children":[]}});
     let source = format!("---\nscene: 1\nname: row\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     let mut view = SceneView::new(&source).unwrap();
     for _ in 0..8 {
         ctx.run_ui(egui::RawInput::default(), |ui| {
