@@ -311,7 +311,7 @@ mod tests {
 
     // This watchdog observes completion independently of the test thread. A
     // direct elapsed assertion cannot distinguish a late wakeup from a hang.
-    const TEST_DEADLINE: Duration = Duration::from_secs(5);
+    const TEST_DEADLINE: Duration = Duration::from_secs(2);
 
     fn within_test_deadline<T: Send + 'static>(
         operation: impl FnOnce() -> T + Send + 'static,
