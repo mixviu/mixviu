@@ -46,7 +46,9 @@ pub(crate) fn job(
             name
         };
         let bold = run["bold"].as_bool().unwrap_or(bold);
-        let weight = run["bold"].as_bool().map_or(weight, |b| if b {600.} else {400.});
+        let weight = run["bold"]
+            .as_bool()
+            .map_or(weight, |b| if b { 600. } else { 400. });
         let requested = if let Some(name) = selected {
             FontId::new(size, toolkit::fonts::optional::family(name, weight))
         } else if mono || run["mono"] == true {
