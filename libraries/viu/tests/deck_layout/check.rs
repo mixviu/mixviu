@@ -74,7 +74,7 @@ fn comparison_row_aligns_actual_glyph_baselines() {
 
 #[test]
 fn shrink_row_preserves_images_buttons_spans_and_grow() {
-    let rects=geometry(r##"{root:{widget:"row",fill:true,gap:8,children:["photo","button","spans","grow"]},photo:{widget:"image",src:"brand:cyclops",w:80,h:40},button:{widget:"button",label:"Ready"},spans:{widget:"text",text:"ignored",size:24,shrink:1,wrap:true,spans:[{text:"Wide bold ",bold:true},{text:"mono identifier",mono:true}]},grow:{widget:"column",grow:1,children:["tail"]},tail:{widget:"text",text:"Tail"}}"##);
+    let rects=geometry(r##"{root:{widget:"row",fill:true,gap:8,children:["photo","button","spans","grow"]},photo:{widget:"image",src:"brand:cyclops",w:80,h:80},button:{widget:"button",label:"Ready"},spans:{widget:"text",text:"ignored",size:24,shrink:1,wrap:true,spans:[{text:"Wide bold ",bold:true},{text:"mono identifier",mono:true}]},grow:{widget:"column",grow:1,children:["tail"]},tail:{widget:"text",text:"Tail"}}"##);
     assert!(rects["photo"].width()>=80.,"{rects:?}");
     assert!(rects["button"].width()>30.,"{rects:?}");
     assert!(rects["spans"].width()>100.,"{rects:?}");
