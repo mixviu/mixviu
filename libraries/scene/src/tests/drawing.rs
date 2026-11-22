@@ -15,7 +15,7 @@ fn drawing_primitives_and_bound_paint_are_validated() {
         serde_json::json!({"preset":"wipe","time":0,"extra":true}),
     ] {
         document.model = Some(serde_json::json!({"time":0.3,"effect":bad}));
-        assert!(resolve(&document).is_err());
+        assert!(lint(&document).iter().any(|d| d.code == "binding-type"));
     }
     for bad in [
         "radius: [-1,100]",

@@ -308,7 +308,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         ports.push(p("shadow", "object", false, None));
     }
     if f == "text" {
-        ports.push(p("letter_spacing", "number", false, None));
+        ports.push(pn("letter_spacing", false, Some(-100.0)));
         ports.push(p("spans", "list", false, None));
         ports.push(p("number", "object", false, None));
     }
