@@ -1,43 +1,95 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-//! Temporary baseline reproduction, replaced by lifecycle regression tests.
-#[path = "support/bus.rs"]
-mod bus;
+//! Real noded lifecycle checks, independent of render-node availability.
+#[path = "support/owned_bus.rs"]
+mod owned_bus;
+use std::{
+    fs,
+    io::{BufRead, BufReader, Write},
+    path::Path,
+    process::{Child, Command, Stdio},
+    time::{Duration, Instant},
+};
 
-#[test]
-fn legacy_child() {
-    let Ok(mode) = std::env::var("LEAK_MODE") else { return };
-    let root = std::env::temp_dir().join(format!("headless-bus-{}-repro", std::process::id()));
-    let output = std::process::Command::new("/opt/mix/bin/mix")
-        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/bus.mix"))
-        .arg("start").arg(&root).arg(bus::binary("noded"))
-        .output().unwrap();
-    assert!(output.status.success(), "{output:?}");
-    let record: serde_json::Value = serde_json::from_slice(&std::fs::read(root.join("bus.json")).unwrap()).unwrap();
-    println!("LEAK_READY {} {}", record["pid"], root.display());
-    use std::io::Write;
-    std::io::stdout().flush().unwrap();
-    if mode == "panic" { panic!("injected panic after broker start, before Bus owns it"); }
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).unwrap();
-}
-
-#[test]
-fn reproduce_legacy_leaks() {
-    use std::io::{BufRead, BufReader};
-    for mode in ["kill", "panic"] {
-        let mut parent = std::process::Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "legacy_child", "--nocapture"])
-            .env("LEAK_MODE", mode)
-            .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::piped()).spawn().unwrap();
-        let mut lines = BufReader::new(parent.stdout.take().unwrap()).lines();
-        let line = lines.find_map(|line| { let line = line.unwrap(); line.starts_with("LEAK_READY ").then_some(line) }).unwrap();
-        let parts: Vec<_> = line.split_whitespace().collect();
-        let pid: i32 = parts[1].parse().unwrap();
-        if mode == "kill" { parent.kill().unwrap(); }
-        let status = parent.wait().unwrap();
-        assert!(std::path::Path::new(&format!("/proc/{pid}/cmdline")).exists());
-        eprintln!("REPRO mode={mode} parent={status} surviving_noded={pid} root={}", parts[2]);
-        unsafe { libc::kill(pid, libc::SIGKILL); }
-        std::fs::remove_dir_all(parts[2]).unwrap();
+struct Parent(Child);
+impl Drop for Parent {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
     }
 }
+
+#[test]
+#[ignore = "private re-exec entry; requires a mode on stdin"]
+fn fixture_parent() {
+    let mut mode = String::new();
+    std::io::stdin().read_line(&mut mode).unwrap();
+    let bus = owned_bus::OwnedBus::start(mode.trim());
+    let record: serde_json::Value =
+        serde_json::from_slice(&fs::read(bus.root.join("bus.json")).unwrap()).unwrap();
+    println!("CHILD_READY {} {}", record["pid"], bus.root.display());
+    std::io::stdout().flush().unwrap();
+    if mode.trim() == "panic" {
+        panic!("injected panic with owned broker");
+    }
+    std::io::stdin().read_line(&mut String::new()).unwrap();
+    drop(bus);
+}
+
+fn gone(pid: u32, root: &Path) -> bool {
+    let running = fs::read(format!("/proc/{pid}/cmdline"))
+        .is_ok_and(|cmd| !cmd.is_empty());
+    !running && !root.exists()
+}
+
+fn within(pid: u32, root: &Path, bound: Duration) -> bool {
+    let deadline = Instant::now() + bound;
+    while !gone(pid, root) {
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::yield_now();
+    }
+    true
+}
+
+fn check(mode: &str) {
+    let mut parent = Parent(Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "fixture_parent", "--ignored", "--nocapture"])
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap());
+    writeln!(parent.0.stdin.as_mut().unwrap(), "{mode}").unwrap();
+    let mut output = BufReader::new(parent.0.stdout.take().unwrap());
+    let mut line = String::new();
+    loop {
+        line.clear();
+        assert_ne!(output.read_line(&mut line).unwrap(), 0, "fixture exited before handshake");
+        if line.starts_with("CHILD_READY ") { break; }
+    }
+    let parts: Vec<_> = line.split_whitespace().collect();
+    let pid: u32 = parts[1].parse().unwrap();
+    let root = Path::new(parts[2]);
+    assert!(!gone(pid, root), "handshake must name a live broker");
+    if mode != "panic" && mode != "normal" {
+        parent.0.kill().unwrap();
+    } else if mode == "normal" {
+        drop(parent.0.stdin.take());
+    }
+    let status = parent.0.wait().unwrap();
+    assert_eq!(status.success(), mode == "normal");
+    let cleaned = within(pid, root, Duration::from_secs(2));
+    if mode == "negative-control" {
+        assert!(!cleaned, "negative control unexpectedly passed the leak oracle");
+        assert!(within(pid, root, Duration::from_secs(2)), "control cleanup failed");
+    } else {
+        assert!(cleaned, "{mode}: noded {pid} or {} survived 2 s", root.display());
+    }
+    eprintln!("LIFETIME mode={mode} noded={pid} cleaned={cleaned}");
+}
+
+#[test]
+fn sigkill_reaps_broker_and_directory() { check("kill"); }
+#[test]
+fn panic_reaps_broker_and_directory() { check("panic"); }
+#[test]
+fn normal_exit_reaps_broker_and_directory() { check("normal"); }
+#[test]
+fn missing_lifetime_tie_fails_oracle() { check("negative-control"); }

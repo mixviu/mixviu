@@ -2,9 +2,10 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 //! Private Bus helper. MIX_TEST_MIX_EXE overrides mix:prefix/bin/mix when
 //! testing with another native Mix binary on the build worker.
+#[path = "owned_bus.rs"]
+mod owned_bus;
 use serde_json::Value;
 use std::{
-    fs,
     path::{Path, PathBuf},
     process::{Child, Command, Output},
 };
@@ -20,6 +21,7 @@ pub fn binary(name: &str) -> PathBuf {
 }
 
 pub struct Bus {
+    _owner: owned_bus::OwnedBus,
     root: PathBuf,
     pub url: String,
 }
@@ -55,16 +57,8 @@ impl Bus {
     }
 
     pub fn start(label: &str) -> Self {
-        let root =
-            std::env::temp_dir().join(format!("headless-bus-{}-{label}", std::process::id()));
-        let output = helper("start", &root, &[binary("noded").to_str().unwrap()], None);
-        check(&output);
-        let record: Value =
-            serde_json::from_slice(&fs::read(root.join("bus.json")).unwrap()).unwrap();
-        Self {
-            root,
-            url: record["url"].as_str().unwrap().into(),
-        }
+        let owner = owned_bus::OwnedBus::start(label);
+        Self { root: owner.root.clone(), url: owner.url.clone(), _owner: owner }
     }
 
     pub fn ready(&self, service: &str) {
@@ -107,16 +101,6 @@ impl Drop for Observer {
     fn drop(&mut self) {
         let _ = self.0.kill();
         let _ = self.0.wait();
-    }
-}
-
-impl Drop for Bus {
-    fn drop(&mut self) {
-        let output = helper("stop", &self.root, &[], None);
-        if !output.status.success() {
-            eprintln!("stop private Bus: {output:?}");
-        }
-        let _ = fs::remove_dir_all(&self.root);
     }
 }
 

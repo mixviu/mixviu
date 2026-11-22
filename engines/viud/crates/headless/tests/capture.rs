@@ -4,6 +4,8 @@
 //! Build viud (backend-headless,test-support), noded and testkit binaries first.
 #[path = "support/osd.rs"]
 mod osd;
+#[path = "support/owned_bus.rs"]
+mod owned_bus;
 #[path = "support/pattern.rs"]
 mod pattern;
 #[path = "support/process.rs"]
@@ -43,6 +45,7 @@ struct Bus {
     // Keep fixtures in this binary exclusive even with libtest's default
     // parallelism; unrelated test binaries still use the normal CI pool.
     _capture: std::sync::MutexGuard<'static, ()>,
+    _owner: owned_bus::OwnedBus,
     root: PathBuf,
     url: String,
 }
@@ -84,22 +87,8 @@ impl Bus {
         let capture = CAPTURE
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let root =
-            std::env::temp_dir().join(format!("headless-bus-{}-{label}", std::process::id()));
-        let output = helper("start", &root, &[binary("noded").to_str().unwrap()], None);
-        assert!(
-            output.status.success(),
-            "private broker: {} {}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let record: Value =
-            serde_json::from_slice(&fs::read(root.join("bus.json")).unwrap()).unwrap();
-        Self {
-            _capture: capture,
-            root,
-            url: record["url"].as_str().unwrap().into(),
-        }
+        let owner = owned_bus::OwnedBus::start(label);
+        Self { _capture: capture, root: owner.root.clone(), url: owner.url.clone(), _owner: owner }
     }
     fn call(&self, command_name: &str, args: Value) -> Value {
         self.call_rc(command_name, args, 0)
@@ -3290,18 +3279,6 @@ fn review_visual_only_place_is_refused_by_session_lock_dispatch() {
         10,
     );
     assert_eq!(refusal["error"], "locked");
-}
-
-impl Drop for Bus {
-    fn drop(&mut self) {
-        let output = helper("stop", &self.root, &[], None);
-        assert!(
-            output.status.success(),
-            "stop owned broker: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        let _ = fs::remove_dir_all(&self.root);
-    }
 }
 
 #[test]
