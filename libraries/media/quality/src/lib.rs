@@ -53,8 +53,7 @@ fn validate(a: &Yuv420, b: &Yuv420) -> Result<(), Error> {
 }
 fn weighted(f: &Yuv420, p: [f64; 3]) -> f64 {
     let total = f.y.len() as f64 + f.u.len() as f64 + f.v.len() as f64;
-    p[0] * (f.y.len() as f64 / total) + p[1] * (f.u.len() as f64 / total)
-        + p[2] * (f.v.len() as f64 / total)
+    (p[0] * f.y.len() as f64 + p[1] * f.u.len() as f64 + p[2] * f.v.len() as f64) / total
 }
 pub fn psnr(a: &Yuv420, b: &Yuv420) -> Result<Psnr, Error> {
     validate(a, b)?;

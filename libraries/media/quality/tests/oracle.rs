@@ -25,7 +25,7 @@ fn ffmpeg_generated_corpus() {
     let mut maxima = [[0.0f64;4];2];
     // Self-contained public corpus: moving detail plus flat deck-like panels.
     // No private captures or separately provisioned fixtures are required.
-    for (w,h,source) in [(96,64,"testsrc2=size=96x64:rate=30"),(35,33,"nullsrc=size=35x33:rate=30,format=yuv420p,geq=lum='mod(X*7+Y*13+N*11,256)':cb='mod(X*17+N,256)':cr='mod(Y*19+N,256)'"),(320,180,"color=c=navy:size=320x180:rate=30,drawbox=x=20:y=20:w=280:h=40:color=white:t=fill,drawbox=x=20:y=80:w=130:h=70:color=yellow:t=fill")] {
+    for (w,h,source) in [(96usize,64usize,"testsrc2=size=96x64:rate=30"),(35,33,"nullsrc=size=35x33:rate=30,format=yuv420p,geq=lum='mod(X*7+Y*13+N*11,256)':cb='mod(X*17+N,256)':cr='mod(Y*19+N,256)'"),(320,180,"color=c=navy:size=320x180:rate=30,drawbox=x=20:y=20:w=280:h=40:color=white:t=fill,drawbox=x=20:y=80:w=130:h=70:color=yellow:t=fill")] {
         let raw = command(&["-v","error","-f","lavfi","-i",source,"-frames:v","6","-pix_fmt","yuv420p","-f","rawvideo","-"]);
         let n = w*h+2*w.div_ceil(2)*h.div_ceil(2);
         assert_eq!(raw.len(),n*6);
