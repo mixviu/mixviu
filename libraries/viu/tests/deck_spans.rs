@@ -70,7 +70,7 @@ fn mono_runs_use_the_theme_mono_unless_a_mono_font_is_named() {
         for named_mono in [false, true] {
             let ctx = egui::Context::default();
             viu::fonts::install(&ctx, 400, 600);
-            let mut node = json!({"widget":"text","font":"Liberation Sans","size":24,"mono":whole_node,"spans":[{"text":"mono","mono":!whole_node}]});
+            let mut node = json!({"widget":"text","text":"mono","font":"Liberation Sans","size":24,"mono":whole_node,"spans":[{"text":"mono","mono":!whole_node}]});
             if named_mono {
                 node["mono_font"] = json!("Noto Sans Mono");
             }
