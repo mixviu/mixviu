@@ -608,7 +608,7 @@ fn cross_axis_is_independent_on_plain_and_flex_rows() {
 
 #[test]
 fn explicit_cross_alignment_overrides_legacy_stretch() {
-    let g = geometry(r#"{root:{widget:"row",align:"stretch",cross_align:"end",children:["a","b"]},a:{widget:"column",height:80,min_width:100,children:[]},b:{widget:"column",grow:1,min_height:20,children:[]}}"#);
+    let g = geometry(r#"{root:{widget:"row",align:"stretch",cross_align:"end",children:["a","b"]},a:{widget:"column",height:80,min_width:100,children:[]},b:{widget:"column",grow:1,children:["t"]},t:{widget:"text",text:"short"}}"#);
     assert!((g["a"].bottom() - g["b"].bottom()).abs() < 1.);
     assert!(g["b"].height() < 30.);
 }
