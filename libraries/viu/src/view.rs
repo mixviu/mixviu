@@ -3458,7 +3458,7 @@ mod round7_tests {
         let mut view=SceneView::new("---\nscene: 1\nname: palette\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"accent\",color:\"#ffffff\",spans:[{text:\"accent\",role:\"acc\"}]}}\n```\n").unwrap();
         let ctx=egui::Context::default();
         for colour in [Color32::RED,Color32::GREEN] {
-            let map=BTreeMap::from([("accent".into(),colour)]);
+            let map:BTreeMap<String,Color32>=BTreeMap::from([("accent".into(),colour)]);
             ctx.data_mut(|d|d.insert_temp(egui::Id::unique("viu-design-colours"),std::sync::Arc::new(map)));
             let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();
             assert_eq!(view.painted.entries.values().next().unwrap().1.job.sections[0].format.color,colour);

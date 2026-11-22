@@ -582,7 +582,7 @@ fn cross_axis_is_independent_on_plain_and_flex_rows() {
         let grow=if flex{",grow:1"}else{""};
         let mut tops=Vec::new();
         for cross in ["start","center","end"] {
-            let g=geometry(&format!(r#"{{root:{{widget:"row",cross_align:"{cross}",children:["a","b"]}},a:{{widget:"column",width:100,height:80,children:[]}},b:{{widget:"column",height:20,children:[]{grow}}}}}"#));
+            let g=geometry(&format!(r#"{{root:{{widget:"row",cross_align:"{cross}",children:["a","b"]}},a:{{widget:"column",min_width:100,height:80,children:[]}},b:{{widget:"column",height:20,children:[]{grow}}}}}"#));
             assert!(g["a"].left()<g["b"].left(),"{flex} {cross}");
             let delta=g["b"].top()-g["a"].top();
             let expected=match cross{"start"=>0.,"center"=>30.,_=>60.};
@@ -591,7 +591,7 @@ fn cross_axis_is_independent_on_plain_and_flex_rows() {
         }
         assert!(tops[0]<tops[1] && tops[1]<tops[2]);
     }
-    let g=geometry(r#"{root:{widget:"row",children:["a","b"]},a:{widget:"column",width:100,height:80,children:[]},b:{widget:"column",height:20,grow:1,children:[]}}"#);
+    let g=geometry(r#"{root:{widget:"row",children:["a","b"]},a:{widget:"column",min_width:100,height:80,children:[]},b:{widget:"column",height:20,grow:1,children:[]}}"#);
     assert!((g["a"].top()-g["b"].top()).abs()<1.,"main default grow rows are top aligned");
 }
 
