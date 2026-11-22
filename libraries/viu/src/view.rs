@@ -906,7 +906,7 @@ impl SceneView {
                 })
             })
             .flatten();
-        if let Some(width) = width.filter(|_|ui.layout().is_vertical()) {
+        if let Some(width) = width.filter(|_| ui.layout().is_vertical()) {
             let width = bounded_layout(width, 1e6)
                 .max(num(node, "min_width").unwrap_or(0.))
                 .min(num(node, "max_width").unwrap_or(1e6));
@@ -2821,7 +2821,24 @@ fn route_event(
     }
 }
 fn num(node: &Node, port: &str) -> Option<f32> {
-    node.ports.get(port)?.as_f64().map(|n| {let v=n as f32;if matches!(port,"width"|"min_width"|"max_width"|"column_gap"|"min_column_width"|"height"|"row_gap"|"gap") {bounded_layout(v,1e6)}else{v}})
+    node.ports.get(port)?.as_f64().map(|n| {
+        let v = n as f32;
+        if matches!(
+            port,
+            "width"
+                | "min_width"
+                | "max_width"
+                | "column_gap"
+                | "min_column_width"
+                | "height"
+                | "row_gap"
+                | "gap"
+        ) {
+            bounded_layout(v, 1e6)
+        } else {
+            v
+        }
+    })
 }
 fn color(s: &str) -> Option<Color32> {
     let s = s.strip_prefix('#')?;
@@ -2838,20 +2855,44 @@ fn color(s: &str) -> Option<Color32> {
 }
 
 fn text_baseline(ui: &egui::Ui, node: &Node) -> f32 {
-    let cache=natural_size_key(node).with(("baseline",ui.pixels_per_point().to_bits()));if let Some(v)=measure_get::<f32>(ui,cache){return v;}
+    let cache = natural_size_key(node).with(("baseline", ui.pixels_per_point().to_bits()));
+    if let Some(v) = measure_get::<f32>(ui, cache) {
+        return v;
+    }
     // Only the first line contributes to a baseline. Bound the shaping input.
     let plain = json!([{"text":text(node,"text")}]);
-    let mut remaining=4096;
-    let mut runs=Vec::new();
-    for run in node.ports.get("spans").unwrap_or(&plain).as_array().into_iter().flatten().take(64) {
-        let text:String=run["text"].as_str().unwrap_or("").chars().take_while(|c|*c!='\n').take(remaining).collect();
-        remaining-=text.chars().count();
-        let mut bounded=serde_json::Map::new();
-        for k in ["bold","mono","role","color"] {if let Some(v)=run.get(k){bounded.insert(k.into(),v.clone());}}
-        bounded.insert("text".into(),json!(text));runs.push(Value::Object(bounded));
-        if remaining==0 || run["text"].as_str().is_some_and(|s|s.contains('\n')){break;}
+    let mut remaining = 4096;
+    let mut runs = Vec::new();
+    for run in node
+        .ports
+        .get("spans")
+        .unwrap_or(&plain)
+        .as_array()
+        .into_iter()
+        .flatten()
+        .take(64)
+    {
+        let text: String = run["text"]
+            .as_str()
+            .unwrap_or("")
+            .chars()
+            .take_while(|c| *c != '\n')
+            .take(remaining)
+            .collect();
+        remaining -= text.chars().count();
+        let mut bounded = serde_json::Map::new();
+        for k in ["bold", "mono", "role", "color"] {
+            if let Some(v) = run.get(k) {
+                bounded.insert(k.into(), v.clone());
+            }
+        }
+        bounded.insert("text".into(), json!(text));
+        runs.push(Value::Object(bounded));
+        if remaining == 0 || run["text"].as_str().is_some_and(|s| s.contains('\n')) {
+            break;
+        }
     }
-    let bounded_runs=Value::Array(runs);
+    let bounded_runs = Value::Array(runs);
     let bold = node.ports.get("bold") == Some(&Value::Bool(true));
     let mut job = crate::spans::job(
         ui,
@@ -2866,12 +2907,17 @@ fn text_baseline(ui: &egui::Ui, node: &Node) -> f32 {
             node.ports.get("mono_font").and_then(Value::as_str),
         ),
     );
-    for s in &mut job.sections{s.format.line_height=num(node,"line_height");}
+    for s in &mut job.sections {
+        s.format.line_height = num(node, "line_height");
+    }
     let g = ui.fonts_mut(|f| f.layout_job(job));
-    let value=g.rows
+    let value = g
+        .rows
         .first()
         .and_then(|r| r.glyphs.first().map(|glyph| r.pos.y + glyph.pos.y))
-        .unwrap_or(0.);measure_put(ui,cache,value);value
+        .unwrap_or(0.);
+    measure_put(ui, cache, value);
+    value
 }
 
 fn bounded_layout(value: f32, maximum: f32) -> f32 {
@@ -2891,19 +2937,64 @@ fn bounded_layout(value: f32, maximum: f32) -> f32 {
 // never debug-format the ports map or retain a new Context entry per text value.
 fn natural_size_key(node: &Node) -> egui::Id {
     use std::hash::{Hash, Hasher};
-    fn value(v:&Value,h:&mut impl Hasher){
-        match v {Value::String(s)=>s.hash(h),Value::Array(a)=>for v in a{value(v,h)},Value::Object(m)=>for(k,v)in m{k.hash(h);value(v,h)},_=>v.to_string().hash(h)}
+    fn value(v: &Value, h: &mut impl Hasher) {
+        match v {
+            Value::String(s) => s.hash(h),
+            Value::Array(a) => {
+                for v in a {
+                    value(v, h)
+                }
+            }
+            Value::Object(m) => {
+                for (k, v) in m {
+                    k.hash(h);
+                    value(v, h)
+                }
+            }
+            _ => v.to_string().hash(h),
+        }
     }
-    let mut h=std::collections::hash_map::DefaultHasher::new();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
     node.family.hash(&mut h);
-    for key in ["text","spans","font","mono_font","size","bold","mono","weight","letter_spacing","line_height","label"] {key.hash(&mut h);if let Some(v)=node.ports.get(key){value(v,&mut h);}}
+    for key in [
+        "text",
+        "spans",
+        "font",
+        "mono_font",
+        "size",
+        "bold",
+        "mono",
+        "weight",
+        "letter_spacing",
+        "line_height",
+        "label",
+    ] {
+        key.hash(&mut h);
+        if let Some(v) = node.ports.get(key) {
+            value(v, &mut h);
+        }
+    }
     egui::Id::new(h.finish())
 }
-fn measure_get<T: Clone+Send+Sync+'static>(ui:&egui::Ui,key:egui::Id)->Option<T>{
-    ui.ctx().data_mut(|d|d.get_temp_mut_or_default::<std::collections::HashMap<egui::Id,T>>(egui::Id::new("scene-measurements")).get(&key).cloned())
+fn measure_get<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id) -> Option<T> {
+    ui.ctx().data_mut(|d| {
+        d.get_temp_mut_or_default::<std::collections::HashMap<egui::Id, T>>(egui::Id::new(
+            "scene-measurements",
+        ))
+        .get(&key)
+        .cloned()
+    })
 }
-fn measure_put<T: Clone+Send+Sync+'static>(ui:&egui::Ui,key:egui::Id,value:T){
-    ui.ctx().data_mut(|d|{let cache=d.get_temp_mut_or_default::<std::collections::HashMap<egui::Id,T>>(egui::Id::new("scene-measurements"));if cache.len()>=256 && !cache.contains_key(&key){cache.clear();}cache.insert(key,value);});
+fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, value: T) {
+    ui.ctx().data_mut(|d| {
+        let cache = d.get_temp_mut_or_default::<std::collections::HashMap<egui::Id, T>>(
+            egui::Id::new("scene-measurements"),
+        );
+        if cache.len() >= 256 && !cache.contains_key(&key) {
+            cache.clear();
+        }
+        cache.insert(key, value);
+    });
 }
 
 // Shape the original spans once. Word bounds are read from the natural glyph
@@ -2921,59 +3012,55 @@ fn intrinsic_text_width(
     }
     if node.family == "text" {
         let cache = natural_size_key(node).with(("text-widths", ui.pixels_per_point().to_bits()));
-        let sizes = measure_get::<(f32,f32)>(ui,cache)
-            .unwrap_or_else(|| {
-                let plain = json!([{"text":text(node,"text")}]);
-                let bold = node.ports.get("bold") == Some(&Value::Bool(true));
-                let mut job = crate::spans::job(
-                    ui,
-                    node.ports.get("spans").unwrap_or(&plain),
-                    num(node, "size").unwrap_or(13.),
-                    node.ports.get("mono") == Some(&Value::Bool(true)),
-                    bold,
-                    Color32::WHITE,
-                    (
-                        node.ports.get("font").and_then(Value::as_str),
-                        num(node, "weight").unwrap_or(if bold { 700. } else { 400. }),
-                        node.ports.get("mono_font").and_then(Value::as_str),
-                    ),
-                );
-                for s in &mut job.sections {
-                    s.format.extra_letter_spacing = num(node, "letter_spacing").unwrap_or(0.);
-                }
-                let galley = ui.fonts_mut(|f| f.layout_job(job));
-                let natural = galley.size().x;
-                let mut minimum = 0.0_f32;
-                let mut start = None;
-                let mut seen = 0;
-                'rows: for row in &galley.rows {
-                    for glyph in &row.glyphs {
-                        seen += 1;
-                        if seen > 4096 {
-                            minimum = natural;
-                            break 'rows;
-                        }
-                        if glyph.chr.is_whitespace() {
-                            start = None;
-                        } else {
-                            let begin = *start.get_or_insert(glyph.pos.x);
-                            minimum = minimum.max(glyph.max_x() - begin);
-                        }
+        let sizes = measure_get::<(f32, f32)>(ui, cache).unwrap_or_else(|| {
+            let plain = json!([{"text":text(node,"text")}]);
+            let bold = node.ports.get("bold") == Some(&Value::Bool(true));
+            let mut job = crate::spans::job(
+                ui,
+                node.ports.get("spans").unwrap_or(&plain),
+                num(node, "size").unwrap_or(13.),
+                node.ports.get("mono") == Some(&Value::Bool(true)),
+                bold,
+                Color32::WHITE,
+                (
+                    node.ports.get("font").and_then(Value::as_str),
+                    num(node, "weight").unwrap_or(if bold { 700. } else { 400. }),
+                    node.ports.get("mono_font").and_then(Value::as_str),
+                ),
+            );
+            for s in &mut job.sections {
+                s.format.extra_letter_spacing = num(node, "letter_spacing").unwrap_or(0.);
+            }
+            let galley = ui.fonts_mut(|f| f.layout_job(job));
+            let natural = galley.size().x;
+            let mut minimum = 0.0_f32;
+            let mut start = None;
+            let mut seen = 0;
+            'rows: for row in &galley.rows {
+                for glyph in &row.glyphs {
+                    seen += 1;
+                    if seen > 4096 {
+                        minimum = natural;
+                        break 'rows;
                     }
-                    start = None;
+                    if glyph.chr.is_whitespace() {
+                        start = None;
+                    } else {
+                        let begin = *start.get_or_insert(glyph.pos.x);
+                        minimum = minimum.max(glyph.max_x() - begin);
+                    }
                 }
-                let result = (natural, minimum);
-                measure_put(ui,cache,result);
-                result
-            });
+                start = None;
+            }
+            let result = (natural, minimum);
+            measure_put(ui, cache, result);
+            result
+        });
         return (if words { sizes.1 } else { sizes.0 })
             .min(num(node, "max_width").unwrap_or(f32::INFINITY));
     }
-    let cached = measure_get::<egui::Vec2>(ui,natural_size_key(node))
-        .map(|v| v.x);
-    let explicit = num(node, "width")
-        .or(num(node, "w"))
-;
+    let cached = measure_get::<egui::Vec2>(ui, natural_size_key(node)).map(|v| v.x);
+    let explicit = num(node, "width").or(num(node, "w"));
     if let Some(width) = explicit {
         return bounded_layout(width, 1e6);
     }
@@ -3010,16 +3097,28 @@ fn intrinsic_text_width(
         });
     }
     let widths: Vec<f32> = children(node)
-        .filter_map(|c| nodes.get(c)).filter(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))
+        .filter_map(|c| nodes.get(c))
+        .filter(|n| n.ports.get("hidden") != Some(&Value::Bool(true)))
         .map(|n| intrinsic_text_width(ui, n, nodes, model, words, depth + 1))
         .collect();
     let content = if node.family == "row" {
         widths.iter().sum::<f32>()
-            + num(node, "gap").unwrap_or(ui.spacing().item_spacing.x) * widths.len().saturating_sub(1) as f32
-    } else if node.family=="grid" {let columns=(num(node,"columns").unwrap_or(2.) as usize).max(1);let mut maxima=vec![num(node,"min_column_width").unwrap_or(0.);columns];for (i,w) in widths.iter().enumerate(){maxima[i%columns]=maxima[i%columns].max(*w);}maxima.iter().sum::<f32>()+num(node,"column_gap").unwrap_or(12.)*columns.saturating_sub(1) as f32} else {
+            + num(node, "gap").unwrap_or(ui.spacing().item_spacing.x)
+                * widths.len().saturating_sub(1) as f32
+    } else if node.family == "grid" {
+        let columns = (num(node, "columns").unwrap_or(2.) as usize).max(1);
+        let mut maxima = vec![num(node, "min_column_width").unwrap_or(0.); columns];
+        for (i, w) in widths.iter().enumerate() {
+            maxima[i % columns] = maxima[i % columns].max(*w);
+        }
+        maxima.iter().sum::<f32>()
+            + num(node, "column_gap").unwrap_or(12.) * columns.saturating_sub(1) as f32
+    } else {
         widths.into_iter().fold(0.0_f32, f32::max)
     };
-    (content + node_padding(node, "padding_left") + node_padding(node, "padding_right")).max(num(node,"min_width").unwrap_or(0.)).min(num(node,"max_width").unwrap_or(1e6))
+    (content + node_padding(node, "padding_left") + node_padding(node, "padding_right"))
+        .max(num(node, "min_width").unwrap_or(0.))
+        .min(num(node, "max_width").unwrap_or(1e6))
 }
 
 fn node_padding(node: &Node, side: &str) -> f32 {
