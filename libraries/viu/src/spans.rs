@@ -10,7 +10,9 @@ pub(crate) fn job(
     mono: bool,
     bold: bool,
     base: Color32,
+    family: (Option<&str>, f32, Option<&str>),
 ) -> LayoutJob {
+    let (name, weight, mono_name) = family;
     let mut job = LayoutJob::default();
     for run in spans.as_array().into_iter().flatten() {
         let role = match run["role"].as_str().unwrap_or("text") {
@@ -33,17 +35,32 @@ pub(crate) fn job(
             })
             .or_else(|| crate::appearance::colour(ui.ctx(), role))
             .unwrap_or(base);
+        let fallback = if mono || run["mono"] == true {
+            FontFamily::Monospace
+        } else {
+            FontFamily::Proportional
+        };
+        let selected = if mono || run["mono"] == true {
+            mono_name.or(if mono { name } else { None })
+        } else {
+            name
+        };
+        let bold = run["bold"].as_bool().unwrap_or(bold);
+        let weight = run["bold"].as_bool().map_or(weight, |b| if b {600.} else {400.});
+        let requested = if let Some(name) = selected {
+            FontId::new(size, toolkit::fonts::optional::family(name, weight))
+        } else if mono || run["mono"] == true {
+            FontId::new(size, FontFamily::Monospace)
+        } else if bold {
+            toolkit::fonts::heading(size)
+        } else {
+            FontId::new(size, FontFamily::Proportional)
+        };
         job.append(
             run["text"].as_str().unwrap_or(""),
             0.,
             TextFormat {
-                font_id: if mono || run["mono"] == true {
-                    FontId::new(size, FontFamily::Monospace)
-                } else if run["bold"].as_bool().unwrap_or(bold) {
-                    toolkit::fonts::bound(ui.ctx(), toolkit::fonts::heading(size))
-                } else {
-                    FontId::new(size, FontFamily::Proportional)
-                },
+                font_id: toolkit::fonts::bound_or(ui.ctx(), requested, fallback),
                 color,
                 background: if run["highlight"] == true {
                     color.gamma_multiply(0.14)
@@ -60,4 +77,55 @@ pub(crate) fn job(
         );
     }
     job
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn runtime_bound_families_fall_back_at_paint_without_optional_bundle() {
+        let ctx = egui::Context::default();
+        let absent = tempfile::tempdir().unwrap();
+        crate::fonts::install_with_font_directory(&ctx, 400, 600, absent.path());
+        let source = "---\nscene: 1\nname: fonts\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"sans\",font:\"= $model.font\",mono_font:\"= $model.mono_font\"}}\n```\n";
+        for (sans, mono) in [
+            ("unknown", "unknown-mono"),
+            ("Liberation Sans", "Noto Sans Mono"),
+        ] {
+            let mut document = scene::parse(source).unwrap();
+            document.model = Some(json!({"font":sans,"mono_font":mono}));
+            let resolved = scene::resolve(&document).unwrap();
+            let ports = &resolved.nodes["root"].ports;
+            let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                for node_mono in [false, true] {
+                    let job = job(
+                        ui,
+                        &json!([{"text":"sans"},{"text":"mono","mono":true}]),
+                        24.,
+                        node_mono,
+                        false,
+                        Color32::WHITE,
+                        (ports["font"].as_str(), 400., ports["mono_font"].as_str()),
+                    );
+                    assert_eq!(
+                        job.sections[0].format.font_id.family,
+                        if node_mono {
+                            FontFamily::Monospace
+                        } else {
+                            FontFamily::Proportional
+                        }
+                    );
+                    assert_eq!(
+                        job.sections.last().unwrap().format.font_id.family,
+                        FontFamily::Monospace
+                    );
+                    ui.label(job);
+                }
+            });
+            assert!(out.shapes.iter().any(|shape| matches!(&shape.shape, egui::Shape::Text(t) if t.galley.job.text == "sansmono")));
+            out.drop_without_applying_deltas();
+        }
+    }
 }

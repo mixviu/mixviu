@@ -23,6 +23,7 @@
 use crate::theme::Theme;
 use egui::{FontData, FontDefinitions, FontFamily, FontId};
 use std::sync::Arc;
+pub mod optional;
 
 /// The named family for emphasised body text.
 pub const MEDIUM: &str = "medium";
@@ -71,6 +72,34 @@ pub fn definitions(theme: &Theme) -> FontDefinitions {
             .families
             .insert(FontFamily::Name(family.into()), stack);
     }
+    let _ = optional::register(&mut fonts, &optional::directory());
+    // Optional families are chosen by the design's existing typography roles.
+    for (role, target, weight) in [
+        (design::TypographyRole::Ui, FontFamily::Proportional, ui),
+        (
+            design::TypographyRole::Ui,
+            FontFamily::Name(MEDIUM.into()),
+            ui.saturating_add(100),
+        ),
+        (
+            design::TypographyRole::UiDisplay,
+            FontFamily::Name(HEADING.into()),
+            display,
+        ),
+        (design::TypographyRole::Mono, FontFamily::Monospace, 400),
+    ] {
+        let record = design::active_typography(Some(theme.typography()), role);
+        let name = if role == design::TypographyRole::Mono {
+            theme.overlay().mono.as_deref()
+        } else {
+            theme.overlay().family.as_deref()
+        }
+        .unwrap_or(&record.family);
+        let selected = optional::family(name, f32::from(weight));
+        if let Some(stack) = fonts.families.get(&selected).cloned() {
+            fonts.families.insert(target, stack);
+        }
+    }
     fonts
 }
 
@@ -88,10 +117,16 @@ pub fn medium(size: f32) -> FontId {
 /// family is not bound yet: fonts installed with [`install`] bind from the
 /// next frame, and egui refuses an unbound family.
 pub fn bound(ctx: &egui::Context, font: FontId) -> FontId {
+    bound_or(ctx, font, FontFamily::Proportional)
+}
+
+/// Resolve against the context's loaded families, retaining the caller's
+/// sans or mono role when a requested family is unavailable.
+pub fn bound_or(ctx: &egui::Context, font: FontId, fallback: FontFamily) -> FontId {
     if ctx.fonts(|f| f.definitions().families.contains_key(&font.family)) {
         font
     } else {
-        FontId::new(font.size, FontFamily::Proportional)
+        FontId::new(font.size, fallback)
     }
 }
 
@@ -103,6 +138,39 @@ pub fn heading(size: f32) -> FontId {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn optional_families_follow_theme_choices_without_changing_defaults() {
+        let theme = Theme::embedded()
+            .with_overlay(crate::theme::Overlay {
+                family: Some("Liberation Sans".into()),
+                mono: Some("Noto Sans Mono".into()),
+                weight: Some(500),
+                ..Default::default()
+            })
+            .unwrap();
+        let fonts = definitions(&theme);
+        assert_eq!(
+            fonts.families[&FontFamily::Proportional][0],
+            optional::FILES[0]
+        );
+        assert_eq!(
+            fonts.families[&FontFamily::Name(MEDIUM.into())][0],
+            optional::FILES[1]
+        );
+        assert_eq!(
+            fonts.families[&FontFamily::Name(HEADING.into())][0],
+            optional::FILES[1]
+        );
+        assert_eq!(
+            fonts.families[&FontFamily::Monospace][0],
+            optional::FILES[2]
+        );
+        assert_eq!(
+            fonts.families[&FontFamily::Proportional][1],
+            optional::FILES[3]
+        );
+    }
 
     #[test]
     fn offered_weights_install_distinct_faces_and_clamp_the_display_offset() {

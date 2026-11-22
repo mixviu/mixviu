@@ -4,7 +4,9 @@
 $tokens = require("../../libraries/design/deck.tokens.mix")
 
 fn deck_text($text, $style, $role)
-  return {widget:"text", text:$text, size:$tokens.type[$style], color:$tokens.colour[$role]}
+  $mono=contains(["date","chip","rail","rail_compact","series_footer","code","terminal","tree"],$style)
+  $weight=if contains(["headline","topic_title","wordmark","stat","panel_title"],$style) then 700 else 400 end
+  return {widget:"text", text:$text, size:$tokens.type[$style], color:$tokens.colour[$role],font:if $mono then "Noto Sans Mono" else "Liberation Sans" end,mono_font:"Noto Sans Mono",mono:$mono,weight:$weight}
 end
 fn inline($runs, $style, $mono)
   $styled = []
@@ -15,7 +17,7 @@ fn inline($runs, $style, $mono)
     $semantic = if contains(["text","keyword","function","string","comment","value","ok","bad","warn","acc","mut"],$role) then $role else "text" end
     push($styled, merge($run, {role:$semantic,color:$tokens.colour[$role] ?? $tokens.colour.text}))
   end
-  return {widget:"text", text:$plain, spans:$styled, size:$tokens.type[$style], mono:$mono}
+  return {widget:"text", text:$plain, spans:$styled, size:$tokens.type[$style], mono:$mono,mono_font:"Noto Sans Mono",font:if $mono then "Noto Sans Mono" else "Liberation Sans" end}
 end
 fn column($items, $gap)
   return {widget:"column", children:$items, gap:$gap}
@@ -36,7 +38,9 @@ end
 fn kicker($text, $prs)
   $items = [deck_text($text,"kicker","mut")]
   for $pr in $prs
-    push($items, chip($pr.text,"",$pr.role ?? "acc"))
+    $pill=chip($pr.text,"",$pr.role ?? "acc")
+    $pill.children[0].weight=600
+    push($items,$pill)
   end
   return row($items,16)
 end
@@ -95,7 +99,7 @@ fn chapter_rail($chapters,$active,$series)
   $chips=[]
   for $name in $chapters
     $current=$name==$active
-    push($chips,merge(column([merge(deck_text($name,"rail",if $current then "background" else "mut" end),{mono:true,bold:$current,size:$tokens.type.rail})],0),{padding_left:$tokens.space.rail_x,padding_right:$tokens.space.rail_x,padding_top:$tokens.space.rail_y,padding_bottom:$tokens.space.rail_y,radius:$tokens.space.rail_radius,background:if $current then $tokens.colour.acc else $tokens.colour.rail end,outline:if $current then $tokens.colour.acc else $tokens.colour.line end,outline_width:1}))
+    push($chips,merge(column([merge(deck_text($name,"rail",if $current then "background" else "mut" end),{mono:true,mono_font:"Noto Sans Mono",bold:$current,weight:if $current then 700 else 400 end,size:$tokens.type.rail})],0),{padding_left:$tokens.space.rail_x,padding_right:$tokens.space.rail_x,padding_top:$tokens.space.rail_y,padding_bottom:$tokens.space.rail_y,radius:$tokens.space.rail_radius,background:if $current then $tokens.colour.acc else $tokens.colour.rail end,outline:if $current then $tokens.colour.acc else $tokens.colour.line end,outline_width:1}))
   end
   return merge(row([row($chips,$tokens.space.rail_gap),merge(deck_text($series,"rail","mut"),{size:$tokens.type.series_footer})],0),{fill:true,justify:"between"})
 end

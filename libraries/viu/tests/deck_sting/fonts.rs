@@ -1,7 +1,6 @@
 use super::*;
 
 #[test]
-#[ignore = "requires PR #235 on main: bundled deck faces and role binding; un-ignore after merging #235"]
 fn sting_font_identity_rows() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../share/fonts");
     let mut defs = egui::FontDefinitions::default();

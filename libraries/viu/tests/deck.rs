@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+use egui::{Color32, FontFamily, FontId};
 use serde_json::{Value, json};
 use std::{
     path::PathBuf,
     sync::{Arc, mpsc},
     time::Duration,
 };
+use toolkit::fonts::optional::FILES;
 use viu::{
     runtime::{Completion, Program, Runtime},
     view::SceneView,
@@ -129,6 +131,7 @@ fn a_natural_width_fixed_label_stays_visible_between_growing_cells() {
     );
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     for _ in 0..8 {
         let out = ctx.run_ui(
             egui::RawInput {
@@ -322,6 +325,7 @@ fn play_replies_immediately_and_survives_caller_cancellation_past_180_seconds() 
 
 fn frame(model: Value) -> (SceneView, egui::FullOutput) {
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     let mut view = SceneView::with_model(
         model["presentation"]["scene"].as_str().unwrap(),
         model.clone(),
@@ -463,6 +467,7 @@ fn settled_manual_slide_arms_no_repaint() {
     )
     .unwrap();
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     for i in 0..6 {
         let mut out = ctx.run_ui(
             egui::RawInput {
@@ -576,4 +581,145 @@ fn render_reference_scenes() {
         println!("DECK_PNG={}", path.display());
         println!("DECK_SAMPLE={id} time=10 beats=0,3,15");
     }
+}
+
+fn identity(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
+    let sans_bytes = std::fs::read(dir.join(FILES[0]))?;
+    let noto_bytes = std::fs::read(dir.join(FILES[3]))?;
+    let sans = swash::FontRef::from_index(&sans_bytes, 0).unwrap();
+    let noto = swash::FontRef::from_index(&noto_bytes, 0).unwrap();
+    // Alphabetic characters exclude format characters such as soft hyphen.
+    let fallback_text = (0x20..=0xffff)
+        .filter_map(char::from_u32)
+        .find(|&c| c.is_alphabetic() && sans.charmap().map(c) == 0 && noto.charmap().map(c) != 0)
+        .expect("Noto supplies a glyph absent from Liberation")
+        .to_string();
+    let roles = [
+        ("sans heading", "Heading", "Liberation Sans", 700, FILES[1]),
+        ("sans body", "Body", "Liberation Sans", 400, FILES[0]),
+        ("sans medium", "Medium", "Liberation Sans", 500, FILES[0]),
+        (
+            "sans semibold",
+            "Semibold",
+            "Liberation Sans",
+            600,
+            FILES[1],
+        ),
+        ("mono date", "2026-11-22", "Noto Sans Mono", 400, FILES[2]),
+        ("mono medium", "mono 500", "Noto Sans Mono", 500, FILES[4]),
+        ("mono PR tag", "#215", "Noto Sans Mono", 600, FILES[5]),
+        ("mono rail", "current rail", "Noto Sans Mono", 700, FILES[5]),
+        (
+            "glyph fallback",
+            fallback_text.as_str(),
+            "Liberation Sans",
+            400,
+            FILES[3],
+        ),
+    ];
+    let mut nodes = json!({"root":{"widget":"column","children":[]}});
+    for (i, (_, text, family, weight, _)) in roles.iter().enumerate() {
+        let id = format!("r{i}");
+        nodes["root"]["children"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!(id));
+        nodes[&id] = json!({"widget":"text","text":text,"mono":*family == "Noto Sans Mono","weight":weight,"size":24});
+    }
+    let fixture_dir = tempfile::tempdir()?;
+    let mut deck = Deck::new();
+    let fixture = fixture_dir.path().join("fonts.json");
+    std::fs::write(
+        &fixture,
+        json!({"schema":"deck.v1","slides":[{"id":"fonts","steps":1,"scene":nodes}]}).to_string(),
+    )?;
+    let done = deck.call("deck.open", json!({"path":fixture}));
+    std::fs::remove_file(&fixture)?;
+    assert_eq!(done.reply.as_ref().unwrap().rc, 0, "{:?}", done.reply);
+    let model = done.model.unwrap();
+    let source = model["presentation"]["scene"].as_str().unwrap();
+    let mut view = SceneView::new(source)?;
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        view.show(ui);
+    });
+    output.textures_delta.clear();
+    for (role, text, _, _, file) in roles {
+        let actual = output
+            .shapes
+            .iter()
+            .find_map(|s| match &s.shape {
+                egui::Shape::Text(t) if t.galley.job.text == text => Some(&t.galley),
+                _ => None,
+            })
+            .expect("role painted by SceneView");
+        let expected = ctx.fonts_mut(|fonts| {
+            fonts.layout_no_wrap(
+                text.into(),
+                FontId::new(24., FontFamily::Name(file.into())),
+                Color32::WHITE,
+            )
+        });
+        let glyphs = |galley: &egui::Galley| {
+            galley
+                .rows
+                .iter()
+                .flat_map(|r| r.glyphs.iter())
+                .map(|g| (g.chr, g.uv_rect, g.advance_width))
+                .collect::<Vec<_>>()
+        };
+        let actual_glyphs = glyphs(actual);
+        assert!(!actual_glyphs.is_empty(), "{role}: no glyphs painted");
+        if role == "glyph fallback" {
+            assert!(
+                actual_glyphs
+                    .iter()
+                    .all(|(_, uv, _)| uv.size[0] > 0. && uv.size[1] > 0.),
+                "fallback must rasterise a visible glyph"
+            );
+        }
+        assert_eq!(
+            actual_glyphs,
+            glyphs(&expected),
+            "{role}: actual raster face differs"
+        );
+        let mut db = fontdb::Database::new();
+        db.load_font_file(dir.join(file))?;
+        let face = db.faces().next().expect("one face");
+        let expected_name = if file == FILES[0] {
+            "LiberationSans"
+        } else {
+            file.strip_suffix(".ttf").unwrap()
+        };
+        assert_eq!(
+            face.post_script_name, expected_name,
+            "{role}: file identity"
+        );
+        println!("FONT_IDENTITY {role}: {}", face.post_script_name);
+    }
+    Ok(())
+}
+
+#[test]
+fn deck_font_identity_and_missing_bundle_control() {
+    let dir = toolkit::fonts::optional::directory();
+    identity(&dir).expect("bundled font identity");
+    let temp = tempfile::tempdir().unwrap();
+    for file in FILES {
+        std::fs::copy(dir.join(file), temp.path().join(file)).unwrap();
+    }
+    std::fs::rename(temp.path().join(FILES[0]), temp.path().join("absent.ttf")).unwrap();
+    let ctx = egui::Context::default();
+    viu::fonts::install_with_font_directory(&ctx, 400, 600, temp.path());
+    let source = "---\nscene: 1\nname: missing-font\ncitizen: deck\n---\n```mix\n{root:{widget:\"text\",text:\"heading\",font:\"Liberation Sans\"}}\n```\n";
+    let mut view = SceneView::new(source).unwrap();
+    let mut refusal = None;
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        refusal = view.bind_fonts(ui.ctx()).err();
+    });
+    output.textures_delta.clear();
+    let error = refusal.expect("production validate_controls must refuse an unbound family");
+    assert!(error.contains("required font family not bound"));
+    println!("FONT_IDENTITY without fonts: FAIL (expected production refusal): {error}");
 }

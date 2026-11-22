@@ -30,3 +30,6 @@ secrets.*
 
 # Build output (Rust builds run on CBC, never locally)
 /target/
+
+# Agent job receipts (Sol writes last.md in the worktree root); keep them out of the tree.
+/last.md
