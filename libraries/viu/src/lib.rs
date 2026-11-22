@@ -99,3 +99,4 @@ pub mod network_map;
 mod numbers;
 pub mod saved_state;
 mod spans;
+mod drawing;

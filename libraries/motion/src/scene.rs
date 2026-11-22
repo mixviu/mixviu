@@ -40,7 +40,7 @@ impl Entrance {
         }
         // Only finite, representable furniture effects. Other table entries
         // require effects not yet available in the scene painter.
-        if !["fade", "up", "down", "left", "right", "pop", "drop"].contains(&o.preset.as_str()) {
+        if !["fade", "up", "down", "left", "right", "pop", "drop", "zoom", "wipe"].contains(&o.preset.as_str()) {
             return Err("unsupported scene motion preset");
         }
         Ok(())

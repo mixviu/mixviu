@@ -604,6 +604,32 @@ fn transform(shape: &mut ClippedShape, rect: Rect, values: &motion::Values) {
     }
 }
 
+/// Apply a deterministic, externally clocked paint effect without changing layout.
+pub fn paint_effect(ui: &Ui, layer: LayerId, start: ShapeIdx, rect: Rect, spec: &Value) {
+    let Some(name) = spec["preset"].as_str() else { return };
+    let Some(time) = spec["time"].as_f64() else { return };
+    static TABLE: std::sync::OnceLock<Vec<Preset>> = std::sync::OnceLock::new();
+    let Some(preset) = TABLE.get_or_init(motion::presets).iter().find(|p| p.name == name) else { return };
+    let values = preset.sample(time);
+    let scale = values.get(Property::Scale) as f32;
+    let clip = values.get(Property::ClipRight) as f32;
+    ui.ctx().graphics_mut(|g| {
+        let list = g.entry(layer);
+        let end = list.next_idx().0;
+        for i in start.0..end {
+            list.mutate_shape(ShapeIdx(i), |s| {
+                s.shape.transform(egui::emath::TSTransform {
+                    scaling: scale,
+                    translation: rect.center().to_vec2() * (1. - scale),
+                });
+                if clip > 0. {
+                    s.clip_rect = s.clip_rect.intersect(Rect::from_min_max(rect.min, egui::pos2(rect.right()-rect.width()*clip, rect.bottom())));
+                }
+            });
+        }
+    });
+}
+
 /// Shared deterministic state transition for built-in widgets. Retargets from
 /// the value sampled at this frame; settled widgets request no repaint.
 pub fn scalar(ctx: &Context, id: egui::Id, target: f64, ms: f64, enabled: bool) -> f32 {

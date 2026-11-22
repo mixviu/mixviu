@@ -291,6 +291,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         "toggle" => &TOGGLE,
         "list" => &LIST,
         "image" => &IMAGE,
+        "drawing" => &IMAGE,
         "spacer" => &SPACER,
         "control" => &CONTROL,
         "grid" => &GRID,
@@ -300,7 +301,13 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         _ => return None,
     };
     let mut ports = family.to_vec();
+    if f == "drawing" {
+        ports.retain(|p| p.name != "src");
+        ports.push(p("primitives", "list", true, None));
+        ports.push(pn("sample_time", false, None));
+    }
     if f == "text" {
+        ports.push(p("letter_spacing", "number", false, None));
         ports.push(p("spans", "list", false, None));
         ports.push(p("number", "object", false, None));
     }
@@ -342,6 +349,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
             p("motion", "bool", false, None),
             pn("opacity", false, Some(0.0)),
             p("offset", "offset", false, None),
+            p("paint_effect", "object", false, None),
         ]);
         // Optional Viu host geometry slots. No defaults: existing resolved
         // scenes retain their canonical form and ordinary dock placement.
@@ -444,6 +452,11 @@ pub(crate) fn check_port_value(
     out: &mut Vec<Diagnostic>,
 ) {
     let k = p.name;
+    if k == "primitives" {
+        if let Err(message) = crate::drawing::validate(v) {
+            out.push(Diagnostic::error("drawing-value", line, message));
+        }
+    }
     if k == "background_radials" {
         let valid = v.as_array().is_some_and(|a| {
             a.len() <= 4

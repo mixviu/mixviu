@@ -723,7 +723,7 @@ impl SceneView {
         let list_row = route.is_some_and(|(_, list, _)| text(list, "row") == id);
         if !list_row
             && self.motion_parent.is_none()
-            && !["enter", "exit", "opacity", "offset", "transition"]
+            && !["enter", "exit", "opacity", "offset", "transition", "paint_effect"]
                 .iter()
                 .any(|p| node.ports.contains_key(*p))
         {
@@ -794,6 +794,9 @@ impl SceneView {
         );
         self.motion_parent = parent;
         let painted_rect = self.geometry.get(&key).copied().unwrap_or(ui.min_rect());
+        if let Some(spec) = node.ports.get("paint_effect") {
+            toolkit::scene_motion::paint_effect(ui, layer.unwrap_or(ui.layer_id()), if layer.is_some() { egui::layers::ShapeIdx(0) } else { start }, painted_rect, spec);
+        }
         toolkit::scene_motion::highlight(
             ui,
             layer.unwrap_or(ui.layer_id()),
@@ -1076,9 +1079,12 @@ impl SceneView {
                     "text" => {
                         let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(ui.visuals().text_color()).to_array();
                         let number = node.ports.get("number").map(|spec| self.numbers.text(ui, &key, spec, node.ports.get("motion") != Some(&Value::Bool(false))));
-                        if let Some(spans) = node.ports.get("spans") {
+                        if node.ports.contains_key("spans") || node.ports.contains_key("letter_spacing") {
+                            let plain = json!([{"text":number.as_deref().unwrap_or_else(||text(node,"text")),"color":text(node,"color")}]);
+                            let spans = node.ports.get("spans").unwrap_or(&plain);
                             let mut job = crate::spans::job(ui, spans, num(node,"size").unwrap_or(13.0), node.ports.get("mono") == Some(&Value::Bool(true)), node.ports.get("bold") == Some(&Value::Bool(true)), Color32::from_rgba_unmultiplied(colour[0], colour[1], colour[2], colour[3]));
                             job.halign = match text(node,"align") {"center"=>egui::Align::Center,"right"=>egui::Align::Max,_=>egui::Align::Min};
+                            for section in &mut job.sections { section.format.extra_letter_spacing = num(node,"letter_spacing").unwrap_or(0.); }
                             let label = egui::Label::new(job);
                             let label=if node.ports.get("wrap") == Some(&Value::Bool(true)) {label.wrap()} else {label.extend()};
                             if node.ports.get("fill")==Some(&Value::Bool(true)) {ui.add_sized(egui::vec2(ui.available_width(),0.),label);} else {ui.add(label);}
@@ -1101,6 +1107,9 @@ impl SceneView {
                                 events.push(Event{command:command.into(),body:json!({"scene":self.tree.name,"node":id,"kind":if intent.action=="submit" {"submit"} else {"change"},"value":intent.value})});
                             }
                         }
+                    }
+                    "drawing" => {
+                        crate::drawing::show(ui, node);
                     }
                     "image" => {
                         if text(node,"src")=="brand:cyclops" {
@@ -1297,7 +1306,7 @@ impl SceneView {
 
 
                                 } else {
-                                    ui.vertical(|ui| draw(ui));
+                                    if text(node,"align")=="center" { ui.vertical_centered(|ui| draw(ui)); } else { ui.vertical(|ui| draw(ui)); }
                                 }
                             })
                             .response;
@@ -2417,7 +2426,7 @@ fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
                 }
             }
             "text" | "button" | "field" | "toggle" | "row" | "column" | "list" | "spacer"
-            | "grid" => {}
+            | "grid" | "drawing" => {}
             "panes" => {
                 if children(node).count() != 3 {
                     return Err("panes requires left, center, right children".into());
