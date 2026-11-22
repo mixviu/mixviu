@@ -1423,7 +1423,8 @@ mod tests {
         // freshly written stub races concurrent forks that still hold its
         // write descriptor (ETXTBSY), the likely cause of the rare start-wait
         // timeout in closing_a_window_kills_its_group_and_reaps_the_leader.
-        let mix = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/runner-stub");
+        let mix =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/runner-stub");
         let roots = Roots {
             builtin: temp.path().join("builtin"),
             user: temp.path().join("user"),
