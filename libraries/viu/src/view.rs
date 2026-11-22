@@ -3501,11 +3501,13 @@ struct PaintedGalleys {
     seen: BTreeSet<String>,
     bytes: usize,
     clock: u64,
+    admit: bool,
 }
 impl PaintedGalleys {
     fn begin(&mut self) {
         self.seen.clear();
         self.clock += 1;
+        self.admit=true;
     }
     fn end(&mut self) {
         self.entries.retain(|key, (_, _, bytes, _)| {
@@ -3530,6 +3532,7 @@ impl PaintedGalleys {
         if let Some(old) = self.entries.remove(&node) {
             self.bytes -= old.2;
         }
+        if !self.admit{return;}
         // Charge owned capacities, including row glyph/mesh buffers and section metadata.
         let bytes = std::mem::size_of::<egui::Galley>()
             + galley.job.text.capacity()
@@ -3547,6 +3550,7 @@ impl PaintedGalleys {
                 })
                 .sum::<usize>();
         if bytes > PAINTED_BYTES {
+            self.admit=false;
             return;
         }
         while self.bytes + bytes > PAINTED_BYTES {
@@ -3559,6 +3563,7 @@ impl PaintedGalleys {
             if let Some(oldest) = oldest {
                 self.bytes -= self.entries.remove(&oldest).unwrap().2;
             } else {
+                self.admit=false;
                 return;
             }
         }
@@ -3658,3 +3663,39 @@ fn row_measurable(node:&Node,nodes:&BTreeMap<String,Node>,depth:usize)->bool {
 
 #[cfg(test)]
 thread_local! {static PALETTE_PASSES:std::cell::Cell<usize>=const{std::cell::Cell::new(0)};}
+
+#[cfg(test)]
+mod round8_tests {
+    use super::*;
+    #[test]
+    fn above_budget_live_text_keeps_cached_galleys_across_frames() {
+        let mut nodes=serde_json::Map::new();let mut kids=Vec::new();
+        for i in 0..4 {let id=format!("t{i}");kids.push(id.clone());nodes.insert(id,json!({"widget":"text","text":format!("{} {i}","a".repeat(100_000))}));}
+        nodes.insert("root".into(),json!({"widget":"column","children":kids}));
+        let mut view=SceneView::new(&format!("---\nscene: 1\nname: budget\ncitizen: test\n---\n```mix\n{}\n```\n",Value::Object(nodes))).unwrap();
+        let ctx=egui::Context::default();let mut retained=BTreeMap::new();
+        for frame in 0..5 {
+            let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();
+            assert!(view.painted.bytes<=PAINTED_BYTES);
+            assert!(!view.painted.entries.is_empty() && view.painted.entries.len()<4,"live set exceeds budget");
+            if frame==0 {retained=view.painted.entries.iter().map(|(k,e)|(k.clone(),e.1.clone())).collect();}
+            else {for (k,galley) in &retained{assert!(std::sync::Arc::ptr_eq(galley,&view.painted.entries[k].1),"cached node reshaped: {k}");}}
+        }
+    }
+    #[test]
+    fn palette_hash_runs_once_per_frame_for_many_text_nodes() {
+        let mut nodes=serde_json::Map::new();let mut kids=Vec::new();
+        for i in 0..100 {let id=format!("t{i}");kids.push(id.clone());nodes.insert(id,json!({"widget":"text","text":"label"}));}
+        nodes.insert("root".into(),json!({"widget":"column","children":kids}));
+        let mut view=SceneView::new(&format!("---\nscene: 1\nname: palette-count\ncitizen: test\n---\n```mix\n{}\n```\n",Value::Object(nodes))).unwrap();
+        let ctx=egui::Context::default();
+        for _ in 0..3 {PALETTE_PASSES.set(0);let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();assert_eq!(PALETTE_PASSES.get(),1);}
+    }
+    #[test]
+    fn sibling_lists_with_shared_item_ids_keep_separate_paint_entries() {
+        let mut view=SceneView::new("---\nscene: 1\nname: list-scopes\ncitizen: test\n---\n```mix\n{root:{widget:\"column\",children:[\"left\",\"right\"]},left:{widget:\"list\",row:\"t\",row_height:24,rows:[{id:\"one\",cells:[\"Alpha\"]}]},right:{widget:\"list\",row:\"t\",row_height:24,rows:[{id:\"one\",cells:[\"Beta\"]}]},t:{widget:\"text\",text:\"{cells[0]}\"}}\n```\n").unwrap();
+        let ctx=egui::Context::default();
+        for _ in 0..3 {let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();assert_eq!(view.painted.entries.len(),2);}
+        let texts:Vec<_>=view.painted.entries.values().map(|e|e.1.job.text.as_str()).collect();assert!(texts.contains(&"Alpha") && texts.contains(&"Beta"));
+    }
+}
