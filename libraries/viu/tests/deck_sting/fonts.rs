@@ -94,9 +94,7 @@ fn sting_font_identity_rows() {
                 section.format.font_id.family = egui::FontFamily::Name(file.into());
             }
         }
-        let expected = ctx.fonts_mut(|f| {
-            f.layout_job(expected_job)
-        });
+        let expected = ctx.fonts_mut(|f| f.layout_job(expected_job));
         let glyphs = |g: &egui::Galley, skip, take| {
             g.rows
                 .iter()
@@ -114,7 +112,11 @@ fn sting_font_identity_rows() {
         let mut db = fontdb::Database::new();
         db.load_font_file(dir.join(file)).unwrap();
         let face = db.faces().next().unwrap();
-        let name = if file == "LiberationSans-Regular.ttf" {"LiberationSans"} else {file.strip_suffix(".ttf").unwrap()};
+        let name = if file == "LiberationSans-Regular.ttf" {
+            "LiberationSans"
+        } else {
+            file.strip_suffix(".ttf").unwrap()
+        };
         assert_eq!(face.post_script_name, name);
         println!("STING_FONT_IDENTITY {role}={name}");
     }

@@ -330,7 +330,10 @@ fn chrome_entrance_contact_sheet() {
             aligned &= delta.abs() <= 4.;
         }
     }
-    assert!(aligned, "vertical offsets must be within four physical pixels");
+    assert!(
+        aligned,
+        "vertical offsets must be within four physical pixels"
+    );
     assert_eq!(animate_check(&native, logo), Ok(()));
     assert_eq!(entrances(&native, &final_geometry), Ok(()));
     // Oracle entrance regions use the same logical column, allowing for font
