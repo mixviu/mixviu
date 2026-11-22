@@ -35,7 +35,7 @@ fn timing($raw,$where,$steps)
   $t={b:number($raw.b ?? 0,$where..".b",0,$steps-1,true),delay:number($raw.delay ?? 0,$where..".delay",0,60),stagger:number($raw.stagger ?? 0,$where..".stagger",0,60),anim:$raw.anim ?? "fade",child_anim:$raw.child_anim ?? "fade",until:nil}
   if $raw.until!=nil then $t.until=number($raw.until,$where..".until",$t.b,$steps-1,true) end
   for $key in ["anim","child_anim"]
-    if not contains(["fade","up","down","left","right"],$t[$key]) then fault("DECK_MOTION",$where.."."..$key,"unsupported entrance; deferred effects must be documented outside slide artwork") end
+    if not contains(["fade","up","down","left","right","pop","zoom","wipe"],$t[$key]) then fault("DECK_MOTION",$where.."."..$key,"unsupported entrance") end
   end
   return $t
 end
@@ -85,11 +85,19 @@ fn check_deck($deck)
 end
 fn scene_source($slide)
   $nodes=$slide.scene
+  for $key in keys($nodes)
+    if $nodes[$key].widget=="drawing" then $nodes[$key].sample_time="= $model.scene_time" end
+    if $nodes[$key].widget=="text" then
+      $nodes[$key].font=if $nodes[$key].mono==true then "Noto Sans Mono" else "Liberation Sans" end
+      $nodes[$key].mono_font="Noto Sans Mono"
+    end
+  end
   for $id in keys($slide.build)
     $nodes[$id].hidden="= $model.build["..json_encode($id).."].hidden"
     $nodes[$id].opacity="= $model.build["..json_encode($id).."].opacity"
     $nodes[$id].offset="= $model.build["..json_encode($id).."].offset"
     $nodes[$id].motion=false
+    $nodes[$id].paint_effect="= $model.build["..json_encode($id).."].paint_effect"
   end
   return "---\nscene: 1\nname: deck\ncitizen: deck\n---\n```mix\n"..json_encode($nodes).."\n```\n"
 end

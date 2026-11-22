@@ -604,6 +604,78 @@ fn transform(shape: &mut ClippedShape, rect: Rect, values: &motion::Values) {
     }
 }
 
+/// Apply a deterministic, externally clocked paint effect without changing layout.
+pub fn paint_effect(
+    ui: &Ui,
+    node: &str,
+    layer: LayerId,
+    start: ShapeIdx,
+    rect: Rect,
+    spec: &Value,
+) {
+    let Some(name) = spec["preset"].as_str() else {
+        return;
+    };
+    let Some(time) = spec["time"].as_f64() else {
+        return;
+    };
+    if !time.is_finite() {
+        return;
+    }
+    static TABLE: std::sync::OnceLock<Vec<Preset>> = std::sync::OnceLock::new();
+    let Some(preset) = TABLE
+        .get_or_init(motion::presets)
+        .iter()
+        .find(|p| p.name == name)
+    else {
+        return;
+    };
+    let values = preset.sample(time);
+    let scale = values.get(Property::Scale) as f32;
+    let clip = values.get(Property::ClipRight) as f32;
+    let blur = values.get(Property::Blur) as f32;
+    if scale == 1. && clip <= 0. && blur <= 0.3 {
+        return;
+    }
+    let bounds = ui.ctx().graphics_mut(|g| {
+        g.entry(layer)
+            .all_entries()
+            .skip(start.0)
+            .fold(Rect::NOTHING, |rect, s| {
+                rect.union(s.shape.visual_bounding_rect())
+            })
+    });
+    let bounds = if bounds.is_finite() && bounds.is_positive() {
+        bounds
+    } else {
+        rect
+    };
+    ui.ctx().graphics_mut(|g| {
+        let list = g.entry(layer);
+        let end = list.next_idx().0;
+        for i in start.0..end {
+            list.mutate_shape(ShapeIdx(i), |s| {
+                s.shape.transform(egui::emath::TSTransform {
+                    scaling: scale,
+                    translation: rect.center().to_vec2() * (1. - scale),
+                });
+                if clip > 0. {
+                    s.clip_rect = s.clip_rect.intersect(Rect::from_min_max(
+                        bounds.min,
+                        egui::pos2(bounds.right() - bounds.width() * clip, bounds.bottom()),
+                    ));
+                }
+            });
+        }
+    });
+    if blur > 0.3 {
+        scene_blur::apply(ui, node, layer, start, blur);
+    }
+}
+
+#[path = "scene_blur.rs"]
+mod scene_blur;
+
 /// Shared deterministic state transition for built-in widgets. Retargets from
 /// the value sampled at this frame; settled widgets request no repaint.
 pub fn scalar(ctx: &Context, id: egui::Id, target: f64, ms: f64, enabled: bool) -> f32 {

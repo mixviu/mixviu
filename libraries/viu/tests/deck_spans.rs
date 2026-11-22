@@ -7,6 +7,7 @@ macro_rules! page {
         #[test]
         fn $name() {
             let ctx = egui::Context::default();
+            viu::fonts::install(&ctx, 400, 600);
             let mut view = SceneView::new(include_str!(concat!(
                 "../../../apps/gallery/deck-pages/",
                 $file,
@@ -62,9 +63,352 @@ fn source() -> String {
     ]}});
     format!("---\nscene: 1\nname: deck\ncitizen: test\n---\n```mix\n{nodes}\n```\n")
 }
+
+#[test]
+fn font_port_face_table_covers_every_node_and_inline_combination() {
+    const P: &str = "Inter-Regular";
+    const J: &str = "JetBrainsMono-Regular";
+    const S: &str = "LiberationSans";
+    const M: &str = "NotoSansMono-Regular";
+    // font, mono_font, node mono, inline mono, base face, inline face.
+    let cases = [
+        (false, false, false, false, P, P),
+        (false, false, false, true, P, J),
+        (false, false, true, false, J, J),
+        (false, false, true, true, J, J),
+        (false, true, false, false, P, P),
+        (false, true, false, true, P, M),
+        (false, true, true, false, M, M),
+        (false, true, true, true, M, M),
+        (true, false, false, false, S, S),
+        (true, false, false, true, S, J),
+        (true, false, true, false, S, S),
+        (true, false, true, true, S, S),
+        (true, true, false, false, S, S),
+        (true, true, false, true, S, M),
+        (true, true, true, false, M, M),
+        (true, true, true, true, M, M),
+    ];
+    for (font, mono_font, node_mono, inline_mono, base_face, inline_face) in cases {
+        let ctx = egui::Context::default();
+        viu::fonts::install(&ctx, 400, 600);
+        let mut plain = json!({"widget":"text","text":"plain","size":24,"mono":node_mono});
+        if font {
+            plain["font"] = json!("Liberation Sans");
+        }
+        if mono_font {
+            plain["mono_font"] = json!("Noto Sans Mono");
+        }
+        let mut runs = plain.clone();
+        runs["text"] = json!("base code");
+        runs["spans"] = json!([{"text":"base "},{"text":"code","mono":inline_mono}]);
+        let nodes = json!({"root":{"widget":"column","children":["plain","runs"]},"plain":plain,"runs":runs});
+        let source =
+            format!("---\nscene: 1\nname: font-matrix\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+        let mut view = SceneView::new(&source).unwrap();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            view.show(ui);
+        });
+        out.textures_delta.clear();
+        let find = |text: &str| {
+            out.shapes
+                .iter()
+                .find_map(|s| match &s.shape {
+                    egui::Shape::Text(t) if t.galley.job.text == text => Some(&t.galley),
+                    _ => None,
+                })
+                .expect("scene text painted")
+        };
+        let glyphs = |g: &egui::Galley| {
+            g.rows
+                .iter()
+                .flat_map(|r| &r.glyphs)
+                .map(|g| (g.chr, g.uv_rect, g.advance_width))
+                .collect::<Vec<_>>()
+        };
+        let check = |actual: &egui::Galley, offset: usize, face: &str| {
+            let (family, reference) = match face {
+                P => (
+                    egui::FontFamily::Proportional,
+                    egui::FontFamily::Proportional,
+                ),
+                J => (egui::FontFamily::Monospace, egui::FontFamily::Monospace),
+                S => (
+                    toolkit::fonts::optional::family("Liberation Sans", 400.),
+                    egui::FontFamily::Name("LiberationSans-Regular.ttf".into()),
+                ),
+                M => (
+                    toolkit::fonts::optional::family("Noto Sans Mono", 400.),
+                    egui::FontFamily::Name("NotoSansMono-Regular.ttf".into()),
+                ),
+                _ => unreachable!(),
+            };
+            let section = actual
+                .job
+                .sections
+                .iter()
+                .find(|s| s.byte_range.contains(&offset.into()))
+                .unwrap();
+            assert_eq!(section.format.font_id.family, family);
+            let defs = ctx.fonts(|f| f.definitions().clone());
+            let primary = &defs.families[&family][0];
+            let mut db = fontdb::Database::new();
+            db.load_font_data(defs.font_data[primary].bytes().to_vec());
+            assert_eq!(db.faces().next().unwrap().post_script_name, face);
+            // Keep the full text and preceding advances: an isolated suffix
+            // can land at a different subpixel phase and get another atlas UV.
+            let mut reference_job = (*actual.job).clone();
+            reference_job
+                .sections
+                .iter_mut()
+                .find(|s| s.byte_range.contains(&offset.into()))
+                .unwrap()
+                .format
+                .font_id
+                .family = reference;
+            let expected = ctx.fonts_mut(|f| f.layout_job(reference_job));
+            let actual_glyphs = glyphs(actual);
+            let expected_glyphs = glyphs(&expected);
+            assert!(!expected_glyphs.is_empty());
+            assert_eq!(
+                actual_glyphs, expected_glyphs,
+                "painted face for font={font}, mono_font={mono_font}, node={node_mono}, inline={inline_mono}"
+            );
+        };
+        check(find("plain"), 0, base_face);
+        check(find("base code"), 0, base_face);
+        check(find("base code"), 5, inline_face);
+        println!(
+            "FONT_FACE_TABLE font={font} mono_font={mono_font} node={node_mono} inline={inline_mono}: plain/base={base_face}; inline={inline_face}"
+        );
+        out.drop_without_applying_deltas();
+    }
+}
+
+#[test]
+fn mono_runs_preserve_node_faces_and_use_theme_mono_for_inline_runs() {
+    for whole_node in [false, true] {
+        for named_mono in [false, true] {
+            let ctx = egui::Context::default();
+            viu::fonts::install(&ctx, 400, 600);
+            let mut node = json!({"widget":"text","text":"mono","font":"Liberation Sans","size":24,"mono":whole_node,"spans":[{"text":"mono","mono":!whole_node}]});
+            if whole_node {
+                node["font"] = json!("Noto Sans Mono");
+            }
+            if named_mono {
+                node["mono_font"] = json!("Noto Sans Mono");
+            }
+            let nodes = json!({"root":node});
+            let source =
+                format!("---\nscene: 1\nname: mono\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+            let mut view = SceneView::new(&source).unwrap();
+            let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            let actual = out
+                .shapes
+                .iter()
+                .find_map(|s| match &s.shape {
+                    egui::Shape::Text(t) if t.galley.job.text == "mono" => Some(&t.galley),
+                    _ => None,
+                })
+                .expect("SceneView paints the mono text");
+            let expected_family = if named_mono || whole_node {
+                toolkit::fonts::optional::family("Noto Sans Mono", 400.)
+            } else {
+                egui::FontFamily::Monospace
+            };
+            assert_eq!(
+                actual.job.sections[0].format.font_id.family,
+                expected_family
+            );
+            let defs = ctx.fonts(|f| f.definitions().clone());
+            let primary = &defs.families[&expected_family][0];
+            let mut db = fontdb::Database::new();
+            db.load_font_data(defs.font_data[primary].bytes().to_vec());
+            let face = &db.faces().next().unwrap().post_script_name;
+            assert_eq!(
+                face,
+                if named_mono || whole_node {
+                    "NotoSansMono-Regular"
+                } else {
+                    "JetBrainsMono-Regular"
+                }
+            );
+            let reference_family = if named_mono || whole_node {
+                egui::FontFamily::Name("NotoSansMono-Regular.ttf".into())
+            } else {
+                egui::FontFamily::Monospace
+            };
+            let expected = ctx.fonts_mut(|f| {
+                f.layout_no_wrap(
+                    "mono".into(),
+                    egui::FontId::new(24., reference_family),
+                    egui::Color32::WHITE,
+                )
+            });
+            let sans = ctx.fonts_mut(|f| {
+                f.layout_no_wrap(
+                    "mono".into(),
+                    egui::FontId::new(
+                        24.,
+                        toolkit::fonts::optional::family("Liberation Sans", 400.),
+                    ),
+                    egui::Color32::WHITE,
+                )
+            });
+            let glyphs = |galley: &egui::Galley| {
+                galley
+                    .rows
+                    .iter()
+                    .flat_map(|r| &r.glyphs)
+                    .map(|g| (g.chr, g.uv_rect, g.advance_width))
+                    .collect::<Vec<_>>()
+            };
+            assert!(!glyphs(actual).is_empty());
+            assert_eq!(glyphs(actual), glyphs(&expected), "painted raster face");
+            assert_ne!(
+                glyphs(actual),
+                glyphs(&sans),
+                "mono must not use the sans face"
+            );
+            println!(
+                "MONO_IDENTITY {} {}: {:?} -> {face}",
+                if whole_node { "node" } else { "inline" },
+                if named_mono {
+                    "with mono_font"
+                } else {
+                    "without mono_font"
+                },
+                expected_family
+            );
+            out.drop_without_applying_deltas();
+        }
+    }
+}
+#[test]
+fn unregistered_font_family_refuses_before_paint() {
+    let source = "---\nscene: 1\nname: font-refusal\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"hello\",font:\"missing-family\"}}\n```\n";
+    let mut view = SceneView::new(source).unwrap();
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        assert!(view.bind_fonts(ui.ctx()).unwrap_err().contains("not bound"));
+    });
+    output.textures_delta.clear();
+}
+
+#[test]
+fn mono_gallery_rail_chip_uses_named_mono_face() {
+    let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
+    let mut view = SceneView::new(include_str!(
+        "../../../apps/gallery/deck-pages/rail.scene.mix"
+    ))
+    .unwrap();
+    let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        view.show(ui);
+    });
+    let actual = out
+        .shapes
+        .iter()
+        .find_map(|s| match &s.shape {
+            egui::Shape::Text(t) if t.galley.job.text == "now" => Some(&t.galley),
+            _ => None,
+        })
+        .expect("real gallery chip painted");
+    let family = toolkit::fonts::optional::family("Noto Sans Mono", 400.);
+    assert_eq!(actual.job.sections[0].format.font_id.family, family);
+    let defs = ctx.fonts(|f| f.definitions().clone());
+    let primary = &defs.families[&family][0];
+    let mut db = fontdb::Database::new();
+    db.load_font_data(defs.font_data[primary].bytes().to_vec());
+    let face = &db.faces().next().unwrap().post_script_name;
+    assert_eq!(face, "NotoSansMono-Regular");
+    let expected = ctx.fonts_mut(|f| {
+        f.layout_no_wrap(
+            "now".into(),
+            egui::FontId::new(
+                24.,
+                egui::FontFamily::Name("NotoSansMono-Regular.ttf".into()),
+            ),
+            egui::Color32::WHITE,
+        )
+    });
+    let glyphs = |g: &egui::Galley| {
+        g.rows
+            .iter()
+            .flat_map(|r| &r.glyphs)
+            .map(|g| (g.chr, g.uv_rect, g.advance_width))
+            .collect::<Vec<_>>()
+    };
+    assert!(!glyphs(actual).is_empty());
+    assert_eq!(
+        glyphs(actual),
+        glyphs(&expected),
+        "gallery chip raster face"
+    );
+    println!("MONO_IDENTITY gallery rail chip now: {family:?} -> {face}");
+    out.drop_without_applying_deltas();
+}
+
+#[test]
+fn bound_font_and_mono_font_refuse_unknown_or_absent_families_without_panicking() {
+    let absent = tempfile::tempdir().unwrap();
+    let ctx = egui::Context::default();
+    viu::fonts::install_with_font_directory(&ctx, 400, 600, absent.path());
+    for (port, name) in [
+        ("font", "unknown"),
+        ("font", "Liberation Sans"),
+        ("mono_font", "unknown"),
+        ("mono_font", "Noto Sans Mono"),
+    ] {
+        let nodes =
+            json!({"root":{"widget":"text","text":"hello",port:format!("= $model.{port}")}});
+        let source =
+            format!("---\nscene: 1\nname: bound\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+        let mut view = SceneView::with_model(&source, json!({port:"heading"})).unwrap();
+        // Rebinding before context admission must also be safe to show.
+        view.apply_model(json!({port:name})).unwrap();
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            assert!(view.bind_fonts(ui.ctx()).unwrap_err().contains("not bound"));
+            view.show(ui);
+        });
+        assert!(!out.shapes.is_empty());
+        out.drop_without_applying_deltas();
+    }
+}
+
+#[test]
+fn bound_fonts_survive_file_removal_and_invalid_font_patches_preserve_the_scene() {
+    let temp = tempfile::tempdir().unwrap();
+    for file in toolkit::fonts::optional::FILES {
+        std::fs::copy(
+            toolkit::fonts::optional::directory().join(file),
+            temp.path().join(file),
+        )
+        .unwrap();
+    }
+    let mut defs = egui::FontDefinitions::default();
+    toolkit::fonts::optional::register(&mut defs, temp.path()).unwrap();
+    std::fs::remove_dir_all(temp.path()).unwrap();
+    let ctx = egui::Context::default();
+    ctx.set_fonts(defs);
+    let source = "---\nscene: 1\nname: bound\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"hello\",font:\"= $model.font\"}}\n```\n";
+    let model = json!({"font":"Liberation Sans"});
+    let mut view = SceneView::with_model(source, model.clone()).unwrap();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        view.bind_fonts(ui.ctx()).unwrap();
+        let error = view.apply_model(json!({"font":"absent"})).unwrap_err();
+        assert!(error.contains("required font family not bound"));
+        assert_eq!(view.model(), &model);
+        view.show(ui);
+    });
+    output.textures_delta.clear();
+}
 #[test]
 fn inline_runs_keep_layout_colours_history_and_highlight() {
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     let mut view = SceneView::new(&source()).unwrap();
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
         view.show(ui);
@@ -116,6 +460,7 @@ fn number_text_samples_a_motion_scalar_track_and_settles_without_repaint() {
     let source = format!("---\nscene: 1\nname: count\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     let track = motion::Track {
         property: motion::Property::Scalar,
         keyframes: vec![
@@ -303,6 +648,7 @@ fn before_after_cards_paint_the_named_border_colours() {
     ))
     .unwrap();
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
         view.show(ui);
     });
@@ -320,6 +666,7 @@ fn a_constant_number_track_never_arms_animation_frames() {
     let source = format!("---\nscene: 1\nname: count\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
     let mut view = SceneView::new(&source).unwrap();
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     for t in [0., 0.01, 0.02] {
         let mut out = ctx.run_ui(
             egui::RawInput {
@@ -400,6 +747,7 @@ fn unequal_growing_boxes_and_arrow_share_the_row_centre() {
     let nodes = json!({"root":{"widget":"row","align":"center","min_width":600,"children":["a","arrow","b"]},"a":{"widget":"column","grow":1,"height":60,"children":[]},"arrow":{"widget":"text","text":"→","min_width":40},"b":{"widget":"column","grow":1,"height":140,"children":[]}});
     let source = format!("---\nscene: 1\nname: row\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     let mut view = SceneView::new(&source).unwrap();
     for _ in 0..8 {
         ctx.run_ui(egui::RawInput::default(), |ui| {

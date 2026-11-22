@@ -1171,3 +1171,4 @@ fn sorted(mut d: Vec<Diagnostic>) -> Vec<Diagnostic> {
     d.sort_by(|a, b| a.line.cmp(&b.line).then(a.code.cmp(&b.code)));
     d
 }
+pub mod drawing;

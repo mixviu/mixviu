@@ -1,6 +1,14 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Run on an owned CBC checkout only, through cbc-build.mix --commit SHA.
 $mode=args()[0] ?? "check"
+if $mode=="evidence" then
+  for $test in ["sting::chrome_entrance_contact_sheet","sting::gallery_contact_sheet"]
+    $r=run_argv(["cargo","test","-p","lib-viu","--test","deck",$test,"--","--ignored","--nocapture"],{timeout:2400,stderr:"stdout",max_output:64000000})
+    print($r.stdout)
+    if $r.exit_code!=0 then exit($r.exit_code ?? 1) end
+  end
+  exit(0)
+end
 if $mode=="fmt" then
   try
     print(run_argv_must(["cargo","fmt","--all"]))
@@ -11,12 +19,14 @@ if $mode=="fmt" then
   exit(0)
 end
 if $mode!="check" and $mode!="focused" then raise("USAGE","check|focused|fmt (CBC only)") end
-$tests=if $mode=="focused" then ["cargo","test","-p","lib-viu","--test","deck","--test","deck_spans","--test","scene_adapter","--no-fail-fast"] else ["cargo","test","-p","lib-viu","-p","viu","--no-fail-fast"] end
+$tests=if $mode=="focused" then ["cargo","test","-p","lib-viu","--test","deck","--test","deck_spans","--test","scene_adapter","--no-fail-fast"] else ["mix","tools/ci/test_pool.mix","--jobs","4","--","-p","scene","-p","motion","-p","toolkit","-p","lib-viu","-p","viu","--all-targets"] end
 $output="/tmp/deck-gallery-check-"..to_string(pid())
 $failed=false
 for $cmd in [
   $tests,
-  ["cargo","clippy","-p","lib-viu","-p","viu","--all-targets"],
+  ["cargo","test","-p","scene","-p","motion","-p","toolkit","-p","lib-viu","-p","viu","--doc","--no-fail-fast"],
+  ["cargo","clippy","-p","scene","-p","motion","-p","toolkit","-p","lib-viu","-p","viu","--all-targets"],
+  ["mix","tools/foreign_gate.mix"],
   ["cargo","fmt","--all","--","--check"],
   ["mix","apps/deck/core-test.mix"],
   ["mix","lint","apps/deck/app.mix"],

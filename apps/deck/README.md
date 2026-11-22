@@ -1,5 +1,37 @@
 # Deck
 
+Deck text uses the measured HTML faces: Liberation Sans (400/500 Regular,
+600/700 Bold), Noto Sans Mono (400 Regular, 500 Medium, 600/700 Bold),
+and Noto Sans Regular for missing glyphs. No synthetic weight is used.
+Gold ships six unmodified files and OFL licences in `share/fonts`.
+Toolkit and Viu register these optional named families; desktop defaults
+remain Inter and JetBrains Mono. A design typography role or app
+can select them by family name. Content settings retain Inter/JetBrains Mono.
+Scene text accepts `font` and CSS `weight`;
+deck supplies its sans/mono families for every text node, including spans.
+The host binds scenes against the context's loaded families before replacing
+the current scene. Model patches use that bound set, with no filesystem stats.
+Missing or unknown families refuse there rather than substituting; the painter
+also checks binding before drawing. Structural parsing alone does not bind fonts.
+Paint-time resolution guards every named family against the bound context,
+falling back to Proportional for sans runs and Monospace for mono runs.
+Without `mono_font`, a whole-node `mono: true` uses the node's chosen `font`;
+an inline mono run in a sans node uses the theme's Monospace family (JetBrains
+Mono by default). An explicit `mono_font` takes precedence for every mono run.
+The two family ports are independent: `mono_font` works without `font`, and
+sans runs without `font` keep the theme's proportional face.
+
+`cargo test -p lib-viu --test deck deck_font_identity -- --nocapture` (CBC only) paints
+the roles and compares their glyph atlas coordinates with isolated faces,
+reporting the files' internal PostScript names. The positive check uses the
+production installer without replacing its fonts. Its visible fallback-glyph
+probe excludes format characters. The renamed-file control uses the same
+installer and checks production scene refusal against the bound families. This is the
+font acceptance check; no SSIM claim is made. `tools/deck_font_probe.mix` prints
+the source episode's 16 sections and adjacent sting to PDF using supplied
+templates, then records pdffonts output and hashes. See
+`provenance/deck-font-measurement.json` for the 17-slide measurement.
+
 Run `viu run apps/deck`. The ordinary window starts full-screen. The host fits
 the 1600 × 900 logical canvas into the output, centred with letterboxing;
 scene dimensions never depend on output resolution. Application behaviour is
@@ -42,8 +74,9 @@ pinned at open, so source replacement/removal cannot change a later goto.
 The shared store caps handles at 64 and resident pixels at 512 MiB; active
 and candidate decks share those budgets. Refused opens release candidate
 handles and preserve the active deck. Use `w` and `h` for the display size.
-The static `brand:cyclops` uses the approved intro geometry; draw, blink and
-spin remain separate motion work.
+The static `brand:cyclops` remains available for ordinary brand cards. The
+opening sting uses the shared `drawing` primitives, composed in Mix: a dashed
+arc, pop/blink eye, float and a shadow of the combined silhouette.
 
 Grow rows allocate each cell its weighted share of the remaining width.
 Nested content wraps where supported and clips at its cell edge when it
@@ -70,7 +103,8 @@ first-frame and draw latency must be measured before treating a recording's
 1.1-second frame as app scene time 1.1. The historical recording did not log
 that correlation, so its precise wall-clock offset remains unproven.
 
-`anim` and `child_anim` support `fade`, `up`, `down`, `left`, `right`.
+`anim` and `child_anim` support `fade`, `up`, `down`, `left`, `right`, `pop`,
+`zoom` and `wipe`.
 `delay` and `stagger` are seconds, each in 0..60. A stagger container gives
 unconfigured direct children its beat and `delay + child_index * stagger`.
 Explicit child build entries take precedence. Unsupported transforms must be
@@ -124,7 +158,7 @@ scene document) and `presentation.size` (two logical dimensions). This mounts
 an unframed scene directly; it does not create or configure another window.
 Local native ports are `scene.validate {source}` and
 `motion.seek {preset,time}`. The latter samples the shared finite opacity and
-translation presets at a supplied time, returning `{opacity,offset}`.
+translation presets at a supplied time, returning `{opacity,offset,paint_effect}`.
 
 ## Reference and checks
 
@@ -133,7 +167,7 @@ translation presets at a supplied time, returning `{opacity,offset}`.
 sections and an opening sting. It preserves the historical story and measured
 numbers. Infrastructure names are generalised. Paragraphs are condensed for
 the available widget layout. The screenshot/callout/Ken Burns, count-up strip,
-cyclops drawing/spin and underline effects are omitted and listed in the PR.
+cyclops spin and underline effects are omitted and listed in the PR.
 It is a reference adaptation, with visual differences from the HTML original.
 
 `core-test.mix` checks format refusals, boundaries, navigation and deterministic
@@ -166,3 +200,10 @@ unchanged against main; no changed file is path-included by that app.
 Its stale manifest therefore needs no dependent tests for this scoped change.
 It is not reactivated or brought into the workspace. The owning lib-viu and
 viu test targets, including the runtime tests, remain in the CBC scope.
+
+The sting regression in `libraries/viu/tests/deck_sting/check.rs` paints all
+entrance times at 4K, checks ring progress, pop, blink, element delays and
+centring, and rejects a static negative control. Its ignored evidence test
+reads Chrome frames from `STING_ORACLE`, saves native frames and a contact
+sheet under the worker temporary directory. Chrome is only an explicit
+evidence input; ordinary tests require no browser.

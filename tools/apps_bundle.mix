@@ -92,6 +92,7 @@ chmod($stage .. "/bin/term", 0o755)
 place($stage, "apps/term/mixviu.term.desktop", "share/applications/mixviu.term.desktop")
 for $f in ["LICENSE-APACHE", "LICENSE-MIT", "NOTICE"] place($stage, $f, "share/mixviu/" .. $f) end
 for $f in tracked("share/scenes") place($stage, $f, $f) end
+for $f in tracked("share/fonts") place($stage, $f, $f) end
 for $f in tracked("engines/viud/scripts") place($stage, $f, "share/viud/scripts/" .. substr($f, len("engines/viud/scripts/"))) end
 -- Mix services: their scripts install at <prefix>/lib/<service>/.
 for $svc in ["clipd", "notifyd", "exportd", "dlnad", "agentd", "peersd", "releasesd", "daylight", "toolsd"]

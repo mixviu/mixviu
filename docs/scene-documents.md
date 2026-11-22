@@ -210,7 +210,7 @@ widgets today. The ordinary app renderer has a separate implementation.
 | content | children:l!, settings:o={}, scroll:b=true, surface:s=panel (panel/editor), keyboard_scroll:o? | `libraries/scene/src/schema.rs:131` |
 | panes | children:l!, left_fraction:n=0.18, right_fraction:n=0.42, right_visible:b=true, clip:b=true, focus:s=center (left/center/right), on_change:s?, compact_below:n?, narrow_below:n?, narrow_left_range:l?, narrow_right_range:l?, keyboard:b=false, focus_targets:o?, pane_labels:o? | `libraries/scene/src/schema.rs:138` |
 | sides | children:l!, wrap:b=false | `libraries/scene/src/schema.rs:154` |
-| text | text:s!, size:n=13, bold:b=false, mono:b=false, color:s?, elide:b=false, wrap:b=false, max_lines:n=3 (integer 1..1024), width:n?, fill:b=false, hidden:b=false, align:s=left (left/center/right) | `libraries/scene/src/schema.rs:180` |
+| text | text:s!, size:n=13, bold:b=false, mono:b=false, font:s?, mono_font:s?, weight:n?, color:s?, elide:b=false, wrap:b=false, max_lines:n=3 (integer 1..1024), width:n?, fill:b=false, hidden:b=false, align:s=left (left/center/right) | `libraries/scene/src/schema.rs:180` |
 | field | value:s!, placeholder:s?, width:n?, password:b=false, on_change:s?, on_submit:s? | `libraries/scene/src/schema.rs:194` |
 | button | label:s!, tone:s=normal (normal/danger/primary), width:n?, on_click:s?, on_context:s? | `libraries/scene/src/schema.rs:202` |
 | toggle | value:b!, label:s!, on_change:s? | `libraries/scene/src/schema.rs:217` |

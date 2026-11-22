@@ -291,6 +291,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         "toggle" => &TOGGLE,
         "list" => &LIST,
         "image" => &IMAGE,
+        "drawing" => &IMAGE,
         "spacer" => &SPACER,
         "control" => &CONTROL,
         "grid" => &GRID,
@@ -300,7 +301,17 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         _ => return None,
     };
     let mut ports = family.to_vec();
+    if f == "drawing" {
+        ports.retain(|p| p.name != "src");
+        ports.push(p("primitives", "list", true, None));
+        ports.push(pn("sample_time", false, None));
+        ports.push(p("shadow", "object", false, None));
+    }
     if f == "text" {
+        ports.push(pn("letter_spacing", false, Some(-100.0)));
+        ports.push(p("font", "string", false, None));
+        ports.push(p("mono_font", "string", false, None));
+        ports.push(pn("weight", false, Some(1.0)));
         ports.push(p("spans", "list", false, None));
         ports.push(p("number", "object", false, None));
     }
@@ -342,6 +353,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
             p("motion", "bool", false, None),
             pn("opacity", false, Some(0.0)),
             p("offset", "offset", false, None),
+            p("paint_effect", "object", false, None),
         ]);
         // Optional Viu host geometry slots. No defaults: existing resolved
         // scenes retain their canonical form and ordinary dock placement.
@@ -444,6 +456,46 @@ pub(crate) fn check_port_value(
     out: &mut Vec<Diagnostic>,
 ) {
     let k = p.name;
+    if k == "sample_time" && v.as_f64().is_none_or(|n| !n.is_finite() || n.abs() > 3600.) {
+        out.push(Diagnostic::error(
+            "motion-value",
+            line,
+            "sample_time must be finite within +/-3600 seconds",
+        ));
+    }
+    if k == "shadow" {
+        if let Err(message) = crate::drawing::validate_shadow(v) {
+            out.push(Diagnostic::error("drawing-value", line, message));
+        }
+    }
+    if k == "paint_effect" {
+        let valid = v.as_object().is_some_and(|o| o.len() == 2)
+            && v["time"]
+                .as_f64()
+                .is_some_and(|t| t.is_finite() && t.abs() <= 3600.)
+            && v["preset"]
+                .as_str()
+                .is_some_and(|s| motion::scene::paint_preset(s).is_ok());
+        if !valid {
+            out.push(Diagnostic::error(
+                "motion-value",
+                line,
+                "invalid externally sampled paint effect",
+            ));
+        }
+    }
+    if k == "letter_spacing" && v.as_f64().is_none_or(|n| !n.is_finite() || n.abs() > 100.) {
+        out.push(Diagnostic::error(
+            "port-range",
+            line,
+            "letter spacing must be within +/-100",
+        ));
+    }
+    if k == "primitives" {
+        if let Err(message) = crate::drawing::validate(v) {
+            out.push(Diagnostic::error("drawing-value", line, message));
+        }
+    }
     if k == "background_radials" {
         let valid = v.as_array().is_some_and(|a| {
             a.len() <= 4
@@ -508,7 +560,13 @@ pub(crate) fn check_port_value(
                         o.keys().all(|k| {
                             matches!(
                                 k.as_str(),
-                                "text" | "role" | "color" | "mono" | "strike" | "highlight"
+                                "text"
+                                    | "role"
+                                    | "color"
+                                    | "mono"
+                                    | "strike"
+                                    | "highlight"
+                                    | "bold"
                             )
                         }) && run["text"].as_str().is_some_and(|s| s.len() <= 65536)
                             && run.get("role").is_none_or(|v| {
@@ -527,7 +585,7 @@ pub(crate) fn check_port_value(
                                         && s[1..].bytes().all(|b| b.is_ascii_hexdigit())
                                 })
                             })
-                            && ["mono", "strike", "highlight"]
+                            && ["mono", "strike", "highlight", "bold"]
                                 .iter()
                                 .all(|k| run.get(k).is_none_or(JsonValue::is_boolean))
                     })
