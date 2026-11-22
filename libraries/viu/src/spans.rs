@@ -123,7 +123,10 @@ mod tests {
                             FontFamily::Proportional
                         }
                     );
-                    assert_eq!(job.sections.last().unwrap().format.font_id.family, FontFamily::Monospace);
+                    assert_eq!(
+                        job.sections.last().unwrap().format.font_id.family,
+                        FontFamily::Monospace
+                    );
                     ui.label(job);
                 }
             });
