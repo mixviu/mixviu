@@ -10,7 +10,7 @@ fn manual_wrap_and_between_clip_painted_shapes_to_cells() {
         for _ in 0..8 {
             let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {view.show(ui);});
             out.textures_delta.clear();
-            let red: Vec<_> = out.shapes.iter().filter(|s| matches!(&s.shape, egui::Shape::Rect(r) if r.fill == egui::Color32::RED)).collect();
+            let red: Vec<_> = out.shapes.iter().filter(|s| matches!(&s.shape, egui::Shape::Mesh(m) if m.vertices.iter().any(|v|v.color == egui::Color32::RED))).collect();
             assert!(!red.is_empty());
             for shape in red {
                 assert!(shape.clip_rect.right() <= view.geometry["root"].left() + 60.5, "{mode}: {:?}", shape.clip_rect);
