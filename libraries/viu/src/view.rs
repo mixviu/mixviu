@@ -982,8 +982,16 @@ impl SceneView {
                     && row_measurable(node, nodes, 0)
                 {
                     Some(
-                        intrinsic_text_width(ui, node, nodes, &self.tree.model, &mut self.numbers, false, 0)
-                            .min(ui.available_width()),
+                        intrinsic_text_width(
+                            ui,
+                            node,
+                            nodes,
+                            &self.tree.model,
+                            &mut self.numbers,
+                            false,
+                            0,
+                        )
+                        .min(ui.available_width()),
                     )
                 } else {
                     None
@@ -3035,11 +3043,20 @@ fn color(s: &str) -> Option<Color32> {
     ))
 }
 
-fn rendered_number(ui: &egui::Ui, node: &Node, numbers: &mut crate::numbers::Numbers) -> Option<String> {
+fn rendered_number(
+    ui: &egui::Ui,
+    node: &Node,
+    numbers: &mut crate::numbers::Numbers,
+) -> Option<String> {
     node.ports.get("number").map(|spec| {
         // Use the stable, list-scoped identity, independent of the animation sample.
         let identity = node.ports["__measure_identity"].as_u64().unwrap_or(0);
-        numbers.text(ui, &identity.to_string(), spec, node.ports.get("motion") != Some(&Value::Bool(false)))
+        numbers.text(
+            ui,
+            &identity.to_string(),
+            spec,
+            node.ports.get("motion") != Some(&Value::Bool(false)),
+        )
     })
 }
 
@@ -3188,7 +3205,8 @@ mod measurement_cache_tests {
             ui.allocate_exact_size(egui::vec2(10., 200.), egui::Sense::hover());
             assert!(ui.available_height() < 0.);
             assert_eq!(super::finite_available_height(ui), 0.);
-        }).drop_without_applying_deltas();
+        })
+        .drop_without_applying_deltas();
     }
 
     #[test]
@@ -3197,12 +3215,27 @@ mod measurement_cache_tests {
         let mut view = super::SceneView::new(source).unwrap();
         let ctx = egui::Context::default();
         for (time, rendered) in [(0., "0"), (2., "123,456")] {
-            ctx.run_ui(egui::RawInput { time: Some(time), ..Default::default() }, |ui| {
-                view.show(ui);
-                let node = &view.measurement_nodes.as_ref().unwrap().1["n"];
-                let key = super::natural_size_key(node).with(("baseline", Some(rendered), ui.pixels_per_point().to_bits(), super::font_state_key(ui)));
-                assert!(super::measure_get::<f32>(ui, key).is_some(), "missing baseline sample {rendered}");
-            }).drop_without_applying_deltas();
+            ctx.run_ui(
+                egui::RawInput {
+                    time: Some(time),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui);
+                    let node = &view.measurement_nodes.as_ref().unwrap().1["n"];
+                    let key = super::natural_size_key(node).with((
+                        "baseline",
+                        Some(rendered),
+                        ui.pixels_per_point().to_bits(),
+                        super::font_state_key(ui),
+                    ));
+                    assert!(
+                        super::measure_get::<f32>(ui, key).is_some(),
+                        "missing baseline sample {rendered}"
+                    );
+                },
+            )
+            .drop_without_applying_deltas();
         }
     }
 
@@ -3557,7 +3590,8 @@ fn measurement_runs(node: &Node, first_line: bool, number: Option<&str>) -> Valu
             }
         }
     } else {
-        let text: String = number.unwrap_or_else(||text(node, "text"))
+        let text: String = number
+            .unwrap_or_else(|| text(node, "text"))
             .chars()
             .take(4096)
             .take_while(|c| !first_line || *c != '\n')

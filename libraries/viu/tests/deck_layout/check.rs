@@ -70,9 +70,22 @@ citizen: test
             view.show(ui);
         });
         out.textures_delta.clear();
-        for id in ["root", "oversized", "cross", "baseline", "width", "a", "b", "c", "d"] {
+        for id in [
+            "root",
+            "oversized",
+            "cross",
+            "baseline",
+            "width",
+            "a",
+            "b",
+            "c",
+            "d",
+        ] {
             let rect = view.geometry[id];
-            assert!(rect.is_finite() && rect.width() >= 0. && rect.height() >= 0., "{id}: {rect:?}");
+            assert!(
+                rect.is_finite() && rect.width() >= 0. && rect.height() >= 0.,
+                "{id}: {rect:?}"
+            );
         }
         assert!(view.geometry["cross"].top() >= view.geometry["oversized"].bottom());
         for s in &out.shapes {
@@ -88,7 +101,8 @@ citizen: test
 #[test]
 fn animated_number_in_measured_rows_reserves_its_current_rendered_width() {
     for mode in ["cross_align:\"start\",fill:true", "align:\"baseline\""] {
-        let source = format!(r#"---
+        let source = format!(
+            r#"---
 scene: 1
 name: number-width
 citizen: test
@@ -96,21 +110,38 @@ citizen: test
 ```mix
 {{root:{{widget:"row",{mode},gap:10,children:["number","next"]}},number:{{widget:"text",text:"fallback",number:{{from:0,to:123456,ms:1000,delay_ms:0}},size:32}},next:{{widget:"text",text:"Next"}}}}
 ```
-"#);
+"#
+        );
         let mut view = SceneView::new(&source).unwrap();
         let ctx = egui::Context::default();
         let mut widths = vec![];
         let mut samples = vec![];
         for time in [0., 0.5, 1.1, 2., 3.] {
-            let mut out = ctx.run_ui(egui::RawInput { time: Some(time), ..Default::default() }, |ui| { view.show(ui); });
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    time: Some(time),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui);
+                },
+            );
             out.textures_delta.clear();
-            let number = out.shapes.iter().find_map(|s| match &s.shape {
-                egui::Shape::Text(t) if t.galley.job.text != "Next" => Some(t),
-                _ => None,
-            }).expect("rendered number");
+            let number = out
+                .shapes
+                .iter()
+                .find_map(|s| match &s.shape {
+                    egui::Shape::Text(t) if t.galley.job.text != "Next" => Some(t),
+                    _ => None,
+                })
+                .expect("rendered number");
             assert_ne!(number.galley.job.text, "fallback");
             let advance = view.geometry["next"].left() - view.geometry["number"].left() - 10.;
-            assert!((advance - number.galley.size().x).abs() < 1., "{mode} t={time}: {advance} versus {}", number.galley.size().x);
+            assert!(
+                (advance - number.galley.size().x).abs() < 1.,
+                "{mode} t={time}: {advance} versus {}",
+                number.galley.size().x
+            );
             widths.push(advance);
             samples.push(number.galley.job.text.clone());
         }
