@@ -886,7 +886,7 @@ impl SceneView {
         if node.ports.get("hidden")==Some(&Value::Bool(true)) {return;}
         let width=matches!(node.family.as_str(),"column"|"row").then(||num(node,"width").or_else(||(node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0. || num(node,"shrink").unwrap_or(0.)>0.).then(||ui.available_width()))).flatten();
         if let Some(width)=width {
-            let width=bounded_layout(width,1e6);
+            let width=bounded_layout(width,1e6).max(num(node,"min_width").unwrap_or(0.)).min(num(node,"max_width").unwrap_or(1e6));
             let available=ui.available_rect_before_wrap();
             let x=match ui.layout().horizontal_placement(){egui::Align::Center=>available.center().x-width/2.,egui::Align::Max=>available.right()-width,_=>available.left()};
             let rect=egui::Rect::from_min_size(egui::pos2(x,available.top()),egui::vec2(width,available.height()));
@@ -1424,10 +1424,16 @@ impl SceneView {
                                             if stretch {self.stretch_heights.remove(*child);}
                                             let actual=cell.min_rect().height();
                                             if (actual-previous).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cache,actual));ui.ctx().request_discard("flex cross size");}
-                                            ui.ctx().data_mut(|d|d.insert_temp(natural_size_key(&nodes[*child]),cell.min_rect().size()));
+                                            if (cell.min_rect().width()-width).abs()>0.01 {ui.ctx().request_discard("natural leaf width");}ui.ctx().data_mut(|d|d.insert_temp(natural_size_key(&nodes[*child]),cell.min_rect().size()));
                                             height=height.max(actual);x+=width+ui.spacing().item_spacing.x;
                                         }
                                         ui.allocate_space(egui::vec2(ui.available_width(),height));
+                                    } else if text(node,"align")=="baseline" {
+                                        let active:Vec<_>=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();
+                                        let bases:Vec<f32>=active.iter().map(|c|text_baseline(ui,&nodes[*c])).collect();
+                                        let baseline=bases.iter().copied().fold(0.0_f32,f32::max);let origin=ui.available_rect_before_wrap().min;let mut x=origin.x;let mut height=0.0_f32;
+                                        for (child,base) in active.iter().zip(bases) {let width=intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,false,0);let offset=baseline-base;let pos=egui::pos2(x,origin.y+offset);let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(pos,egui::vec2(width,ui.available_height()))).layout(egui::Layout::top_down(egui::Align::Min)));self.node(&mut cell,child,nodes,route,depth+1,events);height=height.max(offset+cell.min_rect().height());x+=width+ui.spacing().item_spacing.x;}
+                                        ui.allocate_space(egui::vec2((x-origin.x-ui.spacing().item_spacing.x).max(0.),height));
                                     } else if text(node,"align")=="end" {
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
                                     } else if text(node,"align")=="start" {
@@ -2779,6 +2785,10 @@ fn color(s: &str) -> Option<Color32> {
         byte(4)?,
         if s.len() == 8 { byte(6)? } else { 255 },
     ))
+}
+
+fn text_baseline(ui:&egui::Ui,node:&Node)->f32 {
+    let plain=json!([{"text":text(node,"text")}]);let bold=node.ports.get("bold")==Some(&Value::Bool(true));let job=crate::spans::job(ui,node.ports.get("spans").unwrap_or(&plain),num(node,"size").unwrap_or(13.),node.ports.get("mono")==Some(&Value::Bool(true)),bold,Color32::WHITE,(node.ports.get("font").and_then(Value::as_str),num(node,"weight").unwrap_or(if bold{700.}else{400.}),node.ports.get("mono_font").and_then(Value::as_str)));let g=ui.fonts_mut(|f|f.layout_job(job));g.rows.first().and_then(|r|r.glyphs.first().map(|glyph|r.pos.y+glyph.pos.y)).unwrap_or(0.)
 }
 
 fn bounded_layout(value:f32,maximum:f32)->f32 {

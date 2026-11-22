@@ -331,6 +331,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
             p("flex", "string", false, None),
         ]);
     }
+    if f=="row" {ports.iter_mut().find(|p|p.name=="align").unwrap().enum_values=&["start","center","end","stretch","baseline"];}
     if f == "list" {
         ports
             .iter_mut()

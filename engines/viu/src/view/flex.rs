@@ -460,6 +460,7 @@ impl<'a> Builder<'a> {
             bottom: length(bottom),
         };
         style.align_items = Some(match port_text(node, "align") {
+            "baseline" => AlignItems::BASELINE,
             "center" => AlignItems::CENTER,
             "end" => AlignItems::FLEX_END,
             "stretch" => AlignItems::STRETCH,
@@ -704,7 +705,8 @@ impl<'a> Builder<'a> {
                 height: zero(),
             };
             style.align_items = Some(match port_text(node, "align") {
-                "center" => AlignItems::CENTER,
+                "baseline" => AlignItems::BASELINE,
+            "center" => AlignItems::CENTER,
                 "end" => AlignItems::FLEX_END,
                 _ => AlignItems::FLEX_START,
             });

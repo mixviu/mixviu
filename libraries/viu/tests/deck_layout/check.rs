@@ -29,7 +29,7 @@ fn geometry(source: &str) -> std::collections::BTreeMap<String, egui::Rect> {
 fn wrapped_fill_label_retains_natural_glyph_advances() {
     let ctx=egui::Context::default();viu::fonts::install(&ctx,400,600);
     let mut view=SceneView::new("---\nscene: 1\nname: glyphs\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"RAW NOTICES\",font:\"Liberation Sans\",size:20,weight:500,letter_spacing:1.6,max_width:100,wrap:true,fill:true,align:\"center\"}}\n```\n").unwrap();
-    let mut output=ctx.run_ui(egui::RawInput::default(),|ui|view.show(ui));
+    let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});
     let galleys:Vec<_>=output.shapes.iter().filter_map(|s|if let egui::Shape::Text(t)=&s.shape {Some(t.galley.clone())}else{None}).collect();
     let galley=galleys.iter().find(|g|g.job.text=="RAW NOTICES").unwrap();
     assert!(galley.rows.len()>=2);
