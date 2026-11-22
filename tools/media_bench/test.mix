@@ -105,7 +105,7 @@ for $line in ["42 mix rebuild.mix","42 mix episode.mix.old","42 other build.mix"
   $c.guard_at(1600,$line)
 end
 check(deep_eq($s.budget_argv(["ffmpeg","-threads","4","n_threads=4"],{budget:"4"}),["ffmpeg","-threads","4","n_threads=4"]))
-check(deep_eq($s.budget_argv(["ffmpeg","-threads","4","n_threads=4"],{budget:"unrestricted"}),["ffmpeg","-threads","0","n_threads=0"]))
+check(deep_eq($s.budget_argv(["ffmpeg","-threads","4","n_threads=4"],{budget:"unrestricted"}),["ffmpeg","-threads","0","n_threads=4"]))
 check($c.excluded({curve:{status:"unavailable",overlap_lo:1}},"curve.overlap_lo"))
 check($c.excluded({curve:{status:"ok",bd_rate_percent:10}},"curve.bd_rate_percent"))
 check(not contains($c.report($r,nil),"Round-1"))
@@ -131,6 +131,10 @@ try
   write_file($original.."/episode.mix",data_encode([{kind:"clip",path:$alias.."/take.mp4"}]))
   write_file($original.."/meta.json",json_encode({real:$original.."/file",alias:$alias.."/file",alias_dot:$tmp.."/./linked/file",sibling:$original.."-other/file",alias_sibling:$alias.."-other/file",root:$alias}))
   write_file($original.."/actions.jsonl",json_encode({path:$alias.."/file"}).."\n")
+  -- A real run also holds Mix scripts that are not strict data.
+  mkdir($original.."/tools")
+  $script="print(\""..$alias.."/file\")\n"
+  write_file($original.."/tools/check.mix",$script)
   $before=$ep.run_snapshot($original)
   $copied=$ep.copy_run(realpath($alias),[$original,$alias,$tmp.."/./linked"],$before)
   $copy=$copied.path
@@ -141,6 +145,7 @@ try
   check($meta.alias_dot==$copy.."/file")
   check($meta.sibling==$original.."-other/file" and $meta.alias_sibling==$alias.."-other/file")
   check(load_data($copy.."/episode.mix")[0].path==$copy.."/take.mp4")
+  check(read_file($copy.."/tools/check.mix")==$script)
   check(json_parse(trim(read_file($copy.."/actions.jsonl"))).path==$copy.."/file")
   check($ep.take_entries($copy)[0].id=="assemble-root")
   check($before.sha256==$ep.run_snapshot($original).sha256)
@@ -159,6 +164,16 @@ try
   end
   run_argv_must(["cp","-p","--",$tmp.."/saved",$original.."/new-file"])
   check($refused and $before.sha256==$ep.run_snapshot($original).sha256)
+  -- A truncated running order must refuse the copy, never pass with stale paths.
+  $good=read_file($original.."/episode.mix")
+  write_file($original.."/episode.mix","[{kind:\"clip\",path:")
+  $stale=glob("/var/tmp/media-bench/episode-*")
+  $refused=false
+  try $ep.copy_run($original,[$original],$ep.run_snapshot($original)) catch $e
+    $refused=contains(to_string($e),"episode.mix")
+  end
+  write_file($original.."/episode.mix",$good)
+  check($refused and len(glob("/var/tmp/media-bench/episode-*"))==len($stale))
 finally
   if $copy!=nil then $ep.remove_copy($copy,false) end
   run_argv_must(["rm","-rf","--",$tmp])
