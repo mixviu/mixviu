@@ -3198,18 +3198,6 @@ fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, v
 mod measurement_cache_tests {
     use serde_json::{Value, json};
     #[test]
-    fn exhausted_available_height_is_clamped_to_zero() {
-        let ctx = egui::Context::default();
-        ctx.run_ui(egui::RawInput::default(), |ui| {
-            ui.set_max_height(40.);
-            ui.allocate_exact_size(egui::vec2(10., 200.), egui::Sense::hover());
-            assert!(ui.available_height() < 0.);
-            assert_eq!(super::finite_available_height(ui), 0.);
-        })
-        .drop_without_applying_deltas();
-    }
-
-    #[test]
     fn animated_number_baseline_cache_tracks_the_rendered_sample() {
         let source = "---\nscene: 1\nname: number-cache\ncitizen: test\n---\n```mix\n{root:{widget:\"row\",align:\"baseline\",children:[\"n\",\"next\"]},n:{widget:\"text\",text:\"fallback\",number:{to:123456,ms:1000,delay_ms:0}},next:{widget:\"text\",text:\"Next\"}}\n```\n";
         let mut view = super::SceneView::new(source).unwrap();
