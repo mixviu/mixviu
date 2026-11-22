@@ -1,13 +1,28 @@
-# PR #231 round 2: host wake lock order
+# PR #231 round 3: ordered wake regression
 
 PR: https://github.com/mixviu/mixviu/pull/231
-Validated code head: cd5320babe5f14ea9109d3c6cd5275724e53dff1.
+Round-3 code head: 8ef45d5612972eb320e8630063289e2c7f90eee1.
 PR head: the receipt commit containing this file; code is unchanged from the validated head.
 Merged main: f33a6596 (#232) and 5779ecb0 (#233), merge c41bbe50. No conflicts; round-1 receipt preserved.
 Round 2 adds an explicit editor fake write-rejection assertion at editor_app_test.mix:44-49.
 Base prerequisite: #220 merged as e8e9da41729efa4dba3fff1663c50f9f49cd6c79 before work began.
 
-## Round 2 validation — green
+## Round 3 delta and validation — green
+
+Only tests/comments changed after reviewed head 5cbadb39. app_host.rs:3642 uses callback start/completion channels to order the setup-equivalent registry push strictly within the callback. Success has a 2 s hang backstop; the 200 ms discrimination bound exists only in the held-guard negative control. The outer result backstop is 5 s so an inner timeout reports first. The callback write scope was verified in pinned egui 0.37.0 context.rs:2145-2147 and ContextImpl::request_repaint_after at :170-171; the source comment records that dependency.
+
+file_tiles.rs:301 inspects both /proc/<pid>/task/<tid>/wchan and syscall; either a futex wait channel or syscall number libc::SYS_futex confirms queuing. Both read errors cause an immediate diagnostic; otherwise the existing bounded probe fails with both observations if no futex is seen. The libc unsafe call is retained with the Rust 2024 edition noted. The nested control documents its reliance on viewport_id taking the Context read lock.
+
+- 20261122-104604-ef0db5e9-a1: CBC rustfmt generation and focused no-default wake/file-tile tests including controls, BUILD_RC=0. Worker formatting diff applied locally; worker edits reverted within the same job.
+- 20261122-104750-5b3383ec-a1: four-configuration lib-viu matrix (default, no-default, default+test-support, no-default+test-support), all 56 targets per pool, doc-tests, CI-form clippy, native store and editor controls: BUILD_RC=0. All four wake/file-tile positive and negative runs passed; no failed tests. fmt check passed. The four-configuration matrix and its controls are complete.
+- 20261122-104752-bcffa876: loaded iterations 1–10, BUILD_RC=0.
+- 20261122-104753-018bc70d: loaded iterations 11–20, BUILD_RC=0.
+
+All 20 loaded runs used `mix tools/ci/test_pool.mix --jobs 8 -- --locked -p lib-viu -p toolkit --all-targets --no-default-features`: 80 binaries in each normal pool, no test filters or saturation experiment. Saved logs contain completion markers for every iteration, and 20 passes each for wake_releases_registry_before_context_write, held_registry_negative_control_times_out, viewport_height_with_queued_writer and nested_read_with_queued_writer_negative_control. No failures or retries. The known toolkit macros reap test passed 20/20: no panic occurred, so no panic text is omitted.
+
+All four round-3 CBC jobs returned BUILD_RC=0. The editor read-only fake and store write:true controls passed in the matrix job; all existing unit controls were included in the full target runs. PR #231 remains ready. The next review is the requested short Opus delta review. This receipt-only commit leaves the validated code at 8ef45d5612972eb320e8630063289e2c7f90eee1 unchanged.
+
+## Round 2 validation — green (historical)
 
 Code head: cd5320babe5f14ea9109d3c6cd5275724e53dff1.
 
@@ -20,10 +35,10 @@ Workshop coverage is now real: the standalone test-support binary ran nine tests
 
 | Control | Location | Result |
 | --- | --- | --- |
-| Wake releases registry before Context write | app_host.rs:3689 | Passed in all four lib-viu configurations |
-| Restored held-guard loop times out, then joins both threads | app_host.rs:3694 | Passed in all four configurations |
-| File-tile helper completes with a writer confirmed queued after a barrier | file_tiles.rs:414 | Passed in all four configurations |
-| Restored nested viewport read times out in reaped subprocess | file_tiles.rs:418 | Passed in all four configurations |
+| Wake releases registry before Context write | app_host.rs:3706 | Passed in all four lib-viu configurations |
+| Restored held-guard loop times out, then joins both threads | app_host.rs:3711 | Passed in all four configurations |
+| File-tile helper completes with a writer confirmed queued after a barrier | file_tiles.rs:431 | Passed in all four configurations |
+| Restored nested viewport read times out in reaped subprocess | file_tiles.rs:435 | Passed in all four configurations |
 | Editor fake rejects write:true before parsing | editor_app_test.mix:44 | Passed with freshly built Mix, full script 852 ms |
 | Store rejects write:true with bad desk theme beside read-only forms | store_tests.rs:63 | Passed in isolated native child, parent 1.71 s |
 
@@ -38,9 +53,9 @@ Production registry acquisitions (all):
 - libraries/viu/src/native_bus.rs:50 passive_frame_stats: separate map registry -> clone -> release -> toolkit frame_stats Context reads. Already correct.
 - libraries/viu/src/native_bus.rs:446 stats_surface and :450 remove_stats_surface: map insert/remove only.
 
-Test-only registry acquisitions: app_host.rs:3658 (setup-equivalent push); app_host.rs:3668 (deliberately held-guard negative loop); native_bus.rs:1029 (stats registry length assertion). These are excluded from the production ordering claim.
+Test-only registry acquisitions: app_host.rs:3661 (setup-equivalent push); app_host.rs:3685 (deliberately held-guard negative loop); native_bus.rs:1029 (stats registry length assertion). These are excluded from the production ordering claim.
 
-Opposite order: no production Context -> LayerHost registry path demonstrated. toolkit layer/state.rs:396 calls setup directly, outside a Context closure; :478 calls removed directly from surface retention. app_host Context closure bodies contain no setup/removed calls. app_host.rs:2085 text_input_active reads only stored scene state (view.rs:700). The repaired callback removes the latent order regardless. In the regression app_host.rs:3653 the egui repaint callback holds the Context write lock while another thread performs the setup registry push; fixed wake completes, held-guard control times out at 200 ms and then releases and joins both threads.
+Opposite order: no production Context -> LayerHost registry path demonstrated. toolkit layer/state.rs:396 calls setup directly, outside a Context closure; :478 calls removed directly from surface retention. app_host Context closure bodies contain no setup/removed calls. app_host.rs:2085 text_input_active reads only stored scene state (view.rs:700). The repaired callback removes the latent order regardless. In the regression app_host.rs:3654 the egui repaint callback holds the Context write lock while another thread performs the setup registry push; callback start/completion channels order the fixed registry push within the callback (2 s hang backstop); only the held-guard control times out at 200 ms, then releases and joins both threads.
 
 Context lock semantics checked against the worker Cargo registry egui/epaint 0.37.0 source: data/memory/options use read; their mut forms use write; input, fonts, graphics and output (including read-only forms) use write. viewport_id reads; request_repaint reads the viewport then writes; request_repaint_of writes; style mutation, viewport commands and callback setters write. run_ui/run_pass release their internal locks before user UI closures. Context clone/equality do not acquire its RwLock. Epaint debug assertions enable the ten-second lock detector; regression watchdogs finish earlier.
 
@@ -184,10 +199,10 @@ libraries/viu/src/terminal/session_actor.rs:1731:        let mut options = broke
 libraries/viu/src/terminal/session_actor.rs:1744:            options: broker.options(),
 libraries/viu/src/terminal/session_actor.rs:1798:        let supervisor = Supervisor::with_options(broker.options(), broker.url.clone()).unwrap();
 libraries/viu/src/file_tiles.rs:98:        .data(|d| {
-libraries/viu/src/file_tiles.rs:313:            writer.data_mut(|_| {});
-libraries/viu/src/file_tiles.rs:333:            ui.ctx().data_mut(|d| {
-libraries/viu/src/file_tiles.rs:341:                ui.ctx().data(|d| {
-libraries/viu/src/file_tiles.rs:440:                ui.ctx().data_mut(|d| {
+libraries/viu/src/file_tiles.rs:314:            writer.data_mut(|_| {});
+libraries/viu/src/file_tiles.rs:348:            ui.ctx().data_mut(|d| {
+libraries/viu/src/file_tiles.rs:358:                ui.ctx().data(|d| {
+libraries/viu/src/file_tiles.rs:457:                ui.ctx().data_mut(|d| {
 libraries/viu/src/app_host/osd.rs:209:        let presses = ui.input(|i| {
 libraries/viu/src/app_host.rs:776:            && ctx.input(|i| i.viewport().close_requested())
 libraries/viu/src/app_host.rs:2045:                let time = ui.input(|i| i.time);
@@ -323,7 +338,6 @@ libraries/viu/src/native_bus.rs:905:                            NodedClient::con
 libraries/viu/src/native_bus.rs:940:                    ctx.data_mut(|data| {
 libraries/viu/src/native_bus.rs:974:                        NodedClient::connect_unix("", &broker.url, &broker.options(), None)
 libraries/viu/src/native_bus.rs:1166:                NodedClient::connect_unix("", &broker.url, &broker.options(), None)
-
 ```
 
 Public Context convenience methods, repaint/style/viewport calls, including tests and examples (conservative inventory using every public method in egui context.rs; includes same-name non-egui calls):
@@ -512,15 +526,15 @@ libraries/viu/src/terminal/admission.rs:137:        let supervisor = Supervisor:
 libraries/viu/src/terminal/admission.rs:150:            let UnixConnectOutcome::VerifiedUnix(caller) = NodedClient::connect_unix("", &broker.url, &broker.options(), None).await.unwrap() else {panic!("verified observer required")};
 libraries/viu/src/file_tiles.rs:96:    let vp = ui.ctx().viewport_id();
 libraries/viu/src/file_tiles.rs:98:        .data(|d| {
-libraries/viu/src/file_tiles.rs:313:            writer.data_mut(|_| {});
-libraries/viu/src/file_tiles.rs:331:        ctx.run_ui(Default::default(), |ui| {
-libraries/viu/src/file_tiles.rs:332:            let vp = ui.ctx().viewport_id();
-libraries/viu/src/file_tiles.rs:333:            ui.ctx().data_mut(|d| {
-libraries/viu/src/file_tiles.rs:341:                ui.ctx().data(|d| {
-libraries/viu/src/file_tiles.rs:344:                        ui.ctx().viewport_id(),
-libraries/viu/src/file_tiles.rs:438:            let output = ctx.run_ui(Default::default(), |ui| {
-libraries/viu/src/file_tiles.rs:439:                let vp = ui.ctx().viewport_id();
-libraries/viu/src/file_tiles.rs:440:                ui.ctx().data_mut(|d| {
+libraries/viu/src/file_tiles.rs:314:            writer.data_mut(|_| {});
+libraries/viu/src/file_tiles.rs:346:        ctx.run_ui(Default::default(), |ui| {
+libraries/viu/src/file_tiles.rs:347:            let vp = ui.ctx().viewport_id();
+libraries/viu/src/file_tiles.rs:348:            ui.ctx().data_mut(|d| {
+libraries/viu/src/file_tiles.rs:358:                ui.ctx().data(|d| {
+libraries/viu/src/file_tiles.rs:361:                        ui.ctx().viewport_id(),
+libraries/viu/src/file_tiles.rs:455:            let output = ctx.run_ui(Default::default(), |ui| {
+libraries/viu/src/file_tiles.rs:456:                let vp = ui.ctx().viewport_id();
+libraries/viu/src/file_tiles.rs:457:                ui.ctx().data_mut(|d| {
 libraries/viu/src/chooser_host.rs:70:            context.request_repaint_of(vid);
 libraries/viu/src/chooser_host.rs:71:            context.request_repaint_of(egui::ViewportId::ROOT);
 libraries/viu/src/chooser_host.rs:218:                    ctx.request_repaint();
@@ -872,13 +886,13 @@ libraries/viu/src/app_host.rs:3529:            if let Some(pos) = ui.input(|i| {
 libraries/viu/src/app_host.rs:3549:                if ui.ctx().data(|d| d.get_temp::<Value>(key)).as_ref() != Some(&stamp) {
 libraries/viu/src/app_host.rs:3558:                        ui.ctx().data_mut(|d| d.insert_temp(key, stamp));
 libraries/viu/src/app_host.rs:3631:            ctx.request_repaint();
-libraries/viu/src/app_host.rs:3646:            ctx.run_ui(Default::default(), |_| {})
-libraries/viu/src/app_host.rs:3653:        ctx.set_request_repaint_callback(move |_| {
-libraries/viu/src/app_host.rs:3669:                    ctx.request_repaint();
-libraries/viu/src/app_host.rs:3702:            ctx.run_ui(egui::RawInput::default(), |_| {})
-libraries/viu/src/app_host.rs:3708:        ctx.set_request_repaint_callback(move |request| {
-libraries/viu/src/app_host.rs:3717:        ctx.run_ui(input, |ui| {
-libraries/viu/src/app_host.rs:3718:            assert_eq!(ui.ctx().viewport_id(), child);
+libraries/viu/src/app_host.rs:3647:            ctx.run_ui(Default::default(), |_| {})
+libraries/viu/src/app_host.rs:3654:        ctx.set_request_repaint_callback(move |_| {
+libraries/viu/src/app_host.rs:3686:                    ctx.request_repaint();
+libraries/viu/src/app_host.rs:3719:            ctx.run_ui(egui::RawInput::default(), |_| {})
+libraries/viu/src/app_host.rs:3725:        ctx.set_request_repaint_callback(move |request| {
+libraries/viu/src/app_host.rs:3734:        ctx.run_ui(input, |ui| {
+libraries/viu/src/app_host.rs:3735:            assert_eq!(ui.ctx().viewport_id(), child);
 libraries/viu/tests/ports_round2.rs:59:        ctx.run_ui(
 libraries/viu/tests/gallery_contract.rs:74:        ctx.run_ui(
 libraries/viu/tests/deck_spans.rs:23:            let mut output = ctx.run_ui(raw, |ui| {
@@ -1002,7 +1016,6 @@ libraries/viu/src/view.rs:1975:                    ui.ctx().request_repaint();
 libraries/viu/src/view.rs:2005:                        + ui.ctx().global_style().spacing.item_spacing.y)
 libraries/viu/src/view.rs:2154:                    egui::Id::unique((ui.ctx().viewport_id(), key, child, "resize")),
 libraries/viu/src/view.rs:2159:                    ui.ctx().set_cursor_icon(if horizontal {
-
 ```
 
 ## Changes
