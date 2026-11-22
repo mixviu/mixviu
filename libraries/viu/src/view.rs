@@ -1546,12 +1546,12 @@ impl SceneView {
                                         let fixed:f32=active.iter().filter(|c|nodes[**c].ports.get("fill")!=Some(&Value::Bool(true))).map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,false,0)).sum();
                                         let sizes:Vec<egui::Vec2>=active.iter().map(|child|{let old=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(ui.scope_id().with((&key,"between-size",child)))).unwrap_or_default();egui::vec2(if nodes[*child].ports.get("fill")==Some(&Value::Bool(true)){(bounded_layout(ui.available_width(),1e6)-fixed-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.)/fill_count.max(1) as f32}else{intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,false,0)},old.y)}).collect();
                                         let available=bounded_layout(ui.available_width(),1e6);
-                                        let gap=((available-sizes.iter().map(|s|s.x).sum::<f32>())/active.len().saturating_sub(1).max(1) as f32).max(ui.spacing().item_spacing.x);
+                                        let gap=ui.spacing().item_spacing.x;let split_gap=(available-sizes.iter().map(|s|s.x).sum::<f32>()-gap*active.len().saturating_sub(1) as f32).max(0.);
                                         let cross=sizes.iter().map(|s|s.y).fold(0.0_f32,f32::max);
                                         let origin=ui.available_rect_before_wrap().min;
                                         let mut x=origin.x;
                                         let mut height=0.0_f32;
-                                        for (child,size) in active.iter().zip(&sizes) {
+                                        for (index,(child,size)) in active.iter().zip(&sizes).enumerate() {
                                             let rect=egui::Rect::from_min_size(egui::pos2(x,origin.y+match cross_align(node,"center"){"start"=>0.,"end"=>cross-size.y,_=>(cross-size.y)/2.}),*size);
                                             let measure=egui::Rect::from_min_size(rect.min,egui::vec2(size.x,ui.available_height().max(size.y)));
                                             let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(measure).layout(egui::Layout::top_down(egui::Align::Min)));
@@ -1561,7 +1561,7 @@ impl SceneView {
 
                                             if (actual.y-size.y).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(ui.scope_id().with((&key,"between-size",child)),actual));ui.ctx().request_discard("scene layout measurement");}
                                             height=height.max(actual.y);
-                                            x+=size.x+gap;
+                                            x+=size.x+gap;if index==0{x+=split_gap;}
                                         }
                                         ui.allocate_space(egui::vec2(available,height));
                                     } else if text(node,"justify")=="between" {

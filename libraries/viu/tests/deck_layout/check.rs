@@ -658,6 +658,7 @@ fn default_wrap_and_between_match_native_main_placement() {
     for mode in ["wrap:true","justify:\"between\""] {
         let scene=|native:bool|format!(r#"{{root:{{widget:"row",{mode},native_spacing:{native},gap:8,children:["a","b","c"]}},a:{{widget:"text",text:"Large",size:40}},b:{{widget:"text",text:"small",size:12}},c:{{widget:"text",text:"third",size:20}}}}"#);
         let a=positions(&scene(false));let b=positions(&scene(true));
+        if mode.starts_with("justify"){let c=positions(&scene(false).replace("native_spacing:false","native_spacing:false,cross_align:\"end\""));for id in ["Large","small","third"]{assert!((c[id].x-b[id].x).abs()<1.,"explicit cross moved x: {c:?} {b:?}");}}
         assert_eq!(a.len(),3);assert_eq!(b.len(),3);
         for id in ["Large","small","third"]{assert!((a[id].y-b[id].y).abs()<1.,"{mode} {id}: {a:?} {b:?}");if mode.starts_with("justify"){assert!((a[id].x-b[id].x).abs()<1.);}}
     }
