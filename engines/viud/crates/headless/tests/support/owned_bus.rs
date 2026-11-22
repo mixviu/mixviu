@@ -2,10 +2,12 @@
 //! The test owns noded with Drop and PDEATHSIG. A separate TempDir owner
 //! survives test cancellation and removes the directory on pipe EOF.
 #![allow(dead_code)]
+#[path = "handshake.rs"]
+mod handshake;
+pub use handshake::read_ready;
 use std::{
     fs,
-    io::{BufRead, BufReader, Read, Write},
-    net::TcpListener,
+    io::{Read, Write},
     os::unix::process::CommandExt,
     path::PathBuf,
     process::{Child, Command, Stdio},
@@ -17,9 +19,12 @@ pub struct OwnedBus {
     owner: Child,
     pub root: PathBuf,
     pub url: String,
+    spawning_thread: std::thread::ThreadId,
 }
 
 impl OwnedBus {
+    /// Construct and drop on the same thread, which must outlive the broker:
+    /// Linux PDEATHSIG follows the forking thread, not just its process.
     pub fn start(label: &str) -> Self {
         Self::start_inner(label, true)
     }
@@ -50,23 +55,19 @@ impl OwnedBus {
             owner,
             root: PathBuf::new(),
             url: String::new(),
+            spawning_thread: std::thread::current().id(),
         };
         writeln!(bus.owner.stdin.as_mut().unwrap(), "{label}").unwrap();
-        let output = bus.owner.stdout.take().unwrap();
-        for line in BufReader::new(output).lines() {
-            let line = line.unwrap();
-            if let Some(record) = line.strip_prefix("BUS_READY ") {
-                let record: serde_json::Value = serde_json::from_str(record).unwrap();
-                bus.root = record["root"].as_str().unwrap().into();
-                bus.url = record["url"].as_str().unwrap().into();
-                bus.spawn_broker(death_signal, record["port"].as_u64().unwrap());
-                return bus;
-            }
-        }
-        panic!("broker owner exited before readiness");
+        let mut output = bus.owner.stdout.take().unwrap();
+        let record = read_ready(&mut output, "BUS_READY ", Instant::now() + Duration::from_secs(10))
+            .expect("directory owner handshake (10 s deadline)");
+        let record: serde_json::Value = serde_json::from_str(&record).unwrap();
+        bus.root = record["root"].as_str().unwrap().into();
+        bus.spawn_broker(death_signal);
+        bus
     }
 
-    fn spawn_broker(&mut self, death_signal: bool, port: u64) {
+    fn spawn_broker(&mut self, death_signal: bool) {
         let bin = std::env::current_exe()
             .unwrap()
             .parent()
@@ -80,7 +81,7 @@ impl OwnedBus {
             .args([
                 "serve",
                 "--listen",
-                &format!("127.0.0.1:{port}"),
+                "127.0.0.1:0",
                 "--node",
                 "headless-test",
                 "--no-monitor",
@@ -124,8 +125,28 @@ impl OwnedBus {
                 fs::read_to_string(self.root.join("noded.log")).unwrap()
             );
             assert!(Instant::now() < deadline, "noded readiness timeout");
-            std::thread::yield_now();
+            std::thread::sleep(Duration::from_millis(5));
         }
+        // Noded owns the ephemeral TCP bind from the outset. Its existing
+        // noded.peers diagnostic reports listener.local_addr().port(), reached
+        // through the unique Unix endpoint without guessing a TCP address.
+        let mut query = Broker(Command::new(
+            std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mix/bin/mix".into()),
+        )
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/bus.mix"))
+            .arg("discover").arg(&self.root)
+            .env("MIX_NODED_URL", format!("unix://{}", self.root.join("run/noded/bus.sock").display()))
+            .env("MIX_RUN", self.root.join("run"))
+            .env("MIX_ETC", self.root.join("etc"))
+            .env("MIX_VAR", self.root.join("var"))
+            .env("MIX_NODE_CONFIG", self.root.join("etc/node.conf.mix"))
+            .stdin(Stdio::null()).stdout(Stdio::piped()).spawn().unwrap());
+        let record = read_ready(&mut query.0.stdout.take().unwrap(), "BUS_ADDRESS ", deadline)
+            .unwrap_or_else(|error| panic!("bound address handshake: {error}; {}", fs::read_to_string(self.root.join("noded.log")).unwrap()));
+        let record: serde_json::Value = serde_json::from_str(&record).unwrap();
+        let port = record["port"].as_u64().filter(|port| (1..=65535).contains(port)).expect("noded bound TCP port");
+        assert_eq!(record["node"], "headless-test");
+        self.url = format!("ws://127.0.0.1:{port}/ws");
         fs::write(
             self.root.join("bus.json"),
             serde_json::json!({"pid":broker.0.id(),"url":self.url}).to_string(),
@@ -139,7 +160,22 @@ impl Drop for OwnedBus {
         drop(self.broker.take());
         drop(self.owner.stdin.take());
         // Do not kill the directory owner: it needs time to drop its TempDir.
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while matches!(self.owner.try_wait(), Ok(None)) {
+            if Instant::now() >= deadline {
+                let _ = self.owner.kill();
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
         let _ = self.owner.wait();
+        // The owner normally removes this itself. If its handshake hung and
+        // the bounded fallback killed it, retire our known directory here.
+        if !self.root.as_os_str().is_empty() {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+        debug_assert_eq!(self.spawning_thread, std::thread::current().id(),
+            "OwnedBus must be constructed and dropped on the thread that outlives its broker");
     }
 }
 
@@ -163,19 +199,16 @@ fn owner_process() {
     for dir in ["etc", "var", "run/noded", "home"] {
         fs::create_dir_all(root.path().join(dir)).unwrap();
     }
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let port = listener.local_addr().unwrap().port();
     let conf = root.path().join("etc/node.conf.mix");
     fs::write(&conf, serde_json::json!({
         "node":"headless-test", "mesh":"headless-test.invalid", "wg_ip":"127.0.0.1",
-        "noded":{"port":port,"admission":"off","unix_socket":root.path().join("run/noded/bus.sock")}
+        "noded":{"port":0,"admission":"off","unix_socket":root.path().join("run/noded/bus.sock")}
     }).to_string()).unwrap();
     let mesh = root.path().join("etc/mesh.conf.mix");
     fs::write(&mesh, r#"{"node_name":"headless-test","peers":[]}"#).unwrap();
-    drop(listener);
     println!(
         "BUS_READY {}",
-        serde_json::json!({"root":root.path(),"url":format!("ws://127.0.0.1:{port}/ws"),"port":port})
+        serde_json::json!({"root":root.path()})
     );
     std::io::stdout().flush().unwrap();
     std::io::stdin().read_to_end(&mut Vec::new()).unwrap();

@@ -1,9 +1,13 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
 -- Copyright 2026 Mark Constable <mc@mixos.dev>
 -- The same owned, throwaway broker used by the compositor's Mix gates.
-$pb = require("../../../../../../tests/lib/private_bus.mix")
 $a = args()
-if $a[0] == "ready" then
+if $a[0] == "discover" then
+  send noded noded.peers timeout=5 body="{}"
+  if $rc != 0 then raise("BROKER_ADDRESS", "noded.peers failed: " .. to_string($rc)) end
+  $peers = if type($result) == "string" then json_parse($result) else $result end
+  print("BUS_ADDRESS " .. json_encode($peers))
+elif $a[0] == "ready" then
   $service = if len($a) > 2 then $a[2] else "comp-headless" end
   $deadline = monotonic() + 15
   while monotonic() < $deadline

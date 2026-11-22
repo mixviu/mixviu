@@ -4,7 +4,7 @@
 mod owned_bus;
 use std::{
     fs,
-    io::{BufRead, BufReader, Write},
+    io::Write,
     os::unix::process::CommandExt,
     path::Path,
     process::{Child, Command, Stdio},
@@ -51,7 +51,7 @@ fn within(pid: u32, root: &Path, bound: Duration) -> bool {
         if Instant::now() >= deadline {
             return false;
         }
-        std::thread::yield_now();
+        std::thread::sleep(Duration::from_millis(5));
     }
     true
 }
@@ -67,22 +67,12 @@ fn check(mode: &str) {
             .unwrap(),
     );
     writeln!(parent.0.stdin.as_mut().unwrap(), "{mode}").unwrap();
-    let mut output = BufReader::new(parent.0.stdout.take().unwrap());
-    let mut line = String::new();
-    loop {
-        line.clear();
-        assert_ne!(
-            output.read_line(&mut line).unwrap(),
-            0,
-            "fixture exited before handshake"
-        );
-        if line.starts_with("CHILD_READY ") {
-            break;
-        }
-    }
+    let mut output = parent.0.stdout.take().unwrap();
+    let line = owned_bus::read_ready(&mut output, "CHILD_READY ", Instant::now() + Duration::from_secs(15))
+        .expect("fixture parent handshake (15 s deadline)");
     let parts: Vec<_> = line.split_whitespace().collect();
-    let pid: u32 = parts[1].parse().unwrap();
-    let root = Path::new(parts[2]);
+    let pid: u32 = parts[0].parse().unwrap();
+    let root = Path::new(parts[1]);
     assert!(!gone(pid, root), "handshake must name a live broker");
     if mode == "group-kill" {
         // SAFETY: the fixture has its own process group, created above.
@@ -114,6 +104,12 @@ fn check(mode: &str) {
             "control cleanup failed"
         );
     } else {
+        if !cleaned {
+            // SAFETY: exact child PID from the fixture handshake. A failed
+            // assertion must not leave its deliberate leak specimen running.
+            unsafe { libc::kill(pid as i32, libc::SIGKILL); }
+            let _ = within(pid, root, Duration::from_secs(2));
+        }
         assert!(
             cleaned,
             "{mode}: noded {pid} or {} survived 2 s",
