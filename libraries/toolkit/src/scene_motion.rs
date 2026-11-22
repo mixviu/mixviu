@@ -606,10 +606,20 @@ fn transform(shape: &mut ClippedShape, rect: Rect, values: &motion::Values) {
 
 /// Apply a deterministic, externally clocked paint effect without changing layout.
 pub fn paint_effect(ui: &Ui, layer: LayerId, start: ShapeIdx, rect: Rect, spec: &Value) {
-    let Some(name) = spec["preset"].as_str() else { return };
-    let Some(time) = spec["time"].as_f64() else { return };
+    let Some(name) = spec["preset"].as_str() else {
+        return;
+    };
+    let Some(time) = spec["time"].as_f64() else {
+        return;
+    };
     static TABLE: std::sync::OnceLock<Vec<Preset>> = std::sync::OnceLock::new();
-    let Some(preset) = TABLE.get_or_init(motion::presets).iter().find(|p| p.name == name) else { return };
+    let Some(preset) = TABLE
+        .get_or_init(motion::presets)
+        .iter()
+        .find(|p| p.name == name)
+    else {
+        return;
+    };
     let values = preset.sample(time);
     let scale = values.get(Property::Scale) as f32;
     let clip = values.get(Property::ClipRight) as f32;
@@ -624,26 +634,22 @@ pub fn paint_effect(ui: &Ui, layer: LayerId, start: ShapeIdx, rect: Rect, spec: 
                     translation: rect.center().to_vec2() * (1. - scale),
                 });
                 if clip > 0. {
-                    s.clip_rect = s.clip_rect.intersect(Rect::from_min_max(rect.min, egui::pos2(rect.right()-rect.width()*clip, rect.bottom())));
+                    s.clip_rect = s.clip_rect.intersect(Rect::from_min_max(
+                        rect.min,
+                        egui::pos2(rect.right() - rect.width() * clip, rect.bottom()),
+                    ));
                 }
-                if blur > 0.05 {
-                    let original=s.shape.clone();
-                    let mut copies=Vec::new();
-                    let mut total=0.;
-                    for y in -4..=4 {for x in -4..=4 {total+=(-((x*x+y*y) as f32)/8.).exp();}}
-                    for y in -4..=4 {for x in -4..=4 {
-                        let mut copy=original.clone();
-                        copy.translate(egui::vec2(x as f32*blur/2.,y as f32*blur/2.));
-                        let weight=(-((x*x+y*y) as f32)/8.).exp()/total;
-                        egui::epaint::shape_transform::adjust_colors(&mut copy,|c| *c=c.gamma_multiply(weight));
-                        copies.push(copy);
-                    }}
-                    s.shape=egui::Shape::Vec(copies);
-                }
+
             });
         }
     });
+    if blur > 0.05 {
+        scene_blur::apply(ui,layer,start,blur);
+    }
 }
+
+#[path = "scene_blur.rs"]
+mod scene_blur;
 
 /// Shared deterministic state transition for built-in widgets. Retargets from
 /// the value sampled at this frame; settled widgets request no repaint.

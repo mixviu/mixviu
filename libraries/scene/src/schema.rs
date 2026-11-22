@@ -454,16 +454,32 @@ pub(crate) fn check_port_value(
 ) {
     let k = p.name;
     if k == "shadow" {
-        if let Err(message) = crate::drawing::validate_shadow(v) { out.push(Diagnostic::error("drawing-value", line, message)); }
+        if let Err(message) = crate::drawing::validate_shadow(v) {
+            out.push(Diagnostic::error("drawing-value", line, message));
+        }
     }
     if k == "paint_effect" {
-        let valid = v.as_object().is_some_and(|o| o.len()==2)
-            && v["time"].as_f64().is_some_and(|t| t.is_finite() && t.abs() <= 3600.)
-            && v["preset"].as_str().is_some_and(|s| motion::scene::Entrance::Name(s.into()).validate().is_ok());
-        if !valid { out.push(Diagnostic::error("motion-value", line, "invalid externally sampled paint effect")); }
+        let valid = v.as_object().is_some_and(|o| o.len() == 2)
+            && v["time"]
+                .as_f64()
+                .is_some_and(|t| t.is_finite() && t.abs() <= 3600.)
+            && v["preset"]
+                .as_str()
+                .is_some_and(|s| motion::scene::Entrance::Name(s.into()).validate().is_ok());
+        if !valid {
+            out.push(Diagnostic::error(
+                "motion-value",
+                line,
+                "invalid externally sampled paint effect",
+            ));
+        }
     }
     if k == "letter_spacing" && v.as_f64().is_none_or(|n| !n.is_finite() || n.abs() > 100.) {
-        out.push(Diagnostic::error("port-range", line, "letter spacing must be within +/-100"));
+        out.push(Diagnostic::error(
+            "port-range",
+            line,
+            "letter spacing must be within +/-100",
+        ));
     }
     if k == "primitives" {
         if let Err(message) = crate::drawing::validate(v) {

@@ -723,9 +723,16 @@ impl SceneView {
         let list_row = route.is_some_and(|(_, list, _)| text(list, "row") == id);
         if !list_row
             && self.motion_parent.is_none()
-            && !["enter", "exit", "opacity", "offset", "transition", "paint_effect"]
-                .iter()
-                .any(|p| node.ports.contains_key(*p))
+            && ![
+                "enter",
+                "exit",
+                "opacity",
+                "offset",
+                "transition",
+                "paint_effect",
+            ]
+            .iter()
+            .any(|p| node.ports.contains_key(*p))
         {
             self.node_contents(ui, id, nodes, route, depth, events);
             return;
@@ -795,7 +802,17 @@ impl SceneView {
         self.motion_parent = parent;
         let painted_rect = self.geometry.get(&key).copied().unwrap_or(ui.min_rect());
         if let Some(spec) = node.ports.get("paint_effect") {
-            toolkit::scene_motion::paint_effect(ui, layer.unwrap_or(ui.layer_id()), if layer.is_some() { egui::layers::ShapeIdx(0) } else { start }, painted_rect, spec);
+            toolkit::scene_motion::paint_effect(
+                ui,
+                layer.unwrap_or(ui.layer_id()),
+                if layer.is_some() {
+                    egui::layers::ShapeIdx(0)
+                } else {
+                    start
+                },
+                painted_rect,
+                spec,
+            );
         }
         toolkit::scene_motion::highlight(
             ui,
