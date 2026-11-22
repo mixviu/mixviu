@@ -56,9 +56,13 @@ pub struct SceneView {
     frame: Option<Box<SceneView>>,
     regions: BTreeMap<String, egui::Rect>,
     stretch_heights: BTreeMap<String, f32>,
-    natural_heights: BTreeMap<String,f32>,
-    measurement_hashes: BTreeMap<String,(Node,u64)>,
-    measurement_nodes: Option<(u64,std::sync::Arc<BTreeMap<String,Node>>,std::sync::Arc<PreparedLists>)>,
+    natural_heights: BTreeMap<String, f32>,
+    measurement_hashes: BTreeMap<String, (Node, u64)>,
+    measurement_nodes: Option<(
+        u64,
+        std::sync::Arc<BTreeMap<String, Node>>,
+        std::sync::Arc<PreparedLists>,
+    )>,
     tree: ResolvedScene,
     bindings: scene::bindings::BindingSet,
     model_bytes: usize,
@@ -596,15 +600,38 @@ impl SceneView {
         self.regions.clear();
         self.geometry.clear();
         self.widgets.begin_frame();
-        if self.measurement_nodes.as_ref().is_none_or(|(revision,..)|*revision!=self.revision){
-            let mut nodes:BTreeMap<String,Node>=self.tree.nodes.clone().into_iter().collect();
-            let mut alive=BTreeSet::new();
-            prepare_measurements(&mut nodes,&self.tree.name,&mut self.measurement_hashes,&mut alive);
-            let mut lists=self.lists.clone();for list in lists.values_mut(){for nodes in list.instances.values_mut(){prepare_measurements(nodes,&self.tree.name,&mut self.measurement_hashes,&mut alive);}}
-            self.measurement_hashes.retain(|id,_|alive.contains(id));
-            self.measurement_nodes=Some((self.revision,std::sync::Arc::new(nodes),std::sync::Arc::new(lists)));
+        if self
+            .measurement_nodes
+            .as_ref()
+            .is_none_or(|(revision, ..)| *revision != self.revision)
+        {
+            let mut nodes: BTreeMap<String, Node> = self.tree.nodes.clone().into_iter().collect();
+            let mut alive = BTreeSet::new();
+            prepare_measurements(
+                &mut nodes,
+                &self.tree.name,
+                &mut self.measurement_hashes,
+                &mut alive,
+            );
+            let mut lists = self.lists.clone();
+            for list in lists.values_mut() {
+                for nodes in list.instances.values_mut() {
+                    prepare_measurements(
+                        nodes,
+                        &self.tree.name,
+                        &mut self.measurement_hashes,
+                        &mut alive,
+                    );
+                }
+            }
+            self.measurement_hashes.retain(|id, _| alive.contains(id));
+            self.measurement_nodes = Some((
+                self.revision,
+                std::sync::Arc::new(nodes),
+                std::sync::Arc::new(lists),
+            ));
         }
-        let nodes=self.measurement_nodes.as_ref().unwrap().1.clone();
+        let nodes = self.measurement_nodes.as_ref().unwrap().1.clone();
         self.node(ui, "root", &nodes, None, 0, &mut events);
         self.motion.end(ui);
         self.numbers.end();
@@ -2848,7 +2875,12 @@ fn num(node: &Node, port: &str) -> Option<f32> {
                 | "min_column_width"
                 | "height"
                 | "row_gap"
-                | "gap" | "size" | "padding" | "radius" | "w" | "h"
+                | "gap"
+                | "size"
+                | "padding"
+                | "radius"
+                | "w"
+                | "h"
         ) {
             bounded_layout(v, 1e6)
         } else {
@@ -2875,7 +2907,7 @@ fn text_baseline(ui: &egui::Ui, node: &Node) -> f32 {
     if let Some(v) = measure_get::<f32>(ui, cache) {
         return v;
     }
-    let bounded_runs=measurement_runs(node,true);
+    let bounded_runs = measurement_runs(node, true);
     let bold = node.ports.get("bold") == Some(&Value::Bool(true));
     let mut job = crate::spans::job(
         ui,
@@ -2891,7 +2923,7 @@ fn text_baseline(ui: &egui::Ui, node: &Node) -> f32 {
         ),
     );
     for s in &mut job.sections {
-        s.format.line_height = num(node, "line_height").map(|v|v.clamp(0.1,4096.));
+        s.format.line_height = num(node, "line_height").map(|v| v.clamp(0.1, 4096.));
     }
     record_measurement_work();
     let g = ui.fonts_mut(|f| f.layout_job(job));
@@ -2919,7 +2951,7 @@ fn bounded_layout(value: f32, maximum: f32) -> f32 {
 
 // One bounded cache per value type and context. Hash borrowed content directly;
 // never debug-format the ports map or retain a new Context entry per text value.
-fn measurement_content_hash(id:&str,node: &Node) -> u64 {
+fn measurement_content_hash(id: &str, node: &Node) -> u64 {
     record_measurement_work();
     use std::hash::{Hash, Hasher};
     fn value(v: &Value, h: &mut impl Hasher) {
@@ -2940,13 +2972,21 @@ fn measurement_content_hash(id:&str,node: &Node) -> u64 {
         }
     }
     let mut h = std::collections::hash_map::DefaultHasher::new();
-    id.hash(&mut h);node.family.hash(&mut h);
-    for (key,v) in &node.ports {key.hash(&mut h);value(v,&mut h);}
+    id.hash(&mut h);
+    node.family.hash(&mut h);
+    for (key, v) in &node.ports {
+        key.hash(&mut h);
+        value(v, &mut h);
+    }
     h.finish()
 }
-fn natural_size_key(node:&Node)->egui::Id{
-    egui::Id::new(node.ports.get("__measure_key").and_then(Value::as_u64).unwrap_or(node as *const Node as usize as u64))
-
+fn natural_size_key(node: &Node) -> egui::Id {
+    egui::Id::new(
+        node.ports
+            .get("__measure_key")
+            .and_then(Value::as_u64)
+            .unwrap_or(node as *const Node as usize as u64),
+    )
 }
 fn measure_get<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id) -> Option<T> {
     ui.ctx().data_mut(|d| {
@@ -2962,22 +3002,50 @@ fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, v
         let cache = d.get_temp_mut_or_default::<std::collections::HashMap<egui::Id, T>>(
             egui::Id::new("scene-measurements"),
         );
-        if cache.len() >= 4096 && !cache.contains_key(&key) {if let Some(old)=cache.keys().next().copied(){cache.remove(&old);}}
+        if cache.len() >= 4096 && !cache.contains_key(&key) {
+            if let Some(old) = cache.keys().next().copied() {
+                cache.remove(&old);
+            }
+        }
         cache.insert(key, value);
     });
 }
 
 #[cfg(test)]
 mod measurement_cache_tests {
-    use serde_json::{json,Value};
+    use serde_json::{Value, json};
     #[test]
-    fn three_hundred_texts_do_no_measurement_or_shaping_work_after_settling(){
-        let mut nodes=serde_json::Map::new();let mut children=Vec::new();
-        for i in 0..300{let id=format!("text-{i}");children.push(id.clone());nodes.insert(id,json!({"widget":"text","text":format!("Measured label {i}"),"size":14}));}
-        nodes.insert("root".into(),json!({"widget":"grid","columns":3,"content_columns":true,"children":children}));
-        let source=format!("---\nscene: 1\nname: cache-300\ncitizen: test\n---\n```mix\n{}\n```\n",Value::Object(nodes));
-        let mut view=super::SceneView::new(&source).unwrap();let ctx=egui::Context::default();
-        for frame in 0..12{super::MEASUREMENT_WORK.set(0);let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();if frame>4{assert_eq!(super::MEASUREMENT_WORK.get(),0,"frame {frame}");}}
+    fn three_hundred_texts_do_no_measurement_or_shaping_work_after_settling() {
+        let mut nodes = serde_json::Map::new();
+        let mut children = Vec::new();
+        for i in 0..300 {
+            let id = format!("text-{i}");
+            children.push(id.clone());
+            nodes.insert(
+                id,
+                json!({"widget":"text","text":format!("Measured label {i}"),"size":14}),
+            );
+        }
+        nodes.insert(
+            "root".into(),
+            json!({"widget":"grid","columns":3,"content_columns":true,"children":children}),
+        );
+        let source = format!(
+            "---\nscene: 1\nname: cache-300\ncitizen: test\n---\n```mix\n{}\n```\n",
+            Value::Object(nodes)
+        );
+        let mut view = super::SceneView::new(&source).unwrap();
+        let ctx = egui::Context::default();
+        for frame in 0..12 {
+            super::MEASUREMENT_WORK.set(0);
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+            if frame > 4 {
+                assert_eq!(super::MEASUREMENT_WORK.get(), 0, "frame {frame}");
+            }
+        }
     }
     #[test]
     fn changing_content_cannot_grow_measurement_storage_without_bound() {
@@ -2992,7 +3060,7 @@ mod measurement_cache_tests {
                 )
                 .len()
             });
-            assert_eq!(count,4096);
+            assert_eq!(count, 4096);
         });
         output.textures_delta.clear();
     }
@@ -3014,7 +3082,7 @@ fn intrinsic_text_width(
     if node.family == "text" {
         let cache = natural_size_key(node).with(("text-widths", ui.pixels_per_point().to_bits()));
         let sizes = measure_get::<(f32, f32)>(ui, cache).unwrap_or_else(|| {
-            let runs=measurement_runs(node,false);
+            let runs = measurement_runs(node, false);
             let bold = node.ports.get("bold") == Some(&Value::Bool(true));
             let mut job = crate::spans::job(
                 ui,
@@ -3070,13 +3138,12 @@ fn intrinsic_text_width(
         return Widget::decode(&node.ports["definition"])
             .ok()
             .and_then(|w| w.intrinsic_width(ui, model).ok())
-
             .unwrap_or(80.);
     }
     if !matches!(node.family.as_str(), "column" | "row" | "grid") {
         return match node.family.as_str() {
             "image" => image_extent(node).x,
-            "drawing" => num(node,"w").unwrap_or(280.),
+            "drawing" => num(node, "w").unwrap_or(280.),
             "spacer" => num(node, "size").unwrap_or(8.),
             "field" => ui.spacing().text_edit_width,
             _ => {
@@ -3107,15 +3174,21 @@ fn intrinsic_text_width(
         .collect();
     let content = if node.family == "row" {
         widths.iter().sum::<f32>()
-            + if node.ports.get("native_spacing")==Some(&Value::Bool(true)){ui.spacing().item_spacing.x}else{num(node, "gap").unwrap_or(0.)}
-                * widths.len().saturating_sub(1) as f32
+            + if node.ports.get("native_spacing") == Some(&Value::Bool(true)) {
+                ui.spacing().item_spacing.x
+            } else {
+                num(node, "gap").unwrap_or(0.)
+            } * widths.len().saturating_sub(1) as f32
     } else if node.family == "grid" {
         let columns = (num(node, "columns").unwrap_or(2.) as usize).clamp(1, 16);
         let mut maxima = vec![num(node, "min_column_width").unwrap_or(0.); columns];
         for (i, w) in widths.iter().enumerate() {
             maxima[i % columns] = maxima[i % columns].max(*w);
         }
-        if node.ports.get("content_columns")!=Some(&Value::Bool(true)){let maximum=maxima.iter().copied().fold(0.,f32::max);maxima.fill(maximum);}
+        if node.ports.get("content_columns") != Some(&Value::Bool(true)) {
+            let maximum = maxima.iter().copied().fold(0., f32::max);
+            maxima.fill(maximum);
+        }
         maxima.iter().sum::<f32>()
             + num(node, "column_gap").unwrap_or(12.) * columns.saturating_sub(1) as f32
     } else {
@@ -3152,39 +3225,91 @@ mod motion_identity_tests;
 #[cfg(test)]
 #[path = "view_binding_tests.rs"]
 mod binding_tests;
-fn image_extent(node:&Node)->egui::Vec2 {
+fn image_extent(node: &Node) -> egui::Vec2 {
     // Share the image painter's sizing contract with intrinsic layout.
-    let default=if text(node,"src").starts_with("raster:"){320.}else if text(node,"src").starts_with("icon:"){24.}else{200.};
-    let w=num(node,"w").or(num(node,"h")).unwrap_or(default);
-    egui::vec2(w,num(node,"h").unwrap_or(if text(node,"src").starts_with("raster:"){180.}else{w}))
+    let default = if text(node, "src").starts_with("raster:") {
+        320.
+    } else if text(node, "src").starts_with("icon:") {
+        24.
+    } else {
+        200.
+    };
+    let w = num(node, "w").or(num(node, "h")).unwrap_or(default);
+    egui::vec2(
+        w,
+        num(node, "h").unwrap_or(if text(node, "src").starts_with("raster:") {
+            180.
+        } else {
+            w
+        }),
+    )
 }
-fn prepare_measurements(nodes:&mut BTreeMap<String,Node>,scene:&str,memo:&mut BTreeMap<String,(Node,u64)>,alive:&mut BTreeSet<String>){
-    for (id,node) in nodes {
-        let name=format!("{scene}/{id}");alive.insert(name.clone());
-        let hash=if let Some((old,hash))=memo.get(&name).filter(|(old,_)|old==&*node){let _=old;*hash}else{let hash=measurement_content_hash(&name,node);memo.insert(name,(node.clone(),hash));hash};
-        node.ports.insert("__measure_key".into(),json!(hash));
-        if node.family=="row" && text(node,"align")=="start"{let align=node.ports.get("cross_align").and_then(Value::as_str).unwrap_or("center").to_owned();node.ports.insert("align".into(),json!(align));}
+fn prepare_measurements(
+    nodes: &mut BTreeMap<String, Node>,
+    scene: &str,
+    memo: &mut BTreeMap<String, (Node, u64)>,
+    alive: &mut BTreeSet<String>,
+) {
+    for (id, node) in nodes {
+        let name = format!("{scene}/{id}");
+        alive.insert(name.clone());
+        let hash = if let Some((old, hash)) = memo.get(&name).filter(|(old, _)| old == &*node) {
+            let _ = old;
+            *hash
+        } else {
+            let hash = measurement_content_hash(&name, node);
+            memo.insert(name, (node.clone(), hash));
+            hash
+        };
+        node.ports.insert("__measure_key".into(), json!(hash));
+        if node.family == "row" && text(node, "align") == "start" {
+            let align = node
+                .ports
+                .get("cross_align")
+                .and_then(Value::as_str)
+                .unwrap_or("center")
+                .to_owned();
+            node.ports.insert("align".into(), json!(align));
+        }
     }
 }
 #[cfg(test)]
-thread_local!{static MEASUREMENT_WORK:std::cell::Cell<usize>=const{std::cell::Cell::new(0)};}
-fn record_measurement_work(){#[cfg(test)] MEASUREMENT_WORK.set(MEASUREMENT_WORK.get()+1);}
-fn measurement_runs(node:&Node,first_line:bool)->Value {
-    let mut left=4096;
-    let mut out=Vec::new();
-    if let Some(runs)=node.ports.get("spans").and_then(Value::as_array){
-        for run in runs.iter().take(64){
-            let source=run["text"].as_str().unwrap_or("");
-            let text:String=source.chars().take(left).take_while(|c|!first_line||*c!='\n').collect();
-            left-=text.chars().count();
-            let mut bounded=serde_json::Map::new();
-            for key in ["bold","mono","role","color","highlight","strike"]{if let Some(v)=run.get(key){bounded.insert(key.into(),v.clone());}}
-            bounded.insert("text".into(),json!(text));out.push(Value::Object(bounded));
-            if left==0 || first_line && source.as_bytes().iter().take(4096).any(|c|*c==b'\n'){break;}
+thread_local! {static MEASUREMENT_WORK:std::cell::Cell<usize>=const{std::cell::Cell::new(0)};}
+fn record_measurement_work() {
+    #[cfg(test)]
+    MEASUREMENT_WORK.set(MEASUREMENT_WORK.get() + 1);
+}
+fn measurement_runs(node: &Node, first_line: bool) -> Value {
+    let mut left = 4096;
+    let mut out = Vec::new();
+    if let Some(runs) = node.ports.get("spans").and_then(Value::as_array) {
+        for run in runs.iter().take(64) {
+            let source = run["text"].as_str().unwrap_or("");
+            let text: String = source
+                .chars()
+                .take(left)
+                .take_while(|c| !first_line || *c != '\n')
+                .collect();
+            left -= text.chars().count();
+            let mut bounded = serde_json::Map::new();
+            for key in ["bold", "mono", "role", "color", "highlight", "strike"] {
+                if let Some(v) = run.get(key) {
+                    bounded.insert(key.into(), v.clone());
+                }
+            }
+            bounded.insert("text".into(), json!(text));
+            out.push(Value::Object(bounded));
+            if left == 0 || first_line && source.as_bytes().iter().take(4096).any(|c| *c == b'\n') {
+                break;
+            }
         }
-    }else{
-        let text:String=text(node,"text").chars().take(4096).take_while(|c|!first_line||*c!='\n').collect();out.push(json!({"text":text}));
+    } else {
+        let text: String = text(node, "text")
+            .chars()
+            .take(4096)
+            .take_while(|c| !first_line || *c != '\n')
+            .collect();
+        out.push(json!({"text":text}));
     }
     Value::Array(out)
 }
-
