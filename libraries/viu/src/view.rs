@@ -633,11 +633,11 @@ impl SceneView {
                 &mut alive,
             );
             let mut lists = self.lists.clone();
-            for list in lists.values_mut() {
-                for nodes in list.instances.values_mut() {
+            for (list_id,list) in lists.iter_mut() {
+                for (item_id,nodes) in list.instances.iter_mut() {
                     prepare_measurements(
                         nodes,
-                        &self.tree.name,
+                        &format!("{}/{list_id}/{item_id}",self.tree.name),
                         &self.tree.model,
                         &mut self.measurement_hashes,
                         &mut alive,
@@ -1625,7 +1625,7 @@ impl SceneView {
             paint_outline(ui, node, response.rect);
         }
         if node.family != "control" {
-            if !matches!(node.family.as_str(),"text"|"column"|"row"|"grid"){ui.ctx().data_mut(|d|d.insert_temp(natural_size_key(node).with("observed-width"),response.rect.width()));}
+            if !matches!(node.family.as_str(),"text"|"column"|"row"|"grid"){ui.ctx().data_mut(|d|d.insert_temp(egui::Id::new(node.ports.get("__measure_identity").and_then(Value::as_u64).unwrap_or(0)).with("observed-width"),response.rect.width()));}
             self.geometry.insert(
                 key,
                 if node.family == "dock" {
@@ -2902,7 +2902,7 @@ fn num(node: &Node, port: &str) -> Option<f32> {
                 | "row_gap"
                 | "gap"
                 | "size"
-                | "padding"
+                | "padding" | "padding_top" | "padding_right" | "padding_bottom" | "padding_left" | "padding_x" | "padding_y" | "outline_width"
                 | "radius"
                 | "w"
                 | "h"
@@ -3326,6 +3326,7 @@ fn prepare_measurements(
             node.ports.insert("__measure_value".into(), value);
         }
         let name = format!("{scene}/{id}");
+        {use std::hash::{Hash,Hasher};let mut identity=std::collections::hash_map::DefaultHasher::new();name.hash(&mut identity);node.ports.insert("__measure_identity".into(),json!(identity.finish()));}
         alive.insert(name.clone());
         let hash = if let Some((old, hash)) = memo.get(&name).filter(|(old, _)| old == &*node) {
             let _ = old;
