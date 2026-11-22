@@ -60,8 +60,8 @@ fn render_layout_steps() {
     std::fs::create_dir_all(&out).unwrap();
     let document: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     let mut deck = Deck::new();
-    let opened=deck.call("deck.open",json!({"path":path})).reply.unwrap();
-    assert_eq!(opened.rc,0,"{opened:?}");
+    let opened = deck.call("deck.open", json!({"path":path})).reply.unwrap();
+    assert_eq!(opened.rc, 0, "{opened:?}");
     for slide in document["slides"].as_array().unwrap() {
         let id = slide["id"].as_str().unwrap();
         for step in 0..slide["steps"].as_u64().unwrap() {
