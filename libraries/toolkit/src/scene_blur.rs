@@ -11,7 +11,7 @@ struct Cached {
     // Retain the layout jobs used as font identities: their pointers cannot
     // be reused while an entry refers to them.
     _sources: Vec<egui::epaint::ClippedShape>,
-    _fonts:Vec<std::sync::Arc<egui::FontData>>,
+    _fonts: Vec<std::sync::Arc<egui::FontData>>,
 }
 
 #[cfg(test)]
@@ -99,7 +99,10 @@ mod tests {
     #[test]
     fn repeated_frame_hits_before_atlas_or_raster_and_budget_is_bounded() {
         let ctx = egui::Context::default();
-        ctx.run_ui(egui::RawInput::default(),|ui| {ui.label("A paused blurred sample");}).drop_without_applying_deltas();
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.label("A paused blurred sample");
+        })
+        .drop_without_applying_deltas();
         for i in 0..3 {
             ctx.run_ui(
                 egui::RawInput {
@@ -119,9 +122,12 @@ mod tests {
         let c = shared.lock().unwrap();
         assert!(c.hits >= 1, "hits={} rasters={}", c.hits, c.rasterizations);
         assert_eq!(c.atlas_reads, c.rasterizations);
-        assert_eq!(c.rasterizations,1);
-        assert_eq!(c.atlas_reads,1);
-        println!("BLUR_CACHE hits={} rasterizations={} atlas_reads={}",c.hits,c.rasterizations,c.atlas_reads);
+        assert_eq!(c.rasterizations, 1);
+        assert_eq!(c.atlas_reads, 1);
+        println!(
+            "BLUR_CACHE hits={} rasterizations={} atlas_reads={}",
+            c.hits, c.rasterizations, c.atlas_reads
+        );
         assert!(c.entries.iter().map(|(_, c)| c.pixels).sum::<usize>() <= PIXELS);
     }
     #[test]
@@ -243,12 +249,18 @@ pub(super) fn apply(ui: &egui::Ui, node: &str, layer: LayerId, start: ShapeIdx, 
     // Family mappings, font-data identity and text options are cheap inputs.
     // The atlas pixels are consulted only on a miss, never hashed or cloned
     // on an identical-frame hit.
-    let fonts=ui.ctx().fonts(|f| {
+    let fonts = ui.ctx().fonts(|f| {
         f.definitions().families.hash(&mut hash);
-        format!("{:?}",f.options()).hash(&mut hash);
-        f.definitions().font_data.iter().map(|(name,font)| {
-            name.hash(&mut hash);(std::sync::Arc::as_ptr(font) as usize).hash(&mut hash);font.clone()
-        }).collect()
+        format!("{:?}", f.options()).hash(&mut hash);
+        f.definitions()
+            .font_data
+            .iter()
+            .map(|(name, font)| {
+                name.hash(&mut hash);
+                (std::sync::Arc::as_ptr(font) as usize).hash(&mut hash);
+                font.clone()
+            })
+            .collect()
     });
     for v in [sigma, ppp, rect.min.x, rect.min.y, rect.max.x, rect.max.y] {
         v.to_bits().hash(&mut hash);
@@ -408,7 +420,7 @@ pub(super) fn apply(ui: &egui::Ui, node: &str, layer: LayerId, start: ShapeIdx, 
             signature,
             pixels: width as usize * height as usize,
             _sources: shapes,
-            _fonts:fonts,
+            _fonts: fonts,
             texture: ui.ctx().load_texture(
                 format!("scene-gaussian-{key:?}"),
                 image,

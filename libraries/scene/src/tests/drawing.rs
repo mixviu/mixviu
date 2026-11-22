@@ -77,16 +77,19 @@ fn hostile_drawing_ports_are_refused_at_the_boundary() {
         s[field] = bad;
         assert!(crate::drawing::validate_shadow(&s).is_err());
     }
-    for bad in [
-        serde_json::json!(1e308),
-        serde_json::json!(-3601),
-    ] {
+    for bad in [serde_json::json!(1e308), serde_json::json!(-3601)] {
         assert!(
             crate::bindings::coerce_port(&bad, crate::schema::port_for("drawing", "sample_time"))
                 .is_err()
         );
     }
-    assert!(matches!(crate::bindings::coerce_port(&serde_json::Value::Null,crate::schema::port_for("drawing","sample_time")),Ok(None)));
+    assert!(matches!(
+        crate::bindings::coerce_port(
+            &serde_json::Value::Null,
+            crate::schema::port_for("drawing", "sample_time")
+        ),
+        Ok(None)
+    ));
     assert!(
         crate::bindings::coerce_port(
             &serde_json::json!(101),
