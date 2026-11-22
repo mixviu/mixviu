@@ -374,6 +374,14 @@ fn render_layout_steps() {
             )
             .unwrap();
             view.set_rasters(deck.rasters.clone());
+            let settle=egui::Context::default();
+            viu::fonts::install(&settle,400,600);
+            for frame in 0..24 {
+                let mut output=settle.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1600.,900.))),..Default::default()},|ui|{view.show(ui);});
+                output.textures_delta.clear();
+                if frame==23 {assert!(!output.platform_output.requested_discard(),"{id}-{step}: {:?}",output.platform_output.request_discard_reasons);}
+            }
+            println!("SETTLED {id}-{step}: no discard reasons after 24 frames");
             let rects = Arc::new(std::sync::Mutex::new(json!({})));
             let captured = rects.clone();
             let mut harness = egui_kittest::Harness::builder()
@@ -471,4 +479,12 @@ fn gallery_and_workshop_layouts_settle() {
         let mut v=SceneView::new(&source).unwrap();let ctx=egui::Context::default();
         for frame in 0..24 {let mut o=ctx.run_ui(egui::RawInput::default(),|ui|{v.show(ui);});o.textures_delta.clear();if frame==23{assert!(!o.platform_output.requested_discard(),"{}: {:?}",source,o.platform_output.request_discard_reasons);}}
     }
+}
+
+#[test]
+fn measured_grid_sums_columns_and_min_width_is_only_a_floor() {
+    let r=geometry(r#"{root:{widget:"row",justify:"between",fill:true,children:["g","tail"]},g:{widget:"grid",columns:2,column_gap:20,children:["a","b"]},a:{widget:"text",text:"A long first column",size:24},b:{widget:"text",text:"Second column",size:24},tail:{widget:"text",text:"Tail"}}"#);
+    assert!(r["g"].width()>r["a"].width()+r["b"].width()+18.);
+    let r=geometry(r#"{root:{widget:"row",children:["c","field","spacer","tail"]},c:{widget:"column",min_width:30,shrink:1,children:["text"]},text:{widget:"text",text:"Long intrinsic content"},field:{widget:"field",value:"",placeholder:"Input"},spacer:{widget:"spacer",size:20},tail:{widget:"column",basis:100,children:[]}}"#);
+    assert!(r["c"].width()>40.);assert!(r["field"].width()>20.);assert!(r["spacer"].width()>=20.);assert!((r["tail"].width()-100.).abs()<1.);
 }
