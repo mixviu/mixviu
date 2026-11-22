@@ -611,7 +611,8 @@ fn identity(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     let model = done.model.unwrap();
     let source = model["presentation"]["scene"].as_str().unwrap();
     let mut view = SceneView::new(source)?;
-    let output = ctx.run_ui(egui::RawInput::default(), |ui| { view.show(ui); });
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| { view.show(ui); });
+    output.textures_delta.clear();
     for (role, text, _, _, file) in roles {
         let actual = output.shapes.iter().find_map(|s| match &s.shape {
             egui::Shape::Text(t) if t.galley.job.text == text => Some(&t.galley),
