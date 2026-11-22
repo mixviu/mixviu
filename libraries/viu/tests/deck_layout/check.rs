@@ -137,16 +137,16 @@ fn start_row_reserves_height_and_hidden_grid_cell_keeps_its_slot() {
 }
 
 #[test]
-fn bounded_columns_keep_center_and_end_placement() {
+fn bounded_columns_keep_main_center_and_grow_start_placement() {
     let rects = geometry(
-        r##"{root:{widget:"column",fill:true,align:"center",children:["center","row"]},center:{widget:"column",grow:1,min_width:200,max_width:200,children:["middle"]},middle:{widget:"text",text:"Middle"},row:{widget:"row",fill:true,align:"end",children:["right"]},right:{widget:"column",min_width:200,max_width:200,children:["last"]},last:{widget:"text",text:"Right"}}"##,
+        r##"{root:{widget:"column",fill:true,align:"center",children:["center","row"]},center:{widget:"column",grow:1,min_width:200,max_width:200,children:["middle"]},middle:{widget:"text",text:"Middle"},row:{widget:"row",fill:true,align:"end",children:["right"]},right:{widget:"column",grow:1,min_width:200,max_width:200,children:["last"]},last:{widget:"text",text:"Right"}}"##,
     );
     assert!(
         (rects["root"].center().x - rects["center"].center().x).abs() < 1.,
         "{rects:?}"
     );
     assert!(
-        (rects["row"].right() - rects["right"].right()).abs() < 1.,
+        (rects["row"].left() - rects["right"].left()).abs() < 1.,
         "{rects:?}"
     );
 }
