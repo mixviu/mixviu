@@ -28,6 +28,9 @@ impl OwnedBus {
                 "--ignored",
                 "--nocapture",
             ])
+            // Stay alive when the test pool cancels the test's process group:
+            // this owner must reap the broker and remove its directory first.
+            .process_group(0)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()

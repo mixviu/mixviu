@@ -41,11 +41,11 @@ fn binary(name: &str) -> PathBuf {
 }
 
 struct Bus {
+    _owner: owned_bus::OwnedBus,
     // These tests measure a real render node and bounded recorder queues.
     // Keep fixtures in this binary exclusive even with libtest's default
     // parallelism; unrelated test binaries still use the normal CI pool.
     _capture: std::sync::MutexGuard<'static, ()>,
-    _owner: owned_bus::OwnedBus,
     root: PathBuf,
     url: String,
 }

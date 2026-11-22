@@ -5,6 +5,7 @@ mod owned_bus;
 use std::{
     fs,
     io::{BufRead, BufReader, Write},
+    os::unix::process::CommandExt,
     path::Path,
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
@@ -55,6 +56,7 @@ fn check(mode: &str) {
     let mut parent = Parent(
         Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "fixture_parent", "--ignored", "--nocapture"])
+            .process_group(0)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
@@ -78,7 +80,10 @@ fn check(mode: &str) {
     let pid: u32 = parts[1].parse().unwrap();
     let root = Path::new(parts[2]);
     assert!(!gone(pid, root), "handshake must name a live broker");
-    if mode != "panic" && mode != "normal" {
+    if mode == "group-kill" {
+        // SAFETY: the fixture has its own process group, created above.
+        assert_eq!(unsafe { libc::kill(-(parent.0.id() as i32), libc::SIGKILL) }, 0);
+    } else if mode != "panic" && mode != "normal" {
         parent.0.kill().unwrap();
     } else if mode == "panic" {
         writeln!(parent.0.stdin.as_mut().unwrap(), "panic now").unwrap();
@@ -111,6 +116,10 @@ fn check(mode: &str) {
 #[test]
 fn sigkill_reaps_broker_and_directory() {
     check("kill");
+}
+#[test]
+fn cancelled_process_group_reaps_broker_and_directory() {
+    check("group-kill");
 }
 #[test]
 fn panic_reaps_broker_and_directory() {
