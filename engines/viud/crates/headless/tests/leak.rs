@@ -24,7 +24,11 @@ impl Drop for Parent {
 fn fixture_parent() {
     let mut mode = String::new();
     std::io::stdin().read_line(&mut mode).unwrap();
-    let bus = owned_bus::OwnedBus::start(mode.trim());
+    let bus = if mode.trim() == "negative-control" {
+        owned_bus::OwnedBus::without_death_signal()
+    } else {
+        owned_bus::OwnedBus::start(mode.trim())
+    };
     let record: serde_json::Value =
         serde_json::from_slice(&fs::read(bus.root.join("bus.json")).unwrap()).unwrap();
     println!("CHILD_READY {} {}", record["pid"], bus.root.display());
@@ -98,7 +102,8 @@ fn check(mode: &str) {
             !cleaned,
             "negative control unexpectedly passed the leak oracle"
         );
-        std::os::unix::net::UnixStream::connect(root.join("release.sock")).unwrap();
+        // SAFETY: this is the exact live broker from our fixture handshake.
+        unsafe { libc::kill(pid as i32, libc::SIGKILL); }
         assert!(
             within(pid, root, Duration::from_secs(2)),
             "control cleanup failed"
