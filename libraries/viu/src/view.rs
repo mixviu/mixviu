@@ -606,7 +606,7 @@ impl SceneView {
         });
         ui.ctx()
             .data_mut(|d| d.insert_temp(egui::Id::new("scene-font-state"), font_state));
-        self.frame_palette=palette_key(ui);
+        self.frame_palette = palette_key(ui);
         self.painted.begin();
         self.motion.begin(ui);
         self.numbers.begin();
@@ -960,7 +960,31 @@ impl SceneView {
         if node.ports.get("hidden") == Some(&Value::Bool(true)) {
             return;
         }
-        let width = if matches!(node.family.as_str(),"column"|"row") {num(node,"width").or_else(||{if node.ports.get("fill")==Some(&Value::Bool(true)) || ["grow","shrink","basis"].iter().any(|p|num(node,p).unwrap_or(0.)>0.) {Some(ui.available_width())}else if node.family=="row" && node.ports.contains_key("cross_align") && text(node,"align")!="end" && row_measurable(node,nodes,0) {Some(intrinsic_text_width(ui,node,nodes,&self.tree.model,false,0).min(ui.available_width()))}else{None}})}else{None};
+        let width = if matches!(node.family.as_str(), "column" | "row") {
+            num(node, "width").or_else(|| {
+                if node.ports.get("fill") == Some(&Value::Bool(true))
+                    || ["grow", "shrink", "basis"]
+                        .iter()
+                        .any(|p| num(node, p).unwrap_or(0.) > 0.)
+                {
+                    Some(ui.available_width())
+                } else if node.family == "row"
+                    && node.ports.contains_key("cross_align")
+                    && text(node, "align") != "end"
+                    && text(node, "justify") != "between"
+                    && row_measurable(node, nodes, 0)
+                {
+                    Some(
+                        intrinsic_text_width(ui, node, nodes, &self.tree.model, false, 0)
+                            .min(ui.available_width()),
+                    )
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        };
         if let Some(width) = width.filter(|_| ui.layout().is_vertical()) {
             let width = bounded_layout(width, 1e6)
                 .max(num(node, "min_width").unwrap_or(0.))
@@ -1546,12 +1570,12 @@ impl SceneView {
                                         let fixed:f32=active.iter().filter(|c|nodes[**c].ports.get("fill")!=Some(&Value::Bool(true))).map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,false,0)).sum();
                                         let sizes:Vec<egui::Vec2>=active.iter().map(|child|{let old=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(ui.scope_id().with((&key,"between-size",child)))).unwrap_or_default();egui::vec2(if nodes[*child].ports.get("fill")==Some(&Value::Bool(true)){(bounded_layout(ui.available_width(),1e6)-fixed-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.)/fill_count.max(1) as f32}else{intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,false,0)},old.y)}).collect();
                                         let available=bounded_layout(ui.available_width(),1e6);
-                                        let gap=((available-sizes.iter().map(|s|s.x).sum::<f32>())/active.len().saturating_sub(1).max(1) as f32).max(ui.spacing().item_spacing.x);
+                                        let gap=ui.spacing().item_spacing.x;let split_gap=(available-sizes.iter().map(|s|s.x).sum::<f32>()-gap*active.len().saturating_sub(1) as f32).max(0.);
                                         let cross=sizes.iter().map(|s|s.y).fold(0.0_f32,f32::max);
                                         let origin=ui.available_rect_before_wrap().min;
                                         let mut x=origin.x;
                                         let mut height=0.0_f32;
-                                        for (child,size) in active.iter().zip(&sizes) {
+                                        for (index,(child,size)) in active.iter().zip(&sizes).enumerate() {
                                             let rect=egui::Rect::from_min_size(egui::pos2(x,origin.y+match cross_align(node,"center"){"start"=>0.,"end"=>cross-size.y,_=>(cross-size.y)/2.}),*size);
                                             let measure=egui::Rect::from_min_size(rect.min,egui::vec2(size.x,ui.available_height().max(size.y)));
                                             let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(measure).layout(egui::Layout::top_down(egui::Align::Min)));
@@ -1561,7 +1585,7 @@ impl SceneView {
 
                                             if (actual.y-size.y).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(ui.scope_id().with((&key,"between-size",child)),actual));ui.ctx().request_discard("scene layout measurement");}
                                             height=height.max(actual.y);
-                                            x+=size.x+gap;
+                                            x+=size.x+gap;if index==0{x+=split_gap;}
                                         }
                                         ui.allocate_space(egui::vec2(available,height));
                                     } else if text(node,"justify")=="between" {
@@ -3100,21 +3124,38 @@ fn natural_size_key(node: &Node) -> egui::Id {
 }
 #[derive(Clone)]
 struct MeasurementCache<T> {
-    values:std::collections::HashMap<egui::Id,T>,
-    order:std::collections::VecDeque<egui::Id>,
+    values: std::collections::HashMap<egui::Id, T>,
+    order: std::collections::VecDeque<egui::Id>,
 }
 impl<T> Default for MeasurementCache<T> {
-    fn default()->Self{Self{values:Default::default(),order:Default::default()}}
+    fn default() -> Self {
+        Self {
+            values: Default::default(),
+            order: Default::default(),
+        }
+    }
 }
-fn measure_get<T:Clone+Send+Sync+'static>(ui:&egui::Ui,key:egui::Id)->Option<T>{
-    ui.ctx().data_mut(|d|d.get_temp_mut_or_default::<MeasurementCache<T>>(egui::Id::new("scene-measurements")).values.get(&key).cloned())
+fn measure_get<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id) -> Option<T> {
+    ui.ctx().data_mut(|d| {
+        d.get_temp_mut_or_default::<MeasurementCache<T>>(egui::Id::new("scene-measurements"))
+            .values
+            .get(&key)
+            .cloned()
+    })
 }
-fn measure_put<T:Clone+Send+Sync+'static>(ui:&egui::Ui,key:egui::Id,value:T){
-    ui.ctx().data_mut(|d|{
-        let cache=d.get_temp_mut_or_default::<MeasurementCache<T>>(egui::Id::new("scene-measurements"));
-        if cache.values.len()>=4096 && !cache.values.contains_key(&key){if let Some(old)=cache.order.pop_front(){cache.values.remove(&old);}}
-        if !cache.values.contains_key(&key){cache.order.push_back(key);}
-        cache.values.insert(key,value);
+fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, value: T) {
+    ui.ctx().data_mut(|d| {
+        let cache =
+            d.get_temp_mut_or_default::<MeasurementCache<T>>(egui::Id::new("scene-measurements"));
+        if cache.values.len() >= 4096 && !cache.values.contains_key(&key) {
+            if let Some(old) = cache.order.pop_front() {
+                cache.values.remove(&old);
+            }
+        }
+        if !cache.values.contains_key(&key) {
+            cache.order.push_back(key);
+        }
+        cache.values.insert(key, value);
     });
 }
 
@@ -3162,10 +3203,11 @@ mod measurement_cache_tests {
                 super::measure_put(ui, egui::Id::new(i), i as f32);
             }
             let count = ctx.data_mut(|d| {
-                d.get_temp_mut_or_default::<super::MeasurementCache<f32>>(
-                    egui::Id::new("scene-measurements"),
-                )
-                .values.len()
+                d.get_temp_mut_or_default::<super::MeasurementCache<f32>>(egui::Id::new(
+                    "scene-measurements",
+                ))
+                .values
+                .len()
             });
             assert_eq!(count, 4096);
         });
@@ -3468,7 +3510,8 @@ fn cross_align<'a>(node: &'a Node, fallback: &'a str) -> &'a str {
         .unwrap_or(fallback)
 }
 fn palette_key(ui: &egui::Ui) -> u64 {
-    #[cfg(test)] PALETTE_PASSES.set(PALETTE_PASSES.get()+1);
+    #[cfg(test)]
+    PALETTE_PASSES.set(PALETTE_PASSES.get() + 1);
     use std::hash::{Hash, Hasher};
     let mut hash = std::collections::hash_map::DefaultHasher::new();
     ui.ctx().data(|d| {
@@ -3497,7 +3540,7 @@ impl PaintedGalleys {
     fn begin(&mut self) {
         self.seen.clear();
         self.clock += 1;
-        self.admit=true;
+        self.admit = true;
     }
     fn end(&mut self) {
         self.entries.retain(|key, (_, _, bytes, _)| {
@@ -3522,7 +3565,9 @@ impl PaintedGalleys {
         if let Some(old) = self.entries.remove(&node) {
             self.bytes -= old.2;
         }
-        if !self.admit{return;}
+        if !self.admit {
+            return;
+        }
         // Charge owned capacities, including row glyph/mesh buffers and section metadata.
         let bytes = std::mem::size_of::<egui::Galley>()
             + galley.job.text.capacity()
@@ -3540,20 +3585,20 @@ impl PaintedGalleys {
                 })
                 .sum::<usize>();
         if bytes > PAINTED_BYTES {
-            self.admit=false;
+            self.admit = false;
             return;
         }
         while self.bytes + bytes > PAINTED_BYTES {
             let oldest = self
                 .entries
                 .iter()
-                .filter(|(_,e)|e.3<self.clock)
+                .filter(|(_, e)| e.3 < self.clock)
                 .min_by_key(|(_, e)| e.3)
                 .map(|(k, _)| k.clone());
             if let Some(oldest) = oldest {
                 self.bytes -= self.entries.remove(&oldest).unwrap().2;
             } else {
-                self.admit=false;
+                self.admit = false;
                 return;
             }
         }
@@ -3641,13 +3686,21 @@ mod round7_tests {
     }
 }
 
-fn row_measurable(node:&Node,nodes:&BTreeMap<String,Node>,depth:usize)->bool {
-    if depth>32{return false;}
-    if node.ports.get("hidden")==Some(&Value::Bool(true)){return true;}
-    match node.family.as_str(){
-        "text"|"image"|"drawing"|"spacer"|"field"|"button"|"control"=>true,
-        "row"|"column"|"grid"=>children(node).all(|c|nodes.get(c).is_some_and(|n|row_measurable(n,nodes,depth+1))),
-        _=>false,
+fn row_measurable(node: &Node, nodes: &BTreeMap<String, Node>, depth: usize) -> bool {
+    if depth > 32 {
+        return false;
+    }
+    if node.ports.get("hidden") == Some(&Value::Bool(true)) {
+        return true;
+    }
+    match node.family.as_str() {
+        "text" | "image" | "drawing" | "spacer" | "field" | "button" | "control" => true,
+        "row" | "column" | "grid" => children(node).all(|c| {
+            nodes
+                .get(c)
+                .is_some_and(|n| row_measurable(n, nodes, depth + 1))
+        }),
+        _ => false,
     }
 }
 
@@ -3659,34 +3712,98 @@ mod round8_tests {
     use super::*;
     #[test]
     fn above_budget_live_text_keeps_cached_galleys_across_frames() {
-        let mut nodes=serde_json::Map::new();let mut kids=Vec::new();
-        for i in 0..4 {let id=format!("t{i}");kids.push(id.clone());nodes.insert(id,json!({"widget":"text","text":format!("= $model.t{i}")}));}
-        nodes.insert("root".into(),json!({"widget":"column","children":kids}));
-        let mut view=SceneView::new(&format!("---\nscene: 1\nname: budget\ncitizen: test\n---\n```mix\n{}\n```\n",Value::Object(nodes))).unwrap();
-        let mut model=serde_json::Map::new();for i in 0..4{model.insert(format!("t{i}"),json!(format!("{} {i}","a".repeat(100_000))));}view.apply_model(Value::Object(model)).unwrap();
-        let ctx=egui::Context::default();let mut retained=BTreeMap::new();
+        let mut nodes = serde_json::Map::new();
+        let mut kids = Vec::new();
+        for i in 0..4 {
+            let id = format!("t{i}");
+            kids.push(id.clone());
+            nodes.insert(id, json!({"widget":"text","text":format!("= $model.t{i}")}));
+        }
+        nodes.insert("root".into(), json!({"widget":"column","children":kids}));
+        let mut view = SceneView::new(&format!(
+            "---\nscene: 1\nname: budget\ncitizen: test\n---\n```mix\n{}\n```\n",
+            Value::Object(nodes)
+        ))
+        .unwrap();
+        let mut model = serde_json::Map::new();
+        for i in 0..4 {
+            model.insert(
+                format!("t{i}"),
+                json!(format!("{} {i}", "a".repeat(100_000))),
+            );
+        }
+        view.apply_model(Value::Object(model)).unwrap();
+        let ctx = egui::Context::default();
+        let mut retained = BTreeMap::new();
         for frame in 0..5 {
-            let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();
-            assert!(view.painted.bytes<=PAINTED_BYTES);
-            assert!(!view.painted.entries.is_empty() && view.painted.entries.len()<4,"live set exceeds budget");
-            if frame==0 {retained=view.painted.entries.iter().map(|(k,e)|(k.clone(),e.1.clone())).collect();}
-            else {for (k,galley) in &retained{assert!(std::sync::Arc::ptr_eq(galley,&view.painted.entries[k].1),"cached node reshaped: {k}");}}
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+            assert!(view.painted.bytes <= PAINTED_BYTES);
+            assert!(
+                !view.painted.entries.is_empty() && view.painted.entries.len() < 4,
+                "live set exceeds budget"
+            );
+            if frame == 0 {
+                retained = view
+                    .painted
+                    .entries
+                    .iter()
+                    .map(|(k, e)| (k.clone(), e.1.clone()))
+                    .collect();
+            } else {
+                for (k, galley) in &retained {
+                    assert!(
+                        std::sync::Arc::ptr_eq(galley, &view.painted.entries[k].1),
+                        "cached node reshaped: {k}"
+                    );
+                }
+            }
         }
     }
     #[test]
     fn palette_hash_runs_once_per_frame_for_many_text_nodes() {
-        let mut nodes=serde_json::Map::new();let mut kids=Vec::new();
-        for i in 0..100 {let id=format!("t{i}");kids.push(id.clone());nodes.insert(id,json!({"widget":"text","text":"label"}));}
-        nodes.insert("root".into(),json!({"widget":"column","children":kids}));
-        let mut view=SceneView::new(&format!("---\nscene: 1\nname: palette-count\ncitizen: test\n---\n```mix\n{}\n```\n",Value::Object(nodes))).unwrap();
-        let ctx=egui::Context::default();
-        for _ in 0..3 {PALETTE_PASSES.set(0);let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();assert_eq!(PALETTE_PASSES.get(),1);}
+        let mut nodes = serde_json::Map::new();
+        let mut kids = Vec::new();
+        for i in 0..100 {
+            let id = format!("t{i}");
+            kids.push(id.clone());
+            nodes.insert(id, json!({"widget":"text","text":"label"}));
+        }
+        nodes.insert("root".into(), json!({"widget":"column","children":kids}));
+        let mut view = SceneView::new(&format!(
+            "---\nscene: 1\nname: palette-count\ncitizen: test\n---\n```mix\n{}\n```\n",
+            Value::Object(nodes)
+        ))
+        .unwrap();
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            PALETTE_PASSES.set(0);
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+            assert_eq!(PALETTE_PASSES.get(), 1);
+        }
     }
     #[test]
     fn sibling_lists_with_shared_item_ids_keep_separate_paint_entries() {
         let mut view=SceneView::new("---\nscene: 1\nname: list-scopes\ncitizen: test\n---\n```mix\n{root:{widget:\"column\",children:[\"left\",\"right\"]},left:{widget:\"list\",row:\"t\",row_height:24,rows:[{id:\"one\",cells:[\"Alpha\"]}]},right:{widget:\"list\",row:\"t\",row_height:24,rows:[{id:\"one\",cells:[\"Beta\"]}]},t:{widget:\"text\",text:\"{cells[0]}\"}}\n```\n").unwrap();
-        let ctx=egui::Context::default();
-        for _ in 0..3 {let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();assert_eq!(view.painted.entries.len(),2);}
-        let texts:Vec<_>=view.painted.entries.values().map(|e|e.1.job.text.as_str()).collect();assert!(texts.contains(&"Alpha") && texts.contains(&"Beta"));
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+            assert_eq!(view.painted.entries.len(), 2);
+        }
+        let texts: Vec<_> = view
+            .painted
+            .entries
+            .values()
+            .map(|e| e.1.job.text.as_str())
+            .collect();
+        assert!(texts.contains(&"Alpha") && texts.contains(&"Beta"));
     }
 }
