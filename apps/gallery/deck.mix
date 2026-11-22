@@ -145,6 +145,22 @@ fn flow($nodes)
   end
   return row($items,$tokens.space.flow)
 end
+fn compact_flow($nodes)
+  $node=flow($nodes)
+  $node.gap=8
+  for $i=0 to len($node.children)-1
+    $child=$node.children[$i]
+    if $i%2==0 then
+      $child.padding_left=14;$child.padding_right=14
+      $child.padding_top=10;$child.padding_bottom=10
+      $child.align="center"
+      $child.children[0]=merge($child.children[0],{text:upper($child.children[0].text),size:20,weight:500,letter_spacing:1.6,line_height:25,wrap:true,max_width:$tokens.space.compact_flow_label,align:"center"})
+      $child.children[1]=merge($child.children[1],{size:19,line_height:23.75,align:"center"})
+    else $child.children[0].size=40 end
+    $node.children[$i]=$child
+  end
+  return $node
+end
 fn code($lines)
   $items = []
   for $line in $lines
