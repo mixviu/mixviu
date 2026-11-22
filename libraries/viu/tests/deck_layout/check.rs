@@ -630,3 +630,10 @@ fn auto_height_justify_keeps_natural_packing() {
         }
     }
 }
+
+#[test]
+fn legacy_end_grow_row_keeps_main_top_left_packing() {
+    let a = geometry(r#"{root:{widget:"row",children:["a","b"]},a:{widget:"column",height:80,min_width:100,children:[]},b:{widget:"column",height:20,grow:1,children:[]}}"#);
+    let b = geometry(r#"{root:{widget:"row",align:"end",children:["a","b"]},a:{widget:"column",height:80,min_width:100,children:[]},b:{widget:"column",height:20,grow:1,children:[]}}"#);
+    assert_eq!(a, b);
+}
