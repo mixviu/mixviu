@@ -301,17 +301,8 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
     };
     let mut ports = family.to_vec();
     if f == "text" {
-        for name in ["font", "mono_font"] {
-            ports.push(Port {
-                enum_values: &[
-                    "Liberation Sans",
-                    "Liberation Sans Bold",
-                    "Noto Sans Mono",
-                    "Noto Sans",
-                ],
-                ..p(name, "string", false, None)
-            });
-        }
+        ports.push(p("font", "string", false, None));
+        ports.push(p("mono_font", "string", false, None));
         ports.push(pn("weight", false, Some(1.0)));
         ports.push(p("spans", "list", false, None));
         ports.push(p("number", "object", false, None));

@@ -574,7 +574,7 @@
           "mono": true,
           "size": 17,
           "text": "before",
-          "weight": 400,
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -1573,7 +1573,7 @@
           "mono": true,
           "size": 17,
           "text": "recorder",
-          "weight": 400,
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -2119,7 +2119,7 @@
           "mono": true,
           "size": 17,
           "text": "reader",
-          "weight": 400,
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -2596,7 +2596,7 @@
           "mono": true,
           "size": 17,
           "text": ".mkv",
-          "weight": 400,
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -3116,7 +3116,7 @@
           "mono": true,
           "size": 17,
           "text": "privacy",
-          "weight": 400,
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -3775,7 +3775,7 @@
           "mono": true,
           "size": 17,
           "text": "turning point",
-          "weight": 400,
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -4457,7 +4457,7 @@
           "mono": true,
           "size": 17,
           "text": "live",
-          "weight": 400,
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -4977,7 +4977,7 @@
           "mono": true,
           "size": 17,
           "text": "loose ends",
-          "weight": 400,
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -5497,7 +5497,7 @@
           "mono": true,
           "size": 17,
           "text": "now",
-          "weight": 400,
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -6050,7 +6050,7 @@
           "mono": true,
           "size": 17,
           "text": "owed",
-          "weight": 400,
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },

@@ -1437,7 +1437,8 @@ impl Host {
                                     } else {
                                         SceneView::with_model(&source, projected)
                                     })
-                                    .map(|view| {
+                                    .and_then(|mut view| {
+                                        view.bind_fonts(ctx)?;
                                         self.view = view;
                                         self.view.set_documents(self.documents.clone());
                                         self.view.set_rasters(self.rasters.clone());
@@ -1445,6 +1446,7 @@ impl Host {
                                         self.view.set_native_menus(self.native_drive);
                                         self.loaded = true;
                                         self.active_scene = source;
+                                        Ok(())
                                     })
                                 }
                             });
@@ -1738,7 +1740,7 @@ impl Host {
             .or_else(|| self.output.as_ref().map(|_| &self.model))
         {
             if self.ready && !self.loaded {
-                match SceneView::with_model(&self.scene_source, projected.clone()) {
+                match SceneView::with_model(&self.scene_source, projected.clone()).and_then(|mut view| { view.bind_fonts(ctx)?; Ok(view) }) {
                     Ok(view) => {
                         self.view = view;
                         self.view.set_rasters(self.rasters.clone());

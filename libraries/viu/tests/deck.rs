@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
+use egui::{Color32, FontDefinitions, FontFamily, FontId};
+use toolkit::fonts::optional::{FILES, register};
 use serde_json::{Value, json};
 use std::{
     path::PathBuf,
@@ -579,9 +581,6 @@ fn render_reference_scenes() {
     }
 }
 
-// SPDX-License-Identifier: MIT OR Apache-2.0
-use egui::{Color32, FontDefinitions, FontFamily, FontId};
-use toolkit::fonts::optional::{FILES, register};
 
 fn identity(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut defs = FontDefinitions::default();
@@ -610,7 +609,9 @@ fn identity(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
             FILES[1],
         ),
         ("mono date", "2026-11-22", "Noto Sans Mono", 400, FILES[2]),
-        ("mono PR tag", "#215", "Noto Sans Mono", 700, FILES[2]),
+        ("mono medium", "mono 500", "Noto Sans Mono", 500, FILES[4]),
+        ("mono PR tag", "#215", "Noto Sans Mono", 600, FILES[5]),
+        ("mono rail", "current rail", "Noto Sans Mono", 700, FILES[5]),
         (
             "glyph fallback",
             fallback_text.as_str(),
@@ -700,6 +701,18 @@ fn deck_font_identity_and_missing_bundle_control() {
         std::fs::copy(dir.join(file), temp.path().join(file)).unwrap();
     }
     std::fs::rename(temp.path().join(FILES[0]), temp.path().join("absent.ttf")).unwrap();
-    let error = identity(temp.path()).expect_err("missing bundled file must fail");
-    println!("FONT_IDENTITY without fonts: FAIL (expected): {error}");
+    let mut defs = FontDefinitions::default();
+    // Same failed optional installation as production; rejection must come from
+    // the scene admission path, not from propagating register() in this test.
+    let _ = register(&mut defs, temp.path());
+    let ctx = egui::Context::default();
+    ctx.set_fonts(defs);
+    let source = "---\nscene: 1\nname: missing-font\ncitizen: deck\n---\n```mix\n{root:{widget:\"text\",text:\"heading\",font:\"Liberation Sans\"}}\n```\n";
+    let mut view = SceneView::new(source).unwrap();
+    let mut refusal = None;
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| { refusal = view.bind_fonts(ui.ctx()).err(); });
+    output.textures_delta.clear();
+    let error = refusal.expect("production validate_controls must refuse an unbound family");
+    assert!(error.contains("required font family not bound"));
+    println!("FONT_IDENTITY without fonts: FAIL (expected production refusal): {error}");
 }

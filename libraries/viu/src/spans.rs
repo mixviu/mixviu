@@ -10,7 +10,7 @@ pub(crate) fn job(
     mono: bool,
     bold: bool,
     base: Color32,
-    family: Option<(&str, u16, Option<&str>)>,
+    family: Option<(&str, f32, Option<&str>)>,
 ) -> LayoutJob {
     let mut job = LayoutJob::default();
     for run in spans.as_array().into_iter().flatten() {

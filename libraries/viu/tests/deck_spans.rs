@@ -66,7 +66,35 @@ fn source() -> String {
 #[test]
 fn unregistered_font_family_refuses_before_paint() {
     let source = "---\nscene: 1\nname: font-refusal\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"hello\",font:\"missing-family\"}}\n```\n";
-    assert!(SceneView::new(source).is_err());
+    let mut view = SceneView::new(source).unwrap();
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        assert!(view.bind_fonts(ui.ctx()).unwrap_err().contains("not bound"));
+    });
+    output.textures_delta.clear();
+}
+
+#[test]
+fn bound_fonts_survive_file_removal_and_invalid_font_patches_preserve_the_scene() {
+    let temp = tempfile::tempdir().unwrap();
+    for file in toolkit::fonts::optional::FILES {
+        std::fs::copy(toolkit::fonts::optional::directory().join(file),temp.path().join(file)).unwrap();
+    }
+    let mut defs = egui::FontDefinitions::default();
+    toolkit::fonts::optional::register(&mut defs,temp.path()).unwrap();
+    std::fs::remove_dir_all(temp.path()).unwrap();
+    let ctx = egui::Context::default();ctx.set_fonts(defs);
+    let source = "---\nscene: 1\nname: bound\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"hello\",font:\"= $model.font\"}}\n```\n";
+    let model=json!({"font":"Liberation Sans"});
+    let mut view=SceneView::with_model(source, model.clone()).unwrap();
+    let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{
+        view.bind_fonts(ui.ctx()).unwrap();
+        let error=view.apply_model(json!({"font":"absent"})).unwrap_err();
+        assert!(error.contains("required font family not bound"));
+        assert_eq!(view.model(),&model);
+        view.show(ui);
+    });
+    output.textures_delta.clear();
 }
 #[test]
 fn inline_runs_keep_layout_colours_history_and_highlight() {

@@ -1,19 +1,27 @@
 # Deck
 
 Deck text uses the measured HTML faces: Liberation Sans (400/500 Regular,
-600/700 Bold), Noto Sans Mono Regular for dates, PR tags, rails and code,
+600/700 Bold), Noto Sans Mono (400 Regular, 500 Medium, 600/700 Bold),
 and Noto Sans Regular for missing glyphs. No synthetic weight is used.
-Gold ships the four unmodified files and OFL licences in `share/fonts`.
+Gold ships six unmodified files and OFL licences in `share/fonts`.
 Toolkit and Viu register these optional named families; desktop defaults
-remain Inter and JetBrains Mono. A design typography role or content font
-can select them by family name. Scene text accepts `font` and CSS `weight`;
+remain Inter and JetBrains Mono. A design typography role or app
+can select them by family name. Content settings retain Inter/JetBrains Mono.
+Scene text accepts `font` and CSS `weight`;
 deck supplies its sans/mono families for every text node, including spans.
-An absent bundle refuses deck scene validation rather than substituting.
+The host binds scenes against the context's loaded families before replacing
+the current scene. Model patches use that bound set, with no filesystem stats.
+Missing or unknown families refuse there rather than substituting; the painter
+also checks binding before drawing. Structural parsing alone does not bind fonts.
 
 `cargo test -p lib-viu --test deck deck_font_identity -- --nocapture` (CBC only) paints
 the roles and compares their glyph atlas coordinates with isolated faces,
-reporting the files' internal PostScript names. Its renamed-file control
-must fail. This is the font acceptance check; no SSIM claim is made.
+reporting the files' internal PostScript names. Its renamed-file control checks
+the production scene refusal against the context's bound families. This is the
+font acceptance check; no SSIM claim is made. `tools/deck_font_probe.mix` prints
+the source episode's 16 sections and adjacent sting to PDF using supplied
+templates, then records pdffonts output and hashes. See
+`provenance/deck-font-measurement.json` for the 17-slide measurement.
 
 Run `viu run apps/deck`. The ordinary window starts full-screen. The host fits
 the 1600 × 900 logical canvas into the output, centred with letterboxing;

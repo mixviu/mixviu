@@ -95,7 +95,7 @@ pub fn definitions(theme: &Theme) -> FontDefinitions {
             theme.overlay().family.as_deref()
         }
         .unwrap_or(&record.family);
-        let selected = optional::family(name, weight);
+        let selected = optional::family(name, f32::from(weight));
         if let Some(stack) = fonts.families.get(&selected).cloned() {
             fonts.families.insert(target, stack);
         }

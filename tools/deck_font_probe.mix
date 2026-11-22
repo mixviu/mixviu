@@ -10,21 +10,23 @@ mkdir($out,{parents:true});$out=realpath($out)
 copy($source,$out.."/deck.html")
 for $file in ["deck.css","anim.css","deck.js"] copy($templates.."/"..$file,$out.."/"..$file) end
 if is_dir(dirname($source).."/assets") then symlink(dirname($source).."/assets",$out.."/assets") end
-$allowed=["LiberationSans","LiberationSans-Bold","NotoSansMono-Regular","NotoSansMono-Bold","NotoSans-Regular"]
+$inputs=["deck.html"]
+if is_file(dirname($source).."/sting.html") then copy(dirname($source).."/sting.html",$out.."/sting.html");push($inputs,"sting.html") end
 $rows=[];$union=[]
-for $section in slice(split(read_file($source),"<section"),1)
+for $input in $inputs
+for $section in slice(split(read_file($out.."/"..$input),"<section"),1)
   $header=split($section,">")[0]
   if not re_match($header,"id=\"[^\"]+\"") then raise("SCENE","section without id") end
   $id=re_replace($header,".*id=\"([^\"]+)\".*","$1")
   if not re_match($id,"^[A-Za-z0-9_-]+$") then raise("SCENE","unsafe scene id") end
   $pdf=$out.."/"..$id..".pdf"
-  run_argv_must(["google-chrome-stable","--headless=new","--disable-gpu","--no-first-run","--no-default-browser-check","--allow-file-access-from-files","--user-data-dir="..$out.."/profile","--no-pdf-header-footer","--virtual-time-budget=3000","--print-to-pdf="..$pdf,"file://"..$out.."/deck.html#s="..$id.."&t=30"],{timeout:60,max_output:100000})
+  run_argv_must(["google-chrome-stable","--headless=new","--disable-gpu","--no-first-run","--no-default-browser-check","--allow-file-access-from-files","--user-data-dir="..$out.."/profile","--no-pdf-header-footer","--virtual-time-budget=3000","--print-to-pdf="..$pdf,"file://"..$out.."/"..$input.."#s="..$id.."&t=30"],{timeout:60,max_output:100000})
   $raw=run_argv_must(["pdffonts",$pdf]);write_file($out.."/"..$id..".pdffonts.txt",$raw)
   $faces=[]
   for $line in slice(lines(trim($raw)),2)
     $name=split(trim($line)," ")[0]
     $name=re_replace($name,"^[A-Z]{6}\\+","")
-    if not contains($allowed,$name) then raise("UNEXPECTED_FACE",$id..": "..$name) end
+    if not re_match($name,"^(LiberationSans|NotoSansMono|NotoSans)(-|$)") or re_match($name,"Italic|Oblique") then raise("UNEXPECTED_FACE",$id..": "..$name) end
     if not contains($faces,$name) then push($faces,$name) end
     if not contains($union,$name) then push($union,$name) end
   end
@@ -32,7 +34,9 @@ for $section in slice(split(read_file($source),"<section"),1)
   push($rows,{slide:$id,faces:$faces})
   print(json_encode($rows[len($rows)-1]))
 end
-$pins={html:hash_file($source,"sha256")}
+end
+$pins={}
+for $input in $inputs $pins[$input]=hash_file($out.."/"..$input,"sha256") end
 for $file in ["deck.css","anim.css","deck.js"] $pins[$file]=hash_file($templates.."/"..$file,"sha256") end
 $result={chrome:trim(run_argv_must(["google-chrome-stable","--version"])),inputs:$pins,slides:$rows,union:$union}
 write_file($out.."/faces.json",json_encode($result).."\n")
