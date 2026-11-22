@@ -342,7 +342,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "THE NIGHTLY EPISODE'S TUTORIAL TAKES",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -636,7 +636,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "BUT THE DESKS CARRY NO FFMPEG",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -675,7 +675,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "SO EVERY TAKE FELL BACK",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -701,6 +701,7 @@
         "root.3.1.1.1": {
           "color": "#8d99a8",
           "font": "Liberation Sans",
+          "letter_spacing": 1.3199999999999998,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 22,
@@ -1123,7 +1124,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "A TAKE IS A DIRECTORY: A LOSSLESS FRAME LOG, PURE RUST, NO FFMPEG",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -1536,7 +1537,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "THIS VIDEO'S FIRST LIVE TAKE, DESK7",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -1572,6 +1573,7 @@
         "root.3.0.1.0.1": {
           "color": "#8d99a8",
           "font": "Liberation Sans",
+          "letter_spacing": 1.3199999999999998,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 22,
@@ -1602,6 +1604,7 @@
         "root.3.0.1.1.1": {
           "color": "#8d99a8",
           "font": "Liberation Sans",
+          "letter_spacing": 1.3199999999999998,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 22,
@@ -1632,6 +1635,7 @@
         "root.3.0.1.2.1": {
           "color": "#8d99a8",
           "font": "Liberation Sans",
+          "letter_spacing": 1.3199999999999998,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 22,
@@ -1665,7 +1669,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "ON DISK",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -1691,6 +1695,7 @@
         "root.3.1.1.1": {
           "color": "#8d99a8",
           "font": "Liberation Sans",
+          "letter_spacing": 1.3199999999999998,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 22,
@@ -2130,7 +2135,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "BEFORE THE READER",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -2232,7 +2237,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "PR #191 · MEASURED, THEN MERGED",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -2661,7 +2666,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "EVERY NIGHT, THE RECORDER SAID NO",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -2700,7 +2705,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "QUIETLY",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -3135,7 +3140,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "PR #193 · LISTED WINDOWS",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -3174,7 +3179,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "FIRST SECURITY REVIEW: FAIL",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -3213,7 +3218,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "HISTORICAL STATUS AT AUTHORING",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -3648,7 +3653,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "RECORDED ON THE STAGING DESK",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -3873,7 +3878,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "17–20 NOVEMBER",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -4558,7 +4563,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "THE SAME SCRIPTS THE NIGHTLY EPISODE USES",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -4993,7 +4998,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "FOUND MAKING THIS VIDEO",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -5032,7 +5037,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "A CLOSED PIPE",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -5071,7 +5076,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "CHROME",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -5506,7 +5511,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "INSIDE THE TAKE",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -5545,7 +5550,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "BETTER",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -5584,7 +5589,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "THE COST, AND WHAT IS UNKNOWN",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },
@@ -6568,7 +6573,7 @@
           "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "THE DESK RECORDS ITSELF",
-          "weight": 700,
+          "weight": 500,
           "widget": "text",
           "wrap": true
         },

@@ -4,9 +4,9 @@
 $tokens = require("../../libraries/design/deck.tokens.mix")
 
 fn deck_text($text, $style, $role)
-  $mono=contains(["date","chip","rail","rail_compact","series_footer","code","terminal","tree"],$style)
+  $mono=contains(["date","chip","pr","topic_no","rail","rail_compact","series_footer","code","terminal","tree"],$style)
   $weight=if contains(["headline","topic_title","wordmark","stat","panel_title"],$style) then 700 else 400 end
-  return {widget:"text", text:$text, size:$tokens.type[$style], color:$tokens.colour[$role],font:if $mono then "Noto Sans Mono" else "Liberation Sans" end,mono_font:"Noto Sans Mono",mono:$mono,weight:$weight}
+  return {widget:"text", text:$text, size:$tokens.type[$style], color:$tokens.colour[$role],font:if $mono then "Noto Sans Mono" else "Liberation Sans" end,mono_font:"Noto Sans Mono",mono:$mono,weight:if $style=="panel_title" then 500 else $weight end}
 end
 fn inline($runs, $style, $mono)
   $styled = []
@@ -45,6 +45,30 @@ fn kicker($text, $prs)
 end
 fn pr_pill($text,$role="acc")
   return merge(column([merge(deck_text($text,"pr","background"),{weight:600})],0),{padding_left:14,padding_right:14,padding_top:4,padding_bottom:4,background:$tokens.colour[$role],radius:8})
+end
+fn header($text,$prs=[],$mark=false)
+  $node=kicker(upper($text),$prs)
+  $node.children[0].letter_spacing=$tokens.type.kicker*0.04
+  if $mark then
+    $node.children=concat([{widget:"image",src:"brand:cyclops",w:34,h:34}],$node.children)
+  end
+  return $node
+end
+fn compact_rail($chapters,$active,$date)
+  $node=chapter_rail($chapters,$active,$date)
+  $node.children[0].gap=6
+  for $i=0 to len($node.children[0].children)-1
+    $node.children[0].children[$i].padding_left=8
+    $node.children[0].children[$i].padding_right=8
+    $node.children[0].children[$i].padding_top=2
+    $node.children[0].children[$i].padding_bottom=2
+    $node.children[0].children[$i].radius=5
+    $node.children[0].children[$i].children[0].size=16
+  end
+  $node.children[1].font="Liberation Sans"
+  $node.children[1].mono=false
+  $node.children[1].letter_spacing=0.96
+  return $node
 end
 fn compact_card($title,$items,$tone="mut")
   $node=card($title,$items,$tone)
