@@ -293,6 +293,7 @@ fn themed_plain_colours_and_bold_are_painted() {
             v.show(ui);
         });
         o.textures_delta.clear();
+        let mut found=std::collections::BTreeSet::new();
         for s in o.shapes {
             if let egui::Shape::Text(t) = s.shape {
                 let wanted = match t.galley.job.text.as_str() {
@@ -301,6 +302,7 @@ fn themed_plain_colours_and_bold_are_painted() {
                     "Design" => design,
                     _ => continue,
                 };
+                found.insert(t.galley.job.text.clone());
                 assert!(
                     t.galley
                         .job
@@ -310,6 +312,7 @@ fn themed_plain_colours_and_bold_are_painted() {
                 );
             }
         }
+        assert_eq!(found.len(),3);
     }
 }
 
