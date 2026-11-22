@@ -42,6 +42,7 @@ decor = { workspace = true }
 screencopy = { workspace = true }
 
 [dev-dependencies]
+tempfile.workspace = true
 motion.workspace = true
 media-vfl = { path = "../../../../libraries/media/vfl" }
 wayland-protocols-wlr = { workspace = true, features = ["client"] }
