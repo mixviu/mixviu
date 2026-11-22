@@ -1,0 +1,25 @@
+-- Fake libtest executable; fixture-only, no Rust or external test tooling.
+$a = args()
+if len(filter($a, fn($a) = $a == "--exact")) > 1 then
+  eprint("error: Option 'exact' given more than once")
+  exit(101)
+end
+$tests = ["module::tests::pass", "module::tests::fail", "module::tests::hang", "module::tests::other_fail"]
+if contains($a, "--list") then
+  for $t in $tests
+    print($t .. ": test")
+  end
+  exit(0)
+end
+$chosen = []
+for $t in $tests
+  $skip = false
+  for $i = 0 to len($a) - 1
+    if $a[$i] == "--skip" and $a[$i + 1] == $t then $skip = true end
+  end
+  if not $skip and (len($a) == 0 or $a[0] == "--skip" or $a[0] == $t) then push($chosen, $t) end
+end
+for $t in $chosen
+  if ends_with($t, "::hang") then sleep(2000) end
+  if ends_with($t, "::fail") or ends_with($t, "::other_fail") then exit(1) end
+end

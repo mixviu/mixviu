@@ -114,12 +114,17 @@ if not is_file("/proc/self/environ") then refuse("needs Linux procfs (/proc/self
 
 $serial_path = $o.opts.serial ?? "tools/ci/serial-tests.conf.mix"
 $serial = if exists($serial_path) then load_data($serial_path).serial_tests ?? [] else [] end
+$quarantine = require("quarantine.mix")
+-- Required even for an empty list: missing or malformed policy fails closed.
+$quarantined = $quarantine.load("tools/ci/quarantine.conf.mix")
+$today = floor(time() / 86400)
 $root = realpath(".")
 $mix_exe = realpath("/proc/self/exe")
 $recorder = path_join(dirname(realpath(script_path())), "test_record.mix")
 -- The recorder records programs under the target directory (cargo's test
 -- binaries) and runs anything else, i.e. rustdoc's doc-test executables.
 $metadata = json_parse(run_argv_must(["cargo", "metadata", "--format-version", "1", "--no-deps"], {timeout: 600, max_output: 64000000}))
+$quarantine.validate_packages($quarantined, $metadata)
 $meta_target = $metadata.target_directory
 
 -- Retry-once policy (see header). Decided before anything runs.
@@ -256,6 +261,9 @@ try
 
   $pool = []
   $alone = []
+  $pool_quarantined = []
+  $alone_quarantined = []
+  $quarantine_matched = {}
   $matched = {}
   $selected_pkgs = {}
   for $i = 0 to len($runs) - 1
@@ -293,11 +301,17 @@ try
     $argv = if len($odd) == 0 then $r.argv else concat(concat(["env", "--"], $odd), $r.argv) end
     $job = {argv: $argv, env: $plain, cwd: $r.cwd, timeout: 3600, max_output: 64000000,
             stdout: "capture", stderr: "stdout", label: $labels[$i], key: $key}
+    $job.executable = if len($odd) == 0 then [$r.argv[0]] else concat(concat(["env", "--"], $odd), [$r.argv[0]]) end
+    $prepared = $quarantine.prepare($job, $quarantined, $pkg, $target, $today)
+    $quarantine_matched[$key] = true
+    $job = $prepared.strict
     if len(filter($serial, fn($s) = $s.package == $pkg and $s.target == $target)) > 0 then
       $matched[$key] = true
       push($alone, $job)
+      $alone_quarantined = concat($alone_quarantined, $prepared.isolated)
     else
       push($pool, $job)
+      $pool_quarantined = concat($pool_quarantined, $prepared.isolated)
     end
   end
   -- A serial entry for a package in this selection must name a real test
@@ -307,13 +321,20 @@ try
   for $s in $stale
     print("::error::" .. $serial_path .. ": " .. $s.package .. "/" .. $s.target .. " matches no test binary of " .. $s.package)
   end
+  for $e in $quarantined
+    if has_key($selected_pkgs, $e.package) and not has_key($quarantine_matched, $e.package .. "/" .. $e.target) then
+      refuse("quarantine target matches no selected binary: " .. $e.package .. "/" .. $e.target)
+    end
+  end
 
   -- 2-3. Replay: the pool, then the serial list one at a time.
   $t_run = monotonic()
   $pool_rs = run_parallel(run_spec($pool), {max: $jobs})
+  $quarantine.replay($pool_quarantined)
   $pool_s = monotonic() - $t_run
   $t_alone = monotonic()
   $alone_rs = run_parallel(run_spec($alone), {max: 1})
+  $quarantine.replay($alone_quarantined)
   $alone_s = monotonic() - $t_alone
 
   $all = concat($pool, $alone)

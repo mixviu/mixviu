@@ -1,0 +1,8 @@
+-- Strict data: {package, target, test, owner, ledger, evidence, brief,
+-- added, expires, cosign}. Dates are YYYY-MM-DD (UTC midnight).
+-- Authority: maintainer decision 2026-11-22-flake-quarantine.md.
+-- Only shrinks: additions are list-only PRs with ledger, failing unchanged-head
+-- job, >=20 comparable rounds (<10% failures), fix brief, owner and Fable co-sign.
+-- Never widen/edit an entry; remove with its fix and soak. Default 7 days,
+-- maximum 14; one 7-day Fable renewal on new evidence, then Mark's ruling.
+entries: []
