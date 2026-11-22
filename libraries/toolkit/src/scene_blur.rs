@@ -17,6 +17,29 @@ struct Cached {
 mod tests {
     use super::*;
     #[test]
+    fn zoom_requires_scale_and_blur_and_wipe_requires_partial_clip() {
+        let ctx=egui::Context::default();
+        ctx.run_ui(egui::RawInput::default(),|ui| {
+            let layer=ui.layer_id();let start=ui.ctx().graphics_mut(|g|g.entry(layer).next_idx());
+            ui.label("A zoomed title");
+            let before=ui.ctx().graphics_mut(|g|g.entry(layer).all_entries().skip(start.0).fold(Rect::NOTHING,|r,s|r.union(s.shape.visual_bounding_rect())));
+            super::super::paint_effect(ui,"zoom",layer,start,before,&serde_json::json!({"preset":"zoom","time":0.1}));
+            let shared=cache(ui.ctx());let c=shared.lock().unwrap();
+            assert_eq!(c.rasterizations,1,"zoom blur must rasterize");
+            let painted=c.entries.back().unwrap().1._sources.iter().fold(Rect::NOTHING,|r,s|r.union(s.shape.visual_bounding_rect()));
+            let expected=motion::scene::paint_preset("zoom").unwrap().sample(0.1).get(motion::Property::Scale) as f32;
+            assert!((painted.width()/before.width()-expected).abs()<0.001,"zoom must scale");
+        }).drop_without_applying_deltas();
+        ctx.run_ui(egui::RawInput::default(),|ui| {
+            let layer=ui.layer_id();let start=ui.ctx().graphics_mut(|g|g.entry(layer).next_idx());
+            ui.label("A progressively wiped subtitle");
+            let bounds=ui.ctx().graphics_mut(|g|g.entry(layer).all_entries().skip(start.0).fold(Rect::NOTHING,|r,s|r.union(s.shape.visual_bounding_rect())));
+            super::super::paint_effect(ui,"wipe",layer,start,bounds,&serde_json::json!({"preset":"wipe","time":0.4}));
+            let right=ui.ctx().graphics_mut(|g|g.entry(layer).all_entries().skip(start.0).next().unwrap().clip_rect.right());
+            assert!(right>bounds.left() && right<bounds.right());
+        }).drop_without_applying_deltas();
+    }
+    #[test]
     fn repeated_frame_hits_before_atlas_or_raster_and_budget_is_bounded() {
         let ctx=egui::Context::default();
         for i in 0..3 {

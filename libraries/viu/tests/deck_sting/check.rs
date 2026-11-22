@@ -2,6 +2,8 @@ use super::*;
 use std::collections::BTreeMap;
 #[path = "safety.rs"]
 mod safety;
+#[path = "primitives.rs"]
+mod primitives;
 
 const TIMES: [f64; 9] = [0.1, 0.3, 0.6, 0.9, 1.2, 1.5, 2., 92. / 30., 172. / 30.];
 fn render(model: Value) -> (image::RgbaImage, BTreeMap<String, egui::Rect>) {
@@ -171,6 +173,12 @@ fn sting_entrance_paints_and_rejects_a_static_control() {
     let logo = final_geometry["root.0"];
     assert_eq!(animate_check(&images, logo), Ok(()));
     assert_eq!(entrances(&images, &final_geometry), Ok(()));
+    primitives::painted_centres(&images,&final_geometry);
+    for (id,index) in [("root.6",5),("root.8",6)] {
+        let part=element_pixels(&images[index],final_geometry[id],true);
+        let full=element_pixels(&images[8],final_geometry[id],true);
+        assert!(part>0 && part<full*99/100,"{id} must wipe progressively");
+    }
     println!(
         "STING_ENTRANCE animated=PASS ring_fraction_0.3={:.6} blink_ratio={:.6}",
         coloured(&images[1], logo, false) as f64 / coloured(&images[8], logo, false) as f64,
