@@ -1004,7 +1004,7 @@ impl SceneView {
             };
             let rect = egui::Rect::from_min_size(
                 egui::pos2(x, available.top()),
-                egui::vec2(width, available.height()),
+                egui::vec2(width, finite_available_height(ui)),
             );
             let mut cell = ui.new_child(
                 egui::UiBuilder::new()
@@ -1100,7 +1100,7 @@ impl SceneView {
                 if matches!(node.family.as_str(),"panes"|"content"|"section"|"sides") || node.ports.get("native_spacing")==Some(&Value::Bool(true)) {
                     ui.spacing_mut().item_spacing=ui.ctx().global_style().spacing.item_spacing;
                 } else if node.family!="control" {
-                    ui.spacing_mut().item_spacing=Vec2::new(horizontal_spacing(ui,node),num(node,"row_gap").or(num(node,"gap")).unwrap_or(4.0));
+                    ui.spacing_mut().item_spacing=Vec2::new(num(node,"column_gap").or(num(node,"gap")).unwrap_or(4.0),num(node,"row_gap").or(num(node,"gap")).unwrap_or(4.0));
                 }
                 match node.family.as_str() {
                     "sides"=>{
@@ -1403,7 +1403,7 @@ impl SceneView {
                                         }
                                         if child==flex {
                                             let width=(ui.available_width()-2.0).clamp(80.0,220.0);
-                                            let area=egui::Rect::from_min_size(ui.cursor().min,egui::vec2(width,ui.available_height()));
+                                            let area=egui::Rect::from_min_size(ui.cursor().min,egui::vec2(width,finite_available_height(ui)));
                                             self.child_rect(ui,child,area,nodes,route,depth,events);
                                             ui.allocate_rect(area,egui::Sense::hover());
                                         } else {self.node(ui,child,nodes,route,depth+1,events);}
@@ -1545,8 +1545,8 @@ impl SceneView {
                                             let cross=row.iter().map(|i|sizes[*i].y).fold(0.0_f32,f32::max);let mut x=origin.x;let mut actual_height=0.0_f32;
                                             for i in row {
                                                 let child=active[i];let size=sizes[i];let top=y+match cross_align(node,"center"){"center"=>(cross-size.y).max(0.)/2.,"end"=>(cross-size.y).max(0.),_=>0.};
-                                                let rect=egui::Rect::from_min_size(egui::pos2(x,top),egui::vec2(size.x,ui.available_height().max(size.y)));
-                                                let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));cell.set_clip_rect(ui.clip_rect().intersect(rect));
+                                                let rect=egui::Rect::from_min_size(egui::pos2(x,top),egui::vec2(size.x,finite_available_height(ui).max(size.y)));
+                                                let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(rect.left(),ui.clip_rect().top()),egui::pos2(rect.right(),ui.clip_rect().bottom()))));
                                                 self.node(&mut cell,child,nodes,route,depth+1,events);let actual=cell.min_rect().size();
                                                 ui.ctx().data_mut(|d|{d.insert_temp(ui.scope_id().with((&key,"wrap-size",child)),actual);});
                                                 if (actual.y-size.y).abs()>0.01{ui.ctx().request_discard("wrapped compound height");}
@@ -1584,7 +1584,7 @@ impl SceneView {
                                         let mut height=0.0_f32;
                                         for (index,(child,size)) in active.iter().zip(&sizes).enumerate() {
                                             let rect=egui::Rect::from_min_size(egui::pos2(x,origin.y+match cross_align(node,"center"){"start"=>0.,"end"=>cross-size.y,_=>(cross-size.y)/2.}),*size);
-                                            let measure=egui::Rect::from_min_size(rect.min,egui::vec2(size.x,ui.available_height().max(size.y)));
+                                            let measure=egui::Rect::from_min_size(rect.min,egui::vec2(size.x,finite_available_height(ui).max(size.y)));
                                             let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(measure).layout(egui::Layout::top_down(egui::Align::Min)));
                                             cell.set_clip_rect(ui.clip_rect().intersect(measure));
                                             self.node(&mut cell,child,nodes,route,depth+1,events);
@@ -1602,7 +1602,8 @@ impl SceneView {
                                         let available=(bounded_layout(ui.available_width(),1e6)-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.);
                                         let natural:Vec<f32>=active.iter().map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,false,0)).collect();
                                         let minimum:Vec<f32>=active.iter().map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,true,0)).collect();
-                                        let grow:Vec<f32>=active.iter().map(|c|bounded_layout(num(&nodes[*c],"grow").unwrap_or(0.),1000.)).collect();
+                                        let has_grow=active.iter().any(|c|num(&nodes[*c],"grow").unwrap_or(0.)>0.);
+                                        let grow:Vec<f32>=active.iter().map(|c|bounded_layout(num(&nodes[*c],"grow").filter(|v|*v>0.).unwrap_or(if nodes[*c].ports.get("fill")==Some(&Value::Bool(true)){1.}else{0.}),1000.)).collect();
                                         let mut widths:Vec<f32>=active.iter().enumerate().map(|(i,c)|num(&nodes[*c],"basis").map(|n|bounded_layout(n,available)).unwrap_or(if grow[i]>0. {0.}else{natural[i]})).collect();
                                         let extra=(available-widths.iter().sum::<f32>()).max(0.);
                                         let total_grow=grow.iter().sum::<f32>();
@@ -1625,8 +1626,8 @@ impl SceneView {
                                         let mut x=origin.x+if text(node,"align")=="end"{(bounded_layout(ui.available_width(),1e6)-occupied).max(0.)}else{0.};let mut height=0.0_f32;
                                         for (child,width) in active.iter().zip(&widths) {
                                             let cache=row_id.with(("flex-height",child));let previous=ui.ctx().data(|d|d.get_temp::<f32>(cache)).unwrap_or(0.);
-                                            let top=origin.y+match cross_align(node,if text(node,"align")=="center" || total_grow==0.{"center"}else{"start"}){"center"=>(cross-previous).max(0.)/2.,"end"=>(cross-previous).max(0.),_=>0.};
-                                            let rect=egui::Rect::from_min_size(egui::pos2(x,top),egui::vec2(*width,ui.available_height().max(previous)));
+                                            let top=origin.y+match cross_align(node,if text(node,"align")=="center" || (!has_grow && text(node,"align")!="stretch"){"center"}else{"start"}){"center"=>(cross-previous).max(0.)/2.,"end"=>(cross-previous).max(0.),_=>0.};
+                                            let rect=egui::Rect::from_min_size(egui::pos2(x,top),egui::vec2(*width,finite_available_height(ui).max(previous)));
                                             let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
                                             cell.set_max_width(*width);
                                             cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(x,ui.clip_rect().top()),egui::pos2(x+width,ui.clip_rect().bottom()))));
@@ -1645,7 +1646,7 @@ impl SceneView {
                                         let active:Vec<_>=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();
                                         let bases:Vec<f32>=active.iter().map(|c|text_baseline(ui,&nodes[*c])).collect();
                                         let baseline=bases.iter().copied().fold(0.0_f32,f32::max);let origin=ui.available_rect_before_wrap().min;let mut x=origin.x;let mut height=0.0_f32;
-                                        for (child,base) in active.iter().zip(bases) {let width=intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,false,0);let offset=baseline-base;let pos=egui::pos2(x,origin.y+offset);let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(pos,egui::vec2(width,ui.available_height()))).layout(egui::Layout::top_down(egui::Align::Min)));self.node(&mut cell,child,nodes,route,depth+1,events);height=height.max(offset+cell.min_rect().height());x+=width+ui.spacing().item_spacing.x;}
+                                        for (child,base) in active.iter().zip(bases) {let width=intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,false,0);let offset=baseline-base;let pos=egui::pos2(x,origin.y+offset);let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(pos,egui::vec2(width,finite_available_height(ui)))).layout(egui::Layout::top_down(egui::Align::Min)));self.node(&mut cell,child,nodes,route,depth+1,events);height=height.max(offset+cell.min_rect().height());x+=width+ui.spacing().item_spacing.x;}
                                         ui.allocate_space(egui::vec2((x-origin.x-ui.spacing().item_spacing.x).max(0.),height));
                                     } else if text(node,"align")=="end" {
                                         ui.with_layout(egui::Layout::right_to_left(match cross_align(node,"center"){"start"=>egui::Align::Min,"end"=>egui::Align::Max,_=>egui::Align::Center}),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
@@ -3224,6 +3225,15 @@ mod measurement_cache_tests {
 
 // Shape the original spans once. Word bounds are read from the natural glyph
 // positions (bounded scan), rather than shaping every word on every frame.
+fn finite_available_height(ui: &egui::Ui) -> f32 {
+    let height = ui.available_height();
+    if height.is_finite() {
+        height
+    } else {
+        ui.clip_rect().height()
+    }
+}
+
 fn horizontal_spacing(ui: &egui::Ui, node: &Node) -> f32 {
     if node.ports.get("native_spacing") == Some(&Value::Bool(true))
         || text(node, "packing") == "toolbar"

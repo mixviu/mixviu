@@ -2,6 +2,96 @@
 use super::*;
 
 #[test]
+fn measured_rows_share_remaining_width_with_fill_children() {
+    for row in ["cross_align:\"center\"", "align:\"start\""] {
+        for flex in ["", ",shrink:1", ",basis:100"] {
+            if row.starts_with("align") && flex.is_empty() {
+                continue;
+            }
+            for count in 1..=2 {
+                let kids = if count == 1 {
+                    r#""a","b""#
+                } else {
+                    r#""a","b","c""#
+                };
+                let g = geometry(&format!(
+                    r#"{{root:{{widget:"row",fill:true,gap:10,{row},children:[{kids}]}},a:{{widget:"column",min_width:100,height:30,children:[]{flex}}},b:{{widget:"column",fill:true,height:20,children:[]}},c:{{widget:"column",fill:true,height:20,children:[]}}}}"#
+                ));
+                let expected = (g["root"].width() - 100. - 10. * count as f32) / count as f32;
+                assert!(expected > 400.);
+                assert!((g["b"].width() - expected).abs() < 1., "{row} {flex} {g:?}");
+                if count == 2 {
+                    assert!((g["c"].width() - expected).abs() < 1.);
+                }
+                let last = if count == 1 { "b" } else { "c" };
+                assert!((g[last].right() - g["root"].right()).abs() < 1.);
+            }
+        }
+    }
+}
+
+#[test]
+fn shrink_and_basis_stretch_rows_keep_children_at_top() {
+    for flex in ["shrink:1", "basis:120"] {
+        let g = geometry(&format!(
+            r#"{{root:{{widget:"column",children:["row","next"]}},row:{{widget:"row",fill:true,align:"stretch",children:["a","b"]}},a:{{widget:"column",min_width:100,height:80,children:[]}},b:{{widget:"column",{flex},children:["label"]}},label:{{widget:"text",text:"Short"}},next:{{widget:"text",text:"Following"}}}}"#
+        ));
+        assert!((g["a"].top() - g["b"].top()).abs() < 1., "{flex} {g:?}");
+        assert!(g["b"].height() >= 79.);
+        assert!(g["b"].bottom() <= g["row"].bottom() + 1.);
+        assert!(g["next"].top() >= g["b"].bottom() - 1.);
+    }
+}
+
+#[test]
+fn manual_rows_inside_scroll_keep_all_geometry_finite() {
+    for mode in [
+        "wrap:true",
+        "justify:\"between\",cross_align:\"center\"",
+        "cross_align:\"start\"",
+        "align:\"baseline\"",
+    ] {
+        let source = format!(
+            r#"{{root:{{widget:"column",scroll:true,height:200,children:["row"]}},row:{{widget:"row",fill:true,{mode},children:["a","b"]}},a:{{widget:"text",text:"Large",size:40}},b:{{widget:"text",text:"Small",size:12}}}}"#
+        );
+        let mut view = SceneView::new(&format!(
+            "---\nscene: 1\nname: finite-manual\ncitizen: test\n---\n```mix\n{source}\n```\n"
+        ))
+        .unwrap();
+        let ctx = egui::Context::default();
+        for _ in 0..8 {
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1000., 600.),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui);
+                },
+            );
+            out.textures_delta.clear();
+            for id in ["root", "row", "a", "b"] {
+                assert!(view.geometry.contains_key(id), "{mode}: missing {id}");
+                assert!(
+                    view.geometry[id].is_finite(),
+                    "{mode} {id}: {:?}",
+                    view.geometry[id]
+                );
+            }
+            for shape in &out.shapes {
+                assert!(shape.clip_rect.is_finite());
+                if let egui::Shape::Text(t) = &shape.shape {
+                    assert!(t.pos.is_finite() && t.galley.rect.is_finite());
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn manual_wrap_and_between_clip_painted_shapes_to_cells() {
     for mode in ["wrap:true", "justify:\"between\",cross_align:\"center\""] {
         let source = format!(
