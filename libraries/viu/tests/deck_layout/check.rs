@@ -2,6 +2,24 @@
 use super::*;
 
 #[test]
+fn manual_wrap_and_between_clip_painted_shapes_to_cells() {
+    for mode in ["wrap:true", "justify:\"between\",cross_align:\"center\""] {
+        let source = format!(r##"{{root:{{widget:"row",fill:true,{mode},children:["a","b"]}},a:{{widget:"drawing",w:250,h:20,max_width:60,primitives:[{{kind:"bar",centre:[125,10],radius:[125,10],colour:"#ff0000"}}]}},b:{{widget:"text",text:"Neighbour"}}}}"##);
+        let mut view = SceneView::new(&format!("---\nscene: 1\nname: clips\ncitizen: test\n---\n```mix\n{source}\n```\n")).unwrap();
+        let ctx = egui::Context::default();
+        for _ in 0..8 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {view.show(ui);});
+            out.textures_delta.clear();
+            let red: Vec<_> = out.shapes.iter().filter(|s| matches!(&s.shape, egui::Shape::Rect(r) if r.fill == egui::Color32::RED)).collect();
+            assert!(!red.is_empty());
+            for shape in red {
+                assert!(shape.clip_rect.right() <= view.geometry["root"].left() + 60.5, "{mode}: {:?}", shape.clip_rect);
+            }
+        }
+    }
+}
+
+#[test]
 fn shrink_and_basis_only_rows_keep_main_centred_cross_placement() {
     let plain = geometry(r#"{root:{widget:"row",children:["a","b"]},a:{widget:"column",width:100,height:80,children:[]},b:{widget:"column",width:120,height:20,children:[]}}"#);
     for port in ["shrink:1", "basis:120"] {
