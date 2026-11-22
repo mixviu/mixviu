@@ -86,7 +86,15 @@ fn detect_with(
 }
 
 fn bounded_probe(path: PathBuf) -> Option<bool> {
-    let deadline = Instant::now() + BUDGET;
+    bounded_probe_with(path, Instant::now(), probe)
+}
+
+fn bounded_probe_with(
+    path: PathBuf,
+    now: Instant,
+    probe: impl FnOnce(PathBuf, Instant) -> Option<bool> + Send + 'static,
+) -> Option<bool> {
+    let deadline = now + BUDGET;
     let (send, receive) = mpsc::sync_channel(1);
     // A stalled compositor or library initialisation cannot stall
     // the UI or a Bus reply. Late results are discarded, never cached later.
@@ -301,10 +309,9 @@ mod tests {
         // Explicit backend injection makes this independent of the worker's
         // environment. This path opens no socket and launches no process.
         // This module never starts a process: no child processes by construction.
-        let start = Instant::now();
-        let result = automatic(&detect(false));
+        let result =
+            within_test_deadline(|| automatic(&detect(false))).expect("non-Wayland detection hung");
         assert_eq!((result.mode, result.reason), (Decorations::Server, "rule1"));
-        assert!(start.elapsed() < Duration::from_millis(250));
     }
 
     #[test]
@@ -312,9 +319,81 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("display");
         let _server = std::os::unix::net::UnixListener::bind(&path).unwrap();
-        let start = Instant::now();
-        assert_eq!(bounded_probe(path), None);
-        assert!(start.elapsed() < Duration::from_millis(250));
+        assert_eq!(
+            within_test_deadline(move || bounded_probe(path))
+                .expect("silent registry detection hung"),
+            None,
+        );
+    }
+
+    // This watchdog observes completion independently of the test thread. A
+    // direct elapsed assertion cannot distinguish a late wakeup from a hang.
+    const TEST_DEADLINE: Duration = Duration::from_secs(5);
+
+    fn within_test_deadline<T: Send + 'static>(
+        operation: impl FnOnce() -> T + Send + 'static,
+    ) -> Result<T, mpsc::RecvTimeoutError> {
+        let (send, receive) = mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let _ = send.send(operation());
+        });
+        receive.recv_timeout(TEST_DEADLINE)
+    }
+
+    fn assert_probe_deadline(now: Instant, deadline: Instant) {
+        assert_eq!(BUDGET, Duration::from_millis(200));
+        assert_eq!(deadline, now + BUDGET);
+    }
+
+    #[test]
+    fn probe_receives_exact_reply_deadline() {
+        let now = Instant::now();
+        let path = PathBuf::from("injected-display");
+        let expected_path = path.clone();
+        let (send, receive) = mpsc::sync_channel(1);
+        let result = within_test_deadline(move || {
+            bounded_probe_with(path, now, move |path, deadline| {
+                send.send((path, deadline)).unwrap();
+                None
+            })
+        })
+        .expect("injected probe hung");
+        assert_eq!(result, None);
+        let (path, deadline) = receive.recv_timeout(TEST_DEADLINE).unwrap();
+        assert_eq!(path, expected_path);
+        assert_probe_deadline(now, deadline);
+    }
+
+    #[test]
+    #[should_panic(expected = "assertion `left == right` failed")]
+    fn different_probe_deadline_is_rejected() {
+        let now = Instant::now();
+        assert_probe_deadline(now, now + BUDGET + Duration::from_millis(1));
+    }
+
+    #[test]
+    fn worker_ignoring_deadline_cannot_hang_caller() {
+        let (release, wait) = mpsc::sync_channel::<()>(1);
+        let result = within_test_deadline(move || {
+            bounded_probe_with(PathBuf::new(), Instant::now(), move |_, _| {
+                let _ = wait.recv(); // Deliberately ignores its deadline.
+                None
+            })
+        });
+        // Release the deliberately blocked worker even if the assertion fails.
+        drop(release);
+        assert_eq!(result.expect("caller waited for a stuck worker"), None);
+    }
+
+    #[test]
+    fn watchdog_rejects_an_operation_that_never_returns() {
+        let (release, wait) = mpsc::sync_channel::<()>(1);
+        let result = within_test_deadline(move || {
+            let _ = wait.recv(); // No deadline: must fail the same watchdog.
+            None::<bool>
+        });
+        drop(release);
+        assert_eq!(result, Err(mpsc::RecvTimeoutError::Timeout));
     }
 
     #[test]
