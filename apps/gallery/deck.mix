@@ -161,6 +161,12 @@ end
 fn brand($name, $tagline, $date)
   return column([{widget:"image",src:"brand:cyclops",w:200,h:200},deck_text($name,"wordmark","acc"),deck_text($tagline,"tagline","mut"),deck_text($date,"date","text")],28)
 end
+fn closing($name,$tagline,$address,$height=716)
+  $title=merge(deck_text($name,"wordmark","text"),{size:110,line_height:110,letter_spacing:-3.3,align:"center"})
+  $subtitle=merge(deck_text($tagline,"tagline","mut"),{size:38,line_height:49.4,max_width:1250,wrap:true,align:"center"})
+  $link=merge(deck_text($address,"date","text"),{size:32,align:"center"})
+  return merge(column([{widget:"image",src:"brand:cyclops",w:230,h:230},{widget:"spacer",size:30},$title,{widget:"spacer",size:26},$subtitle,{widget:"spacer",size:26},$link],0),{fill:true,align:"center",justify:"center",height:$height-40,padding_bottom:40})
+end
 -- Opening sting: all geometry and continuous motion remain scene data.
 fn sting($title, $subtitle)
   $k=280/512*1.3

@@ -1135,6 +1135,7 @@ impl SceneView {
                         }
                     }
                     "text" => {
+                        if let Some(width)=num(node,"max_width") {ui.set_max_width(width);}
                         let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(ui.visuals().text_color()).to_array();
                         let number = node.ports.get("number").map(|spec| self.numbers.text(ui, &key, spec, node.ports.get("motion") != Some(&Value::Bool(false))));
                         let plain = json!([{"text":number.as_deref().unwrap_or_else(||text(node,"text"))}]);

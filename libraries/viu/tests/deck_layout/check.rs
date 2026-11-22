@@ -13,6 +13,16 @@ fn explicit_line_height_sizes_each_text_line() {
 }
 
 #[test]
+fn wrapped_text_obeys_its_maximum_width() {
+    let mut view=SceneView::new("---\nscene: 1\nname: bounded\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"first second third fourth\",size:20,max_width:80,wrap:true}}\n```\n").unwrap();
+    let ctx=egui::Context::default();
+    let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});
+    output.textures_delta.clear();
+    let rect=view.geometry["root"];
+    assert!(rect.width()<=80. && rect.height()>40.,"{rect:?}");
+}
+
+#[test]
 fn column_justify_centres_the_content() {
     let mut view = SceneView::new("---\nscene: 1\nname: centre\ncitizen: test\n---\n```mix\n{root:{widget:\"column\",height:400,justify:\"center\",children:[\"a\"]},a:{widget:\"text\",text:\"Centred\",size:30}}\n```\n").unwrap();
     let ctx = egui::Context::default();
