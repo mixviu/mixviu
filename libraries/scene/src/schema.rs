@@ -317,7 +317,6 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         ports.push(p("number", "object", false, None));
     }
     if f == "grid" {ports.push(p("content_columns","bool",false,None));ports.push(p("row_rule","string",false,None));}
-    if f == "grid" {ports.push(p("content_columns","bool",false,None));ports.push(p("row_rule","string",false,None));}
     if f == "row" {
         ports.extend([
             Port {
@@ -333,8 +332,6 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
             p("flex", "string", false, None),
         ]);
     }
-    if f == "grid" {ports.push(p("content_columns","bool",false,None));ports.push(p("row_rule","string",false,None));}
-    if f == "grid" {ports.push(p("content_columns","bool",false,None));ports.push(p("row_rule","string",false,None));}
     if f == "row" {
         ports
             .iter_mut()
