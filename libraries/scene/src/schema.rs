@@ -657,7 +657,7 @@ pub(crate) fn check_port_value(
     }
     let ceiling = match k {
         "line_height" => Some(4096.),
-        "basis" => Some(1e6),
+        "basis" | "width" | "min_width" | "max_width" | "column_gap" | "min_column_width" | "height" | "row_gap" | "gap" => Some(1e6),
         "grow" | "shrink" => Some(1000.),
         _ => None,
     };
