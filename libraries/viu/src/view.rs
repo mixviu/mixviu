@@ -2857,7 +2857,11 @@ fn text_baseline(ui: &egui::Ui, node: &Node) -> f32 {
 }
 
 fn bounded_layout(value: f32, maximum: f32) -> f32 {
-    let maximum = if maximum.is_finite() {maximum.clamp(0.,1e6)}else{1e6};
+    let maximum = if maximum.is_finite() {
+        maximum.clamp(0., 1e6)
+    } else {
+        1e6
+    };
     if value.is_finite() {
         value.clamp(0., maximum.max(0.))
     } else {
