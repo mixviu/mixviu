@@ -205,7 +205,7 @@ fn chapter_rail($chapters,$active,$series,$compact=false)
     $date=merge($date,{font:"Liberation Sans",mono:false,letter_spacing:$tokens.type.rail_date_tracking})
     $date=merge(column([$date],0),{padding_right:$tokens.space.rail_date_right})
   end
-  return merge(row([row($chips,if $compact then $tokens.space.compact_rail_gap else $tokens.space.rail_gap end),$date],0),{fill:true,justify:"between"})
+  return merge(row([row($chips,if $compact then $tokens.space.compact_rail_gap else $tokens.space.rail_gap end),$date],0),{fill:true,justify:"between",cross_align:"center"})
 end
 fn mock($title, $items)
   return merge(column([deck_text($title,"node_label","mut"),bullets($items,"acc")],6),{padding_left:20,padding_right:20,padding_top:14,padding_bottom:14,background:$tokens.colour.panel,radius:12})
