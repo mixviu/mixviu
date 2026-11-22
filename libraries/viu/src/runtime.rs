@@ -828,16 +828,12 @@ impl BusHandler for Local {
                         .as_f64()
                         .filter(|v| v.is_finite())
                         .ok_or_else(|| failure("finite time required"))?;
-                    let entrance = motion::scene::Entrance::Name(name.into());
-                    entrance.validate().map_err(failure)?;
-                    if !["fade", "up", "down", "left", "right"].contains(&name) {
-                        return Err(failure(
-                            "seek currently supports opacity and translation presets only",
-                        ));
-                    }
-                    let values = entrance.playback(0.0, 0, false).sample(at);
+                    let values = motion::scene::paint_preset(name)
+                        .map_err(failure)?
+                        .sample(at);
                     json!({"opacity":values.get(motion::Property::Opacity),
-                        "offset":[values.get(motion::Property::Tx),values.get(motion::Property::Ty)]})
+                        "offset":[values.get(motion::Property::Tx),values.get(motion::Property::Ty)],
+                        "paint_effect":{"preset":name,"time":at}})
                 }
                 "scenes.model.patch" => {
                     #[cfg(feature = "test-support")]

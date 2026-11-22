@@ -95,6 +95,7 @@ pub mod time_series;
 mod backdrop;
 pub mod dashboard;
 pub mod data_panels;
+mod drawing;
 pub mod network_map;
 mod numbers;
 pub mod saved_state;

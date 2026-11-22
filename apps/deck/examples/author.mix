@@ -45,8 +45,8 @@ fn slide_stat($value,$caption,$role)
   $node.children[0].size=52
   return $node
 end
-$sting=$d.flatten(merge($d.brand("MixViu","Adventures · The desk records itself","20 November 2026"),{min_width:1600,height:708,padding_left:96,padding_top:72,padding_bottom:120,background:"#0d1117"}),"root")
-push($slides,{id:"sting",kind:"sting",steps:1,scene:$sting,build:{"root.0":{b:0,anim:"fade"},"root.1":{b:0,delay:0.5,anim:"up"},"root.2":{b:0,delay:0.8,anim:"up"},"root.3":{b:0,delay:1.2,anim:"up"}}})
+$sting=$d.flatten($d.sting("The desk records itself","MixViu Adventures"),"root")
+push($slides,{id:"sting",kind:"sting",steps:1,scene:$sting,build:{"root.3":{b:0,delay:0.5,anim:"fade"},"root.5":{b:0,delay:0.8,anim:"zoom"},"root.7":{b:0,delay:1.3,anim:"wipe"},"root.9":{b:0,delay:1.6,anim:"wipe"}}})
 slide("before","MixViu Adventures · before","Every night, a desk makes the takes",2,[
  entrance($d.card("THE NIGHTLY EPISODE'S TUTORIAL TAKES",[$d.flow([{label:"script",text:"tutorial steps"},{label:"over the Bus",text:"apps on a desk",role:"acc"},{label:"capture",text:"the screen"},{label:"media builder",text:"narrated video",role:"ok"}])],"text"),0,0.5),
  entrance(merge($d.row([card("But the desks carry no ffmpeg","By design: no ffmpeg and no C or C++ tools on the desks. The first recorder design wrote through an ffmpeg subprocess, so on a desk it could not record.","bad"),merge($d.card("SO EVERY TAKE FELL BACK",[slide_stat("still screenshots","one per step, held while the narration plays","warn")],"mut"),{grow:1})],40),{fill:true,align:"stretch"}),1)])

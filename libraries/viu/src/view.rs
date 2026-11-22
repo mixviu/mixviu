@@ -764,9 +764,16 @@ impl SceneView {
         let list_row = route.is_some_and(|(_, list, _)| text(list, "row") == id);
         if !list_row
             && self.motion_parent.is_none()
-            && !["enter", "exit", "opacity", "offset", "transition"]
-                .iter()
-                .any(|p| node.ports.contains_key(*p))
+            && ![
+                "enter",
+                "exit",
+                "opacity",
+                "offset",
+                "transition",
+                "paint_effect",
+            ]
+            .iter()
+            .any(|p| node.ports.contains_key(*p))
         {
             self.node_contents(ui, id, nodes, route, depth, events);
             return;
@@ -826,6 +833,9 @@ impl SceneView {
         if capture.is_some() {
             self.motion_parent = Some(key.clone());
         }
+        let paint_start = ui
+            .ctx()
+            .graphics_mut(|g| g.entry(layer.unwrap_or(ui.layer_id())).next_idx());
         ui.scope_builder(
             egui::UiBuilder::new().layer_id(layer.unwrap_or(ui.layer_id())),
             |ui| {
@@ -835,6 +845,16 @@ impl SceneView {
         );
         self.motion_parent = parent;
         let painted_rect = self.geometry.get(&key).copied().unwrap_or(ui.min_rect());
+        if let Some(spec) = node.ports.get("paint_effect") {
+            toolkit::scene_motion::paint_effect(
+                ui,
+                &key,
+                layer.unwrap_or(ui.layer_id()),
+                paint_start,
+                painted_rect,
+                spec,
+            );
+        }
         toolkit::scene_motion::highlight(
             ui,
             layer.unwrap_or(ui.layer_id()),
@@ -1118,11 +1138,12 @@ impl SceneView {
                         let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(ui.visuals().text_color()).to_array();
                         let number = node.ports.get("number").map(|spec| self.numbers.text(ui, &key, spec, node.ports.get("motion") != Some(&Value::Bool(false))));
                         let plain = json!([{"text":number.as_deref().unwrap_or_else(||text(node,"text"))}]);
-                        if node.ports.contains_key("spans") || node.ports.contains_key("font") || node.ports.contains_key("mono_font") {
+                        if node.ports.contains_key("spans") || node.ports.contains_key("letter_spacing") || node.ports.contains_key("font") || node.ports.contains_key("mono_font") {
                             let spans = node.ports.get("spans").unwrap_or(&plain);
                             let family = (node.ports.get("font").and_then(Value::as_str), num(node,"weight").unwrap_or(if node.ports.get("bold") == Some(&Value::Bool(true)) {700.} else {400.}), node.ports.get("mono_font").and_then(Value::as_str));
                             let mut job = crate::spans::job(ui, spans, num(node,"size").unwrap_or(13.0), node.ports.get("mono") == Some(&Value::Bool(true)), node.ports.get("bold") == Some(&Value::Bool(true)), Color32::from_rgba_unmultiplied(colour[0], colour[1], colour[2], colour[3]), family);
                             job.halign = match text(node,"align") {"center"=>egui::Align::Center,"right"=>egui::Align::Max,_=>egui::Align::Min};
+                            for section in &mut job.sections { section.format.extra_letter_spacing = num(node,"letter_spacing").unwrap_or(0.); }
                             let label = egui::Label::new(job);
                             let label=if node.ports.get("wrap") == Some(&Value::Bool(true)) {label.wrap()} else {label.extend()};
                             if node.ports.get("fill")==Some(&Value::Bool(true)) {ui.add_sized(egui::vec2(ui.available_width(),0.),label);} else {ui.add(label);}
@@ -1145,6 +1166,9 @@ impl SceneView {
                                 events.push(Event{command:command.into(),body:json!({"scene":self.tree.name,"node":id,"kind":if intent.action=="submit" {"submit"} else {"change"},"value":intent.value})});
                             }
                         }
+                    }
+                    "drawing" => {
+                        crate::drawing::show(ui, &key, node);
                     }
                     "image" => {
                         if text(node,"src")=="brand:cyclops" {
@@ -1341,7 +1365,7 @@ impl SceneView {
 
 
                                 } else {
-                                    ui.vertical(|ui| draw(ui));
+                                    if text(node,"align")=="center" { ui.vertical_centered(|ui| draw(ui)); } else { ui.vertical(|ui| draw(ui)); }
                                 }
                             })
                             .response;
@@ -2485,7 +2509,7 @@ fn validate_controls(
                 }
             }
             "text" | "button" | "field" | "toggle" | "row" | "column" | "list" | "spacer"
-            | "grid" => {}
+            | "grid" | "drawing" => {}
             "panes" => {
                 if children(node).count() != 3 {
                     return Err("panes requires left, center, right children".into());
