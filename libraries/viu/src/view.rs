@@ -1365,7 +1365,23 @@ impl SceneView {
 
 
                                 } else {
-                                    if text(node,"align")=="center" { ui.vertical_centered(|ui| draw(ui)); } else { ui.vertical(|ui| draw(ui)); }
+                                    let centre = text(node,"justify")=="center";
+                                    let cache = ui.id().with((&key,"column-content-height"));
+                                    if centre {
+                                        let content = ui.ctx().data_mut(|d| d.get_temp::<f32>(cache)).unwrap_or(0.);
+                                        if let Some(height)=num(node,"height") {
+                                            ui.add_space(((height-content)/2.).max(0.));
+                                        }
+                                    }
+                                    let content = if text(node,"align")=="center" { ui.vertical_centered(|ui| draw(ui)) } else { ui.vertical(|ui| draw(ui)) }.response.rect.height();
+                                    if centre {
+                                        let changed=ui.ctx().data_mut(|d| {
+                                            let old=d.get_temp::<f32>(cache);
+                                            d.insert_temp(cache,content);
+                                            old.is_none_or(|old|(old-content).abs()>0.01)
+                                        });
+                                        if changed {ui.ctx().request_repaint();}
+                                    }
                                 }
                             })
                             .response;

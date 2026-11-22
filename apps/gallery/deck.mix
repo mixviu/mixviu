@@ -170,7 +170,7 @@ fn sting($title, $subtitle)
   return merge(column([{widget:"spacer",size:10},$logo,{widget:"spacer",size:28},$brandline,{widget:"spacer",size:18.5},$heading,{widget:"spacer",size:14},$sub,{widget:"spacer",size:30},$bar],0),{align:"center",min_width:1600,height:900,padding_top:127,padding_bottom:40,background:$tokens.colour.background})
 end
 fn topic($number, $title, $subtitle)
-  return column([deck_text($number,"topic_no","acc"),deck_text($title,"topic_title","text"),deck_text($subtitle,"topic_sub","mut")],22)
+  return merge(column([deck_text($number,"topic_no","acc"),deck_text($title,"topic_title","text"),deck_text($subtitle,"topic_sub","mut")],22),{height:708,padding_bottom:40,justify:"center"})
 end
 fn flatten($tree, $id)
   $nodes = {}

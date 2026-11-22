@@ -2,6 +2,19 @@
 use super::*;
 
 #[test]
+fn column_justify_centres_the_content() {
+    let mut view = SceneView::new("---\nscene: 1\nname: centre\ncitizen: test\n---\n```mix\n{root:{widget:\"column\",height:400,justify:\"center\",children:[\"a\"]},a:{widget:\"text\",text:\"Centred\",size:30}}\n```\n").unwrap();
+    let ctx=egui::Context::default();
+    viu::fonts::install(&ctx,400,600);
+    for _ in 0..4 {
+        let _=ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(600.,600.))),..Default::default()},|ui|{view.show(ui);});
+    }
+    let root=view.geometry["root"];
+    let text=view.geometry["a"];
+    assert!((root.center().y-text.center().y).abs()<1.,"{root:?} {text:?}");
+}
+
+#[test]
 #[ignore = "explicit CBC evidence; DECK_LAYOUT_INPUT and DECK_LAYOUT_OUTPUT required"]
 fn render_layout_steps() {
     let path = PathBuf::from(std::env::var_os("DECK_LAYOUT_INPUT").expect("DECK_LAYOUT_INPUT"));
