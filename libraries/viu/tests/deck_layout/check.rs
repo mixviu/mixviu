@@ -27,23 +27,47 @@ fn geometry(source: &str) -> std::collections::BTreeMap<String, egui::Rect> {
 
 #[test]
 fn wrapped_fill_label_retains_natural_glyph_advances() {
-    let ctx=egui::Context::default();viu::fonts::install(&ctx,400,600);
+    let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     let mut view=SceneView::new("---\nscene: 1\nname: glyphs\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"RAW NOTICES\",font:\"Liberation Sans\",size:20,weight:500,letter_spacing:1.6,max_width:100,wrap:true,fill:true,align:\"center\"}}\n```\n").unwrap();
-    let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        view.show(ui);
+    });
     output.textures_delta.clear();
-    let galleys:Vec<_>=output.shapes.iter().filter_map(|s|if let egui::Shape::Text(t)=&s.shape {Some(t.galley.clone())}else{None}).collect();
-    let galley=galleys.iter().find(|g|g.job.text=="RAW NOTICES").unwrap();
-    assert!(galley.rows.len()>=2);
+    let galleys: Vec<_> = output
+        .shapes
+        .iter()
+        .filter_map(|s| {
+            if let egui::Shape::Text(t) = &s.shape {
+                Some(t.galley.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    let galley = galleys
+        .iter()
+        .find(|g| g.job.text == "RAW NOTICES")
+        .unwrap();
+    assert!(galley.rows.len() >= 2);
     assert!(!galley.job.justify);
-    assert!(galley.rows[0].glyphs.last().unwrap().max_x()-galley.rows[0].glyphs[0].pos.x<80.);
+    assert!(galley.rows[0].glyphs.last().unwrap().max_x() - galley.rows[0].glyphs[0].pos.x < 80.);
     for row in &galley.rows {
-        let word=row.text().trim().to_owned();
-        let mut job=egui::text::LayoutJob::simple(word.clone(),FontId::new(20.,toolkit::fonts::optional::family("Liberation Sans",500.)),Color32::WHITE,f32::INFINITY);
-        job.sections[0].format.extra_letter_spacing=1.6;
-        let natural=ctx.fonts_mut(|f|f.layout_job(job));
-        for (a,b) in row.glyphs.windows(2).zip(natural.rows[0].glyphs.windows(2)) {
-            let error=((a[1].pos.x-a[0].pos.x)-(b[1].pos.x-b[0].pos.x)).abs();
-            assert!(error<=1.01,"{word}: advance delta {error}");
+        let word = row.text().trim().to_owned();
+        let mut job = egui::text::LayoutJob::simple(
+            word.clone(),
+            FontId::new(
+                20.,
+                toolkit::fonts::optional::family("Liberation Sans", 500.),
+            ),
+            Color32::WHITE,
+            f32::INFINITY,
+        );
+        job.sections[0].format.extra_letter_spacing = 1.6;
+        let natural = ctx.fonts_mut(|f| f.layout_job(job));
+        for (a, b) in row.glyphs.windows(2).zip(natural.rows[0].glyphs.windows(2)) {
+            let error = ((a[1].pos.x - a[0].pos.x) - (b[1].pos.x - b[0].pos.x)).abs();
+            assert!(error <= 1.01, "{word}: advance delta {error}");
         }
         println!("GLYPH_ADVANCE {word}: natural advances preserved");
     }
@@ -52,67 +76,134 @@ fn wrapped_fill_label_retains_natural_glyph_advances() {
 
 #[test]
 fn first_frame_between_and_wrap_have_visible_text() {
-    for ports in ["justify:\"between\"", "wrap:true", "justify:\"between\",native_spacing:true"] {
-        let source=format!("---\nscene: 1\nname: initial\ncitizen: test\n---\n```mix\n{{root:{{widget:\"row\",fill:true,{ports},children:[\"a\",\"b\"]}},a:{{widget:\"column\",children:[\"one\"]}},b:{{widget:\"column\",children:[\"two\"]}},one:{{widget:\"text\",text:\"First\"}},two:{{widget:\"text\",text:\"Second\"}}}}\n```\n");
-        let mut view=SceneView::new(&source).unwrap();let ctx=egui::Context::default();
-        let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();
-        let text:Vec<_>=out.shapes.iter().filter(|s|matches!(&s.shape,egui::Shape::Text(_))).collect();
-        assert!(text.len()>=2,"{ports}");
-        assert!(text.iter().all(|s|s.clip_rect.width()>10. && s.clip_rect.height()>10.),"{ports}");
-        assert!(view.geometry["root"].height()>0.);
+    for ports in [
+        "justify:\"between\"",
+        "wrap:true",
+        "justify:\"between\",native_spacing:true",
+    ] {
+        let source = format!(
+            "---\nscene: 1\nname: initial\ncitizen: test\n---\n```mix\n{{root:{{widget:\"row\",fill:true,{ports},children:[\"a\",\"b\"]}},a:{{widget:\"column\",children:[\"one\"]}},b:{{widget:\"column\",children:[\"two\"]}},one:{{widget:\"text\",text:\"First\"}},two:{{widget:\"text\",text:\"Second\"}}}}\n```\n"
+        );
+        let mut view = SceneView::new(&source).unwrap();
+        let ctx = egui::Context::default();
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            view.show(ui);
+        });
+        out.textures_delta.clear();
+        let text: Vec<_> = out
+            .shapes
+            .iter()
+            .filter(|s| matches!(&s.shape, egui::Shape::Text(_)))
+            .collect();
+        assert!(text.len() >= 2, "{ports}");
+        assert!(
+            text.iter()
+                .all(|s| s.clip_rect.width() > 10. && s.clip_rect.height() > 10.),
+            "{ports}"
+        );
+        assert!(view.geometry["root"].height() > 0.);
     }
 }
 
 #[test]
 fn comparison_row_aligns_actual_glyph_baselines() {
-    let source="---\nscene: 1\nname: baseline\ncitizen: test\n---\n```mix\n{root:{widget:\"row\",align:\"baseline\",children:[\"big\",\"small\"]},big:{widget:\"text\",text:\"6.3 s\",size:44,font:\"Liberation Sans\",weight:700},small:{widget:\"text\",text:\"median\",size:20,font:\"Liberation Sans\"}}\n```\n";
-    let mut view=SceneView::new(source).unwrap();let ctx=egui::Context::default();viu::fonts::install(&ctx,400,600);
-    let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();
-    let baselines:Vec<_>=out.shapes.iter().filter_map(|s|if let egui::Shape::Text(t)=&s.shape {let r=&t.galley.rows[0];Some(t.pos.y+r.pos.y+r.glyphs[0].pos.y)}else{None}).collect();
-    assert_eq!(baselines.len(),2);assert!((baselines[0]-baselines[1]).abs()<0.01,"{baselines:?}");
+    let source = "---\nscene: 1\nname: baseline\ncitizen: test\n---\n```mix\n{root:{widget:\"row\",align:\"baseline\",children:[\"big\",\"small\"]},big:{widget:\"text\",text:\"6.3 s\",size:44,font:\"Liberation Sans\",weight:700},small:{widget:\"text\",text:\"median\",size:20,font:\"Liberation Sans\"}}\n```\n";
+    let mut view = SceneView::new(source).unwrap();
+    let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
+    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        view.show(ui);
+    });
+    out.textures_delta.clear();
+    let baselines: Vec<_> = out
+        .shapes
+        .iter()
+        .filter_map(|s| {
+            if let egui::Shape::Text(t) = &s.shape {
+                let r = &t.galley.rows[0];
+                Some(t.pos.y + r.pos.y + r.glyphs[0].pos.y)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert_eq!(baselines.len(), 2);
+    assert!((baselines[0] - baselines[1]).abs() < 0.01, "{baselines:?}");
 }
 
 #[test]
 fn shrink_row_preserves_images_buttons_spans_and_grow() {
-    let rects=geometry(r##"{root:{widget:"row",fill:true,gap:8,children:["photo","button","spans","grow"]},photo:{widget:"image",src:"brand:cyclops",w:80,h:80},button:{widget:"button",label:"Ready"},spans:{widget:"text",text:"ignored",size:24,shrink:1,wrap:true,spans:[{text:"Wide bold ",bold:true},{text:"mono identifier",mono:true}]},grow:{widget:"column",grow:1,children:["tail"]},tail:{widget:"text",text:"Tail"}}"##);
-    assert!(rects["photo"].width()>=80.,"{rects:?}");
-    assert!(rects["button"].width()>30.,"{rects:?}");
-    assert!(rects["spans"].width()>100.,"{rects:?}");
-    assert!(rects["grow"].width()>100.,"{rects:?}");
-    assert!(rects["button"].left()>=rects["photo"].right()+7.,"{rects:?}");
-    assert!(rects["spans"].left()>=rects["button"].right()+7.,"{rects:?}");
+    let rects = geometry(
+        r##"{root:{widget:"row",fill:true,gap:8,children:["photo","button","spans","grow"]},photo:{widget:"image",src:"brand:cyclops",w:80,h:80},button:{widget:"button",label:"Ready"},spans:{widget:"text",text:"ignored",size:24,shrink:1,wrap:true,spans:[{text:"Wide bold ",bold:true},{text:"mono identifier",mono:true}]},grow:{widget:"column",grow:1,children:["tail"]},tail:{widget:"text",text:"Tail"}}"##,
+    );
+    assert!(rects["photo"].width() >= 80., "{rects:?}");
+    assert!(rects["button"].width() > 30., "{rects:?}");
+    assert!(rects["spans"].width() > 100., "{rects:?}");
+    assert!(rects["grow"].width() > 100., "{rects:?}");
+    assert!(
+        rects["button"].left() >= rects["photo"].right() + 7.,
+        "{rects:?}"
+    );
+    assert!(
+        rects["spans"].left() >= rects["button"].right() + 7.,
+        "{rects:?}"
+    );
 }
 
 #[test]
 fn start_row_reserves_height_and_hidden_grid_cell_keeps_its_slot() {
-    let rects=geometry(r##"{root:{widget:"column",children:["row","grid"]},row:{widget:"row",height:80,align:"start",children:["label"]},label:{widget:"text",text:"Top"},grid:{widget:"grid",columns:2,column_gap:20,children:["hidden","visible"]},hidden:{widget:"column",hidden:true,children:[]},visible:{widget:"text",text:"Right"}}"##);
-    assert!(rects["row"].height()>=80.,"{rects:?}");
-    assert!(rects["visible"].left()>rects["grid"].left()+400.,"{rects:?}");
+    let rects = geometry(
+        r##"{root:{widget:"column",children:["row","grid"]},row:{widget:"row",height:80,align:"start",children:["label"]},label:{widget:"text",text:"Top"},grid:{widget:"grid",columns:2,column_gap:20,children:["hidden","visible"]},hidden:{widget:"column",hidden:true,children:[]},visible:{widget:"text",text:"Right"}}"##,
+    );
+    assert!(rects["row"].height() >= 80., "{rects:?}");
+    assert!(
+        rects["visible"].left() > rects["grid"].left() + 400.,
+        "{rects:?}"
+    );
 }
 
 #[test]
 fn bounded_columns_keep_center_and_end_placement() {
-    let rects=geometry(r##"{root:{widget:"column",fill:true,align:"center",children:["center","row"]},center:{widget:"column",grow:1,min_width:200,max_width:200,children:["middle"]},middle:{widget:"text",text:"Middle"},row:{widget:"row",fill:true,align:"end",children:["right"]},right:{widget:"column",grow:1,min_width:200,max_width:200,children:["last"]},last:{widget:"text",text:"Right"}}"##);
-    assert!((rects["root"].center().x-rects["center"].center().x).abs()<1.,"{rects:?}");
-    assert!((rects["row"].right()-rects["right"].right()).abs()<1.,"{rects:?}");
+    let rects = geometry(
+        r##"{root:{widget:"column",fill:true,align:"center",children:["center","row"]},center:{widget:"column",grow:1,min_width:200,max_width:200,children:["middle"]},middle:{widget:"text",text:"Middle"},row:{widget:"row",fill:true,align:"end",children:["right"]},right:{widget:"column",grow:1,min_width:200,max_width:200,children:["last"]},last:{widget:"text",text:"Right"}}"##,
+    );
+    assert!(
+        (rects["root"].center().x - rects["center"].center().x).abs() < 1.,
+        "{rects:?}"
+    );
+    assert!(
+        (rects["row"].right() - rects["right"].right()).abs() < 1.,
+        "{rects:?}"
+    );
 }
 
 #[test]
 fn columns_distribute_free_space_and_scroll_grid_has_first_frame_height() {
-    for mode in ["end","between","around","evenly"] {
-        let source=format!(r##"{{root:{{widget:"column",height:400,justify:"{mode}",children:["a","b"]}},a:{{widget:"text",text:"One"}},b:{{widget:"text",text:"Two"}}}}"##);
-        let r=geometry(&source);
-        assert!(r["b"].top()>r["a"].top(),"{mode}: {r:?}");
-        if mode=="end" {assert!((r["root"].bottom()-r["b"].bottom()).abs()<1.,"{r:?}");}
-        if mode=="between" {assert!((r["root"].bottom()-r["b"].bottom()).abs()<1.,"{r:?}");assert!((r["root"].top()-r["a"].top()).abs()<1.);}
+    for mode in ["end", "between", "around", "evenly"] {
+        let source = format!(
+            r##"{{root:{{widget:"column",height:400,justify:"{mode}",children:["a","b"]}},a:{{widget:"text",text:"One"}},b:{{widget:"text",text:"Two"}}}}"##
+        );
+        let r = geometry(&source);
+        assert!(r["b"].top() > r["a"].top(), "{mode}: {r:?}");
+        if mode == "end" {
+            assert!((r["root"].bottom() - r["b"].bottom()).abs() < 1., "{r:?}");
+        }
+        if mode == "between" {
+            assert!((r["root"].bottom() - r["b"].bottom()).abs() < 1., "{r:?}");
+            assert!((r["root"].top() - r["a"].top()).abs() < 1.);
+        }
     }
-    let r=geometry(r##"{root:{widget:"grid",columns:1,children:["scroll"]},scroll:{widget:"column",fill:true,scroll:true,children:["line"]},line:{widget:"text",text:"Visible"}}"##);
-    assert!(r["scroll"].height()>10.,"{r:?}");
+    let r = geometry(
+        r##"{root:{widget:"grid",columns:1,children:["scroll"]},scroll:{widget:"column",fill:true,scroll:true,children:["line"]},line:{widget:"text",text:"Visible"}}"##,
+    );
+    assert!(r["scroll"].height() > 10., "{r:?}");
 }
 
 #[test]
 fn all_hidden_flex_children_leave_a_finite_empty_row() {
-    let r=geometry(r##"{root:{widget:"row",children:["hidden"]},hidden:{widget:"column",shrink:1,hidden:true,children:[]}}"##);
+    let r = geometry(
+        r##"{root:{widget:"row",children:["hidden"]},hidden:{widget:"column",shrink:1,hidden:true,children:[]}}"##,
+    );
     assert!(r["root"].is_finite());
 }
 

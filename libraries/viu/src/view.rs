@@ -881,21 +881,63 @@ impl SceneView {
         }
     }
 
-    fn node_contents(&mut self,ui:&mut egui::Ui,id:&str,nodes:&BTreeMap<String,Node>,route:Option<(&str,&Node,&Value)>,depth:usize,events:&mut Vec<Event>) {
-        let Some(node)=nodes.get(id) else{return;};
-        if node.ports.get("hidden")==Some(&Value::Bool(true)) {return;}
-        let width=matches!(node.family.as_str(),"column"|"row").then(||num(node,"width").or_else(||(node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0. || num(node,"shrink").unwrap_or(0.)>0.).then(||ui.available_width()))).flatten();
-        if let Some(width)=width {
-            let width=bounded_layout(width,1e6).max(num(node,"min_width").unwrap_or(0.)).min(num(node,"max_width").unwrap_or(1e6));
-            let available=ui.available_rect_before_wrap();
-            let x=match ui.layout().horizontal_placement(){egui::Align::Center=>available.center().x-width/2.,egui::Align::Max=>available.right()-width,_=>available.left()};
-            let rect=egui::Rect::from_min_size(egui::pos2(x,available.top()),egui::vec2(width,available.height()));
-            let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
-            cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(x,ui.clip_rect().top()),egui::pos2(x+width,ui.clip_rect().bottom()))));
-            self.node_surface(&mut cell,id,nodes,route,depth,events);
-            let height=cell.min_rect().height();
-            ui.allocate_rect(egui::Rect::from_min_size(rect.min,egui::vec2(width,height)),Sense::hover());
-        }else{self.node_surface(ui,id,nodes,route,depth,events);}
+    fn node_contents(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        nodes: &BTreeMap<String, Node>,
+        route: Option<(&str, &Node, &Value)>,
+        depth: usize,
+        events: &mut Vec<Event>,
+    ) {
+        let Some(node) = nodes.get(id) else {
+            return;
+        };
+        if node.ports.get("hidden") == Some(&Value::Bool(true)) {
+            return;
+        }
+        let width = matches!(node.family.as_str(), "column" | "row")
+            .then(|| {
+                num(node, "width").or_else(|| {
+                    (node.ports.get("fill") == Some(&Value::Bool(true))
+                        || num(node, "grow").unwrap_or(0.) > 0.
+                        || num(node, "shrink").unwrap_or(0.) > 0.)
+                        .then(|| ui.available_width())
+                })
+            })
+            .flatten();
+        if let Some(width) = width {
+            let width = bounded_layout(width, 1e6)
+                .max(num(node, "min_width").unwrap_or(0.))
+                .min(num(node, "max_width").unwrap_or(1e6));
+            let available = ui.available_rect_before_wrap();
+            let x = match ui.layout().horizontal_placement() {
+                egui::Align::Center => available.center().x - width / 2.,
+                egui::Align::Max => available.right() - width,
+                _ => available.left(),
+            };
+            let rect = egui::Rect::from_min_size(
+                egui::pos2(x, available.top()),
+                egui::vec2(width, available.height()),
+            );
+            let mut cell = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(
+                egui::pos2(x, ui.clip_rect().top()),
+                egui::pos2(x + width, ui.clip_rect().bottom()),
+            )));
+            self.node_surface(&mut cell, id, nodes, route, depth, events);
+            let height = cell.min_rect().height();
+            ui.allocate_rect(
+                egui::Rect::from_min_size(rect.min, egui::vec2(width, height)),
+                Sense::hover(),
+            );
+        } else {
+            self.node_surface(ui, id, nodes, route, depth, events);
+        }
     }
 
     fn node_surface(
@@ -1317,6 +1359,7 @@ impl SceneView {
                                         num(node, "height").unwrap_or(0.0),
                                     ));
                                 }
+                                let assigned_height = self.stretch_heights.get(id).copied();
                                 let mut draw = |ui: &mut egui::Ui| {
                                     for child in children(node) {
                                         self.node(ui, child, nodes, route, depth + 1, events);
@@ -1454,7 +1497,7 @@ impl SceneView {
                                     let cache = ui.scope_id().with((&key,"column-content-height"));
                                     if centre {
                                         let content = ui.ctx().data_mut(|d| d.get_temp::<f32>(cache)).unwrap_or(0.);
-                                        if content>0. {let height=num(node,"height").or_else(||self.stretch_heights.get(id).copied()).unwrap_or(ui.available_height());let free=(height-content).max(0.);let leading=match mode{"end"=>free,"between"=>{extra=if count>1{free/(count-1) as f32}else{0.};0.},"around"=>{extra=free/count.max(1) as f32;extra/2.},"evenly"=>{extra=free/(count+1) as f32;extra},_=>free/2.};if leading>0.{ui.add_space(leading);}ui.spacing_mut().item_spacing.y=old_gap+extra;}
+                                        if content>0. {let height=num(node,"height").or(assigned_height).unwrap_or(ui.available_height());let free=(height-content).max(0.);let leading=match mode{"end"=>free,"between"=>{extra=if count>1{free/(count-1) as f32}else{0.};0.},"around"=>{extra=free/count.max(1) as f32;extra/2.},"evenly"=>{extra=free/(count+1) as f32;extra},_=>free/2.};if leading>0.{ui.add_space(leading);}ui.spacing_mut().item_spacing.y=old_gap+extra;}
                                     }
                                     let content = if text(node,"align")=="center" { ui.vertical_centered(|ui| draw(ui)) } else { ui.vertical(|ui| draw(ui)) }.response.rect.height()-extra*count.saturating_sub(1) as f32;
                                     ui.spacing_mut().item_spacing.y=old_gap;
@@ -2790,54 +2833,163 @@ fn color(s: &str) -> Option<Color32> {
     ))
 }
 
-fn text_baseline(ui:&egui::Ui,node:&Node)->f32 {
-    let plain=json!([{"text":text(node,"text")}]);let bold=node.ports.get("bold")==Some(&Value::Bool(true));let job=crate::spans::job(ui,node.ports.get("spans").unwrap_or(&plain),num(node,"size").unwrap_or(13.),node.ports.get("mono")==Some(&Value::Bool(true)),bold,Color32::WHITE,(node.ports.get("font").and_then(Value::as_str),num(node,"weight").unwrap_or(if bold{700.}else{400.}),node.ports.get("mono_font").and_then(Value::as_str)));let g=ui.fonts_mut(|f|f.layout_job(job));g.rows.first().and_then(|r|r.glyphs.first().map(|glyph|r.pos.y+glyph.pos.y)).unwrap_or(0.)
+fn text_baseline(ui: &egui::Ui, node: &Node) -> f32 {
+    let plain = json!([{"text":text(node,"text")}]);
+    let bold = node.ports.get("bold") == Some(&Value::Bool(true));
+    let job = crate::spans::job(
+        ui,
+        node.ports.get("spans").unwrap_or(&plain),
+        num(node, "size").unwrap_or(13.),
+        node.ports.get("mono") == Some(&Value::Bool(true)),
+        bold,
+        Color32::WHITE,
+        (
+            node.ports.get("font").and_then(Value::as_str),
+            num(node, "weight").unwrap_or(if bold { 700. } else { 400. }),
+            node.ports.get("mono_font").and_then(Value::as_str),
+        ),
+    );
+    let g = ui.fonts_mut(|f| f.layout_job(job));
+    g.rows
+        .first()
+        .and_then(|r| r.glyphs.first().map(|glyph| r.pos.y + glyph.pos.y))
+        .unwrap_or(0.)
 }
 
-fn bounded_layout(value:f32,maximum:f32)->f32 {
-    if value.is_finite() {value.clamp(0.,maximum.max(0.))}else{maximum.max(0.)}
+fn bounded_layout(value: f32, maximum: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(0., maximum.max(0.))
+    } else {
+        maximum.max(0.)
+    }
 }
 
-fn natural_size_key(node:&Node)->egui::Id {
-    egui::Id::new(("scene-natural-leaf",&node.family,format!("{:?}",node.ports)))
+fn natural_size_key(node: &Node) -> egui::Id {
+    egui::Id::new((
+        "scene-natural-leaf",
+        &node.family,
+        format!("{:?}", node.ports),
+    ))
 }
 
 // Shape the original spans once. Word bounds are read from the natural glyph
 // positions (bounded scan), rather than shaping every word on every frame.
-fn intrinsic_text_width(ui:&egui::Ui,node:&Node,nodes:&BTreeMap<String,Node>,model:&Value,words:bool,depth:usize)->f32 {
-    if depth>32 || node.ports.get("hidden")==Some(&Value::Bool(true)) {return 0.;}
-    if node.family=="text" {
-        let cache=natural_size_key(node).with(("text-widths",ui.pixels_per_point().to_bits()));
-        let sizes=ui.ctx().data(|d|d.get_temp::<(f32,f32)>(cache)).unwrap_or_else(|| {
-            let plain=json!([{"text":text(node,"text")}]);
-            let bold=node.ports.get("bold")==Some(&Value::Bool(true));
-            let mut job=crate::spans::job(ui,node.ports.get("spans").unwrap_or(&plain),num(node,"size").unwrap_or(13.),node.ports.get("mono")==Some(&Value::Bool(true)),bold,Color32::WHITE,(node.ports.get("font").and_then(Value::as_str),num(node,"weight").unwrap_or(if bold {700.}else{400.}),node.ports.get("mono_font").and_then(Value::as_str)));
-            for s in &mut job.sections {s.format.extra_letter_spacing=num(node,"letter_spacing").unwrap_or(0.);}
-            let galley=ui.fonts_mut(|f|f.layout_job(job));let natural=galley.size().x;
-            let mut minimum=0.0_f32;let mut start=None;let mut seen=0;
-            for row in &galley.rows {
-                for glyph in &row.glyphs {
-                    seen+=1;if seen>4096 {minimum=natural;break;}
-                    if glyph.chr.is_whitespace() {start=None;}else{let begin=*start.get_or_insert(glyph.pos.x);minimum=minimum.max(glyph.max_x()-begin);}
+fn intrinsic_text_width(
+    ui: &egui::Ui,
+    node: &Node,
+    nodes: &BTreeMap<String, Node>,
+    model: &Value,
+    words: bool,
+    depth: usize,
+) -> f32 {
+    if depth > 32 || node.ports.get("hidden") == Some(&Value::Bool(true)) {
+        return 0.;
+    }
+    if node.family == "text" {
+        let cache = natural_size_key(node).with(("text-widths", ui.pixels_per_point().to_bits()));
+        let sizes = ui
+            .ctx()
+            .data(|d| d.get_temp::<(f32, f32)>(cache))
+            .unwrap_or_else(|| {
+                let plain = json!([{"text":text(node,"text")}]);
+                let bold = node.ports.get("bold") == Some(&Value::Bool(true));
+                let mut job = crate::spans::job(
+                    ui,
+                    node.ports.get("spans").unwrap_or(&plain),
+                    num(node, "size").unwrap_or(13.),
+                    node.ports.get("mono") == Some(&Value::Bool(true)),
+                    bold,
+                    Color32::WHITE,
+                    (
+                        node.ports.get("font").and_then(Value::as_str),
+                        num(node, "weight").unwrap_or(if bold { 700. } else { 400. }),
+                        node.ports.get("mono_font").and_then(Value::as_str),
+                    ),
+                );
+                for s in &mut job.sections {
+                    s.format.extra_letter_spacing = num(node, "letter_spacing").unwrap_or(0.);
                 }
-                start=None;
+                let galley = ui.fonts_mut(|f| f.layout_job(job));
+                let natural = galley.size().x;
+                let mut minimum = 0.0_f32;
+                let mut start = None;
+                let mut seen = 0;
+                for row in &galley.rows {
+                    for glyph in &row.glyphs {
+                        seen += 1;
+                        if seen > 4096 {
+                            minimum = natural;
+                            break;
+                        }
+                        if glyph.chr.is_whitespace() {
+                            start = None;
+                        } else {
+                            let begin = *start.get_or_insert(glyph.pos.x);
+                            minimum = minimum.max(glyph.max_x() - begin);
+                        }
+                    }
+                    start = None;
+                }
+                let result = (natural, minimum);
+                ui.ctx().data_mut(|d| d.insert_temp(cache, result));
+                result
+            });
+        return (if words { sizes.1 } else { sizes.0 })
+            .min(num(node, "max_width").unwrap_or(f32::INFINITY));
+    }
+    let cached = ui
+        .ctx()
+        .data(|d| d.get_temp::<egui::Vec2>(natural_size_key(node)))
+        .map(|v| v.x);
+    let explicit = num(node, "width")
+        .or(num(node, "w"))
+        .or(num(node, "min_width"));
+    if let Some(width) = explicit {
+        return bounded_layout(width, 1e6);
+    }
+    if node.family == "control" {
+        return Widget::decode(&node.ports["definition"])
+            .ok()
+            .and_then(|w| w.intrinsic_width(ui, model).ok())
+            .or(cached)
+            .unwrap_or(80.);
+    }
+    if !matches!(node.family.as_str(), "column" | "row" | "grid") {
+        return cached.unwrap_or_else(|| match node.family.as_str() {
+            "image" => {
+                if text(node, "src") == "brand:cyclops" {
+                    200.
+                } else {
+                    24.
+                }
             }
-            let result=(natural,minimum);ui.ctx().data_mut(|d|d.insert_temp(cache,result));result
+            "drawing" => 24.,
+            "spacer" => num(node, "size").unwrap_or(8.),
+            "field" => ui.spacing().text_edit_width,
+            _ => {
+                ui.fonts_mut(|f| {
+                    f.layout_no_wrap(
+                        text(node, "label").to_owned(),
+                        egui::FontId::proportional(14.),
+                        Color32::WHITE,
+                    )
+                })
+                .size()
+                .x + 2. * ui.spacing().button_padding.x
+            }
         });
-        return (if words {sizes.1}else{sizes.0}).min(num(node,"max_width").unwrap_or(f32::INFINITY));
     }
-    let cached=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(natural_size_key(node))).map(|v|v.x);
-    let explicit=num(node,"width").or(num(node,"w")).or(num(node,"min_width"));
-    if let Some(width)=explicit {return bounded_layout(width,1e6);}
-    if node.family=="control" {
-        return Widget::decode(&node.ports["definition"]).ok().and_then(|w|w.intrinsic_width(ui,model).ok()).or(cached).unwrap_or(80.);
-    }
-    if !matches!(node.family.as_str(),"column"|"row"|"grid") {
-        return cached.unwrap_or_else(||match node.family.as_str(){"image"=>if text(node,"src")=="brand:cyclops"{200.}else{24.},"drawing"=>24.,"spacer"=>num(node,"size").unwrap_or(8.),"field"=>ui.spacing().text_edit_width,_=>ui.fonts_mut(|f|f.layout_no_wrap(text(node,"label").to_owned(),egui::FontId::proportional(14.),Color32::WHITE)).size().x+2.*ui.spacing().button_padding.x});
-    }
-    let widths:Vec<f32>=children(node).filter_map(|c|nodes.get(c)).map(|n|intrinsic_text_width(ui,n,nodes,model,words,depth+1)).collect();
-    let content=if node.family=="row" {widths.iter().sum::<f32>()+num(node,"gap").unwrap_or(0.)*widths.len().saturating_sub(1) as f32}else{widths.into_iter().fold(0.0_f32,f32::max)};
-    content+node_padding(node,"padding_left")+node_padding(node,"padding_right")
+    let widths: Vec<f32> = children(node)
+        .filter_map(|c| nodes.get(c))
+        .map(|n| intrinsic_text_width(ui, n, nodes, model, words, depth + 1))
+        .collect();
+    let content = if node.family == "row" {
+        widths.iter().sum::<f32>()
+            + num(node, "gap").unwrap_or(0.) * widths.len().saturating_sub(1) as f32
+    } else {
+        widths.into_iter().fold(0.0_f32, f32::max)
+    };
+    content + node_padding(node, "padding_left") + node_padding(node, "padding_right")
 }
 
 fn node_padding(node: &Node, side: &str) -> f32 {

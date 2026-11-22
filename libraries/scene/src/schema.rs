@@ -331,7 +331,13 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
             p("flex", "string", false, None),
         ]);
     }
-    if f=="row" {ports.iter_mut().find(|p|p.name=="align").unwrap().enum_values=&["start","center","end","stretch","baseline"];}
+    if f == "row" {
+        ports
+            .iter_mut()
+            .find(|p| p.name == "align")
+            .unwrap()
+            .enum_values = &["start", "center", "end", "stretch", "baseline"];
+    }
     if f == "list" {
         ports
             .iter_mut()
@@ -397,7 +403,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         ports.push(pn("outline_width", false, None));
         ports.push(p("scroll", "bool", false, None));
         let mut justify = p("justify", "string", false, None);
-        justify.enum_values = &["start","center","end","between","around","evenly"];
+        justify.enum_values = &["start", "center", "end", "between", "around", "evenly"];
         ports.extend([
             justify,
             p("bar", "string", false, None),
@@ -634,10 +640,33 @@ pub(crate) fn check_port_value(
             format!("{k} on {id}: {message}"),
         ));
     }
-    if k=="background_inset" && !v.as_array().is_some_and(|a|a.len()==4 && a.iter().all(|n|n.as_f64().is_some_and(|n|n.is_finite() && (0.0..=1e6).contains(&n)))) {out.push(Diagnostic::error("port-type",line,format!("background_inset on {id} requires four finite nonnegative lengths")));}
-    let ceiling=match k {"line_height"=>Some(4096.),"basis"=>Some(1e6),"grow"|"shrink"=>Some(1000.),_=>None};
-    if ceiling.is_some_and(|limit|v.as_f64().is_some_and(|n|!n.is_finite() || n>limit)) {
-        out.push(Diagnostic::error("port-max",line,format!("port {k} on {id} exceeds its finite layout ceiling")));
+    if k == "background_inset"
+        && !v.as_array().is_some_and(|a| {
+            a.len() == 4
+                && a.iter().all(|n| {
+                    n.as_f64()
+                        .is_some_and(|n| n.is_finite() && (0.0..=1e6).contains(&n))
+                })
+        })
+    {
+        out.push(Diagnostic::error(
+            "port-type",
+            line,
+            format!("background_inset on {id} requires four finite nonnegative lengths"),
+        ));
+    }
+    let ceiling = match k {
+        "line_height" => Some(4096.),
+        "basis" => Some(1e6),
+        "grow" | "shrink" => Some(1000.),
+        _ => None,
+    };
+    if ceiling.is_some_and(|limit| v.as_f64().is_some_and(|n| !n.is_finite() || n > limit)) {
+        out.push(Diagnostic::error(
+            "port-max",
+            line,
+            format!("port {k} on {id} exceeds its finite layout ceiling"),
+        ));
     }
     if ["ratio", "minimum", "maximum"].contains(&k) && v.as_f64().is_some_and(|n| n > 1.0) {
         out.push(Diagnostic::error(
