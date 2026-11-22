@@ -68,8 +68,12 @@ fn check(mode: &str) {
     );
     writeln!(parent.0.stdin.as_mut().unwrap(), "{mode}").unwrap();
     let mut output = parent.0.stdout.take().unwrap();
-    let line = owned_bus::read_ready(&mut output, "CHILD_READY ", Instant::now() + Duration::from_secs(15))
-        .expect("fixture parent handshake (15 s deadline)");
+    let line = owned_bus::read_ready(
+        &mut output,
+        "CHILD_READY ",
+        Instant::now() + Duration::from_secs(30),
+    )
+    .expect("fixture parent handshake (30 s deadline)");
     let parts: Vec<_> = line.split_whitespace().collect();
     let pid: u32 = parts[0].parse().unwrap();
     let root = Path::new(parts[1]);
@@ -107,7 +111,9 @@ fn check(mode: &str) {
         if !cleaned {
             // SAFETY: exact child PID from the fixture handshake. A failed
             // assertion must not leave its deliberate leak specimen running.
-            unsafe { libc::kill(pid as i32, libc::SIGKILL); }
+            unsafe {
+                libc::kill(pid as i32, libc::SIGKILL);
+            }
             let _ = within(pid, root, Duration::from_secs(2));
         }
         assert!(

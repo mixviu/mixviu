@@ -15,7 +15,10 @@ pub fn read_ready(
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            return Err(io::Error::new(io::ErrorKind::TimedOut, format!("waiting for {prefix:?}")));
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("waiting for {prefix:?}"),
+            ));
         }
         let mut fd = libc::pollfd {
             fd: input.as_raw_fd(),
@@ -24,14 +27,22 @@ pub fn read_ready(
         };
         // SAFETY: one valid, exclusively read descriptor, bounded timeout.
         let ready = unsafe {
-            libc::poll(&mut fd, 1, remaining.as_millis().clamp(1, i32::MAX as u128) as i32)
+            libc::poll(
+                &mut fd,
+                1,
+                remaining.as_millis().clamp(1, i32::MAX as u128) as i32,
+            )
         };
         if ready < 0 {
             let error = io::Error::last_os_error();
-            if error.kind() == io::ErrorKind::Interrupted { continue; }
+            if error.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
             return Err(error);
         }
-        if ready == 0 { continue; }
+        if ready == 0 {
+            continue;
+        }
         let mut bytes = [0; 1024];
         // A pipe/socket read returns the available bytes; unlike read_line,
         // this never waits for a missing newline after poll reports readiness.
@@ -40,7 +51,10 @@ pub fn read_ready(
             result => result?,
         };
         if len == 0 {
-            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, format!("EOF before {prefix:?}")));
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                format!("EOF before {prefix:?}"),
+            ));
         }
         pending.extend_from_slice(&bytes[..len]);
         while let Some(end) = pending.iter().position(|byte| *byte == b'\n') {
@@ -51,7 +65,10 @@ pub fn read_ready(
             }
         }
         if pending.len() > 64 * 1024 {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "handshake line exceeds 64 KiB"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "handshake line exceeds 64 KiB",
+            ));
         }
     }
 }
@@ -62,8 +79,12 @@ fn silent_and_partial_handshakes_have_deadlines() {
     for partial in [b"".as_slice(), b"READY incomplete"] {
         let (mut input, mut writer) = UnixStream::pair().unwrap();
         writer.write_all(partial).unwrap();
-        let error = read_ready(&mut input, "READY ", Instant::now() + Duration::from_millis(50))
-            .unwrap_err();
+        let error = read_ready(
+            &mut input,
+            "READY ",
+            Instant::now() + Duration::from_millis(50),
+        )
+        .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::TimedOut);
     }
 }

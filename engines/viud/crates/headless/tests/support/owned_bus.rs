@@ -59,8 +59,12 @@ impl OwnedBus {
         };
         writeln!(bus.owner.stdin.as_mut().unwrap(), "{label}").unwrap();
         let mut output = bus.owner.stdout.take().unwrap();
-        let record = read_ready(&mut output, "BUS_READY ", Instant::now() + Duration::from_secs(10))
-            .expect("directory owner handshake (10 s deadline)");
+        let record = read_ready(
+            &mut output,
+            "BUS_READY ",
+            Instant::now() + Duration::from_secs(10),
+        )
+        .expect("directory owner handshake (10 s deadline)");
         let record: serde_json::Value = serde_json::from_str(&record).unwrap();
         bus.root = record["root"].as_str().unwrap().into();
         bus.spawn_broker(death_signal);
@@ -130,21 +134,45 @@ impl OwnedBus {
         // Noded owns the ephemeral TCP bind from the outset. Its existing
         // noded.peers diagnostic reports listener.local_addr().port(), reached
         // through the unique Unix endpoint without guessing a TCP address.
-        let mut query = Broker(Command::new(
-            std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mix/bin/mix".into()),
-        )
-            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/bus.mix"))
-            .arg("discover").arg(&self.root)
-            .env("MIX_NODED_URL", format!("unix://{}", self.root.join("run/noded/bus.sock").display()))
+        let mut query = Broker(
+            Command::new(
+                std::env::var_os("MIX_TEST_MIX_EXE").unwrap_or_else(|| "/opt/mix/bin/mix".into()),
+            )
+            .arg(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/support/bus.mix"
+            ))
+            .arg("discover")
+            .arg(&self.root)
+            .env(
+                "MIX_NODED_URL",
+                format!("unix://{}", self.root.join("run/noded/bus.sock").display()),
+            )
             .env("MIX_RUN", self.root.join("run"))
             .env("MIX_ETC", self.root.join("etc"))
             .env("MIX_VAR", self.root.join("var"))
             .env("MIX_NODE_CONFIG", self.root.join("etc/node.conf.mix"))
-            .stdin(Stdio::null()).stdout(Stdio::piped()).spawn().unwrap());
-        let record = read_ready(&mut query.0.stdout.take().unwrap(), "BUS_ADDRESS ", deadline)
-            .unwrap_or_else(|error| panic!("bound address handshake: {error}; {}", fs::read_to_string(self.root.join("noded.log")).unwrap()));
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+        );
+        let record = read_ready(
+            &mut query.0.stdout.take().unwrap(),
+            "BUS_ADDRESS ",
+            deadline,
+        )
+        .unwrap_or_else(|error| {
+            panic!(
+                "bound address handshake: {error}; {}",
+                fs::read_to_string(self.root.join("noded.log")).unwrap()
+            )
+        });
         let record: serde_json::Value = serde_json::from_str(&record).unwrap();
-        let port = record["port"].as_u64().filter(|port| (1..=65535).contains(port)).expect("noded bound TCP port");
+        let port = record["port"]
+            .as_u64()
+            .filter(|port| (1..=65535).contains(port))
+            .expect("noded bound TCP port");
         assert_eq!(record["node"], "headless-test");
         self.url = format!("ws://127.0.0.1:{port}/ws");
         fs::write(
@@ -174,8 +202,11 @@ impl Drop for OwnedBus {
         if !self.root.as_os_str().is_empty() {
             let _ = fs::remove_dir_all(&self.root);
         }
-        debug_assert_eq!(self.spawning_thread, std::thread::current().id(),
-            "OwnedBus must be constructed and dropped on the thread that outlives its broker");
+        debug_assert_eq!(
+            self.spawning_thread,
+            std::thread::current().id(),
+            "OwnedBus must be constructed and dropped on the thread that outlives its broker"
+        );
     }
 }
 
@@ -206,10 +237,7 @@ fn owner_process() {
     }).to_string()).unwrap();
     let mesh = root.path().join("etc/mesh.conf.mix");
     fs::write(&mesh, r#"{"node_name":"headless-test","peers":[]}"#).unwrap();
-    println!(
-        "BUS_READY {}",
-        serde_json::json!({"root":root.path()})
-    );
+    println!("BUS_READY {}", serde_json::json!({"root":root.path()}));
     std::io::stdout().flush().unwrap();
     std::io::stdin().read_to_end(&mut Vec::new()).unwrap();
     drop(root);
