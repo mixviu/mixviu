@@ -309,6 +309,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
     }
     if f == "text" {
         ports.push(pn("letter_spacing", false, Some(-100.0)));
+        ports.push(pn("line_height", false, Some(0.1)));
         ports.push(p("font", "string", false, None));
         ports.push(p("mono_font", "string", false, None));
         ports.push(pn("weight", false, Some(1.0)));

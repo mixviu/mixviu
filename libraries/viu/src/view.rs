@@ -1138,12 +1138,12 @@ impl SceneView {
                         let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(ui.visuals().text_color()).to_array();
                         let number = node.ports.get("number").map(|spec| self.numbers.text(ui, &key, spec, node.ports.get("motion") != Some(&Value::Bool(false))));
                         let plain = json!([{"text":number.as_deref().unwrap_or_else(||text(node,"text"))}]);
-                        if node.ports.contains_key("spans") || node.ports.contains_key("letter_spacing") || node.ports.contains_key("font") || node.ports.contains_key("mono_font") {
+                        if node.ports.contains_key("spans") || node.ports.contains_key("letter_spacing") || node.ports.contains_key("line_height") || node.ports.contains_key("font") || node.ports.contains_key("mono_font") {
                             let spans = node.ports.get("spans").unwrap_or(&plain);
                             let family = (node.ports.get("font").and_then(Value::as_str), num(node,"weight").unwrap_or(if node.ports.get("bold") == Some(&Value::Bool(true)) {700.} else {400.}), node.ports.get("mono_font").and_then(Value::as_str));
                             let mut job = crate::spans::job(ui, spans, num(node,"size").unwrap_or(13.0), node.ports.get("mono") == Some(&Value::Bool(true)), node.ports.get("bold") == Some(&Value::Bool(true)), Color32::from_rgba_unmultiplied(colour[0], colour[1], colour[2], colour[3]), family);
                             job.halign = match text(node,"align") {"center"=>egui::Align::Center,"right"=>egui::Align::Max,_=>egui::Align::Min};
-                            for section in &mut job.sections { section.format.extra_letter_spacing = num(node,"letter_spacing").unwrap_or(0.); }
+                            for section in &mut job.sections { section.format.extra_letter_spacing = num(node,"letter_spacing").unwrap_or(0.); section.format.line_height=num(node,"line_height"); }
                             let label = egui::Label::new(job);
                             let label=if node.ports.get("wrap") == Some(&Value::Bool(true)) {label.wrap()} else {label.extend()};
                             if node.ports.get("fill")==Some(&Value::Bool(true)) {ui.add_sized(egui::vec2(ui.available_width(),0.),label);} else {ui.add(label);}
@@ -1357,6 +1357,8 @@ impl SceneView {
                                         if text(node,"align")=="center" {egui::Grid::new((&key,"cross-center")).num_columns(active.len()).min_col_width(0.).min_row_height(0.).spacing(ui.spacing().item_spacing).striped(false).show(ui,|ui|cells(ui));} else {ui.horizontal_top(|ui|cells(ui));}
                                     } else if text(node,"align")=="end" {
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
+                                    } else if text(node,"align")=="start" {
+                                        ui.horizontal_top(|ui|draw(ui));
                                     } else if let Some(height) = num(node, "height") {
  ui.allocate_ui_with_layout(Vec2::new(ui.available_width(),height),egui::Layout::left_to_right(egui::Align::Center),|ui|draw(ui));
  } else { ui.horizontal(|ui| draw(ui)); }
