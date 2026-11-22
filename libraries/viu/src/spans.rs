@@ -42,14 +42,13 @@ pub(crate) fn job(
         let requested = if let Some((name, weight, mono_name)) = family {
             FontId::new(
                 size,
-                toolkit::fonts::optional::family(
-                    if mono || run["mono"] == true {
-                        mono_name.unwrap_or(name)
-                    } else {
-                        name
-                    },
-                    weight,
-                ),
+                if mono || run["mono"] == true {
+                    mono_name.map_or(FontFamily::Monospace, |name| {
+                        toolkit::fonts::optional::family(name, weight)
+                    })
+                } else {
+                    toolkit::fonts::optional::family(name, weight)
+                },
             )
         } else if mono || run["mono"] == true {
             FontId::new(size, FontFamily::Monospace)

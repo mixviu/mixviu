@@ -15,6 +15,8 @@ Missing or unknown families refuse there rather than substituting; the painter
 also checks binding before drawing. Structural parsing alone does not bind fonts.
 Paint-time resolution guards every named family against the bound context,
 falling back to Proportional for sans runs and Monospace for mono runs.
+When a scene names a sans `font` but omits `mono_font`, whole-node and inline
+mono runs use the theme's Monospace family (JetBrains Mono by default).
 
 `cargo test -p lib-viu --test deck deck_font_identity -- --nocapture` (CBC only) paints
 the roles and compares their glyph atlas coordinates with isolated faces,

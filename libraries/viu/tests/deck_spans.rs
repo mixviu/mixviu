@@ -63,6 +63,55 @@ fn source() -> String {
     ]}});
     format!("---\nscene: 1\nname: deck\ncitizen: test\n---\n```mix\n{nodes}\n```\n")
 }
+
+#[test]
+fn mono_runs_use_the_theme_mono_unless_a_mono_font_is_named() {
+    for whole_node in [false, true] {
+        for named_mono in [false, true] {
+            let ctx = egui::Context::default();
+            viu::fonts::install(&ctx, 400, 600);
+            let mut node = json!({"widget":"text","font":"Liberation Sans","size":24,"mono":whole_node,"spans":[{"text":"mono","mono":!whole_node}]});
+            if named_mono {
+                node["mono_font"] = json!("Noto Sans Mono");
+            }
+            let nodes = json!({"root":node});
+            let source = format!("---\nscene: 1\nname: mono\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+            let mut view = SceneView::new(&source).unwrap();
+            let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            let actual = out.shapes.iter().find_map(|s| match &s.shape {
+                egui::Shape::Text(t) if t.galley.job.text == "mono" => Some(&t.galley),
+                _ => None,
+            }).expect("SceneView paints the mono text");
+            let expected_family = if named_mono {
+                toolkit::fonts::optional::family("Noto Sans Mono", 400.)
+            } else {
+                egui::FontFamily::Monospace
+            };
+            assert_eq!(actual.job.sections[0].format.font_id.family, expected_family);
+            let defs = ctx.fonts(|f| f.definitions().clone());
+            let primary = &defs.families[&expected_family][0];
+            let mut db = fontdb::Database::new();
+            db.load_font_data(defs.font_data[primary].data.as_ref().to_vec());
+            let face = &db.faces().next().unwrap().post_script_name;
+            assert_eq!(face, if named_mono { "NotoSansMono-Regular" } else { "JetBrainsMono-Regular" });
+            let reference_family = if named_mono {
+                egui::FontFamily::Name("NotoSansMono-Regular.ttf".into())
+            } else {
+                egui::FontFamily::Monospace
+            };
+            let expected = ctx.fonts_mut(|f| f.layout_no_wrap("mono".into(), egui::FontId::new(24.,reference_family),egui::Color32::WHITE));
+            let sans = ctx.fonts_mut(|f| f.layout_no_wrap("mono".into(), egui::FontId::new(24.,toolkit::fonts::optional::family("Liberation Sans",400.)),egui::Color32::WHITE));
+            let glyphs = |galley: &egui::Galley| galley.rows.iter().flat_map(|r| &r.glyphs).map(|g| (g.chr,g.uv_rect,g.advance_width)).collect::<Vec<_>>();
+            assert!(!glyphs(actual).is_empty());
+            assert_eq!(glyphs(actual), glyphs(&expected), "painted raster face");
+            assert_ne!(glyphs(actual), glyphs(&sans), "mono must not use the sans face");
+            println!("MONO_IDENTITY {} {}: {:?} -> {face}", if whole_node {"node"} else {"inline"}, if named_mono {"with mono_font"} else {"without mono_font"}, expected_family);
+            out.drop_without_applying_deltas();
+        }
+    }
+}
 #[test]
 fn unregistered_font_family_refuses_before_paint() {
     let source = "---\nscene: 1\nname: font-refusal\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"hello\",font:\"missing-family\"}}\n```\n";
