@@ -1416,13 +1416,15 @@ mod tests {
 
     #[cfg(unix)]
     fn runner_fixture() -> (tempfile::TempDir, Roots, Entry) {
-        use std::os::unix::fs::PermissionsExt;
         let temp = tempfile::tempdir().unwrap();
-        let mix = temp.path().join("runner-stub");
         // Explicit test-only shell fixture: the runner launches this instead
         // of Mix, so start/stop/reaping never depend on an installed binary.
-        std::fs::write(&mix, "#!/bin/sh\n# SPDX-License-Identifier: MIT OR Apache-2.0\nprintf '%s\\n' \"$$\" > \"$1.parent\"\n/bin/sleep 120 &\nchild=$!\nprintf '%s\\n' \"$child\" > \"$1.child\"\nwait \"$child\"\n").unwrap();
-        std::fs::set_permissions(&mix, std::fs::Permissions::from_mode(0o700)).unwrap();
+        // It is checked in (mode 755), never written at test time: exec'ing a
+        // freshly written stub races concurrent forks that still hold its
+        // write descriptor (ETXTBSY), the likely cause of the rare start-wait
+        // timeout in closing_a_window_kills_its_group_and_reaps_the_leader.
+        let mix =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/runner-stub");
         let roots = Roots {
             builtin: temp.path().join("builtin"),
             user: temp.path().join("user"),
