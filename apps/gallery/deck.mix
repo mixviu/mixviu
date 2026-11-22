@@ -25,8 +25,10 @@ end
 fn row($items, $gap)
   return {widget:"row", children:$items, gap:$gap, align:"center"}
 end
-fn card($title, $items, $tone)
-  $content = [deck_text($title, "panel_title", $tone)]
+fn card($title, $items, $tone,$mono_title=false)
+  $heading=deck_text($title, "panel_title", $tone)
+  if $mono_title then $heading.mono=true;$heading.font="Noto Sans Mono" end
+  $content = [$heading]
   for $item in $items
     push($content, $item)
   end
