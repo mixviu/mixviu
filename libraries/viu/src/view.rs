@@ -1544,12 +1544,12 @@ impl SceneView {
                                         let baseline=bases.iter().copied().fold(0.0_f32,f32::max);let origin=ui.available_rect_before_wrap().min;let mut x=origin.x;let mut height=0.0_f32;
                                         for (child,base) in active.iter().zip(bases) {let width=intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,false,0);let offset=baseline-base;let pos=egui::pos2(x,origin.y+offset);let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(pos,egui::vec2(width,ui.available_height()))).layout(egui::Layout::top_down(egui::Align::Min)));self.node(&mut cell,child,nodes,route,depth+1,events);height=height.max(offset+cell.min_rect().height());x+=width+ui.spacing().item_spacing.x;}
                                         ui.allocate_space(egui::vec2((x-origin.x-ui.spacing().item_spacing.x).max(0.),height));
-                                    } else if node.ports.contains_key("cross_align") {
+                                    } else if node.ports.contains_key("cross_align") && text(node,"align")!="end" {
                                         let cross=match text(node,"cross_align"){"start"=>egui::Align::Min,"end"=>egui::Align::Max,_=>egui::Align::Center};
                                         let layout=if text(node,"align")=="end"{egui::Layout::right_to_left(cross)}else{egui::Layout::left_to_right(cross)};
                                         if let Some(h)=num(node,"height"){ui.allocate_ui_with_layout(egui::vec2(ui.available_width(),h),layout,|ui|draw(ui));}else{ui.with_layout(layout,|ui|draw(ui));}
                                     } else if text(node,"align")=="end" {
-                                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
+                                        ui.with_layout(egui::Layout::right_to_left(match cross_align(node,"center"){"start"=>egui::Align::Min,"end"=>egui::Align::Max,_=>egui::Align::Center}),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
                                     } else if let Some(height) = num(node, "height") {
  ui.allocate_ui_with_layout(Vec2::new(ui.available_width(),height),egui::Layout::left_to_right(egui::Align::Center),|ui|draw(ui));
  } else { ui.horizontal(|ui| draw(ui)); }
@@ -3531,8 +3531,9 @@ mod round7_tests {
             assert_eq!(view.painted.entries.len(), 1, "frame {frame}");
             assert!(view.painted.bytes <= PAINTED_BYTES);
         }
-        view.painted.begin();
-        view.painted.end();
+        view.tree.nodes.get_mut("root").unwrap().ports.insert("hidden".into(),json!(true));
+        view.revision+=1;
+        let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();
         assert!(view.painted.entries.is_empty());
         assert_eq!(view.painted.bytes, 0);
     }
