@@ -1214,7 +1214,7 @@ impl SceneView {
 
                         let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(if node.ports.get("bold")==Some(&Value::Bool(true)){ui.visuals().strong_text_color()}else{ui.visuals().text_color()}).to_array();
                         let number = node.ports.get("number").map(|spec| self.numbers.text(ui, &key, spec, node.ports.get("motion") != Some(&Value::Bool(false))));
-                        let plain = json!([{"text":number.as_deref().unwrap_or_else(||text(node,"text")),"color":format!("#{:02x}{:02x}{:02x}",colour[0],colour[1],colour[2])}]);
+                        let plain = json!([{"text":number.as_deref().unwrap_or_else(||text(node,"text"))}]);
                         {
                             let spans = node.ports.get("spans").unwrap_or(&plain);
                             let family = (node.ports.get("font").and_then(Value::as_str), num(node,"weight").unwrap_or(if node.ports.get("bold") == Some(&Value::Bool(true)) {700.} else {400.}), node.ports.get("mono_font").and_then(Value::as_str));
