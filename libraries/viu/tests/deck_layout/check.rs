@@ -645,7 +645,9 @@ fn legacy_end_grow_row_keeps_main_top_left_packing() {
 #[test]
 fn explicit_cross_works_with_native_spacing_wrap_and_between() {
     for extra in ["wrap:true", "justify: \"between\""] {
-        let source = format!(r#"{{root:{{widget:"row",cross_align:"end",native_spacing:true,{extra},children:["a","b"]}},a:{{widget:"column",height:80,min_width:100,children:[]}},b:{{widget:"column",height:20,min_width:100,children:[]}}}}"#);
+        let source = format!(
+            r#"{{root:{{widget:"row",cross_align:"end",native_spacing:true,{extra},children:["a","b"]}},a:{{widget:"column",height:80,min_width:100,children:[]}},b:{{widget:"column",height:20,min_width:100,children:[]}}}}"#
+        );
         let g = geometry(&source);
         assert!((g["a"].bottom() - g["b"].bottom()).abs() < 1., "{extra}");
     }
