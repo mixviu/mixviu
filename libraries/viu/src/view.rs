@@ -50,7 +50,8 @@ pub struct SceneView {
     numbers: crate::numbers::Numbers,
     backdrops: crate::backdrop::Backdrops,
     scene_images: crate::image_view::Images,
-    motion_parent: Option<String>,\n    painted: PaintedGalleys,
+    motion_parent: Option<String>,
+    painted: PaintedGalleys,
     collect_widget_rects: bool,
     widget_rects: Vec<crate::widget_rects::WidgetRect>,
     frame: Option<Box<SceneView>>,
@@ -161,7 +162,8 @@ impl SceneView {
             numbers: crate::numbers::Numbers::default(),
             backdrops: crate::backdrop::Backdrops::default(),
             scene_images: crate::image_view::Images::scene(),
-            motion_parent: None,\n            painted: PaintedGalleys::default(),
+            motion_parent: None,
+            painted: PaintedGalleys::default(),
             frame: None,
             regions: BTreeMap::new(),
             stretch_heights: BTreeMap::new(),
@@ -602,7 +604,8 @@ impl SceneView {
         });
         ui.ctx()
             .data_mut(|d| d.insert_temp(egui::Id::new("scene-font-state"), font_state));
-        self.painted.begin();\n        self.motion.begin(ui);
+        self.painted.begin();
+        self.motion.begin(ui);
         self.numbers.begin();
         self.backdrops.begin();
         self.scene_images.begin();
@@ -650,7 +653,8 @@ impl SceneView {
         }
         let nodes = self.measurement_nodes.as_ref().unwrap().1.clone();
         self.node(ui, "root", &nodes, None, 0, &mut events);
-        self.painted.end();\n        self.motion.end(ui);
+        self.painted.end();
+        self.motion.end(ui);
         self.numbers.end();
         self.backdrops.end();
         self.scene_images.finish();
@@ -1540,10 +1544,12 @@ impl SceneView {
                                         let baseline=bases.iter().copied().fold(0.0_f32,f32::max);let origin=ui.available_rect_before_wrap().min;let mut x=origin.x;let mut height=0.0_f32;
                                         for (child,base) in active.iter().zip(bases) {let width=intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,false,0);let offset=baseline-base;let pos=egui::pos2(x,origin.y+offset);let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(pos,egui::vec2(width,ui.available_height()))).layout(egui::Layout::top_down(egui::Align::Min)));self.node(&mut cell,child,nodes,route,depth+1,events);height=height.max(offset+cell.min_rect().height());x+=width+ui.spacing().item_spacing.x;}
                                         ui.allocate_space(egui::vec2((x-origin.x-ui.spacing().item_spacing.x).max(0.),height));
+                                    } else if node.ports.contains_key("cross_align") {
+                                        let cross=match text(node,"cross_align"){"start"=>egui::Align::Min,"end"=>egui::Align::Max,_=>egui::Align::Center};
+                                        let layout=if text(node,"align")=="end"{egui::Layout::right_to_left(cross)}else{egui::Layout::left_to_right(cross)};
+                                        if let Some(h)=num(node,"height"){ui.allocate_ui_with_layout(egui::vec2(ui.available_width(),h),layout,|ui|draw(ui));}else{ui.with_layout(layout,|ui|draw(ui));}
                                     } else if text(node,"align")=="end" {
                                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
-                                    } else if text(node,"align")=="start" {
-                                        if let Some(h)=num(node,"height") {ui.allocate_ui_with_layout(egui::vec2(ui.available_width(),h),egui::Layout::left_to_right(egui::Align::Min),|ui|draw(ui));}else{ui.horizontal_top(|ui|draw(ui));}
                                     } else if let Some(height) = num(node, "height") {
  ui.allocate_ui_with_layout(Vec2::new(ui.available_width(),height),egui::Layout::left_to_right(egui::Align::Center),|ui|draw(ui));
  } else { ui.horizontal(|ui| draw(ui)); }
@@ -2883,7 +2889,8 @@ fn route_event(
 }
 fn num(node: &Node, port: &str) -> Option<f32> {
     node.ports.get(port)?.as_f64().map(|n| {
-        let v = n as f32;\n        if port=="letter_spacing" {return v.clamp(-100.,4096.);}
+        let v = n as f32;
+        if port=="letter_spacing" {return v.clamp(-100.,4096.);}
         if matches!(
             port,
             "width"
@@ -3414,8 +3421,8 @@ impl PaintedGalleys {
         // Charge owned capacities, including row glyph/mesh buffers and section metadata.
         let bytes=std::mem::size_of::<egui::Galley>()+galley.job.text.capacity()
             +galley.job.sections.capacity()*(std::mem::size_of::<egui::text::LayoutSection>()+1024)
-            +galley.rows.capacity()*std::mem::size_of::<egui::text::PlacedRow>()
-            +galley.rows.iter().map(|r|r.glyphs.capacity()*std::mem::size_of::<egui::text::Glyph>()
+            +galley.rows.capacity()*256
+            +galley.rows.iter().map(|r|r.glyphs.capacity()*128
                 +r.visuals.mesh.vertices.capacity()*std::mem::size_of::<egui::epaint::Vertex>()
                 +r.visuals.mesh.indices.capacity()*std::mem::size_of::<u32>()).sum::<usize>();
         if bytes>PAINTED_BYTES{return;}
@@ -3450,7 +3457,7 @@ mod round7_tests {
         let mut view=SceneView::new("---\nscene: 1\nname: palette\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"accent\",color:\"#ffffff\",spans:[{text:\"accent\",role:\"acc\"}]}}\n```\n").unwrap();
         let ctx=egui::Context::default();
         for colour in [Color32::RED,Color32::GREEN] {
-            let map=BTreeMap::from([("acc".into(),colour)]);
+            let map=BTreeMap::from([("accent".into(),colour)]);
             ctx.data_mut(|d|d.insert_temp(egui::Id::unique("viu-design-colours"),std::sync::Arc::new(map)));
             let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();
             assert_eq!(view.painted.entries.values().next().unwrap().1.job.sections[0].format.color,colour);
