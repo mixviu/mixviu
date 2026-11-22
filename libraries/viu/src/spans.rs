@@ -105,11 +105,7 @@ mod tests {
                         node_mono,
                         false,
                         Color32::WHITE,
-                        (
-                            ports["font"].as_str(),
-                            400.,
-                            ports["mono_font"].as_str(),
-                        ),
+                        (ports["font"].as_str(), 400., ports["mono_font"].as_str()),
                     );
                     assert_eq!(
                         job.sections[0].format.font_id.family,
