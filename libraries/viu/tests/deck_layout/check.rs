@@ -645,13 +645,24 @@ fn explicit_cross_works_with_native_spacing_wrap_and_between() {
 
 #[test]
 fn default_wrap_and_between_match_native_main_placement() {
+    fn positions(source:&str)->std::collections::BTreeMap<String,egui::Pos2>{
+        let mut view=SceneView::new(&format!("---\nscene: 1\nname: main-ink\ncitizen: test\n---\n```mix\n{source}\n```\n")).unwrap();
+        let ctx=egui::Context::default();let mut found=std::collections::BTreeMap::new();
+        for _ in 0..8 {
+            let mut out=ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1000.,600.))),..Default::default()},|ui|{view.show(ui);});
+            out.textures_delta.clear();found.clear();
+            for shape in &out.shapes{if let egui::Shape::Text(t)=&shape.shape{found.insert(t.galley.job.text.clone(),t.pos);}}
+        }
+        found
+    }
     for mode in ["wrap:true","justify:\"between\""] {
         let scene=|native:bool|format!(r#"{{root:{{widget:"row",{mode},native_spacing:{native},gap:8,children:["a","b","c"]}},a:{{widget:"text",text:"Large",size:40}},b:{{widget:"text",text:"small",size:12}},c:{{widget:"text",text:"third",size:20}}}}"#);
-        let a=geometry(&scene(false));let b=geometry(&scene(true));
-        for id in ["a","b","c"] {assert!((a[id].top()-a["root"].top()-(b[id].top()-b["root"].top())).abs()<1.,"{mode} {id} {a:?} {b:?}");}
-        if mode.starts_with("justify") {for id in ["a","b","c"]{assert!((a[id].left()-b[id].left()).abs()<1.,"{id}");}}
+        let a=positions(&scene(false));let b=positions(&scene(true));
+        assert_eq!(a.len(),3);assert_eq!(b.len(),3);
+        for id in ["Large","small","third"]{assert!((a[id].y-b[id].y).abs()<1.,"{mode} {id}: {a:?} {b:?}");if mode.starts_with("justify"){assert!((a[id].x-b[id].x).abs()<1.);}}
     }
 }
+
 #[test]
 fn authored_height_does_not_change_legacy_center_grow_cross_positions() {
     let scene=|height:&str|format!(r#"{{root:{{widget:"row",align:"center",{height}children:["a","b"]}},a:{{widget:"column",height:80,min_width:100,children:[]}},b:{{widget:"column",height:20,grow:1,children:[]}}}}"#);
@@ -682,7 +693,7 @@ fn unknown_leaves_use_native_row_measurement_without_clipping() {
 }
 #[test]
 fn non_text_column_distribution_falls_back_to_main_packing() {
-    let scene=|mode:&str|format!(r#"{{root:{{widget:"column",height:300,justify:"{mode}",children:["a","b"]}},a:{{widget:"button",label:"Button"}},b:{{widget:"image",src:"icon:home",w:32,h:32}}}}"#);
+    let scene=|mode:&str|format!(r#"{{root:{{widget:"column",height:300,justify:"{mode}",children:["a","b"]}},a:{{widget:"button",label:"Button"}},b:{{widget:"image",src:"brand:cyclops",w:32,h:32}}}}"#);
     let main=geometry(&scene("start"));
     for mode in ["between","around","evenly"]{let g=geometry(&scene(mode));for id in ["a","b"]{assert_eq!(g[id],main[id],"{mode}");}}
 }
