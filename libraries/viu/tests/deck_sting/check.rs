@@ -106,7 +106,7 @@ fn element_pixels(image: &image::RgbaImage, rect: egui::Rect, cyan: bool) -> usi
                 && if cyan {
                     p[1] > 100 && p[2] > 120 && p[0] < 140
                 } else {
-                    p[0] > 100 && p[1] > 100 && p[2] > 100
+                    p[0] > 50 && p[1] > 50 && p[2] > 50
                 }
         })
         .count()
@@ -130,6 +130,9 @@ fn entrances(
             let pixels = element_pixels(&images[i], rect, cyan);
             if *t < delay && pixels > 5 {
                 return Err(format!("{id} visible before delay at {t}: {pixels}"));
+            }
+            if *t > delay && pixels <= 5 {
+                return Err(format!("{id} absent after delay at {t}: {pixels}"));
             }
             if *t > delay + 0.9 && pixels < settled / 2 {
                 return Err(format!(
