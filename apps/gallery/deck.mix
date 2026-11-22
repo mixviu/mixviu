@@ -78,6 +78,7 @@ fn compact_rail($chapters,$active,$date)
 end
 fn compact_card($title,$items,$tone="mut")
   $node=card($title,$items,$tone)
+  $node.fill=true
   $node.padding_left=$tokens.space.compact_card_x
   $node.padding_right=$tokens.space.compact_card_x
   $node.padding_top=$tokens.space.compact_card_y

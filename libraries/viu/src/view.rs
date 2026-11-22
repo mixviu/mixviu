@@ -1366,7 +1366,7 @@ impl SceneView {
 
                                 } else {
                                     let centre = text(node,"justify")=="center";
-                                    let cache = ui.id().with((&key,"column-content-height"));
+                                    let cache = ui.scope_id().with((&key,"column-content-height"));
                                     if centre {
                                         let content = ui.ctx().data_mut(|d| d.get_temp::<f32>(cache)).unwrap_or(0.);
                                         if let Some(height)=num(node,"height") {

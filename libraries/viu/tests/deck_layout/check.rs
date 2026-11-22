@@ -7,7 +7,7 @@ fn column_justify_centres_the_content() {
     let ctx = egui::Context::default();
     viu::fonts::install(&ctx, 400, 600);
     for _ in 0..4 {
-        let _ = ctx.run_ui(
+        let mut output = ctx.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -19,6 +19,7 @@ fn column_justify_centres_the_content() {
                 view.show(ui);
             },
         );
+        output.textures_delta.clear();
     }
     let root = view.geometry["root"];
     let text = view.geometry["a"];
