@@ -939,7 +939,7 @@ impl SceneView {
             || id.to_owned(),
             |(_, _, item)| format!("{}#{id}", item["id"].as_str().unwrap_or("")),
         );
-        let response = ui
+        let mut response = ui
             .push_id(&key, |ui| {
                 if node.ports.get("motion") == Some(&Value::Bool(false)) { ui.style_mut().animation_time = 0.0; }
                 let _surface_policy=toolkit::scene_motion::policy(ui);
@@ -1449,6 +1449,9 @@ impl SceneView {
                 }
             })
             .response;
+        if let Some(height)=self.stretch_heights.get(id).copied() {
+            response.rect.max.y=response.rect.max.y.max(response.rect.min.y+height);
+        }
         if node.family != "dock" {
             paint_outline(ui, node, response.rect);
         }
