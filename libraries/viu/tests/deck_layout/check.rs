@@ -21,11 +21,29 @@ fn manual_wrap_and_between_clip_painted_shapes_to_cells() {
 
 #[test]
 fn shrink_and_basis_only_rows_keep_main_centred_cross_placement() {
-    let plain = geometry(r#"{root:{widget:"row",children:["a","b"]},a:{widget:"column",min_width:100,height:80,children:[]},b:{widget:"column",min_width:120,height:20,children:[]}}"#);
-    for port in ["shrink:1", "basis:120"] {
-        let g = geometry(&format!(r#"{{root:{{widget:"row",children:["a","b"]}},a:{{widget:"column",min_width:100,height:80,children:[]}},b:{{widget:"column",min_width:120,height:20,{port},children:[]}}}}"#));
-        for child in ["a", "b"] {
-            assert!((g[child].top() - plain[child].top()).abs() < 1., "{port} {g:?} {plain:?}");
+    fn positions(port: &str) -> std::collections::BTreeMap<String, f32> {
+        let source = format!(r#"{{root:{{widget:"row",children:["a","b"]}},a:{{widget:"text",text:"Large",size:40}},b:{{widget:"text",text:"Small",size:12{port}}}}}"#);
+        let mut view = SceneView::new(&format!("---\nscene: 1\nname: native-cross\ncitizen: test\n---\n```mix\n{source}\n```\n")).unwrap();
+        let ctx = egui::Context::default();
+        let mut result = std::collections::BTreeMap::new();
+        for _ in 0..8 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {view.show(ui);});
+            out.textures_delta.clear();
+            result.clear();
+            for shape in out.shapes {
+                if let egui::Shape::Text(t) = shape.shape {
+                    result.insert(t.galley.job.text.clone(), t.pos.y);
+                }
+            }
+        }
+        result
+    }
+    let plain = positions("");
+    assert!(plain["Small"] > plain["Large"] + 10.);
+    for port in [",shrink:1", ",basis:120"] {
+        let measured = positions(port);
+        for child in ["Large", "Small"] {
+            assert!((measured[child] - plain[child]).abs() < 1., "{port} {measured:?} {plain:?}");
         }
     }
 }
