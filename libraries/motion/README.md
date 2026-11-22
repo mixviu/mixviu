@@ -40,6 +40,24 @@ The arrow's wipe duration override (0.5 seconds), underline's extra delay
 (0.3 seconds), and count-up's cubic ease-out (duration 1.4 seconds) are caller
 timing/track choices, not extra named keyframes.
 
+`scene::paint_preset` exposes the finite presets understood by an externally
+clocked painter, including pop, zoom and wipe. Scene `paint_effect` holds
+`{preset,time}`; time is seconds relative to the entrance delay. Zoom filters
+font-atlas text and vector paint through a bounded premultiplied Gaussian
+raster (cached between identical samples). Other image textures stay sharp.
+Wipe clips the painted rectangle without changing layout. Lifecycle `enter`
+retains its separate supported-preset contract.
+
+The scene `drawing` family has `w`, `h`, `sample_time` and `primitives`.
+Each primitive has `kind` (arc/ellipse/bar), `centre`, `radius` (two radii),
+`colour`, optional `end_colour` for a bar, and optional `effects` containing
+`{preset,delay?}` (draw/pop/blink/float). Arc `start` and `sweep` are degrees;
+`width` is its round-capped stroke width. Optional `dash_length` separates
+the authored dash period from geometric arc length. `shadow` on the drawing
+has RGBA channels in 0..255, an offset and a Gaussian standard deviation in
+logical pixels. It filters the combined silhouette once. Geometry and time
+are supplied by the scene; the painter contains no logo-specific behaviour.
+
 Determinism: the new sampler uses ordered IEEE-754 binary64 operations, no
 `mul_add` or fast-math. Spring transcendental functions use pinned pure-Rust
 `libm` with default architecture features disabled, avoiding platform system

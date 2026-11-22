@@ -42,8 +42,9 @@ pinned at open, so source replacement/removal cannot change a later goto.
 The shared store caps handles at 64 and resident pixels at 512 MiB; active
 and candidate decks share those budgets. Refused opens release candidate
 handles and preserve the active deck. Use `w` and `h` for the display size.
-The static `brand:cyclops` uses the approved intro geometry; draw, blink and
-spin remain separate motion work.
+The static `brand:cyclops` remains available for ordinary brand cards. The
+opening sting uses the shared `drawing` primitives, composed in Mix: a dashed
+arc, pop/blink eye, float and a shadow of the combined silhouette.
 
 Grow rows allocate each cell its weighted share of the remaining width.
 Nested content wraps where supported and clips at its cell edge when it
@@ -70,7 +71,8 @@ first-frame and draw latency must be measured before treating a recording's
 1.1-second frame as app scene time 1.1. The historical recording did not log
 that correlation, so its precise wall-clock offset remains unproven.
 
-`anim` and `child_anim` support `fade`, `up`, `down`, `left`, `right`.
+`anim` and `child_anim` support `fade`, `up`, `down`, `left`, `right`, `pop`,
+`zoom` and `wipe`.
 `delay` and `stagger` are seconds, each in 0..60. A stagger container gives
 unconfigured direct children its beat and `delay + child_index * stagger`.
 Explicit child build entries take precedence. Unsupported transforms must be
@@ -124,7 +126,7 @@ scene document) and `presentation.size` (two logical dimensions). This mounts
 an unframed scene directly; it does not create or configure another window.
 Local native ports are `scene.validate {source}` and
 `motion.seek {preset,time}`. The latter samples the shared finite opacity and
-translation presets at a supplied time, returning `{opacity,offset}`.
+translation presets at a supplied time, returning `{opacity,offset,paint_effect}`.
 
 ## Reference and checks
 
@@ -133,7 +135,7 @@ translation presets at a supplied time, returning `{opacity,offset}`.
 sections and an opening sting. It preserves the historical story and measured
 numbers. Infrastructure names are generalised. Paragraphs are condensed for
 the available widget layout. The screenshot/callout/Ken Burns, count-up strip,
-cyclops drawing/spin and underline effects are omitted and listed in the PR.
+cyclops spin and underline effects are omitted and listed in the PR.
 It is a reference adaptation, with visual differences from the HTML original.
 
 `core-test.mix` checks format refusals, boundaries, navigation and deterministic
@@ -166,3 +168,10 @@ unchanged against main; no changed file is path-included by that app.
 Its stale manifest therefore needs no dependent tests for this scoped change.
 It is not reactivated or brought into the workspace. The owning lib-viu and
 viu test targets, including the runtime tests, remain in the CBC scope.
+
+The sting regression in `libraries/viu/tests/deck_sting/check.rs` paints all
+entrance times at 4K, checks ring progress, pop, blink, element delays and
+centring, and rejects a static negative control. Its ignored evidence test
+reads Chrome frames from `STING_ORACLE`, saves native frames and a contact
+sheet under the worker temporary directory. Chrome is only an explicit
+evidence input; ordinary tests require no browser.
