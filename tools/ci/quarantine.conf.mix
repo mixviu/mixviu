@@ -4,5 +4,30 @@
 -- Only shrinks: additions are list-only PRs with ledger, failing unchanged-head
 -- job, >=20 comparable rounds (<10% failures), fix brief, owner and Fable co-sign.
 -- Never widen/edit an entry; remove with its fix and soak. Default 7 days,
--- maximum 14; one 7-day Fable renewal on new evidence, then Mark's ruling.
+-- maximum 14. Optional append-only renewals: [{until, by, evidence, cosign}],
+-- at most two (fable then mark), each extends 1..7 days, hard cap added + 28.
+-- Evidence is non-empty and distinct from entry/previous renewals.
+-- Consumer contract: stdout GATE_QUARANTINE JSON is diagnostic only (children
+-- can print it). Caller supplies --quarantine-out PATH, outside checkout and
+-- target/. Never discover the path from stdout. Without a caller path, the
+-- default is records.jsonl in a fresh 0700 directory under TMPDIR (or /tmp).
+-- The pool collects in memory, then after all children, doc-tests and retries
+-- creates a 0600 staging file in a private 0700 directory beside PATH and
+-- atomically renames it over PATH. Parent must exist, outside the repo/build.
+-- ci.mix accepts --quarantine-dir DIR and chooses mix.jsonl, workspace.jsonl,
+-- portald.jsonl there (otherwise it creates a private temporary directory).
+-- Ordinary child lines retain their bytes for libtest/panic log consumers.
+-- Lines starting test_pool:, GATE_ or :: after colour/whitespace stripping,
+-- and lines with rewriting controls (CR, backspace, non-colour escapes, etc.)
+-- are prefixed child: and JSON-escaped. No child receives the record path.
+-- Exactly one JSON object
+-- per active entry in the selected binaries per pool run, zero for empty lists.
+-- Schema: package,target,test,result,expires (effective UTC date),owner.
+-- Results: pass,fail,timeout,ignored,missing. Retain all records in summaries
+-- and quarantine.jsonl; append failures to the ledger. Never parse child stdout
+-- as the trusted channel. An incomplete pool may leave an old file: consumers
+-- must use a fresh destination per run and check the pool's completion status.
+-- Same-UID isolation is out of scope: the gate executes the PR's own pool.
+-- Tier 2 review defends edits to the pool/list; this channel defends against
+-- test output and test-written build files, not a malicious pool edit.
 entries: []

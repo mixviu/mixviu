@@ -3,7 +3,10 @@
 -- tools/ci/test_pool.mix: `cargo test` with the test binaries run in
 -- parallel. Called by tools/ci.mix in place of `cargo test`.
 --
---   mix tools/ci/test_pool.mix [--jobs N] [--serial FILE] -- CARGO_TEST_ARGS...
+--   mix tools/ci/test_pool.mix [--jobs N] [--serial FILE]
+--       [--quarantine-out PATH] -- CARGO_TEST_ARGS...
+-- Caller chooses an external record path; never discover it from stdout.
+-- Records publish atomically after all children, including retries, exit.
 --
 -- `cargo test` runs its test binaries one after another; only tests inside a
 -- binary run in parallel. On a 16-core worker the 464 workspace binaries
@@ -70,9 +73,9 @@
 -- when the report already holds an entry (one retry per run, shared by
 -- every step that uses the same report).
 
-$o = getopt(args(), {jobs: {arg: true}, serial: {arg: true}})
+$o = getopt(args(), {jobs: {arg: true}, serial: {arg: true}, "quarantine-out": {arg: true}})
 if len($o.errors) > 0 or len($o.rest) == 0 then
-  eprint("usage: mix tools/ci/test_pool.mix [--jobs N] [--serial FILE] -- CARGO_TEST_ARGS...")
+  eprint("usage: mix tools/ci/test_pool.mix [--jobs N] [--serial FILE] [--quarantine-out PATH] -- CARGO_TEST_ARGS...")
   exit(64)
 end
 fn default_jobs()
@@ -116,8 +119,8 @@ $serial_path = $o.opts.serial ?? "tools/ci/serial-tests.conf.mix"
 $serial = if exists($serial_path) then load_data($serial_path).serial_tests ?? [] else [] end
 $quarantine = require("quarantine.mix")
 -- Required even for an empty list: missing or malformed policy fails closed.
-$quarantined = $quarantine.load("tools/ci/quarantine.conf.mix")
 $today = floor(time() / 86400)
+$quarantined = $quarantine.load("tools/ci/quarantine.conf.mix", $today)
 $root = realpath(".")
 $mix_exe = realpath("/proc/self/exe")
 $recorder = path_join(dirname(realpath(script_path())), "test_record.mix")
@@ -191,8 +194,25 @@ elif $retry_report != "" then
   end
 end
 print("test_pool: retry " .. $retry.why)
+-- Check both the lexical path and its existing ancestor before mkdir can write.
+if not starts_with($meta_target, $root .. "/") or contains(split($meta_target, "/"), "..") then refuse("cargo target_directory must be under the job root") end
+$target_ancestor = $meta_target
+while not exists($target_ancestor)
+  $target_ancestor = dirname($target_ancestor)
+end
+$target_ancestor = realpath($target_ancestor)
+if $target_ancestor == nil or ($target_ancestor != $root and not starts_with($target_ancestor, $root .. "/")) then refuse("cargo target_directory must be under the job root") end
 mkdir($meta_target)
 $target_dir = realpath($meta_target)
+if not starts_with($target_dir, $root .. "/") then refuse("cargo target_directory must be under the job root") end
+$quarantine_private = nil
+$quarantine_out = nil
+if $o.opts["quarantine-out"] != nil then
+  $quarantine_out = $quarantine.record_path($o.opts["quarantine-out"], $root, $target_dir)
+else
+  $quarantine_private = $quarantine.private_dir(env("TMPDIR", "/tmp"), $root, $target_dir)
+  $quarantine_out = path_join($quarantine_private, "records.jsonl")
+end
 if re_match($mix_exe .. $recorder .. $root .. $target_dir, "\\s") then refuse("a space in the mix, recorder, checkout or target path breaks cargo's runner setting") end
 -- Brackets break the Running-line match; `=` makes `env --` read a program
 -- path under the target directory as an assignment.
@@ -237,13 +257,13 @@ try
   $labels = map(filter($err_lines, fn($l) = re_match(strip_escapes($l), $run_line)), fn($l) = trim(re_replace(strip_escapes($l), "^\\s+Running ", "")))
   -- The build output, without the record pass's Running lines: each binary's
   -- Running line is printed once, with its result, below.
-  print(join(filter($err_lines, fn($l) = not re_match(strip_escapes($l), $run_line)), "\n"))
+  $quarantine.child_output(join(filter($err_lines, fn($l) = not re_match(strip_escapes($l), $run_line)), "\n"))
   -- Cargo printed Doc-tests lines when it would run doc-tests here.
   $has_doc = len(filter($err_lines, fn($l) = re_match(strip_escapes($l), "^\\s+Doc-tests "))) > 0
   if len($runs) == 0 and not ($b.ok and $has_doc) then
     -- Nothing recorded: the build failed, or the selection has no tests at
     -- all. (Doc-tests alone, after a good build, run below as under cargo.)
-    print($b.stdout)
+    $quarantine.child_output($b.stdout)
     if not $b.ok then
       print("::error::test build failed (rc " .. to_string($b.exit_code ?? 124) .. (if $b.timed_out then ", timed out" else "" end) .. "): cargo test " .. join($cargo_args, " "))
     else
@@ -323,18 +343,18 @@ try
   end
   for $e in $quarantined
     if has_key($selected_pkgs, $e.package) and not has_key($quarantine_matched, $e.package .. "/" .. $e.target) then
-      refuse("quarantine target matches no selected binary: " .. $e.package .. "/" .. $e.target)
+      refuse("quarantine target matches no selected binary: " .. json_encode([$e.package, $e.target]))
     end
   end
 
   -- 2-3. Replay: the pool, then the serial list one at a time.
   $t_run = monotonic()
   $pool_rs = run_parallel(run_spec($pool), {max: $jobs})
-  $quarantine.replay($pool_quarantined)
+  $quarantine_records = $quarantine.replay($pool_quarantined)
   $pool_s = monotonic() - $t_run
   $t_alone = monotonic()
   $alone_rs = run_parallel(run_spec($alone), {max: 1})
-  $quarantine.replay($alone_quarantined)
+  $quarantine_records = concat($quarantine_records, $quarantine.replay($alone_quarantined))
   $alone_s = monotonic() - $t_alone
 
   $all = concat($pool, $alone)
@@ -345,8 +365,8 @@ try
   for $i = 0 to len($all) - 1
     $j = $all[$i]
     $r = $rs[$i]
-    print("     Running " .. $j.label)
-    print($r.stdout)
+    print("     Running " .. json_encode($j.label))
+    $quarantine.child_output($r.stdout)
     if $r.stdout_truncated then print("::warning::" .. $j.key .. ": output over 64 MB was truncated in this log") end
     -- `ok` is false for a non-zero exit, a timeout (even when the leader
     -- exited 0 while a descendant held its output open), and a spawn failure.
@@ -361,14 +381,14 @@ try
   $t_doc = monotonic()
   if $has_doc then
     $d = run_argv(concat(["cargo", "test", "--doc", "--no-fail-fast"], $cargo_args), {timeout: 7200, stderr: "stdout", max_output: 64000000})
-    print($d.stdout)
+    $quarantine.child_output($d.stdout)
     if not $d.ok then
       push($failed, "doc-tests (cargo test --doc rc " .. to_string($d.exit_code ?? 124) .. (if $d.timed_out then ", timed out" else "" end) .. ")")
     end
   end
   $doc_s = monotonic() - $t_doc
   if $record_failed then
-    print($b.stdout)
+    $quarantine.child_output($b.stdout)
     push($failed, "record pass (cargo test rc " .. to_string($b.exit_code ?? 124) .. (if $b.timed_out then ", timed out" else "" end) .. ")")
   end
 
@@ -389,9 +409,9 @@ try
       elif $used > 0 then
         print("::notice::test_pool: no retry: this run already retried a binary (" .. $retry_report .. ")")
       else
-        print("     Running " .. $j.label .. " (retry, alone)")
+        print("     Running " .. json_encode($j.label) .. " (retry, alone)")
         $again = run_parallel(run_spec([$j]), {max: 1})[0]
-        print($again.stdout)
+        $quarantine.child_output($again.stdout)
         if $again.ok then
           $out = $first.stdout ?? ""
           append_file($retry_report, json_encode({key: $j.key, label: $j.label, first_rc: $first.exit_code, first_timed_out: $first.timed_out,
@@ -411,6 +431,8 @@ try
   for $t in slice(reverse(sort_by($timing, fn($t) = $t.s)), 0, 10)
     print(fmt("  %7.1f s  %s", $t.s, $t.key))
   end
+  -- Every child, including doc-tests and retry, has exited. Publish last.
+  $quarantine.publish_records($quarantine_records, $quarantine_out, $root, $target_dir)
   if len($failed) > 0 or len($stale) > 0 then
     for $f in $failed
       print("::error::test failed: " .. $f)

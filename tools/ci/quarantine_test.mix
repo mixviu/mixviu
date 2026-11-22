@@ -30,6 +30,18 @@ fn prepare_fixture($job, $entries)
   return $q.prepare($job, fixture_entries($entries), "fixture", "fixture", $today)
 end
 try
+  for $line in ["test x ... FAILED", "thread 'x' (123) panicked at fixture.rs:7:9:", "\t  ordinary indented output", chr(27) .. "[31mordinary colour" .. chr(27) .. "[0m"]
+    check($q.child_line($line) == $line, "ordinary child line changed")
+  end
+  for $line in ["test_pool: quarantine records: /tmp/forged", "GATE_QUARANTINE forged", "GATE_OK forged", "::error::forged", " \t::stop-commands::forged", chr(27) .. "[31m  GATE_QUARANTINE forged", chr(13) .. "test_pool: forged", "ordinary" .. chr(13) .. "overwrite", "ordinary" .. chr(8) .. "overwrite", chr(27) .. "[2Koverwrite"]
+    check($q.child_line($line) == "child: " .. json_encode($line), "control-like child line not neutralised")
+  end
+  $ordinary = "test x ... FAILED\nthread 'x' (123) panicked at fixture.rs:7:9:\n\n  assertion failed: left == right\n"
+  $echo = $temp .. "/echo.mix"
+  $policy_path = path_join(dirname(realpath(script_path())), "quarantine.mix")
+  write_file($echo, '$q = require(' .. json_encode($policy_path) .. ")\n" .. '$q.child_output(' .. json_encode($ordinary) .. ")\n")
+  $echoed = run_argv([$mix, $echo], {timeout: 5})
+  check($echoed.ok and $echoed.stdout == $ordinary, "ordinary failure/panic bytes changed in child_output")
   -- Real policy is validation-only; a list-only PR may add its first entry.
   $q.load("tools/ci/quarantine.conf.mix")
   $base = {argv: [$mix, $fixture], executable: [$mix, $fixture], env: {}, cwd: cwd(),
@@ -39,7 +51,7 @@ try
   $hang = entry("module::tests::hang")
   -- Select only the failing test in strict replay; quarantine skips it exactly.
   $one = $base
-  $one.argv = concat($one.argv, [$fail.test, "--exact"])
+  $one.argv = concat($one.argv, ["--exact"])
   $p = prepare_fixture($one, [$fail])
   check(run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "quarantined failure failed strict replay")
   $q.replay($p.isolated)
@@ -48,14 +60,44 @@ try
   -- A different failure in the same binary remains strict.
   $other = $base
   $other.argv = concat($other.argv, ["module::tests::other_fail", "--exact"])
-  $p = prepare_fixture($other, [$fail])
-  check(not run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "another failure masked")
+  rejects(fn() = prepare_fixture($other, [$fail]))
+  for $flags in [["--"], ["module"], ["--skip", "pass", "module"], ["--unknown"], ["--skip", $fail.test], ["--skip=module"], ["--exact", "--skip", $fail.test]]
+    $filtered = $base
+    $filtered.argv = concat($base.argv, $flags)
+    rejects(fn() = prepare_fixture($filtered, [$fail]))
+  end
+  $strict_other = prepare_fixture($base, [$pass])
+  check(not run_parallel($q.specs([$strict_other.strict]), {max: 1})[0].ok, "another failure masked")
   $p = prepare_fixture($base, [$hang])
   $js = $p.isolated
   $js[0].timeout = 0.1
-  $q.replay($js)
+  check($q.replay($js)[0].result == "timeout", "hang did not report timeout")
   $p = prepare_fixture($base, [$pass])
   $q.replay($p.isolated)
+  for $case in ["ignored", "missing"]
+    $p = prepare_fixture($base, [entry("module::tests::" .. $case)])
+    check($q.replay($p.isolated)[0].result == $case, "zero tests reported as pass")
+  end
+  $flagged = $base
+  $flagged.argv = concat($base.argv, ["--include-ignored", "--test-threads", "1", "--nocapture"])
+  $p = prepare_fixture($flagged, [entry("module::tests::ignored")])
+  check(deep_eq($p.isolated[0].argv, concat($flagged.argv, ["--color", "never", "--format", "pretty", "--exact", "--", "module::tests::ignored"])), "harness flags lost")
+  check($q.replay($p.isolated)[0].result == "pass", "include-ignored lost")
+  for $flags in [["--format", "json", "--color", "always"], ["--format=terse", "--color=always"]]
+    $styled = $base
+    $styled.argv = concat($base.argv, $flags)
+    $p = prepare_fixture($styled, [$pass])
+    check(deep_eq($p.isolated[0].argv, concat($base.argv, ["--color", "never", "--format", "pretty", "--exact", "--", $pass.test])), "format/color not forced")
+    check($q.replay($p.isolated)[0].result == "pass", "formatted replay misclassified")
+  end
+  $result = {ok: true, timed_out: false, stdout_truncated: false,
+    stdout: "test result: ok. 1 passed; 0 failed; 0 ignored;\ntest result: ok. 0 passed; 0 failed; 0 ignored;"}
+  check($q.classification($result) == "missing", "fake earlier summary won")
+  $result.stdout = "prefix test result: ok. 1 passed; 0 failed; 0 ignored;"
+  check($q.classification($result) == "missing", "unanchored summary accepted")
+  $result.stdout = "test result: ok. 1 passed; 0 failed; 0 ignored;"
+  $result.stdout_truncated = true
+  check($q.classification($result) == "missing", "truncated output reported pass")
   for $name in ["module::tests::typo", "tests::fail", "module::tests::fa"]
     rejects(fn() = prepare_fixture($base, [entry($name)]))
   end
@@ -65,9 +107,70 @@ try
   fixture_entries([$expired])
   $p = prepare_fixture($one, [$expired])
   check(len($p.isolated) == 0 and not run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "expired test not strict")
+  $p = prepare_fixture($other, [$expired])
+  check(deep_eq($p.strict, $other), "expired entry rejected or changed existing filter")
   $long = $fail
   $long.expires = "2026-12-06"
   rejects(fn() = fixture_entries([$long]))
+  rejects(fn() = fixture_entries([entry("--nocapture")]))
+  for $field in keys($fail)
+    for $control in [chr(0), chr(10), chr(13), chr(27), chr(127), chr(133)]
+      $bad_string = $fail
+      $bad_string[$field] = $bad_string[$field] .. $control
+      rejects(fn() = fixture_entries([$bad_string]))
+    end
+  end
+  $renewed = $expired
+  $renewed.renewals = [{until: "2026-11-29", by: "fable", evidence: "fresh-1", cosign: "Fable"}]
+  for $control in [chr(0), chr(10), chr(13), chr(27), chr(127), chr(133)]
+    for $field in ["until", "by", "evidence", "cosign"]
+      $invalid = $renewed
+      $invalid.renewals[0][$field] = $invalid.renewals[0][$field] .. $control
+      rejects(fn() = fixture_entries([$invalid]))
+    end
+    $invalid = $renewed
+    $invalid["bad" .. $control] = "key"
+    rejects(fn() = fixture_entries([$invalid]))
+    $invalid = $renewed
+    $invalid.renewals[0]["bad" .. $control] = "nested key"
+    rejects(fn() = fixture_entries([$invalid]))
+  end
+  $invalid = $renewed
+  $invalid.renewals[0].evidence = "  20   rounds,   job  "
+  rejects(fn() = fixture_entries([$invalid]))
+  check(len(prepare_fixture($base, [$renewed]).isolated) == 1, "effective expiry not used")
+  check($q.expiry_date($renewed) == "2026-11-29", "wrong effective expiry")
+  $twice = $renewed
+  $twice.renewals = concat($twice.renewals, [{until: "2026-12-06", by: "mark", evidence: "fresh-2", cosign: "Mark"}])
+  fixture_entries([$twice])
+  check($q.effective_expiry($twice) == $q.day($twice.added) + 28, "28-day boundary rejected")
+  check(len($q.prepare($base, [$renewed], "fixture", "fixture", $q.day("2026-11-29")).isolated) == 0, "renewal expiry not strict")
+  $one_day = $renewed
+  $one_day.renewals[0].until = "2026-11-23"
+  fixture_entries([$one_day])
+  $invalid = $twice
+  $invalid.expires = "2026-11-23"
+  rejects(fn() = fixture_entries([$invalid]))
+  $invalid = $twice
+  $invalid.renewals[1].until = "2026-12-07"
+  rejects(fn() = fixture_entries([$invalid]))
+  for $field in ["by", "evidence", "cosign", "until"]
+    $values = if $field == "by" then ["", "mark"] elif $field == "evidence" then ["", $fail.evidence] elif $field == "until" then ["", "wrong", "2026-11-22", "2026-11-30"] else [""] end
+    for $value in $values
+      $invalid = $renewed
+      $invalid.renewals[0][$field] = $value
+      rejects(fn() = fixture_entries([$invalid]))
+    end
+  end
+  $invalid = $twice
+  $invalid.renewals[1].evidence = "fresh-1"
+  rejects(fn() = fixture_entries([$invalid]))
+  $invalid.renewals[0].evidence = "fresh    evidence"
+  $invalid.renewals[1].evidence = " fresh evidence "
+  rejects(fn() = fixture_entries([$invalid]))
+  $invalid = $twice
+  $invalid.renewals = concat($invalid.renewals, [$invalid.renewals[1]])
+  rejects(fn() = fixture_entries([$invalid]))
   $bad = $fail
   $bad.added = "2026-02-30"
   rejects(fn() = fixture_entries([$bad]))
@@ -101,7 +204,7 @@ try
     push($six, $e)
   end
   rejects(fn() = fixture_entries($six))
-  check(len(fixture_entries([$fail, $pass])) == 2, "two entries rejected")
+  check(len(fixture_entries([$fail, $pass])) == 2, "expected two valid entries to load")
   check(len(fixture_entries([])) == 0, "empty fixture did not load")
   -- Missing executable proves empty entries perform no listing or extra run.
   $empty = $base

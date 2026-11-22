@@ -4,6 +4,8 @@
 -- PR (on CBC: cbc-build.mix --repo mixviu --commit SHA -- mix tools/ci.mix all).
 --
 --   mix tools/ci.mix STAGE [--mix PATH]
+--   --quarantine-dir DIR: caller-owned external record directory; test stage
+--   uses mix.jsonl, workspace.jsonl and portald.jsonl. Never discover via stdout.
 --   STAGE: fmt | env-registry | env | mix-services | mix-hygiene | clippy | viud | foreign | test | mix-lint | mix-lint-baseline | release-mix | all
 --   env-registry needs only the running Mix and git; --mix never bootstraps it.
 --   release-mix (not in all): release build of mix, refused if it links the test hooks.
@@ -24,9 +26,9 @@
 -- Lint uses the selected --mix analyser too. Source-derived context bridges
 -- native vocabulary differences without depending on an installed version.
 
-$o = getopt(args(), {mix: {arg: true}, dir: {arg: true}})
+$o = getopt(args(), {mix: {arg: true}, dir: {arg: true}, "quarantine-dir": {arg: true}})
 if len($o.errors) > 0 or len($o.rest) != 1 then
-  eprint("usage: mix tools/ci.mix fmt|env-registry|env|mix-services|mix-hygiene|clippy|viud|foreign|test|stage-smoke|mix-lint|mix-lint-baseline|release-mix|stage-install|all [--mix PATH] [--dir DIR]")
+  eprint("usage: mix tools/ci.mix fmt|env-registry|env|mix-services|mix-hygiene|clippy|viud|foreign|test|stage-smoke|mix-lint|mix-lint-baseline|release-mix|stage-install|all [--mix PATH] [--dir DIR] [--quarantine-dir DIR]")
   exit(64)
 end
 $stage = $o.rest[0]
@@ -95,6 +97,9 @@ fn stage_test($mix)
   -- platform's crates in the cache.
   ensure_mix($mix)
   $abs = realpath($mix)
+  -- The consumer chooses record paths; never discover them in child stdout.
+  $q = require("ci/quarantine.mix")
+  $records = $o.opts["quarantine-dir"] ?? $q.private_dir(env("TMPDIR", "/tmp"), realpath("."), realpath("target"))
   run_step([$mix, "tools/reserved_keys.mix", $abs])
   run_step([$mix, "tools/reserved-policy-test.mix"])
   run_step([$mix, "tools/term-targets-test.mix"])
@@ -112,8 +117,8 @@ fn stage_test($mix)
   -- The test binaries run in parallel (tools/ci/test_pool.mix, which adds
   -- --no-fail-fast); a short serial list (tools/ci/serial-tests.conf.mix)
   -- runs alone afterwards.
-  run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "-p", "mix", "--features", "test-hooks"], $test_env)
-  run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "--workspace", "--exclude", "mix"], $test_env)
+  run_step([$mix, "tools/ci/test_pool.mix", "--quarantine-out", path_join($records, "mix.jsonl"), "--", "--locked", "-p", "mix", "--features", "test-hooks"], $test_env)
+  run_step([$mix, "tools/ci/test_pool.mix", "--quarantine-out", path_join($records, "workspace.jsonl"), "--", "--locked", "--workspace", "--exclude", "mix"], $test_env)
   -- Only the scoped capture fixtures select an optimised test-hook compositor.
   run_step(["cargo", "build", "--release", "--locked", "-p", "viud", "--no-default-features", "--features", "backend-native,test-support"])
   $capture_env = merge($test_env, {MIX_TEST_VIUD_EXE: realpath("target/release/viud"), MIX_TEST_VIU_EXE: realpath("target/debug/viu")})
@@ -122,7 +127,7 @@ fn stage_test($mix)
   for $filter in ["review_", "placement_", "moved_window_clip"]
     run_step(concat($capture_test, [$filter, "--", "--ignored", "--test-threads=1"]), $capture_env)
   end
-  run_step([$mix, "tools/ci/test_pool.mix", "--", "--locked", "-p", "portald", "--no-default-features"], $test_env)
+  run_step([$mix, "tools/ci/test_pool.mix", "--quarantine-out", path_join($records, "portald.jsonl"), "--", "--locked", "-p", "portald", "--no-default-features"], $test_env)
   stage_mix_services($mix)
   run_step([$mix, "tools/mesh/tests/all.mix"])
   for $case in sort(glob("apps/term/*-test.mix"))
@@ -374,6 +379,8 @@ end
 fn stage_mix_lint($mix)
   ensure_mix($mix)
   run_step([$mix, "tools/ci/lint_context_test.mix", $mix])
+  run_step([$mix, "tools/ci/quarantine_test.mix"])
+  run_step([$mix, "tools/ci/quarantine_report_test.mix"])
   $now = lint_counts($mix)
   $base = {}
   if exists($baseline_path) then
