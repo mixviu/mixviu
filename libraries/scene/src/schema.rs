@@ -663,8 +663,8 @@ pub(crate) fn check_port_value(
         ));
     }
     let ceiling = match k {
-        "line_height" => Some(4096.),
-        "size" | "padding" | "radius" | "w" | "h" | "basis" | "width" | "min_width"
+        "line_height" | "letter_spacing" => Some(4096.),
+        "padding_top" | "padding_right" | "padding_bottom" | "padding_left" | "padding_x" | "padding_y" | "outline_width" | "size" | "padding" | "radius" | "w" | "h" | "basis" | "width" | "min_width"
         | "max_width" | "column_gap" | "min_column_width" | "height" | "row_gap" | "gap" => {
             Some(1e6)
         }

@@ -460,7 +460,7 @@ impl<'a> Builder<'a> {
             top: length(top),
             bottom: length(bottom),
         };
-        style.align_items = Some(match port_text(node, "align") {
+        style.align_items = Some(match if node.family=="row" && node.ports.contains_key("cross_align"){port_text(node,"cross_align")}else{port_text(node,"align")} {
             "baseline" => AlignItems::BASELINE,
             "center" => AlignItems::CENTER,
             "end" => AlignItems::FLEX_END,
@@ -705,7 +705,7 @@ impl<'a> Builder<'a> {
                 width: length(gap),
                 height: zero(),
             };
-            style.align_items = Some(match port_text(node, "align") {
+            style.align_items = Some(match if node.family=="row" && node.ports.contains_key("cross_align"){port_text(node,"cross_align")}else{port_text(node,"align")} {
                 "baseline" => AlignItems::BASELINE,
                 "center" => AlignItems::CENTER,
                 "end" => AlignItems::FLEX_END,
