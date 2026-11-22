@@ -2967,7 +2967,7 @@ fn natural_size_key(node: &Node) -> egui::Id {
         "weight",
         "letter_spacing",
         "line_height",
-        "label",
+        "label","src","w","h","width","min_width","max_width",
     ] {
         key.hash(&mut h);
         if let Some(v) = node.ports.get(key) {
@@ -2995,6 +2995,19 @@ fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, v
         }
         cache.insert(key, value);
     });
+}
+
+#[cfg(test)]
+mod measurement_cache_tests {
+    #[test]
+    fn changing_content_cannot_grow_measurement_storage_without_bound() {
+        let ctx=egui::Context::default();
+        let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{
+            for i in 0..4096 {super::measure_put(ui,egui::Id::new(i),i as f32);}
+            let count=ctx.data_mut(|d|d.get_temp_mut_or_default::<std::collections::HashMap<egui::Id,f32>>(egui::Id::new("scene-measurements")).len());
+            assert!(count<=256);
+        });output.textures_delta.clear();
+    }
 }
 
 // Shape the original spans once. Word bounds are read from the natural glyph

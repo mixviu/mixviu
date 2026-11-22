@@ -171,6 +171,10 @@ fn layout_lengths_and_weights_have_finite_ceilings() {
         r#"root:{widget:"text",text:"x",shrink:1e300}"#,
         r#"root:{widget:"text",text:"x",grow:1e300}"#,
         r#"root:{widget:"column",justify:"unsupported",children:[]}"#,
+        r#"root:{widget:"column",width:1e300,children:[]}"#,
+        r#"root:{widget:"column",min_width:1e300,children:[]}"#,
+        r#"root:{widget:"column",max_width:1e300,children:[]}"#,
+        r#"root:{widget:"grid",column_gap:1e300,min_column_width:1e300,children:[]}"#,
         r#"root:{widget:"column",background_inset:[0,-1,0,0],children:[]}"#,
     ] {
         assert!(resolve(&document(body)).is_err(), "{body}");
