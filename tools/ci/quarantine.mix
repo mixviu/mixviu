@@ -195,13 +195,103 @@ fn child_output($output)
   if $output != "" and not ends_with($output, "\n") then print("") end
 end
 
+fn final_summary_line($output)
+  $summaries = filter(split($output, "\n"), fn($l) = starts_with($l, "test result:"))
+  return if len($summaries) == 0 then "" else $summaries[len($summaries) - 1] end
+end
+
+-- Real libtest appends "; finished in 0.01s". Fixtures may omit that tail.
+-- Use exactly this parser for both raw isolated output and the echoed stream.
+fn parse_summary($line)
+  if child_line($line) != $line then return nil end
+  $found = re_find($line, '^test result: [a-zA-Z]+\. ([0-9]+) passed; ([0-9]+) failed; ([0-9]+) ignored; [0-9]+ measured; ([0-9]+) filtered out(; finished in [^\x00-\x1f\x7f]*)?$')
+  if len($found) == 0 then return nil end
+  $m = $found[0].groups
+  return {passed: to_number($m[0]), failed: to_number($m[1]), ignored: to_number($m[2]), filtered: to_number($m[3])}
+end
+
+fn valid_summary($s, $result)
+  if type($s) != "map" then return false end
+  if not deep_eq(sort(keys($s)), sort(["passed", "failed", "ignored"])) then return false end
+  for $k in ["passed", "failed", "ignored"]
+    if type($s[$k]) != "number" or not contains([0, 1], $s[$k]) then return false end
+  end
+  if $s.passed + $s.failed + $s.ignored > 1 then return false end
+  if $result == "pass" then return deep_eq($s, {passed: 1, failed: 0, ignored: 0}) end
+  if $result == "fail" then return deep_eq($s, {passed: 0, failed: 1, ignored: 0}) end
+  if $result == "ignored" then return deep_eq($s, {passed: 0, failed: 0, ignored: 1}) end
+  return contains(["timeout", "missing"], $result)
+end
+
+fn summary($r)
+  $s = parse_summary(final_summary_line($r.stdout))
+  if $s == nil then return nil end
+  $s = delete($s, "filtered")
+  -- A summary echoed before a later kill/truncation still entered the totals.
+  return if valid_summary($s, classification($r)) then $s else nil end
+end
+
+fn validate_record($record)
+  if type($record) != "map" then bad("record must be a map") end
+  for $k in ["package", "target", "test", "result", "expires", "owner"]
+    if type($record[$k]) != "string" then bad("invalid record field " .. $k) end
+  end
+  if not contains(["pass", "fail", "timeout", "ignored", "missing"], $record.result) then bad("invalid record result") end
+  if not has_key($record, "summary") then bad("record lacks summary") end
+  if $record.summary != nil and not valid_summary($record.summary, $record.result) then bad("invalid record summary") end
+end
+
+-- Account one pool's output and its caller-owned completion file together.
+-- Isolated summaries are printed in the stream too: move exactly their counts.
+fn gate_report($output, $path, $step)
+  $totals = {passed: 0, failed: 0, ignored: 0, filtered: 0, quarantined: {passed: 0, failed: 0, ignored: 0}}
+  for $line in split($output, "\n")
+    $s = parse_summary($line)
+    if $s != nil then
+      for $k in ["passed", "failed", "ignored", "filtered"]
+        $totals[$k] = $totals[$k] + $s[$k]
+      end
+    end
+  end
+  if not is_file($path) then
+    return {totals: $totals, records: [], failed: ["quarantine records missing: " .. $step]}
+  end
+  $records = []
+  $failed = []
+  for $line in filter(split(read_file($path), "\n"), fn($l) = trim($l) != "")
+    $record = nil
+    try
+      $record = json_parse($line)
+      validate_record($record)
+    catch $err
+      push($failed, "quarantine record invalid: " .. $step)
+      continue
+    end
+    $record.step = $step
+    if $record.summary != nil then
+      $underflow = false
+      for $k in ["passed", "failed", "ignored"]
+        if $totals[$k] < $record.summary[$k] then $underflow = true end
+      end
+      if $underflow then
+        push($failed, "quarantine totals underflow: " .. $step)
+      else
+        for $k in ["passed", "failed", "ignored"]
+          $totals[$k] = $totals[$k] - $record.summary[$k]
+          $totals.quarantined[$k] = $totals.quarantined[$k] + $record.summary[$k]
+        end
+      end
+    end
+    push($records, $record)
+  end
+  return {totals: $totals, records: $records, failed: $failed}
+end
+
 fn classification($r)
   if $r.timed_out then return "timeout" end
   if not $r.ok then return "fail" end
   if $r.stdout_truncated then return "missing" end
-  $summaries = filter(lines($r.stdout), fn($l) = starts_with($l, "test result:"))
-  if len($summaries) == 0 then return "missing" end
-  $final = $summaries[len($summaries) - 1]
+  $final = final_summary_line($r.stdout)
   if re_match($final, "^test result: ok\\. 1 passed; 0 failed; 0 ignored;.*$") then return "pass" end
   if re_match($final, "^test result: ok\\. 0 passed; 0 failed; 1 ignored;.*$") then return "ignored" end
   return "missing"
@@ -249,7 +339,7 @@ fn replay($jobs)
     $e = $j.entry
     $result = classification($r)
     $record = {package: $e.package, target: $e.target, test: $e.test,
-      result: $result, expires: expiry_date($e), owner: $e.owner}
+      result: $result, summary: summary($r), expires: expiry_date($e), owner: $e.owner}
     push($records, $record)
     print("GATE_QUARANTINE " .. json_encode($record))
   end

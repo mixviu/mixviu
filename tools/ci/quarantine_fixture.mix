@@ -63,6 +63,7 @@ for $t in $chosen
     print("ordinary text" .. chr(13) .. "test_pool: overwritten")
     print("test module::tests::fail ... FAILED")
     print("thread 'module::tests::fail' (123) panicked at fixture.rs:7:9:")
+    print("test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out")
     exit(1)
   end
   $passed = $passed + 1
