@@ -34,5 +34,5 @@ return {
     "series_footer":16,"small":30,"stat":76,"stat_label":22,
     "tagline":40,"terminal":26,"topic_no":34,"topic_sub":38,
     "topic_title":120,"tree":29,"wordmark":150
-  },
+  }
 }
