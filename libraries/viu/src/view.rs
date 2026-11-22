@@ -3113,7 +3113,9 @@ fn intrinsic_text_width(
             "spacer" => num(node, "size").unwrap_or(8.),
             "field" => ui.spacing().text_edit_width,
             _ => {
-                ui.fonts_mut(|f| {
+                let key=natural_size_key(node).with(("button-width",ui.pixels_per_point().to_bits()));
+                if let Some(v)=measure_get::<f32>(ui,key){return v;}
+                let width=ui.fonts_mut(|f| {
                     f.layout_no_wrap(
                         text(node, "label").to_owned(),
                         egui::FontId::proportional(14.),
@@ -3121,7 +3123,8 @@ fn intrinsic_text_width(
                     )
                 })
                 .size()
-                .x + 2. * ui.spacing().button_padding.x
+                .x + 2. * ui.spacing().button_padding.x;
+                measure_put(ui,key,width);width
             }
         });
     }
