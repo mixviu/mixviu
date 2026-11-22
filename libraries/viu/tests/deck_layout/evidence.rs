@@ -125,17 +125,24 @@ fn render_layout_steps() {
             settle_view.set_rasters(deck.rasters.clone());
             let settle = egui::Context::default();
             viu::fonts::install(&settle, 400, 600);
+            viu::icons::install(&settle);
             for frame in 0..24 {
-                let mut output = settle.run_ui(
-                    egui::RawInput {
+                let mut input = egui::RawInput {
                         screen_rect: Some(egui::Rect::from_min_size(
                             egui::Pos2::ZERO,
                             egui::vec2(1600., 900.),
                         )),
                         ..Default::default()
-                    },
+                    };
+                input.viewports.get_mut(&egui::ViewportId::ROOT).unwrap().native_pixels_per_point = Some(2.4);
+                let mut output = settle.run_ui(
+                    input,
                     |ui| {
-                        settle_view.show(ui);
+                        assert_eq!(ui.ctx().pixels_per_point(), 2.4);
+                        let mut canvas = ui.new_child(egui::UiBuilder::new().max_rect(
+                            egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600., 900.)),
+                        ));
+                        settle_view.show(&mut canvas);
                     },
                 );
                 output.textures_delta.clear();
@@ -147,12 +154,13 @@ fn render_layout_steps() {
                     );
                 }
             }
-            println!("SETTLED {id}-{step}: no discard reasons after 24 frames");
+            println!("SETTLED {id}-{step}: no discard reasons after 24 frames at 2.4 pixels per point");
             let rects = Arc::new(std::sync::Mutex::new(json!({})));
             let captured = rects.clone();
             let mut harness = egui_kittest::Harness::builder()
                 .with_size(egui::vec2(1600., 900.))
                 .with_pixels_per_point(2.4)
+                .with_max_steps(120)
                 .with_context_setup(|ctx| {
                     viu::fonts::install(ctx, 400, 600);
                     viu::icons::install(ctx);
@@ -180,6 +188,19 @@ fn render_layout_steps() {
                         .collect();
                 });
             harness.run();
+            harness.step();
+            let output = harness.output();
+            assert!(
+                !output.platform_output.requested_discard(),
+                "{id}-{step}: capture discard: {:?}",
+                output.platform_output.request_discard_reasons
+            );
+            assert!(
+                output.viewport_output.values().all(|v| v.repaint_delay == std::time::Duration::MAX),
+                "{id}-{step}: capture requested repaint: {:?}",
+                output.viewport_output
+            );
+            println!("CAPTURE_SETTLED {id}-{step}: extra harness step requests neither repaint nor discard at 2.4 pixels per point");
             harness
                 .render()
                 .unwrap()
