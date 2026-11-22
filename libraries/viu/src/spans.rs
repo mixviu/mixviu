@@ -33,7 +33,7 @@ pub(crate) fn job(
                     rgb as u8,
                 ))
             })
-            .or_else(|| crate::appearance::colour(ui.ctx(), role))
+            .or_else(|| run["role"].as_str().and_then(|_| crate::appearance::colour(ui.ctx(), role)))
             .unwrap_or(base);
         let fallback = if mono || run["mono"] == true {
             FontFamily::Monospace

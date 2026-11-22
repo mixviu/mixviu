@@ -419,3 +419,56 @@ fn render_layout_steps() {
         }
     }
 }
+
+#[test]
+fn themed_plain_colours_and_bold_are_painted() {
+    for dark in [false,true] {
+        let ctx=egui::Context::default();
+        viu::appearance::install_theme(&ctx,&toolkit::Theme::embedded()).unwrap();
+        ctx.set_visuals(if dark{egui::Visuals::dark()}else{egui::Visuals::light()});
+        let mut v=SceneView::new("---\nscene: 1\nname: colours\ncitizen: test\n---\n```mix\n{root:{widget:\"column\",children:[\"a\",\"b\",\"c\"]},a:{widget:\"text\",text:\"White\",color:\"#ffffff\"},b:{widget:\"text\",text:\"Bold\",bold:true},c:{widget:\"text\",text:\"Design\",color:\"design.text\"}}\n```\n").unwrap();
+        let strong=ctx.global_style().visuals.strong_text_color();
+        let design=viu::appearance::colour(&ctx,"text").unwrap();
+        let mut o=ctx.run_ui(egui::RawInput::default(),|ui|{v.show(ui);});o.textures_delta.clear();
+        for s in o.shapes {if let egui::Shape::Text(t)=s.shape {let wanted=match t.galley.job.text.as_str(){"White"=>Color32::WHITE,"Bold"=>strong,"Design"=>design,_=>continue};assert!(t.galley.job.sections.iter().all(|s|s.format.color==wanted));}}
+    }
+}
+
+#[test]
+fn scroll_justify_stays_finite_and_max_width_keeps_parent_centre() {
+    for mode in ["center","between","evenly"] {
+        let r=geometry(&format!(r#"{{root:{{widget:"column",scroll:true,children:["j"]}},j:{{widget:"column",justify:"{mode}",children:["a","b"]}},a:{{widget:"text",text:"One"}},b:{{widget:"text",text:"Two"}}}}"#));
+        assert!(r.values().all(|r|r.is_finite()));
+    }
+    let r=geometry(r#"{root:{widget:"column",fill:true,align:"center",children:["a","b"]},a:{widget:"text",text:"A wrapped centred subtitle with enough words to wrap",max_width:140,wrap:true,align:"center"},b:{widget:"text",text:"Following"}}"#);
+    assert!((r["a"].center().x-r["root"].center().x).abs()<1.);
+    assert!((r["b"].center().x-r["root"].center().x).abs()<1.);
+}
+
+#[test]
+fn grid_clips_painted_text_and_native_between_skips_hidden() {
+    let source="---\nscene: 1\nname: grid\ncitizen: test\n---\n```mix\n{root:{widget:\"grid\",columns:2,children:[\"a\",\"b\"]},a:{widget:\"text\",text:\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",size:40},b:{widget:\"text\",text:\"Right\"}}\n```\n";
+    let mut v=SceneView::new(source).unwrap();let ctx=egui::Context::default();let mut o=ctx.run_ui(egui::RawInput::default(),|ui|{v.show(ui);});o.textures_delta.clear();
+    let right=v.geometry["b"].left();
+    assert!(o.shapes.iter().any(|s|matches!(&s.shape,egui::Shape::Text(t) if t.galley.job.text.starts_with("AAAA") && s.clip_rect.right()<right)));
+    let r=geometry(r#"{root:{widget:"row",fill:true,justify:"between",native_spacing:true,children:["hidden","a","b"]},hidden:{widget:"text",text:"Hidden",hidden:true},a:{widget:"text",text:"Left"},b:{widget:"button",label:"Right"}}"#);
+    assert!((r["a"].left()-r["root"].left()).abs()<1.);
+    assert!((r["b"].right()-r["root"].right()).abs()<1.);
+}
+
+#[test]
+fn gallery_and_workshop_layouts_settle() {
+    let mut sources=vec![];
+    for entry in std::fs::read_dir(concat!(env!("CARGO_MANIFEST_DIR"),"/../../apps/gallery/deck-pages")).unwrap(){let p=entry.unwrap().path();if p.extension().is_some_and(|x|x=="mix"){sources.push(std::fs::read_to_string(p).unwrap());}}
+    // Workshop's actual container definitions, with deterministic control data.
+    let d=scene::parse(include_str!("../../../../apps/workshop/scene.mix")).unwrap();
+    for root in ["body-actions","mesh-top-lists"] {
+        let mut nodes=serde_json::Map::new();let raw=&d.nodes[root];let mut ports=raw.ports.clone();ports.shift_remove("hidden");ports.insert("widget".into(),json!(raw.widget));nodes.insert("root".into(),serde_json::to_value(ports).unwrap());
+        for child in raw.ports["children"].as_array().unwrap(){let id=child.as_str().unwrap();nodes.insert(id.into(),json!({"widget":"button","label":id}));}
+        sources.push(format!("---\nscene: 1\nname: workshop-layout\ncitizen: test\n---\n```mix\n{}\n```\n",Value::Object(nodes)));
+    }
+    for source in sources {
+        let mut v=SceneView::new(&source).unwrap();let ctx=egui::Context::default();
+        for frame in 0..24 {let mut o=ctx.run_ui(egui::RawInput::default(),|ui|{v.show(ui);});o.textures_delta.clear();if frame==23{assert!(!o.platform_output.requested_discard(),"{}: {:?}",v.tree.name,o.platform_output.request_discard_reasons);}}
+    }
+}
