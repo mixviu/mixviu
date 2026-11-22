@@ -4,10 +4,12 @@ use super::*;
 #[test]
 fn explicit_line_height_sizes_each_text_line() {
     let mut view=SceneView::new("---\nscene: 1\nname: leading\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"first\\nsecond\",size:20,line_height:60}}\n```\n").unwrap();
-    let ctx=egui::Context::default();
-    let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});
+    let ctx = egui::Context::default();
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        view.show(ui);
+    });
     output.textures_delta.clear();
-    assert!((view.geometry["root"].height()-120.).abs()<1.);
+    assert!((view.geometry["root"].height() - 120.).abs() < 1.);
 }
 
 #[test]
