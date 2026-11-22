@@ -3865,6 +3865,7 @@ dependencies = [
  "serde_json",
  "slots",
  "smithay",
+ "tempfile",
  "testkit",
  "wayland-client",
  "wayland-protocols",

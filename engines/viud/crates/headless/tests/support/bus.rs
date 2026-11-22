@@ -58,7 +58,11 @@ impl Bus {
 
     pub fn start(label: &str) -> Self {
         let owner = owned_bus::OwnedBus::start(label);
-        Self { root: owner.root.clone(), url: owner.url.clone(), _owner: owner }
+        Self {
+            root: owner.root.clone(),
+            url: owner.url.clone(),
+            _owner: owner,
+        }
     }
 
     pub fn ready(&self, service: &str) {

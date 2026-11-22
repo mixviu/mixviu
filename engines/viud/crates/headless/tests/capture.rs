@@ -88,7 +88,12 @@ impl Bus {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let owner = owned_bus::OwnedBus::start(label);
-        Self { _capture: capture, root: owner.root.clone(), url: owner.url.clone(), _owner: owner }
+        Self {
+            _capture: capture,
+            root: owner.root.clone(),
+            url: owner.url.clone(),
+            _owner: owner,
+        }
     }
     fn call(&self, command_name: &str, args: Value) -> Value {
         self.call_rc(command_name, args, 0)

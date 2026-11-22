@@ -28,16 +28,15 @@ fn fixture_parent() {
         serde_json::from_slice(&fs::read(bus.root.join("bus.json")).unwrap()).unwrap();
     println!("CHILD_READY {} {}", record["pid"], bus.root.display());
     std::io::stdout().flush().unwrap();
+    std::io::stdin().read_line(&mut String::new()).unwrap();
     if mode.trim() == "panic" {
         panic!("injected panic with owned broker");
     }
-    std::io::stdin().read_line(&mut String::new()).unwrap();
     drop(bus);
 }
 
 fn gone(pid: u32, root: &Path) -> bool {
-    let running = fs::read(format!("/proc/{pid}/cmdline"))
-        .is_ok_and(|cmd| !cmd.is_empty());
+    let running = fs::read(format!("/proc/{pid}/cmdline")).is_ok_and(|cmd| !cmd.is_empty());
     !running && !root.exists()
 }
 
@@ -53,16 +52,27 @@ fn within(pid: u32, root: &Path, bound: Duration) -> bool {
 }
 
 fn check(mode: &str) {
-    let mut parent = Parent(Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", "fixture_parent", "--ignored", "--nocapture"])
-        .stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap());
+    let mut parent = Parent(
+        Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "fixture_parent", "--ignored", "--nocapture"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
     writeln!(parent.0.stdin.as_mut().unwrap(), "{mode}").unwrap();
     let mut output = BufReader::new(parent.0.stdout.take().unwrap());
     let mut line = String::new();
     loop {
         line.clear();
-        assert_ne!(output.read_line(&mut line).unwrap(), 0, "fixture exited before handshake");
-        if line.starts_with("CHILD_READY ") { break; }
+        assert_ne!(
+            output.read_line(&mut line).unwrap(),
+            0,
+            "fixture exited before handshake"
+        );
+        if line.starts_with("CHILD_READY ") {
+            break;
+        }
     }
     let parts: Vec<_> = line.split_whitespace().collect();
     let pid: u32 = parts[1].parse().unwrap();
@@ -70,6 +80,8 @@ fn check(mode: &str) {
     assert!(!gone(pid, root), "handshake must name a live broker");
     if mode != "panic" && mode != "normal" {
         parent.0.kill().unwrap();
+    } else if mode == "panic" {
+        writeln!(parent.0.stdin.as_mut().unwrap(), "panic now").unwrap();
     } else if mode == "normal" {
         drop(parent.0.stdin.take());
     }
@@ -77,19 +89,37 @@ fn check(mode: &str) {
     assert_eq!(status.success(), mode == "normal");
     let cleaned = within(pid, root, Duration::from_secs(2));
     if mode == "negative-control" {
-        assert!(!cleaned, "negative control unexpectedly passed the leak oracle");
-        assert!(within(pid, root, Duration::from_secs(2)), "control cleanup failed");
+        assert!(
+            !cleaned,
+            "negative control unexpectedly passed the leak oracle"
+        );
+        assert!(
+            within(pid, root, Duration::from_secs(2)),
+            "control cleanup failed"
+        );
     } else {
-        assert!(cleaned, "{mode}: noded {pid} or {} survived 2 s", root.display());
+        assert!(
+            cleaned,
+            "{mode}: noded {pid} or {} survived 2 s",
+            root.display()
+        );
     }
     eprintln!("LIFETIME mode={mode} noded={pid} cleaned={cleaned}");
 }
 
 #[test]
-fn sigkill_reaps_broker_and_directory() { check("kill"); }
+fn sigkill_reaps_broker_and_directory() {
+    check("kill");
+}
 #[test]
-fn panic_reaps_broker_and_directory() { check("panic"); }
+fn panic_reaps_broker_and_directory() {
+    check("panic");
+}
 #[test]
-fn normal_exit_reaps_broker_and_directory() { check("normal"); }
+fn normal_exit_reaps_broker_and_directory() {
+    check("normal");
+}
 #[test]
-fn missing_lifetime_tie_fails_oracle() { check("negative-control"); }
+fn missing_lifetime_tie_fails_oracle() {
+    check("negative-control");
+}

@@ -21,15 +21,24 @@ pub struct OwnedBus {
 impl OwnedBus {
     pub fn start(label: &str) -> Self {
         let name = module_path!().split_once("::").unwrap().1;
-        let mut owner = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", &format!("{name}::owner_process"), "--ignored", "--nocapture"])
+        let owner = Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                &format!("{name}::owner_process"),
+                "--ignored",
+                "--nocapture",
+            ])
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
             .unwrap();
-        writeln!(owner.stdin.as_mut().unwrap(), "{label}").unwrap();
         // Install the guard before any fallible readiness work.
-        let mut bus = Self { owner, root: PathBuf::new(), url: String::new() };
+        let mut bus = Self {
+            owner,
+            root: PathBuf::new(),
+            url: String::new(),
+        };
+        writeln!(bus.owner.stdin.as_mut().unwrap(), "{label}").unwrap();
         let output = bus.owner.stdout.take().unwrap();
         for line in BufReader::new(output).lines() {
             let line = line.unwrap();
@@ -66,7 +75,10 @@ impl Drop for Broker {
 fn owner_process() {
     let mut label = String::new();
     std::io::stdin().read_line(&mut label).unwrap();
-    let root = tempfile::Builder::new().prefix("headless-bus-").tempdir().unwrap();
+    let root = tempfile::Builder::new()
+        .prefix("headless-bus-")
+        .tempdir()
+        .unwrap();
     for dir in ["etc", "var", "run/noded", "home"] {
         fs::create_dir_all(root.path().join(dir)).unwrap();
     }
@@ -79,15 +91,32 @@ fn owner_process() {
     }).to_string()).unwrap();
     let mesh = root.path().join("etc/mesh.conf.mix");
     fs::write(&mesh, r#"{"node_name":"headless-test","peers":[]}"#).unwrap();
-    let bin = std::env::current_exe().unwrap().parent().unwrap().parent().unwrap().join("noded");
+    let bin = std::env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("noded");
     let mut command = Command::new(bin);
-    command.args(["serve", "--listen", &format!("127.0.0.1:{port}"), "--node", "headless-test",
-        "--no-monitor", "--no-log", "--mesh-config"]).arg(&mesh)
-        .env_clear().env("HOME",root.path().join("home"))
-        .env("MIX_ETC",root.path().join("etc"))
-        .env("MIX_VAR",root.path().join("var"))
-        .env("MIX_RUN",root.path().join("run"))
-        .env("MIX_NODE_CONFIG",&conf)
+    command
+        .args([
+            "serve",
+            "--listen",
+            &format!("127.0.0.1:{port}"),
+            "--node",
+            "headless-test",
+            "--no-monitor",
+            "--no-log",
+            "--mesh-config",
+        ])
+        .arg(&mesh)
+        .env_clear()
+        .env("HOME", root.path().join("home"))
+        .env("MIX_ETC", root.path().join("etc"))
+        .env("MIX_VAR", root.path().join("var"))
+        .env("MIX_RUN", root.path().join("run"))
+        .env("MIX_NODE_CONFIG", &conf)
         .stdin(Stdio::null())
         .stdout(fs::File::create(root.path().join("noded.log")).unwrap())
         .stderr(Stdio::null());
@@ -110,12 +139,33 @@ fn owner_process() {
     let deadline = Instant::now() + Duration::from_secs(10);
     // Wait for this child's Unix socket, not an arbitrary process on the port.
     while std::os::unix::net::UnixStream::connect(root.path().join("run/noded/bus.sock")).is_err() {
-        assert!(broker.0.try_wait().unwrap().is_none(), "noded exited: {}", fs::read_to_string(root.path().join("noded.log")).unwrap());
+        let mut pipe = libc::pollfd {
+            fd: libc::STDIN_FILENO,
+            events: libc::POLLHUP,
+            revents: 0,
+        };
+        // SAFETY: one valid pollfd, no blocking. Also clean up when the test
+        // dies during startup, before the readiness handshake.
+        if unsafe { libc::poll(&mut pipe, 1, 0) } > 0 && pipe.revents & libc::POLLHUP != 0 {
+            return;
+        }
+        assert!(
+            broker.0.try_wait().unwrap().is_none(),
+            "noded exited: {}",
+            fs::read_to_string(root.path().join("noded.log")).unwrap()
+        );
         assert!(Instant::now() < deadline, "noded readiness timeout");
         std::thread::yield_now();
     }
-    fs::write(root.path().join("bus.json"), serde_json::json!({"pid":broker.0.id(),"url":url}).to_string()).unwrap();
-    println!("BUS_READY {}", serde_json::json!({"root":root.path(),"url":url}));
+    fs::write(
+        root.path().join("bus.json"),
+        serde_json::json!({"pid":broker.0.id(),"url":url}).to_string(),
+    )
+    .unwrap();
+    println!(
+        "BUS_READY {}",
+        serde_json::json!({"root":root.path(),"url":url})
+    );
     std::io::stdout().flush().unwrap();
     // Negative control removes the pipe tie for three seconds, beyond the
     // regression's two-second bound. It still cleans up its own specimen.
@@ -125,4 +175,7 @@ fn owner_process() {
     }
     drop(broker);
     drop(root);
+    // The parent may already be dead, with its stdout pipe closed. All owned
+    // resources are gone; skip libtest's final write to that broken pipe.
+    std::process::exit(0);
 }
