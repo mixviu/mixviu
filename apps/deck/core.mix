@@ -85,6 +85,11 @@ fn check_deck($deck)
 end
 fn scene_source($slide)
   $nodes=$slide.scene
+  for $key in keys($nodes)
+    if $nodes[$key].widget=="text" then
+      $nodes[$key].font=if $nodes[$key].mono==true then "Noto Sans Mono" else "Liberation Sans" end
+    end
+  end
   for $id in keys($slide.build)
     $nodes[$id].hidden="= $model.build["..json_encode($id).."].hidden"
     $nodes[$id].opacity="= $model.build["..json_encode($id).."].opacity"

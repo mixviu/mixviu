@@ -4,7 +4,9 @@
 $tokens = require("../../libraries/design/deck.tokens.mix")
 
 fn deck_text($text, $style, $role)
-  return {widget:"text", text:$text, size:$tokens.type[$style], color:$tokens.colour[$role]}
+  $mono=contains(["date","chip","rail","rail_compact","series_footer","code","terminal","tree"],$style)
+  $weight=if contains(["headline","topic_title","wordmark","stat","panel_title"],$style) then 700 else 400 end
+  return {widget:"text", text:$text, size:$tokens.type[$style], color:$tokens.colour[$role],font:if $mono then "Noto Sans Mono" else "Liberation Sans" end,mono:$mono,weight:$weight}
 end
 fn inline($runs, $style, $mono)
   $styled = []
@@ -15,7 +17,7 @@ fn inline($runs, $style, $mono)
     $semantic = if contains(["text","keyword","function","string","comment","value","ok","bad","warn","acc","mut"],$role) then $role else "text" end
     push($styled, merge($run, {role:$semantic,color:$tokens.colour[$role] ?? $tokens.colour.text}))
   end
-  return {widget:"text", text:$plain, spans:$styled, size:$tokens.type[$style], mono:$mono}
+  return {widget:"text", text:$plain, spans:$styled, size:$tokens.type[$style], mono:$mono,font:if $mono then "Noto Sans Mono" else "Liberation Sans" end}
 end
 fn column($items, $gap)
   return {widget:"column", children:$items, gap:$gap}

@@ -71,6 +71,7 @@ fn padded(ui: &mut Ui, content: &Content, fill: Option<Color32>, add: impl FnOnc
             ui.scope(|ui| {
                 let family = match content.font.family.as_deref() {
                     Some("JetBrains Mono") => FontFamily::Monospace,
+                    Some(name @ ("Liberation Sans" | "Liberation Sans Bold" | "Noto Sans Mono" | "Noto Sans")) => crate::fonts::optional::family(name, 400),
                     _ => FontFamily::Proportional,
                 };
                 let size = (content.font.size * crate::ui_scale::of(ui.ctx()).text_scale) as f32;

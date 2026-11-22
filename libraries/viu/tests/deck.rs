@@ -320,6 +320,7 @@ fn play_replies_immediately_and_survives_caller_cancellation_past_180_seconds() 
 
 fn frame(model: Value) -> (SceneView, egui::FullOutput) {
     let ctx = egui::Context::default();
+    viu::fonts::install(&ctx, 400, 600);
     let mut view = SceneView::with_model(
         model["presentation"]["scene"].as_str().unwrap(),
         model.clone(),

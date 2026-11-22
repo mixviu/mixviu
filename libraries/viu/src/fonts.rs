@@ -71,6 +71,7 @@ pub fn install(ctx: &egui::Context, body: u16, heading: u16) {
         let stack = fonts.families[&FontFamily::Name(primary.into())].clone();
         fonts.families.insert(FontFamily::Name(alias.into()), stack);
     }
+    let _ = toolkit::fonts::optional::register(&mut fonts, &toolkit::fonts::optional::directory());
     ctx.set_fonts(fonts);
     ctx.data_mut(|d| d.insert_temp::<(u16, u16)>(key, (body, heading)));
 }

@@ -10,6 +10,7 @@ pub(crate) fn job(
     mono: bool,
     bold: bool,
     base: Color32,
+    family: Option<(&str, u16)>,
 ) -> LayoutJob {
     let mut job = LayoutJob::default();
     for run in spans.as_array().into_iter().flatten() {
@@ -37,7 +38,10 @@ pub(crate) fn job(
             run["text"].as_str().unwrap_or(""),
             0.,
             TextFormat {
-                font_id: if mono || run["mono"] == true {
+                font_id: if let Some((name, weight)) = family {
+                    FontId::new(size, toolkit::fonts::optional::family(
+                        if mono || run["mono"] == true { "Noto Sans Mono" } else { name }, weight))
+                } else if mono || run["mono"] == true {
                     FontId::new(size, FontFamily::Monospace)
                 } else if bold {
                     toolkit::fonts::bound(ui.ctx(), toolkit::fonts::heading(size))

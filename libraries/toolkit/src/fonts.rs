@@ -23,6 +23,7 @@
 use crate::theme::Theme;
 use egui::{FontData, FontDefinitions, FontFamily, FontId};
 use std::sync::Arc;
+pub mod optional;
 
 /// The named family for emphasised body text.
 pub const MEDIUM: &str = "medium";
@@ -71,6 +72,7 @@ pub fn definitions(theme: &Theme) -> FontDefinitions {
             .families
             .insert(FontFamily::Name(family.into()), stack);
     }
+    let _ = optional::register(&mut fonts, &optional::directory());
     fonts
 }
 
