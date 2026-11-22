@@ -587,6 +587,12 @@ impl SceneView {
         self.show_content(ui)
     }
     fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
+        let font_state=ui.fonts(|f|{
+            use std::hash::{Hash,Hasher};let mut hash=std::collections::hash_map::DefaultHasher::new();
+            for (name,data) in &f.definitions().font_data{name.hash(&mut hash);std::sync::Arc::as_ptr(data).hash(&mut hash);}
+            for (family,names) in &f.definitions().families{family.hash(&mut hash);names.hash(&mut hash);}hash.finish()
+        });
+        ui.ctx().data_mut(|d|d.insert_temp(egui::Id::new("scene-font-state"),font_state));
         self.motion.begin(ui);
         self.numbers.begin();
         self.backdrops.begin();
@@ -1254,7 +1260,7 @@ impl SceneView {
                         let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(if node.ports.get("bold")==Some(&Value::Bool(true)){ui.visuals().strong_text_color()}else{ui.visuals().text_color()});
                         let number = node.ports.get("number").map(|spec| self.numbers.text(ui, &key, spec, node.ports.get("motion") != Some(&Value::Bool(false))));
                         let width=num(node,"max_width").unwrap_or(ui.available_width()).min(ui.available_width());
-                        let cache=natural_size_key(node).with(("paint",width.to_bits(),ui.pixels_per_point().to_bits(),colour.to_array(),number.as_deref()));
+                            let cache=natural_size_key(node).with(("paint",width.to_bits(),ui.pixels_per_point().to_bits(),font_state_key(ui),colour.to_array(),number.as_deref()));
                         let galley=measure_get::<std::sync::Arc<egui::Galley>>(ui,cache).unwrap_or_else(||{
                             record_measurement_work();
                             let plain=json!([{"text":number.as_deref().unwrap_or_else(||text(node,"text"))}]);
@@ -2903,7 +2909,7 @@ fn color(s: &str) -> Option<Color32> {
 }
 
 fn text_baseline(ui: &egui::Ui, node: &Node) -> f32 {
-    let cache = natural_size_key(node).with(("baseline", ui.pixels_per_point().to_bits()));
+    let cache = natural_size_key(node).with(("baseline", ui.pixels_per_point().to_bits(),font_state_key(ui)));
     if let Some(v) = measure_get::<f32>(ui, cache) {
         return v;
     }
@@ -3080,7 +3086,7 @@ fn intrinsic_text_width(
         return 0.;
     }
     if node.family == "text" {
-        let cache = natural_size_key(node).with(("text-widths", ui.pixels_per_point().to_bits()));
+        let cache = natural_size_key(node).with(("text-widths", ui.pixels_per_point().to_bits(),font_state_key(ui)));
         let sizes = measure_get::<(f32, f32)>(ui, cache).unwrap_or_else(|| {
             let runs = measurement_runs(node, false);
             let bold = node.ports.get("bold") == Some(&Value::Bool(true));
@@ -3148,7 +3154,7 @@ fn intrinsic_text_width(
             "field" => ui.spacing().text_edit_width,
             _ => {
                 let key =
-                    natural_size_key(node).with(("button-width", ui.pixels_per_point().to_bits()));
+                    natural_size_key(node).with(("button-width", ui.pixels_per_point().to_bits(),font_state_key(ui)));
                 if let Some(v) = measure_get::<f32>(ui, key) {
                     return v;
                 }
@@ -3279,6 +3285,7 @@ fn record_measurement_work() {
     #[cfg(test)]
     MEASUREMENT_WORK.set(MEASUREMENT_WORK.get() + 1);
 }
+fn font_state_key(ui:&egui::Ui)->u64{ui.ctx().data(|d|d.get_temp::<u64>(egui::Id::new("scene-font-state"))).unwrap_or(0)}
 fn measurement_runs(node: &Node, first_line: bool) -> Value {
     let mut left = 4096;
     let mut out = Vec::new();
