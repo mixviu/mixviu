@@ -62,6 +62,14 @@ fn a_minimum_width_does_not_cap_natural_content() {
 }
 
 #[test]
+fn wrapped_compound_tags_move_as_whole_cells() {
+    let rects=geometry(r##"{root:{widget:"row",width:300,wrap:true,gap:8,children:["a","b","c"]},a:{widget:"column",width:220,children:["one"]},b:{widget:"column",width:220,children:["two"]},c:{widget:"column",width:220,children:["three"]},one:{widget:"text",text:"First tag"},two:{widget:"text",text:"Second tag"},three:{widget:"text",text:"Third tag"}}"##);
+    assert!(rects["b"].top()>=rects["a"].bottom()+7.,"{rects:?}");
+    assert!(rects["c"].top()>=rects["b"].bottom()+7.,"{rects:?}");
+    assert!(rects["c"].right()<=rects["root"].right(),"{rects:?}");
+}
+
+#[test]
 fn flex_basis_and_stretch_keep_weighted_cards_in_one_row() {
     let rects = geometry(
         r##"{root:{widget:"row",fill:true,gap:40,align:"stretch",children:["a","b"]},a:{widget:"column",grow:1,basis:60,children:["one"]},b:{widget:"column",grow:2,basis:60,children:["three"]},one:{widget:"text",text:"short"},three:{widget:"text",text:"one\ntwo\nthree"}}"##,

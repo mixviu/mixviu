@@ -1308,7 +1308,27 @@ impl SceneView {
                                     }
                                 };
                                 if node.family == "row" {
-                                    if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) {
+                                    if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) && node.ports.get("native_spacing")!=Some(&Value::Bool(true)) {
+                                        let origin=ui.available_rect_before_wrap().min;
+                                        let available=ui.available_width();
+                                        let mut x=0.0_f32;let mut y=0.0_f32;let mut line_height=0.0_f32;
+                                        let gap=ui.spacing().item_spacing;
+                                        for child in children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))) {
+                                            let cache=ui.scope_id().with((&key,"wrap-size",child));
+                                            let size=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(cache)).unwrap_or_default();
+                                            if x>0. && x+size.x>available+0.01 {x=0.;y+=line_height+gap.y;line_height=0.;}
+                                            let pos=origin+egui::vec2(x,y);
+                                            let measure=egui::Rect::from_min_size(pos,egui::vec2(available,size.y));
+                                            let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(measure).layout(egui::Layout::top_down(egui::Align::Min)));
+                                            cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_size(pos,egui::vec2(size.x.min(available),size.y))));
+                                            self.node(&mut cell,child,nodes,route,depth+1,events);
+                                            let actual=cell.min_rect().size();
+                                            if (actual-size).length()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cache,actual));ui.ctx().request_repaint();}
+                                            line_height=line_height.max(size.y);
+                                            x+=size.x+gap.x;
+                                        }
+                                        ui.allocate_space(egui::vec2(available,y+line_height));
+                                    } else if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) {
                                         ui.horizontal_wrapped(|ui| {
                                             for child in children(node) {
                                                 let Some(control)=nodes.get(child) else {continue};
