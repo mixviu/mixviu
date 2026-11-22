@@ -106,9 +106,10 @@ fn font_port_face_table_covers_every_node_and_inline_combination() {
         let source =
             format!("---\nscene: 1\nname: font-matrix\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
         let mut view = SceneView::new(&source).unwrap();
-        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
             view.show(ui);
         });
+        out.textures_delta.clear();
         let find = |text: &str| {
             out.shapes
                 .iter()
@@ -125,7 +126,7 @@ fn font_port_face_table_covers_every_node_and_inline_combination() {
                 .map(|g| (g.chr, g.uv_rect, g.advance_width))
                 .collect::<Vec<_>>()
         };
-        let check = |actual: &egui::Galley, offset: usize, text: &str, face: &str| {
+        let check = |actual: &egui::Galley, offset: usize, face: &str| {
             let (family, reference) = match face {
                 P => (
                     egui::FontFamily::Proportional,
@@ -154,25 +155,23 @@ fn font_port_face_table_covers_every_node_and_inline_combination() {
             let mut db = fontdb::Database::new();
             db.load_font_data(defs.font_data[primary].bytes().to_vec());
             assert_eq!(db.faces().next().unwrap().post_script_name, face);
-            let expected = ctx.fonts_mut(|f| {
-                f.layout_no_wrap(
-                    text.into(),
-                    egui::FontId::new(24., reference),
-                    egui::Color32::WHITE,
-                )
-            });
+            // Keep the full text and preceding advances: an isolated suffix
+            // can land at a different subpixel phase and get another atlas UV.
+            let mut reference_job = (*actual.job).clone();
+            reference_job.sections.iter_mut().find(|s| s.byte_range.contains(&offset.into())).unwrap().format.font_id.family = reference;
+            let expected = ctx.fonts_mut(|f| f.layout_job(reference_job));
             let actual_glyphs = glyphs(actual);
             let expected_glyphs = glyphs(&expected);
             assert!(!expected_glyphs.is_empty());
             assert_eq!(
-                &actual_glyphs[offset..offset + text.chars().count()],
-                expected_glyphs.as_slice(),
+                actual_glyphs,
+                expected_glyphs,
                 "painted face for font={font}, mono_font={mono_font}, node={node_mono}, inline={inline_mono}"
             );
         };
-        check(find("plain"), 0, "plain", base_face);
-        check(find("base code"), 0, "base ", base_face);
-        check(find("base code"), 5, "code", inline_face);
+        check(find("plain"), 0, base_face);
+        check(find("base code"), 0, base_face);
+        check(find("base code"), 5, inline_face);
         println!(
             "FONT_FACE_TABLE font={font} mono_font={mono_font} node={node_mono} inline={inline_mono}: plain/base={base_face}; inline={inline_face}"
         );
