@@ -20,7 +20,7 @@
 --         diff, then restore the tree (apply the diff locally).
 $mode = args()[0] ?? "gate"
 $failed = []
-$totals = {passed: 0, failed: 0, ignored: 0, filtered: 0}
+$totals = {passed: 0, failed: 0, ignored: 0, filtered: 0, quarantined: {passed: 0, failed: 0, ignored: 0}}
 
 fn gate_step($argv, $jobs, $env = {})
   print("STEP_BEGIN " .. join($argv, " "))
@@ -212,24 +212,32 @@ $checks = [
   ["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"]
 ]
 $test_mix = realpath(".") .. "/target/debug/mix"
+$quarantine = require("ci/quarantine.mix")
+$quarantine_dir = $quarantine.private_dir(env("TMPDIR", "/tmp"), realpath("."), realpath(".") .. "/target")
+$quarantine_records = []
 for $argv in $checks
-  $env = if $argv[1] == "test" then {MIX_TEST_E2E_EXE: $test_mix, MIX_TEST_MIX_EXE: $test_mix} else {} end
-  $r = gate_step($argv, "6", $env)
+  $is_test = $argv[1] == "test"
+  $step = if contains($argv, "--workspace") then "workspace" else "mix" end
+  $record_file = path_join($quarantine_dir, $step .. ".jsonl")
+  $env = if $is_test then {MIX_TEST_E2E_EXE: $test_mix, MIX_TEST_MIX_EXE: $test_mix, TEST_POOL_RETRY_REPORT: ""} else {} end
+  $command = if $is_test then concat([$test_mix, "tools/ci/test_pool.mix", "--quarantine-out", $record_file, "--"], slice($argv, 2)) else $argv end
+  $r = gate_step($command, "6", $env)
   if not $r.ok then push($failed, join($argv, " ")) end
-  if $argv[1] == "test" then
-    for $line in lines($r.stdout)
-      $found = re_find($line, "^test result: [a-zA-Z]+\\. ([0-9]+) passed; ([0-9]+) failed; ([0-9]+) ignored; [0-9]+ measured; ([0-9]+) filtered out")
-      if len($found) > 0 then
-        $m = $found[0].groups
-        $totals.passed = $totals.passed + to_number($m[0])
-        $totals.failed = $totals.failed + to_number($m[1])
-        $totals.ignored = $totals.ignored + to_number($m[2])
-        $totals.filtered = $totals.filtered + to_number($m[3])
-      end
+  if $is_test then
+    $report = $quarantine.gate_report($r.stdout, $record_file, $step)
+    $failed = concat($failed, $report.failed)
+    $quarantine_records = concat($quarantine_records, $report.records)
+    for $k in ["passed", "failed", "ignored", "filtered"]
+      $totals[$k] = $totals[$k] + $report.totals[$k]
+    end
+    for $k in ["passed", "failed", "ignored"]
+      $totals.quarantined[$k] = $totals.quarantined[$k] + $report.totals.quarantined[$k]
     end
   end
 end
+remove_dir($quarantine_dir)
 print("TEST_TOTALS " .. json_encode($totals))
+print("GATE_QUARANTINE_RECORDS " .. json_encode($quarantine_records))
 
 -- viud is egui-free by construction (default features).
 $tree = run_argv(["cargo", "tree", "--locked", "-p", "viud", "-e", "normal"], {max_output: 64000000})

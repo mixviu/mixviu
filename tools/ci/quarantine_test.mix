@@ -54,7 +54,8 @@ try
   $one.argv = concat($one.argv, ["--exact"])
   $p = prepare_fixture($one, [$fail])
   check(run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "quarantined failure failed strict replay")
-  $q.replay($p.isolated)
+  $failure = $q.replay($p.isolated)[0]
+  check($failure.result == "fail" and deep_eq($failure.summary, {passed: 0, failed: 1, ignored: 0}), "failure summary wrong")
   $p = prepare_fixture($one, [$fail, $pass])
   check(run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "two entries or existing --exact duplicated libtest flag")
   -- A different failure in the same binary remains strict.
@@ -71,12 +72,15 @@ try
   $p = prepare_fixture($base, [$hang])
   $js = $p.isolated
   $js[0].timeout = 0.1
-  check($q.replay($js)[0].result == "timeout", "hang did not report timeout")
+  $timeout = $q.replay($js)[0]
+  check($timeout.result == "timeout" and $timeout.summary == nil, "hang summary must be nil")
   $p = prepare_fixture($base, [$pass])
-  $q.replay($p.isolated)
+  check(deep_eq($q.replay($p.isolated)[0].summary, {passed: 1, failed: 0, ignored: 0}), "pass summary wrong")
   for $case in ["ignored", "missing"]
     $p = prepare_fixture($base, [entry("module::tests::" .. $case)])
-    check($q.replay($p.isolated)[0].result == $case, "zero tests reported as pass")
+    $record = $q.replay($p.isolated)[0]
+    check($record.result == $case, "zero tests reported as pass")
+    check(deep_eq($record.summary, {passed: 0, failed: 0, ignored: (if $case == "ignored" then 1 else 0 end)}), "final summary wrong")
   end
   $flagged = $base
   $flagged.argv = concat($base.argv, ["--include-ignored", "--test-threads", "1", "--nocapture"])
@@ -98,6 +102,29 @@ try
   $result.stdout = "test result: ok. 1 passed; 0 failed; 0 ignored;"
   $result.stdout_truncated = true
   check($q.classification($result) == "missing", "truncated output reported pass")
+  check($q.summary($result) == nil, "truncated summary accepted")
+  $result.stdout_truncated = false
+  $result.signal = 9
+  check($q.summary($result) == nil, "crash summary accepted")
+  $result.signal = nil
+  $result.stdout = "no summary"
+  check($q.summary($result) == nil, "absent summary accepted")
+  $stream = "test result: FAILED. 8 passed; 2 failed; 3 ignored; 0 measured; 5 filtered out\n"
+  $stream = $stream .. "test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out\n"
+  $stream = $stream .. "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out\n"
+  $stream = $stream .. "test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 9 filtered out\n"
+  $records_path = $temp .. "/counts.jsonl"
+  $counts = [{summary: {passed: 0, failed: 1, ignored: 0}}, {summary: {passed: 1, failed: 0, ignored: 0}}, {summary: {passed: 0, failed: 0, ignored: 1}}, {summary: nil}]
+  write_file($records_path, join(map($counts, fn($r) = json_encode($r)), "\n") .. "\n")
+  $report = $q.gate_report($stream, $records_path, "workspace")
+  check(deep_eq($report.totals, {passed: 8, failed: 2, ignored: 3, filtered: 32, quarantined: {passed: 1, failed: 1, ignored: 1}}), "gate totals arithmetic wrong")
+  check(len($report.failed) == 0 and len($report.records) == 4, "gate records lost")
+  check(len(filter($report.records, fn($r) = $r.step != "workspace")) == 0, "step missing")
+  $missing = $q.gate_report($stream, $temp .. "/absent.jsonl", "mix")
+  check(deep_eq($missing.failed, ["quarantine records missing: mix"]), "missing records not reported")
+  write_file($records_path, "")
+  $empty = $q.gate_report($stream, $records_path, "mix")
+  check(len($empty.failed) == 0 and len($empty.records) == 0 and $empty.totals.failed == 3, "empty list changed totals")
   for $name in ["module::tests::typo", "tests::fail", "module::tests::fa"]
     rejects(fn() = prepare_fixture($base, [entry($name)]))
   end

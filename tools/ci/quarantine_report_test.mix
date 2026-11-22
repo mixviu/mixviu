@@ -61,7 +61,8 @@ try
       check(read_file($temp .. "/calls") == (if $mode == "retry" then "fail\nretry-write\n" else "fail\n" end), "quarantined failure retried")
       check(contains($r.stdout, "(retry, alone)") == ($mode == "retry"), "wrong retry count")
       if $mode == "retry" then check(read_file($repo .. "/target/quarantine-decoy.jsonl") == "forged retry records\n", "retry did not write decoy") end
-      check(deep_eq(sort(keys($records[0])), sort(["package", "target", "test", "result", "expires", "owner"])), "record schema wrong")
+      check(deep_eq(sort(keys($records[0])), sort(["package", "target", "test", "result", "summary", "expires", "owner"])), "record schema wrong")
+      check(deep_eq($records[0].summary, {passed: 0, failed: 1, ignored: 0}), "pool failure summary wrong")
     end
   end
   for $case in ["target", "record"]
