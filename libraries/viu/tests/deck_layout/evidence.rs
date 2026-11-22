@@ -1,20 +1,63 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
-use super::*;
 use super::layout::geometry;
+use super::*;
 
 #[test]
-fn authored_deck_builds_settle_in_ci(){
-    let path=PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/deck/examples/vfl-self-recording.json");
-    let doc:Value=serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();let mut deck=Deck::new();
-    assert_eq!(deck.call("deck.open",json!({"path":path})).reply.unwrap().rc,0);
-    let mut count=0;
-    for slide in doc["slides"].as_array().unwrap(){for step in 0..slide["steps"].as_u64().unwrap(){
-        let model=deck.call("deck.goto",json!({"slide":slide["id"],"step":step})).model.unwrap();
-        let mut view=SceneView::with_model(model["presentation"]["scene"].as_str().unwrap(),model.clone()).unwrap();view.set_rasters(deck.rasters.clone());let ctx=egui::Context::default();viu::fonts::install(&ctx,400,600);viu::icons::install(&ctx);
-        for frame in 0..120{let mut out=ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1600.,900.))),..Default::default()},|ui|{view.show(ui);});out.textures_delta.clear();if frame==119{assert!(!out.platform_output.requested_discard(),"{}-{step}: {:?}",slide["id"],out.platform_output.request_discard_reasons);}}
-        count+=1;
-    }}
-    assert_eq!(count,21);
+fn authored_deck_builds_settle_in_ci() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../apps/deck/examples/vfl-self-recording.json");
+    let doc: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let mut deck = Deck::new();
+    assert_eq!(
+        deck.call("deck.open", json!({"path":path}))
+            .reply
+            .unwrap()
+            .rc,
+        0
+    );
+    let mut count = 0;
+    for slide in doc["slides"].as_array().unwrap() {
+        for step in 0..slide["steps"].as_u64().unwrap() {
+            let model = deck
+                .call("deck.goto", json!({"slide":slide["id"],"step":step}))
+                .model
+                .unwrap();
+            let mut view = SceneView::with_model(
+                model["presentation"]["scene"].as_str().unwrap(),
+                model.clone(),
+            )
+            .unwrap();
+            view.set_rasters(deck.rasters.clone());
+            let ctx = egui::Context::default();
+            viu::fonts::install(&ctx, 400, 600);
+            viu::icons::install(&ctx);
+            for frame in 0..120 {
+                let mut out = ctx.run_ui(
+                    egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(1600., 900.),
+                        )),
+                        ..Default::default()
+                    },
+                    |ui| {
+                        view.show(ui);
+                    },
+                );
+                out.textures_delta.clear();
+                if frame == 119 {
+                    assert!(
+                        !out.platform_output.requested_discard(),
+                        "{}-{step}: {:?}",
+                        slide["id"],
+                        out.platform_output.request_discard_reasons
+                    );
+                }
+            }
+            count += 1;
+        }
+    }
+    assert_eq!(count, 21);
 }
 #[test]
 fn comparison_row_aligns_actual_glyph_baselines() {
@@ -242,4 +285,3 @@ fn column_justify_centres_the_content() {
         "{root:?} {text:?}"
     );
 }
-
