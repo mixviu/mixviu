@@ -111,15 +111,18 @@ pub fn show(ui: &mut egui::Ui, node: &Node) {
         };
         shapes.push(shape);
     }
-    paint_shadow(ui, rect, node.ports.get("shadow"), &shapes);
+    paint_shadow(ui, rect, node.ports.get("shadow"), &shapes, format!("{rect:?}:{time}:{}:{}",node.ports["primitives"],node.ports.get("shadow").unwrap_or(&serde_json::Value::Null)));
     ui.painter().extend(shapes);
 }
 
+#[derive(Clone)]
+struct ShadowCache { signature:String, texture:egui::TextureHandle }
 fn paint_shadow(
     ui: &egui::Ui,
     rect: egui::Rect,
     spec: Option<&serde_json::Value>,
     shapes: &[Shape],
+    signature:String,
 ) {
     let Some(spec) = spec else { return };
     let Ok(shadow) = serde_json::from_value::<scene::drawing::Shadow>(spec.clone()) else {
@@ -135,6 +138,14 @@ fn paint_shadow(
         return;
     };
     let origin = rect.min - Vec2::splat(pad);
+    let key=ui.scope_id().with("drawing-shadow");
+    let draw=|texture:&egui::TextureHandle| {
+        let pos=origin+Vec2::new(shadow.offset[0],shadow.offset[1]);
+        ui.painter().image(texture.id(),egui::Rect::from_min_size(pos,Vec2::new(width as f32,height as f32)),egui::Rect::from_min_max(Pos2::ZERO,egui::pos2(1.,1.)),Color32::WHITE);
+    };
+    if let Some(cache)=ui.ctx().data_mut(|d|d.get_temp::<ShadowCache>(key)).filter(|c|c.signature==signature) {
+        draw(&cache.texture);return;
+    }
     let input = shapes
         .iter()
         .cloned()
@@ -189,21 +200,7 @@ fn paint_shadow(
         [width as usize, height as usize],
         blurred.as_raw(),
     );
-    let key = ui.scope_id().with("drawing-shadow");
-    let mut texture = ui
-        .ctx()
-        .data_mut(|d| d.get_temp::<egui::TextureHandle>(key))
-        .unwrap_or_else(|| {
-            ui.ctx()
-                .load_texture("drawing-shadow", image.clone(), Default::default())
-        });
-    texture.set(image, Default::default());
-    let pos = origin + Vec2::new(shadow.offset[0], shadow.offset[1]);
-    ui.painter().image(
-        texture.id(),
-        egui::Rect::from_min_size(pos, Vec2::new(width as f32, height as f32)),
-        egui::Rect::from_min_max(Pos2::ZERO, egui::pos2(1., 1.)),
-        Color32::WHITE,
-    );
-    ui.ctx().data_mut(|d| d.insert_temp(key, texture));
+    let texture=ui.ctx().load_texture("drawing-shadow",image,Default::default());
+    draw(&texture);
+    ui.ctx().data_mut(|d|d.insert_temp(key,ShadowCache {signature,texture}));
 }
