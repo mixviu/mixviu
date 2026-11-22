@@ -499,13 +499,31 @@ impl SceneView {
     /// Admit named text families against the renderer's actual bound font set.
     /// Retain that set for transactional model/patch validation without file IO.
     pub fn bind_fonts(&mut self, ctx: &egui::Context) -> Result<(), String> {
-        if let Some(frame) = self.frame.as_mut() { frame.bind_fonts(ctx)?; }
-        if !self.tree.nodes.values().any(|node| node.ports.contains_key("font") || node.ports.contains_key("mono_font")) {
+        if let Some(frame) = self.frame.as_mut() {
+            frame.bind_fonts(ctx)?;
+        }
+        if !self
+            .tree
+            .nodes
+            .values()
+            .any(|node| node.ports.contains_key("font") || node.ports.contains_key("mono_font"))
+        {
             return Ok(());
         }
-        let families = ctx.fonts(|fonts| fonts.definitions().families.keys().filter_map(|family| {
-            if let egui::FontFamily::Name(name) = family { Some(name.to_string()) } else { None }
-        }).collect::<BTreeSet<_>>());
+        let families = ctx.fonts(|fonts| {
+            fonts
+                .definitions()
+                .families
+                .keys()
+                .filter_map(|family| {
+                    if let egui::FontFamily::Name(name) = family {
+                        Some(name.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<BTreeSet<_>>()
+        });
         if self.font_families.as_ref() != Some(&families) {
             validate_controls(&self.tree, Some(&families))?;
             self.font_families = Some(families);
@@ -2238,10 +2256,19 @@ impl Event {
     }
 }
 
-fn validate_controls(tree: &ResolvedScene, families: Option<&BTreeSet<String>>) -> Result<(), String> {
+fn validate_controls(
+    tree: &ResolvedScene,
+    families: Option<&BTreeSet<String>>,
+) -> Result<(), String> {
     if let Some(families) = families {
         for node in tree.nodes.values() {
-            let weight = num(node, "weight").unwrap_or(if node.ports.get("bold") == Some(&Value::Bool(true)) {700.} else {400.});
+            let weight = num(node, "weight").unwrap_or(
+                if node.ports.get("bold") == Some(&Value::Bool(true)) {
+                    700.
+                } else {
+                    400.
+                },
+            );
             for port in ["font", "mono_font"] {
                 if let Some(name) = node.ports.get(port).and_then(Value::as_str) {
                     let family = toolkit::fonts::optional::family(name, weight);

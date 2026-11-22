@@ -1740,7 +1740,12 @@ impl Host {
             .or_else(|| self.output.as_ref().map(|_| &self.model))
         {
             if self.ready && !self.loaded {
-                match SceneView::with_model(&self.scene_source, projected.clone()).and_then(|mut view| { view.bind_fonts(ctx)?; Ok(view) }) {
+                match SceneView::with_model(&self.scene_source, projected.clone()).and_then(
+                    |mut view| {
+                        view.bind_fonts(ctx)?;
+                        Ok(view)
+                    },
+                ) {
                     Ok(view) => {
                         self.view = view;
                         self.view.set_rasters(self.rasters.clone());

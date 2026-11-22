@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use egui::{Color32, FontDefinitions, FontFamily, FontId};
-use toolkit::fonts::optional::{FILES, register};
 use serde_json::{Value, json};
 use std::{
     path::PathBuf,
     sync::{Arc, mpsc},
     time::Duration,
 };
+use toolkit::fonts::optional::{FILES, register};
 use viu::{
     runtime::{Completion, Program, Runtime},
     view::SceneView,
@@ -581,7 +581,6 @@ fn render_reference_scenes() {
     }
 }
 
-
 fn identity(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut defs = FontDefinitions::default();
     register(&mut defs, dir)?;
@@ -710,7 +709,9 @@ fn deck_font_identity_and_missing_bundle_control() {
     let source = "---\nscene: 1\nname: missing-font\ncitizen: deck\n---\n```mix\n{root:{widget:\"text\",text:\"heading\",font:\"Liberation Sans\"}}\n```\n";
     let mut view = SceneView::new(source).unwrap();
     let mut refusal = None;
-    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| { refusal = view.bind_fonts(ui.ctx()).err(); });
+    let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+        refusal = view.bind_fonts(ui.ctx()).err();
+    });
     output.textures_delta.clear();
     let error = refusal.expect("production validate_controls must refuse an unbound family");
     assert!(error.contains("required font family not bound"));
