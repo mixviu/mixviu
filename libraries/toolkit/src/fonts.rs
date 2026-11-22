@@ -76,8 +76,16 @@ pub fn definitions(theme: &Theme) -> FontDefinitions {
     // Optional families are chosen by the design's existing typography roles.
     for (role, target, weight) in [
         (design::TypographyRole::Ui, FontFamily::Proportional, ui),
-        (design::TypographyRole::Ui, FontFamily::Name(MEDIUM.into()), ui.saturating_add(100)),
-        (design::TypographyRole::UiDisplay, FontFamily::Name(HEADING.into()), display),
+        (
+            design::TypographyRole::Ui,
+            FontFamily::Name(MEDIUM.into()),
+            ui.saturating_add(100),
+        ),
+        (
+            design::TypographyRole::UiDisplay,
+            FontFamily::Name(HEADING.into()),
+            display,
+        ),
         (design::TypographyRole::Mono, FontFamily::Monospace, 400),
     ] {
         let record = design::active_typography(Some(theme.typography()), role);
@@ -85,7 +93,8 @@ pub fn definitions(theme: &Theme) -> FontDefinitions {
             theme.overlay().mono.as_deref()
         } else {
             theme.overlay().family.as_deref()
-        }.unwrap_or(&record.family);
+        }
+        .unwrap_or(&record.family);
         let selected = optional::family(name, weight);
         if let Some(stack) = fonts.families.get(&selected).cloned() {
             fonts.families.insert(target, stack);
@@ -126,18 +135,35 @@ mod tests {
 
     #[test]
     fn optional_families_follow_theme_choices_without_changing_defaults() {
-        let theme = Theme::embedded().with_overlay(crate::theme::Overlay {
-            family: Some("Liberation Sans".into()),
-            mono: Some("Noto Sans Mono".into()),
-            weight: Some(500),
-            ..Default::default()
-        }).unwrap();
+        let theme = Theme::embedded()
+            .with_overlay(crate::theme::Overlay {
+                family: Some("Liberation Sans".into()),
+                mono: Some("Noto Sans Mono".into()),
+                weight: Some(500),
+                ..Default::default()
+            })
+            .unwrap();
         let fonts = definitions(&theme);
-        assert_eq!(fonts.families[&FontFamily::Proportional][0], optional::FILES[0]);
-        assert_eq!(fonts.families[&FontFamily::Name(MEDIUM.into())][0], optional::FILES[1]);
-        assert_eq!(fonts.families[&FontFamily::Name(HEADING.into())][0], optional::FILES[1]);
-        assert_eq!(fonts.families[&FontFamily::Monospace][0], optional::FILES[2]);
-        assert_eq!(fonts.families[&FontFamily::Proportional][1], optional::FILES[3]);
+        assert_eq!(
+            fonts.families[&FontFamily::Proportional][0],
+            optional::FILES[0]
+        );
+        assert_eq!(
+            fonts.families[&FontFamily::Name(MEDIUM.into())][0],
+            optional::FILES[1]
+        );
+        assert_eq!(
+            fonts.families[&FontFamily::Name(HEADING.into())][0],
+            optional::FILES[1]
+        );
+        assert_eq!(
+            fonts.families[&FontFamily::Monospace][0],
+            optional::FILES[2]
+        );
+        assert_eq!(
+            fonts.families[&FontFamily::Proportional][1],
+            optional::FILES[3]
+        );
     }
 
     #[test]

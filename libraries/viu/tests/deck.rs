@@ -589,6 +589,13 @@ fn identity(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
     let ctx = egui::Context::default();
     viu::fonts::install(&ctx, 400, 600);
     ctx.set_fonts(defs);
+    let sans_bytes = std::fs::read(dir.join(FILES[0]))?;
+    let noto_bytes = std::fs::read(dir.join(FILES[3]))?;
+    let sans = swash::FontRef::from_index(&sans_bytes, 0).unwrap();
+    let noto = swash::FontRef::from_index(&noto_bytes, 0).unwrap();
+    let fallback_text = (0x20..=0xffff).filter_map(char::from_u32)
+        .find(|&c| !c.is_control() && sans.charmap().map(c) == 0 && noto.charmap().map(c) != 0)
+        .expect("Noto supplies a glyph absent from Liberation").to_string();
     let roles = [
         ("sans heading", "Heading", "Liberation Sans", 700, FILES[1]),
         ("sans body", "Body", "Liberation Sans", 400, FILES[0]),
@@ -602,7 +609,7 @@ fn identity(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
         ),
         ("mono date", "2026-11-22", "Noto Sans Mono", 400, FILES[2]),
         ("mono PR tag", "#215", "Noto Sans Mono", 700, FILES[2]),
-        ("glyph fallback", "₿", "Liberation Sans", 400, FILES[3]),
+        ("glyph fallback", fallback_text.as_str(), "Liberation Sans", 400, FILES[3]),
     ];
     let mut nodes = json!({"root":{"widget":"column","children":[]}});
     for (i, (_, text, family, weight, _)) in roles.iter().enumerate() {
