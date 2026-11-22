@@ -216,11 +216,11 @@ fn closing($name,$tagline,$address,$height=nil)
   $height=$height ?? ($tokens.canvas.height-$tokens.space.closing_top-$tokens.space.bottom)
   $runs=if type($name)=="list" then $name else [{text:$name,color:$tokens.colour.text}] end
   $name=join(map($runs,fn($run)=$run.text),"")
-  $title=merge(deck_text($name,"wordmark","text"),{size:110,line_height:110,letter_spacing:-3.3,align:"center"})
+  $title=merge(deck_text($name,"wordmark","text"),{size:$tokens.type.closing_title,line_height:$tokens.type.closing_title,letter_spacing:$tokens.type.closing_title*(-0.03),align:"center"})
 $title.spans=$runs
-  $subtitle=merge(deck_text($tagline,"tagline","mut"),{size:38,line_height:49.4,max_width:1250,wrap:true,align:"center"})
-  $link=merge(deck_text($address,"date","text"),{size:32,align:"center"})
-  return merge(column([{widget:"image",src:"brand:cyclops",w:230,h:230},{widget:"spacer",size:30},$title,{widget:"spacer",size:26},$subtitle,{widget:"spacer",size:26},$link],0),{fill:true,align:"center",justify:"center",height:$height-$tokens.space.center_bottom,padding_bottom:$tokens.space.center_bottom})
+  $subtitle=merge(deck_text($tagline,"tagline","mut"),{size:$tokens.type.closing_subtitle,line_height:$tokens.type.closing_subtitle*1.3,max_width:$tokens.space.closing_width,wrap:true,align:"center"})
+  $link=merge(deck_text($address,"date","text"),{size:$tokens.type.closing_link,align:"center"})
+  return merge(column([{widget:"image",src:"brand:cyclops",w:$tokens.space.closing_logo,h:$tokens.space.closing_logo},{widget:"spacer",size:$tokens.space.closing_top_gap},$title,{widget:"spacer",size:$tokens.space.closing_gap},$subtitle,{widget:"spacer",size:$tokens.space.closing_gap},$link],0),{fill:true,align:"center",justify:"center",height:$height-$tokens.space.center_bottom,padding_bottom:$tokens.space.center_bottom})
 end
 -- Opening sting: all geometry and continuous motion remain scene data.
 fn sting($title, $subtitle)

@@ -1377,7 +1377,7 @@ impl SceneView {
                                         for row in rows {
                                             let cross=row.iter().map(|i|sizes[*i].y).fold(0.0_f32,f32::max);let mut x=origin.x;let mut actual_height=0.0_f32;
                                             for i in row {
-                                                let child=active[i];let size=sizes[i];let top=y+if text(node,"align")=="center"{(cross-size.y).max(0.)/2.}else{0.};
+                                                let child=active[i];let size=sizes[i];let top=y+match text(node,"align"){"center"=>(cross-size.y).max(0.)/2.,"end"=>(cross-size.y).max(0.),_=>0.};
                                                 let rect=egui::Rect::from_min_size(egui::pos2(x,top),egui::vec2(size.x,ui.available_height().max(size.y)));
                                                 let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));cell.set_clip_rect(ui.clip_rect());
                                                 self.node(&mut cell,child,nodes,route,depth+1,events);let actual=cell.min_rect().size();
@@ -1408,9 +1408,9 @@ impl SceneView {
                                         let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
                                         let fill_count=active.iter().filter(|c|nodes[**c].ports.get("fill")==Some(&Value::Bool(true))).count();
                                         let fixed:f32=active.iter().filter(|c|nodes[**c].ports.get("fill")!=Some(&Value::Bool(true))).map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,false,0)).sum();
-                                        let sizes:Vec<egui::Vec2>=active.iter().map(|child|{let old=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(ui.scope_id().with((&key,"between-size",child)))).unwrap_or_default();egui::vec2(if nodes[*child].ports.get("fill")==Some(&Value::Bool(true)){(ui.available_width()-fixed).max(0.)/fill_count.max(1) as f32}else{intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,false,0)},old.y)}).collect();
+                                        let sizes:Vec<egui::Vec2>=active.iter().map(|child|{let old=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(ui.scope_id().with((&key,"between-size",child)))).unwrap_or_default();egui::vec2(if nodes[*child].ports.get("fill")==Some(&Value::Bool(true)){(ui.available_width()-fixed-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.)/fill_count.max(1) as f32}else{intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,false,0)},old.y)}).collect();
                                         let available=ui.available_width();
-                                        let gap=((available-sizes.iter().map(|s|s.x).sum::<f32>())/active.len().saturating_sub(1).max(1) as f32).max(0.);
+                                        let gap=((available-sizes.iter().map(|s|s.x).sum::<f32>())/active.len().saturating_sub(1).max(1) as f32).max(ui.spacing().item_spacing.x);
                                         let cross=sizes.iter().map(|s|s.y).fold(0.0_f32,f32::max);
                                         let origin=ui.available_rect_before_wrap().min;
                                         let mut x=origin.x;
@@ -2857,6 +2857,7 @@ fn text_baseline(ui: &egui::Ui, node: &Node) -> f32 {
 }
 
 fn bounded_layout(value: f32, maximum: f32) -> f32 {
+    let maximum = if maximum.is_finite() {maximum.clamp(0.,1e6)}else{1e6};
     if value.is_finite() {
         value.clamp(0., maximum.max(0.))
     } else {

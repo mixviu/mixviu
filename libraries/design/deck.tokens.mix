@@ -17,6 +17,7 @@ return {
     "count_delay_ms":200,"count_ms":1400
   },
   "space": {
+    "closing_logo":230,"closing_width":1250,"closing_top_gap":30,"closing_gap":26,
     "bottom":120,"card_radius":18,"card_x":32,"card_y":28,
     "center_bottom":40,"chip":12,"closing_top":64,"columns":40,
     "compact_card_x":18,"compact_card_y":14,"compact_chip_x":11,"compact_chip_y":5,
@@ -26,6 +27,7 @@ return {
     "side":96,"terminal_row":38,"top":72,"tree_row":50.75
   },
   "type": {
+    "closing_title":110,"closing_subtitle":38,"closing_link":32,
     "arrow":40,"arrow_label":18,"badge":20,"big":34,
     "caption":26,"chip":24,"chip_caption":21,"code":25,
     "date":30,"headline":68,"kicker":26,"list":31,
