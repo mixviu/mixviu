@@ -3635,9 +3635,10 @@ fn contexts_wake(
 
 #[cfg(test)]
 mod tests {
-    // request_repaint invokes this callback with the Context write lock held.
-    // Another registry user must finish before that callback returns, proving
-    // the wake path has released the registry before entering egui.
+    // Verified against egui 0.37.0 context.rs: request_repaint_of calls
+    // ContextImpl::request_repaint under Context::write, which invokes the
+    // repaint callback synchronously. The start/completion handshake below
+    // therefore brackets the registry push inside that Context write scope.
     fn registry_during_repaint(held_guard: bool) -> bool {
         use std::sync::{Arc, Mutex, mpsc};
         use std::time::Duration;
@@ -3653,14 +3654,30 @@ mod tests {
         ctx.set_request_repaint_callback(move |_| {
             let registry = registry.clone();
             let (tx, rx) = mpsc::channel();
+            let (start_tx, start_rx) = mpsc::channel();
             let user = std::thread::spawn(move || {
+                start_rx.recv_timeout(Duration::from_secs(2)).unwrap();
                 // Same registry operation as setup, concurrent with wake.
                 registry.lock().unwrap().push(egui::Context::default());
                 let _ = tx.send(());
             });
-            result_tx
-                .send(rx.recv_timeout(Duration::from_millis(200)).is_ok())
-                .unwrap();
+            start_tx.send(()).unwrap();
+            let completed = if held_guard {
+                // Only the deliberately held-guard control uses a short
+                // bound. Its user cannot complete until this callback exits.
+                assert!(matches!(
+                    rx.recv_timeout(Duration::from_millis(200)),
+                    Err(mpsc::RecvTimeoutError::Timeout)
+                ));
+                false
+            } else {
+                // Completion must precede callback exit. Two seconds is a
+                // hang backstop, not a timing discriminator for success.
+                rx.recv_timeout(Duration::from_secs(2))
+                    .expect("registry push did not complete inside repaint callback");
+                true
+            };
+            result_tx.send(completed).unwrap();
             join_tx.send(user).unwrap();
         });
         let wake = if held_guard {
@@ -3673,7 +3690,7 @@ mod tests {
             super::contexts_wake(contexts)
         };
         let worker = std::thread::spawn(move || wake());
-        let completed = result_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let completed = result_rx.recv_timeout(Duration::from_secs(5)).unwrap();
         worker.join().unwrap();
         // The negative control releases both locks after its bounded wait;
         // no detached deadlock or delayed epaint detector panic remains.

@@ -296,8 +296,8 @@ mod tests {
     }
 
     // Called with the outer read held. A barrier starts the writer, then
-    // Linux's wait channel proves it has actually queued on the lock. Merely
-    // announcing an intent to write is insufficient for a read-in-read test.
+    // Linux's wait channel or futex syscall proves it has queued on the lock.
+    // Merely announcing an intent to write is insufficient for this test.
     pub(super) fn queue_writer(ctx: &egui::Context) {
         if !CONTEND.with(|flag| flag.replace(false)) {
             return;
@@ -308,6 +308,7 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         std::thread::spawn(move || {
             start.wait();
+            // Rust 2024: libc declares gettid as an unsafe extern function.
             // SAFETY: gettid has no arguments or memory preconditions.
             tx.send(unsafe { libc::gettid() }).unwrap();
             writer.data_mut(|_| {});
@@ -315,12 +316,24 @@ mod tests {
         barrier.wait();
         let tid = rx.recv_timeout(Duration::from_secs(1)).unwrap();
         let deadline = Instant::now() + Duration::from_secs(1);
+        let task = format!("/proc/{}/task/{tid}", std::process::id());
         loop {
-            let state = std::fs::read_to_string(format!("/proc/self/task/{tid}/wchan")).unwrap();
-            if state.contains("futex") {
+            let state = std::fs::read_to_string(format!("{task}/wchan"));
+            let syscall = std::fs::read_to_string(format!("{task}/syscall"));
+            assert!(
+                state.is_ok() || syscall.is_ok(),
+                "cannot inspect queued writer: wchan={state:?}, syscall={syscall:?}"
+            );
+            let in_futex = syscall.as_ref().ok().and_then(|s| {
+                s.split_whitespace().next()?.parse::<libc::c_long>().ok()
+            }) == Some(libc::SYS_futex);
+            if state.as_ref().is_ok_and(|s| s.contains("futex")) || in_futex {
                 break;
             }
-            assert!(Instant::now() < deadline, "writer did not queue: {state}");
+            assert!(
+                Instant::now() < deadline,
+                "writer did not queue: wchan={state:?}, syscall={syscall:?}"
+            );
             std::thread::yield_now();
         }
         println!("WRITER_QUEUED");
@@ -338,6 +351,8 @@ mod tests {
             });
             CONTEND.with(|flag| flag.set(true));
             if nested {
+                // This control depends on viewport_id() taking the Context
+                // read lock; making it lock-free must fail the control loudly.
                 ui.ctx().data(|d| {
                     queue_writer(ui.ctx());
                     d.get_temp::<f32>(egui::Id::unique((
