@@ -469,6 +469,6 @@ fn gallery_and_workshop_layouts_settle() {
     }
     for source in sources {
         let mut v=SceneView::new(&source).unwrap();let ctx=egui::Context::default();
-        for frame in 0..24 {let mut o=ctx.run_ui(egui::RawInput::default(),|ui|{v.show(ui);});o.textures_delta.clear();if frame==23{assert!(!o.platform_output.requested_discard(),"{}: {:?}",v.tree.name,o.platform_output.request_discard_reasons);}}
+        for frame in 0..24 {let mut o=ctx.run_ui(egui::RawInput::default(),|ui|{v.show(ui);});o.textures_delta.clear();if frame==23{assert!(!o.platform_output.requested_discard(),"{}: {:?}",source,o.platform_output.request_discard_reasons);}}
     }
 }

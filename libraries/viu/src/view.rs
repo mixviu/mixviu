@@ -906,7 +906,7 @@ impl SceneView {
                 })
             })
             .flatten();
-        if let Some(width) = width {
+        if let Some(width) = width.filter(|_|ui.layout().is_vertical()) {
             let width = bounded_layout(width, 1e6)
                 .max(num(node, "min_width").unwrap_or(0.))
                 .min(num(node, "max_width").unwrap_or(1e6));
@@ -1179,7 +1179,7 @@ impl SceneView {
                             let mut height=0.0_f32;
                             for (column,child) in group.iter().enumerate() {
                                 let width=widths[column];let left=origin.x+widths[..column].iter().sum::<f32>()+column as f32*gap;
-                                let rect=egui::Rect::from_min_size(egui::pos2(left,top),egui::vec2(width,(ui.available_height()-(top-origin.y)).max(0.)));
+                                let rect=egui::Rect::from_min_size(egui::pos2(left,top),egui::vec2(width,(ui.available_height().min(ui.clip_rect().height())-(top-origin.y)).max(0.)));
                                 let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
                                 cell.set_width(width);
                                 cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(rect.left(),ui.clip_rect().top()),egui::pos2(rect.right(),ui.clip_rect().bottom()))));
@@ -1476,7 +1476,7 @@ impl SceneView {
                                             height=height.max(actual);x+=width+ui.spacing().item_spacing.x;
                                         }
                                         ui.allocate_space(egui::vec2(ui.available_width(),height));
-                                    } else if text(node,"align")=="baseline" {
+                                    } else if text(node,"align")=="baseline" && children(node).all(|c|nodes.get(c).is_some_and(|n|n.family=="text")) {
                                         let active:Vec<_>=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();
                                         let bases:Vec<f32>=active.iter().map(|c|text_baseline(ui,&nodes[*c])).collect();
                                         let baseline=bases.iter().copied().fold(0.0_f32,f32::max);let origin=ui.available_rect_before_wrap().min;let mut x=origin.x;let mut height=0.0_f32;
@@ -2839,11 +2839,23 @@ fn color(s: &str) -> Option<Color32> {
 
 fn text_baseline(ui: &egui::Ui, node: &Node) -> f32 {
     let cache=natural_size_key(node).with(("baseline",ui.pixels_per_point().to_bits()));if let Some(v)=measure_get::<f32>(ui,cache){return v;}
+    // Only the first line contributes to a baseline. Bound the shaping input.
     let plain = json!([{"text":text(node,"text")}]);
+    let mut remaining=4096;
+    let mut runs=Vec::new();
+    for run in node.ports.get("spans").unwrap_or(&plain).as_array().into_iter().flatten().take(64) {
+        let text:String=run["text"].as_str().unwrap_or("").chars().take_while(|c|*c!='\n').take(remaining).collect();
+        remaining-=text.chars().count();
+        let mut bounded=serde_json::Map::new();
+        for k in ["bold","mono","role","color"] {if let Some(v)=run.get(k){bounded.insert(k.into(),v.clone());}}
+        bounded.insert("text".into(),json!(text));runs.push(Value::Object(bounded));
+        if remaining==0 || run["text"].as_str().is_some_and(|s|s.contains('\n')){break;}
+    }
+    let bounded_runs=Value::Array(runs);
     let bold = node.ports.get("bold") == Some(&Value::Bool(true));
     let mut job = crate::spans::job(
         ui,
-        node.ports.get("spans").unwrap_or(&plain),
+        &bounded_runs,
         num(node, "size").unwrap_or(13.),
         node.ports.get("mono") == Some(&Value::Bool(true)),
         bold,
