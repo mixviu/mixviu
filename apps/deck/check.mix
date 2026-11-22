@@ -11,12 +11,14 @@ if $mode=="fmt" then
   exit(0)
 end
 if $mode!="check" and $mode!="focused" then raise("USAGE","check|focused|fmt (CBC only)") end
-$tests=if $mode=="focused" then ["cargo","test","-p","lib-viu","--test","deck","--test","deck_spans","--test","scene_adapter","--no-fail-fast"] else ["cargo","test","-p","lib-viu","-p","viu","--no-fail-fast"] end
+$tests=if $mode=="focused" then ["cargo","test","-p","lib-viu","--test","deck","--test","deck_spans","--test","scene_adapter","--no-fail-fast"] else ["cargo","test","-p","scene","-p","toolkit","-p","lib-viu","-p","viu","--all-targets","--no-fail-fast"] end
 $output="/tmp/deck-gallery-check-"..to_string(pid())
 $failed=false
 for $cmd in [
   $tests,
-  ["cargo","clippy","-p","lib-viu","-p","viu","--all-targets"],
+  ["cargo","test","-p","scene","-p","toolkit","-p","lib-viu","-p","viu","--doc","--no-fail-fast"],
+  ["cargo","clippy","-p","scene","-p","toolkit","-p","lib-viu","-p","viu","--all-targets"],
+  ["mix","tools/foreign_gate.mix"],
   ["cargo","fmt","--all","--","--check"],
   ["mix","apps/deck/core-test.mix"],
   ["mix","lint","apps/deck/app.mix"],

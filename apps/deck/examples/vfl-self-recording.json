@@ -50,20 +50,32 @@
         },
         "root.1": {
           "color": "#3cc8d8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 150,
           "text": "MixViu",
+          "weight": 700,
           "widget": "text"
         },
         "root.2": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "Adventures · The desk records itself",
+          "weight": 400,
           "widget": "text"
         },
         "root.3": {
           "color": "#e8edf3",
+          "font": "Noto Sans Mono",
+          "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 30,
           "text": "20 November 2026",
+          "weight": 400,
           "widget": "text"
         }
       },
@@ -121,16 +133,24 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "MIXVIU ADVENTURES · BEFORE",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.1": {
           "bold": true,
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 56,
           "text": "Every night, a desk makes the takes",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -152,8 +172,12 @@
         },
         "root.2.0": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "THE NIGHTLY EPISODE'S TUTORIAL TAKES",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -189,15 +213,23 @@
         },
         "root.2.1.0.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 20,
           "text": "script",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.1.0.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 28,
           "text": "tutorial steps",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -211,15 +243,23 @@
         },
         "root.2.1.1.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.1.1.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 18,
           "text": "",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -241,15 +281,23 @@
         },
         "root.2.1.2.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 20,
           "text": "over the Bus",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.1.2.1": {
           "color": "#3cc8d8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 28,
           "text": "apps on a desk",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -263,15 +311,23 @@
         },
         "root.2.1.3.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.1.3.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 18,
           "text": "",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -293,15 +349,23 @@
         },
         "root.2.1.4.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 20,
           "text": "capture",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.1.4.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 28,
           "text": "the screen",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -315,15 +379,23 @@
         },
         "root.2.1.5.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.1.5.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 18,
           "text": "",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -345,15 +417,23 @@
         },
         "root.2.1.6.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 20,
           "text": "media builder",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.1.6.1": {
           "color": "#5ad18a",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 28,
           "text": "narrated video",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -386,15 +466,23 @@
         },
         "root.3.0.0": {
           "color": "#f2706b",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "BUT THE DESKS CARRY NO FFMPEG",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.3.0.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "By design: no ffmpeg and no C or C++ tools on the desks. The first recorder design wrote through an ffmpeg subprocess, so on a desk it could not record.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -417,8 +505,12 @@
         },
         "root.3.1.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "SO EVERY TAKE FELL BACK",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -432,15 +524,23 @@
         },
         "root.3.1.1.0": {
           "color": "#f0b45a",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 52,
           "text": "still screenshots",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.3.1.1.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 22,
           "text": "ONE PER STEP, HELD WHILE THE NARRATION PLAYS",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -495,9 +595,12 @@
         "root.5.0.0.0": {
           "bold": true,
           "color": "#0d1117",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "before",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -519,9 +622,12 @@
         "root.5.0.1.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "recorder",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -543,9 +649,12 @@
         "root.5.0.2.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "reader",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -567,9 +676,12 @@
         "root.5.0.3.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": ".mkv",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -591,9 +703,12 @@
         "root.5.0.4.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "privacy",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -615,9 +730,12 @@
         "root.5.0.5.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "turning point",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -639,9 +757,12 @@
         "root.5.0.6.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "live",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -663,9 +784,12 @@
         "root.5.0.7.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "loose ends",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -687,9 +811,12 @@
         "root.5.0.8.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "now",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -711,16 +838,23 @@
         "root.5.0.9.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "owed",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.5.1": {
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
+          "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 14,
           "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         }
@@ -779,16 +913,24 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "THE NEW RECORDER · PR #162",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.1": {
           "bold": true,
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 56,
           "text": "The compositor records itself, as .vfl",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -811,8 +953,12 @@
         },
         "root.2.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "A TAKE IS A DIRECTORY: A LOSSLESS FRAME LOG, PURE RUST, NO FFMPEG",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -1126,8 +1272,12 @@
         },
         "root.2.1.1.0.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 22,
           "text": "key frame: the whole picture",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1150,8 +1300,12 @@
         },
         "root.2.1.1.1.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 22,
           "text": "delta: only the changed rectangles",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1174,8 +1328,12 @@
         },
         "root.2.1.1.2.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 22,
           "text": "repeat: nothing changed",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1208,8 +1366,12 @@
         },
         "root.3.0.0": {
           "color": "#5ad18a",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "THIS VIDEO'S FIRST LIVE TAKE, DESK7",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -1233,15 +1395,23 @@
         },
         "root.3.0.1.0.0": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 52,
           "text": "1,507",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.3.0.1.0.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 22,
           "text": "FRAMES IN 50 S",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1255,15 +1425,23 @@
         },
         "root.3.0.1.1.0": {
           "color": "#5ad18a",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 52,
           "text": "1,477",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.3.0.1.1.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 22,
           "text": "REPEATS",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1277,15 +1455,23 @@
         },
         "root.3.0.1.2.0": {
           "color": "#5ad18a",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 52,
           "text": "0",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.3.0.1.2.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 22,
           "text": "DROPPED",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1309,8 +1495,12 @@
         },
         "root.3.1.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "ON DISK",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -1324,22 +1514,34 @@
         },
         "root.3.1.1.0": {
           "color": "#5ad18a",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 52,
           "text": "1.97 MB",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.3.1.1.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 22,
           "text": "THE WHOLE TAKE",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.3.1.2": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "Raw pixels for the same frames: about 19 GB (1,507 × 2250 × 1400 × 4 bytes).",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1394,9 +1596,12 @@
         "root.5.0.0.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "before",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1418,9 +1623,12 @@
         "root.5.0.1.0": {
           "bold": true,
           "color": "#0d1117",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "recorder",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -1442,9 +1650,12 @@
         "root.5.0.2.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "reader",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1466,9 +1677,12 @@
         "root.5.0.3.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": ".mkv",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1490,9 +1704,12 @@
         "root.5.0.4.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "privacy",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1514,9 +1731,12 @@
         "root.5.0.5.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "turning point",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1538,9 +1758,12 @@
         "root.5.0.6.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "live",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1562,9 +1785,12 @@
         "root.5.0.7.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "loose ends",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1586,9 +1812,12 @@
         "root.5.0.8.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "now",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1610,16 +1839,23 @@
         "root.5.0.9.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "owed",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.5.1": {
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
+          "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 14,
           "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         }
@@ -1684,16 +1920,24 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "TROUBLE 1 · NOTHING COULD READ IT",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.1": {
           "bold": true,
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 56,
           "text": "A take nobody could open",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -1716,15 +1960,23 @@
         },
         "root.2.0": {
           "color": "#f2706b",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "BEFORE THE READER",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.2.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "The writer shipped first. No reader, no verify, no export. The pipeline had no way to turn a take into video.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1744,7 +1996,9 @@
           "widget": "column"
         },
         "root.3.0": {
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "spans": [
             {
@@ -1758,7 +2012,9 @@
           "wrap": true
         },
         "root.3.1": {
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "spans": [
             {
@@ -1772,7 +2028,9 @@
           "wrap": true
         },
         "root.3.2": {
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "spans": [
             {
@@ -1804,15 +2062,23 @@
         },
         "root.4.0": {
           "color": "#5ad18a",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "PR #191 · MEASURED, THEN MERGED",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.4.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "450–842 export frames per second. Synthetic 60 s 4K30 takes; exporter only, peak 65 MiB. Merged 19 Nov, on the desks that evening.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1867,9 +2133,12 @@
         "root.6.0.0.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "before",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1891,9 +2160,12 @@
         "root.6.0.1.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "recorder",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1915,9 +2187,12 @@
         "root.6.0.2.0": {
           "bold": true,
           "color": "#0d1117",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "reader",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -1939,9 +2214,12 @@
         "root.6.0.3.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": ".mkv",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1963,9 +2241,12 @@
         "root.6.0.4.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "privacy",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -1987,9 +2268,12 @@
         "root.6.0.5.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "turning point",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2011,9 +2295,12 @@
         "root.6.0.6.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "live",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2035,9 +2322,12 @@
         "root.6.0.7.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "loose ends",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2059,9 +2349,12 @@
         "root.6.0.8.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "now",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2083,16 +2376,23 @@
         "root.6.0.9.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "owed",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.6.1": {
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
+          "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 14,
           "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         }
@@ -2151,16 +2451,24 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "TROUBLE 2 · THE WRONG FILE NAME",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.1": {
           "bold": true,
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 56,
           "text": "The pipeline still asked for capture.mkv",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -2183,15 +2491,23 @@
         },
         "root.2.0": {
           "color": "#f2706b",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "EVERY NIGHT, THE RECORDER SAID NO",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.2.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "comp.record.start rc 10: expected absolute path to a VFL directory; path without .vfl extension. Auto mode fell back to stills.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2214,15 +2530,23 @@
         },
         "root.3.0": {
           "color": "#f0b45a",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "QUIETLY",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.3.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "Fallback kept the episode working, so nothing looked broken. Every night since the recorder shipped. 19 November: 4 of 4 takes fell back to stills.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2277,9 +2601,12 @@
         "root.5.0.0.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "before",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2301,9 +2628,12 @@
         "root.5.0.1.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "recorder",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2325,9 +2655,12 @@
         "root.5.0.2.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "reader",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2349,9 +2682,12 @@
         "root.5.0.3.0": {
           "bold": true,
           "color": "#0d1117",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": ".mkv",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -2373,9 +2709,12 @@
         "root.5.0.4.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "privacy",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2397,9 +2736,12 @@
         "root.5.0.5.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "turning point",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2421,9 +2763,12 @@
         "root.5.0.6.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "live",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2445,9 +2790,12 @@
         "root.5.0.7.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "loose ends",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2469,9 +2817,12 @@
         "root.5.0.8.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "now",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2493,16 +2844,23 @@
         "root.5.0.9.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "owed",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.5.1": {
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
+          "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 14,
           "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         }
@@ -2567,16 +2925,24 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "TROUBLE 3 · PRIVACY",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.1": {
           "bold": true,
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 56,
           "text": "A whole-screen take shows everything",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -2599,15 +2965,23 @@
         },
         "root.2.0": {
           "color": "#3cc8d8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "PR #193 · LISTED WINDOWS",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.2.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "Record only the named windows, over the wallpaper. Nothing else on the desk reaches the take.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2630,15 +3004,23 @@
         },
         "root.3.0": {
           "color": "#f2706b",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "FIRST SECURITY REVIEW: FAIL",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.3.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "An unlisted app's cursor could reach the take; listed windows not fenced to the recorded output. Fixed in round 2; round 3 reviews found no defects.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2661,15 +3043,23 @@
         },
         "root.4.0": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "HISTORICAL STATUS AT AUTHORING",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.4.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "At the time of writing, #193 was open and waiting for one more review.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2724,9 +3114,12 @@
         "root.6.0.0.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "before",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2748,9 +3141,12 @@
         "root.6.0.1.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "recorder",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2772,9 +3168,12 @@
         "root.6.0.2.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "reader",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2796,9 +3195,12 @@
         "root.6.0.3.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": ".mkv",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2820,9 +3222,12 @@
         "root.6.0.4.0": {
           "bold": true,
           "color": "#0d1117",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "privacy",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -2844,9 +3249,12 @@
         "root.6.0.5.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "turning point",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2868,9 +3276,12 @@
         "root.6.0.6.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "live",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2892,9 +3303,12 @@
         "root.6.0.7.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "loose ends",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2916,9 +3330,12 @@
         "root.6.0.8.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "now",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -2940,16 +3357,23 @@
         "root.6.0.9.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "owed",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.6.1": {
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
+          "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 14,
           "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         }
@@ -3014,16 +3438,24 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "THE TURNING POINT · STAGING",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.1": {
           "bold": true,
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 56,
           "text": "One trial take, end to end",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -3046,15 +3478,23 @@
         },
         "root.2.0": {
           "color": "#5ad18a",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "RECORDED ON THE STAGING DESK",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.2.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "197 frames at 30 fps; 0 dropped; about 174 KB. Verify: ok, complete, 3 markers. Export: exactly 197 × 2250 × 1400 × 4 bytes.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3088,15 +3528,23 @@
         },
         "root.3.0.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 20,
           "text": "mixd vfl export",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.3.0.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 28,
           "text": "raw frames",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3110,15 +3558,23 @@
         },
         "root.3.1.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.3.1.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 18,
           "text": "",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3140,15 +3596,23 @@
         },
         "root.3.2.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 20,
           "text": "pipe",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.3.2.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 28,
           "text": "ffmpeg",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3162,15 +3626,23 @@
         },
         "root.3.3.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.3.3.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 18,
           "text": "",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3192,15 +3664,23 @@
         },
         "root.3.4.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 20,
           "text": "mp4",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.3.4.1": {
           "color": "#5ad18a",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 28,
           "text": "197 frames, 6.567 s",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3223,15 +3703,23 @@
         },
         "root.4.0": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "17–20 NOVEMBER",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.4.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "Recorder (#162), then reader (#191), then gold and a trial take. The pipeline switched to .vfl: real assembly, a 4K take in 1.2 s. First nightly with recorded takes was still ahead.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3286,9 +3774,12 @@
         "root.6.0.0.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "before",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3310,9 +3801,12 @@
         "root.6.0.1.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "recorder",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3334,9 +3828,12 @@
         "root.6.0.2.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "reader",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3358,9 +3855,12 @@
         "root.6.0.3.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": ".mkv",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3382,9 +3882,12 @@
         "root.6.0.4.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "privacy",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3406,9 +3909,12 @@
         "root.6.0.5.0": {
           "bold": true,
           "color": "#0d1117",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "turning point",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -3430,9 +3936,12 @@
         "root.6.0.6.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "live",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3454,9 +3963,12 @@
         "root.6.0.7.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "loose ends",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3478,9 +3990,12 @@
         "root.6.0.8.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "now",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3502,16 +4017,23 @@
         "root.6.0.9.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "owed",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.6.1": {
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
+          "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 14,
           "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         }
@@ -3570,16 +4092,24 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "LIVE · STAGING",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.1": {
           "bold": true,
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 56,
           "text": "The next two minutes recorded themselves",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -3615,15 +4145,23 @@
         },
         "root.2.0.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 20,
           "text": "Bus",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.0.1": {
           "color": "#3cc8d8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 28,
           "text": "Term talks to compositor",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3637,15 +4175,23 @@
         },
         "root.2.1.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.1.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 18,
           "text": "",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3667,15 +4213,23 @@
         },
         "root.2.2.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 20,
           "text": "compositor",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.2.1": {
           "color": "#3cc8d8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 28,
           "text": "records Term as .vfl",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3689,15 +4243,23 @@
         },
         "root.2.3.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.3.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 18,
           "text": "",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3719,15 +4281,23 @@
         },
         "root.2.4.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 20,
           "text": "media builder",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.4.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 28,
           "text": "verify, export, assemble",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3741,15 +4311,23 @@
         },
         "root.2.5.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.5.1": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 18,
           "text": "",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3771,15 +4349,23 @@
         },
         "root.2.6.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 20,
           "text": "this video",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.6.1": {
           "color": "#5ad18a",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 28,
           "text": "no screenshots",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3802,15 +4388,23 @@
         },
         "root.3.0": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "THE SAME SCRIPTS THE NIGHTLY EPISODE USES",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.3.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "run.mix --mode record, then assemble.mix.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3865,9 +4459,12 @@
         "root.5.0.0.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "before",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3889,9 +4486,12 @@
         "root.5.0.1.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "recorder",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3913,9 +4513,12 @@
         "root.5.0.2.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "reader",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3937,9 +4540,12 @@
         "root.5.0.3.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": ".mkv",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3961,9 +4567,12 @@
         "root.5.0.4.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "privacy",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -3985,9 +4594,12 @@
         "root.5.0.5.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "turning point",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4009,9 +4621,12 @@
         "root.5.0.6.0": {
           "bold": true,
           "color": "#0d1117",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "live",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -4033,9 +4648,12 @@
         "root.5.0.7.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "loose ends",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4057,9 +4675,12 @@
         "root.5.0.8.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "now",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4081,16 +4702,23 @@
         "root.5.0.9.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "owed",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.5.1": {
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
+          "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 14,
           "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         }
@@ -4155,16 +4783,24 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "LOOSE ENDS",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.1": {
           "bold": true,
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 56,
           "text": "One found today, two known",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -4187,15 +4823,23 @@
         },
         "root.2.0": {
           "color": "#f0b45a",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "FOUND MAKING THIS VIDEO",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.2.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "record_busy: one take at a time. Older tutorials start their own recording inside a recorded take and are refused. New tutorials inspect the running take.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4218,15 +4862,23 @@
         },
         "root.3.0": {
           "color": "#f2706b",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "A CLOSED PIPE",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.3.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "mixd vfl export exits 1 when the encoder stops reading early. Assembly accepts exactly that case for now.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4249,15 +4901,23 @@
         },
         "root.4.0": {
           "color": "#3cc8d8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "CHROME",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.4.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "These source slides were rendered by headless Chrome. A deck app recorded live is planned to replace it.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4312,9 +4972,12 @@
         "root.6.0.0.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "before",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4336,9 +4999,12 @@
         "root.6.0.1.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "recorder",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4360,9 +5026,12 @@
         "root.6.0.2.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "reader",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4384,9 +5053,12 @@
         "root.6.0.3.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": ".mkv",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4408,9 +5080,12 @@
         "root.6.0.4.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "privacy",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4432,9 +5107,12 @@
         "root.6.0.5.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "turning point",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4456,9 +5134,12 @@
         "root.6.0.6.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "live",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4480,9 +5161,12 @@
         "root.6.0.7.0": {
           "bold": true,
           "color": "#0d1117",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "loose ends",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -4504,9 +5188,12 @@
         "root.6.0.8.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "now",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4528,16 +5215,23 @@
         "root.6.0.9.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "owed",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.6.1": {
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
+          "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 14,
           "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         }
@@ -4602,16 +5296,24 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "OUTCOME · 20 NOVEMBER",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.1": {
           "bold": true,
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 56,
           "text": "Where it stands",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -4634,15 +5336,23 @@
         },
         "root.2.0": {
           "color": "#3cc8d8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "INSIDE THE TAKE",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.2.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "Live counters read from inside the take.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4665,15 +5375,23 @@
         },
         "root.3.0": {
           "color": "#5ad18a",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "BETTER",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.3.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "Takes are real video again, recorded by the compositor. Still no ffmpeg on the desk. Every take is verified before use.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4696,15 +5414,23 @@
         },
         "root.4.0": {
           "color": "#f2706b",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "THE COST, AND WHAT IS UNKNOWN",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.4.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "Tonight's nightly was the first, with no record of it yet. The media builder still encodes with ffmpeg. Recorder cost on a desk was not benched.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4759,9 +5485,12 @@
         "root.6.0.0.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "before",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4783,9 +5512,12 @@
         "root.6.0.1.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "recorder",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4807,9 +5539,12 @@
         "root.6.0.2.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "reader",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4831,9 +5566,12 @@
         "root.6.0.3.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": ".mkv",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4855,9 +5593,12 @@
         "root.6.0.4.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "privacy",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4879,9 +5620,12 @@
         "root.6.0.5.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "turning point",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4903,9 +5647,12 @@
         "root.6.0.6.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "live",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4927,9 +5674,12 @@
         "root.6.0.7.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "loose ends",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -4951,9 +5701,12 @@
         "root.6.0.8.0": {
           "bold": true,
           "color": "#0d1117",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "now",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -4975,16 +5728,23 @@
         "root.6.0.9.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "owed",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.6.1": {
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
+          "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 14,
           "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         }
@@ -5037,16 +5797,24 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "STILL OWED",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.1": {
           "bold": true,
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 56,
           "text": "Next: Chrome leaves the pipeline",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -5072,15 +5840,23 @@
         },
         "root.2.0.0": {
           "color": "#3cc8d8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 31,
           "text": "●",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.0.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 31,
           "text": "Merge listed windows (#193)",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -5095,15 +5871,23 @@
         },
         "root.2.1.0": {
           "color": "#3cc8d8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 31,
           "text": "●",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.1.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 31,
           "text": "Quiet exit on a closed pipe",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -5118,15 +5902,23 @@
         },
         "root.2.2.0": {
           "color": "#3cc8d8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 31,
           "text": "●",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.2.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 31,
           "text": "Bench the recorder on a desk",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -5141,15 +5933,23 @@
         },
         "root.2.3.0": {
           "color": "#3cc8d8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 31,
           "text": "●",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.3.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 31,
           "text": "Motion and captions in the compositor",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -5164,15 +5964,23 @@
         },
         "root.2.4.0": {
           "color": "#3cc8d8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 31,
           "text": "●",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.2.4.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 31,
           "text": "A deck app, recorded live",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -5227,9 +6035,12 @@
         "root.4.0.0.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "before",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -5251,9 +6062,12 @@
         "root.4.0.1.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "recorder",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -5275,9 +6089,12 @@
         "root.4.0.2.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "reader",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -5299,9 +6116,12 @@
         "root.4.0.3.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": ".mkv",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -5323,9 +6143,12 @@
         "root.4.0.4.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "privacy",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -5347,9 +6170,12 @@
         "root.4.0.5.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "turning point",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -5371,9 +6197,12 @@
         "root.4.0.6.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "live",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -5395,9 +6224,12 @@
         "root.4.0.7.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "loose ends",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -5419,9 +6251,12 @@
         "root.4.0.8.0": {
           "bold": false,
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "now",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
@@ -5443,16 +6278,23 @@
         "root.4.0.9.0": {
           "bold": true,
           "color": "#0d1117",
+          "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "text": "owed",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.4.1": {
           "color": "#8d99a8",
+          "font": "Noto Sans Mono",
+          "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 14,
           "text": "MIXVIU ADVENTURES · THE DESK RECORDS ITSELF",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         }
@@ -5516,16 +6358,24 @@
         },
         "root.0.0": {
           "color": "#8d99a8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "MIXVIU ADVENTURES",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.1": {
           "bold": true,
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 56,
           "text": "MixViu",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
@@ -5548,29 +6398,45 @@
         },
         "root.2.0": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 24,
           "text": "THE DESK RECORDS ITSELF",
+          "weight": 700,
           "widget": "text",
           "wrap": true
         },
         "root.2.1": {
           "color": "#e8edf3",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "Recorded by the compositor, read back by mixd.",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.3": {
           "color": "#3cc8d8",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "github.com/mixviu/mixviu",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },
         "root.4": {
           "color": "#f0b45a",
+          "font": "Liberation Sans",
+          "mono": false,
+          "mono_font": "Noto Sans Mono",
           "size": 26,
           "text": "MixViu Adventures",
+          "weight": 400,
           "widget": "text",
           "wrap": true
         },

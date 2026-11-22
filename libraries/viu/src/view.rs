@@ -64,6 +64,7 @@ pub struct SceneView {
     widgets: Widgets,
     focus_error: Option<String>,
     shown_revision: Option<u64>,
+    font_families: Option<BTreeSet<String>>,
     slots: BTreeMap<String, egui::Rect>,
     overlays: BTreeSet<String>,
     #[cfg(test)]
@@ -144,7 +145,7 @@ impl SceneView {
         }
         let tree = scene::resolve(&document).map_err(|e| format!("{e:?}"))?;
         let lists = validate_templates(&tree).map_err(|e| e.to_string())?;
-        validate_controls(&tree)?;
+        validate_controls(&tree, None)?;
         let bindings = scene::bindings::BindingSet::from_resolved(&tree);
         let model_bytes = crate::model_patch::model_bytes(&tree.model);
         Ok(Self {
@@ -166,6 +167,7 @@ impl SceneView {
             widgets: Widgets::default(),
             focus_error: None,
             shown_revision: None,
+            font_families: None,
             slots: BTreeMap::new(),
             overlays: BTreeSet::new(),
             #[cfg(test)]
@@ -210,7 +212,7 @@ impl SceneView {
             #[cfg(feature = "test-support")]
             let rebound = started.map(|_| crate::app_host::test_support::thread_cpu());
             let lists = validate_templates(&self.tree).map_err(|e| e.to_string())?;
-            validate_controls(&self.tree)?;
+            validate_controls(&self.tree, self.font_families.as_ref())?;
             self.validate_hosted_overlays(&self.tree)?;
             #[cfg(feature = "test-support")]
             let validated = started.map(|_| crate::app_host::test_support::thread_cpu());
@@ -460,7 +462,7 @@ impl SceneView {
             )
         });
         let lists = validate_templates(&candidate).map_err(|e| e.to_string())?;
-        validate_controls(&candidate)?;
+        validate_controls(&candidate, self.font_families.as_ref())?;
         #[cfg(feature = "test-support")]
         let rebuilt = probe.map(|_| {
             (
@@ -494,7 +496,46 @@ impl SceneView {
         Ok(())
     }
 
+    /// Admit named text families against the renderer's actual bound font set.
+    /// Retain that set for transactional model/patch validation without file IO.
+    pub fn bind_fonts(&mut self, ctx: &egui::Context) -> Result<(), String> {
+        if let Some(frame) = self.frame.as_mut() {
+            frame.bind_fonts(ctx)?;
+        }
+        if !self
+            .tree
+            .nodes
+            .values()
+            .any(|node| node.ports.contains_key("font") || node.ports.contains_key("mono_font"))
+        {
+            return Ok(());
+        }
+        let families = ctx.fonts(|fonts| {
+            fonts
+                .definitions()
+                .families
+                .keys()
+                .filter_map(|family| {
+                    if let egui::FontFamily::Name(name) = family {
+                        Some(name.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<BTreeSet<_>>()
+        });
+        if self.font_families.as_ref() != Some(&families) {
+            validate_controls(&self.tree, Some(&families))?;
+            self.font_families = Some(families);
+        }
+        Ok(())
+    }
+
     pub fn show(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
+        if let Err(error) = self.bind_fonts(ui.ctx()) {
+            ui.colored_label(Color32::RED, error);
+            return Vec::new();
+        }
         toolkit::scene_motion::install(ui.ctx());
         ui.ctx()
             .data_mut(|d| d.insert_temp(egui::Id::unique("viu-editor-focused"), false));
@@ -1076,8 +1117,11 @@ impl SceneView {
                     "text" => {
                         let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(ui.visuals().text_color()).to_array();
                         let number = node.ports.get("number").map(|spec| self.numbers.text(ui, &key, spec, node.ports.get("motion") != Some(&Value::Bool(false))));
-                        if let Some(spans) = node.ports.get("spans") {
-                            let mut job = crate::spans::job(ui, spans, num(node,"size").unwrap_or(13.0), node.ports.get("mono") == Some(&Value::Bool(true)), node.ports.get("bold") == Some(&Value::Bool(true)), Color32::from_rgba_unmultiplied(colour[0], colour[1], colour[2], colour[3]));
+                        let plain = json!([{"text":number.as_deref().unwrap_or_else(||text(node,"text"))}]);
+                        if node.ports.contains_key("spans") || node.ports.contains_key("font") || node.ports.contains_key("mono_font") {
+                            let spans = node.ports.get("spans").unwrap_or(&plain);
+                            let family = (node.ports.get("font").and_then(Value::as_str), num(node,"weight").unwrap_or(if node.ports.get("bold") == Some(&Value::Bool(true)) {700.} else {400.}), node.ports.get("mono_font").and_then(Value::as_str));
+                            let mut job = crate::spans::job(ui, spans, num(node,"size").unwrap_or(13.0), node.ports.get("mono") == Some(&Value::Bool(true)), node.ports.get("bold") == Some(&Value::Bool(true)), Color32::from_rgba_unmultiplied(colour[0], colour[1], colour[2], colour[3]), family);
                             job.halign = match text(node,"align") {"center"=>egui::Align::Center,"right"=>egui::Align::Max,_=>egui::Align::Min};
                             let label = egui::Label::new(job);
                             let label=if node.ports.get("wrap") == Some(&Value::Bool(true)) {label.wrap()} else {label.extend()};
@@ -2212,7 +2256,31 @@ impl Event {
     }
 }
 
-fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
+fn validate_controls(
+    tree: &ResolvedScene,
+    families: Option<&BTreeSet<String>>,
+) -> Result<(), String> {
+    if let Some(families) = families {
+        for node in tree.nodes.values() {
+            let weight = num(node, "weight").unwrap_or(
+                if node.ports.get("bold") == Some(&Value::Bool(true)) {
+                    700.
+                } else {
+                    400.
+                },
+            );
+            for port in ["font", "mono_font"] {
+                if let Some(name) = node.ports.get(port).and_then(Value::as_str) {
+                    let family = toolkit::fonts::optional::family(name, weight);
+                    if let egui::FontFamily::Name(name) = family
+                        && !families.contains(name.as_ref())
+                    {
+                        return Err(format!("required font family not bound: {name}"));
+                    }
+                }
+            }
+        }
+    }
     let mut slots = std::collections::BTreeSet::new();
     for node in tree.nodes.values() {
         if let Some(slot) = node.ports.get("window_slot") {

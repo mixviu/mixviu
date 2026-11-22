@@ -27,8 +27,25 @@ fn face(weight: u16) -> (&'static str, &'static [u8]) {
     }
 }
 pub fn install(ctx: &egui::Context, body: u16, heading: u16) {
+    install_with_font_directory(ctx, body, heading, &toolkit::fonts::optional::directory());
+}
+
+/// Install the same desktop stacks using an explicit optional-font bundle.
+/// Missing or unreadable bundles leave only the embedded desktop families.
+pub fn install_with_font_directory(
+    ctx: &egui::Context,
+    body: u16,
+    heading: u16,
+    dir: &std::path::Path,
+) {
     let key = egui::Id::unique("viu-font-weights");
-    if ctx.data(|d| d.get_temp::<(u16, u16)>(key)) == Some((body, heading)) {
+    let bundle_key = egui::Id::unique("viu-font-directory");
+    if ctx.data(|d| d.get_temp::<(u16, u16)>(key)) == Some((body, heading))
+        && ctx
+            .data(|d| d.get_temp::<std::path::PathBuf>(bundle_key))
+            .as_deref()
+            == Some(dir)
+    {
         return;
     }
     let mut fonts = FontDefinitions::default();
@@ -71,8 +88,10 @@ pub fn install(ctx: &egui::Context, body: u16, heading: u16) {
         let stack = fonts.families[&FontFamily::Name(primary.into())].clone();
         fonts.families.insert(FontFamily::Name(alias.into()), stack);
     }
+    let _ = toolkit::fonts::optional::register(&mut fonts, dir);
     ctx.set_fonts(fonts);
     ctx.data_mut(|d| d.insert_temp::<(u16, u16)>(key, (body, heading)));
+    ctx.data_mut(|d| d.insert_temp(bundle_key, dir.to_owned()));
 }
 pub fn emphasis(ctx: &egui::Context, font: FontId) -> FontId {
     if ctx
