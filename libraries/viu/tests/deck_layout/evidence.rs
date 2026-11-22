@@ -204,7 +204,7 @@ fn render_layout_steps() {
                     .values()
                     .all(|v| v.repaint_delay == std::time::Duration::MAX),
                 "{id}-{step}: capture requested repaint: {:?}",
-                output.viewport_output
+                output.viewport_output.values().map(|v| v.repaint_delay).collect::<Vec<_>>()
             );
             println!(
                 "CAPTURE_SETTLED {id}-{step}: extra harness step requests neither repaint nor discard at 2.4 pixels per point"
