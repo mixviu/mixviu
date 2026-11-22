@@ -162,9 +162,8 @@ fn owner_process() {
         serde_json::json!({"pid":broker.0.id(),"url":url}).to_string(),
     )
     .unwrap();
-    let release = (label.trim() == "negative-control").then(|| {
-        std::os::unix::net::UnixListener::bind(root.path().join("release.sock")).unwrap()
-    });
+    let release = (label.trim() == "negative-control")
+        .then(|| std::os::unix::net::UnixListener::bind(root.path().join("release.sock")).unwrap());
     println!(
         "BUS_READY {}",
         serde_json::json!({"root":root.path(),"url":url})
