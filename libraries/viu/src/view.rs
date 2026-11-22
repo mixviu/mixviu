@@ -3227,7 +3227,11 @@ mod measurement_cache_tests {
 // positions (bounded scan), rather than shaping every word on every frame.
 fn finite_available_height(ui: &egui::Ui) -> f32 {
     let height = ui.available_height();
-    if height.is_finite() { height } else { ui.clip_rect().height() }
+    if height.is_finite() {
+        height
+    } else {
+        ui.clip_rect().height()
+    }
 }
 
 fn horizontal_spacing(ui: &egui::Ui, node: &Node) -> f32 {
