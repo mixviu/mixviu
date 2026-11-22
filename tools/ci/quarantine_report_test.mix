@@ -12,7 +12,7 @@ $repo = $temp .. "/repo"
 try
   $suite = run_argv([$mix, $dir .. "/quarantine_test.mix"], {timeout: 10, stderr: "stdout"})
   check($suite.ok, "policy fixture suite failed: " .. $suite.stdout)
-  for $warning in ["QUARANTINE expired:", "QUARANTINE over 10 days old:", "QUARANTINE second entry within 14 days:"]
+  for $warning in ["::warning::QUARANTINE expired:", "::warning::QUARANTINE over 10 days old:", "::warning::QUARANTINE second entry within 14 days:"]
     check(contains($suite.stdout, $warning), "missing warning " .. $warning)
   end
   check(len(re_find($suite.stdout, "QUARANTINE expired:")) >= 2, "expiry must warn on every load")
@@ -80,13 +80,25 @@ try
   check(not $r.ok and contains($r.stdout, "target_directory must be under"), "symlink target escape accepted")
   check(not exists($temp .. "/new-target"), "target escape wrote before validation")
   mkdir($temp .. "/defaults")
+  write_file($repo .. "/tools/ci/quarantine.conf.mix", data_encode({entries: []}))
+  $out = $temp .. "/zero.jsonl"
+  $r = run_argv([$mix, $dir .. "/test_pool.mix", "--quarantine-out", $out, "--", "--lib"],
+    {cwd: $repo, timeout: 20, stderr: "stdout", env: {PATH: $repo .. "/bin:" .. env("PATH"), FIXTURE_NO_BINARIES: "1"}})
+  check($r.ok and is_file($out) and read_file($out) == "", "zero binaries did not publish empty records")
+  write_file($repo .. "/tools/ci/quarantine.conf.mix", data_encode({entries: [$entry]}))
   $r = run_argv([$mix, $dir .. "/test_pool.mix", "--", "--lib"],
     {cwd: $repo, timeout: 20, stderr: "stdout", env: {PATH: $repo .. "/bin:" .. env("PATH"), TMPDIR: $temp .. "/defaults"}})
   check($r.ok, "default private output failed")
   check(not re_match($r.stdout, "(?m)^test_pool: quarantine records:"), "pool advertised default records")
-  $files = glob($temp .. "/defaults/mix-quarantine-*/records.jsonl")
-  check(len($files) == 1, "default path not in private temp directory")
-  check(trim(run_argv_must(["stat", "-c", "%a", dirname($files[0])])) == "700", "default directory permissions")
+  check(contains($r.stdout, "GATE_QUARANTINE "), "default run did not print records")
+  check(len(glob($temp .. "/defaults/mix-quarantine-*")) == 0, "default output directory leaked")
+  for $destination in [$temp .. "/.", $temp .. "/..", $temp .. "/", $temp, "/proc/quarantine-records.jsonl"]
+    write_file($temp .. "/calls", "")
+    $r = run_argv([$mix, $dir .. "/test_pool.mix", "--quarantine-out", $destination, "--", "--lib"],
+      {cwd: $repo, timeout: 20, stderr: "stdout", env: {PATH: $repo .. "/bin:" .. env("PATH"), FIXTURE_CALLS: $temp .. "/calls"}})
+    check(not $r.ok and contains($r.stdout, "quarantine: record"), "bad record destination accepted: " .. $r.stdout)
+    check(read_file($temp .. "/calls") == "", "test ran before record path refusal")
+  end
   -- Exercise the real gate's outer catch after it has started its checks.
   -- Fake cargo succeeds; the absent target/debug/mix aborts the first pool.
   -- No Rust command is run, and the caller-owned quarantine dir is cleaned.
@@ -103,6 +115,24 @@ try
   end
   check(contains($r.stdout, "gate aborted: ") and contains($r.stdout, "target/debug/mix"), "abort reason missing: " .. $r.stdout)
   check(len(glob($temp .. "/gate-temp/mix-quarantine-*")) == 0, "aborted gate leaked quarantine directory")
+  -- Exercise the actual tree check with a small capture cap. Earlier cargo
+  -- and pool steps are fixtures; stop after tree checking at missing release_set.
+  mkdir($repo .. "/target/debug")
+  write_file($repo .. "/target/debug/mix", "#!" .. $mix .. "\n" ..
+    '$o = getopt(args(), {"quarantine-out": {arg: true}})' .. "\n" ..
+    'write_file($o.opts["quarantine-out"], "")' .. "\n")
+  chmod($repo .. "/target/debug/mix", 0o700)
+  copy($dir .. "/quarantine.mix", $repo .. "/tools/ci/quarantine.mix")
+  write_file($repo .. "/tools/cutover_gate.mix", replace(read_file($dir .. "/../cutover_gate.mix"), "max_output: 64000000", "max_output: 128"))
+  for $truncated in [false, true]
+    write_file($repo .. "/bin/cargo", "#!" .. $mix .. "\n" ..
+      'if contains(args(), "tree") then' .. "\n" ..
+      (if $truncated then 'for $i = 1 to 20 print("ordinary dependency v1.0") end' else 'print("viud v1.0")' end) .. "\nend\n")
+    $r = run_argv([$mix, $repo .. "/tools/cutover_gate.mix", "gate"],
+      {cwd: $repo, timeout: 10, stderr: "stdout", env: {PATH: $repo .. "/bin:" .. env("PATH"), TMPDIR: $temp .. "/gate-temp"}})
+    check(contains($r.stdout, "VIUD_EGUI_MATCH_LINES=0"), "gate did not reach egui tree check: " .. $r.stdout)
+    check(contains($r.stdout, "viud egui tree check output truncated") == $truncated, "wrong tree truncation verdict: " .. $r.stdout)
+  end
   print("quarantine report contract: PASS")
 finally
   remove_dir($temp)

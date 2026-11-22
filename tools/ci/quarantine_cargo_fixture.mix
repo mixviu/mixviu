@@ -7,6 +7,8 @@ elif contains($a, "metadata") then
   print(json_encode({workspace_root: $root, target_directory: env("FIXTURE_TARGET", $root .. "/target"),
     workspace_members: ["fixture-id"], packages: [{id: "fixture-id", name: "fixture",
       manifest_path: $root .. "/fixture/Cargo.toml", dependencies: []}]}))
+elif env("FIXTURE_NO_BINARIES") == "1" then
+  exit(0)
 else
   $runner = split(env("CARGO_TARGET_FIXTURE_HOST_RUNNER"), " ")
   $r = run_argv(concat($runner, [$root .. "/target/fixture"]), {env: {CARGO_PKG_NAME: "fixture"}})
