@@ -20,8 +20,10 @@ fn gallery_contact_sheet() {
     let mut pages = pages.map(|p| p.unwrap().path()).collect::<Vec<_>>();
     pages.sort();
     for (index, path) in pages.iter().enumerate() {
-        let mut document=scene::parse(&std::fs::read_to_string(path).unwrap()).unwrap();
-        for node in document.nodes.values_mut() {node.ports.insert("motion".into(),json!(false));}
+        let mut document = scene::parse(&std::fs::read_to_string(path).unwrap()).unwrap();
+        for node in document.nodes.values_mut() {
+            node.ports.insert("motion".into(), json!(false));
+        }
         let mut view = SceneView::new(&scene::to_source(&document)).unwrap();
         let mut harness = egui_kittest::Harness::builder()
             .with_size(egui::vec2(1600., 900.))
