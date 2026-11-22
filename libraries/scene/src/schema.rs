@@ -465,7 +465,7 @@ pub(crate) fn check_port_value(
                 .is_some_and(|t| t.is_finite() && t.abs() <= 3600.)
             && v["preset"]
                 .as_str()
-                .is_some_and(|s| motion::scene::Entrance::Name(s.into()).validate().is_ok());
+                .is_some_and(|s| motion::scene::paint_preset(s).is_ok());
         if !valid {
             out.push(Diagnostic::error(
                 "motion-value",

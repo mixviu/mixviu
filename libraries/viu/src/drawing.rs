@@ -141,6 +141,7 @@ fn paint_shadow(
         .map(|shape| egui::epaint::ClippedShape {
             clip_rect: egui::Rect::EVERYTHING,
             shape,
+            transform_after_tessellation: Default::default(),
         })
         .collect();
     for primitive in ui.ctx().tessellate(input, 1.) {
@@ -188,7 +189,7 @@ fn paint_shadow(
         [width as usize, height as usize],
         blurred.as_raw(),
     );
-    let key = ui.id().with("drawing-shadow");
+    let key = ui.scope_id().with("drawing-shadow");
     let mut texture = ui
         .ctx()
         .data_mut(|d| d.get_temp::<egui::TextureHandle>(key))

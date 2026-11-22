@@ -639,12 +639,11 @@ pub fn paint_effect(ui: &Ui, layer: LayerId, start: ShapeIdx, rect: Rect, spec: 
                         egui::pos2(rect.right() - rect.width() * clip, rect.bottom()),
                     ));
                 }
-
             });
         }
     });
     if blur > 0.05 {
-        scene_blur::apply(ui,layer,start,blur);
+        scene_blur::apply(ui, layer, start, blur);
     }
 }
 
