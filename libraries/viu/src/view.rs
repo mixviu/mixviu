@@ -982,8 +982,16 @@ impl SceneView {
                     && row_measurable(node, nodes, 0)
                 {
                     Some(
-                        intrinsic_text_width(ui, node, nodes, &self.tree.model, false, 0)
-                            .min(ui.available_width()),
+                        intrinsic_text_width(
+                            ui,
+                            node,
+                            nodes,
+                            &self.tree.model,
+                            &mut self.numbers,
+                            false,
+                            0,
+                        )
+                        .min(ui.available_width()),
                     )
                 } else {
                     None
@@ -1256,7 +1264,7 @@ impl SceneView {
                         let width=((bounded_layout(ui.available_width(),1e6)-gap*(columns-1) as f32)/columns as f32).max(num(node,"min_column_width").unwrap_or(0.0));
                         let active:Vec<_>=children(node).collect();
                         let mut widths=vec![width;columns];
-                        if node.ports.get("content_columns")==Some(&Value::Bool(true)){widths.fill(0.);for (i,c) in active.iter().enumerate(){if let Some(child)=nodes.get(*c){widths[i%columns]=widths[i%columns].max(intrinsic_text_width(ui,child,nodes,&self.tree.model,false,0));}}let total=widths.iter().sum::<f32>();let floor=num(node,"min_column_width").unwrap_or(0.);let budget=(bounded_layout(ui.available_width(),1e6)-gap*(columns-1) as f32).max(floor*columns as f32);for w in &mut widths{*w=if total>0.{floor+(budget-floor*columns as f32)*(*w)/total}else{budget/columns as f32};}}
+                        if node.ports.get("content_columns")==Some(&Value::Bool(true)){widths.fill(0.);for (i,c) in active.iter().enumerate(){if let Some(child)=nodes.get(*c){widths[i%columns]=widths[i%columns].max(intrinsic_text_width(ui,child,nodes,&self.tree.model,&mut self.numbers,false,0));}}let total=widths.iter().sum::<f32>();let floor=num(node,"min_column_width").unwrap_or(0.);let budget=(bounded_layout(ui.available_width(),1e6)-gap*(columns-1) as f32).max(floor*columns as f32);for w in &mut widths{*w=if total>0.{floor+(budget-floor*columns as f32)*(*w)/total}else{budget/columns as f32};}}
                         let origin=ui.available_rect_before_wrap().min;
                         let mut top=origin.y;
                         for group in active.chunks(columns) {
@@ -1297,7 +1305,7 @@ impl SceneView {
                     "text" => {
 
                         let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(if node.ports.get("bold")==Some(&Value::Bool(true)){ui.visuals().strong_text_color()}else{ui.visuals().text_color()});
-                        let number = node.ports.get("number").map(|spec| self.numbers.text(ui, &key, spec, node.ports.get("motion") != Some(&Value::Bool(false))));
+                        let number = rendered_number(ui, node, &mut self.numbers);
                         let width=num(node,"max_width").unwrap_or(ui.available_width()).min(ui.available_width());
                             let cache=natural_size_key(node).with(("paint",if node.ports.get("wrap")==Some(&Value::Bool(true)){width.to_bits()}else{0},self.frame_palette,ui.pixels_per_point().to_bits(),font_state_key(ui),colour.to_array(),number.as_deref()));
                         let paint_id=route.map_or_else(||key.clone(),|(list,_,_)|format!("{list}/{key}"));
@@ -1536,7 +1544,7 @@ impl SceneView {
                                     } else                                     if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) && (node.ports.get("native_spacing")!=Some(&Value::Bool(true)) || node.ports.contains_key("cross_align")) {
                                         let origin=ui.available_rect_before_wrap().min;let available=bounded_layout(ui.available_width(),1e6);let gap=ui.spacing().item_spacing;
                                         let active:Vec<_>=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();
-                                        let sizes:Vec<egui::Vec2>=active.iter().map(|c|{let old=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(ui.scope_id().with((&key,"wrap-size",c)))).unwrap_or_default();egui::vec2(if nodes[*c].ports.get("fill")==Some(&Value::Bool(true)){available}else{intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,false,0).min(available)},old.y)}).collect();
+                                        let sizes:Vec<egui::Vec2>=active.iter().map(|c|{let old=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(ui.scope_id().with((&key,"wrap-size",c)))).unwrap_or_default();egui::vec2(if nodes[*c].ports.get("fill")==Some(&Value::Bool(true)){available}else{intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,&mut self.numbers,false,0).min(available)},old.y)}).collect();
                                         let mut rows:Vec<Vec<usize>>=vec![];let mut current=vec![];let mut used=0.;
                                         for (i,size) in sizes.iter().enumerate(){if !current.is_empty() && used+size.x>available+0.01{rows.push(std::mem::take(&mut current));used=0.;}current.push(i);used+=size.x+gap.x;}
                                         if !current.is_empty(){rows.push(current);}
@@ -1574,8 +1582,8 @@ impl SceneView {
                                     } else if text(node,"justify")=="between" && node.ports.contains_key("cross_align") {
                                         let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
                                         let fill_count=active.iter().filter(|c|nodes[**c].ports.get("fill")==Some(&Value::Bool(true))).count();
-                                        let fixed:f32=active.iter().filter(|c|nodes[**c].ports.get("fill")!=Some(&Value::Bool(true))).map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,false,0)).sum();
-                                        let sizes:Vec<egui::Vec2>=active.iter().map(|child|{let old=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(ui.scope_id().with((&key,"between-size",child)))).unwrap_or_default();egui::vec2(if nodes[*child].ports.get("fill")==Some(&Value::Bool(true)){(bounded_layout(ui.available_width(),1e6)-fixed-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.)/fill_count.max(1) as f32}else{intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,false,0)},old.y)}).collect();
+                                        let fixed:f32=active.iter().filter(|c|nodes[**c].ports.get("fill")!=Some(&Value::Bool(true))).map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,&mut self.numbers,false,0)).sum();
+                                        let sizes:Vec<egui::Vec2>=active.iter().map(|child|{let old=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(ui.scope_id().with((&key,"between-size",child)))).unwrap_or_default();egui::vec2(if nodes[*child].ports.get("fill")==Some(&Value::Bool(true)){(bounded_layout(ui.available_width(),1e6)-fixed-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.)/fill_count.max(1) as f32}else{intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,&mut self.numbers,false,0)},old.y)}).collect();
                                         let available=bounded_layout(ui.available_width(),1e6);
                                         let gap=ui.spacing().item_spacing.x;let split_gap=(available-sizes.iter().map(|s|s.x).sum::<f32>()-gap*active.len().saturating_sub(1) as f32).max(0.);
                                         let cross=sizes.iter().map(|s|s.y).fold(0.0_f32,f32::max);
@@ -1600,8 +1608,8 @@ impl SceneView {
                                     } else if node.ports.contains_key("cross_align") || children(node).any(|c|nodes.get(c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)) && ["grow","shrink","basis"].iter().any(|p|num(n,p).unwrap_or(0.)>0.))) {
                                         let active:Vec<_>=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();
                                         let available=(bounded_layout(ui.available_width(),1e6)-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.);
-                                        let natural:Vec<f32>=active.iter().map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,false,0)).collect();
-                                        let minimum:Vec<f32>=active.iter().map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,true,0)).collect();
+                                        let natural:Vec<f32>=active.iter().map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,&mut self.numbers,false,0)).collect();
+                                        let minimum:Vec<f32>=active.iter().map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,&mut self.numbers,true,0)).collect();
                                         let has_grow=active.iter().any(|c|num(&nodes[*c],"grow").unwrap_or(0.)>0.);
                                         let grow:Vec<f32>=active.iter().map(|c|bounded_layout(num(&nodes[*c],"grow").filter(|v|*v>0.).unwrap_or(if nodes[*c].ports.get("fill")==Some(&Value::Bool(true)){1.}else{0.}),1000.)).collect();
                                         let mut widths:Vec<f32>=active.iter().enumerate().map(|(i,c)|num(&nodes[*c],"basis").map(|n|bounded_layout(n,available)).unwrap_or(if grow[i]>0. {0.}else{natural[i]})).collect();
@@ -1644,9 +1652,9 @@ impl SceneView {
                                         ui.allocate_space(egui::vec2(if node.ports.get("fill")==Some(&Value::Bool(true)) || total_grow>0. || text(node,"align")=="end"{bounded_layout(ui.available_width(),1e6)}else{occupied},height));
                                     } else if text(node,"align")=="baseline" && children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).all(|c|nodes.get(c).is_some_and(|n|n.family=="text")) {
                                         let active:Vec<_>=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();
-                                        let bases:Vec<f32>=active.iter().map(|c|text_baseline(ui,&nodes[*c])).collect();
+                                        let bases:Vec<f32>=active.iter().map(|c|text_baseline(ui,&nodes[*c],&mut self.numbers)).collect();
                                         let baseline=bases.iter().copied().fold(0.0_f32,f32::max);let origin=ui.available_rect_before_wrap().min;let mut x=origin.x;let mut height=0.0_f32;
-                                        for (child,base) in active.iter().zip(bases) {let width=intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,false,0);let offset=baseline-base;let pos=egui::pos2(x,origin.y+offset);let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(pos,egui::vec2(width,finite_available_height(ui)))).layout(egui::Layout::top_down(egui::Align::Min)));self.node(&mut cell,child,nodes,route,depth+1,events);height=height.max(offset+cell.min_rect().height());x+=width+ui.spacing().item_spacing.x;}
+                                        for (child,base) in active.iter().zip(bases) {let width=intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,&mut self.numbers,false,0);let offset=baseline-base;let pos=egui::pos2(x,origin.y+offset);let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(pos,egui::vec2(width,finite_available_height(ui)))).layout(egui::Layout::top_down(egui::Align::Min)));self.node(&mut cell,child,nodes,route,depth+1,events);height=height.max(offset+cell.min_rect().height());x+=width+ui.spacing().item_spacing.x;}
                                         ui.allocate_space(egui::vec2((x-origin.x-ui.spacing().item_spacing.x).max(0.),height));
                                     } else if text(node,"align")=="end" {
                                         ui.with_layout(egui::Layout::right_to_left(match cross_align(node,"center"){"start"=>egui::Align::Min,"end"=>egui::Align::Max,_=>egui::Align::Center}),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
@@ -3035,16 +3043,35 @@ fn color(s: &str) -> Option<Color32> {
     ))
 }
 
-fn text_baseline(ui: &egui::Ui, node: &Node) -> f32 {
+fn rendered_number(
+    ui: &egui::Ui,
+    node: &Node,
+    numbers: &mut crate::numbers::Numbers,
+) -> Option<String> {
+    node.ports.get("number").map(|spec| {
+        // Use the stable, list-scoped identity, independent of the animation sample.
+        let identity = node.ports["__measure_identity"].as_u64().unwrap_or(0);
+        numbers.text(
+            ui,
+            &identity.to_string(),
+            spec,
+            node.ports.get("motion") != Some(&Value::Bool(false)),
+        )
+    })
+}
+
+fn text_baseline(ui: &egui::Ui, node: &Node, numbers: &mut crate::numbers::Numbers) -> f32 {
+    let number = rendered_number(ui, node, numbers);
     let cache = natural_size_key(node).with((
         "baseline",
+        number.as_deref(),
         ui.pixels_per_point().to_bits(),
         font_state_key(ui),
     ));
     if let Some(v) = measure_get::<f32>(ui, cache) {
         return v;
     }
-    let bounded_runs = measurement_runs(node, true);
+    let bounded_runs = measurement_runs(node, true, number.as_deref());
     let bold = node.ports.get("bold") == Some(&Value::Bool(true));
     let mut job = crate::spans::job(
         ui,
@@ -3171,6 +3198,36 @@ fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, v
 mod measurement_cache_tests {
     use serde_json::{Value, json};
     #[test]
+    fn animated_number_baseline_cache_tracks_the_rendered_sample() {
+        let source = "---\nscene: 1\nname: number-cache\ncitizen: test\n---\n```mix\n{root:{widget:\"row\",align:\"baseline\",children:[\"n\",\"next\"]},n:{widget:\"text\",text:\"fallback\",number:{to:123456,ms:1000,delay_ms:0}},next:{widget:\"text\",text:\"Next\"}}\n```\n";
+        let mut view = super::SceneView::new(source).unwrap();
+        let ctx = egui::Context::default();
+        for (time, rendered) in [(0., "0"), (2., "123,456")] {
+            ctx.run_ui(
+                egui::RawInput {
+                    time: Some(time),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui);
+                    let node = &view.measurement_nodes.as_ref().unwrap().1["n"];
+                    let key = super::natural_size_key(node).with((
+                        "baseline",
+                        Some(rendered),
+                        ui.pixels_per_point().to_bits(),
+                        super::font_state_key(ui),
+                    ));
+                    assert!(
+                        super::measure_get::<f32>(ui, key).is_some(),
+                        "missing baseline sample {rendered}"
+                    );
+                },
+            )
+            .drop_without_applying_deltas();
+        }
+    }
+
+    #[test]
     fn three_hundred_texts_do_no_measurement_or_shaping_work_after_settling() {
         let mut nodes = serde_json::Map::new();
         let mut children = Vec::new();
@@ -3228,9 +3285,9 @@ mod measurement_cache_tests {
 fn finite_available_height(ui: &egui::Ui) -> f32 {
     let height = ui.available_height();
     if height.is_finite() {
-        height
+        height.max(0.)
     } else {
-        ui.clip_rect().height()
+        ui.clip_rect().height().max(0.)
     }
 }
 
@@ -3250,6 +3307,7 @@ fn intrinsic_text_width(
     node: &Node,
     nodes: &BTreeMap<String, Node>,
     model: &Value,
+    numbers: &mut crate::numbers::Numbers,
     words: bool,
     depth: usize,
 ) -> f32 {
@@ -3257,13 +3315,15 @@ fn intrinsic_text_width(
         return 0.;
     }
     if node.family == "text" {
+        let number = rendered_number(ui, node, numbers);
         let cache = natural_size_key(node).with((
             "text-widths",
+            number.as_deref(),
             ui.pixels_per_point().to_bits(),
             font_state_key(ui),
         ));
         let sizes = measure_get::<(f32, f32)>(ui, cache).unwrap_or_else(|| {
-            let runs = measurement_runs(node, false);
+            let runs = measurement_runs(node, false, number.as_deref());
             let bold = node.ports.get("bold") == Some(&Value::Bool(true));
             let mut job = crate::spans::job(
                 ui,
@@ -3372,7 +3432,7 @@ fn intrinsic_text_width(
     let widths: Vec<f32> = children(node)
         .filter_map(|c| nodes.get(c))
         .filter(|n| node.family == "grid" || n.ports.get("hidden") != Some(&Value::Bool(true)))
-        .map(|n| intrinsic_text_width(ui, n, nodes, model, words, depth + 1))
+        .map(|n| intrinsic_text_width(ui, n, nodes, model, numbers, words, depth + 1))
         .collect();
     let content = if node.family == "row" {
         widths.iter().sum::<f32>()
@@ -3493,7 +3553,7 @@ fn font_state_key(ui: &egui::Ui) -> u64 {
         .data(|d| d.get_temp::<u64>(egui::Id::new("scene-font-state")))
         .unwrap_or(0)
 }
-fn measurement_runs(node: &Node, first_line: bool) -> Value {
+fn measurement_runs(node: &Node, first_line: bool, number: Option<&str>) -> Value {
     let mut left = 4096;
     let mut out = Vec::new();
     if let Some(runs) = node.ports.get("spans").and_then(Value::as_array) {
@@ -3518,7 +3578,8 @@ fn measurement_runs(node: &Node, first_line: bool) -> Value {
             }
         }
     } else {
-        let text: String = text(node, "text")
+        let text: String = number
+            .unwrap_or_else(|| text(node, "text"))
             .chars()
             .take(4096)
             .take_while(|c| !first_line || *c != '\n')

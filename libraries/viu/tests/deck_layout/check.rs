@@ -44,6 +44,115 @@ fn shrink_and_basis_stretch_rows_keep_children_at_top() {
 }
 
 #[test]
+fn exhausted_column_keeps_manual_rows_and_width_wrapper_non_negative() {
+    let source = r#"---
+scene: 1
+name: exhausted-height
+citizen: test
+---
+```mix
+{
+ root:{widget:"column",height:40,children:["oversized","cross","baseline","width"]},
+ oversized:{widget:"image",src:"brand:cyclops",w:50,h:200},
+ cross:{widget:"row",cross_align:"start",children:["a","b"]},
+ a:{widget:"text",text:"Large",size:40},b:{widget:"text",text:"Small",size:12,fill:true},
+ baseline:{widget:"row",align:"baseline",children:["c","d"]},
+ c:{widget:"text",text:"Baseline",size:24},d:{widget:"text",text:"Small",size:12},
+ width:{widget:"text",text:"Width wrapper",width:100}
+}
+```
+"#;
+    let mut view = SceneView::new(source).unwrap();
+    let ctx = egui::Context::default();
+    for _ in 0..8 {
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.set_max_height(40.);
+            view.show(ui);
+        });
+        out.textures_delta.clear();
+        for id in [
+            "root",
+            "oversized",
+            "cross",
+            "baseline",
+            "width",
+            "a",
+            "b",
+            "c",
+            "d",
+        ] {
+            let rect = view.geometry[id];
+            assert!(
+                rect.is_finite() && rect.width() >= 0. && rect.height() >= 0.,
+                "{id}: {rect:?}"
+            );
+        }
+        assert!(view.geometry["cross"].top() >= view.geometry["oversized"].bottom());
+        for s in &out.shapes {
+            assert!(s.clip_rect.is_finite());
+            if let egui::Shape::Text(t) = &s.shape {
+                assert!(t.pos.is_finite() && t.galley.rect.is_finite());
+                assert!(t.galley.rect.width() >= 0. && t.galley.rect.height() >= 0.);
+            }
+        }
+    }
+}
+
+#[test]
+fn animated_number_in_measured_rows_reserves_its_current_rendered_width() {
+    for mode in ["cross_align:\"start\",fill:true", "align:\"baseline\""] {
+        let source = format!(
+            r#"---
+scene: 1
+name: number-width
+citizen: test
+---
+```mix
+{{root:{{widget:"row",{mode},gap:10,children:["number","next"]}},number:{{widget:"text",text:"fallback",number:{{from:0,to:123456,ms:1000,delay_ms:0}},size:32}},next:{{widget:"text",text:"Next"}}}}
+```
+"#
+        );
+        let mut view = SceneView::new(&source).unwrap();
+        let ctx = egui::Context::default();
+        let mut widths = vec![];
+        let mut samples = vec![];
+        for time in [0., 0.5, 1.1, 2., 3.] {
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    time: Some(time),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui);
+                },
+            );
+            out.textures_delta.clear();
+            let number = out
+                .shapes
+                .iter()
+                .find_map(|s| match &s.shape {
+                    egui::Shape::Text(t) if t.galley.job.text != "Next" => Some(t),
+                    _ => None,
+                })
+                .expect("rendered number");
+            assert_ne!(number.galley.job.text, "fallback");
+            let advance = view.geometry["next"].left() - view.geometry["number"].left() - 10.;
+            assert!(
+                (advance - number.galley.size().x).abs() < 1.,
+                "{mode} t={time}: {advance} versus {}",
+                number.galley.size().x
+            );
+            widths.push(advance);
+            samples.push(number.galley.job.text.clone());
+        }
+        assert_eq!(samples.first().unwrap(), "0");
+        assert_eq!(samples.last().unwrap(), "123,456");
+        assert!(widths[2] > widths[0] + 50.);
+        assert_eq!(widths[3], widths[4]);
+    }
+}
+
+#[test]
 fn manual_rows_inside_scroll_keep_all_geometry_finite() {
     for mode in [
         "wrap:true",
