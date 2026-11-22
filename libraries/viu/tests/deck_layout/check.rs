@@ -1,11 +1,25 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
 
-fn geometry(source: &str) -> std::collections::BTreeMap<String,egui::Rect> {
-    let mut view=SceneView::new(&format!("---\nscene: 1\nname: layout-test\ncitizen: test\n---\n```mix\n{source}\n```\n")).unwrap();
-    let ctx=egui::Context::default();
+fn geometry(source: &str) -> std::collections::BTreeMap<String, egui::Rect> {
+    let mut view = SceneView::new(&format!(
+        "---\nscene: 1\nname: layout-test\ncitizen: test\n---\n```mix\n{source}\n```\n"
+    ))
+    .unwrap();
+    let ctx = egui::Context::default();
     for _ in 0..8 {
-        let mut output=ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1000.,600.))),..Default::default()},|ui|{view.show(ui);});
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1000., 600.),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                view.show(ui);
+            },
+        );
         output.textures_delta.clear();
     }
     view.geometry
@@ -13,16 +27,23 @@ fn geometry(source: &str) -> std::collections::BTreeMap<String,egui::Rect> {
 
 #[test]
 fn between_keeps_a_nested_date_at_the_right_edge() {
-    let rects=geometry(r##"{root:{widget:"row",fill:true,justify:"between",children:["chips","date"]},chips:{widget:"row",children:["chip"]},chip:{widget:"text",text:"#210 #215 #214"},date:{widget:"column",padding_right:9,children:["label"]},label:{widget:"text",text:"21 NOV 2026"}}"##);
-    assert!(rects["label"].left()>rects["chips"].right()+100.);
-    assert!((rects["root"].right()-9.-rects["label"].right()).abs()<1.,"{rects:?}");
+    let rects = geometry(
+        r##"{root:{widget:"row",fill:true,justify:"between",children:["chips","date"]},chips:{widget:"row",children:["chip"]},chip:{widget:"text",text:"#210 #215 #214"},date:{widget:"column",padding_right:9,children:["label"]},label:{widget:"text",text:"21 NOV 2026"}}"##,
+    );
+    assert!(rects["label"].left() > rects["chips"].right() + 100.);
+    assert!(
+        (rects["root"].right() - 9. - rects["label"].right()).abs() < 1.,
+        "{rects:?}"
+    );
 }
 
 #[test]
 fn grid_intrinsics_cannot_move_the_next_column() {
-    let rects=geometry(r##"{root:{widget:"grid",columns:2,column_gap:40,children:["left","right"]},left:{widget:"column",fill:true,children:["wide"]},wide:{widget:"text",text:"a_very_long_unbroken_value_that_is_wider_than_the_first_grid_cell_and_must_not_move_the_second_cell",size:30},right:{widget:"column",fill:true,children:["label"]},label:{widget:"text",text:"Right column"}}"##);
-    let expected=rects["root"].left()+(rects["root"].width()+40.)/2.;
-    assert!((rects["right"].left()-expected).abs()<1.,"{rects:?}");
+    let rects = geometry(
+        r##"{root:{widget:"grid",columns:2,column_gap:40,children:["left","right"]},left:{widget:"column",fill:true,children:["wide"]},wide:{widget:"text",text:"a_very_long_unbroken_value_that_is_wider_than_the_first_grid_cell_and_must_not_move_the_second_cell",size:30},right:{widget:"column",fill:true,children:["label"]},label:{widget:"text",text:"Right column"}}"##,
+    );
+    let expected = rects["root"].left() + (rects["root"].width() + 40.) / 2.;
+    assert!((rects["right"].left() - expected).abs() < 1., "{rects:?}");
 }
 
 #[test]
@@ -84,8 +105,12 @@ fn render_layout_steps() {
     std::fs::create_dir_all(&out).unwrap();
     let document: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     for slide in document["slides"].as_array().unwrap() {
-        let source=format!("---\nscene: 1\nname: layout-input\ncitizen: deck\n---\n```mix\n{}\n```\n",slide["scene"]);
-        SceneView::new(&source).unwrap_or_else(|error|panic!("{}: {error}",slide["id"]));
+        let source = format!(
+            "---\nscene: 1\nname: layout-input\ncitizen: deck\n---\n```mix\n{}\n```\n",
+            slide["scene"]
+        );
+        let parsed=scene::parse(&source).unwrap_or_else(|error|panic!("{}: {error:?}",slide["id"]));
+        scene::resolve(&parsed).unwrap_or_else(|error|panic!("{}: {error:?}",slide["id"]));
     }
     let mut deck = Deck::new();
     let opened = deck.call("deck.open", json!({"path":path})).reply.unwrap();
