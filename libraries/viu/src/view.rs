@@ -1482,7 +1482,7 @@ impl SceneView {
                         if let Some(height)=self.stretch_heights.get(id).copied() {
                             response.rect.max.y=response.rect.max.y.max(response.rect.min.y+height);
                         }
-                        if !node.ports.contains_key("background_radials") {ui.painter().set(radial_shape,egui::Shape::rect_filled(response.rect,num(node,"radius").unwrap_or(0.),background));}
+                        if !node.ports.contains_key("background_radials") {let mut background_rect=response.rect;background_rect.max.x=(background_rect.max.x-num(node,"background_inset_right").unwrap_or(0.)).max(background_rect.min.x);ui.painter().set(radial_shape,egui::Shape::rect_filled(background_rect,num(node,"radius").unwrap_or(0.),background));}
                         if let Some(radials)=node.ports.get("background_radials") { ui.painter().set(radial_shape,self.backdrops.shape(ui.ctx(),&key,response.rect,background,radials)); }
                         if route.is_some_and(|(_, list, _)| text(list, "row") == id)
                             || node.ports.contains_key("on_click")

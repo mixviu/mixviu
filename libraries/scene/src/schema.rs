@@ -390,6 +390,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         ports.push(p("tooltip", "object", false, None));
     }
     if matches!(f, "row" | "column") {
+        ports.push(pn("background_inset_right", false, Some(0.0)));
         ports.push(p("background_radials", "list", false, None));
         ports.push(p("outline", "string", false, None));
         ports.push(pn("outline_width", false, None));
