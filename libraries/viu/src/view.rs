@@ -1457,7 +1457,7 @@ impl SceneView {
                                         let mut x=origin.x+if text(node,"align")=="end" {(available-widths.iter().sum::<f32>()).max(0.)}else{0.};let mut height=0.0_f32;
                                         for (child,width) in active.iter().zip(&widths) {
                                             let cache=row_id.with(("flex-height",child));let previous=ui.ctx().data(|d|d.get_temp::<f32>(cache)).unwrap_or(0.);
-                                            let top=origin.y+if text(node,"align")=="center" {(cross-previous).max(0.)/2.}else{0.};
+                                            let top=origin.y+match text(node,"align"){"center"=>(cross-previous).max(0.)/2.,"end"=>(cross-previous).max(0.),_=>0.};
                                             let rect=egui::Rect::from_min_size(egui::pos2(x,top),egui::vec2(*width,ui.available_height().max(previous)));
                                             let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
                                             cell.set_max_width(*width);

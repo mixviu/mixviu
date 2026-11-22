@@ -269,6 +269,8 @@ fn wrapped_compound_tags_move_as_whole_cells() {
 
 #[test]
 fn flex_basis_and_stretch_keep_weighted_cards_in_one_row() {
+    let large=geometry(r##"{root:{widget:"row",fill:true,children:["a","b"]},a:{widget:"column",grow:1,basis:1000000,children:[]},b:{widget:"column",grow:1,basis:1000000,children:[]}}"##);
+    assert!(large["a"].is_finite() && large["b"].right()<=large["root"].right()+0.01,"{large:?}");
     let rects = geometry(
         r##"{root:{widget:"row",fill:true,gap:40,align:"stretch",children:["a","b"]},a:{widget:"column",grow:1,basis:60,children:["one"]},b:{widget:"column",grow:2,basis:60,children:["three"]},one:{widget:"text",text:"short"},three:{widget:"text",text:"one\ntwo\nthree"}}"##,
     );
