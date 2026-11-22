@@ -3670,9 +3670,10 @@ mod round8_tests {
     #[test]
     fn above_budget_live_text_keeps_cached_galleys_across_frames() {
         let mut nodes=serde_json::Map::new();let mut kids=Vec::new();
-        for i in 0..4 {let id=format!("t{i}");kids.push(id.clone());nodes.insert(id,json!({"widget":"text","text":format!("{} {i}","a".repeat(100_000))}));}
+        for i in 0..4 {let id=format!("t{i}");kids.push(id.clone());nodes.insert(id,json!({"widget":"text","text":format!("= $model.t{i}")}));}
         nodes.insert("root".into(),json!({"widget":"column","children":kids}));
         let mut view=SceneView::new(&format!("---\nscene: 1\nname: budget\ncitizen: test\n---\n```mix\n{}\n```\n",Value::Object(nodes))).unwrap();
+        let mut model=serde_json::Map::new();for i in 0..4{model.insert(format!("t{i}"),json!(format!("{} {i}","a".repeat(100_000))));}view.apply_model(Value::Object(model)).unwrap();
         let ctx=egui::Context::default();let mut retained=BTreeMap::new();
         for frame in 0..5 {
             let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();
