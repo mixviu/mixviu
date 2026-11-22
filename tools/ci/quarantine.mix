@@ -75,7 +75,9 @@ fn prepare($job, $entries, $package, $target, $today)
   for $e in $es
     if not contains($names, $e.test) then bad("unknown full test name " .. $package .. "/" .. $target .. ": " .. $e.test) end
     if day($e.expires) > $today then
-      $strict.argv = concat($strict.argv, ["--skip", $e.test, "--exact"])
+      $strict.argv = concat($strict.argv, ["--skip", $e.test])
+      -- libtest accepts --exact only once; it applies to every --skip.
+      if not contains($strict.argv, "--exact") then $strict.argv = concat($strict.argv, ["--exact"]) end
       $one = $job
       $one.argv = concat($job.executable, [$e.test, "--exact"])
       $one.timeout = 60

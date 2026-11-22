@@ -1,5 +1,9 @@
 -- Fake libtest executable; fixture-only, no Rust or external test tooling.
 $a = args()
+if len(filter($a, fn($a) = $a == "--exact")) > 1 then
+  eprint("error: Option 'exact' given more than once")
+  exit(101)
+end
 $tests = ["module::tests::pass", "module::tests::fail", "module::tests::hang", "module::tests::other_fail"]
 if contains($a, "--list") then
   for $t in $tests

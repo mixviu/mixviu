@@ -31,6 +31,8 @@ $one.argv = concat($one.argv, [$fail.test, "--exact"])
 $p = $q.prepare($one, [$fail], "fixture", "fixture", $today)
 check(run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "quarantined failure failed strict replay")
 $q.replay($p.isolated)
+$p = $q.prepare($one, [$fail, $pass], "fixture", "fixture", $today)
+check(run_parallel($q.specs([$p.strict]), {max: 1})[0].ok, "two entries or existing --exact duplicated libtest flag")
 -- A different failure in the same binary remains strict.
 $other = $base
 $other.argv = concat($other.argv, ["module::tests::other_fail", "--exact"])
