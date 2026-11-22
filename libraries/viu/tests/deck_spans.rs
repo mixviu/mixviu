@@ -158,14 +158,20 @@ fn font_port_face_table_covers_every_node_and_inline_combination() {
             // Keep the full text and preceding advances: an isolated suffix
             // can land at a different subpixel phase and get another atlas UV.
             let mut reference_job = (*actual.job).clone();
-            reference_job.sections.iter_mut().find(|s| s.byte_range.contains(&offset.into())).unwrap().format.font_id.family = reference;
+            reference_job
+                .sections
+                .iter_mut()
+                .find(|s| s.byte_range.contains(&offset.into()))
+                .unwrap()
+                .format
+                .font_id
+                .family = reference;
             let expected = ctx.fonts_mut(|f| f.layout_job(reference_job));
             let actual_glyphs = glyphs(actual);
             let expected_glyphs = glyphs(&expected);
             assert!(!expected_glyphs.is_empty());
             assert_eq!(
-                actual_glyphs,
-                expected_glyphs,
+                actual_glyphs, expected_glyphs,
                 "painted face for font={font}, mono_font={mono_font}, node={node_mono}, inline={inline_mono}"
             );
         };
