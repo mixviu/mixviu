@@ -11,7 +11,7 @@ if $mode=="fmt" then
   exit(0)
 end
 if $mode!="check" and $mode!="focused" then raise("USAGE","check|focused|fmt (CBC only)") end
-$tests=if $mode=="focused" then ["cargo","test","-p","lib-viu","--test","deck","--test","deck_spans","--test","scene_adapter","--no-fail-fast"] else ["cargo","test","-p","scene","-p","motion","-p","toolkit","-p","lib-viu","-p","viu","--all-targets","--no-fail-fast"] end
+$tests=if $mode=="focused" then ["cargo","test","-p","lib-viu","--test","deck","--test","deck_spans","--test","scene_adapter","--no-fail-fast"] else ["mix","tools/ci/test_pool.mix","--jobs","4","--","-p","scene","-p","motion","-p","toolkit","-p","lib-viu","-p","viu","--all-targets"] end
 $output="/tmp/deck-gallery-check-"..to_string(pid())
 $failed=false
 for $cmd in [
