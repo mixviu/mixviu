@@ -289,6 +289,33 @@ fn chrome_entrance_contact_sheet() {
     let path = out.join("chrome-native-contact-sheet.png");
     sheet.save(&path).unwrap();
     println!("STING_CONTACT_SHEET={}", path.display());
+    for i in 6..TIMES.len() {
+        for (name, top, bottom, cyan) in [
+            ("logo", 120., 420., false),
+            ("brandline", 440., 490., false),
+            ("title", 490., 630., false),
+            ("subtitle", 630., 700., true),
+            ("bar", 700., 750., true),
+        ] {
+            let bounds = |image: &image::RgbaImage| {
+                let mut lo = u32::MAX;
+                let mut hi = 0;
+                for (x, y, p) in image.enumerate_pixels() {
+                    let yy = y as f32 / 2.4;
+                    if x > 1000 && x < 2840 && yy >= top && yy < bottom
+                        && if cyan {p[1] > 100 && p[2] > 120 && p[0] < 140}
+                           else {p[0] > 220 && p[1] > 220 && p[2] > 220}
+                    {lo=lo.min(y); hi=hi.max(y);}
+                }
+                assert!(lo <= hi, "{name}: empty painted band");
+                (lo, hi)
+            };
+            let n=bounds(&native[i]); let c=bounds(&chrome[i]);
+            let delta=(n.0 as f64+n.1 as f64-c.0 as f64-c.1 as f64)/2.;
+            println!("STING_VERTICAL time={} {name} chrome={c:?} native={n:?} offset_px={delta}",TIMES[i]);
+            assert!(delta.abs()<=4.,"{name} vertical offset {delta} at {}",TIMES[i]);
+        }
+    }
     assert_eq!(animate_check(&native, logo), Ok(()));
     assert_eq!(entrances(&native, &final_geometry), Ok(()));
     // Oracle entrance regions use the same logical column, allowing for font
