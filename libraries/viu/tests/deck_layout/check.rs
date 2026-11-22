@@ -631,7 +631,6 @@ fn auto_height_justify_keeps_natural_packing() {
     }
 }
 
-
 #[test]
 fn explicit_cross_works_with_native_spacing_wrap_and_between() {
     for extra in ["wrap:true", "justify: \"between\""] {
@@ -645,56 +644,131 @@ fn explicit_cross_works_with_native_spacing_wrap_and_between() {
 
 #[test]
 fn default_wrap_and_between_match_native_main_placement() {
-    fn positions(source:&str)->std::collections::BTreeMap<String,egui::Pos2>{
-        let mut view=SceneView::new(&format!("---\nscene: 1\nname: main-ink\ncitizen: test\n---\n```mix\n{source}\n```\n")).unwrap();
-        let ctx=egui::Context::default();let mut found=std::collections::BTreeMap::new();
+    fn positions(source: &str) -> std::collections::BTreeMap<String, egui::Pos2> {
+        let mut view = SceneView::new(&format!(
+            "---\nscene: 1\nname: main-ink\ncitizen: test\n---\n```mix\n{source}\n```\n"
+        ))
+        .unwrap();
+        let ctx = egui::Context::default();
+        let mut found = std::collections::BTreeMap::new();
         for _ in 0..8 {
-            let mut out=ctx.run_ui(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1000.,600.))),..Default::default()},|ui|{view.show(ui);});
-            out.textures_delta.clear();found.clear();
-            for shape in &out.shapes{if let egui::Shape::Text(t)=&shape.shape{found.insert(t.galley.job.text.clone(),t.pos);}}
+            let mut out = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(1000., 600.),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui);
+                },
+            );
+            out.textures_delta.clear();
+            found.clear();
+            for shape in &out.shapes {
+                if let egui::Shape::Text(t) = &shape.shape {
+                    found.insert(t.galley.job.text.clone(), t.pos);
+                }
+            }
         }
         found
     }
-    for mode in ["wrap:true","justify:\"between\""] {
-        let scene=|native:bool|format!(r#"{{root:{{widget:"row",{mode},native_spacing:{native},gap:8,children:["a","b","c"]}},a:{{widget:"text",text:"Large",size:40}},b:{{widget:"text",text:"small",size:12}},c:{{widget:"text",text:"third",size:20}}}}"#);
-        let a=positions(&scene(false));let b=positions(&scene(true));
-        if mode.starts_with("justify"){let c=positions(&scene(false).replace("native_spacing:false","native_spacing:false,cross_align:\"end\""));for id in ["Large","small","third"]{assert!((c[id].x-b[id].x).abs()<1.,"explicit cross moved x: {c:?} {b:?}");}}
-        assert_eq!(a.len(),3);assert_eq!(b.len(),3);
-        for id in ["Large","small","third"]{assert!((a[id].y-b[id].y).abs()<1.,"{mode} {id}: {a:?} {b:?}");if mode.starts_with("justify"){assert!((a[id].x-b[id].x).abs()<1.);}}
+    for mode in ["wrap:true", "justify:\"between\""] {
+        let scene = |native: bool| {
+            format!(
+                r#"{{root:{{widget:"row",{mode},native_spacing:{native},gap:8,children:["a","b","c"]}},a:{{widget:"text",text:"Large",size:40}},b:{{widget:"text",text:"small",size:12}},c:{{widget:"text",text:"third",size:20}}}}"#
+            )
+        };
+        let a = positions(&scene(false));
+        let b = positions(&scene(true));
+        if mode.starts_with("justify") {
+            let c = positions(&scene(false).replace(
+                "native_spacing:false",
+                "native_spacing:false,cross_align:\"end\"",
+            ));
+            for id in ["Large", "small", "third"] {
+                assert!(
+                    (c[id].x - b[id].x).abs() < 1.,
+                    "explicit cross moved x: {c:?} {b:?}"
+                );
+            }
+        }
+        assert_eq!(a.len(), 3);
+        assert_eq!(b.len(), 3);
+        for id in ["Large", "small", "third"] {
+            assert!((a[id].y - b[id].y).abs() < 1., "{mode} {id}: {a:?} {b:?}");
+            if mode.starts_with("justify") {
+                assert!((a[id].x - b[id].x).abs() < 1.);
+            }
+        }
     }
 }
 
 #[test]
 fn authored_height_does_not_change_legacy_center_grow_cross_positions() {
-    let scene=|height:&str|format!(r#"{{root:{{widget:"row",align:"center",{height}children:["a","b"]}},a:{{widget:"column",height:80,min_width:100,children:[]}},b:{{widget:"column",height:20,grow:1,children:[]}}}}"#);
-    let a=geometry(&scene(""));let b=geometry(&scene("height:300,"));
-    for id in ["a","b"]{assert!((a[id].top()-b[id].top()).abs()<1.);}
+    let scene = |height: &str| {
+        format!(
+            r#"{{root:{{widget:"row",align:"center",{height}children:["a","b"]}},a:{{widget:"column",height:80,min_width:100,children:[]}},b:{{widget:"column",height:20,grow:1,children:[]}}}}"#
+        )
+    };
+    let a = geometry(&scene(""));
+    let b = geometry(&scene("height:300,"));
+    for id in ["a", "b"] {
+        assert!((a[id].top() - b[id].top()).abs() < 1.);
+    }
 }
 #[test]
 fn explicit_cross_preserves_end_packing_and_plain_row_width() {
-    for flex in [false,true] {for cross in ["start","center","end"] {
-        let grow=if flex{",grow:1,max_width:100"}else{""};
-        let scene=|cross:&str|format!(r#"{{root:{{widget:"row",align:"end",fill:true,{cross}children:["a","b"]}},a:{{widget:"column",min_width:100,height:80,children:[]}},b:{{widget:"column",min_width:100,height:20{grow},children:[]}}}}"#);
-        let a=geometry(&scene(""));let b=geometry(&scene(&format!("cross_align:\"{cross}\",")));
-        for id in ["a","b"]{assert!((a[id].left()-b[id].left()).abs()<1.,"{flex} {cross}");}
-        assert!((b["root"].right()-b["b"].right()).abs()<1.);
-    }}
-    let a=geometry(r#"{root:{widget:"column",fill:true,align:"center",children:["r"]},r:{widget:"row",cross_align:"center",background:"design.panel",children:["a","b"]},a:{widget:"text",text:"one"},b:{widget:"text",text:"two"}}"#);
-    assert!(a["r"].width()<200.,"{:?}",a["r"]);
-    assert!((a["root"].center().x-a["r"].center().x).abs()<1.);
+    for flex in [false, true] {
+        for cross in ["start", "center", "end"] {
+            let grow = if flex { ",grow:1,max_width:100" } else { "" };
+            let scene = |cross: &str| {
+                format!(
+                    r#"{{root:{{widget:"row",align:"end",fill:true,{cross}children:["a","b"]}},a:{{widget:"column",min_width:100,height:80,children:[]}},b:{{widget:"column",min_width:100,height:20{grow},children:[]}}}}"#
+                )
+            };
+            let a = geometry(&scene(""));
+            let b = geometry(&scene(&format!("cross_align:\"{cross}\",")));
+            for id in ["a", "b"] {
+                assert!((a[id].left() - b[id].left()).abs() < 1., "{flex} {cross}");
+            }
+            assert!((b["root"].right() - b["b"].right()).abs() < 1.);
+        }
+    }
+    let a = geometry(
+        r#"{root:{widget:"column",fill:true,align:"center",children:["r"]},r:{widget:"row",cross_align:"center",background:"design.panel",children:["a","b"]},a:{widget:"text",text:"one"},b:{widget:"text",text:"two"}}"#,
+    );
+    assert!(a["r"].width() < 200., "{:?}", a["r"]);
+    assert!((a["root"].center().x - a["r"].center().x).abs() < 1.);
 }
 #[test]
 fn unknown_leaves_use_native_row_measurement_without_clipping() {
-    for extra in ["","wrap:true,","justify:\"between\","] {
-        let scene=|native:bool|format!(r#"{{root:{{widget:"row",{extra}native_spacing:{native},children:["a","b"]}},a:{{widget:"toggle",value:true,label:"Full checkbox label"}},b:{{widget:"button",label:"Next"}}}}"#);
-        let a=geometry(&scene(false));let b=geometry(&scene(true));
-        assert!(a["a"].width()>100.);assert!((a["a"].width()-b["a"].width()).abs()<1.);
-        assert!(a["b"].left()>=a["a"].right());
+    for extra in ["", "wrap:true,", "justify:\"between\","] {
+        let scene = |native: bool| {
+            format!(
+                r#"{{root:{{widget:"row",{extra}native_spacing:{native},children:["a","b"]}},a:{{widget:"toggle",value:true,label:"Full checkbox label"}},b:{{widget:"button",label:"Next"}}}}"#
+            )
+        };
+        let a = geometry(&scene(false));
+        let b = geometry(&scene(true));
+        assert!(a["a"].width() > 100.);
+        assert!((a["a"].width() - b["a"].width()).abs() < 1.);
+        assert!(a["b"].left() >= a["a"].right());
     }
 }
 #[test]
 fn non_text_column_distribution_falls_back_to_main_packing() {
-    let scene=|mode:&str|format!(r#"{{root:{{widget:"column",height:300,justify:"{mode}",children:["a","b"]}},a:{{widget:"button",label:"Button"}},b:{{widget:"image",src:"brand:cyclops",w:32,h:32}}}}"#);
-    let main=geometry(&scene("start"));
-    for mode in ["between","around","evenly"]{let g=geometry(&scene(mode));for id in ["a","b"]{assert_eq!(g[id],main[id],"{mode}");}}
+    let scene = |mode: &str| {
+        format!(
+            r#"{{root:{{widget:"column",height:300,justify:"{mode}",children:["a","b"]}},a:{{widget:"button",label:"Button"}},b:{{widget:"image",src:"brand:cyclops",w:32,h:32}}}}"#
+        )
+    };
+    let main = geometry(&scene("start"));
+    for mode in ["between", "around", "evenly"] {
+        let g = geometry(&scene(mode));
+        for id in ["a", "b"] {
+            assert_eq!(g[id], main[id], "{mode}");
+        }
+    }
 }
