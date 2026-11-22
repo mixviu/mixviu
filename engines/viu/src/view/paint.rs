@@ -345,7 +345,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                         let mut background_rect = rect;
                         background_rect.max.x = (background_rect.max.x
                             - number(&node, "background_inset_right").unwrap_or(0.0))
-                            .max(background_rect.min.x);
+                        .max(background_rect.min.x);
                         painter.rect_filled(background_rect, radius, fill);
                     }
                 }

@@ -179,9 +179,14 @@ outline. `compact_table`, `compact_flow` and `compact_tags` share the smaller
 table, diagram and wrapped-tag metrics. `weighted_row` accepts weights and
 optional fixed cell insets, expressed through the scene's grow and basis ports.
 `code(lines, highlighted, size, leading, inset)` accepts zero-based highlighted line
-indices and optional font size, line height and horizontal inset. Each selected line paints a full
-content-width dark teal band without changing the code block's line spacing.
+indices and optional font size, line height and horizontal inset. Each selected
+line paints a dark teal band without changing the code block's line spacing.
 The code gallery demonstrates the option; an omitted list preserves plain code.
+For rows and columns, `background_inset_right` crops only the fill, leaving
+content, outline and layout bounds unchanged. This reproduces the code band’s
+CSS width and negative-margin interaction without clipping its text.
+Text compounds with `shrink` reserve their natural width and share negative
+space in proportion to content width, bounded by their longest word.
 Stat captions are uppercase with the HTML letter spacing. Topic stacks use
 the scene column's vertical `justify: center` contract; their optional fourth
 argument is the available section height, including bottom padding.
