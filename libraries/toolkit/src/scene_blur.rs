@@ -44,7 +44,14 @@ pub(super) fn apply(ui: &egui::Ui, layer: LayerId, start: ShapeIdx, sigma: f32) 
         v.to_bits().hash(&mut hash);
     }
     for p in &meshes {
-        for v in [p.clip_rect.min.x,p.clip_rect.min.y,p.clip_rect.max.x,p.clip_rect.max.y] {v.to_bits().hash(&mut hash);}
+        for v in [
+            p.clip_rect.min.x,
+            p.clip_rect.min.y,
+            p.clip_rect.max.x,
+            p.clip_rect.max.y,
+        ] {
+            v.to_bits().hash(&mut hash);
+        }
         let egui::epaint::Primitive::Mesh(m) = &p.primitive else {
             unreachable!()
         };
