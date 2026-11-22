@@ -1,47 +1,91 @@
--- Exercise actual processes and assert the public stdout record contract.
+-- End-to-end pool fixture: fake cargo/rustc, real recorder and child processes.
+-- No Rust build, network or installed worker tooling needed.
 $mix = realpath("/proc/self/exe")
-$test = path_join(dirname(realpath(script_path())), "quarantine_test.mix")
+$dir = dirname(realpath(script_path()))
 $q = require("quarantine.mix")
--- Validate the real list without constraining its size to zero. Every fixture
--- run uses its own temporary policy, so a list-only first-entry PR stays valid.
 $q.load("tools/ci/quarantine.conf.mix")
 $temp = trim(run_argv_must(["mktemp", "-d", "/var/tmp/quarantine-report-XXXXXX"]))
+fn check($ok, $why)
+  if not $ok then raise("TEST", $why) end
+end
+$repo = $temp .. "/repo"
 try
-  $empty_root = $temp .. "/empty"
-  $one_root = $temp .. "/one"
-  for $root in [$empty_root, $one_root]
-    mkdir($root .. "/tools/ci", {parents: true})
+  $suite = run_argv([$mix, $dir .. "/quarantine_test.mix"], {timeout: 10, stderr: "stdout"})
+  check($suite.ok, "policy fixture suite failed: " .. $suite.stdout)
+  for $warning in ["QUARANTINE expired:", "QUARANTINE over 10 days old:", "QUARANTINE second entry within 14 days:"]
+    check(contains($suite.stdout, $warning), "missing warning " .. $warning)
   end
-  $empty = $empty_root .. "/tools/ci/quarantine.conf.mix"
-  write_file($empty, data_encode({entries: []}))
-  $one = $one_root .. "/tools/ci/quarantine.conf.mix"
-  $policy = load_data("tools/ci/quarantine.conf.mix")
-  $policy.entries = [{package: "lib-viu", target: "viu",
-    test: "annotation::document::tests::hit_finds_the_topmost_object", owner: "fixture-owner",
-    ledger: "fixture ledger", evidence: "fixture job and 20 rounds", brief: "fixture fix",
-    cosign: "fixture co-sign", added: date_format(time(), "%Y-%m-%d", {utc: true}),
-    expires: date_format(time() + 604800, "%Y-%m-%d", {utc: true})}]
-  write_file($one, data_encode($policy))
-  for $root in [$empty_root, $one_root]
-    $r = run_argv([$mix, $test], {cwd: $root, timeout: 5, stderr: "stdout"})
+  check(len(re_find($suite.stdout, "QUARANTINE expired:")) >= 2, "expiry must warn on every load")
+  mkdir($repo .. "/tools/ci", {parents: true})
+  mkdir($repo .. "/bin")
+  mkdir($repo .. "/target")
+  $fixture = $repo .. "/target/fixture"
+  write_file($fixture, replace(read_file($dir .. "/quarantine_fixture.mix"), "#!/usr/local/bin/mix", "#!" .. $mix))
+  chmod($fixture, 0o700)
+  for $name in ["cargo", "rustc"]
+    write_file($repo .. "/bin/" .. $name, "#!" .. $mix .. "\n" .. read_file($dir .. "/quarantine_cargo_fixture.mix"))
+    chmod($repo .. "/bin/" .. $name, 0o700)
+  end
+  write_file($temp .. "/changed", "README.md\n")
+  $today = floor(time() / 86400)
+  $entry = {package: "fixture", target: "fixture", test: "module::tests::fail", owner: "fixture-owner",
+    ledger: "ledger", evidence: "20 rounds", brief: "fix", cosign: "Fable",
+    added: date_format($today * 86400, "%Y-%m-%d", {utc: true}),
+    expires: date_format(($today + 7) * 86400, "%Y-%m-%d", {utc: true})}
+  for $mode in ["empty", "active", "retry"]
+    $active = $mode != "empty"
+    $out = $temp .. "/" .. $mode .. ".jsonl"
+    write_file($out, "old file, replaced atomically")
+    write_file($repo .. "/tools/ci/quarantine.conf.mix", data_encode({entries: (if $active then [$entry] else [] end)}))
+    write_file($temp .. "/calls", "")
+    write_file($temp .. "/retry", "")
+    $r = run_argv([$mix, $dir .. "/test_pool.mix", "--jobs", "1", "--quarantine-out", $out, "--", "--lib"],
+      {cwd: $repo, timeout: 20, stderr: "stdout", env: {PATH: $repo .. "/bin:" .. env("PATH"),
+        FIXTURE_RETRY: (if $mode == "retry" then "1" else "0" end), FIXTURE_CALLS: $temp .. "/calls", TEST_POOL_RETRY_REPORT: $temp .. "/retry",
+        TEST_POOL_CHANGED_PATHS_FILE: $temp .. "/changed", GITHUB_ACTIONS: "false"}})
     print($r.stdout)
-    if not $r.ok then raise("TEST", "quarantine fixtures failed or exceeded 5 seconds") end
-    $records = map(filter(lines($r.stdout), fn($l) = starts_with($l, "GATE_QUARANTINE ")),
-      fn($l) = json_parse(substr($l, len("GATE_QUARANTINE "))))
-    if not deep_eq(map($records, fn($r) = $r.result), ["fail", "timeout", "pass"]) then
-      raise("TEST", "quarantine records missing or wrong: " .. json_encode($records))
+    check($r.ok == $active, "pool fixture exit status wrong")
+    check(contains($r.stdout, "retry one retry"), "retry policy was not enabled")
+    check(contains($r.stdout, "::warning::FLAKY:") == ($mode == "retry"), "wrong retry/FLAKY policy")
+    check((read_file($temp .. "/retry") != "") == ($mode == "retry"), "wrong retry report")
+    $records = map(filter(lines(read_file($out)), fn($l) = $l != ""), fn($l) = json_parse($l))
+    check(not re_match($r.stdout, "(?m)^(test_pool: quarantine records:|GATE_QUARANTINE .*forged|::stop-commands::|::error::forged)"), "child impersonated pool output")
+    check(contains($r.stdout, "child: \"test_pool: quarantine records:"), "spoofed pointer fixture absent")
+    check(contains($r.stdout, "child: " .. json_encode("ordinary text" .. chr(13) .. "test_pool: overwritten")), "CR overwrite not neutralised")
+    check(contains($r.stdout, "\ntest module::tests::fail ... FAILED\n"), "libtest failure line changed")
+    check(contains($r.stdout, "\nthread 'module::tests::fail' (123) panicked at fixture.rs:7:9:\n"), "panic line changed")
+    check(trim(run_argv_must(["stat", "-c", "%a", $out])) == "600", "record permissions not private")
+    check(len($records) == (if $active then 1 else 0 end), "record count wrong or child forged record accepted")
+    if $active then
+      check($records[0].result == "fail" and $records[0].test == $entry.test, "wrong pool record")
+      check(read_file($temp .. "/calls") == (if $mode == "retry" then "fail\nretry-write\n" else "fail\n" end), "quarantined failure retried")
+      check(contains($r.stdout, "(retry, alone)") == ($mode == "retry"), "wrong retry count")
+      if $mode == "retry" then check(read_file($repo .. "/target/quarantine-decoy.jsonl") == "forged retry records\n", "retry did not write decoy") end
+      check(deep_eq(sort(keys($records[0])), sort(["package", "target", "test", "result", "expires", "owner"])), "record schema wrong")
     end
-    for $record in $records
-      if not deep_eq(sort(keys($record)), sort(["package", "target", "test", "result", "expires", "owner"])) then
-        raise("TEST", "record schema changed")
-      end
-    end
-    for $message in ["QUARANTINE expired:", "QUARANTINE over 10 days old:", "QUARANTINE second entry within 14 days:"]
-      if not contains($r.stdout, $message) then raise("TEST", "missing warning " .. $message) end
-    end
-    if contains($r.stdout, "FLAKY") then raise("TEST", "quarantined result became FLAKY") end
   end
-  print("quarantine fixture suites: empty and one-entry policy copies PASS")
+  for $case in ["target", "record"]
+    $out = if $case == "record" then $repo .. "/bad.jsonl" else $temp .. "/bad.jsonl" end
+    $r = run_argv([$mix, $dir .. "/test_pool.mix", "--quarantine-out", $out, "--", "--lib"],
+      {cwd: $repo, timeout: 20, stderr: "stdout", env: {PATH: $repo .. "/bin:" .. env("PATH"),
+        FIXTURE_TARGET: (if $case == "target" then $temp else $repo .. "/target" end)}})
+    check(not $r.ok, "unsafe " .. $case .. " path accepted")
+    check(contains($r.stdout, (if $case == "target" then "target_directory must be under" else "record path must be outside" end)), "wrong path refusal")
+    check(not exists($out), "unsafe path was written")
+  end
+  run_argv_must(["ln", "-s", $temp, $repo .. "/escaped-target"])
+  $r = run_argv([$mix, $dir .. "/test_pool.mix", "--quarantine-out", $temp .. "/escaped.jsonl", "--", "--lib"],
+    {cwd: $repo, timeout: 20, stderr: "stdout", env: {PATH: $repo .. "/bin:" .. env("PATH"), FIXTURE_TARGET: $repo .. "/escaped-target/new-target"}})
+  check(not $r.ok and contains($r.stdout, "target_directory must be under"), "symlink target escape accepted")
+  check(not exists($temp .. "/new-target"), "target escape wrote before validation")
+  mkdir($temp .. "/defaults")
+  $r = run_argv([$mix, $dir .. "/test_pool.mix", "--", "--lib"],
+    {cwd: $repo, timeout: 20, stderr: "stdout", env: {PATH: $repo .. "/bin:" .. env("PATH"), TMPDIR: $temp .. "/defaults"}})
+  check($r.ok, "default private output failed")
+  check(not re_match($r.stdout, "(?m)^test_pool: quarantine records:"), "pool advertised default records")
+  $files = glob($temp .. "/defaults/mix-quarantine-*/records.jsonl")
+  check(len($files) == 1, "default path not in private temp directory")
+  check(trim(run_argv_must(["stat", "-c", "%a", dirname($files[0])])) == "700", "default directory permissions")
   print("quarantine report contract: PASS")
 finally
   remove_dir($temp)
