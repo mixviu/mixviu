@@ -30,16 +30,13 @@ fn row($items, $gap)
   return {widget:"row", children:$items, gap:$gap, align:"center"}
 end
 fn weighted_row($items,$weights,$width,$gap,$insets=[])
-  $fixed=0
-  for $inset in $insets $fixed=$fixed+$inset end
-  $weight=0
-  for $part in $weights $weight=$weight+$part end
-  $content=$width-$gap*(len($items)-1)-$fixed
   $children=[]
   for $i=0 to len($items)-1
-    push($children,merge($items[$i],{grow:$content*$weights[$i]/$weight+($insets[$i] ?? 0),fill:true}))
+    $child={}
+    for $key in keys($items[$i]) if $key!="fill" then $child[$key]=$items[$i][$key] end end
+    push($children,merge($child,{grow:$weights[$i],basis:$insets[$i] ?? 0}))
   end
-  return merge(row($children,$gap),{align:"start",fill:true})
+  return merge(row($children,$gap),{align:"start",width:$width})
 end
 fn card($title, $items, $tone,$mono_title=false)
   $heading=deck_text($title, "panel_title", $tone)
@@ -118,7 +115,7 @@ fn compact_table($rows)
     $items=[]
     for $cell in $cells
       $label=merge(deck_text($cell[0],"caption",$cell[1]),{size:if $index==0 then 17 else 20 end,weight:if $index==0 then 500 else 400 end,wrap:true})
-      push($items,merge(column([$label],0),{grow:1,fill:true,padding_left:10,padding_right:10,padding_top:5,padding_bottom:6}))
+      push($items,merge(column([$label],0),{grow:1,padding_left:10,padding_right:10,padding_top:5,padding_bottom:6}))
     end
     push($lines,merge(row($items,0),{align:"start",fill:true}))
     $index=$index+1

@@ -1349,10 +1349,11 @@ impl SceneView {
                                             })
                                         }).collect();
                                         let weight: f32 = active.iter().map(|child|num(&nodes[*child],"grow").unwrap_or(0.).max(0.)).sum();
-                                        let remaining = (ui.available_width()-fixed.iter().sum::<f32>()-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.);
+                                        let bases:Vec<f32>=active.iter().map(|child|if num(&nodes[*child],"grow").unwrap_or(0.)>0. {num(&nodes[*child],"basis").unwrap_or(0.)}else{0.}).collect();
+                                        let remaining = (ui.available_width()-fixed.iter().sum::<f32>()-bases.iter().sum::<f32>()-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.);
                                         let mut cells = |ui: &mut egui::Ui| for (i,child) in active.iter().enumerate() {
                                             let grow = num(&nodes[*child],"grow").unwrap_or(0.);
-                                            let width = if grow > 0. { remaining*grow/weight } else { fixed[i] };
+                                            let width = if grow > 0. { bases[i]+remaining*grow/weight } else { fixed[i] };
                                             let cell = row_id.with(("cross-size",child));
                                             let height = ui.ctx().data(|d|d.get_temp::<f32>(cell)).unwrap_or(0.);
                                             let actual = if grow <= 0. {
