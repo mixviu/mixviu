@@ -43,7 +43,7 @@ try
   $write_refused=false
   try
     rpc("shell","shell.scene.validate",{source:"unused",write:true})
-  catch $e
+  catch $message, $e
     $write_refused=$e.code=="EDITOR_WRITE"
   end
   check($write_refused,"read-only editor fake refuses write admission before parsing")
