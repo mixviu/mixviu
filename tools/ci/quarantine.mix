@@ -176,13 +176,13 @@ fn harness_flags($flags)
 end
 
 -- Keep libtest failures and panic sites readable by humans and hub parsers.
--- Current pool control prefixes: test_pool:, GATE_QUARANTINE and :: Actions
--- commands (warning/error/notice). Reserve all GATE_ prefixes for pool records.
+-- Reserved control prefixes: test_pool:, GATE_, TEST_TOTALS, ARTIFACTS and ::
+-- Actions commands (warning/error/notice).
 fn child_line($line)
   -- SGR colour is harmless; any other escape/control could rewrite the line.
   $plain = re_replace($line, "\\x1b\\[[0-9;:]*m", "")
   $start = trim($plain)
-  if starts_with($start, "test_pool:") or starts_with($start, "GATE_") or starts_with($start, "::") or re_match($plain, "[\\x00-\\x08\\x0b-\\x1f\\x7f-\\x9f]") then
+  if starts_with($start, "test_pool:") or starts_with($start, "GATE_") or starts_with($start, "TEST_TOTALS") or starts_with($start, "ARTIFACTS") or starts_with($start, "::") or re_match($plain, "[\\x00-\\x08\\x0b-\\x1f\\x7f-\\x9f]") then
     return "child: " .. json_encode($line)
   end
   return $line
@@ -243,7 +243,7 @@ end
 
 -- Account one pool's output and its caller-owned completion file together.
 -- Isolated summaries are printed in the stream too: move exactly their counts.
-fn gate_report($output, $path, $step)
+fn gate_report($output, $path, $step, $subtract = true)
   $totals = {passed: 0, failed: 0, ignored: 0, filtered: 0, quarantined: {passed: 0, failed: 0, ignored: 0}}
   for $line in split($output, "\n")
     $s = parse_summary($line)
@@ -268,7 +268,7 @@ fn gate_report($output, $path, $step)
       continue
     end
     $record.step = $step
-    if $record.summary != nil then
+    if $subtract and $record.summary != nil then
       $underflow = false
       for $k in ["passed", "failed", "ignored"]
         if $totals[$k] < $record.summary[$k] then $underflow = true end
@@ -285,6 +285,15 @@ fn gate_report($output, $path, $step)
     push($records, $record)
   end
   return {totals: $totals, records: $records, failed: $failed}
+end
+
+-- A cut stream cannot prove which isolated summaries reached its totals.
+-- Still validate/list completion records, but subtract none of them.
+fn gate_result($r, $path, $step)
+  $truncated = $r.stdout_truncated ?? false
+  $report = gate_report($r.stdout, $path, $step, not $truncated)
+  if $truncated then $report.failed = concat($report.failed, ["test output truncated: " .. $step]) end
+  return $report
 end
 
 fn classification($r)
