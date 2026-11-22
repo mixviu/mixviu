@@ -1,0 +1,18 @@
+-- Focused CBC checks only; never use the full merge gate here.
+fn checked($args)
+  $r = run_argv($args, {timeout: 1800, max_output: 16777216})
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then raise("CHECK", join($args, " ")) end
+end
+if trim(run_argv_must(["git", "status", "--porcelain"])) != "" then raise("DIRTY", "clean checkout required") end
+try
+  checked(["cargo", "fmt", "-p", "media-quality", "-p", "logging"])
+  checked(["cargo", "clippy", "-p", "media-quality", "-p", "logging", "--all-targets", "--", "-D", "warnings"])
+  checked(["env", "MIX_TEST_REQUIRE_FFMPEG=1", "cargo", "test", "-p", "media-quality", "-p", "logging", "--all-targets", "--", "--nocapture"])
+  checked(["/opt/mix/bin/mix", "tools/foreign_gate.mix"])
+  checked(["cargo", "test", "--profile", "release-fast", "-p", "media-quality", "--test", "metrics", "throughput_4k", "--", "--ignored", "--nocapture"])
+finally
+  print(run_argv_must(["git", "diff", "--", "libraries/media/quality", "libraries/logging/src/debug.rs", "Cargo.lock"]))
+  print(run_argv_must(["git", "restore", "--", "libraries/media/quality", "libraries/logging/src/debug.rs", "Cargo.lock"]))
+end
