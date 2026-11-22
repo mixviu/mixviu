@@ -828,7 +828,9 @@ impl BusHandler for Local {
                         .as_f64()
                         .filter(|v| v.is_finite())
                         .ok_or_else(|| failure("finite time required"))?;
-                    let values = motion::scene::paint_preset(name).map_err(failure)?.sample(at);
+                    let values = motion::scene::paint_preset(name)
+                        .map_err(failure)?
+                        .sample(at);
                     json!({"opacity":values.get(motion::Property::Opacity),
                         "offset":[values.get(motion::Property::Tx),values.get(motion::Property::Ty)],
                         "paint_effect":{"preset":name,"time":at}})

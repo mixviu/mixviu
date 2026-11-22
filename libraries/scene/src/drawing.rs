@@ -74,7 +74,10 @@ pub fn validate(value: &serde_json::Value) -> Result<(), String> {
 }
 pub fn validate_shadow(value: &serde_json::Value) -> Result<(), String> {
     let s: Shadow = serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
-    if !s.colour.iter().all(|n| n.is_finite() && (0. ..=255.).contains(n))
+    if !s
+        .colour
+        .iter()
+        .all(|n| n.is_finite() && (0. ..=255.).contains(n))
         || !(0. ..=200.).contains(&s.blur)
         || !s.offset.iter().all(|n| n.is_finite() && n.abs() <= 1000.)
     {

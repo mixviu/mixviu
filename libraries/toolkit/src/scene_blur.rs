@@ -25,7 +25,10 @@ pub(super) fn apply(ui: &egui::Ui, layer: LayerId, start: ShapeIdx, sigma: f32) 
         return;
     }
     rect = rect.expand(sigma * 3.);
-    let ppp = ui.pixels_per_point().min(2047. / rect.width()).min(2047. / rect.height());
+    let ppp = ui
+        .pixels_per_point()
+        .min(2047. / rect.width())
+        .min(2047. / rect.height());
     let size = (rect.size() * ppp).ceil();
     if size.x > 4096. || size.y > 2048. || size.x * size.y > 4_194_304. {
         return;

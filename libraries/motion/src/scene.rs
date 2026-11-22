@@ -7,11 +7,20 @@ use serde_json::Value;
 /// Paint effects supported by the externally clocked scene painter. Unlike
 /// lifecycle entrances these may require clipping or a text/vector filter.
 pub fn paint_preset(name: &str) -> Result<Preset, &'static str> {
-    if !["fade", "up", "down", "left", "right", "pop", "drop", "zoom", "wipe"].contains(&name) {
+    if ![
+        "fade", "up", "down", "left", "right", "pop", "drop", "zoom", "wipe",
+    ]
+    .contains(&name)
+    {
         return Err("unsupported paint preset");
     }
     static TABLE: std::sync::OnceLock<Vec<Preset>> = std::sync::OnceLock::new();
-    Ok(TABLE.get_or_init(crate::presets).iter().find(|p|p.name==name).expect("canonical paint preset").clone())
+    Ok(TABLE
+        .get_or_init(crate::presets)
+        .iter()
+        .find(|p| p.name == name)
+        .expect("canonical paint preset")
+        .clone())
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

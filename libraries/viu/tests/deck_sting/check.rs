@@ -18,8 +18,13 @@ fn render(model: Value) -> (image::RgbaImage, BTreeMap<String, egui::Rect>) {
         .build_ui(move |ui| {
             // Match app_host's unframed logical presentation canvas, rather
             // than the harness central panel's default eight-pixel margin.
-            let mut canvas=ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1600.,900.))));
-            canvas.set_clip_rect(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1600.,900.)));
+            let mut canvas = ui.new_child(egui::UiBuilder::new().max_rect(
+                egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600., 900.)),
+            ));
+            canvas.set_clip_rect(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1600., 900.),
+            ));
             view.show(&mut canvas);
             *captured.lock().unwrap() = view.geometry.clone();
         });
@@ -31,16 +36,28 @@ fn render(model: Value) -> (image::RgbaImage, BTreeMap<String, egui::Rect>) {
 fn samples() -> Vec<Value> {
     samples_for(None)
 }
-fn samples_for(copy:Option<(&str,&str)>) -> Vec<Value> {
+fn samples_for(copy: Option<(&str, &str)>) -> Vec<Value> {
     let mut deck = Deck::new();
-    let dir=tempfile::tempdir().unwrap();
-    if let Some((title,subtitle))=copy {
-        let mut document:Value=serde_json::from_str(include_str!("../../../../apps/deck/examples/vfl-self-recording.json")).unwrap();
-        document["slides"][0]["scene"]["root.4"]["text"]=json!(title);
-        document["slides"][0]["scene"]["root.6"]["text"]=json!(subtitle);
-        let path=dir.path().join("sting.json");std::fs::write(&path,document.to_string()).unwrap();
-        assert_eq!(deck.call("deck.open",json!({"path":path})).reply.unwrap().rc,0);
-    } else { deck.open(); }
+    let dir = tempfile::tempdir().unwrap();
+    if let Some((title, subtitle)) = copy {
+        let mut document: Value = serde_json::from_str(include_str!(
+            "../../../../apps/deck/examples/vfl-self-recording.json"
+        ))
+        .unwrap();
+        document["slides"][0]["scene"]["root.4"]["text"] = json!(title);
+        document["slides"][0]["scene"]["root.6"]["text"] = json!(subtitle);
+        let path = dir.path().join("sting.json");
+        std::fs::write(&path, document.to_string()).unwrap();
+        assert_eq!(
+            deck.call("deck.open", json!({"path":path}))
+                .reply
+                .unwrap()
+                .rc,
+            0
+        );
+    } else {
+        deck.open();
+    }
     deck.call("deck.play", json!({"slides":["sting"],"beats":[[0,10]]}));
     deck.call("viu.presentation", json!({"time":100}));
     TIMES
@@ -169,9 +186,9 @@ fn chrome_entrance_contact_sheet() {
     let oracle = PathBuf::from(std::env::var("STING_ORACLE").expect("STING_ORACLE"));
     let out = std::env::temp_dir().join("mixviu-deck-sting");
     std::fs::create_dir_all(&out).unwrap();
-    let title=std::env::var("STING_TITLE").expect("STING_TITLE");
-    let subtitle=std::env::var("STING_SUBTITLE").expect("STING_SUBTITLE");
-    let frames = samples_for(Some((&title,&subtitle)));
+    let title = std::env::var("STING_TITLE").expect("STING_TITLE");
+    let subtitle = std::env::var("STING_SUBTITLE").expect("STING_SUBTITLE");
+    let frames = samples_for(Some((&title, &subtitle)));
     let mut sheet = image::RgbaImage::new(1920, 540 * TIMES.len() as u32);
     let mut native = Vec::new();
     let mut chrome = Vec::new();
@@ -182,7 +199,7 @@ fn chrome_entrance_contact_sheet() {
         logo = geometry["root.0"];
         final_geometry = geometry;
         image.save(out.join(format!("native-{t}.png"))).unwrap();
-        let reference = image::open(oracle.join(format!("f{:05}.png",(t*30.).round() as u32)))
+        let reference = image::open(oracle.join(format!("f{:05}.png", (t * 30.).round() as u32)))
             .unwrap()
             .to_rgba8();
         assert_eq!(image.dimensions(), (3840, 2160));
