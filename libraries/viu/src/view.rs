@@ -901,7 +901,7 @@ impl SceneView {
                 num(node, "width").or_else(|| {
                     (node.ports.get("fill") == Some(&Value::Bool(true))
                         || num(node, "grow").unwrap_or(0.) > 0.
-                        || num(node, "shrink").unwrap_or(0.) > 0.)
+                        || num(node, "shrink").unwrap_or(0.) > 0. || num(node, "basis").unwrap_or(0.) > 0.)
                         .then(|| ui.available_width())
                 })
             })
@@ -1335,8 +1335,8 @@ impl SceneView {
                         }
                         let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
                         let radial_shape = ui.painter().add(egui::Shape::Noop);
-                        let frame_width = num(node,"width").or(num(node,"min_width")).or_else(|| (node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0. || num(node,"shrink").unwrap_or(0.)>0.).then(||ui.available_width()));
-                        let bound_width=num(node,"width").or_else(||(node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0. || num(node,"shrink").unwrap_or(0.)>0.).then(||ui.available_width().max(num(node,"min_width").unwrap_or(0.))));
+                        let frame_width = num(node,"width").or(num(node,"min_width")).or_else(|| (node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0. || num(node,"shrink").unwrap_or(0.)>0. || num(node,"basis").unwrap_or(0.)>0.).then(||ui.available_width()));
+                        let bound_width=num(node,"width").or_else(||(node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0. || num(node,"shrink").unwrap_or(0.)>0. || num(node,"basis").unwrap_or(0.)>0.).then(||ui.available_width().max(num(node,"min_width").unwrap_or(0.))));
                         let frame = egui::Frame::new()
                             .fill(Color32::TRANSPARENT)
                             .inner_margin(egui::Margin { left: node_padding(node, "padding_left") as i8, right: node_padding(node, "padding_right") as i8, top: node_padding(node, "padding_top") as i8, bottom: node_padding(node, "padding_bottom") as i8 })
@@ -1549,7 +1549,7 @@ impl SceneView {
             if let Some(width) = num(node, "width").or_else(|| {
                 (node.ports.get("fill") == Some(&Value::Bool(true))
                     || num(node, "grow").unwrap_or(0.) > 0.
-                    || num(node, "shrink").unwrap_or(0.) > 0.)
+                    || num(node, "shrink").unwrap_or(0.) > 0. || num(node, "basis").unwrap_or(0.) > 0.)
                     .then(|| allocated.width().max(num(node, "min_width").unwrap_or(0.)))
             }) {
                 response.rect.max.x = response.rect.min.x + width;
