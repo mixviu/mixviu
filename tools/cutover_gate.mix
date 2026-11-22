@@ -208,8 +208,10 @@ $checks = [
   -- Tests that start a real interpreter get the one built from this tree,
   -- never an installed one (tools/ci.mix does the same).
   ["cargo", "build", "--locked", "-p", "mix", "--bin", "mix"],
-  ["cargo", "test", "--locked", "-p", "mix", "--no-fail-fast"],
-  ["cargo", "test", "--locked", "--workspace", "--exclude", "mix", "--no-fail-fast"]
+  -- test_pool supplies --no-fail-fast for recording and doc-tests, and
+  -- replays every binary before reporting failures. Cargo refuses duplicates.
+  ["cargo", "test", "--locked", "-p", "mix"],
+  ["cargo", "test", "--locked", "--workspace", "--exclude", "mix"]
 ]
 $test_mix = realpath(".") .. "/target/debug/mix"
 $quarantine = require("ci/quarantine.mix")
