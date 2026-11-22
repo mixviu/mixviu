@@ -79,8 +79,14 @@ opening sting uses the shared `drawing` primitives, composed in Mix: a dashed
 arc, pop/blink eye, float and a shadow of the combined silhouette.
 
 Grow rows allocate each cell its weighted share of the remaining width.
+Each growing cell reserves its optional `basis` before sharing the remainder;
+`align: stretch` gives the cards the tallest cell's background and outline.
 Nested content wraps where supported and clips at its cell edge when it
 cannot wrap; it cannot move the next card outside the canvas.
+Wrapped rows keep compound children together. Grid columns retain their
+allocated width even when a child has wider intrinsic content. A minimum
+width alone still permits natural growth. Rows with `justify: between`
+measure nested children before placing them at the two edges.
 `kind` defaults to `slide`; `sting` accepts a composed brand slide with the same
 timing contract. A sting needs no HTML or separate renderer.
 
@@ -161,6 +167,44 @@ Local native ports are `scene.validate {source}` and
 translation presets at a supplied time, returning `{opacity,offset,paint_effect}`.
 
 ## Reference and checks
+
+`apps/gallery/deck.mix` supplies separate `pr_pill`, `compact_card` and
+`compact_chip` compositions: PR pills use 26 px mono 600 with 4 × 14 px
+padding; compact overview cards use 21 px headings and 14 × 18 px padding;
+their chips use 20 px mono and 17 px sans captions. Ordinary `chip` retains
+the larger presentation style. `header(text, prs, true)` includes the 34 px
+cyclops; `compact_rail` keeps the date at the right of a single chip row.
+`compact_chip` accepts a fourth `found` argument for the gold current-PR
+outline. `compact_table`, `compact_flow` and `compact_tags` share the smaller
+table, diagram and wrapped-tag metrics. `weighted_row` accepts weights and
+optional fixed cell insets, expressed through the scene's grow and basis ports.
+`code(lines, highlighted, size, leading, inset)` accepts zero-based highlighted line
+indices and optional font size, line height and horizontal inset. Each selected
+line paints a dark teal band without changing the code block's line spacing.
+The code gallery demonstrates the option; an omitted list preserves plain code.
+For rows and columns, `background_inset` accepts [top, right, bottom, left] and crops only the flat fill, leaving
+content, outline and layout bounds unchanged. This reproduces the code band’s
+CSS width and negative-margin interaction without clipping its text.
+Flex rows preserve measured non-text sizes and shaped span advances. Grow and
+shrink can share a row; numeric lengths and weights have finite ceilings. Text
+width measurements are cached and word-bound scans are capped at 4096 glyphs.
+Rows support baseline alignment; columns support all six justify modes.
+Grid cells keep their slots when hidden. Native-spacing rows retain their
+legacy wrapping and between paths.
+Stat captions are uppercase with the HTML letter spacing. Topic stacks use
+the scene column's vertical `justify: center` contract; their optional fourth
+argument is the available section height, including bottom padding.
+`closing` supplies the centred logo, wordmark, subtitle and address stack.
+Text nodes accept `line_height` in logical pixels; app and shell painters
+use it for each line. Wrapped app text also honours `max_width`.
+
+The ignored `layout::render_layout_steps` test in the `deck` test target
+accepts `DECK_LAYOUT_INPUT` (a private deck JSON path) and
+`DECK_LAYOUT_OUTPUT` (an evidence directory). On CBC it opens the supplied
+deck through the real behaviour and pinned raster path, renders every settled
+build step at 3840 × 2160, and writes the native scene-node rectangles beside
+each PNG as `[x, y, width, height]` in output pixels. This runner requires no
+browser and makes no SSIM or box-parity assertion by itself.
 
 `examples/vfl-self-recording.json` is a hand-authored native adaptation of the
 20 November 2026 “The desk records itself” episode, including all eleven source
