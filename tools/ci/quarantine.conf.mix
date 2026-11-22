@@ -4,5 +4,16 @@
 -- Only shrinks: additions are list-only PRs with ledger, failing unchanged-head
 -- job, >=20 comparable rounds (<10% failures), fix brief, owner and Fable co-sign.
 -- Never widen/edit an entry; remove with its fix and soak. Default 7 days,
--- maximum 14; one 7-day Fable renewal on new evidence, then Mark's ruling.
+-- maximum 14. Optional append-only renewals: [{until, by, evidence, cosign}],
+-- at most two (fable then mark), each extends 1..7 days, hard cap added + 28.
+-- Evidence is non-empty and distinct from entry/previous renewals.
+-- Consumer contract: stdout GATE_QUARANTINE JSON is diagnostic only (children
+-- can print it). Trust the pool-owned target/quarantine-UUID.jsonl file, whose
+-- absolute path is printed as "test_pool: quarantine records: PATH". The pool
+-- writes it after replay; no child receives its path. Exactly one JSON object
+-- per active entry in the selected binaries per pool run, zero for empty lists.
+-- Schema: package,target,test,result,expires (effective UTC date),owner.
+-- Results: pass,fail,timeout,ignored,missing. Retain all records in summaries
+-- and quarantine.jsonl; append failures to the ledger. Never parse child stdout
+-- as the trusted channel. A failed/incomplete pool may have no record file.
 entries: []

@@ -4,9 +4,9 @@ fn bad($message)
 end
 
 fn day($s)
-  if type($s) != "string" or not re_match($s, '^\d{4}-\d{2}-\d{2}$') then bad("bad date " .. to_string($s)) end
+  if type($s) != "string" or not re_match($s, '^\d{4}-\d{2}-\d{2}$') then bad("bad date " .. json_encode($s)) end
   $t = date_parse($s .. "T00:00:00Z")
-  if $t == nil or date_format($t, "%Y-%m-%d", {utc: true}) != $s then bad("bad date " .. $s) end
+  if $t == nil or date_format($t, "%Y-%m-%d", {utc: true}) != $s then bad("bad date " .. json_encode($s)) end
   return $t / 86400
 end
 
@@ -17,30 +17,75 @@ fn checked($entries, $today)
   $packages = {}
   for $e in $entries
     if type($e) != "map" then bad("entry must be a map") end
+    clean_strings($e)
     for $field in ["package", "target", "test", "owner", "ledger", "evidence", "brief", "added", "expires", "cosign"]
       if type($e[$field]) != "string" or trim($e[$field]) == "" then bad("missing/non-string field " .. $field) end
     end
+    if starts_with($e.test, "-") then bad("test must not start with '-'") end
     $added = day($e.added)
     $expires = day($e.expires)
     if $expires <= $added or $expires - $added > 14 then bad("expiry must be 1..14 days after added") end
     if $added > $today then bad("added date is in the future") end
+    $expires = effective_expiry($e)
     $key = json_encode([$e.package, $e.target, $e.test])
     if has_key($seen, $key) then bad("duplicate " .. $key) end
     $seen[$key] = true
     $packages[$e.package] = ($packages[$e.package] ?? 0) + 1
-    if $packages[$e.package] > 2 then bad("at most 2 entries per package: " .. $e.package) end
+    if $packages[$e.package] > 2 then bad("at most 2 entries per package: " .. json_encode($e.package)) end
     if $expires <= $today then
-      print("::warning::QUARANTINE expired: " .. $key .. "; runs strict (expires " .. $e.expires .. ")")
+      print("::warning::QUARANTINE expired: " .. $key .. "; runs strict (expires " .. json_encode(expiry_date($e)) .. ")")
     end
     if $today - $added > 10 then print("::warning::QUARANTINE over 10 days old: " .. $key) end
   end
   for $pkg in keys($packages)
     $es = filter($entries, fn($e) = $e.package == $pkg)
     if len($es) == 2 and abs(day($es[0].added) - day($es[1].added)) <= 14 then
-      print("::warning::QUARANTINE second entry within 14 days: " .. $pkg)
+      print("::warning::QUARANTINE second entry within 14 days: " .. json_encode($pkg))
     end
   end
   return $entries
+end
+
+-- Check even optional/unknown string fields, including renewal fields.
+fn clean_strings($v)
+  if type($v) == "string" then
+    if re_match($v, "[\\x00-\\x1f\\x7f-\\x9f]") then bad("control character in " .. json_encode($v)) end
+  elif type($v) == "map" then
+    for $k in keys($v)
+      clean_strings($k)
+      clean_strings($v[$k])
+    end
+  elif type($v) == "list" then
+    for $item in $v
+      clean_strings($item)
+    end
+  end
+end
+
+fn effective_expiry($e)
+  $expiry = day($e.expires)
+  $renewals = $e.renewals ?? []
+  if type($renewals) != "list" or len($renewals) > 2 then bad("at most two renewals") end
+  $evidence = [$e.evidence]
+  for $i = 0 to len($renewals) - 1
+    $r = $renewals[$i]
+    if type($r) != "map" then bad("renewal must be a map") end
+    for $field in ["until", "by", "evidence", "cosign"]
+      if type($r[$field]) != "string" or trim($r[$field]) == "" then bad("missing renewal field " .. $field) end
+    end
+    if $r.by != ["fable", "mark"][$i] then bad("renewals require fable then mark") end
+    $until = day($r.until)
+    if $until - $expiry < 1 or $until - $expiry > 7 then bad("renewal must extend expiry by 1..7 days") end
+    if $until > day($e.added) + 28 then bad("renewal exceeds added + 28 days") end
+    if contains($evidence, $r.evidence) then bad("renewal needs fresh evidence") end
+    push($evidence, $r.evidence)
+    $expiry = $until
+  end
+  return $expiry
+end
+
+fn expiry_date($e)
+  return date_format(effective_expiry($e) * 86400, "%Y-%m-%d", {utc: true})
 end
 
 fn load($path, $today = floor(time() / 86400))
@@ -53,7 +98,7 @@ fn validate_packages($entries, $metadata)
   -- metadata.packages can contain non-members; membership is authoritative.
   $members = map(filter($metadata.packages, fn($p) = contains($metadata.workspace_members, $p.id)), fn($p) = $p.name)
   for $e in $entries
-    if not contains($members, $e.package) then bad("unknown workspace package " .. $e.package) end
+    if not contains($members, $e.package) then bad("unknown workspace package " .. json_encode($e.package)) end
   end
 end
 
@@ -73,21 +118,24 @@ fn prepare($job, $entries, $package, $target, $today)
   $strict = $job
   $isolated = []
   if len($es) == 0 then return {strict: $strict, isolated: []} end
+  $active = filter($es, fn($e) = effective_expiry($e) > $today)
+  $flags = slice($job.argv, len($job.executable), len($job.argv))
+  if len($active) > 0 then harness_flags($flags) end
   -- List from the executable, without cargo's harness filters or flags.
   $listing = $job
   $listing.argv = concat($job.executable, ["--list", "--format", "terse"])
   $listing.timeout = 10
   $r = run_parallel(specs([$listing]), {max: 1})[0]
-  if not $r.ok or $r.stdout_truncated then bad("cannot list " .. $package .. "/" .. $target) end
+  if not $r.ok or $r.stdout_truncated then bad("cannot list " .. json_encode([$package, $target])) end
   $names = names($r.stdout)
   for $e in $es
-    if not contains($names, $e.test) then bad("unknown full test name " .. $package .. "/" .. $target .. ": " .. $e.test) end
-    if day($e.expires) > $today then
+    if not contains($names, $e.test) then bad("unknown full test name " .. json_encode([$package, $target, $e.test])) end
+    if effective_expiry($e) > $today then
       $strict.argv = concat($strict.argv, ["--skip", $e.test])
       -- libtest accepts --exact only once; it applies to every --skip.
       if not contains($strict.argv, "--exact") then $strict.argv = concat($strict.argv, ["--exact"]) end
       $one = $job
-      $one.argv = concat($job.executable, [$e.test, "--exact"])
+      $one.argv = concat(concat($job.executable, filter($flags, fn($f) = $f != "--exact")), ["--exact", "--", $e.test])
       $one.timeout = 60
       $one.entry = $e
       push($isolated, $one)
@@ -96,13 +144,40 @@ fn prepare($job, $entries, $package, $target, $today)
   return {strict: $strict, isolated: $isolated}
 end
 
+-- Value-taking flags are explicit: unknown options fail closed too.
+fn harness_flags($flags)
+  $value = false
+  for $f in $flags
+    if $value then
+      if starts_with($f, "-") then bad("missing harness flag value") end
+      $value = false
+    elif contains(["--skip", "--test-threads", "--format", "--color", "--logfile", "--shuffle-seed"], $f) then
+      $value = true
+    elif contains(["--exact", "--ignored", "--include-ignored", "--nocapture", "--show-output", "--quiet", "-q", "--test", "--bench", "--report-time", "--ensure-time", "--shuffle"], $f) then
+      nil
+    elif re_match($f, "^--(skip|test-threads|format|color|logfile|shuffle-seed)=.+$") then
+      nil
+    else
+      bad("active entry refuses harness filter, '--' or unsupported flag: " .. json_encode($f))
+    end
+  end
+  if $value then bad("missing harness flag value") end
+end
+
 fn replay($jobs)
+  $records = []
   for $j in $jobs
     $r = run_parallel(specs([$j]), {max: 1})[0]
     print($r.stdout)
     $e = $j.entry
-    print("GATE_QUARANTINE " .. json_encode({package: $e.package, target: $e.target,
-      test: $e.test, result: (if $r.timed_out then "timeout" elif $r.ok then "pass" else "fail" end),
-      expires: $e.expires, owner: $e.owner}))
+    $result = if $r.timed_out then "timeout" elif not $r.ok then "fail"
+      elif re_match($r.stdout, "test result: ok\\. 1 passed;") then "pass"
+      elif re_match($r.stdout, "test result: ok\\. 0 passed; 0 failed; 1 ignored;") then "ignored"
+      else "missing" end
+    $record = {package: $e.package, target: $e.target, test: $e.test,
+      result: $result, expires: expiry_date($e), owner: $e.owner}
+    push($records, $record)
+    print("GATE_QUARANTINE " .. json_encode($record))
   end
+  return $records
 end

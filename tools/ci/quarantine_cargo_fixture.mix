@@ -1,0 +1,15 @@
+-- Called as fake cargo or rustc by quarantine_report_test only.
+$root = cwd()
+$a = args()
+if contains($a, "-vV") then
+  print("host: fixture-host")
+elif contains($a, "metadata") then
+  print(json_encode({workspace_root: $root, target_directory: $root .. "/target",
+    workspace_members: ["fixture-id"], packages: [{id: "fixture-id", name: "fixture",
+      manifest_path: $root .. "/fixture/Cargo.toml", dependencies: []}]}))
+else
+  $runner = split(env("CARGO_TARGET_FIXTURE_HOST_RUNNER"), " ")
+  $r = run_argv(concat($runner, [$root .. "/target/fixture"]), {env: {CARGO_PKG_NAME: "fixture"}})
+  if not $r.ok then exit(1) end
+  eprint("     Running fixture (" .. $root .. "/target/fixture)")
+end

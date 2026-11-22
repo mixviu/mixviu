@@ -116,8 +116,8 @@ $serial_path = $o.opts.serial ?? "tools/ci/serial-tests.conf.mix"
 $serial = if exists($serial_path) then load_data($serial_path).serial_tests ?? [] else [] end
 $quarantine = require("quarantine.mix")
 -- Required even for an empty list: missing or malformed policy fails closed.
-$quarantined = $quarantine.load("tools/ci/quarantine.conf.mix")
 $today = floor(time() / 86400)
+$quarantined = $quarantine.load("tools/ci/quarantine.conf.mix", $today)
 $root = realpath(".")
 $mix_exe = realpath("/proc/self/exe")
 $recorder = path_join(dirname(realpath(script_path())), "test_record.mix")
@@ -323,18 +323,24 @@ try
   end
   for $e in $quarantined
     if has_key($selected_pkgs, $e.package) and not has_key($quarantine_matched, $e.package .. "/" .. $e.target) then
-      refuse("quarantine target matches no selected binary: " .. $e.package .. "/" .. $e.target)
+      refuse("quarantine target matches no selected binary: " .. json_encode([$e.package, $e.target]))
     end
   end
 
   -- 2-3. Replay: the pool, then the serial list one at a time.
   $t_run = monotonic()
   $pool_rs = run_parallel(run_spec($pool), {max: $jobs})
-  $quarantine.replay($pool_quarantined)
+  $quarantine_records = $quarantine.replay($pool_quarantined)
   $pool_s = monotonic() - $t_run
   $t_alone = monotonic()
   $alone_rs = run_parallel(run_spec($alone), {max: 1})
-  $quarantine.replay($alone_quarantined)
+  $quarantine_records = concat($quarantine_records, $quarantine.replay($alone_quarantined))
+  -- Only the pool writes this channel, after its children have finished.
+  -- Never pass its path to cargo, a recorder or a test binary.
+  $quarantine_out = path_join($target_dir, "quarantine-" .. uuid() .. ".jsonl")
+  write_file($quarantine_out, join(map($quarantine_records, fn($r) = json_encode($r)), "\n") .. (if len($quarantine_records) > 0 then "\n" else "" end))
+  chmod($quarantine_out, 0o600)
+  print("test_pool: quarantine records: " .. $quarantine_out)
   $alone_s = monotonic() - $t_alone
 
   $all = concat($pool, $alone)

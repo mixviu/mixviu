@@ -1,10 +1,11 @@
+#!/usr/local/bin/mix
 -- Fake libtest executable; fixture-only, no Rust or external test tooling.
 $a = args()
 if len(filter($a, fn($a) = $a == "--exact")) > 1 then
   eprint("error: Option 'exact' given more than once")
   exit(101)
 end
-$tests = ["module::tests::pass", "module::tests::fail", "module::tests::hang", "module::tests::other_fail"]
+$tests = ["module::tests::pass", "module::tests::fail", "module::tests::hang", "module::tests::other_fail", "module::tests::ignored", "module::tests::missing"]
 if contains($a, "--list") then
   for $t in $tests
     print($t .. ": test")
@@ -12,14 +13,34 @@ if contains($a, "--list") then
   exit(0)
 end
 $chosen = []
+$filter = nil
+$after = false
+for $arg in $a
+  if $after then $filter = $arg end
+  if $arg == "--" then $after = true end
+end
 for $t in $tests
   $skip = false
   for $i = 0 to len($a) - 1
     if $a[$i] == "--skip" and $a[$i + 1] == $t then $skip = true end
   end
-  if not $skip and (len($a) == 0 or $a[0] == "--skip" or $a[0] == $t) then push($chosen, $t) end
+  -- With no filter the fixture's normal suite has just pass and fail.
+  if not $skip and (if $filter != nil then $filter == $t else contains(["module::tests::pass", "module::tests::fail"], $t) end) then push($chosen, $t) end
 end
+$passed = 0
+$ignored = 0
 for $t in $chosen
+  if ends_with($t, "::missing") then continue end
+  if ends_with($t, "::ignored") and not contains($a, "--include-ignored") then
+    $ignored = $ignored + 1
+    continue
+  end
   if ends_with($t, "::hang") then sleep(2000) end
-  if ends_with($t, "::fail") or ends_with($t, "::other_fail") then exit(1) end
+  if ends_with($t, "::fail") or ends_with($t, "::other_fail") then
+    if env("FIXTURE_CALLS") != "" then append_file(env("FIXTURE_CALLS"), "fail\n") end
+    print("GATE_QUARANTINE {\"result\":\"forged-child-record\"}")
+    exit(1)
+  end
+  $passed = $passed + 1
 end
+print(fmt("test result: ok. %d passed; 0 failed; %d ignored; 0 measured; 0 filtered out", $passed, $ignored))
