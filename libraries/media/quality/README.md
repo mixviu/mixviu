@@ -48,3 +48,25 @@ all four metric components. Missing ffmpeg/filters prints SKIP unless
 `MIX_TEST_REQUIRE_FFMPEG=1`. SSIM tolerance is 1e-6; PSNR must agree within
 1e-6 dB or exactly at ffmpeg's two printed decimals.
 Real private deck/corpus captures are separate evidence, not CI fixtures.
+
+Validation on 2026-11-22: all six correctness tests passed (four metric/
+reader tests, one 18-frame oracle and one CLI test). Seven intentional
+mutations were killed, covering every correctness test: infinity handling,
+size error identity, plane weighting, truncated reads, SSIM c2, PSNR peak
+and CLI field output. The ignored throughput test is a measurement only.
+The installed oracle identified itself as n9.0.2; `vf_ssim.c` and
+`vf_psnr.c` fetched from n9.0.2 and n9.1 were byte-identical.
+
+Maximum absolute differences from the printed oracle values:
+
+| Metric | Y | U | V | All |
+|---|---:|---:|---:|---:|
+| SSIM | 4.318657e-7 | 4.357211e-7 | 4.934337e-7 | 4.976271e-7 |
+| PSNR dB | 0.004870475 | 0.004868873 | 0.004346282 | 0.003507728 |
+
+All PSNR values match exactly when rounded to the oracle's two decimals;
+these differences are printed-value quantisation, not a six-decimal dB
+parity claim. Identical-frame infinity agrees explicitly in every plane.
+The focused checks also passed the foreign gate and all logging test
+targets. Logging's existing `items_after_test_module` clippy warning is
+reported at normal warning level; media-quality passes `-D warnings`.
