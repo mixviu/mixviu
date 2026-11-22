@@ -51,6 +51,28 @@ fn wrapped_fill_label_retains_natural_glyph_advances() {
 }
 
 #[test]
+fn first_frame_between_and_wrap_have_visible_text() {
+    for ports in ["justify:\"between\"", "wrap:true", "justify:\"between\",native_spacing:true"] {
+        let source=format!("---\nscene: 1\nname: initial\ncitizen: test\n---\n```mix\n{{root:{{widget:\"row\",fill:true,{ports},children:[\"a\",\"b\"]}},a:{{widget:\"column\",children:[\"one\"]}},b:{{widget:\"column\",children:[\"two\"]}},one:{{widget:\"text\",text:\"First\"}},two:{{widget:\"text\",text:\"Second\"}}}}\n```\n");
+        let mut view=SceneView::new(&source).unwrap();let ctx=egui::Context::default();
+        let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();
+        let text:Vec<_>=out.shapes.iter().filter(|s|matches!(&s.shape,egui::Shape::Text(_))).collect();
+        assert!(text.len()>=2,"{ports}");
+        assert!(text.iter().all(|s|s.clip_rect.width()>10. && s.clip_rect.height()>10.),"{ports}");
+        assert!(view.geometry["root"].height()>0.);
+    }
+}
+
+#[test]
+fn comparison_row_aligns_actual_glyph_baselines() {
+    let source="---\nscene: 1\nname: baseline\ncitizen: test\n---\n```mix\n{root:{widget:\"row\",align:\"baseline\",children:[\"big\",\"small\"]},big:{widget:\"text\",text:\"6.3 s\",size:44,font:\"Liberation Sans\",weight:700},small:{widget:\"text\",text:\"median\",size:20,font:\"Liberation Sans\"}}\n```\n";
+    let mut view=SceneView::new(source).unwrap();let ctx=egui::Context::default();viu::fonts::install(&ctx,400,600);
+    let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();
+    let baselines:Vec<_>=out.shapes.iter().filter_map(|s|if let egui::Shape::Text(t)=&s.shape {let r=&t.galley.rows[0];Some(t.pos.y+r.pos.y+r.glyphs[0].pos.y)}else{None}).collect();
+    assert_eq!(baselines.len(),2);assert!((baselines[0]-baselines[1]).abs()<0.01,"{baselines:?}");
+}
+
+#[test]
 fn shrink_row_preserves_images_buttons_spans_and_grow() {
     let rects=geometry(r##"{root:{widget:"row",fill:true,gap:8,children:["photo","button","spans","grow"]},photo:{widget:"image",src:"brand:cyclops",w:80,h:40},button:{widget:"button",label:"Ready"},spans:{widget:"text",text:"ignored",size:24,shrink:1,wrap:true,spans:[{text:"Wide bold ",bold:true},{text:"mono identifier",mono:true}]},grow:{widget:"column",grow:1,children:["tail"]},tail:{widget:"text",text:"Tail"}}"##);
     assert!(rects["photo"].width()>=80.,"{rects:?}");

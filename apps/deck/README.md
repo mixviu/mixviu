@@ -182,11 +182,15 @@ optional fixed cell insets, expressed through the scene's grow and basis ports.
 indices and optional font size, line height and horizontal inset. Each selected
 line paints a dark teal band without changing the code block's line spacing.
 The code gallery demonstrates the option; an omitted list preserves plain code.
-For rows and columns, `background_inset_right` crops only the fill, leaving
+For rows and columns, `background_inset` accepts [top, right, bottom, left] and crops only the flat fill, leaving
 content, outline and layout bounds unchanged. This reproduces the code band’s
 CSS width and negative-margin interaction without clipping its text.
-Text compounds with `shrink` reserve their natural width and share negative
-space in proportion to content width, bounded by their longest word.
+Flex rows preserve measured non-text sizes and shaped span advances. Grow and
+shrink can share a row; numeric lengths and weights have finite ceilings. Text
+width measurements are cached and word-bound scans are capped at 4096 glyphs.
+Rows support baseline alignment; columns refuse unsupported justify modes.
+Grid cells keep their slots when hidden. Native-spacing rows retain their
+legacy wrapping and between paths.
 Stat captions are uppercase with the HTML letter spacing. Topic stacks use
 the scene column's vertical `justify: center` contract; their optional fourth
 argument is the available section height, including bottom padding.
