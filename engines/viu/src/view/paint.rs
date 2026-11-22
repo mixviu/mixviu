@@ -343,9 +343,7 @@ pub(crate) fn paint(scene: &mut SceneUi, ui: &mut Ui, emit: &mut Vec<SceneMessag
                     }
                     if let Some(fill) = if hovered { hover } else { normal } {
                         let mut background_rect = rect;
-                        background_rect.max.x = (background_rect.max.x
-                            - number(&node, "background_inset_right").unwrap_or(0.0))
-                        .max(background_rect.min.x);
+                        if let Some(a)=node.ports.get("background_inset").and_then(serde_json::Value::as_array).filter(|a|a.len()==4){let v:Vec<f32>=a.iter().map(|v|(v.as_f64().unwrap_or(0.).clamp(0.,1e6)) as f32).collect();background_rect.min+=egui::vec2(v[3],v[0]);background_rect.max-=egui::vec2(v[1],v[2]);background_rect.max=background_rect.max.max(background_rect.min);}
                         painter.rect_filled(background_rect, radius, fill);
                     }
                 }

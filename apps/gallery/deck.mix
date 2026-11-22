@@ -70,21 +70,7 @@ fn header($text,$prs=[],$mark=false)
   return $node
 end
 fn compact_rail($chapters,$active,$date)
-  $node=chapter_rail($chapters,$active,$date)
-  $node.children[0].gap=$tokens.space.compact_rail_gap
-  for $i=0 to len($node.children[0].children)-1
-    $node.children[0].children[$i].padding_left=9
-    $node.children[0].children[$i].padding_right=9
-    $node.children[0].children[$i].padding_top=3
-    $node.children[0].children[$i].padding_bottom=3
-    $node.children[0].children[$i].radius=5
-    $node.children[0].children[$i].children[0].size=16
-  end
-  $node.children[1].font="Liberation Sans"
-  $node.children[1].mono=false
-  $node.children[1].letter_spacing=0.96
-  $node.children[1]=merge(column([$node.children[1]],0),{padding_right:9})
-  return $node
+  return chapter_rail($chapters,$active,$date,true)
 end
 fn compact_card($title,$items,$tone="mut")
   $node=card($title,$items,$tone)
@@ -167,7 +153,7 @@ fn compact_flow($nodes)
   end
   return $node
 end
-fn code($lines,$highlighted=[],$size=nil,$leading=nil,$inset=31)
+fn code($lines,$highlighted=[],$size=nil,$leading=nil,$inset=31,$band_inset=0)
   $items = []
   $index=0
   for $line in $lines
@@ -176,7 +162,7 @@ fn code($lines,$highlighted=[],$size=nil,$leading=nil,$inset=31)
     if $leading!=nil then $label.line_height=$leading end
     if len($highlighted)>0 then
       $label=merge(column([$label],0),{fill:true,padding_left:$inset,padding_right:$inset})
-      if contains($highlighted,$index) then $label.background=$tokens.colour.code_highlight;$label.background_inset_right=$inset+31 end
+      if contains($highlighted,$index) then $label.background=$tokens.colour.code_highlight;$label.background_inset=[0,$band_inset,0,0] end
     end
     push($items,$label)
     $index=$index+1
@@ -207,13 +193,18 @@ fn deck_stat($number, $caption, $role, $animate=true)
   if $animate and $target != nil then $text.number = {to:$target,ms:$tokens.motion.count_ms,delay_ms:$tokens.motion.count_delay_ms} end
   return column([$text,merge(deck_text(upper($caption),"stat_label","mut"),{letter_spacing:$tokens.type.stat_label*0.06})],0)
 end
-fn chapter_rail($chapters,$active,$series)
+fn chapter_rail($chapters,$active,$series,$compact=false)
   $chips=[]
   for $name in $chapters
     $current=$name==$active
-    push($chips,merge(column([merge(deck_text($name,"rail",if $current then "background" else "mut" end),{mono:true,mono_font:"Noto Sans Mono",bold:$current,weight:if $current then 700 else 400 end,size:$tokens.type.rail})],0),{padding_left:$tokens.space.rail_x,padding_right:$tokens.space.rail_x,padding_top:$tokens.space.rail_y,padding_bottom:$tokens.space.rail_y,radius:$tokens.space.rail_radius,background:if $current then $tokens.colour.acc else $tokens.colour.rail end,outline:if $current then $tokens.colour.acc else $tokens.colour.line end,outline_width:1}))
+    push($chips,merge(column([merge(deck_text($name,"rail",if $current then "background" else "mut" end),{mono:true,mono_font:"Noto Sans Mono",bold:$current,weight:if $current then 700 else 400 end,size:if $compact then $tokens.type.rail_compact else $tokens.type.rail end})],0),{padding_left:$tokens.space.rail_x,padding_right:$tokens.space.rail_x,padding_top:$tokens.space.rail_y,padding_bottom:$tokens.space.rail_y,radius:if $compact then $tokens.space.rail_compact_radius else $tokens.space.rail_radius end,background:if $current then $tokens.colour.acc else $tokens.colour.rail end,outline:if $current then $tokens.colour.acc else $tokens.colour.line end,outline_width:1}))
   end
-  return merge(row([row($chips,$tokens.space.rail_gap),merge(deck_text($series,"rail","mut"),{size:$tokens.type.series_footer})],0),{fill:true,justify:"between"})
+  $date=merge(deck_text($series,"rail","mut"),{size:$tokens.type.series_footer})
+  if $compact then
+    $date=merge($date,{font:"Liberation Sans",mono:false,letter_spacing:$tokens.type.rail_date_tracking})
+    $date=merge(column([$date],0),{padding_right:$tokens.space.rail_date_right})
+  end
+  return merge(row([row($chips,if $compact then $tokens.space.compact_rail_gap else $tokens.space.rail_gap end),$date],0),{fill:true,justify:"between"})
 end
 fn mock($title, $items)
   return merge(column([deck_text($title,"node_label","mut"),bullets($items,"acc")],6),{padding_left:20,padding_right:20,padding_top:14,padding_bottom:14,background:$tokens.colour.panel,radius:12})
@@ -221,12 +212,15 @@ end
 fn brand($name, $tagline, $date)
   return column([{widget:"image",src:"brand:cyclops",w:200,h:200},deck_text($name,"wordmark","acc"),deck_text($tagline,"tagline","mut"),deck_text($date,"date","text")],28)
 end
-fn closing($name,$tagline,$address,$height=716)
+fn closing($name,$tagline,$address,$height=nil)
+  $height=$height ?? ($tokens.canvas.height-$tokens.space.closing_top-$tokens.space.bottom)
+  $runs=if type($name)=="list" then $name else [{text:$name,color:$tokens.colour.text}] end
+  $name=join(map($runs,fn($run)=$run.text),"")
   $title=merge(deck_text($name,"wordmark","text"),{size:110,line_height:110,letter_spacing:-3.3,align:"center"})
-  if $name=="MixViu" then $title.spans=[{text:"Mix",color:$tokens.colour.text},{text:"Viu",color:$tokens.colour.acc}] end
+$title.spans=$runs
   $subtitle=merge(deck_text($tagline,"tagline","mut"),{size:38,line_height:49.4,max_width:1250,wrap:true,align:"center"})
   $link=merge(deck_text($address,"date","text"),{size:32,align:"center"})
-  return merge(column([{widget:"image",src:"brand:cyclops",w:230,h:230},{widget:"spacer",size:30},$title,{widget:"spacer",size:26},$subtitle,{widget:"spacer",size:26},$link],0),{fill:true,align:"center",justify:"center",height:$height-40,padding_bottom:40})
+  return merge(column([{widget:"image",src:"brand:cyclops",w:230,h:230},{widget:"spacer",size:30},$title,{widget:"spacer",size:26},$subtitle,{widget:"spacer",size:26},$link],0),{fill:true,align:"center",justify:"center",height:$height-$tokens.space.center_bottom,padding_bottom:$tokens.space.center_bottom})
 end
 -- Opening sting: all geometry and continuous motion remain scene data.
 fn sting($title, $subtitle)
@@ -243,8 +237,9 @@ fn sting($title, $subtitle)
   -- Compensate native role line boxes so painted centres match the CSS stack.
   return merge(column([{widget:"spacer",size:10},$logo,{widget:"spacer",size:28},$brandline,{widget:"spacer",size:18.5},$heading,{widget:"spacer",size:14},$sub,{widget:"spacer",size:30},$bar],0),{align:"center",min_width:1600,height:900,padding_top:127,padding_bottom:40,background:$tokens.colour.background})
 end
-fn topic($number, $title, $subtitle,$height=708)
-  return merge(column([deck_text($number,"topic_no","acc"),{widget:"spacer",size:10},deck_text($title,"topic_title","text"),{widget:"spacer",size:22},deck_text($subtitle,"topic_sub","mut")],0),{height:$height-40,padding_bottom:40,justify:"center"})
+fn topic($number, $title, $subtitle,$height=nil)
+  $height=$height ?? ($tokens.canvas.height-$tokens.space.top-$tokens.space.bottom)
+  return merge(column([deck_text($number,"topic_no","acc"),{widget:"spacer",size:10},deck_text($title,"topic_title","text"),{widget:"spacer",size:22},deck_text($subtitle,"topic_sub","mut")],0),{height:$height-$tokens.space.center_bottom,padding_bottom:$tokens.space.center_bottom,justify:"center"})
 end
 fn flatten($tree, $id)
   $nodes = {}

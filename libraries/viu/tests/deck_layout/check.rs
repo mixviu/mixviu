@@ -26,6 +26,59 @@ fn geometry(source: &str) -> std::collections::BTreeMap<String, egui::Rect> {
 }
 
 #[test]
+fn wrapped_fill_label_retains_natural_glyph_advances() {
+    let ctx=egui::Context::default();viu::fonts::install(&ctx,400,600);
+    let mut view=SceneView::new("---\nscene: 1\nname: glyphs\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"RAW NOTICES\",font:\"Liberation Sans\",size:20,weight:500,letter_spacing:1.6,max_width:100,wrap:true,fill:true,align:\"center\"}}\n```\n").unwrap();
+    let mut output=ctx.run_ui(egui::RawInput::default(),|ui|view.show(ui));
+    let galleys:Vec<_>=output.shapes.iter().filter_map(|s|if let egui::Shape::Text(t)=&s.shape {Some(t.galley.clone())}else{None}).collect();
+    let galley=galleys.iter().find(|g|g.job.text=="RAW NOTICES").unwrap();
+    assert!(galley.rows.len()>=2);
+    for row in &galley.rows {
+        let word=row.text().trim().to_owned();
+        let mut job=egui::text::LayoutJob::simple(word.clone(),FontId::new(20.,toolkit::fonts::optional::family("Liberation Sans",500.)),Color32::WHITE,f32::INFINITY);
+        job.sections[0].format.extra_letter_spacing=1.6;
+        let natural=ctx.fonts_mut(|f|f.layout_job(job));
+        for (a,b) in row.glyphs.windows(2).zip(natural.rows[0].glyphs.windows(2)) {
+            let error=((a[1].pos.x-a[0].pos.x)-(b[1].pos.x-b[0].pos.x)).abs();
+            assert!(error<0.01,"{word}: advance delta {error}");
+        }
+        println!("GLYPH_ADVANCE {word}: natural advances preserved");
+    }
+    output.textures_delta.clear();
+}
+
+#[test]
+fn shrink_row_preserves_images_buttons_spans_and_grow() {
+    let rects=geometry(r##"{root:{widget:"row",fill:true,gap:8,children:["photo","button","spans","grow"]},photo:{widget:"image",src:"brand:cyclops",w:80,h:40},button:{widget:"button",label:"Ready"},spans:{widget:"text",text:"ignored",size:24,shrink:1,wrap:true,spans:[{text:"Wide bold ",bold:true},{text:"mono identifier",mono:true}]},grow:{widget:"column",grow:1,children:["tail"]},tail:{widget:"text",text:"Tail"}}"##);
+    assert!(rects["photo"].width()>=80.,"{rects:?}");
+    assert!(rects["button"].width()>30.,"{rects:?}");
+    assert!(rects["spans"].width()>100.,"{rects:?}");
+    assert!(rects["grow"].width()>100.,"{rects:?}");
+    assert!(rects["button"].left()>=rects["photo"].right()+7.,"{rects:?}");
+    assert!(rects["spans"].left()>=rects["button"].right()+7.,"{rects:?}");
+}
+
+#[test]
+fn start_row_reserves_height_and_hidden_grid_cell_keeps_its_slot() {
+    let rects=geometry(r##"{root:{widget:"column",children:["row","grid"]},row:{widget:"row",height:80,align:"start",children:["label"]},label:{widget:"text",text:"Top"},grid:{widget:"grid",columns:2,column_gap:20,children:["hidden","visible"]},hidden:{widget:"column",hidden:true,children:[]},visible:{widget:"text",text:"Right"}}"##);
+    assert!(rects["row"].height()>=80.,"{rects:?}");
+    assert!(rects["visible"].left()>rects["grid"].left()+400.,"{rects:?}");
+}
+
+#[test]
+fn bounded_columns_keep_center_and_end_placement() {
+    let rects=geometry(r##"{root:{widget:"column",fill:true,align:"center",children:["center","row"]},center:{widget:"column",grow:1,min_width:200,max_width:200,children:["middle"]},middle:{widget:"text",text:"Middle"},row:{widget:"row",fill:true,align:"end",children:["right"]},right:{widget:"column",grow:1,min_width:200,max_width:200,children:["last"]},last:{widget:"text",text:"Right"}}"##);
+    assert!(rects["middle"].left()>=rects["center"].left(),"{rects:?}");
+    assert!(rects["last"].left()>=rects["right"].left(),"{rects:?}");
+}
+
+#[test]
+fn all_hidden_flex_children_leave_a_finite_empty_row() {
+    let r=geometry(r##"{root:{widget:"row",children:["hidden"]},hidden:{widget:"column",shrink:1,hidden:true,children:[]}}"##);
+    assert!(r["root"].is_finite());
+}
+
+#[test]
 fn between_keeps_a_nested_date_at_the_right_edge() {
     let rects = geometry(
         r##"{root:{widget:"row",fill:true,justify:"between",children:["chips","date"]},chips:{widget:"row",children:["chip"]},chip:{widget:"text",text:"#210 #215 #214"},date:{widget:"column",padding_right:9,children:["label"]},label:{widget:"text",text:"21 NOV 2026",wrap:true}}"##,

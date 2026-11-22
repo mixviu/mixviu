@@ -390,7 +390,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         ports.push(p("tooltip", "object", false, None));
     }
     if matches!(f, "row" | "column") {
-        ports.push(pn("background_inset_right", false, Some(0.0)));
+        ports.push(p("background_inset", "list", false, None));
         ports.push(p("background_radials", "list", false, None));
         ports.push(p("outline", "string", false, None));
         ports.push(pn("outline_width", false, None));
@@ -633,6 +633,7 @@ pub(crate) fn check_port_value(
             format!("{k} on {id}: {message}"),
         ));
     }
+    if k=="background_inset" && !v.as_array().is_some_and(|a|a.len()==4 && a.iter().all(|n|n.as_f64().is_some_and(|n|n.is_finite() && (0.0..=1e6).contains(&n)))) {out.push(Diagnostic::error("port-type",line,format!("background_inset on {id} requires four finite nonnegative lengths")));}
     let ceiling=match k {"line_height"=>Some(4096.),"basis"=>Some(1e6),"grow"|"shrink"=>Some(1000.),_=>None};
     if ceiling.is_some_and(|limit|v.as_f64().is_some_and(|n|!n.is_finite() || n>limit)) {
         out.push(Diagnostic::error("port-max",line,format!("port {k} on {id} exceeds its finite layout ceiling")));
