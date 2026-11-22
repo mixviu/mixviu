@@ -1275,12 +1275,17 @@ impl SceneView {
                         let radial_shape = ui.painter().add(egui::Shape::Noop);
                         let frame_width = num(node,"width").or(num(node,"min_width")).or_else(|| (node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0.).then(||ui.available_width()));
                         let frame = egui::Frame::new()
-                            .fill(if node.ports.contains_key("background_radials") {Color32::TRANSPARENT} else {background})
+                            .fill(Color32::TRANSPARENT)
                             .inner_margin(egui::Margin { left: node_padding(node, "padding_left") as i8, right: node_padding(node, "padding_right") as i8, top: node_padding(node, "padding_top") as i8, bottom: node_padding(node, "padding_bottom") as i8 })
                             .corner_radius(num(node, "radius").unwrap_or(0.0));
                         let mut response = frame
                             .show(ui, |ui| {
-                                if let Some(width)=frame_width { ui.set_min_width((width-node_padding(node,"padding_left")-node_padding(node,"padding_right")).max(0.)); }
+                                if let Some(width)=frame_width {
+                                    let inner=(width-node_padding(node,"padding_left")-node_padding(node,"padding_right")).max(0.);
+                                    ui.set_min_width(inner);ui.set_max_width(inner);
+                                    let left=ui.available_rect_before_wrap().left();
+                                    ui.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(left,ui.clip_rect().top()),egui::pos2(left+inner,ui.clip_rect().bottom()))));
+                                }
                                 if let Some(height) = num(node, "height") {
                                     ui.set_min_height(height);
                                 }
@@ -1324,7 +1329,8 @@ impl SceneView {
                                         let mut height=0.0_f32;
                                         for (child,size) in active.iter().zip(&sizes) {
                                             let rect=egui::Rect::from_min_size(egui::pos2(x,origin.y+(cross-size.y)/2.),*size);
-                                            let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
+                                            let measure=egui::Rect::from_min_size(rect.min,egui::vec2(available,size.y));
+                                            let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(measure).layout(egui::Layout::top_down(egui::Align::Min)));
                                             cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(rect.min,egui::pos2(rect.right(),ui.clip_rect().bottom()))));
                                             self.node(&mut cell,child,nodes,route,depth+1,events);
                                             let actual=cell.min_rect().size();
@@ -1422,12 +1428,11 @@ impl SceneView {
                                 }
                             })
                             .response;
+                        if let Some(width)=frame_width {response.rect.max.x=response.rect.min.x+width;}
                         if let Some(height)=self.stretch_heights.get(id).copied() {
                             response.rect.max.y=response.rect.max.y.max(response.rect.min.y+height);
-                            if !node.ports.contains_key("background_radials") {
-                                ui.painter().set(radial_shape,egui::Shape::rect_filled(response.rect,num(node,"radius").unwrap_or(0.),background));
-                            }
                         }
+                        if !node.ports.contains_key("background_radials") {ui.painter().set(radial_shape,egui::Shape::rect_filled(response.rect,num(node,"radius").unwrap_or(0.),background));}
                         if let Some(radials)=node.ports.get("background_radials") { ui.painter().set(radial_shape,self.backdrops.shape(ui.ctx(),&key,response.rect,background,radials)); }
                         if route.is_some_and(|(_, list, _)| text(list, "row") == id)
                             || node.ports.contains_key("on_click")
@@ -1451,6 +1456,11 @@ impl SceneView {
             .response;
         if let Some(height)=self.stretch_heights.get(id).copied() {
             response.rect.max.y=response.rect.max.y.max(response.rect.min.y+height);
+        }
+        if matches!(node.family.as_str(),"column"|"row") {
+            if let Some(width)=num(node,"width").or(num(node,"min_width")).or_else(||(node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0.).then_some(allocated.width())) {
+                response.rect.max.x=response.rect.min.x+width;
+            }
         }
         if node.family != "dock" {
             paint_outline(ui, node, response.rect);

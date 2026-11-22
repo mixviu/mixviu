@@ -402,8 +402,7 @@
         },
         "root.2.1.1": {
           "children": [
-            "root.2.1.1.0",
-            "root.2.1.1.1"
+            "root.2.1.1.0"
           ],
           "gap": 0,
           "widget": "column"
@@ -415,17 +414,6 @@
           "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
-          "weight": 400,
-          "widget": "text",
-          "wrap": true
-        },
-        "root.2.1.1.1": {
-          "color": "#8d99a8",
-          "font": "Liberation Sans",
-          "mono": false,
-          "mono_font": "Noto Sans Mono",
-          "size": 18,
-          "text": "",
           "weight": 400,
           "widget": "text",
           "wrap": true
@@ -470,8 +458,7 @@
         },
         "root.2.1.3": {
           "children": [
-            "root.2.1.3.0",
-            "root.2.1.3.1"
+            "root.2.1.3.0"
           ],
           "gap": 0,
           "widget": "column"
@@ -483,17 +470,6 @@
           "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
-          "weight": 400,
-          "widget": "text",
-          "wrap": true
-        },
-        "root.2.1.3.1": {
-          "color": "#8d99a8",
-          "font": "Liberation Sans",
-          "mono": false,
-          "mono_font": "Noto Sans Mono",
-          "size": 18,
-          "text": "",
           "weight": 400,
           "widget": "text",
           "wrap": true
@@ -538,8 +514,7 @@
         },
         "root.2.1.5": {
           "children": [
-            "root.2.1.5.0",
-            "root.2.1.5.1"
+            "root.2.1.5.0"
           ],
           "gap": 0,
           "widget": "column"
@@ -551,17 +526,6 @@
           "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
-          "weight": 400,
-          "widget": "text",
-          "wrap": true
-        },
-        "root.2.1.5.1": {
-          "color": "#8d99a8",
-          "font": "Liberation Sans",
-          "mono": false,
-          "mono_font": "Noto Sans Mono",
-          "size": 18,
-          "text": "",
           "weight": 400,
           "widget": "text",
           "wrap": true
@@ -2172,6 +2136,7 @@
             "root.3.1",
             "root.3.2"
           ],
+          "fill": true,
           "gap": 0,
           "outline": "#26303d",
           "outline_width": 1,
@@ -3747,8 +3712,7 @@
         },
         "root.3.1": {
           "children": [
-            "root.3.1.0",
-            "root.3.1.1"
+            "root.3.1.0"
           ],
           "gap": 0,
           "widget": "column"
@@ -3760,17 +3724,6 @@
           "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
-          "weight": 400,
-          "widget": "text",
-          "wrap": true
-        },
-        "root.3.1.1": {
-          "color": "#8d99a8",
-          "font": "Liberation Sans",
-          "mono": false,
-          "mono_font": "Noto Sans Mono",
-          "size": 18,
-          "text": "",
           "weight": 400,
           "widget": "text",
           "wrap": true
@@ -3815,8 +3768,7 @@
         },
         "root.3.3": {
           "children": [
-            "root.3.3.0",
-            "root.3.3.1"
+            "root.3.3.0"
           ],
           "gap": 0,
           "widget": "column"
@@ -3828,17 +3780,6 @@
           "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
-          "weight": 400,
-          "widget": "text",
-          "wrap": true
-        },
-        "root.3.3.1": {
-          "color": "#8d99a8",
-          "font": "Liberation Sans",
-          "mono": false,
-          "mono_font": "Noto Sans Mono",
-          "size": 18,
-          "text": "",
           "weight": 400,
           "widget": "text",
           "wrap": true
@@ -4366,8 +4307,7 @@
         },
         "root.2.1": {
           "children": [
-            "root.2.1.0",
-            "root.2.1.1"
+            "root.2.1.0"
           ],
           "gap": 0,
           "widget": "column"
@@ -4379,17 +4319,6 @@
           "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
-          "weight": 400,
-          "widget": "text",
-          "wrap": true
-        },
-        "root.2.1.1": {
-          "color": "#8d99a8",
-          "font": "Liberation Sans",
-          "mono": false,
-          "mono_font": "Noto Sans Mono",
-          "size": 18,
-          "text": "",
           "weight": 400,
           "widget": "text",
           "wrap": true
@@ -4434,8 +4363,7 @@
         },
         "root.2.3": {
           "children": [
-            "root.2.3.0",
-            "root.2.3.1"
+            "root.2.3.0"
           ],
           "gap": 0,
           "widget": "column"
@@ -4447,17 +4375,6 @@
           "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
-          "weight": 400,
-          "widget": "text",
-          "wrap": true
-        },
-        "root.2.3.1": {
-          "color": "#8d99a8",
-          "font": "Liberation Sans",
-          "mono": false,
-          "mono_font": "Noto Sans Mono",
-          "size": 18,
-          "text": "",
           "weight": 400,
           "widget": "text",
           "wrap": true
@@ -4502,8 +4419,7 @@
         },
         "root.2.5": {
           "children": [
-            "root.2.5.0",
-            "root.2.5.1"
+            "root.2.5.0"
           ],
           "gap": 0,
           "widget": "column"
@@ -4515,17 +4431,6 @@
           "mono_font": "Noto Sans Mono",
           "size": 40,
           "text": "→",
-          "weight": 400,
-          "widget": "text",
-          "wrap": true
-        },
-        "root.2.5.1": {
-          "color": "#8d99a8",
-          "font": "Liberation Sans",
-          "mono": false,
-          "mono_font": "Noto Sans Mono",
-          "size": 18,
-          "text": "",
           "weight": 400,
           "widget": "text",
           "wrap": true

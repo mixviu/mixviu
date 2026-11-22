@@ -44,6 +44,7 @@ fn grid_intrinsics_cannot_move_the_next_column() {
     );
     let expected = rects["root"].left() + (rects["root"].width() + 40.) / 2.;
     assert!((rects["right"].left() - expected).abs() < 1., "{rects:?}");
+    assert!(rects["left"].right()<=rects["right"].left()-39.,"{rects:?}");
 }
 
 #[test]
