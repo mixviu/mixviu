@@ -23,5 +23,5 @@ return {
   },
   "space": {"top":72,"side":96,"bottom":120,"columns":40,"card_x":32,
     "card_y":28,"card_radius":18,"flow":18,"chip":12,"terminal_row":38,
-    "tree_row":50.75,"rail_bottom":44,"content_bottom":800,"rail_x":9,"rail_y":3,"rail_radius":6,"rail_gap":10,"compact_card_x":18,"compact_card_y":14,"compact_chip_x":11,"compact_chip_y":5,"compact_flow_label":220}
+    "tree_row":50.75,"rail_bottom":44,"content_bottom":800,"rail_x":9,"rail_y":3,"rail_radius":6,"rail_gap":10,"compact_card_x":18,"compact_card_y":14,"compact_chip_x":11,"compact_chip_y":5,"compact_heading_gap":9.5,"compact_flow_label":220,"compact_rail_gap":5.7}
 }

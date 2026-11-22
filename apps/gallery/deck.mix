@@ -71,7 +71,7 @@ fn header($text,$prs=[],$mark=false)
 end
 fn compact_rail($chapters,$active,$date)
   $node=chapter_rail($chapters,$active,$date)
-  $node.children[0].gap=6
+  $node.children[0].gap=$tokens.space.compact_rail_gap
   for $i=0 to len($node.children[0].children)-1
     $node.children[0].children[$i].padding_left=9
     $node.children[0].children[$i].padding_right=9
@@ -93,7 +93,7 @@ fn compact_card($title,$items,$tone="mut")
   $node.padding_right=$tokens.space.compact_card_x
   $node.padding_top=$tokens.space.compact_card_y
   $node.padding_bottom=$tokens.space.compact_card_y
-  $node.gap=8
+  $node.gap=$tokens.space.compact_heading_gap
   $node.children[0]=merge($node.children[0],{size:21,weight:500,letter_spacing:1.68})
   $node.children=[$node.children[0],column($items,7)]
   return $node
@@ -127,7 +127,7 @@ fn compact_tags($labels)
   for $label in $labels
     push($tags,merge(column([merge(deck_text($label,"chip","text"),{size:19})],0),{padding_left:11,padding_right:11,padding_top:5,padding_bottom:5,background:$tokens.colour.panel,outline:$tokens.colour.line,outline_width:1,radius:8}))
   end
-  return merge(row($tags,8),{wrap:true,fill:true,padding_top:6})
+  return merge(row($tags,8),{wrap:true,fill:true})
 end
 fn headline($text, $small)
   return column([deck_text($text,"headline","text"),deck_text($small,"small","mut")],10)
