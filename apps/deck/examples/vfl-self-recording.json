@@ -1930,6 +1930,7 @@
         "root.3.0": {
           "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "spans": [
             {
@@ -1945,6 +1946,7 @@
         "root.3.1": {
           "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "spans": [
             {
@@ -1960,6 +1962,7 @@
         "root.3.2": {
           "font": "Noto Sans Mono",
           "mono": true,
+          "mono_font": "Noto Sans Mono",
           "size": 17,
           "spans": [
             {

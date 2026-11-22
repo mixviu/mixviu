@@ -302,6 +302,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
     let mut ports = family.to_vec();
     if f == "text" {
         ports.push(p("font", "string", false, None));
+        ports.push(p("mono_font", "string", false, None));
         ports.push(pn("weight", false, Some(1.0)));
         ports.push(p("spans", "list", false, None));
         ports.push(p("number", "object", false, None));

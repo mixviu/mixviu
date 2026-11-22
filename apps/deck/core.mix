@@ -88,6 +88,7 @@ fn scene_source($slide)
   for $key in keys($nodes)
     if $nodes[$key].widget=="text" then
       $nodes[$key].font=if $nodes[$key].mono==true then "Noto Sans Mono" else "Liberation Sans" end
+      $nodes[$key].mono_font="Noto Sans Mono"
     end
   end
   for $id in keys($slide.build)

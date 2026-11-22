@@ -17,7 +17,7 @@ fn inline($runs, $style, $mono)
     $semantic = if contains(["text","keyword","function","string","comment","value","ok","bad","warn","acc","mut"],$role) then $role else "text" end
     push($styled, merge($run, {role:$semantic,color:$tokens.colour[$role] ?? $tokens.colour.text}))
   end
-  return {widget:"text", text:$plain, spans:$styled, size:$tokens.type[$style], mono:$mono,font:if $mono then "Noto Sans Mono" else "Liberation Sans" end}
+  return {widget:"text", text:$plain, spans:$styled, size:$tokens.type[$style], mono:$mono,mono_font:"Noto Sans Mono",font:if $mono then "Noto Sans Mono" else "Liberation Sans" end}
 end
 fn column($items, $gap)
   return {widget:"column", children:$items, gap:$gap}
