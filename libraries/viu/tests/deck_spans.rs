@@ -64,6 +64,11 @@ fn source() -> String {
     format!("---\nscene: 1\nname: deck\ncitizen: test\n---\n```mix\n{nodes}\n```\n")
 }
 #[test]
+fn unregistered_font_family_refuses_before_paint() {
+    let source = "---\nscene: 1\nname: font-refusal\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"hello\",font:\"missing-family\"}}\n```\n";
+    assert!(SceneView::new(source).is_err());
+}
+#[test]
 fn inline_runs_keep_layout_colours_history_and_highlight() {
     let ctx = egui::Context::default();
     viu::fonts::install(&ctx, 400, 600);
