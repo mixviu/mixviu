@@ -90,7 +90,7 @@ fn sting_font_identity_rows() {
         // each glyph's subpixel X position, not only its font and character.
         let mut expected_job = (*actual.job).clone();
         for section in &mut expected_job.sections {
-            if section.byte_range.start == skip {
+            if section.byte_range.start.0 as usize == skip {
                 section.format.font_id.family = egui::FontFamily::Name(file.into());
             }
         }
