@@ -15,6 +15,7 @@ fn rpc($target,$command,$args)
   if $command=="shell.scenes.list" then return [] end
   if $command=="shell.props.get" then return {panels:{bottom:{mode:"docked",width_px:40,pages:[],declared:[]}}} end
   if $command=="shell.scene.validate" then
+    if type($args)=="map" and $args.write==true then raise("EDITOR_WRITE","editor validation must be read-only") end
     $source=type($args)=="map" ? $args.source : $args
     $loader.document($source)
     return {valid:true}
@@ -24,19 +25,37 @@ fn rpc($target,$command,$args)
   if $command=="scene-editor.quit" then return {quitting:true} end
   raise("SCENES_UPSTREAM","injected host refusal",{upstream:{error_code:"HOST_REFUSED",message:"test host refused"}})
 end
+-- The install reducer is a writer. Give only that step its explicit staged
+-- admission boundary; editor inspection and activation keep the read-only fake.
+fn install_rpc($target,$command,$args)
+  if $command=="shell.scene.validate" and type($args)=="map" and $args.write==true then
+    $loader.document($args.source)
+    return {valid:true}
+  end
+  return rpc($target,$command,$args)
+end
 fn parsed($path,$opts) return {ok:true,problems:[]} end
 fn notify($body) return true end
 fn stop($pid,$tag) return true end
 fn launch($dir,$name,$generation,$host,$me) raise("UNEXPECTED_LAUNCH","disabled installation must not start") end
 $io={rpc:fn($t,$v,$a)=rpc($t,$v,$a),check:fn($p,$o)=parsed($p,$o),notify:fn($b)=notify($b),stop:fn($p,$t)=stop($p,$t),launch:fn($d,$n,$g,$h,$m)=launch($d,$n,$g,$h,$m)}
 try
+  $write_refused=false
+  try
+    rpc("shell","shell.scene.validate",{source:"unused",write:true})
+  catch $message, $e
+    $write_refused=$e.code=="EDITOR_WRITE"
+  end
+  check($write_refused,"read-only editor fake refuses write admission before parsing")
   $s=$loader.initial($tmp,$templates,"shell","scenes",$io)
   $s=$loader.rescan($s,false)
   $s=$app.request($s,"snapshot",{},$loader)
   check($s.rc==0 and $s.response.schema=="scene-editor.snapshot.v1" and len($s.response.state_token)==64,"versioned native snapshot")
   $token=$s.response.state_token
   $selection={view:"gallery",template:"notes",scene:nil,page:nil}
+  $s.io.rpc=fn($t,$v,$a)=install_rpc($t,$v,$a)
   $s=$app.request($s,"action",{action:"install",selection:$selection,state_token:$token},$loader)
+  $s.io.rpc=$io.rpc
   check($s.rc==0 and is_file($tmp .. "/notes/scene.mix") and not $s.scenes.notes.enabled,"install executes the real reducer without self RPC")
   check($s.response.selection.scene=="notes","completion includes updated selection")
   $installed_token=$s.response.state_token

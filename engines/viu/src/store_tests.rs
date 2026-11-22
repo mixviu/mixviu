@@ -60,6 +60,18 @@ fn bad_desk_theme_reload_child() {
             0
         );
     }
+    let refused = store.dispatch(
+        SceneCommand::Validate,
+        "",
+        &json!({"source":TOAST,"write":true}),
+        &mut caller,
+    );
+    assert_eq!(refused.rc, 10);
+    assert!(
+        refused.body.contains("missing.store-control"),
+        "{}",
+        refused.body
+    );
     // Exact native handler used by prepare_reload, remount, reload_group_once.
     for _ in 0..2 {
         assert_eq!(
