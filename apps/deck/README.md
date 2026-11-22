@@ -162,6 +162,24 @@ translation presets at a supplied time, returning `{opacity,offset,paint_effect}
 
 ## Reference and checks
 
+`apps/gallery/deck.mix` supplies separate `pr_pill`, `compact_card` and
+`compact_chip` compositions: PR pills use 26 px mono 600 with 4 × 14 px
+padding; compact overview cards use 21 px headings and 14 × 18 px padding;
+their chips use 20 px mono and 17 px sans captions. Ordinary `chip` retains
+the larger presentation style. `header(text, prs, true)` includes the 34 px
+cyclops; `compact_rail` keeps the date at the right of a single chip row.
+Stat captions are uppercase with the HTML letter spacing. Topic stacks use
+the scene column's vertical `justify: center` contract; their optional fourth
+argument is the available section height, including bottom padding.
+
+The ignored `layout::render_layout_steps` test in the `deck` test target
+accepts `DECK_LAYOUT_INPUT` (a private deck JSON path) and
+`DECK_LAYOUT_OUTPUT` (an evidence directory). On CBC it opens the supplied
+deck through the real behaviour and pinned raster path, renders every settled
+build step at 3840 × 2160, and writes the native scene-node rectangles beside
+each PNG as `[x, y, width, height]` in output pixels. This runner requires no
+browser and makes no SSIM or box-parity assertion by itself.
+
 `examples/vfl-self-recording.json` is a hand-authored native adaptation of the
 20 November 2026 “The desk records itself” episode, including all eleven source
 sections and an opening sting. It preserves the historical story and measured
