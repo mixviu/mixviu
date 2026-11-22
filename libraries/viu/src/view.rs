@@ -960,7 +960,7 @@ impl SceneView {
         if node.ports.get("hidden") == Some(&Value::Bool(true)) {
             return;
         }
-        let width = if matches!(node.family.as_str(),"column"|"row") {num(node,"width").or_else(||{if node.ports.get("fill")==Some(&Value::Bool(true)) || ["grow","shrink","basis"].iter().any(|p|num(node,p).unwrap_or(0.)>0.) {Some(ui.available_width())}else if node.family=="row" && node.ports.contains_key("cross_align") && text(node,"align")!="end" && row_measurable(node,nodes,0) {Some(intrinsic_text_width(ui,node,nodes,&self.tree.model,false,0).min(ui.available_width()))}else{None}})}else{None};
+        let width = if matches!(node.family.as_str(),"column"|"row") {num(node,"width").or_else(||{if node.ports.get("fill")==Some(&Value::Bool(true)) || ["grow","shrink","basis"].iter().any(|p|num(node,p).unwrap_or(0.)>0.) {Some(ui.available_width())}else if node.family=="row" && node.ports.contains_key("cross_align") && text(node,"align")!="end" && text(node,"justify")!="between" && row_measurable(node,nodes,0) {Some(intrinsic_text_width(ui,node,nodes,&self.tree.model,false,0).min(ui.available_width()))}else{None}})}else{None};
         if let Some(width) = width.filter(|_| ui.layout().is_vertical()) {
             let width = bounded_layout(width, 1e6)
                 .max(num(node, "min_width").unwrap_or(0.))
