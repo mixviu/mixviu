@@ -103,10 +103,11 @@ try
       mkdir($record_dir)
     end
     $cleanup_script = $temp .. "/cleanup.mix"
-    write_file($cleanup_script, '$quarantine_private = ' .. json_encode(if $bad_private then $private else nil end) .. "\n" ..
-      '$rec_dir = ' .. json_encode(if $bad_private then $record_dir else nil end) .. "\ntry\n  exit(0)\nfinally\n" .. $cleanup_body)
+    write_file($cleanup_script, '$quarantine_private = ' .. (if $bad_private then json_encode($private) else "nil" end) .. "\n" ..
+      '$rec_dir = ' .. (if $bad_private then json_encode($record_dir) else "nil" end) .. "\ntry\n  exit(0)\nfinally\n" .. $cleanup_body)
     $r = run_argv([$mix, $cleanup_script], {timeout: 5})
     check($r.ok and $r.stdout == "", "cleanup changed exit status or wrote stdout: " .. $r.stdout .. $r.stderr)
+    if not $bad_private then check($r.stderr == "", "nil cleanup paths produced stderr: " .. $r.stderr) end
     check(contains($r.stderr, "::warning::could not remove " .. $private) == $bad_private, "private cleanup warning missing or spurious: " .. $r.stderr)
     check(not exists($record_dir), "private cleanup failure skipped recorded-environment cleanup")
   end
