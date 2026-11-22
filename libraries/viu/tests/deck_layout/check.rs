@@ -28,7 +28,7 @@ fn geometry(source: &str) -> std::collections::BTreeMap<String, egui::Rect> {
 #[test]
 fn between_keeps_a_nested_date_at_the_right_edge() {
     let rects = geometry(
-        r##"{root:{widget:"row",fill:true,justify:"between",children:["chips","date"]},chips:{widget:"row",children:["chip"]},chip:{widget:"text",text:"#210 #215 #214"},date:{widget:"column",padding_right:9,children:["label"]},label:{widget:"text",text:"21 NOV 2026"}}"##,
+        r##"{root:{widget:"row",fill:true,justify:"between",children:["chips","date"]},chips:{widget:"row",children:["chip"]},chip:{widget:"text",text:"#210 #215 #214"},date:{widget:"column",padding_right:9,children:["label"]},label:{widget:"text",text:"21 NOV 2026",wrap:true}}"##,
     );
     assert!(rects["label"].left() > rects["chips"].right() + 100.);
     assert!(
