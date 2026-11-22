@@ -164,6 +164,21 @@ fn new_ports_reject_bad_enums_types_and_negative_values() {
 }
 
 #[test]
+fn layout_lengths_and_weights_have_finite_ceilings() {
+    for body in [
+        r#"root:{widget:"text",text:"x",line_height:1e300}"#,
+        r#"root:{widget:"text",text:"x",basis:1e300}"#,
+        r#"root:{widget:"text",text:"x",shrink:1e300}"#,
+        r#"root:{widget:"text",text:"x",grow:1e300}"#,
+        r#"root:{widget:"column",justify:"evenly",children:[]}"#,
+        r#"root:{widget:"column",background_inset:[0,-1,0,0],children:[]}"#,
+    ] {
+        assert!(resolve(&document(body)).is_err(),"{body}");
+    }
+    resolve(&document(r#"root:{widget:"column",background_inset:[1,2,3,4],children:[]}"#)).unwrap();
+}
+
+#[test]
 fn model_bound_constraints_are_checked_transactionally() {
     let mut doc =
         document(r#"root: {widget: "text", text: "x", min_width: "= $model.low", max_width: 80}"#);

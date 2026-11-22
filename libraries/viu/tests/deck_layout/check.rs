@@ -68,8 +68,8 @@ fn start_row_reserves_height_and_hidden_grid_cell_keeps_its_slot() {
 #[test]
 fn bounded_columns_keep_center_and_end_placement() {
     let rects=geometry(r##"{root:{widget:"column",fill:true,align:"center",children:["center","row"]},center:{widget:"column",grow:1,min_width:200,max_width:200,children:["middle"]},middle:{widget:"text",text:"Middle"},row:{widget:"row",fill:true,align:"end",children:["right"]},right:{widget:"column",grow:1,min_width:200,max_width:200,children:["last"]},last:{widget:"text",text:"Right"}}"##);
-    assert!(rects["middle"].left()>=rects["center"].left(),"{rects:?}");
-    assert!(rects["last"].left()>=rects["right"].left(),"{rects:?}");
+    assert!((rects["root"].center().x-rects["center"].center().x).abs()<1.,"{rects:?}");
+    assert!((rects["row"].right()-rects["right"].right()).abs()<1.,"{rects:?}");
 }
 
 #[test]

@@ -1342,6 +1342,7 @@ impl SceneView {
                                             cell.set_clip_rect(ui.clip_rect());
                                             self.node(&mut cell,child,nodes,route,depth+1,events);
                                             let actual=cell.min_rect().size();
+                                            ui.ctx().data_mut(|d|d.insert_temp(natural_size_key(&nodes[child]),actual));
                                             if (actual-size).length()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cache,actual));ui.ctx().request_discard("scene layout measurement");}
                                             line_height=line_height.max(actual.y);
                                             x+=actual.x+gap.x;
@@ -1380,6 +1381,7 @@ impl SceneView {
                                             cell.set_clip_rect(ui.clip_rect());
                                             self.node(&mut cell,child,nodes,route,depth+1,events);
                                             let actual=cell.min_rect().size();
+                                            ui.ctx().data_mut(|d|d.insert_temp(natural_size_key(&nodes[*child]),actual));
                                             if (actual-*size).length()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(ui.scope_id().with((&key,"between-size",child)),actual));ui.ctx().request_discard("scene layout measurement");}
                                             height=height.max(actual.y);
                                             x+=size.x+gap;
