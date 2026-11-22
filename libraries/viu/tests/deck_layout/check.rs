@@ -64,7 +64,7 @@ fn a_minimum_width_does_not_cap_natural_content() {
 #[test]
 fn wrapped_compound_tags_move_as_whole_cells() {
     let rects = geometry(
-        r##"{root:{widget:"row",width:300,wrap:true,gap:8,children:["a","b","c"]},a:{widget:"column",width:220,children:["one"]},b:{widget:"column",width:220,children:["two"]},c:{widget:"column",width:220,children:["three"]},one:{widget:"text",text:"First tag"},two:{widget:"text",text:"Second tag"},three:{widget:"text",text:"Third tag"}}"##,
+        r##"{root:{widget:"row",fill:true,wrap:true,gap:8,children:["a","b","c"]},a:{widget:"column",min_width:600,children:["one"]},b:{widget:"column",min_width:600,children:["two"]},c:{widget:"column",min_width:600,children:["three"]},one:{widget:"text",text:"First tag"},two:{widget:"text",text:"Second tag"},three:{widget:"text",text:"Third tag"}}"##,
     );
     assert!(rects["b"].top() >= rects["a"].bottom() + 7., "{rects:?}");
     assert!(rects["c"].top() >= rects["b"].bottom() + 7., "{rects:?}");

@@ -79,8 +79,14 @@ opening sting uses the shared `drawing` primitives, composed in Mix: a dashed
 arc, pop/blink eye, float and a shadow of the combined silhouette.
 
 Grow rows allocate each cell its weighted share of the remaining width.
+Each growing cell reserves its optional `basis` before sharing the remainder;
+`align: stretch` gives the cards the tallest cell's background and outline.
 Nested content wraps where supported and clips at its cell edge when it
 cannot wrap; it cannot move the next card outside the canvas.
+Wrapped rows keep compound children together. Grid columns retain their
+allocated width even when a child has wider intrinsic content. A minimum
+width alone still permits natural growth. Rows with `justify: between`
+measure nested children before placing them at the two edges.
 `kind` defaults to `slide`; `sting` accepts a composed brand slide with the same
 timing contract. A sting needs no HTML or separate renderer.
 
@@ -168,6 +174,10 @@ padding; compact overview cards use 21 px headings and 14 × 18 px padding;
 their chips use 20 px mono and 17 px sans captions. Ordinary `chip` retains
 the larger presentation style. `header(text, prs, true)` includes the 34 px
 cyclops; `compact_rail` keeps the date at the right of a single chip row.
+`compact_chip` accepts a fourth `found` argument for the gold current-PR
+outline. `compact_table`, `compact_flow` and `compact_tags` share the smaller
+table, diagram and wrapped-tag metrics. `weighted_row` accepts weights and
+optional fixed cell insets, expressed through the scene's grow and basis ports.
 Stat captions are uppercase with the HTML letter spacing. Topic stacks use
 the scene column's vertical `justify: center` contract; their optional fourth
 argument is the available section height, including bottom padding.

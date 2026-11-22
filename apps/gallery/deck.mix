@@ -36,7 +36,7 @@ fn weighted_row($items,$weights,$width,$gap,$insets=[])
     for $key in keys($items[$i]) if $key!="fill" then $child[$key]=$items[$i][$key] end end
     push($children,merge($child,{grow:$weights[$i],basis:$insets[$i] ?? 0}))
   end
-  return merge(row($children,$gap),{align:"start",width:$width})
+  return merge(row($children,$gap),{align:"start",min_width:$width,fill:true})
 end
 fn card($title, $items, $tone,$mono_title=false)
   $heading=deck_text($title, "panel_title", $tone)
