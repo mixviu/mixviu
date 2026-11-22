@@ -10,8 +10,9 @@ pub(crate) fn job(
     mono: bool,
     bold: bool,
     base: Color32,
-    family: Option<(&str, f32, Option<&str>)>,
+    family: (Option<&str>, f32, Option<&str>),
 ) -> LayoutJob {
+    let (name, weight, mono_name) = family;
     let mut job = LayoutJob::default();
     for run in spans.as_array().into_iter().flatten() {
         let role = match run["role"].as_str().unwrap_or("text") {
@@ -39,19 +40,13 @@ pub(crate) fn job(
         } else {
             FontFamily::Proportional
         };
-        let requested = if let Some((name, weight, mono_name)) = family {
-            FontId::new(
-                size,
-                if mono || run["mono"] == true {
-                    mono_name
-                        .or(mono.then_some(name))
-                        .map_or(FontFamily::Monospace, |name| {
-                            toolkit::fonts::optional::family(name, weight)
-                        })
-                } else {
-                    toolkit::fonts::optional::family(name, weight)
-                },
-            )
+        let selected = if mono || run["mono"] == true {
+            mono_name.or(if mono { name } else { None })
+        } else {
+            name
+        };
+        let requested = if let Some(name) = selected {
+            FontId::new(size, toolkit::fonts::optional::family(name, weight))
         } else if mono || run["mono"] == true {
             FontId::new(size, FontFamily::Monospace)
         } else if bold {
@@ -110,11 +105,11 @@ mod tests {
                         node_mono,
                         false,
                         Color32::WHITE,
-                        Some((
-                            ports["font"].as_str().unwrap(),
+                        (
+                            ports["font"].as_str(),
                             400.,
                             ports["mono_font"].as_str(),
-                        )),
+                        ),
                     );
                     assert_eq!(
                         job.sections[0].format.font_id.family,

@@ -18,6 +18,8 @@ falling back to Proportional for sans runs and Monospace for mono runs.
 Without `mono_font`, a whole-node `mono: true` uses the node's chosen `font`;
 an inline mono run in a sans node uses the theme's Monospace family (JetBrains
 Mono by default). An explicit `mono_font` takes precedence for every mono run.
+The two family ports are independent: `mono_font` works without `font`, and
+sans runs without `font` keep the theme's proportional face.
 
 `cargo test -p lib-viu --test deck deck_font_identity -- --nocapture` (CBC only) paints
 the roles and compares their glyph atlas coordinates with isolated faces,
