@@ -178,6 +178,10 @@ cyclops; `compact_rail` keeps the date at the right of a single chip row.
 outline. `compact_table`, `compact_flow` and `compact_tags` share the smaller
 table, diagram and wrapped-tag metrics. `weighted_row` accepts weights and
 optional fixed cell insets, expressed through the scene's grow and basis ports.
+`code(lines, highlighted, size, leading, inset)` accepts zero-based highlighted line
+indices and optional font size, line height and horizontal inset. Each selected line paints a full
+content-width dark teal band without changing the code block's line spacing.
+The code gallery demonstrates the option; an omitted list preserves plain code.
 Stat captions are uppercase with the HTML letter spacing. Topic stacks use
 the scene column's vertical `justify: center` contract; their optional fourth
 argument is the available section height, including bottom padding.
