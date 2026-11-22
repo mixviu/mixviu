@@ -3531,9 +3531,17 @@ mod round7_tests {
             assert_eq!(view.painted.entries.len(), 1, "frame {frame}");
             assert!(view.painted.bytes <= PAINTED_BYTES);
         }
-        view.tree.nodes.get_mut("root").unwrap().ports.insert("hidden".into(),json!(true));
-        view.revision+=1;
-        let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();
+        view.tree
+            .nodes
+            .get_mut("root")
+            .unwrap()
+            .ports
+            .insert("hidden".into(), json!(true));
+        view.revision += 1;
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            view.show(ui);
+        });
+        out.textures_delta.clear();
         assert!(view.painted.entries.is_empty());
         assert_eq!(view.painted.bytes, 0);
     }
