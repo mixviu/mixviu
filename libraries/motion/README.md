@@ -75,3 +75,16 @@ Run crate tests and clippy through the native build service. The ignored
 `scene_throughput` test reports samples/second for thirty properties in an
 optimised test build. Browser capture instructions and status are in
 `oracle/README.md`; the committed fixture gates the projected property values.
+Filter stores are bounded per egui context: at most eight entries and eight
+Mi pixels per store, with eight Mi pixels admitted per paint pass. Blur and
+shadow have separate stores. Over-budget effects stay sharp/unshadowed.
+A blur hit compares node identity, sampled geometry, layout-job and font-data
+identities, family mappings and text options before tessellation or atlas
+access. It never hashes the font atlas. A common drawing float translates
+the cached shadow quad without rebuilding the silhouette. Zoom blur below
+0.3 logical pixels is omitted to avoid box-filter tail inflation.
+
+The sting font identity test is ignored pending PR #235: title 700 and Mix
+600 require Liberation Sans Bold; Viu 400 requires Liberation Sans Regular;
+the mono subtitle requires Noto Sans Mono Regular. Un-ignore and regenerate
+review evidence after merging that PR. Vertical spacing waits for its metrics.

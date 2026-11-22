@@ -97,6 +97,10 @@ fn removing_each_logo_primitive_is_detected() {
         n["root.0"].as_object_mut().unwrap().remove("shadow");
     }));
     assert!(shadow_pixels(&no_shadow) < 500);
-    println!("STING_SHADOW present={} removed={}",shadow_pixels(&floating),shadow_pixels(&no_shadow));
+    println!(
+        "STING_SHADOW present={} removed={}",
+        shadow_pixels(&floating),
+        shadow_pixels(&no_shadow)
+    );
     println!("STING_MUTATION float=FAIL shadow=FAIL (expected)");
 }

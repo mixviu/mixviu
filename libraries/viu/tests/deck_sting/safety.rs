@@ -11,9 +11,11 @@ fn bad_and_nil_bound_primitives_paint_without_panicking() {
         json!({"x":null,"shadow":null,"time":null}),
         json!({"x":[{"kind":"arc","centre":[0,0],"radius":[1e-40,1e-40],"colour":"#ffffff","sweep":1e-40}],"time":0}),
     ] {
-        let nil=model["x"].is_null();
-        let result=view.apply_model(model);
-        if nil {assert!(result.is_ok());}
+        let nil = model["x"].is_null();
+        let result = view.apply_model(model);
+        if nil {
+            assert!(result.is_ok());
+        }
         ctx.run_ui(egui::RawInput::default(), |ui| {
             view.show(ui);
         })

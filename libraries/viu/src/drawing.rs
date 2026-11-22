@@ -10,8 +10,10 @@ pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
             .and_then(serde_json::Value::as_f64)
             .unwrap_or(default) as f32
     };
-    let size=Vec2::new(n("w",280.),n("h",280.));
-    if !size.is_finite() || size.x<=0. || size.y<=0. || size.x>10000. || size.y>10000. {return}
+    let size = Vec2::new(n("w", 280.), n("h", 280.));
+    if !size.is_finite() || size.x <= 0. || size.y <= 0. || size.x > 10000. || size.y > 10000. {
+        return;
+    }
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     let time = node
         .ports
@@ -158,7 +160,8 @@ pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
             node.ports.get("shadow"),
             &shadow_shapes,
             format!(
-                "{:?}:{raw}:{sampled:?}:{}",rect.size(),
+                "{:?}:{raw}:{sampled:?}:{}",
+                rect.size(),
                 node.ports.get("shadow").unwrap_or(&serde_json::Value::Null)
             ),
             Vec2::new(0., dy),
@@ -178,16 +181,26 @@ fn parse_colour(text: &str) -> Option<u32> {
 struct ShadowCache {
     signature: String,
     texture: egui::TextureHandle,
-    pixels:usize,
+    pixels: usize,
 }
 #[derive(Default)]
-struct Shadows {entries:std::collections::VecDeque<(egui::Id,ShadowCache)>,pass:u64,spent:usize,hits:usize,rasters:usize}
-const SHADOW_PIXELS:usize=8*1024*1024;
-fn shadows(ctx:&egui::Context)->std::sync::Arc<std::sync::Mutex<Shadows>> {
-    let key=egui::Id::unique("scene-shadow-budget-v1");
+struct Shadows {
+    entries: std::collections::VecDeque<(egui::Id, ShadowCache)>,
+    pass: u64,
+    spent: usize,
+    hits: usize,
+    rasters: usize,
+}
+const SHADOW_PIXELS: usize = 8 * 1024 * 1024;
+fn shadows(ctx: &egui::Context) -> std::sync::Arc<std::sync::Mutex<Shadows>> {
+    let key = egui::Id::unique("scene-shadow-budget-v1");
     ctx.data_mut(|d| {
-        if let Some(c)=d.get_temp::<std::sync::Arc<std::sync::Mutex<Shadows>>>(key) {return c}
-        let c=std::sync::Arc::new(std::sync::Mutex::new(Shadows::default()));d.insert_temp(key,c.clone());c
+        if let Some(c) = d.get_temp::<std::sync::Arc<std::sync::Mutex<Shadows>>>(key) {
+            return c;
+        }
+        let c = std::sync::Arc::new(std::sync::Mutex::new(Shadows::default()));
+        d.insert_temp(key, c.clone());
+        c
     })
 }
 fn paint_shadow(
@@ -223,26 +236,41 @@ fn paint_shadow(
             Color32::WHITE,
         );
     };
-    let shared=shadows(ui.ctx());
-    let old={
-        let mut c=shared.lock().unwrap_or_else(|e|e.into_inner());
-        let pass=ui.ctx().cumulative_pass_nr();
-        if c.pass!=pass {c.pass=pass;c.spent=0;}
-        let pixels=width as usize*height as usize;
-        if c.spent+pixels>SHADOW_PIXELS {return}
-        c.spent+=pixels;
-        let found=c.entries.iter().position(|(id,v)|*id==key && v.signature==signature);
-        found.and_then(|i|c.entries.remove(i)).map(|(_,v)|{c.hits+=1;v})
+    let shared = shadows(ui.ctx());
+    let old = {
+        let mut c = shared.lock().unwrap_or_else(|e| e.into_inner());
+        let pass = ui.ctx().cumulative_pass_nr();
+        if c.pass != pass {
+            c.pass = pass;
+            c.spent = 0;
+        }
+        let pixels = width as usize * height as usize;
+        if c.spent + pixels > SHADOW_PIXELS {
+            return;
+        }
+        c.spent += pixels;
+        let found = c
+            .entries
+            .iter()
+            .position(|(id, v)| *id == key && v.signature == signature);
+        found.and_then(|i| c.entries.remove(i)).map(|(_, v)| {
+            c.hits += 1;
+            v
+        })
     };
     if let Some(cache) = old {
         draw(&cache.texture);
-        shared.lock().unwrap_or_else(|e|e.into_inner()).entries.push_back((key,cache));
+        shared
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .entries
+            .push_back((key, cache));
         return;
     }
     let Some(mut mask) = tiny_skia::Pixmap::new(width, height) else {
         return;
     };
-    shared.lock().unwrap_or_else(|e|e.into_inner()).rasters+=1;
+    shared.lock().unwrap_or_else(|e| e.into_inner()).rasters += 1;
     let input = shapes
         .iter()
         .cloned()
@@ -307,11 +335,22 @@ fn paint_shadow(
         ui.ctx()
             .load_texture(format!("drawing-shadow-{key:?}"), image, Default::default());
     draw(&texture);
-    let mut c=shared.lock().unwrap_or_else(|e|e.into_inner());
-    c.entries.retain(|(id,_)|*id!=key);
-    let pixels=width as usize*height as usize;
-    while c.entries.len()>=8 || c.entries.iter().map(|(_,v)|v.pixels).sum::<usize>()+pixels>SHADOW_PIXELS {c.entries.pop_front();}
-    c.entries.push_back((key,ShadowCache {signature,texture,pixels}));
+    let mut c = shared.lock().unwrap_or_else(|e| e.into_inner());
+    c.entries.retain(|(id, _)| *id != key);
+    let pixels = width as usize * height as usize;
+    while c.entries.len() >= 8
+        || c.entries.iter().map(|(_, v)| v.pixels).sum::<usize>() + pixels > SHADOW_PIXELS
+    {
+        c.entries.pop_front();
+    }
+    c.entries.push_back((
+        key,
+        ShadowCache {
+            signature,
+            texture,
+            pixels,
+        },
+    ));
 }
 
 #[cfg(test)]
@@ -319,17 +358,27 @@ mod tests {
     use super::*;
     #[test]
     fn sibling_shadows_cache_and_float_translates_the_cached_raster() {
-        let source="---\nscene: 1\nname: shadows\ncitizen: test\n---\n```mix\n{root:{widget:\"drawing\",w:100,h:100,primitives:[{kind:\"ellipse\",centre:[50,50],radius:[20,20],colour:\"#ff0000\",effects:[{preset:\"float\"}]}],shadow:{colour:[242,70,70,77],offset:[0,5],blur:10}}}\n```\n";
-        let node=scene::resolve(&scene::parse(source).unwrap()).unwrap().nodes["root"].clone();
-        let ctx=egui::Context::default();
-        for time in [2.,2.1] {
-            ctx.run_ui(egui::RawInput::default(),|ui| {
-                let mut n=node.clone();n.ports.insert("sample_time".into(),serde_json::json!(time));
-                show(ui,"a",&n);show(ui,"b",&n);
-            }).drop_without_applying_deltas();
+        let source = "---\nscene: 1\nname: shadows\ncitizen: test\n---\n```mix\n{root:{widget:\"drawing\",w:100,h:100,primitives:[{kind:\"ellipse\",centre:[50,50],radius:[20,20],colour:\"#ff0000\",effects:[{preset:\"float\"}]}],shadow:{colour:[242,70,70,77],offset:[0,5],blur:10}}}\n```\n";
+        let node = scene::resolve(&scene::parse(source).unwrap())
+            .unwrap()
+            .nodes["root"]
+            .clone();
+        let ctx = egui::Context::default();
+        for time in [2., 2.1] {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let mut n = node.clone();
+                n.ports
+                    .insert("sample_time".into(), serde_json::json!(time));
+                show(ui, "a", &n);
+                show(ui, "b", &n);
+            })
+            .drop_without_applying_deltas();
         }
-        let store=shadows(&ctx);let store=store.lock().unwrap();
-        assert_eq!(store.rasters,2);assert_eq!(store.entries.len(),2);assert!(store.hits>=2);
-        assert!(store.entries.iter().map(|(_,v)|v.pixels).sum::<usize>()<=SHADOW_PIXELS);
+        let store = shadows(&ctx);
+        let store = store.lock().unwrap();
+        assert_eq!(store.rasters, 2);
+        assert_eq!(store.entries.len(), 2);
+        assert!(store.hits >= 2);
+        assert!(store.entries.iter().map(|(_, v)| v.pixels).sum::<usize>() <= SHADOW_PIXELS);
     }
 }

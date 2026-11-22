@@ -1,29 +1,56 @@
 use super::*;
 use std::collections::BTreeMap;
-#[path = "safety.rs"]
-mod safety;
-#[path = "primitives.rs"]
-mod primitives;
 #[path = "fonts.rs"]
 mod fonts;
+#[path = "primitives.rs"]
+mod primitives;
+#[path = "safety.rs"]
+mod safety;
 
 #[test]
 #[ignore = "explicit CBC gallery visual evidence"]
 fn gallery_contact_sheet() {
-    let dir=std::env::temp_dir().join("mixviu-deck-sting-r2");std::fs::create_dir_all(&dir).unwrap();
-    let mut sheet=image::RgbaImage::new(3200,1800);
-    let pages=std::fs::read_dir(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/gallery/deck-pages")).unwrap();
-    let mut pages=pages.map(|p|p.unwrap().path()).collect::<Vec<_>>();pages.sort();
-    for (index,path) in pages.iter().enumerate() {
-        let mut view=SceneView::new(&std::fs::read_to_string(path).unwrap()).unwrap();
-        let mut harness=egui_kittest::Harness::builder().with_size(egui::vec2(1600.,900.)).with_context_setup(|ctx| {viu::fonts::install(ctx,400,600);viu::icons::install(ctx);}).wgpu().build_ui(move|ui| {view.show(ui);});
-        harness.run();let image=harness.render().unwrap();
-        let image=image::imageops::resize(&image,800,450,image::imageops::FilterType::Lanczos3);
-        image::imageops::replace(&mut sheet,&image,(index%4) as i64*800,(index/4) as i64*450);
-        println!("GALLERY_ROW {index} {}",path.file_name().unwrap().to_string_lossy());
+    let dir = std::env::temp_dir().join("mixviu-deck-sting-r2");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut sheet = image::RgbaImage::new(3200, 1800);
+    let pages = std::fs::read_dir(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/gallery/deck-pages"),
+    )
+    .unwrap();
+    let mut pages = pages.map(|p| p.unwrap().path()).collect::<Vec<_>>();
+    pages.sort();
+    for (index, path) in pages.iter().enumerate() {
+        let mut view = SceneView::new(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(1600., 900.))
+            .with_context_setup(|ctx| {
+                viu::fonts::install(ctx, 400, 600);
+                viu::icons::install(ctx);
+            })
+            .wgpu()
+            .build_ui(move |ui| {
+                view.show(ui);
+            });
+        harness.run();
+        let image = harness.render().unwrap();
+        let image =
+            image::imageops::resize(&image, 800, 450, image::imageops::FilterType::Lanczos3);
+        image::imageops::replace(
+            &mut sheet,
+            &image,
+            (index % 4) as i64 * 800,
+            (index / 4) as i64 * 450,
+        );
+        println!(
+            "GALLERY_ROW {index} {}",
+            path.file_name().unwrap().to_string_lossy()
+        );
     }
     sheet.save(dir.join("gallery.png")).unwrap();
-    println!("GALLERY_CONTACT_SHEET={}",dir.join("gallery.png").display());
+    println!(
+        "GALLERY_CONTACT_SHEET={}",
+        dir.join("gallery.png").display()
+    );
 }
 
 const TIMES: [f64; 9] = [0.1, 0.3, 0.6, 0.9, 1.2, 1.5, 2., 92. / 30., 172. / 30.];
@@ -111,14 +138,18 @@ fn animate_check(images: &[image::RgbaImage], logo: egui::Rect) -> Result<(), St
     let ring = |i| coloured(&images[i], logo, false) as f64;
     let eye = |i| coloured(&images[i], logo, true) as f64;
     let fraction = ring(1) / ring(8);
-    if !(0.01..0.2).contains(&(ring(0)/ring(8))) {return Err("ring start cap missing or already complete at 0.1".into());}
+    if !(0.01..0.2).contains(&(ring(0) / ring(8))) {
+        return Err("ring start cap missing or already complete at 0.1".into());
+    }
     if !(0.01..0.5).contains(&fraction) {
         return Err(format!("ring at 0.3 must be partial: {fraction}"));
     }
     if eye(1) < 500. {
         return Err("eye has not popped at 0.3".into());
     }
-    if eye(0)>eye(1)*0.4 {return Err("eye is instant rather than popping".into());}
+    if eye(0) > eye(1) * 0.4 {
+        return Err("eye is instant rather than popping".into());
+    }
     if eye(7) / eye(8) > 0.18 {
         return Err("eye did not close at blink".into());
     }
@@ -194,11 +225,14 @@ fn sting_entrance_paints_and_rejects_a_static_control() {
     let logo = final_geometry["root.0"];
     assert_eq!(animate_check(&images, logo), Ok(()));
     assert_eq!(entrances(&images, &final_geometry), Ok(()));
-    primitives::painted_centres(&images,&final_geometry);
-    for (id,index) in [("root.6",5),("root.8",6)] {
-        let part=element_pixels(&images[index],final_geometry[id],true);
-        let full=element_pixels(&images[8],final_geometry[id],true);
-        assert!(part>0 && part<full*99/100,"{id} must wipe progressively");
+    primitives::painted_centres(&images, &final_geometry);
+    for (id, index) in [("root.6", 5), ("root.8", 6)] {
+        let part = element_pixels(&images[index], final_geometry[id], true);
+        let full = element_pixels(&images[8], final_geometry[id], true);
+        assert!(
+            part > 0 && part < full * 99 / 100,
+            "{id} must wipe progressively"
+        );
     }
     println!(
         "STING_ENTRANCE animated=PASS ring_fraction_0.3={:.6} blink_ratio={:.6}",
@@ -321,7 +355,13 @@ fn chrome_entrance_contact_sheet() {
         f(&native)
     );
     assert!((f(&chrome) - f(&native)).abs() < 0.005);
-    let start=|images:&[image::RgbaImage]|coloured(&images[0],logo,false) as f64/coloured(&images[8],logo,false) as f64;
-    println!("STING_ORACLE ring_start chrome={} native={}",start(&chrome),start(&native));
-    assert!((start(&chrome)-start(&native)).abs()<0.005);
+    let start = |images: &[image::RgbaImage]| {
+        coloured(&images[0], logo, false) as f64 / coloured(&images[8], logo, false) as f64
+    };
+    println!(
+        "STING_ORACLE ring_start chrome={} native={}",
+        start(&chrome),
+        start(&native)
+    );
+    assert!((start(&chrome) - start(&native)).abs() < 0.005);
 }
