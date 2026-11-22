@@ -180,24 +180,52 @@ fn unregistered_font_family_refuses_before_paint() {
 fn mono_gallery_rail_chip_uses_named_mono_face() {
     let ctx = egui::Context::default();
     viu::fonts::install(&ctx, 400, 600);
-    let mut view = SceneView::new(include_str!("../../../apps/gallery/deck-pages/rail.scene.mix")).unwrap();
-    let out = ctx.run_ui(egui::RawInput::default(), |ui| { view.show(ui); });
-    let actual = out.shapes.iter().find_map(|s| match &s.shape {
-        egui::Shape::Text(t) if t.galley.job.text == "now" => Some(&t.galley),
-        _ => None,
-    }).expect("real gallery chip painted");
-    let family = toolkit::fonts::optional::family("Noto Sans Mono",400.);
-    assert_eq!(actual.job.sections[0].format.font_id.family,family);
+    let mut view = SceneView::new(include_str!(
+        "../../../apps/gallery/deck-pages/rail.scene.mix"
+    ))
+    .unwrap();
+    let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+        view.show(ui);
+    });
+    let actual = out
+        .shapes
+        .iter()
+        .find_map(|s| match &s.shape {
+            egui::Shape::Text(t) if t.galley.job.text == "now" => Some(&t.galley),
+            _ => None,
+        })
+        .expect("real gallery chip painted");
+    let family = toolkit::fonts::optional::family("Noto Sans Mono", 400.);
+    assert_eq!(actual.job.sections[0].format.font_id.family, family);
     let defs = ctx.fonts(|f| f.definitions().clone());
     let primary = &defs.families[&family][0];
     let mut db = fontdb::Database::new();
     db.load_font_data(defs.font_data[primary].bytes().to_vec());
     let face = &db.faces().next().unwrap().post_script_name;
-    assert_eq!(face,"NotoSansMono-Regular");
-    let expected = ctx.fonts_mut(|f| f.layout_no_wrap("now".into(),egui::FontId::new(24.,egui::FontFamily::Name("NotoSansMono-Regular.ttf".into())),egui::Color32::WHITE));
-    let glyphs = |g: &egui::Galley| g.rows.iter().flat_map(|r| &r.glyphs).map(|g| (g.chr,g.uv_rect,g.advance_width)).collect::<Vec<_>>();
+    assert_eq!(face, "NotoSansMono-Regular");
+    let expected = ctx.fonts_mut(|f| {
+        f.layout_no_wrap(
+            "now".into(),
+            egui::FontId::new(
+                24.,
+                egui::FontFamily::Name("NotoSansMono-Regular.ttf".into()),
+            ),
+            egui::Color32::WHITE,
+        )
+    });
+    let glyphs = |g: &egui::Galley| {
+        g.rows
+            .iter()
+            .flat_map(|r| &r.glyphs)
+            .map(|g| (g.chr, g.uv_rect, g.advance_width))
+            .collect::<Vec<_>>()
+    };
     assert!(!glyphs(actual).is_empty());
-    assert_eq!(glyphs(actual),glyphs(&expected),"gallery chip raster face");
+    assert_eq!(
+        glyphs(actual),
+        glyphs(&expected),
+        "gallery chip raster face"
+    );
     println!("MONO_IDENTITY gallery rail chip now: {family:?} -> {face}");
     out.drop_without_applying_deltas();
 }
