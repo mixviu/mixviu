@@ -4,16 +4,27 @@ use super::*;
 #[test]
 fn manual_wrap_and_between_clip_painted_shapes_to_cells() {
     for mode in ["wrap:true", "justify:\"between\",cross_align:\"center\""] {
-        let source = format!(r##"{{root:{{widget:"row",fill:true,{mode},children:["a","b"]}},a:{{widget:"drawing",w:250,h:20,max_width:60,primitives:[{{kind:"bar",centre:[125,10],radius:[125,10],colour:"#ff0000"}}]}},b:{{widget:"text",text:"Neighbour"}}}}"##);
-        let mut view = SceneView::new(&format!("---\nscene: 1\nname: clips\ncitizen: test\n---\n```mix\n{source}\n```\n")).unwrap();
+        let source = format!(
+            r##"{{root:{{widget:"row",fill:true,{mode},children:["a","b"]}},a:{{widget:"drawing",w:250,h:20,max_width:60,primitives:[{{kind:"bar",centre:[125,10],radius:[125,10],colour:"#ff0000"}}]}},b:{{widget:"text",text:"Neighbour"}}}}"##
+        );
+        let mut view = SceneView::new(&format!(
+            "---\nscene: 1\nname: clips\ncitizen: test\n---\n```mix\n{source}\n```\n"
+        ))
+        .unwrap();
         let ctx = egui::Context::default();
         for _ in 0..8 {
-            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {view.show(ui);});
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
             out.textures_delta.clear();
             let red: Vec<_> = out.shapes.iter().filter(|s| matches!(&s.shape, egui::Shape::Mesh(m) if m.vertices.iter().any(|v|v.color == egui::Color32::RED))).collect();
             assert!(!red.is_empty());
             for shape in red {
-                assert!(shape.clip_rect.right() <= view.geometry["root"].left() + 60.5, "{mode}: {:?}", shape.clip_rect);
+                assert!(
+                    shape.clip_rect.right() <= view.geometry["root"].left() + 60.5,
+                    "{mode}: {:?}",
+                    shape.clip_rect
+                );
             }
         }
     }
@@ -22,12 +33,19 @@ fn manual_wrap_and_between_clip_painted_shapes_to_cells() {
 #[test]
 fn shrink_and_basis_only_rows_keep_main_centred_cross_placement() {
     fn positions(port: &str) -> std::collections::BTreeMap<String, f32> {
-        let source = format!(r#"{{root:{{widget:"row",children:["a","b"]}},a:{{widget:"text",text:"Large",size:40}},b:{{widget:"text",text:"Small",size:12{port}}}}}"#);
-        let mut view = SceneView::new(&format!("---\nscene: 1\nname: native-cross\ncitizen: test\n---\n```mix\n{source}\n```\n")).unwrap();
+        let source = format!(
+            r#"{{root:{{widget:"row",children:["a","b"]}},a:{{widget:"text",text:"Large",size:40}},b:{{widget:"text",text:"Small",size:12{port}}}}}"#
+        );
+        let mut view = SceneView::new(&format!(
+            "---\nscene: 1\nname: native-cross\ncitizen: test\n---\n```mix\n{source}\n```\n"
+        ))
+        .unwrap();
         let ctx = egui::Context::default();
         let mut result = std::collections::BTreeMap::new();
         for _ in 0..8 {
-            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {view.show(ui);});
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
             out.textures_delta.clear();
             result.clear();
             for shape in out.shapes {
@@ -43,7 +61,10 @@ fn shrink_and_basis_only_rows_keep_main_centred_cross_placement() {
     for port in [",shrink:1", ",basis:120"] {
         let measured = positions(port);
         for child in ["Large", "Small"] {
-            assert!((measured[child] - plain[child]).abs() < 1., "{port} {measured:?} {plain:?}");
+            assert!(
+                (measured[child] - plain[child]).abs() < 1.,
+                "{port} {measured:?} {plain:?}"
+            );
         }
     }
 }
@@ -51,11 +72,18 @@ fn shrink_and_basis_only_rows_keep_main_centred_cross_placement() {
 #[test]
 fn compact_cross_row_spacing_keeps_last_glyph_inside_cell() {
     for ports in ["", ",gap:13", ",column_gap:19", ",native_spacing:true"] {
-        let source = format!(r#"{{root:{{widget:"row",cross_align:"center"{ports},children:["a","b","c"]}},a:{{widget:"text",text:"ONE"}},b:{{widget:"text",text:"TWO"}},c:{{widget:"text",text:"TAIL"}}}}"#);
-        let mut view = SceneView::new(&format!("---\nscene: 1\nname: spacing\ncitizen: test\n---\n```mix\n{source}\n```\n")).unwrap();
+        let source = format!(
+            r#"{{root:{{widget:"row",cross_align:"center"{ports},children:["a","b","c"]}},a:{{widget:"text",text:"ONE"}},b:{{widget:"text",text:"TWO"}},c:{{widget:"text",text:"TAIL"}}}}"#
+        );
+        let mut view = SceneView::new(&format!(
+            "---\nscene: 1\nname: spacing\ncitizen: test\n---\n```mix\n{source}\n```\n"
+        ))
+        .unwrap();
         let ctx = egui::Context::default();
         for _ in 0..8 {
-            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {view.show(ui);});
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
             out.textures_delta.clear();
             let mut found = false;
             for shape in &out.shapes {
@@ -63,7 +91,11 @@ fn compact_cross_row_spacing_keeps_last_glyph_inside_cell() {
                     if t.galley.job.text == "TAIL" {
                         found = true;
                         let right = t.pos.x + t.galley.rect.right();
-                        assert!(right <= shape.clip_rect.right() + 0.5, "{ports}: {right} {:?}", shape.clip_rect);
+                        assert!(
+                            right <= shape.clip_rect.right() + 0.5,
+                            "{ports}: {right} {:?}",
+                            shape.clip_rect
+                        );
                         assert!(right <= view.geometry["root"].right() + 0.5);
                         assert!(right <= view.geometry["c"].right() + 0.5);
                     }

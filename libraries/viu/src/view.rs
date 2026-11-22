@@ -975,7 +975,9 @@ impl SceneView {
                     && !children(node).filter_map(|c| nodes.get(c)).any(|n| {
                         n.ports.get("hidden") != Some(&Value::Bool(true))
                             && (n.ports.get("fill") == Some(&Value::Bool(true))
-                                || ["grow", "basis"].iter().any(|p| num(n, p).unwrap_or(0.) > 0.))
+                                || ["grow", "basis"]
+                                    .iter()
+                                    .any(|p| num(n, p).unwrap_or(0.) > 0.))
                     })
                     && row_measurable(node, nodes, 0)
                 {
