@@ -336,6 +336,9 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         ]);
     }
     if f == "row" {
+        let mut cross = p("cross_align", "string", false, None);
+        cross.enum_values = &["start", "center", "end"];
+        ports.push(cross);
         ports
             .iter_mut()
             .find(|p| p.name == "align")
@@ -661,8 +664,10 @@ pub(crate) fn check_port_value(
     }
     let ceiling = match k {
         "line_height" => Some(4096.),
-        "basis" | "width" | "min_width" | "max_width" | "column_gap" | "min_column_width"
-        | "height" | "row_gap" | "gap" => Some(1e6),
+        "size" | "padding" | "radius" | "w" | "h" | "basis" | "width" | "min_width"
+        | "max_width" | "column_gap" | "min_column_width" | "height" | "row_gap" | "gap" => {
+            Some(1e6)
+        }
         "grow" | "shrink" => Some(1000.),
         _ => None,
     };

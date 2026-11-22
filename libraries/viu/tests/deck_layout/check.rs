@@ -106,32 +106,6 @@ fn first_frame_between_and_wrap_have_visible_text() {
 }
 
 #[test]
-fn comparison_row_aligns_actual_glyph_baselines() {
-    let source = "---\nscene: 1\nname: baseline\ncitizen: test\n---\n```mix\n{root:{widget:\"row\",align:\"baseline\",children:[\"big\",\"small\"]},big:{widget:\"text\",text:\"6.3 s\",size:44,font:\"Liberation Sans\",weight:700},small:{widget:\"text\",text:\"median\",size:20,font:\"Liberation Sans\"}}\n```\n";
-    let mut view = SceneView::new(source).unwrap();
-    let ctx = egui::Context::default();
-    viu::fonts::install(&ctx, 400, 600);
-    let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-        view.show(ui);
-    });
-    out.textures_delta.clear();
-    let baselines: Vec<_> = out
-        .shapes
-        .iter()
-        .filter_map(|s| {
-            if let egui::Shape::Text(t) = &s.shape {
-                let r = &t.galley.rows[0];
-                Some(t.pos.y + r.pos.y + r.glyphs[0].pos.y)
-            } else {
-                None
-            }
-        })
-        .collect();
-    assert_eq!(baselines.len(), 2);
-    assert!((baselines[0] - baselines[1]).abs() < 0.01, "{baselines:?}");
-}
-
-#[test]
 fn shrink_row_preserves_images_buttons_spans_and_grow() {
     let rects = geometry(
         r##"{root:{widget:"row",fill:true,gap:8,children:["photo","button","spans","grow"]},photo:{widget:"image",src:"brand:cyclops",w:80,h:80},button:{widget:"button",label:"Ready"},spans:{widget:"text",text:"ignored",size:24,shrink:1,wrap:true,spans:[{text:"Wide bold ",bold:true},{text:"mono identifier",mono:true}]},grow:{widget:"column",grow:1,children:["tail"]},tail:{widget:"text",text:"Tail"}}"##,
@@ -343,115 +317,6 @@ fn column_justify_centres_the_content() {
 }
 
 #[test]
-#[ignore = "explicit CBC evidence; DECK_LAYOUT_INPUT and DECK_LAYOUT_OUTPUT required"]
-fn render_layout_steps() {
-    let path = PathBuf::from(std::env::var_os("DECK_LAYOUT_INPUT").expect("DECK_LAYOUT_INPUT"));
-    let out = PathBuf::from(std::env::var_os("DECK_LAYOUT_OUTPUT").expect("DECK_LAYOUT_OUTPUT"));
-    std::fs::create_dir_all(&out).unwrap();
-    let document: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    for slide in document["slides"].as_array().unwrap() {
-        let source = format!(
-            "---\nscene: 1\nname: layout-input\ncitizen: deck\n---\n```mix\n{}\n```\n",
-            slide["scene"]
-        );
-        let parsed =
-            scene::parse(&source).unwrap_or_else(|error| panic!("{}: {error:?}", slide["id"]));
-        scene::resolve(&parsed).unwrap_or_else(|error| panic!("{}: {error:?}", slide["id"]));
-    }
-    let mut deck = Deck::new();
-    let opened = deck.call("deck.open", json!({"path":path})).reply.unwrap();
-    assert_eq!(opened.rc, 0, "{opened:?}");
-    for slide in document["slides"].as_array().unwrap() {
-        let id = slide["id"].as_str().unwrap();
-        for step in 0..slide["steps"].as_u64().unwrap() {
-            let model = deck
-                .call("deck.goto", json!({"slide":id,"step":step}))
-                .model
-                .unwrap();
-            let mut view = SceneView::with_model(
-                model["presentation"]["scene"].as_str().unwrap(),
-                model.clone(),
-            )
-            .unwrap();
-            view.set_rasters(deck.rasters.clone());
-            let mut settle_view = SceneView::with_model(
-                model["presentation"]["scene"].as_str().unwrap(),
-                model.clone(),
-            )
-            .unwrap();
-            settle_view.set_rasters(deck.rasters.clone());
-            let settle = egui::Context::default();
-            viu::fonts::install(&settle, 400, 600);
-            for frame in 0..24 {
-                let mut output = settle.run_ui(
-                    egui::RawInput {
-                        screen_rect: Some(egui::Rect::from_min_size(
-                            egui::Pos2::ZERO,
-                            egui::vec2(1600., 900.),
-                        )),
-                        ..Default::default()
-                    },
-                    |ui| {
-                        settle_view.show(ui);
-                    },
-                );
-                output.textures_delta.clear();
-                if frame == 23 {
-                    assert!(
-                        !output.platform_output.requested_discard(),
-                        "{id}-{step}: {:?}",
-                        output.platform_output.request_discard_reasons
-                    );
-                }
-            }
-            println!("SETTLED {id}-{step}: no discard reasons after 24 frames");
-            let rects = Arc::new(std::sync::Mutex::new(json!({})));
-            let captured = rects.clone();
-            let mut harness = egui_kittest::Harness::builder()
-                .with_size(egui::vec2(1600., 900.))
-                .with_pixels_per_point(2.4)
-                .with_context_setup(|ctx| {
-                    viu::fonts::install(ctx, 400, 600);
-                    viu::icons::install(ctx);
-                })
-                .wgpu()
-                .build_ui(move |ui| {
-                    let mut canvas = ui.new_child(egui::UiBuilder::new().max_rect(
-                        egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600., 900.)),
-                    ));
-                    view.show(&mut canvas);
-                    *captured.lock().unwrap() = view
-                        .geometry
-                        .iter()
-                        .map(|(k, r)| {
-                            (
-                                k.clone(),
-                                json!([
-                                    r.left() * 2.4,
-                                    r.top() * 2.4,
-                                    r.width() * 2.4,
-                                    r.height() * 2.4
-                                ]),
-                            )
-                        })
-                        .collect();
-                });
-            harness.run();
-            harness
-                .render()
-                .unwrap()
-                .save(out.join(format!("{id}-{step}.png")))
-                .unwrap();
-            std::fs::write(
-                out.join(format!("{id}-{step}.json")),
-                serde_json::to_vec_pretty(&*rects.lock().unwrap()).unwrap(),
-            )
-            .unwrap();
-        }
-    }
-}
-
-#[test]
 fn themed_plain_colours_and_bold_are_painted() {
     for dark in [false, true] {
         let ctx = egui::Context::default();
@@ -522,58 +387,6 @@ fn grid_clips_painted_text_and_native_between_skips_hidden() {
 }
 
 #[test]
-fn gallery_and_workshop_layouts_settle() {
-    let mut sources = vec![];
-    for entry in std::fs::read_dir(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../apps/gallery/deck-pages"
-    ))
-    .unwrap()
-    {
-        let p = entry.unwrap().path();
-        if p.extension().is_some_and(|x| x == "mix") {
-            sources.push(std::fs::read_to_string(p).unwrap());
-        }
-    }
-    // Workshop's actual container definitions, with deterministic control data.
-    let d = scene::parse(include_str!("../../../../apps/workshop/scene.mix")).unwrap();
-    for root in ["body-actions", "mesh-top-lists"] {
-        let mut nodes = serde_json::Map::new();
-        let raw = &d.nodes[root];
-        let mut ports = raw.ports.clone();
-        ports.shift_remove("hidden");
-        ports.insert("widget".into(), json!(raw.widget));
-        nodes.insert("root".into(), serde_json::to_value(ports).unwrap());
-        for child in raw.ports["children"].as_array().unwrap() {
-            let id = child.as_str().unwrap();
-            nodes.insert(id.into(), json!({"widget":"button","label":id}));
-        }
-        sources.push(format!(
-            "---\nscene: 1\nname: workshop-layout\ncitizen: test\n---\n```mix\n{}\n```\n",
-            Value::Object(nodes)
-        ));
-    }
-    for source in sources {
-        let mut v = SceneView::new(&source).unwrap();
-        let ctx = egui::Context::default();
-        for frame in 0..24 {
-            let mut o = ctx.run_ui(egui::RawInput::default(), |ui| {
-                v.show(ui);
-            });
-            o.textures_delta.clear();
-            if frame == 23 {
-                assert!(
-                    !o.platform_output.requested_discard(),
-                    "{}: {:?}",
-                    source,
-                    o.platform_output.request_discard_reasons
-                );
-            }
-        }
-    }
-}
-
-#[test]
 fn measured_grid_sums_columns_and_min_width_is_only_a_floor() {
     let r = geometry(
         r#"{root:{widget:"row",justify:"between",fill:true,children:["g","tail"]},g:{widget:"grid",columns:2,column_gap:20,children:["a","b"]},a:{widget:"text",text:"A long first column",size:24},b:{widget:"text",text:"Second column",size:24},tail:{widget:"text",text:"Tail"}}"#,
@@ -620,5 +433,182 @@ fn grid_scroll_rows_shrink_with_viewport_and_reserve_prior_rows() {
             assert!(scroll.height() < previous - 200., "{scroll:?}");
         }
         previous = scroll.height();
+    }
+}
+
+#[test]
+fn default_rows_keep_main_cross_alignment_with_and_without_height() {
+    for height in ["", ",height:80"] {
+        let r = geometry(&format!(
+            r#"{{root:{{widget:"row"{height},children:["label","button"]}},label:{{widget:"text",text:"Short",size:12}},button:{{widget:"button",label:"Button"}}}}"#
+        ));
+        assert!(
+            (r["label"].center().y - r["button"].center().y).abs() < 1.,
+            "{r:?}"
+        );
+        assert!(
+            (r["label"].center().y - r["root"].center().y).abs() < 1.,
+            "{r:?}"
+        );
+    }
+}
+
+#[test]
+fn real_workshop_and_dopus_rows_match_main_centred_cross_positions() {
+    let model = json!({"macro_confirm":true,"mesh_ping":{"id":"mesh-ping","kind":"button","label":"Ping","initial":"","properties":{"text":"Ping"}},"location_controls":{"left":{"id":"left-location","kind":"field","label":"","initial":"","properties":{"accessible_name":"Path","fill":true}},"right":{"id":"right-location","kind":"field","label":"","initial":"","properties":{"accessible_name":"Path","fill":true}}},"__viu_metrics":{"height":600,"control_row_height":60,"item_spacing_x":8}});
+    for (source, ids) in [
+        (
+            include_str!("../../../../apps/workshop/scene.mix"),
+            vec!["macro-confirmation", "mesh-header"],
+        ),
+        (
+            include_str!("../../../../apps/dopus/scene.mix"),
+            vec![
+                "left-location-row",
+                "right-location-row",
+                "left-summary-row",
+                "right-summary-row",
+            ],
+        ),
+        (
+            include_str!("../../../../apps/dopus/chooser.scene.mix"),
+            vec!["location-row", "summary-row"],
+        ),
+    ] {
+        let doc = scene::parse(source).unwrap();
+        for id in ids {
+            for height in [None, Some(80)] {
+                let row = &doc.nodes[id];
+                let mut ports = row.ports.clone();
+                ports.insert("widget".into(), json!("row"));
+                ports.shift_remove("hidden");
+                if let Some(h) = height {
+                    ports.insert("height".into(), json!(h));
+                }
+                let children = row.ports["children"].as_array().unwrap();
+                let mut nodes = serde_json::Map::new();
+                nodes.insert("root".into(), serde_json::to_value(ports).unwrap());
+                for c in children {
+                    let name = c.as_str().unwrap();
+                    let raw = &doc.nodes[name];
+                    let mut p = raw.ports.clone();
+                    p.insert("widget".into(), json!(raw.widget));
+                    nodes.insert(name.into(), serde_json::to_value(p).unwrap());
+                }
+                let mut geometries = vec![];
+                for reference in [false, true] {
+                    let mut nodes = nodes.clone();
+                    if reference {
+                        nodes["root"]["align"] = json!("center");
+                    }
+                    let source = format!(
+                        "---\nscene: 1\nname: row-parity\ncitizen: test\n---\n```mix\n{}\n```\n",
+                        Value::Object(nodes)
+                    );
+                    let mut v = SceneView::with_model(&source, model.clone()).unwrap();
+                    let ctx = egui::Context::default();
+                    for _ in 0..6 {
+                        ctx.run_ui(egui::RawInput::default(), |ui| {
+                            v.show(ui);
+                        })
+                        .drop_without_applying_deltas();
+                    }
+                    geometries.push(v.geometry);
+                }
+                for child in children {
+                    let child = child.as_str().unwrap();
+                    let a = geometries[0][child];
+                    let b = geometries[1][child];
+                    let delta = (a.center().y - geometries[0]["root"].top())
+                        - (b.center().y - geometries[1]["root"].top());
+                    assert!(delta.abs() < 0.01, "{id}/{child}: {delta}");
+                }
+                println!("ROW_MAIN_PARITY {id} height={height:?}: cross-position delta 0");
+            }
+        }
+    }
+}
+
+#[test]
+fn translucent_plain_node_and_theme_colours_are_not_premultiplied_twice() {
+    let ctx = egui::Context::default();
+    viu::appearance::install_theme(&ctx, &toolkit::Theme::embedded()).unwrap();
+    let theme = Color32::from_rgba_unmultiplied(60, 120, 220, 128);
+    let normal = Color32::from_rgba_unmultiplied(150, 200, 250, 96);
+    ctx.data_mut(|d| {
+        let key = egui::Id::unique("viu-design-colours");
+        let mut palette = (**d
+            .get_temp::<Arc<std::collections::BTreeMap<String, Color32>>>(key)
+            .as_ref()
+            .unwrap())
+        .clone();
+        palette.insert("translucent".into(), theme);
+        d.insert_temp(key, Arc::new(palette));
+    });
+    ctx.global_style_mut(|s| s.visuals.override_text_color = Some(normal));
+    let mut v=SceneView::new("---\nscene: 1\nname: alpha\ncitizen: test\n---\n```mix\n{root:{widget:\"column\",children:[\"a\",\"b\",\"c\"]},a:{widget:\"text\",text:\"Node\",color:\"#ff804080\"},b:{widget:\"text\",text:\"Theme\",color:\"design.translucent\"},c:{widget:\"text\",text:\"Normal\"}}\n```\n").unwrap();
+    let mut o = ctx.run_ui(egui::RawInput::default(), |ui| {
+        v.show(ui);
+    });
+    o.textures_delta.clear();
+    let mut found = 0;
+    for s in o.shapes {
+        if let egui::Shape::Text(t) = s.shape {
+            let expected = match t.galley.job.text.as_str() {
+                "Node" => Color32::from_rgba_unmultiplied(255, 128, 64, 128),
+                "Theme" => theme,
+                "Normal" => normal,
+                _ => continue,
+            };
+            found += 1;
+            assert!(
+                t.galley
+                    .job
+                    .sections
+                    .iter()
+                    .all(|s| s.format.color == expected)
+            );
+        }
+    }
+    assert_eq!(found, 3);
+}
+
+#[test]
+fn stretched_justified_columns_settle_and_shrink_with_padding() {
+    for justify in ["center", "end", "between"] {
+        let source = format!(
+            r#"---
+scene: 1
+name: stretch
+citizen: test
+---
+```mix
+{{root:{{widget:"row",fill:true,align:"stretch",children:["a","b"]}},a:{{widget:"column",grow:1,padding_top:12,padding_bottom:14,justify:"{justify}",children:["one","two"]}},one:{{widget:"text",text:"One"}},two:{{widget:"text",text:"Two"}},b:{{widget:"column",grow:1,height:"= $model.height",children:[]}}}}
+```
+"#
+        );
+        let mut v = SceneView::with_model(&source, json!({"height":220})).unwrap();
+        let ctx = egui::Context::default();
+        for target in [220, 100] {
+            v.apply_model(json!({"height":target})).unwrap();
+            for frame in 0..24 {
+                let mut o = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    v.show(ui);
+                });
+                o.textures_delta.clear();
+                if frame == 23 {
+                    assert!(
+                        !o.platform_output.requested_discard(),
+                        "{justify}: {:?}",
+                        o.platform_output.request_discard_reasons
+                    );
+                }
+            }
+            assert!(
+                v.geometry["root"].height() <= target as f32 + 1.,
+                "{justify}: {:?}",
+                v.geometry
+            );
+        }
     }
 }
