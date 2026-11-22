@@ -289,6 +289,7 @@ fn chrome_entrance_contact_sheet() {
     let path = out.join("chrome-native-contact-sheet.png");
     sheet.save(&path).unwrap();
     println!("STING_CONTACT_SHEET={}", path.display());
+    let mut aligned = true;
     for i in 6..TIMES.len() {
         for (name, top, bottom, cyan) in [
             ("logo", 120., 420., false),
@@ -326,13 +327,10 @@ fn chrome_entrance_contact_sheet() {
                 "STING_VERTICAL time={} {name} chrome={c:?} native={n:?} offset_px={delta}",
                 TIMES[i]
             );
-            assert!(
-                delta.abs() <= 4.,
-                "{name} vertical offset {delta} at {}",
-                TIMES[i]
-            );
+            aligned &= delta.abs() <= 4.;
         }
     }
+    assert!(aligned, "vertical offsets must be within four physical pixels");
     assert_eq!(animate_check(&native, logo), Ok(()));
     assert_eq!(entrances(&native, &final_geometry), Ok(()));
     // Oracle entrance regions use the same logical column, allowing for font

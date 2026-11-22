@@ -84,7 +84,7 @@ access. It never hashes the font atlas. A common drawing float translates
 the cached shadow quad without rebuilding the silhouette. Zoom blur below
 0.3 logical pixels is omitted to avoid box-filter tail inflation.
 
-The sting font identity test is ignored pending PR #235: title 700 and Mix
+The sting font identity test checks the bundled deck roles: title 700 and Mix
 600 require Liberation Sans Bold; Viu 400 requires Liberation Sans Regular;
-the mono subtitle requires Noto Sans Mono Regular. Un-ignore and regenerate
-review evidence after merging that PR. Vertical spacing waits for its metrics.
+the mono subtitle requires Noto Sans Mono Regular. The saved Chrome comparison
+also gates painted vertical placement within four physical pixels at 4K.
