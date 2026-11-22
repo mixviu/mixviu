@@ -34,6 +34,12 @@ fn record_fixture($summary, $result)
     result: $result, expires: "2026-11-28", owner: "owner", summary: $summary}
 end
 try
+  for $prefix in ["", " \t", chr(27) .. "[31m", " \t" .. chr(27) .. "[31m  "]
+    for $reserved in ["TEST_TOTALS {}", "ARTIFACTS /x"]
+      $line = $prefix .. $reserved
+      check($q.child_line($line) == "child: " .. json_encode($line), "gold verdict prefix not neutralised")
+    end
+  end
   for $line in ["test x ... FAILED", "thread 'x' (123) panicked at fixture.rs:7:9:", "\t  ordinary indented output", chr(27) .. "[31mordinary colour" .. chr(27) .. "[0m"]
     check($q.child_line($line) == $line, "ordinary child line changed")
   end
@@ -127,6 +133,21 @@ try
   check(deep_eq($report.totals, {passed: 8, failed: 2, ignored: 3, filtered: 32, quarantined: {passed: 1, failed: 1, ignored: 1}}), "gate totals arithmetic wrong")
   check(len($report.failed) == 0 and len($report.records) == 4, "gate records lost")
   check(len(filter($report.records, fn($r) = $r.step != "workspace")) == 0, "step missing")
+  -- The missing tail may contain isolated summaries. None may be subtracted,
+  -- even when the observed strict counts are large enough to hide the loss.
+  for $output in [$stream, "test result: FAILED. 8 passed; 2 failed; 3 ignored; 0 measured; 5 filtered out\n", ""]
+    $r = {stdout: $output, stdout_truncated: true, ok: true}
+    $cut = $q.gate_result($r, $records_path, "workspace")
+    $observed = if $output == $stream then {passed: 9, failed: 3, ignored: 4, filtered: 32} elif $output == "" then {passed: 0, failed: 0, ignored: 0, filtered: 0} else {passed: 8, failed: 2, ignored: 3, filtered: 5} end
+    check(deep_eq($cut.failed, ["test output truncated: workspace"]), "truncation must fail even with rc 0")
+    for $k in keys($observed)
+      check($cut.totals[$k] == $observed[$k], "truncated stream subtracted " .. $k)
+    end
+    check(deep_eq($cut.totals.quarantined, {passed: 0, failed: 0, ignored: 0}), "truncated stream moved counts")
+    check(deep_eq($cut.records, $report.records), "truncated stream lost completion records")
+  end
+  $whole = $q.gate_result({stdout: $stream, stdout_truncated: false}, $records_path, "workspace")
+  check(deep_eq($whole, $report), "complete step accounting changed")
   $missing = $q.gate_report($stream, $temp .. "/absent.jsonl", "mix")
   check(deep_eq($missing.failed, ["quarantine records missing: mix"]), "missing records not reported")
   write_file($records_path, "")

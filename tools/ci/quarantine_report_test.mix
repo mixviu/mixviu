@@ -87,6 +87,22 @@ try
   $files = glob($temp .. "/defaults/mix-quarantine-*/records.jsonl")
   check(len($files) == 1, "default path not in private temp directory")
   check(trim(run_argv_must(["stat", "-c", "%a", dirname($files[0])])) == "700", "default directory permissions")
+  -- Exercise the real gate's outer catch after it has started its checks.
+  -- Fake cargo succeeds; the absent target/debug/mix aborts the first pool.
+  -- No Rust command is run, and the caller-owned quarantine dir is cleaned.
+  write_file($repo .. "/bin/cargo", "#!" .. $mix .. "\nprint(\"fake cargo step\")\nexit(0)\n")
+  mkdir($temp .. "/gate-temp")
+  $r = run_argv([$mix, realpath($dir .. "/../cutover_gate.mix"), "gate"],
+    {cwd: $repo, timeout: 10, stderr: "stdout", env: {PATH: $repo .. "/bin:" .. env("PATH"), TMPDIR: $temp .. "/gate-temp"}})
+  check($r.exit_code == 1, "aborted gate did not exit 1: " .. $r.stdout)
+  check(contains($r.stdout, "fake cargo step"), "gate did not reach checks")
+  for $prefix in ["TEST_TOTALS ", "GATE_QUARANTINE_RECORDS ", "GATE_FAILED "]
+    $verdict = filter(lines($r.stdout), fn($l) = starts_with($l, $prefix))
+    check(len($verdict) == 1, "aborted gate lacks unique " .. $prefix .. ": " .. $r.stdout)
+    json_parse(substr($verdict[0], len($prefix)))
+  end
+  check(contains($r.stdout, "gate aborted: ") and contains($r.stdout, "target/debug/mix"), "abort reason missing: " .. $r.stdout)
+  check(len(glob($temp .. "/gate-temp/mix-quarantine-*")) == 0, "aborted gate leaked quarantine directory")
   print("quarantine report contract: PASS")
 finally
   remove_dir($temp)
