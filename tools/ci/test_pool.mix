@@ -259,11 +259,6 @@ try
   $quarantine.child_output(join(filter($err_lines, fn($l) = not re_match(strip_escapes($l), $run_line)), "\n"))
   -- Cargo printed Doc-tests lines when it would run doc-tests here.
   $has_doc = len(filter($err_lines, fn($l) = re_match(strip_escapes($l), "^\\s+Doc-tests "))) > 0
-  if len($runs) == 0 and $b.ok and not $has_doc then
-    $quarantine.child_output($b.stdout)
-    $quarantine.publish_records([], $quarantine_out, $root, $target_dir)
-    exit(0)
-  end
   if len($runs) == 0 and not ($b.ok and $has_doc) then
     -- Nothing recorded: the build failed, or the selection has no tests at
     -- all. (Doc-tests alone, after a good build, run below as under cargo.)

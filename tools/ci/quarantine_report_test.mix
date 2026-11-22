@@ -84,7 +84,8 @@ try
   $out = $temp .. "/zero.jsonl"
   $r = run_argv([$mix, $dir .. "/test_pool.mix", "--quarantine-out", $out, "--", "--lib"],
     {cwd: $repo, timeout: 20, stderr: "stdout", env: {PATH: $repo .. "/bin:" .. env("PATH"), FIXTURE_NO_BINARIES: "1"}})
-  check($r.ok and is_file($out) and read_file($out) == "", "zero binaries did not publish empty records")
+  check(not $r.ok and contains($r.stdout, "refusing to pass an empty selection"), "zero binaries did not refuse empty selection: " .. $r.stdout)
+  check(not exists($out), "empty selection published records")
   write_file($repo .. "/tools/ci/quarantine.conf.mix", data_encode({entries: [$entry]}))
   $r = run_argv([$mix, $dir .. "/test_pool.mix", "--", "--lib"],
     {cwd: $repo, timeout: 20, stderr: "stdout", env: {PATH: $repo .. "/bin:" .. env("PATH"), TMPDIR: $temp .. "/defaults"}})
