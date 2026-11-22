@@ -179,9 +179,9 @@ fn paint_shadow(
     let mut blurred = image::imageops::fast_blur(&image, shadow.blur);
     for pixel in blurred.pixels_mut() {
         *pixel = image::Rgba([
-            shadow.colour[0],
-            shadow.colour[1],
-            shadow.colour[2],
+            shadow.colour[0] as u8,
+            shadow.colour[1] as u8,
+            shadow.colour[2] as u8,
             (pixel[3] as f32 * shadow.colour[3] as f32 / 255.).round() as u8,
         ]);
     }

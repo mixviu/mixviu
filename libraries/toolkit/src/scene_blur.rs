@@ -52,7 +52,7 @@ pub(super) fn apply(ui: &egui::Ui, layer: LayerId, start: ShapeIdx, sigma: f32) 
         }
     }
     let signature = hash.finish();
-    let key = egui::Id::new(("scene-gaussian", layer, start.0));
+    let key = egui::Id::unique(("scene-gaussian", layer, start.0));
     let old = ui.ctx().data_mut(|d| d.get_temp::<Cached>(key));
     let cached = if let Some(c) = old.filter(|c| c.signature == signature) {
         c

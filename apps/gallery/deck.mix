@@ -118,7 +118,7 @@ fn sting($title, $subtitle)
   $sub={widget:"text",text:$subtitle,size:36,mono:true,letter_spacing:1.44,color:$tokens.colour.acc,align:"center"}
   $bar={widget:"drawing",w:260,h:8,primitives:[{kind:"bar",centre:[130,4],radius:[130,4],colour:$tokens.colour.acc,end_colour:$tokens.colour.blue}]}
   -- CSS line boxes: 280 + 28 + 41 + 22 + 109.2 + 22 + 43.2 + 30 + 8.
-  return merge(column([$logo,{widget:"spacer",size:28},$brandline,{widget:"spacer",size:22},$heading,{widget:"spacer",size:22},$sub,{widget:"spacer",size:30},$bar],0),{align:"center",min_width:1600,height:900,padding_top:138,padding_bottom:40,background:$tokens.colour.background})
+  return merge(column([$logo,{widget:"spacer",size:28},$brandline,{widget:"spacer",size:22},$heading,{widget:"spacer",size:22},$sub,{widget:"spacer",size:30},$bar],0),{align:"center",min_width:1600,height:900,padding_top:138,padding_bottom:40,background:$tokens.colour.background,background_radials:$tokens.backdrop})
 end
 fn topic($number, $title, $subtitle)
   return column([deck_text($number,"topic_no","acc"),deck_text($title,"topic_title","text"),deck_text($subtitle,"topic_sub","mut")],22)
