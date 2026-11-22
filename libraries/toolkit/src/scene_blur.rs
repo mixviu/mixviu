@@ -39,10 +39,12 @@ pub(super) fn apply(ui: &egui::Ui, layer: LayerId, start: ShapeIdx, sigma: f32) 
     if meshes.iter().any(|p| !matches!(&p.primitive,egui::epaint::Primitive::Mesh(m) if m.texture_id==egui::TextureId::Managed(0))) {return}
     let atlas = ui.ctx().fonts(|f| f.image());
     let mut hash = std::collections::hash_map::DefaultHasher::new();
+    atlas.pixels.hash(&mut hash);
     for v in [sigma, ppp, rect.min.x, rect.min.y, rect.max.x, rect.max.y] {
         v.to_bits().hash(&mut hash);
     }
     for p in &meshes {
+        for v in [p.clip_rect.min.x,p.clip_rect.min.y,p.clip_rect.max.x,p.clip_rect.max.y] {v.to_bits().hash(&mut hash);}
         let egui::epaint::Primitive::Mesh(m) = &p.primitive else {
             unreachable!()
         };
