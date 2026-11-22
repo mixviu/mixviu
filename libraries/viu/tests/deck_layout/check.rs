@@ -374,7 +374,11 @@ fn render_layout_steps() {
             )
             .unwrap();
             view.set_rasters(deck.rasters.clone());
-            let mut settle_view=SceneView::with_model(model["presentation"]["scene"].as_str().unwrap(),model.clone()).unwrap();
+            let mut settle_view = SceneView::with_model(
+                model["presentation"]["scene"].as_str().unwrap(),
+                model.clone(),
+            )
+            .unwrap();
             settle_view.set_rasters(deck.rasters.clone());
             let settle = egui::Context::default();
             viu::fonts::install(&settle, 400, 600);
