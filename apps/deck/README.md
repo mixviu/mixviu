@@ -1,5 +1,20 @@
 # Deck
 
+Deck text uses the measured HTML faces: Liberation Sans (400/500 Regular,
+600/700 Bold), Noto Sans Mono Regular for dates, PR tags, rails and code,
+and Noto Sans Regular for missing glyphs. No synthetic weight is used.
+Gold ships the four unmodified files and OFL licences in `share/fonts`.
+Toolkit and Viu register these optional named families; desktop defaults
+remain Inter and JetBrains Mono. A design typography role or content font
+can select them by family name. Scene text accepts `font` and CSS `weight`;
+deck supplies its sans/mono families for every text node, including spans.
+An absent bundle refuses deck scene validation rather than substituting.
+
+`cargo test -p lib-viu --test deck_fonts -- --nocapture` (CBC only) paints
+the roles and compares their glyph atlas coordinates with isolated faces,
+reporting the files' internal PostScript names. Its renamed-file control
+must fail. This is the font acceptance check; no SSIM claim is made.
+
 Run `viu run apps/deck`. The ordinary window starts full-screen. The host fits
 the 1600 × 900 logical canvas into the output, centred with letterboxing;
 scene dimensions never depend on output resolution. Application behaviour is

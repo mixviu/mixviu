@@ -73,6 +73,18 @@ pub fn definitions(theme: &Theme) -> FontDefinitions {
             .insert(FontFamily::Name(family.into()), stack);
     }
     let _ = optional::register(&mut fonts, &optional::directory());
+    // Optional families are chosen by the design's existing typography roles.
+    for (role, target) in [
+        (design::TypographyRole::Ui, FontFamily::Proportional),
+        (design::TypographyRole::UiDisplay, FontFamily::Name(HEADING.into())),
+        (design::TypographyRole::Mono, FontFamily::Monospace),
+    ] {
+        let record = design::active_typography(Some(theme.typography()), role);
+        let selected = optional::family(&record.family, record.weight);
+        if let Some(stack) = fonts.families.get(&selected).cloned() {
+            fonts.families.insert(target, stack);
+        }
+    }
     fonts
 }
 

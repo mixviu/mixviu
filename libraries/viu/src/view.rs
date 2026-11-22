@@ -2216,6 +2216,15 @@ impl Event {
 }
 
 fn validate_controls(tree: &ResolvedScene) -> Result<(), String> {
+    if tree.nodes.values().any(|node| node.ports.get("font").and_then(Value::as_str)
+        .is_some_and(|name| matches!(name, "Liberation Sans" | "Liberation Sans Bold" | "Noto Sans Mono" | "Noto Sans"))) {
+        let dir = toolkit::fonts::optional::directory();
+        for file in toolkit::fonts::optional::FILES {
+            if !dir.join(file).is_file() {
+                return Err(format!("required optional font absent: {file}"));
+            }
+        }
+    }
     let mut slots = std::collections::BTreeSet::new();
     for node in tree.nodes.values() {
         if let Some(slot) = node.ports.get("window_slot") {
