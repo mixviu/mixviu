@@ -8,12 +8,23 @@
 -- at most two (fable then mark), each extends 1..7 days, hard cap added + 28.
 -- Evidence is non-empty and distinct from entry/previous renewals.
 -- Consumer contract: stdout GATE_QUARANTINE JSON is diagnostic only (children
--- can print it). Trust the pool-owned target/quarantine-UUID.jsonl file, whose
--- absolute path is printed as "test_pool: quarantine records: PATH". The pool
--- writes it after replay; no child receives its path. Exactly one JSON object
+-- can print it). Caller supplies --quarantine-out PATH, outside checkout and
+-- target/. Never discover the path from stdout. Without a caller path, the
+-- default is records.jsonl in a fresh 0700 directory under TMPDIR (or /tmp).
+-- The pool collects in memory, then after all children, doc-tests and retries
+-- creates a 0600 staging file in a private 0700 directory beside PATH and
+-- atomically renames it over PATH. Parent must exist, outside the repo/build.
+-- ci.mix accepts --quarantine-dir DIR and chooses mix.jsonl, workspace.jsonl,
+-- portald.jsonl there (otherwise it creates a private temporary directory).
+-- All echoed child lines are prefixed child: and JSON-escaped; only pool lines
+-- are control output. No child receives the record path. Exactly one JSON object
 -- per active entry in the selected binaries per pool run, zero for empty lists.
 -- Schema: package,target,test,result,expires (effective UTC date),owner.
 -- Results: pass,fail,timeout,ignored,missing. Retain all records in summaries
 -- and quarantine.jsonl; append failures to the ledger. Never parse child stdout
--- as the trusted channel. A failed/incomplete pool may have no record file.
+-- as the trusted channel. An incomplete pool may leave an old file: consumers
+-- must use a fresh destination per run and check the pool's completion status.
+-- Same-UID isolation is out of scope: the gate executes the PR's own pool.
+-- Tier 2 review defends edits to the pool/list; this channel defends against
+-- test output and test-written build files, not a malicious pool edit.
 entries: []

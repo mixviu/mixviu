@@ -49,7 +49,7 @@ try
   $other = $base
   $other.argv = concat($other.argv, ["module::tests::other_fail", "--exact"])
   rejects(fn() = prepare_fixture($other, [$fail]))
-  for $flags in [["--"], ["module"], ["--skip", "pass", "module"], ["--unknown"]]
+  for $flags in [["--"], ["module"], ["--skip", "pass", "module"], ["--unknown"], ["--skip", $fail.test], ["--skip=module"], ["--exact", "--skip", $fail.test]]
     $filtered = $base
     $filtered.argv = concat($base.argv, $flags)
     rejects(fn() = prepare_fixture($filtered, [$fail]))
@@ -59,7 +59,7 @@ try
   $p = prepare_fixture($base, [$hang])
   $js = $p.isolated
   $js[0].timeout = 0.1
-  $q.replay($js)
+  check($q.replay($js)[0].result == "timeout", "hang did not report timeout")
   $p = prepare_fixture($base, [$pass])
   $q.replay($p.isolated)
   for $case in ["ignored", "missing"]
@@ -69,8 +69,23 @@ try
   $flagged = $base
   $flagged.argv = concat($base.argv, ["--include-ignored", "--test-threads", "1", "--nocapture"])
   $p = prepare_fixture($flagged, [entry("module::tests::ignored")])
-  check(deep_eq($p.isolated[0].argv, concat($flagged.argv, ["--exact", "--", "module::tests::ignored"])), "harness flags lost")
+  check(deep_eq($p.isolated[0].argv, concat($flagged.argv, ["--color", "never", "--format", "pretty", "--exact", "--", "module::tests::ignored"])), "harness flags lost")
   check($q.replay($p.isolated)[0].result == "pass", "include-ignored lost")
+  for $flags in [["--format", "json", "--color", "always"], ["--format=terse", "--color=always"]]
+    $styled = $base
+    $styled.argv = concat($base.argv, $flags)
+    $p = prepare_fixture($styled, [$pass])
+    check(deep_eq($p.isolated[0].argv, concat($base.argv, ["--color", "never", "--format", "pretty", "--exact", "--", $pass.test])), "format/color not forced")
+    check($q.replay($p.isolated)[0].result == "pass", "formatted replay misclassified")
+  end
+  $result = {ok: true, timed_out: false, stdout_truncated: false,
+    stdout: "test result: ok. 1 passed; 0 failed; 0 ignored;\ntest result: ok. 0 passed; 0 failed; 0 ignored;"}
+  check($q.classification($result) == "missing", "fake earlier summary won")
+  $result.stdout = "prefix test result: ok. 1 passed; 0 failed; 0 ignored;"
+  check($q.classification($result) == "missing", "unanchored summary accepted")
+  $result.stdout = "test result: ok. 1 passed; 0 failed; 0 ignored;"
+  $result.stdout_truncated = true
+  check($q.classification($result) == "missing", "truncated output reported pass")
   for $name in ["module::tests::typo", "tests::fail", "module::tests::fa"]
     rejects(fn() = prepare_fixture($base, [entry($name)]))
   end
@@ -95,6 +110,22 @@ try
   end
   $renewed = $expired
   $renewed.renewals = [{until: "2026-11-29", by: "fable", evidence: "fresh-1", cosign: "Fable"}]
+  for $control in [chr(0), chr(10), chr(13), chr(27), chr(127), chr(133)]
+    for $field in ["until", "by", "evidence", "cosign"]
+      $invalid = $renewed
+      $invalid.renewals[0][$field] = $invalid.renewals[0][$field] .. $control
+      rejects(fn() = fixture_entries([$invalid]))
+    end
+    $invalid = $renewed
+    $invalid["bad" .. $control] = "key"
+    rejects(fn() = fixture_entries([$invalid]))
+    $invalid = $renewed
+    $invalid.renewals[0]["bad" .. $control] = "nested key"
+    rejects(fn() = fixture_entries([$invalid]))
+  end
+  $invalid = $renewed
+  $invalid.renewals[0].evidence = "  20   rounds,   job  "
+  rejects(fn() = fixture_entries([$invalid]))
   check(len(prepare_fixture($base, [$renewed]).isolated) == 1, "effective expiry not used")
   check($q.expiry_date($renewed) == "2026-11-29", "wrong effective expiry")
   $twice = $renewed
@@ -121,6 +152,9 @@ try
   end
   $invalid = $twice
   $invalid.renewals[1].evidence = "fresh-1"
+  rejects(fn() = fixture_entries([$invalid]))
+  $invalid.renewals[0].evidence = "fresh    evidence"
+  $invalid.renewals[1].evidence = " fresh evidence "
   rejects(fn() = fixture_entries([$invalid]))
   $invalid = $twice
   $invalid.renewals = concat($invalid.renewals, [$invalid.renewals[1]])

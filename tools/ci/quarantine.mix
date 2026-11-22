@@ -66,7 +66,7 @@ fn effective_expiry($e)
   $expiry = day($e.expires)
   $renewals = $e.renewals ?? []
   if type($renewals) != "list" or len($renewals) > 2 then bad("at most two renewals") end
-  $evidence = [$e.evidence]
+  $evidence = [normal_evidence($e.evidence)]
   for $i = 0 to len($renewals) - 1
     $r = $renewals[$i]
     if type($r) != "map" then bad("renewal must be a map") end
@@ -77,11 +77,15 @@ fn effective_expiry($e)
     $until = day($r.until)
     if $until - $expiry < 1 or $until - $expiry > 7 then bad("renewal must extend expiry by 1..7 days") end
     if $until > day($e.added) + 28 then bad("renewal exceeds added + 28 days") end
-    if contains($evidence, $r.evidence) then bad("renewal needs fresh evidence") end
-    push($evidence, $r.evidence)
+    if contains($evidence, normal_evidence($r.evidence)) then bad("renewal needs fresh evidence") end
+    push($evidence, normal_evidence($r.evidence))
     $expiry = $until
   end
   return $expiry
+end
+
+fn normal_evidence($s)
+  return re_replace(trim($s), "\\s+", " ")
 end
 
 fn expiry_date($e)
@@ -120,7 +124,7 @@ fn prepare($job, $entries, $package, $target, $today)
   if len($es) == 0 then return {strict: $strict, isolated: []} end
   $active = filter($es, fn($e) = effective_expiry($e) > $today)
   $flags = slice($job.argv, len($job.executable), len($job.argv))
-  if len($active) > 0 then harness_flags($flags) end
+  $isolated_flags = if len($active) > 0 then harness_flags($flags) else [] end
   -- List from the executable, without cargo's harness filters or flags.
   $listing = $job
   $listing.argv = concat($job.executable, ["--list", "--format", "terse"])
@@ -135,7 +139,7 @@ fn prepare($job, $entries, $package, $target, $today)
       -- libtest accepts --exact only once; it applies to every --skip.
       if not contains($strict.argv, "--exact") then $strict.argv = concat($strict.argv, ["--exact"]) end
       $one = $job
-      $one.argv = concat(concat($job.executable, filter($flags, fn($f) = $f != "--exact")), ["--exact", "--", $e.test])
+      $one.argv = concat(concat($job.executable, $isolated_flags), ["--color", "never", "--format", "pretty", "--exact", "--", $e.test])
       $one.timeout = 60
       $one.entry = $e
       push($isolated, $one)
@@ -146,34 +150,91 @@ end
 
 -- Value-taking flags are explicit: unknown options fail closed too.
 fn harness_flags($flags)
-  $value = false
+  $value = nil
+  $out = []
   for $f in $flags
-    if $value then
+    if $value != nil then
       if starts_with($f, "-") then bad("missing harness flag value") end
-      $value = false
-    elif contains(["--skip", "--test-threads", "--format", "--color", "--logfile", "--shuffle-seed"], $f) then
-      $value = true
+      if not contains(["--color", "--format"], $value) then $out = concat($out, [$value, $f]) end
+      $value = nil
+    elif $f == "--skip" or starts_with($f, "--skip=") then
+      bad("active entry refuses carried --skip: it could exclude the entry or change meaning under --exact")
+    elif contains(["--test-threads", "--format", "--color", "--logfile", "--shuffle-seed"], $f) then
+      $value = $f
     elif contains(["--exact", "--ignored", "--include-ignored", "--nocapture", "--show-output", "--quiet", "-q", "--test", "--bench", "--report-time", "--ensure-time", "--shuffle"], $f) then
+      if $f != "--exact" then push($out, $f) end
+    elif re_match($f, "^--(format|color)=.+$") then
       nil
-    elif re_match($f, "^--(skip|test-threads|format|color|logfile|shuffle-seed)=.+$") then
-      nil
+    elif re_match($f, "^--(test-threads|logfile|shuffle-seed)=.+$") then
+      push($out, $f)
     else
       bad("active entry refuses harness filter, '--' or unsupported flag: " .. json_encode($f))
     end
   end
-  if $value then bad("missing harness flag value") end
+  if $value != nil then bad("missing harness flag value") end
+  return $out
+end
+
+-- JSON-escape controls as well as prefixing: CR/ANSI cannot erase the prefix.
+fn child_output($output)
+  for $line in lines($output)
+    print("child: " .. json_encode($line))
+  end
+end
+
+fn classification($r)
+  if $r.timed_out then return "timeout" end
+  if not $r.ok then return "fail" end
+  if $r.stdout_truncated then return "missing" end
+  $summaries = filter(lines($r.stdout), fn($l) = starts_with($l, "test result:"))
+  if len($summaries) == 0 then return "missing" end
+  $final = $summaries[len($summaries) - 1]
+  if re_match($final, "^test result: ok\\. 1 passed; 0 failed; 0 ignored;.*$") then return "pass" end
+  if re_match($final, "^test result: ok\\. 0 passed; 0 failed; 1 ignored;.*$") then return "ignored" end
+  return "missing"
+end
+
+fn outside($path, $root)
+  if $path == $root or starts_with($path, $root .. "/") then bad("record path must be outside checkout/build tree") end
+end
+
+fn record_path($path, $root, $target)
+  $parent = realpath(dirname($path))
+  if $parent == nil then bad("record parent must exist") end
+  $out = path_join($parent, basename($path))
+  outside($out, $root)
+  outside($out, $target)
+  return $out
+end
+
+fn private_dir($parent, $root, $target)
+  $parent = realpath($parent)
+  if $parent == nil then bad("temporary parent must exist") end
+  outside($parent, $root)
+  outside($parent, $target)
+  return trim(run_argv_must(["mktemp", "-d", path_join($parent, "mix-quarantine-XXXXXX")]))
+end
+
+-- Called last, after doc-tests and retries. mktemp creates 0700/0600 from
+-- creation; staging beside the destination guarantees same-filesystem rename.
+fn publish_records($records, $out, $root, $target)
+  $stage = private_dir(dirname($out), $root, $target)
+  try
+    $file = trim(run_argv_must(["mktemp", path_join($stage, "records-XXXXXX")]))
+    write_file($file, join(map($records, fn($r) = json_encode($r)), "\n") .. (if len($records) > 0 then "\n" else "" end))
+    rename($file, $out)
+  finally
+    remove_dir($stage)
+  end
 end
 
 fn replay($jobs)
   $records = []
   for $j in $jobs
     $r = run_parallel(specs([$j]), {max: 1})[0]
-    print($r.stdout)
+    child_output($r.stdout)
     $e = $j.entry
-    $result = if $r.timed_out then "timeout" elif not $r.ok then "fail"
-      elif re_match($r.stdout, "test result: ok\\. 1 passed;") then "pass"
-      elif re_match($r.stdout, "test result: ok\\. 0 passed; 0 failed; 1 ignored;") then "ignored"
-      else "missing" end
+    $result = classification($r)
     $record = {package: $e.package, target: $e.target, test: $e.test,
       result: $result, expires: expiry_date($e), owner: $e.owner}
     push($records, $record)

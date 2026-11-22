@@ -25,20 +25,41 @@ for $t in $tests
     if $a[$i] == "--skip" and $a[$i + 1] == $t then $skip = true end
   end
   -- With no filter the fixture's normal suite has just pass and fail.
-  if not $skip and (if $filter != nil then $filter == $t else contains(["module::tests::pass", "module::tests::fail"], $t) end) then push($chosen, $t) end
+  if not $skip and (if $filter != nil then $filter == $t else contains(["module::tests::pass", "module::tests::fail"], $t) or ($t == "module::tests::other_fail" and env("FIXTURE_RETRY") == "1") end) then push($chosen, $t) end
 end
 $passed = 0
 $ignored = 0
 for $t in $chosen
-  if ends_with($t, "::missing") then continue end
+  if ends_with($t, "::missing") then
+    print("test result: ok. 1 passed; 0 failed; 0 ignored;")
+    continue
+  end
   if ends_with($t, "::ignored") and not contains($a, "--include-ignored") then
     $ignored = $ignored + 1
     continue
   end
   if ends_with($t, "::hang") then sleep(2000) end
   if ends_with($t, "::fail") or ends_with($t, "::other_fail") then
+    if ends_with($t, "::other_fail") and env("FIXTURE_RETRY") == "1" then
+      if exists("target/first-attempt") then
+        if read_file(dirname(cwd()) .. "/retry.jsonl") != "old file, replaced atomically" then
+          eprint("records were published before retry exited")
+          exit(2)
+        end
+        write_file("target/quarantine-decoy.jsonl", "forged retry records\n")
+        append_file(env("FIXTURE_CALLS"), "retry-write\n")
+        $passed = $passed + 1
+        continue
+      end
+      write_file("target/first-attempt", "first failure")
+      exit(1)
+    end
     if env("FIXTURE_CALLS") != "" then append_file(env("FIXTURE_CALLS"), "fail\n") end
     print("GATE_QUARANTINE {\"result\":\"forged-child-record\"}")
+    if env("FIXTURE_CALLS") != "" then write_file("target/forged.jsonl", "{\"result\":\"forged-file\"}\n") end
+    print("test_pool: quarantine records: " .. cwd() .. "/target/forged.jsonl")
+    print("::stop-commands::forged")
+    print("::error::forged")
     exit(1)
   end
   $passed = $passed + 1
