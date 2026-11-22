@@ -137,7 +137,7 @@ fn start_row_reserves_height_and_hidden_grid_cell_keeps_its_slot() {
 }
 
 #[test]
-fn bounded_columns_keep_center_and_end_placement() {
+fn bounded_columns_keep_main_center_and_grow_start_placement() {
     let rects = geometry(
         r##"{root:{widget:"column",fill:true,align:"center",children:["center","row"]},center:{widget:"column",grow:1,min_width:200,max_width:200,children:["middle"]},middle:{widget:"text",text:"Middle"},row:{widget:"row",fill:true,align:"end",children:["right"]},right:{widget:"column",grow:1,min_width:200,max_width:200,children:["last"]},last:{widget:"text",text:"Right"}}"##,
     );
@@ -146,7 +146,7 @@ fn bounded_columns_keep_center_and_end_placement() {
         "{rects:?}"
     );
     assert!(
-        (rects["row"].right() - rects["right"].right()).abs() < 1.,
+        (rects["row"].left() - rects["right"].left()).abs() < 1.,
         "{rects:?}"
     );
 }
@@ -640,4 +640,15 @@ fn legacy_end_grow_row_keeps_main_top_left_packing() {
         r#"{root:{widget:"row",align:"end",children:["a","b"]},a:{widget:"column",height:80,min_width:100,children:[]},b:{widget:"column",height:20,grow:1,children:[]}}"#,
     );
     assert_eq!(a, b);
+}
+
+#[test]
+fn explicit_cross_works_with_native_spacing_wrap_and_between() {
+    for extra in ["wrap:true", "justify: \"between\""] {
+        let source = format!(
+            r#"{{root:{{widget:"row",cross_align:"end",native_spacing:true,{extra},children:["a","b"]}},a:{{widget:"column",height:80,min_width:100,children:[]}},b:{{widget:"column",height:20,min_width:100,children:[]}}}}"#
+        );
+        let g = geometry(&source);
+        assert!((g["a"].bottom() - g["b"].bottom()).abs() < 1., "{extra}");
+    }
 }
