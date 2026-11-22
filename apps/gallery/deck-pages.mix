@@ -12,9 +12,9 @@ $samples = {
     merge($d.card("Right edge",[$d.deck_text("bounded","big","ok")],"ok"),{grow:1})
   ],24),
   typography:$d.column([$d.kicker("Deck components",[{text:"#198",role:"blue"}]),$d.headline("A scene is a slide","1600 × 900 logical pixels"),$d.deck_text("Readable at presentation scale","big","text"),$d.bullets(["Composition lives in Mix","Semantic inline runs"],"ok"),$d.deck_text("A caption below the content","caption","mut")],18),
-  cards:$d.row([$d.card("Before",[$d.deck_text("Still frames","big","bad")],"bad"),$d.card("After",[$d.deck_text("Native scenes","big","ok")],"ok")],40),
+  cards:$d.row([$d.card("Before",[$d.deck_text("Still frames","big","bad")],"bad"),$d.card("After",[$d.deck_text("Native scenes","big","ok")],"ok"),$d.card("scenes.model.patch",[$d.deck_text("Mono medium heading","caption","text")],"mut",true)],40),
   flow:$d.flow([{label:"source",text:"scene",role:"warn"},{label:"host",text:"viu",role:"acc",via:"resolve"},{label:"result",text:"frame",role:"ok",via:"paint"}]),
-  code:$d.code([[{text:"fn ",role:"keyword"},{text:"hello",role:"function"},{text:"()",role:"code"}],[{text:"  return ",role:"keyword"},{text:"\"hello\"",role:"string"}],[{text:"end",role:"keyword"}]]),
+  code:$d.code([[{text:"fn ",role:"keyword"},{text:"hello",role:"function"},{text:"()",role:"code"}],[{text:"  return ",role:"keyword"},{text:"\"hello\"",role:"string"}],[{text:"end",role:"keyword"}]],[1]),
   terminal:$d.terminal("Terminal",[[{text:"old command",role:"comment",strike:true}],[{text:"$ ",role:"acc"},{text:"mix deck.mix",role:"text"}],[{text:" ",role:"mut"}],[{text:"ready ▌",role:"ok"}]]),
   tree:$d.tree([{text:"app",role:"warn",badge:"shield"},{text:"├─ render",role:"text"},{text:"└─ record",role:"ok",badge:"allow",allow:true}]),
   chips:$d.column([$d.row([$d.chip("#198","Motion","blue"),$d.chip("Mix","Scene composition","acc")],12),$d.card("Group",[$d.row([$d.chip("code","inline runs","violet"),$d.chip("flow","nodes","warn")],12)],"mut")],28),

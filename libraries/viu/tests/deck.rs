@@ -725,3 +725,6 @@ fn deck_font_identity_and_missing_bundle_control() {
     assert!(error.contains("required font family not bound"));
     println!("FONT_IDENTITY without fonts: FAIL (expected production refusal): {error}");
 }
+
+#[path = "deck_layout/evidence.rs"]
+mod layout_evidence;
