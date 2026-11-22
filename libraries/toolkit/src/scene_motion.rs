@@ -624,6 +624,8 @@ pub fn paint_effect(ui: &Ui, layer: LayerId, start: ShapeIdx, rect: Rect, spec: 
     let scale = values.get(Property::Scale) as f32;
     let clip = values.get(Property::ClipRight) as f32;
     let blur = values.get(Property::Blur) as f32;
+    let bounds=ui.ctx().graphics_mut(|g|g.entry(layer).all_entries().skip(start.0).fold(Rect::NOTHING,|rect,s|rect.union(s.shape.visual_bounding_rect())));
+    let bounds=if bounds.is_finite() && bounds.is_positive() {bounds} else {rect};
     ui.ctx().graphics_mut(|g| {
         let list = g.entry(layer);
         let end = list.next_idx().0;
@@ -635,8 +637,8 @@ pub fn paint_effect(ui: &Ui, layer: LayerId, start: ShapeIdx, rect: Rect, spec: 
                 });
                 if clip > 0. {
                     s.clip_rect = s.clip_rect.intersect(Rect::from_min_max(
-                        rect.min,
-                        egui::pos2(rect.right() - rect.width() * clip, rect.bottom()),
+                        bounds.min,
+                        egui::pos2(bounds.right() - bounds.width() * clip, bounds.bottom()),
                     ));
                 }
             });

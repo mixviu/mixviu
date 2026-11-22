@@ -259,6 +259,13 @@ fn chrome_entrance_contact_sheet() {
             ) as f64;
         println!("STING_ORACLE time={t} eye_ratio chrome={c:.6} native={n:.6}");
         assert!((n - c).abs() < 0.18, "eye at {t}");
+        for id in ["root.4","root.6","root.8"] {
+            let cyan=id!="root.4";
+            let native_fraction=element_pixels(&native[i],final_geometry[id],cyan) as f64/element_pixels(&native[8],final_geometry[id],cyan) as f64;
+            let chrome_fraction=element_pixels(&chrome[i],oracle_geometry[id],cyan) as f64/element_pixels(&chrome[8],oracle_geometry[id],cyan) as f64;
+            println!("STING_ORACLE time={t} {id} chrome_fraction={chrome_fraction:.6} native_fraction={native_fraction:.6}");
+            assert!((native_fraction-chrome_fraction).abs()<if cyan {0.06} else {0.15},"{id} progress at {t}");
+        }
     }
     // The oracle uses the same centred logo box. Compare area fractions, so
     // antialiasing and the independently supplied font roles cannot dominate.
