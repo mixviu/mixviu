@@ -51,10 +51,20 @@ pub struct SceneView {
     backdrops: crate::backdrop::Backdrops,
     scene_images: crate::image_view::Images,
     motion_parent: Option<String>,
+    painted: PaintedGalleys,
+    frame_palette: u64,
     collect_widget_rects: bool,
     widget_rects: Vec<crate::widget_rects::WidgetRect>,
     frame: Option<Box<SceneView>>,
     regions: BTreeMap<String, egui::Rect>,
+    stretch_heights: BTreeMap<String, f32>,
+    natural_heights: BTreeMap<String, f32>,
+    measurement_hashes: BTreeMap<String, (Node, u64)>,
+    measurement_nodes: Option<(
+        u64,
+        std::sync::Arc<BTreeMap<String, Node>>,
+        std::sync::Arc<PreparedLists>,
+    )>,
     tree: ResolvedScene,
     bindings: scene::bindings::BindingSet,
     model_bytes: usize,
@@ -154,8 +164,14 @@ impl SceneView {
             backdrops: crate::backdrop::Backdrops::default(),
             scene_images: crate::image_view::Images::scene(),
             motion_parent: None,
+            painted: PaintedGalleys::default(),
+            frame_palette: 0,
             frame: None,
             regions: BTreeMap::new(),
+            stretch_heights: BTreeMap::new(),
+            natural_heights: BTreeMap::new(),
+            measurement_hashes: BTreeMap::new(),
+            measurement_nodes: None,
             tree,
             bindings,
             model_bytes,
@@ -575,6 +591,23 @@ impl SceneView {
         self.show_content(ui)
     }
     fn show_content(&mut self, ui: &mut egui::Ui) -> Vec<Event> {
+        let font_state = ui.fonts(|f| {
+            use std::hash::{Hash, Hasher};
+            let mut hash = std::collections::hash_map::DefaultHasher::new();
+            for (name, data) in &f.definitions().font_data {
+                name.hash(&mut hash);
+                std::sync::Arc::as_ptr(data).hash(&mut hash);
+            }
+            for (family, names) in &f.definitions().families {
+                family.hash(&mut hash);
+                names.hash(&mut hash);
+            }
+            hash.finish()
+        });
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(egui::Id::new("scene-font-state"), font_state));
+        self.frame_palette = palette_key(ui);
+        self.painted.begin();
         self.motion.begin(ui);
         self.numbers.begin();
         self.backdrops.begin();
@@ -588,9 +621,42 @@ impl SceneView {
         self.regions.clear();
         self.geometry.clear();
         self.widgets.begin_frame();
-        let tree = self.tree.clone();
-        let nodes = tree.nodes.into_iter().collect();
+        if self
+            .measurement_nodes
+            .as_ref()
+            .is_none_or(|(revision, ..)| *revision != self.revision)
+        {
+            let mut nodes: BTreeMap<String, Node> = self.tree.nodes.clone().into_iter().collect();
+            let mut alive = BTreeSet::new();
+            prepare_measurements(
+                &mut nodes,
+                &self.tree.name,
+                &self.tree.model,
+                &mut self.measurement_hashes,
+                &mut alive,
+            );
+            let mut lists = self.lists.clone();
+            for (list_id, list) in lists.iter_mut() {
+                for (item_id, nodes) in list.instances.iter_mut() {
+                    prepare_measurements(
+                        nodes,
+                        &format!("{}/{list_id}/{item_id}", self.tree.name),
+                        &self.tree.model,
+                        &mut self.measurement_hashes,
+                        &mut alive,
+                    );
+                }
+            }
+            self.measurement_hashes.retain(|id, _| alive.contains(id));
+            self.measurement_nodes = Some((
+                self.revision,
+                std::sync::Arc::new(nodes),
+                std::sync::Arc::new(lists),
+            ));
+        }
+        let nodes = self.measurement_nodes.as_ref().unwrap().1.clone();
         self.node(ui, "root", &nodes, None, 0, &mut events);
+        self.painted.end();
         self.motion.end(ui);
         self.numbers.end();
         self.backdrops.end();
@@ -888,6 +954,95 @@ impl SceneView {
         depth: usize,
         events: &mut Vec<Event>,
     ) {
+        let Some(node) = nodes.get(id) else {
+            return;
+        };
+        if node.ports.get("hidden") == Some(&Value::Bool(true)) {
+            return;
+        }
+        let width = if matches!(node.family.as_str(), "column" | "row") {
+            num(node, "width").or_else(|| {
+                if node.ports.get("fill") == Some(&Value::Bool(true))
+                    || ["grow", "shrink", "basis"]
+                        .iter()
+                        .any(|p| num(node, p).unwrap_or(0.) > 0.)
+                {
+                    Some(ui.available_width())
+                } else if node.family == "row"
+                    && node.ports.contains_key("cross_align")
+                    && text(node, "align") != "end"
+                    && text(node, "justify") != "between"
+                    && !children(node).filter_map(|c| nodes.get(c)).any(|n| {
+                        n.ports.get("hidden") != Some(&Value::Bool(true))
+                            && (n.ports.get("fill") == Some(&Value::Bool(true))
+                                || ["grow", "basis"]
+                                    .iter()
+                                    .any(|p| num(n, p).unwrap_or(0.) > 0.))
+                    })
+                    && row_measurable(node, nodes, 0)
+                {
+                    Some(
+                        intrinsic_text_width(
+                            ui,
+                            node,
+                            nodes,
+                            &self.tree.model,
+                            &mut self.numbers,
+                            false,
+                            0,
+                        )
+                        .min(ui.available_width()),
+                    )
+                } else {
+                    None
+                }
+            })
+        } else {
+            None
+        };
+        if let Some(width) = width.filter(|_| ui.layout().is_vertical()) {
+            let width = bounded_layout(width, 1e6)
+                .max(num(node, "min_width").unwrap_or(0.))
+                .min(num(node, "max_width").unwrap_or(1e6));
+            let available = ui.available_rect_before_wrap();
+            let x = match ui.layout().horizontal_placement() {
+                egui::Align::Center => available.center().x - width / 2.,
+                egui::Align::Max => available.right() - width,
+                _ => available.left(),
+            };
+            let rect = egui::Rect::from_min_size(
+                egui::pos2(x, available.top()),
+                egui::vec2(width, finite_available_height(ui)),
+            );
+            let mut cell = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(
+                egui::pos2(x, ui.clip_rect().top()),
+                egui::pos2(x + width, ui.clip_rect().bottom()),
+            )));
+            self.node_surface(&mut cell, id, nodes, route, depth, events);
+            let height = cell.min_rect().height();
+            ui.allocate_rect(
+                egui::Rect::from_min_size(rect.min, egui::vec2(width, height)),
+                Sense::hover(),
+            );
+        } else {
+            self.node_surface(ui, id, nodes, route, depth, events);
+        }
+    }
+
+    fn node_surface(
+        &mut self,
+        ui: &mut egui::Ui,
+        id: &str,
+        nodes: &BTreeMap<String, Node>,
+        route: Option<(&str, &Node, &Value)>,
+        depth: usize,
+        events: &mut Vec<Event>,
+    ) {
         if depth > 128 {
             return;
         }
@@ -937,7 +1092,7 @@ impl SceneView {
             || id.to_owned(),
             |(_, _, item)| format!("{}#{id}", item["id"].as_str().unwrap_or("")),
         );
-        let response = ui
+        let mut response = ui
             .push_id(&key, |ui| {
                 if node.ports.get("motion") == Some(&Value::Bool(false)) { ui.style_mut().animation_time = 0.0; }
                 let _surface_policy=toolkit::scene_motion::policy(ui);
@@ -1104,19 +1259,32 @@ impl SceneView {
                     },
                     "split"=>self.split(ui,&key,node,nodes,route,depth,events),
                     "grid" => {
-                        let columns=num(node,"columns").unwrap_or(2.0) as usize;
+                        let columns=(num(node,"columns").unwrap_or(2.0) as usize).clamp(1, 16);
                         let gap=num(node,"column_gap").unwrap_or(12.0);
-                        let width=((ui.available_width()-gap*(columns-1) as f32)/columns as f32).max(num(node,"min_column_width").unwrap_or(0.0));
-                        egui::Grid::new(text(node,"identity")).num_columns(columns).min_col_width(width).max_col_width(width)
-                            .spacing([gap,num(node,"row_gap").unwrap_or(3.0)]).show(ui,|ui| {
-                                for (index,child) in children(node).enumerate() {
-                                    let cell=ui.scope(|ui| { ui.set_min_width(width); ui.set_max_width(width);
-                                        self.node(ui,child,nodes,route,depth+1,events);
-                                    });
-                                    self.geometry.insert(child.into(),cell.response.rect);
-                                    if index%columns==columns-1 { ui.end_row(); }
-                                }
-                            });
+                        let width=((bounded_layout(ui.available_width(),1e6)-gap*(columns-1) as f32)/columns as f32).max(num(node,"min_column_width").unwrap_or(0.0));
+                        let active:Vec<_>=children(node).collect();
+                        let mut widths=vec![width;columns];
+                        if node.ports.get("content_columns")==Some(&Value::Bool(true)){widths.fill(0.);for (i,c) in active.iter().enumerate(){if let Some(child)=nodes.get(*c){widths[i%columns]=widths[i%columns].max(intrinsic_text_width(ui,child,nodes,&self.tree.model,&mut self.numbers,false,0));}}let total=widths.iter().sum::<f32>();let floor=num(node,"min_column_width").unwrap_or(0.);let budget=(bounded_layout(ui.available_width(),1e6)-gap*(columns-1) as f32).max(floor*columns as f32);for w in &mut widths{*w=if total>0.{floor+(budget-floor*columns as f32)*(*w)/total}else{budget/columns as f32};}}
+                        let origin=ui.available_rect_before_wrap().min;
+                        let mut top=origin.y;
+                        for group in active.chunks(columns) {
+
+                            let mut height=0.0_f32;
+                            for (column,child) in group.iter().enumerate() {
+                                let width=widths[column];let left=origin.x+widths[..column].iter().sum::<f32>()+column as f32*gap;
+                                let rect=egui::Rect::from_min_size(egui::pos2(left,top),egui::vec2(width,if ui.available_height().is_finite(){(ui.available_height()-(top-origin.y)).max(0.)}else{ui.clip_rect().height()}));
+                                let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
+                                cell.set_width(width);
+                                cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(rect.left(),ui.clip_rect().top()),egui::pos2(rect.right(),ui.clip_rect().bottom()))));
+                                self.node(&mut cell,child,nodes,route,depth+1,events);
+                                height=height.max(cell.min_rect().height());
+                            }
+
+                            if let Some(colour)=color(text(node,"row_rule")){ui.painter().hline(origin.x..=origin.x+widths.iter().sum::<f32>()+gap*(columns-1) as f32,top+height-0.5,egui::Stroke::new(1.,colour));}
+                            top+=height+num(node,"row_gap").unwrap_or(3.);
+                        }
+                        let height=if active.is_empty(){0.}else{top-origin.y-num(node,"row_gap").unwrap_or(3.)};
+                        ui.allocate_space(egui::vec2(widths.iter().sum::<f32>()+gap*(columns-1) as f32,height));
                     }
                     "control" => {
                         // Container gaps arrange children; they must not
@@ -1135,22 +1303,26 @@ impl SceneView {
                         }
                     }
                     "text" => {
-                        let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(ui.visuals().text_color()).to_array();
-                        let number = node.ports.get("number").map(|spec| self.numbers.text(ui, &key, spec, node.ports.get("motion") != Some(&Value::Bool(false))));
-                        let plain = json!([{"text":number.as_deref().unwrap_or_else(||text(node,"text"))}]);
-                        if node.ports.contains_key("spans") || node.ports.contains_key("letter_spacing") || node.ports.contains_key("font") || node.ports.contains_key("mono_font") {
-                            let spans = node.ports.get("spans").unwrap_or(&plain);
-                            let family = (node.ports.get("font").and_then(Value::as_str), num(node,"weight").unwrap_or(if node.ports.get("bold") == Some(&Value::Bool(true)) {700.} else {400.}), node.ports.get("mono_font").and_then(Value::as_str));
-                            let mut job = crate::spans::job(ui, spans, num(node,"size").unwrap_or(13.0), node.ports.get("mono") == Some(&Value::Bool(true)), node.ports.get("bold") == Some(&Value::Bool(true)), Color32::from_rgba_unmultiplied(colour[0], colour[1], colour[2], colour[3]), family);
-                            job.halign = match text(node,"align") {"center"=>egui::Align::Center,"right"=>egui::Align::Max,_=>egui::Align::Min};
-                            for section in &mut job.sections { section.format.extra_letter_spacing = num(node,"letter_spacing").unwrap_or(0.); }
-                            let label = egui::Label::new(job);
-                            let label=if node.ports.get("wrap") == Some(&Value::Bool(true)) {label.wrap()} else {label.extend()};
-                            if node.ports.get("fill")==Some(&Value::Bool(true)) {ui.add_sized(egui::vec2(ui.available_width(),0.),label);} else {ui.add(label);}
-                        } else {
-                        let widget=Widget::new(&key,"label","",json!(number.as_deref().unwrap_or_else(||text(node,"text")))).with_properties(json!({"size":num(node,"size").unwrap_or(13.0),"bold":node.ports.get("bold"),"mono":node.ports.get("mono"),"align":node.ports.get("align"),"wrap":node.ports.get("wrap"),"fill":node.ports.get("fill"),"colour":colour}));
-                        self.widgets.widget(ui,&widget,&json!({}));
-                        }
+
+                        let colour=color(text(node,"color")).or_else(||text(node,"color").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(if node.ports.get("bold")==Some(&Value::Bool(true)){ui.visuals().strong_text_color()}else{ui.visuals().text_color()});
+                        let number = rendered_number(ui, node, &mut self.numbers);
+                        let width=num(node,"max_width").unwrap_or(ui.available_width()).min(ui.available_width());
+                            let cache=natural_size_key(node).with(("paint",if node.ports.get("wrap")==Some(&Value::Bool(true)){width.to_bits()}else{0},self.frame_palette,ui.pixels_per_point().to_bits(),font_state_key(ui),colour.to_array(),number.as_deref()));
+                        let paint_id=route.map_or_else(||key.clone(),|(list,_,_)|format!("{list}/{key}"));
+                        let galley=self.painted.get(&paint_id,cache).unwrap_or_else(||{
+                            record_measurement_work();
+                            let plain=json!([{"text":number.as_deref().unwrap_or_else(||text(node,"text"))}]);
+                            let spans=node.ports.get("spans").unwrap_or(&plain);
+                            let family=(node.ports.get("font").and_then(Value::as_str),num(node,"weight").unwrap_or(if node.ports.get("bold")==Some(&Value::Bool(true)){700.}else{400.}),node.ports.get("mono_font").and_then(Value::as_str));
+                            let mut job=crate::spans::job(ui,spans,num(node,"size").unwrap_or(13.),node.ports.get("mono")==Some(&Value::Bool(true)),node.ports.get("bold")==Some(&Value::Bool(true)),colour,family);
+                            job.halign=match text(node,"align"){ "center"=>egui::Align::Center,"right"=>egui::Align::Max,_=>egui::Align::Min};
+                            for section in &mut job.sections{section.format.extra_letter_spacing=num(node,"letter_spacing").unwrap_or(0.);section.format.line_height=num(node,"line_height").map(|v|v.clamp(0.1,4096.));}
+                            job.justify=false;job.wrap.max_width=if node.ports.get("wrap")==Some(&Value::Bool(true)){width}else{f32::INFINITY};
+                            let galley=ui.fonts_mut(|f|f.layout_job(job));self.painted.put(paint_id,cache,galley.clone());galley
+                        });
+                        let label=egui::Label::new(galley);
+                        let label=if node.ports.get("wrap")==Some(&Value::Bool(true)){label.wrap()}else{label.extend()};
+                        if node.ports.get("fill")==Some(&Value::Bool(true)){ui.add_sized(egui::vec2(width,0.),label);}else{ui.add(label);}
                     }
                     "button" => {
                         let widget=Widget::new(&key,"button","",json!("Ready")).with_properties(json!({"text":text(node,"label")}));
@@ -1172,16 +1344,13 @@ impl SceneView {
                     }
                     "image" => {
                         if text(node,"src")=="brand:cyclops" {
-                            let w=num(node,"w").unwrap_or(200.0);
-                            let h=num(node,"h").unwrap_or(w);
+                            let size=image_extent(node);let w=size.x;let h=size.y;
                             ui.add(egui::Image::from_bytes("bytes://viu/cyclops.svg",include_bytes!("../../../share/brand/logos/alien-cyclops.svg").as_slice()).fit_to_exact_size(Vec2::new(w,h)));
                         } else if let Some(icon)=text(node,"src").strip_prefix("icon:").and_then(crate::icons::Icon::from_name) {
-                            let w=num(node,"w").or(num(node,"h")).unwrap_or(24.0);
-                            let h=num(node,"h").unwrap_or(w);
+                            let size=image_extent(node);let w=size.x;let h=size.y;
                             ui.add(crate::icons::image_of(ui.ctx(),icon,w,ui.visuals().text_color()).fit_to_exact_size(Vec2::new(w,h)));
                         } else if text(node,"src").starts_with("raster:") {
-                            let w=num(node,"w").unwrap_or(320.0);
-                            let h=num(node,"h").unwrap_or(180.0);
+                            let size=image_extent(node);let w=size.x;let h=size.y;
                             ui.allocate_ui(Vec2::new(w,h), |ui| {
                                 self.scene_images.draw(ui,id,&json!({"phase":"ready","handle":text(node,"src"),"scene_size":[w,h]}));
                             });
@@ -1192,10 +1361,10 @@ impl SceneView {
                     }
                     "list" => {
                         let horizontal = text(node, "flow") == "horizontal";
-                        let data = self.lists.get(id).cloned().unwrap_or_default();
-                        let list_rows = rows(node).to_vec();
+                        let lists=self.measurement_nodes.as_ref().unwrap().2.clone();let empty=crate::templates::ListData::default();let data=lists.get(id).unwrap_or(&empty);
+                        let list_rows = rows(node);
                         let mut draw = |ui: &mut egui::Ui| {
-                            for item in &list_rows {
+                            for item in list_rows {
                                 if let Some(instance) =
                                     item["id"].as_str().and_then(|id| data.instances.get(id))
                                 {
@@ -1242,7 +1411,7 @@ impl SceneView {
                                         }
                                         if child==flex {
                                             let width=(ui.available_width()-2.0).clamp(80.0,220.0);
-                                            let area=egui::Rect::from_min_size(ui.cursor().min,egui::vec2(width,ui.available_height()));
+                                            let area=egui::Rect::from_min_size(ui.cursor().min,egui::vec2(width,finite_available_height(ui)));
                                             self.child_rect(ui,child,area,nodes,route,depth,events);
                                             ui.allocate_rect(area,egui::Sense::hover());
                                         } else {self.node(ui,child,nodes,route,depth+1,events);}
@@ -1260,14 +1429,23 @@ impl SceneView {
                         }
                         let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
                         let radial_shape = ui.painter().add(egui::Shape::Noop);
-                        let frame_width = num(node,"width").or(num(node,"min_width")).or_else(|| (node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0.).then(||ui.available_width()));
+                        let frame_width = num(node,"width").or(num(node,"min_width")).or_else(|| (node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0. || num(node,"shrink").unwrap_or(0.)>0. || num(node,"basis").unwrap_or(0.)>0.).then(||ui.available_width())).map(|width|constrained_width(node,width));
+                        let bound_width=num(node,"width").or_else(||(node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0. || num(node,"shrink").unwrap_or(0.)>0. || num(node,"basis").unwrap_or(0.)>0.).then(||ui.available_width().max(num(node,"min_width").unwrap_or(0.)))).map(|width|constrained_width(node,width));
                         let frame = egui::Frame::new()
-                            .fill(if node.ports.contains_key("background_radials") {Color32::TRANSPARENT} else {background})
+                            .fill(Color32::TRANSPARENT)
                             .inner_margin(egui::Margin { left: node_padding(node, "padding_left") as i8, right: node_padding(node, "padding_right") as i8, top: node_padding(node, "padding_top") as i8, bottom: node_padding(node, "padding_bottom") as i8 })
                             .corner_radius(num(node, "radius").unwrap_or(0.0));
-                        let response = frame
+                        let mut response = frame
                             .show(ui, |ui| {
-                                if let Some(width)=frame_width { ui.set_min_width((width-node_padding(node,"padding_left")-node_padding(node,"padding_right")).max(0.)); }
+                                if let Some(width)=frame_width {
+                                    let inner=(width-node_padding(node,"padding_left")-node_padding(node,"padding_right")).max(0.);
+                                    ui.set_min_width(inner);
+                                }
+                                if let Some(width)=bound_width {
+                                    let inner=(width-node_padding(node,"padding_left")-node_padding(node,"padding_right")).max(0.);
+                                    ui.set_max_width(inner);
+
+                                }
                                 if let Some(height) = num(node, "height") {
                                     ui.set_min_height(height);
                                 }
@@ -1279,12 +1457,15 @@ impl SceneView {
                                         num(node, "height").unwrap_or(0.0),
                                     ));
                                 }
+                                let assigned_height = self.stretch_heights.get(id).copied();
                                 let mut draw = |ui: &mut egui::Ui| {
                                     for child in children(node) {
                                         self.node(ui, child, nodes, route, depth + 1, events);
                                     }
                                 };
                                 if node.family == "row" {
+                                    if !row_measurable(node,nodes,0) {
+
                                     if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) {
                                         ui.horizontal_wrapped(|ui| {
                                             for child in children(node) {
@@ -1360,15 +1541,159 @@ impl SceneView {
                                     } else if let Some(height) = num(node, "height") {
  ui.allocate_ui_with_layout(Vec2::new(ui.available_width(),height),egui::Layout::left_to_right(egui::Align::Center),|ui|draw(ui));
  } else { ui.horizontal(|ui| draw(ui)); }
+                                    } else                                     if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) && (node.ports.get("native_spacing")!=Some(&Value::Bool(true)) || node.ports.contains_key("cross_align")) {
+                                        let origin=ui.available_rect_before_wrap().min;let available=bounded_layout(ui.available_width(),1e6);let gap=ui.spacing().item_spacing;
+                                        let active:Vec<_>=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();
+                                        let sizes:Vec<egui::Vec2>=active.iter().map(|c|{let old=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(ui.scope_id().with((&key,"wrap-size",c)))).unwrap_or_default();egui::vec2(if nodes[*c].ports.get("fill")==Some(&Value::Bool(true)){available}else{intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,&mut self.numbers,false,0).min(available)},old.y)}).collect();
+                                        let mut rows:Vec<Vec<usize>>=vec![];let mut current=vec![];let mut used=0.;
+                                        for (i,size) in sizes.iter().enumerate(){if !current.is_empty() && used+size.x>available+0.01{rows.push(std::mem::take(&mut current));used=0.;}current.push(i);used+=size.x+gap.x;}
+                                        if !current.is_empty(){rows.push(current);}
+                                        let mut y=origin.y;let mut total_width=0.0_f32;
+                                        for row in rows {
+                                            let cross=row.iter().map(|i|sizes[*i].y).fold(0.0_f32,f32::max);let mut x=origin.x;let mut actual_height=0.0_f32;
+                                            for i in row {
+                                                let child=active[i];let size=sizes[i];let top=y+match cross_align(node,"center"){"center"=>(cross-size.y).max(0.)/2.,"end"=>(cross-size.y).max(0.),_=>0.};
+                                                let rect=egui::Rect::from_min_size(egui::pos2(x,top),egui::vec2(size.x,finite_available_height(ui).max(size.y)));
+                                                let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(rect.left(),ui.clip_rect().top()),egui::pos2(rect.right(),ui.clip_rect().bottom()))));
+                                                self.node(&mut cell,child,nodes,route,depth+1,events);let actual=cell.min_rect().size();
+                                                ui.ctx().data_mut(|d|{d.insert_temp(ui.scope_id().with((&key,"wrap-size",child)),actual);});
+                                                if (actual.y-size.y).abs()>0.01{ui.ctx().request_discard("wrapped compound height");}
+                                                actual_height=actual_height.max(actual.y);x+=size.x+gap.x;
+                                            }
+                                            total_width=total_width.max(x-origin.x-gap.x);y+=actual_height+gap.y;
+                                        }
+                                        let height=(y-origin.y-gap.y).max(0.);
+                                        ui.allocate_space(egui::vec2(if node.ports.get("fill")==Some(&Value::Bool(true)){available}else{total_width},height));
+                                    } else if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) {
+                                        ui.horizontal_wrapped(|ui| {
+                                            for child in children(node) {
+                                                let Some(control)=nodes.get(child) else {continue};
+                                                if control.ports.get("hidden")==Some(&Value::Bool(true)){continue;}
+                                                if node.ports.get("native_spacing")==Some(&Value::Bool(true)) && control.family=="control" {
+                                                    match Widget::decode(&control.ports["definition"]) {
+                                                        Ok(widget)=>for intent in self.widgets.widget_inline(ui,&widget,&self.tree.model) {
+                                                            if let Some(command)=control.ports.get("on_intent").and_then(Value::as_str){events.push(Event::from_intent(command,&self.tree.name,intent));}
+                                                        },
+                                                        Err(error)=>{ui.colored_label(Color32::RED,error);}
+                                                    }
+                                                } else {self.node(ui,child,nodes,route,depth+1,events);}
+                                            }
+                                        });
+                                    } else if text(node,"justify")=="between" && node.ports.contains_key("cross_align") {
+                                        let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
+                                        let fill_count=active.iter().filter(|c|nodes[**c].ports.get("fill")==Some(&Value::Bool(true))).count();
+                                        let fixed:f32=active.iter().filter(|c|nodes[**c].ports.get("fill")!=Some(&Value::Bool(true))).map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,&mut self.numbers,false,0)).sum();
+                                        let sizes:Vec<egui::Vec2>=active.iter().map(|child|{let old=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(ui.scope_id().with((&key,"between-size",child)))).unwrap_or_default();egui::vec2(if nodes[*child].ports.get("fill")==Some(&Value::Bool(true)){(bounded_layout(ui.available_width(),1e6)-fixed-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.)/fill_count.max(1) as f32}else{intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,&mut self.numbers,false,0)},old.y)}).collect();
+                                        let available=bounded_layout(ui.available_width(),1e6);
+                                        let gap=ui.spacing().item_spacing.x;let split_gap=(available-sizes.iter().map(|s|s.x).sum::<f32>()-gap*active.len().saturating_sub(1) as f32).max(0.);
+                                        let cross=sizes.iter().map(|s|s.y).fold(0.0_f32,f32::max);
+                                        let origin=ui.available_rect_before_wrap().min;
+                                        let mut x=origin.x;
+                                        let mut height=0.0_f32;
+                                        for (index,(child,size)) in active.iter().zip(&sizes).enumerate() {
+                                            let rect=egui::Rect::from_min_size(egui::pos2(x,origin.y+match cross_align(node,"center"){"start"=>0.,"end"=>cross-size.y,_=>(cross-size.y)/2.}),*size);
+                                            let measure=egui::Rect::from_min_size(rect.min,egui::vec2(size.x,finite_available_height(ui).max(size.y)));
+                                            let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(measure).layout(egui::Layout::top_down(egui::Align::Min)));
+                                            cell.set_clip_rect(ui.clip_rect().intersect(measure));
+                                            self.node(&mut cell,child,nodes,route,depth+1,events);
+                                            let actual=cell.min_rect().size();
+
+                                            if (actual.y-size.y).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(ui.scope_id().with((&key,"between-size",child)),actual));ui.ctx().request_discard("scene layout measurement");}
+                                            height=height.max(actual.y);
+                                            x+=size.x+gap;if index==0{x+=split_gap;}
+                                        }
+                                        ui.allocate_space(egui::vec2(available,height));
+                                    } else if text(node,"justify")=="between" {
+                                        ui.horizontal(|ui|{let active:Vec<_>=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();if let Some(first)=active.first(){self.node(ui,first,nodes,route,depth+1,events);ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|for child in active.iter().skip(1).rev(){self.node(ui,child,nodes,route,depth+1,events);});}});
+                                    } else if node.ports.contains_key("cross_align") || children(node).any(|c|nodes.get(c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)) && ["grow","shrink","basis"].iter().any(|p|num(n,p).unwrap_or(0.)>0.))) {
+                                        let active:Vec<_>=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();
+                                        let available=(bounded_layout(ui.available_width(),1e6)-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.);
+                                        let natural:Vec<f32>=active.iter().map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,&mut self.numbers,false,0)).collect();
+                                        let minimum:Vec<f32>=active.iter().map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,&mut self.numbers,true,0)).collect();
+                                        let has_grow=active.iter().any(|c|num(&nodes[*c],"grow").unwrap_or(0.)>0.);
+                                        let grow:Vec<f32>=active.iter().map(|c|bounded_layout(num(&nodes[*c],"grow").filter(|v|*v>0.).unwrap_or(if nodes[*c].ports.get("fill")==Some(&Value::Bool(true)){1.}else{0.}),1000.)).collect();
+                                        let mut widths:Vec<f32>=active.iter().enumerate().map(|(i,c)|num(&nodes[*c],"basis").map(|n|bounded_layout(n,available)).unwrap_or(if grow[i]>0. {0.}else{natural[i]})).collect();
+                                        let extra=(available-widths.iter().sum::<f32>()).max(0.);
+                                        let total_grow=grow.iter().sum::<f32>();
+                                        if total_grow>0. {for i in 0..widths.len() {widths[i]+=extra*grow[i]/total_grow;}}
+                                        for _ in 0..active.len().min(32) {
+                                            let excess=(widths.iter().sum::<f32>()-available).max(0.);if excess<0.01 {break;}
+                                            let weights:Vec<f32>=active.iter().enumerate().map(|(i,c)|if widths[i]>minimum[i]+0.01 {bounded_layout(num(&nodes[*c],"shrink").unwrap_or(0.),1000.)*natural[i].max(1.)}else{0.}).collect();
+                                            let total=weights.iter().sum::<f32>();if total<=0. {break;}
+                                            for i in 0..widths.len() {widths[i]=(widths[i]-excess*weights[i]/total).max(minimum[i].min(widths[i]));}
+                                        }
+                                        // Explicit bases reserve a bounded budget, even without grow.
+                                        let fixed: f32=active.iter().enumerate().filter(|(_,c)|!nodes[**c].ports.contains_key("basis")).map(|(i,_)|widths[i]).sum();
+                                        let based: f32=active.iter().enumerate().filter(|(_,c)|nodes[**c].ports.contains_key("basis")).map(|(i,_)|widths[i]).sum();
+                                        let budget=(available-fixed).max(0.);
+                                        if based>budget && based>0. {for (i,c) in active.iter().enumerate() {if nodes[*c].ports.contains_key("basis") {widths[i]*=budget/based;}}}
+                                        for (i,c) in active.iter().enumerate() {widths[i]=widths[i].max(num(&nodes[*c],"min_width").unwrap_or(0.)).min(num(&nodes[*c],"max_width").unwrap_or(1e6));}
+                                        let origin=ui.available_rect_before_wrap().min;let row_id=ui.scope_id();
+                                        let cross=active.iter().map(|c|ui.ctx().data(|d|d.get_temp::<f32>(row_id.with(("flex-height",c)))).unwrap_or(0.)).fold(if node.ports.contains_key("cross_align"){num(node,"height").unwrap_or(0.)}else{0.},f32::max);
+                                        let occupied=widths.iter().sum::<f32>()+ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32;
+                                        let mut x=origin.x+if text(node,"align")=="end"{(bounded_layout(ui.available_width(),1e6)-occupied).max(0.)}else{0.};let mut height=0.0_f32;
+                                        for (child,width) in active.iter().zip(&widths) {
+                                            let cache=row_id.with(("flex-height",child));let previous=ui.ctx().data(|d|d.get_temp::<f32>(cache)).unwrap_or(0.);
+                                            let top=origin.y+match cross_align(node,if text(node,"align")=="center" || (!has_grow && text(node,"align")!="stretch"){"center"}else{"start"}){"center"=>(cross-previous).max(0.)/2.,"end"=>(cross-previous).max(0.),_=>0.};
+                                            let rect=egui::Rect::from_min_size(egui::pos2(x,top),egui::vec2(*width,finite_available_height(ui).max(previous)));
+                                            let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
+                                            cell.set_max_width(*width);
+                                            cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(x,ui.clip_rect().top()),egui::pos2(x+width,ui.clip_rect().bottom()))));
+                                            let stretch=cross_align(node,text(node,"align"))=="stretch" && num(&nodes[*child],"height").is_none();
+                                            if stretch {self.stretch_heights.insert((*child).into(),cross);}
+                                            if nodes[*child].family=="spacer"{cell.allocate_space(egui::vec2(*width,0.));self.geometry.insert((*child).into(),egui::Rect::from_min_size(rect.min,egui::vec2(*width,0.)));}else{self.node(&mut cell,child,nodes,route,depth+1,events);}
+                                            if stretch {self.stretch_heights.remove(*child);}
+                                            let actual=cell.min_rect().height();
+                                            let natural=if stretch{self.natural_heights.get(*child).copied().unwrap_or(actual)}else{actual};
+                                            if (natural-previous).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cache,natural));ui.ctx().request_discard("flex cross size");}
+
+                                            height=height.max(actual);x+=width+ui.spacing().item_spacing.x;
+                                        }
+                                        ui.allocate_space(egui::vec2(if node.ports.get("fill")==Some(&Value::Bool(true)) || total_grow>0. || text(node,"align")=="end"{bounded_layout(ui.available_width(),1e6)}else{occupied},height));
+                                    } else if text(node,"align")=="baseline" && children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).all(|c|nodes.get(c).is_some_and(|n|n.family=="text")) {
+                                        let active:Vec<_>=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();
+                                        let bases:Vec<f32>=active.iter().map(|c|text_baseline(ui,&nodes[*c],&mut self.numbers)).collect();
+                                        let baseline=bases.iter().copied().fold(0.0_f32,f32::max);let origin=ui.available_rect_before_wrap().min;let mut x=origin.x;let mut height=0.0_f32;
+                                        for (child,base) in active.iter().zip(bases) {let width=intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,&mut self.numbers,false,0);let offset=baseline-base;let pos=egui::pos2(x,origin.y+offset);let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(pos,egui::vec2(width,finite_available_height(ui)))).layout(egui::Layout::top_down(egui::Align::Min)));self.node(&mut cell,child,nodes,route,depth+1,events);height=height.max(offset+cell.min_rect().height());x+=width+ui.spacing().item_spacing.x;}
+                                        ui.allocate_space(egui::vec2((x-origin.x-ui.spacing().item_spacing.x).max(0.),height));
+                                    } else if text(node,"align")=="end" {
+                                        ui.with_layout(egui::Layout::right_to_left(match cross_align(node,"center"){"start"=>egui::Align::Min,"end"=>egui::Align::Max,_=>egui::Align::Center}),|ui|for child in children(node).collect::<Vec<_>>().into_iter().rev(){self.node(ui,child,nodes,route,depth+1,events);});
+                                    } else if let Some(height) = num(node, "height") {
+ ui.allocate_ui_with_layout(Vec2::new(ui.available_width(),height),egui::Layout::left_to_right(egui::Align::Center),|ui|draw(ui));
+ } else { ui.horizontal(|ui| draw(ui)); }
                                 } else if node.ports.get("scroll")==Some(&Value::Bool(true)) {
                                     egui::ScrollArea::vertical().id_salt(&key).min_scrolled_height(0.0).max_height(ui.available_height()).show(ui,|ui| { ui.vertical(|ui| draw(ui)); });
 
 
                                 } else {
-                                    if text(node,"align")=="center" { ui.vertical_centered(|ui| draw(ui)); } else { ui.vertical(|ui| draw(ui)); }
+                                    let mode=text(node,"justify");
+                                    let centre=matches!(mode,"center"|"end"|"between"|"around"|"evenly") && (!matches!(mode,"between"|"around"|"evenly") || children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).all(|c|nodes.get(c).is_some_and(|n|n.family=="text"))) && num(node,"height").or(assigned_height.map(|h|(h-node_padding(node,"padding_top")-node_padding(node,"padding_bottom")).max(0.))).is_some_and(|h|h.is_finite());
+                                    let count=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).count();
+                                    let old_gap=ui.spacing().item_spacing.y;let mut extra=0.;
+                                    let cache = ui.scope_id().with((&key,"column-content-height"));
+                                    if centre {
+                                        let content = ui.ctx().data_mut(|d| d.get_temp::<f32>(cache)).unwrap_or(0.);
+                                        if content>0. {let height=num(node,"height").or(assigned_height.map(|h|(h-node_padding(node,"padding_top")-node_padding(node,"padding_bottom")).max(0.))).unwrap_or(ui.available_height());let free=(height-content).max(0.);let leading=match mode{"end"=>free,"between"=>{extra=if count>1{free/(count-1) as f32}else{0.};0.},"around"=>{extra=free/count.max(1) as f32;extra/2.},"evenly"=>{extra=free/(count+1) as f32;extra},_=>free/2.};if leading>0.{ui.add_space(leading);}ui.spacing_mut().item_spacing.y=old_gap+extra;}
+                                    }
+                                    let content = if text(node,"align")=="center" { ui.vertical_centered(|ui| draw(ui)) } else { ui.vertical(|ui| draw(ui)) }.response.rect.height()-extra*count.saturating_sub(1) as f32;
+                                    self.natural_heights.insert(id.into(),content+node_padding(node,"padding_top")+node_padding(node,"padding_bottom"));
+                                    ui.spacing_mut().item_spacing.y=old_gap;
+                                    if centre {
+                                        let changed=ui.ctx().data_mut(|d| {
+                                            let old=d.get_temp::<f32>(cache);
+                                            d.insert_temp(cache,content);
+                                            old.is_none_or(|old|(old-content).abs()>0.01)
+                                        });
+                                        if changed {ui.ctx().request_discard("scene layout measurement");}
+                                    }
                                 }
                             })
                             .response;
+                        if let Some(width)=bound_width {response.rect.max.x=response.rect.min.x+constrained_width(node,width);}
+                        if let Some(height)=self.stretch_heights.get(id).copied() {
+                            response.rect.max.y=response.rect.max.y.max(response.rect.min.y+height);
+                        }
+                        if !node.ports.contains_key("background_radials") {let mut background_rect=response.rect;if let Some(a)=node.ports.get("background_inset").and_then(Value::as_array).filter(|a|a.len()==4){let v:Vec<f32>=a.iter().map(|v|bounded_layout(v.as_f64().unwrap_or(0.) as f32,1e6)).collect();background_rect.min+=egui::vec2(v[3],v[0]);background_rect.max-=egui::vec2(v[1],v[2]);background_rect.max=background_rect.max.max(background_rect.min);}ui.painter().set(radial_shape,egui::Shape::rect_filled(background_rect,num(node,"radius").unwrap_or(0.),background));}
                         if let Some(radials)=node.ports.get("background_radials") { ui.painter().set(radial_shape,self.backdrops.shape(ui.ctx(),&key,response.rect,background,radials)); }
                         if route.is_some_and(|(_, list, _)| text(list, "row") == id)
                             || node.ports.contains_key("on_click")
@@ -1390,6 +1715,20 @@ impl SceneView {
                 }
             })
             .response;
+        if let Some(height) = self.stretch_heights.get(id).copied() {
+            response.rect.max.y = response.rect.max.y.max(response.rect.min.y + height);
+        }
+        if matches!(node.family.as_str(), "column" | "row") {
+            if let Some(width) = num(node, "width").or_else(|| {
+                (node.ports.get("fill") == Some(&Value::Bool(true))
+                    || num(node, "grow").unwrap_or(0.) > 0.
+                    || num(node, "shrink").unwrap_or(0.) > 0.
+                    || num(node, "basis").unwrap_or(0.) > 0.)
+                    .then(|| allocated.width().max(num(node, "min_width").unwrap_or(0.)))
+            }) {
+                response.rect.max.x = response.rect.min.x + constrained_width(node, width);
+            }
+        }
         if node.family != "dock" {
             paint_outline(ui, node, response.rect);
         }
@@ -2656,7 +2995,39 @@ fn route_event(
     }
 }
 fn num(node: &Node, port: &str) -> Option<f32> {
-    node.ports.get(port)?.as_f64().map(|n| n as f32)
+    node.ports.get(port)?.as_f64().map(|n| {
+        let v = n as f32;
+        if port == "letter_spacing" {
+            return v.clamp(-100., 4096.);
+        }
+        if matches!(
+            port,
+            "width"
+                | "min_width"
+                | "max_width"
+                | "column_gap"
+                | "min_column_width"
+                | "height"
+                | "row_gap"
+                | "gap"
+                | "size"
+                | "padding"
+                | "padding_top"
+                | "padding_right"
+                | "padding_bottom"
+                | "padding_left"
+                | "padding_x"
+                | "padding_y"
+                | "outline_width"
+                | "radius"
+                | "w"
+                | "h"
+        ) {
+            bounded_layout(v, 1e6)
+        } else {
+            v
+        }
+    })
 }
 fn color(s: &str) -> Option<Color32> {
     let s = s.strip_prefix('#')?;
@@ -2670,6 +3041,420 @@ fn color(s: &str) -> Option<Color32> {
         byte(4)?,
         if s.len() == 8 { byte(6)? } else { 255 },
     ))
+}
+
+fn rendered_number(
+    ui: &egui::Ui,
+    node: &Node,
+    numbers: &mut crate::numbers::Numbers,
+) -> Option<String> {
+    node.ports.get("number").map(|spec| {
+        // Use the stable, list-scoped identity, independent of the animation sample.
+        let identity = node.ports["__measure_identity"].as_u64().unwrap_or(0);
+        numbers.text(
+            ui,
+            &identity.to_string(),
+            spec,
+            node.ports.get("motion") != Some(&Value::Bool(false)),
+        )
+    })
+}
+
+fn text_baseline(ui: &egui::Ui, node: &Node, numbers: &mut crate::numbers::Numbers) -> f32 {
+    let number = rendered_number(ui, node, numbers);
+    let cache = natural_size_key(node).with((
+        "baseline",
+        number.as_deref(),
+        ui.pixels_per_point().to_bits(),
+        font_state_key(ui),
+    ));
+    if let Some(v) = measure_get::<f32>(ui, cache) {
+        return v;
+    }
+    let bounded_runs = measurement_runs(node, true, number.as_deref());
+    let bold = node.ports.get("bold") == Some(&Value::Bool(true));
+    let mut job = crate::spans::job(
+        ui,
+        &bounded_runs,
+        num(node, "size").unwrap_or(13.),
+        node.ports.get("mono") == Some(&Value::Bool(true)),
+        bold,
+        Color32::WHITE,
+        (
+            node.ports.get("font").and_then(Value::as_str),
+            num(node, "weight").unwrap_or(if bold { 700. } else { 400. }),
+            node.ports.get("mono_font").and_then(Value::as_str),
+        ),
+    );
+    for s in &mut job.sections {
+        s.format.line_height = num(node, "line_height").map(|v| v.clamp(0.1, 4096.));
+    }
+    record_measurement_work();
+    let g = ui.fonts_mut(|f| f.layout_job(job));
+    let value = g
+        .rows
+        .first()
+        .and_then(|r| r.glyphs.first().map(|glyph| r.pos.y + glyph.pos.y))
+        .unwrap_or(0.);
+    measure_put(ui, cache, value);
+    value
+}
+
+fn bounded_layout(value: f32, maximum: f32) -> f32 {
+    let maximum = if maximum.is_finite() {
+        maximum.clamp(0., 1e6)
+    } else {
+        1e6
+    };
+    if value.is_finite() {
+        value.clamp(0., maximum.max(0.))
+    } else {
+        maximum.max(0.)
+    }
+}
+fn constrained_width(node: &Node, value: f32) -> f32 {
+    bounded_layout(value, 1e6)
+        .max(num(node, "min_width").unwrap_or(0.))
+        .min(num(node, "max_width").unwrap_or(1e6))
+}
+
+// One bounded cache per value type and context. Hash borrowed content directly;
+// never debug-format the ports map or retain a new Context entry per text value.
+fn measurement_content_hash(id: &str, node: &Node) -> u64 {
+    record_measurement_work();
+    use std::hash::{Hash, Hasher};
+    fn value(v: &Value, h: &mut impl Hasher) {
+        match v {
+            Value::String(s) => s.hash(h),
+            Value::Array(a) => {
+                for v in a {
+                    value(v, h)
+                }
+            }
+            Value::Object(m) => {
+                for (k, v) in m {
+                    k.hash(h);
+                    value(v, h)
+                }
+            }
+            _ => v.to_string().hash(h),
+        }
+    }
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    id.hash(&mut h);
+    node.family.hash(&mut h);
+    for (key, v) in &node.ports {
+        key.hash(&mut h);
+        value(v, &mut h);
+    }
+    h.finish()
+}
+fn natural_size_key(node: &Node) -> egui::Id {
+    egui::Id::new(
+        node.ports
+            .get("__measure_key")
+            .and_then(Value::as_u64)
+            .unwrap_or(node as *const Node as usize as u64),
+    )
+}
+#[derive(Clone)]
+struct MeasurementCache<T> {
+    values: std::collections::HashMap<egui::Id, T>,
+    order: std::collections::VecDeque<egui::Id>,
+}
+impl<T> Default for MeasurementCache<T> {
+    fn default() -> Self {
+        Self {
+            values: Default::default(),
+            order: Default::default(),
+        }
+    }
+}
+fn measure_get<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id) -> Option<T> {
+    ui.ctx().data_mut(|d| {
+        d.get_temp_mut_or_default::<MeasurementCache<T>>(egui::Id::new("scene-measurements"))
+            .values
+            .get(&key)
+            .cloned()
+    })
+}
+fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, value: T) {
+    ui.ctx().data_mut(|d| {
+        let cache =
+            d.get_temp_mut_or_default::<MeasurementCache<T>>(egui::Id::new("scene-measurements"));
+        if cache.values.len() >= 4096 && !cache.values.contains_key(&key) {
+            if let Some(old) = cache.order.pop_front() {
+                cache.values.remove(&old);
+            }
+        }
+        if !cache.values.contains_key(&key) {
+            cache.order.push_back(key);
+        }
+        cache.values.insert(key, value);
+    });
+}
+
+#[cfg(test)]
+mod measurement_cache_tests {
+    use serde_json::{Value, json};
+    #[test]
+    fn animated_number_baseline_cache_tracks_the_rendered_sample() {
+        let source = "---\nscene: 1\nname: number-cache\ncitizen: test\n---\n```mix\n{root:{widget:\"row\",align:\"baseline\",children:[\"n\",\"next\"]},n:{widget:\"text\",text:\"fallback\",number:{to:123456,ms:1000,delay_ms:0}},next:{widget:\"text\",text:\"Next\"}}\n```\n";
+        let mut view = super::SceneView::new(source).unwrap();
+        let ctx = egui::Context::default();
+        for (time, rendered) in [(0., "0"), (2., "123,456")] {
+            ctx.run_ui(
+                egui::RawInput {
+                    time: Some(time),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui);
+                    let node = &view.measurement_nodes.as_ref().unwrap().1["n"];
+                    let key = super::natural_size_key(node).with((
+                        "baseline",
+                        Some(rendered),
+                        ui.pixels_per_point().to_bits(),
+                        super::font_state_key(ui),
+                    ));
+                    assert!(
+                        super::measure_get::<f32>(ui, key).is_some(),
+                        "missing baseline sample {rendered}"
+                    );
+                },
+            )
+            .drop_without_applying_deltas();
+        }
+    }
+
+    #[test]
+    fn three_hundred_texts_do_no_measurement_or_shaping_work_after_settling() {
+        let mut nodes = serde_json::Map::new();
+        let mut children = Vec::new();
+        for i in 0..300 {
+            let id = format!("text-{i}");
+            children.push(id.clone());
+            nodes.insert(
+                id,
+                json!({"widget":"text","text":format!("Measured label {i}"),"size":14}),
+            );
+        }
+        nodes.insert(
+            "root".into(),
+            json!({"widget":"grid","columns":3,"content_columns":true,"children":children}),
+        );
+        let source = format!(
+            "---\nscene: 1\nname: cache-300\ncitizen: test\n---\n```mix\n{}\n```\n",
+            Value::Object(nodes)
+        );
+        let mut view = super::SceneView::new(&source).unwrap();
+        let ctx = egui::Context::default();
+        for frame in 0..12 {
+            super::MEASUREMENT_WORK.set(0);
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+            if frame > 4 {
+                assert_eq!(super::MEASUREMENT_WORK.get(), 0, "frame {frame}");
+            }
+        }
+    }
+    #[test]
+    fn changing_content_cannot_grow_measurement_storage_without_bound() {
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            for i in 0..8192 {
+                super::measure_put(ui, egui::Id::new(i), i as f32);
+            }
+            let count = ctx.data_mut(|d| {
+                d.get_temp_mut_or_default::<super::MeasurementCache<f32>>(egui::Id::new(
+                    "scene-measurements",
+                ))
+                .values
+                .len()
+            });
+            assert_eq!(count, 4096);
+        });
+        output.textures_delta.clear();
+    }
+}
+
+// Shape the original spans once. Word bounds are read from the natural glyph
+// positions (bounded scan), rather than shaping every word on every frame.
+fn finite_available_height(ui: &egui::Ui) -> f32 {
+    let height = ui.available_height();
+    if height.is_finite() {
+        height.max(0.)
+    } else {
+        ui.clip_rect().height().max(0.)
+    }
+}
+
+fn horizontal_spacing(ui: &egui::Ui, node: &Node) -> f32 {
+    if node.ports.get("native_spacing") == Some(&Value::Bool(true))
+        || text(node, "packing") == "toolbar"
+        || ["options", "tools"].contains(&text(node, "bar"))
+    {
+        ui.ctx().global_style().spacing.item_spacing.x
+    } else {
+        num(node, "column_gap").or(num(node, "gap")).unwrap_or(4.)
+    }
+}
+
+fn intrinsic_text_width(
+    ui: &egui::Ui,
+    node: &Node,
+    nodes: &BTreeMap<String, Node>,
+    model: &Value,
+    numbers: &mut crate::numbers::Numbers,
+    words: bool,
+    depth: usize,
+) -> f32 {
+    if depth > 32 || node.ports.get("hidden") == Some(&Value::Bool(true)) {
+        return 0.;
+    }
+    if node.family == "text" {
+        let number = rendered_number(ui, node, numbers);
+        let cache = natural_size_key(node).with((
+            "text-widths",
+            number.as_deref(),
+            ui.pixels_per_point().to_bits(),
+            font_state_key(ui),
+        ));
+        let sizes = measure_get::<(f32, f32)>(ui, cache).unwrap_or_else(|| {
+            let runs = measurement_runs(node, false, number.as_deref());
+            let bold = node.ports.get("bold") == Some(&Value::Bool(true));
+            let mut job = crate::spans::job(
+                ui,
+                &runs,
+                num(node, "size").unwrap_or(13.),
+                node.ports.get("mono") == Some(&Value::Bool(true)),
+                bold,
+                Color32::WHITE,
+                (
+                    node.ports.get("font").and_then(Value::as_str),
+                    num(node, "weight").unwrap_or(if bold { 700. } else { 400. }),
+                    node.ports.get("mono_font").and_then(Value::as_str),
+                ),
+            );
+            for s in &mut job.sections {
+                s.format.extra_letter_spacing = num(node, "letter_spacing").unwrap_or(0.);
+            }
+            record_measurement_work();
+            let galley = ui.fonts_mut(|f| f.layout_job(job));
+            let natural = galley.size().x;
+            let mut minimum = 0.0_f32;
+            let mut start = None;
+            let mut seen = 0;
+            'rows: for row in &galley.rows {
+                for glyph in &row.glyphs {
+                    seen += 1;
+                    if seen > 4096 {
+                        minimum = natural;
+                        break 'rows;
+                    }
+                    if glyph.chr.is_whitespace() {
+                        start = None;
+                    } else {
+                        let begin = *start.get_or_insert(glyph.pos.x);
+                        minimum = minimum.max(glyph.max_x() - begin);
+                    }
+                }
+                start = None;
+            }
+            let result = (natural, minimum);
+            measure_put(ui, cache, result);
+            result
+        });
+        return (if words { sizes.1 } else { sizes.0 })
+            .max(num(node, "min_width").unwrap_or(0.))
+            .min(num(node, "max_width").unwrap_or(1e6));
+    }
+
+    let constrain = |v: f32| {
+        bounded_layout(v, 1e6)
+            .max(num(node, "min_width").unwrap_or(0.))
+            .min(num(node, "max_width").unwrap_or(1e6))
+    };
+    let explicit = num(node, "width").or(num(node, "w"));
+    if let Some(width) = explicit {
+        return constrain(width);
+    }
+    if node.family == "control" {
+        let key = natural_size_key(node).with((
+            "control-width",
+            ui.pixels_per_point().to_bits(),
+            font_state_key(ui),
+        ));
+        if let Some(width) = measure_get::<f32>(ui, key) {
+            return constrain(width);
+        }
+        let width = Widget::decode(&node.ports["definition"])
+            .ok()
+            .and_then(|w| w.intrinsic_width(ui, model).ok());
+        if let Some(width) = width {
+            measure_put(ui, key, width);
+        }
+        return constrain(width.unwrap_or(80.));
+    }
+    if !matches!(node.family.as_str(), "column" | "row" | "grid") {
+        let width = match node.family.as_str() {
+            "image" => image_extent(node).x,
+            "drawing" => num(node, "w").unwrap_or(280.),
+            "spacer" => num(node, "size").unwrap_or(8.),
+            "field" => ui.spacing().text_edit_width,
+            _ => {
+                let key = natural_size_key(node).with((
+                    "button-width",
+                    ui.pixels_per_point().to_bits(),
+                    font_state_key(ui),
+                ));
+                if let Some(v) = measure_get::<f32>(ui, key) {
+                    return constrain(v);
+                }
+                let width =
+                    ui.fonts_mut(|f| {
+                        f.layout_no_wrap(
+                            text(node, "label").chars().take(4096).collect(),
+                            egui::FontId::proportional(14.),
+                            Color32::WHITE,
+                        )
+                    })
+                    .size()
+                    .x + 2. * ui.spacing().button_padding.x;
+                measure_put(ui, key, width);
+                width
+            }
+        };
+        return constrain(width);
+    }
+    let widths: Vec<f32> = children(node)
+        .filter_map(|c| nodes.get(c))
+        .filter(|n| node.family == "grid" || n.ports.get("hidden") != Some(&Value::Bool(true)))
+        .map(|n| intrinsic_text_width(ui, n, nodes, model, numbers, words, depth + 1))
+        .collect();
+    let content = if node.family == "row" {
+        widths.iter().sum::<f32>()
+            + horizontal_spacing(ui, node) * widths.len().saturating_sub(1) as f32
+    } else if node.family == "grid" {
+        let columns = (num(node, "columns").unwrap_or(2.) as usize).clamp(1, 16);
+        let mut maxima = vec![num(node, "min_column_width").unwrap_or(0.); columns];
+        for (i, w) in widths.iter().enumerate() {
+            maxima[i % columns] = maxima[i % columns].max(*w);
+        }
+        if node.ports.get("content_columns") != Some(&Value::Bool(true)) {
+            let maximum = maxima.iter().copied().fold(0., f32::max);
+            maxima.fill(maximum);
+        }
+        maxima.iter().sum::<f32>()
+            + num(node, "column_gap").unwrap_or(12.) * columns.saturating_sub(1) as f32
+    } else {
+        widths.into_iter().fold(0.0_f32, f32::max)
+    };
+    (content + node_padding(node, "padding_left") + node_padding(node, "padding_right"))
+        .max(num(node, "min_width").unwrap_or(0.))
+        .min(num(node, "max_width").unwrap_or(1e6))
 }
 
 fn node_padding(node: &Node, side: &str) -> f32 {
@@ -2698,3 +3483,414 @@ mod motion_identity_tests;
 #[cfg(test)]
 #[path = "view_binding_tests.rs"]
 mod binding_tests;
+fn image_extent(node: &Node) -> egui::Vec2 {
+    // Share the image painter's sizing contract with intrinsic layout.
+    let default = if text(node, "src").starts_with("raster:") {
+        320.
+    } else if text(node, "src").starts_with("icon:") {
+        24.
+    } else {
+        200.
+    };
+    let w = num(node, "w")
+        .or_else(|| {
+            text(node, "src")
+                .starts_with("icon:")
+                .then(|| num(node, "h"))
+                .flatten()
+        })
+        .unwrap_or(default);
+    egui::vec2(
+        w,
+        num(node, "h").unwrap_or(if text(node, "src").starts_with("raster:") {
+            180.
+        } else {
+            w
+        }),
+    )
+}
+fn prepare_measurements(
+    nodes: &mut BTreeMap<String, Node>,
+    scene: &str,
+    model: &Value,
+    memo: &mut BTreeMap<String, (Node, u64)>,
+    alive: &mut BTreeSet<String>,
+) {
+    for (id, node) in nodes {
+        if node.family == "control" {
+            let key = node.ports["definition"]["id"].as_str().unwrap_or(id);
+            let value = model["values"].get(key).cloned().unwrap_or(Value::Null);
+            node.ports.insert("__measure_value".into(), value);
+        }
+        let name = format!("{scene}/{id}");
+        {
+            use std::hash::{Hash, Hasher};
+            let mut identity = std::collections::hash_map::DefaultHasher::new();
+            name.hash(&mut identity);
+            node.ports
+                .insert("__measure_identity".into(), json!(identity.finish()));
+        }
+        alive.insert(name.clone());
+        let hash = if let Some((old, hash)) = memo.get(&name).filter(|(old, _)| old == &*node) {
+            let _ = old;
+            *hash
+        } else {
+            let hash = measurement_content_hash(&name, node);
+            memo.insert(name, (node.clone(), hash));
+            hash
+        };
+        node.ports.insert("__measure_key".into(), json!(hash));
+    }
+}
+#[cfg(test)]
+thread_local! {static MEASUREMENT_WORK:std::cell::Cell<usize>=const{std::cell::Cell::new(0)};}
+fn record_measurement_work() {
+    #[cfg(test)]
+    MEASUREMENT_WORK.set(MEASUREMENT_WORK.get() + 1);
+}
+fn font_state_key(ui: &egui::Ui) -> u64 {
+    ui.ctx()
+        .data(|d| d.get_temp::<u64>(egui::Id::new("scene-font-state")))
+        .unwrap_or(0)
+}
+fn measurement_runs(node: &Node, first_line: bool, number: Option<&str>) -> Value {
+    let mut left = 4096;
+    let mut out = Vec::new();
+    if let Some(runs) = node.ports.get("spans").and_then(Value::as_array) {
+        for run in runs.iter().take(64) {
+            let source = run["text"].as_str().unwrap_or("");
+            let text: String = source
+                .chars()
+                .take(left)
+                .take_while(|c| !first_line || *c != '\n')
+                .collect();
+            left -= text.chars().count();
+            let mut bounded = serde_json::Map::new();
+            for key in ["bold", "mono", "role", "color", "highlight", "strike"] {
+                if let Some(v) = run.get(key) {
+                    bounded.insert(key.into(), v.clone());
+                }
+            }
+            bounded.insert("text".into(), json!(text));
+            out.push(Value::Object(bounded));
+            if left == 0 || first_line && source.as_bytes().iter().take(4096).any(|c| *c == b'\n') {
+                break;
+            }
+        }
+    } else {
+        let text: String = number
+            .unwrap_or_else(|| text(node, "text"))
+            .chars()
+            .take(4096)
+            .take_while(|c| !first_line || *c != '\n')
+            .collect();
+        out.push(json!({"text":text}));
+    }
+    Value::Array(out)
+}
+fn cross_align<'a>(node: &'a Node, fallback: &'a str) -> &'a str {
+    node.ports
+        .get("cross_align")
+        .and_then(Value::as_str)
+        .unwrap_or(fallback)
+}
+fn palette_key(ui: &egui::Ui) -> u64 {
+    #[cfg(test)]
+    PALETTE_PASSES.set(PALETTE_PASSES.get() + 1);
+    use std::hash::{Hash, Hasher};
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
+    ui.ctx().data(|d| {
+        if let Some(colours) = d.get_temp::<std::sync::Arc<BTreeMap<String, Color32>>>(
+            egui::Id::unique("viu-design-colours"),
+        ) {
+            for (name, colour) in colours.iter() {
+                name.hash(&mut hash);
+                colour.to_array().hash(&mut hash);
+            }
+        }
+    });
+    ui.visuals().selection.bg_fill.to_array().hash(&mut hash);
+    hash.finish()
+}
+const PAINTED_BYTES: usize = 32 * 1024 * 1024;
+#[derive(Default)]
+struct PaintedGalleys {
+    entries: BTreeMap<String, (egui::Id, std::sync::Arc<egui::Galley>, usize, u64)>,
+    seen: BTreeSet<String>,
+    bytes: usize,
+    clock: u64,
+    admit: bool,
+}
+impl PaintedGalleys {
+    fn begin(&mut self) {
+        self.seen.clear();
+        self.clock += 1;
+        self.admit = true;
+    }
+    fn end(&mut self) {
+        self.entries.retain(|key, (_, _, bytes, _)| {
+            if self.seen.contains(key) {
+                true
+            } else {
+                self.bytes -= *bytes;
+                false
+            }
+        });
+    }
+    fn get(&mut self, node: &str, key: egui::Id) -> Option<std::sync::Arc<egui::Galley>> {
+        self.seen.insert(node.into());
+        let entry = self.entries.get_mut(node)?;
+        if entry.0 != key {
+            return None;
+        }
+        entry.3 = self.clock;
+        Some(entry.1.clone())
+    }
+    fn put(&mut self, node: String, key: egui::Id, galley: std::sync::Arc<egui::Galley>) {
+        if let Some(old) = self.entries.remove(&node) {
+            self.bytes -= old.2;
+        }
+        if !self.admit {
+            return;
+        }
+        // Charge owned capacities, including row glyph/mesh buffers and section metadata.
+        let bytes = std::mem::size_of::<egui::Galley>()
+            + galley.job.text.capacity()
+            + galley.job.sections.capacity()
+                * (std::mem::size_of::<egui::text::LayoutSection>() + 1024)
+            + galley.rows.capacity() * 256
+            + galley
+                .rows
+                .iter()
+                .map(|r| {
+                    r.glyphs.capacity() * 128
+                        + r.visuals.mesh.vertices.capacity()
+                            * std::mem::size_of::<egui::epaint::Vertex>()
+                        + r.visuals.mesh.indices.capacity() * std::mem::size_of::<u32>()
+                })
+                .sum::<usize>();
+        if bytes > PAINTED_BYTES {
+            self.admit = false;
+            return;
+        }
+        while self.bytes + bytes > PAINTED_BYTES {
+            let oldest = self
+                .entries
+                .iter()
+                .filter(|(_, e)| e.3 < self.clock)
+                .min_by_key(|(_, e)| e.3)
+                .map(|(k, _)| k.clone());
+            if let Some(oldest) = oldest {
+                self.bytes -= self.entries.remove(&oldest).unwrap().2;
+            } else {
+                self.admit = false;
+                return;
+            }
+        }
+        self.seen.insert(node.clone());
+        self.bytes += bytes;
+        self.entries.insert(node, (key, galley, bytes, self.clock));
+    }
+}
+
+#[cfg(test)]
+mod round7_tests {
+    use super::*;
+    #[test]
+    fn changing_100kb_text_retains_one_galley_for_500_frames_then_prunes() {
+        let source = "---\nscene: 1\nname: retention\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"= $model.text\"}}\n```\n";
+        let mut view = SceneView::new(source).unwrap();
+        let ctx = egui::Context::default();
+        for frame in 0..500 {
+            view.apply_model(json!({"text":format!("{} {frame}","a".repeat(100_000))}))
+                .unwrap();
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            output.textures_delta.clear();
+            assert_eq!(view.painted.entries.len(), 1, "frame {frame}");
+            assert!(view.painted.bytes <= PAINTED_BYTES);
+        }
+        view.tree
+            .nodes
+            .get_mut("root")
+            .unwrap()
+            .ports
+            .insert("hidden".into(), json!(true));
+        view.revision += 1;
+        let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            view.show(ui);
+        });
+        out.textures_delta.clear();
+        assert!(view.painted.entries.is_empty());
+        assert_eq!(view.painted.bytes, 0);
+    }
+    #[test]
+    fn span_palette_change_invalidates_painted_galley() {
+        let mut view=SceneView::new("---\nscene: 1\nname: palette\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"accent\",color:\"#ffffff\",spans:[{text:\"accent\",role:\"acc\"}]}}\n```\n").unwrap();
+        let ctx = egui::Context::default();
+        for colour in [Color32::RED, Color32::GREEN] {
+            let map: BTreeMap<String, Color32> = BTreeMap::from([("accent".into(), colour)]);
+            ctx.data_mut(|d| {
+                d.insert_temp(
+                    egui::Id::unique("viu-design-colours"),
+                    std::sync::Arc::new(map),
+                )
+            });
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+            assert_eq!(
+                view.painted.entries.values().next().unwrap().1.job.sections[0]
+                    .format
+                    .color,
+                colour
+            );
+        }
+    }
+    #[test]
+    fn hostile_side_padding_is_finite_in_paint_even_without_schema() {
+        let mut view=SceneView::new("---\nscene: 1\nname: padding\ncitizen: test\n---\n```mix\n{root:{widget:\"row\",align:\"stretch\",children:[\"child\"]},child:{widget:\"column\",grow:1,children:[]}}\n```\n").unwrap();
+        view.tree
+            .nodes
+            .get_mut("child")
+            .unwrap()
+            .ports
+            .insert("padding_top".into(), json!(1e300));
+        let ctx = egui::Context::default();
+        for _ in 0..12 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+        }
+        for rect in view.geometry.values() {
+            assert!(rect.is_finite(), "{rect:?}");
+        }
+    }
+}
+
+fn row_measurable(node: &Node, nodes: &BTreeMap<String, Node>, depth: usize) -> bool {
+    if depth > 32 {
+        return false;
+    }
+    if node.ports.get("hidden") == Some(&Value::Bool(true)) {
+        return true;
+    }
+    match node.family.as_str() {
+        "text" | "image" | "drawing" | "spacer" | "field" | "button" | "control" => true,
+        "row" | "column" | "grid" => children(node).all(|c| {
+            nodes
+                .get(c)
+                .is_some_and(|n| row_measurable(n, nodes, depth + 1))
+        }),
+        _ => false,
+    }
+}
+
+#[cfg(test)]
+thread_local! {static PALETTE_PASSES:std::cell::Cell<usize>=const{std::cell::Cell::new(0)};}
+
+#[cfg(test)]
+mod round8_tests {
+    use super::*;
+    #[test]
+    fn above_budget_live_text_keeps_cached_galleys_across_frames() {
+        let mut nodes = serde_json::Map::new();
+        let mut kids = Vec::new();
+        for i in 0..4 {
+            let id = format!("t{i}");
+            kids.push(id.clone());
+            nodes.insert(id, json!({"widget":"text","text":format!("= $model.t{i}")}));
+        }
+        nodes.insert("root".into(), json!({"widget":"column","children":kids}));
+        let mut view = SceneView::new(&format!(
+            "---\nscene: 1\nname: budget\ncitizen: test\n---\n```mix\n{}\n```\n",
+            Value::Object(nodes)
+        ))
+        .unwrap();
+        let mut model = serde_json::Map::new();
+        for i in 0..4 {
+            model.insert(
+                format!("t{i}"),
+                json!(format!("{} {i}", "a".repeat(100_000))),
+            );
+        }
+        view.apply_model(Value::Object(model)).unwrap();
+        let ctx = egui::Context::default();
+        let mut retained = BTreeMap::new();
+        for frame in 0..5 {
+            MEASUREMENT_WORK.set(0);
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+            assert!(view.painted.bytes <= PAINTED_BYTES);
+            assert!(
+                !view.painted.entries.is_empty() && view.painted.entries.len() < 4,
+                "live set exceeds budget"
+            );
+            if frame == 0 {
+                retained = view
+                    .painted
+                    .entries
+                    .iter()
+                    .map(|(k, e)| (k.clone(), e.1.clone()))
+                    .collect();
+            } else {
+                assert_eq!(MEASUREMENT_WORK.get(), 4 - retained.len());
+                for (k, galley) in &retained {
+                    assert!(
+                        std::sync::Arc::ptr_eq(galley, &view.painted.entries[k].1),
+                        "cached node reshaped: {k}"
+                    );
+                }
+            }
+        }
+    }
+    #[test]
+    fn palette_hash_runs_once_per_frame_for_many_text_nodes() {
+        let mut nodes = serde_json::Map::new();
+        let mut kids = Vec::new();
+        for i in 0..100 {
+            let id = format!("t{i}");
+            kids.push(id.clone());
+            nodes.insert(id, json!({"widget":"text","text":"label"}));
+        }
+        nodes.insert("root".into(), json!({"widget":"column","children":kids}));
+        let mut view = SceneView::new(&format!(
+            "---\nscene: 1\nname: palette-count\ncitizen: test\n---\n```mix\n{}\n```\n",
+            Value::Object(nodes)
+        ))
+        .unwrap();
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            PALETTE_PASSES.set(0);
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+            assert_eq!(PALETTE_PASSES.get(), 1);
+        }
+    }
+    #[test]
+    fn sibling_lists_with_shared_item_ids_keep_separate_paint_entries() {
+        let mut view=SceneView::new("---\nscene: 1\nname: list-scopes\ncitizen: test\n---\n```mix\n{root:{widget:\"column\",children:[\"left\",\"right\"]},left:{widget:\"list\",row:\"t\",row_height:24,rows:[{id:\"one\",cells:[\"Alpha\"]}]},right:{widget:\"list\",row:\"t\",row_height:24,rows:[{id:\"one\",cells:[\"Beta\"]}]},t:{widget:\"text\",text:\"{cells[0]}\"}}\n```\n").unwrap();
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+            assert_eq!(view.painted.entries.len(), 2);
+        }
+        let texts: Vec<_> = view
+            .painted
+            .entries
+            .values()
+            .map(|e| e.1.job.text.as_str())
+            .collect();
+        assert!(texts.contains(&"Alpha") && texts.contains(&"Beta"));
+    }
+}

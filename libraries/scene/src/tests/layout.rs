@@ -150,6 +150,7 @@ fn new_ports_reject_bad_enums_types_and_negative_values() {
         ("justify: \"space-between\"", "enum-value"),
         ("align_self: \"baseline\"", "enum-value"),
         ("grow: -1", "port-min"),
+        ("cross_align: \"diagonal\"", "enum-value"),
         ("shrink: -1", "port-min"),
         ("basis: \"auto\"", "port-type"),
         ("min_width: -1", "port-min"),
@@ -161,6 +162,34 @@ fn new_ports_reject_bad_enums_types_and_negative_values() {
         let doc = document(&format!("root: {{widget: \"row\", children: [], {ports}}}"));
         assert!(lint(&doc).iter().any(|d| d.code == code), "{ports}");
     }
+}
+
+#[test]
+fn layout_lengths_and_weights_have_finite_ceilings() {
+    for body in [
+        r#"root:{widget:"spacer",size:1e300}"#,
+        r#"root:{widget:"column",padding_x:1e300,children:[]}"#,
+        r#"root:{widget:"column",padding_y:1e300,children:[]}"#,
+        r#"root:{widget:"column",outline_width:1e300,children:[]}"#,
+        r#"root:{widget:"column",padding_top:1e300,children:[]}"#,
+        r#"root:{widget:"text",text:"x",letter_spacing:1e300}"#,
+        r#"root:{widget:"text",text:"x",line_height:1e300}"#,
+        r#"root:{widget:"text",text:"x",basis:1e300}"#,
+        r#"root:{widget:"text",text:"x",shrink:1e300}"#,
+        r#"root:{widget:"text",text:"x",grow:1e300}"#,
+        r#"root:{widget:"column",justify:"unsupported",children:[]}"#,
+        r#"root:{widget:"column",width:1e300,children:[]}"#,
+        r#"root:{widget:"column",min_width:1e300,children:[]}"#,
+        r#"root:{widget:"column",max_width:1e300,children:[]}"#,
+        r#"root:{widget:"grid",column_gap:1e300,min_column_width:1e300,children:[]}"#,
+        r#"root:{widget:"column",background_inset:[0,-1,0,0],children:[]}"#,
+    ] {
+        assert!(resolve(&document(body)).is_err(), "{body}");
+    }
+    resolve(&document(
+        r#"root:{widget:"column",background_inset:[1,2,3,4],children:[]}"#,
+    ))
+    .unwrap();
 }
 
 #[test]

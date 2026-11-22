@@ -309,11 +309,16 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
     }
     if f == "text" {
         ports.push(pn("letter_spacing", false, Some(-100.0)));
+        ports.push(pn("line_height", false, Some(0.1)));
         ports.push(p("font", "string", false, None));
         ports.push(p("mono_font", "string", false, None));
         ports.push(pn("weight", false, Some(1.0)));
         ports.push(p("spans", "list", false, None));
         ports.push(p("number", "object", false, None));
+    }
+    if f == "grid" {
+        ports.push(p("content_columns", "bool", false, None));
+        ports.push(p("row_rule", "string", false, None));
     }
     if f == "row" {
         ports.extend([
@@ -329,6 +334,16 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
             p("fit", "list", false, None),
             p("flex", "string", false, None),
         ]);
+    }
+    if f == "row" {
+        let mut cross = p("cross_align", "string", false, None);
+        cross.enum_values = &["start", "center", "end"];
+        ports.push(cross);
+        ports
+            .iter_mut()
+            .find(|p| p.name == "align")
+            .unwrap()
+            .enum_values = &["start", "center", "end", "stretch", "baseline"];
     }
     if f == "list" {
         ports
@@ -389,6 +404,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         ports.push(p("tooltip", "object", false, None));
     }
     if matches!(f, "row" | "column") {
+        ports.push(p("background_inset", "list", false, None));
         ports.push(p("background_radials", "list", false, None));
         ports.push(p("outline", "string", false, None));
         ports.push(pn("outline_width", false, None));
@@ -629,6 +645,37 @@ pub(crate) fn check_port_value(
             "motion-value",
             line,
             format!("{k} on {id}: {message}"),
+        ));
+    }
+    if k == "background_inset"
+        && !v.as_array().is_some_and(|a| {
+            a.len() == 4
+                && a.iter().all(|n| {
+                    n.as_f64()
+                        .is_some_and(|n| n.is_finite() && (0.0..=1e6).contains(&n))
+                })
+        })
+    {
+        out.push(Diagnostic::error(
+            "port-type",
+            line,
+            format!("background_inset on {id} requires four finite nonnegative lengths"),
+        ));
+    }
+    let ceiling = match k {
+        "line_height" | "letter_spacing" => Some(4096.),
+        "padding_top" | "padding_right" | "padding_bottom" | "padding_left" | "padding_x"
+        | "padding_y" | "outline_width" | "size" | "padding" | "radius" | "w" | "h" | "basis"
+        | "width" | "min_width" | "max_width" | "column_gap" | "min_column_width" | "height"
+        | "row_gap" | "gap" => Some(1e6),
+        "grow" | "shrink" => Some(1000.),
+        _ => None,
+    };
+    if ceiling.is_some_and(|limit| v.as_f64().is_some_and(|n| !n.is_finite() || n > limit)) {
+        out.push(Diagnostic::error(
+            "port-max",
+            line,
+            format!("port {k} on {id} exceeds its finite layout ceiling"),
         ));
     }
     if ["ratio", "minimum", "maximum"].contains(&k) && v.as_f64().is_some_and(|n| n > 1.0) {

@@ -210,7 +210,7 @@ widgets today. The ordinary app renderer has a separate implementation.
 | content | children:l!, settings:o={}, scroll:b=true, surface:s=panel (panel/editor), keyboard_scroll:o? | `libraries/scene/src/schema.rs:131` |
 | panes | children:l!, left_fraction:n=0.18, right_fraction:n=0.42, right_visible:b=true, clip:b=true, focus:s=center (left/center/right), on_change:s?, compact_below:n?, narrow_below:n?, narrow_left_range:l?, narrow_right_range:l?, keyboard:b=false, focus_targets:o?, pane_labels:o? | `libraries/scene/src/schema.rs:138` |
 | sides | children:l!, wrap:b=false | `libraries/scene/src/schema.rs:154` |
-| text | text:s!, size:n=13, bold:b=false, mono:b=false, font:s?, mono_font:s?, weight:n?, color:s?, elide:b=false, wrap:b=false, max_lines:n=3 (integer 1..1024), width:n?, fill:b=false, hidden:b=false, align:s=left (left/center/right) | `libraries/scene/src/schema.rs:180` |
+| text | line_height:n? (0.1..4096), letter_spacing:n? (-100..4096), spans:l?, number:o?, text:s!, size:n=13, bold:b=false, mono:b=false, font:s?, mono_font:s?, weight:n?, color:s?, elide:b=false, wrap:b=false, max_lines:n=3 (integer 1..1024), width:n?, fill:b=false, hidden:b=false, align:s=left (left/center/right) | `libraries/scene/src/schema.rs:180` |
 | field | value:s!, placeholder:s?, width:n?, password:b=false, on_change:s?, on_submit:s? | `libraries/scene/src/schema.rs:194` |
 | button | label:s!, tone:s=normal (normal/danger/primary), width:n?, on_click:s?, on_context:s? | `libraries/scene/src/schema.rs:202` |
 | toggle | value:b!, label:s!, on_change:s? | `libraries/scene/src/schema.rs:217` |
@@ -219,7 +219,7 @@ widgets today. The ordinary app renderer has a separate implementation.
 
 | spacer | size:n? | `libraries/scene/src/schema.rs:243` |
 | control | definition:o!, on_intent:s? | `libraries/scene/src/schema.rs:244` |
-| grid | children:l!, columns:n! (integer 1..16), identity:s?, column_gap:n=12, row_gap:n=3, min_column_width:n=0 | `libraries/scene/src/schema.rs:248` |
+| grid | children:l!, columns:n! (integer 1..16), identity:s?, column_gap:n=12, row_gap:n=3, min_column_width:n=0, content_columns:b? (size columns by content), row_rule:s? (colour of a rule after every row) | `libraries/scene/src/schema.rs:248` |
 | dock | children:l!, placements:o!, clip:b?, on_change:s?, outline:s?, outline_width:n?, passthrough_single:b=false, focus_target:s? | `libraries/scene/src/schema.rs:256` |
 | band | children:l!, groups:o! | `libraries/scene/src/schema.rs:266` |
 | split | children:l!, ratio:n=0.5, axis:s=horizontal (horizontal/vertical), divider:n=6 (>=1), minimum:n=0.1, maximum:n=0.9, on_change:s?; ratio/minimum/maximum <=1 | `libraries/scene/src/schema.rs:270`, `libraries/scene/src/schema.rs:431` |
@@ -247,11 +247,11 @@ Additional ports (no defaults unless shown):
 | Applies to | Ports | Evidence |
 |---|---|---|
 | Every non-window | window_slot:s, slot_only:s, hidden:b (text already defaults false), clip:b, enabled:b, clip_below:n, align_self:s (auto/start/center/end/stretch), grow:n, shrink:n, basis:n, min_width:n, max_width:n, min_height:n, max_height:n, reserve_height:n | `libraries/scene/src/schema.rs:332` |
-| row | packing:s (normal/toolbar), end:s, fit:l, flex:s | `libraries/scene/src/schema.rs:302` |
+| row | cross_align:s (start/center/end; cross-axis only, optional in both painters), packing:s (normal/toolbar), end:s, fit:l, flex:s | `libraries/scene/src/schema.rs:302` |
 | row/column/button | tooltip:o; intended shape title, optional subtitle/lines | `libraries/scene/src/schema.rs:360` |
-| row/column | scroll:b, justify:s (start/center/end/between/around/evenly), bar:s, padding_x:length, padding_y:length, native_spacing:b, native_frame:b, group_frame:b, group_title:s, group_key:s, scroll_key:s, scroll_ready:b, reserve_panel_after:b, row_gap:n, column_gap:n, padding_top:n, padding_right:n, padding_bottom:n, padding_left:n | `libraries/scene/src/schema.rs:366` |
+| row/column | background_inset:l? (four finite lengths in top/right/bottom/left order; background only), scroll:b, justify:s (start/center/end/between/around/evenly), bar:s, padding_x:length, padding_y:length, native_spacing:b, native_frame:b, group_frame:b, group_title:s, group_key:s, scroll_key:s, scroll_ready:b, reserve_panel_after:b, row_gap:n, column_gap:n, padding_top:n, padding_right:n, padding_bottom:n, padding_left:n | `libraries/scene/src/schema.rs:366` |
 
-Row/column align and list align are start/center/end/stretch. `length` accepts
+Row align also accepts baseline (direct text children in SceneView). Column and list align accept start/center/end/stretch. cross_align never changes main-axis alignment or child order; when absent, each painter retains its existing path's cross placement. Column justify distributes only with an authored height or a stretch assignment; between/around/evenly retain main packing when any visible child is not direct text. Padding and outline lengths have a finite 1e6 ceiling in validation and paint. `length` accepts
 nonnegative finite numbers or `design.bar_inset`, `design.bar_padding_y`,
 `design.tool_margin`. The schema appends duplicate scroll/clip declarations;
 do not interpret duplicates as separate ports. `describe` returns path, type,
@@ -490,7 +490,7 @@ The application host caches a bounded, bilinearly sampled texture per node,
 logical size and resolved colour inputs. Translation reuses the texture;
 resize or changed base/field colours rebuild it. Hidden/removed entries are
 released. Static fields do not regenerate their pixels during frame loops.
-Growing rows with `align: "center"` measure cell heights and centre boxes
+Growing rows with `cross_align: "center"` measure cell heights and centre boxes
 and text on the tallest cell, including arrow text. Layout changes may need
 a settling pass; unchanged rows request no further repaint.
 Fixed/minimum, fill and allocated grow widths also constrain the painted
