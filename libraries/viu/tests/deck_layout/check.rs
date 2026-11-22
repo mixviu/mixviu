@@ -48,6 +48,12 @@ fn grid_intrinsics_cannot_move_the_next_column() {
 }
 
 #[test]
+fn a_minimum_width_does_not_cap_natural_content() {
+    let rects=geometry(r##"{root:{widget:"column",min_width:10,children:["label"]},label:{widget:"text",text:"A wider natural label",size:30}}"##);
+    assert!(rects["root"].width()>=rects["label"].width() && rects["root"].width()>100.,"{rects:?}");
+}
+
+#[test]
 fn flex_basis_and_stretch_keep_weighted_cards_in_one_row() {
     let rects=geometry(r##"{root:{widget:"row",fill:true,gap:40,align:"stretch",children:["a","b"]},a:{widget:"column",grow:1,basis:60,children:["one"]},b:{widget:"column",grow:2,basis:60,children:["three"]},one:{widget:"text",text:"short"},three:{widget:"text",text:"one\ntwo\nthree"}}"##);
     let share=(rects["root"].width()-40.-120.)/3.;

@@ -1274,6 +1274,7 @@ impl SceneView {
                         let background = color(text(node,"background")).or_else(||text(node,"background").strip_prefix("design.").and_then(|role|crate::appearance::colour(ui.ctx(),role))).unwrap_or(Color32::TRANSPARENT);
                         let radial_shape = ui.painter().add(egui::Shape::Noop);
                         let frame_width = num(node,"width").or(num(node,"min_width")).or_else(|| (node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0.).then(||ui.available_width()));
+                        let bound_width=num(node,"width").or_else(||(node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0.).then(||ui.available_width().max(num(node,"min_width").unwrap_or(0.))));
                         let frame = egui::Frame::new()
                             .fill(Color32::TRANSPARENT)
                             .inner_margin(egui::Margin { left: node_padding(node, "padding_left") as i8, right: node_padding(node, "padding_right") as i8, top: node_padding(node, "padding_top") as i8, bottom: node_padding(node, "padding_bottom") as i8 })
@@ -1282,7 +1283,11 @@ impl SceneView {
                             .show(ui, |ui| {
                                 if let Some(width)=frame_width {
                                     let inner=(width-node_padding(node,"padding_left")-node_padding(node,"padding_right")).max(0.);
-                                    ui.set_min_width(inner);ui.set_max_width(inner);
+                                    ui.set_min_width(inner);
+                                }
+                                if let Some(width)=bound_width {
+                                    let inner=(width-node_padding(node,"padding_left")-node_padding(node,"padding_right")).max(0.);
+                                    ui.set_max_width(inner);
                                     let left=ui.available_rect_before_wrap().left();
                                     ui.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(left,ui.clip_rect().top()),egui::pos2(left+inner,ui.clip_rect().bottom()))));
                                 }
@@ -1428,7 +1433,7 @@ impl SceneView {
                                 }
                             })
                             .response;
-                        if let Some(width)=frame_width {response.rect.max.x=response.rect.min.x+width;}
+                        if let Some(width)=bound_width {response.rect.max.x=response.rect.min.x+width;}
                         if let Some(height)=self.stretch_heights.get(id).copied() {
                             response.rect.max.y=response.rect.max.y.max(response.rect.min.y+height);
                         }
@@ -1458,7 +1463,7 @@ impl SceneView {
             response.rect.max.y=response.rect.max.y.max(response.rect.min.y+height);
         }
         if matches!(node.family.as_str(),"column"|"row") {
-            if let Some(width)=num(node,"width").or(num(node,"min_width")).or_else(||(node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0.).then_some(allocated.width())) {
+            if let Some(width)=num(node,"width").or_else(||(node.ports.get("fill")==Some(&Value::Bool(true)) || num(node,"grow").unwrap_or(0.)>0.).then(||allocated.width().max(num(node,"min_width").unwrap_or(0.)))) {
                 response.rect.max.x=response.rect.min.x+width;
             }
         }
