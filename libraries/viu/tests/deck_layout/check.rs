@@ -581,3 +581,38 @@ fn measured_grid_sums_columns_and_min_width_is_only_a_floor() {
     assert!(r["spacer"].width() >= 20.);
     assert!((r["tail"].width() - 100.).abs() < 1.);
 }
+
+#[test]
+fn grid_scroll_rows_shrink_with_viewport_and_reserve_prior_rows() {
+    let nodes = json!({"root":{"widget":"grid","columns":1,"row_gap":12,"children":["fixed","scroll"]},"fixed":{"widget":"column","height":80,"children":[]},"scroll":{"widget":"column","scroll":true,"children":["long"]},"long":{"widget":"text","text":"line\n".repeat(200)}});
+    let mut view = SceneView::new(&format!(
+        "---\nscene: 1\nname: resize\ncitizen: test\n---\n```mix\n{nodes}\n```\n"
+    ))
+    .unwrap();
+    let ctx = egui::Context::default();
+    let mut previous = 0.;
+    for height in [800., 400.] {
+        for _ in 0..8 {
+            ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(800., height),
+                    )),
+                    ..Default::default()
+                },
+                |ui| {
+                    view.show(ui);
+                },
+            )
+            .drop_without_applying_deltas();
+        }
+        let scroll = view.geometry["scroll"];
+        assert!(scroll.bottom() <= height + 1., "{scroll:?}");
+        assert!(scroll.top() >= view.geometry["fixed"].bottom() + 11.);
+        if previous > 0. {
+            assert!(scroll.height() < previous - 200., "{scroll:?}");
+        }
+        previous = scroll.height();
+    }
+}

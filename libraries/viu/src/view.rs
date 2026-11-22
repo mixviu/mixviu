@@ -1496,7 +1496,7 @@ impl SceneView {
 
                                 } else {
                                     let mode=text(node,"justify");
-                                    let centre=matches!(mode,"center"|"end"|"between"|"around"|"evenly") && num(node,"height").or(assigned_height).unwrap_or(ui.available_height()).is_finite();
+                                    let centre=matches!(mode,"center"|"end"|"between"|"around"|"evenly") && (!matches!(mode,"between"|"around"|"evenly") || children(node).all(|c|nodes.get(c).is_some_and(|n|n.family=="text"))) && num(node,"height").or(assigned_height).unwrap_or(ui.available_height()).is_finite();
                                     let count=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).count();
                                     let old_gap=ui.spacing().item_spacing.y;let mut extra=0.;
                                     let cache = ui.scope_id().with((&key,"column-content-height"));
@@ -3113,15 +3113,23 @@ fn intrinsic_text_width(
             "spacer" => num(node, "size").unwrap_or(8.),
             "field" => ui.spacing().text_edit_width,
             _ => {
-                ui.fonts_mut(|f| {
-                    f.layout_no_wrap(
-                        text(node, "label").to_owned(),
-                        egui::FontId::proportional(14.),
-                        Color32::WHITE,
-                    )
-                })
-                .size()
-                .x + 2. * ui.spacing().button_padding.x
+                let key =
+                    natural_size_key(node).with(("button-width", ui.pixels_per_point().to_bits()));
+                if let Some(v) = measure_get::<f32>(ui, key) {
+                    return v;
+                }
+                let width =
+                    ui.fonts_mut(|f| {
+                        f.layout_no_wrap(
+                            text(node, "label").to_owned(),
+                            egui::FontId::proportional(14.),
+                            Color32::WHITE,
+                        )
+                    })
+                    .size()
+                    .x + 2. * ui.spacing().button_padding.x;
+                measure_put(ui, key, width);
+                width
             }
         });
     }

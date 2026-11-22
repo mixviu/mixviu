@@ -202,7 +202,7 @@ fn workshop_mounts_gold_frame_and_routes_dialogs_without_bus_transport() {
     viu::appearance::install(&ctx);
     viu::icons::install(&ctx);
     for frame in 0..24 {
-        let output=ctx.run_ui(
+        let output = ctx.run_ui(
             egui::RawInput {
                 screen_rect: Some(egui::Rect::from_min_size(
                     egui::Pos2::ZERO,
@@ -214,7 +214,13 @@ fn workshop_mounts_gold_frame_and_routes_dialogs_without_bus_transport() {
                 view.show(ui);
             },
         );
-        if frame==23 {assert!(!output.platform_output.requested_discard(),"{:?}",output.platform_output.request_discard_reasons);}
+        if frame == 23 {
+            assert!(
+                !output.platform_output.requested_discard(),
+                "{:?}",
+                output.platform_output.request_discard_reasons
+            );
+        }
         output.drop_without_applying_deltas();
     }
     assert!(view.geometry.contains_key("gold-menu"));
