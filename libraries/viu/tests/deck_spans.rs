@@ -7,7 +7,6 @@ macro_rules! page {
         #[test]
         fn $name() {
             let ctx = egui::Context::default();
-    viu::fonts::install(&ctx, 400, 600);
             viu::fonts::install(&ctx, 400, 600);
             let mut view = SceneView::new(include_str!(concat!(
                 "../../../apps/gallery/deck-pages/",

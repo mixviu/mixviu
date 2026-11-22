@@ -39,8 +39,17 @@ pub(crate) fn job(
             0.,
             TextFormat {
                 font_id: if let Some((name, weight, mono_name)) = family {
-                    FontId::new(size, toolkit::fonts::optional::family(
-                        if mono || run["mono"] == true { mono_name.unwrap_or(name) } else { name }, weight))
+                    FontId::new(
+                        size,
+                        toolkit::fonts::optional::family(
+                            if mono || run["mono"] == true {
+                                mono_name.unwrap_or(name)
+                            } else {
+                                name
+                            },
+                            weight,
+                        ),
+                    )
                 } else if mono || run["mono"] == true {
                     FontId::new(size, FontFamily::Monospace)
                 } else if bold {
