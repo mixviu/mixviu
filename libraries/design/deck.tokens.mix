@@ -10,7 +10,7 @@ return {
     "ok":"#5ad18a","warn":"#f0b45a","violet":"#b48cff",
     "keyword":"#ff8fa3","function":"#7fd4ff","string":"#a5e07a",
     "comment":"#6b7787","value":"#f6c177","code":"#cdd6e0",
-    "code_background":"#0b1016","code_highlight":"#122a31","history":"#5d6876","blank":"#2a3442",
+    "code_background":"#0b1016","code_highlight":"#112930","history":"#5d6876","blank":"#2a3442",
     "before":"#5a2b2b","after":"#24513a","tag":"#cfe3ff","rail":"#0f151d"
   },
   "type": {
