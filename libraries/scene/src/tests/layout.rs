@@ -150,6 +150,7 @@ fn new_ports_reject_bad_enums_types_and_negative_values() {
         ("justify: \"space-between\"", "enum-value"),
         ("align_self: \"baseline\"", "enum-value"),
         ("grow: -1", "port-min"),
+        ("cross_align: \"diagonal\"", "enum-value"),
         ("shrink: -1", "port-min"),
         ("basis: \"auto\"", "port-type"),
         ("min_width: -1", "port-min"),
@@ -166,6 +167,9 @@ fn new_ports_reject_bad_enums_types_and_negative_values() {
 #[test]
 fn layout_lengths_and_weights_have_finite_ceilings() {
     for body in [
+        r#"root:{widget:"spacer",size:1e300}"#,
+        r#"root:{widget:"column",padding_top:1e300,children:[]}"#,
+        r#"root:{widget:"text",text:"x",letter_spacing:1e300}"#,
         r#"root:{widget:"text",text:"x",line_height:1e300}"#,
         r#"root:{widget:"text",text:"x",basis:1e300}"#,
         r#"root:{widget:"text",text:"x",shrink:1e300}"#,

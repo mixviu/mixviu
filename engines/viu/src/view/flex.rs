@@ -460,13 +460,19 @@ impl<'a> Builder<'a> {
             top: length(top),
             bottom: length(bottom),
         };
-        style.align_items = Some(match port_text(node, "align") {
-            "baseline" => AlignItems::BASELINE,
-            "center" => AlignItems::CENTER,
-            "end" => AlignItems::FLEX_END,
-            "stretch" => AlignItems::STRETCH,
-            _ => AlignItems::FLEX_START,
-        });
+        style.align_items = Some(
+            match if node.family == "row" && node.ports.contains_key("cross_align") {
+                port_text(node, "cross_align")
+            } else {
+                port_text(node, "align")
+            } {
+                "baseline" => AlignItems::BASELINE,
+                "center" => AlignItems::CENTER,
+                "end" => AlignItems::FLEX_END,
+                "stretch" => AlignItems::STRETCH,
+                _ => AlignItems::FLEX_START,
+            },
+        );
         style.justify_content = Some(match port_text(node, "justify") {
             "center" => JustifyContent::CENTER,
             "end" => JustifyContent::FLEX_END,
@@ -705,12 +711,18 @@ impl<'a> Builder<'a> {
                 width: length(gap),
                 height: zero(),
             };
-            style.align_items = Some(match port_text(node, "align") {
-                "baseline" => AlignItems::BASELINE,
-                "center" => AlignItems::CENTER,
-                "end" => AlignItems::FLEX_END,
-                _ => AlignItems::FLEX_START,
-            });
+            style.align_items = Some(
+                match if node.family == "row" && node.ports.contains_key("cross_align") {
+                    port_text(node, "cross_align")
+                } else {
+                    port_text(node, "align")
+                } {
+                    "baseline" => AlignItems::BASELINE,
+                    "center" => AlignItems::CENTER,
+                    "end" => AlignItems::FLEX_END,
+                    _ => AlignItems::FLEX_START,
+                },
+            );
             if !node.ports.contains_key("min_width") {
                 let gaps = gap * cells.len().saturating_sub(1) as f32;
                 style.min_size.width = lpa(floors + gaps);
