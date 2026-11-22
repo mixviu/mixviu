@@ -100,8 +100,8 @@ fn samples_for(copy: Option<(&str, &str)>) -> Vec<Value> {
             "../../../../apps/deck/examples/vfl-self-recording.json"
         ))
         .unwrap();
-        document["slides"][0]["scene"]["root.4"]["text"] = json!(title);
-        document["slides"][0]["scene"]["root.6"]["text"] = json!(subtitle);
+        document["slides"][0]["scene"]["root.5"]["text"] = json!(title);
+        document["slides"][0]["scene"]["root.7"]["text"] = json!(subtitle);
         let path = dir.path().join("sting.json");
         std::fs::write(&path, document.to_string()).unwrap();
         assert_eq!(
@@ -178,10 +178,10 @@ fn entrances(
     geometry: &BTreeMap<String, egui::Rect>,
 ) -> Result<(), String> {
     for (id, delay, cyan) in [
-        ("root.2", 0.5, false),
-        ("root.4", 0.8, false),
-        ("root.6", 1.3, true),
-        ("root.8", 1.6, true),
+        ("root.3", 0.5, false),
+        ("root.5", 0.8, false),
+        ("root.7", 1.3, true),
+        ("root.9", 1.6, true),
     ] {
         let rect = geometry[id];
         let settled = element_pixels(&images[8], rect, cyan);
@@ -210,10 +210,10 @@ fn sting_entrance_paints_and_rejects_a_static_control() {
     let frames = samples();
     for (i, t) in TIMES.iter().enumerate() {
         for (id, delay) in [
-            ("root.2", 0.5),
-            ("root.4", 0.8),
-            ("root.6", 1.3),
-            ("root.8", 1.6),
+            ("root.3", 0.5),
+            ("root.5", 0.8),
+            ("root.7", 1.3),
+            ("root.9", 1.6),
         ] {
             let effect = &frames[i]["build"][id]["paint_effect"];
             assert!((effect["time"].as_f64().unwrap() - (t - delay)).abs() < 1e-6);
@@ -226,11 +226,11 @@ fn sting_entrance_paints_and_rejects_a_static_control() {
         images.push(image);
         final_geometry = rects;
     }
-    let logo = final_geometry["root.0"];
+    let logo = final_geometry["root.1"];
     assert_eq!(animate_check(&images, logo), Ok(()));
     assert_eq!(entrances(&images, &final_geometry), Ok(()));
     primitives::painted_centres(&images, &final_geometry);
-    for (id, index) in [("root.6", 5), ("root.8", 6)] {
+    for (id, index) in [("root.7", 5), ("root.9", 6)] {
         let part = element_pixels(&images[index], final_geometry[id], true);
         let full = element_pixels(&images[8], final_geometry[id], true);
         assert!(
@@ -247,7 +247,7 @@ fn sting_entrance_paints_and_rejects_a_static_control() {
     let rejected = animate_check(&control, logo).unwrap_err();
     assert!(entrances(&control, &final_geometry).is_err());
     println!("STING_ENTRANCE static=FAIL (expected): {rejected}");
-    for id in ["root.0", "root.2", "root.4", "root.6", "root.8"] {
+    for id in ["root.1", "root.3", "root.5", "root.7", "root.9"] {
         let delta = (final_geometry[id].center().x * 2.4 - 1920.).abs();
         println!("STING_CENTRE {id} delta_px={delta}");
         assert!(delta <= 4.);
@@ -270,7 +270,7 @@ fn chrome_entrance_contact_sheet() {
     let mut final_geometry = BTreeMap::new();
     for (i, (model, t)) in frames.into_iter().zip(TIMES).enumerate() {
         let (image, geometry) = render(model);
-        logo = geometry["root.0"];
+        logo = geometry["root.1"];
         final_geometry = geometry;
         image.save(out.join(format!("native-{t}.png"))).unwrap();
         let reference = image::open(oracle.join(format!("f{:05}.png", (t * 30.).round() as u32)))
@@ -340,19 +340,19 @@ fn chrome_entrance_contact_sheet() {
     // metrics by splitting the whitespace between its five element bands.
     let oracle_geometry = BTreeMap::from([
         (
-            "root.2".into(),
+            "root.3".into(),
             egui::Rect::from_min_max(egui::pos2(0., 440.), egui::pos2(1600., 490.)),
         ),
         (
-            "root.4".into(),
+            "root.5".into(),
             egui::Rect::from_min_max(egui::pos2(0., 490.), egui::pos2(1600., 630.)),
         ),
         (
-            "root.6".into(),
+            "root.7".into(),
             egui::Rect::from_min_max(egui::pos2(0., 630.), egui::pos2(1600., 700.)),
         ),
         (
-            "root.8".into(),
+            "root.9".into(),
             egui::Rect::from_min_max(egui::pos2(650., 700.), egui::pos2(950., 750.)),
         ),
     ]);
@@ -378,8 +378,8 @@ fn chrome_entrance_contact_sheet() {
             ) as f64;
         println!("STING_ORACLE time={t} eye_ratio chrome={c:.6} native={n:.6}");
         assert!((n - c).abs() < 0.18, "eye at {t}");
-        for id in ["root.4", "root.6", "root.8"] {
-            let cyan = id != "root.4";
+        for id in ["root.5", "root.7", "root.9"] {
+            let cyan = id != "root.5";
             let native_fraction = element_pixels(&native[i], final_geometry[id], cyan) as f64
                 / element_pixels(&native[8], final_geometry[id], cyan) as f64;
             let chrome_fraction = element_pixels(&chrome[i], oracle_geometry[id], cyan) as f64

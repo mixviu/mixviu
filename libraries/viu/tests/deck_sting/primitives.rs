@@ -13,7 +13,7 @@ fn edited(model: &Value, edit: impl FnOnce(&mut Value)) -> Value {
 }
 fn remove(model: &Value, preset: &str) -> Value {
     edited(model, |nodes| {
-        for p in nodes["root.0"]["primitives"].as_array_mut().unwrap() {
+        for p in nodes["root.1"]["primitives"].as_array_mut().unwrap() {
             p["effects"]
                 .as_array_mut()
                 .unwrap()
@@ -44,7 +44,7 @@ pub(super) fn painted_centres(
     images: &[image::RgbaImage],
     geometry: &BTreeMap<String, egui::Rect>,
 ) {
-    for id in ["root.0", "root.2", "root.4", "root.6", "root.8"] {
+    for id in ["root.1", "root.3", "root.5", "root.7", "root.9"] {
         let r = geometry[id];
         let mut left = u32::MAX;
         let mut right = 0;
@@ -67,7 +67,7 @@ pub(super) fn painted_centres(
 fn removing_each_logo_primitive_is_detected() {
     let frames = samples();
     let (settled, geometry) = render(frames[8].clone());
-    let logo = geometry["root.0"];
+    let logo = geometry["root.1"];
     let (early, _) = render(frames[0].clone());
     let (drawn, _) = render(frames[1].clone());
     let (blink, _) = render(frames[7].clone());
@@ -94,7 +94,7 @@ fn removing_each_logo_primitive_is_detected() {
     assert!((eye_y(&no_float) - expected).abs() > 20.);
     assert!(shadow_pixels(&floating) > 1000);
     let (no_shadow, _) = render(edited(&frames[6], |n| {
-        n["root.0"].as_object_mut().unwrap().remove("shadow");
+        n["root.1"].as_object_mut().unwrap().remove("shadow");
     }));
     assert!(shadow_pixels(&no_shadow) < 500);
     println!(

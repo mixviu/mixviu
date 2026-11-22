@@ -122,7 +122,7 @@ fn sting($title, $subtitle)
   $sub={widget:"text",text:$subtitle,size:36,mono:true,letter_spacing:1.44,color:$tokens.colour.acc,align:"center"}
   $bar={widget:"drawing",w:260,h:8,primitives:[{kind:"bar",centre:[130,4],radius:[130,4],colour:$tokens.colour.acc,end_colour:$tokens.colour.blue}]}
   -- Compensate native role line boxes so painted centres match the CSS stack.
-  return merge(column([$logo,{widget:"spacer",size:28},$brandline,{widget:"spacer",size:18.5},$heading,{widget:"spacer",size:14},$sub,{widget:"spacer",size:30},$bar],0),{align:"center",min_width:1600,height:900,padding_top:148,padding_bottom:40,background:$tokens.colour.background})
+  return merge(column([{widget:"spacer",size:10},$logo,{widget:"spacer",size:28},$brandline,{widget:"spacer",size:18.5},$heading,{widget:"spacer",size:14},$sub,{widget:"spacer",size:30},$bar],0),{align:"center",min_width:1600,height:900,padding_top:127,padding_bottom:40,background:$tokens.colour.background})
 end
 fn topic($number, $title, $subtitle)
   return column([deck_text($number,"topic_no","acc"),deck_text($title,"topic_title","text"),deck_text($subtitle,"topic_sub","mut")],22)
