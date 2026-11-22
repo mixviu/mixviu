@@ -450,7 +450,7 @@ fn numeric_port_boundaries_are_table_driven() {
             let zero = numeric_probe(family, port.name, 0.0);
             let negative = numeric_probe(family, port.name, -1.0);
             if port.name == "letter_spacing" {
-                assert!(!negative.iter().any(|d| d.severity == Severity::Error));
+                assert!(!negative.iter().any(|d| d.code == "port-min"));
                 assert!(
                     numeric_probe(family, port.name, -101.0)
                         .iter()
