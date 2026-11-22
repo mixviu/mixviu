@@ -57,7 +57,8 @@ fn sting_font_identity_rows() {
             view.show(ui);
         },
     );
-    for (role, text, skip, take, size, file) in [
+    output.textures_delta.clear();
+    for (role, text, skip, take, _size, file) in [
         (
             "title 700",
             "The desk records itself",
@@ -85,13 +86,16 @@ fn sting_font_identity_rows() {
                 _ => None,
             })
             .expect("sting role painted");
-        let run = text.chars().skip(skip).take(take).collect::<String>();
+        // Keep spacing and preceding runs identical: egui's atlas key includes
+        // each glyph's subpixel X position, not only its font and character.
+        let mut expected_job = (*actual.job).clone();
+        for section in &mut expected_job.sections {
+            if section.byte_range.start == skip {
+                section.format.font_id.family = egui::FontFamily::Name(file.into());
+            }
+        }
         let expected = ctx.fonts_mut(|f| {
-            f.layout_no_wrap(
-                run,
-                egui::FontId::new(size, egui::FontFamily::Name(file.into())),
-                egui::Color32::WHITE,
-            )
+            f.layout_job(expected_job)
         });
         let glyphs = |g: &egui::Galley, skip, take| {
             g.rows
@@ -104,10 +108,15 @@ fn sting_font_identity_rows() {
         };
         assert_eq!(
             glyphs(&actual, skip, take),
-            glyphs(&expected, 0, usize::MAX),
+            glyphs(&expected, skip, take),
             "{role}: wrong raster face"
         );
-        println!("STING_FONT_IDENTITY {role}={file}");
+        let mut db = fontdb::Database::new();
+        db.load_font_file(dir.join(file)).unwrap();
+        let face = db.faces().next().unwrap();
+        let name = if file == "LiberationSans-Regular.ttf" {"LiberationSans"} else {file.strip_suffix(".ttf").unwrap()};
+        assert_eq!(face.post_script_name, name);
+        println!("STING_FONT_IDENTITY {role}={name}");
     }
     output.textures_delta.clear();
 }
