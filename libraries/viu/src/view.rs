@@ -1168,22 +1168,26 @@ impl SceneView {
                         let columns=(num(node,"columns").unwrap_or(2.0) as usize).clamp(1,16);
                         let gap=num(node,"column_gap").unwrap_or(12.0);
                         let width=((ui.available_width()-gap*(columns-1) as f32)/columns as f32).max(num(node,"min_column_width").unwrap_or(0.0));
+                        let active:Vec<_>=children(node).collect();
+                        let mut widths=vec![width;columns];
+                        if node.ports.get("content_columns")==Some(&Value::Bool(true)){widths.fill(0.);for (i,c) in active.iter().enumerate(){widths[i%columns]=widths[i%columns].max(intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,false,0));}let total=widths.iter().sum::<f32>();let budget=(ui.available_width()-gap*(columns-1) as f32).max(0.);if total>0.{for w in &mut widths{*w=budget*(*w)/total;}}}
                         let origin=ui.available_rect_before_wrap().min;
                         let mut top=origin.y;
-                        let active:Vec<_>=children(node).collect();
                         for (row,group) in active.chunks(columns).enumerate() {
                             let cache=ui.scope_id().with((&key,"grid-height",row));
                             let previous=ui.ctx().data(|d|d.get_temp::<f32>(cache)).unwrap_or(0.);
                             let mut height=0.0_f32;
                             for (column,child) in group.iter().enumerate() {
-                                let rect=egui::Rect::from_min_size(egui::pos2(origin.x+column as f32*(width+gap),top),egui::vec2(width,(ui.available_height()-(top-origin.y)).max(0.)));
+                                let width=widths[column];let left=origin.x+widths[..column].iter().sum::<f32>()+column as f32*gap;
+                                let rect=egui::Rect::from_min_size(egui::pos2(left,top),egui::vec2(width,(ui.available_height()-(top-origin.y)).max(0.)));
                                 let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
                                 cell.set_width(width);
-                                cell.set_clip_rect(ui.clip_rect());
+                                cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(rect.left(),ui.clip_rect().top()),egui::pos2(rect.right(),ui.clip_rect().bottom()))));
                                 self.node(&mut cell,child,nodes,route,depth+1,events);
                                 height=height.max(cell.min_rect().height());
                             }
                             if (height-previous).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cache,height));ui.ctx().request_discard("scene layout measurement");}
+                            if let Some(colour)=color(text(node,"row_rule")){ui.painter().hline(origin.x..=origin.x+widths.iter().sum::<f32>()+gap*(columns-1) as f32,top+height-0.5,egui::Stroke::new(1.,colour));}\n                            if let Some(colour)=color(text(node,"row_rule")){ui.painter().hline(origin.x..=origin.x+widths.iter().sum::<f32>()+gap*(columns-1) as f32,top+height-0.5,egui::Stroke::new(1.,colour));}
                             top+=height+num(node,"row_gap").unwrap_or(3.);
                         }
                         let height=if active.is_empty(){0.}else{top-origin.y-num(node,"row_gap").unwrap_or(3.)};
@@ -2833,10 +2837,11 @@ fn color(s: &str) -> Option<Color32> {
     ))
 }
 
-fn text_baseline(ui: &egui::Ui, node: &Node) -> f32 {\n    let cache=natural_size_key(node).with(("baseline",ui.pixels_per_point().to_bits()));if let Some(v)=measure_get::<f32>(ui,cache){return v;}
+fn text_baseline(ui: &egui::Ui, node: &Node) -> f32 {
+    let cache=natural_size_key(node).with(("baseline",ui.pixels_per_point().to_bits()));if let Some(v)=measure_get::<f32>(ui,cache){return v;}
     let plain = json!([{"text":text(node,"text")}]);
     let bold = node.ports.get("bold") == Some(&Value::Bool(true));
-    let job = crate::spans::job(
+    let mut job = crate::spans::job(
         ui,
         node.ports.get("spans").unwrap_or(&plain),
         num(node, "size").unwrap_or(13.),
@@ -2849,11 +2854,12 @@ fn text_baseline(ui: &egui::Ui, node: &Node) -> f32 {\n    let cache=natural_siz
             node.ports.get("mono_font").and_then(Value::as_str),
         ),
     );
+    for s in &mut job.sections{s.format.line_height=num(node,"line_height");}
     let g = ui.fonts_mut(|f| f.layout_job(job));
-    g.rows
+    let value=g.rows
         .first()
         .and_then(|r| r.glyphs.first().map(|glyph| r.pos.y + glyph.pos.y))
-        .unwrap_or(0.)
+        .unwrap_or(0.);measure_put(ui,cache,value);value
 }
 
 fn bounded_layout(value: f32, maximum: f32) -> f32 {
@@ -2903,9 +2909,7 @@ fn intrinsic_text_width(
     }
     if node.family == "text" {
         let cache = natural_size_key(node).with(("text-widths", ui.pixels_per_point().to_bits()));
-        let sizes = ui
-            .ctx()
-            .data(|d| d.get_temp::<(f32, f32)>(cache))
+        let sizes = measure_get::<(f32,f32)>(ui,cache)
             .unwrap_or_else(|| {
                 let plain = json!([{"text":text(node,"text")}]);
                 let bold = node.ports.get("bold") == Some(&Value::Bool(true));
@@ -2935,7 +2939,7 @@ fn intrinsic_text_width(
                         seen += 1;
                         if seen > 4096 {
                             minimum = natural;
-                            break;
+                            break 'rows;
                         }
                         if glyph.chr.is_whitespace() {
                             start = None;
@@ -2953,9 +2957,7 @@ fn intrinsic_text_width(
         return (if words { sizes.1 } else { sizes.0 })
             .min(num(node, "max_width").unwrap_or(f32::INFINITY));
     }
-    let cached = ui
-        .ctx()
-        .data(|d| d.get_temp::<egui::Vec2>(natural_size_key(node)))
+    let cached = measure_get::<egui::Vec2>(ui,natural_size_key(node))
         .map(|v| v.x);
     let explicit = num(node, "width")
         .or(num(node, "w"))
@@ -2996,13 +2998,13 @@ fn intrinsic_text_width(
         });
     }
     let widths: Vec<f32> = children(node)
-        .filter_map(|c| nodes.get(c))
+        .filter_map(|c| nodes.get(c)).filter(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))
         .map(|n| intrinsic_text_width(ui, n, nodes, model, words, depth + 1))
         .collect();
     let content = if node.family == "row" {
         widths.iter().sum::<f32>()
             + num(node, "gap").unwrap_or(ui.spacing().item_spacing.x) * widths.len().saturating_sub(1) as f32
-    } else {
+    } else if node.family=="grid" {let columns=(num(node,"columns").unwrap_or(2.) as usize).max(1);let mut maxima=vec![num(node,"min_column_width").unwrap_or(0.);columns];for (i,w) in widths.iter().enumerate(){maxima[i%columns]=maxima[i%columns].max(*w);}maxima.iter().sum::<f32>()+num(node,"column_gap").unwrap_or(12.)*columns.saturating_sub(1) as f32} else {
         widths.into_iter().fold(0.0_f32, f32::max)
     };
     (content + node_padding(node, "padding_left") + node_padding(node, "padding_right")).max(num(node,"min_width").unwrap_or(0.)).min(num(node,"max_width").unwrap_or(1e6))

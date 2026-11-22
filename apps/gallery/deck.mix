@@ -101,12 +101,12 @@ fn compact_table($rows)
     $items=[]
     for $cell in $cells
       $label=merge(deck_text($cell[0],"caption",$cell[1]),{size:if $index==0 then 17 else 20 end,weight:if $index==0 then 500 else 400 end,wrap:true})
-      push($items,merge(column([$label],0),{grow:1,padding_left:10,padding_right:10,padding_top:5,padding_bottom:6}))
+      push($items,merge(column([$label],0),{padding_left:10,padding_right:10,padding_top:5,padding_bottom:6}))
     end
-    push($lines,merge(row($items,0),{align:"start",fill:true}))
+    $lines=concat($lines,$items)
     $index=$index+1
   end
-  return merge(column($lines,0),{fill:true})
+  return {widget:"grid",columns:len($rows[0]),column_gap:0,row_gap:0,content_columns:true,row_rule:$tokens.colour.line,children:$lines}
 end
 fn compact_tags($labels)
   $tags=[]
