@@ -374,6 +374,12 @@ fn render_layout_steps() {
             )
             .unwrap();
             view.set_rasters(deck.rasters.clone());
+            let mut settle_view = SceneView::with_model(
+                model["presentation"]["scene"].as_str().unwrap(),
+                model.clone(),
+            )
+            .unwrap();
+            settle_view.set_rasters(deck.rasters.clone());
             let settle = egui::Context::default();
             viu::fonts::install(&settle, 400, 600);
             for frame in 0..24 {
@@ -386,7 +392,7 @@ fn render_layout_steps() {
                         ..Default::default()
                     },
                     |ui| {
-                        view.show(ui);
+                        settle_view.show(ui);
                     },
                 );
                 output.textures_delta.clear();
