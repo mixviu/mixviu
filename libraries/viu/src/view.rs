@@ -1283,7 +1283,7 @@ impl SceneView {
                         let lists=self.measurement_nodes.as_ref().unwrap().2.clone();let empty=crate::templates::ListData::default();let data=lists.get(id).unwrap_or(&empty);
                         let list_rows = rows(node);
                         let mut draw = |ui: &mut egui::Ui| {
-                            for item in &list_rows {
+                            for item in list_rows {
                                 if let Some(instance) =
                                     item["id"].as_str().and_then(|id| data.instances.get(id))
                                 {
@@ -1439,7 +1439,7 @@ impl SceneView {
                                             cell.set_clip_rect(ui.clip_rect());
                                             self.node(&mut cell,child,nodes,route,depth+1,events);
                                             let actual=cell.min_rect().size();
-                                            
+
                                             if (actual.y-size.y).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(ui.scope_id().with((&key,"between-size",child)),actual));ui.ctx().request_discard("scene layout measurement");}
                                             height=height.max(actual.y);
                                             x+=size.x+gap;
@@ -1486,7 +1486,7 @@ impl SceneView {
                                             let actual=cell.min_rect().height();
                                             let natural=if stretch{self.natural_heights.get(*child).copied().unwrap_or(actual)}else{actual};
                                             if (natural-previous).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cache,natural));ui.ctx().request_discard("flex cross size");}
-                                            
+
                                             height=height.max(actual);x+=width+ui.spacing().item_spacing.x;
                                         }
                                         ui.allocate_space(egui::vec2(ui.available_width(),height));
@@ -3161,7 +3161,7 @@ fn image_extent(node:&Node)->egui::Vec2 {
 fn prepare_measurements(nodes:&mut BTreeMap<String,Node>,scene:&str,memo:&mut BTreeMap<String,(Node,u64)>,alive:&mut BTreeSet<String>){
     for (id,node) in nodes {
         let name=format!("{scene}/{id}");alive.insert(name.clone());
-        let hash=if let Some((old,hash))=memo.get(&name).filter(|(old,_)|old==node){let _=old;*hash}else{let hash=measurement_content_hash(&name,node);memo.insert(name,(node.clone(),hash));hash};
+        let hash=if let Some((old,hash))=memo.get(&name).filter(|(old,_)|old==&*node){let _=old;*hash}else{let hash=measurement_content_hash(&name,node);memo.insert(name,(node.clone(),hash));hash};
         node.ports.insert("__measure_key".into(),json!(hash));
         if node.family=="row" && text(node,"align")=="start"{let align=node.ports.get("cross_align").and_then(Value::as_str).unwrap_or("center").to_owned();node.ports.insert("align".into(),json!(align));}
     }

@@ -622,3 +622,64 @@ fn grid_scroll_rows_shrink_with_viewport_and_reserve_prior_rows() {
         previous = scroll.height();
     }
 }
+
+#[test]
+fn default_rows_keep_main_cross_alignment_with_and_without_height(){
+    for height in ["",",height:80"]{
+        let r=geometry(&format!(r#"{{root:{{widget:"row"{height},children:["label","button"]}},label:{{widget:"text",text:"Short",size:12}},button:{{widget:"button",label:"Button"}}}}"#));
+        assert!((r["label"].center().y-r["button"].center().y).abs()<1.,"{r:?}");
+        assert!((r["label"].center().y-r["root"].center().y).abs()<1.,"{r:?}");
+    }
+}
+
+#[test]
+fn real_workshop_and_dopus_rows_match_main_centred_cross_positions(){
+    let model=json!({"macro_confirm":true,"mesh_ping":{"id":"mesh-ping","kind":"button","label":"Ping","initial":"","properties":{"text":"Ping"}},"location_controls":{"left":{"id":"left-location","kind":"field","label":"","initial":"","properties":{"accessible_name":"Path","fill":true}},"right":{"id":"right-location","kind":"field","label":"","initial":"","properties":{"accessible_name":"Path","fill":true}}},"__viu_metrics":{"height":600,"control_row_height":60,"item_spacing_x":8}});
+    for (source,ids) in [(include_str!("../../../../apps/workshop/scene.mix"),vec!["macro-confirmation","mesh-header"]),(include_str!("../../../../apps/dopus/scene.mix"),vec!["left-location-row","right-location-row","left-summary-row","right-summary-row"]),(include_str!("../../../../apps/dopus/chooser.scene.mix"),vec!["location-row","summary-row"])]{
+        let doc=scene::parse(source).unwrap();
+        for id in ids {for height in [None,Some(80)]{
+            let row=&doc.nodes[id];let mut ports=row.ports.clone();ports.insert("widget".into(),json!("row"));ports.shift_remove("hidden");
+            if let Some(h)=height{ports.insert("height".into(),json!(h));}
+            let children=row.ports["children"].as_array().unwrap();let mut nodes=serde_json::Map::new();nodes.insert("root".into(),serde_json::to_value(ports).unwrap());
+            for c in children{let name=c.as_str().unwrap();let raw=&doc.nodes[name];let mut p=raw.ports.clone();p.insert("widget".into(),json!(raw.widget));nodes.insert(name.into(),serde_json::to_value(p).unwrap());}
+            let mut geometries=vec![];
+            for reference in [false,true]{let mut nodes=nodes.clone();if reference{nodes["root"]["align"]=json!("center");}
+                let source=format!("---\nscene: 1\nname: row-parity\ncitizen: test\n---\n```mix\n{}\n```\n",Value::Object(nodes));let mut v=SceneView::with_model(&source,model.clone()).unwrap();let ctx=egui::Context::default();
+                for _ in 0..6{ctx.run_ui(egui::RawInput::default(),|ui|{v.show(ui);}).drop_without_applying_deltas();}geometries.push(v.geometry);
+            }
+            for child in children{let child=child.as_str().unwrap();let a=geometries[0][child];let b=geometries[1][child];let delta=(a.center().y-geometries[0]["root"].top())-(b.center().y-geometries[1]["root"].top());assert!(delta.abs()<0.01,"{id}/{child}: {delta}");}
+            println!("ROW_MAIN_PARITY {id} height={height:?}: cross-position delta 0");
+        }}
+    }
+}
+
+#[test]
+fn translucent_plain_node_and_theme_colours_are_not_premultiplied_twice(){
+    let ctx=egui::Context::default();viu::appearance::install_theme(&ctx,&toolkit::Theme::embedded()).unwrap();
+    let theme=Color32::from_rgba_unmultiplied(60,120,220,128);let normal=Color32::from_rgba_unmultiplied(150,200,250,96);
+    ctx.data_mut(|d|{let key=egui::Id::unique("viu-design-colours");let mut palette=(**d.get_temp::<Arc<std::collections::BTreeMap<String,Color32>>>(key).as_ref().unwrap()).clone();palette.insert("translucent".into(),theme);d.insert_temp(key,Arc::new(palette));});
+    ctx.style_mut(|s|s.visuals.override_text_color=Some(normal));
+    let mut v=SceneView::new("---\nscene: 1\nname: alpha\ncitizen: test\n---\n```mix\n{root:{widget:\"column\",children:[\"a\",\"b\",\"c\"]},a:{widget:\"text\",text:\"Node\",color:\"#ff804080\"},b:{widget:\"text\",text:\"Theme\",color:\"design.translucent\"},c:{widget:\"text\",text:\"Normal\"}}\n```\n").unwrap();
+    let mut o=ctx.run_ui(egui::RawInput::default(),|ui|{v.show(ui);});o.textures_delta.clear();let mut found=0;
+    for s in o.shapes{if let egui::Shape::Text(t)=s.shape{let expected=match t.galley.job.text.as_str(){"Node"=>Color32::from_rgba_unmultiplied(255,128,64,128),"Theme"=>theme,"Normal"=>normal,_=>continue};found+=1;assert!(t.galley.job.sections.iter().all(|s|s.format.color==expected));}}
+    assert_eq!(found,3);
+}
+
+#[test]
+fn stretched_justified_columns_settle_and_shrink_with_padding(){
+    for justify in ["center","end","between"]{
+        let source=format!(r#"---
+scene: 1
+name: stretch
+citizen: test
+---
+```mix
+{{root:{{widget:"row",fill:true,align:"stretch",children:["a","b"]}},a:{{widget:"column",grow:1,padding_top:12,padding_bottom:14,justify:"{justify}",children:["one","two"]}},one:{{widget:"text",text:"One"}},two:{{widget:"text",text:"Two"}},b:{{widget:"column",grow:1,height:"= $model.height",children:[]}}}}
+```
+"#);
+        let mut v=SceneView::with_model(&source,json!({"height":220})).unwrap();let ctx=egui::Context::default();
+        for target in [220,100]{v.apply_model(json!({"height":target})).unwrap();for frame in 0..24{let mut o=ctx.run_ui(egui::RawInput::default(),|ui|{v.show(ui);});o.textures_delta.clear();if frame==23{assert!(!o.platform_output.requested_discard(),"{justify}: {:?}",o.platform_output.request_discard_reasons);}}
+            assert!(v.geometry["root"].height()<=target as f32+1.,"{justify}: {:?}",v.geometry);
+        }
+    }
+}
