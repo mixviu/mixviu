@@ -250,6 +250,7 @@ try
   -- viud is egui-free by construction (default features).
   $tree = run_argv(["cargo", "tree", "--locked", "-p", "viud", "-e", "normal"], {max_output: 64000000})
   $egui = filter(lines($tree.stdout), fn($line) = re_match($line, "(^|[^a-z_-])(egui|egui-wgpu|egui-winit|toolkit) v[0-9]"))
+  if $tree.stdout_truncated then push($failed, "viud egui tree check output truncated") end
   print("VIUD_EGUI_MATCH_LINES=" .. to_string(len($egui)))
   if not $tree.ok or len($egui) != 0 then
     print(join($egui, "\n"))

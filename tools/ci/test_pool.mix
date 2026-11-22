@@ -205,14 +205,6 @@ if $target_ancestor == nil or ($target_ancestor != $root and not starts_with($ta
 mkdir($meta_target)
 $target_dir = realpath($meta_target)
 if not starts_with($target_dir, $root .. "/") then refuse("cargo target_directory must be under the job root") end
-$quarantine_private = nil
-$quarantine_out = nil
-if $o.opts["quarantine-out"] != nil then
-  $quarantine_out = $quarantine.record_path($o.opts["quarantine-out"], $root, $target_dir)
-else
-  $quarantine_private = $quarantine.private_dir(env("TMPDIR", "/tmp"), $root, $target_dir)
-  $quarantine_out = path_join($quarantine_private, "records.jsonl")
-end
 if re_match($mix_exe .. $recorder .. $root .. $target_dir, "\\s") then refuse("a space in the mix, recorder, checkout or target path breaks cargo's runner setting") end
 -- Brackets break the Running-line match; `=` makes `env --` read a program
 -- path under the target directory as an assignment.
@@ -238,7 +230,14 @@ fn strip_escapes($l)
   return re_replace($l, "\\x1b\\[[0-9;]*m", "")
 end
 
+$quarantine_private = nil
 try
+  if $o.opts["quarantine-out"] != nil then
+    $quarantine_out = $quarantine.record_path($o.opts["quarantine-out"], $root, $target_dir)
+  else
+    $quarantine_private = $quarantine.private_dir(env("TMPDIR", "/tmp"), $root, $target_dir)
+    $quarantine_out = path_join($quarantine_private, "records.jsonl")
+  end
   -- 1. Record: cargo builds and records each test binary; doc-tests wait.
   -- `--color never` is cargo's own flag, so the Running lines parse and the
   -- recorded environment is untouched (CARGO_TERM_COLOR is passed on to tests).
@@ -440,6 +439,15 @@ try
     exit(1)
   end
 finally
-  $cleanup = run_argv(["rm", "-rf", $rec_dir])
-  if not $cleanup.ok then print("::warning::could not remove " .. $rec_dir .. " (it holds recorded environments)") end
+  if $quarantine_private != nil then
+    try
+      remove_dir($quarantine_private)
+    catch $err
+      eprint("::warning::could not remove " .. $quarantine_private .. ": " .. to_string($err))
+    end
+  end
+  if $rec_dir != nil then
+    $cleanup = run_argv(["rm", "-rf", $rec_dir])
+    if not $cleanup.ok then eprint("::warning::could not remove " .. $rec_dir .. " (it holds recorded environments)") end
+  end
 end

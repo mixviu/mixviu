@@ -72,3 +72,5 @@ The base expiry remains at most 14 days. Caps: 5 total, 2 per
 package. Passes never remove entries. Hub consumers retain the records in the
 gate summary/comment and quarantine.jsonl, and append failures to the ledger;
 gold excludes quarantined failures from its stop count.
+Pool Running headers are cosmetic; no consumer may parse them. Quarantine
+warnings use the reserved `::warning::` prefix.

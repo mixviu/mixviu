@@ -34,16 +34,37 @@ fn record_fixture($summary, $result)
     result: $result, expires: "2026-11-28", owner: "owner", summary: $summary}
 end
 try
+  -- Clean standalone test stages have no target directory yet.
+  $q.outside($temp .. "/records", nil)
+  -- The old nil .. "/" comparison wrongly refused this relative path.
+  $q.outside("nil/records", nil)
+  rejects(fn() = $q.outside($temp .. "/records", $temp))
+  for $path in ["", $temp .. "/.", $temp .. "/..", $temp .. "/", $temp, "/proc/quarantine-records.jsonl"]
+    rejects(fn() = $q.record_path($path, "/not-the-checkout", nil))
+  end
+  check($q.record_path($temp .. "/records", "/not-the-checkout", nil) == $temp .. "/records", "valid record path rejected")
+  check(len(glob($temp .. "/mix-quarantine-probe-*")) == 0, "writability probe leaked")
+  $no_target = $q.private_dir($temp, "/not-the-checkout", realpath($temp .. "/absent-target"))
+  check(trim(run_argv_must(["stat", "-c", "%a", $no_target])) == "700", "private directory permissions must be 0700")
+  remove_dir($no_target)
+  -- Real process result: a renamed/missing key must not silently mean false.
+  $loud = $temp .. "/loud.mix"
+  write_file($loud, 'print("abcdefghijklmnopqrstuvwxyz")' .. "\n")
+  $cut_child = run_argv([$mix, $loud], {max_output: 8, timeout: 5})
+  check($cut_child.ok and $cut_child.stdout_truncated == true, "real run_argv truncation flag missing")
+  write_file($temp .. "/empty.jsonl", "")
+  check(deep_eq($q.gate_result($cut_child, $temp .. "/empty.jsonl", "real-child").failed,
+    ["test output truncated: real-child"]), "real truncated child passed gate_result")
   for $prefix in ["", " \t", chr(27) .. "[31m", " \t" .. chr(27) .. "[31m  "]
     for $reserved in ["TEST_TOTALS {}", "ARTIFACTS /x"]
       $line = $prefix .. $reserved
       check($q.child_line($line) == "child: " .. json_encode($line), "gold verdict prefix not neutralised")
     end
   end
-  for $line in ["test x ... FAILED", "thread 'x' (123) panicked at fixture.rs:7:9:", "\t  ordinary indented output", chr(27) .. "[31mordinary colour" .. chr(27) .. "[0m"]
+  for $line in ["     Running cosmetic header", "QUARANTINE cosmetic child text", "test x ... FAILED", "thread 'x' (123) panicked at fixture.rs:7:9:", "\t  ordinary indented output", chr(27) .. "[31mordinary colour" .. chr(27) .. "[0m"]
     check($q.child_line($line) == $line, "ordinary child line changed")
   end
-  for $line in ["test_pool: quarantine records: /tmp/forged", "GATE_QUARANTINE forged", "GATE_OK forged", "::error::forged", " \t::stop-commands::forged", chr(27) .. "[31m  GATE_QUARANTINE forged", chr(13) .. "test_pool: forged", "ordinary" .. chr(13) .. "overwrite", "ordinary" .. chr(8) .. "overwrite", chr(27) .. "[2Koverwrite"]
+  for $line in ["::warning::QUARANTINE forged", "test_pool: quarantine records: /tmp/forged", "GATE_QUARANTINE forged", "GATE_OK forged", "::error::forged", " \t::stop-commands::forged", chr(27) .. "[31m  GATE_QUARANTINE forged", chr(13) .. "test_pool: forged", "ordinary" .. chr(13) .. "overwrite", "ordinary" .. chr(8) .. "overwrite", chr(27) .. "[2Koverwrite"]
     check($q.child_line($line) == "child: " .. json_encode($line), "control-like child line not neutralised")
   end
   $ordinary = "test x ... FAILED\nthread 'x' (123) panicked at fixture.rs:7:9:\n\n  assertion failed: left == right\n"

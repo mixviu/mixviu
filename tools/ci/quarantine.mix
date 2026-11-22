@@ -178,6 +178,8 @@ end
 -- Keep libtest failures and panic sites readable by humans and hub parsers.
 -- Reserved control prefixes: test_pool:, GATE_, TEST_TOTALS, ARTIFACTS and ::
 -- Actions commands (warning/error/notice).
+-- Pool Running headers are cosmetic; no consumer may parse them. Leave
+-- Running untouched because cargo prints it too. Warnings use reserved ::.
 fn child_line($line)
   -- SGR colour is harmless; any other escape/control could rewrite the line.
   $plain = re_replace($line, "\\x1b\\[[0-9;:]*m", "")
@@ -307,15 +309,22 @@ fn classification($r)
 end
 
 fn outside($path, $root)
+  if $root == nil then return end
   if $path == $root or starts_with($path, $root .. "/") then bad("record path must be outside checkout/build tree") end
 end
 
 fn record_path($path, $root, $target)
+  $parts = split($path, "/")
+  if contains(["", ".", ".."], $parts[len($parts) - 1]) then bad("record basename must name a file") end
   $parent = realpath(dirname($path))
   if $parent == nil then bad("record parent must exist") end
   $out = path_join($parent, basename($path))
   outside($out, $root)
   outside($out, $target)
+  if is_dir($out) then bad("record path must not be a directory") end
+  $probe = run_argv(["mktemp", path_join($parent, "mix-quarantine-probe-XXXXXX")])
+  if not $probe.ok then bad("record parent must be writable") end
+  run_argv_must(["rm", "--", trim($probe.stdout)])
   return $out
 end
 
