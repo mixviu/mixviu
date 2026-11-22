@@ -50,9 +50,10 @@ fn manual_rows_inside_scroll_keep_all_geometry_finite() {
         "justify:\"between\",cross_align:\"center\"",
         "cross_align:\"start\"",
         "align:\"baseline\"",
+        "cross_align:\"start\",fill:true",
     ] {
         let source = format!(
-            r#"{{root:{{widget:"column",scroll:true,height:200,children:["row"]}},row:{{widget:"row",fill:true,{mode},children:["a","b"]}},a:{{widget:"text",text:"Large",size:40}},b:{{widget:"text",text:"Small",size:12}}}}"#
+            r#"{{root:{{widget:"column",scroll:true,height:200,children:["row"]}},row:{{widget:"row",{mode},children:["a","b"]}},a:{{widget:"text",text:"Large",size:40}},b:{{widget:"text",text:"Small",size:12,fill:true}}}}"#
         );
         let mut view = SceneView::new(&format!(
             "---\nscene: 1\nname: finite-manual\ncitizen: test\n---\n```mix\n{source}\n```\n"
