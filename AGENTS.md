@@ -60,11 +60,15 @@ Flaky-test quarantine is governed by the maintainer's decision
 tools/ci/quarantine.conf.mix (Tier 2), initially empty. Entries name one exact
 libtest test, still run with a timeout and report GATE_QUARANTINE records on
 every gate path; failures do not block, retry or create FLAKY records. Expired
-entries run strict. Additions are separate list-only PRs requiring a ledger,
+entries warn on every run and run strict. Additions are separate list-only PRs requiring a ledger,
 failing unchanged-head job, at least 20 comparable rounds with under 10%
 failures, owner, fix brief and Fable co-sign. Never widen an entry; remove it
-with its fix and soak. Default expiry is 7 days, maximum 14; one 7-day renewal
-needs Fable and fresh evidence, a second needs Mark. Caps: 5 total, 2 per
+with its fix and soak. Base expiry defaults to 7 days, maximum 14. Frozen
+`added`/`expires` and append-only renewals are enforced by review of the
+list-only PR's diff, not by the snapshot validator. Append-only `renewals[]`
+records extend the effective expiry by 1..7 days each, Fable then Mark,
+with distinct evidence and co-signs; at most two, capped at added + 28 days.
+The base expiry remains at most 14 days. Caps: 5 total, 2 per
 package. Passes never remove entries. Hub consumers retain the records in the
 gate summary/comment and quarantine.jsonl, and append failures to the ledger;
 gold excludes quarantined failures from its stop count.
