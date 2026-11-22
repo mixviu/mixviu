@@ -151,6 +151,7 @@ enum Leaf {
         elide: bool,
         wrap: bool,
         max_lines: usize,
+        line_height: Option<f32>,
     },
     Button {
         label: String,
@@ -260,7 +261,9 @@ impl<'a> Builder<'a> {
         Some(match node.family.as_str() {
             "text" => {
                 let style = self.text_style(flag(node, "mono"));
-                style.line(style.size(number(node, "size")))
+                number(node, "line_height")
+                    .map(|v| v.clamp(0.1, 4096.))
+                    .unwrap_or_else(|| style.line(style.size(number(node, "size"))))
             }
             "image" => number(node, "h").unwrap_or(16.0),
             "row" => children(node)
@@ -458,6 +461,7 @@ impl<'a> Builder<'a> {
             bottom: length(bottom),
         };
         style.align_items = Some(match port_text(node, "align") {
+            "baseline" => AlignItems::BASELINE,
             "center" => AlignItems::CENTER,
             "end" => AlignItems::FLEX_END,
             "stretch" => AlignItems::STRETCH,
@@ -562,6 +566,7 @@ impl<'a> Builder<'a> {
                     elide: flag(node, "elide"),
                     wrap: flag(node, "wrap"),
                     max_lines: number(node, "max_lines").unwrap_or(3.0) as usize,
+                    line_height: number(node, "line_height").map(|v| v.clamp(0.1, 4096.)),
                 };
                 self.tree
                     .new_leaf_with_context(style, meta(Some(leaf)))
@@ -701,6 +706,7 @@ impl<'a> Builder<'a> {
                 height: zero(),
             };
             style.align_items = Some(match port_text(node, "align") {
+                "baseline" => AlignItems::BASELINE,
                 "center" => AlignItems::CENTER,
                 "end" => AlignItems::FLEX_END,
                 _ => AlignItems::FLEX_START,
@@ -761,6 +767,7 @@ fn leaf_size(
             elide,
             wrap,
             max_lines,
+            line_height,
         } => {
             let w = measure(text, *size, *mono, *bold).x;
             let bound = known.width.or(match available.width {
@@ -775,9 +782,9 @@ fn leaf_size(
                 });
                 return Size {
                     width: known.width.unwrap_or(w.ceil().min(width)),
-                    height: known
-                        .height
-                        .unwrap_or(line(*mono, *size) * lines.len() as f32),
+                    height: known.height.unwrap_or(
+                        line_height.unwrap_or_else(|| line(*mono, *size)) * lines.len() as f32,
+                    ),
                 };
             }
             Size {
@@ -790,7 +797,7 @@ fn leaf_size(
                 } else {
                     w.ceil()
                 },
-                height: line(*mono, *size),
+                height: line_height.unwrap_or_else(|| line(*mono, *size)),
             }
         }
         Leaf::Button { label } => {
