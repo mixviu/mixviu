@@ -6,7 +6,11 @@ $tokens = require("../../libraries/design/deck.tokens.mix")
 fn deck_text($text, $style, $role)
   $mono=contains(["date","chip","pr","topic_no","rail","rail_compact","series_footer","code","terminal","tree"],$style)
   $weight=if contains(["headline","topic_title","wordmark","stat","panel_title"],$style) then 700 else 400 end
-  return {widget:"text", text:$text, size:$tokens.type[$style], color:$tokens.colour[$role],font:if $mono then "Noto Sans Mono" else "Liberation Sans" end,mono_font:"Noto Sans Mono",mono:$mono,weight:if $style=="panel_title" then 500 else $weight end}
+  $node={widget:"text", text:$text, size:$tokens.type[$style], color:$tokens.colour[$role],font:if $mono then "Noto Sans Mono" else "Liberation Sans" end,mono_font:"Noto Sans Mono",mono:$mono,weight:if $style=="panel_title" then 500 else $weight end}
+  if $style=="panel_title" then $node.letter_spacing=$node.size*0.08 end
+  if $style=="headline" then $node.letter_spacing=$node.size*(-0.01) end
+  if $style=="stat" or $style=="topic_title" then $node.letter_spacing=$node.size*(-0.02) end
+  return $node
 end
 fn inline($runs, $style, $mono)
   $styled = []

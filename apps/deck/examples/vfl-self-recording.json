@@ -311,6 +311,7 @@
           "bold": true,
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": -0.68,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 56,
@@ -338,6 +339,7 @@
         "root.2.0": {
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -632,6 +634,7 @@
         "root.3.0.0": {
           "color": "#f2706b",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -671,6 +674,7 @@
         "root.3.1.0": {
           "color": "#8d99a8",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -690,6 +694,7 @@
         "root.3.1.1.0": {
           "color": "#f0b45a",
           "font": "Liberation Sans",
+          "letter_spacing": -1.52,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 52,
@@ -1092,6 +1097,7 @@
           "bold": true,
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": -0.68,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 56,
@@ -1120,6 +1126,7 @@
         "root.2.0": {
           "color": "#8d99a8",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -1533,6 +1540,7 @@
         "root.3.0.0": {
           "color": "#5ad18a",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -1562,6 +1570,7 @@
         "root.3.0.1.0.0": {
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": -1.52,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 52,
@@ -1593,6 +1602,7 @@
         "root.3.0.1.1.0": {
           "color": "#5ad18a",
           "font": "Liberation Sans",
+          "letter_spacing": -1.52,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 52,
@@ -1624,6 +1634,7 @@
         "root.3.0.1.2.0": {
           "color": "#5ad18a",
           "font": "Liberation Sans",
+          "letter_spacing": -1.52,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 52,
@@ -1665,6 +1676,7 @@
         "root.3.1.0": {
           "color": "#8d99a8",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -1684,6 +1696,7 @@
         "root.3.1.1.0": {
           "color": "#5ad18a",
           "font": "Liberation Sans",
+          "letter_spacing": -1.52,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 52,
@@ -2103,6 +2116,7 @@
           "bold": true,
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": -0.68,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 56,
@@ -2131,6 +2145,7 @@
         "root.2.0": {
           "color": "#f2706b",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -2233,6 +2248,7 @@
         "root.4.0": {
           "color": "#5ad18a",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -2634,6 +2650,7 @@
           "bold": true,
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": -0.68,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 56,
@@ -2662,6 +2679,7 @@
         "root.2.0": {
           "color": "#f2706b",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -2701,6 +2719,7 @@
         "root.3.0": {
           "color": "#f0b45a",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -3108,6 +3127,7 @@
           "bold": true,
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": -0.68,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 56,
@@ -3136,6 +3156,7 @@
         "root.2.0": {
           "color": "#3cc8d8",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -3175,6 +3196,7 @@
         "root.3.0": {
           "color": "#f2706b",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -3214,6 +3236,7 @@
         "root.4.0": {
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -3621,6 +3644,7 @@
           "bold": true,
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": -0.68,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 56,
@@ -3649,6 +3673,7 @@
         "root.2.0": {
           "color": "#5ad18a",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -3874,6 +3899,7 @@
         "root.4.0": {
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -4275,6 +4301,7 @@
           "bold": true,
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": -0.68,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 56,
@@ -4559,6 +4586,7 @@
         "root.3.0": {
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -4966,6 +4994,7 @@
           "bold": true,
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": -0.68,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 56,
@@ -4994,6 +5023,7 @@
         "root.2.0": {
           "color": "#f0b45a",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -5033,6 +5063,7 @@
         "root.3.0": {
           "color": "#f2706b",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -5072,6 +5103,7 @@
         "root.4.0": {
           "color": "#3cc8d8",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -5479,6 +5511,7 @@
           "bold": true,
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": -0.68,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 56,
@@ -5507,6 +5540,7 @@
         "root.2.0": {
           "color": "#3cc8d8",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -5546,6 +5580,7 @@
         "root.3.0": {
           "color": "#5ad18a",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -5585,6 +5620,7 @@
         "root.4.0": {
           "color": "#f2706b",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
@@ -5980,6 +6016,7 @@
           "bold": true,
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": -0.68,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 56,
@@ -6541,6 +6578,7 @@
           "bold": true,
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": -0.68,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 56,
@@ -6569,6 +6607,7 @@
         "root.2.0": {
           "color": "#e8edf3",
           "font": "Liberation Sans",
+          "letter_spacing": 1.92,
           "mono": false,
           "mono_font": "Noto Sans Mono",
           "size": 24,
