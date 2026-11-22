@@ -101,7 +101,7 @@ fn mono_runs_use_the_theme_mono_unless_a_mono_font_is_named() {
             let defs = ctx.fonts(|f| f.definitions().clone());
             let primary = &defs.families[&expected_family][0];
             let mut db = fontdb::Database::new();
-            db.load_font_data(defs.font_data[primary].data.as_ref().to_vec());
+            db.load_font_data(defs.font_data[primary].bytes().to_vec());
             let face = &db.faces().next().unwrap().post_script_name;
             assert_eq!(
                 face,
