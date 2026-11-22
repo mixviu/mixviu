@@ -1107,16 +1107,26 @@ impl SceneView {
                         let columns=num(node,"columns").unwrap_or(2.0) as usize;
                         let gap=num(node,"column_gap").unwrap_or(12.0);
                         let width=((ui.available_width()-gap*(columns-1) as f32)/columns as f32).max(num(node,"min_column_width").unwrap_or(0.0));
-                        egui::Grid::new(text(node,"identity")).num_columns(columns).min_col_width(width).max_col_width(width)
-                            .spacing([gap,num(node,"row_gap").unwrap_or(3.0)]).show(ui,|ui| {
-                                for (index,child) in children(node).enumerate() {
-                                    let cell=ui.scope(|ui| { ui.set_min_width(width); ui.set_max_width(width);
-                                        self.node(ui,child,nodes,route,depth+1,events);
-                                    });
-                                    self.geometry.insert(child.into(),cell.response.rect);
-                                    if index%columns==columns-1 { ui.end_row(); }
-                                }
-                            });
+                        let origin=ui.available_rect_before_wrap().min;
+                        let mut top=origin.y;
+                        let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
+                        for (row,group) in active.chunks(columns).enumerate() {
+                            let cache=ui.scope_id().with((&key,"grid-height",row));
+                            let previous=ui.ctx().data(|d|d.get_temp::<f32>(cache)).unwrap_or(0.);
+                            let mut height=0.0_f32;
+                            for (column,child) in group.iter().enumerate() {
+                                let rect=egui::Rect::from_min_size(egui::pos2(origin.x+column as f32*(width+gap),top),egui::vec2(width,previous));
+                                let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
+                                cell.set_width(width);
+                                cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(rect.min,egui::pos2(rect.right(),ui.clip_rect().bottom()))));
+                                self.node(&mut cell,child,nodes,route,depth+1,events);
+                                height=height.max(cell.min_rect().height());
+                            }
+                            if (height-previous).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cache,height));ui.ctx().request_repaint();}
+                            top+=height+num(node,"row_gap").unwrap_or(3.);
+                        }
+                        let height=if active.is_empty(){0.}else{top-origin.y-num(node,"row_gap").unwrap_or(3.)};
+                        ui.allocate_space(egui::vec2(ui.available_width(),height));
                     }
                     "control" => {
                         // Container gaps arrange children; they must not
@@ -1303,7 +1313,24 @@ impl SceneView {
                                         });
                                     } else if text(node,"justify")=="between" {
                                         let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
-                                        ui.horizontal(|ui| {if let Some(first)=active.first(){self.node(ui,first,nodes,route,depth+1,events);ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{for child in active.iter().skip(1).rev(){self.node(ui,child,nodes,route,depth+1,events);}});}});
+                                        let sizes:Vec<egui::Vec2>=active.iter().map(|child|ui.ctx().data(|d|d.get_temp::<egui::Vec2>(ui.scope_id().with((&key,"between-size",child)))).unwrap_or_default()).collect();
+                                        let available=ui.available_width();
+                                        let gap=((available-sizes.iter().map(|s|s.x).sum::<f32>())/active.len().saturating_sub(1).max(1) as f32).max(0.);
+                                        let cross=sizes.iter().map(|s|s.y).fold(0.0_f32,f32::max);
+                                        let origin=ui.available_rect_before_wrap().min;
+                                        let mut x=origin.x;
+                                        let mut height=0.0_f32;
+                                        for (child,size) in active.iter().zip(&sizes) {
+                                            let rect=egui::Rect::from_min_size(egui::pos2(x,origin.y+(cross-size.y)/2.),*size);
+                                            let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
+                                            cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(rect.min,egui::pos2(rect.right(),ui.clip_rect().bottom()))));
+                                            self.node(&mut cell,child,nodes,route,depth+1,events);
+                                            let actual=cell.min_rect().size();
+                                            if (actual-*size).length()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(ui.scope_id().with((&key,"between-size",child)),actual));ui.ctx().request_repaint();}
+                                            height=height.max(actual.y);
+                                            x+=size.x+gap;
+                                        }
+                                        ui.allocate_space(egui::vec2(available,height));
                                     } else if children(node).any(|child|nodes.get(child).is_some_and(|n|num(n,"grow").unwrap_or(0.)>0.)) {
                                         let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
                                         // Natural fixed cells (for example arrows) keep their width.

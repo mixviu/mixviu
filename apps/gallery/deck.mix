@@ -88,14 +88,29 @@ fn compact_card($title,$items,$tone="mut")
   $node.children[0]=merge($node.children[0],{size:21,weight:500,letter_spacing:1.68})
   return $node
 end
-fn compact_chip($text,$caption,$role="text")
+fn compact_chip($text,$caption,$role="text",$found=false)
   $node=chip($text,$caption,$role)
-  $node.padding_left=10;$node.padding_right=10
-  $node.padding_top=4;$node.padding_bottom=4
+  $node.padding_left=$tokens.space.compact_chip_x;$node.padding_right=$tokens.space.compact_chip_x
+  $node.padding_top=$tokens.space.compact_chip_y;$node.padding_bottom=$tokens.space.compact_chip_y
+  $node.background=$tokens.colour.chip_background
+  $node.outline=if $found then $tokens.colour.warn else $tokens.colour.line end
   $node.gap=6
   $node.children[0].size=20
   $node.children[1].size=17
   return $node
+end
+fn compact_table($rows)
+  $lines=[];$index=0
+  for $cells in $rows
+    $items=[]
+    for $cell in $cells
+      $label=merge(deck_text($cell[0],"caption",$cell[1]),{size:if $index==0 then 17 else 20 end,weight:if $index==0 then 500 else 400 end,wrap:true})
+      push($items,merge(column([$label],0),{grow:1,fill:true,padding_left:10,padding_right:10,padding_top:5,padding_bottom:6}))
+    end
+    push($lines,merge(row($items,0),{align:"start",fill:true}))
+    $index=$index+1
+  end
+  return merge(column($lines,0),{fill:true})
 end
 fn headline($text, $small)
   return column([deck_text($text,"headline","text"),deck_text($small,"small","mut")],10)
