@@ -26,6 +26,7 @@ for $cmd in [
   $tests,
   ["cargo","test","-p","scene","-p","motion","-p","toolkit","-p","lib-viu","-p","viu","--doc","--no-fail-fast"],
   ["cargo","clippy","-p","scene","-p","motion","-p","toolkit","-p","lib-viu","-p","viu","--all-targets"],
+  ["mix","tools/foreign_gate.mix"],
   ["cargo","fmt","--all","--","--check"],
   ["mix","apps/deck/core-test.mix"],
   ["mix","lint","apps/deck/app.mix"],
