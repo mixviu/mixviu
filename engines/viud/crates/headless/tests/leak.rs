@@ -93,6 +93,7 @@ fn check(mode: &str) {
             !cleaned,
             "negative control unexpectedly passed the leak oracle"
         );
+        std::os::unix::net::UnixStream::connect(root.join("release.sock")).unwrap();
         assert!(
             within(pid, root, Duration::from_secs(2)),
             "control cleanup failed"

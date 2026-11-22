@@ -162,16 +162,23 @@ fn owner_process() {
         serde_json::json!({"pid":broker.0.id(),"url":url}).to_string(),
     )
     .unwrap();
+    let release = (label.trim() == "negative-control").then(|| {
+        std::os::unix::net::UnixListener::bind(root.path().join("release.sock")).unwrap()
+    });
     println!(
         "BUS_READY {}",
         serde_json::json!({"root":root.path(),"url":url})
     );
     std::io::stdout().flush().unwrap();
-    // Negative control removes the pipe tie for three seconds, beyond the
-    // regression's two-second bound. It still cleans up its own specimen.
+    // The control removes the pipe tie and waits for an explicit release from
+    // the regression controller. No timing sleep stands in for a handshake.
     std::io::stdin().read_to_end(&mut Vec::new()).unwrap();
-    if label.trim() == "negative-control" {
-        std::thread::sleep(Duration::from_secs(3));
+    if let Some(release) = release {
+        release.set_nonblocking(true).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while release.accept().is_err() && Instant::now() < deadline {
+            std::thread::yield_now();
+        }
     }
     drop(broker);
     drop(root);
