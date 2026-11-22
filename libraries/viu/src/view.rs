@@ -1324,27 +1324,28 @@ impl SceneView {
                                 };
                                 if node.family == "row" {
                                     if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) && node.ports.get("native_spacing")!=Some(&Value::Bool(true)) {
-                                        let origin=ui.available_rect_before_wrap().min;
-                                        let available=ui.available_width();
-                                        let mut x=0.0_f32;let mut y=0.0_f32;let mut line_height=0.0_f32;
-                                        let gap=ui.spacing().item_spacing;
-                                        for child in children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))) {
-                                            let cache=ui.scope_id().with((&key,"wrap-size",child));
-                                            let previous=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(cache)).unwrap_or_default();
-                                            let size=egui::vec2(intrinsic_text_width(ui,&nodes[child],nodes,&self.tree.model,false,0),previous.y);
-                                            if x>0. && x+size.x>available+0.01 {x=0.;y+=line_height+gap.y;line_height=0.;}
-                                            let pos=origin+egui::vec2(x,y);
-                                            let measure=egui::Rect::from_min_size(pos,egui::vec2(size.x,ui.available_height().max(size.y)));
-                                            let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(measure).layout(egui::Layout::top_down(egui::Align::Min)));
-                                            cell.set_clip_rect(ui.clip_rect());
-                                            self.node(&mut cell,child,nodes,route,depth+1,events);
-                                            let actual=cell.min_rect().size();
-                                            ui.ctx().data_mut(|d|d.insert_temp(natural_size_key(&nodes[child]),actual));
-                                            if (actual-size).length()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cache,actual));ui.ctx().request_discard("scene layout measurement");}
-                                            line_height=line_height.max(actual.y);
-                                            x+=actual.x+gap.x;
+                                        let origin=ui.available_rect_before_wrap().min;let available=ui.available_width();let gap=ui.spacing().item_spacing;
+                                        let active:Vec<_>=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();
+                                        let sizes:Vec<egui::Vec2>=active.iter().map(|c|{let old=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(ui.scope_id().with((&key,"wrap-size",c)))).unwrap_or_default();egui::vec2(if nodes[*c].ports.get("fill")==Some(&Value::Bool(true)){available}else{intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,false,0)},old.y)}).collect();
+                                        let mut rows:Vec<Vec<usize>>=vec![];let mut current=vec![];let mut used=0.;
+                                        for (i,size) in sizes.iter().enumerate(){if !current.is_empty() && used+size.x>available+0.01{rows.push(std::mem::take(&mut current));used=0.;}current.push(i);used+=size.x+gap.x;}
+                                        if !current.is_empty(){rows.push(current);}
+                                        let mut y=origin.y;let mut total_width=0.0_f32;
+                                        for row in rows {
+                                            let cross=row.iter().map(|i|sizes[*i].y).fold(0.0_f32,f32::max);let mut x=origin.x;let mut actual_height=0.0_f32;
+                                            for i in row {
+                                                let child=active[i];let size=sizes[i];let top=y+if text(node,"align")=="center"{(cross-size.y).max(0.)/2.}else{0.};
+                                                let rect=egui::Rect::from_min_size(egui::pos2(x,top),egui::vec2(size.x,ui.available_height().max(size.y)));
+                                                let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));cell.set_clip_rect(ui.clip_rect());
+                                                self.node(&mut cell,child,nodes,route,depth+1,events);let actual=cell.min_rect().size();
+                                                ui.ctx().data_mut(|d|{d.insert_temp(natural_size_key(&nodes[child]),actual);d.insert_temp(ui.scope_id().with((&key,"wrap-size",child)),actual);});
+                                                if (actual-size).length()>0.01{ui.ctx().request_discard("wrapped compound size");}
+                                                actual_height=actual_height.max(actual.y);x+=actual.x+gap.x;
+                                            }
+                                            total_width=total_width.max(x-origin.x-gap.x);y+=actual_height+gap.y;
                                         }
-                                        ui.allocate_space(egui::vec2(if node.ports.get("fill")==Some(&Value::Bool(true)){available}else{x.min(available)},y+line_height));
+                                        let height=(y-origin.y-gap.y).max(0.);
+                                        ui.allocate_space(egui::vec2(if node.ports.get("fill")==Some(&Value::Bool(true)){available}else{total_width},height));
                                     } else if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) {
                                         ui.horizontal_wrapped(|ui| {
                                             for child in children(node) {
@@ -1420,7 +1421,7 @@ impl SceneView {
                                             cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(x,ui.clip_rect().top()),egui::pos2(x+width,ui.clip_rect().bottom()))));
                                             let stretch=text(node,"align")=="stretch" && num(&nodes[*child],"height").is_none();
                                             if stretch {self.stretch_heights.insert((*child).into(),cross);}
-                                            self.node(&mut cell,child,nodes,route,depth+1,events);
+                                            if nodes[*child].family=="spacer"{cell.allocate_space(egui::vec2(*width,0.));self.geometry.insert((*child).into(),egui::Rect::from_min_size(rect.min,egui::vec2(*width,0.)));}else{self.node(&mut cell,child,nodes,route,depth+1,events);}
                                             if stretch {self.stretch_heights.remove(*child);}
                                             let actual=cell.min_rect().height();
                                             if (actual-previous).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cache,actual));ui.ctx().request_discard("flex cross size");}
@@ -1446,15 +1447,17 @@ impl SceneView {
 
 
                                 } else {
-                                    let centre = text(node,"justify")=="center";
+                                    let mode=text(node,"justify");
+                                    let centre=matches!(mode,"center"|"end"|"between"|"around"|"evenly");
+                                    let count=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).count();
+                                    let old_gap=ui.spacing().item_spacing.y;let mut extra=0.;
                                     let cache = ui.scope_id().with((&key,"column-content-height"));
                                     if centre {
                                         let content = ui.ctx().data_mut(|d| d.get_temp::<f32>(cache)).unwrap_or(0.);
-                                        if let Some(height)=num(node,"height").filter(|_|content>0.) {
-                                            ui.add_space(((height-content)/2.).max(0.));
-                                        }
+                                        if content>0. {let height=num(node,"height").or_else(||self.stretch_heights.get(id).copied()).unwrap_or(ui.available_height());let free=(height-content).max(0.);let leading=match mode{"end"=>free,"between"=>{extra=if count>1{free/(count-1) as f32}else{0.};0.},"around"=>{extra=free/count.max(1) as f32;extra/2.},"evenly"=>{extra=free/(count+1) as f32;extra},_=>free/2.};if leading>0.{ui.add_space(leading);}ui.spacing_mut().item_spacing.y=old_gap+extra;}
                                     }
-                                    let content = if text(node,"align")=="center" { ui.vertical_centered(|ui| draw(ui)) } else { ui.vertical(|ui| draw(ui)) }.response.rect.height();
+                                    let content = if text(node,"align")=="center" { ui.vertical_centered(|ui| draw(ui)) } else { ui.vertical(|ui| draw(ui)) }.response.rect.height()-extra*count.saturating_sub(1) as f32;
+                                    ui.spacing_mut().item_spacing.y=old_gap;
                                     if centre {
                                         let changed=ui.ctx().data_mut(|d| {
                                             let old=d.get_temp::<f32>(cache);

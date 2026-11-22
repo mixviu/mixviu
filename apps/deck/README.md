@@ -188,7 +188,7 @@ CSS width and negative-margin interaction without clipping its text.
 Flex rows preserve measured non-text sizes and shaped span advances. Grow and
 shrink can share a row; numeric lengths and weights have finite ceilings. Text
 width measurements are cached and word-bound scans are capped at 4096 glyphs.
-Rows support baseline alignment; columns refuse unsupported justify modes.
+Rows support baseline alignment; columns support all six justify modes.
 Grid cells keep their slots when hidden. Native-spacing rows retain their
 legacy wrapping and between paths.
 Stat captions are uppercase with the HTML letter spacing. Topic stacks use

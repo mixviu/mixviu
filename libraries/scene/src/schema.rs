@@ -397,7 +397,7 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         ports.push(pn("outline_width", false, None));
         ports.push(p("scroll", "bool", false, None));
         let mut justify = p("justify", "string", false, None);
-        justify.enum_values = if f=="column" {&["start","center"]}else{&["start", "center", "end", "between", "around", "evenly"]};
+        justify.enum_values = &["start","center","end","between","around","evenly"];
         ports.extend([
             justify,
             p("bar", "string", false, None),

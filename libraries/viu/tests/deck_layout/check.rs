@@ -98,6 +98,19 @@ fn bounded_columns_keep_center_and_end_placement() {
 }
 
 #[test]
+fn columns_distribute_free_space_and_scroll_grid_has_first_frame_height() {
+    for mode in ["end","between","around","evenly"] {
+        let source=format!(r##"{{root:{{widget:"column",height:400,justify:"{mode}",children:["a","b"]}},a:{{widget:"text",text:"One"}},b:{{widget:"text",text:"Two"}}}}"##);
+        let r=geometry(&source);
+        assert!(r["b"].top()>r["a"].top(),"{mode}: {r:?}");
+        if mode=="end" {assert!((r["root"].bottom()-r["b"].bottom()).abs()<1.,"{r:?}");}
+        if mode=="between" {assert!((r["root"].bottom()-r["b"].bottom()).abs()<1.,"{r:?}");assert!((r["root"].top()-r["a"].top()).abs()<1.);}
+    }
+    let r=geometry(r##"{root:{widget:"grid",columns:1,children:["scroll"]},scroll:{widget:"column",fill:true,scroll:true,children:["line"]},line:{widget:"text",text:"Visible"}}"##);
+    assert!(r["scroll"].height()>10.,"{r:?}");
+}
+
+#[test]
 fn all_hidden_flex_children_leave_a_finite_empty_row() {
     let r=geometry(r##"{root:{widget:"row",children:["hidden"]},hidden:{widget:"column",shrink:1,hidden:true,children:[]}}"##);
     assert!(r["root"].is_finite());
