@@ -40,6 +40,13 @@ fn stop($pid,$tag) return true end
 fn launch($dir,$name,$generation,$host,$me) raise("UNEXPECTED_LAUNCH","disabled installation must not start") end
 $io={rpc:fn($t,$v,$a)=rpc($t,$v,$a),check:fn($p,$o)=parsed($p,$o),notify:fn($b)=notify($b),stop:fn($p,$t)=stop($p,$t),launch:fn($d,$n,$g,$h,$m)=launch($d,$n,$g,$h,$m)}
 try
+  $write_refused=false
+  try
+    rpc("shell","shell.scene.validate",{source:"unused",write:true})
+  catch $e
+    $write_refused=$e.code=="EDITOR_WRITE"
+  end
+  check($write_refused,"read-only editor fake refuses write admission before parsing")
   $s=$loader.initial($tmp,$templates,"shell","scenes",$io)
   $s=$loader.rescan($s,false)
   $s=$app.request($s,"snapshot",{},$loader)
