@@ -19,7 +19,7 @@ fn inline($runs, $style, $mono)
     $plain = $plain .. $run.text
     $role = $run.role ?? "text"
     $semantic = if contains(["text","keyword","function","string","comment","value","ok","bad","warn","acc","mut"],$role) then $role else "text" end
-    push($styled, merge($run, {role:$semantic,color:$tokens.colour[$role] ?? $tokens.colour.text}))
+    push($styled, merge($run, {role:$semantic,color:$run.color ?? $tokens.colour[$role] ?? $tokens.colour.text}))
   end
   return {widget:"text", text:$plain, spans:$styled, size:$tokens.type[$style], mono:$mono,mono_font:"Noto Sans Mono",font:if $mono then "Noto Sans Mono" else "Liberation Sans" end}
 end
@@ -166,10 +166,18 @@ fn compact_flow($nodes)
   end
   return $node
 end
-fn code($lines)
+fn code($lines,$highlighted=[],$size=nil,$leading=nil)
   $items = []
+  $index=0
   for $line in $lines
-    push($items,inline($line,"code",true))
+    $label=inline($line,"code",true)
+    if $size!=nil then $label.size=$size end
+    if $leading!=nil then $label.line_height=$leading end
+    if contains($highlighted,$index) then
+      $label=merge(column([$label],0),{fill:true,background:$tokens.colour.code_highlight})
+    end
+    push($items,$label)
+    $index=$index+1
   end
   return merge(column($items,0),{fill:true,padding_left:31,padding_right:31,padding_top:27,padding_bottom:27,background:$tokens.colour.code_background,radius:16,outline:$tokens.colour.line,outline_width:1})
 end
