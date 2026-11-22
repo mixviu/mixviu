@@ -1,0 +1,26 @@
+-- Run on CBC only. Every correctness test is challenged by a bounded mutation.
+-- Restore each file immediately, even when a test fails unexpectedly.
+$root = "libraries/media/quality/"
+$cases = [
+  {file: "src/lib.rs", old: "if mse == 0.0", new: "if mse == 1.0", target: "metrics", test: "identity_offset_and_sequence"},
+  {file: "src/lib.rs", old: "return Err(Error::SizeMismatch);", new: "return Err(Error::InvalidFormat);", target: "metrics", test: "invalid_and_small"},
+  {file: "src/lib.rs", old: "let total = f.y.len() as f64 + f.u.len() as f64 + f.v.len() as f64;", new: "let total = (f.y.len() as f64 + f.u.len() as f64 + f.v.len() as f64) * 2.0;", target: "metrics", test: "odd_edges_and_weighting"},
+  {file: "src/y4m.rs", old: "self.input.read_exact(&mut v)?;", new: "let _ = self.input.read_exact(&mut v);", target: "metrics", test: "y4m_streaming_and_errors"},
+  {file: "src/lib.rs", old: "235963", new: "1", target: "oracle", test: "ffmpeg_generated_corpus"},
+  {file: "src/lib.rs", old: "65025.0 / mse", new: "65000.0 / mse", target: "oracle", test: "ffmpeg_generated_corpus"}
+]
+for $case in $cases
+  $path = $root .. $case.file
+  $source = read_file($path)
+  if not contains($source, $case.old) then raise("MUTATION", "source anchor missing: " .. $case.old) end
+  try
+    write_file($path, replace($source, $case.old, $case.new))
+    $r = run_argv(["env", "MIX_TEST_REQUIRE_FFMPEG=1", "cargo", "test", "-p", "media-quality", "--test", $case.target, $case.test, "--", "--exact", "--nocapture"], {timeout: 300})
+    print($r.stdout)
+    print($r.stderr)
+    if $r.exit_code != 101 or not contains($r.stdout, "test result: FAILED") then raise("SURVIVED", $case.old) end
+    print("KILLED: " .. $case.test .. " / " .. $case.old)
+  finally
+    write_file($path, $source)
+  end
+end

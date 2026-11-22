@@ -6,13 +6,15 @@ fn open(path: &str) -> io::Result<Box<dyn BufRead>> {
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
-    let (a,b) = match args.as_slice() {
+    compare(&args, &mut io::BufWriter::new(io::stdout().lock()))
+}
+fn compare(args: &[String], out: &mut impl Write) -> Result<(), Box<dyn std::error::Error>> {
+    let (a,b) = match args {
         [b] => ("-",b.as_str()), [a,b] if a != "-" || b != "-" => (a.as_str(),b.as_str()),
         _ => return Err("usage: quality [first.y4m|-] second.y4m".into()),
     };
     let (mut a,mut b) = (Reader::new(open(a)?)?,Reader::new(open(b)?)?);
     let mut seq = Sequence::default();
-    let mut out = io::BufWriter::new(io::stdout().lock());
     let mut n = 0u64;
     loop {
         match (a.next_frame()?,b.next_frame()?) {
@@ -30,4 +32,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else { return Err("empty streams".into()); }
     out.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn output_and_stream_lengths() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.y4m");
+        let mut bytes = b"YUV4MPEG2 W16 H16 Ip C420\nFRAME\n".to_vec();
+        bytes.extend([80u8;384]);
+        std::fs::write(&path,&bytes).unwrap();
+        let args = [path.to_str().unwrap().to_owned(),path.to_str().unwrap().to_owned()];
+        let mut out = Vec::new();
+        compare(&args,&mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("n:1 Y:1.000000 U:1.000000 V:1.000000 All:1.000000"));
+        assert!(text.contains("psnr_avg:inf"));
+        assert!(text.contains("average:inf min:inf"));
+        assert_eq!(text.lines().count(),3);
+        let other = dir.path().join("b.y4m");
+        std::fs::write(&other,b"YUV4MPEG2 W16 H16 Ip C420\n").unwrap();
+        assert!(compare(&[args[0].clone(),other.to_str().unwrap().to_owned()],&mut Vec::new()).is_err());
+        assert!(compare(&[],&mut Vec::new()).is_err());
+        assert!(compare(&["-".into(),"-".into()],&mut Vec::new()).is_err());
+    }
 }

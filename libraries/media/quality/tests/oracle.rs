@@ -30,7 +30,7 @@ fn ffmpeg_generated_corpus() {
         let n = w*h+2*w.div_ceil(2)*h.div_ceil(2);
         assert_eq!(raw.len(),n*6);
         let mut other = raw.clone();
-        for (i,x) in other.iter_mut().enumerate() { if i%7==0 { *x=x.saturating_add((i%13) as u8); } }
+        for (i,x) in other.iter_mut().enumerate() { if i/n == 1 { *x = 255 - *x; } else if i/n > 1 && i%7==0 { *x=x.saturating_add((i%13) as u8); } }
         let a = dir.path().join("a.yuv"); let b = dir.path().join("b.yuv");
         std::fs::File::create(&a).unwrap().write_all(&raw).unwrap();
         std::fs::write(&b,&other).unwrap();

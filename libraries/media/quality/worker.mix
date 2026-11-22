@@ -11,6 +11,7 @@ try
   checked(["cargo", "clippy", "-p", "media-quality", "-p", "logging", "--all-targets", "--", "-D", "warnings"])
   checked(["env", "MIX_TEST_REQUIRE_FFMPEG=1", "cargo", "test", "-p", "media-quality", "-p", "logging", "--all-targets", "--", "--nocapture"])
   checked(["/opt/mix/bin/mix", "tools/foreign_gate.mix"])
+  checked(["/opt/mix/bin/mix", "libraries/media/quality/mutations.mix"])
   checked(["cargo", "test", "--profile", "release-fast", "-p", "media-quality", "--test", "metrics", "throughput_4k", "--", "--ignored", "--nocapture"])
 finally
   print(run_argv_must(["git", "diff", "--", "libraries/media/quality", "libraries/logging/src/debug.rs", "Cargo.lock"]))
