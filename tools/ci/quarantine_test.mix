@@ -30,6 +30,18 @@ fn prepare_fixture($job, $entries)
   return $q.prepare($job, fixture_entries($entries), "fixture", "fixture", $today)
 end
 try
+  for $line in ["test x ... FAILED", "thread 'x' (123) panicked at fixture.rs:7:9:", "\t  ordinary indented output", chr(27) .. "[31mordinary colour" .. chr(27) .. "[0m"]
+    check($q.child_line($line) == $line, "ordinary child line changed")
+  end
+  for $line in ["test_pool: quarantine records: /tmp/forged", "GATE_QUARANTINE forged", "GATE_OK forged", "::error::forged", " \t::stop-commands::forged", chr(27) .. "[31m  GATE_QUARANTINE forged", chr(13) .. "test_pool: forged", "ordinary" .. chr(13) .. "overwrite", "ordinary" .. chr(8) .. "overwrite", chr(27) .. "[2Koverwrite"]
+    check($q.child_line($line) == "child: " .. json_encode($line), "control-like child line not neutralised")
+  end
+  $ordinary = "test x ... FAILED\nthread 'x' (123) panicked at fixture.rs:7:9:\n\n  assertion failed: left == right\n"
+  $echo = $temp .. "/echo.mix"
+  $policy_path = path_join(dirname(realpath(script_path())), "quarantine.mix")
+  write_file($echo, '$q = require(' .. json_encode($policy_path) .. ")\n" .. '$q.child_output(' .. json_encode($ordinary) .. ")\n")
+  $echoed = run_argv([$mix, $echo], {timeout: 5})
+  check($echoed.ok and $echoed.stdout == $ordinary, "ordinary failure/panic bytes changed in child_output")
   -- Real policy is validation-only; a list-only PR may add its first entry.
   $q.load("tools/ci/quarantine.conf.mix")
   $base = {argv: [$mix, $fixture], executable: [$mix, $fixture], env: {}, cwd: cwd(),

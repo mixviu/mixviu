@@ -175,11 +175,24 @@ fn harness_flags($flags)
   return $out
 end
 
--- JSON-escape controls as well as prefixing: CR/ANSI cannot erase the prefix.
-fn child_output($output)
-  for $line in lines($output)
-    print("child: " .. json_encode($line))
+-- Keep libtest failures and panic sites readable by humans and hub parsers.
+-- Current pool control prefixes: test_pool:, GATE_QUARANTINE and :: Actions
+-- commands (warning/error/notice). Reserve all GATE_ prefixes for pool records.
+fn child_line($line)
+  -- SGR colour is harmless; any other escape/control could rewrite the line.
+  $plain = re_replace($line, "\\x1b\\[[0-9;:]*m", "")
+  $start = trim($plain)
+  if starts_with($start, "test_pool:") or starts_with($start, "GATE_") or starts_with($start, "::") or re_match($plain, "[\\x00-\\x08\\x0b-\\x1f\\x7f-\\x9f]") then
+    return "child: " .. json_encode($line)
   end
+  return $line
+end
+
+fn child_output($output)
+  -- split preserves raw CR (lines() removes CR in CRLF), and join preserves
+  -- blank lines and the original final newline.
+  write_stdout(join(map(split($output, "\n"), fn($line) = child_line($line)), "\n"))
+  if $output != "" and not ends_with($output, "\n") then print("") end
 end
 
 fn classification($r)

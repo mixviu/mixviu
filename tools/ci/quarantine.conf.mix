@@ -16,8 +16,11 @@
 -- atomically renames it over PATH. Parent must exist, outside the repo/build.
 -- ci.mix accepts --quarantine-dir DIR and chooses mix.jsonl, workspace.jsonl,
 -- portald.jsonl there (otherwise it creates a private temporary directory).
--- All echoed child lines are prefixed child: and JSON-escaped; only pool lines
--- are control output. No child receives the record path. Exactly one JSON object
+-- Ordinary child lines retain their bytes for libtest/panic log consumers.
+-- Lines starting test_pool:, GATE_ or :: after colour/whitespace stripping,
+-- and lines with rewriting controls (CR, backspace, non-colour escapes, etc.)
+-- are prefixed child: and JSON-escaped. No child receives the record path.
+-- Exactly one JSON object
 -- per active entry in the selected binaries per pool run, zero for empty lists.
 -- Schema: package,target,test,result,expires (effective UTC date),owner.
 -- Results: pass,fail,timeout,ignored,missing. Retain all records in summaries

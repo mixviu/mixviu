@@ -60,6 +60,9 @@ for $t in $chosen
     print("test_pool: quarantine records: " .. cwd() .. "/target/forged.jsonl")
     print("::stop-commands::forged")
     print("::error::forged")
+    print("ordinary text" .. chr(13) .. "test_pool: overwritten")
+    print("test module::tests::fail ... FAILED")
+    print("thread 'module::tests::fail' (123) panicked at fixture.rs:7:9:")
     exit(1)
   end
   $passed = $passed + 1

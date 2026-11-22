@@ -51,6 +51,9 @@ try
     $records = map(filter(lines(read_file($out)), fn($l) = $l != ""), fn($l) = json_parse($l))
     check(not re_match($r.stdout, "(?m)^(test_pool: quarantine records:|GATE_QUARANTINE .*forged|::stop-commands::|::error::forged)"), "child impersonated pool output")
     check(contains($r.stdout, "child: \"test_pool: quarantine records:"), "spoofed pointer fixture absent")
+    check(contains($r.stdout, "child: " .. json_encode("ordinary text" .. chr(13) .. "test_pool: overwritten")), "CR overwrite not neutralised")
+    check(contains($r.stdout, "\ntest module::tests::fail ... FAILED\n"), "libtest failure line changed")
+    check(contains($r.stdout, "\nthread 'module::tests::fail' (123) panicked at fixture.rs:7:9:\n"), "panic line changed")
     check(trim(run_argv_must(["stat", "-c", "%a", $out])) == "600", "record permissions not private")
     check(len($records) == (if $active then 1 else 0 end), "record count wrong or child forged record accepted")
     if $active then
