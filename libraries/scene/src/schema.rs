@@ -303,7 +303,12 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
     if f == "text" {
         for name in ["font", "mono_font"] {
             ports.push(Port {
-                enum_values: &["Liberation Sans", "Liberation Sans Bold", "Noto Sans Mono", "Noto Sans"],
+                enum_values: &[
+                    "Liberation Sans",
+                    "Liberation Sans Bold",
+                    "Noto Sans Mono",
+                    "Noto Sans",
+                ],
                 ..p(name, "string", false, None)
             });
         }
