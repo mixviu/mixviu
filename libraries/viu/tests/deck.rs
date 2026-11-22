@@ -9,6 +9,8 @@ use viu::{
     runtime::{Completion, Program, Runtime},
     view::SceneView,
 };
+#[path = "deck_sting/check.rs"]
+mod sting;
 
 struct Deck {
     rasters: viu::raster::Rasters,
