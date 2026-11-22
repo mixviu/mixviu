@@ -164,6 +164,16 @@ try
   end
   run_argv_must(["cp","-p","--",$tmp.."/saved",$original.."/new-file"])
   check($refused and $before.sha256==$ep.run_snapshot($original).sha256)
+  -- A truncated running order must refuse the copy, never pass with stale paths.
+  $good=read_file($original.."/episode.mix")
+  write_file($original.."/episode.mix","[{kind:\"clip\",path:")
+  $stale=glob("/var/tmp/media-bench/episode-*")
+  $refused=false
+  try $ep.copy_run($original,[$original],$ep.run_snapshot($original)) catch $e
+    $refused=contains(to_string($e),"episode.mix")
+  end
+  write_file($original.."/episode.mix",$good)
+  check($refused and len(glob("/var/tmp/media-bench/episode-*"))==len($stale))
 finally
   if $copy!=nil then $ep.remove_copy($copy,false) end
   run_argv_must(["rm","-rf","--",$tmp])

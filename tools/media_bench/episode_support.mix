@@ -80,10 +80,15 @@ fn copy_run($source,$origins,$before)
         write_file($file,json_encode(rebase_value(json_parse(read_file($file)),$origins,$copy)))
       else
         -- A real run also holds Mix scripts (check-native.mix, tools/*.mix);
-        -- only strict-data .mix files carry paths to rebase. Leave the rest.
-        $data=nil; $strict=true
-        try $data=load_data($file) catch $e $strict=false end
-        if $strict then write_file($file,data_encode(rebase_value($data,$origins,$copy))) end
+        -- only strict-data .mix files carry paths to rebase. Leave the rest,
+        -- but the root episode.mix is the running order: it must parse.
+        if $file==$copy.."/episode.mix" then
+          write_file($file,data_encode(rebase_value(load_data($file),$origins,$copy)))
+        else
+          $data=nil; $strict=true
+          try $data=load_data($file) catch $e $strict=false end
+          if $strict then write_file($file,data_encode(rebase_value($data,$origins,$copy))) end
+        end
       end
     end
   catch $error
