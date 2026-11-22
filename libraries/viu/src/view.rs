@@ -1527,7 +1527,7 @@ impl SceneView {
                                             let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
                                             cell.set_max_width(*width);
                                             cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(x,ui.clip_rect().top()),egui::pos2(x+width,ui.clip_rect().bottom()))));
-                                            let stretch=text(node,"align")=="stretch" && num(&nodes[*child],"height").is_none();
+                                            let stretch=cross_align(node,text(node,"align"))=="stretch" && num(&nodes[*child],"height").is_none();
                                             if stretch {self.stretch_heights.insert((*child).into(),cross);}
                                             if nodes[*child].family=="spacer"{cell.allocate_space(egui::vec2(*width,0.));self.geometry.insert((*child).into(),egui::Rect::from_min_size(rect.min,egui::vec2(*width,0.)));}else{self.node(&mut cell,child,nodes,route,depth+1,events);}
                                             if stretch {self.stretch_heights.remove(*child);}
