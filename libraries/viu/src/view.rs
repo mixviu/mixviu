@@ -901,7 +901,8 @@ impl SceneView {
                 num(node, "width").or_else(|| {
                     (node.ports.get("fill") == Some(&Value::Bool(true))
                         || num(node, "grow").unwrap_or(0.) > 0.
-                        || num(node, "shrink").unwrap_or(0.) > 0. || num(node, "basis").unwrap_or(0.) > 0.)
+                        || num(node, "shrink").unwrap_or(0.) > 0.
+                        || num(node, "basis").unwrap_or(0.) > 0.)
                         .then(|| ui.available_width())
                 })
             })
@@ -1165,7 +1166,7 @@ impl SceneView {
                     },
                     "split"=>self.split(ui,&key,node,nodes,route,depth,events),
                     "grid" => {
-                        let columns=(num(node,"columns").unwrap_or(2.0) as usize).clamp(1,16);
+                        let columns=(num(node,"columns").unwrap_or(2.0) as usize).clamp(1, 16);
                         let gap=num(node,"column_gap").unwrap_or(12.0);
                         let width=((ui.available_width()-gap*(columns-1) as f32)/columns as f32).max(num(node,"min_column_width").unwrap_or(0.0));
                         let active:Vec<_>=children(node).collect();
@@ -1549,7 +1550,8 @@ impl SceneView {
             if let Some(width) = num(node, "width").or_else(|| {
                 (node.ports.get("fill") == Some(&Value::Bool(true))
                     || num(node, "grow").unwrap_or(0.) > 0.
-                    || num(node, "shrink").unwrap_or(0.) > 0. || num(node, "basis").unwrap_or(0.) > 0.)
+                    || num(node, "shrink").unwrap_or(0.) > 0.
+                    || num(node, "basis").unwrap_or(0.) > 0.)
                     .then(|| allocated.width().max(num(node, "min_width").unwrap_or(0.)))
             }) {
                 response.rect.max.x = response.rect.min.x + width;
@@ -2967,7 +2969,13 @@ fn natural_size_key(node: &Node) -> egui::Id {
         "weight",
         "letter_spacing",
         "line_height",
-        "label","src","w","h","width","min_width","max_width",
+        "label",
+        "src",
+        "w",
+        "h",
+        "width",
+        "min_width",
+        "max_width",
     ] {
         key.hash(&mut h);
         if let Some(v) = node.ports.get(key) {
@@ -3001,12 +3009,20 @@ fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, v
 mod measurement_cache_tests {
     #[test]
     fn changing_content_cannot_grow_measurement_storage_without_bound() {
-        let ctx=egui::Context::default();
-        let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{
-            for i in 0..4096 {super::measure_put(ui,egui::Id::new(i),i as f32);}
-            let count=ctx.data_mut(|d|d.get_temp_mut_or_default::<std::collections::HashMap<egui::Id,f32>>(egui::Id::new("scene-measurements")).len());
-            assert!(count<=256);
-        });output.textures_delta.clear();
+        let ctx = egui::Context::default();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            for i in 0..4096 {
+                super::measure_put(ui, egui::Id::new(i), i as f32);
+            }
+            let count = ctx.data_mut(|d| {
+                d.get_temp_mut_or_default::<std::collections::HashMap<egui::Id, f32>>(
+                    egui::Id::new("scene-measurements"),
+                )
+                .len()
+            });
+            assert!(count <= 256);
+        });
+        output.textures_delta.clear();
     }
 }
 
@@ -3111,7 +3127,7 @@ fn intrinsic_text_width(
     }
     let widths: Vec<f32> = children(node)
         .filter_map(|c| nodes.get(c))
-        .filter(|n| n.ports.get("hidden") != Some(&Value::Bool(true)))
+        .filter(|n| node.family == "grid" || n.ports.get("hidden") != Some(&Value::Bool(true)))
         .map(|n| intrinsic_text_width(ui, n, nodes, model, words, depth + 1))
         .collect();
     let content = if node.family == "row" {
@@ -3119,7 +3135,7 @@ fn intrinsic_text_width(
             + num(node, "gap").unwrap_or(ui.spacing().item_spacing.x)
                 * widths.len().saturating_sub(1) as f32
     } else if node.family == "grid" {
-        let columns = (num(node, "columns").unwrap_or(2.) as usize).max(1);
+        let columns = (num(node, "columns").unwrap_or(2.) as usize).clamp(1, 16);
         let mut maxima = vec![num(node, "min_column_width").unwrap_or(0.); columns];
         for (i, w) in widths.iter().enumerate() {
             maxima[i % columns] = maxima[i % columns].max(*w);
