@@ -164,7 +164,7 @@ fn chrome_entrance_contact_sheet() {
         ("root.8".into(),egui::Rect::from_min_max(egui::pos2(650.,700.),egui::pos2(950.,750.))),
     ]);
     assert_eq!(entrances(&chrome,&oracle_geometry),Ok(()));
-    assert_eq!(animate_check(&chrome,egui::Rect::from_min_max(egui::pos2(660.,120.),egui::pos2(940.,420.)))),Ok(()));
+    assert_eq!(animate_check(&chrome,egui::Rect::from_min_max(egui::pos2(660.,120.),egui::pos2(940.,420.))),Ok(()));
     for (i,t) in TIMES.iter().enumerate() {
         let n=coloured(&native[i],logo,true) as f64/coloured(&native[8],logo,true) as f64;
         let c=coloured(&chrome[i],egui::Rect::from_min_max(egui::pos2(660.,120.),egui::pos2(940.,420.)),true) as f64/coloured(&chrome[8],egui::Rect::from_min_max(egui::pos2(660.,120.),egui::pos2(940.,420.)),true) as f64;
