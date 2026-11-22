@@ -324,9 +324,11 @@ mod tests {
                 state.is_ok() || syscall.is_ok(),
                 "cannot inspect queued writer: wchan={state:?}, syscall={syscall:?}"
             );
-            let in_futex = syscall.as_ref().ok().and_then(|s| {
-                s.split_whitespace().next()?.parse::<libc::c_long>().ok()
-            }) == Some(libc::SYS_futex);
+            let in_futex = syscall
+                .as_ref()
+                .ok()
+                .and_then(|s| s.split_whitespace().next()?.parse::<libc::c_long>().ok())
+                == Some(libc::SYS_futex);
             if state.as_ref().is_ok_and(|s| s.contains("futex")) || in_futex {
                 break;
             }
