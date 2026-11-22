@@ -678,7 +678,7 @@ fn explicit_cross_preserves_end_packing_and_plain_row_width() {
         for id in ["a","b"]{assert!((a[id].left()-b[id].left()).abs()<1.,"{flex} {cross}");}
         assert!((b["root"].right()-b["b"].right()).abs()<1.);
     }}
-    let a=geometry(r#"{root:{widget:"column",align:"center",children:["r"]},r:{widget:"row",cross_align:"center",background:"design.panel",children:["a","b"]},a:{widget:"text",text:"one"},b:{widget:"text",text:"two"}}"#);
+    let a=geometry(r#"{root:{widget:"column",fill:true,align:"center",children:["r"]},r:{widget:"row",cross_align:"center",background:"design.panel",children:["a","b"]},a:{widget:"text",text:"one"},b:{widget:"text",text:"two"}}"#);
     assert!(a["r"].width()<200.,"{:?}",a["r"]);
     assert!((a["root"].center().x-a["r"].center().x).abs()<1.);
 }
