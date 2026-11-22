@@ -1,6 +1,111 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
 
+#[test]
+fn manual_wrap_and_between_clip_painted_shapes_to_cells() {
+    for mode in ["wrap:true", "justify:\"between\",cross_align:\"center\""] {
+        let source = format!(
+            r##"{{root:{{widget:"row",fill:true,{mode},children:["a","b"]}},a:{{widget:"drawing",w:250,h:20,max_width:60,primitives:[{{kind:"bar",centre:[125,10],radius:[125,10],colour:"#ff0000"}}]}},b:{{widget:"text",text:"Neighbour"}}}}"##
+        );
+        let mut view = SceneView::new(&format!(
+            "---\nscene: 1\nname: clips\ncitizen: test\n---\n```mix\n{source}\n```\n"
+        ))
+        .unwrap();
+        let ctx = egui::Context::default();
+        for _ in 0..8 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+            let red: Vec<_> = out.shapes.iter().filter(|s| matches!(&s.shape, egui::Shape::Mesh(m) if m.vertices.iter().any(|v|v.color == egui::Color32::RED))).collect();
+            assert!(!red.is_empty());
+            for shape in red {
+                assert!(
+                    shape.clip_rect.right() <= view.geometry["root"].left() + 60.5,
+                    "{mode}: {:?}",
+                    shape.clip_rect
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn shrink_and_basis_only_rows_keep_main_centred_cross_placement() {
+    fn positions(port: &str) -> std::collections::BTreeMap<String, f32> {
+        let source = format!(
+            r#"{{root:{{widget:"row",children:["a","b"]}},a:{{widget:"text",text:"Large",size:40}},b:{{widget:"text",text:"Small",size:12{port}}}}}"#
+        );
+        let mut view = SceneView::new(&format!(
+            "---\nscene: 1\nname: native-cross\ncitizen: test\n---\n```mix\n{source}\n```\n"
+        ))
+        .unwrap();
+        let ctx = egui::Context::default();
+        let mut result = std::collections::BTreeMap::new();
+        for _ in 0..8 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+            result.clear();
+            for shape in out.shapes {
+                if let egui::Shape::Text(t) = shape.shape {
+                    result.insert(t.galley.job.text.clone(), t.pos.y);
+                }
+            }
+        }
+        result
+    }
+    let plain = positions("");
+    assert!(plain["Small"] > plain["Large"] + 10.);
+    for port in [",shrink:1", ",basis:120"] {
+        let measured = positions(port);
+        for child in ["Large", "Small"] {
+            assert!(
+                (measured[child] - plain[child]).abs() < 1.,
+                "{port} {measured:?} {plain:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn compact_cross_row_spacing_keeps_last_glyph_inside_cell() {
+    for ports in ["", ",gap:13", ",column_gap:19", ",native_spacing:true"] {
+        let source = format!(
+            r#"{{root:{{widget:"row",cross_align:"center"{ports},children:["a","b","c"]}},a:{{widget:"text",text:"ONE"}},b:{{widget:"text",text:"TWO"}},c:{{widget:"text",text:"TAIL"}}}}"#
+        );
+        let mut view = SceneView::new(&format!(
+            "---\nscene: 1\nname: spacing\ncitizen: test\n---\n```mix\n{source}\n```\n"
+        ))
+        .unwrap();
+        let ctx = egui::Context::default();
+        for _ in 0..8 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+            let mut found = false;
+            for shape in &out.shapes {
+                if let egui::Shape::Text(t) = &shape.shape {
+                    if t.galley.job.text == "TAIL" {
+                        found = true;
+                        let right = t.pos.x + t.galley.rect.right();
+                        assert!(
+                            right <= shape.clip_rect.right() + 0.5,
+                            "{ports}: {right} {:?}",
+                            shape.clip_rect
+                        );
+                        assert!(right <= view.geometry["root"].right() + 0.5);
+                        assert!(right <= view.geometry["c"].right() + 0.5);
+                    }
+                }
+            }
+            assert!(found, "missing last label");
+        }
+    }
+}
+
 pub(super) fn geometry(source: &str) -> std::collections::BTreeMap<String, egui::Rect> {
     let mut view = SceneView::new(&format!(
         "---\nscene: 1\nname: layout-test\ncitizen: test\n---\n```mix\n{source}\n```\n"
@@ -586,6 +691,10 @@ fn cross_axis_is_independent_on_plain_and_flex_rows() {
                 r#"{{root:{{widget:"row",cross_align:"{cross}",children:["a","b"]}},a:{{widget:"column",min_width:100,height:80,children:[]}},b:{{widget:"column",height:20,children:[]{grow}}}}}"#
             ));
             assert!(g["a"].left() < g["b"].left(), "{flex} {cross}");
+            if flex {
+                assert!(g["b"].width() > 800., "grow child starved: {g:?}");
+                assert!((g["b"].right() - g["root"].right()).abs() < 1.);
+            }
             let delta = g["b"].top() - g["a"].top();
             let expected = match cross {
                 "start" => 0.,
