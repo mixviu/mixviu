@@ -81,7 +81,12 @@ pub fn definitions(theme: &Theme) -> FontDefinitions {
         (design::TypographyRole::Mono, FontFamily::Monospace, 400),
     ] {
         let record = design::active_typography(Some(theme.typography()), role);
-        let selected = optional::family(&record.family, weight);
+        let name = if role == design::TypographyRole::Mono {
+            theme.overlay().mono.as_deref()
+        } else {
+            theme.overlay().family.as_deref()
+        }.unwrap_or(&record.family);
+        let selected = optional::family(name, weight);
         if let Some(stack) = fonts.families.get(&selected).cloned() {
             fonts.families.insert(target, stack);
         }
@@ -118,6 +123,22 @@ pub fn heading(size: f32) -> FontId {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn optional_families_follow_theme_choices_without_changing_defaults() {
+        let theme = Theme::embedded().with_overlay(crate::theme::Overlay {
+            family: Some("Liberation Sans".into()),
+            mono: Some("Noto Sans Mono".into()),
+            weight: Some(500),
+            ..Default::default()
+        }).unwrap();
+        let fonts = definitions(&theme);
+        assert_eq!(fonts.families[&FontFamily::Proportional][0], optional::FILES[0]);
+        assert_eq!(fonts.families[&FontFamily::Name(MEDIUM.into())][0], optional::FILES[1]);
+        assert_eq!(fonts.families[&FontFamily::Name(HEADING.into())][0], optional::FILES[1]);
+        assert_eq!(fonts.families[&FontFamily::Monospace][0], optional::FILES[2]);
+        assert_eq!(fonts.families[&FontFamily::Proportional][1], optional::FILES[3]);
+    }
 
     #[test]
     fn offered_weights_install_distinct_faces_and_clamp_the_display_offset() {
