@@ -3491,14 +3491,7 @@ impl crate::layer::LayerProgram for LayerHost {
         self.contexts.lock().unwrap().push(ctx.clone());
         if let Some(bundle) = self.bundle.take() {
             let contexts = self.contexts.clone();
-            self.host = Some(create(
-                bundle,
-                Arc::new(move || {
-                    for ctx in contexts.lock().unwrap().iter() {
-                        ctx.request_repaint();
-                    }
-                }),
-            ));
+            self.host = Some(create(bundle, contexts_wake(contexts)));
         }
         if let Some(host) = &self.host {
             let _ = crate::appearance::install_theme(ctx, &host.file_theme);
@@ -3635,8 +3628,97 @@ fn loading_view() -> SceneView {
     SceneView::new("---\nscene: 1\nname: loading\ncitizen: loading\n---\n```mix\n{root:{widget:\"text\",text:\"Loading…\"}}\n```\n").expect("static loading scene")
 }
 
+fn contexts_wake(
+    contexts: Arc<std::sync::Mutex<Vec<egui::Context>>>,
+) -> Arc<dyn Fn() + Send + Sync> {
+    Arc::new(move || {
+        // Match toolkit's macros wake: release our registry before egui's lock.
+        let contexts = contexts.lock().unwrap().clone();
+        for ctx in contexts {
+            ctx.request_repaint();
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
+    // Verified against egui 0.37.0 context.rs: request_repaint_of calls
+    // ContextImpl::request_repaint under Context::write, which invokes the
+    // repaint callback synchronously. The start/completion handshake below
+    // therefore brackets the registry push inside that Context write scope.
+    fn registry_during_repaint(held_guard: bool) -> bool {
+        use std::sync::{Arc, Mutex, mpsc};
+        use std::time::Duration;
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            ctx.run_ui(Default::default(), |_| {})
+                .drop_without_applying_deltas();
+        }
+        let contexts = Arc::new(Mutex::new(vec![ctx.clone()]));
+        let registry = contexts.clone();
+        let (result_tx, result_rx) = mpsc::channel();
+        let (join_tx, join_rx) = mpsc::channel();
+        ctx.set_request_repaint_callback(move |_| {
+            let registry = registry.clone();
+            let (tx, rx) = mpsc::channel();
+            let (start_tx, start_rx) = mpsc::channel();
+            let user = std::thread::spawn(move || {
+                start_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+                // Same registry operation as setup, concurrent with wake.
+                registry.lock().unwrap().push(egui::Context::default());
+                let _ = tx.send(());
+            });
+            start_tx.send(()).unwrap();
+            let completed = if held_guard {
+                // Only the deliberately held-guard control uses a short
+                // bound. Its user cannot complete until this callback exits.
+                assert!(matches!(
+                    rx.recv_timeout(Duration::from_millis(200)),
+                    Err(mpsc::RecvTimeoutError::Timeout)
+                ));
+                false
+            } else {
+                // Completion must precede callback exit. Two seconds is a
+                // hang backstop, not a timing discriminator for success.
+                rx.recv_timeout(Duration::from_secs(2))
+                    .expect("registry push did not complete inside repaint callback");
+                true
+            };
+            result_tx.send(completed).unwrap();
+            join_tx.send(user).unwrap();
+        });
+        let wake = if held_guard {
+            Arc::new(move || {
+                for ctx in contexts.lock().unwrap().iter() {
+                    ctx.request_repaint();
+                }
+            }) as Arc<dyn Fn() + Send + Sync>
+        } else {
+            super::contexts_wake(contexts)
+        };
+        let worker = std::thread::spawn(move || wake());
+        let completed = result_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        worker.join().unwrap();
+        // The negative control releases both locks after its bounded wait;
+        // no detached deadlock or delayed epaint detector panic remains.
+        join_rx
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .join()
+            .unwrap();
+        completed
+    }
+
+    #[test]
+    fn wake_releases_registry_before_context_write() {
+        assert!(registry_during_repaint(false));
+    }
+
+    #[test]
+    fn held_registry_negative_control_times_out() {
+        assert!(!registry_during_repaint(true));
+    }
+
     #[test]
     fn worker_completion_during_child_pass_wakes_root_owner() {
         let ctx = egui::Context::default();
