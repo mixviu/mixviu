@@ -3736,6 +3736,7 @@ mod round8_tests {
         let ctx = egui::Context::default();
         let mut retained = BTreeMap::new();
         for frame in 0..5 {
+            MEASUREMENT_WORK.set(0);
             let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
                 view.show(ui);
             });
@@ -3753,6 +3754,7 @@ mod round8_tests {
                     .map(|(k, e)| (k.clone(), e.1.clone()))
                     .collect();
             } else {
+                assert_eq!(MEASUREMENT_WORK.get(), 4 - retained.len());
                 for (k, galley) in &retained {
                     assert!(
                         std::sync::Arc::ptr_eq(galley, &view.painted.entries[k].1),
