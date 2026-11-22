@@ -2801,20 +2801,57 @@ fn color(s: &str) -> Option<Color32> {
 
 // Text-only compounds can reserve their max-content width, then shrink towards
 // their longest word without traversing controls or producing duplicate events.
-fn intrinsic_text_width(ui:&egui::Ui,node:&Node,nodes:&BTreeMap<String,Node>,words:bool,depth:usize)->f32 {
-    if depth>32 {return 0.;}
-    if node.family=="text" {
-        let source=text(node,"text");
-        let pieces:Vec<&str>=if words {source.split_whitespace().collect()}else{vec![source]};
-        return pieces.iter().map(|s| {
-            let mut job=crate::spans::job(ui,&json!([{"text":s}]),num(node,"size").unwrap_or(13.),node.ports.get("mono")==Some(&Value::Bool(true)),false,Color32::WHITE,(node.ports.get("font").and_then(Value::as_str),num(node,"weight").unwrap_or(400.),node.ports.get("mono_font").and_then(Value::as_str)));
-            for section in &mut job.sections {section.format.extra_letter_spacing=num(node,"letter_spacing").unwrap_or(0.);}
-            ui.fonts_mut(|fonts|fonts.layout_job(job)).size().x
-        }).fold(0.0_f32,f32::max);
+fn intrinsic_text_width(
+    ui: &egui::Ui,
+    node: &Node,
+    nodes: &BTreeMap<String, Node>,
+    words: bool,
+    depth: usize,
+) -> f32 {
+    if depth > 32 {
+        return 0.;
     }
-    let widths:Vec<f32>=children(node).filter_map(|c|nodes.get(c)).map(|n|intrinsic_text_width(ui,n,nodes,words,depth+1)).collect();
-    let content=if node.family=="row" {widths.iter().sum::<f32>()+num(node,"gap").unwrap_or(0.)*widths.len().saturating_sub(1) as f32}else{widths.into_iter().fold(0.0_f32,f32::max)};
-    content+node_padding(node,"padding_left")+node_padding(node,"padding_right")
+    if node.family == "text" {
+        let source = text(node, "text");
+        let pieces: Vec<&str> = if words {
+            source.split_whitespace().collect()
+        } else {
+            vec![source]
+        };
+        return pieces
+            .iter()
+            .map(|s| {
+                let mut job = crate::spans::job(
+                    ui,
+                    &json!([{"text":s}]),
+                    num(node, "size").unwrap_or(13.),
+                    node.ports.get("mono") == Some(&Value::Bool(true)),
+                    false,
+                    Color32::WHITE,
+                    (
+                        node.ports.get("font").and_then(Value::as_str),
+                        num(node, "weight").unwrap_or(400.),
+                        node.ports.get("mono_font").and_then(Value::as_str),
+                    ),
+                );
+                for section in &mut job.sections {
+                    section.format.extra_letter_spacing = num(node, "letter_spacing").unwrap_or(0.);
+                }
+                ui.fonts_mut(|fonts| fonts.layout_job(job)).size().x
+            })
+            .fold(0.0_f32, f32::max);
+    }
+    let widths: Vec<f32> = children(node)
+        .filter_map(|c| nodes.get(c))
+        .map(|n| intrinsic_text_width(ui, n, nodes, words, depth + 1))
+        .collect();
+    let content = if node.family == "row" {
+        widths.iter().sum::<f32>()
+            + num(node, "gap").unwrap_or(0.) * widths.len().saturating_sub(1) as f32
+    } else {
+        widths.into_iter().fold(0.0_f32, f32::max)
+    };
+    content + node_padding(node, "padding_left") + node_padding(node, "padding_right")
 }
 
 fn node_padding(node: &Node, side: &str) -> f32 {

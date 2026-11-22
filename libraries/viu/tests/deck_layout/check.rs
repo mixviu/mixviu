@@ -68,7 +68,10 @@ fn shrinking_compounds_wrap_inside_their_shared_row() {
     );
     assert!(rects["one"].height() > 50., "{rects:?}");
     assert!(rects["two"].height() > 50., "{rects:?}");
-    assert!((rects["root"].right() - rects["b"].right()).abs() < 1., "{rects:?}");
+    assert!(
+        (rects["root"].right() - rects["b"].right()).abs() < 1.,
+        "{rects:?}"
+    );
     assert!(rects["a"].right() + 7. < rects["arrow"].left(), "{rects:?}");
 }
 
