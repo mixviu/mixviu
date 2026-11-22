@@ -32,11 +32,19 @@ pub fn install(ctx: &egui::Context, body: u16, heading: u16) {
 
 /// Install the same desktop stacks using an explicit optional-font bundle.
 /// Missing or unreadable bundles leave only the embedded desktop families.
-pub fn install_with_font_directory(ctx: &egui::Context, body: u16, heading: u16, dir: &std::path::Path) {
+pub fn install_with_font_directory(
+    ctx: &egui::Context,
+    body: u16,
+    heading: u16,
+    dir: &std::path::Path,
+) {
     let key = egui::Id::unique("viu-font-weights");
     let bundle_key = egui::Id::unique("viu-font-directory");
     if ctx.data(|d| d.get_temp::<(u16, u16)>(key)) == Some((body, heading))
-        && ctx.data(|d| d.get_temp::<std::path::PathBuf>(bundle_key)).as_deref() == Some(dir)
+        && ctx
+            .data(|d| d.get_temp::<std::path::PathBuf>(bundle_key))
+            .as_deref()
+            == Some(dir)
     {
         return;
     }

@@ -92,15 +92,37 @@ mod tests {
         let absent = tempfile::tempdir().unwrap();
         crate::fonts::install_with_font_directory(&ctx, 400, 600, absent.path());
         let source = "---\nscene: 1\nname: fonts\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"sans\",font:\"= $model.font\",mono_font:\"= $model.mono_font\"}}\n```\n";
-        for (sans, mono) in [("unknown", "unknown-mono"), ("Liberation Sans", "Noto Sans Mono")] {
+        for (sans, mono) in [
+            ("unknown", "unknown-mono"),
+            ("Liberation Sans", "Noto Sans Mono"),
+        ] {
             let mut document = scene::parse(source).unwrap();
             document.model = Some(json!({"font":sans,"mono_font":mono}));
             let resolved = scene::resolve(&document).unwrap();
             let ports = &resolved.nodes["root"].ports;
             let out = ctx.run_ui(egui::RawInput::default(), |ui| {
                 for node_mono in [false, true] {
-                    let job = job(ui, &json!([{"text":"sans"},{"text":"mono","mono":true}]), 24., node_mono, false, Color32::WHITE, Some((ports["font"].as_str().unwrap(),400.,ports["mono_font"].as_str())));
-                    assert_eq!(job.sections[0].format.font_id.family, if node_mono { FontFamily::Monospace } else { FontFamily::Proportional });
+                    let job = job(
+                        ui,
+                        &json!([{"text":"sans"},{"text":"mono","mono":true}]),
+                        24.,
+                        node_mono,
+                        false,
+                        Color32::WHITE,
+                        Some((
+                            ports["font"].as_str().unwrap(),
+                            400.,
+                            ports["mono_font"].as_str(),
+                        )),
+                    );
+                    assert_eq!(
+                        job.sections[0].format.font_id.family,
+                        if node_mono {
+                            FontFamily::Monospace
+                        } else {
+                            FontFamily::Proportional
+                        }
+                    );
                     assert_eq!(job.sections[1].format.font_id.family, FontFamily::Monospace);
                     ui.label(job);
                 }

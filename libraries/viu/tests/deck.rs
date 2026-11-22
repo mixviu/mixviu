@@ -670,7 +670,12 @@ fn identity(dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
         let actual_glyphs = glyphs(actual);
         assert!(!actual_glyphs.is_empty(), "{role}: no glyphs painted");
         if role == "glyph fallback" {
-            assert!(actual_glyphs.iter().all(|(_, uv, _)| uv.size[0] > 0 && uv.size[1] > 0), "fallback must rasterise a visible glyph");
+            assert!(
+                actual_glyphs
+                    .iter()
+                    .all(|(_, uv, _)| uv.size[0] > 0. && uv.size[1] > 0.),
+                "fallback must rasterise a visible glyph"
+            );
         }
         assert_eq!(
             actual_glyphs,

@@ -79,9 +79,16 @@ fn bound_font_and_mono_font_refuse_unknown_or_absent_families_without_panicking(
     let absent = tempfile::tempdir().unwrap();
     let ctx = egui::Context::default();
     viu::fonts::install_with_font_directory(&ctx, 400, 600, absent.path());
-    for (port, name) in [("font", "unknown"), ("font", "Liberation Sans"), ("mono_font", "unknown"), ("mono_font", "Noto Sans Mono")] {
-        let nodes = json!({"root":{"widget":"text","text":"hello",port:format!("= $model.{port}")}});
-        let source = format!("---\nscene: 1\nname: bound\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
+    for (port, name) in [
+        ("font", "unknown"),
+        ("font", "Liberation Sans"),
+        ("mono_font", "unknown"),
+        ("mono_font", "Noto Sans Mono"),
+    ] {
+        let nodes =
+            json!({"root":{"widget":"text","text":"hello",port:format!("= $model.{port}")}});
+        let source =
+            format!("---\nscene: 1\nname: bound\ncitizen: test\n---\n```mix\n{nodes}\n```\n");
         let mut view = SceneView::with_model(&source, json!({port:"heading"})).unwrap();
         // Rebinding before context admission must also be safe to show.
         view.apply_model(json!({port:name})).unwrap();
