@@ -171,6 +171,9 @@ cyclops; `compact_rail` keeps the date at the right of a single chip row.
 Stat captions are uppercase with the HTML letter spacing. Topic stacks use
 the scene column's vertical `justify: center` contract; their optional fourth
 argument is the available section height, including bottom padding.
+`closing` supplies the centred logo, wordmark, subtitle and address stack.
+Text nodes accept `line_height` in logical pixels; app and shell painters
+use it for each line. Wrapped app text also honours `max_width`.
 
 The ignored `layout::render_layout_steps` test in the `deck` test target
 accepts `DECK_LAYOUT_INPUT` (a private deck JSON path) and

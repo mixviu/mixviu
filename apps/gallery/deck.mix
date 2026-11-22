@@ -163,6 +163,7 @@ fn brand($name, $tagline, $date)
 end
 fn closing($name,$tagline,$address,$height=716)
   $title=merge(deck_text($name,"wordmark","text"),{size:110,line_height:110,letter_spacing:-3.3,align:"center"})
+  if $name=="MixViu" then $title.spans=[{text:"Mix",color:$tokens.colour.text},{text:"Viu",color:$tokens.colour.acc}] end
   $subtitle=merge(deck_text($tagline,"tagline","mut"),{size:38,line_height:49.4,max_width:1250,wrap:true,align:"center"})
   $link=merge(deck_text($address,"date","text"),{size:32,align:"center"})
   return merge(column([{widget:"image",src:"brand:cyclops",w:230,h:230},{widget:"spacer",size:30},$title,{widget:"spacer",size:26},$subtitle,{widget:"spacer",size:26},$link],0),{fill:true,align:"center",justify:"center",height:$height-40,padding_bottom:40})
