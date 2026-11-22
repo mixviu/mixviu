@@ -47,6 +47,15 @@ fn grid_intrinsics_cannot_move_the_next_column() {
 }
 
 #[test]
+fn flex_basis_and_stretch_keep_weighted_cards_in_one_row() {
+    let rects=geometry(r##"{root:{widget:"row",fill:true,gap:40,align:"stretch",children:["a","b"]},a:{widget:"column",grow:1,basis:60,children:["one"]},b:{widget:"column",grow:2,basis:60,children:["three"]},one:{widget:"text",text:"short"},three:{widget:"text",text:"one\ntwo\nthree"}}"##);
+    let share=(rects["root"].width()-40.-120.)/3.;
+    assert!((rects["a"].width()-share-60.).abs()<1.,"{rects:?}");
+    assert!((rects["a"].height()-rects["b"].height()).abs()<1.,"{rects:?}");
+    assert!((rects["root"].right()-rects["b"].right()).abs()<1.,"{rects:?}");
+}
+
+#[test]
 fn explicit_line_height_sizes_each_text_line() {
     let mut view=SceneView::new("---\nscene: 1\nname: leading\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"first\\nsecond\",size:20,line_height:60}}\n```\n").unwrap();
     let ctx = egui::Context::default();

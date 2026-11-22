@@ -55,6 +55,7 @@ pub struct SceneView {
     widget_rects: Vec<crate::widget_rects::WidgetRect>,
     frame: Option<Box<SceneView>>,
     regions: BTreeMap<String, egui::Rect>,
+    stretch_heights: BTreeMap<String,f32>,
     tree: ResolvedScene,
     bindings: scene::bindings::BindingSet,
     model_bytes: usize,
@@ -156,6 +157,7 @@ impl SceneView {
             motion_parent: None,
             frame: None,
             regions: BTreeMap::new(),
+            stretch_heights: BTreeMap::new(),
             tree,
             bindings,
             model_bytes,
@@ -1276,7 +1278,7 @@ impl SceneView {
                             .fill(if node.ports.contains_key("background_radials") {Color32::TRANSPARENT} else {background})
                             .inner_margin(egui::Margin { left: node_padding(node, "padding_left") as i8, right: node_padding(node, "padding_right") as i8, top: node_padding(node, "padding_top") as i8, bottom: node_padding(node, "padding_bottom") as i8 })
                             .corner_radius(num(node, "radius").unwrap_or(0.0));
-                        let response = frame
+                        let mut response = frame
                             .show(ui, |ui| {
                                 if let Some(width)=frame_width { ui.set_min_width((width-node_padding(node,"padding_left")-node_padding(node,"padding_right")).max(0.)); }
                                 if let Some(height) = num(node, "height") {
@@ -1351,6 +1353,7 @@ impl SceneView {
                                         let weight: f32 = active.iter().map(|child|num(&nodes[*child],"grow").unwrap_or(0.).max(0.)).sum();
                                         let bases:Vec<f32>=active.iter().map(|child|if num(&nodes[*child],"grow").unwrap_or(0.)>0. {num(&nodes[*child],"basis").unwrap_or(0.)}else{0.}).collect();
                                         let remaining = (ui.available_width()-fixed.iter().sum::<f32>()-bases.iter().sum::<f32>()-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.);
+                                        let cross=active.iter().map(|child|ui.ctx().data(|d|d.get_temp::<f32>(row_id.with(("cross-size",child)))).unwrap_or(0.)).fold(0.0_f32,f32::max);
                                         let mut cells = |ui: &mut egui::Ui| for (i,child) in active.iter().enumerate() {
                                             let grow = num(&nodes[*child],"grow").unwrap_or(0.);
                                             let width = if grow > 0. { bases[i]+remaining*grow/weight } else { fixed[i] };
@@ -1375,7 +1378,10 @@ impl SceneView {
                                                 cell_ui.set_min_width(width);
                                                 cell_ui.set_max_width(width);
                                                 cell_ui.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(rect.min,egui::pos2(rect.right(),ui.clip_rect().bottom()))));
+                                                let stretch=text(node,"align")=="stretch" && num(&nodes[*child],"height").is_none();
+                                                if stretch {self.stretch_heights.insert((*child).into(),cross);}
                                                 self.node(&mut cell_ui,child,nodes,route,depth+1,events);
+                                                if stretch {self.stretch_heights.remove(*child);}
                                                 cell_ui.min_rect().height()
                                             };
                                             if (height-actual).abs() > 0.01 {
@@ -1416,6 +1422,12 @@ impl SceneView {
                                 }
                             })
                             .response;
+                        if let Some(height)=self.stretch_heights.get(id).copied() {
+                            response.rect.max.y=response.rect.max.y.max(response.rect.min.y+height);
+                            if !node.ports.contains_key("background_radials") {
+                                ui.painter().set(radial_shape,egui::Shape::rect_filled(response.rect,num(node,"radius").unwrap_or(0.),background));
+                            }
+                        }
                         if let Some(radials)=node.ports.get("background_radials") { ui.painter().set(radial_shape,self.backdrops.shape(ui.ctx(),&key,response.rect,background,radials)); }
                         if route.is_some_and(|(_, list, _)| text(list, "row") == id)
                             || node.ports.contains_key("on_click")
