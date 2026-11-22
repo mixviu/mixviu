@@ -176,10 +176,15 @@ pub fn hex_of(c: Color32) -> String {
 }
 
 pub(crate) fn number(node: &Node, port: &str) -> Option<f32> {
-    node.ports
-        .get(port)
-        .and_then(Value::as_f64)
-        .map(|v| {let n=v as f32;match port {"letter_spacing"=>n.clamp(-100.,4096.),"padding"|"padding_x"|"padding_y"|"padding_top"|"padding_right"|"padding_bottom"|"padding_left"|"outline_width"|"size"=>n.clamp(0.,1e6),_=>n}})
+    node.ports.get(port).and_then(Value::as_f64).map(|v| {
+        let n = v as f32;
+        match port {
+            "letter_spacing" => n.clamp(-100., 4096.),
+            "padding" | "padding_x" | "padding_y" | "padding_top" | "padding_right"
+            | "padding_bottom" | "padding_left" | "outline_width" | "size" => n.clamp(0., 1e6),
+            _ => n,
+        }
+    })
 }
 
 pub(crate) fn flag(node: &Node, port: &str) -> bool {

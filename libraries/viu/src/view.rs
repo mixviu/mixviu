@@ -633,11 +633,11 @@ impl SceneView {
                 &mut alive,
             );
             let mut lists = self.lists.clone();
-            for (list_id,list) in lists.iter_mut() {
-                for (item_id,nodes) in list.instances.iter_mut() {
+            for (list_id, list) in lists.iter_mut() {
+                for (item_id, nodes) in list.instances.iter_mut() {
                     prepare_measurements(
                         nodes,
-                        &format!("{}/{list_id}/{item_id}",self.tree.name),
+                        &format!("{}/{list_id}/{item_id}", self.tree.name),
                         &self.tree.model,
                         &mut self.measurement_hashes,
                         &mut alive,
@@ -1625,7 +1625,20 @@ impl SceneView {
             paint_outline(ui, node, response.rect);
         }
         if node.family != "control" {
-            if !matches!(node.family.as_str(),"text"|"column"|"row"|"grid"){ui.ctx().data_mut(|d|d.insert_temp(egui::Id::new(node.ports.get("__measure_identity").and_then(Value::as_u64).unwrap_or(0)).with("observed-width"),response.rect.width()));}
+            if !matches!(node.family.as_str(), "text" | "column" | "row" | "grid") {
+                ui.ctx().data_mut(|d| {
+                    d.insert_temp(
+                        egui::Id::new(
+                            node.ports
+                                .get("__measure_identity")
+                                .and_then(Value::as_u64)
+                                .unwrap_or(0),
+                        )
+                        .with("observed-width"),
+                        response.rect.width(),
+                    )
+                });
+            }
             self.geometry.insert(
                 key,
                 if node.family == "dock" {
@@ -2890,7 +2903,9 @@ fn route_event(
 fn num(node: &Node, port: &str) -> Option<f32> {
     node.ports.get(port)?.as_f64().map(|n| {
         let v = n as f32;
-        if port=="letter_spacing" {return v.clamp(-100.,4096.);}
+        if port == "letter_spacing" {
+            return v.clamp(-100., 4096.);
+        }
         if matches!(
             port,
             "width"
@@ -2902,7 +2917,14 @@ fn num(node: &Node, port: &str) -> Option<f32> {
                 | "row_gap"
                 | "gap"
                 | "size"
-                | "padding" | "padding_top" | "padding_right" | "padding_bottom" | "padding_left" | "padding_x" | "padding_y" | "outline_width"
+                | "padding"
+                | "padding_top"
+                | "padding_right"
+                | "padding_bottom"
+                | "padding_left"
+                | "padding_x"
+                | "padding_y"
+                | "outline_width"
                 | "radius"
                 | "w"
                 | "h"
@@ -3033,17 +3055,23 @@ fn measure_get<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id) -
 }
 fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, value: T) {
     ui.ctx().data_mut(|d| {
-        let order_key=egui::Id::new(("measurement-order",std::any::type_name::<T>()));
-        let mut order=d.get_temp::<std::collections::VecDeque<egui::Id>>(order_key).unwrap_or_default();
+        let order_key = egui::Id::new(("measurement-order", std::any::type_name::<T>()));
+        let mut order = d
+            .get_temp::<std::collections::VecDeque<egui::Id>>(order_key)
+            .unwrap_or_default();
         let cache = d.get_temp_mut_or_default::<std::collections::HashMap<egui::Id, T>>(
             egui::Id::new("scene-measurements"),
         );
         if cache.len() >= 4096 && !cache.contains_key(&key) {
-            if let Some(old)=order.pop_front(){cache.remove(&old);}
+            if let Some(old) = order.pop_front() {
+                cache.remove(&old);
+            }
         }
-        if !cache.contains_key(&key){order.push_back(key);}
+        if !cache.contains_key(&key) {
+            order.push_back(key);
+        }
         cache.insert(key, value);
-        d.insert_temp(order_key,order);
+        d.insert_temp(order_key, order);
     });
 }
 
@@ -3326,7 +3354,13 @@ fn prepare_measurements(
             node.ports.insert("__measure_value".into(), value);
         }
         let name = format!("{scene}/{id}");
-        {use std::hash::{Hash,Hasher};let mut identity=std::collections::hash_map::DefaultHasher::new();name.hash(&mut identity);node.ports.insert("__measure_identity".into(),json!(identity.finish()));}
+        {
+            use std::hash::{Hash, Hasher};
+            let mut identity = std::collections::hash_map::DefaultHasher::new();
+            name.hash(&mut identity);
+            node.ports
+                .insert("__measure_identity".into(), json!(identity.finish()));
+        }
         alive.insert(name.clone());
         let hash = if let Some((old, hash)) = memo.get(&name).filter(|(old, _)| old == &*node) {
             let _ = old;
@@ -3337,7 +3371,6 @@ fn prepare_measurements(
             hash
         };
         node.ports.insert("__measure_key".into(), json!(hash));
-
     }
 }
 #[cfg(test)]
@@ -3386,53 +3419,97 @@ fn measurement_runs(node: &Node, first_line: bool) -> Value {
     Value::Array(out)
 }
 fn cross_align<'a>(node: &'a Node, fallback: &'a str) -> &'a str {
-    node.ports.get("cross_align").and_then(Value::as_str).unwrap_or(fallback)
+    node.ports
+        .get("cross_align")
+        .and_then(Value::as_str)
+        .unwrap_or(fallback)
 }
 fn palette_key(ui: &egui::Ui) -> u64 {
     use std::hash::{Hash, Hasher};
-    let mut hash=std::collections::hash_map::DefaultHasher::new();
+    let mut hash = std::collections::hash_map::DefaultHasher::new();
     ui.ctx().data(|d| {
-        if let Some(colours)=d.get_temp::<std::sync::Arc<BTreeMap<String,Color32>>>(egui::Id::unique("viu-design-colours")) {
-            for (name,colour) in colours.iter(){name.hash(&mut hash);colour.to_array().hash(&mut hash);}
+        if let Some(colours) = d.get_temp::<std::sync::Arc<BTreeMap<String, Color32>>>(
+            egui::Id::unique("viu-design-colours"),
+        ) {
+            for (name, colour) in colours.iter() {
+                name.hash(&mut hash);
+                colour.to_array().hash(&mut hash);
+            }
         }
     });
     ui.visuals().selection.bg_fill.to_array().hash(&mut hash);
     hash.finish()
 }
-const PAINTED_BYTES: usize=32*1024*1024;
+const PAINTED_BYTES: usize = 32 * 1024 * 1024;
 #[derive(Default)]
 struct PaintedGalleys {
-    entries:BTreeMap<String,(egui::Id,std::sync::Arc<egui::Galley>,usize,u64)>,
-    seen:BTreeSet<String>,
-    bytes:usize,
-    clock:u64,
+    entries: BTreeMap<String, (egui::Id, std::sync::Arc<egui::Galley>, usize, u64)>,
+    seen: BTreeSet<String>,
+    bytes: usize,
+    clock: u64,
 }
 impl PaintedGalleys {
-    fn begin(&mut self){self.seen.clear();self.clock+=1;}
-    fn end(&mut self){
-        self.entries.retain(|key,(_,_,bytes,_)| {if self.seen.contains(key){true}else{self.bytes-=*bytes;false}});
+    fn begin(&mut self) {
+        self.seen.clear();
+        self.clock += 1;
     }
-    fn get(&mut self,node:&str,key:egui::Id)->Option<std::sync::Arc<egui::Galley>> {
+    fn end(&mut self) {
+        self.entries.retain(|key, (_, _, bytes, _)| {
+            if self.seen.contains(key) {
+                true
+            } else {
+                self.bytes -= *bytes;
+                false
+            }
+        });
+    }
+    fn get(&mut self, node: &str, key: egui::Id) -> Option<std::sync::Arc<egui::Galley>> {
         self.seen.insert(node.into());
-        let entry=self.entries.get_mut(node)?;
-        if entry.0!=key{return None;}entry.3=self.clock;Some(entry.1.clone())
-    }
-    fn put(&mut self,node:String,key:egui::Id,galley:std::sync::Arc<egui::Galley>){
-        if let Some(old)=self.entries.remove(&node){self.bytes-=old.2;}
-        // Charge owned capacities, including row glyph/mesh buffers and section metadata.
-        let bytes=std::mem::size_of::<egui::Galley>()+galley.job.text.capacity()
-            +galley.job.sections.capacity()*(std::mem::size_of::<egui::text::LayoutSection>()+1024)
-            +galley.rows.capacity()*256
-            +galley.rows.iter().map(|r|r.glyphs.capacity()*128
-                +r.visuals.mesh.vertices.capacity()*std::mem::size_of::<egui::epaint::Vertex>()
-                +r.visuals.mesh.indices.capacity()*std::mem::size_of::<u32>()).sum::<usize>();
-        if bytes>PAINTED_BYTES{return;}
-        while self.bytes+bytes>PAINTED_BYTES {
-            let oldest=self.entries.iter().min_by_key(|(_,e)|e.3).map(|(k,_)|k.clone());
-            if let Some(oldest)=oldest{self.bytes-=self.entries.remove(&oldest).unwrap().2;}else{break;}
+        let entry = self.entries.get_mut(node)?;
+        if entry.0 != key {
+            return None;
         }
-        self.seen.insert(node.clone());self.bytes+=bytes;
-        self.entries.insert(node,(key,galley,bytes,self.clock));
+        entry.3 = self.clock;
+        Some(entry.1.clone())
+    }
+    fn put(&mut self, node: String, key: egui::Id, galley: std::sync::Arc<egui::Galley>) {
+        if let Some(old) = self.entries.remove(&node) {
+            self.bytes -= old.2;
+        }
+        // Charge owned capacities, including row glyph/mesh buffers and section metadata.
+        let bytes = std::mem::size_of::<egui::Galley>()
+            + galley.job.text.capacity()
+            + galley.job.sections.capacity()
+                * (std::mem::size_of::<egui::text::LayoutSection>() + 1024)
+            + galley.rows.capacity() * 256
+            + galley
+                .rows
+                .iter()
+                .map(|r| {
+                    r.glyphs.capacity() * 128
+                        + r.visuals.mesh.vertices.capacity()
+                            * std::mem::size_of::<egui::epaint::Vertex>()
+                        + r.visuals.mesh.indices.capacity() * std::mem::size_of::<u32>()
+                })
+                .sum::<usize>();
+        if bytes > PAINTED_BYTES {
+            return;
+        }
+        while self.bytes + bytes > PAINTED_BYTES {
+            let oldest = self
+                .entries
+                .iter()
+                .min_by_key(|(_, e)| e.3)
+                .map(|(k, _)| k.clone());
+            if let Some(oldest) = oldest {
+                self.bytes -= self.entries.remove(&oldest).unwrap().2;
+            } else {
+                break;
+            }
+        }
+        self.seen.insert(node.clone());
+        self.bytes += bytes;
+        self.entries.insert(node, (key, galley, bytes, self.clock));
     }
 }
 
@@ -3441,35 +3518,66 @@ mod round7_tests {
     use super::*;
     #[test]
     fn changing_100kb_text_retains_one_galley_for_500_frames_then_prunes() {
-        let source="---\nscene: 1\nname: retention\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"= $model.text\"}}\n```\n";
-        let mut view=SceneView::new(source).unwrap();
-        let ctx=egui::Context::default();
+        let source = "---\nscene: 1\nname: retention\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"= $model.text\"}}\n```\n";
+        let mut view = SceneView::new(source).unwrap();
+        let ctx = egui::Context::default();
         for frame in 0..500 {
-            view.apply_model(json!({"text":format!("{} {frame}","a".repeat(100_000))})).unwrap();
-            let mut output=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});
+            view.apply_model(json!({"text":format!("{} {frame}","a".repeat(100_000))}))
+                .unwrap();
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
             output.textures_delta.clear();
-            assert_eq!(view.painted.entries.len(),1,"frame {frame}");
-            assert!(view.painted.bytes<=PAINTED_BYTES);
+            assert_eq!(view.painted.entries.len(), 1, "frame {frame}");
+            assert!(view.painted.bytes <= PAINTED_BYTES);
         }
-        view.painted.begin();view.painted.end();assert!(view.painted.entries.is_empty());assert_eq!(view.painted.bytes,0);
+        view.painted.begin();
+        view.painted.end();
+        assert!(view.painted.entries.is_empty());
+        assert_eq!(view.painted.bytes, 0);
     }
     #[test]
     fn span_palette_change_invalidates_painted_galley() {
         let mut view=SceneView::new("---\nscene: 1\nname: palette\ncitizen: test\n---\n```mix\n{root:{widget:\"text\",text:\"accent\",color:\"#ffffff\",spans:[{text:\"accent\",role:\"acc\"}]}}\n```\n").unwrap();
-        let ctx=egui::Context::default();
-        for colour in [Color32::RED,Color32::GREEN] {
-            let map:BTreeMap<String,Color32>=BTreeMap::from([("accent".into(),colour)]);
-            ctx.data_mut(|d|d.insert_temp(egui::Id::unique("viu-design-colours"),std::sync::Arc::new(map)));
-            let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();
-            assert_eq!(view.painted.entries.values().next().unwrap().1.job.sections[0].format.color,colour);
+        let ctx = egui::Context::default();
+        for colour in [Color32::RED, Color32::GREEN] {
+            let map: BTreeMap<String, Color32> = BTreeMap::from([("accent".into(), colour)]);
+            ctx.data_mut(|d| {
+                d.insert_temp(
+                    egui::Id::unique("viu-design-colours"),
+                    std::sync::Arc::new(map),
+                )
+            });
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+            assert_eq!(
+                view.painted.entries.values().next().unwrap().1.job.sections[0]
+                    .format
+                    .color,
+                colour
+            );
         }
     }
     #[test]
     fn hostile_side_padding_is_finite_in_paint_even_without_schema() {
         let mut view=SceneView::new("---\nscene: 1\nname: padding\ncitizen: test\n---\n```mix\n{root:{widget:\"row\",align:\"stretch\",children:[\"child\"]},child:{widget:\"column\",grow:1,children:[]}}\n```\n").unwrap();
-        view.tree.nodes.get_mut("child").unwrap().ports.insert("padding_top".into(),json!(1e300));
-        let ctx=egui::Context::default();
-        for _ in 0..12{let mut out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});out.textures_delta.clear();}
-        for rect in view.geometry.values(){assert!(rect.is_finite(),"{rect:?}");}
+        view.tree
+            .nodes
+            .get_mut("child")
+            .unwrap()
+            .ports
+            .insert("padding_top".into(), json!(1e300));
+        let ctx = egui::Context::default();
+        for _ in 0..12 {
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+        }
+        for rect in view.geometry.values() {
+            assert!(rect.is_finite(), "{rect:?}");
+        }
     }
 }

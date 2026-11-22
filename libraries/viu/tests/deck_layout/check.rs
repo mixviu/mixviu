@@ -578,29 +578,46 @@ citizen: test
 
 #[test]
 fn cross_axis_is_independent_on_plain_and_flex_rows() {
-    for flex in [false,true] {
-        let grow=if flex{",grow:1"}else{""};
-        let mut tops=Vec::new();
-        for cross in ["start","center","end"] {
-            let g=geometry(&format!(r#"{{root:{{widget:"row",cross_align:"{cross}",children:["a","b"]}},a:{{widget:"column",min_width:100,height:80,children:[]}},b:{{widget:"column",height:20,children:[]{grow}}}}}"#));
-            assert!(g["a"].left()<g["b"].left(),"{flex} {cross}");
-            let delta=g["b"].top()-g["a"].top();
-            let expected=match cross{"start"=>0.,"center"=>30.,_=>60.};
-            assert!((delta-expected).abs()<1.,"{flex} {cross} {delta}");
+    for flex in [false, true] {
+        let grow = if flex { ",grow:1" } else { "" };
+        let mut tops = Vec::new();
+        for cross in ["start", "center", "end"] {
+            let g = geometry(&format!(
+                r#"{{root:{{widget:"row",cross_align:"{cross}",children:["a","b"]}},a:{{widget:"column",min_width:100,height:80,children:[]}},b:{{widget:"column",height:20,children:[]{grow}}}}}"#
+            ));
+            assert!(g["a"].left() < g["b"].left(), "{flex} {cross}");
+            let delta = g["b"].top() - g["a"].top();
+            let expected = match cross {
+                "start" => 0.,
+                "center" => 30.,
+                _ => 60.,
+            };
+            assert!((delta - expected).abs() < 1., "{flex} {cross} {delta}");
             tops.push(delta);
         }
-        assert!(tops[0]<tops[1] && tops[1]<tops[2]);
+        assert!(tops[0] < tops[1] && tops[1] < tops[2]);
     }
-    let g=geometry(r#"{root:{widget:"row",children:["a","b"]},a:{widget:"column",min_width:100,height:80,children:[]},b:{widget:"column",height:20,grow:1,children:[]}}"#);
-    assert!((g["a"].top()-g["b"].top()).abs()<1.,"main default grow rows are top aligned");
+    let g = geometry(
+        r#"{root:{widget:"row",children:["a","b"]},a:{widget:"column",min_width:100,height:80,children:[]},b:{widget:"column",height:20,grow:1,children:[]}}"#,
+    );
+    assert!(
+        (g["a"].top() - g["b"].top()).abs() < 1.,
+        "main default grow rows are top aligned"
+    );
 }
 
 #[test]
 fn auto_height_justify_keeps_natural_packing() {
-    let mut expected=None;
-    for mode in ["start","center","end","between","around","evenly"] {
-        let g=geometry(&format!(r#"{{root:{{widget:"column",justify:"{mode}",children:["a","b"]}},a:{{widget:"text",text:"one"}},b:{{widget:"text",text:"two"}}}}"#));
-        let packing=(g["a"],g["b"],g["root"]);
-        if let Some(expected)=expected{assert_eq!(packing,expected,"{mode}");}else{expected=Some(packing);}
+    let mut expected = None;
+    for mode in ["start", "center", "end", "between", "around", "evenly"] {
+        let g = geometry(&format!(
+            r#"{{root:{{widget:"column",justify:"{mode}",children:["a","b"]}},a:{{widget:"text",text:"one"}},b:{{widget:"text",text:"two"}}}}"#
+        ));
+        let packing = (g["a"], g["b"], g["root"]);
+        if let Some(expected) = expected {
+            assert_eq!(packing, expected, "{mode}");
+        } else {
+            expected = Some(packing);
+        }
     }
 }
