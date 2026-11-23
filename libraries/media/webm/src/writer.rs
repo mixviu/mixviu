@@ -254,7 +254,7 @@ impl<W: Write + Seek> Writer<W> {
         if track == 1 && key || !self.video && base == t {
             self.cues.push((t, at - self.segment));
         }
-        if self.discard_ns != 0 {
+        if self.discard_ns != 0 || track == 1 {
             let block = [
                 &[0x80 | track][..],
                 &((t - base) as i16).to_be_bytes(),
@@ -262,13 +262,15 @@ impl<W: Write + Seek> Writer<W> {
                 data,
             ]
             .concat();
-            self.out.write_all(&master(
-                0xa0,
-                &[
-                    elem(0xa1, &block),
-                    elem(0x75a2, &(self.discard_ns as i64).to_be_bytes()),
-                ],
-            ))?;
+            let mut items = vec![elem(0xa1, &block), u(0x9b, d)];
+            if track == 1 && !key {
+                // A backward reference marks this BlockGroup as non-key.
+                items.push(elem(0xfb, &(-1i64).to_be_bytes()));
+            }
+            if self.discard_ns != 0 {
+                items.push(elem(0x75a2, &(self.discard_ns as i64).to_be_bytes()));
+            }
+            self.out.write_all(&master(0xa0, &items))?;
             self.discard_ns = 0;
         } else {
             self.out.write_all(&[0xa3])?;

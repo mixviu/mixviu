@@ -21,7 +21,7 @@ path = "src/main.rs"
 
 [dependencies]
 media-audio = { path = "../../libraries/media/audio" }
-media-av1 = { path = "../../libraries/media/av1" }
+media-av1 = { path = "../../libraries/media/av1", features = ["asm"] }
 media-frame = { path = "../../libraries/media/frame" }
 media-vfl = { path = "../../libraries/media/vfl" }
 media-webm = { path = "../../libraries/media/webm" }

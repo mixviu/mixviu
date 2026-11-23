@@ -39,7 +39,7 @@ impl Timeline {
         for s in &v.segments {
             if !time(s.at_s) || s.from_slot >= s.to_slot || frame(s.at_s) >= frame(self.duration_s) { return refuse("segment_range"); }
             if s.path.as_os_str().is_empty() || s.path.components().any(|c| !matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir)) { return refuse("segment_path_relative"); }
-            let r = media_vfl::Reader::open(base.join(&s.path))?;
+            let r = media_vfl::reader::Reader::open(base.join(&s.path))?;
             if r.fps() != 30 || !r.complete() { return refuse("segment_complete_30fps_required"); }
             let start = frame(s.at_s);
             if previous.is_none() && start != 0 { return refuse("gap_before_first_segment"); }
@@ -57,9 +57,9 @@ impl Timeline {
         Ok(starts)
     }
 }
-struct Source { reader: media_vfl::Reader, next: u64, current: Option<Bgra> }
+struct Source { reader: media_vfl::reader::Reader, next: u64, current: Option<Bgra> }
 impl Source {
-    fn new(base: &Path, s: &Segment) -> Result<Self> { Ok(Self { reader: media_vfl::Reader::open(base.join(&s.path))?, next: u64::MAX, current: None }) }
+    fn new(base: &Path, s: &Segment) -> Result<Self> { Ok(Self { reader: media_vfl::reader::Reader::open(base.join(&s.path))?, next: u64::MAX, current: None }) }
     fn get(&mut self, slot: u64, width: usize, height: usize) -> Result<(Bgra, bool)> {
         if self.next == slot + 1 { return Ok((self.current.as_ref().ok_or("missing_frame")?.clone(), true)); }
         let w = self.reader.width() as usize; let h = self.reader.height() as usize;

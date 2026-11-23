@@ -1,0 +1,6 @@
+$r = run_argv(["cargo", "fmt", "-p", "media-audio", "-p", "media-av1", "-p", "media-vfl", "-p", "media-webm", "-p", "av"])
+print($r.stdout)
+print($r.stderr)
+print(run_argv_must(["git", "diff"]))
+print(run_argv_must(["git", "checkout", "-q", "--", "."]))
+if not $r.ok then exit(1) end
