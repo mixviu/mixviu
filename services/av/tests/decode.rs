@@ -28,6 +28,39 @@ fn repeats(count: u64) -> Vec<u8> {
 }
 
 #[test]
+fn video_and_audio_share_budget_and_publish_together() {
+    let dir = tempfile::tempdir().unwrap();
+    let video = Demuxer::new(FIXTURE).unwrap();
+    let audio = Demuxer::new(include_bytes!("../../../libraries/media/webm/tests/fixtures/sine.webm")).unwrap();
+    let head = audio.tracks[0].codec_private;
+    let mut w = Writer::new(Cursor::new(Vec::new()), Video { width:64, height:48,
+        codec_private: video.tracks[0].codec_private.to_vec() }, Some(media_webm::Opus {
+            channels: head[9], pre_skip: u16::from_le_bytes([head[10],head[11]]), input_sample_rate:48000
+        })).unwrap();
+    w.packet(1,0,40,true,video.packets()[0].data).unwrap();
+    w.opus_packet(0,audio.packets()[0].data,0).unwrap();
+    w.packet(1,40,40,false,video.packets()[1].data).unwrap();
+    let input = dir.path().join("input.webm");
+    std::fs::write(&input,w.finish().unwrap().into_inner()).unwrap();
+    let y4m = dir.path().join("out.y4m");
+    let wav = dir.path().join("out.wav");
+    let invoke = |limit: &str| Command::new(env!("CARGO_BIN_EXE_av")).arg("decode").arg(&input)
+        .arg("--y4m").arg(&y4m).arg("--wav").arg(&wav).arg("--max-output-bytes").arg(limit).output().unwrap();
+    let result = invoke("200000");
+    assert!(result.status.success(),"{}",String::from_utf8_lossy(&result.stderr));
+    let receipt: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    let video_bytes = std::fs::metadata(&y4m).unwrap().len();
+    assert_eq!(receipt["output_bytes"],video_bytes+std::fs::metadata(&wav).unwrap().len());
+    assert_eq!(hound::WavReader::open(&wav).unwrap().spec().sample_rate,48000);
+    std::fs::remove_file(&y4m).unwrap();
+    std::fs::remove_file(&wav).unwrap();
+    let result = invoke(&video_bytes.to_string());
+    assert_eq!(result.status.code(),Some(2));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("OUTPUT_LIMIT_EXCEEDED"));
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(),1);
+}
+
+#[test]
 fn symlink_destinations_and_late_audio_failure_publish_nothing() {
     for wav_link in [false, true] {
         let dir = tempfile::tempdir().unwrap();
@@ -170,6 +203,31 @@ fn element(id: u32, data: &[u8]) -> Vec<u8> {
     out.extend(((1u64 << 56) | data.len() as u64).to_be_bytes());
     out.extend(data);
     out
+}
+
+#[test]
+fn minimum_signed_discard_padding_is_a_clean_transactional_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let v = Demuxer::new(FIXTURE).unwrap();
+    let a = Demuxer::new(include_bytes!("../../../libraries/media/webm/tests/fixtures/sine.webm")).unwrap();
+    let tracks = element(0x1654ae6b,&[
+        element(0xae,&[element(0xd7,&[1]),element(0x83,&[1]),element(0x86,b"V_AV1")].concat()),
+        element(0xae,&[element(0xd7,&[2]),element(0x83,&[2]),element(0x86,b"A_OPUS"),
+            element(0x63a2,a.tracks[0].codec_private)].concat())].concat());
+    let mut block = vec![0x81,0,0,0x80];
+    block.extend(v.packets()[0].data);
+    let mut opus = vec![0x82,0,0,0x80];
+    opus.extend(a.packets()[0].data);
+    let cluster = element(0x1f43b675,&[element(0xe7,&[0]),element(0xa3,&block),
+        element(0xa0,&[element(0xa1,&opus),element(0x75a2,&i64::MIN.to_be_bytes())].concat())].concat());
+    let bytes = [element(0x1a45dfa3,&element(0x4282,b"webm")),element(0x18538067,&[tracks,cluster].concat())].concat();
+    let input = dir.path().join("padding.webm");
+    std::fs::write(&input,bytes).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_av")).arg("decode").arg(&input)
+        .arg("--y4m").arg(dir.path().join("out.y4m")).arg("--wav").arg(dir.path().join("out.wav")).output().unwrap();
+    assert_eq!(result.status.code(),Some(2));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("TIMESTAMP_OVERFLOW: discard padding"));
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(),1);
 }
 #[test]
 fn extreme_packet_delta_is_a_clean_error_and_usage_lists_commands() {
