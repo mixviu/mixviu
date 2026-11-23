@@ -207,3 +207,16 @@ fn malformed_and_limits() {
         let _ = decoder.submit(&mutated, 0, |_| Ok(()));
     }
 }
+
+#[test]
+fn sequence_axis_limits_before_decode() {
+    for (width, height) in [(8193,16), (16,4321)] {
+        let mut encoder = Encoder::new(Settings { width, height, fps_num:25, fps_den:1, speed:10, target:Target::Quality(110), key_interval:10, tile_cols:1, tile_rows:1, threads:1 }).unwrap();
+        let frame = encoder.prepare(&media_frame::Bgra::solid(width,height,[0,0,0,255]).unwrap().to_yuv420()).unwrap();
+        let mut packets = encoder.submit(&frame).unwrap();
+        packets.extend(encoder.finish().unwrap());
+        let mut decoder = Decoder::new(1,1).unwrap();
+        let error = decoder.submit(&packets[0].data,0,|_| panic!("oversized picture emitted")).unwrap_err();
+        assert!(error.0.contains("8192x4320"),"{error}");
+    }
+}
