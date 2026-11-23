@@ -1,6 +1,10 @@
-print(run_argv_must(["cargo", "fmt", "-p", "media-audio", "-p", "media-webm", "-p", "av"]))
-print(run_argv_must(["cargo", "check", "-p", "media-audio", "-p", "media-webm", "-p", "av"]))
+$fmt = run_argv(["cargo", "fmt", "-p", "media-audio", "-p", "media-webm", "-p", "av"], {timeout: 7200})
+print($fmt.stdout)
+print($fmt.stderr)
+$check = run_argv(["cargo", "check", "-p", "media-audio", "-p", "media-webm", "-p", "av"], {timeout: 7200})
+print($check.stdout)
+print($check.stderr)
 $diff = run_argv_must(["git", "diff"])
 print($diff)
 print(run_argv_must(["git", "checkout", "-q", "--", "."]))
-if $diff != "" then exit(1) end
+if not $fmt.ok or not $check.ok or $diff != "" then exit(1) end
