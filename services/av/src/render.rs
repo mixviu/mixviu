@@ -298,9 +298,9 @@ impl Timeline {
         let n = frame(self.duration_s);
         // Conservative admission estimate, including packet/position metadata,
         // two VFL canvases with payload/scratch, scaler and encoder frame storage.
-        let working = source_bytes * 6
+        let working = source_bytes * 8
             + scale_bytes
-            + (v.width as u64 * v.height as u64) * 96
+            + (v.width as u64 * v.height as u64) * 448
             + CHUNK_BYTES_LIMIT as u64
             + 64 * 1024 * 1024;
         if working

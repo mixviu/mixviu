@@ -53,11 +53,12 @@ Each chunk starts at a segment boundary or at most `keyint_s` apart. `chunks`
 limits concurrent encoders; omitted, it is available cores / 8, minimum one.
 `chunks * threads` must not exceed twice the available cores
 (`encode_thread_budget`). A conservative live-video admission estimate must
-also fit 8 GiB (`encode_memory_budget`): per concurrent chunk, six times the
+also fit 8 GiB (`encode_memory_budget`): per concurrent chunk, eight times the
 largest source BGRA canvas, the largest horizontal scaler intermediate
-(`scaled_width * source_height * 16`), 96 bytes per output pixel for frame and
+(`scaled_width * source_height * 16`), 448 bytes per output pixel for frame and
 encoder working storage, 64 MiB for compressed payloads and 64 MiB for metadata.
-This is an admission estimate, not an operating-system RSS limit; rav1e's internal
+The encoder allowance was raised after a 4K episode measured 6.61 GiB process
+high-water RSS. This is an admission estimate, not an operating-system RSS limit; rav1e's internal
 allocator and audio mastering add their own storage. Real episode peak RSS is
 reported with the worker receipt. Audio has the bounded three-hour contract
 documented by media-audio; its mastering storage is released before video work.
