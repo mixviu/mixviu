@@ -219,7 +219,11 @@ fn receipt_line(receipt: &str) -> io::Result<()> {
     writeln!(out, "{receipt}").and_then(|()| out.flush())
 }
 
-fn duration_frame_limit(d: &Demuxer<'_>, track: &media_webm::Track<'_>, interval: Option<u64>) -> Result<u64> {
+fn duration_frame_limit(
+    d: &Demuxer<'_>,
+    track: &media_webm::Track<'_>,
+    interval: Option<u64>,
+) -> Result<u64> {
     if let (Some(duration), Some(interval)) = (d.duration, interval) {
         if track.default_duration_ns == 0 {
             // A single packet delta does not establish the frame rate of VFR.
@@ -228,13 +232,22 @@ fn duration_frame_limit(d: &Demuxer<'_>, track: &media_webm::Track<'_>, interval
             for packet in d.packets().iter().filter(|p| p.track == track.number) {
                 if let Some(ticks) = packet.duration {
                     let ns = ticks.checked_mul(d.scale_ns).ok_or("TIMESTAMP_OVERFLOW")?;
-                    if ns != interval { return Ok(500_000); }
+                    if ns != interval {
+                        return Ok(500_000);
+                    }
                 }
                 if let Some(last) = previous {
-                    let ticks = packet.timestamp.checked_sub(last).ok_or("TIMESTAMP_OVERFLOW")?;
-                    let Ok(ticks) = u64::try_from(ticks) else { return Ok(500_000); };
+                    let ticks = packet
+                        .timestamp
+                        .checked_sub(last)
+                        .ok_or("TIMESTAMP_OVERFLOW")?;
+                    let Ok(ticks) = u64::try_from(ticks) else {
+                        return Ok(500_000);
+                    };
                     let ns = ticks.checked_mul(d.scale_ns).ok_or("TIMESTAMP_OVERFLOW")?;
-                    if ns != interval { return Ok(500_000); }
+                    if ns != interval {
+                        return Ok(500_000);
+                    }
                 }
                 previous = Some(packet.timestamp);
             }

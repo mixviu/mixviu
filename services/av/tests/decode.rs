@@ -103,9 +103,18 @@ fn variable_packet_intervals_do_not_invent_a_frame_rate_ceiling() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("vfr.webm");
     std::fs::write(&input, repeat_stream(20, true)).unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_av")).arg("decode").arg(&input)
-        .arg("--y4m").arg(dir.path().join("out.y4m")).output().unwrap();
-    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    let result = Command::new(env!("CARGO_BIN_EXE_av"))
+        .arg("decode")
+        .arg(&input)
+        .arg("--y4m")
+        .arg(dir.path().join("out.y4m"))
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
     let receipt: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(receipt["frames"], 20);
 }
