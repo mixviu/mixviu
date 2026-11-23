@@ -5611,7 +5611,10 @@ version = "0.1.2"
 dependencies = [
  "ebur128",
  "hound",
+ "media-opus",
+ "media-webm",
  "rubato",
+ "serde",
  "serde_json",
 ]
 
@@ -5982,6 +5985,7 @@ dependencies = [
  "hostd",
  "indexd",
  "maild",
+ "media-audio",
  "media-frame",
  "media-vfl",
  "mimalloc",
