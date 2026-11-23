@@ -1,7 +1,7 @@
 # Narration audio
 
-`media-audio` holds in-memory primitives for S1/S2. It is not connected to
-`mix`, `mix-shell` or any engine. All offsets and lengths are sample **frames**.
+`media-audio` holds in-memory primitives for S1/S2. The `mixd av audio` command uses its flat timeline module;
+`mix` and `mix-shell` remain free of media dependencies. All offsets and lengths are sample **frames**.
 Samples are finite interleaved f64, mono or stereo. Mixing preserves headroom.
 
 `Audio::read_wav` / `write_wav` support PCM16/24/32 and float32 at nonzero
@@ -137,3 +137,27 @@ requires a clean checkout, swaps global gain, no look-ahead, instant release
 and sample-only detection into the limiter one at a time, and requires the
 named locality/attack/release/4x test to fail. It restores the exact source
 bytes in a finally block. The normal tests must pass on the unmodified source.
+
+## Episode timelines
+
+`mixd av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]` executes
+a strict version-1 flat timeline. Paths are relative to the JSON file.
+Times round to 48 kHz frames; trims refer to the resampled source. Source
+tails at the episode boundary are trimmed. A source starting exactly at the
+end contributes no samples. Mono maps to stereo at 1/sqrt(2) per channel,
+matching ffmpeg aformat. Gains are -120..60 dB. Each fade includes both
+endpoints; a single-frame fade is zero. Overlapping fades multiply.
+The mastering receipt reports PCM measurements before Opus encoding.
+Silence and programmes too short to meter return an unmeasurable error.
+
+Memory trade-off: this is an offline mastering executor, using the existing
+L5/L5b whole-programme API to retain its tested gating and limiter behaviour.
+The unnormalised accumulator is f32 (576 MB for 25 minutes). It is converted
+once to f64 for mastering (1.15 GB). The limiter can retain approximately
+six f64 programme buffers plus an envelope: budget 8 GB for 25 minutes,
+plus the largest decoded source. Three hours requires approximately 55 GB
+and a correspondingly sized worker. Static gain uses fewer buffers.
+This favours the existing verified mastering path over a new streaming
+limiter; long programmes need a memory-sized worker. No new foreign crate
+is introduced. `episode_fixture.mix` generates private test inputs from a
+read-only run; scenes are placed back to back without crossfades.

@@ -134,7 +134,7 @@ for each $c in $strict
     -- Tier 2: nothing desktop-only in the shell, even pure Rust.
     for each $n in keys($names)
       for each $p in $forbid
-        if $n == $p or (ends_with($p, "*") and starts_with($n, slice($p, 0, len($p) - 1))) then
+        if ($n == $p or (ends_with($p, "*") and starts_with($n, slice($p, 0, len($p) - 1)))) and not contains(($policy.strict_forbid_exceptions ?? {})[$c] ?? [], $n) then
           push($fail, "strict " .. $c .. " (" .. $label .. ") reaches desktop-only " .. $n)
         end
       end
