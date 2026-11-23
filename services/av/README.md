@@ -41,8 +41,8 @@ Crossfades always encode. Overlaps without a crossfade are cuts.
 
 Scaling uses media-frame's top-left aligned nearest-neighbour filter, maintaining
 aspect ratio and centring on opaque black padding. Conversion is BT.709 limited
-range I420 with centred 2x2 box chroma. This preserves UI colours but can produce
-jagged scaled edges; it is not a smooth reconstruction filter.
+range I420 with centred 2x2 box chroma. Filtering stays in gamma-encoded BGRA space to match the current UI/video and
+crossfade contract; it does not introduce a separate linear-light workflow.
 
 Each chunk starts at a segment boundary or at most `keyint_s` apart. `chunks`
 limits concurrent encoders; omitted, it is available cores / 8, minimum one.
