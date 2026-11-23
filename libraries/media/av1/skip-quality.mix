@@ -1,16 +1,48 @@
-$out = "/var/tmp/vfl-skip-av1"
-$r = run_argv(["cargo","build","--release","-p","mixd","--no-default-features"], {timeout:3600,stdout:"inherit",stderr:"inherit"})
-if not $r.ok then exit($r.exit_code ?? 1) end
+-- Lab oracle only: reuse existing encoder outputs and CBC-built export binary.
+$inputs = "/var/tmp/vfl-skip-av1"
+$out = $inputs .. "/quality-" .. date_format(time(), "%Y%m%d-%H%M%S") .. "-" .. slice(uuid(),0,8)
+mkdir($out, {parents:true})
+print("QUALITY_DIR=" .. $out)
 $bin = env("CARGO_TARGET_DIR", "target") .. "/release/mixd"
+if not is_file($bin) then die("CBC-built mixd missing: " .. $bin) end
+fn step($name,$argv,$prefix)
+  $r = run_argv($argv,{timeout:18000,stdout:{file:$prefix .. ".stdout"},stderr:{file:$prefix .. ".stderr"}})
+  write_file($prefix .. ".result.json",json_encode($r))
+  print($name .. " " .. json_encode($r))
+  if not $r.ok then die($name .. " failed; stderr: " .. $prefix .. ".stderr") end
+  return $r
+end
+$expand = "fps=30:start_time=0:round=near,tpad=stop_mode=clone:stop_duration=10,trim=end_frame=17284,setpts=N/(30*TB)"
 for $mode in ["cfr-skip","vfr","full"]
   $prefix = $out .. "/" .. $mode
   $fifo = $prefix .. ".fifo"
-  print(run_argv(["mkfifo",$fifo]))
-  $expand = "fps=30:start_time=0:round=near,tpad=stop_mode=clone:stop_duration=10,trim=end_frame=17284,setpts=N/(30*TB)"
-  $graph = "[0:v]" .. $expand .. ",split[d][dp];[1:v]split[r][rp];[d][r]libvmaf=model=path=/usr/share/model/vmaf_4k_v0.6.1.json:n_threads=16:log_fmt=json:log_path=" .. $prefix .. ".vmaf.json[v];[dp][rp]psnr=stats_file=" .. $prefix .. ".psnr[p]"
-  $source = "$r = nil; for $attempt in range(1,100); $r=run_argv(" .. json_encode([$bin,"vfl","export","/var/tmp/vfl-skip-input","--format","y4m"]) .. ", {timeout:18000,stdout:{file:" .. json_encode($fifo) .. "}}); if $r.error_code != \"PROCESS_STDIO\" then break end; sleep(0.1); end; print($r)"
-  $pid = spawn(["mix","-c",$source], {stdout:{file:$prefix .. ".export.log"},stderr:{file:$prefix .. ".export.error"}})
-  $r = run_argv(["ffmpeg","-nostdin","-hide_banner","-y","-c:v","libdav1d","-i",$prefix .. ".webm","-i",$fifo,"-filter_complex",$graph,"-map","[v]","-map","[p]","-f","null","-"], {timeout:18000,stdout:{file:$prefix .. ".quality.stdout"},stderr:{file:$prefix .. ".quality.log"}})
-  print($r)
-  print(run_argv(["ffmpeg","-nostdin","-hide_banner","-y","-c:v","libdav1d","-i",$prefix .. ".webm","-vf",$expand,"-f","framemd5",$prefix .. ".md5"],{timeout:7200,stderr:{file:$prefix .. ".decode.log"}}))
+  step("remove FIFO",["rm","-f",$fifo],$prefix .. ".fifo-remove")
+  step("create FIFO",["mkfifo",$fifo],$prefix .. ".fifo-create")
+  -- FIFO routes are nonblocking: retry ENXIO until FFmpeg opens its read end.
+  $source = "$r=nil; for $attempt in range(1,200); $r=run_argv(" .. json_encode([$bin,"vfl","export","/var/tmp/vfl-skip-input","--format","y4m"]) .. ",{timeout:18000,stdout:{file:" .. json_encode($fifo) .. "},stderr:{file:" .. json_encode($prefix .. ".export.stderr") .. "}}); if $r.error_code != \"PROCESS_STDIO\" then break end; sleep(0.1); end; write_file(" .. json_encode($prefix .. ".export.result.json") .. ",json_encode($r)); if not $r.ok then exit(1) end"
+  $pid = spawn(["mix","-c",$source],{exit_event:true,die_with_parent:true,stdout:{file:$prefix .. ".producer.stdout"},stderr:{file:$prefix .. ".producer.stderr"}})
+  $argv = ["ffmpeg","-nostdin","-hide_banner","-y","-filter_complex_threads","8","-threads","4","-c:v","libdav1d","-i",$inputs .. "/" .. $mode .. ".webm","-i",$fifo]
+  $cross = $mode != "full"
+  $graph = "[0:v]" .. $expand .. ",split=" .. (if $cross then "4[d][dp][hash][dc]" else "3[d][dp][hash]" end) .. ";[1:v]split[r][rp];[d][r]libvmaf=model=path=/usr/share/model/vmaf_4k_v0.6.1.json:n_threads=8:log_fmt=json:log_path=" .. $prefix .. ".vmaf.json[v];[dp][rp]psnr=stats_file=" .. $prefix .. ".psnr[p]"
+  if $cross then
+    $argv = concat($argv,["-threads","4","-c:v","libdav1d","-i",$inputs .. "/full.webm"])
+    $graph = $graph .. ";[2:v]" .. $expand .. "[f];[dc][f]psnr=stats_file=" .. $prefix .. ".vs-full.psnr[c]"
+  end
+  $argv = concat($argv,["-filter_complex",$graph,"-map","[v]","-map","[p]"])
+  if $cross then $argv = concat($argv,["-map","[c]"]) end
+  $argv = concat($argv,["-f","null","-","-map","[hash]","-threads:v","1","-fps_mode","passthrough","-f","framemd5",$prefix .. ".md5"])
+  step($mode .. " decode/quality/hash",$argv,$prefix .. ".quality")
+  for $attempt in range(1,100)
+    if is_file($prefix .. ".export.result.json") then break end
+    sleep(0.1)
+  end
+  $export = json_parse(read_file($prefix .. ".export.result.json"))
+  if not $export.ok then die("native export failed: " .. $prefix .. ".export.stderr") end
+  $frames = filter(split(read_file($prefix .. ".md5"),"\n"),fn($s) = starts_with($s,"0,"))
+  $vmaf = json_parse(read_file($prefix .. ".vmaf.json"))
+  if length($frames) != 17284 or length($vmaf.frames) != 17284 then die("oracle frame count mismatch: " .. $mode) end
+  write_file($prefix .. ".counts.json",json_encode({decoded_frames:length($frames),quality_frames:length($vmaf.frames)}))
+  step("remove FIFO",["rm","-f",$fifo],$prefix .. ".fifo-cleanup")
 end
+write_file($out .. "/done.json",json_encode({ok:true}))
+print("QUALITY_OK=" .. $out)
