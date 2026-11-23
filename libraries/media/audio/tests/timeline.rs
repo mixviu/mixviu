@@ -56,6 +56,10 @@ fn validation() {
 }
 #[test]
 fn nonfinite_and_nested_validation() {
+    // Decimal subtraction must not reject an equal-length, frame-exact fade.
+    let mut v = spec();
+    v["sources"] = json!([{"path":"x","at_s":0,"from_s":0.1,"to_s":0.3,"fade_in_s":0.2}]);
+    assert!(serde_json::from_value::<Timeline>(v).unwrap().validate().is_ok());
     for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.1] {
         for field in 0..7 {
             let mut v = spec();

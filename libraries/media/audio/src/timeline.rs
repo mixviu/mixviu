@@ -101,7 +101,7 @@ impl Timeline {
                 if !valid_time(to) || to < s.from_s {
                     return Err(fail("to_s"));
                 }
-                if s.fade_in_s > to - s.from_s || s.fade_out_s > to - s.from_s {
+                if frames(s.fade_in_s) > frames(to) - frames(s.from_s) || frames(s.fade_out_s) > frames(to) - frames(s.from_s) {
                     return Err(fail("fade: longer than source"));
                 }
             }
@@ -125,7 +125,7 @@ impl Timeline {
                 return Err(refusal(&format!("sources[{index}].trim: outside WAV")));
             }
             let len = to - from;
-            if s.fade_in_s * 48000.0 > len as f64 || s.fade_out_s * 48000.0 > len as f64 {
+            if frames(s.fade_in_s) > len || frames(s.fade_out_s) > len {
                 return Err(refusal(&format!(
                     "sources[{index}].fade: longer than source"
                 )));
