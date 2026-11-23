@@ -8,6 +8,8 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
 };
 static NEXT: AtomicU64 = AtomicU64::new(0);
+/// Staged output shared by offline media commands. Publish every member of a
+/// transaction before committing any; Drop rolls back uncommitted publications.
 pub struct Pending {
     pub file: File,
     temporary: PathBuf,
@@ -106,6 +108,42 @@ impl Drop for Pending {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn symlink_planted_after_staging_is_preserved() {
+        let dir = std::env::temp_dir().join(format!("av-late-link-{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let victim = dir.join("victim");
+        let destination = dir.join("out");
+        std::fs::write(&victim, b"keep").unwrap();
+        {
+            let mut pending = Pending::new(&destination).unwrap();
+            std::os::unix::fs::symlink(&victim, &destination).unwrap();
+            assert!(pending.publish().is_err());
+        }
+        assert!(destination.is_symlink());
+        assert_eq!(std::fs::read(&victim).unwrap(), b"keep");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn second_publication_failure_rolls_back_first() {
+        let dir = std::env::temp_dir().join(format!("av-pair-{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let first = dir.join("first");
+        let second = dir.join("second");
+        {
+            let mut a = Pending::new(&first).unwrap();
+            let mut b = Pending::new(&second).unwrap();
+            a.publish().unwrap();
+            // A destination planted after staging still cannot be replaced.
+            std::fs::write(&second, b"planted").unwrap();
+            assert!(b.publish().is_err());
+        }
+        assert!(!first.exists());
+        assert_eq!(std::fs::read(&second).unwrap(), b"planted");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_file(second).unwrap();
+        std::fs::remove_dir(dir).unwrap();
+    }
     #[test]
     fn swapped_temporary_is_not_published() {
         use std::io::Write;

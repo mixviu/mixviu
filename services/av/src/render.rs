@@ -4,7 +4,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use std::{
     ffi::OsString,
-    io::{BufWriter, Read, Write},
+    io::{self, BufWriter, Read, Write},
     path::{Path, PathBuf},
     time::Instant,
 };
@@ -466,9 +466,8 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     let audio_wall = wall.elapsed().as_secs_f64();
     let audio_cpu = cpu() - c;
     if a.receipt.refused || !a.receipt.target_reached {
-        eprintln!("av: mastering refused");
-        println!("{}", serde_json::to_string(&a.receipt)?);
-        return Ok(3);
+        let _ = media_audio::cli::diagnostic(format_args!("mastering refused or loudness target missed"));
+        return deliver_receipt(&serde_json::to_string(&a.receipt)?, 3);
     }
     drop(a.audio);
     let t = Timeline {
@@ -546,14 +545,24 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     w.set_duration_samples(a.receipt.sample_count as u64);
     w.finish()?.flush()?;
     let size = pending.file.metadata()?.len();
-    pending.publish()?;
-    pending.commit();
     let scaled_frames: usize = chunks.iter().map(|c| c.scaling.frames).sum();
     let scale_wall_s: f64 = chunks.iter().map(|c| c.scaling.wall_s).sum();
     let n = frame(t.duration_s);
-    println!(
-        "{}",
-        serde_json::json!({"scaling": {"filter":"bicubic_catmull_rom_gamma","frames":scaled_frames,"sum_wall_s":scale_wall_s,"mean_ms":scale_wall_s*1000.0/scaled_frames.max(1) as f64}, "frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunks.len(), "parallel_chunks": t.encode.chunks, "stages": {"input": {"wall_s": input_wall, "cpu_s": input_cpu}, "audio": {"wall_s": audio_wall, "cpu_s": audio_cpu}, "video": {"wall_s": video_wall, "cpu_s": video_cpu}, "mux": {"wall_s": mux_start.elapsed().as_secs_f64(), "cpu_s": cpu()-c}}, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt})
-    );
-    Ok(0)
+    let receipt = serde_json::to_string(&serde_json::json!({"scaling": {"filter":"bicubic_catmull_rom_gamma","frames":scaled_frames,"sum_wall_s":scale_wall_s,"mean_ms":scale_wall_s*1000.0/scaled_frames.max(1) as f64}, "frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunks.len(), "parallel_chunks": t.encode.chunks, "stages": {"input": {"wall_s": input_wall, "cpu_s": input_cpu}, "audio": {"wall_s": audio_wall, "cpu_s": audio_cpu}, "video": {"wall_s": video_wall, "cpu_s": video_cpu}, "mux": {"wall_s": mux_start.elapsed().as_secs_f64(), "cpu_s": cpu()-c}}, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt})
+    )?;
+    pending.publish()?;
+    pending.commit();
+    deliver_receipt(&receipt, 0)
+}
+
+fn deliver_receipt(receipt: &str, outcome: u8) -> Result<u8> {
+    let mut stdout = io::stdout().lock();
+    if let Err(e) = writeln!(stdout, "{receipt}").and_then(|()| stdout.flush())
+        && outcome == 0
+        && e.kind() != io::ErrorKind::BrokenPipe
+    {
+        let _ = media_audio::cli::diagnostic(format_args!("published but receipt not written: {e}"));
+        return Ok(4);
+    }
+    Ok(outcome)
 }

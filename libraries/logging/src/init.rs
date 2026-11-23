@@ -68,28 +68,6 @@ fn log_root_for(var: &std::path::Path) -> std::path::PathBuf {
     var.join("log")
 }
 
-#[cfg(test)]
-mod log_dir_tests {
-    use super::log_root_for;
-    use std::path::Path;
-
-    #[test]
-    fn each_tier_has_its_own_log_root() {
-        assert_eq!(
-            log_root_for(Path::new("/var/lib/mix")),
-            Path::new("/var/log/mix")
-        );
-        assert_eq!(
-            log_root_for(Path::new("/home/user/.local/share/mix")),
-            Path::new("/home/user/.local/log/mix")
-        );
-        assert_eq!(
-            log_root_for(Path::new("/sandbox/var")),
-            Path::new("/sandbox/var/log")
-        );
-    }
-}
-
 /// Install the global tracing subscriber per `opts` + `defaults`.
 ///
 /// Returns a `LogHandle` the caller must hold for process lifetime.
@@ -620,5 +598,27 @@ where
                 .with_writer(writer)
                 .with_ansi(ansi),
         ),
+    }
+}
+
+#[cfg(test)]
+mod log_dir_tests {
+    use super::log_root_for;
+    use std::path::Path;
+
+    #[test]
+    fn each_tier_has_its_own_log_root() {
+        assert_eq!(
+            log_root_for(Path::new("/var/lib/mix")),
+            Path::new("/var/log/mix")
+        );
+        assert_eq!(
+            log_root_for(Path::new("/home/user/.local/share/mix")),
+            Path::new("/home/user/.local/log/mix")
+        );
+        assert_eq!(
+            log_root_for(Path::new("/sandbox/var")),
+            Path::new("/sandbox/var/log")
+        );
     }
 }

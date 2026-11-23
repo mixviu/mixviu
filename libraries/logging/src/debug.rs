@@ -164,6 +164,7 @@ const WORKSPACE_TARGETS: &[&str] = &[
 // own-crate prefix, so give their longer names explicit dependency levels.
 const PREFIX_DEPENDENCIES: &[&str] = &[
     "av1_grain",
+    "av_data",
     "av_scenechange",
     "strict_num",
     "system_configuration",

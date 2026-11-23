@@ -9,6 +9,11 @@ pub struct Track<'a> {
     pub codec_private: &'a [u8],
     pub codec_delay_ns: u64,
     pub seek_pre_roll_ns: u64,
+    pub width: u64,
+    pub height: u64,
+    pub default_duration_ns: u64,
+    pub sample_rate: f64,
+    pub channels: u64,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Packet<'a> {
@@ -17,6 +22,8 @@ pub struct Packet<'a> {
     pub timestamp: i64,
     pub key_frame: bool,
     pub data: &'a [u8],
+    pub duration: Option<u64>,
+    pub discard_padding_ns: i64,
 }
 #[derive(Debug)]
 pub struct Cue {
@@ -37,6 +44,13 @@ pub struct Demuxer<'a> {
 }
 impl<'a> Demuxer<'a> {
     pub fn new(input: &'a [u8]) -> Result<Self> {
+        // Zero-copy input plus capped indexes: at most 256 MiB of input and
+        // at most 128 MiB of indexes. Parsing has bounded depth (<= 8),
+        // never recursively traverses unknown masters.
+        if input.len() > 256 * 1024 * 1024 {
+            return Err(Error::Invalid("input allocation limit"));
+        }
+        validate_depth(input, 0, &mut 0)?;
         let mut p = 0;
         let header = element(input, &mut p)?;
         if header.id != 0x1a45dfa3 {
@@ -120,11 +134,39 @@ impl<'a> Demuxer<'a> {
                                 0x63a2 => t.codec_private = f.data,
                                 0x56aa => t.codec_delay_ns = uint(f.data)?,
                                 0x56bb => t.seek_pre_roll_ns = uint(f.data)?,
+                                0x23e383 => t.default_duration_ns = uint(f.data)?,
+                                0xe0 | 0xe1 => {
+                                    for v in children(f.data) {
+                                        let v = v?;
+                                        match v.id {
+                                            0xb0 => t.width = uint(v.data)?,
+                                            0xba => t.height = uint(v.data)?,
+                                            0x9f => t.channels = uint(v.data)?,
+                                            0xb5 => t.sample_rate = float(v.data)?,
+                                            _ => {}
+                                        }
+                                    }
+                                }
                                 _ => {}
                             }
                         }
                         if t.number == 0 || t.codec.is_empty() || !track_numbers.insert(t.number) {
                             return Err(Error::Invalid("invalid track"));
+                        }
+                        match t.codec {
+                            "V_AV1" if t.kind == 1 => {}
+                            "A_OPUS" if t.kind == 2 => {
+                                if t.channels == 0 {
+                                    t.channels = 1;
+                                }
+                                if t.sample_rate == 0.0 {
+                                    t.sample_rate = 48_000.0;
+                                }
+                            }
+                            _ => return Err(Error::UnsupportedCodec(t.codec.to_owned())),
+                        }
+                        if d.tracks.len() >= 64 {
+                            return Err(Error::Invalid("track limit"));
                         }
                         d.tracks.push(t);
                     }
@@ -148,11 +190,15 @@ impl<'a> Demuxer<'a> {
                             0xa0 => {
                                 let mut block = None;
                                 let mut reference = false;
+                                let mut duration = None;
+                                let mut padding = 0;
                                 for f in children(c.data) {
                                     let f = f?;
                                     match f.id {
                                         0xa1 => block = Some(f.data),
                                         0xfb => reference = true,
+                                        0x9b => duration = Some(uint(f.data)?),
+                                        0x75a2 => padding = signed(f.data)?,
                                         _ => {}
                                     }
                                 }
@@ -162,6 +208,9 @@ impl<'a> Demuxer<'a> {
                                     Some(!reference),
                                     e.start as u64,
                                 )?;
+                                let packet = d.packets.last_mut().ok_or(Error::Truncated)?;
+                                packet.duration = duration;
+                                packet.discard_padding_ns = padding;
                             }
                             _ => {}
                         }
@@ -192,11 +241,17 @@ impl<'a> Demuxer<'a> {
                                     }
                                     positions
                                         .push((track, pos.ok_or(Error::Invalid("cue position"))?));
+                                    if positions.len() > 64 {
+                                        return Err(Error::Invalid("cue positions limit"));
+                                    }
                                 }
                                 _ => {}
                             }
                         }
                         for (track, pos) in positions {
+                            if d.cues.len() >= 100_000 {
+                                return Err(Error::Invalid("cue limit"));
+                            }
                             d.cues.push(Cue {
                                 timestamp: time.ok_or(Error::Invalid("cue time"))?,
                                 track,
@@ -219,6 +274,9 @@ impl<'a> Demuxer<'a> {
         Ok(d)
     }
     fn block(&mut self, b: &'a [u8], base: i64, key: Option<bool>, cluster: u64) -> Result<()> {
+        if self.packets.len() >= 500_000 {
+            return Err(Error::Invalid("packet limit"));
+        }
         let mut p = 0;
         let (track, unknown) = vint(b, &mut p, false)?;
         if unknown || track == 0 {
@@ -242,6 +300,8 @@ impl<'a> Demuxer<'a> {
             timestamp,
             key_frame,
             data: &b[p + 3..],
+            duration: None,
+            discard_padding_ns: 0,
         });
         Ok(())
     }
@@ -282,4 +342,55 @@ impl<'a> Demuxer<'a> {
             .get(&(cue.cluster_position, video, cue.timestamp))?;
         Some(cue.timestamp)
     }
+}
+
+fn float(b: &[u8]) -> Result<f64> {
+    let v = match b.len() {
+        4 => f32::from_be_bytes(b.try_into().map_err(|_| Error::Truncated)?) as f64,
+        8 => f64::from_be_bytes(b.try_into().map_err(|_| Error::Truncated)?),
+        _ => return Err(Error::Invalid("float size")),
+    };
+    if !v.is_finite() || v < 0.0 {
+        return Err(Error::Invalid("invalid float"));
+    }
+    Ok(v)
+}
+fn signed(b: &[u8]) -> Result<i64> {
+    if b.is_empty() || b.len() > 8 {
+        return Err(Error::Invalid("signed integer size"));
+    }
+    let mut bytes = [if b[0] & 128 != 0 { 255 } else { 0 }; 8];
+    bytes[8 - b.len()..].copy_from_slice(b);
+    Ok(i64::from_be_bytes(bytes))
+}
+
+fn validate_depth(b: &[u8], depth: usize, elements: &mut usize) -> Result<()> {
+    if depth > 8 {
+        return Err(Error::Invalid("nesting depth limit"));
+    }
+    for e in children(b) {
+        let e = e?;
+        *elements += 1;
+        if *elements > 2_000_000 {
+            return Err(Error::Invalid("element count limit"));
+        }
+        if matches!(
+            e.id,
+            0x1a45dfa3
+                | 0x18538067
+                | 0x1549a966
+                | 0x1654ae6b
+                | 0xae
+                | 0xe0
+                | 0xe1
+                | 0x1f43b675
+                | 0xa0
+                | 0x1c53bb6b
+                | 0xbb
+                | 0xb7
+        ) {
+            validate_depth(e.data, depth + 1, elements)?;
+        }
+    }
+    Ok(())
 }

@@ -64,4 +64,7 @@ unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
 # Sources pinned by rev in manifests and Cargo.lock. Rio's terminal extraction
 # is the accepted Term specimen; tools/foreign_gate.mix keeps it Viu-only.
-allow-git = ["https://github.com/markc/spamlite", "https://github.com/raphamorim/rio"]
+# rav1d is pinned by rev: released 1.1.0 aborts on corrupt input, and the
+# error-cleanup fix is unreleased. Switch to the crates.io release containing
+# the fix (1.1.1 or later) and remove this allow-git entry.
+allow-git = ["https://github.com/markc/spamlite", "https://github.com/raphamorim/rio", "https://github.com/memorysafety/rav1d"]
