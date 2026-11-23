@@ -123,7 +123,11 @@ impl Timeline {
     /// The offline L5/L5b API consumes f64; see README for peak memory budgeting.
     pub fn mix(&self, base: &Path) -> Result<Audio> {
         self.validate()?;
-        let base = std::fs::canonicalize(if base.as_os_str().is_empty() { Path::new(".") } else { base })?;
+        let base = std::fs::canonicalize(if base.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            base
+        })?;
         let output_frames = frames(self.duration_s);
         let mut placed_frames = 0usize;
         let mut out = Vec::<f32>::new();
@@ -148,11 +152,17 @@ impl Timeline {
             }
             let start = frames(s.at_s);
             let placed = len.min(output_frames - start);
-            placed_frames = placed_frames.checked_add(placed).ok_or(crate::Error::SizeOverflow)?;
+            placed_frames = placed_frames
+                .checked_add(placed)
+                .ok_or(crate::Error::SizeOverflow)?;
             if placed_frames > output_frames * 16 {
-                return Err(refusal(&format!("sources[{index}].work: summed placed frames exceed 16x output frames")));
+                return Err(refusal(&format!(
+                    "sources[{index}].work: summed placed frames exceed 16x output frames"
+                )));
             }
-            let clip = source.decode(from..from + placed).map_err(|e| fail(e.to_string()))?;
+            let clip = source
+                .decode(from..from + placed)
+                .map_err(|e| fail(e.to_string()))?;
             let gain = 10.0_f64.powf(s.gain_db / 20.0)
                 * if clip.channels() == 1 {
                     std::f64::consts::FRAC_1_SQRT_2
@@ -162,8 +172,8 @@ impl Timeline {
             for k in 0..placed {
                 let fade = ramp(k, frames(s.fade_in_s)) * ramp(len - 1 - k, frames(s.fade_out_s));
                 for c in 0..2 {
-                    let src = k * clip.channels() as usize
-                        + if clip.channels() == 1 { 0 } else { c };
+                    let src =
+                        k * clip.channels() as usize + if clip.channels() == 1 { 0 } else { c };
                     let dst = &mut out[(start + k) * 2 + c];
                     *dst += (clip.samples()[src] * gain * fade) as f32;
                     if !dst.is_finite() {

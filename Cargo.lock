@@ -5619,6 +5619,7 @@ version = "0.1.2"
 dependencies = [
  "ebur128",
  "hound",
+ "libc",
  "media-opus",
  "media-webm",
  "rubato",

@@ -277,8 +277,8 @@ impl Audio {
                 wave[n + pad] = frame[c];
             }
             for n in 0..frames {
-                let pos = (range.start + n) as f64 * self.rate as f64 / 48000.0
-                    - origin as f64 + pad as f64;
+                let pos = (range.start + n) as f64 * self.rate as f64 / 48000.0 - origin as f64
+                    + pad as f64;
                 let t = pos - (pad / 2) as f64 + 1.0 - 1.0 / 256.0;
                 let mut nearest = [(0isize, 0isize); 4];
                 get_nearest_times_4(t, 256, &mut nearest);
@@ -480,10 +480,7 @@ fn validate_wav_header(r: &mut (impl Read + Seek), len: u64) -> Result<(), Error
     let mut header = [0; 12];
     r.seek(SeekFrom::Start(0))?;
     r.read_exact(&mut header)?;
-    if &header[..4] != b"RIFF"
-        || &header[8..12] != b"WAVE"
-        || u32at(&header, 4) as u64 + 8 != len
-    {
+    if &header[..4] != b"RIFF" || &header[8..12] != b"WAVE" || u32at(&header, 4) as u64 + 8 != len {
         return Err(Error::InvalidHeader);
     }
     let mut p = 12u64;

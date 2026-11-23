@@ -1,5 +1,9 @@
 use crate::timeline::{self, Timeline};
-use std::{ffi::OsString, io::{self, Read, Write}, path::PathBuf};
+use std::{
+    ffi::OsString,
+    io::{self, Read, Write},
+    path::PathBuf,
+};
 const MAX_JSON: u64 = 16 * 1024 * 1024;
 /// Diagnostics must never panic, including when the stderr reader has left.
 pub fn diagnostic(message: std::fmt::Arguments<'_>) -> io::Result<()> {
@@ -55,8 +59,8 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> timeline::Result<u8> {
         wav.as_deref(),
     )?;
     let mut stdout = io::stdout().lock();
-    if let Err(e) = writeln!(stdout, "{}", serde_json::to_string(&receipt)?)
-        .and_then(|()| stdout.flush())
+    if let Err(e) =
+        writeln!(stdout, "{}", serde_json::to_string(&receipt)?).and_then(|()| stdout.flush())
     {
         if e.kind() == io::ErrorKind::BrokenPipe {
             return Ok(0);

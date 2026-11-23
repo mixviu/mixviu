@@ -11,7 +11,9 @@ fn main() -> ExitCode {
             }
         },
         _ => {
-            let _ = media_audio::cli::diagnostic(format_args!("usage: av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]"));
+            let _ = media_audio::cli::diagnostic(format_args!(
+                "usage: av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]"
+            ));
             ExitCode::from(2)
         }
     }

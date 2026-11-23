@@ -1,6 +1,10 @@
 //! Descriptor-bound Linux source confinement and seeked WAV decoding.
 use crate::{Audio, Error, MAX_RESAMPLED_FRAMES, validate_wav_header};
-use std::{fs::File, io::{BufReader, Read, Seek, SeekFrom}, path::Path};
+use std::{
+    fs::File,
+    io::{BufReader, Read, Seek, SeekFrom},
+    path::Path,
+};
 
 // Three hours, 48 kHz, eight channels, four bytes/sample, plus 64 KiB
 // of RIFF headers. Standard RIFF's 32-bit length is a tighter bound today.
@@ -12,7 +16,10 @@ pub(crate) fn open(base: &Path, path: &Path) -> Result<File, Box<dyn std::error:
     use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
     // O_NONBLOCK prevents opening a FIFO from waiting for a writer. It does
     // not change regular-file reads. Inspect this descriptor before reading.
-    let file = File::options().read(true).custom_flags(libc::O_NONBLOCK).open(base.join(path))?;
+    let file = File::options()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(base.join(path))?;
     let metadata = file.metadata()?;
     if !metadata.is_file() {
         return Err("path: source is not a regular file".into());
@@ -22,7 +29,10 @@ pub(crate) fn open(base: &Path, path: &Path) -> Result<File, Box<dyn std::error:
         return Err("path: opened source escapes timeline directory".into());
     }
     if metadata.len() > MAX_SOURCE_BYTES {
-        return Err(Error::InputTooLarge { max_bytes: MAX_SOURCE_BYTES }.into());
+        return Err(Error::InputTooLarge {
+            max_bytes: MAX_SOURCE_BYTES,
+        }
+        .into());
     }
     Ok(file)
 }
@@ -38,21 +48,30 @@ pub(crate) struct Wav<R> {
 impl<R: Read + Seek> Wav<R> {
     pub fn new(mut input: R, len: u64) -> Result<Self, Error> {
         if len > MAX_SOURCE_BYTES {
-            return Err(Error::InputTooLarge { max_bytes: MAX_SOURCE_BYTES });
+            return Err(Error::InputTooLarge {
+                max_bytes: MAX_SOURCE_BYTES,
+            });
         }
         validate_wav_header(&mut input, len)?;
         input.seek(SeekFrom::Start(0))?;
         let reader = hound::WavReader::new(input)?;
         // len() counts interleaved values; duration() counts channel frames.
         if u64::from(reader.len()) > MAX_SOURCE_SAMPLES {
-            return Err(Error::InputTooLarge { max_bytes: MAX_SOURCE_BYTES });
+            return Err(Error::InputTooLarge {
+                max_bytes: MAX_SOURCE_BYTES,
+            });
         }
-        let frames = (u64::from(reader.duration()) * 48000)
-            .div_ceil(u64::from(reader.spec().sample_rate));
+        let frames =
+            (u64::from(reader.duration()) * 48000).div_ceil(u64::from(reader.spec().sample_rate));
         if frames > MAX_RESAMPLED_FRAMES as u64 {
-            return Err(Error::OutputTooLong { max_frames: MAX_RESAMPLED_FRAMES });
+            return Err(Error::OutputTooLong {
+                max_frames: MAX_RESAMPLED_FRAMES,
+            });
         }
-        Ok(Self { reader, frames: frames as usize })
+        Ok(Self {
+            reader,
+            frames: frames as usize,
+        })
     }
     pub fn decode(mut self, range: std::ops::Range<usize>) -> Result<Audio, Error> {
         let spec = self.reader.spec();
@@ -67,15 +86,22 @@ impl<R: Read + Seek> Wav<R> {
         } else {
             // Keep both sides of the 512-tap sinc without decoding the rest
             // of the WAV. Absolute output positions preserve resampler phase.
-            let start = (range.start as u64 * u64::from(spec.sample_rate) / 48000)
-                .saturating_sub(512);
+            let start =
+                (range.start as u64 * u64::from(spec.sample_rate) / 48000).saturating_sub(512);
             let end = (range.end as u64 * u64::from(spec.sample_rate)).div_ceil(48000) + 512;
-            (start as usize, end.min(u64::from(self.reader.duration())) as usize)
+            (
+                start as usize,
+                end.min(u64::from(self.reader.duration())) as usize,
+            )
         };
         self.reader.seek(start as u32)?;
-        let count = (end - start).checked_mul(spec.channels as usize).ok_or(Error::SizeOverflow)?;
+        let count = (end - start)
+            .checked_mul(spec.channels as usize)
+            .ok_or(Error::SizeOverflow)?;
         let mut samples = Vec::new();
-        samples.try_reserve_exact(count).map_err(|_| Error::SizeOverflow)?;
+        samples
+            .try_reserve_exact(count)
+            .map_err(|_| Error::SizeOverflow)?;
         match (spec.sample_format, spec.bits_per_sample) {
             (hound::SampleFormat::Float, 32) => {
                 for s in self.reader.samples::<f32>().take(count) {
@@ -94,7 +120,11 @@ impl<R: Read + Seek> Wav<R> {
             return Err(Error::InvalidHeader);
         }
         let audio = Audio::new(spec.sample_rate, spec.channels, samples)?;
-        if spec.sample_rate == 48000 { Ok(audio) } else { audio.resample_window(start, range) }
+        if spec.sample_rate == 48000 {
+            Ok(audio)
+        } else {
+            audio.resample_window(start, range)
+        }
     }
 }
 pub(crate) fn wav(file: File) -> Result<Wav<BufReader<File>>, Error> {
@@ -118,21 +148,52 @@ mod tests {
         }
     }
     impl Seek for Counted {
-        fn seek(&mut self, p: SeekFrom) -> std::io::Result<u64> { self.inner.seek(p) }
+        fn seek(&mut self, p: SeekFrom) -> std::io::Result<u64> {
+            self.inner.seek(p)
+        }
     }
     #[test]
     fn seeked_trim_matches_full_resampling_with_bounded_reads() {
         for rate in [22050, 44100, 48000, 96000] {
-            let original = Audio::new(rate, 2, (0..rate * 2).map(|i| (i as f64 * 0.021).sin() * 0.1).collect()).unwrap();
+            let original = Audio::new(
+                rate,
+                2,
+                (0..rate * 2)
+                    .map(|i| (i as f64 * 0.021).sin() * 0.1)
+                    .collect(),
+            )
+            .unwrap();
             let mut bytes = Cursor::new(Vec::new());
-            original.write_wav(&mut bytes, crate::WavFormat::Float32).unwrap();
-            let expected = Audio::read_wav(Cursor::new(bytes.get_ref())).unwrap().resample_48k().unwrap();
+            original
+                .write_wav(&mut bytes, crate::WavFormat::Float32)
+                .unwrap();
+            let expected = Audio::read_wav(Cursor::new(bytes.get_ref()))
+                .unwrap()
+                .resample_48k()
+                .unwrap();
             let len = bytes.get_ref().len() as u64;
-            let mut input = Counted { inner: bytes, read: 0 };
-            let actual = Wav::new(&mut input, len).unwrap().decode(24000..24100).unwrap();
+            let mut input = Counted {
+                inner: bytes,
+                read: 0,
+            };
+            let actual = Wav::new(&mut input, len)
+                .unwrap()
+                .decode(24000..24100)
+                .unwrap();
             assert_eq!(actual.frames(), 100);
-            assert!(actual.samples().iter().zip(&expected.samples()[48000..48200]).all(|(a,b)| (a-b).abs() < 1e-12), "rate {rate}");
-            assert!(input.read < 12000, "only the trim, filter support and headers are read: {}", input.read);
+            assert!(
+                actual
+                    .samples()
+                    .iter()
+                    .zip(&expected.samples()[48000..48200])
+                    .all(|(a, b)| (a - b).abs() < 1e-12),
+                "rate {rate}"
+            );
+            assert!(
+                input.read < 12000,
+                "only the trim, filter support and headers are read: {}",
+                input.read
+            );
         }
     }
     #[test]

@@ -60,7 +60,11 @@ impl Pending {
         Ok(())
     }
     fn sync_directory(&self) -> io::Result<()> {
-        let parent = self.destination.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+        let parent = self
+            .destination
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
         File::open(parent)?.sync_all()
     }
     pub fn commit(&mut self) {
