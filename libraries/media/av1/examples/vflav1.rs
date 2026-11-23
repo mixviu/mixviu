@@ -1,7 +1,7 @@
 //! Disposable VFL skip measurement. Single GOP, rav1e 0.8.1 low latency only.
 use media_av1::{Encoder, Packet, Settings, Target};
 use media_vfl::reader::Reader;
-use media_webm::writer::{Writer, Video, av1_config};
+use media_webm::{Writer, Video, av1_config};
 use std::{fs::File, io::BufWriter, time::Instant};
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 struct Mux {

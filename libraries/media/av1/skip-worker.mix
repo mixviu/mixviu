@@ -1,0 +1,12 @@
+$out = "/var/tmp/vfl-skip-av1"
+mkdir($out, {parents:true})
+$r = run_argv(["cargo","build","--release","-p","media-av1","--example","vflav1","--features","asm"], {timeout:3600,stdout:"inherit",stderr:"inherit"})
+if not $r.ok then exit($r.exit_code ?? 1) end
+$bin = env("CARGO_TARGET_DIR", "target") .. "/release/examples/vflav1"
+for $mode in ["cfr-skip","vfr","full"]
+  $r = run_argv(["/usr/bin/time","-v","-o",$out .. "/" .. $mode .. ".time",$bin,$mode,"/var/tmp/vfl-skip-input",$out .. "/" .. $mode .. ".webm"], {timeout:18000,stdout:{file:$out .. "/" .. $mode .. ".json"},stderr:{file:$out .. "/" .. $mode .. ".log"}})
+  print($mode .. " " .. json_encode($r))
+  print(read_file($out .. "/" .. $mode .. ".time"))
+  print(read_file($out .. "/" .. $mode .. ".json"))
+  if not $r.ok then exit($r.exit_code ?? 1) end
+end
