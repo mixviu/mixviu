@@ -3,8 +3,7 @@ use crate::{Audio, LimiterConfig, Loudness, WavFormat};
 use media_opus::{Channels, Decoder, Encoder, OpusDecoder, OpusEncoder, OpusHead, Packet};
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::File,
-    io::{BufReader, BufWriter},
+    io::{BufWriter, Write},
     path::{Component, Path, PathBuf},
 };
 
@@ -124,17 +123,21 @@ impl Timeline {
     /// The offline L5/L5b API consumes f64; see README for peak memory budgeting.
     pub fn mix(&self, base: &Path) -> Result<Audio> {
         self.validate()?;
+        let base = std::fs::canonicalize(if base.as_os_str().is_empty() { Path::new(".") } else { base })?;
+        let output_frames = frames(self.duration_s);
+        let mut placed_frames = 0usize;
         let mut out = Vec::<f32>::new();
         let n = frames(self.duration_s) * 2;
         out.try_reserve_exact(n)
             .map_err(|_| crate::Error::SizeOverflow)?;
         out.resize(n, 0.0);
         for (index, s) in self.sources.iter().enumerate() {
-            let clip =
-                Audio::read_wav(BufReader::new(File::open(base.join(&s.path))?))?.resample_48k()?;
+            let fail = |e| refusal(&format!("sources[{index}].{e}"));
+            let file = crate::source::open(&base, &s.path).map_err(|e| fail(e.to_string()))?;
+            let source = crate::source::wav(file).map_err(|e| fail(e.to_string()))?;
             let from = frames(s.from_s);
-            let to = s.to_s.map(frames).unwrap_or(clip.frames());
-            if from > to || to > clip.frames() {
+            let to = s.to_s.map(frames).unwrap_or(source.frames);
+            if from > to || to > source.frames {
                 return Err(refusal(&format!("sources[{index}].trim: outside WAV")));
             }
             let len = to - from;
@@ -144,16 +147,22 @@ impl Timeline {
                 )));
             }
             let start = frames(s.at_s);
+            let placed = len.min(output_frames - start);
+            placed_frames = placed_frames.checked_add(placed).ok_or(crate::Error::SizeOverflow)?;
+            if placed_frames > output_frames * 16 {
+                return Err(refusal(&format!("sources[{index}].work: summed placed frames exceed 16x output frames")));
+            }
+            let clip = source.decode(from..from + placed).map_err(|e| fail(e.to_string()))?;
             let gain = 10.0_f64.powf(s.gain_db / 20.0)
                 * if clip.channels() == 1 {
                     std::f64::consts::FRAC_1_SQRT_2
                 } else {
                     1.0
                 };
-            for k in 0..len.min(frames(self.duration_s) - start) {
+            for k in 0..placed {
                 let fade = ramp(k, frames(s.fade_in_s)) * ramp(len - 1 - k, frames(s.fade_out_s));
                 for c in 0..2 {
-                    let src = (from + k) * clip.channels() as usize
+                    let src = k * clip.channels() as usize
                         + if clip.channels() == 1 { 0 } else { c };
                     let dst = &mut out[(start + k) * 2 + c];
                     *dst += (clip.samples()[src] * gain * fade) as f32;
@@ -246,7 +255,9 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
     let after = audio.measure()?;
     let mut wav_output = wav.map(crate::pending::Pending::new).transpose()?;
     if let Some(output) = &mut wav_output {
-        audio.write_wav(BufWriter::new(&mut output.file), WavFormat::Float32)?;
+        let mut buffer = BufWriter::new(&mut output.file);
+        audio.write_wav(&mut buffer, WavFormat::Float32)?;
+        buffer.flush()?;
     }
     let mut output = crate::pending::Pending::new(out)?;
     let mut writer = media_webm::Writer::audio(
@@ -262,7 +273,11 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
         writer.opus_packet(k as u64 * 20, &p.data, p.discard_padding)?;
     }
     writer.set_duration_samples(count as u64);
-    drop(writer.finish()?);
+    writer.finish()?.flush()?;
+    output.file.sync_all()?;
+    if let Some(wav) = &wav_output {
+        wav.file.sync_all()?;
+    }
     let receipt = Receipt {
         before: r.before.into(),
         after: after.into(),
@@ -281,10 +296,10 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
         codec_passes,
     };
     if !receipt.refused && receipt.target_reached {
+        output.publish()?;
         if let Some(wav) = &mut wav_output {
             wav.publish()?;
         }
-        output.publish()?;
         if let Some(wav) = &mut wav_output {
             wav.commit();
         }

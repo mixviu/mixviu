@@ -9,6 +9,7 @@ use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 pub mod cli;
 mod limiter;
 mod pending;
+mod source;
 pub mod timeline;
 pub use limiter::{LimitReport, LimiterConfig, TargetReport};
 
@@ -249,6 +250,12 @@ impl Audio {
         if self.frames() == 0 {
             return Self::silence(48000, self.channels, 0);
         }
+        self.resample_window(0, 0..frames)
+    }
+    // Input is a seeked window with at least 512 frames of filter support on
+    // either side (or the actual file boundary). Keep the original time origin.
+    fn resample_window(&self, origin: usize, range: std::ops::Range<usize>) -> Result<Self, Error> {
+        let frames = range.len();
         let ratio = 48000.0 / self.rate as f64;
         let sinc = make_interpolator::<f64>(512, ratio, None, 256, WindowFunction::BlackmanHarris2);
         let mut out = Self::silence(48000, self.channels, frames)?;
@@ -270,7 +277,8 @@ impl Audio {
                 wave[n + pad] = frame[c];
             }
             for n in 0..frames {
-                let pos = n as f64 * self.rate as f64 / 48000.0 + pad as f64;
+                let pos = (range.start + n) as f64 * self.rate as f64 / 48000.0
+                    - origin as f64 + pad as f64;
                 let t = pos - (pad / 2) as f64 + 1.0 - 1.0 / 256.0;
                 let mut nearest = [(0isize, 0isize); 4];
                 get_nearest_times_4(t, 256, &mut nearest);
@@ -373,7 +381,7 @@ impl Audio {
         let spec = reader.spec();
         let mut samples = Vec::new();
         samples
-            .try_reserve_exact(reader.len() as usize)
+            .try_reserve_exact(reader.duration() as usize * spec.channels as usize)
             .map_err(|_| Error::SizeOverflow)?;
         match (spec.sample_format, spec.bits_per_sample) {
             (hound::SampleFormat::Float, 32) => {
@@ -457,37 +465,57 @@ impl Audio {
 // Preflight all RIFF chunk boundaries before hound sees them, including divisors
 // used in its header parser. Unknown chunks and canonical 44-byte LINEAR16 work.
 fn validate_riff(b: &[u8]) -> Result<(), Error> {
+    validate_wav_header(&mut Cursor::new(b), b.len() as u64)
+}
+fn validate_wav_header(r: &mut (impl Read + Seek), len: u64) -> Result<(), Error> {
     fn u16at(b: &[u8], n: usize) -> u16 {
         u16::from_le_bytes([b[n], b[n + 1]])
     }
     fn u32at(b: &[u8], n: usize) -> u32 {
         u32::from_le_bytes([b[n], b[n + 1], b[n + 2], b[n + 3]])
     }
-    if b.len() < 12
-        || &b[..4] != b"RIFF"
-        || &b[8..12] != b"WAVE"
-        || u32at(b, 4) as u64 + 8 != b.len() as u64
+    if len < 12 {
+        return Err(Error::InvalidHeader);
+    }
+    let mut header = [0; 12];
+    r.seek(SeekFrom::Start(0))?;
+    r.read_exact(&mut header)?;
+    if &header[..4] != b"RIFF"
+        || &header[8..12] != b"WAVE"
+        || u32at(&header, 4) as u64 + 8 != len
     {
         return Err(Error::InvalidHeader);
     }
-    let mut p = 12;
+    let mut p = 12u64;
     let mut align = None;
     let mut data = None;
-    while p < b.len() {
-        if b.len() - p < 8 {
+    let mut metadata_bytes = 12u64;
+    while p < len {
+        if len - p < 8 {
             return Err(Error::InvalidHeader);
         }
-        let n = u32at(b, p + 4) as usize;
+        r.seek(SeekFrom::Start(p))?;
+        let mut chunk = [0; 8];
+        r.read_exact(&mut chunk)?;
+        let n = u32at(&chunk, 4) as u64;
         let start = p + 8;
         let end = start
             .checked_add(n)
-            .filter(|&v| v <= b.len())
+            .filter(|&v| v <= len)
             .ok_or(Error::InvalidHeader)?;
-        match &b[p..p + 4] {
+        metadata_bytes = metadata_bytes
+            .checked_add(8 + n % 2 + if &chunk[..4] == b"data" { 0 } else { n })
+            .filter(|&v| v <= 65536)
+            .ok_or(Error::InvalidHeader)?;
+        match &chunk[..4] {
             b"fmt " => {
                 if n < 16 || align.is_some() {
                     return Err(Error::InvalidHeader);
                 }
+                let mut format = [0; 40];
+                r.read_exact(&mut format[..n.min(40) as usize])?;
+                let b = &format;
+                let start = 0;
                 let c = u16at(b, start + 2);
                 let rate = u32at(b, start + 4);
                 let bits = u16at(b, start + 14);
@@ -521,7 +549,7 @@ fn validate_riff(b: &[u8]) -> Result<(), Error> {
                 {
                     return Err(Error::InvalidHeader);
                 }
-                align = Some(a as usize);
+                align = Some(a as u64);
             }
             b"data" => {
                 if data.is_some() || align.is_none() {
@@ -533,7 +561,7 @@ fn validate_riff(b: &[u8]) -> Result<(), Error> {
         }
         p = end
             .checked_add(n % 2)
-            .filter(|&v| v <= b.len())
+            .filter(|&v| v <= len)
             .ok_or(Error::InvalidHeader)?;
     }
     match (align, data) {

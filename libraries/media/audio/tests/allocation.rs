@@ -58,5 +58,11 @@ fn programme_and_limiter_allocation_failures_are_errors() {
         0,
         "selected allocation was exercised"
     );
+    let stereo = Audio::new(48000, 2, vec![0.1; 8192]).unwrap();
+    let mut encoded = std::io::Cursor::new(Vec::new());
+    stereo.write_wav(&mut encoded, WavFormat::Float32).unwrap();
+    FAIL_SIZE.with(|s| s.set(65536));
+    assert!(Audio::read_wav(std::io::Cursor::new(encoded.into_inner())).is_err());
+    assert_eq!(FAIL_SIZE.with(Cell::get), 0, "stereo reservation exercised");
     std::fs::remove_dir_all(dir).unwrap();
 }

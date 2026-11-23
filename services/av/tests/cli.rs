@@ -91,6 +91,16 @@ fn refusal_paths_size_and_atomic_outputs() {
             .starts_with("av: mastering refused:")
     );
     assert!(!out.exists() && !wav.exists());
+    // The receipt's reader may leave while rendering. EPIPE ends quietly.
+    let mut child = Command::new(env!("CARGO_BIN_EXE_av"))
+        .arg("audio").arg(&input).arg("--out").arg(&out)
+        .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
+        .spawn().unwrap();
+    drop(child.stdout.take());
+    let closed = child.wait_with_output().unwrap();
+    assert_eq!(closed.status.code(), Some(0), "{}", String::from_utf8_lossy(&closed.stderr));
+    assert!(closed.stderr.is_empty());
+    assert!(!out.exists());
     assert_eq!(
         std::fs::read_dir(&dir).unwrap().count(),
         2,
