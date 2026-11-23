@@ -241,24 +241,41 @@ struct Chunk {
     config: Vec<u8>,
     encoded: usize,
 }
-fn compose(v: &Video, base: &Path, sources: &mut [Option<Source>], k: u64) -> Result<(Arc<Bgra>, bool)> {
+fn compose(
+    v: &Video,
+    base: &Path,
+    sources: &mut [Option<Source>],
+    k: u64,
+) -> Result<(Arc<Bgra>, bool)> {
     let j = v.segments.partition_point(|s| frame(s.at_s) <= k) - 1;
     // Execution walks forward. Retain only the current and outgoing segment;
     // opening every reader up front would allocate one canvas per segment.
-    if j >= 2 { sources[j-2] = None; }
+    if j >= 2 {
+        sources[j - 2] = None;
+    }
     let s = &v.segments[j];
-    if sources[j].is_none() { sources[j] = Some(Source::new(base,s)?); }
+    if sources[j].is_none() {
+        sources[j] = Some(Source::new(base, s)?);
+    }
     let slot = (s.from_slot + k - frame(s.at_s)).min(s.to_slot - 1);
-    let (mut b, mut repeat) = sources[j].as_mut().ok_or("missing_segment_reader")?.get(slot, v.width, v.height)?;
+    let (mut b, mut repeat) = sources[j]
+        .as_mut()
+        .ok_or("missing_segment_reader")?
+        .get(slot, v.width, v.height)?;
     if let Some(f) = v
         .crossfades
         .iter()
         .find(|f| k >= frame(f.at_s) && k < frame(f.at_s + f.duration_s))
     {
         let old = &v.segments[j - 1];
-        if sources[j-1].is_none() { sources[j-1] = Some(Source::new(base,old)?); }
+        if sources[j - 1].is_none() {
+            sources[j - 1] = Some(Source::new(base, old)?);
+        }
         let old_slot = (old.from_slot + k - frame(old.at_s)).min(old.to_slot - 1);
-        let (a, _) = sources[j - 1].as_mut().ok_or("missing_segment_reader")?.get(old_slot, v.width, v.height)?;
+        let (a, _) = sources[j - 1]
+            .as_mut()
+            .ok_or("missing_segment_reader")?
+            .get(old_slot, v.width, v.height)?;
         let len = frame(f.duration_s);
         let weight = if len == 1 {
             255

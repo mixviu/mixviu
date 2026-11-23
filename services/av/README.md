@@ -71,6 +71,9 @@ The JSON receipt reports frame/encode/repeat/keyframe/chunk counts, stage wall
 and process CPU seconds, effective fps, bytes and the complete audio receipt.
 `repeats` counts injected units; keyframe successors are included in encoded
 frames. CPU accounting uses Linux process counters, including encoder threads.
+The nested audio byte count is Opus payload bytes; the outer byte count is the
+complete WebM. Only the active/outgoing VFL pair retains decoded canvases per
+chunk. Completed compressed chunks remain in memory until muxing.
 
 Worker-only benchmark reference: `cargo build --release -p av --example reference`,
 then `reference TIMELINE.json` writes lossless Y4M through the exact same pixel
