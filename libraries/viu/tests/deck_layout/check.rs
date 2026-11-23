@@ -8,21 +8,32 @@ fn equal_rows_stretch_single_cards_and_only_the_last_stacked_card() {
     let ctx = egui::Context::default();
     ctx.set_pixels_per_point(2.4);
     for frame in 0..16 {
-        let mut out = ctx.run_ui(egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.,900.))),
-            time: Some(frame as f64), ..Default::default()
-        }, |ui| { view.show(ui); });
+        let mut out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1000., 900.),
+                )),
+                time: Some(frame as f64),
+                ..Default::default()
+            },
+            |ui| {
+                view.show(ui);
+            },
+        );
         out.textures_delta.clear();
         if frame >= 12 {
             assert!(!ctx.has_requested_repaint());
             assert!(!ctx.will_discard());
         }
     }
-    let g=&view.geometry;
-    for id in ["a","c"] { assert!((g[id].bottom()-g["b"].bottom()).abs()<1., "{id}: {g:?}"); }
-    assert!((g["e"].bottom()-g["right"].bottom()).abs()<1., "{g:?}");
-    assert!((g["e"].top()-g["d"].bottom()-12.).abs()<1.);
-    assert!(g["d"].height()<g["e"].height());
+    let g = &view.geometry;
+    for id in ["a", "c"] {
+        assert!((g[id].bottom() - g["b"].bottom()).abs() < 1., "{id}: {g:?}");
+    }
+    assert!((g["e"].bottom() - g["right"].bottom()).abs() < 1., "{g:?}");
+    assert!((g["e"].top() - g["d"].bottom() - 12.).abs() < 1.);
+    assert!(g["d"].height() < g["e"].height());
 }
 
 #[test]

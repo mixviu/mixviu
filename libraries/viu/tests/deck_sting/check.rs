@@ -264,7 +264,8 @@ fn chrome_entrance_contact_sheet() {
         for (i, model) in samples().into_iter().enumerate() {
             let (image, _) = render(model);
             image.save(out.join(format!("native-{i}.png"))).unwrap();
-            let small = image::imageops::resize(&image, 960, 540, image::imageops::FilterType::Lanczos3);
+            let small =
+                image::imageops::resize(&image, 960, 540, image::imageops::FilterType::Lanczos3);
             image::imageops::replace(&mut sheet, &small, 0, i as i64 * 540);
         }
         sheet.save(out.join("native-contact-sheet.png")).unwrap();

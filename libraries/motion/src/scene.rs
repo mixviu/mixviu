@@ -12,8 +12,14 @@ pub fn paint_preset(name: &str) -> Result<Preset, &'static str> {
             return Err("unsupported legacy paint preset");
         }
         static LEGACY: std::sync::OnceLock<Vec<Preset>> = std::sync::OnceLock::new();
-        return Ok(LEGACY.get_or_init(|| crate::load_presets(include_str!("../legacy-presets.json")).expect("frozen table"))
-            .iter().find(|p| p.name == legacy).expect("frozen entrance").clone());
+        return Ok(LEGACY
+            .get_or_init(|| {
+                crate::load_presets(include_str!("../legacy-presets.json")).expect("frozen table")
+            })
+            .iter()
+            .find(|p| p.name == legacy)
+            .expect("frozen entrance")
+            .clone());
     }
     if ![
         "fade", "up", "down", "left", "right", "pop", "drop", "zoom", "wipe",

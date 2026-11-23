@@ -32,7 +32,10 @@ pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
     static TABLE: std::sync::OnceLock<Vec<motion::Preset>> = std::sync::OnceLock::new();
     // Drawing effects have their own established timing contract (including
     // the sting's eye pop); slide entrance changes must not retime primitives.
-    let table = TABLE.get_or_init(|| motion::load_presets(include_str!("../../motion/legacy-presets.json")).expect("frozen drawing effects"));
+    let table = TABLE.get_or_init(|| {
+        motion::load_presets(include_str!("../../motion/legacy-presets.json"))
+            .expect("frozen drawing effects")
+    });
     let mut shapes = Vec::new();
     let mut shadow_shapes = Vec::new();
     let mut float_offset = None;

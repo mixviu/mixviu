@@ -47,7 +47,7 @@ try
         for $k=0 to len($track.keyframes)-1
           $offset=$track.keyframes[$k].offset
           $table[$i].tracks[$j].keyframes[$k].value=$captured.samples[round($offset*20)].values[$track.property]
-          $table[$i].tracks[$j].keyframes[$k].easing={kind:"bezier",x1:0.65,y1:0,x2:0.35,y2:1}
+          $table[$i].tracks[$j].keyframes[$k].easing=$captured.easing
         end
       end
     end

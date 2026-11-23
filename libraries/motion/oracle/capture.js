@@ -59,7 +59,11 @@
         filter:s.filter,clip_path:s.clipPath,box_shadow:s.boxShadow,
         background_position:s.backgroundPosition,dash_offset:s.strokeDashoffset}});
     }
-    output.presets.push({name,duration,samples});
+    const timing = getComputedStyle(target,pseudo).animationTimingFunction;
+    const bezier = timing.match(/^cubic-bezier\(([^)]+)\)$/);
+    const points = bezier ? bezier[1].split(',').map(Number) : null;
+    const easing = points ? {kind:'bezier',x1:points[0],y1:points[1],x2:points[2],y2:points[3]} : null;
+    output.presets.push({name,duration,samples,easing});
   }
   output.title_samples = [0, .05, .45].map(t => {
     document.getAnimations().forEach(a => {a.pause(); a.currentTime=t*1000;});
