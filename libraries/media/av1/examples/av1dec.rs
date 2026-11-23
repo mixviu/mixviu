@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let seconds = start.elapsed().as_secs_f64();
     println!(
         "asm={} threads={threads} frames={frames} seconds={seconds:.6} fps={:.2}",
-        cfg!(feature = "asm"),
+        cfg!(feature = "decode-asm"),
         frames as f64 / seconds
     );
     Ok(())

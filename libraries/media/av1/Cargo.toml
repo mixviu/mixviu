@@ -5,8 +5,9 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-default = ["asm"]
-asm = ["rav1e/asm", "rav1d/asm"]
+default = ["decode-asm"]
+decode-asm = ["rav1d/asm"]
+asm = ["rav1e/asm", "decode-asm"]
 
 [dependencies]
 media-frame = { path = "../frame" }
