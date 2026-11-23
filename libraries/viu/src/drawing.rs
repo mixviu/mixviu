@@ -363,6 +363,29 @@ fn paint_shadow(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ordinary_drawings_use_current_pop_and_sting_profile_uses_frozen_pop() {
+        for profile in ["current","legacy-sting"] {
+            let source=format!(r##"---
+scene: 1
+name: drawing-profile
+citizen: test
+---
+```mix
+{{root:{{widget:"drawing",w:100,h:100,sample_time:0.3,motion_profile:"{profile}",primitives:[{{kind:"ellipse",centre:[50,50],radius:[20,20],colour:"#ff0000",effects:[{{preset:"pop"}}]}}]}}}}
+```
+"##);
+            let mut view=crate::view::SceneView::new(&source).unwrap();
+            let ctx=egui::Context::default();
+            let out=ctx.run_ui(egui::RawInput::default(),|ui|{view.show(ui);});
+            let ellipse=out.shapes.iter().find_map(|s|match &s.shape{egui::Shape::Ellipse(e)=>Some(e),_=>None}).expect("painted ellipse");
+            let name=if profile=="current"{"pop"}else{"legacy-pop"};
+            let expected=motion::scene::paint_preset(name).unwrap().sample(0.3);
+            assert!((ellipse.radius.x-20.*expected.get(motion::Property::Scale) as f32).abs()<0.01);
+            let other=motion::scene::paint_preset(if profile=="current"{"legacy-pop"}else{"pop"}).unwrap().sample(0.3);
+            assert!((ellipse.radius.x-20.*other.get(motion::Property::Scale) as f32).abs()>0.1);
+        }
+    }
     use super::*;
     #[test]
     fn sibling_shadows_cache_and_float_translates_the_cached_raster() {

@@ -164,3 +164,19 @@ fn fixed_cells_are_not_stretched_and_authored_inner_height_wins() {
         });
     }
 }
+
+#[test]
+fn hiding_last_card_rekeys_the_last_visible_child() {
+    for mode in ["grid","row"] {
+        let src=source(mode,r#"{widget:"column",hidden:"= $model.hide",children:["l"]}"#,"");
+        let ctx=egui::Context::default();ctx.set_pixels_per_point(2.4);
+        let mut view=SceneView::with_model(&src,json!({"hide":false})).unwrap();
+        for hide in [false,true,false] {
+            view.apply_model(json!({"hide":hide})).unwrap();
+            frames(&ctx,&mut view,|v|{
+                let id=if hide{"first"}else{"last"};
+                assert!(((v.geometry[id].bottom()+9.-v.geometry["c"].bottom())*2.4).abs()<=0.5,"{mode}: {:?}",v.geometry);
+            });
+        }
+    }
+}

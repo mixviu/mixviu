@@ -3260,6 +3260,39 @@ fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, v
 mod measurement_cache_tests {
     use serde_json::{Value, json};
     #[test]
+    fn height_keys_cover_identity_descendants_visibility_route_and_paint_inputs() {
+        let source=r#"---
+scene: 1
+name: height-keys
+citizen: test
+---
+```mix
+{root:{widget:"grid",columns:2,equal_height:true,children:["a","b"]},
+ a:{widget:"column",children:["at"]},b:{widget:"column",children:["bt"]},
+ at:{widget:"text",text:"= $model.text",hidden:"= $model.hide"},bt:{widget:"text",text:"Different\ncontent"}}
+```
+"#;
+        let mut view=super::SceneView::with_model(source,json!({"text":"short","hide":false})).unwrap();
+        let ctx=egui::Context::default();
+        let mut keys=Vec::new();
+        for model in [json!({"text":"short","hide":false}),json!({"text":"new\ncontent","hide":false}),json!({"text":"new\ncontent","hide":true})] {
+            view.apply_model(model).unwrap();
+            ctx.run_ui(egui::RawInput::default(),|ui|{
+                view.show(ui);
+                let nodes=&view.measurement_nodes.as_ref().unwrap().1;
+                let key=super::layout_height_key(ui,&nodes["a"],"root/a",200.,1);
+                assert_ne!(key,super::layout_height_key(ui,&nodes["b"],"root/b",200.,1));
+                assert_ne!(key,super::layout_height_key(ui,&nodes["a"],"another-route/a",200.,1));
+                assert_ne!(key,super::layout_height_key(ui,&nodes["a"],"root/a",201.,1));
+                assert_ne!(key,super::layout_height_key(ui,&nodes["a"],"root/a",200.,2));
+                ui.ctx().data_mut(|d|d.insert_temp(egui::Id::new("scene-font-state"),123_u64));
+                assert_ne!(key,super::layout_height_key(ui,&nodes["a"],"root/a",200.,1));
+                keys.push(key);
+            }).drop_without_applying_deltas();
+        }
+        assert_ne!(keys[0],keys[1]);assert_ne!(keys[1],keys[2]);
+    }
+    #[test]
     fn animated_number_baseline_cache_tracks_the_rendered_sample() {
         let source = "---\nscene: 1\nname: number-cache\ncitizen: test\n---\n```mix\n{root:{widget:\"row\",align:\"baseline\",children:[\"n\",\"next\"]},n:{widget:\"text\",text:\"fallback\",number:{to:123456,ms:1000,delay_ms:0}},next:{widget:\"text\",text:\"Next\"}}\n```\n";
         let mut view = super::SceneView::new(source).unwrap();

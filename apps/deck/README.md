@@ -252,5 +252,7 @@ reads Chrome frames from `STING_ORACLE`, saves native frames and a contact
 sheet under the worker temporary directory. Chrome is only an explicit
 evidence input; ordinary tests require no browser.
 
-Sting slides select frozen legacy fade/zoom/wipe entrances; drawing effects
-retain their established table, so the native sting keeps its timing and pixels.
+Sting slides select frozen legacy presets for every entrance and for their
+drawing effects. Ordinary slides and drawings use the current table. The
+legacy names and drawing motion_profile selector are internal host protocols;
+authored deck documents cannot supply them.

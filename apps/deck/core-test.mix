@@ -61,6 +61,10 @@ for $anim in ["fade","up","down","left","right","pop","zoom","wipe","drop","flip
   $bad=$deck;$bad.slides[0].build.a.anim="legacy-"..$anim
   refused(fn()=$c.check_deck($bad),"DECK_MOTION","slides[0](one).build.a.anim")
 end
+$bad=$deck;$bad.slides[0].scene.a.paint_effect={preset:"legacy-up",time:0.3}
+refused(fn()=$c.check_deck($bad),"DECK_MOTION","slides[0](one).scene.a")
+$bad=$deck;$bad.slides[0].scene.a.motion_profile="legacy-sting"
+refused(fn()=$c.check_deck($bad),"DECK_MOTION","slides[0](one).scene.a")
 $profile={id:"p",kind:"sting",scene:{root:{widget:"drawing",primitives:[]}},build:{}}
 assert(contains($c.scene_source($profile),'"motion_profile":"legacy-sting"'))
 $profile.kind="slide"

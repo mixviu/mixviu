@@ -41,7 +41,10 @@ The gate keeps the original tolerances: opacity and scale channels 1e-4;
 translation, rotation, blur and dash offset 0.05 in their native units;
 clip fractions 1e-4. Projected flip scalar uses 0.05 degrees; glow, bg and
 shine scalars use 1e-4. All 19 presets pass. Full per-property maxima are
-recorded in `../VALIDATION.md`.
+recorded in `../VALIDATION.md` for the original 2026-11-19 curves; that maxima
+table is historical, not a report for the revised entrances. The current
+`chrome_oracle` CBC test prints per-property maxima against the regenerated
+fixture on every run, with the same tolerances.
 
 Run mix tools/motion_oracle.mix --write on the Chrome host to regenerate
 both chrome.json and entrance tracks in presets.json. Track endpoints and
