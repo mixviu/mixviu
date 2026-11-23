@@ -1,6 +1,44 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
 
+#[test]
+fn scale_entrances_paint_the_stretched_frame() {
+    for anim in ["pop", "zoom"] {
+        let source = r##"---
+scene: 1
+name: scaled-frame
+citizen: test
+---
+```mix
+{root:{widget:"grid",columns:2,equal_height:true,children:["a","b"]},
+a:{widget:"column",background:"#ff0000",stretch_last:true,paint_effect:"= $model.effect",children:["last"]},
+last:{widget:"column",children:["short"]},short:{widget:"spacer",size:10},
+b:{widget:"column",children:["tall"]},tall:{widget:"spacer",size:80}}
+```
+"##;
+        let mut view = SceneView::new(source).unwrap();
+        let ctx = egui::Context::default();
+        ctx.set_pixels_per_point(2.4);
+        for frame in 0..24 {
+            let time = 0.2 + frame as f64 * 0.001;
+            view.apply_model(json!({"effect":{"preset":anim,"time":time}})).unwrap();
+            let out = ctx.run_ui(egui::RawInput::default(), |ui| { view.show(ui); });
+            let scale = motion::scene::paint_preset(anim).unwrap().sample(time).get(motion::Property::Scale) as f32;
+            let painted = out.shapes.iter().find_map(|s| match &s.shape {
+                egui::Shape::Rect(r) if r.fill == Color32::RED => Some(r.rect),
+                _ => None,
+            }).unwrap();
+            if frame >= 4 {
+                assert!((view.geometry["a"].bottom()-view.geometry["b"].bottom()).abs()*2.4 <= 0.5);
+                assert!((view.geometry["last"].bottom()-view.geometry["a"].bottom()).abs()*2.4 <= 0.5);
+                assert!((painted.height()-view.geometry["b"].height()*scale).abs()*2.4 <= 0.5);
+                assert!(!out.platform_output.requested_discard());
+            }
+            out.drop_without_applying_deltas();
+        }
+    }
+}
+
 fn timed_models(path: &std::path::Path, slide: &str) -> Vec<Value> {
     let mut deck = Deck::new();
     let reply = deck.call("deck.open", json!({"path":path})).reply.unwrap();

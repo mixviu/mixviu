@@ -3183,7 +3183,21 @@ fn measurement_hash(id: &str, node: &Node, layout: bool) -> u64 {
     id.hash(&mut h);
     node.family.hash(&mut h);
     for (key, v) in &node.ports {
-        if layout && matches!(key.as_str(), "opacity" | "offset" | "paint_effect" | "enter" | "exit" | "transition" | "motion" | "__measure_key") { continue; }
+        if layout
+            && matches!(
+                key.as_str(),
+                "opacity"
+                    | "offset"
+                    | "paint_effect"
+                    | "enter"
+                    | "exit"
+                    | "transition"
+                    | "motion"
+                    | "__measure_key"
+            )
+        {
+            continue;
+        }
         key.hash(&mut h);
         value(v, &mut h);
     }
