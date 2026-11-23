@@ -3,6 +3,93 @@ use media_frame::Bgra;
 use media_vfl::reader::{Directory, Reader};
 use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
 type Directories = Vec<Arc<Directory>>;
+const SOURCE_LIMIT: usize = 256;
+use std::collections::{HashMap, HashSet};
+struct VflSource {
+    directory: Arc<Directory>,
+    count: u64,
+    width: u64,
+    height: u64,
+}
+#[derive(Default)]
+struct SourceCatalog {
+    paths: HashMap<PathBuf, Arc<VflSource>>,
+    resolved: HashMap<PathBuf, Arc<VflSource>>,
+    #[cfg(test)]
+    opens: usize,
+    #[cfg(test)]
+    scans: usize,
+}
+impl SourceCatalog {
+    fn get(&mut self, base: &Path, relative: &Path) -> Result<Arc<VflSource>> {
+        if let Some(source) = self.paths.get(relative) {
+            return Ok(source.clone());
+        }
+        let directory = Arc::new(Directory::open(base.join(relative))
+            .map_err(|e| format!("render: segment_directory: {e}"))?);
+        #[cfg(test)]
+        { self.opens += 1; }
+        let resolved = directory.resolved()?;
+        if !resolved.starts_with(base) {
+            return refuse("segment_path_escape");
+        }
+        let source = if let Some(source) = self.resolved.get(&resolved) {
+            source.clone()
+        } else {
+            let mut r = Reader::from_directory(directory.clone())?;
+            if r.fps() != 30 || !r.complete() {
+                return refuse("segment_complete_30fps_required");
+            }
+            #[cfg(test)]
+            { self.scans += 1; }
+            let source = Arc::new(VflSource {
+                count: r.frame_count()?,
+                width: u64::from(r.width()),
+                height: u64::from(r.height()),
+                directory,
+            });
+            self.resolved.insert(resolved, source.clone());
+            source
+        };
+        self.paths.insert(relative.to_path_buf(), source.clone());
+        Ok(source)
+    }
+}
+fn source_paths(segments: &[Segment]) -> Result<Vec<PathBuf>> {
+    let mut distinct = HashSet::new();
+    let mut paths = Vec::with_capacity(segments.len());
+    for s in segments {
+        if s.path.as_os_str().is_empty() || s.path.components().any(|c| {
+            !matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir)
+        }) {
+            return refuse("segment_path_relative");
+        }
+        let relative: PathBuf = s.path.components().filter_map(|c| {
+            if let std::path::Component::Normal(n) = c { Some(n) } else { None }
+        }).collect();
+        if relative.as_os_str().is_empty() {
+            return refuse("segment_path_relative");
+        }
+        distinct.insert(relative.clone());
+        if distinct.len() > SOURCE_LIMIT {
+            return refuse("too_many_sources");
+        }
+        paths.push(relative);
+    }
+    Ok(paths)
+}
+fn source_canvas_bytes(w: u64, h: u64) -> Result<u64> {
+    w.checked_mul(h).and_then(|n| n.checked_mul(4))
+        .ok_or_else(|| "render: encode_memory_budget".into())
+}
+fn working_bytes(source: u64, scale: u64, width: u64, height: u64) -> Result<u64> {
+    source.checked_mul(8)
+        .and_then(|n| n.checked_add(scale))
+        .and_then(|n| width.checked_mul(height)?.checked_mul(448)?.checked_add(n))
+        .and_then(|n| n.checked_add(CHUNK_BYTES_LIMIT as u64))
+        .and_then(|n| n.checked_add(64 * 1024 * 1024))
+        .ok_or_else(|| "render: encode_memory_budget".into())
+}
 const CHUNK_BYTES_LIMIT: usize = 64 * 1024 * 1024;
 fn collect_packets(
     out: &mut Vec<media_av1::Packet>,
@@ -138,6 +225,9 @@ fn refuse<T>(name: &str) -> Result<T> {
 }
 impl Timeline {
     fn validate(&mut self, base: &Path) -> Result<(Vec<u64>, Directories)> {
+        self.validate_sources(base, &mut SourceCatalog::default())
+    }
+    fn validate_sources(&mut self, base: &Path, catalog: &mut SourceCatalog) -> Result<(Vec<u64>, Directories)> {
         self.video
             .crossfades
             .sort_by(|a, b| a.at_s.total_cmp(&b.at_s));
@@ -157,6 +247,8 @@ impl Timeline {
         if v.segments.is_empty() || v.segments.len() > 10000 || v.crossfades.len() > 10000 {
             return refuse("segments_limit");
         }
+        // Pure lexical preflight: reject excess source names before any VFL open.
+        let paths = source_paths(&v.segments)?;
         if self.audio.sample_rate != 48000 {
             return refuse("audio_sample_rate");
         }
@@ -193,52 +285,18 @@ impl Timeline {
         let mut scale_bytes = 0u64;
         let mut starts = vec![0];
         let mut previous = None;
-        for s in &v.segments {
+        for (s, relative) in v.segments.iter().zip(paths) {
             if !time(s.at_s) || s.from_slot >= s.to_slot || frame(s.at_s) >= frame(self.duration_s)
             {
                 return refuse("segment_range");
             }
-            if s.path.as_os_str().is_empty()
-                || s.path.components().any(|c| {
-                    !matches!(
-                        c,
-                        std::path::Component::Normal(_) | std::path::Component::CurDir
-                    )
-                })
-            {
-                return refuse("segment_path_relative");
-            }
-            let relative: PathBuf = s
-                .path
-                .components()
-                .filter_map(|c| {
-                    if let std::path::Component::Normal(n) = c {
-                        Some(n)
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-            if relative.as_os_str().is_empty() {
-                return refuse("segment_path_relative");
-            }
-            let directory = Arc::new(
-                Directory::open(base.join(relative))
-                    .map_err(|e| format!("render: segment_directory: {e}"))?,
-            );
-            if !directory.resolved()?.starts_with(base) {
-                return refuse("segment_path_escape");
-            }
-            let mut r = Reader::from_directory(directory.clone())?;
-            if r.fps() != 30 || !r.complete() {
-                return refuse("segment_complete_30fps_required");
-            }
-            let count = r.frame_count()?;
+            let source = catalog.get(base, &relative)?;
+            let count = source.count;
             if s.from_slot >= count || s.to_slot > count {
                 return refuse("segment_trim_outside_vfl");
             }
-            let (w, h) = (u64::from(r.width()), u64::from(r.height()));
-            source_bytes = source_bytes.max(w * h * 4);
+            let (w, h) = (source.width, source.height);
+            source_bytes = source_bytes.max(source_canvas_bytes(w, h)?);
             let ratio = (v.width as f64 / w as f64).min(v.height as f64 / h as f64);
             let sw = ((w as f64 * ratio).round() as u64).clamp(1, v.width as u64);
             scale_bytes = scale_bytes.max(
@@ -246,7 +304,7 @@ impl Timeline {
                     .and_then(|n| n.checked_mul(16))
                     .ok_or("render: encode_memory_budget")?,
             );
-            directories.push(directory);
+            directories.push(source.directory.clone());
             let start = frame(s.at_s);
             start
                 .checked_add(
@@ -298,11 +356,7 @@ impl Timeline {
         let n = frame(self.duration_s);
         // Conservative admission estimate, including packet/position metadata,
         // two VFL canvases with payload/scratch, scaler and encoder frame storage.
-        let working = source_bytes * 8
-            + scale_bytes
-            + (v.width as u64 * v.height as u64) * 448
-            + CHUNK_BYTES_LIMIT as u64
-            + 64 * 1024 * 1024;
+        let working = working_bytes(source_bytes, scale_bytes, v.width as u64, v.height as u64)?;
         if working
             .checked_mul(e.chunks as u64)
             .is_none_or(|n| n > 8 * 1024 * 1024 * 1024)
@@ -772,6 +826,55 @@ mod tests {
                 "crossfades":[{"at_s":2.51,"duration_s":0.041},{"at_s":1.51,"duration_s":0.041}]},
             "audio":{"sample_rate":48000,"channels":2,"sources":[],"master":{"integrated_lufs":-14,"true_peak_dbtp":-1}},
             "encode":{"speed":10,"qp":100,"tile_cols":1,"tile_rows":1,"threads":1,"chunks":1,"keyint_s":1}})).unwrap()
+    }
+    #[test]
+    fn repeated_vfl_opens_and_scans_once() {
+        let root = tempfile::tempdir().unwrap();
+        let mut t = fixture(root.path());
+        t.duration_s = 334.0;
+        t.video.crossfades.clear();
+        t.video.segments = (0..10000).map(|i| Segment {
+            path: if i % 2 == 0 { "a.vfl" } else { "./a.vfl/" }.into(),
+            from_slot: 0, to_slot: 1, at_s: f64::from(i) / 30.0,
+        }).collect();
+        let mut catalog = SourceCatalog::default();
+        let (_, directories) = t.validate_sources(root.path(), &mut catalog).unwrap();
+        assert_eq!(catalog.opens, 1);
+        assert_eq!(catalog.scans, 1);
+        assert_eq!(directories.len(), 10000);
+        assert!(directories.iter().all(|d| Arc::ptr_eq(d, &directories[0])));
+        // A new alias still needs a confined open, but shares the retained
+        // descriptor and scan after descriptor resolution.
+        std::os::unix::fs::symlink(root.path(), root.path().join("alias")).unwrap();
+        let alias = catalog.get(root.path(), Path::new("alias/a.vfl")).unwrap();
+        assert!(Arc::ptr_eq(&alias.directory, &directories[0]));
+        assert_eq!(catalog.resolved.len(), 1);
+        assert_eq!(catalog.scans, 1);
+    }
+    #[test]
+    fn source_limit_precedes_all_directory_opens() {
+        let root = tempfile::tempdir().unwrap();
+        let mut t = fixture(root.path());
+        t.video.segments = (0..=SOURCE_LIMIT).map(|i| Segment {
+            path: format!("missing-{i}.vfl").into(),
+            from_slot: 0, to_slot: 1, at_s: i as f64 / 30.0,
+        }).collect();
+        let mut catalog = SourceCatalog::default();
+        assert!(t.validate_sources(root.path(), &mut catalog).unwrap_err()
+            .to_string().contains("too_many_sources"));
+        assert_eq!(catalog.opens, 0);
+        assert_eq!(catalog.scans, 0);
+    }
+    #[test]
+    fn memory_budget_overflow_is_refused() {
+        for result in [source_canvas_bytes(u64::MAX, 2),
+            source_canvas_bytes(u64::from(u32::MAX), u64::from(u32::MAX)),
+            working_bytes(u64::MAX / 8 + 1, 0, 32, 32),
+            working_bytes(1, u64::MAX, 32, 32),
+            working_bytes(0, 0, u64::MAX, 2)] {
+            assert!(result.unwrap_err().to_string().contains("encode_memory_budget"));
+        }
+        assert_eq!(source_canvas_bytes(32, 32).unwrap(), 4096);
     }
     #[test]
     fn confined_directory_survives_validation_path_swap() {

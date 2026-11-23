@@ -101,12 +101,21 @@ at most `chunks` results are retained. Each chunk's coded payload is capped at
 64 MiB (`chunk_bytes_limit`), plus at most 324,000 five-byte repeats and bounded
 frame/position metadata. Whole-episode compressed video is never retained.
 
-VFL directories are opened once per segment with O_DIRECTORY and O_NOFOLLOW.
+At most 256 distinct normalised relative VFL path names are accepted
+(`too_many_sources`); this conservative source-name cap is checked before any
+VFL directory is opened, even if some names would resolve to the same source.
+Repeated names share one open and one frame-count scan. Distinct names are opened
+with O_DIRECTORY and O_NOFOLLOW, confined, then deduplicated by descriptor-resolved
+canonical path: aliases share the retained descriptor and cached frame count,
+and their temporary duplicate descriptor is immediately closed. At most 256
+source directory descriptors are retained, plus one temporary validation open.
 Their descriptor-resolved paths must lie beneath the canonical directory of the
 opened timeline file. Every reader, scan and lazy chunk read uses that retained
 descriptor via `/proc/self/fd`; original source paths are never reopened. Files
 inside the VFL must be regular and cannot be symlinks. Segment slots are bounded
 by a verified frame scan and all subsequent slot/coverage arithmetic is checked.
+Source canvas sizes and all memory-estimate products and sums use checked
+arithmetic, refusing overflow as `encode_memory_budget`.
 Audio must explicitly request 48 kHz stereo (`audio_sample_rate`, `audio_channels`).
 
 Worker-only benchmark reference: `cargo build --release -p av --example reference`,
