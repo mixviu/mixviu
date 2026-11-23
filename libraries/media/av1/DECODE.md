@@ -4,6 +4,8 @@ independent of containers, CLI I/O and the future player. rav1d 1.1.0 is BSD-2-C
 nasm on `.asm` files and uses cc to archive those objects, with no C sources.
 The default `asm` feature enables both codec implementations' assembly; build
 with `--no-default-features` to measure the pure Rust paths.
+Both upstream bit-depth features must be built: rav1d 1.1.0 otherwise references
+missing 16-bit assembly symbols. The wrapper still refuses high-bit-depth input.
 
 `Decoder::submit` accepts sized, low-overhead OBUs and a caller timestamp in
 nanoseconds. The callback receives tightly packed, owned Y/U/V planes, including
