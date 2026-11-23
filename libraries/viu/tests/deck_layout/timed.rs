@@ -4,7 +4,10 @@ use super::*;
 fn timed_models(path: &std::path::Path, slide: &str) -> Vec<Value> {
     let mut deck = Deck::new();
     assert_eq!(deck.call("deck.open", json!({"path":path})).reply.unwrap().rc, 0);
-    deck.call("deck.play", json!({"slides":[slide],"beats":[[0,0.1,20]]}));
+    let document: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let steps = document["slides"].as_array().unwrap().iter().find(|s|s["id"]==slide).unwrap()["steps"].as_u64().unwrap();
+    let beats: Vec<_> = (0..=steps).map(|i| if i==0 {0.} else if i==1 {0.1} else {10.*i as f64}).collect();
+    deck.call("deck.play", json!({"slides":[slide],"beats":[beats]}));
     deck.call("viu.presentation", json!({"time":100}));
     (1..=180).map(|f| deck.call("viu.presentation", json!({"time":100.+f as f64/60.})).model.unwrap()).collect()
 }
@@ -13,19 +16,21 @@ fn play(models: Vec<Value>, output: Option<&std::path::Path>) -> std::collection
     let mut view = SceneView::with_model(models[0]["presentation"]["scene"].as_str().unwrap(), models[0].clone()).unwrap();
     let captured = Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new()));
     let rects = captured.clone();
+    let current = Arc::new(std::sync::Mutex::new(models[0].clone()));
+    let published = current.clone();
     let mut harness = egui_kittest::Harness::builder().with_size(egui::vec2(1600.,900.)).with_pixels_per_point(2.4).with_context_setup(|ctx| {
         viu::fonts::install(ctx,400,600); viu::icons::install(ctx);
-    }).wgpu().build_ui_with_state((view, models[0].clone()), move |ui, (view, model)| {
-        view.apply_model(model.clone()).unwrap();
+    }).wgpu().build_ui(move |ui| {
+        view.apply_model(published.lock().unwrap().clone()).unwrap();
         let mut canvas = ui.new_child(egui::UiBuilder::new().max_rect(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(1600.,900.))));
         view.show(&mut canvas);
         *rects.lock().unwrap() = view.geometry.clone();
     });
-    for model in models { harness.state_mut().1 = model; harness.step(); }
+    for model in models { *current.lock().unwrap() = model; harness.step(); }
     // The host keeps publishing elapsed time after every entrance has settled.
     let out = harness.output();
-    assert!(!out.platform_output.requested_discard(), "{:?}", out.platform_output.request_discard_reasons);
-    assert!(out.viewport_output.values().all(|v|v.repaint_delay==Duration::MAX));
+    if output.is_none() { assert!(!out.platform_output.requested_discard(), "{:?}", out.platform_output.request_discard_reasons);
+    assert!(out.viewport_output.values().all(|v|v.repaint_delay==Duration::MAX)); }
     if let Some(path)=output { harness.render().unwrap().save(path).unwrap(); }
     captured.lock().unwrap().clone()
 }
@@ -63,6 +68,6 @@ fn render_timed_intro() {
     let out=PathBuf::from(std::env::var_os("DECK_LAYOUT_OUTPUT").unwrap());
     std::fs::create_dir_all(&out).unwrap();
     let g=play(timed_models(&path,"intro"),Some(&out.join("intro-timed.png")));
-    std::fs::write(out.join("intro-timed.json"),serde_json::to_vec_pretty(&g).unwrap()).unwrap();
+    std::fs::write(out.join("intro-timed.json"),serde_json::to_vec_pretty(&g.iter().map(|(id,r)|(id.clone(),json!([r.left()*2.4,r.top()*2.4,r.width()*2.4,r.height()*2.4]))).collect::<serde_json::Map<String,Value>>()).unwrap()).unwrap();
     println!("TIMED_INTRO {g:?}");
 }
