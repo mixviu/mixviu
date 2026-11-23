@@ -178,12 +178,21 @@ impl Audio {
         if !(1..=2).contains(&channels) {
             return Err(Error::InvalidAudio);
         }
-        samples.try_reserve_exact(self.frames().checked_mul(channels as usize).ok_or(Error::SizeOverflow)?)
+        samples
+            .try_reserve_exact(
+                self.frames()
+                    .checked_mul(channels as usize)
+                    .ok_or(Error::SizeOverflow)?,
+            )
             .map_err(|_| Error::SizeOverflow)?;
         match (self.channels, channels) {
             (a, b) if a == b => samples.extend_from_slice(&self.samples),
             (1, 2) => samples.extend(self.samples.iter().flat_map(|&s| [s, s])),
-            (2, 1) => samples.extend(self.samples.chunks_exact(2).map(|s| s[0] * 0.5 + s[1] * 0.5)),
+            (2, 1) => samples.extend(
+                self.samples
+                    .chunks_exact(2)
+                    .map(|s| s[0] * 0.5 + s[1] * 0.5),
+            ),
             _ => return Err(Error::InvalidAudio),
         }
         Self::new(self.rate, channels, samples)

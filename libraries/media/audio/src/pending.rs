@@ -62,7 +62,9 @@ impl Pending {
         if linked != expected {
             remove_if_identity(&self.destination, linked);
             self.published = None;
-            return Err(io::Error::other("output inode differs from synced temporary descriptor"));
+            return Err(io::Error::other(
+                "output inode differs from synced temporary descriptor",
+            ));
         }
         self.sync_directory()?;
         Ok(())
@@ -83,7 +85,10 @@ fn identity(metadata: &std::fs::Metadata) -> (u64, u64) {
     (metadata.dev(), metadata.ino())
 }
 fn remove_if_identity(path: &Path, expected: (u64, u64)) {
-    if path.symlink_metadata().is_ok_and(|m| identity(&m) == expected) {
+    if path
+        .symlink_metadata()
+        .is_ok_and(|m| identity(&m) == expected)
+    {
         let _ = std::fs::remove_file(path);
     }
 }
@@ -112,7 +117,13 @@ mod tests {
             pending.file.write_all(b"master").unwrap();
             std::fs::remove_file(&pending.temporary).unwrap();
             std::fs::write(&pending.temporary, b"replacement").unwrap();
-            assert!(pending.publish().unwrap_err().to_string().contains("inode differs"));
+            assert!(
+                pending
+                    .publish()
+                    .unwrap_err()
+                    .to_string()
+                    .contains("inode differs")
+            );
             assert!(!destination.exists());
         }
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
