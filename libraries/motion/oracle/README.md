@@ -6,7 +6,7 @@ the workspace's MIT OR Apache-2.0 licence. `capture.js` runs in Chrome, never
 in a separate JavaScript runtime.
 
 SHA-256 of `reference/anim.css`:
-`6e76a18e3cc128e075fd6e775f1b51463e14a5c86578ac7a6706fe18c4b19b98`.
+`a3eeb9f220bc0d1092fcfb6d74592b335250fd8d21e4eafc0d7c9a5be2ea2ddc`.
 SHA-256 of `reference/deck.js`:
 `26a24935798e3e4d4f49e0caac7d4ff75656fc1f13f4a28c8ec2fdf605ae8bf1`.
 
