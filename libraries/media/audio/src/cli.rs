@@ -42,7 +42,9 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> timeline::Result<u8> {
         return Err("timeline JSON exceeds 16 MiB".into());
     }
     let resolved = crate::source::resolved(&file)?;
-    let base = resolved.parent().ok_or("opened timeline has no parent directory")?;
+    let base = resolved
+        .parent()
+        .ok_or("opened timeline has no parent directory")?;
     let mut bytes = Vec::new();
     // The sentinel catches growth after the metadata check. Reserve fallibly
     // before read_to_end so the bounded read cannot trigger an allocation.
@@ -55,7 +57,11 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> timeline::Result<u8> {
     }
     let t: Timeline = serde_json::from_slice(&bytes)?;
     let receipt = timeline::render(&t, base, &out, wav.as_deref())?;
-    let outcome = if receipt.refused || !receipt.target_reached { 3 } else { 0 };
+    let outcome = if receipt.refused || !receipt.target_reached {
+        3
+    } else {
+        0
+    };
     let mut stdout = io::stdout().lock();
     if let Err(e) =
         writeln!(stdout, "{}", serde_json::to_string(&receipt)?).and_then(|()| stdout.flush())
@@ -70,8 +76,7 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> timeline::Result<u8> {
             "mastering refused: maximum gain reduction {:.3} dB; shortfall {:.3} LU",
             receipt.max_gain_reduction_db, receipt.shortfall_lu
         ));
-    }
-    else if !receipt.target_reached {
+    } else if !receipt.target_reached {
         let _ = diagnostic(format_args!(
             "loudness target missed by {:.3} LU",
             (t.master.integrated_lufs - receipt.encoded.integrated_lufs).abs()

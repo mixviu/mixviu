@@ -142,10 +142,21 @@ fn refusal_paths_size_and_atomic_outputs() {
     assert!(String::from_utf8_lossy(&closed.stderr).starts_with("av: mastering refused:"));
     assert!(!out.exists());
     // Neither stdout nor stderr ENOSPC may override the refusal outcome.
-    let full = || std::fs::File::options().write(true).open("/dev/full").unwrap();
+    let full = || {
+        std::fs::File::options()
+            .write(true)
+            .open("/dev/full")
+            .unwrap()
+    };
     let undelivered = Command::new(env!("CARGO_BIN_EXE_av"))
-        .arg("audio").arg(&input).arg("--out").arg(&out)
-        .stdout(full()).stderr(full()).status().unwrap();
+        .arg("audio")
+        .arg(&input)
+        .arg("--out")
+        .arg(&out)
+        .stdout(full())
+        .stderr(full())
+        .status()
+        .unwrap();
     assert_eq!(undelivered.code(), Some(3));
     assert!(!out.exists());
     assert_eq!(
@@ -189,9 +200,14 @@ fn refusal_paths_size_and_atomic_outputs() {
     assert!(out.is_file());
     std::fs::remove_file(&out).unwrap();
     let mut published = Command::new(env!("CARGO_BIN_EXE_av"))
-        .arg("audio").arg(&input).arg("--out").arg(&out)
-        .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped())
-        .spawn().unwrap();
+        .arg("audio")
+        .arg(&input)
+        .arg("--out")
+        .arg(&out)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
     drop(published.stdout.take());
     let published = published.wait_with_output().unwrap();
     assert_eq!(published.status.code(), Some(0));
@@ -225,15 +241,40 @@ fn timeline_symlink_uses_opened_files_real_directory() {
     std::fs::create_dir_all(&real).unwrap();
     std::fs::create_dir(&alias).unwrap();
     let timeline = serde_json::json!({"version":1,"sample_rate":48000,"channels":2,"duration_s":1,"sources":[{"path":"source.wav","at_s":0}],"master":{"integrated_lufs":-40,"true_peak_dbtp":-1}});
-    std::fs::write(real.join("timeline.json"),serde_json::to_vec(&timeline).unwrap()).unwrap();
-    Audio::new(48000,1,(0..48000).map(|n|0.1*(std::f64::consts::TAU*440.0*n as f64/48000.0).sin()).collect()).unwrap()
-        .write_wav(std::fs::File::create(real.join("source.wav")).unwrap(),WavFormat::Float32).unwrap();
+    std::fs::write(
+        real.join("timeline.json"),
+        serde_json::to_vec(&timeline).unwrap(),
+    )
+    .unwrap();
+    Audio::new(
+        48000,
+        1,
+        (0..48000)
+            .map(|n| 0.1 * (std::f64::consts::TAU * 440.0 * n as f64 / 48000.0).sin())
+            .collect(),
+    )
+    .unwrap()
+    .write_wav(
+        std::fs::File::create(real.join("source.wav")).unwrap(),
+        WavFormat::Float32,
+    )
+    .unwrap();
     std::fs::write(alias.join("source.wav"), b"wrong lexical directory").unwrap();
-    std::os::unix::fs::symlink("../real/timeline.json",alias.join("link.json")).unwrap();
+    std::os::unix::fs::symlink("../real/timeline.json", alias.join("link.json")).unwrap();
     let out = dir.join("out.webm");
     let result = Command::new(env!("CARGO_BIN_EXE_av"))
-        .arg("audio").arg(alias.join("link.json")).arg("--out").arg(&out).output().unwrap();
-    assert_eq!(result.status.code(),Some(0),"{}",String::from_utf8_lossy(&result.stderr));
+        .arg("audio")
+        .arg(alias.join("link.json"))
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert_eq!(
+        result.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
     assert!(out.is_file());
     std::fs::remove_dir_all(dir).unwrap();
 }

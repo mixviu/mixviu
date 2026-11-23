@@ -37,7 +37,9 @@ pub(crate) fn resolved(file: &File) -> std::io::Result<PathBuf> {
 }
 #[cfg(not(target_os = "linux"))]
 pub(crate) fn resolved(_: &File) -> std::io::Result<PathBuf> {
-    Err(std::io::Error::other("descriptor location requires Linux /proc/self/fd"))
+    Err(std::io::Error::other(
+        "descriptor location requires Linux /proc/self/fd",
+    ))
 }
 #[cfg(target_os = "linux")]
 pub(crate) fn open(base: &Path, path: &Path) -> Result<File, Box<dyn std::error::Error>> {
