@@ -11,6 +11,8 @@ struct Mux {
     timeline: Vec<u64>,
     mode: String,
     outputs: u64,
+    width: u32,
+    height: u32,
 }
 impl Mux {
     fn emit(&mut self, next: u64) -> Result<()> {
@@ -39,7 +41,7 @@ impl Mux {
         for p in packets {
             let slot = self.timeline[p.pts as usize];
             if self.writer.is_none() {
-                self.writer = Some(Writer::new(BufWriter::new(File::create(&self.path)?), Video {width:3840,height:2160,codec_private:av1_config(&p.data)?},None)?);
+                self.writer = Some(Writer::new(BufWriter::new(File::create(&self.path)?), Video {width:self.width,height:self.height,codec_private:av1_config(&p.data)?},None)?);
             }
             self.emit(slot)?;
             self.pending = Some((p,slot));
@@ -52,9 +54,10 @@ fn run() -> Result<()> {
     let mode = args.get(1).ok_or("mode full|vfr|cfr-skip")?.clone();
     assert!(["full","vfr","cfr-skip"].contains(&mode.as_str()));
     let mut r = Reader::open(args.get(2).ok_or("VFL directory")?)?;
-    assert_eq!((r.width(),r.height(),r.fps()),(3840,2160,30));
-    let mut e = Encoder::new(Settings {width:3840,height:2160,fps_num:30,fps_den:1,speed:10,target:Target::Quality(100),key_interval:1_000_000,tile_cols:4,tile_rows:4,threads:16})?;
-    let mut mux = Mux {writer:None,path:args.get(3).ok_or("output")?.clone(),pending:None,timeline:vec![],mode:mode.clone(),outputs:0};
+    assert_eq!(r.fps(),30);
+    let (width,height) = (r.width(),r.height());
+    let mut e = Encoder::new(Settings {width:width as usize,height:height as usize,fps_num:30,fps_den:1,speed:10,target:Target::Quality(100),key_interval:1_000_000,tile_cols:4,tile_rows:4,threads:16})?;
+    let mut mux = Mux {writer:None,path:args.get(3).ok_or("output")?.clone(),pending:None,timeline:vec![],mode:mode.clone(),outputs:0,width,height};
     let start = Instant::now();
     let (mut count,mut repeats,mut repeat_submit_seconds,mut change_submit_seconds) = (0u64,0u64,0f64,0f64);
     let mut prepared = None;
@@ -63,7 +66,7 @@ fn run() -> Result<()> {
         count += 1;
         repeats += u64::from(f.repeat);
         if !f.repeat {
-            prepared = Some(e.prepare(&media_frame::Bgra::new(3840,2160,f.pixels.to_vec())?.to_yuv420())?);
+            prepared = Some(e.prepare(&media_frame::Bgra::new(width as usize,height as usize,f.pixels.to_vec())?.to_yuv420())?);
         }
         if mode != "full" && f.repeat && !(mode == "cfr-skip" && f.slot == 1) { continue; }
         mux.timeline.push(f.slot);
