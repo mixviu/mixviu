@@ -47,7 +47,9 @@ WAV header and PCM bytes share the same budget. Limit errors publish nothing.
 If Segment Duration and a nominal frame interval are known, output is limited to
 ceil(duration / interval) plus two frames (also capped at 500,000). The interval
 uses DefaultDuration, BlockDuration, then the first positive timestamp delta.
-Without duration or an interval, there is no independent duration/rate bound;
+Without DefaultDuration, every packet duration/delta must agree before using
+that inferred interval as a count ceiling. VFR has no such constant frame rate.
+Without duration or a reliable interval, there is no independent duration/rate bound;
 the byte cap and 500,000-frame limit still apply. Timestamp arithmetic errors
 refuse cleanly. Probe checks timestamp inference but does not publish outputs.
 
