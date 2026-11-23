@@ -1,14 +1,18 @@
 # CI for mixviu. The gate recipe lives in tools/ci.mix (run by the mix built
 # from this tree). The full recipe gates every PR once, on CBC, through the
-# merge gate (`gate-ok`); here, PRs get the fast jobs (fmt, lint), and the
-# full clippy + test leg runs on main after every merge and nightly, on a
+# merge gate (`gate-ok`); here, PRs and merge-queue candidates get the fast
+# jobs (fmt, lint), and the full clippy + test leg runs on main after every
+# merge and nightly, on a
 # clean hosted machine. A gold is built only from a main commit whose run
-# here is green. The required check is `ci-ok` (a skipped job counts as
-# passed). Changes here are Tier 2 (CODEOWNERS).
+# here is green. The required check is `ci-ok`; candidates require successful
+# changes, fmt and lint jobs, while docs-only PRs may skip jobs.
+# Changes here are Tier 2 (CODEOWNERS).
 name: ci
 
 on:
   pull_request:
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
   schedule:
@@ -21,7 +25,9 @@ on:
 permissions: {}
 
 concurrency:
-  # A newer push replaces a PR's run. On main each commit gets its own group,
+  # A newer push replaces a PR's run. Every non-PR event keys on github.sha;
+  # candidates have unique refs (gh-readonly-queue/main/pr-N-SHA) and commits,
+  # so candidates never cancel each other. On main each commit gets its own group,
   # so merges no longer cancel one another's runs: a gold needs a finished
   # green run at its exact commit, and merges come faster than the test leg.
   # Runs at the same commit (its push run and a nightly) queue behind each
@@ -43,19 +49,20 @@ jobs:
   changes:
     # Nightly and manual runs test their ref as it is (nightly: main; manual:
     # the ref picked when dispatching); there is no diff to filter.
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: read
     outputs:
-      code: ${{ steps.filter.outputs.code }}
+      code: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
+        if: github.event_name != 'merge_group'
         with:
           predicate-quantifier: every
           filters: |
@@ -160,5 +167,7 @@ jobs:
     permissions: {}
     steps:
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - if: github.event_name == 'merge_group' && (needs.changes.result != 'success' || needs.fmt.result != 'success' || needs.lint.result != 'success')
         run: exit 1
       - run: echo "all CI jobs passed or were skipped for a docs-only change"

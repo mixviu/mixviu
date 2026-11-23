@@ -730,6 +730,7 @@ name = "av"
 version = "0.1.2"
 dependencies = [
  "hound",
+ "libc",
  "media-audio",
  "media-av1",
  "media-opus",
@@ -5669,6 +5670,7 @@ version = "0.1.2"
 dependencies = [
  "ebur128",
  "hound",
+ "libc",
  "media-opus",
  "media-webm",
  "rubato",

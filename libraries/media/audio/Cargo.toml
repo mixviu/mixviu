@@ -12,6 +12,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 media-opus = { path = "../opus" }
 media-webm = { path = "../webm" }
+libc.workspace = true
 
 [dev-dependencies]
 serde_json.workspace = true
