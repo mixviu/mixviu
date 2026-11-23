@@ -136,9 +136,15 @@ impl Audio {
     /// Fallible copy for whole-programme offline operations.
     pub fn try_clone(&self) -> Result<Self, Error> {
         let mut samples = Vec::new();
-        samples.try_reserve_exact(self.samples.len()).map_err(|_| Error::SizeOverflow)?;
+        samples
+            .try_reserve_exact(self.samples.len())
+            .map_err(|_| Error::SizeOverflow)?;
         samples.extend_from_slice(&self.samples);
-        Ok(Self { rate: self.rate, channels: self.channels, samples })
+        Ok(Self {
+            rate: self.rate,
+            channels: self.channels,
+            samples,
+        })
     }
     pub fn rate(&self) -> u32 {
         self.rate
@@ -366,14 +372,20 @@ impl Audio {
         let mut reader = hound::WavReader::new(Cursor::new(bytes))?;
         let spec = reader.spec();
         let mut samples = Vec::new();
-        samples.try_reserve_exact(reader.len() as usize).map_err(|_| Error::SizeOverflow)?;
+        samples
+            .try_reserve_exact(reader.len() as usize)
+            .map_err(|_| Error::SizeOverflow)?;
         match (spec.sample_format, spec.bits_per_sample) {
             (hound::SampleFormat::Float, 32) => {
-                for sample in reader.samples::<f32>() { samples.push(f64::from(sample?)); }
-            },
+                for sample in reader.samples::<f32>() {
+                    samples.push(f64::from(sample?));
+                }
+            }
             (hound::SampleFormat::Int, b @ (16 | 24 | 32)) => {
                 let scale = 2.0_f64.powi(b as i32 - 1);
-                for sample in reader.samples::<i32>() { samples.push(sample? as f64 / scale); }
+                for sample in reader.samples::<i32>() {
+                    samples.push(sample? as f64 / scale);
+                }
             }
             _ => return Err(Error::UnsupportedFormat),
         };
