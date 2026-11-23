@@ -1,5 +1,5 @@
 $out = "/var/tmp/vfl-skip-av1"
-$expand = "fps=30:start_time=0:round=near,tpad=stop_mode=clone:stop_duration=1,trim=end_frame=17284,setpts=N/(30*TB)"
+$expand = "fps=30:start_time=0:round=near,tpad=stop_mode=clone:stop_duration=10,trim=end_frame=17284,setpts=N/(30*TB)"
 for $mode in ["cfr-skip","vfr"]
   print(run_argv(["ffmpeg","-nostdin","-hide_banner","-y","-c:v","libdav1d","-i",$out .. "/" .. $mode .. ".webm","-c:v","libdav1d","-i",$out .. "/full.webm","-filter_complex","[0:v]" .. $expand .. "[d];[1:v]" .. $expand .. "[r];[d][r]psnr=stats_file=" .. $out .. "/" .. $mode .. ".vs-full.psnr","-f","null","-"],{timeout:7200,stderr:{file:$out .. "/" .. $mode .. ".vs-full.log"}}))
 end
