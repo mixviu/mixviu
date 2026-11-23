@@ -5,7 +5,7 @@ mkdir($out, {parents:true})
 print("QUALITY_DIR=" .. $out)
 $bin = env("CARGO_TARGET_DIR", "target") .. "/release/mixd"
 if not is_file($bin) then die("CBC-built mixd missing: " .. $bin) end
-fn step($name,$argv,$prefix)
+fn oracle_run($name,$argv,$prefix)
   $r = run_argv($argv,{timeout:18000,stdout:{file:$prefix .. ".stdout"},stderr:{file:$prefix .. ".stderr"}})
   write_file($prefix .. ".result.json",json_encode($r))
   print($name .. " " .. json_encode($r))
@@ -16,8 +16,8 @@ $expand = "fps=30:start_time=0:round=near,tpad=stop_mode=clone:stop_duration=10,
 for $mode in ["cfr-skip","vfr","full"]
   $prefix = $out .. "/" .. $mode
   $fifo = $prefix .. ".fifo"
-  step("remove FIFO",["rm","-f",$fifo],$prefix .. ".fifo-remove")
-  step("create FIFO",["mkfifo",$fifo],$prefix .. ".fifo-create")
+  oracle_run("remove FIFO",["rm","-f",$fifo],$prefix .. ".fifo-remove")
+  oracle_run("create FIFO",["mkfifo",$fifo],$prefix .. ".fifo-create")
   -- FIFO routes are nonblocking: retry ENXIO until FFmpeg opens its read end.
   $source = "$r=nil; for $attempt in range(1,200); $r=run_argv(" .. json_encode([$bin,"vfl","export","/var/tmp/vfl-skip-input","--format","y4m"]) .. ",{timeout:18000,stdout:{file:" .. json_encode($fifo) .. "},stderr:{file:" .. json_encode($prefix .. ".export.stderr") .. "}}); if $r.error_code != \"PROCESS_STDIO\" then break end; sleep(0.1); end; write_file(" .. json_encode($prefix .. ".export.result.json") .. ",json_encode($r)); if not $r.ok then exit(1) end"
   $pid = spawn(["mix","-c",$source],{exit_event:true,die_with_parent:true,stdout:{file:$prefix .. ".producer.stdout"},stderr:{file:$prefix .. ".producer.stderr"}})
@@ -31,7 +31,7 @@ for $mode in ["cfr-skip","vfr","full"]
   $argv = concat($argv,["-filter_complex",$graph,"-map","[v]","-map","[p]"])
   if $cross then $argv = concat($argv,["-map","[c]"]) end
   $argv = concat($argv,["-f","null","-","-map","[hash]","-threads:v","1","-fps_mode","passthrough","-f","framemd5",$prefix .. ".md5"])
-  step($mode .. " decode/quality/hash",$argv,$prefix .. ".quality")
+  oracle_run($mode .. " decode/quality/hash",$argv,$prefix .. ".quality")
   for $attempt in range(1,100)
     if is_file($prefix .. ".export.result.json") then break end
     sleep(0.1)
@@ -42,7 +42,7 @@ for $mode in ["cfr-skip","vfr","full"]
   $vmaf = json_parse(read_file($prefix .. ".vmaf.json"))
   if length($frames) != 17284 or length($vmaf.frames) != 17284 then die("oracle frame count mismatch: " .. $mode) end
   write_file($prefix .. ".counts.json",json_encode({decoded_frames:length($frames),quality_frames:length($vmaf.frames)}))
-  step("remove FIFO",["rm","-f",$fifo],$prefix .. ".fifo-cleanup")
+  oracle_run("remove FIFO",["rm","-f",$fifo],$prefix .. ".fifo-cleanup")
 end
 write_file($out .. "/done.json",json_encode({ok:true}))
 print("QUALITY_OK=" .. $out)
