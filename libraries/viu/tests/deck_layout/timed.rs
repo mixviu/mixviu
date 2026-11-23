@@ -3,7 +3,8 @@ use super::*;
 
 fn timed_models(path: &std::path::Path, slide: &str) -> Vec<Value> {
     let mut deck = Deck::new();
-    assert_eq!(deck.call("deck.open", json!({"path":path})).reply.unwrap().rc, 0);
+    let reply=deck.call("deck.open", json!({"path":path})).reply.unwrap();
+    assert_eq!(reply.rc, 0, "{reply:?}");
     let document: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     let steps = document["slides"].as_array().unwrap().iter().find(|s|s["id"]==slide).unwrap()["steps"].as_u64().unwrap();
     let beats: Vec<_> = (0..=steps).map(|i| if i==0 {0.} else if i==1 {0.1} else {10.*i as f64}).collect();
