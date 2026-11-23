@@ -60,6 +60,9 @@ impl Decoder {
         settings.max_frame_delay = 1;
         settings.frame_size_limit = 8192 * 4320;
         settings.strict_std_compliance = 1;
+        // SAFETY: the pinned Dav1dLogger is two nullable pointer Options;
+        // all-zero sets both cookie and callback to None, disabling stderr logs.
+        settings.logger = unsafe { std::mem::zeroed() };
         let mut ctx = None;
         // SAFETY: both outputs are valid and settings retains its default allocator.
         check(
