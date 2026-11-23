@@ -262,7 +262,7 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
         passes: r.passes,
         sample_count: count,
         packets: packets.len(),
-        bytes: 0,
+        bytes: packets.iter().map(|p| p.data.len() as u64).sum(),
         seconds: count as f64 / 48000.0,
         encoded: encoded.into(),
         codec_trim_db,

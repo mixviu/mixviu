@@ -379,6 +379,8 @@ fn cpu() -> f64 {
         .unwrap_or(0.0)
 }
 pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
+    let overall = Instant::now();
+    let total_cpu = cpu();
     let args: Vec<_> = args.collect();
     if args.len() != 3 || args[1] != "--out" {
         return refuse("usage: av render TIMELINE.json --out FILE.webm");
@@ -404,6 +406,8 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
         master: t.audio.master,
     };
     // Preserve the validated video executor while borrowing the audio specification.
+    let input_wall = overall.elapsed().as_secs_f64();
+    let input_cpu = cpu()-total_cpu;
     let wall = Instant::now();
     let c = cpu();
     let a = media_audio::timeline::prepare(&audio, base)?;
@@ -414,6 +418,7 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
         println!("{}", serde_json::to_string(&a.receipt)?);
         return Ok(3);
     }
+    drop(a.audio);
     let t = Timeline {
         audio: Audio {
             sample_rate: 48000,
@@ -492,9 +497,6 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     pending.publish()?;
     pending.commit();
     let n = frame(t.duration_s);
-    println!(
-        "{}",
-        serde_json::json!({"frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunks.len(), "parallel_chunks": t.encode.chunks, "stages": {"audio": {"wall_s": audio_wall, "cpu_s": audio_cpu}, "video": {"wall_s": video_wall, "cpu_s": video_cpu}, "mux": {"wall_s": mux_start.elapsed().as_secs_f64(), "cpu_s": cpu()-c}}, "wall_s": wall.elapsed().as_secs_f64(), "effective_fps": n as f64/wall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt})
-    );
+    println!("{}", serde_json::json!({"frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunks.len(), "parallel_chunks": t.encode.chunks, "stages": {"input": {"wall_s": input_wall, "cpu_s": input_cpu}, "audio": {"wall_s": audio_wall, "cpu_s": audio_cpu}, "video": {"wall_s": video_wall, "cpu_s": video_cpu}, "mux": {"wall_s": mux_start.elapsed().as_secs_f64(), "cpu_s": cpu()-c}}, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt}));
     Ok(0)
 }
