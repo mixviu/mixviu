@@ -32,5 +32,24 @@ BlockDuration, then the first positive packet delta). `av decode` writes Y4M
 with nanosecond XPTS frame tags and float32 WAV, applying OpusHead pre-skip,
 output gain and signed DiscardPadding. Y4M size changes are refused.
 
+Decode stages both files using the same public `media_audio::pending::Pending`
+module as audio: same-directory temporary, checked flush and sync, no-clobber
+hard link, inode verification, and rollback until every output is published.
+Existing destinations (including symlinks) refuse. Zero video frames refuse.
+Success prints one JSON receipt; exit codes are 0 for success (also broken receipt
+pipe), 2 for errors before publication and 4 for other receipt I/O errors after
+publication, matching audio.
+
+The shared Y4M/WAV output budget defaults to 64 GiB, including headers/tags;
+`--max-output-bytes N` sets a positive u64 byte cap. Before each video frame the
+frame count times its packed plane size and the total output bytes are checked.
+WAV header and PCM bytes share the same budget. Limit errors publish nothing.
+If Segment Duration and a nominal frame interval are known, output is limited to
+ceil(duration / interval) plus two frames (also capped at 500,000). The interval
+uses DefaultDuration, BlockDuration, then the first positive timestamp delta.
+Without duration or an interval, there is no independent duration/rate bound;
+the byte cap and 500,000-frame limit still apply. Timestamp arithmetic errors
+refuse cleanly. Probe checks timestamp inference but does not publish outputs.
+
 Worker checks: `mix services/av/focused.mix`; informational benchmark:
 `mix services/av/bench.mix`. Neither invokes the full CI suite.

@@ -1,5 +1,5 @@
-use media_opus::{Channels, Decoder as _, OpusDecoder};
 use media_audio::pending::Pending;
+use media_opus::{Channels, Decoder as _, OpusDecoder};
 use media_webm::Demuxer;
 use serde_json::json;
 use std::{
@@ -18,7 +18,10 @@ struct OutputBudget {
 }
 impl OutputBudget {
     fn charge(&mut self, bytes: u64) -> Result<()> {
-        self.used = self.used.checked_add(bytes).filter(|n| *n <= self.limit)
+        self.used = self
+            .used
+            .checked_add(bytes)
+            .filter(|n| *n <= self.limit)
             .ok_or("OUTPUT_LIMIT_EXCEEDED: total output byte cap")?;
         Ok(())
     }
@@ -39,12 +42,20 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
             wav = Some(args.next().ok_or("missing WAV path")?);
         } else if arg == "--max-output-bytes" && max_output_bytes.is_none() {
             let value = args.next().ok_or("missing output byte cap")?;
-            let limit: u64 = value.to_str().ok_or("INVALID_OUTPUT_LIMIT")?.parse()
+            let limit: u64 = value
+                .to_str()
+                .ok_or("INVALID_OUTPUT_LIMIT")?
+                .parse()
                 .map_err(|_| "INVALID_OUTPUT_LIMIT: expected a positive integer")?;
-            if limit == 0 { return Err("INVALID_OUTPUT_LIMIT: expected a positive integer".into()); }
+            if limit == 0 {
+                return Err("INVALID_OUTPUT_LIMIT: expected a positive integer".into());
+            }
             max_output_bytes = Some(limit);
         } else {
-            return Err("usage: av decode FILE.webm --y4m OUT.y4m [--wav OUT.wav] [--max-output-bytes N]".into());
+            return Err(
+                "usage: av decode FILE.webm --y4m OUT.y4m [--wav OUT.wav] [--max-output-bytes N]"
+                    .into(),
+            );
         }
     }
     let mut bytes = Vec::new();
@@ -54,12 +65,14 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
     let d = Demuxer::new(&bytes)?;
     if probe {
         let mut tracks = Vec::new();
-        for t in &d.tracks { tracks.push(json!({
+        for t in &d.tracks {
+            tracks.push(json!({
             "number": t.number, "codec":t.codec, "width":t.width, "height":t.height,
             "fps": if t.kind == 1 { video_duration(&d,t)?.map(|ns| 1e9 / ns as f64) } else { None },
             "sample_rate": t.sample_rate, "channels":t.channels,
             "packets": d.packets().iter().filter(|p| p.track == t.number).count()
-        })); }
+        }));
+        }
         let mut frames = 0;
         if let Some(t) = d.tracks.iter().find(|t| t.codec == "V_AV1") {
             let mut decoder = media_av1::Decoder::new(1, 500_000)?;
@@ -101,9 +114,15 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
         .ok_or("no AV1 track")?;
     let frame_duration = video_duration(&d, t)?;
     let max_frames = duration_frame_limit(&d, frame_duration)?;
-    let mut budget = OutputBudget { limit: max_output_bytes.unwrap_or(DEFAULT_MAX_OUTPUT_BYTES), used: 0 };
+    let mut budget = OutputBudget {
+        limit: max_output_bytes.unwrap_or(DEFAULT_MAX_OUTPUT_BYTES),
+        used: 0,
+    };
     let mut output = Pending::new(Path::new(&out))?;
-    let mut wav_output = wav.as_ref().map(|path| Pending::new(Path::new(path))).transpose()?;
+    let mut wav_output = wav
+        .as_ref()
+        .map(|path| Pending::new(Path::new(path)))
+        .transpose()?;
     let mut video = BufWriter::new(&mut output.file);
     let mut decoder = media_av1::Decoder::new(4, 500_000)?;
     let mut size = None;
@@ -111,10 +130,18 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
     let mut emit = |f: media_av1::DecodedFrame| {
         let write = (|| -> Result<()> {
             let next = frames.checked_add(1).ok_or("FRAME_COUNT_LIMIT_EXCEEDED")?;
-            if next > max_frames { return Err("FRAME_COUNT_LIMIT_EXCEEDED: container duration and frame rate".into()); }
-            let frame_bytes = f.planes.iter().try_fold(0u64, |n, p| n.checked_add(p.len() as u64))
+            if next > max_frames {
+                return Err("FRAME_COUNT_LIMIT_EXCEEDED: container duration and frame rate".into());
+            }
+            let frame_bytes = f
+                .planes
+                .iter()
+                .try_fold(0u64, |n, p| n.checked_add(p.len() as u64))
                 .ok_or("OUTPUT_LIMIT_EXCEEDED: frame size overflow")?;
-            if next.checked_mul(frame_bytes).is_none_or(|n| n > budget.limit) {
+            if next
+                .checked_mul(frame_bytes)
+                .is_none_or(|n| n > budget.limit)
+            {
                 return Err("OUTPUT_LIMIT_EXCEEDED: frames times frame bytes".into());
             }
             let mut header = String::new();
@@ -126,14 +153,21 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
                 } else {
                     "0:0".into()
                 };
-                header = format!("YUV4MPEG2 W{} H{} F{} Ip A1:1 C420jpeg\n", f.width, f.height, rate);
+                header = format!(
+                    "YUV4MPEG2 W{} H{} F{} Ip A1:1 C420jpeg\n",
+                    f.width, f.height, rate
+                );
                 size = Some((f.width, f.height));
             }
             if size != Some((f.width, f.height)) {
                 return Err("Y4M size changed".into());
             }
             let tag = format!("FRAME XPTS={}\n", f.timestamp_ns);
-            budget.charge(frame_bytes.checked_add((header.len() + tag.len()) as u64).ok_or("OUTPUT_LIMIT_EXCEEDED")?)?;
+            budget.charge(
+                frame_bytes
+                    .checked_add((header.len() + tag.len()) as u64)
+                    .ok_or("OUTPUT_LIMIT_EXCEEDED")?,
+            )?;
             video.write_all(header.as_bytes())?;
             video.write_all(tag.as_bytes())?;
             for plane in &f.planes {
@@ -145,25 +179,36 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
         write.map_err(|e| media_av1::Error(e.to_string()))
     };
     for p in d.packets().iter().filter(|p| p.track == t.number) {
-        let ns = (p.timestamp as i128 * d.scale_ns as i128).try_into().map_err(|_| "TIMESTAMP_OVERFLOW")?;
+        let ns = (p.timestamp as i128 * d.scale_ns as i128)
+            .try_into()
+            .map_err(|_| "TIMESTAMP_OVERFLOW")?;
         decoder.submit(p.data, ns, &mut emit)?;
     }
     decoder.finish(&mut emit)?;
-    if frames == 0 { return Err("NO_VIDEO_FRAMES: AV1 stream emitted no video frames".into()); }
+    if frames == 0 {
+        return Err("NO_VIDEO_FRAMES: AV1 stream emitted no video frames".into());
+    }
     video.flush()?;
     drop(video);
     if let Some(wav) = &mut wav_output {
         audio(&d, &mut wav.file, &mut budget)?;
     }
-    let receipt = serde_json::to_string(&json!({"published":true,"frames":frames,"output_bytes":budget.used}))?;
+    let receipt = serde_json::to_string(
+        &json!({"published":true,"frames":frames,"output_bytes":budget.used}),
+    )?;
     output.publish()?;
-    if let Some(wav) = &mut wav_output { wav.publish()?; }
-    if let Some(wav) = &mut wav_output { wav.commit(); }
+    if let Some(wav) = &mut wav_output {
+        wav.publish()?;
+    }
+    if let Some(wav) = &mut wav_output {
+        wav.commit();
+    }
     output.commit();
     if let Err(e) = receipt_line(&receipt)
         && e.kind() != io::ErrorKind::BrokenPipe
     {
-        let _ = media_audio::cli::diagnostic(format_args!("published but receipt not written: {e}"));
+        let _ =
+            media_audio::cli::diagnostic(format_args!("published but receipt not written: {e}"));
         return Ok(4);
     }
     Ok(0)
@@ -177,7 +222,9 @@ fn receipt_line(receipt: &str) -> io::Result<()> {
 fn duration_frame_limit(d: &Demuxer<'_>, interval: Option<u64>) -> Result<u64> {
     if let (Some(duration), Some(interval)) = (d.duration, interval) {
         let frames = (duration * d.scale_ns as f64 / interval as f64).ceil();
-        if !frames.is_finite() { return Err("TIMESTAMP_OVERFLOW: container duration".into()); }
+        if !frames.is_finite() {
+            return Err("TIMESTAMP_OVERFLOW: container duration".into());
+        }
         return Ok((frames as u64).saturating_add(FRAME_MARGIN).min(500_000));
     }
     // Without Segment Duration or a nominal frame interval there is no
@@ -192,14 +239,25 @@ fn video_duration(d: &Demuxer<'_>, t: &media_webm::Track<'_>) -> Result<Option<u
     let mut previous = None;
     for p in d.packets().iter().filter(|p| p.track == t.number) {
         if let Some(duration) = p.duration.filter(|n| *n > 0) {
-            return Ok(Some(duration.checked_mul(d.scale_ns).ok_or("TIMESTAMP_OVERFLOW")?));
+            return Ok(Some(
+                duration
+                    .checked_mul(d.scale_ns)
+                    .ok_or("TIMESTAMP_OVERFLOW")?,
+            ));
         }
         if let Some(last) = previous
             && p.timestamp > last
         {
-            let delta = p.timestamp.checked_sub(last).ok_or("TIMESTAMP_OVERFLOW: packet delta")?;
-            let delta = delta.checked_abs().ok_or("TIMESTAMP_OVERFLOW: packet delta")? as u64;
-            return Ok(Some(delta.checked_mul(d.scale_ns).ok_or("TIMESTAMP_OVERFLOW")?));
+            let delta = p
+                .timestamp
+                .checked_sub(last)
+                .ok_or("TIMESTAMP_OVERFLOW: packet delta")?;
+            let delta = delta
+                .checked_abs()
+                .ok_or("TIMESTAMP_OVERFLOW: packet delta")? as u64;
+            return Ok(Some(
+                delta.checked_mul(d.scale_ns).ok_or("TIMESTAMP_OVERFLOW")?,
+            ));
         }
         previous = Some(p.timestamp);
     }
@@ -226,11 +284,11 @@ fn audio(d: &Demuxer<'_>, output: &mut File, budget: &mut OutputBudget) -> Resul
     let gain = 10f32.powf(i16::from_le_bytes([h[16], h[17]]) as f32 / (256.0 * 20.0));
     let mut decoder = OpusDecoder::new(channels)?;
     let spec = hound::WavSpec {
-            channels: n as u16,
-            sample_rate: 48_000,
-            bits_per_sample: 32,
-            sample_format: hound::SampleFormat::Float,
-        };
+        channels: n as u16,
+        sample_rate: 48_000,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
     // Ask hound for its exact float-WAV header size, including extensions.
     let mut header = Cursor::new(Vec::new());
     hound::WavWriter::new(&mut header, spec)?.finalize()?;
@@ -239,9 +297,11 @@ fn audio(d: &Demuxer<'_>, output: &mut File, budget: &mut OutputBudget) -> Resul
     let mut writer = hound::WavWriter::new(&mut buffered, spec)?;
     for p in d.packets().iter().filter(|p| p.track == t.number) {
         let pcm = decoder.decode(Some(p.data))?.pcm;
-        let absolute_padding = p.discard_padding_ns.checked_abs().ok_or("TIMESTAMP_OVERFLOW: discard padding")?;
-        let padding = ((absolute_padding as u128 * 48_000 + 500_000_000)
-            / 1_000_000_000) as usize;
+        let absolute_padding = p
+            .discard_padding_ns
+            .checked_abs()
+            .ok_or("TIMESTAMP_OVERFLOW: discard padding")?;
+        let padding = ((absolute_padding as u128 * 48_000 + 500_000_000) / 1_000_000_000) as usize;
         let len = pcm.len() / n;
         if padding > len {
             return Err("Opus discard padding exceeds packet".into());
@@ -252,7 +312,11 @@ fn audio(d: &Demuxer<'_>, output: &mut File, budget: &mut OutputBudget) -> Resul
         let skipped = skip.min(available);
         skip -= skipped;
         let samples = &pcm[(start_pad + skipped) * n..(len - end_pad) * n];
-        budget.charge((samples.len() as u64).checked_mul(4).ok_or("OUTPUT_LIMIT_EXCEEDED")?)?;
+        budget.charge(
+            (samples.len() as u64)
+                .checked_mul(4)
+                .ok_or("OUTPUT_LIMIT_EXCEEDED")?,
+        )?;
         for sample in samples {
             writer.write_sample(*sample * gain)?;
         }
@@ -329,8 +393,15 @@ mod tests {
                 let input = dir.path().join("input.webm");
                 std::fs::write(&input, &bytes).unwrap();
                 let wav = dir.path().join("out.wav");
-                audio(&Demuxer::new(&bytes).unwrap(), &mut File::create(&wav).unwrap(),
-                    &mut OutputBudget { limit: DEFAULT_MAX_OUTPUT_BYTES, used: 0 }).unwrap();
+                audio(
+                    &Demuxer::new(&bytes).unwrap(),
+                    &mut File::create(&wav).unwrap(),
+                    &mut OutputBudget {
+                        limit: DEFAULT_MAX_OUTPUT_BYTES,
+                        used: 0,
+                    },
+                )
+                .unwrap();
                 let ours: Vec<f32> = hound::WavReader::open(wav)
                     .unwrap()
                     .samples()

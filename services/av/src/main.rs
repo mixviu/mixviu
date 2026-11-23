@@ -24,9 +24,7 @@ fn main() -> ExitCode {
             }
         }
         _ => {
-            let _ = media_audio::cli::diagnostic(format_args!(
-                "{USAGE}"
-            ));
+            let _ = media_audio::cli::diagnostic(format_args!("{USAGE}"));
             ExitCode::from(2)
         }
     }
