@@ -127,13 +127,13 @@ fn video_duration(d: &Demuxer<'_>, t: &media_webm::Track<'_>) -> Option<u64> {
         if let Some(duration) = p.duration.filter(|n| *n > 0) {
             return duration.checked_mul(d.scale_ns);
         }
-        if let Some(last) = previous {
-            if p.timestamp > last {
-                return (p.timestamp - last)
-                    .try_into()
-                    .ok()
-                    .and_then(|n: u64| n.checked_mul(d.scale_ns));
-            }
+        if let Some(last) = previous
+            && p.timestamp > last
+        {
+            return (p.timestamp - last)
+                .try_into()
+                .ok()
+                .and_then(|n: u64| n.checked_mul(d.scale_ns));
         }
         previous = Some(p.timestamp);
     }

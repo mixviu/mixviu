@@ -45,7 +45,7 @@ pub struct Demuxer<'a> {
 impl<'a> Demuxer<'a> {
     pub fn new(input: &'a [u8]) -> Result<Self> {
         // Zero-copy input plus capped indexes: at most 256 MiB of input and
-        // approximately 64 MiB of metadata. Parsing has fixed depth (<= 6),
+        // at most 128 MiB of indexes. Parsing has bounded depth (<= 8),
         // never recursively traverses unknown masters.
         if input.len() > 256 * 1024 * 1024 {
             return Err(Error::Invalid("input allocation limit"));
