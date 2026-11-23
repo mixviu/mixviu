@@ -242,15 +242,13 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
         writer.opus_packet(k as u64 * 20, &p.data, discard as u16)?;
         packets += 1;
     }
-    if needed > blocks {
-        if let Some(p) = enc.finish()? {
+    if needed > blocks && let Some(p) = enc.finish()? {
             writer.opus_packet(
                 blocks as u64 * 20,
                 &p.data,
                 p.discard_padding + padding as u16,
             )?;
             packets += 1;
-        }
     }
     writer.set_duration_samples(count as u64);
     writer.finish()?;
