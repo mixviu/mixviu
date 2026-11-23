@@ -50,6 +50,7 @@ impl<'a> Demuxer<'a> {
         if input.len() > 256 * 1024 * 1024 {
             return Err(Error::Invalid("input allocation limit"));
         }
+        validate_depth(input, 0, &mut 0)?;
         let mut p = 0;
         let header = element(input, &mut p)?;
         if header.id != 0x1a45dfa3 {
@@ -345,4 +346,17 @@ fn signed(b: &[u8]) -> Result<i64> {
     let mut bytes = [if b[0] & 128 != 0 { 255 } else { 0 }; 8];
     bytes[8-b.len()..].copy_from_slice(b);
     Ok(i64::from_be_bytes(bytes))
+}
+
+fn validate_depth(b: &[u8], depth: usize, elements: &mut usize) -> Result<()> {
+    if depth > 8 { return Err(Error::Invalid("nesting depth limit")); }
+    for e in children(b) {
+        let e = e?;
+        *elements += 1;
+        if *elements > 2_000_000 { return Err(Error::Invalid("element count limit")); }
+        if matches!(e.id, 0x1a45dfa3 | 0x18538067 | 0x1549a966 | 0x1654ae6b | 0xae | 0xe0 | 0xe1 | 0x1f43b675 | 0xa0 | 0x1c53bb6b | 0xbb | 0xb7) {
+            validate_depth(e.data, depth+1, elements)?;
+        }
+    }
+    Ok(())
 }

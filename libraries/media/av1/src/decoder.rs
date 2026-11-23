@@ -62,6 +62,7 @@ impl Decoder {
             return Err(Error("closed decoder, empty or oversized AV1 input".into()));
         }
         let result = (|| {
+            validate_obus(bytes)?;
             let mut data = Data(Dav1dData::default());
             // SAFETY: data is valid writable storage; allocation size is bounded.
             let ptr = unsafe { dav1d_data_create(Some(NonNull::from(&mut data.0)), bytes.len()) };
@@ -118,6 +119,41 @@ impl Decoder {
         }
         Ok(self.frames - start)
     }
+}
+// Inspect every sequence header before rav1d can allocate reference pictures.
+// Low-overhead OBU streams need explicit sizes, as in WebM temporal units.
+fn validate_obus(bytes: &[u8]) -> Result<(), Error> {
+    let mut at = 0usize;
+    while at < bytes.len() {
+        let start = at;
+        let header = bytes[at];
+        at += 1;
+        if header & 0x83 != 2 { return Err(Error("invalid or unsized OBU".into())); }
+        if header & 4 != 0 { at = at.checked_add(1).ok_or_else(|| Error("OBU overflow".into()))?; }
+        let mut size = 0u64;
+        let mut done = false;
+        for shift in (0..56).step_by(7) {
+            let byte = *bytes.get(at).ok_or_else(|| Error("truncated OBU size".into()))?;
+            at += 1;
+            size |= u64::from(byte & 127) << shift;
+            if byte & 128 == 0 { done = true; break; }
+        }
+        let end = at.checked_add(usize::try_from(size).map_err(|_| Error("OBU size".into()))?).filter(|end| *end <= bytes.len());
+        if !done || end.is_none() { return Err(Error("truncated OBU".into())); }
+        at = end.ok_or_else(|| Error("OBU size".into()))?;
+        if (header >> 3) & 15 == 1 {
+            let mut seq = std::mem::MaybeUninit::<rav1d::include::dav1d::headers::Dav1dSequenceHeader>::uninit();
+            // SAFETY: parser reads this bounded OBU and initialises seq on success.
+            let code = unsafe { dav1d_parse_sequence_header(Some(NonNull::from(&mut seq).cast()), NonNull::new(bytes[start..at].as_ptr().cast_mut()), at-start) }.0;
+            check(code)?;
+            // SAFETY: successful parse initialised seq.
+            let seq = unsafe { seq.assume_init() };
+            if seq.max_width <= 0 || seq.max_height <= 0 || seq.max_width > 8192 || seq.max_height > 4320 || seq.hbd != 0 || seq.layout != 1 {
+                return Err(Error("AV1 sequence exceeds 8192x4320 8-bit I420 limits".into()));
+            }
+        }
+    }
+    Ok(())
 }
 impl Drop for Decoder {
     fn drop(&mut self) {

@@ -19,6 +19,7 @@ workspace = true
 
 [dev-dependencies]
 media-webm = { path = "../webm" }
+tempfile.workspace = true
 
 [[example]]
 name = "av1enc"
