@@ -169,3 +169,24 @@ guard. The receipt reports codec_trim_db, codec_passes and encoded loudness;
 shortfall and target_reached use decoded audio. Optional WAV is the final
 PCM including codec safety trim. Packet storage is about 24 MB per 25 minutes;
 decoded metering adds one f64 programme buffer, below the limiter budget.
+
+## Validation and exit status
+
+Source paths must be relative to the timeline file. Absolute paths and any
+`..` component are refused by source index before opening any WAV. Timeline
+JSON is limited to 16 MiB: the opened file is checked, then read through a
+bounded reader with a growth sentinel. Programme copies/conversions, limiter
+envelopes and decoded metering storage reserve fallibly; allocation failure
+is a normal error.
+
+Exit 0 means an accepted master. Exit 2 reports usage, validation, I/O,
+allocation or codec errors as `av: ...`. Exit 3 means mastering was refused
+or the decoded loudness missed the target: one receipt line is still printed
+and stderr explains the refusal or absolute LU error.
+
+WAV and WebM are staged in temporary files in their destination directories.
+Only an accepted master publishes them. Atomic no-clobber hard links provide
+rename-like publication while preserving existing destinations; an error
+rolls back any file published by this transaction. Refused/missed renders
+leave no final outputs or temporary files. The receipt bytes field describes
+the staged WebM even when that master is discarded.

@@ -60,7 +60,7 @@ impl Audio {
         ceiling_dbtp: f64,
         config: LimiterConfig,
     ) -> Result<LimitReport, Error> {
-        let mut candidate = self.clone();
+        let mut candidate = self.try_clone()?;
         let report = candidate.render_limiter(ceiling_dbtp, config)?;
         if report.max_gain_reduction_db > 6.0 {
             return Err(Error::ReductionLimit {
@@ -144,7 +144,7 @@ impl Audio {
         ceiling_dbtp: f64,
         config: LimiterConfig,
     ) -> Result<TargetReport, Error> {
-        let mut working = self.clone();
+        let mut working = self.try_clone()?;
         let report = working.normalise_target_work(target_lufs, ceiling_dbtp, config)?;
         *self = working;
         Ok(report)
@@ -157,7 +157,7 @@ impl Audio {
         config: LimiterConfig,
     ) -> Result<TargetReport, Error> {
         config.validate()?;
-        let original = self.clone();
+        let original = self.try_clone()?;
         let static_report = self.normalise(target_lufs, ceiling_dbtp)?;
         if !static_report.after.integrated_lufs.is_finite()
             || static_report.after.integrated_lufs < -70.0
@@ -182,7 +182,7 @@ impl Audio {
         let mut best: Option<(Self, TargetReport)> = None;
         for pass in 1..=3 {
             let gain = 10.0_f64.powf(gain_db / 20.0);
-            let mut candidate = original.clone();
+            let mut candidate = original.try_clone()?;
             if !gain.is_finite() || candidate.samples.iter().any(|x| !(x * gain).is_finite()) {
                 return Err(Error::InvalidAudio);
             }

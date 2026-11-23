@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::{BufReader, BufWriter},
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
@@ -94,6 +94,9 @@ impl Timeline {
             if s.path.as_os_str().is_empty() {
                 return Err(fail("path"));
             }
+            if s.path.is_absolute() || s.path.components().any(|c| matches!(c, Component::ParentDir | Component::RootDir | Component::Prefix(_))) {
+                return Err(fail("path: must be relative without .. components"));
+            }
             if !s.gain_db.is_finite() || !(-120.0..=60.0).contains(&s.gain_db) {
                 return Err(fail("gain_db"));
             }
@@ -116,7 +119,7 @@ impl Timeline {
         self.validate()?;
         let mut out = Vec::<f32>::new();
         let n = frames(self.duration_s) * 2;
-        out.try_reserve_exact(n)?;
+        out.try_reserve_exact(n).map_err(|_| crate::Error::SizeOverflow)?;
         out.resize(n, 0.0);
         for (index, s) in self.sources.iter().enumerate() {
             let clip =
@@ -147,16 +150,15 @@ impl Timeline {
                     let dst = &mut out[(start + k) * 2 + c];
                     *dst += (clip.samples()[src] * gain * fade) as f32;
                     if !dst.is_finite() {
-                        return Err(refusal("mix: non-finite sum"));
+                        return Err(refusal(&format!("sources[{index}].mix: non-finite sum")));
                     }
                 }
             }
         }
-        Ok(Audio::new(
-            48000,
-            2,
-            out.into_iter().map(f64::from).collect(),
-        )?)
+        let mut programme = Vec::new();
+        programme.try_reserve_exact(out.len()).map_err(|_| crate::Error::SizeOverflow)?;
+        programme.extend(out.into_iter().map(f64::from));
+        Ok(Audio::new(48000, 2, programme)?)
     }
 }
 /// N-frame inclusive linear ramp: first 0, last 1. A one-frame fade is 0.
@@ -171,7 +173,7 @@ fn ramp(k: usize, n: usize) -> f64 {
 }
 #[derive(Serialize)]
 pub struct Meter {
-    integrated_lufs: f64,
+    pub integrated_lufs: f64,
     true_peak_dbtp: f64,
     lra_lu: f64,
 }
@@ -232,11 +234,13 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
         codec_passes += 1;
     };
     let after = audio.measure()?;
-    if let Some(path) = wav {
-        audio.write_wav(BufWriter::new(File::create_new(path)?), WavFormat::Float32)?;
+    let mut wav_output = wav.map(crate::pending::Pending::new).transpose()?;
+    if let Some(output) = &mut wav_output {
+        audio.write_wav(BufWriter::new(&mut output.file), WavFormat::Float32)?;
     }
+    let mut output = crate::pending::Pending::new(out)?;
     let mut writer = media_webm::Writer::audio(
-        BufWriter::new(File::create_new(out)?),
+        BufWriter::new(&mut output.file),
         media_webm::Opus {
             channels: 2,
             pre_skip: head.pre_skip,
@@ -248,8 +252,8 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
         writer.opus_packet(k as u64 * 20, &p.data, p.discard_padding)?;
     }
     writer.set_duration_samples(count as u64);
-    writer.finish()?;
-    Ok(Receipt {
+    drop(writer.finish()?);
+    let receipt = Receipt {
         before: r.before.into(),
         after: after.into(),
         gain_db: r.gain_db + codec_trim_db,
@@ -260,12 +264,19 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
         passes: r.passes,
         sample_count: count,
         packets: packets.len(),
-        bytes: std::fs::metadata(out)?.len(),
+        bytes: output.file.metadata()?.len(),
         seconds: count as f64 / 48000.0,
         encoded: encoded.into(),
         codec_trim_db,
         codec_passes,
-    })
+    };
+    if !receipt.refused && receipt.target_reached {
+        if let Some(wav) = &mut wav_output { wav.publish()?; }
+        output.publish()?;
+        if let Some(wav) = &mut wav_output { wav.commit(); }
+        output.commit();
+    }
+    Ok(receipt)
 }
 
 /// Decode only packets produced by our own encoder, never untrusted input.
@@ -279,9 +290,10 @@ fn encode_checked(audio: &Audio) -> Result<(OpusHead, Vec<Packet>, Loudness)> {
     // only ceil((length+lookahead)/960) packets and put all excess on the last.
     let needed = (count + usize::from(enc.head().pre_skip)).div_ceil(960);
     let mut packets = Vec::new();
+    packets.try_reserve_exact(needed).map_err(|_| crate::Error::SizeOverflow)?;
     for k in 0..blocks {
         let start = k * 1920;
-        let mut pcm = vec![0f32; 1920];
+        let mut pcm = [0f32; 1920];
         for (d, s) in pcm
             .iter_mut()
             .zip(&audio.samples()[start..audio.samples().len().min(start + 1920)])
@@ -305,13 +317,14 @@ fn encode_checked(audio: &Audio) -> Result<(OpusHead, Vec<Packet>, Loudness)> {
     }
     let mut decoder = OpusDecoder::new(Channels::Stereo)?;
     let mut decoded = Vec::new();
-    decoded.try_reserve_exact((count + 1920) * 2)?;
+    decoded.try_reserve_exact((count + 1920) * 2).map_err(|_| crate::Error::SizeOverflow)?;
     let mut skip = usize::from(head.pre_skip) * 2;
     for p in &packets {
         let frame = decoder.decode(Some(&p.data))?;
         let start = skip.min(frame.pcm.len());
         skip -= start;
         let end = frame.pcm.len() - usize::from(p.discard_padding) * 2;
+        if end < start || decoded.len() + end - start > count * 2 { return Err(refusal("Opus: decoded sample count")); }
         decoded.extend(frame.pcm[start..end].iter().copied().map(f64::from));
     }
     if decoded.len() != count * 2 {

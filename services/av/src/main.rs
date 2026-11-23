@@ -4,7 +4,7 @@ fn main() -> ExitCode {
     let mut args = std::env::args_os().skip(1);
     match args.next().as_deref() {
         Some(command) if command == "audio" => match media_audio::cli::run(args) {
-            Ok(()) => ExitCode::SUCCESS,
+            Ok(code) => ExitCode::from(code),
             Err(e) => {
                 eprintln!("av: {e}");
                 ExitCode::from(2)

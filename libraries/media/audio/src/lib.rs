@@ -8,6 +8,7 @@ use rubato::{
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 pub mod cli;
 mod limiter;
+mod pending;
 pub mod timeline;
 pub use limiter::{LimitReport, LimiterConfig, TargetReport};
 
@@ -132,6 +133,13 @@ impl Audio {
             samples,
         })
     }
+    /// Fallible copy for whole-programme offline operations.
+    pub fn try_clone(&self) -> Result<Self, Error> {
+        let mut samples = Vec::new();
+        samples.try_reserve_exact(self.samples.len()).map_err(|_| Error::SizeOverflow)?;
+        samples.extend_from_slice(&self.samples);
+        Ok(Self { rate: self.rate, channels: self.channels, samples })
+    }
     pub fn rate(&self) -> u32 {
         self.rate
     }
@@ -230,7 +238,7 @@ impl Audio {
             });
         }
         if self.rate == 48000 {
-            return Ok(self.clone());
+            return self.try_clone();
         }
         if self.frames() == 0 {
             return Self::silence(48000, self.channels, 0);
@@ -303,7 +311,7 @@ impl Audio {
             sample_peak = sample_peak.max(m.sample_peak(c)?);
             true_peak = true_peak.max(m.true_peak(c)?);
         }
-        m.add_frames_f64(&vec![0.0; 64 * self.channels as usize])?;
+        m.add_frames_f64(&[0.0; 128][..64 * self.channels as usize])?;
         for c in 0..self.channels as u32 {
             true_peak = true_peak.max(m.true_peak(c)?);
         }
@@ -357,17 +365,15 @@ impl Audio {
         validate_riff(&bytes)?;
         let mut reader = hound::WavReader::new(Cursor::new(bytes))?;
         let spec = reader.spec();
-        let samples = match (spec.sample_format, spec.bits_per_sample) {
-            (hound::SampleFormat::Float, 32) => reader
-                .samples::<f32>()
-                .map(|s| s.map(f64::from))
-                .collect::<Result<Vec<_>, _>>()?,
+        let mut samples = Vec::new();
+        samples.try_reserve_exact(reader.len() as usize).map_err(|_| Error::SizeOverflow)?;
+        match (spec.sample_format, spec.bits_per_sample) {
+            (hound::SampleFormat::Float, 32) => {
+                for sample in reader.samples::<f32>() { samples.push(f64::from(sample?)); }
+            },
             (hound::SampleFormat::Int, b @ (16 | 24 | 32)) => {
                 let scale = 2.0_f64.powi(b as i32 - 1);
-                reader
-                    .samples::<i32>()
-                    .map(|s| s.map(|s| s as f64 / scale))
-                    .collect::<Result<Vec<_>, _>>()?
+                for sample in reader.samples::<i32>() { samples.push(sample? as f64 / scale); }
             }
             _ => return Err(Error::UnsupportedFormat),
         };

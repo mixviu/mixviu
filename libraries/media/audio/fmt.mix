@@ -1,4 +1,6 @@
 print(run_argv_must(["cargo", "fmt", "-p", "media-audio", "-p", "media-webm", "-p", "av"]))
 print(run_argv_must(["cargo", "check", "-p", "media-audio", "-p", "media-webm", "-p", "av"]))
-print(run_argv_must(["git", "diff"]))
+$diff = run_argv_must(["git", "diff"])
+print($diff)
 print(run_argv_must(["git", "checkout", "-q", "--", "."]))
+if $diff != "" then exit(1) end
