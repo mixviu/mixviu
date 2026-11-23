@@ -251,6 +251,15 @@ Additional ports (no defaults unless shown):
 | row/column/button | tooltip:o; intended shape title, optional subtitle/lines | `libraries/scene/src/schema.rs:360` |
 | row/column | background_inset:l? (four finite lengths in top/right/bottom/left order; background only), scroll:b, justify:s (start/center/end/between/around/evenly), bar:s, padding_x:length, padding_y:length, native_spacing:b, native_frame:b, group_frame:b, group_title:s, group_key:s, scroll_key:s, scroll_ready:b, reserve_panel_after:b, row_gap:n, column_gap:n, padding_top:n, padding_right:n, padding_bottom:n, padding_left:n | `libraries/scene/src/schema.rs:366` |
 
+`equal_height: true` on a SceneView row or grid opts into natural row-height
+stretch. Each grid row is independent; row children are top aligned. Put
+`stretch_last: true` on a column cell to grow its last visible child into the
+remaining height, preserving the authored gaps and earlier cards. Without it,
+the cell itself stretches. These boolean ports have no defaults. Assigned
+lengths are clamped to 0..1e6 and natural measurements use the bounded
+node-keyed cache. Remove fixed column heights when using natural equal rows.
+See `apps/deck/examples/equal-rows.scene.mix`.
+
 Row align also accepts baseline (direct text children in SceneView). Column and list align accept start/center/end/stretch. cross_align never changes main-axis alignment or child order; when absent, each painter retains its existing path's cross placement. Column justify distributes only with an authored height or a stretch assignment; between/around/evenly retain main packing when any visible child is not direct text. Padding and outline lengths have a finite 1e6 ceiling in validation and paint. `length` accepts
 nonnegative finite numbers or `design.bar_inset`, `design.bar_padding_y`,
 `design.tool_margin`. The schema appends duplicate scroll/clip declarations;

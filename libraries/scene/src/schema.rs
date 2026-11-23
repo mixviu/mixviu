@@ -320,6 +320,12 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         ports.push(p("content_columns", "bool", false, None));
         ports.push(p("row_rule", "string", false, None));
     }
+    if matches!(f, "grid" | "row") {
+        ports.push(p("equal_height", "bool", false, None));
+    }
+    if f == "column" {
+        ports.push(p("stretch_last", "bool", false, None));
+    }
     if f == "row" {
         ports.extend([
             Port {
