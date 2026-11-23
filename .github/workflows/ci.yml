@@ -1,5 +1,5 @@
 # Merge-queue rehearsal (lab only, never lands; plan in the private hub).
-# Red when lab/RED exists in the tested tree. Runs on PRs and on merge-queue
+# Red when lab/RED exists, or lab/P.md and lab/Q.md both do. Runs on PRs and on merge-queue
 # candidates; the lab-* context cannot satisfy main's required checks.
 name: ci
 
@@ -19,4 +19,7 @@ jobs:
         with:
           persist-credentials: false
       - name: lab marker
-        run: test ! -e lab/RED
+        # Same rule as lab/gate.mix (the hosted runner has no mix).
+        run: |
+          test ! -e lab/RED
+          if [ -e lab/P.md ] && [ -e lab/Q.md ]; then echo "lab/P.md and lab/Q.md conflict"; exit 1; fi

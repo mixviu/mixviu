@@ -1,0 +1,12 @@
+-- The merge-queue rehearsal gate (lab only). Red when lab/RED exists, or when
+-- lab/P.md and lab/Q.md are both present: two changes that pass alone but
+-- conflict together, the case a merge queue must catch on the candidate.
+if is_file("lab/RED") then
+  eprint("lab gate red: lab/RED present")
+  exit(1)
+end
+if is_file("lab/P.md") and is_file("lab/Q.md") then
+  eprint("lab gate red: lab/P.md and lab/Q.md conflict")
+  exit(1)
+end
+print("lab gate green")
