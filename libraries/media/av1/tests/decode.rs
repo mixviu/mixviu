@@ -129,8 +129,11 @@ fn own_encodes_and_show_existing() {
             .unwrap();
             if repeats {
                 w.packet(1, 0, 40, true, &packets[0].data).unwrap();
-                for i in 1..5 {
-                    w.packet(1, i * 40, 40, false, &[0x12, 0, 0x1a, 1, 0x88])
+                // A displayed keyframe cannot be re-shown. The first low-latency
+                // rav1e inter frame refreshes slot 1; re-show that reference.
+                w.packet(1, 40, 40, false, &packets[1].data).unwrap();
+                for i in 2..5 {
+                    w.packet(1, i * 40, 40, false, &[0x12, 0, 0x1a, 1, 0x98])
                         .unwrap();
                 }
             } else {
@@ -177,4 +180,21 @@ fn malformed_and_limits() {
     let mut d = Decoder::new(1, 1).unwrap();
     assert!(d.submit(&[0xff; 128], 0, |_| Ok(())).is_err());
     assert!(d.submit(&[0], 0, |_| Ok(())).is_err());
+    let bytes = include_bytes!("../../webm/tests/fixtures/rav1e.webm");
+    let demux = Demuxer::new(bytes).unwrap();
+    let mut decoder = Decoder::new(1,1).unwrap();
+    let mut count = 0;
+    let mut refused = false;
+    for p in demux.packets() {
+        if decoder.submit(p.data,p.timestamp,|_| { count += 1; Ok(()) }).is_err() { refused = true; break; }
+    }
+    assert!(refused);
+    assert_eq!(count,1);
+    let packet = demux.packets()[0].data;
+    for i in 0..packet.len() {
+        let mut mutated = packet.to_vec();
+        mutated[i] ^= 0xff;
+        let mut decoder = Decoder::new(1,2).unwrap();
+        let _ = decoder.submit(&mutated,0,|_| Ok(()));
+    }
 }
