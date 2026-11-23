@@ -8,7 +8,7 @@ use rubato::{
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 pub mod cli;
 mod limiter;
-mod pending;
+pub mod pending;
 pub mod timeline;
 pub use limiter::{LimitReport, LimiterConfig, TargetReport};
 

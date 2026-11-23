@@ -2,6 +2,7 @@
 use media_frame::Yuv420;
 use rav1e::prelude::*;
 use std::sync::Arc;
+pub mod reference;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Target {

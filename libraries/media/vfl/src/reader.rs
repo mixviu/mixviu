@@ -258,6 +258,7 @@ impl Markers {
     }
 }
 pub struct Decoded<'a> {
+    pub repeat: bool,
     pub slot: u64,
     pub t_us: u64,
     pub pixels: &'a [u8],
@@ -271,6 +272,7 @@ struct KeyPosition {
     frame_offset: Option<u64>,
 }
 pub struct Reader {
+    last_repeat: bool,
     path: PathBuf,
     width: u32,
     height: u32,
@@ -424,6 +426,7 @@ impl Reader {
             open(&path.join("markers.jsonl"))?;
         }
         Ok(Self {
+            last_repeat: false,
             path,
             width,
             height,
@@ -631,6 +634,7 @@ impl Reader {
             let len = u32::from_le_bytes(h[..4].try_into().unwrap()) as usize;
             let slot = u64::from_le_bytes(h[8..16].try_into().unwrap());
             let kind = h[16];
+            self.last_repeat = kind == REPEAT;
             if len > self.raw + self.raw / 255 + 32 {
                 return Err(self.error(ErrorKind::Limit, "payload exceeds canvas bound"));
             }
@@ -782,6 +786,7 @@ impl Reader {
         let t_us = u64::try_from(u128::from(slot) * 1_000_000 / u128::from(self.fps))
             .map_err(|_| self.error(ErrorKind::Limit, "timestamp overflow"))?;
         Ok(Some(Decoded {
+            repeat: self.last_repeat,
             slot,
             t_us,
             pixels: &self.pixels,
@@ -807,6 +812,7 @@ impl Reader {
         self.seek_inner(target)?;
         self.poisoned = false;
         Ok(Decoded {
+            repeat: self.last_repeat,
             slot: target,
             t_us: (u128::from(target) * 1_000_000 / u128::from(self.fps)) as u64,
             pixels: &self.pixels,
