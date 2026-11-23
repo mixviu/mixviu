@@ -72,6 +72,16 @@ impl Pending {
     }
 }
 
+impl Drop for Pending {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.temporary);
+        if self.published && !self.committed {
+            let _ = std::fs::remove_file(&self.destination);
+        }
+        let _ = self.sync_directory();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -89,14 +99,5 @@ mod tests {
         }
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 0);
         std::fs::remove_dir(dir).unwrap();
-    }
-}
-impl Drop for Pending {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.temporary);
-        if self.published && !self.committed {
-            let _ = std::fs::remove_file(&self.destination);
-        }
-        let _ = self.sync_directory();
     }
 }
