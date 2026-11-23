@@ -76,7 +76,8 @@ fn entrance_uses_the_oracle_beat_plus_delay_without_an_extra_lead() {
         json!({"slides":["before"],"beats":[[0.9,3,5]]}),
     );
     deck.call("viu.presentation", json!({"time":100}));
-    let fixture: Value = serde_json::from_str(include_str!("../../motion/oracle/chrome.json")).unwrap();
+    let fixture: Value =
+        serde_json::from_str(include_str!("../../motion/oracle/chrome.json")).unwrap();
     for sample in fixture["title_samples"].as_array().unwrap() {
         let at = 1.05 + sample["t"].as_f64().unwrap();
         let model = deck

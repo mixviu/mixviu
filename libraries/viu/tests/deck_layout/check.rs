@@ -38,7 +38,8 @@ fn equal_rows_stretch_single_cards_and_only_the_last_stacked_card() {
 
 #[test]
 fn equal_grid_rows_are_independent_and_stacked_cells_need_no_fixed_height() {
-    let g = geometry(r##"{
+    let g = geometry(
+        r##"{
       root:{widget:"grid",columns:2,equal_height:true,row_gap:20,children:["a","b","c","d"]},
       a:{widget:"column",stretch_last:true,gap:12,children:["first","last"]},
       first:{widget:"column",padding:8,background:"#123456",children:["f"]},f:{widget:"text",text:"First"},
@@ -46,12 +47,13 @@ fn equal_grid_rows_are_independent_and_stacked_cells_need_no_fixed_height() {
       b:{widget:"column",padding:8,children:["bt"]},bt:{widget:"text",text:"Tall\n2\n3\n4\n5\n6\n7\n8"},
       c:{widget:"column",children:["ct"]},ct:{widget:"text",text:"Short"},
       d:{widget:"column",children:["dt"]},dt:{widget:"text",text:"Two\nlines"}
-    }"##);
-    assert!((g["last"].bottom()-g["b"].bottom()).abs()<1., "{g:?}");
-    assert!((g["last"].top()-g["first"].bottom()-12.).abs()<1.);
-    assert!((g["c"].bottom()-g["d"].bottom()).abs()<1.);
-    assert!(g["c"].height()<g["a"].height());
-    assert!((g["c"].top()-g["a"].bottom()-20.).abs()<1.);
+    }"##,
+    );
+    assert!((g["last"].bottom() - g["b"].bottom()).abs() < 1., "{g:?}");
+    assert!((g["last"].top() - g["first"].bottom() - 12.).abs() < 1.);
+    assert!((g["c"].bottom() - g["d"].bottom()).abs() < 1.);
+    assert!(g["c"].height() < g["a"].height());
+    assert!((g["c"].top() - g["a"].bottom() - 20.).abs() < 1.);
 }
 
 #[test]
