@@ -1,6 +1,24 @@
 use motion::{Property, presets};
 use serde_json::Value;
 
+#[test]
+fn title_samples_match_scene_entrances_and_legacy_sting_is_separate() {
+    let fixture: Value = serde_json::from_str(include_str!("../oracle/chrome.json")).unwrap();
+    let entrance = motion::scene::Entrance::Name("left".into()).playback(0., 0, false);
+    for sample in fixture["title_samples"].as_array().unwrap() {
+        let values = entrance.sample(sample["t"].as_f64().unwrap());
+        assert!((values.get(Property::Opacity)-sample["opacity"].as_f64().unwrap()).abs()<1e-6);
+        assert!((values.get(Property::Tx)-sample["tx"].as_f64().unwrap()).abs()<0.001);
+    }
+    let legacy = motion::load_presets(include_str!("../legacy-presets.json")).unwrap();
+    for name in ["fade", "zoom", "wipe"] {
+        let frozen = motion::scene::paint_preset(&format!("legacy-{name}")).unwrap();
+        let old = legacy.iter().find(|p|p.name==name).unwrap();
+        for i in 0..40 { assert_eq!(frozen.sample(i as f64/30.), old.sample(i as f64/30.)); }
+        assert_ne!(frozen.timing.duration, motion::scene::paint_preset(name).unwrap().timing.duration);
+    }
+}
+
 /// Requires the real generated fixture; absence is a failure, never a skip.
 #[test]
 fn chrome_oracle() {
