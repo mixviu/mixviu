@@ -7,6 +7,8 @@ use rubato::{
 };
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 mod limiter;
+pub mod timeline;
+pub mod cli;
 pub use limiter::{LimitReport, LimiterConfig, TargetReport};
 
 /// Standard RIFF maximum, enough for over three hours of stereo float32 at 48 kHz.

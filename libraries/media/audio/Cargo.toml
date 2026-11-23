@@ -8,6 +8,10 @@ license.workspace = true
 ebur128 = "=0.1.11"
 rubato = { version = "=5.1.0", default-features = false }
 hound = "=3.5.1"
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+media-opus = { path = "../opus" }
+media-webm = { path = "../webm" }
 
 [dev-dependencies]
 serde_json.workspace = true

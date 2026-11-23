@@ -57,16 +57,22 @@ pub struct Writer<W> {
     end: u64,
     last: u64,
     audio: bool,
+    video: bool,
+    discard_ns: u64,
+    duration_ms: Option<f64>,
     failed: bool,
 }
 impl<W: Write + Seek> Writer<W> {
-    pub fn new(mut out: W, video: Video, audio: Option<Opus>) -> Result<Self> {
+    pub fn new(out: W, video: Video, audio: Option<Opus>) -> Result<Self> {
+        Self::configured(out, Some(video), audio)
+    }
+    pub fn audio(out: W, audio: Opus) -> Result<Self> {
+        Self::configured(out, None, Some(audio))
+    }
+    fn configured(mut out: W, video: Option<Video>, audio: Option<Opus>) -> Result<Self> {
         if out.stream_position()? != 0
             || out.seek(SeekFrom::End(0))? != 0
-            || video.width == 0
-            || video.height == 0
-            || video.codec_private.len() < 4
-            || video.codec_private[0] != 0x81
+            || video.as_ref().is_some_and(|v| v.width == 0 || v.height == 0 || v.codec_private.len() < 4 || v.codec_private[0] != 0x81)
             || audio
                 .as_ref()
                 .is_some_and(|a| !(1..=2).contains(&a.channels))
@@ -114,7 +120,8 @@ impl<W: Write + Seek> Writer<W> {
                 u(0x55bb, 1),
             ],
         );
-        let mut entries = vec![master(
+        let mut entries = Vec::new();
+        if let Some(video) = &video { entries.push(master(
             0xae,
             &[
                 u(0xd7, 1),
@@ -132,7 +139,7 @@ impl<W: Write + Seek> Writer<W> {
                     ],
                 ),
             ],
-        )];
+        )); }
         if let Some(a) = &audio {
             entries.push(master(
                 0xae,
@@ -170,8 +177,19 @@ impl<W: Write + Seek> Writer<W> {
             end: 0,
             last: 0,
             audio: audio.is_some(),
+            video: video.is_some(),
+            discard_ns: 0,
+            duration_ms: None,
             failed: false,
         })
+    }
+    /// Audio packet with terminal padding in 48 kHz samples per channel.
+    pub fn opus_packet(&mut self, timestamp_ms: u64, data: &[u8], discard_samples: u16) -> Result<()> {
+        self.discard_ns = (u64::from(discard_samples) * 1_000_000_000 + 24000) / 48000;
+        self.packet(2, timestamp_ms, 20, true, data)
+    }
+    pub fn set_duration_samples(&mut self, samples: u64) {
+        self.duration_ms = Some(samples as f64 / 48.0);
     }
     fn close_cluster(&mut self) -> Result<()> {
         if let Some((at, body, _)) = self.cluster.take() {
@@ -201,7 +219,7 @@ impl<W: Write + Seek> Writer<W> {
         result
     }
     fn write_packet(&mut self, track: u8, t: u64, d: u64, key: bool, data: &[u8]) -> Result<()> {
-        if !(track == 1 || track == 2 && self.audio)
+        if !(track == 1 && self.video || track == 2 && self.audio)
             || t > i64::MAX as u64
             || track == 1 && self.cues.is_empty() && !key
             || t < self.last
@@ -221,15 +239,21 @@ impl<W: Write + Seek> Writer<W> {
             self.cluster = Some((at, body, t));
         }
         let (at, _, base) = self.cluster.ok_or(Error::Invalid("missing cluster"))?;
-        if track == 1 && key {
+        if track == 1 && key || !self.video && base == t {
             self.cues.push((t, at - self.segment));
         }
+        if self.discard_ns != 0 {
+            let block = [&[0x80 | track][..], &((t - base) as i16).to_be_bytes(), &[0], data].concat();
+            self.out.write_all(&master(0xa0, &[elem(0xa1, &block), elem(0x75a2, &(self.discard_ns as i64).to_be_bytes())]))?;
+            self.discard_ns = 0;
+        } else {
         self.out.write_all(&[0xa3])?;
         self.out.write_all(&size(data.len() as u64 + 4)?)?;
         self.out.write_all(&[0x80 | track])?;
         self.out.write_all(&((t - base) as i16).to_be_bytes())?;
         self.out.write_all(&[if key { 0x80 } else { 0 }])?;
         self.out.write_all(data)?;
+        }
         self.last = t;
         self.end = self.end.max(end);
         Ok(())
@@ -251,14 +275,14 @@ impl<W: Write + Seek> Writer<W> {
         for &(time, pos) in &self.cues {
             self.out.write_all(&master(
                 0xbb,
-                &[u(0xb3, time), master(0xb7, &[u(0xf7, 1), u(0xf1, pos)])],
+                &[u(0xb3, time), master(0xb7, &[u(0xf7, if self.video { 1 } else { 2 }), u(0xf1, pos)])],
             ))?;
         }
         let end = self.out.stream_position()?;
         self.out.seek(SeekFrom::Start(size_at))?;
         self.out.write_all(&size(end - body)?)?;
         self.out.seek(SeekFrom::Start(self.duration))?;
-        self.out.write_all(&(self.end as f64).to_be_bytes())?;
+        self.out.write_all(&self.duration_ms.unwrap_or(self.end as f64).to_be_bytes())?;
         let entries = [
             (0x1549a966, self.info),
             (0x1654ae6b, self.tracks),

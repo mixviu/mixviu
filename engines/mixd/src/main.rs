@@ -110,6 +110,7 @@ fn main() -> ExitCode {
     unsafe { std::env::remove_var(mix_shell::ENGINE_HANDOFF_ENV) };
     let args: Vec<OsString> = std::env::args_os().collect();
     match route(&args) {
+        Route::Av => match media_audio::cli::run(args.iter().skip(2).cloned()) { Ok(()) => ExitCode::SUCCESS, Err(e) => { eprintln!("av: {e}"); ExitCode::from(2) } },
         Route::Vfl => match media_vfl::cli::run(args.iter().skip(2).cloned()) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
@@ -136,6 +137,7 @@ fn main() -> ExitCode {
 /// never mixd's `serve` (desk4 P1 found this: the usage check ran first).
 #[derive(Debug, PartialEq)]
 enum Route {
+    Av,
     Vfl,
     Personality(&'static str),
     List,
@@ -148,6 +150,7 @@ fn route(args: &[OsString]) -> Route {
         .first()
         .map(|a| personality_name(a))
         .unwrap_or_default();
+    if name == "mixd" && args.get(1).is_some_and(|a| a == "av") { return Route::Av; }
     if name == "mixd" && args.get(1).is_some_and(|a| a == "vfl") {
         return Route::Vfl;
     }
