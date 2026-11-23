@@ -27,5 +27,8 @@ media-opus = { path = "../../libraries/media/opus" }
 serde_json.workspace = true
 hound = "=3.5.1"
 
+[dev-dependencies]
+tempfile.workspace = true
+
 [lints]
 workspace = true

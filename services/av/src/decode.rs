@@ -96,3 +96,55 @@ fn audio(d: &Demuxer<'_>, path: OsString) -> Result<()> {
     writer.finalize()?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use media_opus::{Encoder as _, OpusEncoder};
+    use std::{io::Cursor, process::Command};
+    fn ff(args: &[&str]) -> Vec<u8> {
+        let o = Command::new("ffmpeg").args(["-v","error","-nostdin"]).args(args).output().unwrap();
+        assert!(o.status.success(), "{}",String::from_utf8_lossy(&o.stderr));
+        o.stdout
+    }
+    #[test]
+    fn opus_sample_count_and_pcm_oracle() {
+        if Command::new("ffmpeg").arg("-version").output().is_err() {
+            assert_ne!(std::env::var("MIX_TEST_REQUIRE_FFMPEG").as_deref(),Ok("1")); return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        for channels in [Channels::Mono,Channels::Stereo] {
+            let mut enc = OpusEncoder::new(channels,96000).unwrap();
+            let head = enc.head().clone();
+            let mut w = media_webm::Writer::audio(Cursor::new(Vec::new()),media_webm::Opus { channels:head.channels,pre_skip:head.pre_skip,input_sample_rate:48000 }).unwrap();
+            for i in 0..10 {
+                let pcm: Vec<_> = (0..960).flat_map(|j| {
+                    let sample = ((i*960+j) as f32 * std::f32::consts::TAU * 440.0/48000.0).sin()*0.1;
+                    vec![sample;channels.count()]
+                }).collect();
+                let p = enc.encode(&pcm).unwrap();
+                w.opus_packet(i*20,&p.data,0).unwrap();
+            }
+            if let Some(p) = enc.finish().unwrap() {
+                w.opus_packet(200,&p.data,p.discard_padding).unwrap();
+            }
+            let own = w.finish().unwrap().into_inner();
+            let path = dir.path().join("ff.webm");
+            ff(&["-y","-f","lavfi","-i","sine=frequency=440:sample_rate=48000:duration=0.200354167","-ac",&channels.count().to_string(),"-c:a","libopus",path.to_str().unwrap()]);
+            let foreign = std::fs::read(&path).unwrap();
+            for (label, bytes) in [("own",own),("ffmpeg",foreign)] {
+                let input = dir.path().join("input.webm");
+                std::fs::write(&input,&bytes).unwrap();
+                let wav = dir.path().join("out.wav");
+                audio(&Demuxer::new(&bytes).unwrap(),wav.clone().into_os_string()).unwrap();
+                let ours: Vec<f32> = hound::WavReader::open(wav).unwrap().samples().map(|s|s.unwrap()).collect();
+                let reference = ff(&["-c:a","libopus","-i",input.to_str().unwrap(),"-f","f32le","-"]);
+                let reference: Vec<f32> = reference.chunks_exact(4).map(|b|f32::from_le_bytes(b.try_into().unwrap())).collect();
+                assert_eq!(ours.len(),reference.len(),"{label} sample count");
+                let rms = (ours.iter().zip(&reference).map(|(a,b)|f64::from(a-b).powi(2)).sum::<f64>()/ours.len() as f64).sqrt();
+                assert!(rms <= 0.001,"{label} RMS {rms}");
+                println!("OPUS {label} channels={} samples={} RMS_dBFS={:.2}",channels.count(),ours.len()/channels.count(),20.0*rms.log10());
+            }
+        }
+    }
+}
