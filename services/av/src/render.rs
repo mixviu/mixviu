@@ -1,5 +1,6 @@
 use media_av1::{Encoder, Settings, Target, reference::ReferenceTracker};
 use media_frame::Bgra;
+use std::sync::Arc;
 use serde::Deserialize;
 use std::{
     ffi::OsString,
@@ -172,7 +173,7 @@ impl Timeline {
 struct Source {
     reader: media_vfl::reader::Reader,
     next: u64,
-    current: Option<Bgra>,
+    current: Option<Arc<Bgra>>,
 }
 impl Source {
     fn new(base: &Path, s: &Segment) -> Result<Self> {
@@ -182,7 +183,7 @@ impl Source {
             current: None,
         })
     }
-    fn get(&mut self, slot: u64, width: usize, height: usize) -> Result<(Bgra, bool)> {
+    fn get(&mut self, slot: u64, width: usize, height: usize) -> Result<(Arc<Bgra>, bool)> {
         if self.next == slot + 1 {
             return Ok((self.current.as_ref().ok_or("missing_frame")?.clone(), true));
         }
@@ -199,7 +200,7 @@ impl Source {
             let ratio = (width as f64 / w as f64).min(height as f64 / h as f64);
             let sw = ((w as f64 * ratio).round() as usize).clamp(1, width);
             let sh = ((h as f64 * ratio).round() as usize).clamp(1, height);
-            self.current = Some(if w == width && h == height {
+            self.current = Some(Arc::new(if w == width && h == height {
                 b
             } else {
                 b.scale(sw, sh)?.pad(
@@ -209,7 +210,7 @@ impl Source {
                     (height - sh) / 2,
                     [0, 0, 0, 255],
                 )?
-            });
+            }));
         }
         self.next = slot + 1;
         Ok((
@@ -223,7 +224,7 @@ struct Chunk {
     config: Vec<u8>,
     encoded: usize,
 }
-fn compose(v: &Video, sources: &mut [Source], k: u64) -> Result<(Bgra, bool)> {
+fn compose(v: &Video, sources: &mut [Source], k: u64) -> Result<(Arc<Bgra>, bool)> {
     let j = v.segments.partition_point(|s| frame(s.at_s) <= k) - 1;
     let s = &v.segments[j];
     let slot = (s.from_slot + k - frame(s.at_s)).min(s.to_slot - 1);
@@ -234,7 +235,7 @@ fn compose(v: &Video, sources: &mut [Source], k: u64) -> Result<(Bgra, bool)> {
         let (a, _) = sources[j-1].get(old_slot, v.width, v.height)?;
         let len = frame(f.duration_s);
         let weight = if len == 1 { 255 } else { ((k-frame(f.at_s))*255/(len-1)) as u8 };
-        b = a.crossfade(&b, weight)?; repeat = false;
+        b = Arc::new(a.crossfade(&b, weight)?); repeat = false;
     }
     Ok((b, repeat && k != frame(s.at_s)))
 }
