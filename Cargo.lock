@@ -5620,6 +5620,7 @@ name = "media-av1"
 version = "0.1.2"
 dependencies = [
  "media-frame",
+ "media-vfl",
  "media-webm",
  "rav1e",
 ]
