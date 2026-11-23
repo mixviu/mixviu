@@ -1603,8 +1603,8 @@ impl SceneView {
                                         });
                                     } else if text(node,"justify")=="between" && node.ports.contains_key("cross_align") {
                                         let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
-                                        let fill_count=active.iter().filter(|c|nodes[*c].ports.get("fill")==Some(&Value::Bool(true))).count();
-                                        let fixed:f32=active.iter().filter(|c|nodes[*c].ports.get("fill")!=Some(&Value::Bool(true))).map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,&mut self.numbers,false,0)).sum();
+                                        let fill_count=active.iter().filter(|c|nodes[**c].ports.get("fill")==Some(&Value::Bool(true))).count();
+                                        let fixed:f32=active.iter().filter(|c|nodes[**c].ports.get("fill")!=Some(&Value::Bool(true))).map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,&mut self.numbers,false,0)).sum();
                                         let sizes:Vec<egui::Vec2>=active.iter().map(|child|{let old=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(ui.scope_id().with((&key,"between-size",child)))).unwrap_or_default();egui::vec2(if nodes[*child].ports.get("fill")==Some(&Value::Bool(true)){(bounded_layout(ui.available_width(),1e6)-fixed-ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32).max(0.)/fill_count.max(1) as f32}else{intrinsic_text_width(ui,&nodes[*child],nodes,&self.tree.model,&mut self.numbers,false,0)},old.y)}).collect();
                                         let available=bounded_layout(ui.available_width(),1e6);
                                         let gap=ui.spacing().item_spacing.x;let split_gap=(available-sizes.iter().map(|s|s.x).sum::<f32>()-gap*active.len().saturating_sub(1) as f32).max(0.);
@@ -1645,8 +1645,8 @@ impl SceneView {
                                             for i in 0..widths.len() {widths[i]=(widths[i]-excess*weights[i]/total).max(minimum[i].min(widths[i]));}
                                         }
                                         // Explicit bases reserve a bounded budget, even without grow.
-                                        let fixed: f32=active.iter().enumerate().filter(|(_,c)|!nodes[*c].ports.contains_key("basis")).map(|(i,_)|widths[i]).sum();
-                                        let based: f32=active.iter().enumerate().filter(|(_,c)|nodes[*c].ports.contains_key("basis")).map(|(i,_)|widths[i]).sum();
+                                        let fixed: f32=active.iter().enumerate().filter(|(_,c)|!nodes[**c].ports.contains_key("basis")).map(|(i,_)|widths[i]).sum();
+                                        let based: f32=active.iter().enumerate().filter(|(_,c)|nodes[**c].ports.contains_key("basis")).map(|(i,_)|widths[i]).sum();
                                         let budget=(available-fixed).max(0.);
                                         if based>budget && based>0. {for (i,c) in active.iter().enumerate() {if nodes[*c].ports.contains_key("basis") {widths[i]*=budget/based;}}}
                                         for (i,c) in active.iter().enumerate() {widths[i]=widths[i].max(num(&nodes[*c],"min_width").unwrap_or(0.)).min(num(&nodes[*c],"max_width").unwrap_or(1e6));}
