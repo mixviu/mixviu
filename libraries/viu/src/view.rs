@@ -1571,7 +1571,7 @@ impl SceneView {
                                     } else if let Some(height) = num(node, "height") {
  ui.allocate_ui_with_layout(Vec2::new(ui.available_width(),height),egui::Layout::left_to_right(egui::Align::Center),|ui|draw(ui));
  } else { ui.horizontal(|ui| draw(ui)); }
-                                    } else                                     if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) && (node.ports.get("native_spacing")!=Some(&Value::Bool(true)) || node.ports.contains_key("cross_align")) {
+                                    } else                                     if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) && node.ports.get("equal_height")!=Some(&Value::Bool(true)) && (node.ports.get("native_spacing")!=Some(&Value::Bool(true)) || node.ports.contains_key("cross_align")) {
                                         let origin=ui.available_rect_before_wrap().min;let available=bounded_layout(ui.available_width(),1e6);let gap=ui.spacing().item_spacing;
                                         let active:Vec<_>=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();
                                         let sizes:Vec<egui::Vec2>=active.iter().map(|c|{let old=ui.ctx().data(|d|d.get_temp::<egui::Vec2>(ui.scope_id().with((&key,"wrap-size",c)))).unwrap_or_default();egui::vec2(if nodes[*c].ports.get("fill")==Some(&Value::Bool(true)){available}else{intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,&mut self.numbers,false,0).min(available)},old.y)}).collect();
@@ -3377,7 +3377,10 @@ citizen: test
                     key,
                     super::layout_height_key(ui, &nodes["a"], "root/a", 200., 1)
                 );
-                current = Some((key, super::layout_height_key(ui, &nodes["b"], "root/b", 200., 1)));
+                current = Some((
+                    key,
+                    super::layout_height_key(ui, &nodes["b"], "root/b", 200., 1),
+                ));
             })
             .drop_without_applying_deltas();
             let (key, sibling) = current.unwrap();
@@ -3387,7 +3390,10 @@ citizen: test
         assert_ne!(keys[0], keys[1]);
         assert_ne!(keys[1], keys[2]);
         assert_eq!(siblings[0], siblings[1], "unrelated card keys remain warm");
-        assert_eq!(siblings[1], siblings[2], "unrelated visibility changes do not rekey this card");
+        assert_eq!(
+            siblings[1], siblings[2],
+            "unrelated visibility changes do not rekey this card"
+        );
     }
     #[test]
     fn animated_number_baseline_cache_tracks_the_rendered_sample() {
@@ -3742,20 +3748,32 @@ fn prepare_measurements(
         // A visiting marker terminates malformed cycles; validated scenes are
         // acyclic. No paint-depth cutoff or native call-stack recursion here.
         use std::hash::{Hash, Hasher};
-        type Work = (String, Vec<String>, usize, std::collections::hash_map::DefaultHasher);
+        type Work = (
+            String,
+            Vec<String>,
+            usize,
+            std::collections::hash_map::DefaultHasher,
+        );
         fn begin(id: &str, nodes: &BTreeMap<String, Node>) -> Work {
             let mut h = std::collections::hash_map::DefaultHasher::new();
             id.hash(&mut h);
             let edges = if let Some(node) = nodes.get(id) {
-                node.ports.get("__measure_key").and_then(Value::as_u64).hash(&mut h);
+                node.ports
+                    .get("__measure_key")
+                    .and_then(Value::as_u64)
+                    .hash(&mut h);
                 children(node).map(str::to_owned).collect()
-            } else { Vec::new() };
+            } else {
+                Vec::new()
+            };
             (id.into(), edges, 0, h)
         }
         let mut hashes = std::collections::HashMap::<String, u64>::new();
         let mut visiting = std::collections::HashSet::<String>::new();
         for root in nodes.keys() {
-            if hashes.contains_key(root) { continue; }
+            if hashes.contains_key(root) {
+                continue;
+            }
             visiting.insert(root.clone());
             let mut stack = vec![begin(root, nodes)];
             while let Some((id, edges, mut next, mut h)) = stack.pop() {
@@ -3776,12 +3794,16 @@ fn prepare_measurements(
                     let hash = h.finish();
                     hashes.insert(id.clone(), hash);
                     visiting.remove(&id);
-                    if let Some((_, _, _, parent)) = stack.last_mut() { hash.hash(parent); }
+                    if let Some((_, _, _, parent)) = stack.last_mut() {
+                        hash.hash(parent);
+                    }
                 }
             }
         }
         for (id, hash) in hashes {
-            if let Some(node) = nodes.get_mut(&id) { node.ports.insert("__layout_revision".into(), json!(hash)); }
+            if let Some(node) = nodes.get_mut(&id) {
+                node.ports.insert("__layout_revision".into(), json!(hash));
+            }
         }
     }
 }
