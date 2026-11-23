@@ -268,17 +268,34 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
         codec_trim_db,
         codec_passes,
     };
-    Ok(Encoded { audio, head, packets, receipt })
+    Ok(Encoded {
+        audio,
+        head,
+        packets,
+        receipt,
+    })
 }
 
 pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Result<Receipt> {
-    let Encoded { audio, head, packets, mut receipt } = prepare(t, base)?;
+    let Encoded {
+        audio,
+        head,
+        packets,
+        mut receipt,
+    } = prepare(t, base)?;
     let mut wav_output = wav.map(crate::pending::Pending::new).transpose()?;
     if let Some(output) = &mut wav_output {
         audio.write_wav(BufWriter::new(&mut output.file), WavFormat::Float32)?;
     }
     let mut output = crate::pending::Pending::new(out)?;
-    let mut writer = media_webm::Writer::audio(BufWriter::new(&mut output.file), media_webm::Opus { channels: 2, pre_skip: head.pre_skip, input_sample_rate: 48000 })?;
+    let mut writer = media_webm::Writer::audio(
+        BufWriter::new(&mut output.file),
+        media_webm::Opus {
+            channels: 2,
+            pre_skip: head.pre_skip,
+            input_sample_rate: 48000,
+        },
+    )?;
     for (k, p) in packets.iter().enumerate() {
         writer.opus_packet(k as u64 * 20, &p.data, p.discard_padding)?;
     }

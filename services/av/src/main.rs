@@ -6,7 +6,10 @@ fn main() -> ExitCode {
     match args.next().as_deref() {
         Some(command) if command == "render" => match render::run(args) {
             Ok(code) => ExitCode::from(code),
-            Err(e) => { eprintln!("av: {e}"); ExitCode::from(2) }
+            Err(e) => {
+                eprintln!("av: {e}");
+                ExitCode::from(2)
+            }
         },
         Some(command) if command == "audio" => match media_audio::cli::run(args) {
             Ok(code) => ExitCode::from(code),
