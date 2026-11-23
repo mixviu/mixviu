@@ -1,25 +1,173 @@
-# Merge-queue rehearsal (lab only, never lands; plan in the private hub).
-# Red when lab/RED exists, or lab/P.md and lab/Q.md both do. Runs on PRs and on merge-queue
-# candidates; the lab-* context cannot satisfy main's required checks.
+# CI for mixviu. The gate recipe lives in tools/ci.mix (run by the mix built
+# from this tree). The full recipe gates every PR once, on CBC, through the
+# merge gate (`gate-ok`); here, PRs and merge-queue candidates get the fast
+# jobs (fmt, lint), and the full clippy + test leg runs on main after every
+# merge and nightly, on a
+# clean hosted machine. A gold is built only from a main commit whose run
+# here is green. The required check is `ci-ok`; candidates require successful
+# changes, fmt and lint jobs, while docs-only PRs may skip jobs.
+# Changes here are Tier 2 (CODEOWNERS).
 name: ci
 
 on:
   pull_request:
   merge_group:
+    types: [checks_requested]
+  push:
+    branches: [main]
+  schedule:
+    # Nightly, 16:00 UTC (02:00 AEST): main on a clean machine even on a day
+    # with no merges, so a change in the toolchain or system libraries
+    # shows up before a gold.
+    - cron: "0 16 * * *"
+  workflow_dispatch:
 
 permissions: {}
 
+concurrency:
+  # A newer push replaces a PR's run. Every non-PR event keys on github.sha;
+  # candidates have unique refs (gh-readonly-queue/main/pr-N-SHA) and commits,
+  # so candidates never cancel each other. On main each commit gets its own group,
+  # so merges no longer cancel one another's runs: a gold needs a finished
+  # green run at its exact commit, and merges come faster than the test leg.
+  # Runs at the same commit (its push run and a nightly) queue behind each
+  # other; a third arrival replaces the one still waiting.
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: "1"
+  # Hosted runners have ~14 GB free; full debug info for the whole workspace
+  # overflows it (the linker dies with SIGBUS). Line tables keep file:line in
+  # backtraces at a fraction of the size.
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+  CARGO_PROFILE_TEST_DEBUG: line-tables-only
+
 jobs:
-  lab-ci-ok:
+  changes:
+    # Nightly and manual runs test their ref as it is (nightly: main; manual:
+    # the ref picked when dispatching); there is no diff to filter.
+    if: github.event_name == 'pull_request' || github.event_name == 'push' || github.event_name == 'merge_group'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ github.event_name == 'merge_group' && 'true' || steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: lab marker
-        # Same rule as lab/gate.mix (the hosted runner has no mix).
-        run: |
-          test ! -e lab/RED
-          if [ -e lab/P.md ] && [ -e lab/Q.md ]; then echo "lab/P.md and lab/Q.md conflict"; exit 1; fi
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name != 'merge_group'
+        with:
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!LICENSE-*'
+
+  fmt:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: cargo fmt --all -- --check
+
+  lint:
+    name: mix lint + viud egui-free
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    # Every job that compiles runs on the target distro (see `test`).
+    container:
+      image: archlinux:base-devel@sha256:2de80105abb49f813a85393c6758a4334deb6bcec4a2411bd2f059c0bee6ee4c
+      # A login-like environment: the shell's session tests expect USER.
+      env:
+        USER: root
+      # A real init as PID 1 reaps orphans, as systemd does on a host.
+      options: --init
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    steps:
+      - name: System libraries
+        run: pacman -Syu --noconfirm --needed git rustup clang pkgconf libpipewire
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The container runs as root over a runner-owned checkout.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: mix
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo build --locked -p mix --bin mix
+      - run: target/debug/mix tools/ci.mix env
+      - run: target/debug/mix tools/ci.mix viud
+      - run: target/debug/mix tools/ci.mix foreign
+      - run: target/debug/mix tools/ci.mix mix-lint
+
+  test:
+    name: clippy + test
+    needs: changes
+    # Not per PR: the CBC merge gate runs the same recipe against current
+    # main before a PR merges. Here it runs after each code merge to main,
+    # nightly and on demand (`changes` is skipped for the last two).
+    if: >-
+      always() && !cancelled() &&
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && needs.changes.outputs.code == 'true'))
+    runs-on: ubuntu-24.04
+    # Arch, like the CBC workers and the desks: viud's libinput needs >= 1.26
+    # (tablet dial API), newer than Ubuntu 24.04 ships.
+    container:
+      image: archlinux:base-devel@sha256:2de80105abb49f813a85393c6758a4334deb6bcec4a2411bd2f059c0bee6ee4c
+      # A login-like environment: the shell's session tests expect USER.
+      env:
+        USER: root
+      # A real init as PID 1 reaps orphans, as systemd does on a host.
+      options: --init
+    permissions:
+      contents: read
+    timeout-minutes: 180
+    steps:
+      - name: System libraries
+        run: pacman -Syu --noconfirm --needed git rustup clang pkgconf libinput libxkbcommon wayland libdrm mesa seatd pixman systemd-libs dbus fontconfig freetype2 pipewire libpulse alsa-lib libxcb vulkan-icd-loader ttf-dejavu adwaita-fonts noto-fonts-emoji inetutils
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The container runs as root over a runner-owned checkout.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: workspace
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - run: cargo build --locked -p mix --bin mix
+      - run: target/debug/mix tools/ci.mix clippy
+      - run: target/debug/mix tools/ci.mix test
+      - if: always()
+        run: df -h / /__w
+
+  ci-ok:
+    if: always()
+    needs: [changes, fmt, lint, test]
+    runs-on: ubuntu-24.04
+    permissions: {}
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - if: github.event_name == 'merge_group' && (needs.changes.result != 'success' || needs.fmt.result != 'success' || needs.lint.result != 'success')
+        run: exit 1
+      - run: echo "all CI jobs passed or were skipped for a docs-only change"
