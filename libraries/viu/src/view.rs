@@ -3220,7 +3220,7 @@ fn layout_height_key(
     width: f32,
     palette: u64,
 ) -> egui::Id {
-    egui::Id::new(node.ports.get("__measure_identity").and_then(Value::as_u64)).with((
+    egui::Id::unique(node.ports.get("__measure_identity").and_then(Value::as_u64)).with((
         "layout-height",
         route,
         node.ports.get("__layout_revision").and_then(Value::as_u64),

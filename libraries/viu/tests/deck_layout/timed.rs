@@ -21,17 +21,34 @@ b:{widget:"column",children:["tall"]},tall:{widget:"spacer",size:80}}
         ctx.set_pixels_per_point(2.4);
         for frame in 0..24 {
             let time = 0.2 + frame as f64 * 0.001;
-            view.apply_model(json!({"effect":{"preset":anim,"time":time}})).unwrap();
-            let out = ctx.run_ui(egui::RawInput::default(), |ui| { view.show(ui); });
-            let scale = motion::scene::paint_preset(anim).unwrap().sample(time).get(motion::Property::Scale) as f32;
-            let painted = out.shapes.iter().find_map(|s| match &s.shape {
-                egui::Shape::Rect(r) if r.fill == Color32::RED => Some(r.rect),
-                _ => None,
-            }).unwrap();
+            view.apply_model(json!({"effect":{"preset":anim,"time":time}}))
+                .unwrap();
+            let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            let scale = motion::scene::paint_preset(anim)
+                .unwrap()
+                .sample(time)
+                .get(motion::Property::Scale) as f32;
+            let painted = out
+                .shapes
+                .iter()
+                .find_map(|s| match &s.shape {
+                    egui::Shape::Rect(r) if r.fill == Color32::RED => Some(r.rect),
+                    _ => None,
+                })
+                .unwrap();
             if frame >= 4 {
-                assert!((view.geometry["a"].bottom()-view.geometry["b"].bottom()).abs()*2.4 <= 0.5);
-                assert!((view.geometry["last"].bottom()-view.geometry["a"].bottom()).abs()*2.4 <= 0.5);
-                assert!((painted.height()-view.geometry["b"].height()*scale).abs()*2.4 <= 0.5);
+                assert!(
+                    (view.geometry["a"].bottom() - view.geometry["b"].bottom()).abs() * 2.4 <= 0.5
+                );
+                assert!(
+                    (view.geometry["last"].bottom() - view.geometry["a"].bottom()).abs() * 2.4
+                        <= 0.5
+                );
+                assert!(
+                    (painted.height() - view.geometry["b"].height() * scale).abs() * 2.4 <= 0.5
+                );
                 assert!(!out.platform_output.requested_discard());
             }
             out.drop_without_applying_deltas();
@@ -97,17 +114,20 @@ fn play(
         })
         .wgpu()
         .build_ui(move |ui| {
-            view.apply_model(publications.next().expect("timed publication per pass")).unwrap();
+            view.apply_model(publications.next().expect("timed publication per pass"))
+                .unwrap();
             let mut canvas = ui.new_child(egui::UiBuilder::new().max_rect(
                 egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1600., 900.)),
             ));
             view.show(&mut canvas);
             *rects.lock().unwrap() = view.geometry.clone();
         });
-    for _ in 0..180 { harness.step(); }
+    for _ in 0..180 {
+        harness.step();
+    }
     // The host keeps publishing elapsed time after every entrance has settled.
     let out = harness.output();
-    if output.is_none() {
+    {
         assert!(
             !out.platform_output.requested_discard(),
             "{:?}",
