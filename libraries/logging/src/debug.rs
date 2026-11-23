@@ -31,6 +31,7 @@ pub(crate) const FAILURE_TARGET: &str = "logging::failure";
 
 /// Own targets use Rust crate names (hyphens become underscores).
 const WORKSPACE_TARGETS: &[&str] = &[
+    "av",
     "media_audio",
     "media_av1",
     "media_frame",
@@ -162,6 +163,8 @@ const WORKSPACE_TARGETS: &[&str] = &[
 // EnvFilter matches target prefixes. These resolved dependencies share an
 // own-crate prefix, so give their longer names explicit dependency levels.
 const PREFIX_DEPENDENCIES: &[&str] = &[
+    "av1_grain",
+    "av_scenechange",
     "strict_num",
     "system_configuration",
     "system_configuration_sys",

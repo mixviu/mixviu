@@ -4,7 +4,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use std::{
     ffi::OsString,
-    io::{BufWriter, Read},
+    io::{BufWriter, Read, Write},
     path::{Path, PathBuf},
     time::Instant,
 };
@@ -544,7 +544,7 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
         w.opus_packet(i as u64 * 20, &p.data, p.discard_padding)?;
     }
     w.set_duration_samples(a.receipt.sample_count as u64);
-    drop(w.finish()?);
+    w.finish()?.flush()?;
     let size = pending.file.metadata()?.len();
     pending.publish()?;
     pending.commit();

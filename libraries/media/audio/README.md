@@ -27,7 +27,9 @@ Excess returns `OutputTooLong`; the cap leaves 50% duration headroom over two ho
 RIFF parsing is deliberately strict: the RIFF size must equal the entire file
 length, every chunk must fit, and final odd chunks must include their pad byte.
 Exactly one fmt chunk must precede exactly one data chunk. Unknown chunks are
-accepted only within those boundaries. Pipe WAVs with placeholder sizes (including
+accepted only within those boundaries; total non-audio RIFF bytes (including
+chunk headers and padding) are limited to 64 KiB to bound header scanning.
+Pipe WAVs with placeholder sizes (including
 ffmpeg pipe output) and lax writers without final padding are refused. PCM,
 IEEE float32 and their extensible GUIDs are accepted; extensible valid bits must
 equal container bits. Narrow valid bits in wider containers are refused with
@@ -172,21 +174,86 @@ decoded metering adds one f64 programme buffer, below the limiter budget.
 
 ## Validation and exit status
 
-Source paths must be relative to the timeline file. Absolute paths and any
-`..` component are refused by source index before opening any WAV. Timeline
+Source paths are relative to the opened timeline's real directory: its
+`/proc/self/fd` location supplies the parent, rather than the lexical parent
+of the CLI argument. A timeline reached through a symlink therefore uses and
+confines sources to the real timeline directory. Absolute source paths and any
+`..` component are refused by source index before opening any WAV. Each source
+is opened nonblocking, then its descriptor metadata must identify a regular
+file. FIFOs, devices and directories are refused. On Linux, `/proc/self/fd`
+provides the opened file's resolved path: it must be beneath the canonical
+timeline directory. Symlinks within that directory are accepted; escaping
+symlinks are refused. Validation and decoding use the same descriptor, without
+reopening the source path. Other platforms fail closed on this operation.
+
+The opened WAV's size is capped at **16,588,865,536 bytes**: three hours of
+48 kHz, eight-channel, 32-bit audio plus 64 KiB of RIFF metadata. Standard
+RIFF's 32-bit length imposes a tighter effective limit (4,294,967,303 bytes);
+the supported input remains mono/stereo. Before sample allocation or decoding,
+the header sample count is capped at 4,147,200,000 interleaved values and its
+resampled duration at three hours. Hound seeks directly to the required input
+window and stops decoding at the trim or placed end. At rates other than
+48 kHz, the window includes up to 512 input frames on each side for the sinc
+filter; buffered I/O can read ahead by at most 8 KiB. No whole-file PCM or
+byte buffer is allocated by the timeline path.
+
+Summed placed source frames must not exceed **16 times the output frames**.
+This permits sixteen full-length overlapping layers while bounding decoding,
+resampling and summing work independently of the 10,000-source limit. Trimmed
+tails and sources at the timeline end contribute zero extra placed work. The
+running total is checked from each header before decoding that source; no
+source that would cross the limit is decoded. RIFF headers are also bounded.
+
+Timeline WAV sample rates must be **8,000–384,000 Hz inclusive**, covering
+telephony through high-resolution masters. Unsupported rates are refused by
+source index before decoding. An additional aggregate native-input budget is
+**16 × output frames × 2 channels × (384000 / 48000)** scalar samples.
+This allows sixteen stereo layers at the maximum supported input rate while
+bounding actual decoding, rather than only output placement. Each source is
+charged its exact decoded native window frames times its channel count,
+including sinc support and clipping at the file edges. The decoder and budget
+share the window calculation. The running total is checked before each decode;
+equality is accepted, excess is refused. Very short or heavily fragmented
+timelines may hit this budget through filter support alone. Empty placed
+windows cost zero. These limits apply to timeline execution; the lower-level
+Audio API retains its existing nonzero-rate contract.
+
+Timeline
 JSON is limited to 16 MiB: the opened file is checked, then read through a
 bounded reader with a growth sentinel. Programme copies/conversions, limiter
 envelopes and decoded metering storage reserve fallibly; allocation failure
 is a normal error.
 
-Exit 0 means an accepted master. Exit 2 reports usage, validation, I/O,
-allocation or codec errors as `av: ...`. Exit 3 means mastering was refused
-or the decoded loudness missed the target: one receipt line is still printed
-and stderr explains the refusal or absolute LU error.
+Timeline JSON uses the same nonblocking open and descriptor regular-file
+check as WAV inputs, before applying its 16 MiB descriptor-size limit.
+
+Exit 2 reports usage, validation, pre-publication I/O, allocation or codec
+errors as `av: ...`. Once rendering has an outcome, that outcome takes
+precedence over receipt delivery and refusal diagnostics:
+
+| Outcome | Receipt delivered | Closed stdout (EPIPE) | Other receipt-write error |
+| --- | ---: | ---: | ---: |
+| Accepted and published | 0 | 0 | 4 |
+| Mastering refused, unpublished | 3 | 3 | 3 |
+| Decoded target missed, unpublished | 3 | 3 | 3 |
+
+EPIPE is quiet and never changes the outcome code. Refusal/miss diagnostics
+are best-effort; stderr failure never changes exit 3. Exit 4 prints
+`av: published but receipt not written: …` best-effort: outputs exist but the
+receipt was not delivered, so do not retry blindly. Diagnostic writes never
+panic on EPIPE.
 
 WAV and WebM are staged in temporary files in their destination directories.
-Only an accepted master publishes them. Atomic no-clobber hard links provide
+Each buffer is explicitly flushed and each file fsynced before publication;
+its directory is fsynced after publication. A flush or sync error exits 2 and
+rolls back any outputs from this run. Only an accepted master publishes them.
+The primary WebM is published before the optional WAV. Atomic no-clobber hard links provide
 rename-like publication while preserving existing destinations; an error
 rolls back any file published by this transaction. Refused/missed renders
 leave no final outputs or temporary files. The receipt bytes field describes
 the staged WebM even when that master is discarded.
+Killing a run can leave recognisable `.av-<pid>-N.tmp` files beside the
+destinations, or a published WebM without its optional WAV. There is no sweep.
+After linking, destination lstat device/inode must match the synced temporary
+descriptor's fstat. A swapped temporary fails publication; cleanup checks the
+entry's identity before removing the mismatching destination link.

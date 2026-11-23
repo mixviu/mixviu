@@ -703,6 +703,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 name = "av"
 version = "0.1.2"
 dependencies = [
+ "libc",
  "media-audio",
  "media-av1",
  "media-frame",
@@ -5624,6 +5625,7 @@ version = "0.1.2"
 dependencies = [
  "ebur128",
  "hound",
+ "libc",
  "media-opus",
  "media-webm",
  "rubato",

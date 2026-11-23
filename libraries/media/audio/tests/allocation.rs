@@ -41,6 +41,14 @@ fn programme_and_limiter_allocation_failures_are_errors() {
             .is_err()
     );
     assert!(audio.samples().iter().all(|s| *s == 0.1));
+    let resampled = Audio::new(44100, 1, vec![0.1; 8192]).unwrap();
+    FAIL_SIZE.with(|s| s.set((8192 + 1024) * 8));
+    assert!(resampled.resample_48k().is_err());
+    assert_eq!(
+        FAIL_SIZE.with(Cell::get),
+        0,
+        "sinc wave reservation exercised"
+    );
     let dir = std::env::temp_dir().join(format!("audio-allocation-{}", std::process::id()));
     std::fs::create_dir(&dir).unwrap();
     Audio::new(48000, 1, vec![0.1; 4096])
@@ -58,5 +66,11 @@ fn programme_and_limiter_allocation_failures_are_errors() {
         0,
         "selected allocation was exercised"
     );
+    let stereo = Audio::new(48000, 2, vec![0.1; 8192]).unwrap();
+    let mut encoded = std::io::Cursor::new(Vec::new());
+    stereo.write_wav(&mut encoded, WavFormat::Float32).unwrap();
+    FAIL_SIZE.with(|s| s.set(65536));
+    assert!(Audio::read_wav(std::io::Cursor::new(encoded.into_inner())).is_err());
+    assert_eq!(FAIL_SIZE.with(Cell::get), 0, "stereo reservation exercised");
     std::fs::remove_dir_all(dir).unwrap();
 }

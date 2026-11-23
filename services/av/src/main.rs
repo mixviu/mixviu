@@ -7,19 +7,21 @@ fn main() -> ExitCode {
         Some(command) if command == "render" => match render::run(args) {
             Ok(code) => ExitCode::from(code),
             Err(e) => {
-                eprintln!("av: {e}");
+                let _ = media_audio::cli::diagnostic(format_args!("{e}"));
                 ExitCode::from(2)
             }
         },
         Some(command) if command == "audio" => match media_audio::cli::run(args) {
             Ok(code) => ExitCode::from(code),
             Err(e) => {
-                eprintln!("av: {e}");
+                let _ = media_audio::cli::diagnostic(format_args!("{e}"));
                 ExitCode::from(2)
             }
         },
         _ => {
-            eprintln!("av: usage: av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]");
+            let _ = media_audio::cli::diagnostic(format_args!(
+                "usage: av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]"
+            ));
             ExitCode::from(2)
         }
     }
