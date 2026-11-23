@@ -1,0 +1,16 @@
+$out = "/var/tmp/vfl-skip-av1"
+$r = run_argv(["cargo","build","--release","-p","mixd","--no-default-features"], {timeout:3600,stdout:"inherit",stderr:"inherit"})
+if not $r.ok then exit($r.exit_code ?? 1) end
+$bin = env("CARGO_TARGET_DIR", "target") .. "/release/mixd"
+for $mode in ["cfr-skip","vfr","full"]
+  $prefix = $out .. "/" .. $mode
+  $fifo = $prefix .. ".fifo"
+  print(run_argv(["mkfifo",$fifo]))
+  $expand = "fps=30:start_time=0:round=near,tpad=stop_mode=clone:stop_duration=1,trim=end_frame=17284,setpts=N/(30*TB)"
+  $graph = "[0:v]" .. $expand .. ",split[d][dp];[1:v]split[r][rp];[d][r]libvmaf=model=path=/usr/share/model/vmaf_4k_v0.6.1.json:n_threads=16:log_fmt=json:log_path=" .. $prefix .. ".vmaf.json[v];[dp][rp]psnr=stats_file=" .. $prefix .. ".psnr[p]"
+  $source = "print(run_argv(" .. json_encode([$bin,"vfl","export","/var/tmp/vfl-skip-input","--format","y4m"]) .. ", {timeout:18000,stdout:{file:" .. json_encode($fifo) .. "}}))"
+  $pid = spawn(["mix","-c",$source], {stdout:{file:$prefix .. ".export.log"},stderr:{file:$prefix .. ".export.error"}})
+  $r = run_argv(["ffmpeg","-nostdin","-hide_banner","-y","-c:v","libdav1d","-i",$prefix .. ".webm","-i",$fifo,"-filter_complex",$graph,"-map","[v]","-map","[p]","-f","null","-"], {timeout:18000,stdout:{file:$prefix .. ".quality.stdout"},stderr:{file:$prefix .. ".quality.log"}})
+  print($r)
+  print(run_argv(["ffmpeg","-nostdin","-hide_banner","-y","-c:v","libdav1d","-i",$prefix .. ".webm","-vf",$expand,"-f","framemd5",$prefix .. ".md5"],{timeout:7200,stderr:{file:$prefix .. ".decode.log"}}))
+end
