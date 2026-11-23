@@ -163,6 +163,8 @@ const WORKSPACE_TARGETS: &[&str] = &[
 // EnvFilter matches target prefixes. These resolved dependencies share an
 // own-crate prefix, so give their longer names explicit dependency levels.
 const PREFIX_DEPENDENCIES: &[&str] = &[
+    "av1_grain",
+    "av_scenechange",
     "strict_num",
     "system_configuration",
     "system_configuration_sys",
