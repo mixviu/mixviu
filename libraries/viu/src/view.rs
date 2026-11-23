@@ -1280,11 +1280,11 @@ impl SceneView {
                                 cell.set_width(width);
                                 cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(rect.left(),ui.clip_rect().top()),egui::pos2(rect.right(),ui.clip_rect().bottom()))));
                                 let stretch=equal && num(&nodes[*child],"height").is_none();
-                                if stretch {self.stretch_heights.insert((*child).into(),if equal{bounded_layout(cross,1e6)}else{cross});}
+                                if stretch {self.natural_heights.remove(*child);self.stretch_heights.insert((*child).into(),bounded_layout(cross,1e6));}
                                 self.node(&mut cell,child,nodes,route,depth+1,events);
                                 if equal {
                                     if stretch {self.stretch_heights.remove(*child);}
-                                    let natural=bounded_layout(cell.min_rect().height(),1e6);
+                                    let natural=bounded_layout(if stretch{self.natural_heights.get(*child).copied().unwrap_or(cell.min_rect().height())}else{cell.min_rect().height()},1e6);
                                     let previous=measure_get::<f32>(ui,keys[column]);
                                     if previous.is_none_or(|p|(p-natural).abs()>0.01){measure_put(ui,keys[column],natural);ui.ctx().request_discard("equal grid height");}
                                 }
@@ -1474,18 +1474,22 @@ impl SceneView {
                                 let previous_last=last_key.and_then(|k|measure_get::<(f32,f32)>(ui,k));
                                 let last=if stretch_last {children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).last()}else{None};
                                 let mut last_natural=0.;
+                                let mut last_layout_growth=0.;
                                 let mut draw = |ui: &mut egui::Ui| {
                                     for child in children(node) {
                                         if Some(child)!=last {self.node(ui,child,nodes,route,depth+1,events);continue;}
                                         let old=self.stretch_heights.get(child).copied();
-                                        if let Some((content,natural))=previous_last {
+                                        let mut assigned=false;
+                                        if let Some((content,natural))=previous_last.filter(|_|num(&nodes[child],"height").is_none()) {
                                             let budget=column_inner_height(node,assigned_height).unwrap_or(content);
                                             let growth=bounded_layout((budget-content).max(0.),1e6);
-                                            if growth>0. {self.stretch_heights.insert(child.into(),bounded_layout(natural+growth,1e6));}
+                                            if growth>0. {self.natural_heights.remove(child);self.stretch_heights.insert(child.into(),bounded_layout(natural+growth,1e6));assigned=true;}
                                         }
-                                        // A scope response measures the childs own natural allocation,
-                                        // including leaves and zero-height nodes, independent of paint stretch.
-                                        last_natural=bounded_layout(ui.scope(|ui|self.node(ui,child,nodes,route,depth+1,events)).response.rect.height(),1e6);
+                                        // Justification can turn an assignment into real layout space.
+                                        // Prefer this passes recorded natural column height in that case.
+                                        let actual=ui.scope(|ui|self.node(ui,child,nodes,route,depth+1,events)).response.rect.height();
+                                        last_natural=bounded_layout(if assigned{self.natural_heights.get(child).copied().unwrap_or(actual)}else{actual},1e6);
+                                        if assigned{last_layout_growth=(actual-last_natural).max(0.);}
                                         if let Some(h)=old{self.stretch_heights.insert(child.into(),h);}else{self.stretch_heights.remove(child);}
                                     }
                                 };
@@ -1669,11 +1673,11 @@ impl SceneView {
                                             cell.set_max_width(*width);
                                             cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(x,ui.clip_rect().top()),egui::pos2(x+width,ui.clip_rect().bottom()))));
                                             let stretch=(equal || cross_align(node,text(node,"align"))=="stretch") && num(&nodes[*child],"height").is_none();
-                                            if stretch {self.stretch_heights.insert((*child).into(),if equal{bounded_layout(cross,1e6)}else{cross});}
+                                            if stretch {if equal{self.natural_heights.remove(*child);}self.stretch_heights.insert((*child).into(),if equal{bounded_layout(cross,1e6)}else{cross});}
                                             if nodes[*child].family=="spacer"{cell.allocate_space(egui::vec2(*width,0.));self.geometry.insert((*child).into(),egui::Rect::from_min_size(rect.min,egui::vec2(*width,0.)));}else{self.node(&mut cell,child,nodes,route,depth+1,events);}
                                             if stretch {self.stretch_heights.remove(*child);}
                                             let actual=cell.min_rect().height();
-                                            let natural=if equal{bounded_layout(actual,1e6)}else if stretch{self.natural_heights.get(*child).copied().unwrap_or(actual)}else{actual};
+                                            let natural=if equal{bounded_layout(if stretch{self.natural_heights.get(*child).copied().unwrap_or(actual)}else{actual},1e6)}else if stretch{self.natural_heights.get(*child).copied().unwrap_or(actual)}else{actual};
                                             if (natural-previous).abs()>0.01 || (equal && measure_get::<f32>(ui,cache).is_none()) {if equal{measure_put(ui,cache,natural);}else{ui.ctx().data_mut(|d|d.insert_temp(cache,natural));}ui.ctx().request_discard("flex cross size");}
 
                                             height=height.max(actual);x+=width+ui.spacing().item_spacing.x;
@@ -1705,7 +1709,8 @@ impl SceneView {
                                         if content>0. {let height=column_inner_height(node,assigned_height).unwrap_or(ui.available_height());let free=(height-content).max(0.);let leading=match mode{"end"=>free,"between"=>{extra=if count>1{free/(count-1) as f32}else{0.};0.},"around"=>{extra=free/count.max(1) as f32;extra/2.},"evenly"=>{extra=free/(count+1) as f32;extra},_=>free/2.};if leading>0.{ui.add_space(leading);}ui.spacing_mut().item_spacing.y=old_gap+extra;}
                                     }
                                     let content = if text(node,"align")=="center" { ui.vertical_centered(|ui| draw(ui)) } else { ui.vertical(|ui| draw(ui)) }.response.rect.height()-extra*count.saturating_sub(1) as f32;
-                                    // Stretch assignments extend painted geometry, not the natural layout response.
+                                    // Remove real layout growth introduced by the assigned last childs justify.
+                                    let content=(content-last_layout_growth).max(0.);
                                     if let Some(cache)=last_key {let measured=(bounded_layout(content,1e6),last_natural);if previous_last.is_none_or(|p|(p.0-measured.0).abs()>0.01 || (p.1-measured.1).abs()>0.01){measure_put(ui,cache,measured);ui.ctx().request_discard("last child natural height");}}
                                     self.natural_heights.insert(id.into(),content+node_padding(node,"padding_top")+node_padding(node,"padding_bottom"));
                                     ui.spacing_mut().item_spacing.y=old_gap;
@@ -3261,6 +3266,28 @@ fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, v
 mod measurement_cache_tests {
     use serde_json::{Value, json};
     #[test]
+    fn graph_revision_covers_deep_chains_and_cycles_in_one_hash_per_node() {
+        fn revision(count:usize,cycle:bool,changed:bool)->u64 {
+            let mut nodes=std::collections::BTreeMap::new();
+            for i in 0..count {
+                let children=if cycle{vec![format!("n{}",(i+1)%count),format!("n{}",(i+2)%count)]}
+                    else if i+1<count{vec![format!("n{}",i+1)]}else{vec![]};
+                let mut ports=json!({"children":children});
+                if i==0{ports["equal_height"]=json!(true);}
+                if i==count-1{ports["text"]=json!(if changed{"changed leaf"}else{"original leaf"});}
+                nodes.insert(format!("n{i}"),serde_json::from_value::<scene::Node>(json!({"family":"column","ports":ports,"line":1,"is_template":false})).unwrap());
+            }
+            super::MEASUREMENT_WORK.set(0);
+            super::prepare_measurements(&mut nodes,"deep-graph",&json!({}),&mut Default::default(),&mut Default::default());
+            assert_eq!(super::MEASUREMENT_WORK.get(),count,"hash every node exactly once, including on cyclic graphs");
+            nodes["n0"].ports["__layout_revision"].as_u64().unwrap()
+        }
+        assert_ne!(revision(300,false,false),revision(300,false,true),"a leaf below depth 128 must rekey the root");
+        assert_ne!(revision(1024,true,false),revision(1024,true,true),"cyclic graphs must terminate and include every node");
+        let cyclic="---\nscene: 1\nname: invalid-cycle\ncitizen: test\n---\n```mix\n{root:{widget:\"column\",children:[\"root\"]}}\n```\n";
+        assert!(super::SceneView::new(cyclic).is_err(),"cycles are refused before rendering");
+    }
+    #[test]
     fn height_keys_cover_identity_descendants_visibility_route_and_paint_inputs() {
         let source = r#"---
 scene: 1
@@ -3667,42 +3694,19 @@ fn prepare_measurements(
             .iter()
             .any(|p| n.ports.get(*p) == Some(&Value::Bool(true)))
     }) {
-        fn revision(
-            id: &str,
-            nodes: &BTreeMap<String, Node>,
-            memo: &mut BTreeMap<String, u64>,
-            depth: usize,
-        ) -> u64 {
-            use std::hash::{Hash, Hasher};
-            if let Some(hash) = memo.get(id) {
-                return *hash;
-            }
-            let mut h = std::collections::hash_map::DefaultHasher::new();
+        // Conservative graph revision: hash every prepared node once. This
+        // includes all descendants, regardless of paint depth, and cannot
+        // recurse or revisit edges exponentially on malformed cyclic graphs.
+        // Unrelated node changes may invalidate extra height entries, only
+        // on scene/model revision; settled frames retain their cached keys.
+        use std::hash::{Hash,Hasher};
+        let mut h=std::collections::hash_map::DefaultHasher::new();
+        for (id,node) in nodes.iter() {
             id.hash(&mut h);
-            if let Some(n) = nodes.get(id) {
-                n.ports
-                    .get("__measure_key")
-                    .and_then(Value::as_u64)
-                    .hash(&mut h);
-                if depth < 128 {
-                    for child in children(n) {
-                        revision(child, nodes, memo, depth + 1).hash(&mut h);
-                    }
-                }
-            }
-            let hash = h.finish();
-            memo.insert(id.into(), hash);
-            hash
+            node.ports.get("__measure_key").and_then(Value::as_u64).hash(&mut h);
         }
-        let mut hashes = BTreeMap::new();
-        for id in nodes.keys() {
-            revision(id, nodes, &mut hashes, 0);
-        }
-        for (id, hash) in hashes {
-            if let Some(n) = nodes.get_mut(&id) {
-                n.ports.insert("__layout_revision".into(), json!(hash));
-            }
-        }
+        let revision=h.finish();
+        for node in nodes.values_mut(){node.ports.insert("__layout_revision".into(),json!(revision));}
     }
 }
 #[cfg(test)]

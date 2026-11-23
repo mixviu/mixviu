@@ -266,10 +266,17 @@ content height; it takes priority over a parent assignment. Parent stretch
 assignments are outer heights, so both `justify` and `stretch_last` subtract
 the column's padding before calculating spare content space. When combined,
 `stretch_last` wins over column `justify`. Row `equal_height` wins over
-`justify: "between"` packing on measurable rows. Height caches include the
+`justify: "between"` and `wrap: true` packing on measurable rows: an
+`equal_height` row is a single, unwrapped row. Height caches include the
 node/instance route, descendant content and visibility revision, width,
 display scale, font state and palette. Revision hashes are prepared when the
-scene/model changes; no descendant walk is added to settled frames.
+scene/model changes; no descendant walk is added to settled frames. The
+revision conservatively hashes the entire prepared graph once, so unrelated
+node changes can invalidate extra height entries. There is no hash depth
+cutoff or recursion, even for malformed cyclic graphs. Scene validation
+rejects child cycles; the SceneView painter stops below depth 128 (nodes
+called with depth greater than 128 emit no content). The revision still
+includes nodes beyond that paint limit.
 
 The `legacy-*` paint preset namespace and drawing `motion_profile:
 "legacy-sting"` are internal host protocols for frozen sting playback. Scene

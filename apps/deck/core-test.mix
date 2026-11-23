@@ -63,6 +63,11 @@ for $anim in ["fade","up","down","left","right","pop","zoom","wipe","drop","flip
 end
 $bad=$deck;$bad.slides[0].scene.a.paint_effect={preset:"legacy-up",time:0.3}
 refused(fn()=$c.check_deck($bad),"DECK_MOTION","slides[0](one).scene.a")
+for $kind in ["slide","sting"]
+  $bad=$deck;$bad.slides[0].kind=$kind
+  $bad.slides[0].scene.a={widget:"drawing",primitives:[{kind:"ellipse",centre:[50,50],radius:[20,20],colour:"#ff0000",effects:[{preset:"legacy-pop"}]}]}
+  refused(fn()=$c.check_deck($bad),"DECK_MOTION","slides[0](one).scene.a.primitives")
+end
 $bad=$deck;$bad.slides[0].scene.a.motion_profile="legacy-sting"
 refused(fn()=$c.check_deck($bad),"DECK_MOTION","slides[0](one).scene.a")
 $profile={id:"p",kind:"sting",scene:{root:{widget:"drawing",primitives:[]}},build:{}}

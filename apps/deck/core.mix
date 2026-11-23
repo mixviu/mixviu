@@ -60,6 +60,15 @@ fn check_deck($deck)
       if type($s.scene[$node])!="map" or type($s.scene[$node].widget)!="string" then fault("DECK_SCENE",$w..".scene."..$node,"expected widget node") end
       $effect=$s.scene[$node].paint_effect ?? {}
       if (type($effect)=="map" and starts_with($effect.preset ?? "","legacy-")) or $s.scene[$node].motion_profile!=nil then fault("DECK_MOTION",$w..".scene."..$node,"legacy motion is internal to the sting host") end
+      if $s.scene[$node].widget=="drawing" and type($s.scene[$node].primitives)=="list" then
+        for $primitive in $s.scene[$node].primitives
+          if type($primitive)=="map" and type($primitive.effects)=="list" then
+            for $fx in $primitive.effects
+              if type($fx)=="map" and type($fx.preset)=="string" and starts_with($fx.preset,"legacy-") then fault("DECK_MOTION",$w..".scene."..$node..".primitives","legacy drawing effects are internal to the sting host") end
+            end
+          end
+        end
+      end
       -- Data cannot smuggle executable bindings or input into a presentation.
       for $key in keys($s.scene[$node])
         $v=$s.scene[$node][$key]

@@ -46,6 +46,11 @@ pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
         let mut opacity = 1.;
         let mut fraction = 1.;
         for e in &p.effects {
+            // The host selects a profile; authored primitive names never select
+            // the internal legacy namespace, even on a sting drawing.
+            if e.preset.starts_with("legacy-") {
+                return;
+            }
             let name = if legacy {
                 format!("legacy-{}", e.preset)
             } else {
