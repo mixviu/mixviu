@@ -190,11 +190,11 @@ files = { path = "libraries/files" }
 # The compositor (engines/viud): smithay with the compositor's hooks and patches
 # (vendor/smithay/PATCHES.md), and wgpu on the GL backend only, sharing
 # smithay's EGL context.
-wgpu = { version = "=30.0.1", default-features = false, features = ["gles", "parking_lot", "std", "wgsl"] }
+wgpu = { version = "=30.0.2", default-features = false, features = ["gles", "parking_lot", "std", "wgsl"] }
 egui-wgpu = { version = "=0.37.0", default-features = false }
 bindgen = "=0.71.1"
 bitflags = "=2.13.2"
-cc = "=1.11.1"
+cc = "=1.11.2"
 crossbeam-channel = "=0.5.17"
 drm-ffi = "=0.9.1"
 gbm = "=0.18.0"
