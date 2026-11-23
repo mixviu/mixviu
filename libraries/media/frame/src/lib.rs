@@ -114,7 +114,7 @@ impl Bgra {
             for (x,taps) in wx.iter().enumerate() {
                 let out = &mut horizontal[(y*width+x)*4..(y*width+x+1)*4];
                 for &(sx,w) in taps {
-                    for c in 0..4 { out[c] += f32::from(self.pixels[(y*self.width+sx)*4+c])*w; }
+                    for (d,s) in out.iter_mut().zip(&self.pixels[(y*self.width+sx)*4..(y*self.width+sx+1)*4]) { *d += f32::from(*s)*w; }
                 }
             }
         }
