@@ -105,17 +105,42 @@ fn mix_decode_length_and_mastering_oracles() {
     // Speech-like crest and sharp envelope changes exercise codec peak safety,
     // independently measured after libopus decoding, not just mastered PCM.
     let src = dir.join("burst.wav");
-    let samples = (0..48000*12).map(|n| {
-        let level = if n%48000<4800 {0.8} else {0.04};
-        level * (std::f64::consts::TAU*440.0*n as f64/48000.0).sin()
-    }).collect();
-    Audio::new(48000,1,samples).unwrap().write_wav(File::create(&src).unwrap(),WavFormat::Float32).unwrap();
+    let samples = (0..48000 * 12)
+        .map(|n| {
+            let level = if n % 48000 < 4800 { 0.8 } else { 0.04 };
+            level * (std::f64::consts::TAU * 440.0 * n as f64 / 48000.0).sin()
+        })
+        .collect();
+    Audio::new(48000, 1, samples)
+        .unwrap()
+        .write_wav(File::create(&src).unwrap(), WavFormat::Float32)
+        .unwrap();
     let t:Timeline=serde_json::from_value(json!({"version":1,"sample_rate":48000,"channels":2,"duration_s":12,"sources":[{"path":"burst.wav","at_s":0}],"master":{"integrated_lufs":-14,"true_peak_dbtp":-1}})).unwrap();
-    let out=dir.join("burst.webm");
-    let r=render(&t,&dir,&out,None).unwrap();
-    let o=ff(&["-c:a","libopus","-i",out.to_str().unwrap(),"-af","ebur128=peak=true:framelog=verbose","-f","null","-"]);
-    let log=String::from_utf8(o.stderr).unwrap();let summary=log.rsplit("Summary:").next().unwrap();
-    let peak=summary.split("Peak:").nth(1).unwrap().split_whitespace().next().unwrap().parse::<f64>().unwrap();
-    assert!(peak<=-0.9,"{summary}");assert!(r.codec_passes<=2);
+    let out = dir.join("burst.webm");
+    let r = render(&t, &dir, &out, None).unwrap();
+    let o = ff(&[
+        "-c:a",
+        "libopus",
+        "-i",
+        out.to_str().unwrap(),
+        "-af",
+        "ebur128=peak=true:framelog=verbose",
+        "-f",
+        "null",
+        "-",
+    ]);
+    let log = String::from_utf8(o.stderr).unwrap();
+    let summary = log.rsplit("Summary:").next().unwrap();
+    let peak = summary
+        .split("Peak:")
+        .nth(1)
+        .unwrap()
+        .split_whitespace()
+        .next()
+        .unwrap()
+        .parse::<f64>()
+        .unwrap();
+    assert!(peak <= -0.9, "{summary}");
+    assert!(r.codec_passes <= 2);
     std::fs::remove_dir_all(dir).unwrap();
 }

@@ -213,13 +213,21 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
     let mut codec_passes = 0;
     let (head, packets, encoded) = loop {
         let (head, packets, encoded) = encode_checked(&audio)?;
-        if encoded.true_peak_dbtp <= t.master.true_peak_dbtp { break (head, packets, encoded); }
-        if codec_passes == 2 { return Err(refusal("Opus: peak ceiling unreachable after two corrections")); }
+        if encoded.true_peak_dbtp <= t.master.true_peak_dbtp {
+            break (head, packets, encoded);
+        }
+        if codec_passes == 2 {
+            return Err(refusal(
+                "Opus: peak ceiling unreachable after two corrections",
+            ));
+        }
         // Opus reconstruction can overshoot even ceiling-compliant PCM.
         // Only attenuate, with a 0.02 dB guard; every attempt is remeasured.
         let trim = t.master.true_peak_dbtp - encoded.true_peak_dbtp - 0.02;
-        let gain = 10.0_f64.powf(trim/20.0);
-        for sample in &mut audio.samples { *sample *= gain; }
+        let gain = 10.0_f64.powf(trim / 20.0);
+        for sample in &mut audio.samples {
+            *sample *= gain;
+        }
         codec_trim_db += trim;
         codec_passes += 1;
     };
@@ -254,7 +262,9 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
         packets: packets.len(),
         bytes: std::fs::metadata(out)?.len(),
         seconds: count as f64 / 48000.0,
-        encoded: encoded.into(), codec_trim_db, codec_passes,
+        encoded: encoded.into(),
+        codec_trim_db,
+        codec_passes,
     })
 }
 
@@ -295,16 +305,18 @@ fn encode_checked(audio: &Audio) -> Result<(OpusHead, Vec<Packet>, Loudness)> {
     }
     let mut decoder = OpusDecoder::new(Channels::Stereo)?;
     let mut decoded = Vec::new();
-    decoded.try_reserve_exact((count+1920)*2)?;
-    let mut skip = usize::from(head.pre_skip)*2;
+    decoded.try_reserve_exact((count + 1920) * 2)?;
+    let mut skip = usize::from(head.pre_skip) * 2;
     for p in &packets {
         let frame = decoder.decode(Some(&p.data))?;
         let start = skip.min(frame.pcm.len());
         skip -= start;
-        let end = frame.pcm.len() - usize::from(p.discard_padding)*2;
+        let end = frame.pcm.len() - usize::from(p.discard_padding) * 2;
         decoded.extend(frame.pcm[start..end].iter().copied().map(f64::from));
     }
-    if decoded.len() != count*2 { return Err(refusal("Opus: decoded sample count")); }
-    let measured = Audio::new(48000,2,decoded)?.measure()?;
-    Ok((head,packets,measured))
+    if decoded.len() != count * 2 {
+        return Err(refusal("Opus: decoded sample count"));
+    }
+    let measured = Audio::new(48000, 2, decoded)?.measure()?;
+    Ok((head, packets, measured))
 }
