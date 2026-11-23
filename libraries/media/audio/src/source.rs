@@ -12,18 +12,29 @@ pub(crate) const MAX_SOURCE_BYTES: u64 = 10800 * 48000 * 8 * 4 + 65536;
 const MAX_SOURCE_SAMPLES: u64 = 10800 * 48000 * 8;
 
 #[cfg(target_os = "linux")]
-pub(crate) fn open(base: &Path, path: &Path) -> Result<File, Box<dyn std::error::Error>> {
-    use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
+pub(crate) fn regular(path: &Path) -> Result<File, Box<dyn std::error::Error>> {
+    use std::os::unix::fs::OpenOptionsExt;
     // O_NONBLOCK prevents opening a FIFO from waiting for a writer. It does
     // not change regular-file reads. Inspect this descriptor before reading.
     let file = File::options()
         .read(true)
         .custom_flags(libc::O_NONBLOCK)
-        .open(base.join(path))?;
+        .open(path)?;
     let metadata = file.metadata()?;
     if !metadata.is_file() {
-        return Err("path: source is not a regular file".into());
+        return Err("path: input is not a regular file".into());
     }
+    Ok(file)
+}
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn regular(_: &Path) -> Result<File, Box<dyn std::error::Error>> {
+    Err("path: nonblocking regular-file input requires Linux".into())
+}
+#[cfg(target_os = "linux")]
+pub(crate) fn open(base: &Path, path: &Path) -> Result<File, Box<dyn std::error::Error>> {
+    use std::os::fd::AsRawFd;
+    let file = regular(&base.join(path))?;
+    let metadata = file.metadata()?;
     let resolved = std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))?;
     if !resolved.starts_with(base) {
         return Err("path: opened source escapes timeline directory".into());

@@ -174,23 +174,19 @@ impl Audio {
         Self::new(rate, channels, samples)
     }
     pub fn map_channels(&self, channels: u16) -> Result<Self, Error> {
-        match (self.channels, channels) {
-            (a, b) if a == b => Ok(self.clone()),
-            (1, 2) => Self::new(
-                self.rate,
-                2,
-                self.samples.iter().flat_map(|&s| [s, s]).collect(),
-            ),
-            (2, 1) => Self::new(
-                self.rate,
-                1,
-                self.samples
-                    .chunks_exact(2)
-                    .map(|s| s[0] * 0.5 + s[1] * 0.5)
-                    .collect(),
-            ),
-            _ => Err(Error::InvalidAudio),
+        let mut samples = Vec::new();
+        if !(1..=2).contains(&channels) {
+            return Err(Error::InvalidAudio);
         }
+        samples.try_reserve_exact(self.frames().checked_mul(channels as usize).ok_or(Error::SizeOverflow)?)
+            .map_err(|_| Error::SizeOverflow)?;
+        match (self.channels, channels) {
+            (a, b) if a == b => samples.extend_from_slice(&self.samples),
+            (1, 2) => samples.extend(self.samples.iter().flat_map(|&s| [s, s])),
+            (2, 1) => samples.extend(self.samples.chunks_exact(2).map(|s| s[0] * 0.5 + s[1] * 0.5)),
+            _ => return Err(Error::InvalidAudio),
+        }
+        Self::new(self.rate, channels, samples)
     }
     /// Pad with silence or trim the end. Trimming a range belongs to the timeline caller.
     pub fn resize(&mut self, frames: usize) -> Result<(), Error> {

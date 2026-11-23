@@ -37,7 +37,7 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> timeline::Result<u8> {
     if out == input || wav.as_ref().is_some_and(|w| w == &out || w == &input) {
         return Err("input and output paths must differ".into());
     }
-    let file = std::fs::File::open(&input)?;
+    let file = crate::source::regular(&input)?;
     if file.metadata()?.len() > MAX_JSON {
         return Err("timeline JSON exceeds 16 MiB".into());
     }
@@ -64,6 +64,10 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> timeline::Result<u8> {
     {
         if e.kind() == io::ErrorKind::BrokenPipe {
             return Ok(0);
+        }
+        if !receipt.refused && receipt.target_reached {
+            let _ = diagnostic(format_args!("published but receipt not written: {e}"));
+            return Ok(4);
         }
         return Err(e.into());
     }

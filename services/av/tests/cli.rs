@@ -1,5 +1,29 @@
 use std::process::Command;
 #[test]
+fn fifo_timeline_returns_promptly() {
+    let dir = std::env::temp_dir().join(format!("av-fifo-{}", std::process::id()));
+    std::fs::create_dir(&dir).unwrap();
+    let input = dir.join("timeline.json");
+    let name = std::ffi::CString::new(input.as_os_str().as_encoded_bytes()).unwrap();
+    assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_av")).arg("audio").arg(&input)
+        .arg("--out").arg(dir.join("out.webm"))
+        .stdout(std::process::Stdio::piped()).stderr(std::process::Stdio::piped()).spawn().unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while child.try_wait().unwrap().is_none() {
+        if std::time::Instant::now() >= deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("FIFO timeline open blocked");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let result = child.wait_with_output().unwrap();
+    assert_eq!(result.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("not a regular file"));
+    std::fs::remove_dir_all(dir).unwrap();
+}
+#[test]
 fn av_errors_are_clean() {
     for args in [
         vec![],
@@ -126,6 +150,14 @@ fn refusal_paths_size_and_atomic_outputs() {
     assert_eq!(std::fs::read(&out).unwrap(), b"keep");
     assert!(!wav.exists());
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 3);
+    std::fs::remove_file(&out).unwrap();
+    let lost = Command::new(env!("CARGO_BIN_EXE_av"))
+        .arg("audio").arg(&input).arg("--out").arg(&out)
+        .stdout(std::fs::File::options().write(true).open("/dev/full").unwrap())
+        .output().unwrap();
+    assert_eq!(lost.status.code(), Some(4), "{}", String::from_utf8_lossy(&lost.stderr));
+    assert!(String::from_utf8_lossy(&lost.stderr).starts_with("av: published but receipt not written:"));
+    assert!(out.is_file());
     Audio::new(48000, 1, vec![f32::MAX as f64; 8])
         .unwrap()
         .write_wav(

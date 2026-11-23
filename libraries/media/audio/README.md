@@ -207,12 +207,19 @@ bounded reader with a growth sentinel. Programme copies/conversions, limiter
 envelopes and decoded metering storage reserve fallibly; allocation failure
 is a normal error.
 
+Timeline JSON uses the same nonblocking open and descriptor regular-file
+check as WAV inputs, before applying its 16 MiB descriptor-size limit.
+
 Exit 0 means an accepted master. Exit 2 reports usage, validation, I/O,
 allocation or codec errors as `av: ...`. Exit 3 means mastering was refused
 or the decoded loudness missed the target: one receipt line is still printed
 and stderr explains the refusal or absolute LU error.
 As with `mixd vfl`, a closed stdout consumer ends quietly with exit 0;
 other receipt-write errors exit 2. Diagnostic writes never panic on EPIPE.
+When an accepted master was already published, a non-EPIPE receipt-write
+failure instead exits **4** with `av: published but receipt not written: …`.
+Exit 4 means the outputs exist but the receipt was not delivered; do not retry
+blindly. Receipt-write errors for rejected, unpublished masters remain exit 2.
 
 WAV and WebM are staged in temporary files in their destination directories.
 Each buffer is explicitly flushed and each file fsynced before publication;
@@ -225,3 +232,6 @@ leave no final outputs or temporary files. The receipt bytes field describes
 the staged WebM even when that master is discarded.
 Killing a run can leave recognisable `.av-<pid>-N.tmp` files beside the
 destinations, or a published WebM without its optional WAV. There is no sweep.
+After linking, destination lstat device/inode must match the synced temporary
+descriptor's fstat. A swapped temporary fails publication; cleanup checks the
+entry's identity before removing the mismatching destination link.

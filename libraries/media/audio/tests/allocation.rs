@@ -41,6 +41,10 @@ fn programme_and_limiter_allocation_failures_are_errors() {
             .is_err()
     );
     assert!(audio.samples().iter().all(|s| *s == 0.1));
+    let resampled = Audio::new(44100, 1, vec![0.1; 8192]).unwrap();
+    FAIL_SIZE.with(|s| s.set((8192 + 1024) * 8));
+    assert!(resampled.resample_48k().is_err());
+    assert_eq!(FAIL_SIZE.with(Cell::get), 0, "sinc wave reservation exercised");
     let dir = std::env::temp_dir().join(format!("audio-allocation-{}", std::process::id()));
     std::fs::create_dir(&dir).unwrap();
     Audio::new(48000, 1, vec![0.1; 4096])
