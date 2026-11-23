@@ -5814,10 +5814,7 @@ mod tests {
         assert_eq!(body["peers"][0]["name"], PEER);
         assert_eq!(body["peers"][0]["wg_ip"], "192.0.2.6");
         assert_eq!(body["peers"][0]["port"], 4300);
-        assert_eq!(
-            body["peers"][0]["challenge_epoch"],
-            serde_json::json!(7)
-        );
+        assert_eq!(body["peers"][0]["challenge_epoch"], serde_json::json!(7));
         assert_eq!(body["source"], "signed-inventory");
         assert_eq!(body["authority"]["epoch"], 7);
         assert_eq!(body["authority"]["hash"], "authority-hash");
