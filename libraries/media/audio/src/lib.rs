@@ -6,7 +6,11 @@ use rubato::{
     sinc_interpolator::{SincInterpolator, make_interpolator},
 };
 use std::io::{Cursor, Read, Seek, SeekFrom, Write};
+pub mod cli;
 mod limiter;
+mod pending;
+mod source;
+pub mod timeline;
 pub use limiter::{LimitReport, LimiterConfig, TargetReport};
 
 /// Standard RIFF maximum, enough for over three hours of stereo float32 at 48 kHz.
@@ -21,6 +25,7 @@ pub enum Error {
     InvalidHeader,
     UnsupportedFormat,
     InvalidAudio,
+    InputSampleRate { rate: u32 },
     SizeOverflow,
     FormatMismatch,
     Measurement(ebur128::Error),
@@ -41,6 +46,9 @@ impl std::fmt::Display for Error {
                 f.write_str("unsupported WAV encoding, channels or bit depth")
             }
             Self::InvalidAudio => f.write_str("invalid audio rate, channels or sample value"),
+            Self::InputSampleRate { rate } => {
+                write!(f, "WAV sample_rate {rate} outside 8000..384000 Hz")
+            }
             Self::SizeOverflow => f.write_str("audio buffer size overflows or cannot be allocated"),
             Self::FormatMismatch => {
                 f.write_str("clip rate or channel count differs from destination")
@@ -130,6 +138,19 @@ impl Audio {
             samples,
         })
     }
+    /// Fallible copy for whole-programme offline operations.
+    pub fn try_clone(&self) -> Result<Self, Error> {
+        let mut samples = Vec::new();
+        samples
+            .try_reserve_exact(self.samples.len())
+            .map_err(|_| Error::SizeOverflow)?;
+        samples.extend_from_slice(&self.samples);
+        Ok(Self {
+            rate: self.rate,
+            channels: self.channels,
+            samples,
+        })
+    }
     pub fn rate(&self) -> u32 {
         self.rate
     }
@@ -157,23 +178,28 @@ impl Audio {
         Self::new(rate, channels, samples)
     }
     pub fn map_channels(&self, channels: u16) -> Result<Self, Error> {
+        let mut samples = Vec::new();
+        if !(1..=2).contains(&channels) {
+            return Err(Error::InvalidAudio);
+        }
+        samples
+            .try_reserve_exact(
+                self.frames()
+                    .checked_mul(channels as usize)
+                    .ok_or(Error::SizeOverflow)?,
+            )
+            .map_err(|_| Error::SizeOverflow)?;
         match (self.channels, channels) {
-            (a, b) if a == b => Ok(self.clone()),
-            (1, 2) => Self::new(
-                self.rate,
-                2,
-                self.samples.iter().flat_map(|&s| [s, s]).collect(),
-            ),
-            (2, 1) => Self::new(
-                self.rate,
-                1,
+            (a, b) if a == b => samples.extend_from_slice(&self.samples),
+            (1, 2) => samples.extend(self.samples.iter().flat_map(|&s| [s, s])),
+            (2, 1) => samples.extend(
                 self.samples
                     .chunks_exact(2)
-                    .map(|s| s[0] * 0.5 + s[1] * 0.5)
-                    .collect(),
+                    .map(|s| s[0] * 0.5 + s[1] * 0.5),
             ),
-            _ => Err(Error::InvalidAudio),
+            _ => return Err(Error::InvalidAudio),
         }
+        Self::new(self.rate, channels, samples)
     }
     /// Pad with silence or trim the end. Trimming a range belongs to the timeline caller.
     pub fn resize(&mut self, frames: usize) -> Result<(), Error> {
@@ -228,11 +254,17 @@ impl Audio {
             });
         }
         if self.rate == 48000 {
-            return Ok(self.clone());
+            return self.try_clone();
         }
         if self.frames() == 0 {
             return Self::silence(48000, self.channels, 0);
         }
+        self.resample_window(0, 0..frames)
+    }
+    // Input is a seeked window with at least 512 frames of filter support on
+    // either side (or the actual file boundary). Keep the original time origin.
+    fn resample_window(&self, origin: usize, range: std::ops::Range<usize>) -> Result<Self, Error> {
+        let frames = range.len();
         let ratio = 48000.0 / self.rate as f64;
         let sinc = make_interpolator::<f64>(512, ratio, None, 256, WindowFunction::BlackmanHarris2);
         let mut out = Self::silence(48000, self.channels, frames)?;
@@ -254,7 +286,8 @@ impl Audio {
                 wave[n + pad] = frame[c];
             }
             for n in 0..frames {
-                let pos = n as f64 * self.rate as f64 / 48000.0 + pad as f64;
+                let pos = (range.start + n) as f64 * self.rate as f64 / 48000.0 - origin as f64
+                    + pad as f64;
                 let t = pos - (pad / 2) as f64 + 1.0 - 1.0 / 256.0;
                 let mut nearest = [(0isize, 0isize); 4];
                 get_nearest_times_4(t, 256, &mut nearest);
@@ -301,7 +334,7 @@ impl Audio {
             sample_peak = sample_peak.max(m.sample_peak(c)?);
             true_peak = true_peak.max(m.true_peak(c)?);
         }
-        m.add_frames_f64(&vec![0.0; 64 * self.channels as usize])?;
+        m.add_frames_f64(&[0.0; 128][..64 * self.channels as usize])?;
         for c in 0..self.channels as u32 {
             true_peak = true_peak.max(m.true_peak(c)?);
         }
@@ -355,17 +388,21 @@ impl Audio {
         validate_riff(&bytes)?;
         let mut reader = hound::WavReader::new(Cursor::new(bytes))?;
         let spec = reader.spec();
-        let samples = match (spec.sample_format, spec.bits_per_sample) {
-            (hound::SampleFormat::Float, 32) => reader
-                .samples::<f32>()
-                .map(|s| s.map(f64::from))
-                .collect::<Result<Vec<_>, _>>()?,
+        let mut samples = Vec::new();
+        samples
+            .try_reserve_exact(reader.duration() as usize * spec.channels as usize)
+            .map_err(|_| Error::SizeOverflow)?;
+        match (spec.sample_format, spec.bits_per_sample) {
+            (hound::SampleFormat::Float, 32) => {
+                for sample in reader.samples::<f32>() {
+                    samples.push(f64::from(sample?));
+                }
+            }
             (hound::SampleFormat::Int, b @ (16 | 24 | 32)) => {
                 let scale = 2.0_f64.powi(b as i32 - 1);
-                reader
-                    .samples::<i32>()
-                    .map(|s| s.map(|s| s as f64 / scale))
-                    .collect::<Result<Vec<_>, _>>()?
+                for sample in reader.samples::<i32>() {
+                    samples.push(sample? as f64 / scale);
+                }
             }
             _ => return Err(Error::UnsupportedFormat),
         };
@@ -437,37 +474,54 @@ impl Audio {
 // Preflight all RIFF chunk boundaries before hound sees them, including divisors
 // used in its header parser. Unknown chunks and canonical 44-byte LINEAR16 work.
 fn validate_riff(b: &[u8]) -> Result<(), Error> {
+    validate_wav_header(&mut Cursor::new(b), b.len() as u64)
+}
+fn validate_wav_header(r: &mut (impl Read + Seek), len: u64) -> Result<(), Error> {
     fn u16at(b: &[u8], n: usize) -> u16 {
         u16::from_le_bytes([b[n], b[n + 1]])
     }
     fn u32at(b: &[u8], n: usize) -> u32 {
         u32::from_le_bytes([b[n], b[n + 1], b[n + 2], b[n + 3]])
     }
-    if b.len() < 12
-        || &b[..4] != b"RIFF"
-        || &b[8..12] != b"WAVE"
-        || u32at(b, 4) as u64 + 8 != b.len() as u64
-    {
+    if len < 12 {
         return Err(Error::InvalidHeader);
     }
-    let mut p = 12;
+    let mut header = [0; 12];
+    r.seek(SeekFrom::Start(0))?;
+    r.read_exact(&mut header)?;
+    if &header[..4] != b"RIFF" || &header[8..12] != b"WAVE" || u32at(&header, 4) as u64 + 8 != len {
+        return Err(Error::InvalidHeader);
+    }
+    let mut p = 12u64;
     let mut align = None;
     let mut data = None;
-    while p < b.len() {
-        if b.len() - p < 8 {
+    let mut metadata_bytes = 12u64;
+    while p < len {
+        if len - p < 8 {
             return Err(Error::InvalidHeader);
         }
-        let n = u32at(b, p + 4) as usize;
+        r.seek(SeekFrom::Start(p))?;
+        let mut chunk = [0; 8];
+        r.read_exact(&mut chunk)?;
+        let n = u32at(&chunk, 4) as u64;
         let start = p + 8;
         let end = start
             .checked_add(n)
-            .filter(|&v| v <= b.len())
+            .filter(|&v| v <= len)
             .ok_or(Error::InvalidHeader)?;
-        match &b[p..p + 4] {
+        metadata_bytes = metadata_bytes
+            .checked_add(8 + n % 2 + if &chunk[..4] == b"data" { 0 } else { n })
+            .filter(|&v| v <= 65536)
+            .ok_or(Error::InvalidHeader)?;
+        match &chunk[..4] {
             b"fmt " => {
                 if n < 16 || align.is_some() {
                     return Err(Error::InvalidHeader);
                 }
+                let mut format = [0; 40];
+                r.read_exact(&mut format[..n.min(40) as usize])?;
+                let b = &format;
+                let start = 0;
                 let c = u16at(b, start + 2);
                 let rate = u32at(b, start + 4);
                 let bits = u16at(b, start + 14);
@@ -501,7 +555,7 @@ fn validate_riff(b: &[u8]) -> Result<(), Error> {
                 {
                     return Err(Error::InvalidHeader);
                 }
-                align = Some(a as usize);
+                align = Some(a as u64);
             }
             b"data" => {
                 if data.is_some() || align.is_none() {
@@ -513,7 +567,7 @@ fn validate_riff(b: &[u8]) -> Result<(), Error> {
         }
         p = end
             .checked_add(n % 2)
-            .filter(|&v| v <= b.len())
+            .filter(|&v| v <= len)
             .ok_or(Error::InvalidHeader)?;
     }
     match (align, data) {

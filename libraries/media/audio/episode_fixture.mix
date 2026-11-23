@@ -1,0 +1,23 @@
+-- Test fixture generator. Usage: mix episode_fixture.mix RUN COPY_DIR
+-- Parts follow episode.mix; scenes are back to back, without crossfades.
+$a = args()
+if len($a) != 2 then raise("USAGE", "episode_fixture.mix RUN COPY_DIR") end
+$run = $a[0]
+$out = $a[1]
+mkdir($out, {parents: true})
+$parts = load_data(path_join($run, "episode.mix"))
+$sources = []
+$time = 0
+for $k in range(0, len($parts) - 1)
+  $job = read_json(path_join($run, "native-" .. $k .. "/job.json"))
+  for $sc in $job.scenes
+    for $i in range(0, len($sc.wavs) - 1)
+      $name = "source-" .. len($sources) .. ".wav"
+      print(run_argv_must(["cp", "--", $sc.wavs[$i].path, path_join($out, $name)]))
+      push($sources, {path: $name, at_s: $time + $sc.starts[$i], to_s: min($sc.wavs[$i].seconds, $sc.seconds - $sc.starts[$i])})
+    end
+    $time = $time + $sc.seconds
+  end
+end
+write_file(path_join($out, "timeline.json"), json_encode({version:1, sample_rate:48000, channels:2, duration_s:$time, sources:$sources, master:{integrated_lufs:-14, true_peak_dbtp:-1}}, true))
+print(json_encode({seconds:$time, sources:len($sources)}))

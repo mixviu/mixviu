@@ -1,0 +1,7 @@
+-- Focused worker checks, including oracle and no full CI run.
+for $argv in [["cargo", "test", "-p", "media-audio", "-p", "media-webm", "-p", "av", "--all-targets"], ["cargo", "clippy", "--no-deps", "-p", "media-audio", "-p", "media-webm", "-p", "av", "--all-targets", "--", "-D", "warnings"], ["mix", "tools/foreign_gate.mix"]]
+  $r = run_argv(concat(["env", "MIX_TEST_REQUIRE_FFMPEG=1"], $argv), {timeout: 7200})
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then exit($r.exit_code ?? 1) end
+end
