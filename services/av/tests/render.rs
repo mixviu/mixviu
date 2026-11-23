@@ -21,6 +21,10 @@ fn repeats_chunks_scaled_fade_and_gap() {
             ),
         })
         .unwrap();
+        w.frame(media_vfl::Frame {
+            slot: 5,
+            pixels: media_vfl::Pixels::Bgra(vec![[20,200,40,255]; (size*size) as usize].into_iter().flatten().collect::<Vec<_>>().into()),
+        }).unwrap();
         w.finish(90, 0, 0, None, true).unwrap();
     }
     media_audio::Audio::new(
@@ -110,9 +114,10 @@ fn repeats_chunks_scaled_fade_and_gap() {
                 .map(|l| l.rsplit(',').next().unwrap().trim())
                 .collect();
             assert_eq!(hashes.len(), 120);
+            assert_ne!(hashes[4],hashes[5]);
             // All holds must remain identical, including both sides of chunk keys.
             for k in 1..120 {
-                if !(45..61).contains(&k) {
+                if k != 5 && !(45..61).contains(&k) {
                     assert_eq!(hashes[k], hashes[k - 1], "frame {k}");
                 }
             }
