@@ -187,6 +187,8 @@ impl Timeline {
         Ok(starts)
     }
 }
+#[derive(Default)]
+struct ScaleStats { frames: usize, wall_s: f64 }
 struct Source {
     reader: media_vfl::reader::Reader,
     next: u64,
@@ -200,7 +202,7 @@ impl Source {
             current: None,
         })
     }
-    fn get(&mut self, slot: u64, width: usize, height: usize) -> Result<(Arc<Bgra>, bool)> {
+    fn get(&mut self, slot: u64, width: usize, height: usize, stats: &mut ScaleStats) -> Result<(Arc<Bgra>, bool)> {
         if self.next == slot + 1 {
             return Ok((self.current.as_ref().ok_or("missing_frame")?.clone(), true));
         }
@@ -220,7 +222,7 @@ impl Source {
             self.current = Some(Arc::new(if w == width && h == height {
                 b
             } else {
-                b.scale(sw, sh)?.pad(
+                { let start = Instant::now(); let scaled = b.resample(sw, sh)?; stats.frames += 1; stats.wall_s += start.elapsed().as_secs_f64(); scaled }.pad(
                     width,
                     height,
                     (width - sw) / 2,
@@ -240,12 +242,14 @@ struct Chunk {
     packets: Vec<media_av1::Packet>,
     config: Vec<u8>,
     encoded: usize,
+    scaling: ScaleStats,
 }
 fn compose(
     v: &Video,
     base: &Path,
     sources: &mut [Option<Source>],
     k: u64,
+    stats: &mut ScaleStats,
 ) -> Result<(Arc<Bgra>, bool)> {
     let j = v.segments.partition_point(|s| frame(s.at_s) <= k) - 1;
     // Execution walks forward. Retain only the current and outgoing segment;
@@ -261,7 +265,7 @@ fn compose(
     let (mut b, mut repeat) = sources[j]
         .as_mut()
         .ok_or("missing_segment_reader")?
-        .get(slot, v.width, v.height)?;
+        .get(slot, v.width, v.height, stats)?;
     if let Some(f) = v
         .crossfades
         .iter()
@@ -275,7 +279,7 @@ fn compose(
         let (a, _) = sources[j - 1]
             .as_mut()
             .ok_or("missing_segment_reader")?
-            .get(old_slot, v.width, v.height)?;
+            .get(old_slot, v.width, v.height, stats)?;
         let len = frame(f.duration_s);
         let weight = if len == 1 {
             255
@@ -295,6 +299,7 @@ pub fn reference(path: &Path, out: impl std::io::Write) -> Result<()> {
     let base = path.parent().unwrap_or(Path::new("."));
     t.validate(base)?;
     let v = &t.video;
+    let mut scaling = ScaleStats::default();
     let mut sources: Vec<_> = (0..v.segments.len()).map(|_| None).collect();
     let mut out = BufWriter::new(out);
     writeln!(
@@ -304,7 +309,7 @@ pub fn reference(path: &Path, out: impl std::io::Write) -> Result<()> {
     )?;
     let mut yuv = None;
     for k in 0..frame(t.duration_s) {
-        let (b, repeat) = compose(v, base, &mut sources, k)?;
+        let (b, repeat) = compose(v, base, &mut sources, k, &mut scaling)?;
         if !repeat {
             yuv = Some(b.to_yuv420());
         }
@@ -332,11 +337,12 @@ fn chunk(t: &Timeline, base: &Path, start: u64, end: u64) -> Result<Chunk> {
         tile_rows: e.tile_rows,
         threads: e.threads,
     })?;
+    let mut scaling = ScaleStats::default();
     let mut sources: Vec<_> = (0..v.segments.len()).map(|_| None).collect();
     let mut encoded = Vec::new();
     let mut positions = Vec::new();
     for k in start..end {
-        let (b, repeat) = compose(v, base, &mut sources, k)?;
+        let (b, repeat) = compose(v, base, &mut sources, k, &mut scaling)?;
         // The displayed keyframe is not showable. Submit its first successor too.
         if !repeat || k < start + 2 {
             let p = enc.prepare(&b.to_yuv420())?;
@@ -384,6 +390,7 @@ fn chunk(t: &Timeline, base: &Path, start: u64, end: u64) -> Result<Chunk> {
         packets,
         config,
         encoded: count,
+        scaling,
     })
 }
 fn cpu() -> f64 {
@@ -525,10 +532,12 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     let size = pending.file.metadata()?.len();
     pending.publish()?;
     pending.commit();
+    let scaled_frames: usize = chunks.iter().map(|c| c.scaling.frames).sum();
+    let scale_wall_s: f64 = chunks.iter().map(|c| c.scaling.wall_s).sum();
     let n = frame(t.duration_s);
     println!(
         "{}",
-        serde_json::json!({"frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunks.len(), "parallel_chunks": t.encode.chunks, "stages": {"input": {"wall_s": input_wall, "cpu_s": input_cpu}, "audio": {"wall_s": audio_wall, "cpu_s": audio_cpu}, "video": {"wall_s": video_wall, "cpu_s": video_cpu}, "mux": {"wall_s": mux_start.elapsed().as_secs_f64(), "cpu_s": cpu()-c}}, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt})
+        serde_json::json!({"scaling": {"filter":"bicubic_catmull_rom_gamma","frames":scaled_frames,"sum_wall_s":scale_wall_s,"mean_ms":scale_wall_s*1000.0/scaled_frames.max(1) as f64}, "frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunks.len(), "parallel_chunks": t.encode.chunks, "stages": {"input": {"wall_s": input_wall, "cpu_s": input_cpu}, "audio": {"wall_s": audio_wall, "cpu_s": audio_cpu}, "video": {"wall_s": video_wall, "cpu_s": video_cpu}, "mux": {"wall_s": mux_start.elapsed().as_secs_f64(), "cpu_s": cpu()-c}}, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt})
     );
     Ok(0)
 }
