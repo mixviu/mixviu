@@ -32,7 +32,10 @@ fn sample_rates_and_native_decode_budget() {
     for rate in [7999, 384001] {
         sparse_wav(&dir.join("source.wav"), rate, 1, 1);
         let error = mix(v.clone()).unwrap_err().to_string();
-        assert!(error.contains("sources[0]") && error.contains("sample_rate"), "{error}");
+        assert!(
+            error.contains("sources[0]") && error.contains("sample_rate"),
+            "{error}"
+        );
     }
     for rate in [8000, 384000] {
         sparse_wav(&dir.join("source.wav"), rate, 1, 1);
@@ -46,14 +49,20 @@ fn sample_rates_and_native_decode_budget() {
     assert!(mix(v.clone()).is_ok());
     v["sources"] = json!([source.clone(), source.clone()]);
     let error = mix(v.clone()).unwrap_err().to_string();
-    assert!(error.contains("sources[1].work: decoded input samples"), "{error}");
+    assert!(
+        error.contains("sources[1].work: decoded input samples"),
+        "{error}"
+    );
     // A shorter stereo file clips each native window to 256*2 samples:
     // two windows exactly reach the budget; one more is refused.
     sparse_wav(&dir.join("source.wav"), 384000, 2, 256);
     assert!(mix(v.clone()).is_ok());
     v["sources"] = json!([source.clone(), source.clone(), source]);
     let error = mix(v).unwrap_err().to_string();
-    assert!(error.contains("sources[2].work: decoded input samples"), "{error}");
+    assert!(
+        error.contains("sources[2].work: decoded input samples"),
+        "{error}"
+    );
     std::fs::remove_dir_all(dir).unwrap();
 }
 

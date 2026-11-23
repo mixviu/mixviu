@@ -67,7 +67,9 @@ impl<R: Read + Seek> Wav<R> {
         input.seek(SeekFrom::Start(0))?;
         let reader = hound::WavReader::new(input)?;
         if !(8000..=384000).contains(&reader.spec().sample_rate) {
-            return Err(Error::InputSampleRate { rate: reader.spec().sample_rate });
+            return Err(Error::InputSampleRate {
+                rate: reader.spec().sample_rate,
+            });
         }
         // len() counts interleaved values; duration() counts channel frames.
         if u64::from(reader.len()) > MAX_SOURCE_SAMPLES {

@@ -46,7 +46,9 @@ impl std::fmt::Display for Error {
                 f.write_str("unsupported WAV encoding, channels or bit depth")
             }
             Self::InvalidAudio => f.write_str("invalid audio rate, channels or sample value"),
-            Self::InputSampleRate { rate } => write!(f, "WAV sample_rate {rate} outside 8000..384000 Hz"),
+            Self::InputSampleRate { rate } => {
+                write!(f, "WAV sample_rate {rate} outside 8000..384000 Hz")
+            }
             Self::SizeOverflow => f.write_str("audio buffer size overflows or cannot be allocated"),
             Self::FormatMismatch => {
                 f.write_str("clip rate or channel count differs from destination")

@@ -165,10 +165,16 @@ impl Timeline {
                 )));
             }
             decoded_samples = decoded_samples
-                .checked_add(source.decoded_samples(from..from + placed).map_err(|e| fail(e.to_string()))?)
+                .checked_add(
+                    source
+                        .decoded_samples(from..from + placed)
+                        .map_err(|e| fail(e.to_string()))?,
+                )
                 .ok_or(crate::Error::SizeOverflow)?;
             if decoded_samples > decoded_budget {
-                return Err(refusal(&format!("sources[{index}].work: decoded input samples exceed 16x output frames x 2 channels x 8 rate budget")));
+                return Err(refusal(&format!(
+                    "sources[{index}].work: decoded input samples exceed 16x output frames x 2 channels x 8 rate budget"
+                )));
             }
             let clip = source
                 .decode(from..from + placed)
