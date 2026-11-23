@@ -130,6 +130,10 @@ impl Timeline {
         })?;
         let output_frames = frames(self.duration_s);
         let mut placed_frames = 0usize;
+        // Sixteen stereo layers at the highest admitted input rate. Count the
+        // exact native windows, including sinc support, before decoding.
+        let decoded_budget = output_frames as u64 * 2 * 8 * 16;
+        let mut decoded_samples = 0u64;
         let mut out = Vec::<f32>::new();
         let n = frames(self.duration_s) * 2;
         out.try_reserve_exact(n)
@@ -159,6 +163,12 @@ impl Timeline {
                 return Err(refusal(&format!(
                     "sources[{index}].work: summed placed frames exceed 16x output frames"
                 )));
+            }
+            decoded_samples = decoded_samples
+                .checked_add(source.decoded_samples(from..from + placed).map_err(|e| fail(e.to_string()))?)
+                .ok_or(crate::Error::SizeOverflow)?;
+            if decoded_samples > decoded_budget {
+                return Err(refusal(&format!("sources[{index}].work: decoded input samples exceed 16x output frames x 2 channels x 8 rate budget")));
             }
             let clip = source
                 .decode(from..from + placed)

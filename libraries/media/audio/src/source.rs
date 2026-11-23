@@ -66,6 +66,9 @@ impl<R: Read + Seek> Wav<R> {
         validate_wav_header(&mut input, len)?;
         input.seek(SeekFrom::Start(0))?;
         let reader = hound::WavReader::new(input)?;
+        if !(8000..=384000).contains(&reader.spec().sample_rate) {
+            return Err(Error::InputSampleRate { rate: reader.spec().sample_rate });
+        }
         // len() counts interleaved values; duration() counts channel frames.
         if u64::from(reader.len()) > MAX_SOURCE_SAMPLES {
             return Err(Error::InputTooLarge {
@@ -84,13 +87,13 @@ impl<R: Read + Seek> Wav<R> {
             frames: frames as usize,
         })
     }
-    pub fn decode(mut self, range: std::ops::Range<usize>) -> Result<Audio, Error> {
+    fn input_window(&self, range: std::ops::Range<usize>) -> Result<std::ops::Range<usize>, Error> {
         let spec = self.reader.spec();
         if range.start > range.end || range.end > self.frames {
             return Err(Error::InvalidAudio);
         }
         if range.is_empty() {
-            return Audio::silence(48000, spec.channels, 0);
+            return Ok(0..0);
         }
         let (start, end) = if spec.sample_rate == 48000 {
             (range.start, range.end)
@@ -105,6 +108,18 @@ impl<R: Read + Seek> Wav<R> {
                 end.min(u64::from(self.reader.duration())) as usize,
             )
         };
+        Ok(start..end)
+    }
+    pub fn decoded_samples(&self, range: std::ops::Range<usize>) -> Result<u64, Error> {
+        Ok(self.input_window(range)?.len() as u64 * u64::from(self.reader.spec().channels))
+    }
+    pub fn decode(mut self, range: std::ops::Range<usize>) -> Result<Audio, Error> {
+        let spec = self.reader.spec();
+        let window = self.input_window(range.clone())?;
+        if window.is_empty() {
+            return Audio::silence(48000, spec.channels, 0);
+        }
+        let (start, end) = (window.start, window.end);
         self.reader.seek(start as u32)?;
         let count = (end - start)
             .checked_mul(spec.channels as usize)

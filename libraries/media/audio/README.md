@@ -201,6 +201,20 @@ tails and sources at the timeline end contribute zero extra placed work. The
 running total is checked from each header before decoding that source; no
 source that would cross the limit is decoded. RIFF headers are also bounded.
 
+Timeline WAV sample rates must be **8,000–384,000 Hz inclusive**, covering
+telephony through high-resolution masters. Unsupported rates are refused by
+source index before decoding. An additional aggregate native-input budget is
+**16 × output frames × 2 channels × (384000 / 48000)** scalar samples.
+This allows sixteen stereo layers at the maximum supported input rate while
+bounding actual decoding, rather than only output placement. Each source is
+charged its exact decoded native window frames times its channel count,
+including sinc support and clipping at the file edges. The decoder and budget
+share the window calculation. The running total is checked before each decode;
+equality is accepted, excess is refused. Very short or heavily fragmented
+timelines may hit this budget through filter support alone. Empty placed
+windows cost zero. These limits apply to timeline execution; the lower-level
+Audio API retains its existing nonzero-rate contract.
+
 Timeline
 JSON is limited to 16 MiB: the opened file is checked, then read through a
 bounded reader with a growth sentinel. Programme copies/conversions, limiter
