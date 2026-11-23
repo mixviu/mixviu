@@ -76,7 +76,9 @@ fn entrance_uses_the_oracle_beat_plus_delay_without_an_extra_lead() {
         json!({"slides":["before"],"beats":[[0.9,3,5]]}),
     );
     deck.call("viu.presentation", json!({"time":100}));
-    for at in [1.0, 1.05, 1.1, 1.5] {
+    let fixture: Value = serde_json::from_str(include_str!("../../motion/oracle/chrome.json")).unwrap();
+    for sample in fixture["title_samples"].as_array().unwrap() {
+        let at = 1.05 + sample["t"].as_f64().unwrap();
         let model = deck
             .call("viu.presentation", json!({"time":100.0+at}))
             .model
@@ -85,6 +87,9 @@ fn entrance_uses_the_oracle_beat_plus_delay_without_an_extra_lead() {
             .playback(0., 0, false)
             .sample(at - 0.9 - 0.15);
         let actual = model["build"]["root.1"]["opacity"].as_f64().unwrap();
+        assert!((actual - sample["opacity"].as_f64().unwrap()).abs() < 1e-6);
+        let offset = model["build"]["root.1"]["offset"][0].as_f64().unwrap();
+        assert!((offset - sample["tx"].as_f64().unwrap()).abs() < 0.001);
         assert!((actual - values.get(motion::Property::Opacity)).abs() < 1e-6);
         println!(
             "ENTRANCE time={at} beat=0.9 delay=0.15 age={} opacity={actual}",

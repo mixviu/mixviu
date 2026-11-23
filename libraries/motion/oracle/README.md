@@ -1,10 +1,12 @@
 The reference CSS and deck runtime are the maintainer's 2026-11-19 deck
-templates, copied without changes for a reproducible oracle. They are under
+templates, retained as a reproducible oracle. Entrance CSS was revised on
+2026-11-23 for cubic ease-in-out, longer durations and larger travel;
+continuous effects are unchanged. They are under
 the workspace's MIT OR Apache-2.0 licence. `capture.js` runs in Chrome, never
 in a separate JavaScript runtime.
 
 SHA-256 of `reference/anim.css`:
-`3c3bf518cff42f18f583ab4cd17b28d89811a9bf5b7c92658d2b2a3662c9e326`.
+`6e76a18e3cc128e075fd6e775f1b51463e14a5c86578ac7a6706fe18c4b19b98`.
 SHA-256 of `reference/deck.js`:
 `26a24935798e3e4d4f49e0caac7d4ff75656fc1f13f4a28c8ec2fdf605ae8bf1`.
 
@@ -40,3 +42,9 @@ translation, rotation, blur and dash offset 0.05 in their native units;
 clip fractions 1e-4. Projected flip scalar uses 0.05 degrees; glow, bg and
 shine scalars use 1e-4. All 19 presets pass. Full per-property maxima are
 recorded in `../VALIDATION.md`.
+
+Run mix tools/motion_oracle.mix --write on the Chrome host to regenerate
+both chrome.json and entrance tracks in presets.json. Track endpoints and
+intermediate keyframes come from captured times; easing comes from computed
+CSS. title_samples additionally pins the title at ages 0, 0.05 and 0.45.
+legacy-presets.json freezes the pre-change drawing and sting contract.

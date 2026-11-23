@@ -622,12 +622,7 @@ pub fn paint_effect(
     if !time.is_finite() {
         return;
     }
-    static TABLE: std::sync::OnceLock<Vec<Preset>> = std::sync::OnceLock::new();
-    let Some(preset) = TABLE
-        .get_or_init(motion::presets)
-        .iter()
-        .find(|p| p.name == name)
-    else {
+    let Ok(preset) = motion::scene::paint_preset(name) else {
         return;
     };
     let values = preset.sample(time);
