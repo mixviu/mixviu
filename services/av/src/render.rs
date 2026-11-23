@@ -93,7 +93,15 @@ impl Timeline {
             return refuse("segments_limit");
         }
         let e = &self.encode;
-        if e.threads == 0 || e.threads > 64 || e.tile_cols > 64 || e.tile_rows > 64 || !e.tile_cols.is_power_of_two() || !e.tile_rows.is_power_of_two() { return refuse("encode_tiles_threads"); }
+        if e.threads == 0
+            || e.threads > 64
+            || e.tile_cols > 64
+            || e.tile_rows > 64
+            || !e.tile_cols.is_power_of_two()
+            || !e.tile_rows.is_power_of_two()
+        {
+            return refuse("encode_tiles_threads");
+        }
         if e.speed > 10
             || e.chunks == 0
             || e.chunks > 64
@@ -158,7 +166,12 @@ impl Timeline {
             {
                 return refuse("crossfade_requires_overlap");
             }
-            if v.segments.get(j+1).is_some_and(|s| frame(s.at_s) < frame(f.at_s+f.duration_s)) { return refuse("crossfade_third_segment"); }
+            if v.segments
+                .get(j + 1)
+                .is_some_and(|s| frame(s.at_s) < frame(f.at_s + f.duration_s))
+            {
+                return refuse("crossfade_third_segment");
+            }
             if i > 0
                 && frame(v.crossfades[i - 1].at_s + v.crossfades[i - 1].duration_s) > frame(f.at_s)
             {
@@ -333,7 +346,9 @@ fn chunk(t: &Timeline, base: &Path, start: u64, end: u64) -> Result<Chunk> {
         let k = start + i as u64;
         let packet = if position.is_some() {
             let mut p = input.next().ok_or("encoder_packet_count")?;
-            if p.pts != input_index || p.duration != 1 { return refuse("reordered_encoder_packets"); }
+            if p.pts != input_index || p.duration != 1 {
+                return refuse("reordered_encoder_packets");
+            }
             input_index += 1;
             let key = tracker.observe(&p.data)?;
             if key != p.key_frame || (i == 0) != key {
@@ -407,7 +422,7 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     };
     // Preserve the validated video executor while borrowing the audio specification.
     let input_wall = overall.elapsed().as_secs_f64();
-    let input_cpu = cpu()-total_cpu;
+    let input_cpu = cpu() - total_cpu;
     let wall = Instant::now();
     let c = cpu();
     let a = media_audio::timeline::prepare(&audio, base)?;
@@ -497,6 +512,9 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     pending.publish()?;
     pending.commit();
     let n = frame(t.duration_s);
-    println!("{}", serde_json::json!({"frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunks.len(), "parallel_chunks": t.encode.chunks, "stages": {"input": {"wall_s": input_wall, "cpu_s": input_cpu}, "audio": {"wall_s": audio_wall, "cpu_s": audio_cpu}, "video": {"wall_s": video_wall, "cpu_s": video_cpu}, "mux": {"wall_s": mux_start.elapsed().as_secs_f64(), "cpu_s": cpu()-c}}, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt}));
+    println!(
+        "{}",
+        serde_json::json!({"frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunks.len(), "parallel_chunks": t.encode.chunks, "stages": {"input": {"wall_s": input_wall, "cpu_s": input_cpu}, "audio": {"wall_s": audio_wall, "cpu_s": audio_cpu}, "video": {"wall_s": video_wall, "cpu_s": video_cpu}, "mux": {"wall_s": mux_start.elapsed().as_secs_f64(), "cpu_s": cpu()-c}}, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt})
+    );
     Ok(0)
 }

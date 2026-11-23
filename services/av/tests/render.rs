@@ -23,8 +23,15 @@ fn repeats_chunks_scaled_fade_and_gap() {
         .unwrap();
         w.frame(media_vfl::Frame {
             slot: 5,
-            pixels: media_vfl::Pixels::Bgra(vec![[20,200,40,255]; (size*size) as usize].into_iter().flatten().collect::<Vec<_>>().into()),
-        }).unwrap();
+            pixels: media_vfl::Pixels::Bgra(
+                vec![[20, 200, 40, 255]; (size * size) as usize]
+                    .into_iter()
+                    .flatten()
+                    .collect::<Vec<_>>()
+                    .into(),
+            ),
+        })
+        .unwrap();
         w.finish(90, 0, 0, None, true).unwrap();
     }
     media_audio::Audio::new(
@@ -49,17 +56,52 @@ fn repeats_chunks_scaled_fade_and_gap() {
         ("/encode/chunks", json!(0), "encode_settings"),
         ("/encode/keyint_s", json!(0), "encode_settings"),
         ("/encode/tile_cols", json!(3), "encode_tiles_threads"),
-        ("/video/segments/0/path", json!("../a.vfl"), "segment_path_relative"),
-        ("/video/segments/0/at_s", json!(0.1), "gap_before_first_segment"),
-        ("/video/segments/0/to_slot", json!(100), "segment_trim_outside_vfl"),
-        ("/video/crossfades/0/at_s", json!(1.0), "crossfade_segment_start"),
-        ("/video/crossfades/0/duration_s", json!(1.0), "crossfade_requires_overlap"),
+        (
+            "/video/segments/0/path",
+            json!("../a.vfl"),
+            "segment_path_relative",
+        ),
+        (
+            "/video/segments/0/at_s",
+            json!(0.1),
+            "gap_before_first_segment",
+        ),
+        (
+            "/video/segments/0/to_slot",
+            json!(100),
+            "segment_trim_outside_vfl",
+        ),
+        (
+            "/video/crossfades/0/at_s",
+            json!(1.0),
+            "crossfade_segment_start",
+        ),
+        (
+            "/video/crossfades/0/duration_s",
+            json!(1.0),
+            "crossfade_requires_overlap",
+        ),
     ] {
-        let mut bad = t.clone(); *bad.pointer_mut(pointer).unwrap() = value;
-        fs::write(root.join("timeline.json"),serde_json::to_vec(&bad).unwrap()).unwrap();
-        let o = Command::new(env!("CARGO_BIN_EXE_av")).arg("render").arg(root.join("timeline.json")).arg("--out").arg(root.join("out.webm")).output().unwrap();
-        assert_eq!(o.status.code(),Some(2));
-        assert!(String::from_utf8_lossy(&o.stderr).contains(name), "{}",String::from_utf8_lossy(&o.stderr));
+        let mut bad = t.clone();
+        *bad.pointer_mut(pointer).unwrap() = value;
+        fs::write(
+            root.join("timeline.json"),
+            serde_json::to_vec(&bad).unwrap(),
+        )
+        .unwrap();
+        let o = Command::new(env!("CARGO_BIN_EXE_av"))
+            .arg("render")
+            .arg(root.join("timeline.json"))
+            .arg("--out")
+            .arg(root.join("out.webm"))
+            .output()
+            .unwrap();
+        assert_eq!(o.status.code(), Some(2));
+        assert!(
+            String::from_utf8_lossy(&o.stderr).contains(name),
+            "{}",
+            String::from_utf8_lossy(&o.stderr)
+        );
         assert!(!root.join("out.webm").exists());
     }
     fs::write(root.join("timeline.json"), serde_json::to_vec(&t).unwrap()).unwrap();
@@ -83,10 +125,10 @@ fn repeats_chunks_scaled_fade_and_gap() {
     let demux = media_webm::Demuxer::new(&bytes).unwrap();
     let video: Vec<_> = demux.packets().iter().filter(|p| p.track == 1).collect();
     let audio: Vec<_> = demux.packets().iter().filter(|p| p.track == 2).collect();
-    assert_eq!(video.len(),120);
-    assert_eq!(video[0].timestamp,0);
-    assert_eq!(audio[0].timestamp,0);
-    assert!((video.last().unwrap().timestamp-audio.last().unwrap().timestamp).abs() <= 34);
+    assert_eq!(video.len(), 120);
+    assert_eq!(video[0].timestamp, 0);
+    assert_eq!(audio[0].timestamp, 0);
+    assert!((video.last().unwrap().timestamp - audio.last().unwrap().timestamp).abs() <= 34);
     let oracle = Command::new("ffmpeg")
         .args(["-v", "error", "-c:v", "libdav1d", "-i"])
         .arg(root.join("out.webm"))
@@ -114,7 +156,7 @@ fn repeats_chunks_scaled_fade_and_gap() {
                 .map(|l| l.rsplit(',').next().unwrap().trim())
                 .collect();
             assert_eq!(hashes.len(), 120);
-            assert_ne!(hashes[4],hashes[5]);
+            assert_ne!(hashes[4], hashes[5]);
             // All holds must remain identical, including both sides of chunk keys.
             for k in 1..120 {
                 if k != 5 && !(45..61).contains(&k) {
