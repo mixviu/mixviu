@@ -3,7 +3,7 @@ use crate::{Audio, Error, MAX_RESAMPLED_FRAMES, validate_wav_header};
 use std::{
     fs::File,
     io::{BufReader, Read, Seek, SeekFrom},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 // Three hours, 48 kHz, eight channels, four bytes/sample, plus 64 KiB
@@ -31,11 +31,19 @@ pub(crate) fn regular(_: &Path) -> Result<File, Box<dyn std::error::Error>> {
     Err("path: nonblocking regular-file input requires Linux".into())
 }
 #[cfg(target_os = "linux")]
-pub(crate) fn open(base: &Path, path: &Path) -> Result<File, Box<dyn std::error::Error>> {
+pub(crate) fn resolved(file: &File) -> std::io::Result<PathBuf> {
     use std::os::fd::AsRawFd;
+    std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))
+}
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn resolved(_: &File) -> std::io::Result<PathBuf> {
+    Err(std::io::Error::other("descriptor location requires Linux /proc/self/fd"))
+}
+#[cfg(target_os = "linux")]
+pub(crate) fn open(base: &Path, path: &Path) -> Result<File, Box<dyn std::error::Error>> {
     let file = regular(&base.join(path))?;
     let metadata = file.metadata()?;
-    let resolved = std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))?;
+    let resolved = resolved(&file)?;
     if !resolved.starts_with(base) {
         return Err("path: opened source escapes timeline directory".into());
     }

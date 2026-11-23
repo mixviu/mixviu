@@ -174,7 +174,10 @@ decoded metering adds one f64 programme buffer, below the limiter budget.
 
 ## Validation and exit status
 
-Source paths must be relative to the timeline file. Absolute paths and any
+Source paths are relative to the opened timeline's real directory: its
+`/proc/self/fd` location supplies the parent, rather than the lexical parent
+of the CLI argument. A timeline reached through a symlink therefore uses and
+confines sources to the real timeline directory. Absolute source paths and any
 `..` component are refused by source index before opening any WAV. Each source
 is opened nonblocking, then its descriptor metadata must identify a regular
 file. FIFOs, devices and directories are refused. On Linux, `/proc/self/fd`
@@ -224,16 +227,21 @@ is a normal error.
 Timeline JSON uses the same nonblocking open and descriptor regular-file
 check as WAV inputs, before applying its 16 MiB descriptor-size limit.
 
-Exit 0 means an accepted master. Exit 2 reports usage, validation, I/O,
-allocation or codec errors as `av: ...`. Exit 3 means mastering was refused
-or the decoded loudness missed the target: one receipt line is still printed
-and stderr explains the refusal or absolute LU error.
-As with `mixd vfl`, a closed stdout consumer ends quietly with exit 0;
-other receipt-write errors exit 2. Diagnostic writes never panic on EPIPE.
-When an accepted master was already published, a non-EPIPE receipt-write
-failure instead exits **4** with `av: published but receipt not written: …`.
-Exit 4 means the outputs exist but the receipt was not delivered; do not retry
-blindly. Receipt-write errors for rejected, unpublished masters remain exit 2.
+Exit 2 reports usage, validation, pre-publication I/O, allocation or codec
+errors as `av: ...`. Once rendering has an outcome, that outcome takes
+precedence over receipt delivery and refusal diagnostics:
+
+| Outcome | Receipt delivered | Closed stdout (EPIPE) | Other receipt-write error |
+| --- | ---: | ---: | ---: |
+| Accepted and published | 0 | 0 | 4 |
+| Mastering refused, unpublished | 3 | 3 | 3 |
+| Decoded target missed, unpublished | 3 | 3 | 3 |
+
+EPIPE is quiet and never changes the outcome code. Refusal/miss diagnostics
+are best-effort; stderr failure never changes exit 3. Exit 4 prints
+`av: published but receipt not written: …` best-effort: outputs exist but the
+receipt was not delivered, so do not retry blindly. Diagnostic writes never
+panic on EPIPE.
 
 WAV and WebM are staged in temporary files in their destination directories.
 Each buffer is explicitly flushed and each file fsynced before publication;
