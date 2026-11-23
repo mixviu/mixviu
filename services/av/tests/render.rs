@@ -120,6 +120,7 @@ fn repeats_chunks_scaled_fade_and_gap() {
     );
     let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(receipt["frames_out"], 120);
+    assert!(receipt["peak_rss_kib"].as_u64().unwrap() > 0);
     assert!(receipt["frames_encoded"].as_u64().unwrap() < 45);
     let bytes = fs::read(root.join("out.webm")).unwrap();
     let demux = media_webm::Demuxer::new(&bytes).unwrap();

@@ -88,6 +88,9 @@ destination and publishes atomically without replacing an existing file.
 
 The JSON receipt reports frame/encode/repeat/keyframe/chunk counts, stage wall
 and process CPU seconds, effective fps, bytes and the complete audio receipt.
+`peak_rss_kib` reads the Linux process high-water RSS (`VmHWM`) at receipt time,
+covering validation, audio and all video workers, rather than summing per-thread
+resident pages. It is null if Linux process metrics are unavailable.
 `repeats` counts injected units; keyframe successors are included in encoded
 frames. CPU accounting uses Linux process counters, including encoder threads.
 The nested audio byte count is Opus payload bytes; the outer byte count is the

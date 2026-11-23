@@ -502,7 +502,7 @@ fn chunk(t: &Timeline, directories: &[Arc<Directory>], start: u64, end: u64) -> 
     for k in start..end {
         let (b, repeat) = compose(
             v,
-            &directories,
+            directories,
             &mut sources,
             &mut fade_index,
             k,
@@ -578,6 +578,11 @@ fn cpu() -> f64 {
             )
         })
         .unwrap_or(0.0)
+}
+fn peak_rss_kib() -> Option<u64> {
+    std::fs::read_to_string("/proc/self/status").ok()?.lines().find_map(|line| {
+        line.strip_prefix("VmHWM:")?.split_whitespace().next()?.parse().ok()
+    })
 }
 pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     let overall = Instant::now();
@@ -719,7 +724,7 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     mux_cpu += cpu() - c;
     let n = frame(t.duration_s);
     let receipt = serde_json::to_string(
-        &serde_json::json!({"scaling": {"filter":"bicubic_catmull_rom_gamma","frames":scaled_frames,"sum_wall_s":scale_wall_s,"mean_ms":scale_wall_s*1000.0/scaled_frames.max(1) as f64}, "frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunk_count, "parallel_chunks": t.encode.chunks, "stages": {"input": {"wall_s": input_wall, "cpu_s": input_cpu}, "audio": {"wall_s": audio_wall, "cpu_s": audio_cpu}, "video": {"wall_s": video_wall, "cpu_s": video_cpu}, "mux": {"wall_s": mux_wall, "cpu_s": mux_cpu}}, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt}),
+        &serde_json::json!({"peak_rss_kib":peak_rss_kib(), "scaling": {"filter":"bicubic_catmull_rom_gamma","frames":scaled_frames,"sum_wall_s":scale_wall_s,"mean_ms":scale_wall_s*1000.0/scaled_frames.max(1) as f64}, "frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunk_count, "parallel_chunks": t.encode.chunks, "stages": {"input": {"wall_s": input_wall, "cpu_s": input_cpu}, "audio": {"wall_s": audio_wall, "cpu_s": audio_cpu}, "video": {"wall_s": video_wall, "cpu_s": video_cpu}, "mux": {"wall_s": mux_wall, "cpu_s": mux_cpu}}, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt}),
     )?;
     pending.publish()?;
     pending.commit();
