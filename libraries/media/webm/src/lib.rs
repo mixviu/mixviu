@@ -11,6 +11,7 @@ pub enum Error {
     SizeOverflow,
     UnsupportedLacing,
     Invalid(&'static str),
+    UnsupportedCodec(String),
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -64,6 +65,10 @@ fn element<'a>(b: &'a [u8], p: &mut usize) -> Result<Element<'a>> {
             .ok_or(Error::SizeOverflow)?
     };
     let data = b.get(body..end).ok_or(Error::Truncated)?;
+    // Masters only borrow data; leaf payloads must fit the packet budget.
+    if !matches!(id, 0x18538067 | 0x1f43b675) && data.len() > 64 * 1024 * 1024 {
+        return Err(Error::Invalid("element size limit"));
+    }
     *p = end;
     Ok(Element { id, data, start })
 }

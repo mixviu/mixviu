@@ -21,10 +21,15 @@ path = "src/main.rs"
 
 [dependencies]
 media-audio = { path = "../../libraries/media/audio" }
+media-av1 = { path = "../../libraries/media/av1" }
+media-webm = { path = "../../libraries/media/webm" }
+media-opus = { path = "../../libraries/media/opus" }
+serde_json.workspace = true
+hound = "=3.5.1"
 
 [dev-dependencies]
 libc.workspace = true
-serde_json.workspace = true
+tempfile.workspace = true
 
 [lints]
 workspace = true

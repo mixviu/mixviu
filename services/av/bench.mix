@@ -1,0 +1,13 @@
+$path = "/var/tmp/av-decode-4k.webm"
+$r = run_argv(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=3840x2160:rate=30", "-frames:v", "60", "-c:v", "libsvtav1", "-preset", "12", "-threads", "4", "-svtav1-params", "lp=4", $path], {timeout: 600})
+print($r.stderr)
+if not $r.ok then exit($r.exit_code ?? 1) end
+for $features in [[], ["--no-default-features"]]
+  $r = run_argv(concat(["cargo", "run", "--release", "-p", "media-av1", "--example", "av1dec"], concat($features, ["--", $path, "4"])), {timeout: 1800})
+  print($r.stdout)
+  print($r.stderr)
+  if not $r.ok then exit($r.exit_code ?? 1) end
+end
+$r = run_argv(["ffmpeg", "-hide_banner", "-benchmark", "-c:v", "libdav1d", "-threads", "4", "-i", $path, "-f", "null", "-"], {timeout: 600})
+print($r.stderr)
+exit($r.exit_code ?? 1)
