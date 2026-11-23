@@ -263,13 +263,15 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
         codec_passes += 1;
     };
     let after = audio.measure()?;
+    // Declare the primary first so rollback drops the optional WAV before
+    // removing the WebM, preserving the publication ordering during cleanup.
+    let mut output = crate::pending::Pending::new(out)?;
     let mut wav_output = wav.map(crate::pending::Pending::new).transpose()?;
     if let Some(output) = &mut wav_output {
         let mut buffer = BufWriter::new(&mut output.file);
         audio.write_wav(&mut buffer, WavFormat::Float32)?;
         buffer.flush()?;
     }
-    let mut output = crate::pending::Pending::new(out)?;
     let mut writer = media_webm::Writer::audio(
         BufWriter::new(&mut output.file),
         media_webm::Opus {
