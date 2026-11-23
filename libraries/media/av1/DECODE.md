@@ -1,12 +1,16 @@
 AV1 decoding lives in `media-av1` beside the encoder: the codec boundary is
-independent of containers, CLI I/O and the future player. rav1d 1.1.0 is BSD-2-Clause
-(https://github.com/memorysafety/rav1d/tree/v1.1.0). Its x86 build script runs
+independent of containers, CLI I/O and the future player. rav1d is BSD-2-Clause,
+pinned to upstream revision `2e7216c20ac2a75de204d6c8d7268b75a45959b4`
+(https://github.com/memorysafety/rav1d/tree/2e7216c20ac2a75de204d6c8d7268b75a45959b4).
+Its x86 build script runs
 nasm on `.asm` files and uses cc to archive those objects, with no C sources.
 The default `decode-asm` feature enables rav1d assembly; `asm` also enables the
 encoder's existing optional assembly. Build
 with `--no-default-features` to measure the pure Rust paths.
-Both upstream bit-depth features must be built: rav1d 1.1.0 otherwise references
-missing 16-bit assembly symbols. The wrapper still refuses high-bit-depth input.
+The released 1.1.0 aborts on corrupted input during error teardown and cannot
+meet this API's error contract. The pinned upstream fixes that teardown; the
+mutation regression remains required. Both upstream bit-depth features are built;
+the wrapper still refuses high-bit-depth input before picture allocation.
 
 `Decoder::submit` accepts sized, low-overhead OBUs and a caller timestamp in
 nanoseconds. The callback receives tightly packed, owned Y/U/V planes, including

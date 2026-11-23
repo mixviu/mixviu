@@ -5,7 +5,7 @@ use rav1d::include::dav1d::{
     dav1d::{Dav1dContext, Dav1dSettings},
     picture::Dav1dPicture,
 };
-use rav1d::src::lib::*;
+use rav1d::*;
 use std::ptr::NonNull;
 
 #[derive(Debug)]
