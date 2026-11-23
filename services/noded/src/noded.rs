@@ -5751,8 +5751,32 @@ mod tests {
         use crate::routing::RoutingAuthority;
         use mesh::PeerConfig;
 
+        // Epoch diagnostics are process-wide. Own this peer key and seed it
+        // through the real admission path before taking the peers snapshot.
+        const PEER: &str = "peers-report-epoch-fixture";
+        let mut challenge = bus::wire::BusMessage::new().with_header("id", "peers-report");
+        challenge.body = serde_json::json!({
+            "verifying_broker_node": PEER,
+            "mesh_fqdn": "example.internal",
+            "inventory_epoch": 7,
+            "session_id": "AQEBAQEBAQEBAQEBAQEBAQ==",
+            "server_nonce": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=",
+        })
+        .to_string();
+        assert!(
+            mesh::build_admit_response(
+                &challenge,
+                "alpha",
+                &Some([9; 32]),
+                PEER,
+                "example.internal",
+                7,
+            )
+            .is_some()
+        );
+
         let etc_roster = vec![PeerConfig {
-            name: "beta".into(),
+            name: PEER.into(),
             mesh_ip: "192.0.2.99".parse().unwrap(),
             noded_port: 4300,
         }];
@@ -5772,7 +5796,7 @@ mod tests {
                     noded_port: 4200,
                 },
                 RoutingMember::ActiveBus {
-                    name: "beta".into(),
+                    name: PEER.into(),
                     mesh_ip: "192.0.2.6".parse().unwrap(),
                     noded_port: 4300,
                 },
@@ -5787,12 +5811,12 @@ mod tests {
         assert_eq!(body["node"], "alpha");
         assert_eq!(body["wg_ip"], "192.0.2.5");
         assert_eq!(body["port"], 4200);
-        assert_eq!(body["peers"][0]["name"], "beta");
+        assert_eq!(body["peers"][0]["name"], PEER);
         assert_eq!(body["peers"][0]["wg_ip"], "192.0.2.6");
         assert_eq!(body["peers"][0]["port"], 4300);
         assert_eq!(
             body["peers"][0]["challenge_epoch"],
-            serde_json::json!(mesh::peer_challenge_epoch("beta"))
+            serde_json::json!(7)
         );
         assert_eq!(body["source"], "signed-inventory");
         assert_eq!(body["authority"]["epoch"], 7);
@@ -5812,7 +5836,7 @@ mod tests {
                 verify_keys: vec![],
                 members: vec![],
                 routing_view: vec![RoutingMember::ActiveBus {
-                    name: "beta".into(),
+                    name: PEER.into(),
                     mesh_ip: "192.0.2.6".parse().unwrap(),
                     noded_port: 4300,
                 }],
@@ -5840,6 +5864,8 @@ mod tests {
         assert_eq!(fallback["source"], "etc-roster-fallback");
         assert_eq!(fallback["peers"][0]["wg_ip"], "192.0.2.99");
         assert_eq!(fallback["peers"][0]["port"], 4300);
+        assert_eq!(fallback["peers"][0]["name"], PEER);
+        assert_eq!(fallback["peers"][0]["challenge_epoch"], 7);
         assert!(fallback.get("authority").is_none());
     }
 
