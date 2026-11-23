@@ -65,11 +65,11 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> timeline::Result<u8> {
     let mut stdout = io::stdout().lock();
     if let Err(e) =
         writeln!(stdout, "{}", serde_json::to_string(&receipt)?).and_then(|()| stdout.flush())
+        && outcome == 0
+        && e.kind() != io::ErrorKind::BrokenPipe
     {
-        if outcome == 0 && e.kind() != io::ErrorKind::BrokenPipe {
-            let _ = diagnostic(format_args!("published but receipt not written: {e}"));
-            return Ok(4);
-        }
+        let _ = diagnostic(format_args!("published but receipt not written: {e}"));
+        return Ok(4);
     }
     if receipt.refused {
         let _ = diagnostic(format_args!(
