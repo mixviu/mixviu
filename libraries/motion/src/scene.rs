@@ -12,20 +12,22 @@ use serde_json::Value;
 pub fn paint_preset(name: &str) -> Result<Preset, &'static str> {
     if let Some(legacy) = name.strip_prefix("legacy-") {
         static LEGACY: std::sync::OnceLock<Vec<Preset>> = std::sync::OnceLock::new();
-        return Ok(LEGACY
+        return LEGACY
             .get_or_init(|| {
                 crate::load_presets(include_str!("../legacy-presets.json")).expect("frozen table")
             })
             .iter()
             .find(|p| p.name == legacy)
-            .cloned().ok_or("unknown legacy paint preset")?);
+            .cloned()
+            .ok_or("unknown legacy paint preset");
     }
     static TABLE: std::sync::OnceLock<Vec<Preset>> = std::sync::OnceLock::new();
-    Ok(TABLE
+    TABLE
         .get_or_init(crate::presets)
         .iter()
         .find(|p| p.name == name)
-        .cloned().ok_or("unknown paint preset")?)
+        .cloned()
+        .ok_or("unknown paint preset")
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

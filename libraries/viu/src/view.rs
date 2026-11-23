@@ -3189,20 +3189,35 @@ fn natural_size_key(node: &Node) -> egui::Id {
 }
 // Height caches are only queried by the opt-in layout paths. Descendant hashes
 // are prepared once per scene/model revision, never by traversing per frame.
-fn layout_height_key(ui: &egui::Ui, node: &Node, route: &str, width: f32, palette: u64) -> egui::Id {
+fn layout_height_key(
+    ui: &egui::Ui,
+    node: &Node,
+    route: &str,
+    width: f32,
+    palette: u64,
+) -> egui::Id {
     natural_size_key(node).with((
-        "layout-height", route, node.ports.get("__layout_revision").and_then(Value::as_u64),
-        bounded_layout(width,1e6).to_bits(), ui.ctx().pixels_per_point().to_bits(),
-        font_state_key(ui), palette,
+        "layout-height",
+        route,
+        node.ports.get("__layout_revision").and_then(Value::as_u64),
+        bounded_layout(width, 1e6).to_bits(),
+        ui.ctx().pixels_per_point().to_bits(),
+        font_state_key(ui),
+        palette,
     ))
 }
 
 // Authored height is an inner/content height and takes priority. A parent's
 // stretch assignment is an outer height, so subtract this column's padding.
 fn column_inner_height(node: &Node, assigned: Option<f32>) -> Option<f32> {
-    num(node,"height").or_else(||assigned.map(|h|
-        (h-node_padding(node,"padding_top")-node_padding(node,"padding_bottom")).max(0.)))
-        .map(|h|bounded_layout(h,1e6))
+    num(node, "height")
+        .or_else(|| {
+            assigned.map(|h| {
+                (h - node_padding(node, "padding_top") - node_padding(node, "padding_bottom"))
+                    .max(0.)
+            })
+        })
+        .map(|h| bounded_layout(h, 1e6))
 }
 #[derive(Clone)]
 struct MeasurementCache<T> {
@@ -3588,21 +3603,47 @@ fn prepare_measurements(
         };
         node.ports.insert("__measure_key".into(), json!(hash));
     }
-    if nodes.values().any(|n| ["equal_height","stretch_last"].iter().any(|p|n.ports.get(*p)==Some(&Value::Bool(true)))) {
-        fn revision(id: &str, nodes: &BTreeMap<String,Node>, memo: &mut BTreeMap<String,u64>, depth: usize) -> u64 {
-            use std::hash::{Hash,Hasher};
-            if let Some(hash)=memo.get(id){return *hash;}
-            let mut h=std::collections::hash_map::DefaultHasher::new();
-            id.hash(&mut h);
-            if let Some(n)=nodes.get(id) {
-                n.ports.get("__measure_key").and_then(Value::as_u64).hash(&mut h);
-                if depth<128 {for child in children(n) {revision(child,nodes,memo,depth+1).hash(&mut h);}}
+    if nodes.values().any(|n| {
+        ["equal_height", "stretch_last"]
+            .iter()
+            .any(|p| n.ports.get(*p) == Some(&Value::Bool(true)))
+    }) {
+        fn revision(
+            id: &str,
+            nodes: &BTreeMap<String, Node>,
+            memo: &mut BTreeMap<String, u64>,
+            depth: usize,
+        ) -> u64 {
+            use std::hash::{Hash, Hasher};
+            if let Some(hash) = memo.get(id) {
+                return *hash;
             }
-            let hash=h.finish();memo.insert(id.into(),hash);hash
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            id.hash(&mut h);
+            if let Some(n) = nodes.get(id) {
+                n.ports
+                    .get("__measure_key")
+                    .and_then(Value::as_u64)
+                    .hash(&mut h);
+                if depth < 128 {
+                    for child in children(n) {
+                        revision(child, nodes, memo, depth + 1).hash(&mut h);
+                    }
+                }
+            }
+            let hash = h.finish();
+            memo.insert(id.into(), hash);
+            hash
         }
-        let mut hashes=BTreeMap::new();
-        for id in nodes.keys(){revision(id,nodes,&mut hashes,0);}
-        for (id,hash) in hashes {if let Some(n)=nodes.get_mut(&id){n.ports.insert("__layout_revision".into(),json!(hash));}}
+        let mut hashes = BTreeMap::new();
+        for id in nodes.keys() {
+            revision(id, nodes, &mut hashes, 0);
+        }
+        for (id, hash) in hashes {
+            if let Some(n) = nodes.get_mut(&id) {
+                n.ports.insert("__layout_revision".into(), json!(hash));
+            }
+        }
     }
 }
 #[cfg(test)]

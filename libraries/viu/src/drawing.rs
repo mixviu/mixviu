@@ -29,7 +29,10 @@ pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
     let Ok(primitives) = serde_json::from_value::<Vec<Primitive>>(raw.clone()) else {
         return;
     };
-    let legacy = node.ports.get("motion_profile").and_then(serde_json::Value::as_str)
+    let legacy = node
+        .ports
+        .get("motion_profile")
+        .and_then(serde_json::Value::as_str)
         == Some("legacy-sting");
     let mut shapes = Vec::new();
     let mut shadow_shapes = Vec::new();
@@ -43,7 +46,11 @@ pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
         let mut opacity = 1.;
         let mut fraction = 1.;
         for e in &p.effects {
-            let name = if legacy { format!("legacy-{}", e.preset) } else { e.preset.clone() };
+            let name = if legacy {
+                format!("legacy-{}", e.preset)
+            } else {
+                e.preset.clone()
+            };
             let Ok(preset) = motion::scene::paint_preset(&name) else {
                 return;
             };

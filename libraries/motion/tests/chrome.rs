@@ -3,14 +3,14 @@ use serde_json::Value;
 
 #[test]
 fn paint_effect_resolves_the_entire_current_and_internal_legacy_tables() {
-    let old=motion::load_presets(include_str!("../legacy-presets.json")).unwrap();
+    let old = motion::load_presets(include_str!("../legacy-presets.json")).unwrap();
     for p in motion::presets() {
-        let resolved=motion::scene::paint_preset(&p.name).unwrap();
-        let legacy=motion::scene::paint_preset(&format!("legacy-{}",p.name)).unwrap();
-        let frozen=old.iter().find(|o|o.name==p.name).unwrap();
-        for t in [0.,0.1,0.4,0.7,1.,3.] {
-            assert_eq!(resolved.sample(t),p.sample(t),"{}",p.name);
-            assert_eq!(legacy.sample(t),frozen.sample(t),"legacy-{}",p.name);
+        let resolved = motion::scene::paint_preset(&p.name).unwrap();
+        let legacy = motion::scene::paint_preset(&format!("legacy-{}", p.name)).unwrap();
+        let frozen = old.iter().find(|o| o.name == p.name).unwrap();
+        for t in [0., 0.1, 0.4, 0.7, 1., 3.] {
+            assert_eq!(resolved.sample(t), p.sample(t), "{}", p.name);
+            assert_eq!(legacy.sample(t), frozen.sample(t), "legacy-{}", p.name);
         }
     }
     assert!(motion::scene::paint_preset("legacy-unknown").is_err());
