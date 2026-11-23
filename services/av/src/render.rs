@@ -1,7 +1,7 @@
 use media_av1::{Encoder, Settings, Target, reference::ReferenceTracker};
 use media_frame::Bgra;
-use std::sync::Arc;
 use serde::Deserialize;
+use std::sync::Arc;
 use std::{
     ffi::OsString,
     io::{BufWriter, Read},
@@ -93,6 +93,7 @@ impl Timeline {
             return refuse("segments_limit");
         }
         let e = &self.encode;
+        if e.threads == 0 || e.threads > 64 || e.tile_cols > 64 || e.tile_rows > 64 || !e.tile_cols.is_power_of_two() || !e.tile_rows.is_power_of_two() { return refuse("encode_tiles_threads"); }
         if e.speed > 10
             || e.chunks == 0
             || e.chunks > 64
@@ -122,7 +123,9 @@ impl Timeline {
             if r.fps() != 30 || !r.complete() {
                 return refuse("segment_complete_30fps_required");
             }
-            if s.to_slot > r.frame_count()? { return refuse("segment_trim_outside_vfl"); }
+            if s.to_slot > r.frame_count()? {
+                return refuse("segment_trim_outside_vfl");
+            }
             let start = frame(s.at_s);
             if previous.is_none() && start != 0 {
                 return refuse("gap_before_first_segment");
@@ -155,6 +158,7 @@ impl Timeline {
             {
                 return refuse("crossfade_requires_overlap");
             }
+            if v.segments.get(j+1).is_some_and(|s| frame(s.at_s) < frame(f.at_s+f.duration_s)) { return refuse("crossfade_third_segment"); }
             if i > 0
                 && frame(v.crossfades[i - 1].at_s + v.crossfades[i - 1].duration_s) > frame(f.at_s)
             {
@@ -229,13 +233,22 @@ fn compose(v: &Video, sources: &mut [Source], k: u64) -> Result<(Arc<Bgra>, bool
     let s = &v.segments[j];
     let slot = (s.from_slot + k - frame(s.at_s)).min(s.to_slot - 1);
     let (mut b, mut repeat) = sources[j].get(slot, v.width, v.height)?;
-    if let Some(f) = v.crossfades.iter().find(|f| k >= frame(f.at_s) && k < frame(f.at_s + f.duration_s)) {
-        let old = &v.segments[j-1];
-        let old_slot = (old.from_slot + k-frame(old.at_s)).min(old.to_slot-1);
-        let (a, _) = sources[j-1].get(old_slot, v.width, v.height)?;
+    if let Some(f) = v
+        .crossfades
+        .iter()
+        .find(|f| k >= frame(f.at_s) && k < frame(f.at_s + f.duration_s))
+    {
+        let old = &v.segments[j - 1];
+        let old_slot = (old.from_slot + k - frame(old.at_s)).min(old.to_slot - 1);
+        let (a, _) = sources[j - 1].get(old_slot, v.width, v.height)?;
         let len = frame(f.duration_s);
-        let weight = if len == 1 { 255 } else { ((k-frame(f.at_s))*255/(len-1)) as u8 };
-        b = Arc::new(a.crossfade(&b, weight)?); repeat = false;
+        let weight = if len == 1 {
+            255
+        } else {
+            ((k - frame(f.at_s)) * 255 / (len - 1)) as u8
+        };
+        b = Arc::new(a.crossfade(&b, weight)?);
+        repeat = false;
     }
     Ok((b, repeat && k != frame(s.at_s)))
 }
@@ -244,19 +257,34 @@ fn compose(v: &Video, sources: &mut [Source], k: u64) -> Result<(Arc<Bgra>, bool
 pub fn reference(path: &Path, out: impl std::io::Write) -> Result<()> {
     use std::io::Write;
     let t: Timeline = serde_json::from_reader(std::fs::File::open(path)?)?;
-    let base = path.parent().unwrap_or(Path::new(".")); t.validate(base)?;
+    let base = path.parent().unwrap_or(Path::new("."));
+    t.validate(base)?;
     let v = &t.video;
-    let mut sources = v.segments.iter().map(|s| Source::new(base,s)).collect::<Result<Vec<_>>>()?;
+    let mut sources = v
+        .segments
+        .iter()
+        .map(|s| Source::new(base, s))
+        .collect::<Result<Vec<_>>>()?;
     let mut out = BufWriter::new(out);
-    writeln!(out, "YUV4MPEG2 W{} H{} F30:1 Ip A1:1 C420jpeg",v.width,v.height)?;
+    writeln!(
+        out,
+        "YUV4MPEG2 W{} H{} F30:1 Ip A1:1 C420jpeg",
+        v.width, v.height
+    )?;
     let mut yuv = None;
     for k in 0..frame(t.duration_s) {
-        let (b, repeat) = compose(v,&mut sources,k)?;
-        if !repeat { yuv = Some(b.to_yuv420()); }
+        let (b, repeat) = compose(v, &mut sources, k)?;
+        if !repeat {
+            yuv = Some(b.to_yuv420());
+        }
         let yuv = yuv.as_ref().ok_or("missing_reference_frame")?;
-        out.write_all(b"FRAME\n")?; out.write_all(&yuv.y)?; out.write_all(&yuv.u)?; out.write_all(&yuv.v)?;
+        out.write_all(b"FRAME\n")?;
+        out.write_all(&yuv.y)?;
+        out.write_all(&yuv.u)?;
+        out.write_all(&yuv.v)?;
     }
-    out.flush()?; Ok(())
+    out.flush()?;
+    Ok(())
 }
 fn chunk(t: &Timeline, base: &Path, start: u64, end: u64) -> Result<Chunk> {
     let v = &t.video;
@@ -281,7 +309,7 @@ fn chunk(t: &Timeline, base: &Path, start: u64, end: u64) -> Result<Chunk> {
     let mut encoded = Vec::new();
     let mut positions = Vec::new();
     for k in start..end {
-        let (b, repeat) = compose(v,&mut sources,k)?;
+        let (b, repeat) = compose(v, &mut sources, k)?;
         // The displayed keyframe is not showable. Submit its first successor too.
         if !repeat || k < start + 2 {
             let p = enc.prepare(&b.to_yuv420())?;
@@ -299,11 +327,14 @@ fn chunk(t: &Timeline, base: &Path, start: u64, end: u64) -> Result<Chunk> {
     let config = media_webm::av1_config(&encoded.first().ok_or("empty_chunk")?.data)?;
     let mut tracker = ReferenceTracker::default();
     let mut input = encoded.into_iter();
+    let mut input_index = 0;
     let mut packets = Vec::new();
     for (i, position) in positions.into_iter().enumerate() {
         let k = start + i as u64;
         let packet = if position.is_some() {
             let mut p = input.next().ok_or("encoder_packet_count")?;
+            if p.pts != input_index || p.duration != 1 { return refuse("reordered_encoder_packets"); }
+            input_index += 1;
             let key = tracker.observe(&p.data)?;
             if key != p.key_frame || (i == 0) != key {
                 return refuse("unexpected_keyframe");
@@ -379,6 +410,7 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     let audio_wall = wall.elapsed().as_secs_f64();
     let audio_cpu = cpu() - c;
     if a.receipt.refused || !a.receipt.target_reached {
+        eprintln!("av: mastering refused");
         println!("{}", serde_json::to_string(&a.receipt)?);
         return Ok(3);
     }

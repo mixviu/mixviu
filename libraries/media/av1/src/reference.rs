@@ -164,16 +164,45 @@ mod tests {
     #[test]
     fn emitted_headers_determine_slots_and_sequence() {
         fn packets(width: usize) -> Vec<crate::Packet> {
-            let mut e = crate::Encoder::new(crate::Settings { width, height: 32, fps_num: 30, fps_den: 1, speed: 10, target: crate::Target::Quality(100), key_interval: 1000, tile_cols: 1, tile_rows: 1, threads: 1 }).unwrap();
-            let f = e.prepare(&media_frame::Bgra::solid(width,32,[80,90,110,255]).unwrap().to_yuv420()).unwrap();
+            let mut e = crate::Encoder::new(crate::Settings {
+                width,
+                height: 32,
+                fps_num: 30,
+                fps_den: 1,
+                speed: 10,
+                target: crate::Target::Quality(100),
+                key_interval: 1000,
+                tile_cols: 1,
+                tile_rows: 1,
+                threads: 1,
+            })
+            .unwrap();
+            let f = e
+                .prepare(
+                    &media_frame::Bgra::solid(width, 32, [80, 90, 110, 255])
+                        .unwrap()
+                        .to_yuv420(),
+                )
+                .unwrap();
             let mut out = Vec::new();
-            for _ in 0..12 { out.extend(e.submit(&f).unwrap()); }
-            out.extend(e.finish().unwrap()); out
+            for _ in 0..12 {
+                out.extend(e.submit(&f).unwrap());
+            }
+            out.extend(e.finish().unwrap());
+            out
         }
-        let p = packets(32); let mut t = ReferenceTracker::default();
-        assert!(t.observe(&p[0].data).unwrap()); assert!(t.repeat().is_err());
-        for packet in &p[1..] { assert!(!t.observe(&packet.data).unwrap()); assert_eq!(t.repeat().unwrap().len(),5); }
-        assert_eq!(t.observe(&packets(64)[0].data).unwrap_err().0,"sequence_header_mismatch");
+        let p = packets(32);
+        let mut t = ReferenceTracker::default();
+        assert!(t.observe(&p[0].data).unwrap());
+        assert!(t.repeat().is_err());
+        for packet in &p[1..] {
+            assert!(!t.observe(&packet.data).unwrap());
+            assert_eq!(t.repeat().unwrap().len(), 5);
+        }
+        assert_eq!(
+            t.observe(&packets(64)[0].data).unwrap_err().0,
+            "sequence_header_mismatch"
+        );
     }
     #[test]
     fn unknown_state_refused() {

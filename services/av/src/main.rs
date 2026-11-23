@@ -1,5 +1,5 @@
-use std::process::ExitCode;
 use av::render;
+use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let mut args = std::env::args_os().skip(1);

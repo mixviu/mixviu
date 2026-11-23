@@ -704,6 +704,11 @@ name = "av"
 version = "0.1.2"
 dependencies = [
  "media-audio",
+ "media-av1",
+ "media-frame",
+ "media-vfl",
+ "media-webm",
+ "serde",
  "serde_json",
 ]
 
