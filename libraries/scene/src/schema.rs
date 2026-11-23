@@ -306,6 +306,9 @@ pub(crate) fn schema(f: &str) -> Option<Vec<Port>> {
         ports.push(p("primitives", "list", true, None));
         ports.push(pn("sample_time", false, None));
         ports.push(p("shadow", "object", false, None));
+        let mut profile = p("motion_profile", "string", false, None);
+        profile.enum_values = &["current", "legacy-sting"];
+        ports.push(profile);
     }
     if f == "text" {
         ports.push(pn("letter_spacing", false, Some(-100.0)));

@@ -13,7 +13,7 @@ fn show_deck()
   for $id in keys($build)
     if $build[$id].age!=nil then
       $anim=$build[$id].anim
-      if $state.s.deck.slides[$state.s.slide].kind=="sting" and contains(["fade","zoom","wipe"],$anim) then $anim="legacy-"..$anim end
+      if $state.s.deck.slides[$state.s.slide].kind=="sting" then $anim="legacy-"..$anim end
       send "viu-local" "motion.seek" body={preset:$anim,time:$build[$id].age}
       if $rc!=0 then raise("DECK_MOTION","native motion sampling failed") end
       $build[$id].opacity=$reply.opacity;$build[$id].offset=$reply.offset

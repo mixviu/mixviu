@@ -1269,7 +1269,7 @@ impl SceneView {
                         let mut top=origin.y;
                         for group in active.chunks(columns) {
                             let equal=node.ports.get("equal_height")==Some(&Value::Bool(true));
-                            let keys:Vec<_>=group.iter().enumerate().map(|(i,c)|natural_size_key(&nodes[*c]).with(("equal-grid",widths[i].to_bits(),ui.ctx().pixels_per_point().to_bits()))).collect();
+                            let keys:Vec<_>=if equal {group.iter().enumerate().map(|(i,c)|layout_height_key(ui,&nodes[*c],&format!("{key}/{c}"),widths[i],self.frame_palette)).collect()}else{Vec::new()};
                             let cross=if equal {keys.iter().filter_map(|k|measure_get::<f32>(ui,*k)).fold(0.,f32::max)}else{0.};
 
                             let mut height=0.0_f32;
@@ -1279,11 +1279,12 @@ impl SceneView {
                                 let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
                                 cell.set_width(width);
                                 cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(rect.left(),ui.clip_rect().top()),egui::pos2(rect.right(),ui.clip_rect().bottom()))));
-                                if equal {self.stretch_heights.insert((*child).into(),bounded_layout(cross,1e6));}
+                                let stretch=equal && num(&nodes[*child],"height").is_none();
+                                if stretch {self.stretch_heights.insert((*child).into(),bounded_layout(cross,1e6));}
                                 self.node(&mut cell,child,nodes,route,depth+1,events);
                                 if equal {
-                                    self.stretch_heights.remove(*child);
-                                    let natural=bounded_layout(self.natural_heights.get(*child).copied().unwrap_or(cell.min_rect().height()),1e6);
+                                    if stretch {self.stretch_heights.remove(*child);}
+                                    let natural=bounded_layout(cell.min_rect().height(),1e6);
                                     let previous=measure_get::<f32>(ui,keys[column]);
                                     if previous.is_none_or(|p|(p-natural).abs()>0.01){measure_put(ui,keys[column],natural);ui.ctx().request_discard("equal grid height");}
                                 }
@@ -1468,20 +1469,24 @@ impl SceneView {
                                     ));
                                 }
                                 let assigned_height = self.stretch_heights.get(id).copied();
-                                let last_key=natural_size_key(node).with(("stretch-last",ui.available_width().to_bits(),ui.ctx().pixels_per_point().to_bits()));
-                                let previous_content=measure_get::<f32>(ui,last_key).unwrap_or(0.);
-                                let last=if node.ports.get("stretch_last")==Some(&Value::Bool(true)){children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).last()}else{None};
+                                let stretch_last=node.ports.get("stretch_last")==Some(&Value::Bool(true));
+                                let last_key=stretch_last.then(||layout_height_key(ui,node,&key,ui.available_width(),self.frame_palette));
+                                let previous_last=last_key.and_then(|k|measure_get::<(f32,f32)>(ui,k));
+                                let last=if stretch_last {children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).last()}else{None};
+                                let mut last_natural=0.;
                                 let mut draw = |ui: &mut egui::Ui| {
                                     for child in children(node) {
+                                        if Some(child)!=last {self.node(ui,child,nodes,route,depth+1,events);continue;}
                                         let old=self.stretch_heights.get(child).copied();
-                                        if Some(child)==last && previous_content>0. {
-                                            let budget=assigned_height.or(num(node,"height")).unwrap_or(0.)-node_padding(node,"padding_top")-node_padding(node,"padding_bottom");
-                                            let last_growth=bounded_layout((budget-previous_content).max(0.),1e6);
-                                            let natural=self.natural_heights.get(child).copied().unwrap_or(0.);
-                                            self.stretch_heights.insert(child.into(),bounded_layout(natural+last_growth,1e6));
+                                        if let Some((content,natural))=previous_last {
+                                            let budget=column_inner_height(node,assigned_height).unwrap_or(content);
+                                            let growth=bounded_layout((budget-content).max(0.),1e6);
+                                            if growth>0. {self.stretch_heights.insert(child.into(),bounded_layout(natural+growth,1e6));}
                                         }
-                                        self.node(ui, child, nodes, route, depth + 1, events);
-                                        if Some(child)==last {if let Some(h)=old{self.stretch_heights.insert(child.into(),h);}else{self.stretch_heights.remove(child);}}
+                                        // A scope response measures the childs own natural allocation,
+                                        // including leaves and zero-height nodes, independent of paint stretch.
+                                        last_natural=bounded_layout(ui.scope(|ui|self.node(ui,child,nodes,route,depth+1,events)).response.rect.height(),1e6);
+                                        if let Some(h)=old{self.stretch_heights.insert(child.into(),h);}else{self.stretch_heights.remove(child);}
                                     }
                                 };
                                 if node.family == "row" {
@@ -1502,7 +1507,7 @@ impl SceneView {
                                                 } else {self.node(ui,child,nodes,route,depth+1,events);}
                                             }
                                         });
-                                    } else if text(node,"justify")=="between" {
+                                    } else if text(node,"justify")=="between" && node.ports.get("equal_height")!=Some(&Value::Bool(true)) {
                                         let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
                                         ui.horizontal(|ui| {if let Some(first)=active.first(){self.node(ui,first,nodes,route,depth+1,events);ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|{for child in active.iter().skip(1).rev(){self.node(ui,child,nodes,route,depth+1,events);}});}});
                                     } else if children(node).any(|child|nodes.get(child).is_some_and(|n|num(n,"grow").unwrap_or(0.)>0.)) {
@@ -1585,7 +1590,7 @@ impl SceneView {
                                         }
                                         let height=(y-origin.y-gap.y).max(0.);
                                         ui.allocate_space(egui::vec2(if node.ports.get("fill")==Some(&Value::Bool(true)){available}else{total_width},height));
-                                    } else if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) {
+                                    } else if node.ports.get("wrap").and_then(Value::as_bool)==Some(true) && node.ports.get("equal_height")!=Some(&Value::Bool(true)) {
                                         ui.horizontal_wrapped(|ui| {
                                             for child in children(node) {
                                                 let Some(control)=nodes.get(child) else {continue};
@@ -1600,7 +1605,7 @@ impl SceneView {
                                                 } else {self.node(ui,child,nodes,route,depth+1,events);}
                                             }
                                         });
-                                    } else if text(node,"justify")=="between" && node.ports.contains_key("cross_align") {
+                                    } else if text(node,"justify")=="between" && node.ports.contains_key("cross_align") && node.ports.get("equal_height")!=Some(&Value::Bool(true)) {
                                         let active:Vec<_>=children(node).filter(|child|nodes.get(*child).is_some_and(|n|n.ports.get("hidden").and_then(Value::as_bool)!=Some(true))).collect();
                                         let fill_count=active.iter().filter(|c|nodes[**c].ports.get("fill")==Some(&Value::Bool(true))).count();
                                         let fixed:f32=active.iter().filter(|c|nodes[**c].ports.get("fill")!=Some(&Value::Bool(true))).map(|c|intrinsic_text_width(ui,&nodes[*c],nodes,&self.tree.model,&mut self.numbers,false,0)).sum();
@@ -1624,7 +1629,7 @@ impl SceneView {
                                             x+=size.x+gap;if index==0{x+=split_gap;}
                                         }
                                         ui.allocate_space(egui::vec2(available,height));
-                                    } else if text(node,"justify")=="between" {
+                                    } else if text(node,"justify")=="between" && node.ports.get("equal_height")!=Some(&Value::Bool(true)) {
                                         ui.horizontal(|ui|{let active:Vec<_>=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();if let Some(first)=active.first(){self.node(ui,first,nodes,route,depth+1,events);ui.with_layout(egui::Layout::right_to_left(egui::Align::Center),|ui|for child in active.iter().skip(1).rev(){self.node(ui,child,nodes,route,depth+1,events);});}});
                                     } else if node.ports.get("equal_height")==Some(&Value::Bool(true)) || node.ports.contains_key("cross_align") || children(node).any(|c|nodes.get(c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)) && ["grow","shrink","basis"].iter().any(|p|num(n,p).unwrap_or(0.)>0.))) {
                                         let active:Vec<_>=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).collect();
@@ -1650,23 +1655,25 @@ impl SceneView {
                                         if based>budget && based>0. {for (i,c) in active.iter().enumerate() {if nodes[*c].ports.contains_key("basis") {widths[i]*=budget/based;}}}
                                         for (i,c) in active.iter().enumerate() {widths[i]=widths[i].max(num(&nodes[*c],"min_width").unwrap_or(0.)).min(num(&nodes[*c],"max_width").unwrap_or(1e6));}
                                         let origin=ui.available_rect_before_wrap().min;let row_id=ui.scope_id();
-                                        let cross=active.iter().map(|c|ui.ctx().data(|d|d.get_temp::<f32>(row_id.with(("flex-height",c)))).unwrap_or(0.)).fold(if node.ports.contains_key("cross_align"){num(node,"height").unwrap_or(0.)}else{0.},f32::max);
+                                        let equal=node.ports.get("equal_height")==Some(&Value::Bool(true));
+                                        let equal_keys:Vec<_>=if equal{active.iter().zip(&widths).map(|(c,w)|layout_height_key(ui,&nodes[*c],&format!("{key}/{c}"),*w,self.frame_palette)).collect()}else{Vec::new()};
+                                        let cross=bounded_layout(active.iter().enumerate().map(|(i,c)|if equal{measure_get::<f32>(ui,equal_keys[i]).unwrap_or(0.)}else{ui.ctx().data(|d|d.get_temp::<f32>(row_id.with(("flex-height",c)))).unwrap_or(0.)}).fold(if node.ports.contains_key("cross_align"){num(node,"height").unwrap_or(0.)}else{0.},f32::max),1e6);
                                         let occupied=widths.iter().sum::<f32>()+ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32;
                                         let mut x=origin.x+if text(node,"align")=="end"{(bounded_layout(ui.available_width(),1e6)-occupied).max(0.)}else{0.};let mut height=0.0_f32;
-                                        for (child,width) in active.iter().zip(&widths) {
-                                            let cache=row_id.with(("flex-height",child));let previous=ui.ctx().data(|d|d.get_temp::<f32>(cache)).unwrap_or(0.);
+                                        for (i,(child,width)) in active.iter().zip(&widths).enumerate() {
+                                            let cache=if equal{equal_keys[i]}else{row_id.with(("flex-height",child))};let previous=if equal{measure_get::<f32>(ui,cache).unwrap_or(0.)}else{ui.ctx().data(|d|d.get_temp::<f32>(cache)).unwrap_or(0.)};
                                             let top=origin.y+match if node.ports.get("equal_height")==Some(&Value::Bool(true)){"start"}else{cross_align(node,if text(node,"align")=="center" || (!has_grow && text(node,"align")!="stretch"){"center"}else{"start"})}{"center"=>(cross-previous).max(0.)/2.,"end"=>(cross-previous).max(0.),_=>0.};
                                             let rect=egui::Rect::from_min_size(egui::pos2(x,top),egui::vec2(*width,finite_available_height(ui).max(previous)));
                                             let mut cell=ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::top_down(egui::Align::Min)));
                                             cell.set_max_width(*width);
                                             cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(x,ui.clip_rect().top()),egui::pos2(x+width,ui.clip_rect().bottom()))));
-                                            let stretch=node.ports.get("equal_height")==Some(&Value::Bool(true)) || (cross_align(node,text(node,"align"))=="stretch" && num(&nodes[*child],"height").is_none());
-                                            if stretch {self.stretch_heights.insert((*child).into(),cross);}
+                                            let stretch=(equal || cross_align(node,text(node,"align"))=="stretch") && num(&nodes[*child],"height").is_none();
+                                            if stretch {self.stretch_heights.insert((*child).into(),bounded_layout(cross,1e6));}
                                             if nodes[*child].family=="spacer"{cell.allocate_space(egui::vec2(*width,0.));self.geometry.insert((*child).into(),egui::Rect::from_min_size(rect.min,egui::vec2(*width,0.)));}else{self.node(&mut cell,child,nodes,route,depth+1,events);}
                                             if stretch {self.stretch_heights.remove(*child);}
                                             let actual=cell.min_rect().height();
-                                            let natural=if stretch{self.natural_heights.get(*child).copied().unwrap_or(actual)}else{actual};
-                                            if (natural-previous).abs()>0.01 {ui.ctx().data_mut(|d|d.insert_temp(cache,natural));ui.ctx().request_discard("flex cross size");}
+                                            let natural=bounded_layout(if equal{actual}else if stretch{self.natural_heights.get(*child).copied().unwrap_or(actual)}else{actual},1e6);
+                                            if (natural-previous).abs()>0.01 || (equal && measure_get::<f32>(ui,cache).is_none()) {if equal{measure_put(ui,cache,natural);}else{ui.ctx().data_mut(|d|d.insert_temp(cache,natural));}ui.ctx().request_discard("flex cross size");}
 
                                             height=height.max(actual);x+=width+ui.spacing().item_spacing.x;
                                         }
@@ -1688,17 +1695,17 @@ impl SceneView {
 
                                 } else {
                                     let mode=text(node,"justify");
-                                    let centre=matches!(mode,"center"|"end"|"between"|"around"|"evenly") && (!matches!(mode,"between"|"around"|"evenly") || children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).all(|c|nodes.get(c).is_some_and(|n|n.family=="text"))) && num(node,"height").or(assigned_height.map(|h|(h-node_padding(node,"padding_top")-node_padding(node,"padding_bottom")).max(0.))).is_some_and(|h|h.is_finite());
+                                    let centre=!stretch_last && matches!(mode,"center"|"end"|"between"|"around"|"evenly") && (!matches!(mode,"between"|"around"|"evenly") || children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).all(|c|nodes.get(c).is_some_and(|n|n.family=="text"))) && column_inner_height(node,assigned_height).is_some_and(|h|h.is_finite());
                                     let count=children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).count();
                                     let old_gap=ui.spacing().item_spacing.y;let mut extra=0.;
                                     let cache = ui.scope_id().with((&key,"column-content-height"));
                                     if centre {
                                         let content = ui.ctx().data_mut(|d| d.get_temp::<f32>(cache)).unwrap_or(0.);
-                                        if content>0. {let height=num(node,"height").or(assigned_height.map(|h|(h-node_padding(node,"padding_top")-node_padding(node,"padding_bottom")).max(0.))).unwrap_or(ui.available_height());let free=(height-content).max(0.);let leading=match mode{"end"=>free,"between"=>{extra=if count>1{free/(count-1) as f32}else{0.};0.},"around"=>{extra=free/count.max(1) as f32;extra/2.},"evenly"=>{extra=free/(count+1) as f32;extra},_=>free/2.};if leading>0.{ui.add_space(leading);}ui.spacing_mut().item_spacing.y=old_gap+extra;}
+                                        if content>0. {let height=column_inner_height(node,assigned_height).unwrap_or(ui.available_height());let free=(height-content).max(0.);let leading=match mode{"end"=>free,"between"=>{extra=if count>1{free/(count-1) as f32}else{0.};0.},"around"=>{extra=free/count.max(1) as f32;extra/2.},"evenly"=>{extra=free/(count+1) as f32;extra},_=>free/2.};if leading>0.{ui.add_space(leading);}ui.spacing_mut().item_spacing.y=old_gap+extra;}
                                     }
                                     let content = if text(node,"align")=="center" { ui.vertical_centered(|ui| draw(ui)) } else { ui.vertical(|ui| draw(ui)) }.response.rect.height()-extra*count.saturating_sub(1) as f32;
                                     // Stretch assignments extend painted geometry, not the natural layout response.
-                                    if last.is_some(){measure_put(ui,last_key,content);if (previous_content-content).abs()>0.01{ui.ctx().request_discard("last child natural height");}}
+                                    if let Some(cache)=last_key {let measured=(bounded_layout(content,1e6),last_natural);if previous_last.is_none_or(|p|(p.0-measured.0).abs()>0.01 || (p.1-measured.1).abs()>0.01){measure_put(ui,cache,measured);ui.ctx().request_discard("last child natural height");}}
                                     self.natural_heights.insert(id.into(),content+node_padding(node,"padding_top")+node_padding(node,"padding_bottom"));
                                     ui.spacing_mut().item_spacing.y=old_gap;
                                     if centre {
@@ -3180,6 +3187,23 @@ fn natural_size_key(node: &Node) -> egui::Id {
             .unwrap_or(node as *const Node as usize as u64),
     )
 }
+// Height caches are only queried by the opt-in layout paths. Descendant hashes
+// are prepared once per scene/model revision, never by traversing per frame.
+fn layout_height_key(ui: &egui::Ui, node: &Node, route: &str, width: f32, palette: u64) -> egui::Id {
+    natural_size_key(node).with((
+        "layout-height", route, node.ports.get("__layout_revision").and_then(Value::as_u64),
+        bounded_layout(width,1e6).to_bits(), ui.ctx().pixels_per_point().to_bits(),
+        font_state_key(ui), palette,
+    ))
+}
+
+// Authored height is an inner/content height and takes priority. A parent's
+// stretch assignment is an outer height, so subtract this column's padding.
+fn column_inner_height(node: &Node, assigned: Option<f32>) -> Option<f32> {
+    num(node,"height").or_else(||assigned.map(|h|
+        (h-node_padding(node,"padding_top")-node_padding(node,"padding_bottom")).max(0.)))
+        .map(|h|bounded_layout(h,1e6))
+}
 #[derive(Clone)]
 struct MeasurementCache<T> {
     values: std::collections::HashMap<egui::Id, T>,
@@ -3539,7 +3563,7 @@ fn prepare_measurements(
     memo: &mut BTreeMap<String, (Node, u64)>,
     alive: &mut BTreeSet<String>,
 ) {
-    for (id, node) in nodes {
+    for (id, node) in nodes.iter_mut() {
         if node.family == "control" {
             let key = node.ports["definition"]["id"].as_str().unwrap_or(id);
             let value = model["values"].get(key).cloned().unwrap_or(Value::Null);
@@ -3563,6 +3587,22 @@ fn prepare_measurements(
             hash
         };
         node.ports.insert("__measure_key".into(), json!(hash));
+    }
+    if nodes.values().any(|n| ["equal_height","stretch_last"].iter().any(|p|n.ports.get(*p)==Some(&Value::Bool(true)))) {
+        fn revision(id: &str, nodes: &BTreeMap<String,Node>, memo: &mut BTreeMap<String,u64>, depth: usize) -> u64 {
+            use std::hash::{Hash,Hasher};
+            if let Some(hash)=memo.get(id){return *hash;}
+            let mut h=std::collections::hash_map::DefaultHasher::new();
+            id.hash(&mut h);
+            if let Some(n)=nodes.get(id) {
+                n.ports.get("__measure_key").and_then(Value::as_u64).hash(&mut h);
+                if depth<128 {for child in children(n) {revision(child,nodes,memo,depth+1).hash(&mut h);}}
+            }
+            let hash=h.finish();memo.insert(id.into(),hash);hash
+        }
+        let mut hashes=BTreeMap::new();
+        for id in nodes.keys(){revision(id,nodes,&mut hashes,0);}
+        for (id,hash) in hashes {if let Some(n)=nodes.get_mut(&id){n.ports.insert("__layout_revision".into(),json!(hash));}}
     }
 }
 #[cfg(test)]

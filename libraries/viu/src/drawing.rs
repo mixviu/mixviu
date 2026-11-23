@@ -29,13 +29,8 @@ pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
     let Ok(primitives) = serde_json::from_value::<Vec<Primitive>>(raw.clone()) else {
         return;
     };
-    static TABLE: std::sync::OnceLock<Vec<motion::Preset>> = std::sync::OnceLock::new();
-    // Drawing effects have their own established timing contract (including
-    // the sting's eye pop); slide entrance changes must not retime primitives.
-    let table = TABLE.get_or_init(|| {
-        motion::load_presets(include_str!("../../motion/legacy-presets.json"))
-            .expect("frozen drawing effects")
-    });
+    let legacy = node.ports.get("motion_profile").and_then(serde_json::Value::as_str)
+        == Some("legacy-sting");
     let mut shapes = Vec::new();
     let mut shadow_shapes = Vec::new();
     let mut float_offset = None;
@@ -48,7 +43,8 @@ pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
         let mut opacity = 1.;
         let mut fraction = 1.;
         for e in &p.effects {
-            let Some(preset) = table.iter().find(|a| a.name == e.preset) else {
+            let name = if legacy { format!("legacy-{}", e.preset) } else { e.preset.clone() };
+            let Ok(preset) = motion::scene::paint_preset(&name) else {
                 return;
             };
             let v = preset.sample(time - e.delay);

@@ -13,6 +13,8 @@ use viu::{
 };
 #[path = "deck_layout/check.rs"]
 mod layout;
+#[path = "deck_layout/review.rs"]
+mod layout_review;
 #[path = "deck_sting/check.rs"]
 mod sting;
 

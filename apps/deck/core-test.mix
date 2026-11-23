@@ -57,6 +57,14 @@ $end=$c.opened($c.fresh(),$deck,"end");$end.deck.slides[0].build.c.delay=10
 $end=$c.play($end,{slides:["one"],beats:[[0,2,4,6]]});$end=$c.sample($end,0);$end=$c.sample($end,6)
 assert_eq($c.build_state($end).c.age,-8)
 print("deck core: navigation, timed builds, boundaries, completion and typed refusals passed")
+for $anim in ["fade","up","down","left","right","pop","zoom","wipe","drop","flip","spin"]
+  $bad=$deck;$bad.slides[0].build.a.anim="legacy-"..$anim
+  refused(fn()=$c.check_deck($bad),"DECK_MOTION","slides[0](one).build.a.anim")
+end
+$profile={id:"p",kind:"sting",scene:{root:{widget:"drawing",primitives:[]}},build:{}}
+assert(contains($c.scene_source($profile),'"motion_profile":"legacy-sting"'))
+$profile.kind="slide"
+assert(contains($c.scene_source($profile),'"motion_profile":"current"'))
 $lead=$c.play($c.opened($c.fresh(),$deck,"lead"),{slides:["one"],beats:[[0.9,2,4,6]]})
 assert_eq($c.build_state($lead).a.hidden,true)
 assert_eq($c.build_state($lead).b.opacity,0)
