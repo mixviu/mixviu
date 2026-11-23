@@ -15,6 +15,8 @@ use viu::{
 mod layout;
 #[path = "deck_layout/review.rs"]
 mod layout_review;
+#[path = "deck_layout/timed.rs"]
+mod timed_layout;
 
 #[test]
 fn sting_freezes_every_entrance_and_ordinary_slides_use_current_presets() {
