@@ -271,9 +271,10 @@ the column's padding before calculating spare content space. When combined,
 node/instance route, descendant content and visibility revision, width,
 display scale, font state and palette. Revision hashes are prepared when the
 scene/model changes; no descendant walk is added to settled frames. The
-revision conservatively hashes the entire prepared graph once, so unrelated
-node changes can invalidate extra height entries. There is no hash depth
-cutoff or recursion, even for malformed cyclic graphs. Scene validation
+revision uses iterative descendant hashing with a visiting set: each node
+is finalised once and each edge is visited once, and unrelated card keys
+stay warm. There is no hash depth cutoff or call-stack recursion, even for
+malformed cyclic graphs. Scene validation
 rejects child cycles; the SceneView painter stops below depth 128 (nodes
 called with depth greater than 128 emit no content). The revision still
 includes nodes beyond that paint limit.

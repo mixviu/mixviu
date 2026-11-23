@@ -3343,6 +3343,7 @@ citizen: test
             super::SceneView::with_model(source, json!({"text":"short","hide":false})).unwrap();
         let ctx = egui::Context::default();
         let mut keys = Vec::new();
+        let mut siblings = Vec::new();
         for model in [
             json!({"text":"short","hide":false}),
             json!({"text":"new\ncontent","hide":false}),
@@ -3376,13 +3377,17 @@ citizen: test
                     key,
                     super::layout_height_key(ui, &nodes["a"], "root/a", 200., 1)
                 );
-                current = Some(key);
+                current = Some((key, super::layout_height_key(ui, &nodes["b"], "root/b", 200., 1)));
             })
             .drop_without_applying_deltas();
-            keys.push(current.unwrap());
+            let (key, sibling) = current.unwrap();
+            keys.push(key);
+            siblings.push(sibling);
         }
         assert_ne!(keys[0], keys[1]);
         assert_ne!(keys[1], keys[2]);
+        assert_eq!(siblings[0], siblings[1], "unrelated card keys remain warm");
+        assert_eq!(siblings[1], siblings[2], "unrelated visibility changes do not rekey this card");
     }
     #[test]
     fn animated_number_baseline_cache_tracks_the_rendered_sample() {
@@ -3733,24 +3738,50 @@ fn prepare_measurements(
             .iter()
             .any(|p| n.ports.get(*p) == Some(&Value::Bool(true)))
     }) {
-        // Conservative graph revision: hash every prepared node once. This
-        // includes all descendants, regardless of paint depth, and cannot
-        // recurse or revisit edges exponentially on malformed cyclic graphs.
-        // Unrelated node changes may invalidate extra height entries, only
-        // on scene/model revision; settled frames retain their cached keys.
+        // Iterative DFS finalises each node once and visits every edge once.
+        // A visiting marker terminates malformed cycles; validated scenes are
+        // acyclic. No paint-depth cutoff or native call-stack recursion here.
         use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        for (id, node) in nodes.iter() {
+        type Work = (String, Vec<String>, usize, std::collections::hash_map::DefaultHasher);
+        fn begin(id: &str, nodes: &BTreeMap<String, Node>) -> Work {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
             id.hash(&mut h);
-            node.ports
-                .get("__measure_key")
-                .and_then(Value::as_u64)
-                .hash(&mut h);
+            let edges = if let Some(node) = nodes.get(id) {
+                node.ports.get("__measure_key").and_then(Value::as_u64).hash(&mut h);
+                children(node).map(str::to_owned).collect()
+            } else { Vec::new() };
+            (id.into(), edges, 0, h)
         }
-        let revision = h.finish();
-        for node in nodes.values_mut() {
-            node.ports
-                .insert("__layout_revision".into(), json!(revision));
+        let mut hashes = std::collections::HashMap::<String, u64>::new();
+        let mut visiting = std::collections::HashSet::<String>::new();
+        for root in nodes.keys() {
+            if hashes.contains_key(root) { continue; }
+            visiting.insert(root.clone());
+            let mut stack = vec![begin(root, nodes)];
+            while let Some((id, edges, mut next, mut h)) = stack.pop() {
+                if let Some(child) = edges.get(next).cloned() {
+                    next += 1;
+                    if let Some(hash) = hashes.get(&child) {
+                        hash.hash(&mut h);
+                    } else if visiting.contains(&child) {
+                        ("cycle", &child).hash(&mut h);
+                    } else {
+                        stack.push((id, edges, next, h));
+                        visiting.insert(child.clone());
+                        stack.push(begin(&child, nodes));
+                        continue;
+                    }
+                    stack.push((id, edges, next, h));
+                } else {
+                    let hash = h.finish();
+                    hashes.insert(id.clone(), hash);
+                    visiting.remove(&id);
+                    if let Some((_, _, _, parent)) = stack.last_mut() { hash.hash(parent); }
+                }
+            }
+        }
+        for (id, hash) in hashes {
+            if let Some(node) = nodes.get_mut(&id) { node.ports.insert("__layout_revision".into(), json!(hash)); }
         }
     }
 }
