@@ -3157,6 +3157,9 @@ fn constrained_width(node: &Node, value: f32) -> f32 {
 // One bounded cache per value type and context. Hash borrowed content directly;
 // never debug-format the ports map or retain a new Context entry per text value.
 fn measurement_content_hash(id: &str, node: &Node) -> u64 {
+    measurement_hash(id, node, false)
+}
+fn measurement_hash(id: &str, node: &Node, layout: bool) -> u64 {
     record_measurement_work();
     use std::hash::{Hash, Hasher};
     fn value(v: &Value, h: &mut impl Hasher) {
@@ -3180,6 +3183,21 @@ fn measurement_content_hash(id: &str, node: &Node) -> u64 {
     id.hash(&mut h);
     node.family.hash(&mut h);
     for (key, v) in &node.ports {
+        if layout
+            && matches!(
+                key.as_str(),
+                "opacity"
+                    | "offset"
+                    | "paint_effect"
+                    | "enter"
+                    | "exit"
+                    | "transition"
+                    | "motion"
+                    | "__measure_key"
+            )
+        {
+            continue;
+        }
         key.hash(&mut h);
         value(v, &mut h);
     }
@@ -3202,7 +3220,7 @@ fn layout_height_key(
     width: f32,
     palette: u64,
 ) -> egui::Id {
-    natural_size_key(node).with((
+    egui::Id::unique(node.ports.get("__measure_identity").and_then(Value::as_u64)).with((
         "layout-height",
         route,
         node.ports.get("__layout_revision").and_then(Value::as_u64),
@@ -3305,8 +3323,8 @@ mod measurement_cache_tests {
             );
             assert_eq!(
                 super::MEASUREMENT_WORK.get(),
-                count,
-                "hash every node exactly once, including on cyclic graphs"
+                count * 2,
+                "one content hash and one layout hash per node, including cycles"
             );
             nodes["n0"].ports["__layout_revision"].as_u64().unwrap()
         }
@@ -3758,10 +3776,9 @@ fn prepare_measurements(
             let mut h = std::collections::hash_map::DefaultHasher::new();
             id.hash(&mut h);
             let edges = if let Some(node) = nodes.get(id) {
-                node.ports
-                    .get("__measure_key")
-                    .and_then(Value::as_u64)
-                    .hash(&mut h);
+                // Paint samples change on every presentation tick, including
+                // after settling. They must not invalidate natural heights.
+                measurement_hash(id, node, true).hash(&mut h);
                 children(node).map(str::to_owned).collect()
             } else {
                 Vec::new()
