@@ -31,7 +31,8 @@ foreign: {
       exit: "a pure-Rust rustls crypto provider when one is mature"}
   },
   admitted: {
-    "rav1e": {kind: "asm", via: "nasm", exit: "asm feature off (pure-Rust fallback)", only: ["media-av1"], by: "Mark", on: "2026-11-14"},
+    "rav1d": {kind: "asm", via: "nasm", exit: "asm feature off (pure-Rust fallback)", only: ["media-av1", "av"], by: "Mark", on: "2026-11-14"},
+    "rav1e": {kind: "asm", via: "nasm", exit: "asm feature off (pure-Rust fallback)", only: ["media-av1", "av"], by: "Mark", on: "2026-11-14"},
     "pipewire-sys": {kind: "system", via: "pipewire (portald ScreenCast only)", exit: "a pure-Rust PipeWire native-protocol client once one can publish a video stream; until then OS interface", only: ["portald"], by: "Mark", on: "2026-11-12"},
     "libspa-sys": {kind: "vendored", via: "pipewire (portald ScreenCast only); runs bindgen; compiles generated SPA inline shims and src/{type-info,command,node-command,meta}.c", exit: "with pipewire-sys", only: ["portald"], by: "Mark", on: "2026-11-12"},
     "libspa": {kind: "vendored", via: "pipewire (portald ScreenCast only); compiles upstream tests/pod.c", exit: "with pipewire-sys", only: ["portald"], by: "Mark", on: "2026-11-12"}
@@ -80,7 +81,7 @@ foreign: {
   },
   -- Tier 2: desktop-only crates the shell must never reach, pure Rust or not.
   -- A trailing * matches a prefix.
-  strict_forbid: ["media-opus", "opus-pure", "audioadapter*", "audio-codec-algorithms", "dasp_frame", "dasp_sample", "visibility", "windowfunctions", "media-audio", "ebur128", "rubato", "hound", "media-av1", "rav1e", "pipewire*", "libspa*", "lib-viu", "viu", "viu-engine", "rio-vt", "teletypewriter", "simdutf", "egui*", "eframe", "epaint", "emath", "ecolor", "winit*", "wgpu*", "naga",
+  strict_forbid: ["media-opus", "opus-pure", "audioadapter*", "audio-codec-algorithms", "dasp_frame", "dasp_sample", "visibility", "windowfunctions", "media-audio", "ebur128", "rubato", "hound", "media-av1", "rav1e", "rav1d", "pipewire*", "libspa*", "lib-viu", "viu", "viu-engine", "rio-vt", "teletypewriter", "simdutf", "egui*", "eframe", "epaint", "emath", "ecolor", "winit*", "wgpu*", "naga",
     "glow", "glutin*", "smithay*", "wayland-*", "x11*", "xkbcommon*", "calloop-wayland-source",
     "iced*", "bevy*", "vello*", "gpui*", "tiny-skia*", "softbuffer", "arboard", "accesskit*"],
   -- Shared libraries a built strict binary must not need (DT_NEEDED prefix).

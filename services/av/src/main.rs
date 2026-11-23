@@ -1,4 +1,5 @@
 use std::process::ExitCode;
+mod decode;
 
 fn main() -> ExitCode {
     let mut args = std::env::args_os().skip(1);
@@ -10,6 +11,12 @@ fn main() -> ExitCode {
                 ExitCode::from(2)
             }
         },
+        Some(command) if command == "decode" || command == "probe" => {
+            match decode::run(command == "probe", args) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(e) => { eprintln!("av: {e}"); ExitCode::from(2) }
+            }
+        }
         _ => {
             eprintln!("av: usage: av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]");
             ExitCode::from(2)

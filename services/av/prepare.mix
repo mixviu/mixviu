@@ -1,0 +1,6 @@
+$r = run_argv(["cargo", "fmt", "-p", "media-av1", "-p", "media-webm", "-p", "av"])
+print($r)
+$r = run_argv(["cargo", "generate-lockfile"])
+print($r)
+print(run_argv(["git", "diff"]).stdout)
+print(run_argv(["git", "checkout", "-q", "--", "."]))

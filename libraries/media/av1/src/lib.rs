@@ -2,6 +2,8 @@
 use media_frame::Yuv420;
 use rav1e::prelude::*;
 use std::sync::Arc;
+mod decoder;
+pub use decoder::{DecodedFrame, Decoder};
 
 #[derive(Clone, Copy, Debug)]
 pub enum Target {
