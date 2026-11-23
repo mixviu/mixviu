@@ -65,7 +65,7 @@ assert_eq($c.build_state($lead).a.age,0)
 $lead=$c.sample($lead,1.1)
 assert(abs($c.build_state($lead).a.age-0.2)<0.000001)
 $lead.deck.slides[0].build.a.delay=0.15
-$oracle=json_parse(read_file("libraries/motion/oracle/chrome.json"))
+$oracle=json_parse(read_file(path_join(dirname(script_path()),"../../libraries/motion/oracle/chrome.json")))
 for $point in $oracle.title_samples
   $lead=$c.sample($lead,1.05+$point.t)
   assert(abs($c.build_state($lead).a.age-$point.t)<0.000001)
