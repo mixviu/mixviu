@@ -264,8 +264,9 @@ impl<W: Write + Seek> Writer<W> {
             .concat();
             let mut items = vec![elem(0xa1, &block), u(0x9b, d)];
             if track == 1 && !key {
-                // A backward reference marks this BlockGroup as non-key.
-                items.push(elem(0xfb, &(-1i64).to_be_bytes()));
+                // RFC 9559 §5.1.3.5.5: zero means dependent, exact reference
+                // blocks unknown. The packet API does not expose codec refs.
+                items.push(elem(0xfb, &0i64.to_be_bytes()));
             }
             if self.discard_ns != 0 {
                 items.push(elem(0x75a2, &(self.discard_ns as i64).to_be_bytes()));
