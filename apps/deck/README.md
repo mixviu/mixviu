@@ -110,7 +110,7 @@ first-frame and draw latency must be measured before treating a recording's
 that correlation, so its precise wall-clock offset remains unproven.
 
 `anim` and `child_anim` support `fade`, `up`, `down`, `left`, `right`, `pop`,
-`zoom` and `wipe`.
+`zoom`, `wipe`, `drop`, `flip` and `spin`.
 `delay` and `stagger` are seconds, each in 0..60. A stagger container gives
 unconfigured direct children its beat and `delay + child_index * stagger`.
 Explicit child build entries take precedence. Unsupported transforms must be
