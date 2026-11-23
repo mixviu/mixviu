@@ -404,9 +404,9 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     let out = Path::new(&args[2]);
     let mut bytes = Vec::new();
     std::fs::File::open(path)?
-        .take(4 * 1024 * 1024 + 1)
+        .take(16 * 1024 * 1024 + 1)
         .read_to_end(&mut bytes)?;
-    if bytes.len() > 4 * 1024 * 1024 {
+    if bytes.len() > 16 * 1024 * 1024 {
         return refuse("timeline_size_limit");
     }
     let t: Timeline = serde_json::from_slice(&bytes)?;
