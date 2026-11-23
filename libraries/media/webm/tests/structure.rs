@@ -149,7 +149,7 @@ fn missing_timestamp_bad_cue_and_unknown_cluster() {
     ));
 }
 #[test]
-fn hostile_many_tracks_blocks_and_cues_opens_within_bound() {
+fn hostile_many_tracks_blocks_and_cues_refused_within_bound() {
     const N: u64 = 20_000;
     let tracks = el(
         0x1654ae6b,
@@ -174,16 +174,20 @@ fn hostile_many_tracks_blocks_and_cues_opens_within_bound() {
     let cues = el(0x1c53bb6b, &cue.repeat(N as usize));
     let bytes = file(&[tracks, el(0x1f43b675, &blocks), cues].concat());
     let start = std::time::Instant::now();
-    let mut d = Demuxer::new(&bytes).unwrap();
+    assert!(Demuxer::new(&bytes).is_err());
     assert!(
         start.elapsed() < std::time::Duration::from_secs(5),
         "indexed open exceeded five-second bound"
     );
-    assert_eq!(d.tracks.len(), N as usize);
-    assert_eq!(d.packets().len(), N as usize * 2);
-    assert_eq!(d.cues.len(), N as usize);
-    assert_eq!(d.seek(0), Some(0));
-    assert!(d.next_packet().unwrap().key_frame);
+}
+
+#[test]
+fn depth_and_codec_limits() {
+    let mut nested = Vec::new();
+    for _ in 0..10 { nested = el(0xae, &nested); }
+    assert!(matches!(Demuxer::new(&file(&nested)), Err(Error::Invalid("nesting depth limit"))));
+    let bad = el(0x1654ae6b, &el(0xae,&[u(0xd7,1),u(0x83,1),el(0x86,b"V_VP9")].concat()));
+    assert!(matches!(Demuxer::new(&file(&bad)),Err(Error::UnsupportedCodec(name)) if name == "V_VP9"));
 }
 
 #[test]

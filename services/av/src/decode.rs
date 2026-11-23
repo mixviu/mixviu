@@ -20,7 +20,7 @@ pub fn run(probe: bool, mut args: impl Iterator<Item=OsString>) -> Result<()> {
     if probe {
         let tracks: Vec<_> = d.tracks.iter().map(|t| json!({
             "number": t.number, "codec":t.codec, "width":t.width, "height":t.height,
-            "fps": if t.default_duration_ns > 0 { Some(1e9 / t.default_duration_ns as f64) } else { None },
+            "fps": if t.kind == 1 { video_duration(&d,t).map(|ns| 1e9 / ns as f64) } else { None },
             "sample_rate": t.sample_rate, "channels":t.channels,
             "packets": d.packets().iter().filter(|p| p.track == t.number).count()
         })).collect();
@@ -32,7 +32,10 @@ pub fn run(probe: bool, mut args: impl Iterator<Item=OsString>) -> Result<()> {
             }
             decoder.finish(|_| { frames += 1; Ok(()) })?;
         }
-        println!("{}", json!({"duration":d.duration.map(|v| v * d.scale_ns as f64 / 1e9), "tracks":tracks,
+        let duration = d.duration.map(|v| v * d.scale_ns as f64 / 1e9).or_else(|| d.packets().iter().map(|p| {
+            (p.timestamp as f64 + p.duration.unwrap_or(0) as f64) * d.scale_ns as f64 / 1e9
+        }).reduce(f64::max));
+        println!("{}", json!({"duration":duration, "tracks":tracks,
             "frames":frames, "packets":d.packets().len(),
             "keyframes":d.packets().iter().filter(|p| p.key_frame && d.tracks.iter().any(|t| t.number == p.track && t.kind == 1)).count(), "cues":d.cues.len()}));
         return Ok(());
@@ -46,7 +49,7 @@ pub fn run(probe: bool, mut args: impl Iterator<Item=OsString>) -> Result<()> {
     let mut emit = |f: media_av1::DecodedFrame| {
         let write = (|| -> std::io::Result<()> {
             if size.is_none() {
-                let duration = t.default_duration_ns;
+                let duration = video_duration(&d,t).unwrap_or(1_000_000_000);
                 // VFR timing is preserved in per-frame XPTS tags (nanoseconds).
                 let rate = if duration > 0 { format!("1000000000:{duration}") } else { "0:0".into() };
                 writeln!(video, "YUV4MPEG2 W{} H{} F{} Ip A1:1 C420jpeg", f.width, f.height, rate)?;
@@ -67,6 +70,19 @@ pub fn run(probe: bool, mut args: impl Iterator<Item=OsString>) -> Result<()> {
     video.flush()?;
     if let Some(path) = wav { audio(&d, path)?; }
     Ok(())
+}
+
+fn video_duration(d: &Demuxer<'_>, t: &media_webm::Track<'_>) -> Option<u64> {
+    if t.default_duration_ns > 0 { return Some(t.default_duration_ns); }
+    let mut previous = None;
+    for p in d.packets().iter().filter(|p| p.track == t.number) {
+        if let Some(duration) = p.duration.filter(|n| *n > 0) { return duration.checked_mul(d.scale_ns); }
+        if let Some(last) = previous {
+            if p.timestamp > last { return (p.timestamp - last).try_into().ok().and_then(|n: u64| n.checked_mul(d.scale_ns)); }
+        }
+        previous = Some(p.timestamp);
+    }
+    None
 }
 
 fn audio(d: &Demuxer<'_>, path: OsString) -> Result<()> {
