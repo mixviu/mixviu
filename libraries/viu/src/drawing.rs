@@ -381,7 +381,11 @@ mod tests {
                 super::show(ui, "untrusted", &node);
             });
             out.textures_delta.clear();
-            assert!(!out.shapes.iter().any(|s| matches!(s.shape, egui::Shape::Ellipse(_))));
+            assert!(
+                !out.shapes
+                    .iter()
+                    .any(|s| matches!(s.shape, egui::Shape::Ellipse(_)))
+            );
         }
     }
     #[test]

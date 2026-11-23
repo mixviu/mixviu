@@ -3285,11 +3285,7 @@ mod measurement_cache_tests {
                     ports["stretch_last"] = json!(true);
                 }
                 if i == count - 1 {
-                    ports["text"] = json!(if changed {
-                        "changed leaf"
-                    } else {
-                        "original leaf"
-                    });
+                    ports["height"] = json!(if changed { 21 } else { 20 });
                 }
                 nodes.insert(
                     format!("n{i}"),
