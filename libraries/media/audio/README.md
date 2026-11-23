@@ -161,3 +161,11 @@ This favours the existing verified mastering path over a new streaming
 limiter; long programmes need a memory-sized worker. No new foreign crate
 is introduced. `episode_fixture.mix` generates private test inputs from a
 read-only run; scenes are placed back to back without crossfades.
+
+Opus safety: the executor decodes only its own encoded packets and meters
+the exact presentation samples. If codec reconstruction exceeds the ceiling,
+it attenuates PCM and re-encodes, with at most two corrections and a 0.02 dB
+guard. The receipt reports codec_trim_db, codec_passes and encoded loudness;
+shortfall and target_reached use decoded audio. Optional WAV is the final
+PCM including codec safety trim. Packet storage is about 24 MB per 25 minutes;
+decoded metering adds one f64 programme buffer, below the limiter budget.

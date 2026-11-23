@@ -1,6 +1,6 @@
 //! Flat, absolute-time episode audio. Mix owns scene and join policy.
 use crate::{Audio, LimiterConfig, Loudness, WavFormat};
-use media_opus::{Channels, Encoder, OpusEncoder};
+use media_opus::{Channels, Decoder, Encoder, OpusDecoder, OpusEncoder, OpusHead, Packet};
 use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
@@ -101,7 +101,9 @@ impl Timeline {
                 if !valid_time(to) || to < s.from_s {
                     return Err(fail("to_s"));
                 }
-                if frames(s.fade_in_s) > frames(to) - frames(s.from_s) || frames(s.fade_out_s) > frames(to) - frames(s.from_s) {
+                if frames(s.fade_in_s) > frames(to) - frames(s.from_s)
+                    || frames(s.fade_out_s) > frames(to) - frames(s.from_s)
+                {
                     return Err(fail("fade: longer than source"));
                 }
             }
@@ -196,6 +198,9 @@ pub struct Receipt {
     pub packets: usize,
     pub bytes: u64,
     pub seconds: f64,
+    pub encoded: Meter,
+    pub codec_trim_db: f64,
+    pub codec_passes: u8,
 }
 pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Result<Receipt> {
     let mut audio = t.mix(base)?;
@@ -204,26 +209,66 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
         t.master.true_peak_dbtp,
         LimiterConfig::default(),
     )?;
+    let mut codec_trim_db = 0.0;
+    let mut codec_passes = 0;
+    let (head, packets, encoded) = loop {
+        let (head, packets, encoded) = encode_checked(&audio)?;
+        if encoded.true_peak_dbtp <= t.master.true_peak_dbtp { break (head, packets, encoded); }
+        if codec_passes == 2 { return Err(refusal("Opus: peak ceiling unreachable after two corrections")); }
+        // Opus reconstruction can overshoot even ceiling-compliant PCM.
+        // Only attenuate, with a 0.02 dB guard; every attempt is remeasured.
+        let trim = t.master.true_peak_dbtp - encoded.true_peak_dbtp - 0.02;
+        let gain = 10.0_f64.powf(trim/20.0);
+        for sample in &mut audio.samples { *sample *= gain; }
+        codec_trim_db += trim;
+        codec_passes += 1;
+    };
+    let after = audio.measure()?;
     if let Some(path) = wav {
         audio.write_wav(BufWriter::new(File::create_new(path)?), WavFormat::Float32)?;
     }
-    let mut enc = OpusEncoder::new(Channels::Stereo, 128000)?;
-    let h = enc.head();
     let mut writer = media_webm::Writer::audio(
         BufWriter::new(File::create_new(out)?),
         media_webm::Opus {
             channels: 2,
-            pre_skip: h.pre_skip,
+            pre_skip: head.pre_skip,
             input_sample_rate: 48000,
         },
     )?;
+    let count = audio.frames();
+    for (k, p) in packets.iter().enumerate() {
+        writer.opus_packet(k as u64 * 20, &p.data, p.discard_padding)?;
+    }
+    writer.set_duration_samples(count as u64);
+    writer.finish()?;
+    Ok(Receipt {
+        before: r.before.into(),
+        after: after.into(),
+        gain_db: r.gain_db + codec_trim_db,
+        max_gain_reduction_db: r.max_gain_reduction_db,
+        shortfall_lu: (t.master.integrated_lufs - encoded.integrated_lufs).max(0.0),
+        target_reached: (t.master.integrated_lufs - encoded.integrated_lufs).abs() <= 0.5,
+        refused: r.refused,
+        passes: r.passes,
+        sample_count: count,
+        packets: packets.len(),
+        bytes: std::fs::metadata(out)?.len(),
+        seconds: count as f64 / 48000.0,
+        encoded: encoded.into(), codec_trim_db, codec_passes,
+    })
+}
+
+/// Decode only packets produced by our own encoder, never untrusted input.
+fn encode_checked(audio: &Audio) -> Result<(OpusHead, Vec<Packet>, Loudness)> {
+    let mut enc = OpusEncoder::new(Channels::Stereo, 128000)?;
+    let head = enc.head().clone();
     let count = audio.frames();
     let blocks = count.div_ceil(960);
     let padding = blocks * 960 - count;
     // Flush delay plus final partial-frame padding may exceed one frame. Encode
     // only ceil((length+lookahead)/960) packets and put all excess on the last.
     let needed = (count + usize::from(enc.head().pre_skip)).div_ceil(960);
-    let mut packets = 0;
+    let mut packets = Vec::new();
     for k in 0..blocks {
         let start = k * 1920;
         let mut pcm = vec![0f32; 1920];
@@ -233,39 +278,33 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
         {
             *d = *s as f32;
         }
-        let p = enc.encode(&pcm)?;
+        let mut p = enc.encode(&pcm)?;
         let discard = if k + 1 == needed {
             padding - usize::from(enc.head().pre_skip)
         } else {
             0
         };
-        writer.opus_packet(k as u64 * 20, &p.data, discard as u16)?;
-        packets += 1;
+        p.discard_padding = discard as u16;
+        packets.push(p);
     }
     if needed > blocks
-        && let Some(p) = enc.finish()?
+        && let Some(mut p) = enc.finish()?
     {
-        writer.opus_packet(
-            blocks as u64 * 20,
-            &p.data,
-            p.discard_padding + padding as u16,
-        )?;
-        packets += 1;
+        p.discard_padding += padding as u16;
+        packets.push(p);
     }
-    writer.set_duration_samples(count as u64);
-    writer.finish()?;
-    Ok(Receipt {
-        before: r.before.into(),
-        after: r.after.into(),
-        gain_db: r.gain_db,
-        max_gain_reduction_db: r.max_gain_reduction_db,
-        shortfall_lu: r.shortfall_lu,
-        target_reached: r.target_reached,
-        refused: r.refused,
-        passes: r.passes,
-        sample_count: count,
-        packets,
-        bytes: std::fs::metadata(out)?.len(),
-        seconds: count as f64 / 48000.0,
-    })
+    let mut decoder = OpusDecoder::new(Channels::Stereo)?;
+    let mut decoded = Vec::new();
+    decoded.try_reserve_exact((count+1920)*2)?;
+    let mut skip = usize::from(head.pre_skip)*2;
+    for p in &packets {
+        let frame = decoder.decode(Some(&p.data))?;
+        let start = skip.min(frame.pcm.len());
+        skip -= start;
+        let end = frame.pcm.len() - usize::from(p.discard_padding)*2;
+        decoded.extend(frame.pcm[start..end].iter().copied().map(f64::from));
+    }
+    if decoded.len() != count*2 { return Err(refusal("Opus: decoded sample count")); }
+    let measured = Audio::new(48000,2,decoded)?.measure()?;
+    Ok((head,packets,measured))
 }
