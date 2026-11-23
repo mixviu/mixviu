@@ -5636,6 +5636,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "media-quality"
+version = "0.1.2"
+dependencies = [
+ "media-frame",
+ "tempfile",
+]
+
+[[package]]
 name = "media-vfl"
 version = "0.1.2"
 dependencies = [

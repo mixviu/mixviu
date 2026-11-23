@@ -1,0 +1,18 @@
+[package]
+name = "media-quality"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+media-frame = { path = "../frame" }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[[example]]
+name = "quality"
+test = true
+
+[lints]
+workspace = true

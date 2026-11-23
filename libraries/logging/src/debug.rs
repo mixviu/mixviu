@@ -35,6 +35,7 @@ const WORKSPACE_TARGETS: &[&str] = &[
     "media_av1",
     "media_frame",
     "media_opus",
+    "media_quality",
     "media_vfl",
     "media_webm",
     "viu_gallery",

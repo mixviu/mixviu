@@ -80,7 +80,7 @@ foreign: {
   },
   -- Tier 2: desktop-only crates the shell must never reach, pure Rust or not.
   -- A trailing * matches a prefix.
-  strict_forbid: ["media-opus", "opus-pure", "audioadapter*", "audio-codec-algorithms", "dasp_frame", "dasp_sample", "visibility", "windowfunctions", "media-audio", "ebur128", "rubato", "hound", "media-av1", "rav1e", "pipewire*", "libspa*", "lib-viu", "viu", "viu-engine", "rio-vt", "teletypewriter", "simdutf", "egui*", "eframe", "epaint", "emath", "ecolor", "winit*", "wgpu*", "naga",
+  strict_forbid: ["media-quality", "media-opus", "opus-pure", "audioadapter*", "audio-codec-algorithms", "dasp_frame", "dasp_sample", "visibility", "windowfunctions", "media-audio", "ebur128", "rubato", "hound", "media-av1", "rav1e", "pipewire*", "libspa*", "lib-viu", "viu", "viu-engine", "rio-vt", "teletypewriter", "simdutf", "egui*", "eframe", "epaint", "emath", "ecolor", "winit*", "wgpu*", "naga",
     "glow", "glutin*", "smithay*", "wayland-*", "x11*", "xkbcommon*", "calloop-wayland-source",
     "iced*", "bevy*", "vello*", "gpui*", "tiny-skia*", "softbuffer", "arboard", "accesskit*"],
   -- Shared libraries a built strict binary must not need (DT_NEEDED prefix).
