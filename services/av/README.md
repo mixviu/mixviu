@@ -39,9 +39,11 @@ cover the complete overlap. The weight runs from 0 to 255 inclusive over the
 rounded duration, using media-frame's integer encoded-BGRA interpolation.
 Crossfades always encode. Overlaps without a crossfade are cuts.
 
-Scaling uses media-frame's top-left aligned nearest-neighbour filter, maintaining
-aspect ratio and centring on opaque black padding. Conversion is BT.709 limited
-range I420 with centred 2x2 box chroma. Filtering stays in gamma-encoded BGRA space to match the current UI/video and
+Scaling uses media-frame's separable Catmull-Rom bicubic filter (a=-0.5), with
+pixel-centre alignment, clamped edges and an antialias kernel for reduction.
+It maintains aspect ratio and centres on opaque black padding. Conversion is
+BT.709 limited-range I420 with centred 2x2 box chroma. Filtering stays in
+gamma-encoded BGRA space to match the current UI/video and
 crossfade contract; it does not introduce a separate linear-light workflow.
 
 Each chunk starts at a segment boundary or at most `keyint_s` apart. `chunks`
