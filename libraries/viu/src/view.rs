@@ -1471,13 +1471,12 @@ impl SceneView {
                                 let last_key=natural_size_key(node).with(("stretch-last",ui.available_width().to_bits(),ui.ctx().pixels_per_point().to_bits()));
                                 let previous_content=measure_get::<f32>(ui,last_key).unwrap_or(0.);
                                 let last=if node.ports.get("stretch_last")==Some(&Value::Bool(true)){children(node).filter(|c|nodes.get(*c).is_some_and(|n|n.ports.get("hidden")!=Some(&Value::Bool(true)))).last()}else{None};
-                                let mut last_growth=0.;
                                 let mut draw = |ui: &mut egui::Ui| {
                                     for child in children(node) {
                                         let old=self.stretch_heights.get(child).copied();
                                         if Some(child)==last && previous_content>0. {
                                             let budget=assigned_height.or(num(node,"height")).unwrap_or(0.)-node_padding(node,"padding_top")-node_padding(node,"padding_bottom");
-                                            last_growth=bounded_layout((budget-previous_content).max(0.),1e6);
+                                            let last_growth=bounded_layout((budget-previous_content).max(0.),1e6);
                                             let natural=self.natural_heights.get(child).copied().unwrap_or(0.);
                                             self.stretch_heights.insert(child.into(),bounded_layout(natural+last_growth,1e6));
                                         }
@@ -1698,8 +1697,7 @@ impl SceneView {
                                         if content>0. {let height=num(node,"height").or(assigned_height.map(|h|(h-node_padding(node,"padding_top")-node_padding(node,"padding_bottom")).max(0.))).unwrap_or(ui.available_height());let free=(height-content).max(0.);let leading=match mode{"end"=>free,"between"=>{extra=if count>1{free/(count-1) as f32}else{0.};0.},"around"=>{extra=free/count.max(1) as f32;extra/2.},"evenly"=>{extra=free/(count+1) as f32;extra},_=>free/2.};if leading>0.{ui.add_space(leading);}ui.spacing_mut().item_spacing.y=old_gap+extra;}
                                     }
                                     let content = if text(node,"align")=="center" { ui.vertical_centered(|ui| draw(ui)) } else { ui.vertical(|ui| draw(ui)) }.response.rect.height()-extra*count.saturating_sub(1) as f32;
-                                    let content=content-last_growth;
-                                    if last.is_some(){eprintln!("STRETCH_DEBUG {id} assigned={assigned_height:?} previous={previous_content} natural={content} growth={last_growth} width={}",ui.available_width());}
+                                    // Stretch assignments extend painted geometry, not the natural layout response.
                                     if last.is_some(){measure_put(ui,last_key,content);if (previous_content-content).abs()>0.01{ui.ctx().request_discard("last child natural height");}}
                                     self.natural_heights.insert(id.into(),content+node_padding(node,"padding_top")+node_padding(node,"padding_bottom"));
                                     ui.spacing_mut().item_spacing.y=old_gap;
