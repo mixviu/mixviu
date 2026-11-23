@@ -96,7 +96,6 @@ fn stretch_last_grid_and_row_keep_equal_bottoms_on_every_settled_frame() {
 fn equal_cells_with_different_descendants_invalidate_on_content_and_visibility() {
     for mode in ["grid", "row"] {
         let src = source(mode, r#"{widget:"column",children:["l"]}"#, "")
-            .replace("text:\"Medium\\n2\\n3\\n4\\n5\"", "text:\"Fixed\"")
             .replace(
                 "text:\"Tall\\n2\\n3\\n4\\n5\\n6\\n7\\n8\"",
                 "text:\"= $model.text\"",
@@ -132,6 +131,7 @@ fn equal_cells_with_different_descendants_invalidate_on_content_and_visibility()
 fn fixed_cells_are_not_stretched_and_authored_inner_height_wins() {
     for mode in ["grid", "row"] {
         let src = source(mode, r#"{widget:"column",children:["l"]}"#, "")
+            .replace("text:\"Medium\\n2\\n3\\n4\\n5\"", "text:\"Fixed\"")
             .replace(
                 "grow:1,stretch_last:true",
                 "grow:1,height:160,stretch_last:true,justify:\"end\"",
