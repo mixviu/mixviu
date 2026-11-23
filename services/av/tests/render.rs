@@ -127,14 +127,35 @@ fn repeats_chunks_scaled_fade_and_gap() {
     let audio: Vec<_> = demux.packets().iter().filter(|p| p.track == 2).collect();
     assert_eq!(video.len(), 120);
     assert_eq!(video.iter().map(|p| p.duration.unwrap()).sum::<u64>(), 4000);
-    assert_eq!(video.iter().filter(|p| p.key_frame).count() as u64, receipt["keyframes"].as_u64().unwrap());
-    let probe = Command::new(env!("CARGO_BIN_EXE_av")).arg("probe").arg(root.join("out.webm")).output().unwrap();
-    assert!(probe.status.success(), "{}", String::from_utf8_lossy(&probe.stderr));
+    assert_eq!(
+        video.iter().filter(|p| p.key_frame).count() as u64,
+        receipt["keyframes"].as_u64().unwrap()
+    );
+    let probe = Command::new(env!("CARGO_BIN_EXE_av"))
+        .arg("probe")
+        .arg(root.join("out.webm"))
+        .output()
+        .unwrap();
+    assert!(
+        probe.status.success(),
+        "{}",
+        String::from_utf8_lossy(&probe.stderr)
+    );
     let probe: Value = serde_json::from_slice(&probe.stdout).unwrap();
     assert_eq!(probe["frames"], 120);
     assert_eq!(probe["duration"], 4.0);
-    let decoded = Command::new(env!("CARGO_BIN_EXE_av")).arg("decode").arg(root.join("out.webm")).arg("--y4m").arg(root.join("own.y4m")).output().unwrap();
-    assert!(decoded.status.success(), "{}", String::from_utf8_lossy(&decoded.stderr));
+    let decoded = Command::new(env!("CARGO_BIN_EXE_av"))
+        .arg("decode")
+        .arg(root.join("out.webm"))
+        .arg("--y4m")
+        .arg(root.join("own.y4m"))
+        .output()
+        .unwrap();
+    assert!(
+        decoded.status.success(),
+        "{}",
+        String::from_utf8_lossy(&decoded.stderr)
+    );
     let decoded: Value = serde_json::from_slice(&decoded.stdout).unwrap();
     assert_eq!(decoded["frames"], 120);
     assert_eq!(video[0].timestamp, 0);
@@ -167,10 +188,19 @@ fn repeats_chunks_scaled_fade_and_gap() {
                 .map(|l| l.rsplit(',').next().unwrap().trim())
                 .collect();
             assert_eq!(hashes.len(), 120);
-            let own = Command::new("ffmpeg").args(["-v", "error", "-i"]).arg(root.join("own.y4m")).args(["-fps_mode", "passthrough", "-f", "framemd5", "-"]).output().unwrap();
+            let own = Command::new("ffmpeg")
+                .args(["-v", "error", "-i"])
+                .arg(root.join("own.y4m"))
+                .args(["-fps_mode", "passthrough", "-f", "framemd5", "-"])
+                .output()
+                .unwrap();
             assert!(own.status.success());
             let own = String::from_utf8(own.stdout).unwrap();
-            let own: Vec<_> = own.lines().filter(|l| !l.starts_with('#') && !l.is_empty()).map(|l| l.rsplit(',').next().unwrap().trim()).collect();
+            let own: Vec<_> = own
+                .lines()
+                .filter(|l| !l.starts_with('#') && !l.is_empty())
+                .map(|l| l.rsplit(',').next().unwrap().trim())
+                .collect();
             assert_eq!(hashes, own);
             assert_ne!(hashes[4], hashes[5]);
             // All holds must remain identical, including both sides of chunk keys.
@@ -181,7 +211,14 @@ fn repeats_chunks_scaled_fade_and_gap() {
             }
         }
     }
-    let invoke = || { let mut c = Command::new(env!("CARGO_BIN_EXE_av")); c.arg("render").arg(root.join("timeline.json")).arg("--out").arg(root.join("next.webm")); c };
+    let invoke = || {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_av"));
+        c.arg("render")
+            .arg(root.join("timeline.json"))
+            .arg("--out")
+            .arg(root.join("next.webm"));
+        c
+    };
     fs::write(root.join("victim"), b"keep").unwrap();
     std::os::unix::fs::symlink(root.join("victim"), root.join("next.webm")).unwrap();
     assert_eq!(invoke().output().unwrap().status.code(), Some(2));
@@ -193,14 +230,21 @@ fn repeats_chunks_scaled_fade_and_gap() {
     assert!(String::from_utf8_lossy(&failed.stderr).contains("published but receipt not written"));
     assert!(root.join("next.webm").is_file());
     fs::remove_file(root.join("next.webm")).unwrap();
-    let mut closed = invoke().stdout(std::process::Stdio::piped()).spawn().unwrap();
+    let mut closed = invoke()
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
     drop(closed.stdout.take());
     assert_eq!(closed.wait().unwrap().code(), Some(0));
     fs::remove_file(root.join("next.webm")).unwrap();
     let mut refused = t.clone();
     refused["audio"]["master"]["integrated_lufs"] = json!(-1);
     refused["audio"]["master"]["true_peak_dbtp"] = json!(-20);
-    fs::write(root.join("timeline.json"), serde_json::to_vec(&refused).unwrap()).unwrap();
+    fs::write(
+        root.join("timeline.json"),
+        serde_json::to_vec(&refused).unwrap(),
+    )
+    .unwrap();
     let refused = invoke().stdout(full()).stderr(full()).status().unwrap();
     assert_eq!(refused.code(), Some(3));
     assert!(!root.join("next.webm").exists());
