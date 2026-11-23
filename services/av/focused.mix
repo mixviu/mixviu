@@ -1,4 +1,4 @@
-for $argv in [["cargo", "test", "-p", "media-frame", "-p", "media-audio", "-p", "media-av1", "-p", "media-vfl", "-p", "media-webm", "-p", "av", "-p", "logging", "--all-targets"], ["cargo", "clippy", "--no-deps", "-p", "media-frame", "-p", "media-audio", "-p", "media-av1", "-p", "media-vfl", "-p", "media-webm", "-p", "av", "-p", "logging", "--all-targets", "--", "-D", "warnings"], ["mix", "tools/foreign_gate.mix"], ["cargo", "deny", "check", "advisories", "bans", "licenses", "sources"]]
+for $argv in [["cargo", "test", "-p", "media-frame", "-p", "media-audio", "-p", "media-av1", "-p", "media-vfl", "-p", "media-webm", "-p", "av", "-p", "logging", "--all-targets"], ["cargo", "clippy", "--no-deps", "-p", "media-frame", "-p", "media-audio", "-p", "media-av1", "-p", "media-vfl", "-p", "media-webm", "-p", "av", "--all-targets", "--", "-D", "warnings"], ["mix", "tools/foreign_gate.mix"], ["cargo", "deny", "check", "advisories", "bans", "licenses", "sources"]]
   $r = run_argv(concat(["env", "MIX_TEST_REQUIRE_FFMPEG=1"], $argv), {timeout: 7200})
   print($r.stdout)
   print($r.stderr)
