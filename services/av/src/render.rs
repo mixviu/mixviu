@@ -117,10 +117,11 @@ impl Timeline {
             {
                 return refuse("segment_path_relative");
             }
-            let r = media_vfl::reader::Reader::open(base.join(&s.path))?;
+            let mut r = media_vfl::reader::Reader::open(base.join(&s.path))?;
             if r.fps() != 30 || !r.complete() {
                 return refuse("segment_complete_30fps_required");
             }
+            if s.to_slot > r.frame_count()? { return refuse("segment_trim_outside_vfl"); }
             let start = frame(s.at_s);
             if previous.is_none() && start != 0 {
                 return refuse("gap_before_first_segment");
@@ -222,6 +223,40 @@ struct Chunk {
     config: Vec<u8>,
     encoded: usize,
 }
+fn compose(v: &Video, sources: &mut [Source], k: u64) -> Result<(Bgra, bool)> {
+    let j = v.segments.partition_point(|s| frame(s.at_s) <= k) - 1;
+    let s = &v.segments[j];
+    let slot = (s.from_slot + k - frame(s.at_s)).min(s.to_slot - 1);
+    let (mut b, mut repeat) = sources[j].get(slot, v.width, v.height)?;
+    if let Some(f) = v.crossfades.iter().find(|f| k >= frame(f.at_s) && k < frame(f.at_s + f.duration_s)) {
+        let old = &v.segments[j-1];
+        let old_slot = (old.from_slot + k-frame(old.at_s)).min(old.to_slot-1);
+        let (a, _) = sources[j-1].get(old_slot, v.width, v.height)?;
+        let len = frame(f.duration_s);
+        let weight = if len == 1 { 255 } else { ((k-frame(f.at_s))*255/(len-1)) as u8 };
+        b = a.crossfade(&b, weight)?; repeat = false;
+    }
+    Ok((b, repeat && k != frame(s.at_s)))
+}
+/// Lossless oracle export: exactly the executor's scaling, padding and fades.
+/// Used by the benchmark example, never by render's output path.
+pub fn reference(path: &Path, out: impl std::io::Write) -> Result<()> {
+    use std::io::Write;
+    let t: Timeline = serde_json::from_reader(std::fs::File::open(path)?)?;
+    let base = path.parent().unwrap_or(Path::new(".")); t.validate(base)?;
+    let v = &t.video;
+    let mut sources = v.segments.iter().map(|s| Source::new(base,s)).collect::<Result<Vec<_>>>()?;
+    let mut out = BufWriter::new(out);
+    writeln!(out, "YUV4MPEG2 W{} H{} F30:1 Ip A1:1 C420jpeg",v.width,v.height)?;
+    let mut yuv = None;
+    for k in 0..frame(t.duration_s) {
+        let (b, repeat) = compose(v,&mut sources,k)?;
+        if !repeat { yuv = Some(b.to_yuv420()); }
+        let yuv = yuv.as_ref().ok_or("missing_reference_frame")?;
+        out.write_all(b"FRAME\n")?; out.write_all(&yuv.y)?; out.write_all(&yuv.u)?; out.write_all(&yuv.v)?;
+    }
+    out.flush()?; Ok(())
+}
 fn chunk(t: &Timeline, base: &Path, start: u64, end: u64) -> Result<Chunk> {
     let v = &t.video;
     let e = &t.encode;
@@ -245,29 +280,9 @@ fn chunk(t: &Timeline, base: &Path, start: u64, end: u64) -> Result<Chunk> {
     let mut encoded = Vec::new();
     let mut positions = Vec::new();
     for k in start..end {
-        let j = v.segments.partition_point(|s| frame(s.at_s) <= k) - 1;
-        let s = &v.segments[j];
-        let slot = (s.from_slot + k - frame(s.at_s)).min(s.to_slot - 1);
-        let (mut b, mut repeat) = sources[j].get(slot, v.width, v.height)?;
-        if let Some(f) = v
-            .crossfades
-            .iter()
-            .find(|f| k >= frame(f.at_s) && k < frame(f.at_s + f.duration_s))
-        {
-            let old = &v.segments[j - 1];
-            let old_slot = (old.from_slot + k - frame(old.at_s)).min(old.to_slot - 1);
-            let (a, _) = sources[j - 1].get(old_slot, v.width, v.height)?;
-            let len = frame(f.duration_s);
-            let weight = if len == 1 {
-                255
-            } else {
-                ((k - frame(f.at_s)) * 255 / (len - 1)) as u8
-            };
-            b = a.crossfade(&b, weight)?;
-            repeat = false;
-        }
+        let (b, repeat) = compose(v,&mut sources,k)?;
         // The displayed keyframe is not showable. Submit its first successor too.
-        if !repeat || k < start + 2 || k == frame(s.at_s) {
+        if !repeat || k < start + 2 {
             let p = enc.prepare(&b.to_yuv420())?;
             encoded.extend(enc.submit(&p)?);
             positions.push(Some(k));
