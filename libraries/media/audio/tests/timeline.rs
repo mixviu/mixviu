@@ -118,5 +118,17 @@ fn placement_trim_fades_crossfade_and_mono() {
             .iter()
             .all(|s| (s - 0.5 * std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-7)
     );
+    let samples:Vec<f64>=(0..16).map(|k|(k/2) as f64/16.0).collect();
+    Audio::new(48000,2,samples.clone()).unwrap().write_wav(std::fs::File::create(dir.join("trim.wav")).unwrap(),WavFormat::Float32).unwrap();
+    let mut v=spec();v["duration_s"]=json!(4.0/48000.0);v["sources"]=json!([{"path":"trim.wav","at_s":0,"from_s":2.0/48000.0,"to_s":6.0/48000.0}]);
+    let a=serde_json::from_value::<Timeline>(v.clone()).unwrap().mix(&dir).unwrap();
+    assert_eq!(a.samples(),&samples[4..12]);
+    v["sources"][0]["to_s"]=json!(1);assert!(serde_json::from_value::<Timeline>(v).unwrap().mix(&dir).is_err());
+    let tone:Vec<f64>=(0..480).flat_map(|k|{let s=0.1*(std::f64::consts::TAU*1000.0*k as f64/48000.0).sin();[s,s]}).collect();
+    Audio::new(48000,2,tone.clone()).unwrap().write_wav(std::fs::File::create(dir.join("cross.wav")).unwrap(),WavFormat::Float32).unwrap();
+    let mut v=spec();v["duration_s"]=json!(0.01);v["sources"]=json!([{"path":"cross.wav","at_s":0,"fade_in_s":0.01},{"path":"cross.wav","at_s":0,"fade_out_s":0.01}]);
+    let a=serde_json::from_value::<Timeline>(v.clone()).unwrap().mix(&dir).unwrap();
+    assert!(a.samples().iter().zip(tone).all(|(a,b)|(a-b).abs()<1e-7));
+    v["sources"][0]["fade_in_s"]=json!(0.02);assert!(serde_json::from_value::<Timeline>(v).unwrap().mix(&dir).is_err());
     std::fs::remove_dir_all(dir).unwrap();
 }
