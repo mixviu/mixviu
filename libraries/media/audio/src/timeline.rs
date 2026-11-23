@@ -1,30 +1,3 @@
-    Ok(Encoded { audio, head, packets, receipt })
-}
-
-pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Result<Receipt> {
-    let Encoded { audio, head, packets, mut receipt } = prepare(t, base)?;
-    let mut wav_output = wav.map(crate::pending::Pending::new).transpose()?;
-    if let Some(output) = &mut wav_output {
-        audio.write_wav(BufWriter::new(&mut output.file), WavFormat::Float32)?;
-    }
-    let mut output = crate::pending::Pending::new(out)?;
-    let mut writer = media_webm::Writer::audio(BufWriter::new(&mut output.file), media_webm::Opus { channels: 2, pre_skip: head.pre_skip, input_sample_rate: 48000 })?;
-    for (k, p) in packets.iter().enumerate() {
-        writer.opus_packet(k as u64 * 20, &p.data, p.discard_padding)?;
-    }
-    writer.set_duration_samples(audio.frames() as u64);
-    drop(writer.finish()?);
-    receipt.bytes = output.file.metadata()?.len();
-    if !receipt.refused && receipt.target_reached {
-        if let Some(wav) = &mut wav_output { wav.publish()?; }
-        output.publish()?;
-        if let Some(wav) = &mut wav_output { wav.commit(); }
-        output.commit();
-    }
-    Ok(receipt)
-}
-
-    let count = audio.frames();
 //! Flat, absolute-time episode audio. Mix owns scene and join policy.
 use crate::{Audio, LimiterConfig, Loudness, WavFormat};
 use media_opus::{Channels, Decoder, Encoder, OpusDecoder, OpusEncoder, OpusHead, Packet};
@@ -277,25 +250,7 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
         codec_passes += 1;
     };
     let after = audio.measure()?;
-    let mut wav_output = wav.map(crate::pending::Pending::new).transpose()?;
-    if let Some(output) = &mut wav_output {
-        audio.write_wav(BufWriter::new(&mut output.file), WavFormat::Float32)?;
-    }
-    let mut output = crate::pending::Pending::new(out)?;
-    let mut writer = media_webm::Writer::audio(
-        BufWriter::new(&mut output.file),
-        media_webm::Opus {
-            channels: 2,
-            pre_skip: head.pre_skip,
-            input_sample_rate: 48000,
-        },
-    )?;
     let count = audio.frames();
-    for (k, p) in packets.iter().enumerate() {
-        writer.opus_packet(k as u64 * 20, &p.data, p.discard_padding)?;
-    }
-    writer.set_duration_samples(count as u64);
-    drop(writer.finish()?);
     let receipt = Receipt {
         before: r.before.into(),
         after: after.into(),
@@ -313,6 +268,23 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
         codec_trim_db,
         codec_passes,
     };
+    Ok(Encoded { audio, head, packets, receipt })
+}
+
+pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Result<Receipt> {
+    let Encoded { audio, head, packets, mut receipt } = prepare(t, base)?;
+    let mut wav_output = wav.map(crate::pending::Pending::new).transpose()?;
+    if let Some(output) = &mut wav_output {
+        audio.write_wav(BufWriter::new(&mut output.file), WavFormat::Float32)?;
+    }
+    let mut output = crate::pending::Pending::new(out)?;
+    let mut writer = media_webm::Writer::audio(BufWriter::new(&mut output.file), media_webm::Opus { channels: 2, pre_skip: head.pre_skip, input_sample_rate: 48000 })?;
+    for (k, p) in packets.iter().enumerate() {
+        writer.opus_packet(k as u64 * 20, &p.data, p.discard_padding)?;
+    }
+    writer.set_duration_samples(audio.frames() as u64);
+    drop(writer.finish()?);
+    receipt.bytes = output.file.metadata()?.len();
     if !receipt.refused && receipt.target_reached {
         if let Some(wav) = &mut wav_output {
             wav.publish()?;
