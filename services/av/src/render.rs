@@ -241,19 +241,24 @@ struct Chunk {
     config: Vec<u8>,
     encoded: usize,
 }
-fn compose(v: &Video, sources: &mut [Source], k: u64) -> Result<(Arc<Bgra>, bool)> {
+fn compose(v: &Video, base: &Path, sources: &mut [Option<Source>], k: u64) -> Result<(Arc<Bgra>, bool)> {
     let j = v.segments.partition_point(|s| frame(s.at_s) <= k) - 1;
+    // Execution walks forward. Retain only the current and outgoing segment;
+    // opening every reader up front would allocate one canvas per segment.
+    if j >= 2 { sources[j-2] = None; }
     let s = &v.segments[j];
+    if sources[j].is_none() { sources[j] = Some(Source::new(base,s)?); }
     let slot = (s.from_slot + k - frame(s.at_s)).min(s.to_slot - 1);
-    let (mut b, mut repeat) = sources[j].get(slot, v.width, v.height)?;
+    let (mut b, mut repeat) = sources[j].as_mut().ok_or("missing_segment_reader")?.get(slot, v.width, v.height)?;
     if let Some(f) = v
         .crossfades
         .iter()
         .find(|f| k >= frame(f.at_s) && k < frame(f.at_s + f.duration_s))
     {
         let old = &v.segments[j - 1];
+        if sources[j-1].is_none() { sources[j-1] = Some(Source::new(base,old)?); }
         let old_slot = (old.from_slot + k - frame(old.at_s)).min(old.to_slot - 1);
-        let (a, _) = sources[j - 1].get(old_slot, v.width, v.height)?;
+        let (a, _) = sources[j - 1].as_mut().ok_or("missing_segment_reader")?.get(old_slot, v.width, v.height)?;
         let len = frame(f.duration_s);
         let weight = if len == 1 {
             255
@@ -273,11 +278,7 @@ pub fn reference(path: &Path, out: impl std::io::Write) -> Result<()> {
     let base = path.parent().unwrap_or(Path::new("."));
     t.validate(base)?;
     let v = &t.video;
-    let mut sources = v
-        .segments
-        .iter()
-        .map(|s| Source::new(base, s))
-        .collect::<Result<Vec<_>>>()?;
+    let mut sources: Vec<_> = (0..v.segments.len()).map(|_| None).collect();
     let mut out = BufWriter::new(out);
     writeln!(
         out,
@@ -286,7 +287,7 @@ pub fn reference(path: &Path, out: impl std::io::Write) -> Result<()> {
     )?;
     let mut yuv = None;
     for k in 0..frame(t.duration_s) {
-        let (b, repeat) = compose(v, &mut sources, k)?;
+        let (b, repeat) = compose(v, base, &mut sources, k)?;
         if !repeat {
             yuv = Some(b.to_yuv420());
         }
@@ -314,15 +315,11 @@ fn chunk(t: &Timeline, base: &Path, start: u64, end: u64) -> Result<Chunk> {
         tile_rows: e.tile_rows,
         threads: e.threads,
     })?;
-    let mut sources: Vec<_> = v
-        .segments
-        .iter()
-        .map(|s| Source::new(base, s))
-        .collect::<Result<_>>()?;
+    let mut sources: Vec<_> = (0..v.segments.len()).map(|_| None).collect();
     let mut encoded = Vec::new();
     let mut positions = Vec::new();
     for k in start..end {
-        let (b, repeat) = compose(v, &mut sources, k)?;
+        let (b, repeat) = compose(v, base, &mut sources, k)?;
         // The displayed keyframe is not showable. Submit its first successor too.
         if !repeat || k < start + 2 {
             let p = enc.prepare(&b.to_yuv420())?;
