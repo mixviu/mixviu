@@ -3283,6 +3283,7 @@ citizen: test
             json!({"text":"new\ncontent","hide":true}),
         ] {
             view.apply_model(model).unwrap();
+            let mut current = None;
             ctx.run_ui(egui::RawInput::default(), |ui| {
                 view.show(ui);
                 let nodes = &view.measurement_nodes.as_ref().unwrap().1;
@@ -3309,9 +3310,10 @@ citizen: test
                     key,
                     super::layout_height_key(ui, &nodes["a"], "root/a", 200., 1)
                 );
-                keys.push(key);
+                current = Some(key);
             })
             .drop_without_applying_deltas();
+            keys.push(current.unwrap());
         }
         assert_ne!(keys[0], keys[1]);
         assert_ne!(keys[1], keys[2]);
