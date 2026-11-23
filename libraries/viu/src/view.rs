@@ -1699,6 +1699,7 @@ impl SceneView {
                                     }
                                     let content = if text(node,"align")=="center" { ui.vertical_centered(|ui| draw(ui)) } else { ui.vertical(|ui| draw(ui)) }.response.rect.height()-extra*count.saturating_sub(1) as f32;
                                     let content=content-last_growth;
+                                    if last.is_some(){eprintln!("STRETCH_DEBUG {id} assigned={assigned_height:?} previous={previous_content} natural={content} growth={last_growth} width={}",ui.available_width());}
                                     if last.is_some(){measure_put(ui,last_key,content);if (previous_content-content).abs()>0.01{ui.ctx().request_discard("last child natural height");}}
                                     self.natural_heights.insert(id.into(),content+node_padding(node,"padding_top")+node_padding(node,"padding_bottom"));
                                     ui.spacing_mut().item_spacing.y=old_gap;
