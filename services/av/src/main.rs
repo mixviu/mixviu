@@ -14,7 +14,10 @@ fn main() -> ExitCode {
         Some(command) if command == "decode" || command == "probe" => {
             match decode::run(command == "probe", args) {
                 Ok(()) => ExitCode::SUCCESS,
-                Err(e) => { eprintln!("av: {e}"); ExitCode::from(2) }
+                Err(e) => {
+                    eprintln!("av: {e}");
+                    ExitCode::from(2)
+                }
             }
         }
         _ => {

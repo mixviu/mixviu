@@ -184,10 +184,20 @@ fn hostile_many_tracks_blocks_and_cues_refused_within_bound() {
 #[test]
 fn depth_and_codec_limits() {
     let mut nested = Vec::new();
-    for _ in 0..10 { nested = el(0xae, &nested); }
-    assert!(matches!(Demuxer::new(&file(&nested)), Err(Error::Invalid("nesting depth limit"))));
-    let bad = el(0x1654ae6b, &el(0xae,&[u(0xd7,1),u(0x83,1),el(0x86,b"V_VP9")].concat()));
-    assert!(matches!(Demuxer::new(&file(&bad)),Err(Error::UnsupportedCodec(name)) if name == "V_VP9"));
+    for _ in 0..10 {
+        nested = el(0xae, &nested);
+    }
+    assert!(matches!(
+        Demuxer::new(&file(&nested)),
+        Err(Error::Invalid("nesting depth limit"))
+    ));
+    let bad = el(
+        0x1654ae6b,
+        &el(0xae, &[u(0xd7, 1), u(0x83, 1), el(0x86, b"V_VP9")].concat()),
+    );
+    assert!(
+        matches!(Demuxer::new(&file(&bad)),Err(Error::UnsupportedCodec(name)) if name == "V_VP9")
+    );
 }
 
 #[test]

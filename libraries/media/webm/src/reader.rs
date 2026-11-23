@@ -156,12 +156,18 @@ impl<'a> Demuxer<'a> {
                         match t.codec {
                             "V_AV1" if t.kind == 1 => {}
                             "A_OPUS" if t.kind == 2 => {
-                                if t.channels == 0 { t.channels = 1; }
-                                if t.sample_rate == 0.0 { t.sample_rate = 48_000.0; }
+                                if t.channels == 0 {
+                                    t.channels = 1;
+                                }
+                                if t.sample_rate == 0.0 {
+                                    t.sample_rate = 48_000.0;
+                                }
                             }
                             _ => return Err(Error::UnsupportedCodec(t.codec.to_owned())),
                         }
-                        if d.tracks.len() >= 64 { return Err(Error::Invalid("track limit")); }
+                        if d.tracks.len() >= 64 {
+                            return Err(Error::Invalid("track limit"));
+                        }
                         d.tracks.push(t);
                     }
                 }
@@ -235,13 +241,17 @@ impl<'a> Demuxer<'a> {
                                     }
                                     positions
                                         .push((track, pos.ok_or(Error::Invalid("cue position"))?));
-                                    if positions.len() > 64 { return Err(Error::Invalid("cue positions limit")); }
+                                    if positions.len() > 64 {
+                                        return Err(Error::Invalid("cue positions limit"));
+                                    }
                                 }
                                 _ => {}
                             }
                         }
                         for (track, pos) in positions {
-                            if d.cues.len() >= 100_000 { return Err(Error::Invalid("cue limit")); }
+                            if d.cues.len() >= 100_000 {
+                                return Err(Error::Invalid("cue limit"));
+                            }
                             d.cues.push(Cue {
                                 timestamp: time.ok_or(Error::Invalid("cue time"))?,
                                 track,
@@ -264,7 +274,9 @@ impl<'a> Demuxer<'a> {
         Ok(d)
     }
     fn block(&mut self, b: &'a [u8], base: i64, key: Option<bool>, cluster: u64) -> Result<()> {
-        if self.packets.len() >= 500_000 { return Err(Error::Invalid("packet limit")); }
+        if self.packets.len() >= 500_000 {
+            return Err(Error::Invalid("packet limit"));
+        }
         let mut p = 0;
         let (track, unknown) = vint(b, &mut p, false)?;
         if unknown || track == 0 {
@@ -338,24 +350,46 @@ fn float(b: &[u8]) -> Result<f64> {
         8 => f64::from_be_bytes(b.try_into().map_err(|_| Error::Truncated)?),
         _ => return Err(Error::Invalid("float size")),
     };
-    if !v.is_finite() || v < 0.0 { return Err(Error::Invalid("invalid float")); }
+    if !v.is_finite() || v < 0.0 {
+        return Err(Error::Invalid("invalid float"));
+    }
     Ok(v)
 }
 fn signed(b: &[u8]) -> Result<i64> {
-    if b.is_empty() || b.len() > 8 { return Err(Error::Invalid("signed integer size")); }
+    if b.is_empty() || b.len() > 8 {
+        return Err(Error::Invalid("signed integer size"));
+    }
     let mut bytes = [if b[0] & 128 != 0 { 255 } else { 0 }; 8];
-    bytes[8-b.len()..].copy_from_slice(b);
+    bytes[8 - b.len()..].copy_from_slice(b);
     Ok(i64::from_be_bytes(bytes))
 }
 
 fn validate_depth(b: &[u8], depth: usize, elements: &mut usize) -> Result<()> {
-    if depth > 8 { return Err(Error::Invalid("nesting depth limit")); }
+    if depth > 8 {
+        return Err(Error::Invalid("nesting depth limit"));
+    }
     for e in children(b) {
         let e = e?;
         *elements += 1;
-        if *elements > 2_000_000 { return Err(Error::Invalid("element count limit")); }
-        if matches!(e.id, 0x1a45dfa3 | 0x18538067 | 0x1549a966 | 0x1654ae6b | 0xae | 0xe0 | 0xe1 | 0x1f43b675 | 0xa0 | 0x1c53bb6b | 0xbb | 0xb7) {
-            validate_depth(e.data, depth+1, elements)?;
+        if *elements > 2_000_000 {
+            return Err(Error::Invalid("element count limit"));
+        }
+        if matches!(
+            e.id,
+            0x1a45dfa3
+                | 0x18538067
+                | 0x1549a966
+                | 0x1654ae6b
+                | 0xae
+                | 0xe0
+                | 0xe1
+                | 0x1f43b675
+                | 0xa0
+                | 0x1c53bb6b
+                | 0xbb
+                | 0xb7
+        ) {
+            validate_depth(e.data, depth + 1, elements)?;
         }
     }
     Ok(())
