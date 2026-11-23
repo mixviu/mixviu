@@ -9,4 +9,11 @@ if is_file("lab/P.md") and is_file("lab/Q.md") then
   eprint("lab gate red: lab/P.md and lab/Q.md conflict")
   exit(1)
 end
+-- lab/SLOW names seconds to sleep before the verdict: a slow gate for the
+-- crash and timeout rehearsals.
+if is_file("lab/SLOW") then
+  $s = to_number(trim(read_file("lab/SLOW"))) ?? 0
+  print("lab gate sleeping " .. to_string($s) .. " s")
+  sleep($s)
+end
 print("lab gate green")
