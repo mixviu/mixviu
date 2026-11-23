@@ -2,6 +2,61 @@
 use super::*;
 
 #[test]
+fn equal_rows_stretch_single_cards_and_only_the_last_stacked_card() {
+    let source = include_str!("../../../../apps/deck/examples/equal-rows.scene.mix");
+    let mut view = SceneView::new(source).unwrap();
+    let ctx = egui::Context::default();
+    ctx.set_pixels_per_point(2.4);
+    for frame in 0..16 {
+        let mut out = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1000., 900.),
+                )),
+                time: Some(frame as f64),
+                ..Default::default()
+            },
+            |ui| {
+                view.show(ui);
+            },
+        );
+        out.textures_delta.clear();
+        if frame >= 12 {
+            assert!(!ctx.has_requested_repaint());
+            assert!(!ctx.will_discard());
+        }
+    }
+    let g = &view.geometry;
+    for id in ["a", "c"] {
+        assert!((g[id].bottom() - g["b"].bottom()).abs() < 1., "{id}: {g:?}");
+    }
+    assert!((g["e"].bottom() - g["right"].bottom()).abs() < 1., "{g:?}");
+    assert!((g["e"].top() - g["d"].bottom() - 12.).abs() < 1.);
+    assert!(g["d"].height() < g["e"].height());
+}
+
+#[test]
+fn equal_grid_rows_are_independent_and_stacked_cells_need_no_fixed_height() {
+    let g = geometry(
+        r##"{
+      root:{widget:"grid",columns:2,equal_height:true,row_gap:20,children:["a","b","c","d"]},
+      a:{widget:"column",stretch_last:true,gap:12,children:["first","last"]},
+      first:{widget:"column",padding:8,background:"#123456",children:["f"]},f:{widget:"text",text:"First"},
+      last:{widget:"column",padding:8,background:"#123456",children:["l"]},l:{widget:"text",text:"Last"},
+      b:{widget:"column",padding:8,children:["bt"]},bt:{widget:"text",text:"Tall\n2\n3\n4\n5\n6\n7\n8"},
+      c:{widget:"column",children:["ct"]},ct:{widget:"text",text:"Short"},
+      d:{widget:"column",children:["dt"]},dt:{widget:"text",text:"Two\nlines"}
+    }"##,
+    );
+    assert!((g["last"].bottom() - g["b"].bottom()).abs() < 1., "{g:?}");
+    assert!((g["last"].top() - g["first"].bottom() - 12.).abs() < 1.);
+    assert!((g["c"].bottom() - g["d"].bottom()).abs() < 1.);
+    assert!(g["c"].height() < g["a"].height());
+    assert!((g["c"].top() - g["a"].bottom() - 20.).abs() < 1.);
+}
+
+#[test]
 fn measured_rows_share_remaining_width_with_fill_children() {
     for row in ["cross_align:\"center\"", "align:\"start\""] {
         for flex in ["", ",shrink:1", ",basis:100"] {

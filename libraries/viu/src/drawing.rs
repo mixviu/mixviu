@@ -29,8 +29,11 @@ pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
     let Ok(primitives) = serde_json::from_value::<Vec<Primitive>>(raw.clone()) else {
         return;
     };
-    static TABLE: std::sync::OnceLock<Vec<motion::Preset>> = std::sync::OnceLock::new();
-    let table = TABLE.get_or_init(motion::presets);
+    let legacy = node
+        .ports
+        .get("motion_profile")
+        .and_then(serde_json::Value::as_str)
+        == Some("legacy-sting");
     let mut shapes = Vec::new();
     let mut shadow_shapes = Vec::new();
     let mut float_offset = None;
@@ -43,7 +46,17 @@ pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
         let mut opacity = 1.;
         let mut fraction = 1.;
         for e in &p.effects {
-            let Some(preset) = table.iter().find(|a| a.name == e.preset) else {
+            // The host selects a profile; authored primitive names never select
+            // the internal legacy namespace, even on a sting drawing.
+            if e.preset.starts_with("legacy-") {
+                return;
+            }
+            let name = if legacy {
+                format!("legacy-{}", e.preset)
+            } else {
+                e.preset.clone()
+            };
+            let Ok(preset) = motion::scene::paint_preset(&name) else {
                 return;
             };
             let v = preset.sample(time - e.delay);
@@ -355,6 +368,76 @@ fn paint_shadow(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn authored_legacy_primitive_names_never_paint_in_either_profile() {
+        for profile in ["current", "legacy-sting"] {
+            let node: scene::Node = serde_json::from_value(serde_json::json!({
+                "family":"drawing","line":1,"is_template":false,
+                "ports":{"w":100,"h":100,"sample_time":0.3,"motion_profile":profile,
+                    "primitives":[{"kind":"ellipse","centre":[50,50],"radius":[20,20],"colour":"#ff0000","effects":[{"preset":"legacy-pop"}]}]}
+            })).unwrap();
+            let ctx = egui::Context::default();
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                super::show(ui, "untrusted", &node);
+            });
+            out.textures_delta.clear();
+            assert!(
+                !out.shapes
+                    .iter()
+                    .any(|s| matches!(s.shape, egui::Shape::Ellipse(_)))
+            );
+        }
+    }
+    #[test]
+    fn ordinary_drawings_use_current_pop_and_sting_profile_uses_frozen_pop() {
+        for profile in ["current", "legacy-sting"] {
+            let source = format!(
+                r##"---
+scene: 1
+name: drawing-profile
+citizen: test
+---
+```mix
+{{root:{{widget:"drawing",w:100,h:100,sample_time:0.3,motion_profile:"{profile}",primitives:[{{kind:"ellipse",centre:[50,50],radius:[20,20],colour:"#ff0000",effects:[{{preset:"pop"}}]}}]}}}}
+```
+"##
+            );
+            let mut view = crate::view::SceneView::new(&source).unwrap();
+            let ctx = egui::Context::default();
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                view.show(ui);
+            });
+            out.textures_delta.clear();
+            let ellipse = out
+                .shapes
+                .iter()
+                .find_map(|s| match &s.shape {
+                    egui::Shape::Ellipse(e) => Some(e),
+                    _ => None,
+                })
+                .expect("painted ellipse");
+            let name = if profile == "current" {
+                "pop"
+            } else {
+                "legacy-pop"
+            };
+            let expected = motion::scene::paint_preset(name).unwrap().sample(0.3);
+            assert!(
+                (ellipse.radius.x - 20. * expected.get(motion::Property::Scale) as f32).abs()
+                    < 0.01
+            );
+            let other = motion::scene::paint_preset(if profile == "current" {
+                "legacy-pop"
+            } else {
+                "pop"
+            })
+            .unwrap()
+            .sample(0.3);
+            assert!(
+                (ellipse.radius.x - 20. * other.get(motion::Property::Scale) as f32).abs() > 0.1
+            );
+        }
+    }
     use super::*;
     #[test]
     fn sibling_shadows_cache_and_float_translates_the_cached_raster() {

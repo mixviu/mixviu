@@ -1,0 +1,25 @@
+---
+scene: 1
+name: equal-card-rows
+citizen: deck
+---
+```mix
+{
+ root:{widget:"column",gap:24,children:["three","two"]},
+ three:{widget:"grid",columns:3,column_gap:14,equal_height:true,children:["a","b","c"]},
+ a:{widget:"column",padding:16,background:"#183040",children:["at"]},
+ at:{widget:"text",text:"Short card"},
+ b:{widget:"column",padding:16,background:"#183040",children:["bt"]},
+ bt:{widget:"text",text:"The tallest card\nSecond line\nThird line\nFourth line"},
+ c:{widget:"column",padding:16,background:"#183040",children:["ct"]},
+ ct:{widget:"text",text:"Medium card\nSecond line"},
+ two:{widget:"row",equal_height:true,gap:12,children:["left","right"]},
+ left:{widget:"column",grow:1,stretch_last:true,gap:12,children:["d","e"]},
+ d:{widget:"column",padding:16,background:"#183040",children:["dt"]},
+ dt:{widget:"text",text:"First card stays natural"},
+ e:{widget:"column",padding:16,background:"#183040",children:["et"]},
+ et:{widget:"text",text:"Last card grows"},
+ right:{widget:"column",grow:1,padding:16,background:"#183040",children:["rt"]},
+ rt:{widget:"text",text:"Tall neighbour\nSecond line\nThird line\nFourth line\nFifth line\nSixth line\nSeventh line\nEighth line"}
+}
+```

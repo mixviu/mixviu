@@ -257,6 +257,21 @@ fn sting_entrance_paints_and_rejects_a_static_control() {
 #[test]
 #[ignore = "explicit CBC evidence: set STING_ORACLE to Chrome frame directory"]
 fn chrome_entrance_contact_sheet() {
+    if std::env::var_os("STING_NATIVE_ONLY").is_some() {
+        let out = PathBuf::from(std::env::var("STING_OUTPUT").expect("STING_OUTPUT"));
+        std::fs::create_dir_all(&out).unwrap();
+        let mut sheet = image::RgbaImage::new(960, 540 * TIMES.len() as u32);
+        for (i, model) in samples().into_iter().enumerate() {
+            let (image, _) = render(model);
+            image.save(out.join(format!("native-{i}.png"))).unwrap();
+            let small =
+                image::imageops::resize(&image, 960, 540, image::imageops::FilterType::Lanczos3);
+            image::imageops::replace(&mut sheet, &small, 0, i as i64 * 540);
+        }
+        sheet.save(out.join("native-contact-sheet.png")).unwrap();
+        println!("STING_NATIVE_CONTACT_SHEET={}", out.display());
+        return;
+    }
     let oracle = PathBuf::from(std::env::var("STING_ORACLE").expect("STING_ORACLE"));
     let out = std::env::temp_dir().join("mixviu-deck-sting");
     std::fs::create_dir_all(&out).unwrap();

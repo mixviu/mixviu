@@ -251,6 +251,41 @@ Additional ports (no defaults unless shown):
 | row/column/button | tooltip:o; intended shape title, optional subtitle/lines | `libraries/scene/src/schema.rs:360` |
 | row/column | background_inset:l? (four finite lengths in top/right/bottom/left order; background only), scroll:b, justify:s (start/center/end/between/around/evenly), bar:s, padding_x:length, padding_y:length, native_spacing:b, native_frame:b, group_frame:b, group_title:s, group_key:s, scroll_key:s, scroll_ready:b, reserve_panel_after:b, row_gap:n, column_gap:n, padding_top:n, padding_right:n, padding_bottom:n, padding_left:n | `libraries/scene/src/schema.rs:366` |
 
+`equal_height: true` on a SceneView row or grid opts into natural row-height
+stretch. Each grid row is independent; row children are top aligned. Put
+`stretch_last: true` on a column cell to grow its last visible child into the
+remaining height, preserving the authored gaps and earlier cards. Without it,
+the cell itself stretches. These boolean ports have no defaults. Assigned
+lengths are clamped to 0..1e6 and natural measurements use the bounded
+node-keyed cache. Remove fixed column heights when using natural equal rows.
+See `apps/deck/examples/equal-rows.scene.mix`.
+
+Children with an authored `height` keep that height, including padding, and
+contribute to the natural row maximum. `height` on a column is its inner
+content height; it takes priority over a parent assignment. Parent stretch
+assignments are outer heights, so both `justify` and `stretch_last` subtract
+the column's padding before calculating spare content space. When combined,
+`stretch_last` wins over column `justify`. Row `equal_height` wins over
+`justify: "between"` and `wrap: true` packing on measurable rows: an
+`equal_height` row is a single, unwrapped row. Height caches include the
+node/instance route, descendant content and visibility revision, width,
+display scale, font state and palette. Revision hashes are prepared when the
+scene/model changes; no descendant walk is added to settled frames. The
+revision uses iterative descendant hashing with a visiting set: each node
+is finalised once and each edge is visited once, and unrelated card keys
+stay warm. There is no hash depth cutoff or call-stack recursion, even for
+malformed cyclic graphs. Scene validation
+rejects child cycles; the SceneView painter stops below depth 128 (nodes
+called with depth greater than 128 emit no content). The revision still
+includes nodes beyond that paint limit.
+
+The `legacy-*` paint preset namespace and drawing `motion_profile:
+"legacy-sting"` are internal host protocols for frozen sting playback. Scene
+hosts may resolve them; deck documents cannot author them. The deck loader
+selects them only for `kind: "sting"`, including every entrance and its
+drawing effects. Ordinary drawings default to current presets. Drawing
+`motion_profile: "current"` is the other supported internal selector.
+
 Row align also accepts baseline (direct text children in SceneView). Column and list align accept start/center/end/stretch. cross_align never changes main-axis alignment or child order; when absent, each painter retains its existing path's cross placement. Column justify distributes only with an authored height or a stretch assignment; between/around/evenly retain main packing when any visible child is not direct text. Padding and outline lengths have a finite 1e6 ceiling in validation and paint. `length` accepts
 nonnegative finite numbers or `design.bar_inset`, `design.bar_padding_y`,
 `design.tool_margin`. The schema appends duplicate scroll/clip declarations;

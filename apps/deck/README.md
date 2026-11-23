@@ -99,8 +99,8 @@ entrance at `scene_time - beats[b] - delay`; it never restarts an entrance on
 each publication. Final playback freezes the last scene's end sample.
 
 For the reference title (`left`, beat 0.9, delay 0.15), both the native
-0.7-second preset and `oracle/reference/deck.js`/`anim.css` start at 1.05:
-opacity is 0 at 1.0/1.05, 0.287865 at 1.1 and 0.978681 at 1.5 seconds.
+0.9-second preset and `oracle/reference/deck.js`/`anim.css` start at 1.05:
+opacity is 0 at 1.0/1.05, 0.00260403 at 1.1 and 0.5 at 1.5 seconds.
 The core/native-port test pins these samples. There is no extra lead in the
 entrance sampler. Live playback defines zero at its first `viu.presentation`
 timestamp and paints the resulting sample on the following draw. A recorder
@@ -110,7 +110,7 @@ first-frame and draw latency must be measured before treating a recording's
 that correlation, so its precise wall-clock offset remains unproven.
 
 `anim` and `child_anim` support `fade`, `up`, `down`, `left`, `right`, `pop`,
-`zoom` and `wipe`.
+`zoom`, `wipe`, `drop`, `flip` and `spin`.
 `delay` and `stagger` are seconds, each in 0..60. A stagger container gives
 unconfigured direct children its beat and `delay + child_index * stagger`.
 Explicit child build entries take precedence. Unsupported transforms must be
@@ -251,3 +251,8 @@ centring, and rejects a static negative control. Its ignored evidence test
 reads Chrome frames from `STING_ORACLE`, saves native frames and a contact
 sheet under the worker temporary directory. Chrome is only an explicit
 evidence input; ordinary tests require no browser.
+
+Sting slides select frozen legacy presets for every entrance and for their
+drawing effects. Ordinary slides and drawings use the current table. The
+legacy names and drawing motion_profile selector are internal host protocols;
+authored deck documents cannot supply them.

@@ -35,7 +35,7 @@ fn timing($raw,$where,$steps)
   $t={b:number($raw.b ?? 0,$where..".b",0,$steps-1,true),delay:number($raw.delay ?? 0,$where..".delay",0,60),stagger:number($raw.stagger ?? 0,$where..".stagger",0,60),anim:$raw.anim ?? "fade",child_anim:$raw.child_anim ?? "fade",until:nil}
   if $raw.until!=nil then $t.until=number($raw.until,$where..".until",$t.b,$steps-1,true) end
   for $key in ["anim","child_anim"]
-    if not contains(["fade","up","down","left","right","pop","zoom","wipe"],$t[$key]) then fault("DECK_MOTION",$where.."."..$key,"unsupported entrance") end
+    if not contains(["fade","up","down","left","right","pop","zoom","wipe","drop","flip","spin"],$t[$key]) then fault("DECK_MOTION",$where.."."..$key,"unsupported entrance") end
   end
   return $t
 end
@@ -58,6 +58,17 @@ fn check_deck($deck)
     $build=$s.build ?? {};check_fields($build,keys($s.scene),$w..".build")
     for $node in keys($s.scene)
       if type($s.scene[$node])!="map" or type($s.scene[$node].widget)!="string" then fault("DECK_SCENE",$w..".scene."..$node,"expected widget node") end
+      $effect=$s.scene[$node].paint_effect ?? {}
+      if (type($effect)=="map" and starts_with($effect.preset ?? "","legacy-")) or $s.scene[$node].motion_profile!=nil then fault("DECK_MOTION",$w..".scene."..$node,"legacy motion is internal to the sting host") end
+      if $s.scene[$node].widget=="drawing" and type($s.scene[$node].primitives)=="list" then
+        for $primitive in $s.scene[$node].primitives
+          if type($primitive)=="map" and type($primitive.effects)=="list" then
+            for $fx in $primitive.effects
+              if type($fx)=="map" and type($fx.preset)=="string" and starts_with($fx.preset,"legacy-") then fault("DECK_MOTION",$w..".scene."..$node..".primitives","legacy drawing effects are internal to the sting host") end
+            end
+          end
+        end
+      end
       -- Data cannot smuggle executable bindings or input into a presentation.
       for $key in keys($s.scene[$node])
         $v=$s.scene[$node][$key]
@@ -86,7 +97,10 @@ end
 fn scene_source($slide)
   $nodes=$slide.scene
   for $key in keys($nodes)
-    if $nodes[$key].widget=="drawing" then $nodes[$key].sample_time="= $model.scene_time" end
+    if $nodes[$key].widget=="drawing" then
+      $nodes[$key].sample_time="= $model.scene_time"
+      $nodes[$key].motion_profile=if $slide.kind=="sting" then "legacy-sting" else "current" end
+    end
     if $nodes[$key].widget=="text" then
       $nodes[$key].font=if $nodes[$key].mono==true then "Noto Sans Mono" else "Liberation Sans" end
       $nodes[$key].mono_font="Noto Sans Mono"

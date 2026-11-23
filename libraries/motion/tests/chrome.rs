@@ -1,6 +1,44 @@
 use motion::{Property, presets};
 use serde_json::Value;
 
+#[test]
+fn paint_effect_resolves_the_entire_current_and_internal_legacy_tables() {
+    let old = motion::load_presets(include_str!("../legacy-presets.json")).unwrap();
+    for p in motion::presets() {
+        let resolved = motion::scene::paint_preset(&p.name).unwrap();
+        let legacy = motion::scene::paint_preset(&format!("legacy-{}", p.name)).unwrap();
+        let frozen = old.iter().find(|o| o.name == p.name).unwrap();
+        for t in [0., 0.1, 0.4, 0.7, 1., 3.] {
+            assert_eq!(resolved.sample(t), p.sample(t), "{}", p.name);
+            assert_eq!(legacy.sample(t), frozen.sample(t), "legacy-{}", p.name);
+        }
+    }
+    assert!(motion::scene::paint_preset("legacy-unknown").is_err());
+}
+
+#[test]
+fn title_samples_match_scene_entrances_and_legacy_sting_is_separate() {
+    let fixture: Value = serde_json::from_str(include_str!("../oracle/chrome.json")).unwrap();
+    let entrance = motion::scene::Entrance::Name("left".into()).playback(0., 0, false);
+    for sample in fixture["title_samples"].as_array().unwrap() {
+        let values = entrance.sample(sample["t"].as_f64().unwrap());
+        assert!((values.get(Property::Opacity) - sample["opacity"].as_f64().unwrap()).abs() < 1e-6);
+        assert!((values.get(Property::Tx) - sample["tx"].as_f64().unwrap()).abs() < 0.001);
+    }
+    let legacy = motion::load_presets(include_str!("../legacy-presets.json")).unwrap();
+    for name in ["fade", "zoom", "wipe"] {
+        let frozen = motion::scene::paint_preset(&format!("legacy-{name}")).unwrap();
+        let old = legacy.iter().find(|p| p.name == name).unwrap();
+        for i in 0..40 {
+            assert_eq!(frozen.sample(i as f64 / 30.), old.sample(i as f64 / 30.));
+        }
+        assert_ne!(
+            frozen.timing.duration,
+            motion::scene::paint_preset(name).unwrap().timing.duration
+        );
+    }
+}
+
 /// Requires the real generated fixture; absence is a failure, never a skip.
 #[test]
 fn chrome_oracle() {

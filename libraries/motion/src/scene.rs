@@ -6,21 +6,28 @@ use serde_json::Value;
 
 /// Paint effects supported by the externally clocked scene painter. Unlike
 /// lifecycle entrances these may require clipping or a text/vector filter.
+/// `legacy-*` is an internal deck-host namespace for frozen sting playback,
+/// never an authored deck animation. Full-table lookup preserves paint effects
+/// used by hosts before the deck entrance policy was added.
 pub fn paint_preset(name: &str) -> Result<Preset, &'static str> {
-    if ![
-        "fade", "up", "down", "left", "right", "pop", "drop", "zoom", "wipe",
-    ]
-    .contains(&name)
-    {
-        return Err("unsupported paint preset");
+    if let Some(legacy) = name.strip_prefix("legacy-") {
+        static LEGACY: std::sync::OnceLock<Vec<Preset>> = std::sync::OnceLock::new();
+        return LEGACY
+            .get_or_init(|| {
+                crate::load_presets(include_str!("../legacy-presets.json")).expect("frozen table")
+            })
+            .iter()
+            .find(|p| p.name == legacy)
+            .cloned()
+            .ok_or("unknown legacy paint preset");
     }
     static TABLE: std::sync::OnceLock<Vec<Preset>> = std::sync::OnceLock::new();
-    Ok(TABLE
+    TABLE
         .get_or_init(crate::presets)
         .iter()
         .find(|p| p.name == name)
-        .expect("canonical paint preset")
-        .clone())
+        .cloned()
+        .ok_or("unknown paint preset")
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
