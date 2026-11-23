@@ -188,7 +188,10 @@ impl Timeline {
     }
 }
 #[derive(Default)]
-struct ScaleStats { frames: usize, wall_s: f64 }
+struct ScaleStats {
+    frames: usize,
+    wall_s: f64,
+}
 struct Source {
     reader: media_vfl::reader::Reader,
     next: u64,
@@ -202,7 +205,13 @@ impl Source {
             current: None,
         })
     }
-    fn get(&mut self, slot: u64, width: usize, height: usize, stats: &mut ScaleStats) -> Result<(Arc<Bgra>, bool)> {
+    fn get(
+        &mut self,
+        slot: u64,
+        width: usize,
+        height: usize,
+        stats: &mut ScaleStats,
+    ) -> Result<(Arc<Bgra>, bool)> {
         if self.next == slot + 1 {
             return Ok((self.current.as_ref().ok_or("missing_frame")?.clone(), true));
         }
@@ -222,7 +231,14 @@ impl Source {
             self.current = Some(Arc::new(if w == width && h == height {
                 b
             } else {
-                { let start = Instant::now(); let scaled = b.resample(sw, sh)?; stats.frames += 1; stats.wall_s += start.elapsed().as_secs_f64(); scaled }.pad(
+                {
+                    let start = Instant::now();
+                    let scaled = b.resample(sw, sh)?;
+                    stats.frames += 1;
+                    stats.wall_s += start.elapsed().as_secs_f64();
+                    scaled
+                }
+                .pad(
                     width,
                     height,
                     (width - sw) / 2,
