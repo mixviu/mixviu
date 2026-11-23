@@ -86,12 +86,18 @@ fn err(
     // Descriptor-relative I/O must not leak /proc/self/fd implementation paths
     // into diagnostics. Resolve the pinned descriptor only for display; no I/O
     // is ever redirected through this path.
-    let file = path.strip_prefix("/proc/self/fd").ok().and_then(|relative| {
-        let mut parts = relative.components();
-        let fd = parts.next()?;
-        let root = Path::new("/proc/self/fd").join(fd.as_os_str());
-        std::fs::read_link(root).ok().map(|p| p.join(parts.as_path()))
-    }).unwrap_or_else(|| path.to_path_buf());
+    let file = path
+        .strip_prefix("/proc/self/fd")
+        .ok()
+        .and_then(|relative| {
+            let mut parts = relative.components();
+            let fd = parts.next()?;
+            let root = Path::new("/proc/self/fd").join(fd.as_os_str());
+            std::fs::read_link(root)
+                .ok()
+                .map(|p| p.join(parts.as_path()))
+        })
+        .unwrap_or_else(|| path.to_path_buf());
     Error {
         file,
         chunk,

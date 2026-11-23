@@ -580,9 +580,16 @@ fn cpu() -> f64 {
         .unwrap_or(0.0)
 }
 fn peak_rss_kib() -> Option<u64> {
-    std::fs::read_to_string("/proc/self/status").ok()?.lines().find_map(|line| {
-        line.strip_prefix("VmHWM:")?.split_whitespace().next()?.parse().ok()
-    })
+    std::fs::read_to_string("/proc/self/status")
+        .ok()?
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("VmHWM:")?
+                .split_whitespace()
+                .next()?
+                .parse()
+                .ok()
+        })
 }
 pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     let overall = Instant::now();
