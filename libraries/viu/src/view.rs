@@ -3267,25 +3267,68 @@ mod measurement_cache_tests {
     use serde_json::{Value, json};
     #[test]
     fn graph_revision_covers_deep_chains_and_cycles_in_one_hash_per_node() {
-        fn revision(count:usize,cycle:bool,changed:bool)->u64 {
-            let mut nodes=std::collections::BTreeMap::new();
+        fn revision(count: usize, cycle: bool, changed: bool) -> u64 {
+            let mut nodes = std::collections::BTreeMap::new();
             for i in 0..count {
-                let children=if cycle{vec![format!("n{}",(i+1)%count),format!("n{}",(i+2)%count)]}
-                    else if i+1<count{vec![format!("n{}",i+1)]}else{vec![]};
-                let mut ports=json!({"children":children});
-                if i==0{ports["equal_height"]=json!(true);}
-                if i==count-1{ports["text"]=json!(if changed{"changed leaf"}else{"original leaf"});}
-                nodes.insert(format!("n{i}"),serde_json::from_value::<scene::Node>(json!({"family":"column","ports":ports,"line":1,"is_template":false})).unwrap());
+                let children = if cycle {
+                    vec![
+                        format!("n{}", (i + 1) % count),
+                        format!("n{}", (i + 2) % count),
+                    ]
+                } else if i + 1 < count {
+                    vec![format!("n{}", i + 1)]
+                } else {
+                    vec![]
+                };
+                let mut ports = json!({"children":children});
+                if i == 0 {
+                    ports["stretch_last"] = json!(true);
+                }
+                if i == count - 1 {
+                    ports["text"] = json!(if changed {
+                        "changed leaf"
+                    } else {
+                        "original leaf"
+                    });
+                }
+                nodes.insert(
+                    format!("n{i}"),
+                    serde_json::from_value::<scene::Node>(
+                        json!({"family":"column","ports":ports,"line":1,"is_template":false}),
+                    )
+                    .unwrap(),
+                );
             }
             super::MEASUREMENT_WORK.set(0);
-            super::prepare_measurements(&mut nodes,"deep-graph",&json!({}),&mut Default::default(),&mut Default::default());
-            assert_eq!(super::MEASUREMENT_WORK.get(),count,"hash every node exactly once, including on cyclic graphs");
+            super::prepare_measurements(
+                &mut nodes,
+                "deep-graph",
+                &json!({}),
+                &mut Default::default(),
+                &mut Default::default(),
+            );
+            assert_eq!(
+                super::MEASUREMENT_WORK.get(),
+                count,
+                "hash every node exactly once, including on cyclic graphs"
+            );
             nodes["n0"].ports["__layout_revision"].as_u64().unwrap()
         }
-        assert_ne!(revision(300,false,false),revision(300,false,true),"a leaf below depth 128 must rekey the root");
-        assert_ne!(revision(1024,true,false),revision(1024,true,true),"cyclic graphs must terminate and include every node");
-        let cyclic="---\nscene: 1\nname: invalid-cycle\ncitizen: test\n---\n```mix\n{root:{widget:\"column\",children:[\"root\"]}}\n```\n";
-        assert!(super::SceneView::new(cyclic).is_err(),"cycles are refused before rendering");
+        assert_ne!(
+            revision(300, false, false),
+            revision(300, false, true),
+            "a leaf below depth 128 must rekey the root"
+        );
+        assert_ne!(
+            revision(1024, true, false),
+            revision(1024, true, true),
+            "cyclic graphs must terminate and include every node"
+        );
+        let cyclic = "---\nscene: 1\nname: invalid-cycle\ncitizen: test\n---\n```mix\n{root:{widget:\"column\",children:[\"root\"]}}\n```\n";
+        assert!(
+            super::SceneView::new(cyclic).is_err(),
+            "cycles are refused before rendering"
+        );
     }
     #[test]
     fn height_keys_cover_identity_descendants_visibility_route_and_paint_inputs() {
@@ -3699,14 +3742,20 @@ fn prepare_measurements(
         // recurse or revisit edges exponentially on malformed cyclic graphs.
         // Unrelated node changes may invalidate extra height entries, only
         // on scene/model revision; settled frames retain their cached keys.
-        use std::hash::{Hash,Hasher};
-        let mut h=std::collections::hash_map::DefaultHasher::new();
-        for (id,node) in nodes.iter() {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        for (id, node) in nodes.iter() {
             id.hash(&mut h);
-            node.ports.get("__measure_key").and_then(Value::as_u64).hash(&mut h);
+            node.ports
+                .get("__measure_key")
+                .and_then(Value::as_u64)
+                .hash(&mut h);
         }
-        let revision=h.finish();
-        for node in nodes.values_mut(){node.ports.insert("__layout_revision".into(),json!(revision));}
+        let revision = h.finish();
+        for node in nodes.values_mut() {
+            node.ports
+                .insert("__layout_revision".into(), json!(revision));
+        }
     }
 }
 #[cfg(test)]

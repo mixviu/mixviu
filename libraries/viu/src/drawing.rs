@@ -369,6 +369,22 @@ fn paint_shadow(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn authored_legacy_primitive_names_never_paint_in_either_profile() {
+        for profile in ["current", "legacy-sting"] {
+            let node: scene::Node = serde_json::from_value(serde_json::json!({
+                "family":"drawing","line":1,"is_template":false,
+                "ports":{"w":100,"h":100,"sample_time":0.3,"motion_profile":profile,
+                    "primitives":[{"kind":"ellipse","centre":[50,50],"radius":[20,20],"colour":"#ff0000","effects":[{"preset":"legacy-pop"}]}]}
+            })).unwrap();
+            let ctx = egui::Context::default();
+            let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                super::show(ui, "untrusted", &node);
+            });
+            out.textures_delta.clear();
+            assert!(!out.shapes.iter().any(|s| matches!(s.shape, egui::Shape::Ellipse(_))));
+        }
+    }
+    #[test]
     fn ordinary_drawings_use_current_pop_and_sting_profile_uses_frozen_pop() {
         for profile in ["current", "legacy-sting"] {
             let source = format!(

@@ -68,7 +68,7 @@ fn stretch_last_grid_and_row_keep_equal_bottoms_on_every_settled_frame() {
             r#"{widget:"text",text:"Last"}"#,
             r#"{widget:"spacer",size:0}"#,
         ] {
-            for extra in ["", "justify:\"between\","] {
+            for extra in ["", "justify:\"between\",", "wrap:true,"] {
                 if mode == "grid" && !extra.is_empty() {
                     continue;
                 }
@@ -193,13 +193,20 @@ fn hiding_last_card_rekeys_the_last_visible_child() {
 
 #[test]
 fn assigned_justify_last_child_excludes_distributed_growth_for_24_settled_frames() {
-    for justify in ["end","between"] {
-        let (children,nodes)=if justify=="between" {
-            (r#"["t","u"]"#,r#"t:{widget:"text",text:"T",size:10,line_height:1},u:{widget:"text",text:"U",size:10,line_height:1}"#)
+    for justify in ["end", "between"] {
+        let (children, nodes) = if justify == "between" {
+            (
+                r#"["t","u"]"#,
+                r#"t:{widget:"text",text:"T",size:10,line_height:1},u:{widget:"text",text:"U",size:10,line_height:1}"#,
+            )
         } else {
-            (r#"["t"]"#,r#"t:{widget:"text",text:"T",size:20,line_height:1},u:{widget:"text",text:"unused"}"#)
+            (
+                r#"["t"]"#,
+                r#"t:{widget:"text",text:"T",size:20,line_height:1},u:{widget:"text",text:"unused"}"#,
+            )
         };
-        let src=format!(r#"---
+        let src = format!(
+            r#"---
 scene: 1
 name: justify-last
 citizen: test
@@ -209,16 +216,21 @@ citizen: test
 first:{{widget:"column",height:20,children:[]}},
 last:{{widget:"column",justify:"{justify}",gap:0,children:{children}}},{nodes}}}
 ```
-"#);
-        let ctx=egui::Context::default();ctx.set_pixels_per_point(2.4);
+"#
+        );
+        let ctx = egui::Context::default();
+        ctx.set_pixels_per_point(2.4);
         for _ in 0..2 {
-            let mut view=SceneView::new(&src).unwrap();
-            frames(&ctx,&mut view,|v|{
-                let g=&v.geometry;
-                assert!((g["first"].height()-20.).abs()<0.01);
-                assert!((g["last"].top()-30.).abs()<0.01,"{justify}: {g:?}");
-                assert!((g["root"].height()-200.).abs()<0.01,"{justify}: {g:?}");
-                assert!(((g["last"].bottom()-200.)*2.4).abs()<=0.5,"{justify}: {g:?}");
+            let mut view = SceneView::new(&src).unwrap();
+            frames(&ctx, &mut view, |v| {
+                let g = &v.geometry;
+                assert!((g["first"].height() - 20.).abs() < 0.01);
+                assert!((g["last"].top() - 30.).abs() < 0.01, "{justify}: {g:?}");
+                assert!((g["root"].height() - 200.).abs() < 0.01, "{justify}: {g:?}");
+                assert!(
+                    ((g["last"].bottom() - 200.) * 2.4).abs() <= 0.5,
+                    "{justify}: {g:?}"
+                );
             });
         }
     }
@@ -226,10 +238,15 @@ last:{{widget:"column",justify:"{justify}",gap:0,children:{children}}},{nodes}}}
 
 #[test]
 fn equal_justify_cells_shrink_when_the_tall_sibling_shrinks() {
-    for mode in ["row","grid"] {
-        for justify in ["end","between"] {
-            let packing=if mode=="grid"{"columns:2,column_gap:10,"}else{"fill:true,gap:10,"};
-            let src=format!(r#"---
+    for mode in ["row", "grid"] {
+        for justify in ["end", "between"] {
+            let packing = if mode == "grid" {
+                "columns:2,column_gap:10,"
+            } else {
+                "fill:true,gap:10,"
+            };
+            let src = format!(
+                r#"---
 scene: 1
 name: justify-shrink
 citizen: test
@@ -240,15 +257,23 @@ a:{{widget:"column",grow:1,justify:"{justify}",gap:0,children:["t","u"]}},
 t:{{widget:"text",text:"T",size:10,line_height:1}},u:{{widget:"text",text:"U",size:10,line_height:1}},
 b:{{widget:"column",grow:1,height:"= $model.height",children:[]}}}}
 ```
-"#);
-            let ctx=egui::Context::default();ctx.set_pixels_per_point(2.4);
-            let mut view=SceneView::with_model(&src,json!({"height":200})).unwrap();
-            for height in [200,80,160,60] {
+"#
+            );
+            let ctx = egui::Context::default();
+            ctx.set_pixels_per_point(2.4);
+            let mut view = SceneView::with_model(&src, json!({"height":200})).unwrap();
+            for height in [200, 80, 160, 60] {
                 view.apply_model(json!({"height":height})).unwrap();
-                frames(&ctx,&mut view,|v|{
-                    let g=&v.geometry;
-                    assert!((g["root"].height()-height as f32).abs()<=0.5,"{mode} {justify}: {g:?}");
-                    assert!(((g["a"].bottom()-g["b"].bottom())*2.4).abs()<=0.5,"{mode} {justify}: {g:?}");
+                frames(&ctx, &mut view, |v| {
+                    let g = &v.geometry;
+                    assert!(
+                        (g["root"].height() - height as f32).abs() <= 0.5,
+                        "{mode} {justify}: {g:?}"
+                    );
+                    assert!(
+                        ((g["a"].bottom() - g["b"].bottom()) * 2.4).abs() <= 0.5,
+                        "{mode} {justify}: {g:?}"
+                    );
                 });
             }
         }
@@ -257,7 +282,7 @@ b:{{widget:"column",grow:1,height:"= $model.height",children:[]}}}}
 
 #[test]
 fn stretch_last_preserves_an_authored_last_child_height() {
-    let src=r#"---
+    let src = r#"---
 scene: 1
 name: fixed-last
 citizen: test
@@ -266,7 +291,14 @@ citizen: test
 {root:{widget:"column",height:200,stretch_last:true,gap:10,children:["first","last"]},first:{widget:"column",height:20,children:[]},last:{widget:"column",height:20,justify:"end",children:["t"]},t:{widget:"text",text:"T",size:10,line_height:1}}
 ```
 "#;
-    let ctx=egui::Context::default();ctx.set_pixels_per_point(2.4);
-    let mut view=SceneView::new(src).unwrap();
-    frames(&ctx,&mut view,|v|assert!((v.geometry["last"].height()-20.).abs()<=0.5,"{:?}",v.geometry));
+    let ctx = egui::Context::default();
+    ctx.set_pixels_per_point(2.4);
+    let mut view = SceneView::new(src).unwrap();
+    frames(&ctx, &mut view, |v| {
+        assert!(
+            (v.geometry["last"].height() - 20.).abs() <= 0.5,
+            "{:?}",
+            v.geometry
+        )
+    });
 }
