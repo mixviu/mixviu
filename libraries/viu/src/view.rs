@@ -1280,7 +1280,7 @@ impl SceneView {
                                 cell.set_width(width);
                                 cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(rect.left(),ui.clip_rect().top()),egui::pos2(rect.right(),ui.clip_rect().bottom()))));
                                 let stretch=equal && num(&nodes[*child],"height").is_none();
-                                if stretch {self.stretch_heights.insert((*child).into(),bounded_layout(cross,1e6));}
+                                if stretch {self.stretch_heights.insert((*child).into(),if equal{bounded_layout(cross,1e6)}else{cross});}
                                 self.node(&mut cell,child,nodes,route,depth+1,events);
                                 if equal {
                                     if stretch {self.stretch_heights.remove(*child);}
@@ -1657,7 +1657,8 @@ impl SceneView {
                                         let origin=ui.available_rect_before_wrap().min;let row_id=ui.scope_id();
                                         let equal=node.ports.get("equal_height")==Some(&Value::Bool(true));
                                         let equal_keys:Vec<_>=if equal{active.iter().zip(&widths).map(|(c,w)|layout_height_key(ui,&nodes[*c],&format!("{key}/{c}"),*w,self.frame_palette)).collect()}else{Vec::new()};
-                                        let cross=bounded_layout(active.iter().enumerate().map(|(i,c)|if equal{measure_get::<f32>(ui,equal_keys[i]).unwrap_or(0.)}else{ui.ctx().data(|d|d.get_temp::<f32>(row_id.with(("flex-height",c)))).unwrap_or(0.)}).fold(if node.ports.contains_key("cross_align"){num(node,"height").unwrap_or(0.)}else{0.},f32::max),1e6);
+                                        let cross=active.iter().enumerate().map(|(i,c)|if equal{measure_get::<f32>(ui,equal_keys[i]).unwrap_or(0.)}else{ui.ctx().data(|d|d.get_temp::<f32>(row_id.with(("flex-height",c)))).unwrap_or(0.)}).fold(if node.ports.contains_key("cross_align"){num(node,"height").unwrap_or(0.)}else{0.},f32::max);
+                                        let cross=if equal{bounded_layout(cross,1e6)}else{cross};
                                         let occupied=widths.iter().sum::<f32>()+ui.spacing().item_spacing.x*active.len().saturating_sub(1) as f32;
                                         let mut x=origin.x+if text(node,"align")=="end"{(bounded_layout(ui.available_width(),1e6)-occupied).max(0.)}else{0.};let mut height=0.0_f32;
                                         for (i,(child,width)) in active.iter().zip(&widths).enumerate() {
@@ -1668,11 +1669,11 @@ impl SceneView {
                                             cell.set_max_width(*width);
                                             cell.set_clip_rect(ui.clip_rect().intersect(egui::Rect::from_min_max(egui::pos2(x,ui.clip_rect().top()),egui::pos2(x+width,ui.clip_rect().bottom()))));
                                             let stretch=(equal || cross_align(node,text(node,"align"))=="stretch") && num(&nodes[*child],"height").is_none();
-                                            if stretch {self.stretch_heights.insert((*child).into(),bounded_layout(cross,1e6));}
+                                            if stretch {self.stretch_heights.insert((*child).into(),if equal{bounded_layout(cross,1e6)}else{cross});}
                                             if nodes[*child].family=="spacer"{cell.allocate_space(egui::vec2(*width,0.));self.geometry.insert((*child).into(),egui::Rect::from_min_size(rect.min,egui::vec2(*width,0.)));}else{self.node(&mut cell,child,nodes,route,depth+1,events);}
                                             if stretch {self.stretch_heights.remove(*child);}
                                             let actual=cell.min_rect().height();
-                                            let natural=bounded_layout(if equal{actual}else if stretch{self.natural_heights.get(*child).copied().unwrap_or(actual)}else{actual},1e6);
+                                            let natural=if equal{bounded_layout(actual,1e6)}else if stretch{self.natural_heights.get(*child).copied().unwrap_or(actual)}else{actual};
                                             if (natural-previous).abs()>0.01 || (equal && measure_get::<f32>(ui,cache).is_none()) {if equal{measure_put(ui,cache,natural);}else{ui.ctx().data_mut(|d|d.insert_temp(cache,natural));}ui.ctx().request_discard("flex cross size");}
 
                                             height=height.max(actual);x+=width+ui.spacing().item_spacing.x;
@@ -3261,7 +3262,7 @@ mod measurement_cache_tests {
     use serde_json::{Value, json};
     #[test]
     fn height_keys_cover_identity_descendants_visibility_route_and_paint_inputs() {
-        let source=r#"---
+        let source = r#"---
 scene: 1
 name: height-keys
 citizen: test
@@ -3272,25 +3273,48 @@ citizen: test
  at:{widget:"text",text:"= $model.text",hidden:"= $model.hide"},bt:{widget:"text",text:"Different\ncontent"}}
 ```
 "#;
-        let mut view=super::SceneView::with_model(source,json!({"text":"short","hide":false})).unwrap();
-        let ctx=egui::Context::default();
-        let mut keys=Vec::new();
-        for model in [json!({"text":"short","hide":false}),json!({"text":"new\ncontent","hide":false}),json!({"text":"new\ncontent","hide":true})] {
+        let mut view =
+            super::SceneView::with_model(source, json!({"text":"short","hide":false})).unwrap();
+        let ctx = egui::Context::default();
+        let mut keys = Vec::new();
+        for model in [
+            json!({"text":"short","hide":false}),
+            json!({"text":"new\ncontent","hide":false}),
+            json!({"text":"new\ncontent","hide":true}),
+        ] {
             view.apply_model(model).unwrap();
-            ctx.run_ui(egui::RawInput::default(),|ui|{
+            ctx.run_ui(egui::RawInput::default(), |ui| {
                 view.show(ui);
-                let nodes=&view.measurement_nodes.as_ref().unwrap().1;
-                let key=super::layout_height_key(ui,&nodes["a"],"root/a",200.,1);
-                assert_ne!(key,super::layout_height_key(ui,&nodes["b"],"root/b",200.,1));
-                assert_ne!(key,super::layout_height_key(ui,&nodes["a"],"another-route/a",200.,1));
-                assert_ne!(key,super::layout_height_key(ui,&nodes["a"],"root/a",201.,1));
-                assert_ne!(key,super::layout_height_key(ui,&nodes["a"],"root/a",200.,2));
-                ui.ctx().data_mut(|d|d.insert_temp(egui::Id::new("scene-font-state"),123_u64));
-                assert_ne!(key,super::layout_height_key(ui,&nodes["a"],"root/a",200.,1));
+                let nodes = &view.measurement_nodes.as_ref().unwrap().1;
+                let key = super::layout_height_key(ui, &nodes["a"], "root/a", 200., 1);
+                assert_ne!(
+                    key,
+                    super::layout_height_key(ui, &nodes["b"], "root/b", 200., 1)
+                );
+                assert_ne!(
+                    key,
+                    super::layout_height_key(ui, &nodes["a"], "another-route/a", 200., 1)
+                );
+                assert_ne!(
+                    key,
+                    super::layout_height_key(ui, &nodes["a"], "root/a", 201., 1)
+                );
+                assert_ne!(
+                    key,
+                    super::layout_height_key(ui, &nodes["a"], "root/a", 200., 2)
+                );
+                ui.ctx()
+                    .data_mut(|d| d.insert_temp(egui::Id::new("scene-font-state"), 123_u64));
+                assert_ne!(
+                    key,
+                    super::layout_height_key(ui, &nodes["a"], "root/a", 200., 1)
+                );
                 keys.push(key);
-            }).drop_without_applying_deltas();
+            })
+            .drop_without_applying_deltas();
         }
-        assert_ne!(keys[0],keys[1]);assert_ne!(keys[1],keys[2]);
+        assert_ne!(keys[0], keys[1]);
+        assert_ne!(keys[1], keys[2]);
     }
     #[test]
     fn animated_number_baseline_cache_tracks_the_rendered_sample() {

@@ -18,20 +18,41 @@ mod layout_review;
 
 #[test]
 fn sting_freezes_every_entrance_and_ordinary_slides_use_current_presets() {
-    for kind in ["sting","slide"] {
-        for anim in ["fade","up","down","left","right","pop","zoom","wipe","drop","flip","spin"] {
-            let dir=tempfile::tempdir().unwrap();let path=dir.path().join("deck.json");
+    for kind in ["sting", "slide"] {
+        for anim in [
+            "fade", "up", "down", "left", "right", "pop", "zoom", "wipe", "drop", "flip", "spin",
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("deck.json");
             std::fs::write(&path,json!({"schema":"deck.v1","slides":[{"id":"one","kind":kind,"steps":1,
                 "scene":{"root":{"widget":"text","text":"Entrance"}},"build":{"root":{"anim":anim}}}]}).to_string()).unwrap();
-            let mut deck=Deck::new();
-            assert_eq!(deck.call("deck.open",json!({"path":path})).reply.unwrap().rc,0);
-            deck.call("deck.play",json!({"slides":["one"],"beats":[[0,10]]}));
-            deck.call("viu.presentation",json!({"time":100}));
-            let model=deck.call("viu.presentation",json!({"time":100.3})).model.unwrap();
-            let preset=if kind=="sting"{format!("legacy-{anim}")}else{anim.into()};
-            assert_eq!(model["build"]["root"]["paint_effect"]["preset"],preset);
-            let expected=motion::scene::paint_preset(&preset).unwrap().sample(0.3);
-            assert!((model["build"]["root"]["opacity"].as_f64().unwrap()-expected.get(motion::Property::Opacity)).abs()<1e-6);
+            let mut deck = Deck::new();
+            assert_eq!(
+                deck.call("deck.open", json!({"path":path}))
+                    .reply
+                    .unwrap()
+                    .rc,
+                0
+            );
+            deck.call("deck.play", json!({"slides":["one"],"beats":[[0,10]]}));
+            deck.call("viu.presentation", json!({"time":100}));
+            let model = deck
+                .call("viu.presentation", json!({"time":100.3}))
+                .model
+                .unwrap();
+            let preset = if kind == "sting" {
+                format!("legacy-{anim}")
+            } else {
+                anim.into()
+            };
+            assert_eq!(model["build"]["root"]["paint_effect"]["preset"], preset);
+            let expected = motion::scene::paint_preset(&preset).unwrap().sample(0.3);
+            assert!(
+                (model["build"]["root"]["opacity"].as_f64().unwrap()
+                    - expected.get(motion::Property::Opacity))
+                .abs()
+                    < 1e-6
+            );
         }
     }
 }
