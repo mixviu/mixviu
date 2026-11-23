@@ -266,6 +266,9 @@ impl<W: Write + Seek> Writer<W> {
             if track == 1 && !key {
                 // RFC 9559 §5.1.3.5.5: zero means dependent, exact reference
                 // blocks unknown. The packet API does not expose codec refs.
+                // Keep this sentinel: omitting ReferenceBlock would label the
+                // BlockGroup as independently decodable; guessing -duration
+                // would invent a reference for AV1's multi-slot dependencies.
                 items.push(elem(0xfb, &0i64.to_be_bytes()));
             }
             if self.discard_ns != 0 {

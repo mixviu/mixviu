@@ -61,6 +61,12 @@ pub struct ReferenceTracker {
 }
 impl ReferenceTracker {
     pub fn observe(&mut self, packet: &[u8]) -> Result<bool> {
+        // Failure must also invalidate any previously shown reference.
+        let result = self.observe_inner(packet);
+        if result.is_err() { self.slot = None; }
+        result
+    }
+    fn observe_inner(&mut self, packet: &[u8]) -> Result<bool> {
         let mut frame = false;
         let mut key = false;
         for (kind, payload) in obus(packet)? {
@@ -105,6 +111,9 @@ impl ReferenceTracker {
                 } else {
                     2
                 };
+                // AV1 sequence_header_obu: enable_order_hint gates this field,
+                // independently of seq_force_integer_mv. See normative syntax:
+                // https://aomediacodec.github.io/av1-spec/#sequence-header-obu-syntax
                 self.order_bits = if order != 0 {
                     b.get(3)? as usize + 1
                 } else {
@@ -122,6 +131,9 @@ impl ReferenceTracker {
                 } // shown KEY or INTER only
                 key = ty == 0;
                 let resilient = if key { 1 } else { b.get(1)? };
+                // Refuse primary-reference / short-signaling paths outright.
+                // new_repeats() pins rav1e's error_resilient setting explicitly.
+                if resilient == 0 { return Err(unknown()); }
                 b.get(1)?;
                 let screen = if self.screen == 2 {
                     b.get(1)?
@@ -131,11 +143,8 @@ impl ReferenceTracker {
                 if screen > 0 && self.integer == 2 {
                     b.get(1)?;
                 }
-                b.get(1)?; // frame_size_override
+                if b.get(1)? != 0 { return Err(unknown()); } // frame_size_override
                 b.get(self.order_bits)?;
-                if !key && resilient == 0 {
-                    b.get(3)?;
-                }
                 if key {
                     self.slot = None;
                 } else {
@@ -161,10 +170,64 @@ impl ReferenceTracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn bits(fields: &[(u32, usize)]) -> Vec<u8> {
+        let mut data = vec![0; fields.iter().map(|(_, n)| n).sum::<usize>().div_ceil(8)];
+        let mut pos = 0;
+        for &(v, n) in fields {
+            for i in (0..n).rev() {
+                data[pos / 8] |= (((v >> i) & 1) as u8) << (7 - pos % 8);
+                pos += 1;
+            }
+        }
+        data
+    }
+    fn sequence(order: bool) -> Vec<u8> {
+        // Exact sequence_header_obu prefix through OrderHintBits. The integer
+        // MV value is zero in both cases: it does not gate order-hint bits.
+        let mut f = vec![(0,5),(0,1),(0,1),(0,5),(0,12),(0,5),
+            (0,4),(0,4),(0,1),(0,1),(0,1),(0,3),(0,4),(order as u32,1)];
+        if order { f.push((0,2)); }
+        f.extend([(0,1),(1,1),(0,1),(0,1)]);
+        if order { f.push((2,3)); }
+        let payload = bits(&f);
+        let mut obu = vec![0x0a, payload.len() as u8];
+        obu.extend(payload);
+        obu
+    }
+    fn inter(order: bool, resilient: bool, size_override: bool, short: bool) -> Vec<u8> {
+        let mut f = vec![(0,1),(1,2),(1,1),(resilient as u32,1),(0,1),(size_override as u32,1)];
+        if order { f.push((0,3)); }
+        if !resilient { f.push((0,3)); } // primary_ref_frame
+        f.push((4,8)); // refresh_frame_flags
+        // These fields follow the refresh mask in AV1, not precede it.
+        if order { f.extend([(0,24),(short as u32,1)]); }
+        if short { f.extend([(0,3),(1,3)]); } else { f.push((0,21)); }
+        let payload = bits(&f);
+        let mut obu = vec![0x32, payload.len() as u8];
+        obu.extend(payload);
+        obu
+    }
+    #[test]
+    fn exact_prefix_conditions_and_refused_header_shapes() {
+        for order in [false, true] {
+            let mut t = ReferenceTracker::default();
+            // A sequence alone fails the packet contract, but records its prefix.
+            assert!(t.observe(&sequence(order)).is_err());
+            assert_eq!(t.order_bits, if order { 3 } else { 0 });
+            assert!(!t.observe(&inter(order, true, false, false)).unwrap());
+            assert_eq!(t.repeat().unwrap(), [0x12,0,0x1a,1,0xa8]);
+            for short in [false,true] {
+                assert_eq!(t.observe(&inter(order,false,false,short)).unwrap_err().0, "unknown_reference_state");
+                assert!(t.repeat().is_err());
+            }
+            assert_eq!(t.observe(&inter(order,true,true,false)).unwrap_err().0, "unknown_reference_state");
+            assert!(t.repeat().is_err());
+        }
+    }
     #[test]
     fn emitted_headers_determine_slots_and_sequence() {
         fn packets(width: usize) -> Vec<crate::Packet> {
-            let mut e = crate::Encoder::new(crate::Settings {
+            let mut e = crate::Encoder::new_repeats(crate::Settings {
                 width,
                 height: 32,
                 fps_num: 30,

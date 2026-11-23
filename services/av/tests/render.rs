@@ -78,8 +78,8 @@ fn repeats_chunks_scaled_fade_and_gap() {
         ),
         (
             "/video/crossfades/0/duration_s",
-            json!(1.0),
-            "crossfade_requires_overlap",
+            json!(3.0),
+            "crossfade_range",
         ),
     ] {
         let mut bad = t.clone();

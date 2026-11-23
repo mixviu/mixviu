@@ -34,9 +34,12 @@ end. A gap before the first segment is refused (`gap_before_first_segment`).
 The output contains exactly `round(duration_s * 30)` video blocks. Audio length
 is `round(duration_s * 48000)` samples, within half a video frame of that grid.
 
-A crossfade starts at an incoming segment's start. The preceding segment must
-cover the complete overlap. The weight runs from 0 to 255 inclusive over the
-rounded duration, using media-frame's integer encoded-BGRA interpolation.
+A crossfade starts at an incoming segment's start. The preceding segment's held
+last frame can cover a fade after its trim ends. Fades are sorted once and must
+not overlap; an advancing cursor replaces per-frame searches. The frame count is
+`round((at_s + duration_s) * 30) - round(at_s * 30)`. The weight runs from 0 to
+255 inclusive over that interval (255 for a one-frame fade), using media-frame's
+integer encoded-BGRA interpolation.
 Crossfades always encode. Overlaps without a crossfade are cuts.
 
 Scaling uses media-frame's separable Catmull-Rom bicubic filter (a=-0.5), with
@@ -48,11 +51,24 @@ crossfade contract; it does not introduce a separate linear-light workflow.
 
 Each chunk starts at a segment boundary or at most `keyint_s` apart. `chunks`
 limits concurrent encoders; omitted, it is available cores / 8, minimum one.
-Each encoder uses pinned rav1e 0.8.1, Main 8-bit 420, low latency, constant QP,
+`chunks * threads` must not exceed twice the available cores
+(`encode_thread_budget`). A conservative live-video admission estimate must
+also fit 8 GiB (`encode_memory_budget`): per concurrent chunk, six times the
+largest source BGRA canvas, the largest horizontal scaler intermediate
+(`scaled_width * source_height * 16`), 96 bytes per output pixel for frame and
+encoder working storage, 64 MiB for compressed payloads and 64 MiB for metadata.
+This is an admission estimate, not an operating-system RSS limit; rav1e's internal
+allocator and audio mastering add their own storage. Real episode peak RSS is
+reported with the worker receipt. Audio has the bounded three-hour contract
+documented by media-audio; its mastering storage is released before video work.
+Each render encoder uses pinned rav1e 0.8.1, Main 8-bit 420, low latency,
+error-resilient frames, constant QP,
 no reordering and one GOP. Actual sequence OBUs must match across chunks.
 The bitstream parser reads refresh masks to choose the last shown frame's slot.
 It accepts only shown key/inter frames, no frame IDs, timing models or OBU
-extensions. Unsupported headers return `unknown_reference_state`; differing
+extensions. Size overrides and non-error-resilient frames are refused before
+reading refresh flags; OrderHintBits follows enable_order_hint per the AV1 spec.
+Unsupported headers return `unknown_reference_state`; differing
 sequence headers return `sequence_header_mismatch`. No slot-index formula is used.
 The first successor of each keyframe is encoded because a displayed keyframe
 cannot be re-shown. Later VFL repeats become five-byte show-existing units.
@@ -66,7 +82,8 @@ Opus reconstruction ceiling checks, pre-skip and terminal padding as `av audio`.
 Unknown JSON fields, non-relative or parent-traversing paths, oversized timelines,
 more than 10,000 segments/fades, duration over three hours, non-30-fps/incomplete
 VFL, out-of-range trims and invalid encoder settings are refused. Exit 2 means
-input/execution error; exit 3 means refused mastering. Output stages beside the
+input/execution error; exit 3 means refused mastering; exit 4 means published
+output with an undelivered receipt (EPIPE preserves the outcome). Output stages beside the
 destination and publishes atomically without replacing an existing file.
 
 The JSON receipt reports frame/encode/repeat/keyframe/chunk counts, stage wall
@@ -75,7 +92,18 @@ and process CPU seconds, effective fps, bytes and the complete audio receipt.
 frames. CPU accounting uses Linux process counters, including encoder threads.
 The nested audio byte count is Opus payload bytes; the outer byte count is the
 complete WebM. Only the active/outgoing VFL pair retains decoded canvases per
-chunk. Completed compressed chunks remain in memory until muxing.
+chunk. A completed batch is muxed in order and released before another starts;
+at most `chunks` results are retained. Each chunk's coded payload is capped at
+64 MiB (`chunk_bytes_limit`), plus at most 324,000 five-byte repeats and bounded
+frame/position metadata. Whole-episode compressed video is never retained.
+
+VFL directories are opened once per segment with O_DIRECTORY and O_NOFOLLOW.
+Their descriptor-resolved paths must lie beneath the canonical directory of the
+opened timeline file. Every reader, scan and lazy chunk read uses that retained
+descriptor via `/proc/self/fd`; original source paths are never reopened. Files
+inside the VFL must be regular and cannot be symlinks. Segment slots are bounded
+by a verified frame scan and all subsequent slot/coverage arithmetic is checked.
+Audio must explicitly request 48 kHz stereo (`audio_sample_rate`, `audio_channels`).
 
 Worker-only benchmark reference: `cargo build --release -p av --example reference`,
 then `reference TIMELINE.json` writes lossless Y4M through the exact same pixel
