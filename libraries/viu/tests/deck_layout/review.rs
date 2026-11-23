@@ -19,7 +19,7 @@ citizen: test
  a:{{widget:"column",grow:1,stretch_last:true,gap:12,padding_top:7,padding_bottom:9,children:["first","last"]}},
  first:{{widget:"column",children:["f"]}},f:{{widget:"text",text:"First"}},last:{leaf},
  l:{{widget:"text",text:"Last"}},
- b:{{widget:"column",grow:1,children:["bt"]}},bt:{{widget:"text",text:"Medium\n2\n3"}},
+ b:{{widget:"column",grow:1,children:["bt"]}},bt:{{widget:"text",text:"Medium\n2\n3\n4\n5"}},
  c:{{widget:"column",grow:1,children:["ct"]}},ct:{{widget:"text",text:"Tall\n2\n3\n4\n5\n6\n7\n8"}}}}
 ```
 "##
@@ -96,6 +96,7 @@ fn stretch_last_grid_and_row_keep_equal_bottoms_on_every_settled_frame() {
 fn equal_cells_with_different_descendants_invalidate_on_content_and_visibility() {
     for mode in ["grid", "row"] {
         let src = source(mode, r#"{widget:"column",children:["l"]}"#, "")
+            .replace("text:\"Medium\\n2\\n3\\n4\\n5\"", "text:\"Fixed\"")
             .replace(
                 "text:\"Tall\\n2\\n3\\n4\\n5\\n6\\n7\\n8\"",
                 "text:\"= $model.text\"",
