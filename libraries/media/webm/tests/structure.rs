@@ -201,6 +201,18 @@ fn depth_and_codec_limits() {
 }
 
 #[test]
+fn blockless_group_never_changes_previous_packet() {
+    let tracks = el(0x1654ae6b, &track(1, 1));
+    let previous = el(0xa3, &[0x81, 0, 0, 0x80, 42]);
+    let group = el(0xa0, &[u(0x9b, 999), el(0x75a2, &123i64.to_be_bytes())].concat());
+    for prior in [Vec::new(), previous] {
+        let cluster = el(0x1f43b675, &[u(0xe7, 0), prior, group.clone()].concat());
+        assert!(matches!(Demuxer::new(&file(&[tracks.clone(), cluster].concat())),
+            Err(Error::Invalid("BlockGroup missing Block"))));
+    }
+}
+
+#[test]
 fn srgb_identity_sequence_is_refused() {
     // Reduced still Main sequence through color_description: 1/13/0. This
     // branch omits color_range/chroma_sample_position, so no such bits follow.

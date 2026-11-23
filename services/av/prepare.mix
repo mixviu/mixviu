@@ -1,4 +1,4 @@
-$r = run_argv(["cargo", "fmt", "-p", "media-av1", "-p", "media-webm", "-p", "av"])
+$r = run_argv(["cargo", "fmt", "-p", "media-audio", "-p", "media-av1", "-p", "media-webm", "-p", "av", "-p", "logging"])
 print($r)
 $r = run_argv(["cargo", "metadata", "--format-version", "1"], {max_output: 16000000})
 print($r.stderr)
