@@ -55,6 +55,31 @@ fn validation() {
     );
 }
 #[test]
+fn nonfinite_and_nested_validation() {
+    for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -0.1] {
+        for field in 0..7 {
+            let mut v=spec(); v["sources"]=json!([{"path":"x","at_s":0}]);
+            let mut t:Timeline=serde_json::from_value(v).unwrap();
+            match field {
+                0=>t.sources[0].at_s=bad,
+                1=>t.sources[0].from_s=bad,
+                2=>t.sources[0].to_s=Some(bad),
+                3=>t.sources[0].fade_in_s=bad,
+                4=>t.sources[0].fade_out_s=bad,
+                5=>t.sources[0].gain_db=if bad.is_finite(){61.0}else{bad},
+                _=>t.duration_s=bad,
+            }
+            assert!(t.validate().is_err(),"field {field} value {bad}");
+        }
+    }
+    for (field,value) in [("integrated_lufs",json!(-71)),("true_peak_dbtp",json!(1)),("unknown",json!(0))] {
+        let mut v=spec(); v["master"][field]=value;
+        assert!(serde_json::from_value::<Timeline>(v).map(|t|t.validate().is_err()).unwrap_or(true));
+    }
+    let mut v=spec();v["sources"]=json!([{"path":"x","at_s":0,"from_s":1,"to_s":0}]);
+    assert!(serde_json::from_value::<Timeline>(v).unwrap().validate().is_err());
+}
+#[test]
 fn placement_trim_fades_crossfade_and_mono() {
     let dir = std::env::temp_dir().join(format!("timeline-unit-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

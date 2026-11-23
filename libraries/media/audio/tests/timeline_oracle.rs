@@ -30,6 +30,7 @@ fn mix_decode_length_and_mastering_oracles() {
         let log=String::from_utf8(o.stderr).unwrap(); let summary=log.rsplit("Summary:").next().unwrap();
         let get=|key:&str|summary.split(key).nth(1).unwrap().split_whitespace().next().unwrap().parse::<f64>().unwrap();
         assert!((get("I:")+14.0).abs()<=0.5,"{summary}"); assert!(get("Peak:")<=-0.9,"{summary}");
+        std::fs::remove_file(out).unwrap(); std::fs::remove_file(wav).unwrap();
     }
     std::fs::remove_dir_all(dir).unwrap();
 }

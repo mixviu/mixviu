@@ -205,12 +205,12 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
         LimiterConfig::default(),
     )?;
     if let Some(path) = wav {
-        audio.write_wav(BufWriter::new(File::create(path)?), WavFormat::Float32)?;
+        audio.write_wav(BufWriter::new(File::create_new(path)?), WavFormat::Float32)?;
     }
     let mut enc = OpusEncoder::new(Channels::Stereo, 128000)?;
     let h = enc.head();
     let mut writer = media_webm::Writer::audio(
-        BufWriter::new(File::create(out)?),
+        BufWriter::new(File::create_new(out)?),
         media_webm::Opus {
             channels: 2,
             pre_skip: h.pre_skip,
