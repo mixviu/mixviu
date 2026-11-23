@@ -4,31 +4,63 @@ use media_vfl::reader::{Directory, Reader};
 use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
 type Directories = Vec<Arc<Directory>>;
 const CHUNK_BYTES_LIMIT: usize = 64 * 1024 * 1024;
-fn collect_packets(out: &mut Vec<media_av1::Packet>, bytes: &mut usize, packets: Vec<media_av1::Packet>) -> Result<()> {
+fn collect_packets(
+    out: &mut Vec<media_av1::Packet>,
+    bytes: &mut usize,
+    packets: Vec<media_av1::Packet>,
+) -> Result<()> {
     for p in packets {
-        *bytes = bytes.checked_add(p.data.len()).filter(|n| *n <= CHUNK_BYTES_LIMIT).ok_or("render: chunk_bytes_limit")?;
+        *bytes = bytes
+            .checked_add(p.data.len())
+            .filter(|n| *n <= CHUNK_BYTES_LIMIT)
+            .ok_or("render: chunk_bytes_limit")?;
         out.push(p);
     }
     Ok(())
 }
 fn opened_timeline(path: &Path) -> Result<(std::fs::File, PathBuf)> {
-    let file = std::fs::File::options().read(true).custom_flags(libc::O_NONBLOCK).open(path)?;
-    if !file.metadata()?.is_file() { return refuse("timeline_regular_file"); }
+    let file = std::fs::File::options()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)?;
+    if !file.metadata()?.is_file() {
+        return refuse("timeline_regular_file");
+    }
     let resolved = std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))?;
     let base = std::fs::canonicalize(resolved.parent().ok_or("timeline_directory")?)?;
     Ok((file, base))
 }
 fn slot(s: &Segment, k: u64) -> Result<u64> {
-    let delta = k.checked_sub(frame(s.at_s)).ok_or("render: slot_arithmetic")?;
+    let delta = k
+        .checked_sub(frame(s.at_s))
+        .ok_or("render: slot_arithmetic")?;
     let last = s.to_slot.checked_sub(1).ok_or("render: slot_arithmetic")?;
-    Ok(s.from_slot.checked_add(delta).ok_or("render: slot_arithmetic")?.min(last))
+    Ok(s.from_slot
+        .checked_add(delta)
+        .ok_or("render: slot_arithmetic")?
+        .min(last))
 }
-fn fade_end(f: &Fade) -> u64 { frame(f.at_s + f.duration_s) }
+fn fade_end(f: &Fade) -> u64 {
+    frame(f.at_s + f.duration_s)
+}
 fn fade_weight(f: &Fade, k: u64) -> Result<u8> {
     let start = frame(f.at_s);
-    let len = fade_end(f).checked_sub(start).filter(|n| *n > 0).ok_or("render: crossfade_range")?;
-    let delta = k.checked_sub(start).filter(|n| *n < len).ok_or("render: crossfade_range")?;
-    Ok(if len == 1 { 255 } else { (delta.checked_mul(255).ok_or("render: crossfade_arithmetic")? / (len - 1)) as u8 })
+    let len = fade_end(f)
+        .checked_sub(start)
+        .filter(|n| *n > 0)
+        .ok_or("render: crossfade_range")?;
+    let delta = k
+        .checked_sub(start)
+        .filter(|n| *n < len)
+        .ok_or("render: crossfade_range")?;
+    Ok(if len == 1 {
+        255
+    } else {
+        (delta
+            .checked_mul(255)
+            .ok_or("render: crossfade_arithmetic")?
+            / (len - 1)) as u8
+    })
 }
 use serde::Deserialize;
 use std::sync::Arc;
@@ -106,7 +138,9 @@ fn refuse<T>(name: &str) -> Result<T> {
 }
 impl Timeline {
     fn validate(&mut self, base: &Path) -> Result<(Vec<u64>, Directories)> {
-        self.video.crossfades.sort_by(|a,b| a.at_s.total_cmp(&b.at_s));
+        self.video
+            .crossfades
+            .sort_by(|a, b| a.at_s.total_cmp(&b.at_s));
         let v = &self.video;
         if self.version != 1 {
             return refuse("version");
@@ -123,8 +157,12 @@ impl Timeline {
         if v.segments.is_empty() || v.segments.len() > 10000 || v.crossfades.len() > 10000 {
             return refuse("segments_limit");
         }
-        if self.audio.sample_rate != 48000 { return refuse("audio_sample_rate"); }
-        if self.audio.channels != 2 { return refuse("audio_channels"); }
+        if self.audio.sample_rate != 48000 {
+            return refuse("audio_sample_rate");
+        }
+        if self.audio.channels != 2 {
+            return refuse("audio_channels");
+        }
         let e = &self.encode;
         if e.threads == 0
             || e.threads > 64
@@ -144,7 +182,10 @@ impl Timeline {
             return refuse("encode_settings");
         }
         let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
-        if e.chunks.checked_mul(e.threads).is_none_or(|n| n > cores.saturating_mul(2)) {
+        if e.chunks
+            .checked_mul(e.threads)
+            .is_none_or(|n| n > cores.saturating_mul(2))
+        {
             return refuse("encode_thread_budget");
         }
         let mut directories = Vec::new();
@@ -167,10 +208,27 @@ impl Timeline {
             {
                 return refuse("segment_path_relative");
             }
-            let relative: PathBuf = s.path.components().filter_map(|c| if let std::path::Component::Normal(n) = c { Some(n) } else { None }).collect();
-            if relative.as_os_str().is_empty() { return refuse("segment_path_relative"); }
-            let directory = Arc::new(Directory::open(base.join(relative)).map_err(|e| format!("render: segment_directory: {e}"))?);
-            if !directory.resolved()?.starts_with(base) { return refuse("segment_path_escape"); }
+            let relative: PathBuf = s
+                .path
+                .components()
+                .filter_map(|c| {
+                    if let std::path::Component::Normal(n) = c {
+                        Some(n)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if relative.as_os_str().is_empty() {
+                return refuse("segment_path_relative");
+            }
+            let directory = Arc::new(
+                Directory::open(base.join(relative))
+                    .map_err(|e| format!("render: segment_directory: {e}"))?,
+            );
+            if !directory.resolved()?.starts_with(base) {
+                return refuse("segment_path_escape");
+            }
             let mut r = Reader::from_directory(directory.clone())?;
             if r.fps() != 30 || !r.complete() {
                 return refuse("segment_complete_30fps_required");
@@ -183,10 +241,20 @@ impl Timeline {
             source_bytes = source_bytes.max(w * h * 4);
             let ratio = (v.width as f64 / w as f64).min(v.height as f64 / h as f64);
             let sw = ((w as f64 * ratio).round() as u64).clamp(1, v.width as u64);
-            scale_bytes = scale_bytes.max(sw.checked_mul(h).and_then(|n| n.checked_mul(16)).ok_or("render: encode_memory_budget")?);
+            scale_bytes = scale_bytes.max(
+                sw.checked_mul(h)
+                    .and_then(|n| n.checked_mul(16))
+                    .ok_or("render: encode_memory_budget")?,
+            );
             directories.push(directory);
             let start = frame(s.at_s);
-            start.checked_add(s.to_slot.checked_sub(s.from_slot).ok_or("render: coverage_arithmetic")?).ok_or("render: coverage_arithmetic")?;
+            start
+                .checked_add(
+                    s.to_slot
+                        .checked_sub(s.from_slot)
+                        .ok_or("render: coverage_arithmetic")?,
+                )
+                .ok_or("render: coverage_arithmetic")?;
             if previous.is_none() && start != 0 {
                 return refuse("gap_before_first_segment");
             }
@@ -205,7 +273,9 @@ impl Timeline {
             {
                 return refuse("crossfade_range");
             }
-            let Ok(j) = v.segments.binary_search_by_key(&frame(f.at_s), |s| frame(s.at_s))
+            let Ok(j) = v
+                .segments
+                .binary_search_by_key(&frame(f.at_s), |s| frame(s.at_s))
             else {
                 return refuse("crossfade_segment_start");
             };
@@ -228,8 +298,15 @@ impl Timeline {
         let n = frame(self.duration_s);
         // Conservative admission estimate, including packet/position metadata,
         // two VFL canvases with payload/scratch, scaler and encoder frame storage.
-        let working = source_bytes * 6 + scale_bytes + (v.width as u64 * v.height as u64) * 96 + CHUNK_BYTES_LIMIT as u64 + 64 * 1024 * 1024;
-        if working.checked_mul(e.chunks as u64).is_none_or(|n| n > 8 * 1024 * 1024 * 1024) {
+        let working = source_bytes * 6
+            + scale_bytes
+            + (v.width as u64 * v.height as u64) * 96
+            + CHUNK_BYTES_LIMIT as u64
+            + 64 * 1024 * 1024;
+        if working
+            .checked_mul(e.chunks as u64)
+            .is_none_or(|n| n > 8 * 1024 * 1024 * 1024)
+        {
             return refuse("encode_memory_budget");
         }
         let step = frame(e.keyint_s);
@@ -333,11 +410,19 @@ fn compose(
         sources[j] = Some(Source::new(directories[j].clone())?);
     }
     let current_slot = slot(s, k)?;
-    let (mut b, mut repeat) = sources[j]
-        .as_mut()
-        .ok_or("missing_segment_reader")?
-        .get(current_slot, v.width, v.height, stats)?;
-    while v.crossfades.get(*fade_index).is_some_and(|f| k >= fade_end(f)) { *fade_index += 1; }
+    let (mut b, mut repeat) = sources[j].as_mut().ok_or("missing_segment_reader")?.get(
+        current_slot,
+        v.width,
+        v.height,
+        stats,
+    )?;
+    while v
+        .crossfades
+        .get(*fade_index)
+        .is_some_and(|f| k >= fade_end(f))
+    {
+        *fade_index += 1;
+    }
     if let Some(f) = v.crossfades.get(*fade_index).filter(|f| k >= frame(f.at_s)) {
         let old = &v.segments[j - 1];
         if sources[j - 1].is_none() {
@@ -373,7 +458,14 @@ pub fn reference(path: &Path, out: impl std::io::Write) -> Result<()> {
     )?;
     let mut yuv = None;
     for k in 0..frame(t.duration_s) {
-        let (b, repeat) = compose(v, &directories, &mut sources, &mut fade_index, k, &mut scaling)?;
+        let (b, repeat) = compose(
+            v,
+            &directories,
+            &mut sources,
+            &mut fade_index,
+            k,
+            &mut scaling,
+        )?;
         if !repeat {
             yuv = Some(b.to_yuv420());
         }
@@ -408,7 +500,14 @@ fn chunk(t: &Timeline, directories: &[Arc<Directory>], start: u64, end: u64) -> 
     let mut encoded_bytes = 0usize;
     let mut positions = Vec::new();
     for k in start..end {
-        let (b, repeat) = compose(v, &directories, &mut sources, &mut fade_index, k, &mut scaling)?;
+        let (b, repeat) = compose(
+            v,
+            &directories,
+            &mut sources,
+            &mut fade_index,
+            k,
+            &mut scaling,
+        )?;
         // The displayed keyframe is not showable. Submit its first successor too.
         if !repeat || k < start + 2 {
             let p = enc.prepare(&b.to_yuv420())?;
@@ -491,8 +590,7 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     let out = Path::new(&args[2]);
     let mut bytes = Vec::new();
     let (file, base) = opened_timeline(path)?;
-    file.take(16 * 1024 * 1024 + 1)
-        .read_to_end(&mut bytes)?;
+    file.take(16 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
     if bytes.len() > 16 * 1024 * 1024 {
         return refuse("timeline_size_limit");
     }
@@ -543,16 +641,27 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     let mut mux_wall = 0.0;
     let mut mux_cpu = 0.0;
     let chunk_count = starts.len() - 1;
-    for ranges in starts.windows(2).collect::<Vec<_>>().chunks(t.encode.chunks) {
+    for ranges in starts
+        .windows(2)
+        .collect::<Vec<_>>()
+        .chunks(t.encode.chunks)
+    {
         let wall = Instant::now();
         let c = cpu();
         let batch = std::thread::scope(|scope| {
-            let handles: Vec<_> = ranges.iter().map(|r| {
-                let t = &t;
-                let directories = &directories;
-                scope.spawn(move || chunk(t, directories, r[0], r[1]).map_err(|e| e.to_string()))
-            }).collect();
-            handles.into_iter().map(|h| h.join().map_err(|_| "chunk_worker_panicked".to_string())?).collect::<std::result::Result<Vec<_>, String>>()
+            let handles: Vec<_> = ranges
+                .iter()
+                .map(|r| {
+                    let t = &t;
+                    let directories = &directories;
+                    scope
+                        .spawn(move || chunk(t, directories, r[0], r[1]).map_err(|e| e.to_string()))
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().map_err(|_| "chunk_worker_panicked".to_string())?)
+                .collect::<std::result::Result<Vec<_>, String>>()
         })?;
         video_wall += wall.elapsed().as_secs_f64();
         video_cpu += cpu() - c;
@@ -560,12 +669,24 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
         let c = cpu();
         for chunk in batch {
             if let Some(previous) = &config {
-                if *previous != chunk.config { return refuse("sequence_header_mismatch"); }
+                if *previous != chunk.config {
+                    return refuse("sequence_header_mismatch");
+                }
             } else {
                 config = Some(chunk.config.clone());
-                writer = Some(media_webm::Writer::new(BufWriter::new(pending.file.try_clone()?), media_webm::Video {
-                    width: t.video.width as u32, height: t.video.height as u32, codec_private: chunk.config.clone(),
-                }, Some(media_webm::Opus {channels: a.head.channels, pre_skip: a.head.pre_skip, input_sample_rate: a.head.input_sample_rate}))?);
+                writer = Some(media_webm::Writer::new(
+                    BufWriter::new(pending.file.try_clone()?),
+                    media_webm::Video {
+                        width: t.video.width as u32,
+                        height: t.video.height as u32,
+                        codec_private: chunk.config.clone(),
+                    },
+                    Some(media_webm::Opus {
+                        channels: a.head.channels,
+                        pre_skip: a.head.pre_skip,
+                        input_sample_rate: a.head.input_sample_rate,
+                    }),
+                )?);
             }
             let w = writer.as_mut().ok_or("missing_muxer")?;
             encoded += chunk.encoded;
@@ -625,7 +746,11 @@ mod tests {
     fn fixture(root: &Path) -> Timeline {
         let mut w = media_vfl::Writer::new(root.join("a.vfl"), 32, 32, 30).unwrap();
         w.origin(0).unwrap();
-        w.frame(media_vfl::Frame { slot: 0, pixels: media_vfl::Pixels::Bgra(vec![70; 4096].into()) }).unwrap();
+        w.frame(media_vfl::Frame {
+            slot: 0,
+            pixels: media_vfl::Pixels::Bgra(vec![70; 4096].into()),
+        })
+        .unwrap();
         w.finish(60, 0, 0, None, true).unwrap();
         serde_json::from_value(json!({"version":1,"duration_s":4,
             "video":{"width":32,"height":32,"fps":30,"segments":[
@@ -645,14 +770,31 @@ mod tests {
         let outside = tempfile::tempdir().unwrap();
         std::os::unix::fs::symlink(outside.path(), root.path().join("a.vfl")).unwrap();
         let mut source = Source::new(directories[0].clone()).unwrap();
-        assert_eq!(source.get(0,32,32,&mut ScaleStats::default()).unwrap().0.pixels()[0],70);
-        assert!(t.validate(root.path()).unwrap_err().to_string().contains("segment_directory"));
+        assert_eq!(
+            source
+                .get(0, 32, 32, &mut ScaleStats::default())
+                .unwrap()
+                .0
+                .pixels()[0],
+            70
+        );
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("segment_directory")
+        );
         // An intermediate symlink is followed only during the one directory
         // open; descriptor resolution must still confine the actual result.
         std::os::unix::fs::symlink(outside.path(), root.path().join("parent")).unwrap();
         std::fs::create_dir(outside.path().join("escape.vfl")).unwrap();
         t.video.segments[0].path = "parent/escape.vfl".into();
-        assert!(t.validate(root.path()).unwrap_err().to_string().contains("segment_path_escape"));
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("segment_path_escape")
+        );
     }
     #[test]
     fn symlink_chunk_and_non_directory_refused() {
@@ -662,44 +804,117 @@ mod tests {
         std::fs::rename(&p, root.path().join("chunk")).unwrap();
         std::os::unix::fs::symlink(root.path().join("chunk"), &p).unwrap();
         assert!(t.validate(root.path()).is_err());
-        std::fs::write(root.path().join("file"),b"not a directory").unwrap();
+        std::fs::write(root.path().join("file"), b"not a directory").unwrap();
         t.video.segments[0].path = "file".into();
-        assert!(t.validate(root.path()).unwrap_err().to_string().contains("segment_directory"));
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("segment_directory")
+        );
     }
     #[test]
     fn rounding_hold_sorting_budgets_and_checked_slots() {
         let root = tempfile::tempdir().unwrap();
         let mut t = fixture(root.path());
         t.validate(root.path()).unwrap(); // previous trim ends before fade: held frame covers it
-        assert_eq!(t.video.crossfades[0].at_s,1.51);
-        for (at,duration) in [(1.51,0.041),(1.52,0.05)] {
-            let f = Fade {at_s:at,duration_s:duration};
-            assert_eq!(fade_weight(&f,fade_end(&f)-1).unwrap(),255);
-            if fade_end(&f)-frame(at)>1 { assert_eq!(fade_weight(&f,frame(at)).unwrap(),0); }
+        assert_eq!(t.video.crossfades[0].at_s, 1.51);
+        for (at, duration) in [(1.51, 0.041), (1.52, 0.05)] {
+            let f = Fade {
+                at_s: at,
+                duration_s: duration,
+            };
+            assert_eq!(fade_weight(&f, fade_end(&f) - 1).unwrap(), 255);
+            if fade_end(&f) - frame(at) > 1 {
+                assert_eq!(fade_weight(&f, frame(at)).unwrap(), 0);
+            }
         }
-        t.video.crossfades.push(Fade {at_s:1.51,duration_s:0.02});
-        assert!(t.validate(root.path()).unwrap_err().to_string().contains("crossfade_order"));
+        t.video.crossfades.push(Fade {
+            at_s: 1.51,
+            duration_s: 0.02,
+        });
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("crossfade_order")
+        );
         t.video.crossfades.pop();
         t.audio.channels = 1;
-        assert!(t.validate(root.path()).unwrap_err().to_string().contains("audio_channels"));
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("audio_channels")
+        );
         t.audio.channels = 2;
         t.audio.sample_rate = 44100;
-        assert!(t.validate(root.path()).unwrap_err().to_string().contains("audio_sample_rate"));
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("audio_sample_rate")
+        );
         t.audio.sample_rate = 48000;
-        t.encode.chunks = 64; t.encode.threads = 64;
-        assert!(t.validate(root.path()).unwrap_err().to_string().contains("encode_thread_budget"));
-        t.encode.chunks = 1; t.encode.threads = 1;
+        t.encode.chunks = 64;
+        t.encode.threads = 64;
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("encode_thread_budget")
+        );
+        t.encode.chunks = 1;
+        t.encode.threads = 1;
         if std::thread::available_parallelism().map_or(1, |n| n.get()) >= 2 {
             t.video.crossfades.clear();
-            t.video.width = 7680; t.video.height = 4320; t.encode.chunks = 3;
-            assert!(t.validate(root.path()).unwrap_err().to_string().contains("encode_memory_budget"));
-            t.video.width = 32; t.video.height = 32; t.encode.chunks = 1;
+            t.video.width = 7680;
+            t.video.height = 4320;
+            t.encode.chunks = 3;
+            assert!(
+                t.validate(root.path())
+                    .unwrap_err()
+                    .to_string()
+                    .contains("encode_memory_budget")
+            );
+            t.video.width = 32;
+            t.video.height = 32;
+            t.encode.chunks = 1;
         }
         t.video.segments[0].to_slot = u64::MAX;
-        assert!(t.validate(root.path()).unwrap_err().to_string().contains("segment_trim_outside_vfl"));
-        let s = Segment {path: "a.vfl".into(), from_slot:u64::MAX-1,to_slot:u64::MAX,at_s:0.0};
-        assert!(slot(&s,2).unwrap_err().to_string().contains("slot_arithmetic"));
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("segment_trim_outside_vfl")
+        );
+        let s = Segment {
+            path: "a.vfl".into(),
+            from_slot: u64::MAX - 1,
+            to_slot: u64::MAX,
+            at_s: 0.0,
+        };
+        assert!(
+            slot(&s, 2)
+                .unwrap_err()
+                .to_string()
+                .contains("slot_arithmetic")
+        );
         let mut bytes = CHUNK_BYTES_LIMIT;
-        assert!(collect_packets(&mut Vec::new(), &mut bytes, vec![media_av1::Packet {data:vec![1],pts:0,duration:1,key_frame:false}]).unwrap_err().to_string().contains("chunk_bytes_limit"));
+        assert!(
+            collect_packets(
+                &mut Vec::new(),
+                &mut bytes,
+                vec![media_av1::Packet {
+                    data: vec![1],
+                    pts: 0,
+                    duration: 1,
+                    key_frame: false
+                }]
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("chunk_bytes_limit")
+        );
     }
 }

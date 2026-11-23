@@ -4,8 +4,8 @@ use serde_json::{Value, json};
 use std::{
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Read, Seek},
-    os::unix::fs::OpenOptionsExt,
     os::fd::AsRawFd,
+    os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -283,9 +283,11 @@ impl Directory {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
         let normalized: PathBuf = path.as_ref().components().collect();
         let path = normalized.as_path();
-        let file = OpenOptions::new().read(true)
+        let file = OpenOptions::new()
+            .read(true)
             .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_NONBLOCK)
-            .open(path).map_err(|e| err(path, None, 0, ErrorKind::Io, e))?;
+            .open(path)
+            .map_err(|e| err(path, None, 0, ErrorKind::Io, e))?;
         Ok(Self { file })
     }
     pub fn resolved(&self) -> std::io::Result<PathBuf> {
