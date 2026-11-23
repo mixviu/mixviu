@@ -1,6 +1,6 @@
 # Narration audio
 
-`media-audio` holds in-memory primitives for S1/S2. The `mixd av audio` command uses its flat timeline module;
+`media-audio` holds in-memory primitives for S1/S2. The `av audio` command uses its flat timeline module;
 `mix` and `mix-shell` remain free of media dependencies. All offsets and lengths are sample **frames**.
 Samples are finite interleaved f64, mono or stereo. Mixing preserves headroom.
 
@@ -140,7 +140,7 @@ bytes in a finally block. The normal tests must pass on the unmodified source.
 
 ## Episode timelines
 
-`mixd av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]` executes
+`av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]` executes
 a strict version-1 flat timeline. Paths are relative to the JSON file.
 Times round to 48 kHz frames; trims refer to the resampled source. Source
 tails at the episode boundary are trimmed. A source starting exactly at the

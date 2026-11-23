@@ -2,12 +2,12 @@ use std::process::Command;
 #[test]
 fn av_errors_are_clean() {
     for args in [
-        vec!["av"],
-        vec!["av", "audio"],
-        vec!["av", "unknown", "x", "--out", "y"],
-        vec!["av", "audio", "missing.json", "--out", "x", "--out", "y"],
+        vec![],
+        vec!["audio"],
+        vec!["unknown", "x", "--out", "y"],
+        vec!["audio", "missing.json", "--out", "x", "--out", "y"],
     ] {
-        let o = Command::new(env!("CARGO_BIN_EXE_mixd"))
+        let o = Command::new(env!("CARGO_BIN_EXE_av"))
             .args(args)
             .output()
             .unwrap();

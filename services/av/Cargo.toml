@@ -1,0 +1,26 @@
+[package]
+name = "av"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+description = "Offline media timeline executor"
+
+[package.metadata.mixviu]
+component = "av"
+kind = "cli"
+layer = "core"
+contract = "none"
+profiles = ["base"]
+
+[[bin]]
+name = "av"
+path = "src/main.rs"
+
+[dependencies]
+media-audio = { path = "../../libraries/media/audio" }
+
+[lints]
+workspace = true

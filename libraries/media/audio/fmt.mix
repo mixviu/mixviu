@@ -1,4 +1,4 @@
-print(run_argv_must(["cargo", "fmt", "-p", "media-audio", "-p", "media-webm", "-p", "mixd"]))
-print(run_argv_must(["cargo", "check", "-p", "media-audio", "-p", "media-webm", "-p", "mixd"]))
+print(run_argv_must(["cargo", "fmt", "-p", "media-audio", "-p", "media-webm", "-p", "av"]))
+print(run_argv_must(["cargo", "check", "-p", "media-audio", "-p", "media-webm", "-p", "av"]))
 print(run_argv_must(["git", "diff"]))
 print(run_argv_must(["git", "checkout", "-q", "--", "."]))

@@ -2,13 +2,13 @@ use crate::timeline::{self, Timeline};
 use std::{ffi::OsString, path::PathBuf};
 pub fn run(args: impl IntoIterator<Item = OsString>) -> timeline::Result<()> {
     let a: Vec<_> = args.into_iter().collect();
-    if a.len() < 4 || a[0] != "audio" {
-        return Err("usage: mixd av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]".into());
+    if a.len() < 3 {
+        return Err("usage: av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]".into());
     }
-    let input = PathBuf::from(&a[1]);
+    let input = PathBuf::from(&a[0]);
     let mut out = None;
     let mut wav = None;
-    let mut i = 2;
+    let mut i = 1;
     while i < a.len() {
         let value = a.get(i + 1).ok_or("missing option value")?;
         if a[i] == "--out" && out.is_none() {
