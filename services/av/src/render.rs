@@ -25,10 +25,14 @@ impl SourceCatalog {
         if let Some(source) = self.paths.get(relative) {
             return Ok(source.clone());
         }
-        let directory = Arc::new(Directory::open(base.join(relative))
-            .map_err(|e| format!("render: segment_directory: {e}"))?);
+        let directory = Arc::new(
+            Directory::open(base.join(relative))
+                .map_err(|e| format!("render: segment_directory: {e}"))?,
+        );
         #[cfg(test)]
-        { self.opens += 1; }
+        {
+            self.opens += 1;
+        }
         let resolved = directory.resolved()?;
         if !resolved.starts_with(base) {
             return refuse("segment_path_escape");
@@ -41,7 +45,9 @@ impl SourceCatalog {
                 return refuse("segment_complete_30fps_required");
             }
             #[cfg(test)]
-            { self.scans += 1; }
+            {
+                self.scans += 1;
+            }
             let source = Arc::new(VflSource {
                 count: r.frame_count()?,
                 width: u64::from(r.width()),
@@ -59,14 +65,27 @@ fn source_paths(segments: &[Segment]) -> Result<Vec<PathBuf>> {
     let mut distinct = HashSet::new();
     let mut paths = Vec::with_capacity(segments.len());
     for s in segments {
-        if s.path.as_os_str().is_empty() || s.path.components().any(|c| {
-            !matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir)
-        }) {
+        if s.path.as_os_str().is_empty()
+            || s.path.components().any(|c| {
+                !matches!(
+                    c,
+                    std::path::Component::Normal(_) | std::path::Component::CurDir
+                )
+            })
+        {
             return refuse("segment_path_relative");
         }
-        let relative: PathBuf = s.path.components().filter_map(|c| {
-            if let std::path::Component::Normal(n) = c { Some(n) } else { None }
-        }).collect();
+        let relative: PathBuf = s
+            .path
+            .components()
+            .filter_map(|c| {
+                if let std::path::Component::Normal(n) = c {
+                    Some(n)
+                } else {
+                    None
+                }
+            })
+            .collect();
         if relative.as_os_str().is_empty() {
             return refuse("segment_path_relative");
         }
@@ -79,11 +98,13 @@ fn source_paths(segments: &[Segment]) -> Result<Vec<PathBuf>> {
     Ok(paths)
 }
 fn source_canvas_bytes(w: u64, h: u64) -> Result<u64> {
-    w.checked_mul(h).and_then(|n| n.checked_mul(4))
+    w.checked_mul(h)
+        .and_then(|n| n.checked_mul(4))
         .ok_or_else(|| "render: encode_memory_budget".into())
 }
 fn working_bytes(source: u64, scale: u64, width: u64, height: u64) -> Result<u64> {
-    source.checked_mul(8)
+    source
+        .checked_mul(8)
         .and_then(|n| n.checked_add(scale))
         .and_then(|n| width.checked_mul(height)?.checked_mul(448)?.checked_add(n))
         .and_then(|n| n.checked_add(CHUNK_BYTES_LIMIT as u64))
@@ -227,7 +248,11 @@ impl Timeline {
     fn validate(&mut self, base: &Path) -> Result<(Vec<u64>, Directories)> {
         self.validate_sources(base, &mut SourceCatalog::default())
     }
-    fn validate_sources(&mut self, base: &Path, catalog: &mut SourceCatalog) -> Result<(Vec<u64>, Directories)> {
+    fn validate_sources(
+        &mut self,
+        base: &Path,
+        catalog: &mut SourceCatalog,
+    ) -> Result<(Vec<u64>, Directories)> {
         self.video
             .crossfades
             .sort_by(|a, b| a.at_s.total_cmp(&b.at_s));
@@ -833,10 +858,14 @@ mod tests {
         let mut t = fixture(root.path());
         t.duration_s = 334.0;
         t.video.crossfades.clear();
-        t.video.segments = (0..10000).map(|i| Segment {
-            path: if i % 2 == 0 { "a.vfl" } else { "./a.vfl/" }.into(),
-            from_slot: 0, to_slot: 1, at_s: f64::from(i) / 30.0,
-        }).collect();
+        t.video.segments = (0..10000)
+            .map(|i| Segment {
+                path: if i % 2 == 0 { "a.vfl" } else { "./a.vfl/" }.into(),
+                from_slot: 0,
+                to_slot: 1,
+                at_s: f64::from(i) / 30.0,
+            })
+            .collect();
         let mut catalog = SourceCatalog::default();
         let (_, directories) = t.validate_sources(root.path(), &mut catalog).unwrap();
         assert_eq!(catalog.opens, 1);
@@ -855,24 +884,39 @@ mod tests {
     fn source_limit_precedes_all_directory_opens() {
         let root = tempfile::tempdir().unwrap();
         let mut t = fixture(root.path());
-        t.video.segments = (0..=SOURCE_LIMIT).map(|i| Segment {
-            path: format!("missing-{i}.vfl").into(),
-            from_slot: 0, to_slot: 1, at_s: i as f64 / 30.0,
-        }).collect();
+        t.video.segments = (0..=SOURCE_LIMIT)
+            .map(|i| Segment {
+                path: format!("missing-{i}.vfl").into(),
+                from_slot: 0,
+                to_slot: 1,
+                at_s: i as f64 / 30.0,
+            })
+            .collect();
         let mut catalog = SourceCatalog::default();
-        assert!(t.validate_sources(root.path(), &mut catalog).unwrap_err()
-            .to_string().contains("too_many_sources"));
+        assert!(
+            t.validate_sources(root.path(), &mut catalog)
+                .unwrap_err()
+                .to_string()
+                .contains("too_many_sources")
+        );
         assert_eq!(catalog.opens, 0);
         assert_eq!(catalog.scans, 0);
     }
     #[test]
     fn memory_budget_overflow_is_refused() {
-        for result in [source_canvas_bytes(u64::MAX, 2),
+        for result in [
+            source_canvas_bytes(u64::MAX, 2),
             source_canvas_bytes(u64::from(u32::MAX), u64::from(u32::MAX)),
             working_bytes(u64::MAX / 8 + 1, 0, 32, 32),
             working_bytes(1, u64::MAX, 32, 32),
-            working_bytes(0, 0, u64::MAX, 2)] {
-            assert!(result.unwrap_err().to_string().contains("encode_memory_budget"));
+            working_bytes(0, 0, u64::MAX, 2),
+        ] {
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("encode_memory_budget")
+            );
         }
         assert_eq!(source_canvas_bytes(32, 32).unwrap(), 4096);
     }
