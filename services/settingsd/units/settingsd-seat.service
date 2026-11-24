@@ -8,7 +8,10 @@ Description=MixViu settings authority for the KDE Plasma seat
 After=graphical-session.target
 PartOf=graphical-session.target
 ConditionEnvironment=XDG_SESSION_DESKTOP=KDE
-StartLimitIntervalSec=0
+# A missing profile fails seed; after five tries the unit parks as failed and
+# stays visible in `systemctl --user status` (restart it after `init`).
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -18,7 +21,7 @@ ExecStart=@{prefix}/bin/settingsd serve --instance %H --root %S/mix/settingsd/%H
 KillMode=control-group
 TimeoutStopSec=10
 Restart=on-failure
-RestartSec=1
+RestartSec=2
 
 [Install]
 WantedBy=graphical-session.target
