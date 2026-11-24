@@ -613,10 +613,9 @@ fn present(state: &mut Loop, output: &Output, visible: &[Window]) {
 fn send_frames(state: &mut Loop, output: &Output, visible: &[Window]) {
     use frames::draw::present::callbacks;
     if std::env::var_os("MIX_TEST_MAPPING_TRACE").is_some() {
-        use dispatcher::wire::trait_::wire_trait::WireTrait;
         for window in state.inner.space_state().state.elements() {
             eprintln!("MAP_FRAME visible={} waiting={} geometry={:?} loc={:?} slot={:?}",
-                visible.contains(window), callbacks::awaits_frame(window), window.geometry(),
+                visible.contains(window), window.toplevel().is_some_and(|t| callbacks::tree_awaits_frame(t.wl_surface())), window.geometry(),
                 state.inner.space_state().state.element_location(window),
                 world::camera::transform::translate::slot::expected_size(window));
         }
