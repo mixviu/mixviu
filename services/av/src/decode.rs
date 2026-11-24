@@ -272,7 +272,7 @@ fn duration_frame_limit(
 /// inclusive 1..=1000 fps range. Preflight both windows before scanning any
 /// grid: more than 64 candidate slots in total (before deduplication) gives
 /// unknown. DefaultDuration and exact uniform timing need no candidate search
-/// and retain their full range. With P track packets, work is O(C*P), C <= 64,
+/// and retain their full range. With P container packets, work is O(C*P), C <= 64,
 /// plus O(P) preflight passes, and O(1) extra space. P is already bounded by
 /// Demuxer's 256 MiB input / 128 MiB index limits.
 /// Test every remaining grid,
@@ -630,13 +630,22 @@ mod tests {
         ] {
             let packets = timing_packets(&timestamps, None);
             let mut tested = 0;
-            assert_eq!(probe_video_rate_with_work(0, scale, packets.iter(), || tested += 1), None);
-            assert_eq!(tested, 0, "over-budget/out-of-range input must not scan grids");
+            assert_eq!(
+                probe_video_rate_with_work(0, scale, packets.iter(), || tested += 1),
+                None
+            );
+            assert_eq!(
+                tested, 0,
+                "over-budget/out-of-range input must not scan grids"
+            );
         }
         let timestamps: Vec<_> = (0..301).map(|i| i * 1000 / 30).collect();
         let packets = timing_packets(&timestamps, None);
         let mut tested = 0;
-        assert_eq!(probe_video_rate_with_work(0, 1_000_000, packets.iter(), || tested += 1), Some(30.0));
+        assert_eq!(
+            probe_video_rate_with_work(0, 1_000_000, packets.iter(), || tested += 1),
+            Some(30.0)
+        );
         assert!(tested > 0 && tested <= MAX_PROBE_CANDIDATES);
     }
 
