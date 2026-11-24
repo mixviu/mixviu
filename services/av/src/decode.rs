@@ -11,6 +11,8 @@ use std::{
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const DEFAULT_MAX_OUTPUT_BYTES: u64 = 64 * 1024 * 1024 * 1024;
 const FRAME_MARGIN: u64 = 2;
+const MAX_PROBE_RATE: i128 = 1000;
+const MAX_PROBE_CANDIDATES: i128 = 64;
 
 struct OutputBudget {
     limit: u64,
@@ -266,7 +268,14 @@ fn duration_frame_limit(
 
 /// Probe timing only; Segment Duration and decoded frame count are independent.
 /// DefaultDuration wins, then an exact uniform tick interval (>= 3 packets).
-/// Otherwise test *all* endpoint-plausible N Hz and N*1000/1001 Hz grids,
+/// Otherwise test endpoint-plausible N Hz and N*1000/1001 Hz grids in the
+/// inclusive 1..=1000 fps range. Preflight both windows before scanning any
+/// grid: more than 64 candidate slots in total (before deduplication) gives
+/// unknown. DefaultDuration and exact uniform timing need no candidate search
+/// and retain their full range. With P track packets, work is O(C*P), C <= 64,
+/// plus O(P) preflight passes, and O(1) extra space. P is already bounded by
+/// Demuxer's 256 MiB input / 128 MiB index limits.
+/// Test every remaining grid,
 /// returning a rate only for one match. Fractional fps is returned as f64
 /// (e.g. 30000/1001), not rounded to 29.97 or a neighbouring integer.
 /// A grid needs residual spread strictly below one TimestampScale tick and
@@ -283,6 +292,17 @@ fn probe_video_rate<'a>(
     default_ns: u64,
     scale_ns: u64,
     packets: impl Iterator<Item = &'a media_webm::Packet<'a>> + Clone,
+) -> Option<f64> {
+    probe_video_rate_with_work(default_ns, scale_ns, packets, || {})
+}
+
+// The observer lets tests assert the actual number of grid scans, independent
+// of machine speed. The no-op production observer is optimised away.
+fn probe_video_rate_with_work<'a>(
+    default_ns: u64,
+    scale_ns: u64,
+    packets: impl Iterator<Item = &'a media_webm::Packet<'a>> + Clone,
+    mut tested_candidate: impl FnMut(),
 ) -> Option<f64> {
     if default_ns > 0 {
         return Some(1e9 / default_ns as f64);
@@ -317,21 +337,32 @@ fn probe_video_rate<'a>(
 
     let tick = i128::from(scale_ns);
     let span = (i128::from(previous) - i128::from(first)).checked_mul(tick)?;
-    let mut matched = None;
-    for (multiplier, denominator) in [(1, 1), (1000, 1001)] {
-        let period_numerator = 1_000_000_000 * denominator;
+    let mut windows = [(1, 1, 0, -1), (1000, 1001, 0, -1)];
+    let mut candidates = 0;
+    for (multiplier, denominator, lower, upper) in &mut windows {
+        let period_numerator = 1_000_000_000 * *denominator;
         let elapsed = (count - 1) as i128 * period_numerator;
         // Endpoint residual must be strictly within one tick. These open
         // bounds enumerate every plausible N, not just the rounded mean.
-        let lower_divisor = span.checked_add(tick)?.checked_mul(multiplier)?;
-        let upper_divisor = span.checked_sub(tick)?.checked_mul(multiplier)?;
-        let lower = elapsed / lower_divisor + 1;
-        let upper = (elapsed - 1) / upper_divisor;
+        let lower_divisor = span.checked_add(tick)?.checked_mul(*multiplier)?;
+        let upper_divisor = span.checked_sub(tick)?.checked_mul(*multiplier)?;
+        // 1 <= N*multiplier/denominator <= MAX_PROBE_RATE, exactly.
+        *lower = (elapsed / lower_divisor + 1).max((*denominator + *multiplier - 1) / *multiplier);
+        *upper = ((elapsed - 1) / upper_divisor).min(MAX_PROBE_RATE * *denominator / *multiplier);
+        candidates += (*upper - *lower + 1).max(0);
+        if candidates > MAX_PROBE_CANDIDATES {
+            return None;
+        }
+    }
+    let mut matched = None;
+    for (multiplier, denominator, lower, upper) in windows {
+        let period_numerator = 1_000_000_000 * denominator;
         for n in lower..=upper {
             // 1001*k * 1000/1001 duplicates integer 1000*k, already tested.
             if denominator == 1001 && n % 1001 == 0 {
                 continue;
             }
+            tested_candidate();
             let numerator = n * multiplier;
             let quantum = tick.checked_mul(numerator)?;
             let (mut low, mut high) = (0, 0);
@@ -586,6 +617,27 @@ mod tests {
             .collect();
         let packets = timing_packets(&timestamps, None);
         assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), None);
+    }
+
+    #[test]
+    fn probe_candidate_search_has_a_preflight_budget() {
+        for (scale, timestamps) in [
+            // Formerly hundreds of millions of endpoint-plausible rates.
+            (1, [0, 1, 3]),
+            // Hundreds of candidates remain even inside the plausible range.
+            (1, [0, 1_000_000, 3_000_000]),
+            (1_000_000, [0, 1, 3]),
+        ] {
+            let packets = timing_packets(&timestamps, None);
+            let mut tested = 0;
+            assert_eq!(probe_video_rate_with_work(0, scale, packets.iter(), || tested += 1), None);
+            assert_eq!(tested, 0, "over-budget/out-of-range input must not scan grids");
+        }
+        let timestamps: Vec<_> = (0..301).map(|i| i * 1000 / 30).collect();
+        let packets = timing_packets(&timestamps, None);
+        let mut tested = 0;
+        assert_eq!(probe_video_rate_with_work(0, 1_000_000, packets.iter(), || tested += 1), Some(30.0));
+        assert!(tested > 0 && tested <= MAX_PROBE_CANDIDATES);
     }
 
     fn ff(args: &[&str]) -> Vec<u8> {
