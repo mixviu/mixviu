@@ -25,7 +25,11 @@ fn speech() -> Audio {
                     .sum::<f64>();
                 // Five-ms plosives every fourth syllable demand about 4 dB
                 // limiting at -14 LUFS without breaching the 6 dB cap.
-                let plosive = if (5700..5940).contains(&(n % 46828)) { 2.2 } else { 1.0 };
+                let plosive = if (5700..5940).contains(&(n % 46828)) {
+                    2.2
+                } else {
+                    1.0
+                };
                 let x = 0.18 * phrase * (0.15 + 0.85 * syllable) * voiced * plosive;
                 [x, x * 0.9]
             })
@@ -54,7 +58,10 @@ fn speech_encoded_target_and_oracle() {
     println!("speech receipt: {}", serde_json::to_string(&r).unwrap());
     assert!(r.target_reached && !r.refused);
     assert!(r.passes > 1, "fixture must exercise limiter corrections");
-    assert!(r.codec_passes > 0, "fixture must exercise codec corrections");
+    assert!(
+        r.codec_passes > 0,
+        "fixture must exercise codec corrections"
+    );
     assert!((-14.1..=-13.9).contains(&r.encoded.integrated_lufs));
     // Serialize to inspect the same peak field supplied to callers.
     assert!(
@@ -98,7 +105,10 @@ fn speech_encoded_target_and_oracle() {
     }
     let repeat_out = dir.join("repeat.webm");
     let repeat = render(&t, &dir, &repeat_out, None).unwrap();
-    assert_eq!(std::fs::read(&out).unwrap(), std::fs::read(&repeat_out).unwrap());
+    assert_eq!(
+        std::fs::read(&out).unwrap(),
+        std::fs::read(&repeat_out).unwrap()
+    );
     assert_eq!(r.encoded.integrated_lufs, repeat.encoded.integrated_lufs);
     assert_eq!(r.passes, repeat.passes);
     assert_eq!(r.codec_passes, repeat.codec_passes);
@@ -107,13 +117,19 @@ fn speech_encoded_target_and_oracle() {
     impossible.master.true_peak_dbtp = -20.0;
     let refused_out = dir.join("refused.webm");
     let refused = render(&impossible, &dir, &refused_out, None).unwrap();
+    println!("limiter-bound refusal: {}", serde_json::to_string(&refused).unwrap());
     assert!(refused.refused && !refused.target_reached);
     assert!(refused.encoded.integrated_lufs < -14.1);
     assert!(!refused_out.exists());
     if let Ok(artifact) = std::env::var("MIX_TEST_MASTERING_ARTIFACT_DIR") {
         std::fs::create_dir_all(&artifact).unwrap();
         std::fs::copy(&out, std::path::Path::new(&artifact).join("speech.webm")).unwrap();
-        std::fs::write(std::path::Path::new(&artifact).join("receipt.json"), serde_json::to_vec_pretty(&r).unwrap()).unwrap();
+        std::fs::copy(dir.join("speech.wav"), std::path::Path::new(&artifact).join("speech.wav")).unwrap();
+        std::fs::write(
+            std::path::Path::new(&artifact).join("receipt.json"),
+            serde_json::to_vec_pretty(&r).unwrap(),
+        )
+        .unwrap();
     }
     std::fs::remove_dir_all(dir).unwrap();
 }

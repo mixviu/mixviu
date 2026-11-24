@@ -6,7 +6,10 @@ pub const MAX_LIMITER_PASSES: u8 = 8;
 const PCM_TOLERANCE_LU: f64 = 0.03;
 
 pub(crate) fn cpu_seconds() -> f64 {
-    let mut time = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut time = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     // SAFETY: time points to a valid, writable timespec. Thread CPU excludes
     // unrelated concurrent render work. Processing in this module is serial.
     let rc = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) };
@@ -350,4 +353,3 @@ mod tolerance_tests {
         }
     }
 }
-
