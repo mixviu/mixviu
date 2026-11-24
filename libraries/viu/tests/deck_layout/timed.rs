@@ -18,7 +18,8 @@ b:{widget:"column",background:"#203040",children:["tall"]},tall:{widget:"spacer"
 animation:{widget:"text",text:"Parallel animation",paint_effect:"= $model.effect"}}
 ```
 "##;
-    let mut view = SceneView::with_model(source, json!({"effect":{"preset":"spin","time":0.2}})).unwrap();
+    let mut view =
+        SceneView::with_model(source, json!({"effect":{"preset":"spin","time":0.2}})).unwrap();
     let geometry = Arc::new(std::sync::Mutex::new(view.geometry.clone()));
     let captured = geometry.clone();
     let clock = Arc::new(std::sync::Mutex::new(0.2_f64));
@@ -28,25 +29,32 @@ animation:{widget:"text",text:"Parallel animation",paint_effect:"= $model.effect
         .with_pixels_per_point(2.4)
         .wgpu()
         .build_ui(move |ui| {
-            view.apply_model(json!({"effect":{"preset":"spin","time":*time.lock().unwrap()}})).unwrap();
+            view.apply_model(json!({"effect":{"preset":"spin","time":*time.lock().unwrap()}}))
+                .unwrap();
             view.show(ui);
             *captured.lock().unwrap() = view.geometry.clone();
         });
-    for _ in 0..4 { harness.step(); }
+    for _ in 0..4 {
+        harness.step();
+    }
     let baseline = geometry.lock().unwrap().clone();
-    assert!((baseline["a"].bottom()-baseline["b"].bottom()).abs()*2.4 <= 0.5);
-    assert!((baseline["last"].bottom()-baseline["a"].bottom()).abs()*2.4 <= 0.5);
+    assert!((baseline["a"].bottom() - baseline["b"].bottom()).abs() * 2.4 <= 0.5);
+    assert!((baseline["last"].bottom() - baseline["a"].bottom()).abs() * 2.4 <= 0.5);
     let image = harness.render().unwrap();
     let region = image::imageops::crop_imm(&image, 30, 150, 600, 120).to_image();
     for frame in 0..24 {
-        *clock.lock().unwrap() = 0.2+frame as f64/120.;
+        *clock.lock().unwrap() = 0.2 + frame as f64 / 120.;
         harness.step();
         let current = geometry.lock().unwrap();
-        for id in ["a","b","heading","last"] {
+        for id in ["a", "b", "heading", "last"] {
             assert_eq!(current[id], baseline[id], "{id} held frame {frame}");
         }
         let image = harness.render().unwrap();
-        assert_eq!(image::imageops::crop_imm(&image, 30, 150, 600, 120).to_image(), region, "source region frame {frame}");
+        assert_eq!(
+            image::imageops::crop_imm(&image, 30, 150, 600, 120).to_image(),
+            region,
+            "source region frame {frame}"
+        );
     }
 }
 
@@ -272,14 +280,22 @@ fn held_source_cards() {
     for slide in ["s220", "s222", "s243"] {
         let beats = match slide {
             "s220" => [0.9, 12.060666666666668, 27.541333333333338, 42.5],
-            "s222" => [0.9, 12.180666666666667, 29.221333333333334, 50.06666666666667],
-            _ => [0.9, 14.940666666666667, 30.781333333333333, 47.13333333333333],
+            "s222" => [
+                0.9,
+                12.180666666666667,
+                29.221333333333334,
+                50.06666666666667,
+            ],
+            _ => [
+                0.9,
+                14.940666666666667,
+                30.781333333333333,
+                47.13333333333333,
+            ],
         };
         let mut deck = Deck::new();
         let opened = deck.call("deck.open", json!({"path":path})).reply.unwrap();
-        assert_eq!(
-            opened.rc, 0, "{opened:?}"
-        );
+        assert_eq!(opened.rc, 0, "{opened:?}");
         deck.call("deck.play", json!({"slides":[slide],"beats":[beats]}));
         let model = deck
             .call("viu.presentation", json!({"time":100}))
@@ -305,24 +321,25 @@ fn held_source_cards() {
             .build_ui(move |ui| {
                 if let Some(model) = deck
                     .call("viu.presentation", json!({"time":*time.lock().unwrap()}))
-                    .model {
+                    .model
+                {
                     view.apply_model(model).unwrap();
                 }
                 view.show(ui);
                 *captured.lock().unwrap() = view.geometry.clone();
             });
-        let warm = ((beats[2]+4.)*60.) as usize;
+        let warm = ((beats[2] + 4.) * 60.) as usize;
         for tick in 1..=warm {
-            *clock.lock().unwrap() = 100.+tick as f64/60.;
+            *clock.lock().unwrap() = 100. + tick as f64 / 60.;
             harness.step();
         }
         let baseline = rects.lock().unwrap().clone();
         let image = harness.render().unwrap();
         // Same flat source patch as the VFL investigation, before encoding.
         let patch = image::imageops::crop_imm(&image, 334, 1208, 212, 26).to_image();
-        let frames = ((beats[3]-beats[2]-4.5)*60.) as usize;
+        let frames = ((beats[3] - beats[2] - 4.5) * 60.) as usize;
         for frame in 0..frames {
-            *clock.lock().unwrap() = 100.+(warm+frame+1) as f64/60.;
+            *clock.lock().unwrap() = 100. + (warm + frame + 1) as f64 / 60.;
             harness.step();
             let current = rects.lock().unwrap().clone();
             if current != baseline {
@@ -343,6 +360,8 @@ fn held_source_cards() {
                 );
             }
         }
-        println!("HELD_SOURCE {slide}: {frames} held frames, stable rects each frame and source patch sampled every 60 frames");
+        println!(
+            "HELD_SOURCE {slide}: {frames} held frames, stable rects each frame and source patch sampled every 60 frames"
+        );
     }
 }
