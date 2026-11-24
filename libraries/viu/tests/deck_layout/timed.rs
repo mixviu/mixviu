@@ -334,6 +334,11 @@ fn held_source_cards() {
             harness.step();
         }
         let baseline = rects.lock().unwrap().clone();
+        for (id, rect) in &baseline {
+            if id.ends_with("r3.4.r3.0") || id.ends_with("r3.4.r3.1") || id.ends_with("r3.4.r3.0.r3.1") {
+                println!("HELD_BASELINE {slide} {id}: {rect:?}");
+            }
+        }
         let image = harness.render().unwrap();
         // Same flat source patch as the VFL investigation, before encoding.
         let patch = image::imageops::crop_imm(&image, 334, 1208, 212, 26).to_image();
