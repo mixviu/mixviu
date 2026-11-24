@@ -221,11 +221,13 @@ impl Audio {
                 *x *= gain;
             }
             let limited = candidate.render_limiter(ceiling_dbtp, config)?;
+            // Count every completed render, including a first-pass refusal
+            // with no earlier candidate to retain.
+            report.passes = pass;
             report.pass_cpu_s[usize::from(pass - 1)] = cpu_seconds() - start;
             if !limited.after.integrated_lufs.is_finite() || limited.after.integrated_lufs < -70.0 {
                 return Err(Error::Unmeasurable);
             }
-            report.passes = pass;
             report.max_gain_reduction_db = report
                 .max_gain_reduction_db
                 .max(limited.max_gain_reduction_db);

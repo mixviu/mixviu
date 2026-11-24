@@ -192,6 +192,19 @@ for mastering and encode/decode/meter separately on every codec attempt,
 plus its limiter attempt count and individual `limiter_cpu_s` costs (including
 gain application and candidate copying). These observational timings never affect
 iteration or encoded output. Shortfall and success use decoded audio.
+Encoded packets, decisions and metered values are deterministic for identical
+inputs and encoder builds. Receipts as a whole are **not byte-reproducible**:
+`MasteringCost` CPU times vary between runs and must be excluded from receipt
+comparisons.
+
+Worst-case work is 48 limiter renders plus six codec cycles. Scaling the
+optimised CBC fixture costs (about 3.0 CPU seconds per limiter render and
+0.27 seconds per codec cycle per 30 seconds of audio) to a ten-minute
+programme gives 2,880 CPU seconds of limiting plus about 33 seconds of codec
+work. Six static-master setup/metering costs add roughly 15 seconds: about
+49 CPU minutes, rounded to **50 CPU minutes**, before mixing and output I/O.
+This is a conservative fixture-based estimate, not a measured ten-minute
+worst-case run or a time limit; hardware and programme content affect CPU cost.
 Optional WAV is the final mastered PCM. Packet storage is about 24 MB per 25 minutes;
 decoded metering adds one f64 programme buffer, below the limiter budget.
 The original mix is retained across codec attempts: one additional stereo f64

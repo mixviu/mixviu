@@ -81,11 +81,6 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> timeline::Result<u8> {
             receipt.max_gain_reduction_db,
             receipt.shortfall_lu
         ));
-    } else if !receipt.target_reached {
-        let _ = diagnostic(format_args!(
-            "loudness target missed by {:.3} LU",
-            (t.master.integrated_lufs - receipt.encoded.integrated_lufs).abs()
-        ));
     }
     Ok(outcome)
 }

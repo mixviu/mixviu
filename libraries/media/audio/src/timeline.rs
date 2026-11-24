@@ -271,6 +271,16 @@ pub struct Encoded {
 }
 /// Mix once, then bounded deterministic mastering from the original mix.
 pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
+    prepare_with_encoder(t, base, encode_checked)
+}
+
+// Private injection point for deterministic codec-budget refusal coverage.
+// Production always supplies the real encode/decode/meter implementation.
+fn prepare_with_encoder(
+    t: &Timeline,
+    base: &Path,
+    mut encode: impl FnMut(&Audio) -> Result<(OpusHead, Vec<Packet>, Loudness)>,
+) -> Result<Encoded> {
     let original = t.mix(base)?;
     let mut pcm_target = t.master.integrated_lufs;
     let mut codec_trim_db = 0.0;
@@ -290,7 +300,7 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
         total_passes += r.passes;
         max_gain_reduction_db = max_gain_reduction_db.max(r.max_gain_reduction_db);
         let start = cpu_seconds();
-        let (head, packets, encoded) = encode_checked(&audio)?;
+        let (head, packets, encoded) = encode(&audio)?;
         mastering_cost.push(MasteringCost {
             limiter_passes: r.passes,
             limiter_cpu_s: r.pass_cpu_s[..usize::from(r.passes)].to_vec(),
@@ -343,12 +353,16 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
 }
 
 pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Result<Receipt> {
+    render_prepared(prepare(t, base)?, out, wav)
+}
+
+fn render_prepared(prepared: Encoded, out: &Path, wav: Option<&Path>) -> Result<Receipt> {
     let Encoded {
         audio,
         head,
         packets,
         mut receipt,
-    } = prepare(t, base)?;
+    } = prepared;
     // Declare the primary first so rollback drops the optional WAV before
     // removing the WebM, preserving the publication ordering during cleanup.
     let mut output = crate::pending::Pending::new(out)?;
@@ -449,4 +463,51 @@ fn encode_checked(audio: &Audio) -> Result<(OpusHead, Vec<Packet>, Loudness)> {
     }
     let measured = Audio::new(48000, 2, decoded)?.measure()?;
     Ok((head, packets, measured))
+}
+
+#[cfg(test)]
+mod refusal_tests {
+    use super::*;
+
+    #[test]
+    fn persistent_codec_error_exhausts_budget_and_rolls_back_both_outputs() {
+        let dir = std::env::temp_dir().join(format!("codec-exhaustion-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("tone.wav");
+        Audio::new(48000, 2, (0..48000).flat_map(|n| {
+            let s = 0.05 * (std::f64::consts::TAU * 1000.0 * n as f64 / 48000.0).sin();
+            [s, s]
+        }).collect()).unwrap().write_wav(std::fs::File::create(&source).unwrap(), WavFormat::Float32).unwrap();
+        let t: Timeline = serde_json::from_value(serde_json::json!({
+            "version":1,"sample_rate":48000,"channels":2,"duration_s":1,
+            "sources":[{"path":"tone.wav","at_s":0}],
+            "master":{"integrated_lufs":-14,"true_peak_dbtp":-1}
+        })).unwrap();
+        let mut attempts = 0;
+        let prepared = prepare_with_encoder(&t, &dir, |audio| {
+            attempts += 1;
+            let (head, packets, mut measured) = encode_checked(audio)?;
+            // Model a codec that keeps missing both limits despite corrections.
+            // Real packets exercise staging, but these injected measurements
+            // deliberately prevent convergence without relying on codec quirks.
+            measured.integrated_lufs = -14.3;
+            measured.true_peak_dbtp = -0.8;
+            Ok((head, packets, measured))
+        }).unwrap();
+        assert_eq!(attempts, MAX_CODEC_ATTEMPTS);
+        let out = dir.join("refused.webm");
+        let wav = dir.join("refused.wav");
+        let receipt = render_prepared(prepared, &out, Some(&wav)).unwrap();
+        assert!(receipt.refused && !receipt.target_reached);
+        assert_eq!(receipt.codec_passes, MAX_CODEC_ATTEMPTS - 1);
+        assert_eq!(receipt.mastering_cost.len(), usize::from(MAX_CODEC_ATTEMPTS));
+        assert_eq!(receipt.passes, 0, "fixture stays on the static PCM path");
+        assert_eq!(receipt.encoded.integrated_lufs, -14.3);
+        assert_eq!(receipt.encoded.true_peak_dbtp, -0.8);
+        assert!((receipt.shortfall_lu - 0.3).abs() < 1e-12);
+        assert!(!out.exists() && !wav.exists());
+        let remaining: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).collect();
+        assert_eq!(remaining, vec![source], "no partial output or staging files");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
