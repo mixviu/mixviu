@@ -152,8 +152,11 @@ pub fn jmap_origin(origin: &str) -> Option<String> {
     let url = url::Url::parse(origin).ok()?;
     url.host_str()?;
     // Belt and braces: the parsed URL must carry nothing beyond the origin.
-    if url.path() != "/" || url.query().is_some() || url.fragment().is_some()
-        || !url.username().is_empty() || url.password().is_some()
+    if url.path() != "/"
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !url.username().is_empty()
+        || url.password().is_some()
     {
         return None;
     }
