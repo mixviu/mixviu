@@ -898,9 +898,11 @@ pub fn run(
             let file_theme = toolkit::Theme::load();
             crate::appearance::install_theme(&cc.egui_ctx, &file_theme)
                 .map_err(std::io::Error::other)?;
+            let instance = settings::session::app_instance()
+                .map_err(|error| std::io::Error::other(error.message))?;
             let session = crate::session::Session::embedded(
                 &app,
-                &settings::session::app_instance().map_err(std::io::Error::other)?,
+                &instance,
                 wake.clone(),
                 bus.backend(),
             )
