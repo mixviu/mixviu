@@ -1,5 +1,6 @@
 //! Flat, absolute-time episode audio. Mix owns scene and join policy.
 use crate::{Audio, LimiterConfig, Loudness, WavFormat};
+use crate::limiter::{target_matches, TARGET_TOLERANCE_LU};
 use media_opus::{Channels, Decoder, Encoder, OpusDecoder, OpusEncoder, OpusHead, Packet};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -232,6 +233,25 @@ impl From<Loudness> for Meter {
     }
 }
 #[derive(Serialize)]
+pub struct MasteringCost {
+    pub limiter_passes: u8,
+    pub mastering_cpu_s: f64,
+    pub codec_cpu_s: f64,
+}
+
+/// At most six fresh masters and six encode/decode/meter attempts.
+pub const MAX_CODEC_ATTEMPTS: u8 = 6;
+
+fn cpu_seconds() -> f64 {
+    let mut time = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    // SAFETY: time points to a valid, writable timespec. The work here is
+    // single-threaded; thread CPU excludes unrelated concurrent render work.
+    let rc = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) };
+    assert_eq!(rc, 0, "thread CPU clock unavailable");
+    time.tv_sec as f64 + time.tv_nsec as f64 * 1e-9
+}
+
+#[derive(Serialize)]
 pub struct Receipt {
     pub before: Meter,
     pub after: Meter,
@@ -248,6 +268,7 @@ pub struct Receipt {
     pub encoded: Meter,
     pub codec_trim_db: f64,
     pub codec_passes: u8,
+    pub mastering_cost: Vec<MasteringCost>,
 }
 pub struct Encoded {
     pub audio: Audio,
@@ -255,34 +276,42 @@ pub struct Encoded {
     pub packets: Vec<Packet>,
     pub receipt: Receipt,
 }
-/// Mix, master and encode once for either audio-only or combined WebM output.
+/// Mix once, then bounded deterministic mastering from the original mix.
 pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
-    let mut audio = t.mix(base)?;
-    let r = audio.normalise_to_target(
-        t.master.integrated_lufs,
-        t.master.true_peak_dbtp,
-        LimiterConfig::default(),
-    )?;
+    let original = t.mix(base)?;
+    let mut pcm_target = t.master.integrated_lufs;
     let mut codec_trim_db = 0.0;
     let mut codec_passes = 0;
-    let (head, packets, encoded) = loop {
+    let mut mastering_cost = Vec::new();
+    let mut total_passes = 0;
+    let (audio, r, head, packets, encoded, reached) = loop {
+        let mut audio = original.try_clone()?;
+        let start = cpu_seconds();
+        let r = audio.normalise_to_target(
+            pcm_target,
+            t.master.true_peak_dbtp + codec_trim_db,
+            LimiterConfig::default(),
+        )?;
+        let mastering_cpu_s = cpu_seconds() - start;
+        total_passes += r.passes;
+        let start = cpu_seconds();
         let (head, packets, encoded) = encode_checked(&audio)?;
-        if encoded.true_peak_dbtp <= t.master.true_peak_dbtp {
-            break (head, packets, encoded);
+        mastering_cost.push(MasteringCost {
+            limiter_passes: r.passes,
+            mastering_cpu_s,
+            codec_cpu_s: cpu_seconds() - start,
+        });
+        let reached = !r.refused
+            && target_matches(t.master.integrated_lufs, encoded.integrated_lufs, TARGET_TOLERANCE_LU)
+            && encoded.true_peak_dbtp <= t.master.true_peak_dbtp;
+        if reached || r.refused || codec_passes + 1 == MAX_CODEC_ATTEMPTS {
+            break (audio, r, head, packets, encoded, reached);
         }
-        if codec_passes == 2 {
-            return Err(refusal(
-                "Opus: peak ceiling unreachable after two corrections",
-            ));
-        }
-        // Opus reconstruction can overshoot even ceiling-compliant PCM.
-        // Only attenuate, with a 0.02 dB guard; every attempt is remeasured.
-        let trim = t.master.true_peak_dbtp - encoded.true_peak_dbtp - 0.02;
-        let gain = 10.0_f64.powf(trim / 20.0);
-        for sample in &mut audio.samples {
-            *sample *= gain;
-        }
-        codec_trim_db += trim;
+        // Lower the PCM ceiling for reconstruction overshoot and compensate
+        // measured codec loudness loss. Re-limit the ORIGINAL, never an already
+        // limited signal. No random state, adaptive stopping based on time, or AGC.
+        codec_trim_db += (t.master.true_peak_dbtp - encoded.true_peak_dbtp - 0.02).min(0.0);
+        pcm_target += t.master.integrated_lufs - encoded.integrated_lufs;
         codec_passes += 1;
     };
     let after = audio.measure()?;
@@ -290,12 +319,12 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
     let receipt = Receipt {
         before: r.before.into(),
         after: after.into(),
-        gain_db: r.gain_db + codec_trim_db,
+        gain_db: r.gain_db,
         max_gain_reduction_db: r.max_gain_reduction_db,
         shortfall_lu: (t.master.integrated_lufs - encoded.integrated_lufs).max(0.0),
-        target_reached: (t.master.integrated_lufs - encoded.integrated_lufs).abs() <= 0.5,
-        refused: r.refused,
-        passes: r.passes,
+        target_reached: reached,
+        refused: !reached,
+        passes: total_passes,
         sample_count: count,
         packets: packets.len(),
         bytes: packets.iter().map(|p| p.data.len() as u64).sum(),
@@ -303,6 +332,7 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
         encoded: encoded.into(),
         codec_trim_db,
         codec_passes,
+        mastering_cost,
     };
     Ok(Encoded {
         audio,

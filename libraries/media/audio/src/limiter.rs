@@ -1,5 +1,30 @@
 use crate::{Audio, Error, Loudness};
 
+/// Final delivery tolerance; PCM aims tighter to leave room for codec error.
+pub const TARGET_TOLERANCE_LU: f64 = 0.1;
+pub const MAX_LIMITER_PASSES: u8 = 8;
+const PCM_TOLERANCE_LU: f64 = 0.03;
+
+pub(crate) fn target_matches(target: f64, measured: f64, tolerance: f64) -> bool {
+    // Compare endpoints rather than subtracting: decimal endpoint subtraction
+    // can round just outside an inclusive tolerance.
+    measured.is_finite() && measured >= target - tolerance && measured <= target + tolerance
+}
+
+#[cfg(test)]
+mod tolerance_tests {
+    use super::*;
+    #[test]
+    fn inclusive_edges_and_nonfinite_refusal() {
+        for measured in [-14.1, -13.9, -14.0] {
+            assert!(target_matches(-14.0, measured, TARGET_TOLERANCE_LU));
+        }
+        for measured in [-14.100001, -13.899999, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(!target_matches(-14.0, measured, TARGET_TOLERANCE_LU));
+        }
+    }
+}
+
 /// Offline, latency-compensated limiter settings. Both channels share one envelope.
 #[derive(Clone, Copy, Debug)]
 pub struct LimiterConfig {
@@ -25,7 +50,7 @@ pub struct TargetReport {
     pub before: Loudness,
     pub after: Loudness,
     pub gain_db: f64,
-    /// Includes the initial limiting attempt; at most three (two corrections).
+    /// Includes the initial limiting attempt; at most MAX_LIMITER_PASSES.
     pub passes: u8,
     /// Maximum reduction attempted, including a refused attempt.
     pub max_gain_reduction_db: f64,
@@ -172,7 +197,7 @@ impl Audio {
             max_gain_reduction_db: 0.0,
             refused: false,
             applied_gain_reduction_db: 0.0,
-            target_reached: (target_lufs - static_report.after.integrated_lufs).abs() <= 0.5,
+            target_reached: target_matches(target_lufs, static_report.after.integrated_lufs, TARGET_TOLERANCE_LU),
             shortfall_lu: static_report.shortfall_lu,
         };
         if !static_report.peak_limited {
@@ -180,7 +205,7 @@ impl Audio {
         }
         let mut gain_db = target_lufs - report.before.integrated_lufs;
         let mut best: Option<(Self, TargetReport)> = None;
-        for pass in 1..=3 {
+        for pass in 1..=MAX_LIMITER_PASSES {
             let gain = 10.0_f64.powf(gain_db / 20.0);
             let mut candidate = original.try_clone()?;
             if !gain.is_finite() || candidate.samples.iter().any(|x| !(x * gain).is_finite()) {
@@ -200,19 +225,21 @@ impl Audio {
             if limited.max_gain_reduction_db > 6.0 {
                 if let Some((audio, mut accepted)) = best {
                     accepted.refused = true;
+                    accepted.target_reached = false;
                     accepted.passes = pass;
                     accepted.max_gain_reduction_db = report.max_gain_reduction_db;
                     *self = audio;
                     return Ok(accepted);
                 }
                 report.refused = true;
+                report.target_reached = false;
                 return Ok(report);
             }
             let error = target_lufs - limited.after.integrated_lufs;
             let mut accepted = report;
             accepted.after = limited.after;
             accepted.applied_gain_reduction_db = limited.max_gain_reduction_db;
-            accepted.target_reached = error.abs() <= 0.5;
+            accepted.target_reached = target_matches(target_lufs, limited.after.integrated_lufs, TARGET_TOLERANCE_LU);
             accepted.gain_db = gain_db;
             accepted.shortfall_lu = error.max(0.0);
             if best.as_ref().is_none_or(|(_, prior)| {
@@ -220,10 +247,11 @@ impl Audio {
             }) {
                 best = Some((candidate, accepted));
             }
-            if error.abs() <= 0.2 || pass == 3 {
+            if error.abs() <= PCM_TOLERANCE_LU || pass == MAX_LIMITER_PASSES {
                 let (audio, mut accepted) = best.expect("an in-bound attempt was recorded");
                 accepted.passes = pass;
                 accepted.max_gain_reduction_db = report.max_gain_reduction_db;
+                accepted.refused = !accepted.target_reached;
                 *self = audio;
                 return Ok(accepted);
             }

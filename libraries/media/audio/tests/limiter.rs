@@ -103,9 +103,9 @@ fn bounded_target_and_invalid_settings() {
         .unwrap();
     assert!(!r.refused, "{r:?}");
     assert!(r.target_reached);
-    assert!((r.after.integrated_lufs + 14.0).abs() <= 0.5, "{r:?}");
+    assert!((r.after.integrated_lufs + 14.0).abs() <= 0.1, "{r:?}");
     assert!(r.after.true_peak_dbtp <= -1.0);
-    assert!((1..=3).contains(&r.passes));
+    assert!((1..=8).contains(&r.passes));
     assert!(
         a.limit_true_peak(
             -1.0,
