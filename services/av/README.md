@@ -136,13 +136,13 @@ resident pages. It is null if Linux process metrics are unavailable.
 `repeats` counts injected units; keyframe successors are included in encoded
 frames. CPU accounting uses Linux process counters, including encoder threads.
 The nested audio byte count is Opus payload bytes; the outer byte count is the
-complete WebM. Only the active/outgoing VFL pair retains decoded canvases per
+complete WebM. Only the active/outgoing segment pair retains decoded canvases per
 chunk. A completed batch is muxed in order and released before another starts;
 at most `chunks` results are retained. Each chunk's coded payload is capped at
 64 MiB (`chunk_bytes_limit`), plus at most 324,000 five-byte repeats and bounded
 frame/position metadata. Whole-episode compressed video is never retained.
 
-At most 256 distinct normalised relative VFL path names are accepted
+At most 256 distinct normalised relative VFL and still path names are accepted
 (`too_many_sources`); this conservative source-name cap is checked before any
 VFL directory is opened, even if some names would resolve to the same source.
 Repeated names share one open and one frame-count scan. Distinct names are opened

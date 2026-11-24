@@ -6,13 +6,35 @@ fn black_vfl_still_black_decoded_frame_hashes() {
     let root = tempfile::tempdir().unwrap();
     let mut w = media_vfl::Writer::new(root.path().join("take.vfl"), 32, 32, 30).unwrap();
     w.origin(0).unwrap();
-    w.frame(media_vfl::Frame { slot: 0, pixels: media_vfl::Pixels::Bgra([10,80,180,255].repeat(32*32).into()) }).unwrap();
+    w.frame(media_vfl::Frame {
+        slot: 0,
+        pixels: media_vfl::Pixels::Bgra([10, 80, 180, 255].repeat(32 * 32).into()),
+    })
+    .unwrap();
     w.finish(120, 0, 0, None, true).unwrap();
-    let mut e = png::Encoder::new(fs::File::create(root.path().join("step.png")).unwrap(), 16, 8);
+    let mut e = png::Encoder::new(
+        fs::File::create(root.path().join("step.png")).unwrap(),
+        16,
+        8,
+    );
     e.set_color(png::ColorType::Rgb);
-    e.write_header().unwrap().write_image_data(&[30,180,60].repeat(16*8)).unwrap();
-    media_audio::Audio::new(48000, 1, (0..192000).map(|n| 0.1*(n as f64*440.0*std::f64::consts::TAU/48000.0).sin()).collect()).unwrap()
-        .write_wav(fs::File::create(root.path().join("tone.wav")).unwrap(), media_audio::WavFormat::Float32).unwrap();
+    e.write_header()
+        .unwrap()
+        .write_image_data(&[30, 180, 60].repeat(16 * 8))
+        .unwrap();
+    media_audio::Audio::new(
+        48000,
+        1,
+        (0..192000)
+            .map(|n| 0.1 * (n as f64 * 440.0 * std::f64::consts::TAU / 48000.0).sin())
+            .collect(),
+    )
+    .unwrap()
+    .write_wav(
+        fs::File::create(root.path().join("tone.wav")).unwrap(),
+        media_audio::WavFormat::Float32,
+    )
+    .unwrap();
     let t = json!({"version":1,"duration_s":4,"video":{"width":32,"height":32,"fps":30,
         "segments":[{"solid":"black","at_s":0,"duration_s":0.6},
             {"path":"take.vfl","from_slot":0,"to_slot":120,"at_s":0.2},
@@ -24,36 +46,65 @@ fn black_vfl_still_black_decoded_frame_hashes() {
     let timeline = root.path().join("timeline.json");
     fs::write(&timeline, serde_json::to_vec(&t).unwrap()).unwrap();
     let out = root.path().join("out.webm");
-    let render = Command::new(env!("CARGO_BIN_EXE_av")).arg("render").arg(&timeline).arg("--out").arg(&out).output().unwrap();
-    assert!(render.status.success(), "{}", String::from_utf8_lossy(&render.stderr));
+    let render = Command::new(env!("CARGO_BIN_EXE_av"))
+        .arg("render")
+        .arg(&timeline)
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .unwrap();
+    assert!(
+        render.status.success(),
+        "{}",
+        String::from_utf8_lossy(&render.stderr)
+    );
     let receipt: Value = serde_json::from_slice(&render.stdout).unwrap();
-    assert_eq!(receipt["frames_out"],120);
+    assert_eq!(receipt["frames_out"], 120);
     assert!(receipt["repeats"].as_u64().unwrap() > 40);
     assert!(receipt["scaling"]["frames"].as_u64().unwrap() > 0);
     let y4m = root.path().join("decoded.y4m");
-    let decode = Command::new(env!("CARGO_BIN_EXE_av")).arg("decode").arg(&out).arg("--y4m").arg(&y4m).output().unwrap();
-    assert!(decode.status.success(), "{}", String::from_utf8_lossy(&decode.stderr));
+    let decode = Command::new(env!("CARGO_BIN_EXE_av"))
+        .arg("decode")
+        .arg(&out)
+        .arg("--y4m")
+        .arg(&y4m)
+        .output()
+        .unwrap();
+    assert!(
+        decode.status.success(),
+        "{}",
+        String::from_utf8_lossy(&decode.stderr)
+    );
     let receipt: Value = serde_json::from_slice(&decode.stdout).unwrap();
-    assert_eq!(receipt["frames"],120);
+    assert_eq!(receipt["frames"], 120);
     let bytes = fs::read(y4m).unwrap();
-    let header = bytes.iter().position(|b| *b == b'\n').unwrap()+1;
-    let frames: Vec<_> = bytes[header..].chunks_exact(6+32*32*3/2).map(|frame| {
-        assert_eq!(&frame[..6],b"FRAME\n");
+    let header = bytes.iter().position(|b| *b == b'\n').unwrap() + 1;
+    let mut frames = Vec::new();
+    let mut offset = header;
+    while offset < bytes.len() {
+        let end = offset + bytes[offset..].iter().position(|b| *b == b'\n').unwrap() + 1;
+        assert!(bytes[offset..end].starts_with(b"FRAME XPTS="));
         let mut h = std::collections::hash_map::DefaultHasher::new();
-        frame[6..].hash(&mut h);
-        h.finish()
-    }).collect();
-    assert_eq!(frames.len(),120);
+        bytes[end..end + 32 * 32 * 3 / 2].hash(&mut h);
+        frames.push(h.finish());
+        offset = end + 32 * 32 * 3 / 2;
+    }
+    assert_eq!(frames.len(), 120);
     for range in [0..6, 24..39, 48..75, 105..120] {
-        for k in range.clone() { assert_eq!(frames[k], frames[range.start], "held frame {k}"); }
+        for k in range.clone() {
+            assert_eq!(frames[k], frames[range.start], "held frame {k}");
+        }
     }
-    assert_eq!(frames[0],frames[119]);
-    assert_ne!(frames[0],frames[30]);
-    assert_ne!(frames[30],frames[60]);
-    for range in [6..24,39..48,75..105] {
-        assert!(frames[range].windows(2).any(|p| p[0]!=p[1]));
+    assert_eq!(frames[0], frames[119]);
+    assert_ne!(frames[0], frames[30]);
+    assert_ne!(frames[30], frames[60]);
+    for range in [6..24, 39..48, 75..105] {
+        assert!(frames[range].windows(2).any(|p| p[0] != p[1]));
     }
-    println!("black/VFL/still/black decoded hashes: {:x} {:x} {:x} {:x}",frames[0],frames[30],frames[60],frames[119]);
+    println!(
+        "black/VFL/still/black decoded hashes: {:x} {:x} {:x} {:x}",
+        frames[0], frames[30], frames[60], frames[119]
+    );
 }
 #[test]
 fn repeats_chunks_scaled_fade_and_gap() {
