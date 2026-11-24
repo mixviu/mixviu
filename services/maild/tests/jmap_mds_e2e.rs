@@ -44,6 +44,45 @@ use tokio::net::TcpStream;
 const ACCOUNT_EMAIL: &str = "e2e@e2e.test";
 const ACCOUNT_PASSWORD: &str = "e2epw1234";
 
+#[tokio::test]
+async fn session_urls_follow_only_allowed_forwarded_hosts() -> Result<()> {
+    for origins in [vec!["https://mail.example.com".into(), "https://mail.example.com:8443".into()], vec![]] {
+        let tmp = TempDir::new()?;
+        let mut cfg = make_config(tmp.path());
+        cfg.jmap_origins = origins;
+        let built = build_runtime(&cfg, RuntimeOpts {
+            enable_bus: false, disable_outbound_delivery: true, ..Default::default()
+        }).await?;
+        create_account(&built, ACCOUNT_EMAIL, ACCOUNT_PASSWORD).await?;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+        let url = format!("http://{}/.well-known/jmap", listener.local_addr()?);
+        let router = built.router.clone();
+        let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap(); });
+        let client = reqwest::Client::new();
+        for host in [None, Some("MAIL.EXAMPLE.COM"), Some("mail.example.com:443"), Some("mail.example.com:8443"), Some("other.example.com"), Some("mail.example.com/path")] {
+            let mut req = client.get(&url).basic_auth(ACCOUNT_EMAIL, Some(ACCOUNT_PASSWORD))
+                .header("host", "mail.example.com")
+                .header("x-forwarded-proto", "http")
+                .header("forwarded", "host=mail.example.com");
+            if let Some(host) = host { req = req.header("x-forwarded-host", host); }
+            let session: Value = req.send().await?.error_for_status()?.json().await?;
+            let base = if cfg.jmap_origins.is_empty() { cfg.base_url.as_str() } else {
+                match host {
+                    Some("MAIL.EXAMPLE.COM" | "mail.example.com:443") => "https://mail.example.com",
+                    Some("mail.example.com:8443") => "https://mail.example.com:8443",
+                    _ => &cfg.base_url,
+                }
+            };
+            for (key, suffix) in [("apiUrl", "/jmap"), ("downloadUrl", "/jmap/blob/{blobId}"), ("uploadUrl", "/jmap/upload/{accountId}"), ("eventSourceUrl", "/jmap/eventsource")] {
+                assert_eq!(session[key], format!("{base}{suffix}"), "{host:?} {key}");
+            }
+        }
+        task.abort();
+        drop(built);
+    }
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn jmap_mds_e2e_smoke() -> Result<()> {
     let tmp = TempDir::new()?;
@@ -643,6 +682,7 @@ fn make_config(root: &std::path::Path) -> Config {
     Config {
         listen: "127.0.0.1:0".into(),
         base_url: "http://127.0.0.1".into(),
+        jmap_origins: Vec::new(),
         database_path,
         blob_dir,
         mds_dir,

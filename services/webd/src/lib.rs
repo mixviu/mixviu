@@ -3321,6 +3321,7 @@ async fn proxy_jmap(
     for (name, value) in &headers {
         if name == axum::http::header::HOST
             || name == axum::http::header::COOKIE
+            || matches!(name.as_str(), "x-forwarded-host" | "x-forwarded-proto" | "x-forwarded-for" | "forwarded")
             || is_hop_by_hop(name)
             || req_conn_skip.contains(name.as_str())
         {
@@ -3328,6 +3329,13 @@ async fn proxy_jmap(
         }
         upstream_req = upstream_req.header(name, value);
     }
+    // Use the Host that passed vhost dispatch, never forwarding metadata
+    // supplied by the client. Set these after Connection filtering as well.
+    if let Some(host) = headers.get(axum::http::header::HOST).and_then(|h| h.to_str().ok()) {
+        let host = host.strip_suffix(":443").unwrap_or(host).to_ascii_lowercase();
+        upstream_req = upstream_req.header("x-forwarded-host", host);
+    }
+    upstream_req = upstream_req.header("x-forwarded-proto", "https");
 
     // REQUEST body: stream a blob upload (byte-capped); buffer + cap everything
     // else (JSON method calls / session).
@@ -11288,6 +11296,7 @@ mod jmap_proxy_tests {
 
     #[derive(Default, Clone)]
     struct Captured {
+        headers: HeaderMap,
         authorization: Option<String>,
         had_cookie: bool,
         upload_body: Vec<u8>,
@@ -11358,6 +11367,15 @@ mod jmap_proxy_tests {
                     )
                 }),
             );
+        let header_cap = cap.clone();
+        let app = app.route("/.well-known/jmap", get(|| async { "session" }))
+            .layer(axum::middleware::from_fn(move |req: axum::extract::Request, next: axum::middleware::Next| {
+                let cap = header_cap.clone();
+                async move {
+                    cap.lock().await.headers = req.headers().clone();
+                    next.run(req).await
+                }
+            }));
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         tokio::spawn(async move {
@@ -11371,6 +11389,38 @@ mod jmap_proxy_tests {
             .await
             .unwrap()
             .to_vec()
+    }
+
+    #[tokio::test]
+    async fn forwarding_headers_are_replaced_on_every_jmap_route() {
+        let (base, cap) = stub_maild().await;
+        for host in ["Mail.Example.com:443", "mail.example.com:8443"] {
+            for (method, path) in [
+                ("GET", "/.well-known/jmap"), ("POST", "/jmap"),
+                ("POST", "/jmap/upload/1"), ("GET", "/jmap/blob/1"),
+                ("GET", "/jmap/eventsource"),
+            ] {
+                let req = axum::http::Request::builder().method(method).uri(path)
+                    .header("host", host)
+                    .header("x-forwarded-host", "attacker.example.com")
+                    .header("x-forwarded-host", "second.example.com")
+                    .header("x-forwarded-proto", "http")
+                    .header("x-forwarded-for", "192.0.2.1")
+                    .header("forwarded", "host=attacker.example.com;proto=http")
+                    .header("connection", "x-forwarded-host, x-forwarded-proto")
+                    .body(Body::empty()).unwrap();
+                let resp = proxy_jmap(&reqwest::Client::new(), &base, req, JMAP_BLOB_UPLOAD_CAP).await.unwrap();
+                assert!(resp.status().is_success(), "{path}");
+                body_bytes(resp).await;
+                let g = cap.lock().await;
+                let headers = &g.headers;
+                assert_eq!(headers["x-forwarded-host"], host.strip_suffix(":443").unwrap_or(host).to_ascii_lowercase());
+                assert_eq!(headers.get_all("x-forwarded-host").iter().count(), 1);
+                assert_eq!(headers["x-forwarded-proto"], "https");
+                assert!(!headers.contains_key("x-forwarded-for"));
+                assert!(!headers.contains_key("forwarded"));
+            }
+        }
     }
 
     /// JSON method calls stay buffered + JSON-shaped; the Authorization header

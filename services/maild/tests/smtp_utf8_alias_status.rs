@@ -44,6 +44,7 @@ async fn fixture_with_overrides(
     let cfg = Config {
         listen: "127.0.0.1:0".into(),
         base_url: "http://127.0.0.1".into(),
+        jmap_origins: Vec::new(),
         hostname: "mail.example.com".into(),
         database_path: tmp.path().join("mail.db").to_string_lossy().into_owned(),
         blob_dir: tmp.path().join("blobs").to_string_lossy().into_owned(),

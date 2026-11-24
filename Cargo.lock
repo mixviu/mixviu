@@ -1658,6 +1658,7 @@ dependencies = [
  "thiserror 2.0.21",
  "tokio-rustls",
  "tracing",
+ "url",
 ]
 
 [[package]]

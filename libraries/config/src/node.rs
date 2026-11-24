@@ -94,6 +94,9 @@ pub struct MaildConfig {
     pub extra: std::collections::BTreeMap<String, serde_json::Value>,
     pub enabled: bool,
     pub jmap_port: u16,
+    /// HTTPS front doors allowed in JMAP session URLs. Empty preserves the base URL.
+    #[serde(deserialize_with = "deserialize_jmap_origins")]
+    pub jmap_origins: Vec<String>,
     pub smtp_port: u16,
     pub smtps_port: u16,
     pub hostname: String,
@@ -115,6 +118,7 @@ impl Default for MaildConfig {
             extra: Default::default(),
             enabled: false,
             jmap_port: 8443,
+            jmap_origins: Vec::new(),
             smtp_port: 25,
             smtps_port: 465,
             hostname: String::new(),
@@ -127,6 +131,53 @@ impl Default for MaildConfig {
             spam_enabled: true,
             spam_db_dir: None,
         }
+    }
+}
+
+/// Parse an HTTPS origin with an authority only; URL parsing alone would
+/// silently accept paths, userinfo, whitespace and backslashes.
+pub fn jmap_origin(origin: &str) -> Option<String> {
+    let authority = origin.strip_prefix("https://")?;
+    if authority.is_empty()
+        || authority.ends_with(':')
+        || authority.chars().any(|c| c.is_whitespace() || c.is_control() || "/\\?#@%".contains(c))
+    {
+        return None;
+    }
+    let url = url::Url::parse(origin).ok()?;
+    url.host_str()?;
+    Some(url.origin().ascii_serialization())
+}
+
+pub fn deserialize_jmap_origins<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Vec::<String>::deserialize(deserializer)?
+        .into_iter()
+        .map(|origin| {
+            jmap_origin(&origin).ok_or_else(|| serde::de::Error::custom(format!(
+                "invalid maild.jmap_origins entry {origin:?}: expected https://host[:port] without path, query, fragment or userinfo"
+            )))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod jmap_origin_tests {
+    use super::*;
+
+    #[test]
+    fn origins_are_validated_during_config_loading() {
+        for entry in ["http://mail.example.com", "https://mail.example.com/", "https://mail.example.com/path", "https://mail.example.com?x", "https://mail.example.com#x", "https://user@mail.example.com", "https://@mail.example.com", "https://", "https://mail.example.com:bad", "https://mail.example.com:", "https://mail.example.com\\path", "https:// mail.example.com"] {
+            let text = format!("maild: {{jmap_origins: [{entry:?}]}}");
+            let err = strict::from_str::<NodeConfig>(&text).unwrap_err();
+            assert!(err.to_string().contains("jmap_origins"), "{entry}: {err}");
+        }
+        let config: NodeConfig = strict::from_str("maild: {jmap_origins: [\"https://MAIL.EXAMPLE.COM:443\", \"https://mail.example.com:8443\"]}").unwrap();
+        assert_eq!(config.maild.unwrap().jmap_origins, ["https://mail.example.com", "https://mail.example.com:8443"]);
+        let config: NodeConfig = strict::from_str("maild: {}").unwrap();
+        assert!(config.maild.unwrap().jmap_origins.is_empty());
     }
 }
 
