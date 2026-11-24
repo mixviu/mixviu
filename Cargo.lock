@@ -733,8 +733,11 @@ dependencies = [
  "libc",
  "media-audio",
  "media-av1",
+ "media-frame",
  "media-opus",
+ "media-vfl",
  "media-webm",
+ "serde",
  "serde_json",
  "tempfile",
 ]

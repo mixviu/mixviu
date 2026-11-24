@@ -293,7 +293,7 @@ fn negative_inputs() {
         b[n] = 0xff;
         let _ = Demuxer::new(&b);
     }
-    // Small, structurally valid file with one hostile SimpleBlock.
+    // Small, structurally valid file with one hostile Block in a BlockGroup.
     let mut w = Writer::new(
         Cursor::new(Vec::new()),
         Video {
@@ -308,7 +308,7 @@ fn negative_inputs() {
     let mut b = w.finish().unwrap().into_inner();
     let at = b
         .windows(5)
-        .position(|x| x == [0x81, 0, 0, 0x80, 0x11])
+        .position(|x| x == [0x81, 0, 0, 0, 0x11])
         .unwrap();
     b[at + 3] |= 2;
     assert!(matches!(

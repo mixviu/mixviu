@@ -1,12 +1,19 @@
+use av::render;
 use std::process::ExitCode;
 mod decode;
 
-// Add render here when its command lands (#279).
-const USAGE: &str = "usage: av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]\n       av decode FILE.webm --y4m OUT.y4m [--wav OUT.wav] [--max-output-bytes N]\n       av probe FILE.webm";
+const USAGE: &str = "usage: av render TIMELINE.json --out FILE.webm\n       av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]\n       av decode FILE.webm --y4m OUT.y4m [--wav OUT.wav] [--max-output-bytes N]\n       av probe FILE.webm";
 
 fn main() -> ExitCode {
     let mut args = std::env::args_os().skip(1);
     match args.next().as_deref() {
+        Some(command) if command == "render" => match render::run(args) {
+            Ok(code) => ExitCode::from(code),
+            Err(e) => {
+                let _ = media_audio::cli::diagnostic(format_args!("{e}"));
+                ExitCode::from(2)
+            }
+        },
         Some(command) if command == "audio" => match media_audio::cli::run(args) {
             Ok(code) => ExitCode::from(code),
             Err(e) => {

@@ -109,6 +109,22 @@ impl Drop for Pending {
 mod tests {
     use super::*;
     #[test]
+    fn symlink_planted_after_staging_is_preserved() {
+        let dir = std::env::temp_dir().join(format!("av-late-link-{}", std::process::id()));
+        std::fs::create_dir(&dir).unwrap();
+        let victim = dir.join("victim");
+        let destination = dir.join("out");
+        std::fs::write(&victim, b"keep").unwrap();
+        {
+            let mut pending = Pending::new(&destination).unwrap();
+            std::os::unix::fs::symlink(&victim, &destination).unwrap();
+            assert!(pending.publish().is_err());
+        }
+        assert!(destination.is_symlink());
+        assert_eq!(std::fs::read(&victim).unwrap(), b"keep");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
     fn second_publication_failure_rolls_back_first() {
         let dir = std::env::temp_dir().join(format!("av-pair-{}", std::process::id()));
         std::fs::create_dir(&dir).unwrap();
