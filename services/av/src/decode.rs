@@ -271,11 +271,19 @@ fn validate_video_timing(d: &Demuxer<'_>, track: &media_webm::Track<'_>) -> Resu
     let mut previous = None;
     for packet in d.packets().iter().filter(|p| p.track == track.number) {
         if let Some(duration) = packet.duration {
-            duration.checked_mul(d.scale_ns).ok_or("TIMESTAMP_OVERFLOW")?;
+            duration
+                .checked_mul(d.scale_ns)
+                .ok_or("TIMESTAMP_OVERFLOW")?;
         }
         if let Some(last) = previous {
-            let delta = packet.timestamp.checked_sub(last).ok_or("TIMESTAMP_OVERFLOW: packet delta")?;
-            delta.unsigned_abs().checked_mul(d.scale_ns).ok_or("TIMESTAMP_OVERFLOW: packet delta")?;
+            let delta = packet
+                .timestamp
+                .checked_sub(last)
+                .ok_or("TIMESTAMP_OVERFLOW: packet delta")?;
+            delta
+                .unsigned_abs()
+                .checked_mul(d.scale_ns)
+                .ok_or("TIMESTAMP_OVERFLOW: packet delta")?;
         }
         previous = Some(packet.timestamp);
     }
