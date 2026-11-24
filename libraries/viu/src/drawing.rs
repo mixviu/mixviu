@@ -748,7 +748,10 @@ mod tests {
                 assert_eq!(store.worker_rasters, 0);
             }
             // An unrelated frame during cooldown must neither retry nor ask
-            // for an immediate repaint.
+            // for an immediate repaint. Hold the deadline in the future so
+            // preemption cannot accidentally turn this into an expired retry.
+            shared.lock().unwrap().spawn_retry_at =
+                Some(std::time::Instant::now() + std::time::Duration::from_secs(60));
             let out = shadow_frame(&ctx, "root", "b", 1.);
             assert!(
                 !out.viewport_output[&egui::ViewportId::ROOT]
