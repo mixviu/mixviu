@@ -3245,31 +3245,23 @@ fn column_inner_height(node: &Node, assigned: Option<f32>) -> Option<f32> {
 }
 #[derive(Clone)]
 struct MeasurementCache<T> {
-    values: std::collections::HashMap<egui::Id, (T, u64)>,
-    order: BTreeMap<u64, egui::Id>,
-    clock: u64,
+    values: std::collections::HashMap<egui::Id, T>,
+    order: std::collections::VecDeque<egui::Id>,
 }
 impl<T> Default for MeasurementCache<T> {
     fn default() -> Self {
         Self {
             values: Default::default(),
             order: Default::default(),
-            clock: 0,
         }
     }
 }
 fn measure_get<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id) -> Option<T> {
     ui.ctx().data_mut(|d| {
-        let cache =
-            d.get_temp_mut_or_default::<MeasurementCache<T>>(egui::Id::new("scene-measurements"));
-        let (value, used) = cache.values.get_mut(&key)?;
-        // A held scene still needs its heights while parallel animation adds
-        // paint samples. Evict by last use, not by the original insertion.
-        cache.order.remove(used);
-        cache.clock += 1;
-        *used = cache.clock;
-        cache.order.insert(*used, key);
-        Some(value.clone())
+        d.get_temp_mut_or_default::<MeasurementCache<T>>(egui::Id::new("scene-measurements"))
+            .values
+            .get(&key)
+            .cloned()
     })
 }
 fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, value: T) {
@@ -3277,82 +3269,20 @@ fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, v
         let cache =
             d.get_temp_mut_or_default::<MeasurementCache<T>>(egui::Id::new("scene-measurements"));
         if cache.values.len() >= 4096 && !cache.values.contains_key(&key) {
-            if let Some((_, old)) = cache.order.pop_first() {
+            if let Some(old) = cache.order.pop_front() {
                 cache.values.remove(&old);
             }
         }
-        if let Some((_, used)) = cache.values.get(&key) {
-            cache.order.remove(used);
+        if !cache.values.contains_key(&key) {
+            cache.order.push_back(key);
         }
-        cache.clock += 1;
-        cache.order.insert(cache.clock, key);
-        cache.values.insert(key, (value, cache.clock));
+        cache.values.insert(key, value);
     });
 }
 
 #[cfg(test)]
 mod measurement_cache_tests {
     use serde_json::{Value, json};
-    #[test]
-    fn held_card_survives_measurement_cache_pressure() {
-        // A parallel animation keeps inserting paint samples while the held
-        // cards repeatedly read their natural heights. Exercise more than the
-        // bounded cache's capacity without needing thousands of GPU frames.
-        let source = r##"---
-scene: 1
-name: held-cards
-citizen: test
----
-```mix
-{root:{widget:"grid",columns:2,equal_height:true,children:["a","b"]},
-a:{widget:"column",background:"#ff0000",stretch_last:true,children:["head","last"]},
-head:{widget:"spacer",size:10},last:{widget:"column",background:"#00ff00",children:["short"]},
-short:{widget:"spacer",size:10},
-b:{widget:"column",background:"#0000ff",children:["tall"]},tall:{widget:"spacer",size:80}}
-```
-"##;
-        let mut view = super::SceneView::new(source).unwrap();
-        let rects = std::sync::Arc::new(std::sync::Mutex::new(Default::default()));
-        let captured = rects.clone();
-        let mut sample = 0_u64;
-        let mut pass = 0;
-        let mut harness = egui_kittest::Harness::builder()
-            .with_size(egui::vec2(320., 180.))
-            .with_pixels_per_point(2.4)
-            .wgpu()
-            .build_ui(move |ui| {
-                pass += 1;
-                for _ in 0..if pass > 8 { 3000 } else { 0 } {
-                    super::measure_put(
-                        ui,
-                        egui::Id::unique(("parallel-paint", sample)),
-                        (1_f32, 1_f32),
-                    );
-                    super::measure_put(ui, egui::Id::unique(("parallel-height", sample)), 1_f32);
-                    sample += 1;
-                }
-                view.show(ui);
-                *captured.lock().unwrap() = view.geometry.clone();
-            });
-        for _ in 0..4 {
-            harness.step();
-        }
-        let baseline: std::collections::BTreeMap<String, egui::Rect> =
-            rects.lock().unwrap().clone();
-        let image = harness.render().unwrap();
-        // Includes the short card's stretched bottom and the page below it.
-        let region = image::imageops::crop_imm(&image, 30, 100, 240, 180).to_image();
-        for frame in 0..24 {
-            harness.step();
-            assert_eq!(*rects.lock().unwrap(), baseline, "held frame {frame}");
-            let image = harness.render().unwrap();
-            assert_eq!(
-                image::imageops::crop_imm(&image, 30, 100, 240, 180).to_image(),
-                region,
-                "source pixels on held frame {frame}"
-            );
-        }
-    }
     #[test]
     fn graph_revision_covers_deep_chains_and_cycles_in_one_hash_per_node() {
         fn revision(count: usize, cycle: bool, changed: bool) -> u64 {

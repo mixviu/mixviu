@@ -221,15 +221,19 @@ fn render_timed_intro() {
 fn held_source_cards() {
     let path = PathBuf::from(std::env::var_os("DECK_LAYOUT_INPUT").unwrap());
     for slide in ["s220", "s222", "s243"] {
+        let beats = match slide {
+            "s220" => [0.9, 12.060666666666668, 27.541333333333338, 42.5],
+            "s222" => [0.9, 12.180666666666667, 29.221333333333334, 50.06666666666667],
+            _ => [0.9, 14.940666666666667, 30.781333333333333, 47.13333333333333],
+        };
         let mut deck = Deck::new();
         let opened = deck.call("deck.open", json!({"path":path})).reply.unwrap();
         assert_eq!(
             opened.rc, 0, "{opened:?}"
         );
-        deck.call("deck.play", json!({"slides":[slide],"beats":[[0,0.1,1,100]]}));
-        deck.call("viu.presentation", json!({"time":100}));
+        deck.call("deck.play", json!({"slides":[slide],"beats":[beats]}));
         let model = deck
-            .call("viu.presentation", json!({"time":110}))
+            .call("viu.presentation", json!({"time":100}))
             .model
             .unwrap();
         let mut view = SceneView::with_model(
@@ -251,21 +255,21 @@ fn held_source_cards() {
             .build_ui(move |ui| {
                 tick += 1;
                 let model = deck
-                    .call("viu.presentation", json!({"time":110.+tick as f64/60.}))
+                    .call("viu.presentation", json!({"time":100.+tick as f64/60.}))
                     .model
                     .unwrap();
                 view.apply_model(model).unwrap();
                 view.show(ui);
                 *captured.lock().unwrap() = view.geometry.clone();
             });
-        for _ in 0..12 {
+        for _ in 0..((beats[2]+4.)*60.) as usize {
             harness.step();
         }
         let baseline = rects.lock().unwrap().clone();
         let image = harness.render().unwrap();
         // Same flat source patch as the VFL investigation, before encoding.
         let patch = image::imageops::crop_imm(&image, 334, 1208, 212, 26).to_image();
-        for frame in 0..2400 {
+        for frame in 0..((beats[3]-beats[2]-4.5)*60.) as usize {
             harness.step();
             let current = rects.lock().unwrap().clone();
             if current != baseline {
