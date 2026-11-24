@@ -2,6 +2,88 @@
 use super::*;
 
 #[test]
+fn held_equal_cards_during_parallel_animation() {
+    let source = r##"---
+scene: 1
+name: held-cards
+citizen: test
+---
+```mix
+{root:{widget:"column",children:["cards","animation"]},
+cards:{widget:"grid",columns:2,equal_height:true,children:["a","b"]},
+a:{widget:"column",stretch_last:true,children:["heading","last"]},
+heading:{widget:"text",text:"Held heading"},
+last:{widget:"column",background:"#203040",children:["short"]},short:{widget:"text",text:"Short"},
+b:{widget:"column",background:"#203040",children:["tall","bullet"]},tall:{widget:"spacer",size:80},
+bullet:{widget:"drawing",w:12,h:"= $model.height",sample_time:"= $model.time",primitives:[{kind:"ellipse",centre:[6,10],radius:[6,6],colour:"#5ad18a"}]},
+animation:{widget:"text",text:"Parallel animation",paint_effect:"= $model.effect"}}
+```
+"##;
+    let mut view = SceneView::with_model(
+        source,
+        json!({"height":20,"time":0,"effect":{"preset":"spin","time":0.2}}),
+    )
+    .unwrap();
+    let geometry = Arc::new(std::sync::Mutex::new(view.geometry.clone()));
+    let captured = geometry.clone();
+    let clock = Arc::new(std::sync::Mutex::new(0.2_f64));
+    let time = clock.clone();
+    let ticking = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let active = ticking.clone();
+    let mut sample = 0.;
+    let drawing_height = Arc::new(std::sync::atomic::AtomicUsize::new(20));
+    let height = drawing_height.clone();
+    let mut harness = egui_kittest::Harness::builder()
+        .with_size(egui::vec2(320., 240.))
+        .with_pixels_per_point(2.4)
+        .wgpu()
+        .build_ui(move |ui| {
+            // The native host can pump another clock publication between
+            // discarded passes. A clock frozen for the retry hides this bug.
+            if active.load(std::sync::atomic::Ordering::Relaxed) {
+                sample += 0.001;
+            }
+            view.apply_model(
+                json!({"height":height.load(std::sync::atomic::Ordering::Relaxed),"time":sample,"effect":{"preset":"spin","time":*time.lock().unwrap()}}),
+            )
+            .unwrap();
+            view.show(ui);
+            *captured.lock().unwrap() = view.geometry.clone();
+        });
+    for _ in 0..4 {
+        harness.step();
+    }
+    let baseline = geometry.lock().unwrap().clone();
+    assert!((baseline["a"].bottom() - baseline["b"].bottom()).abs() * 2.4 <= 0.5);
+    assert!((baseline["last"].bottom() - baseline["a"].bottom()).abs() * 2.4 <= 0.5);
+    let image = harness.render().unwrap();
+    let region = image::imageops::crop_imm(&image, 30, 150, 600, 120).to_image();
+    ticking.store(true, std::sync::atomic::Ordering::Relaxed);
+    for frame in 0..24 {
+        *clock.lock().unwrap() = 0.2 + frame as f64 / 120.;
+        harness.step();
+        let current = geometry.lock().unwrap();
+        for id in ["a", "b", "heading", "last"] {
+            assert_eq!(current[id], baseline[id], "{id} held frame {frame}");
+        }
+        let image = harness.render().unwrap();
+        assert_eq!(
+            image::imageops::crop_imm(&image, 30, 150, 600, 120).to_image(),
+            region,
+            "source region frame {frame}"
+        );
+    }
+    // A real bounds change must still invalidate ancestor height measurements.
+    drawing_height.store(80, std::sync::atomic::Ordering::Relaxed);
+    for _ in 0..4 {
+        harness.step();
+    }
+    let changed = geometry.lock().unwrap();
+    assert!((changed["b"].height() - baseline["b"].height() - 60.).abs() * 2.4 <= 0.5);
+    assert!((changed["a"].bottom() - changed["b"].bottom()).abs() * 2.4 <= 0.5);
+}
+
+#[test]
 fn scale_entrances_paint_the_stretched_frame() {
     for anim in ["pop", "zoom"] {
         let source = r##"---
@@ -214,4 +296,105 @@ fn render_timed_intro() {
     )
     .unwrap();
     println!("TIMED_INTRO {g:?}");
+}
+
+#[test]
+#[ignore = "explicit CBC held-scene evidence; DECK_LAYOUT_INPUT required"]
+fn held_source_cards() {
+    let path = PathBuf::from(std::env::var_os("DECK_LAYOUT_INPUT").unwrap());
+    for slide in ["s220", "s222", "s243"] {
+        let beats = match slide {
+            "s220" => [0.9, 12.060666666666668, 27.541333333333338, 42.5],
+            "s222" => [
+                0.9,
+                12.180666666666667,
+                29.221333333333334,
+                50.06666666666667,
+            ],
+            _ => [
+                0.9,
+                14.940666666666667,
+                30.781333333333333,
+                47.13333333333333,
+            ],
+        };
+        let mut deck = Deck::new();
+        let opened = deck.call("deck.open", json!({"path":path})).reply.unwrap();
+        assert_eq!(opened.rc, 0, "{opened:?}");
+        deck.call("deck.play", json!({"slides":[slide],"beats":[beats]}));
+        let model = deck
+            .call("viu.presentation", json!({"time":100}))
+            .model
+            .unwrap();
+        let mut view = SceneView::with_model(
+            model["presentation"]["scene"].as_str().unwrap(),
+            model.clone(),
+        )
+        .unwrap();
+        let rects = Arc::new(std::sync::Mutex::new(view.geometry.clone()));
+        let captured = rects.clone();
+        let clock = Arc::new(std::sync::Mutex::new(100_f64));
+        let time = clock.clone();
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(1600., 900.))
+            .with_pixels_per_point(2.)
+            .with_context_setup(|ctx| {
+                viu::fonts::install(ctx, 400, 600);
+                viu::icons::install(ctx);
+            })
+            .wgpu()
+            .build_ui(move |ui| {
+                if let Some(model) = deck
+                    .call("viu.presentation", json!({"time":*time.lock().unwrap()}))
+                    .model
+                {
+                    view.apply_model(model).unwrap();
+                }
+                view.show(ui);
+                *captured.lock().unwrap() = view.geometry.clone();
+            });
+        let warm = ((beats[2] + 4.) * 60.) as usize;
+        for tick in 1..=warm {
+            *clock.lock().unwrap() = 100. + tick as f64 / 60.;
+            harness.step();
+        }
+        let baseline = rects.lock().unwrap().clone();
+        for (id, rect) in &baseline {
+            if id.ends_with("r3.4.r3.0")
+                || id.ends_with("r3.4.r3.1")
+                || id.ends_with("r3.4.r3.0.r3.1")
+            {
+                println!("HELD_BASELINE {slide} {id}: {rect:?}");
+            }
+        }
+        let image = harness.render().unwrap();
+        // Same flat source patch as the VFL investigation, before encoding.
+        let patch = image::imageops::crop_imm(&image, 334, 1208, 212, 26).to_image();
+        let frames = ((beats[3] - beats[2] - 4.5) * 60.) as usize;
+        for frame in 0..frames {
+            *clock.lock().unwrap() = 100. + (warm + frame + 1) as f64 / 60.;
+            harness.step();
+            let current = rects.lock().unwrap().clone();
+            if current != baseline {
+                let image = harness.render().unwrap();
+                image
+                    .save(std::env::temp_dir().join(format!("held-{slide}-{frame}.png")))
+                    .unwrap();
+                panic!(
+                    "{slide} held frame {frame}: geometry changed: {current:?}; baseline: {baseline:?}"
+                );
+            }
+            if frame % 60 == 0 {
+                let image = harness.render().unwrap();
+                assert_eq!(
+                    image::imageops::crop_imm(&image, 334, 1208, 212, 26).to_image(),
+                    patch,
+                    "{slide} source patch frame {frame}"
+                );
+            }
+        }
+        println!(
+            "HELD_SOURCE {slide}: {frames} held frames, stable rects each frame and source patch sampled every 60 frames"
+        );
+    }
 }
