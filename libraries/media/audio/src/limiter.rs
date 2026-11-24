@@ -19,7 +19,13 @@ mod tolerance_tests {
         for measured in [-14.1, -13.9, -14.0] {
             assert!(target_matches(-14.0, measured, TARGET_TOLERANCE_LU));
         }
-        for measured in [-14.100001, -13.899999, f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        for measured in [
+            -14.100001,
+            -13.899999,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
             assert!(!target_matches(-14.0, measured, TARGET_TOLERANCE_LU));
         }
     }
@@ -197,7 +203,11 @@ impl Audio {
             max_gain_reduction_db: 0.0,
             refused: false,
             applied_gain_reduction_db: 0.0,
-            target_reached: target_matches(target_lufs, static_report.after.integrated_lufs, TARGET_TOLERANCE_LU),
+            target_reached: target_matches(
+                target_lufs,
+                static_report.after.integrated_lufs,
+                TARGET_TOLERANCE_LU,
+            ),
             shortfall_lu: static_report.shortfall_lu,
         };
         if !static_report.peak_limited {
@@ -239,7 +249,11 @@ impl Audio {
             let mut accepted = report;
             accepted.after = limited.after;
             accepted.applied_gain_reduction_db = limited.max_gain_reduction_db;
-            accepted.target_reached = target_matches(target_lufs, limited.after.integrated_lufs, TARGET_TOLERANCE_LU);
+            accepted.target_reached = target_matches(
+                target_lufs,
+                limited.after.integrated_lufs,
+                TARGET_TOLERANCE_LU,
+            );
             accepted.gain_db = gain_db;
             accepted.shortfall_lu = error.max(0.0);
             if best.as_ref().is_none_or(|(_, prior)| {

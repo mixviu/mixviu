@@ -916,8 +916,10 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     if a.receipt.refused || !a.receipt.target_reached {
         let _ = media_audio::cli::diagnostic(format_args!(
             "mastering refused: encoded {:.3} LUFS, {:.3} dBTP; target {:.3} LUFS, ceiling {:.3} dBTP",
-            a.receipt.encoded.integrated_lufs, a.receipt.encoded.true_peak_dbtp,
-            audio.master.integrated_lufs, audio.master.true_peak_dbtp
+            a.receipt.encoded.integrated_lufs,
+            a.receipt.encoded.true_peak_dbtp,
+            audio.master.integrated_lufs,
+            audio.master.true_peak_dbtp
         ));
         return deliver_receipt(&serde_json::to_string(&a.receipt)?, 3);
     }

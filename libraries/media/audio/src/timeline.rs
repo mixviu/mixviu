@@ -1,6 +1,6 @@
 //! Flat, absolute-time episode audio. Mix owns scene and join policy.
+use crate::limiter::{TARGET_TOLERANCE_LU, target_matches};
 use crate::{Audio, LimiterConfig, Loudness, WavFormat};
-use crate::limiter::{target_matches, TARGET_TOLERANCE_LU};
 use media_opus::{Channels, Decoder, Encoder, OpusDecoder, OpusEncoder, OpusHead, Packet};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -243,7 +243,10 @@ pub struct MasteringCost {
 pub const MAX_CODEC_ATTEMPTS: u8 = 6;
 
 fn cpu_seconds() -> f64 {
-    let mut time = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut time = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     // SAFETY: time points to a valid, writable timespec. The work here is
     // single-threaded; thread CPU excludes unrelated concurrent render work.
     let rc = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) };
@@ -305,7 +308,11 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
             codec_cpu_s: cpu_seconds() - start,
         });
         let reached = !r.refused
-            && target_matches(t.master.integrated_lufs, encoded.integrated_lufs, TARGET_TOLERANCE_LU)
+            && target_matches(
+                t.master.integrated_lufs,
+                encoded.integrated_lufs,
+                TARGET_TOLERANCE_LU,
+            )
             && encoded.true_peak_dbtp <= t.master.true_peak_dbtp;
         if reached || r.refused || codec_passes + 1 == MAX_CODEC_ATTEMPTS {
             break (audio, r, head, packets, encoded, reached);
