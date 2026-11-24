@@ -15,12 +15,15 @@ a:{widget:"column",stretch_last:true,children:["heading","last"]},
 heading:{widget:"text",text:"Held heading"},
 last:{widget:"column",background:"#203040",children:["short"]},short:{widget:"text",text:"Short"},
 b:{widget:"column",background:"#203040",children:["tall","bullet"]},tall:{widget:"spacer",size:80},
-bullet:{widget:"drawing",w:12,h:20,sample_time:"= $model.time",primitives:[{kind:"ellipse",centre:[6,10],radius:[6,6],colour:"#5ad18a"}]},
+bullet:{widget:"drawing",w:12,h:"= $model.height",sample_time:"= $model.time",primitives:[{kind:"ellipse",centre:[6,10],radius:[6,6],colour:"#5ad18a"}]},
 animation:{widget:"text",text:"Parallel animation",paint_effect:"= $model.effect"}}
 ```
 "##;
-    let mut view =
-        SceneView::with_model(source, json!({"time":0,"effect":{"preset":"spin","time":0.2}})).unwrap();
+    let mut view = SceneView::with_model(
+        source,
+        json!({"height":20,"time":0,"effect":{"preset":"spin","time":0.2}}),
+    )
+    .unwrap();
     let geometry = Arc::new(std::sync::Mutex::new(view.geometry.clone()));
     let captured = geometry.clone();
     let clock = Arc::new(std::sync::Mutex::new(0.2_f64));
@@ -28,6 +31,8 @@ animation:{widget:"text",text:"Parallel animation",paint_effect:"= $model.effect
     let ticking = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let active = ticking.clone();
     let mut sample = 0.;
+    let drawing_height = Arc::new(std::sync::atomic::AtomicUsize::new(20));
+    let height = drawing_height.clone();
     let mut harness = egui_kittest::Harness::builder()
         .with_size(egui::vec2(320., 240.))
         .with_pixels_per_point(2.4)
@@ -35,9 +40,13 @@ animation:{widget:"text",text:"Parallel animation",paint_effect:"= $model.effect
         .build_ui(move |ui| {
             // The native host can pump another clock publication between
             // discarded passes. A clock frozen for the retry hides this bug.
-            if active.load(std::sync::atomic::Ordering::Relaxed) { sample += 0.001; }
-            view.apply_model(json!({"time":sample,"effect":{"preset":"spin","time":*time.lock().unwrap()}}))
-                .unwrap();
+            if active.load(std::sync::atomic::Ordering::Relaxed) {
+                sample += 0.001;
+            }
+            view.apply_model(
+                json!({"height":height.load(std::sync::atomic::Ordering::Relaxed),"time":sample,"effect":{"preset":"spin","time":*time.lock().unwrap()}}),
+            )
+            .unwrap();
             view.show(ui);
             *captured.lock().unwrap() = view.geometry.clone();
         });
@@ -64,6 +73,14 @@ animation:{widget:"text",text:"Parallel animation",paint_effect:"= $model.effect
             "source region frame {frame}"
         );
     }
+    // A real bounds change must still invalidate ancestor height measurements.
+    drawing_height.store(80, std::sync::atomic::Ordering::Relaxed);
+    for _ in 0..4 {
+        harness.step();
+    }
+    let changed = geometry.lock().unwrap();
+    assert!((changed["b"].height() - baseline["b"].height() - 60.).abs() * 2.4 <= 0.5);
+    assert!((changed["a"].bottom() - changed["b"].bottom()).abs() * 2.4 <= 0.5);
 }
 
 #[test]
@@ -343,7 +360,10 @@ fn held_source_cards() {
         }
         let baseline = rects.lock().unwrap().clone();
         for (id, rect) in &baseline {
-            if id.ends_with("r3.4.r3.0") || id.ends_with("r3.4.r3.1") || id.ends_with("r3.4.r3.0.r3.1") {
+            if id.ends_with("r3.4.r3.0")
+                || id.ends_with("r3.4.r3.1")
+                || id.ends_with("r3.4.r3.0.r3.1")
+            {
                 println!("HELD_BASELINE {slide} {id}: {rect:?}");
             }
         }

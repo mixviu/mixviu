@@ -3186,17 +3186,18 @@ fn measurement_hash(id: &str, node: &Node, layout: bool) -> u64 {
         // A drawing's bounds come from w/h, not its paint clock. Deck ticks
         // sample even static bullet dots; that must not cool ancestor heights.
         if layout
-            && ((node.family == "drawing" && key == "sample_time") || matches!(
-                key.as_str(),
-                "opacity"
-                    | "offset"
-                    | "paint_effect"
-                    | "enter"
-                    | "exit"
-                    | "transition"
-                    | "motion"
-                    | "__measure_key"
-            ))
+            && ((node.family == "drawing" && key == "sample_time")
+                || matches!(
+                    key.as_str(),
+                    "opacity"
+                        | "offset"
+                        | "paint_effect"
+                        | "enter"
+                        | "exit"
+                        | "transition"
+                        | "motion"
+                        | "__measure_key"
+                ))
         {
             continue;
         }
