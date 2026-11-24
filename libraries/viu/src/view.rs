@@ -3260,7 +3260,8 @@ impl<T> Default for MeasurementCache<T> {
 }
 fn measure_get<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id) -> Option<T> {
     ui.ctx().data_mut(|d| {
-        let cache = d.get_temp_mut_or_default::<MeasurementCache<T>>(egui::Id::new("scene-measurements"));
+        let cache =
+            d.get_temp_mut_or_default::<MeasurementCache<T>>(egui::Id::new("scene-measurements"));
         let (value, used) = cache.values.get_mut(&key)?;
         // A held scene still needs its heights while parallel animation adds
         // paint samples. Evict by last use, not by the original insertion.
@@ -3322,12 +3323,19 @@ b:{widget:"column",background:"#0000ff",children:["tall"]},tall:{widget:"spacer"
                 view.show(ui);
                 *captured.lock().unwrap() = view.geometry.clone();
                 for _ in 0..512 {
-                    super::measure_put(ui, egui::Id::unique(("parallel-paint", sample)), (1_f32, 1_f32));
+                    super::measure_put(
+                        ui,
+                        egui::Id::unique(("parallel-paint", sample)),
+                        (1_f32, 1_f32),
+                    );
                     sample += 1;
                 }
             });
-        for _ in 0..4 { harness.step(); }
-        let baseline: std::collections::BTreeMap<String, egui::Rect> = rects.lock().unwrap().clone();
+        for _ in 0..4 {
+            harness.step();
+        }
+        let baseline: std::collections::BTreeMap<String, egui::Rect> =
+            rects.lock().unwrap().clone();
         let image = harness.render().unwrap();
         // Includes the short card's stretched bottom and the page below it.
         let region = image::imageops::crop_imm(&image, 30, 100, 240, 180).to_image();
@@ -3335,8 +3343,11 @@ b:{widget:"column",background:"#0000ff",children:["tall"]},tall:{widget:"spacer"
             harness.step();
             assert_eq!(*rects.lock().unwrap(), baseline, "held frame {frame}");
             let image = harness.render().unwrap();
-            assert_eq!(image::imageops::crop_imm(&image, 30, 100, 240, 180).to_image(), region,
-                "source pixels on held frame {frame}");
+            assert_eq!(
+                image::imageops::crop_imm(&image, 30, 100, 240, 180).to_image(),
+                region,
+                "source pixels on held frame {frame}"
+            );
         }
     }
     #[test]
