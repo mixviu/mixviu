@@ -189,10 +189,13 @@ The receipt reports `codec_trim_db` (cumulative PCM ceiling adjustment),
 `codec_passes` (corrections), and encoded loudness. `passes` is the total
 limiter attempts over all masters. `mastering_cost` gives thread CPU seconds
 for mastering and encode/decode/meter separately on every codec attempt,
-plus its limiter attempt count. These observational timings never affect
+plus its limiter attempt count and individual `limiter_cpu_s` costs (including
+gain application and candidate copying). These observational timings never affect
 iteration or encoded output. Shortfall and success use decoded audio.
 Optional WAV is the final mastered PCM. Packet storage is about 24 MB per 25 minutes;
 decoded metering adds one f64 programme buffer, below the limiter budget.
+The original mix is retained across codec attempts: one additional stereo f64
+programme buffer (about 1.15 GB for 25 minutes at 48 kHz).
 
 ## Validation and exit status
 

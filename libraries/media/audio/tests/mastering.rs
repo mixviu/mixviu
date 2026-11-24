@@ -11,10 +11,10 @@ fn speech() -> Audio {
     Audio::new(
         48000,
         2,
-        (0..48000 * 30)
+        (0usize..48000 * 30)
             .flat_map(|n| {
                 let t = n as f64 / 48000.0;
-                let phrase = 10.0_f64.powf(if (n / (48000 * 6)) % 2 == 0 {
+                let phrase = 10.0_f64.powf(if (n / (48000 * 6)).is_multiple_of(2) {
                     -2.3 / 20.0
                 } else {
                     2.3 / 20.0

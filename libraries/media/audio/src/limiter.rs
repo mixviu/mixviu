@@ -20,26 +20,6 @@ pub(crate) fn target_matches(target: f64, measured: f64, tolerance: f64) -> bool
     measured.is_finite() && measured >= target - tolerance && measured <= target + tolerance
 }
 
-#[cfg(test)]
-mod tolerance_tests {
-    use super::*;
-    #[test]
-    fn inclusive_edges_and_nonfinite_refusal() {
-        for measured in [-14.1, -13.9, -14.0] {
-            assert!(target_matches(-14.0, measured, TARGET_TOLERANCE_LU));
-        }
-        for measured in [
-            -14.100001,
-            -13.899999,
-            f64::NAN,
-            f64::INFINITY,
-            f64::NEG_INFINITY,
-        ] {
-            assert!(!target_matches(-14.0, measured, TARGET_TOLERANCE_LU));
-        }
-    }
-}
-
 /// Offline, latency-compensated limiter settings. Both channels share one envelope.
 #[derive(Clone, Copy, Debug)]
 pub struct LimiterConfig {
@@ -350,3 +330,24 @@ impl Audio {
         Ok(envelope)
     }
 }
+
+#[cfg(test)]
+mod tolerance_tests {
+    use super::*;
+    #[test]
+    fn inclusive_edges_and_nonfinite_refusal() {
+        for measured in [-14.1, -13.9, -14.0] {
+            assert!(target_matches(-14.0, measured, TARGET_TOLERANCE_LU));
+        }
+        for measured in [
+            -14.100001,
+            -13.899999,
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+        ] {
+            assert!(!target_matches(-14.0, measured, TARGET_TOLERANCE_LU));
+        }
+    }
+}
+
