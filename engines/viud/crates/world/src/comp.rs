@@ -74,28 +74,52 @@ mod placement_marker_tests {
 
         // SAFETY: the generated atom table contains only u32 atom fields.
         let atoms: Atoms = unsafe { std::mem::zeroed() };
-        let x11 = X11Surface::new(None, 1, false, Weak::new(), atoms, None,
+        let x11 = X11Surface::new(
+            None,
+            1,
+            false,
+            Weak::new(),
+            atoms,
+            None,
             Rectangle::new((0, 0).into(), (100, 100).into()),
-            Arc::new(AtomicBool::new(false)));
+            Arc::new(AtomicBool::new(false)),
+        );
         let handle = SurfaceHandle::x11(&x11);
         for readmit in [false, true] {
             let mut comp = CompState::default();
             if readmit {
                 comp.readmit(handle.clone(), false, uuid::Uuid::new_v4(), None);
             } else {
-                comp.apply(SurfaceEvent::RoleTaken { handle: handle.clone(),
-                    role: SurfaceRole::X11 { override_redirect: false }, parent: None });
+                comp.apply(SurfaceEvent::RoleTaken {
+                    handle: handle.clone(),
+                    role: SurfaceRole::X11 {
+                        override_redirect: false,
+                    },
+                    parent: None,
+                });
                 let id = comp.registry.id_for_handle(&handle).unwrap();
                 assert!(!comp.initially_placed(id));
                 comp.apply(SurfaceEvent::Placed(handle.clone()));
             }
             let id = comp.registry.id_for_handle(&handle).unwrap();
             assert!(comp.initially_placed(id));
-            assert!(comp.placed_ids().is_empty(), "floating placement has no usable-area rule");
-            comp.apply(SurfaceEvent::Buffer { handle: handle.clone(), attached: false });
-            assert!(comp.initially_placed(id), "a later null buffer does not undo placement");
+            assert!(
+                comp.placed_ids().is_empty(),
+                "floating placement has no usable-area rule"
+            );
+            comp.apply(SurfaceEvent::Buffer {
+                handle: handle.clone(),
+                attached: false,
+            });
+            assert!(
+                comp.initially_placed(id),
+                "a later null buffer does not undo placement"
+            );
             comp.apply(SurfaceEvent::Dormant(handle.clone()));
-            assert!(!comp.initially_placed(id), "retiring the role clears placement");
+            assert!(
+                !comp.initially_placed(id),
+                "retiring the role clears placement"
+            );
         }
     }
 }

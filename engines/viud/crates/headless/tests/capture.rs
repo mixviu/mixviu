@@ -106,13 +106,20 @@ fn premap_fullscreen_order(name: &str, requests: &[bool], fullscreen: bool) {
             resized = true;
         }
         let row = bus.window(&mut pattern);
-        if resized && row["fullscreen"] == fullscreen
-            && row["width"] == expected.0 && row["height"] == expected.1
-            && row["window_x"] == origin.0 && row["window_y"] == origin.1
+        if resized
+            && row["fullscreen"] == fullscreen
+            && row["width"] == expected.0
+            && row["height"] == expected.1
+            && row["window_x"] == origin.0
+            && row["window_y"] == origin.1
         {
             break;
         }
-        assert!(Instant::now() < deadline, "last pre-map request: {row}; configured={:?}", pattern.state.size);
+        assert!(
+            Instant::now() < deadline,
+            "last pre-map request: {row}; configured={:?}",
+            pattern.state.size
+        );
         thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(pattern.state.size, expected);
