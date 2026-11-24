@@ -166,6 +166,8 @@ pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
                 sample[5] = 0.;
             }
         }
+        #[cfg(test)]
+        let shadow_start = std::time::Instant::now();
         paint_shadow(
             ui,
             id,
@@ -179,6 +181,11 @@ pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
             ),
             Vec2::new(0., dy),
         );
+        #[cfg(test)]
+        {
+            shadows(ui.ctx()).lock().unwrap().last_shadow_ms =
+                shadow_start.elapsed().as_secs_f64() * 1000.;
+        }
     }
     ui.painter().extend(shapes);
 }
@@ -203,8 +210,83 @@ struct Shadows {
     spent: usize,
     hits: usize,
     rasters: usize,
+    blurs: usize,
+    worker_rasters: usize,
+    worker_blurs: usize,
+    pending: Option<PendingShadow>,
+    waiting: std::collections::VecDeque<(egui::Id, u64)>,
+    spawn_backoff: std::time::Duration,
+    spawn_retry_at: Option<std::time::Instant>,
+    #[cfg(test)]
+    synchronous_updates: bool,
+    #[cfg(test)]
+    last_shadow_ms: f64,
+    #[cfg(test)]
+    fail_spawn: bool,
+}
+struct PendingShadow {
+    key: egui::Id,
+    base_signature: String,
+    texture: egui::TextureId,
+    signature: String,
+    image: std::sync::mpsc::Receiver<Option<egui::ColorImage>>,
+    ready: Option<egui::ColorImage>,
+    last_seen: u64,
 }
 const SHADOW_PIXELS: usize = 8 * 1024 * 1024;
+
+fn receive_shadow(c: &mut Shadows, key: egui::Id, signature: &str, pass: u64, ctx: &egui::Context) {
+    let Some(mut pending) = c.pending.take() else {
+        return;
+    };
+    if pending.key == key {
+        pending.last_seen = pass;
+    }
+    if pending.ready.is_none() {
+        match pending.image.try_recv() {
+            Ok(Some(image)) => pending.ready = Some(image),
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                c.pending = Some(pending);
+                return;
+            }
+            _ => return,
+        }
+    }
+    let Some(index) = c.entries.iter().position(|(id, cache)| {
+        *id == pending.key
+            && cache.signature == pending.base_signature
+            && cache.texture.id() == pending.texture
+    }) else {
+        return;
+    };
+    // Only the source's own paint knows its current request. Do not install a
+    // sibling's result speculatively, even when it completes mid-pass.
+    if pending.key != key {
+        if pending.last_seen.saturating_add(1) >= pass {
+            c.pending = Some(pending);
+            ctx.request_repaint();
+        }
+        return;
+    }
+    if c.entries[index].1.signature == signature {
+        return;
+    }
+    let image = pending.ready.take().unwrap();
+    let Some(pixels) = image.size[0].checked_mul(image.size[1]) else {
+        return;
+    };
+    if pixels > SHADOW_PIXELS {
+        return;
+    }
+    let (_, mut cache) = c.entries.remove(index).unwrap();
+    cache.pixels = pixels;
+    cache.texture.set(image, Default::default());
+    cache.signature = pending.signature;
+    while c.entries.iter().map(|(_, v)| v.pixels).sum::<usize>() + pixels > SHADOW_PIXELS {
+        c.entries.pop_front();
+    }
+    c.entries.push_back((key, cache));
+}
 fn shadows(ctx: &egui::Context) -> std::sync::Arc<std::sync::Mutex<Shadows>> {
     let key = egui::Id::unique("scene-shadow-budget-v1");
     ctx.data_mut(|d| {
@@ -262,16 +344,101 @@ fn paint_shadow(
             return;
         }
         c.spent += pixels;
-        let found = c
-            .entries
-            .iter()
-            .position(|(id, v)| *id == key && v.signature == signature);
+        // At most one raster/blur is in flight per context. Receive without
+        // waiting; the previous texture remains usable throughout animation.
+        receive_shadow(&mut c, key, &signature, pass, ui.ctx());
+        let found = c.entries.iter().position(|(id, _)| *id == key);
         found.and_then(|i| c.entries.remove(i)).map(|(_, v)| {
             c.hits += 1;
             v
         })
     };
+    #[cfg(test)]
+    let old = old.filter(|cache| {
+        !(cache.signature != signature && shared.lock().unwrap().synchronous_updates)
+    });
     if let Some(cache) = old {
+        if cache.signature != signature {
+            let mut c = shared.lock().unwrap_or_else(|e| e.into_inner());
+            let pass = ui.ctx().cumulative_pass_nr();
+            // Round-robin dirty sources, without storing obsolete frame meshes.
+            // A source that disappears cannot hold the worker indefinitely.
+            c.waiting.retain(|(_, seen)| seen.saturating_add(1) >= pass);
+            if !c.pending.as_ref().is_some_and(|job| job.key == key) {
+                if let Some((_, seen)) = c.waiting.iter_mut().find(|(id, _)| *id == key) {
+                    *seen = pass;
+                } else {
+                    if c.waiting.len() >= 8 {
+                        c.waiting.pop_front();
+                    }
+                    c.waiting.push_back((key, pass));
+                }
+            }
+            let retry_delay = c.spawn_retry_at.map_or(std::time::Duration::ZERO, |at| {
+                at.saturating_duration_since(std::time::Instant::now())
+            });
+            if c.pending.is_none() && !retry_delay.is_zero() {
+                ui.ctx().request_repaint_after(retry_delay);
+            } else if c.pending.is_none() && c.waiting.front().is_some_and(|(id, _)| *id == key) {
+                c.waiting.pop_front();
+                let (input_tx, input_rx) = std::sync::mpsc::sync_channel(1);
+                let (tx, rx) = std::sync::mpsc::sync_channel(1);
+                let ctx = ui.ctx().clone();
+                let shadow = shadow.clone();
+                let blurred = shadow.blur > 0.;
+                let task = move || {
+                    if let Ok(input) = input_rx.recv() {
+                        let image = raster_shadow(width, height, origin, &shadow, input);
+                        let _ = tx.send(image);
+                        ctx.request_repaint();
+                    }
+                };
+                #[cfg(test)]
+                let fail_spawn = c.fail_spawn;
+                #[cfg(not(test))]
+                let fail_spawn = false;
+                let spawned = if fail_spawn {
+                    Err(std::io::Error::other("injected spawn failure"))
+                } else {
+                    std::thread::Builder::new()
+                        .name("scene-shadow".into())
+                        .spawn(task)
+                };
+                if spawned.is_ok() {
+                    c.spawn_backoff = std::time::Duration::ZERO;
+                    c.spawn_retry_at = None;
+                    let _ = input_tx.send(shadow_input(ui.ctx(), shapes));
+                    c.worker_rasters += 1;
+                    c.worker_blurs += usize::from(blurred);
+                    c.pending = Some(PendingShadow {
+                        key,
+                        base_signature: cache.signature.clone(),
+                        texture: cache.texture.id(),
+                        signature,
+                        image: rx,
+                        ready: None,
+                        last_seen: pass,
+                    });
+                } else {
+                    c.waiting.push_back((key, pass));
+                    c.spawn_backoff = if c.spawn_backoff.is_zero() {
+                        std::time::Duration::from_millis(100)
+                    } else {
+                        (c.spawn_backoff * 2).min(std::time::Duration::from_secs(2))
+                    };
+                    c.spawn_retry_at = Some(std::time::Instant::now() + c.spawn_backoff);
+                    ui.ctx().request_repaint_after(c.spawn_backoff);
+                }
+            } else if c.pending.is_none() {
+                ui.ctx().request_repaint();
+            }
+        } else {
+            shared
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .waiting
+                .retain(|(id, _)| *id != key);
+        }
         draw(&cache.texture);
         shared
             .lock()
@@ -280,10 +447,38 @@ fn paint_shadow(
             .push_back((key, cache));
         return;
     }
-    let Some(mut mask) = tiny_skia::Pixmap::new(width, height) else {
+    let input = shadow_input(ui.ctx(), shapes);
+    let Some(image) = raster_shadow(width, height, origin, &shadow, input) else {
         return;
     };
-    shared.lock().unwrap_or_else(|e| e.into_inner()).rasters += 1;
+    {
+        let mut c = shared.lock().unwrap_or_else(|e| e.into_inner());
+        c.rasters += 1;
+        c.blurs += usize::from(shadow.blur > 0.);
+    }
+    let texture =
+        ui.ctx()
+            .load_texture(format!("drawing-shadow-{key:?}"), image, Default::default());
+    draw(&texture);
+    let mut c = shared.lock().unwrap_or_else(|e| e.into_inner());
+    c.entries.retain(|(id, _)| *id != key);
+    let pixels = width as usize * height as usize;
+    while c.entries.len() >= 8
+        || c.entries.iter().map(|(_, v)| v.pixels).sum::<usize>() + pixels > SHADOW_PIXELS
+    {
+        c.entries.pop_front();
+    }
+    c.entries.push_back((
+        key,
+        ShadowCache {
+            signature,
+            texture,
+            pixels,
+        },
+    ));
+}
+
+fn shadow_input(ctx: &egui::Context, shapes: &[Shape]) -> Vec<egui::ClippedPrimitive> {
     let input = shapes
         .iter()
         .cloned()
@@ -293,7 +488,20 @@ fn paint_shadow(
             transform_after_tessellation: Default::default(),
         })
         .collect();
-    for primitive in ui.ctx().tessellate(input, 1.) {
+    ctx.tessellate(input, 1.)
+}
+
+// The exact same raster and blur serve cold/static shadows and worker updates.
+// No Context lock, texture upload or UI access occurs on the worker.
+fn raster_shadow(
+    width: u32,
+    height: u32,
+    origin: Pos2,
+    shadow: &scene::drawing::Shadow,
+    input: Vec<egui::ClippedPrimitive>,
+) -> Option<egui::ColorImage> {
+    let mut mask = tiny_skia::Pixmap::new(width, height)?;
+    for primitive in input {
         let egui::epaint::Primitive::Mesh(mesh) = primitive.primitive else {
             continue;
         };
@@ -324,9 +532,7 @@ fn paint_shadow(
             }
         }
     }
-    let Some(image) = image::RgbaImage::from_raw(width, height, mask.data().to_vec()) else {
-        return;
-    };
+    let image = image::RgbaImage::from_raw(width, height, mask.data().to_vec())?;
     let mut blurred = if shadow.blur > 0. {
         image::imageops::fast_blur(&image, shadow.blur)
     } else {
@@ -340,34 +546,425 @@ fn paint_shadow(
             (pixel[3] as f32 * shadow.colour[3] / 255.).round() as u8,
         ]);
     }
-    let image = egui::ColorImage::from_rgba_unmultiplied(
+    Some(egui::ColorImage::from_rgba_unmultiplied(
         [width as usize, height as usize],
         blurred.as_raw(),
-    );
-    let texture =
-        ui.ctx()
-            .load_texture(format!("drawing-shadow-{key:?}"), image, Default::default());
-    draw(&texture);
-    let mut c = shared.lock().unwrap_or_else(|e| e.into_inner());
-    c.entries.retain(|(id, _)| *id != key);
-    let pixels = width as usize * height as usize;
-    while c.entries.len() >= 8
-        || c.entries.iter().map(|(_, v)| v.pixels).sum::<usize>() + pixels > SHADOW_PIXELS
-    {
-        c.entries.pop_front();
-    }
-    c.entries.push_back((
-        key,
-        ShadowCache {
-            signature,
-            texture,
-            pixels,
-        },
-    ));
+    ))
 }
 
 #[cfg(test)]
 mod tests {
+    fn pending_for(
+        store: &Shadows,
+        index: usize,
+        signature: &str,
+        image: std::sync::mpsc::Receiver<Option<egui::ColorImage>>,
+    ) -> PendingShadow {
+        let (key, cache) = &store.entries[index];
+        PendingShadow {
+            key: *key,
+            base_signature: cache.signature.clone(),
+            texture: cache.texture.id(),
+            signature: signature.into(),
+            image,
+            ready: None,
+            last_seen: store.pass,
+        }
+    }
+    fn sting_node() -> scene::Node {
+        let ports: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/sting-shadow.json")).unwrap();
+        serde_json::from_value(serde_json::json!({
+            "family":"drawing", "line":1, "is_template":false, "ports":ports
+        }))
+        .unwrap()
+    }
+
+    fn shadow_frame(
+        ctx: &egui::Context,
+        id: &str,
+        signature: &str,
+        scale: f32,
+    ) -> egui::FullOutput {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            paint_shadow(
+                ui,
+                id,
+                egui::Rect::from_min_size(Pos2::ZERO, Vec2::splat(32. * scale)),
+                Some(&serde_json::json!({"colour":[0,0,0,100],"offset":[0,0],"blur":2})),
+                &[Shape::circle_filled(
+                    egui::pos2(16., 16.),
+                    8. * scale,
+                    Color32::WHITE,
+                )],
+                signature.into(),
+                Vec2::ZERO,
+            );
+        })
+    }
+
+    fn fake_update(
+        ctx: &egui::Context,
+        signature: &str,
+    ) -> std::sync::mpsc::SyncSender<Option<egui::ColorImage>> {
+        let shared = shadows(ctx);
+        let mut store = shared.lock().unwrap();
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        store.pending = Some(pending_for(&store, 0, signature, receiver));
+        sender
+    }
+
+    fn tiny_image() -> egui::ColorImage {
+        egui::ColorImage::from_rgba_unmultiplied([1, 1], &[255, 0, 0, 255])
+    }
+
+    #[test]
+    fn evicted_and_recreated_shadow_rejects_the_old_worker_result() {
+        let ctx = egui::Context::default();
+        shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
+        let sender = fake_update(&ctx, "b");
+        let old_texture = shadows(&ctx).lock().unwrap().entries[0].1.texture.id();
+        for i in 0..8 {
+            shadow_frame(&ctx, &format!("sibling-{i}"), "sibling", 1.)
+                .drop_without_applying_deltas();
+        }
+        // Recreate even the same signature: the texture identity guards ABA.
+        shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
+        let shared = shadows(&ctx);
+        let texture = shared
+            .lock()
+            .unwrap()
+            .entries
+            .back()
+            .unwrap()
+            .1
+            .texture
+            .id();
+        assert_ne!(texture, old_texture);
+        sender.send(Some(tiny_image())).unwrap();
+        let out = shadow_frame(&ctx, "root", "a", 1.);
+        assert!(!out.textures_delta.set.contains_key(&texture));
+        out.drop_without_applying_deltas();
+        let store = shared.lock().unwrap();
+        assert_eq!(store.entries.back().unwrap().1.signature, "a");
+        assert!(store.pending.is_none());
+        assert_eq!(store.worker_rasters, 0);
+    }
+
+    #[test]
+    fn reverting_to_the_cached_signature_rejects_a_ready_sibling_result() {
+        let ctx = egui::Context::default();
+        shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
+        let sender = fake_update(&ctx, "b");
+        shadow_frame(&ctx, "root", "b", 1.).drop_without_applying_deltas();
+        sender.send(Some(tiny_image())).unwrap();
+        shadow_frame(&ctx, "sibling", "c", 1.).drop_without_applying_deltas();
+        let shared = shadows(&ctx);
+        assert!(
+            shared
+                .lock()
+                .unwrap()
+                .pending
+                .as_ref()
+                .unwrap()
+                .ready
+                .is_some()
+        );
+        let texture = shared.lock().unwrap().entries[0].1.texture.id();
+        let out = shadow_frame(&ctx, "root", "a", 1.);
+        assert!(!out.textures_delta.set.contains_key(&texture));
+        out.drop_without_applying_deltas();
+        let store = shared.lock().unwrap();
+        assert_eq!(store.entries.back().unwrap().1.signature, "a");
+        assert_eq!(store.worker_rasters, 0);
+        assert!(store.pending.is_none());
+    }
+
+    #[test]
+    fn scaled_worker_image_replaces_the_full_texture_at_its_new_size() {
+        let ctx = egui::Context::default();
+        shadow_frame(&ctx, "root", "base", 1.).drop_without_applying_deltas();
+        let shared = shadows(&ctx);
+        let texture = shared.lock().unwrap().entries[0].1.texture.id();
+        assert_eq!(shared.lock().unwrap().entries[0].1.texture.size(), [44, 44]);
+        let sender = fake_update(&ctx, "scaled");
+        let image = egui::ColorImage::from_rgba_unmultiplied([76, 76], &vec![255; 76 * 76 * 4]);
+        sender.send(Some(image)).unwrap();
+        let out = shadow_frame(&ctx, "root", "scaled", 2.);
+        let delta = out.textures_delta.set[&texture].last().unwrap();
+        assert!(delta.pos.is_none());
+        assert_eq!(delta.image.size(), [76, 76]);
+        out.drop_without_applying_deltas();
+        let store = shared.lock().unwrap();
+        assert_eq!(store.entries[0].1.texture.id(), texture);
+        assert_eq!(store.entries[0].1.texture.size(), [76, 76]);
+        assert_eq!(store.entries[0].1.pixels, 76 * 76);
+        assert!(store.pending.is_none());
+    }
+
+    #[test]
+    fn oversized_worker_result_is_dropped_before_eviction() {
+        let ctx = egui::Context::default();
+        shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
+        let sender = fake_update(&ctx, "b");
+        let mut image = tiny_image();
+        image.size = [SHADOW_PIXELS + 1, 1];
+        sender.send(Some(image)).unwrap();
+        let shared = shadows(&ctx);
+        let mut store = shared.lock().unwrap();
+        let key = store.entries[0].0;
+        let pass = store.pass;
+        receive_shadow(&mut store, key, "b", pass, &ctx);
+        assert!(store.pending.is_none());
+        assert_eq!(store.entries.len(), 1);
+        assert_eq!(store.entries[0].1.signature, "a");
+        assert_eq!(store.entries[0].1.texture.size(), [44, 44]);
+    }
+
+    #[test]
+    fn failed_spawn_backs_off_without_immediate_repaint_and_recovers() {
+        let ctx = egui::Context::default();
+        for _ in 0..4 {
+            shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
+        }
+        let shared = shadows(&ctx);
+        shared.lock().unwrap().fail_spawn = true;
+        for milliseconds in [100, 200, 400, 800, 1600, 2000, 2000] {
+            // Advance the retry deadline without a wall-clock sleep.
+            shared.lock().unwrap().spawn_retry_at = None;
+            let out = shadow_frame(&ctx, "root", "b", 1.);
+            let delay = out.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+            out.drop_without_applying_deltas();
+            assert!(!delay.is_zero());
+            assert!(delay <= std::time::Duration::from_millis(milliseconds));
+            {
+                let store = shared.lock().unwrap();
+                assert_eq!(
+                    store.spawn_backoff,
+                    std::time::Duration::from_millis(milliseconds)
+                );
+                assert!(store.pending.is_none());
+                assert_eq!(store.waiting.front().unwrap().0, store.entries[0].0);
+                assert_eq!(store.worker_rasters, 0);
+            }
+            // An unrelated frame during cooldown must neither retry nor ask
+            // for an immediate repaint. Hold the deadline in the future so
+            // preemption cannot accidentally turn this into an expired retry.
+            shared.lock().unwrap().spawn_retry_at =
+                Some(std::time::Instant::now() + std::time::Duration::from_secs(60));
+            let out = shadow_frame(&ctx, "root", "b", 1.);
+            assert!(
+                !out.viewport_output[&egui::ViewportId::ROOT]
+                    .repaint_delay
+                    .is_zero()
+            );
+            out.drop_without_applying_deltas();
+            assert_eq!(
+                shared.lock().unwrap().spawn_backoff,
+                std::time::Duration::from_millis(milliseconds)
+            );
+        }
+        {
+            let mut store = shared.lock().unwrap();
+            store.fail_spawn = false;
+            store.spawn_retry_at = None;
+        }
+        shadow_frame(&ctx, "root", "b", 1.).drop_without_applying_deltas();
+        let store = shared.lock().unwrap();
+        assert_eq!(store.spawn_backoff, std::time::Duration::ZERO);
+        assert!(store.spawn_retry_at.is_none());
+        assert!(store.pending.is_some());
+        assert_eq!(store.worker_rasters, 1);
+    }
+
+    #[test]
+    fn animated_silhouettes_never_raster_or_blur_again_on_the_frame_path() {
+        let ctx = egui::Context::default();
+        let mut node = sting_node();
+        node.ports
+            .insert("motion_profile".into(), serde_json::json!("legacy-sting"));
+        for frame in 0..30 {
+            node.ports
+                .insert("sample_time".into(), serde_json::json!(frame as f64 / 30.));
+            ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node))
+                .drop_without_applying_deltas();
+        }
+        let store = shadows(&ctx);
+        let store = store.lock().unwrap();
+        assert_eq!(store.rasters, 1);
+        assert_eq!(store.blurs, 1);
+        assert!(store.worker_rasters > 0 && store.worker_rasters <= 29);
+        assert_eq!(store.worker_blurs, store.worker_rasters);
+        assert!(store.entries.iter().map(|(_, v)| v.pixels).sum::<usize>() <= SHADOW_PIXELS);
+    }
+
+    #[test]
+    fn busy_shadow_worker_coalesces_changed_frames_and_keeps_the_last_texture() {
+        let ctx = egui::Context::default();
+        let mut node = sting_node();
+        ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node))
+            .drop_without_applying_deltas();
+        let shared = shadows(&ctx);
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let texture = {
+            let mut store = shared.lock().unwrap();
+            let texture = store.entries[0].1.texture.id();
+            // A deliberately stalled result, with no sleep or timing race.
+            store.pending = Some(pending_for(&store, 0, "busy", receiver));
+            texture
+        };
+        for frame in 0..30 {
+            node.ports
+                .insert("sample_time".into(), serde_json::json!(frame as f64 / 30.));
+            let out = ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
+            assert!(out.shapes.iter().any(|s| matches!(&s.shape,
+                Shape::Mesh(mesh) if mesh.texture_id == texture)));
+            out.drop_without_applying_deltas();
+        }
+        let store = shared.lock().unwrap();
+        assert_eq!((store.rasters, store.blurs), (1, 1));
+        assert_eq!((store.worker_rasters, store.worker_blurs), (0, 0));
+        assert!(store.pending.is_some());
+        drop(sender);
+    }
+
+    #[test]
+    fn completed_worker_shadow_is_pixel_identical_to_a_cold_static_shadow() {
+        let mut node = sting_node();
+        let ctx = egui::Context::default();
+        node.ports
+            .insert("sample_time".into(), serde_json::json!(0.));
+        ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node))
+            .drop_without_applying_deltas();
+        node.ports
+            .insert("sample_time".into(), serde_json::json!(0.3));
+        let reference_ctx = egui::Context::default();
+        let reference =
+            reference_ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
+        let reference_id = shadows(&reference_ctx).lock().unwrap().entries[0]
+            .1
+            .texture
+            .id();
+        let expected = reference.textures_delta.set[&reference_id]
+            .last()
+            .unwrap()
+            .image
+            .clone();
+        reference.drop_without_applying_deltas();
+        let texture = shadows(&ctx).lock().unwrap().entries[0].1.texture.id();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let out = ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
+            let image = out
+                .textures_delta
+                .set
+                .get(&texture)
+                .and_then(|d| d.last())
+                .map(|d| d.image.clone());
+            out.drop_without_applying_deltas();
+            if let Some(egui::ImageData::Color(actual)) = image {
+                let egui::ImageData::Color(expected) = &expected;
+                assert_eq!(actual.size, expected.size);
+                assert_eq!(actual.pixels, expected.pixels);
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "worker did not finish"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert_eq!(shadows(&ctx).lock().unwrap().rasters, 1);
+    }
+
+    #[test]
+    fn animated_siblings_take_turns_on_the_shadow_worker() {
+        let ctx = egui::Context::default();
+        let mut node = sting_node();
+        node.ports
+            .insert("sample_time".into(), serde_json::json!(0.));
+        let paint = |node: &scene::Node| {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                show(ui, "a", node);
+                show(ui, "b", node);
+            })
+            .drop_without_applying_deltas();
+        };
+        paint(&node);
+        let shared = shadows(&ctx);
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let second = {
+            let mut store = shared.lock().unwrap();
+            let second = store.entries[1].0;
+            store.pending = Some(pending_for(&store, 0, "busy", receiver));
+            second
+        };
+        node.ports
+            .insert("sample_time".into(), serde_json::json!(0.3));
+        paint(&node);
+        sender.send(None).unwrap();
+        paint(&node);
+        assert_eq!(shared.lock().unwrap().pending.as_ref().unwrap().key, second);
+    }
+
+    #[test]
+    #[ignore = "explicit CBC headless GPU sting benchmark"]
+    fn sting_shadow_frame_benchmark() {
+        use std::sync::{Arc, Mutex};
+        for synchronous in [true, false] {
+            let mut node = sting_node();
+            node.ports
+                .insert("motion_profile".into(), serde_json::json!("legacy-sting"));
+            let state = Arc::new(Mutex::new((node, Vec::<f64>::new())));
+            let captured = state.clone();
+            let mut harness = egui_kittest::Harness::builder()
+                .with_size(egui::vec2(1600., 900.))
+                .with_pixels_per_point(2.4)
+                .wgpu()
+                .build_ui(move |ui| {
+                    shadows(ui.ctx()).lock().unwrap().synchronous_updates = synchronous;
+                    let mut state = captured.lock().unwrap();
+                    show(ui, "sting", &state.0);
+                    state
+                        .1
+                        .push(shadows(ui.ctx()).lock().unwrap().last_shadow_ms);
+                });
+            let mut hashes = std::collections::HashSet::new();
+            state.lock().unwrap().1.clear();
+            for frame in 0..30 {
+                state.lock().unwrap().0.ports.insert(
+                    "sample_time".into(),
+                    serde_json::json!(3. + frame as f64 / 30.),
+                );
+                harness.step();
+                let image = harness.render().unwrap();
+                assert_eq!(image.dimensions(), (3840, 2160));
+                hashes.insert(blake3::hash(image.as_raw()));
+            }
+            let state = state.lock().unwrap();
+            println!(
+                "STING_SHADOW_FRAME_MS synchronous={synchronous} {:?}",
+                state.1
+            );
+            let mut times = state.1.clone();
+            times.sort_by(f64::total_cmp);
+            println!(
+                "STING_SHADOW synchronous={synchronous} distinct={}/30 shadow_ms_median={:.3} shadow_ms_max={:.3} samples={}",
+                hashes.len(),
+                times[times.len() / 2],
+                times.last().unwrap(),
+                times.len()
+            );
+            assert_eq!(hashes.len(), 30);
+            if !synchronous {
+                assert!(
+                    *times.last().unwrap() < 1000. / 30.,
+                    "shadow exceeded a 30 Hz frame budget"
+                );
+            }
+        }
+    }
+
     #[test]
     fn authored_legacy_primitive_names_never_paint_in_either_profile() {
         for profile in ["current", "legacy-sting"] {
