@@ -81,6 +81,10 @@ fn output_for(lp: &Loop, window: &Window) -> Option<Output> {
     {
         return Some(output.clone());
     }
+    overlapping_output(space, window).or_else(|| space.outputs().next().cloned())
+}
+
+fn overlapping_output(space: &smithay::desktop::Space<Window>, window: &Window) -> Option<Output> {
     // Space's element/output membership is refreshed separately. A lifecycle
     // request immediately after initial placement must use its new slot, not
     // that cache (which can still be empty or describe its previous location).
@@ -92,13 +96,48 @@ fn output_for(lp: &Loop, window: &Window) -> Option<Output> {
         let area = slot.intersection(space.output_geometry(output)?)?;
         Some((i64::from(area.size.w) * i64::from(area.size.h), output.clone()))
     }).max_by_key(|(area, output)| (*area, output.name()));
-    if std::env::var_os("MIX_TEST_MAPPING_TRACE").is_some() {
-        eprintln!("FULLSCREEN_OUTPUT slot={slot:?} cached={:?} candidate={:?}",
-            space.outputs_for_element(window).iter().map(|o| o.name()).collect::<Vec<_>>(),
-            candidate.as_ref().map(|(_, o)| o.name()));
-    }
     candidate.map(|(_, output)| output)
-        .or_else(|| space.outputs().next().cloned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use smithay::output::{Mode, PhysicalProperties, Subpixel};
+    use smithay::utils::Rectangle;
+    use smithay::xwayland::{X11Surface, xwm::Atoms};
+    use std::sync::{Arc, Weak, atomic::AtomicBool};
+
+    #[test]
+    fn fullscreen_output_uses_new_slot_before_membership_refresh() {
+        let mut space = smithay::desktop::Space::<Window>::default();
+        let outputs: Vec<_> = (0..2).map(|n| {
+            let output = Output::new(format!("headless-{n}"), PhysicalProperties {
+                size: (0, 0).into(), subpixel: Subpixel::Unknown,
+                make: "Example".into(), model: "Virtual".into(), serial_number: n.to_string(),
+            });
+            output.change_current_state(Some(Mode { size: (320, 240).into(), refresh: 60_000 }), None, None, None);
+            space.map_output(&output, (n * 1920, 0));
+            output
+        }).collect();
+        // SAFETY: the generated atom table contains only u32 atom fields.
+        let atoms: Atoms = unsafe { std::mem::zeroed() };
+        let x11 = X11Surface::new(None, 1, false, Weak::new(), atoms, None,
+            Rectangle::new((0, 0).into(), (100, 100).into()), Arc::new(AtomicBool::new(false)));
+        let window = Window::new_x11_window(x11);
+        crate::camera::transform::translate::slot::set_expected_size(&window, (320, 240).into());
+        space.map_element(window.clone(), (0, 0), false);
+        assert!(space.outputs_for_element(&window).is_empty());
+        assert_eq!(overlapping_output(&space, &window), Some(outputs[0].clone()));
+
+        // Model the previous pass's membership on output 1, then relocate
+        // without refreshing it, exactly as lifecycle placement does.
+        space.map_element(window.clone(), (1920, 0), false);
+        space.refresh_outputs_with(|_, output| (output == &outputs[1])
+            .then_some(Rectangle::new((0, 0).into(), (320, 240).into())));
+        space.map_element(window.clone(), (0, 0), false);
+        assert_eq!(space.outputs_for_element(&window), vec![outputs[1].clone()]);
+        assert_eq!(overlapping_output(&space, &window), Some(outputs[0].clone()));
+    }
 }
 
 /// The engine's `fullscreen_set` entering: the rectangle the fullscreen `window`
