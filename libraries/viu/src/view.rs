@@ -3284,6 +3284,53 @@ fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, v
 mod measurement_cache_tests {
     use serde_json::{Value, json};
     #[test]
+    fn held_card_survives_measurement_cache_pressure() {
+        // A parallel animation keeps inserting paint samples while the held
+        // cards repeatedly read their natural heights. Exercise more than the
+        // bounded cache's capacity without needing thousands of GPU frames.
+        let source = r##"---
+scene: 1
+name: held-cards
+citizen: test
+---
+```mix
+{root:{widget:"grid",columns:2,equal_height:true,children:["a","b"]},
+a:{widget:"column",background:"#ff0000",stretch_last:true,children:["head","last"]},
+head:{widget:"spacer",size:10},last:{widget:"column",background:"#00ff00",children:["short"]},
+short:{widget:"spacer",size:10},
+b:{widget:"column",background:"#0000ff",children:["tall"]},tall:{widget:"spacer",size:80}}
+```
+"##;
+        let mut view = super::SceneView::new(source).unwrap();
+        let rects = std::sync::Arc::new(std::sync::Mutex::new(Default::default()));
+        let captured = rects.clone();
+        let mut sample = 0_u64;
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(320., 180.))
+            .with_pixels_per_point(2.4)
+            .wgpu()
+            .build_ui(move |ui| {
+                view.show(ui);
+                *captured.lock().unwrap() = view.geometry.clone();
+                for _ in 0..512 {
+                    super::measure_put(ui, egui::Id::new(("parallel-paint", sample)), 1_f32);
+                    sample += 1;
+                }
+            });
+        for _ in 0..4 { harness.step(); }
+        let baseline: std::collections::BTreeMap<String, egui::Rect> = rects.lock().unwrap().clone();
+        let image = harness.render().unwrap();
+        // Includes the short card's stretched bottom and the page below it.
+        let region = image::imageops::crop_imm(&image, 30, 100, 240, 180).to_image();
+        for frame in 0..24 {
+            harness.step();
+            assert_eq!(*rects.lock().unwrap(), baseline, "held frame {frame}");
+            let image = harness.render().unwrap();
+            assert_eq!(image::imageops::crop_imm(&image, 30, 100, 240, 180).to_image(), region,
+                "source pixels on held frame {frame}");
+        }
+    }
+    #[test]
     fn graph_revision_covers_deep_chains_and_cycles_in_one_hash_per_node() {
         fn revision(count: usize, cycle: bool, changed: bool) -> u64 {
             let mut nodes = std::collections::BTreeMap::new();
