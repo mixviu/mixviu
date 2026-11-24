@@ -66,13 +66,16 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
     if probe {
         let mut tracks = Vec::new();
         for t in &d.tracks {
+            if t.kind == 1 {
+                validate_video_timing(&d, t)?;
+            }
             tracks.push(json!({
-            "number": t.number, "codec":t.codec, "width":t.width, "height":t.height,
-            "fps": if t.kind == 1 { probe_video_rate(t.default_duration_ns, d.scale_ns,
-                d.packets().iter().filter(|p| p.track == t.number)) } else { None },
-            "sample_rate": t.sample_rate, "channels":t.channels,
-            "packets": d.packets().iter().filter(|p| p.track == t.number).count()
-        }));
+                "number": t.number, "codec":t.codec, "width":t.width, "height":t.height,
+                "fps": if t.kind == 1 { probe_video_rate(t.default_duration_ns, d.scale_ns,
+                    d.packets().iter().filter(|p| p.track == t.number)) } else { None },
+                "sample_rate": t.sample_rate, "channels":t.channels,
+                "packets": d.packets().iter().filter(|p| p.track == t.number).count()
+            }));
         }
         let mut frames = 0;
         if let Some(t) = d.tracks.iter().find(|t| t.codec == "V_AV1") {
@@ -264,6 +267,21 @@ fn duration_frame_limit(
     Ok(500_000)
 }
 
+fn validate_video_timing(d: &Demuxer<'_>, track: &media_webm::Track<'_>) -> Result<()> {
+    let mut previous = None;
+    for packet in d.packets().iter().filter(|p| p.track == track.number) {
+        if let Some(duration) = packet.duration {
+            duration.checked_mul(d.scale_ns).ok_or("TIMESTAMP_OVERFLOW")?;
+        }
+        if let Some(last) = previous {
+            let delta = packet.timestamp.checked_sub(last).ok_or("TIMESTAMP_OVERFLOW: packet delta")?;
+            delta.unsigned_abs().checked_mul(d.scale_ns).ok_or("TIMESTAMP_OVERFLOW: packet delta")?;
+        }
+        previous = Some(packet.timestamp);
+    }
+    Ok(())
+}
+
 /// Probe timing only: never use packet count / Segment Duration as CFR evidence.
 /// Prefer a whole-Hz grid when every timestamp fits one quantisation phase
 /// (residual range strictly less than one container tick), and every declared
@@ -301,8 +319,8 @@ fn probe_video_rate<'a>(
                 return Some(false);
             }
             previous = Some(packet.timestamp);
-            let elapsed = (i128::from(packet.timestamp) - i128::from(first))
-                .checked_mul(quantum)?;
+            let elapsed =
+                (i128::from(packet.timestamp) - i128::from(first)).checked_mul(quantum)?;
             let residual = elapsed.checked_sub(i as i128 * 1_000_000_000)?;
             low = low.min(residual);
             high = high.max(residual);
@@ -470,8 +488,14 @@ mod tests {
     #[test]
     fn probe_declared_default_interval() {
         let packets = timing_packets(&[0], None);
-        assert_eq!(probe_video_rate(40_000_000, 1_000_000, packets.iter()), Some(25.0));
-        assert_eq!(probe_video_rate(33_366_667, 1_000_000, packets.iter()), Some(1e9 / 33_366_667.0));
+        assert_eq!(
+            probe_video_rate(40_000_000, 1_000_000, packets.iter()),
+            Some(25.0)
+        );
+        assert_eq!(
+            probe_video_rate(33_366_667, 1_000_000, packets.iter()),
+            Some(1e9 / 33_366_667.0)
+        );
     }
 
     #[test]
@@ -489,7 +513,11 @@ mod tests {
             &[0, 67, 33, 100],
         ] {
             let packets = timing_packets(timestamps, None);
-            assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), None, "{timestamps:?}");
+            assert_eq!(
+                probe_video_rate(0, 1_000_000, packets.iter()),
+                None,
+                "{timestamps:?}"
+            );
         }
         let packets = timing_packets(&[0, 40, 80, 120], Some(20));
         assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), None);
@@ -497,8 +525,14 @@ mod tests {
 
     #[test]
     fn probe_exact_fractional_tick_interval() {
-        let packets = timing_packets(&[0, 33, 66, 99, 132, 165, 198, 231, 264, 297, 330, 363, 396], Some(33));
-        assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), Some(1e9 / 33_000_000.0));
+        let packets = timing_packets(
+            &[0, 33, 66, 99, 132, 165, 198, 231, 264, 297, 330, 363, 396],
+            Some(33),
+        );
+        assert_eq!(
+            probe_video_rate(0, 1_000_000, packets.iter()),
+            Some(1e9 / 33_000_000.0)
+        );
     }
 
     fn ff(args: &[&str]) -> Vec<u8> {
