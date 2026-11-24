@@ -59,6 +59,12 @@ fn refusal_returns_legacy_static_result() {
         .normalise_to_target(-14.0, -1.0, LimiterConfig::default())
         .unwrap();
     assert!(r.refused);
+    assert_eq!(
+        r.passes, 1,
+        "first refused render is still an attempted pass"
+    );
+    assert!(r.pass_cpu_s[0] > 0.0);
+    assert!(r.pass_cpu_s[1..].iter().all(|&seconds| seconds == 0.0));
     assert!(r.max_gain_reduction_db > 6.0);
     assert!(r.shortfall_lu > 0.5);
     assert_eq!(a, b);
@@ -103,9 +109,9 @@ fn bounded_target_and_invalid_settings() {
         .unwrap();
     assert!(!r.refused, "{r:?}");
     assert!(r.target_reached);
-    assert!((r.after.integrated_lufs + 14.0).abs() <= 0.5, "{r:?}");
+    assert!((r.after.integrated_lufs + 14.0).abs() <= 0.1, "{r:?}");
     assert!(r.after.true_peak_dbtp <= -1.0);
-    assert!((1..=3).contains(&r.passes));
+    assert!((1..=8).contains(&r.passes));
     assert!(
         a.limit_true_peak(
             -1.0,
