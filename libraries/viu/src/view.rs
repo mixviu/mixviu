@@ -3315,12 +3315,14 @@ b:{widget:"column",background:"#0000ff",children:["tall"]},tall:{widget:"spacer"
         let rects = std::sync::Arc::new(std::sync::Mutex::new(Default::default()));
         let captured = rects.clone();
         let mut sample = 0_u64;
+        let mut pass = 0;
         let mut harness = egui_kittest::Harness::builder()
             .with_size(egui::vec2(320., 180.))
             .with_pixels_per_point(2.4)
             .wgpu()
             .build_ui(move |ui| {
-                for _ in 0..3000 {
+                pass += 1;
+                for _ in 0..if pass > 8 { 3000 } else { 0 } {
                     super::measure_put(
                         ui,
                         egui::Id::unique(("parallel-paint", sample)),
