@@ -2,7 +2,69 @@ use media_av1::{Encoder, Settings, Target, reference::ReferenceTracker};
 use media_frame::Bgra;
 use media_vfl::reader::{Directory, Reader};
 use std::os::{fd::AsRawFd, unix::fs::OpenOptionsExt};
-type Directories = Vec<Arc<Directory>>;
+type Directories = Vec<Input>;
+#[derive(Clone, Debug)]
+enum Input {
+    Vfl(Arc<Directory>),
+    Still(Arc<std::fs::File>),
+    Solid([u8; 3]),
+}
+const STILL_FILE_BYTES_LIMIT: u64 = 64 * 1024 * 1024;
+const STILL_DIMENSION_LIMIT: u32 = 7680;
+const STILL_PIXELS_LIMIT: u64 = 7680 * 4320;
+const STILL_DECODE_BYTES_LIMIT: usize = 256 * 1024 * 1024;
+
+fn png_reader(
+    file: &std::fs::File,
+) -> Result<png::Reader<io::BufReader<std::io::Take<std::fs::File>>>> {
+    use std::io::{Seek, SeekFrom};
+    let mut file = file.try_clone()?;
+    file.seek(SeekFrom::Start(0))?;
+    let mut decoder = png::Decoder::new_with_limits(
+        io::BufReader::new(file.take(STILL_FILE_BYTES_LIMIT)),
+        png::Limits {
+            bytes: STILL_DECODE_BYTES_LIMIT,
+        },
+    );
+    decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
+    decoder.set_ignore_text_chunk(true);
+    decoder.set_ignore_iccp_chunk(true);
+    // Check IHDR before read_info can initialise row/image decoder buffers.
+    let info = decoder.read_header_info()?;
+    if info.width == 0
+        || info.height == 0
+        || info.width > STILL_DIMENSION_LIMIT
+        || info.height > STILL_DIMENSION_LIMIT
+        || u64::from(info.width) * u64::from(info.height) > STILL_PIXELS_LIMIT
+    {
+        return refuse("still_dimensions_limit");
+    }
+    let reader = decoder.read_info()?;
+    if reader.info().animation_control.is_some() {
+        return refuse("still_animation");
+    }
+    Ok(reader)
+}
+fn open_still(base: &Path, relative: &Path) -> Result<(Input, u64, u64)> {
+    let file = std::fs::File::options()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(base.join(relative))?;
+    let meta = file.metadata()?;
+    if !meta.is_file() {
+        return refuse("still_regular_file");
+    }
+    let resolved = std::fs::read_link(format!("/proc/self/fd/{}", file.as_raw_fd()))?;
+    if !resolved.starts_with(base) {
+        return refuse("segment_path_escape");
+    }
+    if meta.len() > STILL_FILE_BYTES_LIMIT {
+        return refuse("still_file_bytes_limit");
+    }
+    let reader = png_reader(&file)?;
+    let (w, h) = (reader.info().width, reader.info().height);
+    Ok((Input::Still(Arc::new(file)), u64::from(w), u64::from(h)))
+}
 const SOURCE_LIMIT: usize = 256;
 use std::collections::{HashMap, HashSet};
 struct VflSource {
@@ -15,6 +77,7 @@ struct VflSource {
 struct SourceCatalog {
     paths: HashMap<PathBuf, Arc<VflSource>>,
     resolved: HashMap<PathBuf, Arc<VflSource>>,
+    stills: HashMap<PathBuf, (Input, u64, u64)>,
     #[cfg(test)]
     opens: usize,
     #[cfg(test)]
@@ -65,6 +128,10 @@ fn source_paths(segments: &[Segment]) -> Result<Vec<PathBuf>> {
     let mut distinct = HashSet::new();
     let mut paths = Vec::with_capacity(segments.len());
     for s in segments {
+        if s.solid.is_some() {
+            paths.push(PathBuf::new());
+            continue;
+        }
         if s.path.as_os_str().is_empty()
             || s.path.components().any(|c| {
                 !matches!(
@@ -206,13 +273,74 @@ struct Video {
     #[serde(default)]
     crossfades: Vec<Fade>,
 }
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Deserialize, Default)]
+#[serde(try_from = "SegmentSpec")]
 struct Segment {
     path: PathBuf,
     from_slot: u64,
     to_slot: u64,
     at_s: f64,
+    solid: Option<[u8; 3]>,
+    still: bool,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SegmentSpec {
+    path: Option<PathBuf>,
+    still: Option<PathBuf>,
+    solid: Option<serde_json::Value>,
+    from_slot: Option<u64>,
+    to_slot: Option<u64>,
+    duration_s: Option<f64>,
+    at_s: f64,
+}
+impl TryFrom<SegmentSpec> for Segment {
+    type Error = String;
+    fn try_from(s: SegmentSpec) -> std::result::Result<Self, String> {
+        if usize::from(s.path.is_some())
+            + usize::from(s.still.is_some())
+            + usize::from(s.solid.is_some())
+            != 1
+        {
+            return Err("render: segment_kind".into());
+        }
+        let mut out = Self {
+            at_s: s.at_s,
+            ..Self::default()
+        };
+        if let Some(path) = s.path {
+            if s.duration_s.is_some() {
+                return Err("render: segment_kind_fields".into());
+            }
+            out.path = path;
+            out.from_slot = s.from_slot.ok_or("render: segment_from_slot")?;
+            out.to_slot = s.to_slot.ok_or("render: segment_to_slot")?;
+        } else {
+            if s.from_slot.is_some() || s.to_slot.is_some() {
+                return Err("render: segment_kind_fields".into());
+            }
+            let duration = s.duration_s.ok_or("render: segment_duration_s")?;
+            if !time(duration) || frame(duration) == 0 || !time(s.at_s + duration) {
+                return Err("render: segment_duration_s".into());
+            }
+            out.to_slot = frame(s.at_s + duration)
+                .checked_sub(frame(s.at_s))
+                .filter(|n| *n > 0)
+                .ok_or("render: segment_duration_s")?;
+            if let Some(path) = s.still {
+                out.path = path;
+                out.still = true;
+            }
+            if let Some(colour) = s.solid {
+                out.solid = Some(if colour == "black" {
+                    [0, 0, 0]
+                } else {
+                    serde_json::from_value::<[u8; 3]>(colour).map_err(|_| "render: solid_colour")?
+                });
+            }
+        }
+        Ok(out)
+    }
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -315,12 +443,27 @@ impl Timeline {
             {
                 return refuse("segment_range");
             }
-            let source = catalog.get(base, &relative)?;
-            let count = source.count;
-            if s.from_slot >= count || s.to_slot > count {
-                return refuse("segment_trim_outside_vfl");
-            }
-            let (w, h) = (source.width, source.height);
+            let (input, w, h) = if let Some(rgb) = s.solid {
+                (Input::Solid(rgb), v.width as u64, v.height as u64)
+            } else if s.still {
+                if let Some(source) = catalog.stills.get(&relative) {
+                    source.clone()
+                } else {
+                    let source = open_still(base, &relative)?;
+                    catalog.stills.insert(relative, source.clone());
+                    source
+                }
+            } else {
+                let source = catalog.get(base, &relative)?;
+                if s.from_slot >= source.count || s.to_slot > source.count {
+                    return refuse("segment_trim_outside_vfl");
+                }
+                (
+                    Input::Vfl(source.directory.clone()),
+                    source.width,
+                    source.height,
+                )
+            };
             source_bytes = source_bytes.max(source_canvas_bytes(w, h)?);
             let ratio = (v.width as f64 / w as f64).min(v.height as f64 / h as f64);
             let sw = ((w as f64 * ratio).round() as u64).clamp(1, v.width as u64);
@@ -329,7 +472,7 @@ impl Timeline {
                     .and_then(|n| n.checked_mul(16))
                     .ok_or("render: encode_memory_budget")?,
             );
-            directories.push(source.directory.clone());
+            directories.push(input);
             let start = frame(s.at_s);
             start
                 .checked_add(
@@ -379,6 +522,13 @@ impl Timeline {
             }
         }
         let n = frame(self.duration_s);
+        if !catalog.stills.is_empty() {
+            // PNG ancillary chunks and inflate scratch have a separate bounded
+            // allowance, even for a tiny image with large metadata chunks.
+            scale_bytes = scale_bytes
+                .checked_add(STILL_DECODE_BYTES_LIMIT as u64)
+                .ok_or("render: encode_memory_budget")?;
+        }
         // Conservative admission estimate, including packet/position metadata,
         // two VFL canvases with payload/scratch, scaler and encoder frame storage.
         let working = working_bytes(source_bytes, scale_bytes, v.width as u64, v.height as u64)?;
@@ -402,16 +552,83 @@ struct ScaleStats {
     wall_s: f64,
 }
 struct Source {
-    reader: media_vfl::reader::Reader,
+    reader: Option<media_vfl::reader::Reader>,
     next: u64,
     current: Option<Arc<Bgra>>,
 }
+fn scale_frame(b: Bgra, width: usize, height: usize, stats: &mut ScaleStats) -> Result<Bgra> {
+    let (w, h) = (b.width(), b.height());
+    if w == width && h == height {
+        return Ok(b);
+    }
+    let ratio = (width as f64 / w as f64).min(height as f64 / h as f64);
+    let sw = ((w as f64 * ratio).round() as usize).clamp(1, width);
+    let sh = ((h as f64 * ratio).round() as usize).clamp(1, height);
+    let start = Instant::now();
+    let scaled = b.resample(sw, sh)?;
+    stats.frames += 1;
+    stats.wall_s += start.elapsed().as_secs_f64();
+    Ok(scaled.pad(
+        width,
+        height,
+        (width - sw) / 2,
+        (height - sh) / 2,
+        [0, 0, 0, 255],
+    )?)
+}
 impl Source {
-    fn new(directory: Arc<Directory>) -> Result<Self> {
+    fn new(input: Input, width: usize, height: usize) -> Result<Self> {
+        let (reader, current) = match input {
+            Input::Vfl(directory) => (Some(Reader::from_directory(directory)?), None),
+            Input::Solid(rgb) => (
+                None,
+                Some(Arc::new(Bgra::solid(
+                    width,
+                    height,
+                    [rgb[2], rgb[1], rgb[0], 255],
+                )?)),
+            ),
+            Input::Still(file) => {
+                // Each chunk has an independent open file description: cloned FDs share offsets.
+                let independent =
+                    std::fs::File::open(format!("/proc/self/fd/{}", file.as_raw_fd()))?;
+                let mut r = png_reader(&independent)?;
+                let size = r
+                    .output_buffer_size()
+                    .filter(|n| *n <= STILL_DECODE_BYTES_LIMIT)
+                    .ok_or("render: still_decode_bytes_limit")?;
+                let mut pixels = vec![0; size];
+                let info = r.next_frame(&mut pixels)?;
+                let mut bgra = Vec::with_capacity(info.width as usize * info.height as usize * 4);
+                let channels = info.color_type.samples();
+                for p in pixels[..info.buffer_size()].chunks_exact(channels) {
+                    let (red, green, blue, alpha) = match info.color_type {
+                        png::ColorType::Rgb => (p[0], p[1], p[2], 255),
+                        png::ColorType::Rgba => (p[0], p[1], p[2], p[3]),
+                        png::ColorType::Grayscale => (p[0], p[0], p[0], 255),
+                        png::ColorType::GrayscaleAlpha => (p[0], p[0], p[0], p[1]),
+                        _ => return refuse("still_colour_type"),
+                    };
+                    // Composite transparency onto the programme's black canvas.
+                    for c in [blue, green, red] {
+                        bgra.push(((u16::from(c) * u16::from(alpha) + 127) / 255) as u8);
+                    }
+                    bgra.push(255);
+                }
+                (
+                    None,
+                    Some(Arc::new(Bgra::new(
+                        info.width as usize,
+                        info.height as usize,
+                        bgra,
+                    )?)),
+                )
+            }
+        };
         Ok(Self {
-            reader: Reader::from_directory(directory)?,
+            reader,
             next: u64::MAX,
-            current: None,
+            current,
         })
     }
     fn get(
@@ -421,41 +638,34 @@ impl Source {
         height: usize,
         stats: &mut ScaleStats,
     ) -> Result<(Arc<Bgra>, bool)> {
+        if self.reader.is_none() {
+            let repeat = self.next != u64::MAX;
+            if !repeat {
+                let b = Arc::unwrap_or_clone(self.current.take().ok_or("missing_frame")?);
+                self.current = Some(Arc::new(scale_frame(b, width, height, stats)?));
+                self.next = 0;
+            }
+            return Ok((
+                self.current.as_ref().ok_or("missing_frame")?.clone(),
+                repeat,
+            ));
+        }
+        let reader = self.reader.as_mut().ok_or("missing_reader")?;
         let after = slot.checked_add(1).ok_or("render: slot_arithmetic")?;
         if self.next == after {
             return Ok((self.current.as_ref().ok_or("missing_frame")?.clone(), true));
         }
-        let w = self.reader.width() as usize;
-        let h = self.reader.height() as usize;
+        let w = reader.width() as usize;
+        let h = reader.height() as usize;
         let f = if self.next == slot {
-            self.reader.read()?.ok_or("segment_trim_outside_vfl")?
+            reader.read()?.ok_or("segment_trim_outside_vfl")?
         } else {
-            self.reader.seek(slot)?
+            reader.seek(slot)?
         };
         let repeat = f.repeat && self.current.is_some();
         if !repeat {
             let b = Bgra::new(w, h, f.pixels.to_vec())?;
-            let ratio = (width as f64 / w as f64).min(height as f64 / h as f64);
-            let sw = ((w as f64 * ratio).round() as usize).clamp(1, width);
-            let sh = ((h as f64 * ratio).round() as usize).clamp(1, height);
-            self.current = Some(Arc::new(if w == width && h == height {
-                b
-            } else {
-                {
-                    let start = Instant::now();
-                    let scaled = b.resample(sw, sh)?;
-                    stats.frames += 1;
-                    stats.wall_s += start.elapsed().as_secs_f64();
-                    scaled
-                }
-                .pad(
-                    width,
-                    height,
-                    (width - sw) / 2,
-                    (height - sh) / 2,
-                    [0, 0, 0, 255],
-                )?
-            }));
+            self.current = Some(Arc::new(scale_frame(b, width, height, stats)?));
         }
         self.next = after;
         Ok((
@@ -472,7 +682,7 @@ struct Chunk {
 }
 fn compose(
     v: &Video,
-    directories: &[Arc<Directory>],
+    directories: &[Input],
     sources: &mut [Option<Source>],
     fade_index: &mut usize,
     k: u64,
@@ -486,7 +696,7 @@ fn compose(
     }
     let s = &v.segments[j];
     if sources[j].is_none() {
-        sources[j] = Some(Source::new(directories[j].clone())?);
+        sources[j] = Some(Source::new(directories[j].clone(), v.width, v.height)?);
     }
     let current_slot = slot(s, k)?;
     let (mut b, mut repeat) = sources[j].as_mut().ok_or("missing_segment_reader")?.get(
@@ -505,7 +715,7 @@ fn compose(
     if let Some(f) = v.crossfades.get(*fade_index).filter(|f| k >= frame(f.at_s)) {
         let old = &v.segments[j - 1];
         if sources[j - 1].is_none() {
-            sources[j - 1] = Some(Source::new(directories[j - 1].clone())?);
+            sources[j - 1] = Some(Source::new(directories[j - 1].clone(), v.width, v.height)?);
         }
         let old_slot = slot(old, k)?;
         let (a, _) = sources[j - 1]
@@ -557,7 +767,7 @@ pub fn reference(path: &Path, out: impl std::io::Write) -> Result<()> {
     out.flush()?;
     Ok(())
 }
-fn chunk(t: &Timeline, directories: &[Arc<Directory>], start: u64, end: u64) -> Result<Chunk> {
+fn chunk(t: &Timeline, directories: &[Input], start: u64, end: u64) -> Result<Chunk> {
     let v = &t.video;
     let e = &t.encode;
     let mut enc = Encoder::new_repeats(Settings {
@@ -834,6 +1044,142 @@ fn deliver_receipt(receipt: &str, outcome: u8) -> Result<u8> {
 mod tests {
     use super::*;
     use serde_json::json;
+    fn png_file(path: &Path, width: u32, height: u32) {
+        let file = std::fs::File::create(path).unwrap();
+        let mut e = png::Encoder::new(file, width, height);
+        e.set_color(png::ColorType::Rgba);
+        let mut w = e.write_header().unwrap();
+        if u64::from(width) * u64::from(height) <= STILL_PIXELS_LIMIT {
+            w.write_image_data(&[100, 80, 60, 128].repeat(width as usize * height as usize))
+                .unwrap();
+        } else {
+            w.write_chunk(png::chunk::IDAT, &[]).unwrap();
+        }
+    }
+    #[test]
+    fn segment_kinds_refuse_ambiguous_fields_colours_and_durations() {
+        for value in [
+            json!({"solid":"red","at_s":0,"duration_s":1}),
+            json!({"solid":[256,0,0],"at_s":0,"duration_s":1}),
+            json!({"solid":[0,0],"at_s":0,"duration_s":1}),
+            json!({"solid":"black","at_s":0,"duration_s":0}),
+            json!({"solid":"black","at_s":0,"duration_s":-1}),
+            json!({"solid":"black","at_s":0,"duration_s":10801}),
+            json!({"still":"a.png","at_s":0}),
+            json!({"still":"a.png","at_s":0,"duration_s":0.001}),
+            json!({"still":"a.png","solid":"black","at_s":0,"duration_s":1}),
+            json!({"solid":"black","path":"a.vfl","at_s":0,"duration_s":1}),
+            json!({"still":"a.png","from_slot":0,"at_s":0,"duration_s":1}),
+            json!({"solid":"black","to_slot":1,"at_s":0,"duration_s":1}),
+        ] {
+            assert!(
+                serde_json::from_value::<Segment>(value.clone()).is_err(),
+                "{value}"
+            );
+        }
+    }
+    #[test]
+    fn solid_needs_no_files_and_repeats_without_scaling() {
+        let mut t = fixture(tempfile::tempdir().unwrap().path());
+        t.video.crossfades.clear();
+        t.video.segments = vec![
+            serde_json::from_value(json!({"solid":[10,20,30],"at_s":0,"duration_s":0.6})).unwrap(),
+        ];
+        let (_, inputs) = t.validate(Path::new("/does-not-exist")).unwrap();
+        assert_eq!(t.video.segments[0].to_slot, 18);
+        let mut source = Source::new(inputs[0].clone(), 32, 32).unwrap();
+        let mut stats = ScaleStats::default();
+        let (first, repeat) = source.get(0, 32, 32, &mut stats).unwrap();
+        assert!(!repeat);
+        assert_eq!(&first.pixels()[..4], &[30, 20, 10, 255]);
+        let (held, repeat) = source.get(17, 32, 32, &mut stats).unwrap();
+        assert!(repeat && Arc::ptr_eq(&first, &held));
+        assert_eq!(stats.frames, 0);
+    }
+    #[test]
+    fn still_confinement_limits_retained_descriptor_and_scaler() {
+        let root = tempfile::tempdir().unwrap();
+        let mut t = fixture(root.path());
+        png_file(&root.path().join("a.png"), 16, 8);
+        t.video.crossfades.clear();
+        t.video.segments =
+            vec![serde_json::from_value(json!({"still":"a.png","at_s":0,"duration_s":1})).unwrap()];
+        let (_, inputs) = t.validate(root.path()).unwrap();
+        std::fs::rename(root.path().join("a.png"), root.path().join("saved.png")).unwrap();
+        std::os::unix::fs::symlink("/dev/zero", root.path().join("a.png")).unwrap();
+        let mut source = Source::new(inputs[0].clone(), 32, 32).unwrap();
+        let mut stats = ScaleStats::default();
+        let (b, repeat) = source.get(0, 32, 32, &mut stats).unwrap();
+        assert!(!repeat);
+        assert_eq!(b.width(), 32);
+        assert_eq!(&b.pixels()[..4], &[0, 0, 0, 255]); // aspect padding
+        assert_eq!(
+            &b.pixels()[(16 * 32 + 16) * 4..(16 * 32 + 16) * 4 + 4],
+            &[30, 40, 50, 255]
+        );
+        assert!(source.get(1, 32, 32, &mut stats).unwrap().1);
+        assert_eq!(stats.frames, 1);
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("still_regular_file")
+        );
+        for path in ["../escape.png", "/absolute.png", ""] {
+            t.video.segments[0].path = path.into();
+            assert!(
+                t.validate(root.path())
+                    .unwrap_err()
+                    .to_string()
+                    .contains("segment_path_relative")
+            );
+        }
+        let outside = tempfile::tempdir().unwrap();
+        png_file(&outside.path().join("outside.png"), 16, 16);
+        std::os::unix::fs::symlink(outside.path(), root.path().join("escape")).unwrap();
+        t.video.segments[0].path = "escape/outside.png".into();
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("segment_path_escape")
+        );
+        let huge = std::fs::File::create(root.path().join("huge.png")).unwrap();
+        huge.set_len(STILL_FILE_BYTES_LIMIT + 1).unwrap();
+        t.video.segments[0].path = "huge.png".into();
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("still_file_bytes_limit")
+        );
+        png_file(
+            &root.path().join("dimensions.png"),
+            STILL_DIMENSION_LIMIT + 1,
+            4320,
+        );
+        t.video.segments[0].path = "dimensions.png".into();
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("still_dimensions_limit")
+        );
+        t.video.segments = (0..=SOURCE_LIMIT)
+            .map(|i| {
+                serde_json::from_value(
+                    json!({"still":format!("missing-{i}.png"),"at_s":i as f64/30.0,"duration_s":1}),
+                )
+                .unwrap()
+            })
+            .collect();
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("too_many_sources")
+        );
+    }
     fn fixture(root: &Path) -> Timeline {
         let mut w = media_vfl::Writer::new(root.join("a.vfl"), 32, 32, 30).unwrap();
         w.origin(0).unwrap();
@@ -864,6 +1210,7 @@ mod tests {
                 from_slot: 0,
                 to_slot: 1,
                 at_s: f64::from(i) / 30.0,
+                ..Segment::default()
             })
             .collect();
         let mut catalog = SourceCatalog::default();
@@ -871,12 +1218,19 @@ mod tests {
         assert_eq!(catalog.opens, 1);
         assert_eq!(catalog.scans, 1);
         assert_eq!(directories.len(), 10000);
-        assert!(directories.iter().all(|d| Arc::ptr_eq(d, &directories[0])));
+        let Input::Vfl(first) = &directories[0] else {
+            panic!("VFL expected")
+        };
+        assert!(
+            directories
+                .iter()
+                .all(|d| matches!(d, Input::Vfl(d) if Arc::ptr_eq(d, first)))
+        );
         // A new alias still needs a confined open, but shares the retained
         // descriptor and scan after descriptor resolution.
         std::os::unix::fs::symlink(root.path(), root.path().join("alias")).unwrap();
         let alias = catalog.get(root.path(), Path::new("alias/a.vfl")).unwrap();
-        assert!(Arc::ptr_eq(&alias.directory, &directories[0]));
+        assert!(Arc::ptr_eq(&alias.directory, first));
         assert_eq!(catalog.resolved.len(), 1);
         assert_eq!(catalog.scans, 1);
     }
@@ -890,6 +1244,7 @@ mod tests {
                 from_slot: 0,
                 to_slot: 1,
                 at_s: i as f64 / 30.0,
+                ..Segment::default()
             })
             .collect();
         let mut catalog = SourceCatalog::default();
@@ -928,7 +1283,7 @@ mod tests {
         std::fs::rename(root.path().join("a.vfl"), root.path().join("original.vfl")).unwrap();
         let outside = tempfile::tempdir().unwrap();
         std::os::unix::fs::symlink(outside.path(), root.path().join("a.vfl")).unwrap();
-        let mut source = Source::new(directories[0].clone()).unwrap();
+        let mut source = Source::new(directories[0].clone(), 32, 32).unwrap();
         assert_eq!(
             source
                 .get(0, 32, 32, &mut ScaleStats::default())
@@ -1052,6 +1407,7 @@ mod tests {
             from_slot: u64::MAX - 1,
             to_slot: u64::MAX,
             at_s: 0.0,
+            ..Segment::default()
         };
         assert!(
             slot(&s, 2)
