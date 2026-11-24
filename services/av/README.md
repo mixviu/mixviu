@@ -58,7 +58,9 @@ PNG input uses the already locked pure-Rust `png 0.18.1` decoder (foreign-policy
 `STILL_FILE_BYTES_LIMIT` (64 MiB of input, including a bounded decoder read),
 `STILL_DIMENSION_LIMIT` (7680 on either axis), `STILL_PIXELS_LIMIT` (7680*4320)
 and `STILL_DECODE_BYTES_LIMIT` (256 MiB decoder allocation budget and output
-buffer cap). Dimensions are checked from the header before allocating pixels.
+buffer cap). Dimensions are checked from the header before allocating pixels. The full
+256 MiB decoder allowance is also charged per concurrent chunk in the
+render memory admission estimate whenever the timeline includes stills.
 Animated PNG is refused. Palette, greyscale, RGB, alpha and 16-bit PNGs are
 expanded to 8-bit BGRA; transparency is composited onto black. The existing
 scaler and padding run only when the source differs from the output canvas

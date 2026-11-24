@@ -20,14 +20,17 @@ fn png_reader(file: &std::fs::File) -> Result<png::Reader<io::BufReader<std::io:
     file.seek(SeekFrom::Start(0))?;
     let mut decoder = png::Decoder::new_with_limits(io::BufReader::new(file.take(STILL_FILE_BYTES_LIMIT)), png::Limits { bytes: STILL_DECODE_BYTES_LIMIT });
     decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::STRIP_16);
-    let reader = decoder.read_info()?;
-    let info = reader.info();
+    decoder.set_ignore_text_chunk(true);
+    decoder.set_ignore_iccp_chunk(true);
+    // Check IHDR before read_info can initialise row/image decoder buffers.
+    let info = decoder.read_header_info()?;
     if info.width == 0 || info.height == 0 || info.width > STILL_DIMENSION_LIMIT
         || info.height > STILL_DIMENSION_LIMIT
         || u64::from(info.width) * u64::from(info.height) > STILL_PIXELS_LIMIT {
         return refuse("still_dimensions_limit");
     }
-    if info.animation_control.is_some() { return refuse("still_animation"); }
+    let reader = decoder.read_info()?;
+    if reader.info().animation_control.is_some() { return refuse("still_animation"); }
     Ok(reader)
 }
 fn open_still(base: &Path, relative: &Path) -> Result<(Input, u64, u64)> {
@@ -476,6 +479,12 @@ impl Timeline {
             }
         }
         let n = frame(self.duration_s);
+        if !catalog.stills.is_empty() {
+            // PNG ancillary chunks and inflate scratch have a separate bounded
+            // allowance, even for a tiny image with large metadata chunks.
+            scale_bytes = scale_bytes.checked_add(STILL_DECODE_BYTES_LIMIT as u64)
+                .ok_or("render: encode_memory_budget")?;
+        }
         // Conservative admission estimate, including packet/position metadata,
         // two VFL canvases with payload/scratch, scaler and encoder frame storage.
         let working = working_bytes(source_bytes, scale_bytes, v.width as u64, v.height as u64)?;
