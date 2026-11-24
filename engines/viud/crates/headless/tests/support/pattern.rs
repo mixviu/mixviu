@@ -343,6 +343,23 @@ impl Pattern {
         decorated: bool,
         size: (i32, i32),
     ) -> Self {
+        Self::from_connection_requests(conn, name, fullscreen, decorated, size, &[])
+    }
+
+    pub fn premap_fullscreen(stream: UnixStream, requests: &[bool]) -> Self {
+        stream.set_nonblocking(true).unwrap();
+        let conn = Connection::from_socket(stream).unwrap();
+        Self::from_connection_requests(conn, "headless-pattern", true, false, (1280, 720), requests)
+    }
+
+    fn from_connection_requests(
+        conn: Connection,
+        name: &str,
+        fullscreen: bool,
+        decorated: bool,
+        size: (i32, i32),
+        requests: &[bool],
+    ) -> Self {
         let mut queue = conn.new_event_queue::<State>();
         let qh = queue.handle();
         let registry = conn.display().get_registry(&qh, ());
@@ -377,7 +394,15 @@ impl Pattern {
         mapping_trace!("PATTERN get_toplevel app_id={name}");
         top.set_app_id(name.into());
         mapping_trace!("PATTERN set_app_id={name}");
-        if fullscreen {
+        if !requests.is_empty() {
+            for on in requests {
+                if *on {
+                    top.set_fullscreen(None);
+                } else {
+                    top.unset_fullscreen();
+                }
+            }
+        } else if fullscreen {
             top.set_fullscreen(None);
         } else {
             top.set_min_size(size.0, size.1);

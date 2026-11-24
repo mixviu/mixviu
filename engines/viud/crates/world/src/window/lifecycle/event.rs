@@ -13,7 +13,8 @@ pub enum WindowLifecycleEvent {
     /// The `bool` is the surface's `DiscardPlaceholder` mark (Shift-close from the
     /// selection toolbar): destroy must leave no placeholder behind.
     Destroyed(Uuid, Vec<ActivationDetails>, bool),
-    /// (Un)fullscreen request for a window. `true` = enter fullscreen.
+    /// (Un)fullscreen request for a window. `true` = enter, `false` = leave.
+    /// Both values share the placement hold and retain their arrival order.
     Fullscreen(Window, bool),
     /// Bring `window` into view (camera `view`) and activate it. Queued by the neutral wire
     /// layer (which can't run the camera logic); `origin` records the source (e.g. a dock via
@@ -115,7 +116,11 @@ impl WindowLifecycleEvent {
             // fullscreen flag. InitialMap must run first, even when it arrived
             // after this request; it records initial placement. Later unmaps
             // must not block a configure needed for the client's next buffer.
+            // This includes unset_fullscreen (false): never let it overtake a
+            // retained set_fullscreen (true), or vice versa.
             Self::Fullscreen(window, _) => {
+                // live_window_space already requires a registered current role.
+                // drain_protocol flushes RoleTaken before inserting into Space.
                 crate::comp::live_window_space(comp, spaces, window).is_some()
                     && dispatcher::wire::trait_::surface_event::SurfaceHandle::of_window(window)
                         .and_then(|handle| comp.registry.id_for_handle(&handle))
