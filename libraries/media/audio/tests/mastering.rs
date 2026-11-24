@@ -117,14 +117,21 @@ fn speech_encoded_target_and_oracle() {
     impossible.master.true_peak_dbtp = -20.0;
     let refused_out = dir.join("refused.webm");
     let refused = render(&impossible, &dir, &refused_out, None).unwrap();
-    println!("limiter-bound refusal: {}", serde_json::to_string(&refused).unwrap());
+    println!(
+        "limiter-bound refusal: {}",
+        serde_json::to_string(&refused).unwrap()
+    );
     assert!(refused.refused && !refused.target_reached);
     assert!(refused.encoded.integrated_lufs < -14.1);
     assert!(!refused_out.exists());
     if let Ok(artifact) = std::env::var("MIX_TEST_MASTERING_ARTIFACT_DIR") {
         std::fs::create_dir_all(&artifact).unwrap();
         std::fs::copy(&out, std::path::Path::new(&artifact).join("speech.webm")).unwrap();
-        std::fs::copy(dir.join("speech.wav"), std::path::Path::new(&artifact).join("speech.wav")).unwrap();
+        std::fs::copy(
+            dir.join("speech.wav"),
+            std::path::Path::new(&artifact).join("speech.wav"),
+        )
+        .unwrap();
         std::fs::write(
             std::path::Path::new(&artifact).join("receipt.json"),
             serde_json::to_vec_pretty(&r).unwrap(),
