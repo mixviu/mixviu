@@ -425,7 +425,8 @@ impl Timeline {
             return refuse("duration_s");
         }
         for duration in [v.fade_in_s, v.fade_out_s] {
-            if !time(duration) || duration > self.duration_s
+            if !time(duration)
+                || duration > self.duration_s
                 || (duration > 0.0 && frame(duration) < 2)
             {
                 return refuse("programme_fade_range");
@@ -1102,17 +1103,24 @@ mod tests {
             (f64::NAN, 0.0, "programme_fade_range"),
             (0.0, f64::INFINITY, "programme_fade_range"),
             (2.1, 2.0, "programme_fade_overlap"),
-            (2.0, 1.999, "programme_fade_overlap"),
         ] {
             t.video.fade_in_s = incoming;
             t.video.fade_out_s = outgoing;
-            // The last case touches on the continuous grid and is valid.
-            if incoming == 2.0 {
-                t.validate(root.path()).unwrap();
-            } else {
-                assert!(t.validate(root.path()).unwrap_err().to_string().contains(refusal));
-            }
+            assert!(
+                t.validate(root.path())
+                    .unwrap_err()
+                    .to_string()
+                    .contains(refusal)
+            );
         }
+        t.video.fade_in_s = 2.0;
+        t.video.fade_out_s = 2.0;
+        t.validate(root.path()).unwrap(); // touching is allowed
+        t.duration_s = 4.016;
+        t.video.fade_in_s = 2.017;
+        t.video.fade_out_s = 1.999;
+        assert!(t.validate(root.path()).unwrap_err().to_string().contains("programme_fade_overlap"));
+        t.duration_s = 4.0;
         t.video.fade_in_s = 0.6;
         t.video.fade_out_s = 1.0;
         t.validate(root.path()).unwrap(); // ordinary crossfades remain valid too
