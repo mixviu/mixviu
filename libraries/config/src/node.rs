@@ -148,6 +148,13 @@ pub fn jmap_origin(origin: &str) -> Option<String> {
     }
     let url = url::Url::parse(origin).ok()?;
     url.host_str()?;
+    // Authority only, checked after parsing too: delimiters such as `;` or `,`
+    // otherwise end the host and start a path the parser accepts silently.
+    if url.path() != "/" || url.query().is_some() || url.fragment().is_some()
+        || !url.username().is_empty() || url.password().is_some()
+    {
+        return None;
+    }
     Some(url.origin().ascii_serialization())
 }
 
@@ -159,7 +166,7 @@ where
         .into_iter()
         .map(|origin| {
             jmap_origin(&origin).ok_or_else(|| serde::de::Error::custom(format!(
-                "invalid maild.jmap_origins entry {origin:?}: expected https://host[:port] without path, query, fragment or userinfo"
+                "invalid jmap_origins entry {origin:?}: expected https://host[:port] without path, query, fragment or userinfo"
             )))
         })
         .collect()
@@ -184,6 +191,8 @@ mod jmap_origin_tests {
             "https://mail.example.com:",
             "https://mail.example.com\\path",
             "https:// mail.example.com",
+            "https://mail.example.com;foo",
+            "https://mail.example.com,x",
         ] {
             let text = format!("maild: {{jmap_origins: [{entry:?}]}}");
             let err = strict::from_str::<NodeConfig>(&text).unwrap_err();
