@@ -203,6 +203,13 @@ struct Shadows {
     spent: usize,
     hits: usize,
     rasters: usize,
+    blurs: usize,
+    pending: Option<PendingShadow>,
+}
+struct PendingShadow {
+    key: egui::Id,
+    signature: String,
+    image: std::sync::mpsc::Receiver<Option<egui::ColorImage>>,
 }
 const SHADOW_PIXELS: usize = 8 * 1024 * 1024;
 fn shadows(ctx: &egui::Context) -> std::sync::Arc<std::sync::Mutex<Shadows>> {
@@ -262,16 +269,47 @@ fn paint_shadow(
             return;
         }
         c.spent += pixels;
+        // At most one raster/blur is in flight per context. Receive without
+        // waiting; the previous texture remains usable throughout animation.
+        if let Some(pending) = c.pending.take() {
+            match pending.image.try_recv() {
+                Ok(Some(image)) => {
+                    if let Some((_, cache)) = c.entries.iter_mut().find(|(id, _)| *id == pending.key) {
+                        cache.pixels = image.size[0] * image.size[1];
+                        cache.texture.set(image, Default::default());
+                        cache.signature = pending.signature;
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => c.pending = Some(pending),
+                _ => {}
+            }
+        }
         let found = c
             .entries
             .iter()
-            .position(|(id, v)| *id == key && v.signature == signature);
+            .position(|(id, _)| *id == key);
         found.and_then(|i| c.entries.remove(i)).map(|(_, v)| {
             c.hits += 1;
             v
         })
     };
     if let Some(cache) = old {
+        if cache.signature != signature {
+            let mut c = shared.lock().unwrap_or_else(|e| e.into_inner());
+            if c.pending.is_none() {
+                let input = shadow_input(ui.ctx(), shapes);
+                let (tx, rx) = std::sync::mpsc::sync_channel(1);
+                let ctx = ui.ctx().clone();
+                let shadow = shadow.clone();
+                if std::thread::Builder::new().name("scene-shadow".into()).spawn(move || {
+                    let image = raster_shadow(width, height, origin, &shadow, input);
+                    let _ = tx.send(image);
+                    ctx.request_repaint();
+                }).is_ok() {
+                    c.pending = Some(PendingShadow { key, signature, image: rx });
+                }
+            }
+        }
         draw(&cache.texture);
         shared
             .lock()
@@ -280,10 +318,31 @@ fn paint_shadow(
             .push_back((key, cache));
         return;
     }
-    let Some(mut mask) = tiny_skia::Pixmap::new(width, height) else {
+    let input = shadow_input(ui.ctx(), shapes);
+    let Some(image) = raster_shadow(width, height, origin, &shadow, input) else {
         return;
     };
-    shared.lock().unwrap_or_else(|e| e.into_inner()).rasters += 1;
+    {
+        let mut c = shared.lock().unwrap_or_else(|e| e.into_inner());
+        c.rasters += 1;
+        c.blurs += usize::from(shadow.blur > 0.);
+    }
+    let texture =
+        ui.ctx()
+            .load_texture(format!("drawing-shadow-{key:?}"), image, Default::default());
+    draw(&texture);
+    let mut c = shared.lock().unwrap_or_else(|e| e.into_inner());
+    c.entries.retain(|(id, _)| *id != key);
+    let pixels = width as usize * height as usize;
+    while c.entries.len() >= 8
+        || c.entries.iter().map(|(_, v)| v.pixels).sum::<usize>() + pixels > SHADOW_PIXELS
+    {
+        c.entries.pop_front();
+    }
+    c.entries.push_back((key, ShadowCache { signature, texture, pixels }));
+}
+
+fn shadow_input(ctx: &egui::Context, shapes: &[Shape]) -> Vec<egui::ClippedPrimitive> {
     let input = shapes
         .iter()
         .cloned()
@@ -293,7 +352,15 @@ fn paint_shadow(
             transform_after_tessellation: Default::default(),
         })
         .collect();
-    for primitive in ui.ctx().tessellate(input, 1.) {
+    ctx.tessellate(input, 1.)
+}
+
+// The exact same raster and blur serve cold/static shadows and worker updates.
+// No Context lock, texture upload or UI access occurs on the worker.
+fn raster_shadow(width: u32, height: u32, origin: Pos2, shadow: &scene::drawing::Shadow,
+    input: Vec<egui::ClippedPrimitive>) -> Option<egui::ColorImage> {
+    let mut mask = tiny_skia::Pixmap::new(width, height)?;
+    for primitive in input {
         let egui::epaint::Primitive::Mesh(mesh) = primitive.primitive else {
             continue;
         };
@@ -324,9 +391,7 @@ fn paint_shadow(
             }
         }
     }
-    let Some(image) = image::RgbaImage::from_raw(width, height, mask.data().to_vec()) else {
-        return;
-    };
+    let image = image::RgbaImage::from_raw(width, height, mask.data().to_vec())?;
     let mut blurred = if shadow.blur > 0. {
         image::imageops::fast_blur(&image, shadow.blur)
     } else {
@@ -340,30 +405,10 @@ fn paint_shadow(
             (pixel[3] as f32 * shadow.colour[3] / 255.).round() as u8,
         ]);
     }
-    let image = egui::ColorImage::from_rgba_unmultiplied(
+    Some(egui::ColorImage::from_rgba_unmultiplied(
         [width as usize, height as usize],
         blurred.as_raw(),
-    );
-    let texture =
-        ui.ctx()
-            .load_texture(format!("drawing-shadow-{key:?}"), image, Default::default());
-    draw(&texture);
-    let mut c = shared.lock().unwrap_or_else(|e| e.into_inner());
-    c.entries.retain(|(id, _)| *id != key);
-    let pixels = width as usize * height as usize;
-    while c.entries.len() >= 8
-        || c.entries.iter().map(|(_, v)| v.pixels).sum::<usize>() + pixels > SHADOW_PIXELS
-    {
-        c.entries.pop_front();
-    }
-    c.entries.push_back((
-        key,
-        ShadowCache {
-            signature,
-            texture,
-            pixels,
-        },
-    ));
+    ))
 }
 
 #[cfg(test)]
