@@ -3320,16 +3320,17 @@ b:{widget:"column",background:"#0000ff",children:["tall"]},tall:{widget:"spacer"
             .with_pixels_per_point(2.4)
             .wgpu()
             .build_ui(move |ui| {
-                view.show(ui);
-                *captured.lock().unwrap() = view.geometry.clone();
-                for _ in 0..512 {
+                for _ in 0..3000 {
                     super::measure_put(
                         ui,
                         egui::Id::unique(("parallel-paint", sample)),
                         (1_f32, 1_f32),
                     );
+                    super::measure_put(ui, egui::Id::unique(("parallel-height", sample)), 1_f32);
                     sample += 1;
                 }
+                view.show(ui);
+                *captured.lock().unwrap() = view.geometry.clone();
             });
         for _ in 0..4 {
             harness.step();
