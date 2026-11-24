@@ -30,6 +30,101 @@ use std::{
 use testkit::TestClient;
 use wayland_client::protocol::wl_shm;
 
+#[test]
+fn initial_fullscreen_before_first_buffer_fills_the_output() {
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("initial-fullscreen");
+    let mut process = process::spawn_size("initial-fullscreen", &bus.url, "1600x900");
+    // Pattern requests fullscreen before its first commit. Its initial client
+    // choice is 1280x720, deliberately different from the output.
+    let mut pattern = Pattern::new(connect(&mut process));
+    pattern.wait_callback(0);
+    bus.ready();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut resized = false;
+    loop {
+        pattern.pump();
+        // Unlike a normal app, Pattern does not automatically resize its shm
+        // buffer when a configure arrives. Complete that client-side half of
+        // the transaction before asserting the committed window geometry.
+        if !resized && pattern.state.size == (1600, 900) {
+            pattern.change_buffer();
+            let before = pattern.state.callbacks;
+            pattern.commit(true);
+            pattern.wait_callback(before);
+            resized = true;
+        }
+        let row = bus.window(&mut pattern);
+        if resized && row["fullscreen"] == true && row["width"] == 1600 && row["height"] == 900 {
+            assert_eq!(row["window_x"], 0);
+            assert_eq!(row["window_y"], 0);
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "initial fullscreen slot: {row}; configured={:?}",
+            pattern.state.size
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(pattern.state.size, (1600, 900));
+}
+
+#[test]
+fn premap_set_then_unset_fullscreen_ends_at_normal_placement() {
+    premap_fullscreen_order("premap-set-unset", &[true, false], false);
+}
+
+#[test]
+fn premap_unset_then_set_fullscreen_fills_the_output() {
+    premap_fullscreen_order("premap-unset-set", &[false, true], true);
+}
+
+fn premap_fullscreen_order(name: &str, requests: &[bool], fullscreen: bool) {
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start(name);
+    let mut process = process::spawn_size(name, &bus.url, "1600x900");
+    // Requests are sent before even the initial empty surface commit.
+    let mut pattern = Pattern::premap_fullscreen(connect(&mut process), requests);
+    pattern.wait_callback(0);
+    bus.ready();
+    let expected = if fullscreen { (1600, 900) } else { (1280, 720) };
+    let origin = if fullscreen { (0, 0) } else { (160, 90) };
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut resized = false;
+    loop {
+        pattern.pump();
+        if !resized && pattern.state.size == expected {
+            pattern.change_buffer();
+            let before = pattern.state.callbacks;
+            pattern.commit(true);
+            pattern.wait_callback(before);
+            resized = true;
+        }
+        let row = bus.window(&mut pattern);
+        if resized
+            && row["fullscreen"] == fullscreen
+            && row["width"] == expected.0
+            && row["height"] == expected.1
+            && row["window_x"] == origin.0
+            && row["window_y"] == origin.1
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "last pre-map request: {row}; configured={:?}",
+            pattern.state.size
+        );
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(pattern.state.size, expected);
+}
+
 fn binary(name: &str) -> PathBuf {
     std::env::current_exe()
         .unwrap()

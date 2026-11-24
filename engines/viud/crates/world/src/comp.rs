@@ -63,6 +63,67 @@ use surfaces::{Registry, SurfaceId, SurfaceRole};
 /// 4). Live code reads [`CompState::current_workspace`].
 pub const CURRENT_WORKSPACE: u32 = 1;
 
+#[cfg(test)]
+mod placement_marker_tests {
+    use super::*;
+
+    #[test]
+    fn placement_and_x11_readmit_do_not_require_usable_area_tracking() {
+        use smithay::xwayland::{X11Surface, xwm::Atoms};
+        use std::sync::{Weak, atomic::AtomicBool};
+
+        // SAFETY: the generated atom table contains only u32 atom fields.
+        let atoms: Atoms = unsafe { std::mem::zeroed() };
+        let x11 = X11Surface::new(
+            None,
+            1,
+            false,
+            Weak::new(),
+            atoms,
+            None,
+            Rectangle::new((0, 0).into(), (100, 100).into()),
+            Arc::new(AtomicBool::new(false)),
+        );
+        let handle = SurfaceHandle::x11(&x11);
+        for readmit in [false, true] {
+            let mut comp = CompState::default();
+            if readmit {
+                comp.readmit(handle.clone(), false, uuid::Uuid::from_u128(1), None);
+            } else {
+                comp.apply(SurfaceEvent::RoleTaken {
+                    handle: handle.clone(),
+                    role: SurfaceRole::X11 {
+                        override_redirect: false,
+                    },
+                    parent: None,
+                });
+                let id = comp.registry.id_for_handle(&handle).unwrap();
+                assert!(!comp.initially_placed(id));
+                comp.apply(SurfaceEvent::Placed(handle.clone()));
+            }
+            let id = comp.registry.id_for_handle(&handle).unwrap();
+            assert!(comp.initially_placed(id));
+            assert!(
+                comp.placed_ids().is_empty(),
+                "floating placement has no usable-area rule"
+            );
+            comp.apply(SurfaceEvent::Buffer {
+                handle: handle.clone(),
+                attached: false,
+            });
+            assert!(
+                comp.initially_placed(id),
+                "a later null buffer does not undo placement"
+            );
+            comp.apply(SurfaceEvent::Dormant(handle.clone()));
+            assert!(
+                !comp.initially_placed(id),
+                "retiring the role clears placement"
+            );
+        }
+    }
+}
+
 /// Deferred lifecycle work must not revive a withdrawn, dead or re-roled window.
 pub fn window_is_live(
     comp: &CompState,
@@ -712,6 +773,15 @@ impl CompState {
             })
             .or_else(|| self.minimize_lifo.iter().rev().find(live))
             .copied()
+    }
+
+    /// Initial placement completed for the current role. Unlike `mapped`, this
+    /// remains true across a null-buffer unmap until the role is retired.
+    /// `SurfaceEvent::Placed` sets this for every initial geometry path (camera,
+    /// parent, carried, X11), and readmit sets it too. It is independent of the
+    /// usable-area-following `placements` map exposed by `placed_ids`.
+    pub fn initially_placed(&self, id: SurfaceId) -> bool {
+        self.placed.contains(&id)
     }
 
     /// Windows whose placement follows an output's usable area.
