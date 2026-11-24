@@ -108,6 +108,18 @@ impl WindowLifecycleEvent {
             };
             self.targets(candidate)
         }) || match self {
+            // A client may request fullscreen before its first buffer. The
+            // Space already contains the toplevel, but initial placement still
+            // owns its restore slot. Applying fullscreen now lets that later
+            // placement overwrite the fullscreen geometry while retaining the
+            // fullscreen flag. InitialMap must run first, even when it arrived
+            // after this request; it publishes the registry's mapped edge.
+            Self::Fullscreen(window, _) => {
+                dispatcher::wire::trait_::surface_event::SurfaceHandle::of_window(window)
+                    .and_then(|handle| comp.registry.id_for_handle(&handle))
+                    .and_then(|id| comp.registry.get(id))
+                    .is_some_and(|record| !record.mapped())
+            }
             Self::InitialMap(window) => crate::comp::live_window_space(comp, spaces, window)
                 .is_some_and(|owner| {
                     !std::ptr::eq(owner, placement_space)
