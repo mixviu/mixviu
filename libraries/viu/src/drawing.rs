@@ -234,7 +234,9 @@ struct PendingShadow {
 const SHADOW_PIXELS: usize = 8 * 1024 * 1024;
 
 fn receive_shadow(c: &mut Shadows, key: egui::Id, signature: &str, pass: u64, ctx: &egui::Context) {
-    let Some(mut pending) = c.pending.take() else { return };
+    let Some(mut pending) = c.pending.take() else {
+        return;
+    };
     if pending.key == key {
         pending.last_seen = pass;
     }
@@ -249,9 +251,12 @@ fn receive_shadow(c: &mut Shadows, key: egui::Id, signature: &str, pass: u64, ct
         }
     }
     let Some(index) = c.entries.iter().position(|(id, cache)| {
-        *id == pending.key && cache.signature == pending.base_signature
+        *id == pending.key
+            && cache.signature == pending.base_signature
             && cache.texture.id() == pending.texture
-    }) else { return };
+    }) else {
+        return;
+    };
     // Only the source's own paint knows its current request. Do not install a
     // sibling's result speculatively, even when it completes mid-pass.
     if pending.key != key {
@@ -265,7 +270,9 @@ fn receive_shadow(c: &mut Shadows, key: egui::Id, signature: &str, pass: u64, ct
         return;
     }
     let image = pending.ready.take().unwrap();
-    let Some(pixels) = image.size[0].checked_mul(image.size[1]) else { return };
+    let Some(pixels) = image.size[0].checked_mul(image.size[1]) else {
+        return;
+    };
     if pixels > SHADOW_PIXELS {
         return;
     }
@@ -387,8 +394,8 @@ fn paint_shadow(
                     Err(std::io::Error::other("injected spawn failure"))
                 } else {
                     std::thread::Builder::new()
-                    .name("scene-shadow".into())
-                    .spawn(task)
+                        .name("scene-shadow".into())
+                        .spawn(task)
                 };
                 if spawned.is_ok() {
                     let _ = input_tx.send(shadow_input(ui.ctx(), shapes));
@@ -532,32 +539,59 @@ fn raster_shadow(
 
 #[cfg(test)]
 mod tests {
-    fn pending_for(store: &Shadows, index: usize, signature: &str,
-        image: std::sync::mpsc::Receiver<Option<egui::ColorImage>>) -> PendingShadow {
+    fn pending_for(
+        store: &Shadows,
+        index: usize,
+        signature: &str,
+        image: std::sync::mpsc::Receiver<Option<egui::ColorImage>>,
+    ) -> PendingShadow {
         let (key, cache) = &store.entries[index];
-        PendingShadow { key: *key, base_signature: cache.signature.clone(), texture: cache.texture.id(),
-            signature: signature.into(), image, ready: None, last_seen: store.pass }
+        PendingShadow {
+            key: *key,
+            base_signature: cache.signature.clone(),
+            texture: cache.texture.id(),
+            signature: signature.into(),
+            image,
+            ready: None,
+            last_seen: store.pass,
+        }
     }
     fn sting_node() -> scene::Node {
-        let ports: serde_json::Value = serde_json::from_str(include_str!(
-            "../tests/fixtures/sting-shadow.json"
-        )).unwrap();
+        let ports: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/sting-shadow.json")).unwrap();
         serde_json::from_value(serde_json::json!({
             "family":"drawing", "line":1, "is_template":false, "ports":ports
         }))
         .unwrap()
     }
 
-    fn shadow_frame(ctx: &egui::Context, id: &str, signature: &str, scale: f32) -> egui::FullOutput {
+    fn shadow_frame(
+        ctx: &egui::Context,
+        id: &str,
+        signature: &str,
+        scale: f32,
+    ) -> egui::FullOutput {
         ctx.run_ui(egui::RawInput::default(), |ui| {
-            paint_shadow(ui, id, egui::Rect::from_min_size(Pos2::ZERO, Vec2::splat(32. * scale)),
+            paint_shadow(
+                ui,
+                id,
+                egui::Rect::from_min_size(Pos2::ZERO, Vec2::splat(32. * scale)),
                 Some(&serde_json::json!({"colour":[0,0,0,100],"offset":[0,0],"blur":2})),
-                &[Shape::circle_filled(egui::pos2(16.,16.), 8. * scale, Color32::WHITE)],
-                signature.into(), Vec2::ZERO);
+                &[Shape::circle_filled(
+                    egui::pos2(16., 16.),
+                    8. * scale,
+                    Color32::WHITE,
+                )],
+                signature.into(),
+                Vec2::ZERO,
+            );
         })
     }
 
-    fn fake_update(ctx: &egui::Context, signature: &str) -> std::sync::mpsc::SyncSender<Option<egui::ColorImage>> {
+    fn fake_update(
+        ctx: &egui::Context,
+        signature: &str,
+    ) -> std::sync::mpsc::SyncSender<Option<egui::ColorImage>> {
         let shared = shadows(ctx);
         let mut store = shared.lock().unwrap();
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
@@ -576,12 +610,21 @@ mod tests {
         let sender = fake_update(&ctx, "b");
         let old_texture = shadows(&ctx).lock().unwrap().entries[0].1.texture.id();
         for i in 0..8 {
-            shadow_frame(&ctx, &format!("sibling-{i}"), "sibling", 1.).drop_without_applying_deltas();
+            shadow_frame(&ctx, &format!("sibling-{i}"), "sibling", 1.)
+                .drop_without_applying_deltas();
         }
         // Recreate even the same signature: the texture identity guards ABA.
         shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
         let shared = shadows(&ctx);
-        let texture = shared.lock().unwrap().entries.back().unwrap().1.texture.id();
+        let texture = shared
+            .lock()
+            .unwrap()
+            .entries
+            .back()
+            .unwrap()
+            .1
+            .texture
+            .id();
         assert_ne!(texture, old_texture);
         sender.send(Some(tiny_image())).unwrap();
         let out = shadow_frame(&ctx, "root", "a", 1.);
@@ -602,7 +645,16 @@ mod tests {
         sender.send(Some(tiny_image())).unwrap();
         shadow_frame(&ctx, "sibling", "c", 1.).drop_without_applying_deltas();
         let shared = shadows(&ctx);
-        assert!(shared.lock().unwrap().pending.as_ref().unwrap().ready.is_some());
+        assert!(
+            shared
+                .lock()
+                .unwrap()
+                .pending
+                .as_ref()
+                .unwrap()
+                .ready
+                .is_some()
+        );
         let texture = shared.lock().unwrap().entries[0].1.texture.id();
         let out = shadow_frame(&ctx, "root", "a", 1.);
         assert!(!out.textures_delta.set.contains_key(&texture));
@@ -619,19 +671,19 @@ mod tests {
         shadow_frame(&ctx, "root", "base", 1.).drop_without_applying_deltas();
         let shared = shadows(&ctx);
         let texture = shared.lock().unwrap().entries[0].1.texture.id();
-        assert_eq!(shared.lock().unwrap().entries[0].1.texture.size(), [44,44]);
+        assert_eq!(shared.lock().unwrap().entries[0].1.texture.size(), [44, 44]);
         let sender = fake_update(&ctx, "scaled");
-        let image = egui::ColorImage::from_rgba_unmultiplied([76,76], &vec![255; 76*76*4]);
+        let image = egui::ColorImage::from_rgba_unmultiplied([76, 76], &vec![255; 76 * 76 * 4]);
         sender.send(Some(image)).unwrap();
         let out = shadow_frame(&ctx, "root", "scaled", 2.);
         let delta = out.textures_delta.set[&texture].last().unwrap();
         assert!(delta.pos.is_none());
-        assert_eq!(delta.image.size(), [76,76]);
+        assert_eq!(delta.image.size(), [76, 76]);
         out.drop_without_applying_deltas();
         let store = shared.lock().unwrap();
         assert_eq!(store.entries[0].1.texture.id(), texture);
-        assert_eq!(store.entries[0].1.texture.size(), [76,76]);
-        assert_eq!(store.entries[0].1.pixels, 76*76);
+        assert_eq!(store.entries[0].1.texture.size(), [76, 76]);
+        assert_eq!(store.entries[0].1.pixels, 76 * 76);
         assert!(store.pending.is_none());
     }
 
@@ -641,7 +693,7 @@ mod tests {
         shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
         let sender = fake_update(&ctx, "b");
         let mut image = tiny_image();
-        image.size = [SHADOW_PIXELS+1, 1];
+        image.size = [SHADOW_PIXELS + 1, 1];
         sender.send(Some(image)).unwrap();
         let shared = shadows(&ctx);
         let mut store = shared.lock().unwrap();
@@ -651,7 +703,7 @@ mod tests {
         assert!(store.pending.is_none());
         assert_eq!(store.entries.len(), 1);
         assert_eq!(store.entries[0].1.signature, "a");
-        assert_eq!(store.entries[0].1.texture.size(), [44,44]);
+        assert_eq!(store.entries[0].1.texture.size(), [44, 44]);
     }
 
     #[test]
@@ -661,7 +713,10 @@ mod tests {
         let shared = shadows(&ctx);
         shared.lock().unwrap().fail_spawn = true;
         let out = shadow_frame(&ctx, "root", "b", 1.);
-        assert_eq!(out.viewport_output[&egui::ViewportId::ROOT].repaint_delay, std::time::Duration::ZERO);
+        assert_eq!(
+            out.viewport_output[&egui::ViewportId::ROOT].repaint_delay,
+            std::time::Duration::ZERO
+        );
         out.drop_without_applying_deltas();
         let store = shared.lock().unwrap();
         assert!(store.pending.is_none());
