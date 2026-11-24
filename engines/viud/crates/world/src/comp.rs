@@ -88,7 +88,7 @@ mod placement_marker_tests {
         for readmit in [false, true] {
             let mut comp = CompState::default();
             if readmit {
-                comp.readmit(handle.clone(), false, uuid::Uuid::new_v4(), None);
+                comp.readmit(handle.clone(), false, uuid::Uuid::from_u128(1), None);
             } else {
                 comp.apply(SurfaceEvent::RoleTaken {
                     handle: handle.clone(),
