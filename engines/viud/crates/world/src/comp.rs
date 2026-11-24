@@ -714,6 +714,12 @@ impl CompState {
             .copied()
     }
 
+    /// Initial placement completed for the current role. Unlike `mapped`, this
+    /// remains true across a null-buffer unmap until the role is retired.
+    pub fn initially_placed(&self, id: SurfaceId) -> bool {
+        self.placed.contains(&id)
+    }
+
     /// Windows whose placement follows an output's usable area.
     pub fn placed_ids(&self) -> Vec<SurfaceId> {
         let mut ids: Vec<SurfaceId> = self.placements.keys().copied().collect();
