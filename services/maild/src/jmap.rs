@@ -143,18 +143,21 @@ pub async fn session(State(state): State<Arc<AppState>>, headers: HeaderMap) -> 
 }
 
 fn session_base_url<'a>(state: &'a AppState, headers: &HeaderMap) -> &'a str {
-    if !state.jmap_origins.is_empty() {
-        if let Some(host) = headers.get("x-forwarded-host") {
-            let origin = host.to_str().ok().and_then(|host| {
-                ::config::node::jmap_origin(&format!("https://{host}"))
-            });
-            if let Some(allowed) = origin.as_ref().and_then(|origin| {
-                state.jmap_origins.iter().find(|allowed| *allowed == origin)
-            }) {
-                return allowed;
-            }
-            tracing::debug!(?host, "ignoring unapproved JMAP forwarded origin");
+    if state.jmap_origins.is_empty() {
+        return &state.base_url;
+    }
+    if let Some(host) = headers.get("x-forwarded-host") {
+        let origin = host
+            .to_str()
+            .ok()
+            .and_then(|host| ::config::node::jmap_origin(&format!("https://{host}")));
+        if let Some(allowed) = origin
+            .as_ref()
+            .and_then(|origin| state.jmap_origins.iter().find(|allowed| *allowed == origin))
+        {
+            return allowed;
         }
+        tracing::debug!(?host, "ignoring unapproved JMAP forwarded origin");
     }
     &state.base_url
 }

@@ -140,7 +140,9 @@ pub fn jmap_origin(origin: &str) -> Option<String> {
     let authority = origin.strip_prefix("https://")?;
     if authority.is_empty()
         || authority.ends_with(':')
-        || authority.chars().any(|c| c.is_whitespace() || c.is_control() || "/\\?#@%".contains(c))
+        || authority
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control() || "/\\?#@%".contains(c))
     {
         return None;
     }
@@ -169,13 +171,29 @@ mod jmap_origin_tests {
 
     #[test]
     fn origins_are_validated_during_config_loading() {
-        for entry in ["http://mail.example.com", "https://mail.example.com/", "https://mail.example.com/path", "https://mail.example.com?x", "https://mail.example.com#x", "https://user@mail.example.com", "https://@mail.example.com", "https://", "https://mail.example.com:bad", "https://mail.example.com:", "https://mail.example.com\\path", "https:// mail.example.com"] {
+        for entry in [
+            "http://mail.example.com",
+            "https://mail.example.com/",
+            "https://mail.example.com/path",
+            "https://mail.example.com?x",
+            "https://mail.example.com#x",
+            "https://user@mail.example.com",
+            "https://@mail.example.com",
+            "https://",
+            "https://mail.example.com:bad",
+            "https://mail.example.com:",
+            "https://mail.example.com\\path",
+            "https:// mail.example.com",
+        ] {
             let text = format!("maild: {{jmap_origins: [{entry:?}]}}");
             let err = strict::from_str::<NodeConfig>(&text).unwrap_err();
             assert!(err.to_string().contains("jmap_origins"), "{entry}: {err}");
         }
         let config: NodeConfig = strict::from_str("maild: {jmap_origins: [\"https://MAIL.EXAMPLE.COM:443\", \"https://mail.example.com:8443\"]}").unwrap();
-        assert_eq!(config.maild.unwrap().jmap_origins, ["https://mail.example.com", "https://mail.example.com:8443"]);
+        assert_eq!(
+            config.maild.unwrap().jmap_origins,
+            ["https://mail.example.com", "https://mail.example.com:8443"]
+        );
         let config: NodeConfig = strict::from_str("maild: {}").unwrap();
         assert!(config.maild.unwrap().jmap_origins.is_empty());
     }
