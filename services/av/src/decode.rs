@@ -557,7 +557,10 @@ mod tests {
     fn probe_ambiguous_neighbours_are_unknown() {
         let packets = timing_packets(&[0, 17, 33], None);
         assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), None);
-        let packets = timing_packets(&[0, 33, 66, 100, 133, 166, 200, 233, 266, 300, 333], Some(33));
+        let packets = timing_packets(
+            &[0, 33, 66, 100, 133, 166, 200, 233, 266, 300, 333],
+            Some(33),
+        );
         assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), None);
         for rounding in [0, 15_000] {
             // Seven frames are ambiguous for either quantisation phase;
