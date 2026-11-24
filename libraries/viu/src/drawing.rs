@@ -499,6 +499,33 @@ mod tests {
     }
 
     #[test]
+    fn completed_worker_shadow_is_pixel_identical_to_a_cold_static_shadow() {
+        let mut node = sting_node();
+        let ctx = egui::Context::default();
+        node.ports.insert("sample_time".into(), serde_json::json!(0.));
+        ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node))
+            .drop_without_applying_deltas();
+        node.ports.insert("sample_time".into(), serde_json::json!(0.3));
+        let reference = egui::Context::default().run_ui(egui::RawInput::default(),
+            |ui| show(ui, "sting", &node));
+        let expected = reference.textures_delta.set.last().unwrap().1.image.clone();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+        loop {
+            let out = ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
+            if let Some((_, delta)) = out.textures_delta.set.last() {
+                let egui::ImageData::Color(actual) = &delta.image;
+                let egui::ImageData::Color(expected) = &expected;
+                assert_eq!(actual.size, expected.size);
+                assert_eq!(actual.pixels, expected.pixels);
+                break;
+            }
+            assert!(std::time::Instant::now() < deadline, "worker did not finish");
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert_eq!(shadows(&ctx).lock().unwrap().rasters, 1);
+    }
+
+    #[test]
     #[ignore = "explicit CBC headless GPU sting benchmark"]
     fn sting_shadow_frame_benchmark() {
         use std::sync::{Arc, Mutex};
@@ -528,11 +555,15 @@ mod tests {
                 hashes.insert(blake3::hash(image.as_raw()));
             }
             let state = state.lock().unwrap();
+            println!("STING_SHADOW_FRAME_MS synchronous={synchronous} {:?}", state.1);
             let mut times = state.1.clone();
             times.sort_by(f64::total_cmp);
             println!("STING_SHADOW synchronous={synchronous} distinct={}/30 shadow_ms_median={:.3} shadow_ms_max={:.3} samples={}",
                 hashes.len(), times[times.len()/2], times.last().unwrap(), times.len());
             assert_eq!(hashes.len(), 30);
+            if !synchronous {
+                assert!(*times.last().unwrap() < 1000. / 30., "shadow exceeded a 30 Hz frame budget");
+            }
         }
     }
 
