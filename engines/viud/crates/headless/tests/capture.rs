@@ -43,15 +43,30 @@ fn initial_fullscreen_before_first_buffer_fills_the_output() {
     pattern.wait_callback(0);
     bus.ready();
     let deadline = Instant::now() + Duration::from_secs(5);
+    let mut resized = false;
     loop {
         pattern.pump();
+        // Unlike a normal app, Pattern does not automatically resize its shm
+        // buffer when a configure arrives. Complete that client-side half of
+        // the transaction before asserting the committed window geometry.
+        if !resized && pattern.state.size == (1600, 900) {
+            pattern.change_buffer();
+            let before = pattern.state.callbacks;
+            pattern.commit(true);
+            pattern.wait_callback(before);
+            resized = true;
+        }
         let row = bus.window(&mut pattern);
         if row["fullscreen"] == true && row["width"] == 1600 && row["height"] == 900 {
             assert_eq!(row["window_x"], 0);
             assert_eq!(row["window_y"], 0);
             break;
         }
-        assert!(Instant::now() < deadline, "initial fullscreen slot: {row}");
+        assert!(
+            Instant::now() < deadline,
+            "initial fullscreen slot: {row}; configured={:?}",
+            pattern.state.size
+        );
         thread::sleep(Duration::from_millis(10));
     }
     assert_eq!(pattern.state.size, (1600, 900));
