@@ -148,7 +148,10 @@ mod tests {
     fn private_compositors_do_not_claim_the_session_osd() {
         assert_eq!(super::service("comp"), "osd");
         assert_eq!(super::service("comp-headless"), "osd-comp-headless");
-        assert_ne!(super::service("comp-headless"), super::service("comp-nested"));
+        assert_ne!(
+            super::service("comp-headless"),
+            super::service("comp-nested")
+        );
     }
     #[test]
     fn restart_backoff_doubles_before_each_retry_and_caps() {
