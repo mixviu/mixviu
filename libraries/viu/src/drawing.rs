@@ -215,6 +215,8 @@ struct Shadows {
     worker_blurs: usize,
     pending: Option<PendingShadow>,
     waiting: std::collections::VecDeque<(egui::Id, u64)>,
+    spawn_backoff: std::time::Duration,
+    spawn_retry_at: Option<std::time::Instant>,
     #[cfg(test)]
     synchronous_updates: bool,
     #[cfg(test)]
@@ -372,7 +374,12 @@ fn paint_shadow(
                     c.waiting.push_back((key, pass));
                 }
             }
-            if c.pending.is_none() && c.waiting.front().is_some_and(|(id, _)| *id == key) {
+            let retry_delay = c.spawn_retry_at.map_or(std::time::Duration::ZERO, |at| {
+                at.saturating_duration_since(std::time::Instant::now())
+            });
+            if c.pending.is_none() && !retry_delay.is_zero() {
+                ui.ctx().request_repaint_after(retry_delay);
+            } else if c.pending.is_none() && c.waiting.front().is_some_and(|(id, _)| *id == key) {
                 c.waiting.pop_front();
                 let (input_tx, input_rx) = std::sync::mpsc::sync_channel(1);
                 let (tx, rx) = std::sync::mpsc::sync_channel(1);
@@ -398,6 +405,8 @@ fn paint_shadow(
                         .spawn(task)
                 };
                 if spawned.is_ok() {
+                    c.spawn_backoff = std::time::Duration::ZERO;
+                    c.spawn_retry_at = None;
                     let _ = input_tx.send(shadow_input(ui.ctx(), shapes));
                     c.worker_rasters += 1;
                     c.worker_blurs += usize::from(blurred);
@@ -412,7 +421,13 @@ fn paint_shadow(
                     });
                 } else {
                     c.waiting.push_back((key, pass));
-                    ui.ctx().request_repaint();
+                    c.spawn_backoff = if c.spawn_backoff.is_zero() {
+                        std::time::Duration::from_millis(100)
+                    } else {
+                        (c.spawn_backoff * 2).min(std::time::Duration::from_secs(2))
+                    };
+                    c.spawn_retry_at = Some(std::time::Instant::now() + c.spawn_backoff);
+                    ui.ctx().request_repaint_after(c.spawn_backoff);
                 }
             } else if c.pending.is_none() {
                 ui.ctx().request_repaint();
@@ -707,21 +722,46 @@ mod tests {
     }
 
     #[test]
-    fn failed_spawn_requeues_the_settled_request_and_requests_repaint() {
+    fn failed_spawn_backs_off_without_immediate_repaint_and_recovers() {
         let ctx = egui::Context::default();
-        shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
+        for _ in 0..4 {
+            shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
+        }
         let shared = shadows(&ctx);
         shared.lock().unwrap().fail_spawn = true;
-        let out = shadow_frame(&ctx, "root", "b", 1.);
-        assert_eq!(
-            out.viewport_output[&egui::ViewportId::ROOT].repaint_delay,
-            std::time::Duration::ZERO
-        );
-        out.drop_without_applying_deltas();
+        for milliseconds in [100, 200, 400, 800, 1600, 2000, 2000] {
+            // Advance the retry deadline without a wall-clock sleep.
+            shared.lock().unwrap().spawn_retry_at = None;
+            let out = shadow_frame(&ctx, "root", "b", 1.);
+            let delay = out.viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+            out.drop_without_applying_deltas();
+            assert!(!delay.is_zero());
+            assert!(delay <= std::time::Duration::from_millis(milliseconds));
+            {
+                let store = shared.lock().unwrap();
+                assert_eq!(store.spawn_backoff, std::time::Duration::from_millis(milliseconds));
+                assert!(store.pending.is_none());
+                assert_eq!(store.waiting.front().unwrap().0, store.entries[0].0);
+                assert_eq!(store.worker_rasters, 0);
+            }
+            // An unrelated frame during cooldown must neither retry nor ask
+            // for an immediate repaint, including a dirty sibling.
+            let out = shadow_frame(&ctx, "root", "b", 1.);
+            assert!(!out.viewport_output[&egui::ViewportId::ROOT].repaint_delay.is_zero());
+            out.drop_without_applying_deltas();
+            assert_eq!(shared.lock().unwrap().spawn_backoff, std::time::Duration::from_millis(milliseconds));
+        }
+        {
+            let mut store = shared.lock().unwrap();
+            store.fail_spawn = false;
+            store.spawn_retry_at = None;
+        }
+        shadow_frame(&ctx, "root", "b", 1.).drop_without_applying_deltas();
         let store = shared.lock().unwrap();
-        assert!(store.pending.is_none());
-        assert_eq!(store.waiting.front().unwrap().0, store.entries[0].0);
-        assert_eq!(store.worker_rasters, 0);
+        assert_eq!(store.spawn_backoff, std::time::Duration::ZERO);
+        assert!(store.spawn_retry_at.is_none());
+        assert!(store.pending.is_some());
+        assert_eq!(store.worker_rasters, 1);
     }
 
     #[test]
