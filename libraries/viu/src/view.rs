@@ -3322,7 +3322,7 @@ b:{widget:"column",background:"#0000ff",children:["tall"]},tall:{widget:"spacer"
                 view.show(ui);
                 *captured.lock().unwrap() = view.geometry.clone();
                 for _ in 0..512 {
-                    super::measure_put(ui, egui::Id::new(("parallel-paint", sample)), 1_f32);
+                    super::measure_put(ui, egui::Id::unique(("parallel-paint", sample)), (1_f32, 1_f32));
                     sample += 1;
                 }
             });
