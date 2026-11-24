@@ -1,0 +1,49 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Run from the repository root: mix services/webd/vhosts/subscriptions_test.mix
+-- Execute the real app source with only the host db seam renamed to SQLite
+-- wrappers. No server, gateway, mail account, or on-disk database is used.
+$root = "services/webd/vhosts/"
+$source = '$DB = sqlopen(":memory:", "rwc")
+sqlexec($DB, "PRAGMA foreign_keys=OFF")
+function test_query($sql, $params = [])
+  return sqlexec($DB, $sql, $params)
+end
+function test_exec($sql, $params = [])
+  return sqlexec($DB, $sql, $params)
+end
+function check($ok, $message)
+  if not $ok then raise("SUB_TEST", $message) end
+end
+function test_http_request($method, $url, $body, $headers, $options)
+  if $method != "GET" or not contains($url, "/payment_intents/pi_example") then
+    raise("SUB_TEST", "unexpected network request")
+  end
+  return {status: 200, body: json_encode({id: "pi_example", status: "succeeded", customer: "cus_example",
+          payment_method: "pm_example", setup_future_usage: "off_session"})}
+end
+$SITE = {title: "Example", domain: "example.com", fqdn: "example.com", tagline: "", footer: "", features: {}}
+$HEADERS = {}
+$METHOD = "GET"
+$QUERY = ""
+$BODY = ""
+$PATH = "/subscribe/example-plus"
+$CSRF = "test"
+'
+for each $file in ["lib/lib.mix", "apps/biz.mix", "apps/stripe.mix", "apps/paypal.mix", "apps/h_biz_pay.mix", "apps/h_sub.mix", "apps/shop.mix", "apps/h_biz_tick.mix", "subscriptions_test_cases.mix"]
+  $part = read_file($root .. $file)
+  $part = re_replace($part, "(?m)^include .*\n", "")
+  $part = replace($part, "db_query(", "test_query(")
+  $part = replace($part, "db_exec(", "test_exec(")
+  $part = replace($part, "http_request(", "test_http_request(")
+  $source = $source .. "\n" .. $part
+end
+$path = "/var/tmp/subscriptions-test-" .. pid() .. ".mix"
+try
+  write_file($path, $source)
+  $result = run_argv(["/usr/local/bin/mix", $path], {timeout: 120, max_output: 20000})
+  print($result.stdout)
+  print($result.stderr)
+  if $result.exit_code != 0 then raise("SUB_TEST", "harness failed") end
+finally
+  remove($path)
+end

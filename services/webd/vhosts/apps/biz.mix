@@ -9,10 +9,59 @@
 
 -- ---------------------------------------------------------------- schema
 
+-- Keep the original column definitions (including additive columns) and every
+-- explicit index/trigger. foreign_keys is OFF in webd, as for the jobs rebuild.
+-- Re-read under the write lock: two first requests may arrive together.
+function biz_subscription_migrate()
+  $schema = db_query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'services'")
+  $old = "'ct','vm','byo','legacy')"
+  if pos($old, $schema[0].sql) == 0 then return end
+  db_exec("BEGIN IMMEDIATE")
+  try
+    $schema = db_query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'services'")
+    if pos($old, $schema[0].sql) == 0 then
+      db_exec("COMMIT")
+      return
+    end
+    $objects = db_query("SELECT sql FROM sqlite_master WHERE tbl_name = 'services'
+                         AND type IN ('index','trigger') AND sql IS NOT NULL")
+    $sql = replace($schema[0].sql, $old, "'ct','vm','byo','legacy','subscription')")
+    $sql = replace($sql, "CREATE TABLE services", "CREATE TABLE services_sub_new")
+    db_exec($sql)
+    -- Explicit names: webd deliberately denies PRAGMA to vhost handlers.
+    $names = "id,legacy_id,customer_id,kind,label,plan_id,units,addon_bulk25,addon_ipv4,price_cents,node,vmid,ip,fqdn,status,next_due,payment_pref,auto_charge,notes,created,updated,period_months"
+    db_exec("INSERT INTO services_sub_new (" .. $names .. ") SELECT " .. $names .. " FROM services")
+    $before = db_query("SELECT COUNT(*) AS n FROM services")
+    $after = db_query("SELECT COUNT(*) AS n FROM services_sub_new")
+    if $before[0].n != $after[0].n then raise("SUB_MIGRATION", "service row count changed") end
+    db_exec("DROP TABLE services")
+    db_exec("ALTER TABLE services_sub_new RENAME TO services")
+    for each $obj in $objects
+      db_exec($obj.sql)
+    end
+    db_exec("COMMIT")
+  catch $e
+    try db_exec("ROLLBACK") catch $rollback_error end
+    raise("SUB_MIGRATION", "services rebuild failed: " .. $e)
+  end
+end
+
+function biz_invoice_subscription($invoice_id)
+  return length(db_query("SELECT 1 FROM invoice_items ii JOIN services s ON s.id = ii.service_id
+                           WHERE ii.invoice_id = ?1 AND s.kind = 'subscription' LIMIT 1", [$invoice_id])) > 0
+end
+
 function biz_init()
   db_exec("CREATE TABLE IF NOT EXISTS plans (
     id INTEGER PRIMARY KEY, code TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
     units INTEGER NOT NULL, price_cents INTEGER NOT NULL, active INTEGER NOT NULL DEFAULT 1)")
+  try db_exec("ALTER TABLE plans ADD COLUMN kind TEXT NOT NULL DEFAULT 'hosting' CHECK(kind IN ('hosting','subscription'))") catch $e end
+  try db_exec("ALTER TABLE plans ADD COLUMN product TEXT NOT NULL DEFAULT ''") catch $e end
+  try db_exec("ALTER TABLE plans ADD COLUMN period_months INTEGER NOT NULL DEFAULT 12") catch $e end
+  db_exec("CREATE TABLE IF NOT EXISTS sub_signups (
+    id INTEGER PRIMARY KEY, token_sha256 TEXT UNIQUE NOT NULL, email TEXT NOT NULL,
+    plan_id INTEGER NOT NULL REFERENCES plans(id), expires_at TEXT NOT NULL,
+    used_at TEXT, invoice_id INTEGER, created TEXT)")
 
   db_exec("CREATE TABLE IF NOT EXISTS customers (
     id INTEGER PRIMARY KEY, legacy_id INTEGER UNIQUE,
@@ -61,6 +110,8 @@ function biz_init()
     auto_charge INTEGER NOT NULL DEFAULT 0,
     notes TEXT DEFAULT '', created TEXT, updated TEXT)")
   try db_exec("ALTER TABLE services ADD COLUMN fqdn TEXT NOT NULL DEFAULT ''") catch $e end
+  try db_exec("ALTER TABLE services ADD COLUMN period_months INTEGER NOT NULL DEFAULT 12") catch $e end
+  biz_subscription_migrate()
 
   db_exec("CREATE TABLE IF NOT EXISTS domains (
     id INTEGER PRIMARY KEY, legacy_id INTEGER UNIQUE,
@@ -493,6 +544,10 @@ function biz_init()
   -- customer domain price = SW wholesale renew + this markup %. Mark's call: 20%.
   biz_set_default("domain_markup_pct", "20")
   biz_set_default("seller_gst_registered", "0")
+  biz_set_default("sub_mail_mode", "off")
+  biz_set_default("sub_grace_days", "3")
+  biz_set_default("sub_pending_days", "7")
+  biz_set_default("sub_export_secret", "")
   -- tenant-specific (bank account, legal seller identity): EMPTY by default —
   -- the invoice hides its bank-transfer block until an admin fills this in
   -- (never ship one tenant's bank details to another's customers)
@@ -857,7 +912,10 @@ end
 -- The from-identity is whatever the jmap seam authenticates as (billing@ on
 -- an anon public_read route; the admin account on an admin route).
 function biz_mail($to, $subject, $body)
-  $mode = biz_setting("mail_mode")
+  return biz_mail_mode($to, $subject, $body, biz_setting("mail_mode"))
+end
+
+function biz_mail_mode($to, $subject, $body, $mode)
   if $mode == "" or $mode == "off" then
     return { ok: true, error: "", skipped: true, indeterminate: false }
   end
@@ -974,10 +1032,16 @@ end
 --   domains only ENQUEUE a renew_domain job (registrar fulfillment advances
 --   domain dates — never payment).
 function biz_advance_renewals($invoice_id)
+  if biz_invoice_subscription($invoice_id) then
+    db_exec("INSERT OR IGNORE INTO notification_events (invoice_id, template, scheduled_for)
+             VALUES (?1, 'sub_receipt', ?2)", [$invoice_id, biz_today()])
+  end
   $svc_items = db_query("SELECT DISTINCT service_id FROM invoice_items
                          WHERE invoice_id = ?1 AND service_id IS NOT NULL", [$invoice_id])
   for each $it in $svc_items
-    db_exec("UPDATE services SET next_due = date(next_due, '+1 year'), updated = ?2
+    db_exec("UPDATE services SET next_due = date(next_due, '+' || period_months || ' months'),
+             status = CASE WHEN kind = 'subscription' AND status IN ('pending','suspended')
+                           THEN 'active' ELSE status END, updated = ?2
              WHERE id = ?1 AND next_due IS NOT NULL", [$it.service_id, biz_now()])
   end
   $dom_items = db_query("SELECT DISTINCT domain_id FROM invoice_items
@@ -989,6 +1053,42 @@ function biz_advance_renewals($invoice_id)
               [$it.domain_id, $invoice_id, biz_now()])
     catch $e
       -- active job already exists — fine
+    end
+  end
+end
+
+-- Called after charging; pending cancellation honours the existing attempt
+-- fence. The service update rechecks status in case payment won the race.
+function biz_subscription_tick($today)
+  db_exec("UPDATE services SET status = 'suspended', updated = ?2
+           WHERE kind = 'subscription' AND status = 'active'
+           AND date(next_due, '+' || ?3 || ' days') < ?1
+           AND EXISTS (SELECT 1 FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id
+                       WHERE ii.service_id = services.id AND i.status = 'open')",
+          [$today, biz_now(), biz_setting("sub_grace_days")])
+  $pending = db_query("SELECT s.id, i.id AS invoice_id FROM services s
+                       JOIN invoice_items ii ON ii.service_id = s.id JOIN invoices i ON i.id = ii.invoice_id
+                       WHERE s.kind = 'subscription' AND s.status = 'pending'
+                       AND date(s.created, '+' || ?2 || ' days') < ?1 AND i.status IN ('draft','open')",
+                      [$today, biz_setting("sub_pending_days")])
+  for each $row in $pending
+    $cancel = biz_cancel_invoice($row.invoice_id, "tick", "unpaid subscription expired")
+    if $cancel.ok then
+      db_exec("UPDATE services SET status = 'cancelled', updated = ?2 WHERE id = ?1 AND status = 'pending'",
+              [$row.id, biz_now()])
+    end
+  end
+  $receipts = db_query("SELECT n.id, i.id AS invoice_id, c.email FROM notification_events n
+                        JOIN invoices i ON i.id = n.invoice_id JOIN customers c ON c.id = i.customer_id
+                        WHERE n.template = 'sub_receipt' AND n.sent_at IS NULL AND i.status = 'paid'")
+  for each $row in $receipts
+    $mail = biz_mail_mode($row.email, biz_brand() .. " payment receipt",
+                         "Payment received for invoice INV-" .. $row.invoice_id .. ". Thank you.\n",
+                         biz_setting("sub_mail_mode"))
+    if $mail.ok then
+      $stamp = biz_now()
+      if $mail.skipped then $stamp = "skipped-off:" .. $stamp end
+      db_exec("UPDATE notification_events SET sent_at = ?2 WHERE id = ?1", [$row.id, $stamp])
     end
   end
 end

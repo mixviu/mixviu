@@ -81,12 +81,18 @@ end
 function bt_generate_one($kind, $ref, $today)
   $period_start = "" .. $ref["next_due"]
   $period_end = biz_date_add($period_start, "+1 year")
+  if $kind == "service" then
+    $period_end = biz_date_add($period_start, "+" .. $ref["period_months"] .. " months")
+  end
   $cust_id = to_number($ref["customer_id"])
   $amount = to_number($ref["price_cents"])
   if $amount == nil or $amount <= 0 then
     return nil  -- zero-priced: renew silently is P-later; skip and surface on dash
   end
   $desc = "Annual hosting renewal — " .. $ref["label"] .. " (" .. $period_start .. " to " .. $period_end .. ")"
+  if $kind == "service" and $ref["kind"] == "subscription" then
+    $desc = $ref["label"] .. " renewal (" .. $period_start .. " to " .. $period_end .. ")"
+  end
   if $kind == "domain" then
     $desc = "Domain renewal — " .. $ref["label"] .. " (" .. $period_start .. " to " .. $period_end .. ")"
   end
@@ -219,7 +225,7 @@ function biz_tick_main()
   $stats = { generated: 0, gen_errors: 0, mails_sent: 0, mails_skipped: 0, mail_errors: 0 }
 
   -- 1. generate service renewals (window: due within lead; includes lapsed)
-  $svcs = db_query("SELECT id, customer_id, label, price_cents, next_due FROM services
+  $svcs = db_query("SELECT id, customer_id, kind, label, price_cents, next_due, period_months FROM services
                     WHERE status = 'active' AND next_due IS NOT NULL AND next_due <= ?1
                     ORDER BY next_due", [$horizon])
   for each $s in $svcs
@@ -314,7 +320,7 @@ function biz_tick_main()
                        JOIN invoices i ON i.id = n.invoice_id
                        JOIN customers c ON c.id = i.customer_id
                        WHERE n.sent_at IS NULL AND n.scheduled_for <= ?1
-                       AND n.template != 'shop_receipt'
+                       AND n.template NOT IN ('shop_receipt','sub_receipt')
                        ORDER BY n.id", [$today])
   for each $p in $pending
     -- an invoice paid/cancelled since scheduling: void the event, send nothing
@@ -341,6 +347,10 @@ function biz_tick_main()
           $subject = biz_brand() .. " invoice INV-" .. $p.id .. " — overdue notice"
         end
         $body = bt_body_dunning($inv, $cust, $tpl)
+      end
+      if biz_invoice_subscription($p.id) then
+        $link = db_query("SELECT token FROM invoices WHERE id = ?1", [$p.id])
+        $body = $body .. "\nPay: " .. replace(biz_invoice_url($link[0].token), "/invoice/", "/pay/") .. "\n"
       end
       $mr = biz_mail($cust["email"], $subject, $body)
       if $mr["skipped"] then
@@ -376,6 +386,7 @@ function biz_tick_main()
   end
 
   -- 4. housekeeping: old rate-limit windows + stale ip reservations
+  biz_subscription_tick($today)
   db_exec("DELETE FROM rate_limits WHERE window_start < datetime(?1, '-2 days')", [biz_now()])
   db_exec("UPDATE ip_pool SET status = 'free', service_id = NULL, reserved_at = NULL,
            reserved_by_job = NULL WHERE status = 'reserved'

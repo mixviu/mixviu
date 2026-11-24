@@ -238,6 +238,7 @@ $gst_opts = [{ value: "0", "label": "Not registered" }, { value: "1", "label": "
 
 -- Engine.
 $fields = fm_number("invoice_lead_days", "Invoice lead days", { value: biz_setting("invoice_lead_days"), help: "Days before the due date to auto-issue the renewal invoice.", help_tip: true })
+$fields = '<p><a href="/biz/subscriptions">Subscription plans and settings</a></p>' .. $fields
 $fields = $fields .. fm_number("remind_before_days", "Remind before days", { value: biz_setting("remind_before_days"), help: "Days before due to send the payment reminder.", help_tip: true })
 $fields = $fields .. fm_text("overdue_days", "Overdue notice days", { value: biz_setting("overdue_days"), help: "Comma list of days-past-due to send overdue notices, e.g. 3,10,17.", help_tip: true })
 $fields = $fields .. fm_number("suspend_flag_days", "Suspend flag days", { value: biz_setting("suspend_flag_days"), help: "Days past due before a service is flagged for suspension.", help_tip: true })

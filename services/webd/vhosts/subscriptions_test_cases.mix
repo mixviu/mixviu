@@ -1,0 +1,119 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Appended to subscriptions_test.mix's isolated host-seam harness.
+-- lint: globals DB SITE HEADERS METHOD QUERY BODY PATH
+-- Runtime host seam wrappers are supplied by subscriptions_test.mix.
+-- lint: ignore MIX-W2401
+include (mix_path("prefix") .. "/vhosts/shared/apps/h_sub.mix")
+-- Build an old-schema services table from the actual pre-migration definition.
+$biz_source = read_file("services/webd/vhosts/apps/biz.mix")
+$begin = index_of($biz_source, 'CREATE TABLE IF NOT EXISTS services (')
+$tail = substr($biz_source, $begin, length($biz_source) - $begin)
+$finish = index_of($tail, '")')
+$ddl = substr($tail, 0, $finish)
+test_exec($ddl)
+test_exec("INSERT INTO services (id,customer_id,label,price_cents,fqdn,next_due,status) VALUES (42,1,'Example hosting',5000,'example.net','2026-02-28','active')")
+test_exec("WITH RECURSIVE n(x) AS (VALUES(100) UNION ALL SELECT x+1 FROM n WHERE x<2099)
+           INSERT INTO services (id,customer_id,label,price_cents,fqdn,status) SELECT x,1,'Example',100,'example.net','cancelled' FROM n")
+test_exec("CREATE INDEX idx_example_preserved ON services(label)")
+cms_init()
+biz_init()
+$old = test_query("SELECT * FROM services WHERE id=42")[0]
+check($old.fqdn == "example.net" and $old.period_months == 12 and $old.price_cents == 5000, "migration preserves old columns")
+check(length(test_query("SELECT * FROM services")) == 2001, "migration row count")
+check(length(test_query("SELECT name FROM sqlite_master WHERE name='idx_example_preserved'")) == 1, "migration index preserved")
+$schema = test_query("SELECT sql FROM sqlite_master WHERE name='services'")[0].sql
+biz_init()
+check(test_query("SELECT sql FROM sqlite_master WHERE name='services'")[0].sql == $schema, "migration rerun no-op")
+test_exec("INSERT INTO plans (code,name,units,price_cents,kind,product,period_months) VALUES ('example-month','Example Plus',0,500,'subscription','example-plus',1)")
+$plan_id = test_query("SELECT id FROM plans WHERE code='example-month'")[0].id
+$page = sub_main()
+check($page.status == 200 and contains($page.body, "per month"), "public plans")
+$METHOD = "POST"
+$BODY = "email=reader%40example.com&plan_id=" .. $plan_id
+check(sub_main().status == 200, "signup accepted with mail off")
+check(length(test_query("SELECT * FROM sub_signups")) == 1, "signup persisted")
+-- Raw tokens are deliberately unavailable in the database; seed a known proof.
+$token = biz_token()
+test_exec("UPDATE sub_signups SET token_sha256=?1", [hash_sha256($token)])
+$confirmed = sub_confirm($token)
+check($confirmed.status == 303 and starts_with($confirmed.headers["Location"], "/pay/"), "confirm issues invoice")
+$invoice_id = test_query("SELECT invoice_id FROM sub_signups")[0].invoice_id
+$invoice = test_query("SELECT * FROM invoices WHERE id=?1", [$invoice_id])[0]
+check($invoice.status == "open" and $invoice.total_cents == 500 and $invoice.tax_cents == 0, "plan price is final total")
+check(sub_confirm($token).headers["Location"] == $confirmed.headers["Location"], "reuse open invoice")
+check(length(test_query("SELECT * FROM services WHERE kind='subscription'")) == 1, "no duplicate service")
+$item = test_query("SELECT * FROM invoice_items WHERE invoice_id=?1", [$invoice_id])[0]
+check($item.period_end == biz_date_add($item.period_start, "+1 months"), "monthly item period")
+$paid = biz_apply_payment($invoice_id, "bank", "example-payment", 500, 0, "test", "test")
+check($paid.ok and $paid.flipped, "payment applied")
+$service = test_query("SELECT * FROM services WHERE id=?1", [$item.service_id])[0]
+check($service.status == "active" and $service.next_due == $item.period_end, "activation and paid through")
+check(not biz_apply_payment($invoice_id, "bank", "example-payment", 500, 0, "test", "test").flipped, "replay does not advance dates")
+check(contains(sub_confirm($token).body, "used"), "paid token reuse")
+$existing_token = biz_token()
+test_exec("INSERT INTO sub_signups (email,plan_id,token_sha256,expires_at) VALUES ('reader@example.com',?1,?2,'2999-01-01')", [$plan_id,hash_sha256($existing_token)])
+check(contains(sub_confirm($existing_token).body, "paid up until"), "existing subscription status after proof")
+check(length(test_query("SELECT * FROM services WHERE kind='subscription'")) == 1, "existing email does not create duplicate")
+check(sub_export("example-plus").status == 404, "export disabled")
+biz_setting_set("sub_export_secret", "example-secret")
+check(sub_export("example-plus").status == 401, "export unauthenticated")
+$HEADERS = {"x-sub-secret": "wrong"}
+check(sub_export("example-plus").status == 401, "export wrong secret")
+$HEADERS = {"x-sub-secret": "example-secret"}
+$export = json_parse(sub_export("example-plus").body)
+check(length($export.subscribers) == 1 and $export.subscribers[0].email == "reader@example.com", "paid entitlement exported")
+$METHOD = "GET"
+$PATH = "/subscribe/unknown"
+check(sub_main().status == 404, "unknown product")
+$expired = biz_token()
+test_exec("INSERT INTO sub_signups (email,plan_id,token_sha256,expires_at) VALUES ('other@example.net',?1,?2,'2000-01-01')", [$plan_id,hash_sha256($expired)])
+check(sub_confirm($expired).status == 410, "expired token")
+check(sub_confirm("bad").status == 404, "malformed token")
+-- Exact pre-existing annual description and period, including leap-day policy.
+$annual = test_query("SELECT * FROM services WHERE id=42")[0]
+$annual_invoice = bt_generate_one("service", $annual, "2026-02-01")
+$annual_item = test_query("SELECT * FROM invoice_items WHERE invoice_id=?1", [$annual_invoice])[0]
+check($annual_item.description == "Annual hosting renewal — Example hosting (2026-02-28 to 2027-02-28)", "annual description unchanged")
+check($annual_item.period_end == biz_date_add($annual.next_due, "+1 year"), "annual period unchanged")
+check(deep_eq(st_subscription_params($annual_invoice, ["existing=1"]), ["existing=1"]), "hosting Stripe params unchanged")
+$params = join(st_subscription_params($invoice_id, []), "&")
+check(contains($params, "off_session") and contains($params, "customer_creation"), "subscription card setup only")
+biz_setting_set("stripe_secret_key", "example-key")
+biz_setting_set("stripe_webhook_secret", "example-signing-secret")
+test_exec("INSERT INTO payment_attempts (invoice_id,gateway,kind,idempotency_key,external_id,amount_cents,currency,mode,status)
+           VALUES (?1,'stripe','checkout','example-attempt','cs_example',500,'aud','test','succeeded')", [$invoice_id])
+$event = {type: "checkout.session.completed", data: {object: {id: "cs_example", payment_status: "paid", payment_intent: "pi_example",
+          customer: "cus_example", amount_total: 500, currency: "aud"}}}
+$BODY = json_encode($event)
+$timestamp = "" .. floor(time())
+$HEADERS = {"stripe-signature": "t=" .. $timestamp .. ",v1=" .. hmac_sha256("example-signing-secret", $timestamp .. "." .. $BODY)}
+check(bp_stripe_webhook().status == 200, "verified Checkout replay repairs card setup")
+$card = test_query("SELECT * FROM customers WHERE id=?1", [$service.customer_id])[0]
+check($card.stripe_pm_status == "verified" and $card.stripe_pm_id == "pm_example" and $card.stripe_customer_id == "cus_example", "verified card saved")
+check(test_query("SELECT auto_charge FROM services WHERE id=?1", [$service.id])[0].auto_charge == 1, "auto charge enabled")
+check(contains(join(st_subscription_params($invoice_id, []), "&"), "cus_example"), "saved customer reused")
+check(biz_date_add("2024-02-29", "+12 months") == biz_date_add("2024-02-29", "+1 year"), "annual leap policy unchanged")
+test_exec("UPDATE services SET next_due='2000-01-01' WHERE id=?1", [$service.id])
+$lapsed = test_query("SELECT * FROM services WHERE id=?1", [$service.id])[0]
+$renewal = bt_generate_one("service", $lapsed, biz_today())
+check($renewal != nil, "monthly renewal generated")
+check(bt_generate_one("service", $lapsed, biz_today()) == nil, "renewal idempotent")
+biz_subscription_tick(biz_today())
+check(test_query("SELECT status FROM services WHERE id=?1", [$service.id])[0].status == "suspended", "unpaid renewal suspends")
+$HEADERS = {"x-sub-secret": "example-secret"}
+check(length(json_parse(sub_export("example-plus").body).subscribers) == 0, "outside grace excluded")
+test_exec("UPDATE services SET next_due=?2 WHERE id=?1", [$service.id, biz_today()])
+check(length(json_parse(sub_export("example-plus").body).subscribers) == 1, "suspended inside grace included")
+$renewal_invoice = test_query("SELECT * FROM invoices WHERE id=?1", [$renewal])[0]
+check(biz_apply_payment($renewal, "bank", "example-renewal", $renewal_invoice.total_cents, 0, "test", "test").flipped, "renewal payment applied")
+check(test_query("SELECT status FROM services WHERE id=?1", [$service.id])[0].status == "active", "suspended service reactivates")
+$pending_token = biz_token()
+test_exec("INSERT INTO sub_signups (email,plan_id,token_sha256,expires_at) VALUES ('pending@example.net',?1,?2,'2999-01-01')", [$plan_id,hash_sha256($pending_token)])
+check(sub_confirm($pending_token).status == 303, "pending fixture")
+test_exec("UPDATE services SET created='2000-01-01' WHERE status='pending' AND kind='subscription'")
+biz_subscription_tick(biz_today())
+check(test_query("SELECT status FROM services WHERE customer_id=(SELECT id FROM customers WHERE email='pending@example.net')")[0].status == "cancelled", "stale pending cancelled")
+check(length(test_query("SELECT i.id FROM invoices i JOIN customers c ON c.id=i.customer_id WHERE c.email='pending@example.net' AND i.status='cancelled'")) == 1, "pending invoice cancelled")
+biz_subscription_tick(biz_today())
+check(test_query("SELECT sent_at FROM notification_events WHERE template='sub_receipt'")[0].sent_at != nil, "receipt off stamped")
+print("subscription tests passed: migration, signup, confirmation, payment, export, tokens, renewals, Stripe parameters, receipt gate")
