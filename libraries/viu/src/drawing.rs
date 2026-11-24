@@ -166,6 +166,8 @@ pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
                 sample[5] = 0.;
             }
         }
+        #[cfg(test)]
+        let shadow_start = std::time::Instant::now();
         paint_shadow(
             ui,
             id,
@@ -179,6 +181,11 @@ pub fn show(ui: &mut egui::Ui, id: &str, node: &Node) {
             ),
             Vec2::new(0., dy),
         );
+        #[cfg(test)]
+        {
+            shadows(ui.ctx()).lock().unwrap().last_shadow_ms =
+                shadow_start.elapsed().as_secs_f64() * 1000.;
+        }
     }
     ui.painter().extend(shapes);
 }
@@ -209,6 +216,8 @@ struct Shadows {
     pending: Option<PendingShadow>,
     #[cfg(test)]
     synchronous_updates: bool,
+    #[cfg(test)]
+    last_shadow_ms: f64,
 }
 struct PendingShadow {
     key: egui::Id,
@@ -278,10 +287,15 @@ fn paint_shadow(
         if let Some(pending) = c.pending.take() {
             match pending.image.try_recv() {
                 Ok(Some(image)) => {
-                    if let Some((_, cache)) = c.entries.iter_mut().find(|(id, _)| *id == pending.key) {
+                    if let Some(index) = c.entries.iter().position(|(id, _)| *id == pending.key) {
+                        let (_, mut cache) = c.entries.remove(index).unwrap();
                         cache.pixels = image.size[0] * image.size[1];
                         cache.texture.set(image, Default::default());
                         cache.signature = pending.signature;
+                        while c.entries.iter().map(|(_, v)| v.pixels).sum::<usize>() + cache.pixels > SHADOW_PIXELS {
+                            c.entries.pop_front();
+                        }
+                        c.entries.push_back((pending.key, cache));
                     }
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => c.pending = Some(pending),
@@ -455,10 +469,39 @@ mod tests {
     }
 
     #[test]
+    fn busy_shadow_worker_coalesces_changed_frames_and_keeps_the_last_texture() {
+        let ctx = egui::Context::default();
+        let mut node = sting_node();
+        ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node))
+            .drop_without_applying_deltas();
+        let shared = shadows(&ctx);
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let texture = {
+            let mut store = shared.lock().unwrap();
+            let key = store.entries[0].0;
+            let texture = store.entries[0].1.texture.id();
+            // A deliberately stalled result, with no sleep or timing race.
+            store.pending = Some(PendingShadow {key, signature: "busy".into(), image: receiver});
+            texture
+        };
+        for frame in 0..30 {
+            node.ports.insert("sample_time".into(), serde_json::json!(frame as f64 / 30.));
+            let out = ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
+            assert!(out.shapes.iter().any(|s| matches!(&s.shape,
+                Shape::Mesh(mesh) if mesh.texture_id == texture)));
+            out.drop_without_applying_deltas();
+        }
+        let store = shared.lock().unwrap();
+        assert_eq!((store.rasters, store.blurs), (1, 1));
+        assert_eq!((store.worker_rasters, store.worker_blurs), (0, 0));
+        assert!(store.pending.is_some());
+        drop(sender);
+    }
+
+    #[test]
     #[ignore = "explicit CBC headless GPU sting benchmark"]
     fn sting_shadow_frame_benchmark() {
         use std::sync::{Arc, Mutex};
-        use std::time::Instant;
         for synchronous in [true, false] {
             let mut node = sting_node();
             node.ports.insert("motion_profile".into(), serde_json::json!("legacy-sting"));
@@ -471,9 +514,8 @@ mod tests {
                 .build_ui(move |ui| {
                     shadows(ui.ctx()).lock().unwrap().synchronous_updates = synchronous;
                     let mut state = captured.lock().unwrap();
-                    let start = Instant::now();
                     show(ui, "sting", &state.0);
-                    state.1.push(start.elapsed().as_secs_f64() * 1000.);
+                    state.1.push(shadows(ui.ctx()).lock().unwrap().last_shadow_ms);
                 });
             let mut hashes = std::collections::HashSet::new();
             state.lock().unwrap().1.clear();
@@ -488,7 +530,7 @@ mod tests {
             let state = state.lock().unwrap();
             let mut times = state.1.clone();
             times.sort_by(f64::total_cmp);
-            println!("STING_SHADOW synchronous={synchronous} distinct={}/30 paint_ms_median={:.3} paint_ms_max={:.3} samples={}",
+            println!("STING_SHADOW synchronous={synchronous} distinct={}/30 shadow_ms_median={:.3} shadow_ms_max={:.3} samples={}",
                 hashes.len(), times[times.len()/2], times.last().unwrap(), times.len());
             assert_eq!(hashes.len(), 30);
         }
