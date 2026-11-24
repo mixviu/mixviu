@@ -17,12 +17,21 @@ fn plasma_seat_unit_is_packaged_and_requires_an_explicit_profile() {
         assert!(unit.lines().any(|actual| actual == line), "missing {line}");
     }
     assert!(!unit.contains("--allow-create"));
-    assert!(!unit.lines().any(|line| line.starts_with("User=") || line.starts_with("EnvironmentFile=")));
+    assert!(
+        !unit
+            .lines()
+            .any(|line| line.starts_with("User=") || line.starts_with("EnvironmentFile="))
+    );
 
     let templates = include_str!("../../../share/layout/templates.mx");
     let templates: serde_json::Value = serde_json::from_str(
-        &templates.lines().filter(|line| !line.starts_with("#")).collect::<Vec<_>>().join("\n"),
-    ).unwrap();
+        &templates
+            .lines()
+            .filter(|line| !line.starts_with("#"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    )
+    .unwrap();
     assert!(templates["files"].as_array().unwrap().iter().any(|file| {
         file["kind"] == "unit"
             && file["source"] == "../../services/settingsd/units/settingsd-seat.service"
