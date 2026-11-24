@@ -86,7 +86,11 @@ fn programme_envelopes_cross_still_and_vfl_cuts_against_ffmpeg() {
             .arg(root.path().join(name));
         serde_json::from_slice::<Value>(&run(c)).unwrap()
     };
-    render(&t, "plain.webm");
+    let plain_receipt = render(&t, "plain.webm");
+    // Nine chunks: two key/successor encodes each, except the one-slot
+    // chunk at slot 15, plus the two VFL changes at slots 18 and 116.
+    assert_eq!(plain_receipt["frames_encoded"], 19);
+    assert_eq!(plain_receipt["repeats"], 101);
     av::render::reference(
         &path,
         fs::File::create(root.path().join("plain.y4m")).unwrap(),
@@ -103,20 +107,18 @@ fn programme_envelopes_cross_still_and_vfl_cuts_against_ffmpeg() {
     // The nonzero VFL trim is honoured: source slot 12 arrives two frames after the cut.
     assert_eq!(&plain[16 * 1536..17 * 1536], &plain[17 * 1536..18 * 1536]);
     assert_ne!(&plain[17 * 1536..18 * 1536], &plain[18 * 1536..19 * 1536]);
-    for (name, incoming, outgoing, filter) in [
-        ("in", 0.6, 0.0, "fade=t=in:s=0:n=17"),
-        ("out", 0.0, 1.0, "fade=t=out:s=90:n=29"),
-        ("both", 0.6, 1.0, "fade=t=in:s=0:n=17,fade=t=out:s=90:n=29"),
+    for (name, incoming, outgoing, filter, encoded) in [
+        ("in", 0.6, 0.0, "fade=t=in:s=0:n=17", 32),
+        ("out", 0.0, 1.0, "fade=t=out:s=90:n=29", 40),
+        ("both", 0.6, 1.0, "fade=t=in:s=0:n=17,fade=t=out:s=90:n=29", 53),
     ] {
         t["video"]["fade_in_s"] = json!(incoming);
         t["video"]["fade_out_s"] = json!(outgoing);
         let webm = format!("{name}.webm");
         let receipt = render(&t, &webm);
         assert_eq!(receipt["frames_out"], 120);
-        assert!(
-            receipt["frames_encoded"].as_u64().unwrap()
-                >= u64::from(incoming > 0.0) * 18 + u64::from(outgoing > 0.0) * 30
-        );
+        assert_eq!(receipt["frames_encoded"], encoded, "{name}");
+        assert_eq!(receipt["repeats"], 120 - encoded, "{name}");
         let decoded_path = root.path().join(format!("{name}.y4m"));
         let mut c = Command::new(env!("CARGO_BIN_EXE_av"));
         c.arg("decode")
@@ -154,5 +156,65 @@ fn programme_envelopes_cross_still_and_vfl_cuts_against_ffmpeg() {
                 .collect::<Vec<_>>()
         };
         assert_eq!(audio(&webm), audio("plain.webm"));
+    }
+
+    // The second hold starts at slot 15 inside the incoming envelope and
+    // continues past its identity endpoint at slot 17, without another cut.
+    t["video"]["segments"] = json!([
+        {"still":"a.png","at_s":0,"duration_s":0.5},
+        {"still":"b.png","at_s":0.5,"duration_s":3.5}
+    ]);
+    t["video"]["fade_in_s"] = json!(0);
+    t["video"]["fade_out_s"] = json!(0);
+    t["encode"]["chunks"] = json!(1);
+    t["encode"]["keyint_s"] = json!(60);
+    fs::write(&path, serde_json::to_vec(&t).unwrap()).unwrap();
+    let plain_path = root.path().join("hold-plain.y4m");
+    av::render::reference(&path, fs::File::create(&plain_path).unwrap()).unwrap();
+    let full_picture = raw_y4m(&plain_path);
+    for (name, outgoing, filter, encoded) in [
+        ("crossing-hold", 0.0, "fade=t=in:s=0:n=17", 18),
+        ("touching", 3.4, "fade=t=in:s=0:n=17,fade=t=out:s=18:n=101", 120),
+    ] {
+        t["video"]["fade_in_s"] = json!(0.6);
+        t["video"]["fade_out_s"] = json!(outgoing);
+        let receipt = render(&t, &format!("{name}.webm"));
+        assert_eq!(receipt["frames_encoded"], encoded, "{name}");
+        assert_eq!(receipt["repeats"], 120 - encoded, "{name}");
+        let decoded_path = root.path().join(format!("{name}.y4m"));
+        let mut c = Command::new(env!("CARGO_BIN_EXE_av"));
+        c.arg("decode").arg(root.path().join(format!("{name}.webm")))
+            .arg("--y4m").arg(&decoded_path);
+        run(c);
+        let decoded = raw_y4m(&decoded_path);
+        let mut c = Command::new("ffmpeg");
+        c.args(["-v", "error", "-i"]).arg(&plain_path)
+            .args(["-vf", filter, "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]);
+        let oracle = run(c);
+        assert_eq!(decoded.len(), oracle.len());
+        let mut maxima = [0u8; 3];
+        for (i, (a, b)) in decoded.iter().zip(&oracle).enumerate() {
+            let plane = match i % 1536 {
+                0..1024 => 0,
+                1024..1280 => 1,
+                _ => 2,
+            };
+            maxima[plane] = maxima[plane].max(a.abs_diff(*b));
+        }
+        println!("{name}: decoded ffmpeg fade per-plane max error {maxima:?}");
+        assert!(maxima.iter().all(|v| *v <= 3), "{name}: {maxima:?}");
+        if outgoing == 0.0 {
+            // All 102 post-envelope frames repeat the fully lit identity
+            // endpoint, rather than the dim first frame of this still hold.
+            for k in 18..120 {
+                assert_eq!(&decoded[k*1536..(k+1)*1536], &decoded[17*1536..18*1536]);
+                assert!(decoded[k*1536..(k+1)*1536].iter()
+                    .zip(&full_picture[k*1536..(k+1)*1536])
+                    .all(|(a,b)| a.abs_diff(*b) <= 3));
+            }
+        } else {
+            // Both sides of the touching seam are the full second picture.
+            assert_eq!(&decoded[17*1536..18*1536], &decoded[18*1536..19*1536]);
+        }
     }
 }
