@@ -110,7 +110,13 @@ fn programme_envelopes_cross_still_and_vfl_cuts_against_ffmpeg() {
     for (name, incoming, outgoing, filter, encoded) in [
         ("in", 0.6, 0.0, "fade=t=in:s=0:n=17", 32),
         ("out", 0.0, 1.0, "fade=t=out:s=90:n=29", 40),
-        ("both", 0.6, 1.0, "fade=t=in:s=0:n=17,fade=t=out:s=90:n=29", 53),
+        (
+            "both",
+            0.6,
+            1.0,
+            "fade=t=in:s=0:n=17,fade=t=out:s=90:n=29",
+            53,
+        ),
     ] {
         t["video"]["fade_in_s"] = json!(incoming);
         t["video"]["fade_out_s"] = json!(outgoing);
@@ -174,7 +180,12 @@ fn programme_envelopes_cross_still_and_vfl_cuts_against_ffmpeg() {
     let full_picture = raw_y4m(&plain_path);
     for (name, outgoing, filter, encoded) in [
         ("crossing-hold", 0.0, "fade=t=in:s=0:n=17", 18),
-        ("touching", 3.4, "fade=t=in:s=0:n=17,fade=t=out:s=18:n=101", 120),
+        (
+            "touching",
+            3.4,
+            "fade=t=in:s=0:n=17,fade=t=out:s=18:n=101",
+            120,
+        ),
     ] {
         t["video"]["fade_in_s"] = json!(0.6);
         t["video"]["fade_out_s"] = json!(outgoing);
@@ -183,12 +194,15 @@ fn programme_envelopes_cross_still_and_vfl_cuts_against_ffmpeg() {
         assert_eq!(receipt["repeats"], 120 - encoded, "{name}");
         let decoded_path = root.path().join(format!("{name}.y4m"));
         let mut c = Command::new(env!("CARGO_BIN_EXE_av"));
-        c.arg("decode").arg(root.path().join(format!("{name}.webm")))
-            .arg("--y4m").arg(&decoded_path);
+        c.arg("decode")
+            .arg(root.path().join(format!("{name}.webm")))
+            .arg("--y4m")
+            .arg(&decoded_path);
         run(c);
         let decoded = raw_y4m(&decoded_path);
         let mut c = Command::new("ffmpeg");
-        c.args(["-v", "error", "-i"]).arg(&plain_path)
+        c.args(["-v", "error", "-i"])
+            .arg(&plain_path)
             .args(["-vf", filter, "-f", "rawvideo", "-pix_fmt", "yuv420p", "-"]);
         let oracle = run(c);
         assert_eq!(decoded.len(), oracle.len());
@@ -207,14 +221,23 @@ fn programme_envelopes_cross_still_and_vfl_cuts_against_ffmpeg() {
             // All 102 post-envelope frames repeat the fully lit identity
             // endpoint, rather than the dim first frame of this still hold.
             for k in 18..120 {
-                assert_eq!(&decoded[k*1536..(k+1)*1536], &decoded[17*1536..18*1536]);
-                assert!(decoded[k*1536..(k+1)*1536].iter()
-                    .zip(&full_picture[k*1536..(k+1)*1536])
-                    .all(|(a,b)| a.abs_diff(*b) <= 3));
+                assert_eq!(
+                    &decoded[k * 1536..(k + 1) * 1536],
+                    &decoded[17 * 1536..18 * 1536]
+                );
+                assert!(
+                    decoded[k * 1536..(k + 1) * 1536]
+                        .iter()
+                        .zip(&full_picture[k * 1536..(k + 1) * 1536])
+                        .all(|(a, b)| a.abs_diff(*b) <= 3)
+                );
             }
         } else {
             // Both sides of the touching seam are the full second picture.
-            assert_eq!(&decoded[17*1536..18*1536], &decoded[18*1536..19*1536]);
+            assert_eq!(
+                &decoded[17 * 1536..18 * 1536],
+                &decoded[18 * 1536..19 * 1536]
+            );
         }
     }
 }
