@@ -219,13 +219,65 @@ struct Shadows {
     synchronous_updates: bool,
     #[cfg(test)]
     last_shadow_ms: f64,
+    #[cfg(test)]
+    fail_spawn: bool,
 }
 struct PendingShadow {
     key: egui::Id,
+    base_signature: String,
+    texture: egui::TextureId,
     signature: String,
     image: std::sync::mpsc::Receiver<Option<egui::ColorImage>>,
+    ready: Option<egui::ColorImage>,
+    last_seen: u64,
 }
 const SHADOW_PIXELS: usize = 8 * 1024 * 1024;
+
+fn receive_shadow(c: &mut Shadows, key: egui::Id, signature: &str, pass: u64, ctx: &egui::Context) {
+    let Some(mut pending) = c.pending.take() else { return };
+    if pending.key == key {
+        pending.last_seen = pass;
+    }
+    if pending.ready.is_none() {
+        match pending.image.try_recv() {
+            Ok(Some(image)) => pending.ready = Some(image),
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                c.pending = Some(pending);
+                return;
+            }
+            _ => return,
+        }
+    }
+    let Some(index) = c.entries.iter().position(|(id, cache)| {
+        *id == pending.key && cache.signature == pending.base_signature
+            && cache.texture.id() == pending.texture
+    }) else { return };
+    // Only the source's own paint knows its current request. Do not install a
+    // sibling's result speculatively, even when it completes mid-pass.
+    if pending.key != key {
+        if pending.last_seen.saturating_add(1) >= pass {
+            c.pending = Some(pending);
+            ctx.request_repaint();
+        }
+        return;
+    }
+    if c.entries[index].1.signature == signature {
+        return;
+    }
+    let image = pending.ready.take().unwrap();
+    let Some(pixels) = image.size[0].checked_mul(image.size[1]) else { return };
+    if pixels > SHADOW_PIXELS {
+        return;
+    }
+    let (_, mut cache) = c.entries.remove(index).unwrap();
+    cache.pixels = pixels;
+    cache.texture.set(image, Default::default());
+    cache.signature = pending.signature;
+    while c.entries.iter().map(|(_, v)| v.pixels).sum::<usize>() + pixels > SHADOW_PIXELS {
+        c.entries.pop_front();
+    }
+    c.entries.push_back((key, cache));
+}
 fn shadows(ctx: &egui::Context) -> std::sync::Arc<std::sync::Mutex<Shadows>> {
     let key = egui::Id::unique("scene-shadow-budget-v1");
     ctx.data_mut(|d| {
@@ -285,26 +337,7 @@ fn paint_shadow(
         c.spent += pixels;
         // At most one raster/blur is in flight per context. Receive without
         // waiting; the previous texture remains usable throughout animation.
-        if let Some(pending) = c.pending.take() {
-            match pending.image.try_recv() {
-                Ok(Some(image)) => {
-                    if let Some(index) = c.entries.iter().position(|(id, _)| *id == pending.key) {
-                        let (_, mut cache) = c.entries.remove(index).unwrap();
-                        cache.pixels = image.size[0] * image.size[1];
-                        cache.texture.set(image, Default::default());
-                        cache.signature = pending.signature;
-                        while c.entries.iter().map(|(_, v)| v.pixels).sum::<usize>() + cache.pixels
-                            > SHADOW_PIXELS
-                        {
-                            c.entries.pop_front();
-                        }
-                        c.entries.push_back((pending.key, cache));
-                    }
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => c.pending = Some(pending),
-                _ => {}
-            }
-        }
+        receive_shadow(&mut c, key, &signature, pass, ui.ctx());
         let found = c.entries.iter().position(|(id, _)| *id == key);
         found.and_then(|i| c.entries.remove(i)).map(|(_, v)| {
             c.hits += 1;
@@ -334,27 +367,45 @@ fn paint_shadow(
             }
             if c.pending.is_none() && c.waiting.front().is_some_and(|(id, _)| *id == key) {
                 c.waiting.pop_front();
-                let input = shadow_input(ui.ctx(), shapes);
+                let (input_tx, input_rx) = std::sync::mpsc::sync_channel(1);
                 let (tx, rx) = std::sync::mpsc::sync_channel(1);
                 let ctx = ui.ctx().clone();
                 let shadow = shadow.clone();
                 let blurred = shadow.blur > 0.;
-                if std::thread::Builder::new()
-                    .name("scene-shadow".into())
-                    .spawn(move || {
+                let task = move || {
+                    if let Ok(input) = input_rx.recv() {
                         let image = raster_shadow(width, height, origin, &shadow, input);
                         let _ = tx.send(image);
                         ctx.request_repaint();
-                    })
-                    .is_ok()
-                {
+                    }
+                };
+                #[cfg(test)]
+                let fail_spawn = c.fail_spawn;
+                #[cfg(not(test))]
+                let fail_spawn = false;
+                let spawned = if fail_spawn {
+                    Err(std::io::Error::other("injected spawn failure"))
+                } else {
+                    std::thread::Builder::new()
+                    .name("scene-shadow".into())
+                    .spawn(task)
+                };
+                if spawned.is_ok() {
+                    let _ = input_tx.send(shadow_input(ui.ctx(), shapes));
                     c.worker_rasters += 1;
                     c.worker_blurs += usize::from(blurred);
                     c.pending = Some(PendingShadow {
                         key,
+                        base_signature: cache.signature.clone(),
+                        texture: cache.texture.id(),
                         signature,
                         image: rx,
+                        ready: None,
+                        last_seen: pass,
                     });
+                } else {
+                    c.waiting.push_back((key, pass));
+                    ui.ctx().request_repaint();
                 }
             } else if c.pending.is_none() {
                 ui.ctx().request_repaint();
@@ -481,19 +532,141 @@ fn raster_shadow(
 
 #[cfg(test)]
 mod tests {
+    fn pending_for(store: &Shadows, index: usize, signature: &str,
+        image: std::sync::mpsc::Receiver<Option<egui::ColorImage>>) -> PendingShadow {
+        let (key, cache) = &store.entries[index];
+        PendingShadow { key: *key, base_signature: cache.signature.clone(), texture: cache.texture.id(),
+            signature: signature.into(), image, ready: None, last_seen: store.pass }
+    }
     fn sting_node() -> scene::Node {
-        let deck: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../apps/deck/examples/vfl-self-recording.json"
-        ))
-        .unwrap();
-        let ports = deck["slides"][0]["scene"]["root.1"]
-            .as_object()
-            .unwrap()
-            .clone();
+        let ports: serde_json::Value = serde_json::from_str(include_str!(
+            "../tests/fixtures/sting-shadow.json"
+        )).unwrap();
         serde_json::from_value(serde_json::json!({
             "family":"drawing", "line":1, "is_template":false, "ports":ports
         }))
         .unwrap()
+    }
+
+    fn shadow_frame(ctx: &egui::Context, id: &str, signature: &str, scale: f32) -> egui::FullOutput {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            paint_shadow(ui, id, egui::Rect::from_min_size(Pos2::ZERO, Vec2::splat(32. * scale)),
+                Some(&serde_json::json!({"colour":[0,0,0,100],"offset":[0,0],"blur":2})),
+                &[Shape::circle_filled(egui::pos2(16.,16.), 8. * scale, Color32::WHITE)],
+                signature.into(), Vec2::ZERO);
+        })
+    }
+
+    fn fake_update(ctx: &egui::Context, signature: &str) -> std::sync::mpsc::SyncSender<Option<egui::ColorImage>> {
+        let shared = shadows(ctx);
+        let mut store = shared.lock().unwrap();
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        store.pending = Some(pending_for(&store, 0, signature, receiver));
+        sender
+    }
+
+    fn tiny_image() -> egui::ColorImage {
+        egui::ColorImage::from_rgba_unmultiplied([1, 1], &[255, 0, 0, 255])
+    }
+
+    #[test]
+    fn evicted_and_recreated_shadow_rejects_the_old_worker_result() {
+        let ctx = egui::Context::default();
+        shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
+        let sender = fake_update(&ctx, "b");
+        let old_texture = shadows(&ctx).lock().unwrap().entries[0].1.texture.id();
+        for i in 0..8 {
+            shadow_frame(&ctx, &format!("sibling-{i}"), "sibling", 1.).drop_without_applying_deltas();
+        }
+        // Recreate even the same signature: the texture identity guards ABA.
+        shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
+        let shared = shadows(&ctx);
+        let texture = shared.lock().unwrap().entries.back().unwrap().1.texture.id();
+        assert_ne!(texture, old_texture);
+        sender.send(Some(tiny_image())).unwrap();
+        let out = shadow_frame(&ctx, "root", "a", 1.);
+        assert!(!out.textures_delta.set.contains_key(&texture));
+        out.drop_without_applying_deltas();
+        let store = shared.lock().unwrap();
+        assert_eq!(store.entries.back().unwrap().1.signature, "a");
+        assert!(store.pending.is_none());
+        assert_eq!(store.worker_rasters, 0);
+    }
+
+    #[test]
+    fn reverting_to_the_cached_signature_rejects_a_ready_sibling_result() {
+        let ctx = egui::Context::default();
+        shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
+        let sender = fake_update(&ctx, "b");
+        shadow_frame(&ctx, "root", "b", 1.).drop_without_applying_deltas();
+        sender.send(Some(tiny_image())).unwrap();
+        shadow_frame(&ctx, "sibling", "c", 1.).drop_without_applying_deltas();
+        let shared = shadows(&ctx);
+        assert!(shared.lock().unwrap().pending.as_ref().unwrap().ready.is_some());
+        let texture = shared.lock().unwrap().entries[0].1.texture.id();
+        let out = shadow_frame(&ctx, "root", "a", 1.);
+        assert!(!out.textures_delta.set.contains_key(&texture));
+        out.drop_without_applying_deltas();
+        let store = shared.lock().unwrap();
+        assert_eq!(store.entries.back().unwrap().1.signature, "a");
+        assert_eq!(store.worker_rasters, 0);
+        assert!(store.pending.is_none());
+    }
+
+    #[test]
+    fn scaled_worker_image_replaces_the_full_texture_at_its_new_size() {
+        let ctx = egui::Context::default();
+        shadow_frame(&ctx, "root", "base", 1.).drop_without_applying_deltas();
+        let shared = shadows(&ctx);
+        let texture = shared.lock().unwrap().entries[0].1.texture.id();
+        assert_eq!(shared.lock().unwrap().entries[0].1.texture.size(), [44,44]);
+        let sender = fake_update(&ctx, "scaled");
+        let image = egui::ColorImage::from_rgba_unmultiplied([76,76], &vec![255; 76*76*4]);
+        sender.send(Some(image)).unwrap();
+        let out = shadow_frame(&ctx, "root", "scaled", 2.);
+        let delta = out.textures_delta.set[&texture].last().unwrap();
+        assert!(delta.pos.is_none());
+        assert_eq!(delta.image.size(), [76,76]);
+        out.drop_without_applying_deltas();
+        let store = shared.lock().unwrap();
+        assert_eq!(store.entries[0].1.texture.id(), texture);
+        assert_eq!(store.entries[0].1.texture.size(), [76,76]);
+        assert_eq!(store.entries[0].1.pixels, 76*76);
+        assert!(store.pending.is_none());
+    }
+
+    #[test]
+    fn oversized_worker_result_is_dropped_before_eviction() {
+        let ctx = egui::Context::default();
+        shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
+        let sender = fake_update(&ctx, "b");
+        let mut image = tiny_image();
+        image.size = [SHADOW_PIXELS+1, 1];
+        sender.send(Some(image)).unwrap();
+        let shared = shadows(&ctx);
+        let mut store = shared.lock().unwrap();
+        let key = store.entries[0].0;
+        let pass = store.pass;
+        receive_shadow(&mut store, key, "b", pass, &ctx);
+        assert!(store.pending.is_none());
+        assert_eq!(store.entries.len(), 1);
+        assert_eq!(store.entries[0].1.signature, "a");
+        assert_eq!(store.entries[0].1.texture.size(), [44,44]);
+    }
+
+    #[test]
+    fn failed_spawn_requeues_the_settled_request_and_requests_repaint() {
+        let ctx = egui::Context::default();
+        shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
+        let shared = shadows(&ctx);
+        shared.lock().unwrap().fail_spawn = true;
+        let out = shadow_frame(&ctx, "root", "b", 1.);
+        assert_eq!(out.viewport_output[&egui::ViewportId::ROOT].repaint_delay, std::time::Duration::ZERO);
+        out.drop_without_applying_deltas();
+        let store = shared.lock().unwrap();
+        assert!(store.pending.is_none());
+        assert_eq!(store.waiting.front().unwrap().0, store.entries[0].0);
+        assert_eq!(store.worker_rasters, 0);
     }
 
     #[test]
@@ -527,14 +700,9 @@ mod tests {
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         let texture = {
             let mut store = shared.lock().unwrap();
-            let key = store.entries[0].0;
             let texture = store.entries[0].1.texture.id();
             // A deliberately stalled result, with no sleep or timing race.
-            store.pending = Some(PendingShadow {
-                key,
-                signature: "busy".into(),
-                image: receiver,
-            });
+            store.pending = Some(pending_for(&store, 0, "busy", receiver));
             texture
         };
         for frame in 0..30 {
@@ -619,13 +787,8 @@ mod tests {
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
         let second = {
             let mut store = shared.lock().unwrap();
-            let first = store.entries[0].0;
             let second = store.entries[1].0;
-            store.pending = Some(PendingShadow {
-                key: first,
-                signature: "busy".into(),
-                image: receiver,
-            });
+            store.pending = Some(pending_for(&store, 0, "busy", receiver));
             second
         };
         node.ports
