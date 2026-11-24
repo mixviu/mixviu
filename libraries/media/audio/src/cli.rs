@@ -73,7 +73,9 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> timeline::Result<u8> {
     }
     if receipt.refused {
         let _ = diagnostic(format_args!(
-            "mastering refused: maximum gain reduction {:.3} dB; shortfall {:.3} LU",
+            "mastering refused: encoded {:.3} LUFS, {:.3} dBTP; target {:.3} LUFS, ceiling {:.3} dBTP; maximum gain reduction {:.3} dB; shortfall {:.3} LU",
+            receipt.encoded.integrated_lufs, receipt.encoded.true_peak_dbtp,
+            t.master.integrated_lufs, t.master.true_peak_dbtp,
             receipt.max_gain_reduction_db, receipt.shortfall_lu
         ));
     } else if !receipt.target_reached {

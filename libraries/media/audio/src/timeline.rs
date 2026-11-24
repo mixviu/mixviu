@@ -220,7 +220,7 @@ fn ramp(k: usize, n: usize) -> f64 {
 #[derive(Serialize)]
 pub struct Meter {
     pub integrated_lufs: f64,
-    true_peak_dbtp: f64,
+    pub true_peak_dbtp: f64,
     lra_lu: f64,
 }
 impl From<Loudness> for Meter {
@@ -267,6 +267,7 @@ pub struct Receipt {
     pub seconds: f64,
     pub encoded: Meter,
     pub codec_trim_db: f64,
+    /// Number of corrections (attempts minus one).
     pub codec_passes: u8,
     pub mastering_cost: Vec<MasteringCost>,
 }
@@ -284,6 +285,7 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
     let mut codec_passes = 0;
     let mut mastering_cost = Vec::new();
     let mut total_passes = 0;
+    let mut max_gain_reduction_db: f64 = 0.0;
     let (audio, r, head, packets, encoded, reached) = loop {
         let mut audio = original.try_clone()?;
         let start = cpu_seconds();
@@ -294,6 +296,7 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
         )?;
         let mastering_cpu_s = cpu_seconds() - start;
         total_passes += r.passes;
+        max_gain_reduction_db = max_gain_reduction_db.max(r.max_gain_reduction_db);
         let start = cpu_seconds();
         let (head, packets, encoded) = encode_checked(&audio)?;
         mastering_cost.push(MasteringCost {
@@ -320,7 +323,7 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
         before: r.before.into(),
         after: after.into(),
         gain_db: r.gain_db,
-        max_gain_reduction_db: r.max_gain_reduction_db,
+        max_gain_reduction_db,
         shortfall_lu: (t.master.integrated_lufs - encoded.integrated_lufs).max(0.0),
         target_reached: reached,
         refused: !reached,

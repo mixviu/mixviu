@@ -141,7 +141,7 @@ fn corrective_refusal_keeps_best_in_bound() {
     assert!(r.after.integrated_lufs > -18.0, "{r:?}");
 }
 #[test]
-fn corrective_pass_uses_point_two_lu_acceptance() {
+fn corrective_pass_uses_tenth_lu_acceptance() {
     let base = burst_mix();
     let mut a = Audio::new(
         48000,
@@ -156,8 +156,8 @@ fn corrective_pass_uses_point_two_lu_acceptance() {
     let r = a
         .normalise_to_target(-14.0, -1.0, Default::default())
         .unwrap();
-    println!("point-two report {r:?}");
-    assert!((r.after.integrated_lufs + 14.0).abs() <= 0.2, "{r:?}");
+    println!("tenth-LU report {r:?}");
+    assert!((r.after.integrated_lufs + 14.0).abs() <= 0.1, "{r:?}");
 }
 #[test]
 fn limiter_docs_describe_slope_and_discrete_crest() {

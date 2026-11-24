@@ -70,19 +70,20 @@ separately. Quantisation or later sample-rate conversion can change peaks.
 `normalise_to_target(target_lufs, ceiling_dbtp, LimiterConfig::default())`
 preserves the static path bit for bit whenever its measured peak permits the
 requested gain. Otherwise it renders target gain through `limit_true_peak`,
-remeasures and makes at most two corrective attempts, each from the original.
+remeasures and makes at most eight attempts (`MAX_LIMITER_PASSES`), each from the original.
 `TargetReport` carries before/after LUFS, LRA and true peak, gain, pass count,
 maximum attempted and final applied reduction, refusal, shortfall and an explicit `target_reached`
-flag (±0.5 LU). Callers must check that flag: bounded corrections can exhaust.
+flag (inclusive ±0.1 LU). Callers must check that flag: bounded corrections can exhaust.
 Normalisation is transactional: on any error, input samples are unchanged.
 Silence, near-silence below the absolute gate, or an unmeasurable rendered
 attempt returns typed `Error::Unmeasurable` without applying gain.
-While passes remain, acceptance requires ±0.2 LU to leave meter-parity margin;
-`target_reached` still means ±0.5 LU. If an attempt exceeds 6 dB, `refused=true`
+While passes remain, the PCM loop aims for ±0.03 LU to leave codec margin;
+`target_reached` means ±0.1 LU. If an attempt exceeds 6 dB, `refused=true`
 records the refused attempt, with its reduction in `max_gain_reduction_db`.
 The best earlier in-bound attempt (smallest absolute target error) is kept;
 its actual reduction is `applied_gain_reduction_db`. Capped static output is
-used only when no limiting attempt is in bounds. Exhaustion also keeps the best attempt.
+used only when no limiting attempt is in bounds. Exhaustion also keeps the best attempt,
+but refuses it if outside ±0.1 LU. A reduction refusal always clears success.
 
 The offline limiter uses four-phase 24-tap Hann-windowed sinc peak detection,
 linked across channels. `lookahead_ms` specifies a unity-to-zero slope,
@@ -166,10 +167,31 @@ read-only run; scenes are placed back to back without crossfades.
 
 Opus safety: the executor decodes only its own encoded packets and meters
 the exact presentation samples. If codec reconstruction exceeds the ceiling,
-it attenuates PCM and re-encodes, with at most two corrections and a 0.02 dB
-guard. The receipt reports codec_trim_db, codec_passes and encoded loudness;
-shortfall and target_reached use decoded audio. Optional WAV is the final
-PCM including codec safety trim. Packet storage is about 24 MB per 25 minutes;
+it lowers the PCM limiter ceiling by the measured overshoot plus a 0.02 dB
+guard, and adjusts the PCM loudness target by the decoded loudness error.
+Every correction re-masters the original mix. `MAX_CODEC_ATTEMPTS` is six
+(one initial attempt and at most five corrections); each master uses at most
+eight limiter attempts, so the total is bounded by 48 limiter renders and six
+encode/decode/meter cycles. The existing envelope and 6 dB reduction cap remain.
+
+The limiter adds its measured loudness deficit to input gain. For speech with
+sparse peaks, most samples remain outside limiting, so a gain correction
+recovers most of that deficit; repeated residual corrections shrink the error.
+The outer loop compensates codec loss and tightens the ceiling for overshoot.
+Eight and six are convergence budgets, not a guarantee for arbitrary gated or
+heavily limited audio: every final encoded result must independently meet
+inclusive ±0.1 LU and the true-peak ceiling. Reduction refusal or budget
+exhaustion returns measured values with `refused=true`, `target_reached=false`
+and publishes neither output. No limiter redesign or relaxation of the cap
+is hidden in the correction loop.
+
+The receipt reports `codec_trim_db` (cumulative PCM ceiling adjustment),
+`codec_passes` (corrections), and encoded loudness. `passes` is the total
+limiter attempts over all masters. `mastering_cost` gives thread CPU seconds
+for mastering and encode/decode/meter separately on every codec attempt,
+plus its limiter attempt count. These observational timings never affect
+iteration or encoded output. Shortfall and success use decoded audio.
+Optional WAV is the final mastered PCM. Packet storage is about 24 MB per 25 minutes;
 decoded metering adds one f64 programme buffer, below the limiter budget.
 
 ## Validation and exit status
