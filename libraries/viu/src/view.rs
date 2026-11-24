@@ -3245,23 +3245,30 @@ fn column_inner_height(node: &Node, assigned: Option<f32>) -> Option<f32> {
 }
 #[derive(Clone)]
 struct MeasurementCache<T> {
-    values: std::collections::HashMap<egui::Id, T>,
-    order: std::collections::VecDeque<egui::Id>,
+    values: std::collections::HashMap<egui::Id, (T, u64)>,
+    order: BTreeMap<u64, egui::Id>,
+    clock: u64,
 }
 impl<T> Default for MeasurementCache<T> {
     fn default() -> Self {
         Self {
             values: Default::default(),
             order: Default::default(),
+            clock: 0,
         }
     }
 }
 fn measure_get<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id) -> Option<T> {
     ui.ctx().data_mut(|d| {
-        d.get_temp_mut_or_default::<MeasurementCache<T>>(egui::Id::new("scene-measurements"))
-            .values
-            .get(&key)
-            .cloned()
+        let cache = d.get_temp_mut_or_default::<MeasurementCache<T>>(egui::Id::new("scene-measurements"));
+        let (value, used) = cache.values.get_mut(&key)?;
+        // A held scene still needs its heights while parallel animation adds
+        // paint samples. Evict by last use, not by the original insertion.
+        cache.order.remove(used);
+        cache.clock += 1;
+        *used = cache.clock;
+        cache.order.insert(*used, key);
+        Some(value.clone())
     })
 }
 fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, value: T) {
@@ -3269,14 +3276,16 @@ fn measure_put<T: Clone + Send + Sync + 'static>(ui: &egui::Ui, key: egui::Id, v
         let cache =
             d.get_temp_mut_or_default::<MeasurementCache<T>>(egui::Id::new("scene-measurements"));
         if cache.values.len() >= 4096 && !cache.values.contains_key(&key) {
-            if let Some(old) = cache.order.pop_front() {
+            if let Some((_, old)) = cache.order.pop_first() {
                 cache.values.remove(&old);
             }
         }
-        if !cache.values.contains_key(&key) {
-            cache.order.push_back(key);
+        if let Some((_, used)) = cache.values.get(&key) {
+            cache.order.remove(used);
         }
-        cache.values.insert(key, value);
+        cache.clock += 1;
+        cache.order.insert(cache.clock, key);
+        cache.values.insert(key, (value, cache.clock));
     });
 }
 
