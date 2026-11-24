@@ -739,17 +739,27 @@ mod tests {
             assert!(delay <= std::time::Duration::from_millis(milliseconds));
             {
                 let store = shared.lock().unwrap();
-                assert_eq!(store.spawn_backoff, std::time::Duration::from_millis(milliseconds));
+                assert_eq!(
+                    store.spawn_backoff,
+                    std::time::Duration::from_millis(milliseconds)
+                );
                 assert!(store.pending.is_none());
                 assert_eq!(store.waiting.front().unwrap().0, store.entries[0].0);
                 assert_eq!(store.worker_rasters, 0);
             }
             // An unrelated frame during cooldown must neither retry nor ask
-            // for an immediate repaint, including a dirty sibling.
+            // for an immediate repaint.
             let out = shadow_frame(&ctx, "root", "b", 1.);
-            assert!(!out.viewport_output[&egui::ViewportId::ROOT].repaint_delay.is_zero());
+            assert!(
+                !out.viewport_output[&egui::ViewportId::ROOT]
+                    .repaint_delay
+                    .is_zero()
+            );
             out.drop_without_applying_deltas();
-            assert_eq!(shared.lock().unwrap().spawn_backoff, std::time::Duration::from_millis(milliseconds));
+            assert_eq!(
+                shared.lock().unwrap().spawn_backoff,
+                std::time::Duration::from_millis(milliseconds)
+            );
         }
         {
             let mut store = shared.lock().unwrap();
