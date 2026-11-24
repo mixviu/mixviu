@@ -226,7 +226,7 @@ fn held_source_cards() {
         assert_eq!(
             opened.rc, 0, "{opened:?}"
         );
-        deck.call("deck.play", json!({"slides":[slide],"beats":[[0,0.1,1]]}));
+        deck.call("deck.play", json!({"slides":[slide],"beats":[[0,0.1,1,100]]}));
         deck.call("viu.presentation", json!({"time":100}));
         let model = deck
             .call("viu.presentation", json!({"time":110}))
