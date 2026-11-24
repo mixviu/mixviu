@@ -204,7 +204,11 @@ struct Shadows {
     hits: usize,
     rasters: usize,
     blurs: usize,
+    worker_rasters: usize,
+    worker_blurs: usize,
     pending: Option<PendingShadow>,
+    #[cfg(test)]
+    synchronous_updates: bool,
 }
 struct PendingShadow {
     key: egui::Id,
@@ -293,6 +297,11 @@ fn paint_shadow(
             v
         })
     };
+    #[cfg(test)]
+    let old = old.filter(|cache| {
+        !(cache.signature != signature
+            && shared.lock().unwrap().synchronous_updates)
+    });
     if let Some(cache) = old {
         if cache.signature != signature {
             let mut c = shared.lock().unwrap_or_else(|e| e.into_inner());
@@ -301,11 +310,14 @@ fn paint_shadow(
                 let (tx, rx) = std::sync::mpsc::sync_channel(1);
                 let ctx = ui.ctx().clone();
                 let shadow = shadow.clone();
+                let blurred = shadow.blur > 0.;
                 if std::thread::Builder::new().name("scene-shadow".into()).spawn(move || {
                     let image = raster_shadow(width, height, origin, &shadow, input);
                     let _ = tx.send(image);
                     ctx.request_repaint();
                 }).is_ok() {
+                    c.worker_rasters += 1;
+                    c.worker_blurs += usize::from(blurred);
                     c.pending = Some(PendingShadow { key, signature, image: rx });
                 }
             }
@@ -413,6 +425,75 @@ fn raster_shadow(width: u32, height: u32, origin: Pos2, shadow: &scene::drawing:
 
 #[cfg(test)]
 mod tests {
+    fn sting_node() -> scene::Node {
+        let deck: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../apps/deck/examples/vfl-self-recording.json"
+        )).unwrap();
+        let ports = deck["slides"][0]["scene"]["root.1"].as_object().unwrap().clone();
+        serde_json::from_value(serde_json::json!({
+            "family":"drawing", "line":1, "is_template":false, "ports":ports
+        })).unwrap()
+    }
+
+    #[test]
+    fn animated_silhouettes_never_raster_or_blur_again_on_the_frame_path() {
+        let ctx = egui::Context::default();
+        let mut node = sting_node();
+        node.ports.insert("motion_profile".into(), serde_json::json!("legacy-sting"));
+        for frame in 0..30 {
+            node.ports.insert("sample_time".into(), serde_json::json!(frame as f64 / 30.));
+            ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node))
+                .drop_without_applying_deltas();
+        }
+        let store = shadows(&ctx);
+        let store = store.lock().unwrap();
+        assert_eq!(store.rasters, 1);
+        assert_eq!(store.blurs, 1);
+        assert!(store.worker_rasters > 0 && store.worker_rasters <= 29);
+        assert_eq!(store.worker_blurs, store.worker_rasters);
+        assert!(store.entries.iter().map(|(_, v)| v.pixels).sum::<usize>() <= SHADOW_PIXELS);
+    }
+
+    #[test]
+    #[ignore = "explicit CBC headless GPU sting benchmark"]
+    fn sting_shadow_frame_benchmark() {
+        use std::sync::{Arc, Mutex};
+        use std::time::Instant;
+        for synchronous in [true, false] {
+            let mut node = sting_node();
+            node.ports.insert("motion_profile".into(), serde_json::json!("legacy-sting"));
+            let state = Arc::new(Mutex::new((node, Vec::<f64>::new())));
+            let captured = state.clone();
+            let mut harness = egui_kittest::Harness::builder()
+                .with_size(egui::vec2(1600., 900.))
+                .with_pixels_per_point(2.4)
+                .wgpu()
+                .build_ui(move |ui| {
+                    shadows(ui.ctx()).lock().unwrap().synchronous_updates = synchronous;
+                    let mut state = captured.lock().unwrap();
+                    let start = Instant::now();
+                    show(ui, "sting", &state.0);
+                    state.1.push(start.elapsed().as_secs_f64() * 1000.);
+                });
+            let mut hashes = std::collections::HashSet::new();
+            state.lock().unwrap().1.clear();
+            for frame in 0..30 {
+                state.lock().unwrap().0.ports.insert("sample_time".into(),
+                    serde_json::json!(3. + frame as f64 / 30.));
+                harness.step();
+                let image = harness.render().unwrap();
+                assert_eq!(image.dimensions(), (3840, 2160));
+                hashes.insert(blake3::hash(image.as_raw()));
+            }
+            let state = state.lock().unwrap();
+            let mut times = state.1.clone();
+            times.sort_by(f64::total_cmp);
+            println!("STING_SHADOW synchronous={synchronous} distinct={}/30 paint_ms_median={:.3} paint_ms_max={:.3} samples={}",
+                hashes.len(), times[times.len()/2], times.last().unwrap(), times.len());
+            assert_eq!(hashes.len(), 30);
+        }
+    }
+
     #[test]
     fn authored_legacy_primitive_names_never_paint_in_either_profile() {
         for profile in ["current", "legacy-sting"] {
