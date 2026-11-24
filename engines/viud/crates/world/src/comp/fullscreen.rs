@@ -85,9 +85,10 @@ fn output_for(lp: &Loop, window: &Window) -> Option<Output> {
 }
 
 fn overlapping_output(space: &smithay::desktop::Space<Window>, window: &Window) -> Option<Output> {
-    // Space's element/output membership is refreshed separately. A lifecycle
-    // request immediately after initial placement must use its new slot, not
-    // that cache (which can still be empty or describe its previous location).
+    // Canvas windows enter every mapped output (Orchestrator::refresh_space),
+    // independent of geometric overlap. That membership is also refreshed
+    // separately from placement. Its HashMap order must never choose which
+    // output a newly placed window fills; use its current slot instead.
     let location = space.element_location(window)?;
     let size = crate::camera::transform::translate::slot::expected_size(window)
         .unwrap_or_else(|| window.geometry().size);
@@ -114,7 +115,7 @@ mod tests {
     use std::sync::{Arc, Weak, atomic::AtomicBool};
 
     #[test]
-    fn fullscreen_output_uses_new_slot_before_membership_refresh() {
+    fn fullscreen_output_uses_placement_not_broadcast_membership() {
         let mut space = smithay::desktop::Space::<Window>::default();
         let outputs: Vec<_> = (0..2)
             .map(|n| {
@@ -157,6 +158,17 @@ mod tests {
         crate::camera::transform::translate::slot::set_expected_size(&window, (320, 240).into());
         space.map_element(window.clone(), (0, 0), false);
         assert!(space.outputs_for_element(&window).is_empty());
+        assert_eq!(
+            overlapping_output(&space, &window),
+            Some(outputs[0].clone())
+        );
+
+        // The production canvas deliberately advertises every mapped output.
+        // Membership is not an overlap oracle, even after a complete refresh.
+        space.refresh_outputs_with(|_, _| {
+            Some(Rectangle::new((0, 0).into(), (320, 240).into()))
+        });
+        assert_eq!(space.outputs_for_element(&window).len(), 2);
         assert_eq!(
             overlapping_output(&space, &window),
             Some(outputs[0].clone())
