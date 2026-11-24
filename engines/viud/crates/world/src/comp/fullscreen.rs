@@ -81,10 +81,23 @@ fn output_for(lp: &Loop, window: &Window) -> Option<Output> {
     {
         return Some(output.clone());
     }
-    space
-        .outputs_for_element(window)
-        .into_iter()
-        .next()
+    // Space's element/output membership is refreshed separately. A lifecycle
+    // request immediately after initial placement must use its new slot, not
+    // that cache (which can still be empty or describe its previous location).
+    let location = space.element_location(window)?;
+    let size = crate::camera::transform::translate::slot::expected_size(window)
+        .unwrap_or_else(|| window.geometry().size);
+    let slot = smithay::utils::Rectangle::new(location, size);
+    let candidate = space.outputs().filter_map(|output| {
+        let area = slot.intersection(space.output_geometry(output)?)?;
+        Some((i64::from(area.size.w) * i64::from(area.size.h), output.clone()))
+    }).max_by_key(|(area, output)| (*area, output.name()));
+    if std::env::var_os("MIX_TEST_MAPPING_TRACE").is_some() {
+        eprintln!("FULLSCREEN_OUTPUT slot={slot:?} cached={:?} candidate={:?}",
+            space.outputs_for_element(window).iter().map(|o| o.name()).collect::<Vec<_>>(),
+            candidate.as_ref().map(|(_, o)| o.name()));
+    }
+    candidate.map(|(_, output)| output)
         .or_else(|| space.outputs().next().cloned())
 }
 
