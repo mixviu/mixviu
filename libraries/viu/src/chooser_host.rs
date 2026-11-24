@@ -900,7 +900,7 @@ pub fn run(
                 .map_err(std::io::Error::other)?;
             let session = crate::session::Session::embedded(
                 &app,
-                &std::env::var("MIX_INSTANCE").unwrap_or_else(|_| "default".into()),
+                &settings::session::app_instance().map_err(std::io::Error::other)?,
                 wake.clone(),
                 bus.backend(),
             )

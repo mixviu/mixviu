@@ -5,7 +5,7 @@ $account_policy=require("accounts.mix")
 $argument_policy=require("arguments.mix")
 $request_policy=require("request.mix")
 $wire_sequence=0;$wire_pending={};$wire_sessions={};$wire_views={};$wire_generations={};$wire_data={};$wire_open_targets={};$wire_list_targets={};$wire_pim_targets={};$wire_waiting=[];$wire_running={}
-$mail_settings={binding:{instance:env("MIX_INSTANCE","default"),profile:"default"},source:"cache",default_account:nil,page_size:100,mark_read_on_open:true,confirm_delete:true,quote_on_reply:true,reply_position:"above",revision:nil}
+$mail_settings={binding:{instance:env("MIX_INSTANCE",env("MIX_SETTINGS_INSTANCE",hostname())),profile:"default"},source:"cache",default_account:nil,page_size:100,mark_read_on_open:true,confirm_delete:true,quote_on_reply:true,reply_position:"above",revision:nil}
 fn wire_entry($id)
   for $e in $entries if $e.id==$id then return $e end end
   return nil

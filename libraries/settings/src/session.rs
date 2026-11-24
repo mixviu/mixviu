@@ -4,7 +4,20 @@
 //! win; the package session authority defaults to this machine's hostname.
 use crate::{Binding, Diagnostic};
 
-pub fn binding() -> Result<Binding, Diagnostic> {
+/// Instance for Viu applications: app override, settings override, then hostname.
+pub fn app_instance() -> Result<String, Diagnostic> {
+    match std::env::var("MIX_INSTANCE") {
+        Ok(value) => Ok(value),
+        Err(std::env::VarError::NotPresent) => settings_instance(),
+        Err(error) => Err(Diagnostic::new(
+            "invalid_session_binding",
+            "MIX_INSTANCE",
+            error.to_string(),
+        )),
+    }
+}
+
+fn settings_instance() -> Result<String, Diagnostic> {
     let instance = match std::env::var("MIX_SETTINGS_INSTANCE") {
         Ok(value) => value,
         Err(std::env::VarError::NotPresent) => std::fs::read_to_string("/proc/sys/kernel/hostname")
@@ -21,6 +34,11 @@ pub fn binding() -> Result<Binding, Diagnostic> {
             ));
         }
     };
+    Ok(instance)
+}
+
+pub fn binding() -> Result<Binding, Diagnostic> {
+    let instance = settings_instance()?;
     let profile = match std::env::var("MIX_SETTINGS_PROFILE") {
         Ok(value) => value,
         Err(std::env::VarError::NotPresent) => "default".to_owned(),
