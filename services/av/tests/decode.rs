@@ -435,6 +435,16 @@ fn extreme_packet_delta_is_a_clean_error_and_usage_lists_commands() {
         .arg(&input)
         .output()
         .unwrap();
+    assert!(result.status.success());
+    let receipt: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert!(receipt["tracks"][0]["fps"].is_null());
+    let result = Command::new(env!("CARGO_BIN_EXE_av"))
+        .arg("decode")
+        .arg(&input)
+        .arg("--y4m")
+        .arg(dir.path().join("overflow.y4m"))
+        .output()
+        .unwrap();
     assert_eq!(result.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&result.stderr).contains("TIMESTAMP_OVERFLOW"));
     let result = Command::new(env!("CARGO_BIN_EXE_av")).output().unwrap();
@@ -442,6 +452,32 @@ fn extreme_packet_delta_is_a_clean_error_and_usage_lists_commands() {
     for command in ["av audio", "av decode", "av probe"] {
         assert!(usage.contains(command));
     }
+}
+
+#[test]
+fn probe_non_monotonic_timing_keeps_receipt() {
+    let source = Demuxer::new(FIXTURE).unwrap();
+    let tracks = element(0x1654ae6b, &element(0xae, &[
+        element(0xd7, &[1]), element(0x83, &[1]), element(0x86, b"V_AV1"),
+    ].concat()));
+    let mut segment = tracks;
+    for (i, timestamp) in [0u64, 67, 33, 100].iter().enumerate() {
+        let block = [&[0x81, 0, 0, 0x80][..], source.packets()[i].data].concat();
+        segment.extend(element(0x1f43b675, &[
+            element(0xe7, &timestamp.to_be_bytes()), element(0xa3, &block),
+        ].concat()));
+    }
+    let bytes = [element(0x1a45dfa3, &element(0x4282, b"webm")), element(0x18538067, &segment)].concat();
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("non-monotonic.webm");
+    std::fs::write(&input, bytes).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_av")).arg("probe").arg(input).output().unwrap();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    let receipt: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert!(receipt["tracks"][0]["fps"].is_null());
+    assert_eq!(receipt["frames"], 4);
+    assert_eq!(receipt["packets"], 4);
+    assert_eq!(receipt["duration"], 0.1);
 }
 
 #[test]

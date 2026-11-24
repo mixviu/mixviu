@@ -66,9 +66,6 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
     if probe {
         let mut tracks = Vec::new();
         for t in &d.tracks {
-            if t.kind == 1 {
-                validate_video_timing(&d, t)?;
-            }
             tracks.push(json!({
                 "number": t.number, "codec":t.codec, "width":t.width, "height":t.height,
                 "fps": if t.kind == 1 { probe_video_rate(t.default_duration_ns, d.scale_ns,
@@ -267,35 +264,21 @@ fn duration_frame_limit(
     Ok(500_000)
 }
 
-fn validate_video_timing(d: &Demuxer<'_>, track: &media_webm::Track<'_>) -> Result<()> {
-    let mut previous = None;
-    for packet in d.packets().iter().filter(|p| p.track == track.number) {
-        if let Some(duration) = packet.duration {
-            duration
-                .checked_mul(d.scale_ns)
-                .ok_or("TIMESTAMP_OVERFLOW")?;
-        }
-        if let Some(last) = previous {
-            let delta = packet
-                .timestamp
-                .checked_sub(last)
-                .ok_or("TIMESTAMP_OVERFLOW: packet delta")?;
-            delta
-                .unsigned_abs()
-                .checked_mul(d.scale_ns)
-                .ok_or("TIMESTAMP_OVERFLOW: packet delta")?;
-        }
-        previous = Some(packet.timestamp);
-    }
-    Ok(())
-}
-
-/// Probe timing only: never use packet count / Segment Duration as CFR evidence.
-/// Prefer a whole-Hz grid when every timestamp fits one quantisation phase
-/// (residual range strictly less than one container tick), and every declared
-/// block duration fits that interval to less than one tick. Otherwise accept
-/// only an exact, constant tick interval. Quantised fractional rates without a
-/// DefaultDuration remain unknown; an average alone cannot establish CFR.
+/// Probe timing only; Segment Duration and decoded frame count are independent.
+/// DefaultDuration wins, then an exact uniform tick interval (>= 3 packets).
+/// Otherwise test *all* endpoint-plausible N Hz and N*1000/1001 Hz grids,
+/// returning a rate only for one match. Fractional fps is returned as f64
+/// (e.g. 30000/1001), not rounded to 29.97 or a neighbouring integer.
+/// A grid needs residual spread strictly below one TimestampScale tick and
+/// consistent block durations. Symmetric +/- half-tick rounding is deliberately
+/// rejected at equality: conservative unknown, never a relaxed extra match.
+///
+/// Horizon: periods P and Q accumulate one tick T of relative drift after
+/// ceil(T/abs(P-Q)) intervals. With unknown quantisation phase, a sufficient
+/// phase-independent distinguishing horizon is ceil(2*T/abs(P-Q)) + 1 frames;
+/// before that, enumerate both hypotheses rather than trusting the average.
+/// For N vs N*1000/1001, abs(P-Q)=1e9/(1000*N) ns: at T=1 ms, 30 vs
+/// 30000/1001 needs 61 frames for this bound. Actual grids can separate sooner.
 fn probe_video_rate<'a>(
     default_ns: u64,
     scale_ns: u64,
@@ -309,62 +292,77 @@ fn probe_video_rate<'a>(
         return None;
     }
     let first = packets.clone().next()?.timestamp;
-    let last = packets.clone().last()?.timestamp;
-    let span = (i128::from(last) - i128::from(first)).checked_mul(i128::from(scale_ns))?;
-    if span <= 0 {
-        return None;
-    }
-    let rate = ((count - 1) as i128 * 1_000_000_000 + span / 2) / span;
-    let fits_grid = || -> Option<bool> {
-        if rate == 0 {
-            return Some(false);
-        }
-        let quantum = i128::from(scale_ns).checked_mul(rate)?;
-        let (mut low, mut high) = (0, 0);
-        let mut previous = None;
-        for (i, packet) in packets.clone().enumerate() {
-            if previous.is_some_and(|last| packet.timestamp <= last) {
-                return Some(false);
-            }
-            previous = Some(packet.timestamp);
-            let elapsed =
-                (i128::from(packet.timestamp) - i128::from(first)).checked_mul(quantum)?;
-            let residual = elapsed.checked_sub(i as i128 * 1_000_000_000)?;
-            low = low.min(residual);
-            high = high.max(residual);
-            if high.checked_sub(low)? >= quantum {
-                return Some(false);
-            }
-            if let Some(duration) = packet.duration {
-                let residual = i128::from(duration).checked_mul(quantum)? - 1_000_000_000;
-                if residual.checked_abs()? >= quantum {
-                    return Some(false);
-                }
-            }
-        }
-        Some(true)
-    };
-    if fits_grid() == Some(true) {
-        return Some(rate as f64);
-    }
-    // Exact uniform timing also supports non-whole-Hz rates. Check the entire
-    // stream, including block durations; never accept just the first delta.
     let delta = i128::from(packets.clone().nth(1)?.timestamp) - i128::from(first);
     if delta <= 0 {
         return None;
     }
-    for (i, packet) in packets.enumerate() {
-        if i128::from(packet.timestamp) - i128::from(first) != i as i128 * delta
-            || packet.duration.is_some_and(|d| i128::from(d) != delta)
-        {
+    let mut uniform = true;
+    let mut previous = first;
+    for (i, packet) in packets.clone().enumerate() {
+        if i > 0 && packet.timestamp <= previous {
             return None;
         }
+        previous = packet.timestamp;
+        uniform &= i128::from(packet.timestamp) - i128::from(first) == i as i128 * delta;
     }
-    Some(1e9 / delta.checked_mul(i128::from(scale_ns))? as f64)
+    if uniform {
+        if packets.clone().any(|p| p.duration.is_some_and(|d| i128::from(d) != delta)) {
+            return None;
+        }
+        return Some(1e9 / delta.checked_mul(i128::from(scale_ns))? as f64);
+    }
+
+    let tick = i128::from(scale_ns);
+    let span = (i128::from(previous) - i128::from(first)).checked_mul(tick)?;
+    let mut matched = None;
+    for (multiplier, denominator) in [(1, 1), (1000, 1001)] {
+        let period_numerator = 1_000_000_000 * denominator;
+        let elapsed = (count - 1) as i128 * period_numerator;
+        // Endpoint residual must be strictly within one tick. These open
+        // bounds enumerate every plausible N, not just the rounded mean.
+        let lower_divisor = span.checked_add(tick)?.checked_mul(multiplier)?;
+        let upper_divisor = span.checked_sub(tick)?.checked_mul(multiplier)?;
+        let lower = elapsed / lower_divisor + 1;
+        let upper = (elapsed - 1) / upper_divisor;
+        for n in lower..=upper {
+            // 1001*k * 1000/1001 duplicates integer 1000*k, already tested.
+            if denominator == 1001 && n % 1001 == 0 {
+                continue;
+            }
+            let numerator = n * multiplier;
+            let quantum = tick.checked_mul(numerator)?;
+            let (mut low, mut high) = (0, 0);
+            let mut fits = true;
+            for (i, packet) in packets.clone().enumerate() {
+                let elapsed = (i128::from(packet.timestamp) - i128::from(first))
+                    .checked_mul(quantum)?;
+                let residual = elapsed.checked_sub(i as i128 * period_numerator)?;
+                low = low.min(residual);
+                high = high.max(residual);
+                if high.checked_sub(low)? >= quantum {
+                    fits = false;
+                    break;
+                }
+                if let Some(duration) = packet.duration {
+                    let residual = i128::from(duration).checked_mul(quantum)? - period_numerator;
+                    if residual.checked_abs()? >= quantum {
+                        fits = false;
+                        break;
+                    }
+                }
+            }
+            if fits {
+                if matched.is_some() {
+                    return None;
+                }
+                matched = Some(numerator as f64 / denominator as f64);
+            }
+        }
+    }
+    matched
 }
 
-// Decode's interval and independent duration/count ceiling are deliberately
-// separate from probe's CFR inference.
+// Decode keeps its independent interval and duration/count ceiling.
 fn video_duration(d: &Demuxer<'_>, t: &media_webm::Track<'_>) -> Result<Option<u64>> {
     if t.default_duration_ns > 0 {
         return Ok(Some(t.default_duration_ns));
@@ -541,6 +539,36 @@ mod tests {
             probe_video_rate(0, 1_000_000, packets.iter()),
             Some(1e9 / 33_000_000.0)
         );
+    }
+
+    #[test]
+    fn probe_exact_short_interval_precedes_neighbouring_grids() {
+        let packets = timing_packets(&[0, 33, 66], Some(33));
+        assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), Some(1e9 / 33_000_000.0));
+    }
+
+    #[test]
+    fn probe_ambiguous_neighbours_are_unknown() {
+        let packets = timing_packets(&[0, 17, 33], None);
+        assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), None);
+        for rounding in [0, 15_000] {
+            for (count, expected) in [(11, None), (301, Some(30_000.0 / 1001.0))] {
+                let timestamps: Vec<_> = (0..count).map(|i| (i * 1_001_000 + rounding) / 30_000).collect();
+                let packets = timing_packets(&timestamps, Some(33));
+                assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), expected);
+            }
+        }
+        let timestamps: Vec<_> = (0..301).map(|i| i * 1000 / 30).collect();
+        let packets = timing_packets(&timestamps, None);
+        assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), Some(30.0));
+    }
+
+    #[test]
+    fn probe_symmetric_half_tick_rounding_is_conservatively_unknown() {
+        // Ties to even creates both -0.5 and +0.5 tick residuals for 16 Hz.
+        let timestamps: Vec<_> = (0..161).map(|i| i / 4 * 250 + [0, 62, 125, 188][(i % 4) as usize]).collect();
+        let packets = timing_packets(&timestamps, None);
+        assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), None);
     }
 
     fn ff(args: &[&str]) -> Vec<u8> {
