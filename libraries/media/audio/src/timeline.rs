@@ -249,7 +249,14 @@ pub struct Receipt {
     pub codec_trim_db: f64,
     pub codec_passes: u8,
 }
-pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Result<Receipt> {
+pub struct Encoded {
+    pub audio: Audio,
+    pub head: OpusHead,
+    pub packets: Vec<Packet>,
+    pub receipt: Receipt,
+}
+/// Mix, master and encode once for either audio-only or combined WebM output.
+pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
     let mut audio = t.mix(base)?;
     let r = audio.normalise_to_target(
         t.master.integrated_lufs,
@@ -279,6 +286,39 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
         codec_passes += 1;
     };
     let after = audio.measure()?;
+    let count = audio.frames();
+    let receipt = Receipt {
+        before: r.before.into(),
+        after: after.into(),
+        gain_db: r.gain_db + codec_trim_db,
+        max_gain_reduction_db: r.max_gain_reduction_db,
+        shortfall_lu: (t.master.integrated_lufs - encoded.integrated_lufs).max(0.0),
+        target_reached: (t.master.integrated_lufs - encoded.integrated_lufs).abs() <= 0.5,
+        refused: r.refused,
+        passes: r.passes,
+        sample_count: count,
+        packets: packets.len(),
+        bytes: packets.iter().map(|p| p.data.len() as u64).sum(),
+        seconds: count as f64 / 48000.0,
+        encoded: encoded.into(),
+        codec_trim_db,
+        codec_passes,
+    };
+    Ok(Encoded {
+        audio,
+        head,
+        packets,
+        receipt,
+    })
+}
+
+pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Result<Receipt> {
+    let Encoded {
+        audio,
+        head,
+        packets,
+        mut receipt,
+    } = prepare(t, base)?;
     // Declare the primary first so rollback drops the optional WAV before
     // removing the WebM, preserving the publication ordering during cleanup.
     let mut output = crate::pending::Pending::new(out)?;
@@ -306,23 +346,7 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
     if let Some(wav) = &wav_output {
         wav.file.sync_all()?;
     }
-    let receipt = Receipt {
-        before: r.before.into(),
-        after: after.into(),
-        gain_db: r.gain_db + codec_trim_db,
-        max_gain_reduction_db: r.max_gain_reduction_db,
-        shortfall_lu: (t.master.integrated_lufs - encoded.integrated_lufs).max(0.0),
-        target_reached: (t.master.integrated_lufs - encoded.integrated_lufs).abs() <= 0.5,
-        refused: r.refused,
-        passes: r.passes,
-        sample_count: count,
-        packets: packets.len(),
-        bytes: output.file.metadata()?.len(),
-        seconds: count as f64 / 48000.0,
-        encoded: encoded.into(),
-        codec_trim_db,
-        codec_passes,
-    };
+    receipt.bytes = output.file.metadata()?.len();
     if !receipt.refused && receipt.target_reached {
         output.publish()?;
         if let Some(wav) = &mut wav_output {
