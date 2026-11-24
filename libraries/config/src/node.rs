@@ -134,22 +134,24 @@ impl Default for MaildConfig {
     }
 }
 
-/// Parse an HTTPS origin with an authority only; URL parsing alone would
-/// silently accept paths, userinfo, whitespace and backslashes.
+/// Parse an HTTPS origin with an authority only. URL parsing alone would
+/// accept paths, userinfo, whitespace, backslashes and WHATWG host code
+/// points such as `;` or `,`, so the authority is checked against an
+/// allowlist first.
 pub fn jmap_origin(origin: &str) -> Option<String> {
     let authority = origin.strip_prefix("https://")?;
     if authority.is_empty()
         || authority.ends_with(':')
-        || authority
+        // Host names (ASCII; IDNs as punycode), IPv6 brackets and a port only.
+        || !authority
             .chars()
-            .any(|c| c.is_whitespace() || c.is_control() || "/\\?#@%".contains(c))
+            .all(|c| c.is_ascii_alphanumeric() || ".-:[]".contains(c))
     {
         return None;
     }
     let url = url::Url::parse(origin).ok()?;
     url.host_str()?;
-    // Authority only, checked after parsing too: delimiters such as `;` or `,`
-    // otherwise end the host and start a path the parser accepts silently.
+    // Belt and braces: the parsed URL must carry nothing beyond the origin.
     if url.path() != "/" || url.query().is_some() || url.fragment().is_some()
         || !url.username().is_empty() || url.password().is_some()
     {
