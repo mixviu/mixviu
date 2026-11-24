@@ -29,7 +29,13 @@ function biz_subscriptions_main()
       biz_setting_set("sub_mail_mode", $mode)
       biz_setting_set("sub_grace_days", "" .. $grace)
       biz_setting_set("sub_pending_days", "" .. $pending)
-      biz_setting_set("stripe_descriptor_suffix", trim("" .. ($form["stripe_descriptor_suffix"] ?? "")))
+      -- Stripe: the full descriptor (account prefix + suffix) is at most 22
+      -- characters and may not contain < > \ ' " *. Keep the suffix short.
+      $suffix = trim("" .. ($form["stripe_descriptor_suffix"] ?? ""))
+      if length($suffix) > 10 or contains($suffix, "<") or contains($suffix, ">") or contains($suffix, "\\") or contains($suffix, "'") or contains($suffix, "\"") or contains($suffix, "*") then
+        return { status: 400, headers: {}, body: "Statement descriptor suffix: at most 10 characters, none of < > \\ ' \" *" }
+      end
+      biz_setting_set("stripe_descriptor_suffix", $suffix)
       $secret = trim("" .. ($form["sub_export_secret"] ?? ""))
       if $secret != "" then biz_setting_set("sub_export_secret", $secret) end
       biz_audit($user.username, "subscription_settings", "biz_settings", nil, "settings updated")
