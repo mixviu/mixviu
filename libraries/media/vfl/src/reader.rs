@@ -4,8 +4,10 @@ use serde_json::{Value, json};
 use std::{
     fs::{File, OpenOptions},
     io::{BufRead, BufReader, Read, Seek},
+    os::fd::AsRawFd,
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,8 +83,23 @@ fn err(
     kind: ErrorKind,
     message: impl ToString,
 ) -> Error {
+    // Descriptor-relative I/O must not leak /proc/self/fd implementation paths
+    // into diagnostics. Resolve the pinned descriptor only for display; no I/O
+    // is ever redirected through this path.
+    let file = path
+        .strip_prefix("/proc/self/fd")
+        .ok()
+        .and_then(|relative| {
+            let mut parts = relative.components();
+            let fd = parts.next()?;
+            let root = Path::new("/proc/self/fd").join(fd.as_os_str());
+            std::fs::read_link(root)
+                .ok()
+                .map(|p| p.join(parts.as_path()))
+        })
+        .unwrap_or_else(|| path.to_path_buf());
     Error {
-        file: path.into(),
+        file,
         chunk,
         offset,
         kind,
@@ -258,6 +275,7 @@ impl Markers {
     }
 }
 pub struct Decoded<'a> {
+    pub repeat: bool,
     pub slot: u64,
     pub t_us: u64,
     pub pixels: &'a [u8],
@@ -270,7 +288,33 @@ struct KeyPosition {
     crc: crc32fast::Hasher,
     frame_offset: Option<u64>,
 }
+/// A pinned Linux directory. All reader access is relative to this descriptor;
+/// renaming or replacing the caller's path cannot redirect later chunk reads.
+#[derive(Debug)]
+pub struct Directory {
+    file: File,
+}
+impl Directory {
+    pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
+        let normalized: PathBuf = path.as_ref().components().collect();
+        let path = normalized.as_path();
+        let file = OpenOptions::new()
+            .read(true)
+            .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_NONBLOCK)
+            .open(path)
+            .map_err(|e| err(path, None, 0, ErrorKind::Io, e))?;
+        Ok(Self { file })
+    }
+    pub fn resolved(&self) -> std::io::Result<PathBuf> {
+        std::fs::read_link(self.path())
+    }
+    fn path(&self) -> PathBuf {
+        PathBuf::from(format!("/proc/self/fd/{}", self.file.as_raw_fd()))
+    }
+}
 pub struct Reader {
+    directory: Arc<Directory>,
+    last_repeat: bool,
     path: PathBuf,
     width: u32,
     height: u32,
@@ -306,7 +350,12 @@ pub struct Reader {
 }
 impl Reader {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, Error> {
-        let path = path.as_ref().to_path_buf();
+        Self::from_directory(Arc::new(Directory::open(path)?))
+    }
+    /// No directory pathname is reopened. Child opens use O_NOFOLLOW and
+    /// descriptor metadata requires regular files, including lazy chunk reads.
+    pub fn from_directory(directory: Arc<Directory>) -> Result<Self, Error> {
+        let path = directory.path();
         let mp = path.join("manifest.json");
         let m = json_file(&mp)?;
         let version = number(&m, "version", &mp)?;
@@ -424,6 +473,8 @@ impl Reader {
             open(&path.join("markers.jsonl"))?;
         }
         Ok(Self {
+            directory,
+            last_repeat: false,
             path,
             width,
             height,
@@ -491,7 +542,7 @@ impl Reader {
         if let Some(n) = self.known_frames {
             return Ok(n);
         }
-        let mut scan = Self::open(&self.path)?;
+        let mut scan = Self::from_directory(self.directory.clone())?;
         scan.index_keys = false;
         while scan.read()?.is_some() {}
         self.known_frames = Some(scan.next);
@@ -631,6 +682,7 @@ impl Reader {
             let len = u32::from_le_bytes(h[..4].try_into().unwrap()) as usize;
             let slot = u64::from_le_bytes(h[8..16].try_into().unwrap());
             let kind = h[16];
+            self.last_repeat = kind == REPEAT;
             if len > self.raw + self.raw / 255 + 32 {
                 return Err(self.error(ErrorKind::Limit, "payload exceeds canvas bound"));
             }
@@ -782,6 +834,7 @@ impl Reader {
         let t_us = u64::try_from(u128::from(slot) * 1_000_000 / u128::from(self.fps))
             .map_err(|_| self.error(ErrorKind::Limit, "timestamp overflow"))?;
         Ok(Some(Decoded {
+            repeat: self.last_repeat,
             slot,
             t_us,
             pixels: &self.pixels,
@@ -807,6 +860,7 @@ impl Reader {
         self.seek_inner(target)?;
         self.poisoned = false;
         Ok(Decoded {
+            repeat: self.last_repeat,
             slot: target,
             t_us: (u128::from(target) * 1_000_000 / u128::from(self.fps)) as u64,
             pixels: &self.pixels,

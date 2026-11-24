@@ -3,6 +3,7 @@ use media_frame::Yuv420;
 use rav1e::prelude::*;
 use std::sync::Arc;
 mod decoder;
+pub mod reference;
 pub use decoder::{DecodedFrame, Decoder};
 
 #[derive(Clone, Copy, Debug)]
@@ -58,6 +59,13 @@ pub struct Encoder {
 }
 impl Encoder {
     pub fn new(settings: Settings) -> Result<Self, Error> {
+        Self::new_inner(settings, false)
+    }
+    /// Narrow repeat-tracker contract: every coded frame is error resilient.
+    pub fn new_repeats(settings: Settings) -> Result<Self, Error> {
+        Self::new_inner(settings, true)
+    }
+    fn new_inner(settings: Settings, error_resilient: bool) -> Result<Self, Error> {
         let s = settings;
         if !(16..=65535).contains(&s.width) || !(16..=65535).contains(&s.height) {
             return Err(Error("dimensions must be 16..=65535".into()));
@@ -91,6 +99,7 @@ impl Encoder {
             matrix_coefficients: MatrixCoefficients::BT709,
         });
         e.low_latency = true;
+        e.error_resilient = error_resilient;
         e.set_key_frame_interval(s.key_interval, s.key_interval);
         e.tile_cols = s.tile_cols;
         e.tile_rows = s.tile_rows;

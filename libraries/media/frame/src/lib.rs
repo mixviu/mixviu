@@ -77,6 +77,93 @@ impl Bgra {
         }
         Ok(out)
     }
+    /// Separable Catmull-Rom bicubic (a=-0.5), pixel-centre aligned, clamped
+    /// edges. Filters encoded/gamma-space BGRA channels, matching the usual
+    /// video/UI scaling contract. Downsampling widens the kernel to antialias.
+    /// Straight alpha is filtered independently; composite before scaling when
+    /// transparent colour fringes are unwanted. Quantisation occurs only once.
+    pub fn resample(&self, width: usize, height: usize) -> Result<Self, InvalidFrame> {
+        size(width, height)?;
+        if (width, height) == (self.width, self.height) {
+            return Ok(self.clone());
+        }
+        fn cubic(x: f64) -> f64 {
+            let x = x.abs();
+            if x < 1.0 {
+                (1.5 * x - 2.5) * x * x + 1.0
+            } else if x < 2.0 {
+                ((-0.5 * x + 2.5) * x - 4.0) * x + 2.0
+            } else {
+                0.0
+            }
+        }
+        fn weights(src: usize, dst: usize) -> Vec<Vec<(usize, f32)>> {
+            let scale = src as f64 / dst as f64;
+            let stretch = scale.max(1.0);
+            (0..dst)
+                .map(|i| {
+                    let centre = (i as f64 + 0.5) * scale - 0.5;
+                    let lo = (centre - 2.0 * stretch).ceil() as isize;
+                    let hi = (centre + 2.0 * stretch).floor() as isize;
+                    let mut taps: Vec<_> = (lo..=hi)
+                        .map(|j| {
+                            (
+                                (j.clamp(0, src as isize - 1)) as usize,
+                                cubic((j as f64 - centre) / stretch) as f32,
+                            )
+                        })
+                        .collect();
+                    let sum: f32 = taps.iter().map(|(_, w)| w).sum();
+                    for (_, w) in &mut taps {
+                        *w /= sum;
+                    }
+                    taps
+                })
+                .collect()
+        }
+        let wx = weights(self.width, width);
+        let wy = weights(self.height, height);
+        let n = width
+            .checked_mul(self.height)
+            .and_then(|n| n.checked_mul(4))
+            .ok_or(InvalidFrame)?;
+        let mut horizontal = Vec::new();
+        horizontal.try_reserve_exact(n).map_err(|_| InvalidFrame)?;
+        horizontal.resize(n, 0.0f32);
+        for y in 0..self.height {
+            for (x, taps) in wx.iter().enumerate() {
+                let out = &mut horizontal[(y * width + x) * 4..(y * width + x + 1) * 4];
+                for &(sx, w) in taps {
+                    for (d, s) in out
+                        .iter_mut()
+                        .zip(&self.pixels[(y * self.width + sx) * 4..(y * self.width + sx + 1) * 4])
+                    {
+                        *d += f32::from(*s) * w;
+                    }
+                }
+            }
+        }
+        let mut out = Self::solid(width, height, [0; 4])?;
+        let mut row = vec![0.0f32; width * 4];
+        for (y, taps) in wy.iter().enumerate() {
+            row.fill(0.0);
+            for &(sy, w) in taps {
+                for (d, s) in row
+                    .iter_mut()
+                    .zip(&horizontal[sy * width * 4..(sy + 1) * width * 4])
+                {
+                    *d += s * w;
+                }
+            }
+            for (d, s) in out.pixels[y * width * 4..(y + 1) * width * 4]
+                .iter_mut()
+                .zip(&row)
+            {
+                *d = s.round().clamp(0.0, 255.0) as u8;
+            }
+        }
+        Ok(out)
+    }
     pub fn pad(
         &self,
         width: usize,
@@ -196,6 +283,45 @@ pub fn still_hold(frame: Arc<Bgra>, count: usize) -> impl Iterator<Item = Arc<Bg
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn bicubic_constants_identity_ramps_and_antialias() {
+        let flat = Bgra::solid(7, 5, [17, 91, 203, 255]).unwrap();
+        assert_eq!(flat.resample(7, 5).unwrap(), flat);
+        for (w, h) in [(13, 11), (1, 1), (3, 2)] {
+            assert_eq!(
+                flat.resample(w, h).unwrap(),
+                Bgra::solid(w, h, [17, 91, 203, 255]).unwrap()
+            );
+        }
+        let ramp = Bgra::new(
+            4,
+            1,
+            vec![
+                [0, 0, 0, 255],
+                [64, 64, 64, 255],
+                [128, 128, 128, 255],
+                [192, 192, 192, 255],
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+        )
+        .unwrap();
+        let smooth = ramp.resample(8, 1).unwrap();
+        assert!(smooth.pixels()[4] > 0 && smooth.pixels()[4] < 64);
+        let board = Bgra::new(
+            64,
+            1,
+            (0..64)
+                .flat_map(|i| [if i % 2 == 0 { 0 } else { 255 }; 4])
+                .collect(),
+        )
+        .unwrap()
+        .resample(1, 1)
+        .unwrap();
+        assert!((i16::from(board.pixels()[0]) - 128).abs() <= 1);
+        assert!(flat.resample(0, 2).is_err());
+    }
     #[test]
     fn primaries_and_odd_edges() {
         for (bgra, y, u, v) in [
