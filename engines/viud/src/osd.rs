@@ -99,6 +99,8 @@ pub fn launch(
     command
         .arg("run")
         .arg(bundle)
+        .arg("--service")
+        .arg(service(comp))
         .arg("--comp")
         .arg(comp)
         .stdin(std::process::Stdio::null())
@@ -131,8 +133,23 @@ pub fn launch(
     }
 }
 
+// Keep the session's familiar name, while private compositors own private hosts.
+fn service(comp: &str) -> String {
+    if comp == "comp" {
+        "osd".into()
+    } else {
+        format!("osd-{comp}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn private_compositors_do_not_claim_the_session_osd() {
+        assert_eq!(super::service("comp"), "osd");
+        assert_eq!(super::service("comp-headless"), "osd-comp-headless");
+        assert_ne!(super::service("comp-headless"), super::service("comp-nested"));
+    }
     #[test]
     fn restart_backoff_doubles_before_each_retry_and_caps() {
         use std::time::Duration;
