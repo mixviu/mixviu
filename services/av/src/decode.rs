@@ -68,7 +68,8 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
         for t in &d.tracks {
             tracks.push(json!({
             "number": t.number, "codec":t.codec, "width":t.width, "height":t.height,
-            "fps": if t.kind == 1 { video_duration(&d,t)?.map(|ns| 1e9 / ns as f64) } else { None },
+            "fps": if t.kind == 1 { probe_video_rate(t.default_duration_ns, d.scale_ns,
+                d.packets().iter().filter(|p| p.track == t.number)) } else { None },
             "sample_rate": t.sample_rate, "channels":t.channels,
             "packets": d.packets().iter().filter(|p| p.track == t.number).count()
         }));
@@ -263,6 +264,81 @@ fn duration_frame_limit(
     Ok(500_000)
 }
 
+/// Probe timing only: never use packet count / Segment Duration as CFR evidence.
+/// Prefer a whole-Hz grid when every timestamp fits one quantisation phase
+/// (residual range strictly less than one container tick), and every declared
+/// block duration fits that interval to less than one tick. Otherwise accept
+/// only an exact, constant tick interval. Quantised fractional rates without a
+/// DefaultDuration remain unknown; an average alone cannot establish CFR.
+fn probe_video_rate<'a>(
+    default_ns: u64,
+    scale_ns: u64,
+    packets: impl Iterator<Item = &'a media_webm::Packet<'a>> + Clone,
+) -> Option<f64> {
+    if default_ns > 0 {
+        return Some(1e9 / default_ns as f64);
+    }
+    let count = packets.clone().count();
+    if count < 3 || scale_ns == 0 {
+        return None;
+    }
+    let first = packets.clone().next()?.timestamp;
+    let last = packets.clone().last()?.timestamp;
+    let span = (i128::from(last) - i128::from(first)).checked_mul(i128::from(scale_ns))?;
+    if span <= 0 {
+        return None;
+    }
+    let rate = ((count - 1) as i128 * 1_000_000_000 + span / 2) / span;
+    let fits_grid = || -> Option<bool> {
+        if rate == 0 {
+            return Some(false);
+        }
+        let quantum = i128::from(scale_ns).checked_mul(rate)?;
+        let (mut low, mut high) = (0, 0);
+        let mut previous = None;
+        for (i, packet) in packets.clone().enumerate() {
+            if previous.is_some_and(|last| packet.timestamp <= last) {
+                return Some(false);
+            }
+            previous = Some(packet.timestamp);
+            let elapsed = (i128::from(packet.timestamp) - i128::from(first))
+                .checked_mul(quantum)?;
+            let residual = elapsed.checked_sub(i as i128 * 1_000_000_000)?;
+            low = low.min(residual);
+            high = high.max(residual);
+            if high.checked_sub(low)? >= quantum {
+                return Some(false);
+            }
+            if let Some(duration) = packet.duration {
+                let residual = i128::from(duration).checked_mul(quantum)? - 1_000_000_000;
+                if residual.checked_abs()? >= quantum {
+                    return Some(false);
+                }
+            }
+        }
+        Some(true)
+    };
+    if fits_grid() == Some(true) {
+        return Some(rate as f64);
+    }
+    // Exact uniform timing also supports non-whole-Hz rates. Check the entire
+    // stream, including block durations; never accept just the first delta.
+    let delta = i128::from(packets.clone().nth(1)?.timestamp) - i128::from(first);
+    if delta <= 0 {
+        return None;
+    }
+    for (i, packet) in packets.enumerate() {
+        if i128::from(packet.timestamp) - i128::from(first) != i as i128 * delta
+            || packet.duration.is_some_and(|d| i128::from(d) != delta)
+        {
+            return None;
+        }
+    }
+    Some(1e9 / delta.checked_mul(i128::from(scale_ns))? as f64)
+}
+
+// Decode's interval and independent duration/count ceiling are deliberately
+// separate from probe's CFR inference.
 fn video_duration(d: &Demuxer<'_>, t: &media_webm::Track<'_>) -> Result<Option<u64>> {
     if t.default_duration_ns > 0 {
         return Ok(Some(t.default_duration_ns));
@@ -362,6 +438,69 @@ mod tests {
     use super::*;
     use media_opus::{Encoder as _, OpusEncoder};
     use std::{io::Cursor, process::Command};
+
+    fn timing_packets(timestamps: &[i64], duration: Option<u64>) -> Vec<media_webm::Packet<'_>> {
+        timestamps
+            .iter()
+            .map(|&timestamp| media_webm::Packet {
+                track: 1,
+                timestamp,
+                key_frame: false,
+                data: &[],
+                duration,
+                discard_padding_ns: 0,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn probe_cfr30_quantised_timestamps() {
+        // Both truncating and rounding muxers; offset must not affect the rate.
+        for rounding in [0, 15] {
+            let timestamps: Vec<_> = (0..18_247)
+                .map(|i| 700 + (i * 1000 + rounding) / 30)
+                .collect();
+            for duration in [None, Some(33)] {
+                let packets = timing_packets(&timestamps, duration);
+                assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), Some(30.0));
+            }
+        }
+    }
+
+    #[test]
+    fn probe_declared_default_interval() {
+        let packets = timing_packets(&[0], None);
+        assert_eq!(probe_video_rate(40_000_000, 1_000_000, packets.iter()), Some(25.0));
+        assert_eq!(probe_video_rate(33_366_667, 1_000_000, packets.iter()), Some(1e9 / 33_366_667.0));
+    }
+
+    #[test]
+    fn probe_insufficient_or_irregular_timing_is_unknown() {
+        for timestamps in [
+            &[][..],
+            &[0],
+            &[0, 33],
+            &[0, 33, 100, 133, 200],
+            // Average is 30 fps, but the interior timestamp breaks the grid.
+            &[0, 20, 80, 100],
+            // Same 33/34 delta histogram as CFR30, with accumulated drift.
+            &[0, 33, 66, 99, 133, 167, 200],
+            &[0, 33, 33, 100],
+            &[0, 67, 33, 100],
+        ] {
+            let packets = timing_packets(timestamps, None);
+            assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), None, "{timestamps:?}");
+        }
+        let packets = timing_packets(&[0, 40, 80, 120], Some(20));
+        assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), None);
+    }
+
+    #[test]
+    fn probe_exact_fractional_tick_interval() {
+        let packets = timing_packets(&[0, 33, 66, 99, 132, 165, 198, 231, 264, 297, 330, 363, 396], Some(33));
+        assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), Some(1e9 / 33_000_000.0));
+    }
+
     fn ff(args: &[&str]) -> Vec<u8> {
         let o = Command::new("ffmpeg")
             .args(["-v", "error", "-nostdin"])
