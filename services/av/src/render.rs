@@ -1119,7 +1119,12 @@ mod tests {
         t.duration_s = 4.016;
         t.video.fade_in_s = 2.017;
         t.video.fade_out_s = 1.999;
-        assert!(t.validate(root.path()).unwrap_err().to_string().contains("programme_fade_overlap"));
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("programme_fade_overlap")
+        );
         t.duration_s = 4.0;
         t.video.fade_in_s = 0.6;
         t.video.fade_out_s = 1.0;

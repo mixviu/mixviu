@@ -96,8 +96,10 @@ fn programme_envelopes_cross_still_and_vfl_cuts_against_ffmpeg() {
     t["video"]["fade_in_s"] = json!(0);
     t["video"]["fade_out_s"] = json!(0);
     render(&t, "zero.webm");
-    assert_eq!(fs::read(root.path().join("plain.webm")).unwrap(),
-        fs::read(root.path().join("zero.webm")).unwrap());
+    assert_eq!(
+        fs::read(root.path().join("plain.webm")).unwrap(),
+        fs::read(root.path().join("zero.webm")).unwrap()
+    );
     // The nonzero VFL trim is honoured: source slot 12 arrives two frames after the cut.
     assert_eq!(&plain[16 * 1536..17 * 1536], &plain[17 * 1536..18 * 1536]);
     assert_ne!(&plain[17 * 1536..18 * 1536], &plain[18 * 1536..19 * 1536]);
@@ -112,8 +114,8 @@ fn programme_envelopes_cross_still_and_vfl_cuts_against_ffmpeg() {
         let receipt = render(&t, &webm);
         assert_eq!(receipt["frames_out"], 120);
         assert!(
-            receipt["frames_encoded"].as_u64().unwrap() >=
-                u64::from(incoming > 0.0) * 18 + u64::from(outgoing > 0.0) * 30
+            receipt["frames_encoded"].as_u64().unwrap()
+                >= u64::from(incoming > 0.0) * 18 + u64::from(outgoing > 0.0) * 30
         );
         let decoded_path = root.path().join(format!("{name}.y4m"));
         let mut c = Command::new(env!("CARGO_BIN_EXE_av"));
