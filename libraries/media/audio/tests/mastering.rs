@@ -96,6 +96,12 @@ fn speech_encoded_target_and_oracle() {
     } else {
         assert_ne!(std::env::var("MIX_TEST_REQUIRE_FFMPEG").as_deref(), Ok("1"));
     }
+    let repeat_out = dir.join("repeat.webm");
+    let repeat = render(&t, &dir, &repeat_out, None).unwrap();
+    assert_eq!(std::fs::read(&out).unwrap(), std::fs::read(&repeat_out).unwrap());
+    assert_eq!(r.encoded.integrated_lufs, repeat.encoded.integrated_lufs);
+    assert_eq!(r.passes, repeat.passes);
+    assert_eq!(r.codec_passes, repeat.codec_passes);
     // Impossible peak/loudness pair must return measured refusal and publish nothing.
     let mut impossible = t;
     impossible.master.true_peak_dbtp = -20.0;
@@ -104,5 +110,10 @@ fn speech_encoded_target_and_oracle() {
     assert!(refused.refused && !refused.target_reached);
     assert!(refused.encoded.integrated_lufs < -14.1);
     assert!(!refused_out.exists());
+    if let Ok(artifact) = std::env::var("MIX_TEST_MASTERING_ARTIFACT_DIR") {
+        std::fs::create_dir_all(&artifact).unwrap();
+        std::fs::copy(&out, std::path::Path::new(&artifact).join("speech.webm")).unwrap();
+        std::fs::write(std::path::Path::new(&artifact).join("receipt.json"), serde_json::to_vec_pretty(&r).unwrap()).unwrap();
+    }
     std::fs::remove_dir_all(dir).unwrap();
 }

@@ -5,6 +5,15 @@ pub const TARGET_TOLERANCE_LU: f64 = 0.1;
 pub const MAX_LIMITER_PASSES: u8 = 8;
 const PCM_TOLERANCE_LU: f64 = 0.03;
 
+pub(crate) fn cpu_seconds() -> f64 {
+    let mut time = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    // SAFETY: time points to a valid, writable timespec. Thread CPU excludes
+    // unrelated concurrent render work. Processing in this module is serial.
+    let rc = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) };
+    assert_eq!(rc, 0, "thread CPU clock unavailable");
+    time.tv_sec as f64 + time.tv_nsec as f64 * 1e-9
+}
+
 pub(crate) fn target_matches(target: f64, measured: f64, tolerance: f64) -> bool {
     // Compare endpoints rather than subtracting: decimal endpoint subtraction
     // can round just outside an inclusive tolerance.
@@ -58,6 +67,8 @@ pub struct TargetReport {
     pub gain_db: f64,
     /// Includes the initial limiting attempt; at most MAX_LIMITER_PASSES.
     pub passes: u8,
+    /// CPU seconds per attempted limiter render; unused entries are zero.
+    pub pass_cpu_s: [f64; MAX_LIMITER_PASSES as usize],
     /// Maximum reduction attempted, including a refused attempt.
     pub max_gain_reduction_db: f64,
     /// An attempt exceeded 6 dB; an earlier in-bound attempt may be retained.
@@ -200,6 +211,7 @@ impl Audio {
             after: static_report.after,
             gain_db: static_report.gain_db,
             passes: 0,
+            pass_cpu_s: [0.0; MAX_LIMITER_PASSES as usize],
             max_gain_reduction_db: 0.0,
             refused: false,
             applied_gain_reduction_db: 0.0,
@@ -216,6 +228,7 @@ impl Audio {
         let mut gain_db = target_lufs - report.before.integrated_lufs;
         let mut best: Option<(Self, TargetReport)> = None;
         for pass in 1..=MAX_LIMITER_PASSES {
+            let start = cpu_seconds();
             let gain = 10.0_f64.powf(gain_db / 20.0);
             let mut candidate = original.try_clone()?;
             if !gain.is_finite() || candidate.samples.iter().any(|x| !(x * gain).is_finite()) {
@@ -225,6 +238,7 @@ impl Audio {
                 *x *= gain;
             }
             let limited = candidate.render_limiter(ceiling_dbtp, config)?;
+            report.pass_cpu_s[usize::from(pass - 1)] = cpu_seconds() - start;
             if !limited.after.integrated_lufs.is_finite() || limited.after.integrated_lufs < -70.0 {
                 return Err(Error::Unmeasurable);
             }
@@ -237,6 +251,7 @@ impl Audio {
                     accepted.refused = true;
                     accepted.target_reached = false;
                     accepted.passes = pass;
+                    accepted.pass_cpu_s = report.pass_cpu_s;
                     accepted.max_gain_reduction_db = report.max_gain_reduction_db;
                     *self = audio;
                     return Ok(accepted);
@@ -264,6 +279,7 @@ impl Audio {
             if error.abs() <= PCM_TOLERANCE_LU || pass == MAX_LIMITER_PASSES {
                 let (audio, mut accepted) = best.expect("an in-bound attempt was recorded");
                 accepted.passes = pass;
+                accepted.pass_cpu_s = report.pass_cpu_s;
                 accepted.max_gain_reduction_db = report.max_gain_reduction_db;
                 accepted.refused = !accepted.target_reached;
                 *self = audio;

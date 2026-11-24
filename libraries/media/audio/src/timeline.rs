@@ -1,5 +1,5 @@
 //! Flat, absolute-time episode audio. Mix owns scene and join policy.
-use crate::limiter::{TARGET_TOLERANCE_LU, target_matches};
+use crate::limiter::{TARGET_TOLERANCE_LU, cpu_seconds, target_matches};
 use crate::{Audio, LimiterConfig, Loudness, WavFormat};
 use media_opus::{Channels, Decoder, Encoder, OpusDecoder, OpusEncoder, OpusHead, Packet};
 use serde::{Deserialize, Serialize};
@@ -235,24 +235,13 @@ impl From<Loudness> for Meter {
 #[derive(Serialize)]
 pub struct MasteringCost {
     pub limiter_passes: u8,
+    pub limiter_cpu_s: Vec<f64>,
     pub mastering_cpu_s: f64,
     pub codec_cpu_s: f64,
 }
 
 /// At most six fresh masters and six encode/decode/meter attempts.
 pub const MAX_CODEC_ATTEMPTS: u8 = 6;
-
-fn cpu_seconds() -> f64 {
-    let mut time = libc::timespec {
-        tv_sec: 0,
-        tv_nsec: 0,
-    };
-    // SAFETY: time points to a valid, writable timespec. The work here is
-    // single-threaded; thread CPU excludes unrelated concurrent render work.
-    let rc = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) };
-    assert_eq!(rc, 0, "thread CPU clock unavailable");
-    time.tv_sec as f64 + time.tv_nsec as f64 * 1e-9
-}
 
 #[derive(Serialize)]
 pub struct Receipt {
@@ -304,6 +293,7 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
         let (head, packets, encoded) = encode_checked(&audio)?;
         mastering_cost.push(MasteringCost {
             limiter_passes: r.passes,
+            limiter_cpu_s: r.pass_cpu_s[..usize::from(r.passes)].to_vec(),
             mastering_cpu_s,
             codec_cpu_s: cpu_seconds() - start,
         });
