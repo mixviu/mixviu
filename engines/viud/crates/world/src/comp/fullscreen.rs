@@ -165,9 +165,7 @@ mod tests {
 
         // The production canvas deliberately advertises every mapped output.
         // Membership is not an overlap oracle, even after a complete refresh.
-        space.refresh_outputs_with(|_, _| {
-            Some(Rectangle::new((0, 0).into(), (320, 240).into()))
-        });
+        space.refresh_outputs_with(|_, _| Some(Rectangle::new((0, 0).into(), (320, 240).into())));
         assert_eq!(space.outputs_for_element(&window).len(), 2);
         assert_eq!(
             overlapping_output(&space, &window),
