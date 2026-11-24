@@ -306,7 +306,10 @@ fn probe_video_rate<'a>(
         uniform &= i128::from(packet.timestamp) - i128::from(first) == i as i128 * delta;
     }
     if uniform {
-        if packets.clone().any(|p| p.duration.is_some_and(|d| i128::from(d) != delta)) {
+        if packets
+            .clone()
+            .any(|p| p.duration.is_some_and(|d| i128::from(d) != delta))
+        {
             return None;
         }
         return Some(1e9 / delta.checked_mul(i128::from(scale_ns))? as f64);
@@ -334,8 +337,8 @@ fn probe_video_rate<'a>(
             let (mut low, mut high) = (0, 0);
             let mut fits = true;
             for (i, packet) in packets.clone().enumerate() {
-                let elapsed = (i128::from(packet.timestamp) - i128::from(first))
-                    .checked_mul(quantum)?;
+                let elapsed =
+                    (i128::from(packet.timestamp) - i128::from(first)).checked_mul(quantum)?;
                 let residual = elapsed.checked_sub(i as i128 * period_numerator)?;
                 low = low.min(residual);
                 high = high.max(residual);
@@ -544,16 +547,25 @@ mod tests {
     #[test]
     fn probe_exact_short_interval_precedes_neighbouring_grids() {
         let packets = timing_packets(&[0, 33, 66], Some(33));
-        assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), Some(1e9 / 33_000_000.0));
+        assert_eq!(
+            probe_video_rate(0, 1_000_000, packets.iter()),
+            Some(1e9 / 33_000_000.0)
+        );
     }
 
     #[test]
     fn probe_ambiguous_neighbours_are_unknown() {
         let packets = timing_packets(&[0, 17, 33], None);
         assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), None);
+        let packets = timing_packets(&[0, 33, 66, 100, 133, 166, 200, 233, 266, 300, 333], Some(33));
+        assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), None);
         for rounding in [0, 15_000] {
-            for (count, expected) in [(11, None), (301, Some(30_000.0 / 1001.0))] {
-                let timestamps: Vec<_> = (0..count).map(|i| (i * 1_001_000 + rounding) / 30_000).collect();
+            // Seven frames are ambiguous for either quantisation phase;
+            // rounded timestamps can distinguish the grids sooner than floor.
+            for (count, expected) in [(7, None), (301, Some(30_000.0 / 1001.0))] {
+                let timestamps: Vec<_> = (0..count)
+                    .map(|i| (i * 1_001_000 + rounding) / 30_000)
+                    .collect();
                 let packets = timing_packets(&timestamps, Some(33));
                 assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), expected);
             }
@@ -566,7 +578,9 @@ mod tests {
     #[test]
     fn probe_symmetric_half_tick_rounding_is_conservatively_unknown() {
         // Ties to even creates both -0.5 and +0.5 tick residuals for 16 Hz.
-        let timestamps: Vec<_> = (0..161).map(|i| i / 4 * 250 + [0, 62, 125, 188][(i % 4) as usize]).collect();
+        let timestamps: Vec<_> = (0..161)
+            .map(|i| i / 4 * 250 + [0, 62, 125, 188][(i % 4) as usize])
+            .collect();
         let packets = timing_packets(&timestamps, None);
         assert_eq!(probe_video_rate(0, 1_000_000, packets.iter()), None);
     }
