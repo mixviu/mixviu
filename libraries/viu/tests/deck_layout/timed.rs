@@ -243,7 +243,8 @@ fn held_source_cards() {
         .unwrap();
         let rects = Arc::new(std::sync::Mutex::new(view.geometry.clone()));
         let captured = rects.clone();
-        let mut tick = 0;
+        let clock = Arc::new(std::sync::Mutex::new(100_f64));
+        let time = clock.clone();
         let mut harness = egui_kittest::Harness::builder()
             .with_size(egui::vec2(1600., 900.))
             .with_pixels_per_point(2.)
@@ -253,16 +254,17 @@ fn held_source_cards() {
             })
             .wgpu()
             .build_ui(move |ui| {
-                tick += 1;
-                let model = deck
-                    .call("viu.presentation", json!({"time":100.+tick as f64/60.}))
-                    .model
-                    .unwrap();
-                view.apply_model(model).unwrap();
+                if let Some(model) = deck
+                    .call("viu.presentation", json!({"time":*time.lock().unwrap()}))
+                    .model {
+                    view.apply_model(model).unwrap();
+                }
                 view.show(ui);
                 *captured.lock().unwrap() = view.geometry.clone();
             });
-        for _ in 0..((beats[2]+4.)*60.) as usize {
+        let warm = ((beats[2]+4.)*60.) as usize;
+        for tick in 1..=warm {
+            *clock.lock().unwrap() = 100.+tick as f64/60.;
             harness.step();
         }
         let baseline = rects.lock().unwrap().clone();
@@ -270,6 +272,7 @@ fn held_source_cards() {
         // Same flat source patch as the VFL investigation, before encoding.
         let patch = image::imageops::crop_imm(&image, 334, 1208, 212, 26).to_image();
         for frame in 0..((beats[3]-beats[2]-4.5)*60.) as usize {
+            *clock.lock().unwrap() = 100.+(warm+frame+1) as f64/60.;
             harness.step();
             let current = rects.lock().unwrap().clone();
             if current != baseline {
