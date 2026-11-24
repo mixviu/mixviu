@@ -14,22 +14,29 @@ cards:{widget:"grid",columns:2,equal_height:true,children:["a","b"]},
 a:{widget:"column",stretch_last:true,children:["heading","last"]},
 heading:{widget:"text",text:"Held heading"},
 last:{widget:"column",background:"#203040",children:["short"]},short:{widget:"text",text:"Short"},
-b:{widget:"column",background:"#203040",children:["tall"]},tall:{widget:"spacer",size:100},
+b:{widget:"column",background:"#203040",children:["tall","bullet"]},tall:{widget:"spacer",size:80},
+bullet:{widget:"drawing",w:12,h:20,sample_time:"= $model.time",primitives:[{kind:"ellipse",centre:[6,10],radius:[6,6],colour:"#5ad18a"}]},
 animation:{widget:"text",text:"Parallel animation",paint_effect:"= $model.effect"}}
 ```
 "##;
     let mut view =
-        SceneView::with_model(source, json!({"effect":{"preset":"spin","time":0.2}})).unwrap();
+        SceneView::with_model(source, json!({"time":0,"effect":{"preset":"spin","time":0.2}})).unwrap();
     let geometry = Arc::new(std::sync::Mutex::new(view.geometry.clone()));
     let captured = geometry.clone();
     let clock = Arc::new(std::sync::Mutex::new(0.2_f64));
     let time = clock.clone();
+    let ticking = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let active = ticking.clone();
+    let mut sample = 0.;
     let mut harness = egui_kittest::Harness::builder()
         .with_size(egui::vec2(320., 240.))
         .with_pixels_per_point(2.4)
         .wgpu()
         .build_ui(move |ui| {
-            view.apply_model(json!({"effect":{"preset":"spin","time":*time.lock().unwrap()}}))
+            // The native host can pump another clock publication between
+            // discarded passes. A clock frozen for the retry hides this bug.
+            if active.load(std::sync::atomic::Ordering::Relaxed) { sample += 0.001; }
+            view.apply_model(json!({"time":sample,"effect":{"preset":"spin","time":*time.lock().unwrap()}}))
                 .unwrap();
             view.show(ui);
             *captured.lock().unwrap() = view.geometry.clone();
@@ -42,6 +49,7 @@ animation:{widget:"text",text:"Parallel animation",paint_effect:"= $model.effect
     assert!((baseline["last"].bottom() - baseline["a"].bottom()).abs() * 2.4 <= 0.5);
     let image = harness.render().unwrap();
     let region = image::imageops::crop_imm(&image, 30, 150, 600, 120).to_image();
+    ticking.store(true, std::sync::atomic::Ordering::Relaxed);
     for frame in 0..24 {
         *clock.lock().unwrap() = 0.2 + frame as f64 / 120.;
         harness.step();
