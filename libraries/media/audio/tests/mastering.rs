@@ -142,8 +142,7 @@ fn speech_encoded_target_and_oracle() {
         .collect();
     after_refusal.sort_unstable();
     assert_eq!(
-        before_refusal,
-        after_refusal,
+        before_refusal, after_refusal,
         "no staging files left behind"
     );
     if let Ok(artifact) = std::env::var("MIX_TEST_MASTERING_ARTIFACT_DIR") {
