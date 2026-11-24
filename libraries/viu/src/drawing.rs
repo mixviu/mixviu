@@ -214,6 +214,7 @@ struct Shadows {
     worker_rasters: usize,
     worker_blurs: usize,
     pending: Option<PendingShadow>,
+    waiting: std::collections::VecDeque<(egui::Id, u64)>,
     #[cfg(test)]
     synchronous_updates: bool,
     #[cfg(test)]
@@ -317,7 +318,22 @@ fn paint_shadow(
     if let Some(cache) = old {
         if cache.signature != signature {
             let mut c = shared.lock().unwrap_or_else(|e| e.into_inner());
-            if c.pending.is_none() {
+            let pass = ui.ctx().cumulative_pass_nr();
+            // Round-robin dirty sources, without storing obsolete frame meshes.
+            // A source that disappears cannot hold the worker indefinitely.
+            c.waiting.retain(|(_, seen)| seen.saturating_add(1) >= pass);
+            if !c.pending.as_ref().is_some_and(|job| job.key == key) {
+                if let Some((_, seen)) = c.waiting.iter_mut().find(|(id, _)| *id == key) {
+                    *seen = pass;
+                } else {
+                    if c.waiting.len() >= 8 {
+                        c.waiting.pop_front();
+                    }
+                    c.waiting.push_back((key, pass));
+                }
+            }
+            if c.pending.is_none() && c.waiting.front().is_some_and(|(id, _)| *id == key) {
+                c.waiting.pop_front();
                 let input = shadow_input(ui.ctx(), shapes);
                 let (tx, rx) = std::sync::mpsc::sync_channel(1);
                 let ctx = ui.ctx().clone();
@@ -340,7 +356,11 @@ fn paint_shadow(
                         image: rx,
                     });
                 }
+            } else if c.pending.is_none() {
+                ui.ctx().request_repaint();
             }
+        } else {
+            shared.lock().unwrap_or_else(|e| e.into_inner()).waiting.retain(|(id, _)| *id != key);
         }
         draw(&cache.texture);
         shared
@@ -542,12 +562,14 @@ mod tests {
         let reference = reference_ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
         let reference_id = shadows(&reference_ctx).lock().unwrap().entries[0].1.texture.id();
         let expected = reference.textures_delta.set[&reference_id].last().unwrap().image.clone();
+        reference.drop_without_applying_deltas();
         let texture = shadows(&ctx).lock().unwrap().entries[0].1.texture.id();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
         loop {
             let out = ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
-            if let Some(delta) = out.textures_delta.set.get(&texture).and_then(|d| d.last()) {
-                let egui::ImageData::Color(actual) = &delta.image;
+            let image = out.textures_delta.set.get(&texture).and_then(|d| d.last()).map(|d| d.image.clone());
+            out.drop_without_applying_deltas();
+            if let Some(egui::ImageData::Color(actual)) = image {
                 let egui::ImageData::Color(expected) = &expected;
                 assert_eq!(actual.size, expected.size);
                 assert_eq!(actual.pixels, expected.pixels);
@@ -560,6 +582,34 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
         assert_eq!(shadows(&ctx).lock().unwrap().rasters, 1);
+    }
+
+    #[test]
+    fn animated_siblings_take_turns_on_the_shadow_worker() {
+        let ctx = egui::Context::default();
+        let mut node = sting_node();
+        node.ports.insert("sample_time".into(), serde_json::json!(0.));
+        let paint = |node: &scene::Node| {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                show(ui, "a", node);
+                show(ui, "b", node);
+            }).drop_without_applying_deltas();
+        };
+        paint(&node);
+        let shared = shadows(&ctx);
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let second = {
+            let mut store = shared.lock().unwrap();
+            let first = store.entries[0].0;
+            let second = store.entries[1].0;
+            store.pending = Some(PendingShadow {key: first, signature: "busy".into(), image: receiver});
+            second
+        };
+        node.ports.insert("sample_time".into(), serde_json::json!(0.3));
+        paint(&node);
+        sender.send(None).unwrap();
+        paint(&node);
+        assert_eq!(shared.lock().unwrap().pending.as_ref().unwrap().key, second);
     }
 
     #[test]
