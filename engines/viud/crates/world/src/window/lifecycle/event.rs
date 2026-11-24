@@ -115,7 +115,8 @@ impl WindowLifecycleEvent {
             // fullscreen flag. InitialMap must run first, even when it arrived
             // after this request; it publishes the registry's mapped edge.
             Self::Fullscreen(window, _) => {
-                dispatcher::wire::trait_::surface_event::SurfaceHandle::of_window(window)
+                crate::comp::live_window_space(comp, spaces, window).is_some()
+                    && dispatcher::wire::trait_::surface_event::SurfaceHandle::of_window(window)
                     .and_then(|handle| comp.registry.id_for_handle(&handle))
                     .and_then(|id| comp.registry.get(id))
                     .is_some_and(|record| !record.mapped())
