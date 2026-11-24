@@ -123,7 +123,10 @@ fn variable_packet_intervals_do_not_invent_a_frame_rate_ceiling() {
 fn probe_rate_uses_all_timestamps_independently_of_duration_and_decoded_count() {
     let source = Demuxer::new(FIXTURE).unwrap();
     for (timestamps, fps) in [
-        ((0..31).map(|i| i * 1000 / 30).collect::<Vec<_>>(), Some(30.0)),
+        (
+            (0..31).map(|i| i * 1000 / 30).collect::<Vec<_>>(),
+            Some(30.0),
+        ),
         (vec![0, 20, 80, 100], None),
         (vec![0], None),
     ] {
@@ -135,9 +138,13 @@ fn probe_rate_uses_all_timestamps_independently_of_duration_and_decoded_count() 
                 codec_private: source.tracks[0].codec_private.to_vec(),
             },
             None,
-        ).unwrap();
+        )
+        .unwrap();
         for (i, &timestamp) in timestamps.iter().enumerate() {
-            let data = source.packets().get(i).map_or(&[0x12, 0, 0x1a, 1, 0x98][..], |p| p.data);
+            let data = source
+                .packets()
+                .get(i)
+                .map_or(&[0x12, 0, 0x1a, 1, 0x98][..], |p| p.data);
             writer.packet(1, timestamp, 33, i == 0, data).unwrap();
         }
         let mut bytes = writer.finish().unwrap().into_inner();
@@ -149,8 +156,15 @@ fn probe_rate_uses_all_timestamps_independently_of_duration_and_decoded_count() 
         let input = dir.path().join("timing.webm");
         std::fs::write(&input, bytes).unwrap();
         let result = Command::new(env!("CARGO_BIN_EXE_av"))
-            .arg("probe").arg(&input).output().unwrap();
-        assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+            .arg("probe")
+            .arg(&input)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
         let receipt: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
         assert_eq!(receipt["tracks"][0]["fps"], serde_json::json!(fps));
         assert_eq!(receipt["frames"], timestamps.len());
