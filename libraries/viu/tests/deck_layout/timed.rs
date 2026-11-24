@@ -215,3 +215,51 @@ fn render_timed_intro() {
     .unwrap();
     println!("TIMED_INTRO {g:?}");
 }
+
+#[test]
+#[ignore = "explicit CBC held-scene evidence; DECK_LAYOUT_INPUT required"]
+fn held_source_cards() {
+    let path = PathBuf::from(std::env::var_os("DECK_LAYOUT_INPUT").unwrap());
+    for slide in ["s220", "s222", "s243"] {
+        let mut deck = Deck::new();
+        assert_eq!(deck.call("deck.open", json!({"path":path})).reply.unwrap().rc, 0);
+        deck.call("deck.play", json!({"slides":[slide],"beats":[[0,0.1,1]]}));
+        deck.call("viu.presentation", json!({"time":100}));
+        let model = deck.call("viu.presentation", json!({"time":110})).model.unwrap();
+        let mut view = SceneView::with_model(model["presentation"]["scene"].as_str().unwrap(), model.clone()).unwrap();
+        let rects = Arc::new(std::sync::Mutex::new(view.geometry.clone()));
+        let captured = rects.clone();
+        let mut tick = 0;
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(1600., 900.))
+            .with_pixels_per_point(2.)
+            .with_context_setup(|ctx| { viu::fonts::install(ctx, 400, 600); viu::icons::install(ctx); })
+            .wgpu()
+            .build_ui(move |ui| {
+                tick += 1;
+                let model = deck.call("viu.presentation", json!({"time":110.+tick as f64/60.})).model.unwrap();
+                view.apply_model(model).unwrap();
+                view.show(ui);
+                *captured.lock().unwrap() = view.geometry.clone();
+            });
+        for _ in 0..12 { harness.step(); }
+        let baseline = rects.lock().unwrap().clone();
+        let image = harness.render().unwrap();
+        // Same flat source patch as the VFL investigation, before encoding.
+        let patch = image::imageops::crop_imm(&image, 334, 1208, 212, 26).to_image();
+        for frame in 0..2400 {
+            harness.step();
+            let current = rects.lock().unwrap().clone();
+            if current != baseline {
+                let image = harness.render().unwrap();
+                image.save(std::env::temp_dir().join(format!("held-{slide}-{frame}.png"))).unwrap();
+                panic!("{slide} held frame {frame}: geometry changed: {current:?}; baseline: {baseline:?}");
+            }
+            if frame % 60 == 0 {
+                let image = harness.render().unwrap();
+                assert_eq!(image::imageops::crop_imm(&image, 334, 1208, 212, 26).to_image(), patch, "{slide} source patch frame {frame}");
+            }
+        }
+        println!("HELD_SOURCE {slide}: 2400 frames, stable rects and source patch");
+    }
+}
