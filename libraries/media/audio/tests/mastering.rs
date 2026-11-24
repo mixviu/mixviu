@@ -117,7 +117,11 @@ fn speech_encoded_target_and_oracle() {
     impossible.master.true_peak_dbtp = -20.0;
     let refused_out = dir.join("refused.webm");
     let refused_wav = dir.join("refused.wav");
-    let before_refusal: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+    let mut before_refusal: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    before_refusal.sort_unstable();
     let refused = render(&impossible, &dir, &refused_out, Some(&refused_wav)).unwrap();
     println!(
         "limiter-bound refusal: {}",
@@ -132,8 +136,16 @@ fn speech_encoded_target_and_oracle() {
     assert!(refused.encoded.integrated_lufs < -14.1);
     assert!(!refused_out.exists());
     assert!(!refused_wav.exists());
-    let after_refusal: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
-    assert_eq!(before_refusal.len(), after_refusal.len(), "no staging files left behind");
+    let mut after_refusal: Vec<_> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    after_refusal.sort_unstable();
+    assert_eq!(
+        before_refusal,
+        after_refusal,
+        "no staging files left behind"
+    );
     if let Ok(artifact) = std::env::var("MIX_TEST_MASTERING_ARTIFACT_DIR") {
         std::fs::create_dir_all(&artifact).unwrap();
         std::fs::copy(&out, std::path::Path::new(&artifact).join("speech.webm")).unwrap();

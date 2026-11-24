@@ -474,15 +474,25 @@ mod refusal_tests {
         let dir = std::env::temp_dir().join(format!("codec-exhaustion-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let source = dir.join("tone.wav");
-        Audio::new(48000, 2, (0..48000).flat_map(|n| {
-            let s = 0.05 * (std::f64::consts::TAU * 1000.0 * n as f64 / 48000.0).sin();
-            [s, s]
-        }).collect()).unwrap().write_wav(std::fs::File::create(&source).unwrap(), WavFormat::Float32).unwrap();
+        Audio::new(
+            48000,
+            2,
+            (0..48000)
+                .flat_map(|n| {
+                    let s = 0.05 * (std::f64::consts::TAU * 1000.0 * n as f64 / 48000.0).sin();
+                    [s, s]
+                })
+                .collect(),
+        )
+        .unwrap()
+        .write_wav(std::fs::File::create(&source).unwrap(), WavFormat::Float32)
+        .unwrap();
         let t: Timeline = serde_json::from_value(serde_json::json!({
             "version":1,"sample_rate":48000,"channels":2,"duration_s":1,
             "sources":[{"path":"tone.wav","at_s":0}],
             "master":{"integrated_lufs":-14,"true_peak_dbtp":-1}
-        })).unwrap();
+        }))
+        .unwrap();
         let mut attempts = 0;
         let prepared = prepare_with_encoder(&t, &dir, |audio| {
             attempts += 1;
@@ -493,21 +503,32 @@ mod refusal_tests {
             measured.integrated_lufs = -14.3;
             measured.true_peak_dbtp = -0.8;
             Ok((head, packets, measured))
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(attempts, MAX_CODEC_ATTEMPTS);
         let out = dir.join("refused.webm");
         let wav = dir.join("refused.wav");
         let receipt = render_prepared(prepared, &out, Some(&wav)).unwrap();
         assert!(receipt.refused && !receipt.target_reached);
         assert_eq!(receipt.codec_passes, MAX_CODEC_ATTEMPTS - 1);
-        assert_eq!(receipt.mastering_cost.len(), usize::from(MAX_CODEC_ATTEMPTS));
+        assert_eq!(
+            receipt.mastering_cost.len(),
+            usize::from(MAX_CODEC_ATTEMPTS)
+        );
         assert_eq!(receipt.passes, 0, "fixture stays on the static PCM path");
         assert_eq!(receipt.encoded.integrated_lufs, -14.3);
         assert_eq!(receipt.encoded.true_peak_dbtp, -0.8);
         assert!((receipt.shortfall_lu - 0.3).abs() < 1e-12);
         assert!(!out.exists() && !wav.exists());
-        let remaining: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().path()).collect();
-        assert_eq!(remaining, vec![source], "no partial output or staging files");
+        let remaining: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(
+            remaining,
+            vec![source],
+            "no partial output or staging files"
+        );
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
