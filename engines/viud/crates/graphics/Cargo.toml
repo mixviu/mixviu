@@ -47,4 +47,4 @@ desktop-dbus = ["dep:zbus"]
 capture-ffmpeg = ["dep:bindgen", "dep:cc", "dep:pkg-config"]
 
 [dev-dependencies]
-lz4_flex = { version = "=0.14.0", default-features = false, features = ["std", "safe-decode"] }
+lz4_flex = { version = "=0.14.2", default-features = false, features = ["std", "safe-decode"] }
