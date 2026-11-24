@@ -237,12 +237,13 @@ function bp_stripe_webhook()
       return { status: 200, headers: {}, body: "not paid yet" }
     end
     -- child PI id is the transaction reference (webhook replays dedupe on it)
-    if not st_subscription_card($att_rows[0], $obj) then
-      return { status: 503, headers: {}, body: "card setup pending" }
-    end
-    return bp_apply_from_attempt($att_rows[0], "" .. $obj["payment_intent"],
+    $applied = bp_apply_from_attempt($att_rows[0], "" .. $obj["payment_intent"],
                                  $obj["amount_total"], $obj["currency"],
                                  "stripe checkout " .. $obj["id"])
+    if $applied.status == 200 and contains(["ok","already applied"], $applied.body) then
+      st_subscription_card_best_effort($att_rows[0], $obj)
+    end
+    return $applied
   end
   if $type == "checkout.session.expired" then
     db_exec("UPDATE payment_attempts SET status = 'expired', updated = ?2

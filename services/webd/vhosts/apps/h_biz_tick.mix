@@ -82,7 +82,7 @@ function bt_generate_one($kind, $ref, $today)
   $period_start = "" .. $ref["next_due"]
   $period_end = biz_date_add($period_start, "+1 year")
   if $kind == "service" then
-    $period_end = biz_date_add($period_start, "+" .. $ref["period_months"] .. " months")
+    $period_end = biz_period_end($period_start, $ref["period_months"], $ref["anchor_day"])
   end
   $cust_id = to_number($ref["customer_id"])
   $amount = to_number($ref["price_cents"])
@@ -225,7 +225,7 @@ function biz_tick_main()
   $stats = { generated: 0, gen_errors: 0, mails_sent: 0, mails_skipped: 0, mail_errors: 0 }
 
   -- 1. generate service renewals (window: due within lead; includes lapsed)
-  $svcs = db_query("SELECT id, customer_id, kind, label, price_cents, next_due, period_months FROM services
+  $svcs = db_query("SELECT id, customer_id, kind, label, price_cents, next_due, period_months, anchor_day FROM services
                     WHERE status = 'active' AND next_due IS NOT NULL AND next_due <= ?1
                     ORDER BY next_due", [$horizon])
   for each $s in $svcs

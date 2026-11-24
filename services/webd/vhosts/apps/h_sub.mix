@@ -25,6 +25,16 @@ end
 
 function sub_confirm($token)
   if length($token) != 64 or not bp_is_hex_token($token) then return sub_response(404, "<p>Invalid link.</p>") end
+  $proof = db_query("SELECT expires_at FROM sub_signups WHERE token_sha256 = ?1", [hash_sha256($token)])
+  if length($proof) == 0 then return sub_response(404, "<p>Invalid link.</p>") end
+  if $proof[0].expires_at <= biz_now() then return sub_response(410, "<p>This link has expired.</p>") end
+  if $METHOD == "GET" then
+    return sub_response(200, '<form method="post"><button type="submit">Confirm and continue to payment</button></form>')
+  end
+  if $METHOD != "POST" then return sub_response(405, "POST only") end
+  if $HEADERS["origin"] != nil and $HEADERS["origin"] != biz_base_url() then
+    return sub_response(403, "Origin mismatch")
+  end
   db_exec("BEGIN IMMEDIATE")
   try
     $rows = db_query("SELECT * FROM sub_signups WHERE token_sha256 = ?1", [hash_sha256($token)])
@@ -33,13 +43,13 @@ function sub_confirm($token)
       return sub_response(404, "<p>Invalid link.</p>")
     end
     $signup = $rows[0]
-    if $signup.used_at != nil then
-      db_exec("COMMIT")
-      return sub_pay($signup.invoice_id)
-    end
     if $signup.expires_at <= biz_now() then
       db_exec("ROLLBACK")
       return sub_response(410, "<p>This link has expired.</p>")
+    end
+    if $signup.used_at != nil then
+      db_exec("COMMIT")
+      return sub_pay($signup.invoice_id)
     end
     $plans = db_query("SELECT * FROM plans WHERE id = ?1 AND active = 1 AND kind = 'subscription'
                        AND product != '' AND period_months IN (1,12) AND price_cents > 0", [$signup.plan_id])
@@ -56,25 +66,42 @@ function sub_confirm($token)
       $customers = db_query("SELECT last_insert_rowid() AS id")
     end
     $customer_id = $customers[0].id
-    $existing = db_query("SELECT s.id, s.status, s.next_due FROM services s JOIN plans p ON p.id = s.plan_id
+    $existing = db_query("SELECT s.id, s.status, s.next_due, s.plan_id FROM services s JOIN plans p ON p.id = s.plan_id
                           WHERE s.customer_id = ?1 AND s.kind = 'subscription' AND p.product = ?2
-                          AND s.status IN ('active','pending') ORDER BY s.id LIMIT 1", [$customer_id, $plan.product])
+                          AND s.status IN ('active','pending','suspended') ORDER BY s.id LIMIT 1", [$customer_id, $plan.product])
     if length($existing) > 0 then
+      if $existing[0].status == "active" then
+        db_exec("COMMIT")
+        return sub_response(200, "<p>paid up until " .. html_escape("" .. $existing[0].next_due) .. "</p>")
+      end
       $open = db_query("SELECT i.id FROM invoices i JOIN invoice_items ii ON ii.invoice_id = i.id
                         WHERE ii.service_id = ?1 AND i.status IN ('open','draft') ORDER BY i.id LIMIT 1", [$existing[0].id])
-      if length($open) > 0 then
-        db_exec("UPDATE sub_signups SET invoice_id = ?2 WHERE id = ?1", [$signup.id, $open[0].id])
+      $replace_pending = $existing[0].status == "pending" and $existing[0].plan_id != $plan.id
+      if $replace_pending then
+        for each $invoice in $open
+          $cancel = biz_cancel_invoice_locked($invoice.id, "subscription", "different plan selected", true)
+          if not $cancel.ok then
+            db_exec("ROLLBACK")
+            return sub_response(409, "<p>Payment in progress. Please finish or retry later.</p>")
+          end
+        end
+        db_exec("UPDATE services SET status = 'cancelled', updated = ?2 WHERE id = ?1", [$existing[0].id, biz_now()])
+      else
+        if length($open) > 0 then
+          db_exec("UPDATE sub_signups SET invoice_id = ?2 WHERE id = ?1", [$signup.id, $open[0].id])
+          db_exec("COMMIT")
+          return sub_pay($open[0].id)
+        end
         db_exec("COMMIT")
-        return sub_pay($open[0].id)
+        return sub_response(200, "<p>" .. html_escape($existing[0].status) .. " — paid up until " .. html_escape("" .. $existing[0].next_due) .. "</p>")
       end
-      db_exec("COMMIT")
-      return sub_response(200, "<p>" .. html_escape($existing[0].status) .. " — paid up until " .. html_escape("" .. $existing[0].next_due) .. "</p>")
     end
     $today = biz_today()
-    $period_end = biz_date_add($today, "+" .. $plan.period_months .. " months")
-    db_exec("INSERT INTO services (customer_id,kind,label,plan_id,price_cents,period_months,status,next_due,created,updated)
-             VALUES (?1,'subscription',?2,?3,?4,?5,'pending',?6,?7,?7)",
-            [$customer_id, $plan.name, $plan.id, $plan.price_cents, $plan.period_months, $today, biz_now()])
+    $anchor = to_number(substr($today, 8, 2))
+    $period_end = biz_period_end($today, $plan.period_months, $anchor)
+    db_exec("INSERT INTO services (customer_id,kind,label,plan_id,price_cents,period_months,status,next_due,created,updated,anchor_day)
+             VALUES (?1,'subscription',?2,?3,?4,?5,'pending',?6,?7,?7,?8)",
+            [$customer_id, $plan.name, $plan.id, $plan.price_cents, $plan.period_months, $today, biz_now(), $anchor])
     $service = db_query("SELECT last_insert_rowid() AS id")
     db_exec("INSERT INTO invoices (customer_id,status,created,updated) VALUES (?1,'draft',?2,?2)", [$customer_id, biz_now()])
     $invoice = db_query("SELECT last_insert_rowid() AS id")
@@ -96,10 +123,10 @@ end
 function sub_export($product)
   $secret = biz_setting("sub_export_secret")
   if $secret == "" then return sub_response(404, "not found") end
-  if not bp_rate_ok("sub:export", 120, 60) then return sub_response(429, "rate limited") end
   $header = ""
   if $HEADERS["x-sub-secret"] != nil then $header = "" .. $HEADERS["x-sub-secret"] end
   if not constant_time_eq($secret, $header) then return sub_response(401, "unauthorised") end
+  if not bp_rate_ok("sub:export:authenticated", 120, 60) then return sub_response(429, "rate limited") end
   $rows = db_query("SELECT c.email, p.code AS plan_code, s.period_months, s.next_due AS paid_through, s.status
                     FROM services s JOIN plans p ON p.id = s.plan_id JOIN customers c ON c.id = s.customer_id
                     WHERE s.kind = 'subscription' AND p.product = ?1
@@ -120,8 +147,8 @@ function sub_main()
     $query = parse_form($QUERY)
     return sub_export("" .. ($query["product"] ?? ""))
   end
-  if $METHOD == "GET" and $product == "confirm" and length($parts) == 4 then
-    if not bp_rate_ok("sub:confirm", 120, 60) then return sub_response(429, "rate limited") end
+  if $product == "confirm" and length($parts) == 4 then
+    if $METHOD == "POST" and not bp_rate_ok("sub:confirm", 120, 60) then return sub_response(429, "rate limited") end
     return sub_confirm($parts[3])
   end
   if length($parts) != 3 then return sub_response(404, "not found") end
@@ -135,11 +162,16 @@ function sub_main()
     -- well as each email; never trust a visitor-supplied forwarding header.
     $global_ok = bp_rate_ok("sub:signup", 100, 3600)
     $email_ok = bp_rate_ok("sub:email:" .. hash_sha256($email), 3, 3600)
+    $domain = split($email, "@")
+    $domain_ok = false
+    if length($domain) == 2 then
+      $domain_ok = bp_rate_ok("sub:domain:" .. hash_sha256($domain[1]), 20, 3600)
+    end
     $selected = nil
     for each $plan in $plans
       if to_number($form["plan_id"]) == $plan.id then $selected = $plan end
     end
-    if $global_ok and $email_ok and biz_is_plain_email($email) and $selected != nil then
+    if $global_ok and $email_ok and $domain_ok and biz_is_plain_email($email) and $selected != nil then
       $token = biz_token()
       db_exec("INSERT INTO sub_signups (token_sha256,email,plan_id,expires_at,created)
                VALUES (?1,?2,?3,?4,?5)", [hash_sha256($token), $email, $selected.id, date_format(time() + 86400, "%Y-%m-%dT%H:%M:%S"), biz_now()])

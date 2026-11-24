@@ -29,7 +29,7 @@ function biz_subscription_migrate()
     $sql = replace($sql, "CREATE TABLE services", "CREATE TABLE services_sub_new")
     db_exec($sql)
     -- Explicit names: webd deliberately denies PRAGMA to vhost handlers.
-    $names = "id,legacy_id,customer_id,kind,label,plan_id,units,addon_bulk25,addon_ipv4,price_cents,node,vmid,ip,fqdn,status,next_due,payment_pref,auto_charge,notes,created,updated,period_months"
+    $names = "id,legacy_id,customer_id,kind,label,plan_id,units,addon_bulk25,addon_ipv4,price_cents,node,vmid,ip,fqdn,status,next_due,payment_pref,auto_charge,notes,created,updated,period_months,anchor_day"
     db_exec("INSERT INTO services_sub_new (" .. $names .. ") SELECT " .. $names .. " FROM services")
     $before = db_query("SELECT COUNT(*) AS n FROM services")
     $after = db_query("SELECT COUNT(*) AS n FROM services_sub_new")
@@ -49,6 +49,67 @@ end
 function biz_invoice_subscription($invoice_id)
   return length(db_query("SELECT 1 FROM invoice_items ii JOIN services s ON s.id = ii.service_id
                            WHERE ii.invoice_id = ?1 AND s.kind = 'subscription' LIMIT 1", [$invoice_id])) > 0
+end
+
+-- Preserve annual SQLite leap policy. Other periods keep the original day,
+-- clamped to the destination month, rather than overflowing or drifting.
+function biz_period_end($start, $months, $anchor)
+  if to_number($months) == 12 then return biz_date_add($start, "+1 year") end
+  if $anchor == nil then $anchor = to_number(substr($start, 8, 2)) end
+  $rows = db_query("SELECT date(?1, 'start of month', '+' || ?2 || ' months',
+                    '+' || (MIN(?3, CAST(strftime('%d', date(?1, 'start of month',
+                    '+' || ?2 || ' months', '+1 month', '-1 day')) AS INTEGER)) - 1) || ' days') AS d",
+                   [$start, $months, $anchor])
+  return $rows[0].d
+end
+
+function biz_subscription_plan($kind, $plan_id)
+  if $kind != "subscription" then return {ok: true, period_months: 12, price_cents: nil} end
+  $plans = db_query("SELECT period_months,price_cents FROM plans WHERE id=?1 AND kind='subscription'
+                     AND period_months IN (1,12)", [$plan_id])
+  if length($plans) == 0 then return {ok: false, error: "A subscription service requires a subscription plan."} end
+  return {ok: true, period_months: $plans[0].period_months, price_cents: $plans[0].price_cents}
+end
+
+-- Admin recovery for an uncredited, unpaid cancelled subscription invoice.
+-- Credit was released on cancellation: require a replacement invoice instead
+-- for credited invoices. Reclaim period keys before reopening to prevent twins.
+function biz_reopen_subscription_invoice($invoice_id, $actor)
+  db_exec("BEGIN IMMEDIATE")
+  try
+    $invoices = db_query("SELECT * FROM invoices WHERE id=?1 AND status='cancelled' AND credit_cents=0", [$invoice_id])
+    if length($invoices) == 0 or not biz_invoice_subscription($invoice_id) or biz_net_paid_cents($invoice_id) != 0 then
+      db_exec("ROLLBACK")
+      return {ok: false, error: "Use an unpaid cancelled subscription invoice without credit."}
+    end
+    $items = db_query("SELECT ii.* FROM invoice_items ii JOIN services s ON s.id=ii.service_id
+                       WHERE ii.invoice_id=?1 AND s.kind='subscription' AND s.status='cancelled'", [$invoice_id])
+    if length($items) == 0 then
+      db_exec("ROLLBACK")
+      return {ok: false, error: "Subscription is no longer cancelled."}
+    end
+    for each $item in $items
+      -- Do not revive a plan replaced by another subscription for the product.
+      $other = db_query("SELECT 1 FROM services old JOIN plans op ON op.id=old.plan_id
+                         JOIN services s ON s.customer_id=old.customer_id JOIN plans p ON p.id=s.plan_id
+                         WHERE old.id=?1 AND s.id!=old.id AND s.kind='subscription'
+                         AND p.product=op.product AND s.status IN ('pending','active','suspended')", [$item.service_id])
+      if length($other) > 0 then
+        db_exec("ROLLBACK")
+        return {ok: false, error: "Another subscription exists; reconcile the transfer against that invoice."}
+      end
+      db_exec("INSERT INTO renewal_keys (kind,ref_id,period_start,invoice_id) VALUES ('service',?1,?2,?3)",
+              [$item.service_id,$item.period_start,$invoice_id])
+      db_exec("UPDATE services SET status='pending',updated=?2 WHERE id=?1", [$item.service_id,biz_now()])
+    end
+    db_exec("UPDATE invoices SET status='open',issued=?2,updated=?3 WHERE id=?1", [$invoice_id,biz_today(),biz_now()])
+    biz_audit($actor,"subscription_invoice_reopen","invoices",$invoice_id,"late transfer recovery; ready to record payment")
+    db_exec("COMMIT")
+    return {ok: true, error: ""}
+  catch $e
+    try db_exec("ROLLBACK") catch $rollback_error end
+    return {ok: false, error: "Could not reopen; check for a replacement invoice."}
+  end
 end
 
 function biz_init()
@@ -111,6 +172,9 @@ function biz_init()
     notes TEXT DEFAULT '', created TEXT, updated TEXT)")
   try db_exec("ALTER TABLE services ADD COLUMN fqdn TEXT NOT NULL DEFAULT ''") catch $e end
   try db_exec("ALTER TABLE services ADD COLUMN period_months INTEGER NOT NULL DEFAULT 12") catch $e end
+  try db_exec("ALTER TABLE services ADD COLUMN anchor_day INTEGER") catch $e end
+  db_exec("UPDATE services SET anchor_day = CAST(substr(next_due,9,2) AS INTEGER)
+           WHERE anchor_day IS NULL AND next_due IS NOT NULL")
   biz_subscription_migrate()
 
   db_exec("CREATE TABLE IF NOT EXISTS domains (
@@ -546,7 +610,8 @@ function biz_init()
   biz_set_default("seller_gst_registered", "0")
   biz_set_default("sub_mail_mode", "off")
   biz_set_default("sub_grace_days", "3")
-  biz_set_default("sub_pending_days", "7")
+  biz_set_default("sub_pending_days", "14")
+  biz_set_default("stripe_descriptor_suffix", "")
   biz_set_default("sub_export_secret", "")
   -- tenant-specific (bank account, legal seller identity): EMPTY by default —
   -- the invoice hides its bank-transfer block until an admin fills this in
@@ -1036,13 +1101,15 @@ function biz_advance_renewals($invoice_id)
     db_exec("INSERT OR IGNORE INTO notification_events (invoice_id, template, scheduled_for)
              VALUES (?1, 'sub_receipt', ?2)", [$invoice_id, biz_today()])
   end
-  $svc_items = db_query("SELECT DISTINCT service_id FROM invoice_items
-                         WHERE invoice_id = ?1 AND service_id IS NOT NULL", [$invoice_id])
+  $svc_items = db_query("SELECT DISTINCT s.id AS service_id, s.next_due, s.period_months, s.anchor_day
+                         FROM invoice_items ii JOIN services s ON s.id = ii.service_id
+                         WHERE ii.invoice_id = ?1 AND s.next_due IS NOT NULL", [$invoice_id])
   for each $it in $svc_items
-    db_exec("UPDATE services SET next_due = date(next_due, '+' || period_months || ' months'),
+    $next = biz_period_end($it.next_due, $it.period_months, $it.anchor_day)
+    db_exec("UPDATE services SET anchor_day = COALESCE(anchor_day, CAST(substr(next_due,9,2) AS INTEGER)), next_due = ?3,
              status = CASE WHEN kind = 'subscription' AND status IN ('pending','suspended')
                            THEN 'active' ELSE status END, updated = ?2
-             WHERE id = ?1 AND next_due IS NOT NULL", [$it.service_id, biz_now()])
+             WHERE id = ?1 AND next_due IS NOT NULL", [$it.service_id, biz_now(), $next])
   end
   $dom_items = db_query("SELECT DISTINCT domain_id FROM invoice_items
                          WHERE invoice_id = ?1 AND domain_id IS NOT NULL", [$invoice_id])
@@ -1069,10 +1136,10 @@ function biz_subscription_tick($today)
   $pending = db_query("SELECT s.id, i.id AS invoice_id FROM services s
                        JOIN invoice_items ii ON ii.service_id = s.id JOIN invoices i ON i.id = ii.invoice_id
                        WHERE s.kind = 'subscription' AND s.status = 'pending'
-                       AND date(s.created, '+' || ?2 || ' days') < ?1 AND i.status IN ('draft','open')",
+                       AND date(i.issued, '+' || ?2 || ' days') < ?1 AND i.status = 'open'",
                       [$today, biz_setting("sub_pending_days")])
   for each $row in $pending
-    $cancel = biz_cancel_invoice($row.invoice_id, "tick", "unpaid subscription expired")
+    $cancel = biz_cancel_invoice($row.invoice_id, "tick", "unpaid subscription expired", true)
     if $cancel.ok then
       db_exec("UPDATE services SET status = 'cancelled', updated = ?2 WHERE id = ?1 AND status = 'pending'",
               [$row.id, biz_now()])
@@ -1294,53 +1361,61 @@ end
 -- Cancel an OPEN/DRAFT invoice: frees its renewal keys so the tick can reissue,
 -- and RELEASES credit spent at issue (open invoices carry a negative ledger row
 -- from biz_issue_invoice; drafts never spent, so nothing to release).
-function biz_cancel_invoice($invoice_id, $actor, $reason)
+function biz_cancel_invoice($invoice_id, $actor, $reason, $unpaid_only = false)
   db_exec("BEGIN IMMEDIATE")
   try
-    -- charge-reservation fence (same rule as manual recording, INSIDE the
-    -- tx): a live gateway attempt means a customer may be mid-checkout —
-    -- cancelling now could still end in a charge against a cancelled
-    -- invoice (the gateway HTTP window is wide, not sub-millisecond).
-    -- Refuse; the attempt resolves or ages out within 24h.
-    $fence = db_query("SELECT id FROM payment_attempts WHERE invoice_id = ?1
-                       AND status = 'created' AND updated > ?2
-                       LIMIT 1", [$invoice_id, biz_now_ago(86400)])
-    if length($fence) > 0 then
-      db_exec("ROLLBACK")
-      return { ok: false, error: "live gateway attempt exists — cancel after it resolves or expires" }
-    end
-    $was = db_query("SELECT status, customer_id, credit_cents FROM invoices
-                     WHERE id = ?1", [$invoice_id])
-    db_exec("UPDATE invoices SET status = 'cancelled', updated = ?2
-             WHERE id = ?1 AND status IN ('open', 'draft')", [$invoice_id, biz_now()])
-    $ch = db_query("SELECT changes() AS n")
-    if to_number($ch[0].n) == 1 then
-      db_exec("DELETE FROM renewal_keys WHERE invoice_id = ?1", [$invoice_id])
-      $w = $was[0]
-      if ("" .. $w.status) == "open" then
-        -- release exactly what THIS invoice ledgered at issue (net of any prior
-        -- release) — an imported open invoice has credit_cents but no ledger spend,
-        -- and releasing invoices.credit_cents blindly would mint credit (Codex).
-        $spent = db_query("SELECT COALESCE(-SUM(delta_cents), 0) AS s FROM credit_ledger
-                           WHERE invoice_id = ?1", [$invoice_id])
-        $rel = to_number($spent[0].s)
-        if $rel > 0 then
-          db_exec("INSERT INTO credit_ledger (customer_id, delta_cents, reason, invoice_id, at)
-                   VALUES (?1, ?2, ?3, ?4, ?5)",
-                  [$w.customer_id, $rel,
-                   "released by cancellation of INV-" .. $invoice_id, $invoice_id, biz_now()])
-        end
-      end
-      db_exec("COMMIT")
-      biz_audit($actor, "cancel", "invoices", $invoice_id, "" .. $reason)
-      return { ok: true, error: "" }
-    end
-    db_exec("ROLLBACK")
-    return { ok: false, error: "invoice not open/draft" }
+    $result = biz_cancel_invoice_locked($invoice_id, $actor, $reason, $unpaid_only)
+    if $result.ok then db_exec("COMMIT") else db_exec("ROLLBACK") end
+    return $result
   catch $e
-    try db_exec("ROLLBACK") catch $e2 end
-    return { ok: false, error: "" .. $e }
+    try db_exec("ROLLBACK") catch $rollback_error end
+    return {ok: false, error: "" .. $e}
   end
+end
+
+-- Caller holds BEGIN IMMEDIATE; shared cancellation/credit/renewal-key path.
+function biz_cancel_invoice_locked($invoice_id, $actor, $reason, $unpaid_only)
+  -- charge-reservation fence (same rule as manual recording, INSIDE the
+  -- tx): a live gateway attempt means a customer may be mid-checkout —
+  -- cancelling now could still end in a charge against a cancelled
+  -- invoice (the gateway HTTP window is wide, not sub-millisecond).
+  -- Ordinary admin cancellation retains its 24h fence. Automatic subscription
+  -- expiry/plan replacement refuses ANY still-created attempt, however old.
+  $fence = db_query("SELECT id FROM payment_attempts WHERE invoice_id = ?1
+                     AND status = 'created' AND (?3 = 1 OR updated > ?2)
+                     LIMIT 1", [$invoice_id, biz_now_ago(86400), $unpaid_only])
+  if length($fence) > 0 then
+    return { ok: false, error: "live gateway attempt exists — cancel after it resolves or expires" }
+  end
+  if $unpaid_only and biz_net_paid_cents($invoice_id) != 0 then
+    return {ok: false, error: "invoice has a net payment"}
+  end
+  $was = db_query("SELECT status, customer_id, credit_cents FROM invoices
+                   WHERE id = ?1", [$invoice_id])
+  db_exec("UPDATE invoices SET status = 'cancelled', updated = ?2
+           WHERE id = ?1 AND status IN ('open', 'draft')", [$invoice_id, biz_now()])
+  $ch = db_query("SELECT changes() AS n")
+  if to_number($ch[0].n) == 1 then
+    db_exec("DELETE FROM renewal_keys WHERE invoice_id = ?1", [$invoice_id])
+    $w = $was[0]
+    if ("" .. $w.status) == "open" then
+      -- release exactly what THIS invoice ledgered at issue (net of any prior
+      -- release) — an imported open invoice has credit_cents but no ledger spend,
+      -- and releasing invoices.credit_cents blindly would mint credit (Codex).
+      $spent = db_query("SELECT COALESCE(-SUM(delta_cents), 0) AS s FROM credit_ledger
+                         WHERE invoice_id = ?1", [$invoice_id])
+      $rel = to_number($spent[0].s)
+      if $rel > 0 then
+        db_exec("INSERT INTO credit_ledger (customer_id, delta_cents, reason, invoice_id, at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                [$w.customer_id, $rel,
+                 "released by cancellation of INV-" .. $invoice_id, $invoice_id, biz_now()])
+      end
+    end
+    biz_audit($actor, "cancel", "invoices", $invoice_id, "" .. $reason)
+    return { ok: true, error: "" }
+  end
+  return { ok: false, error: "invoice not open/draft" }
 end
 
 -- Issue a DRAFT invoice: bill_to snapshot, token, issued/due dates; flips to open;

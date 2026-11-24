@@ -15,7 +15,11 @@ function biz_subscriptions_main()
     if $CSRF == "" or not constant_time_eq($CSRF, "" .. ($form["csrf"] ?? "")) then
       return { status: 403, headers: {}, body: "invalid CSRF token" }
     end
-    if $form["action"] == "settings" then
+    if $form["action"] == "reopen" then
+      $reopened = biz_reopen_subscription_invoice(to_number($form["invoice_id"]), $user.username)
+      if not $reopened.ok then return {status: 409, headers: {}, body: $reopened.error} end
+      return redirect("/biz/invoices?view=" .. to_number($form["invoice_id"]))
+    elif $form["action"] == "settings" then
       $mode = "" .. $form["sub_mail_mode"]
       $grace = to_number($form["sub_grace_days"])
       $pending = to_number($form["sub_pending_days"])
@@ -25,6 +29,7 @@ function biz_subscriptions_main()
       biz_setting_set("sub_mail_mode", $mode)
       biz_setting_set("sub_grace_days", "" .. $grace)
       biz_setting_set("sub_pending_days", "" .. $pending)
+      biz_setting_set("stripe_descriptor_suffix", trim("" .. ($form["stripe_descriptor_suffix"] ?? "")))
       $secret = trim("" .. ($form["sub_export_secret"] ?? ""))
       if $secret != "" then biz_setting_set("sub_export_secret", $secret) end
       biz_audit($user.username, "subscription_settings", "biz_settings", nil, "settings updated")
@@ -66,9 +71,12 @@ function biz_subscriptions_main()
     $html = $html .. '<button type="submit">Save plan</button></form>'
   end
   $html = $html .. fm_open("/biz/subscriptions", {}) .. '<input type="hidden" name="csrf" value="' .. esc($CSRF) .. '"><input type="hidden" name="action" value="settings">'
-  for each $key in ["sub_mail_mode","sub_grace_days","sub_pending_days"]
+  for each $key in ["sub_mail_mode","sub_grace_days","sub_pending_days","stripe_descriptor_suffix"]
     $html = $html .. fm_text($key, $key, { value: biz_setting($key) })
   end
   $html = $html .. fm_password("sub_export_secret", "Export secret (blank keeps current)", { value: "" })
-  return doc(200, "Subscription plans", $user, $html .. '<button type="submit">Save settings</button></form>')
+  $html = $html .. '<button type="submit">Save settings</button></form><h2>Late bank transfer</h2><p>Reopen an unpaid cancelled subscription invoice, then record the transfer on its invoice page. Credited or replaced invoices require manual reconciliation.</p>'
+  $html = $html .. fm_open("/biz/subscriptions", {}) .. '<input type="hidden" name="csrf" value="' .. esc($CSRF) .. '"><input type="hidden" name="action" value="reopen">'
+  $html = $html .. fm_text("invoice_id", "Cancelled invoice ID", {}) .. '<button type="submit">Reopen invoice</button></form>'
+  return doc(200, "Subscription plans", $user, $html)
 end

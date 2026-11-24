@@ -965,6 +965,8 @@ if $METHOD == "POST" then
   if trim(fm_val($f, "plan_id")) != "" then
     $plan_id = to_number(fm_val($f, "plan_id"))
   end
+  $sub_plan = biz_subscription_plan($kind, $plan_id)
+  if not $sub_plan.ok then $err = $sub_plan.error end
   $units = nil
   $uraw = trim(fm_val($f, "units"))
   if $err == "" and $uraw != "" then
@@ -978,7 +980,9 @@ if $METHOD == "POST" then
   $draw = trim(fm_val($f, "price"))
   if $err == "" then
     if $draw == "" then
-      if $units != nil then
+      if $kind == "subscription" then
+        $cents = $sub_plan.price_cents
+      elif $units != nil then
         $cents = price_for_units($units)
       else
         $err = "Price is required (or set units for the catalogue price)."
@@ -1045,6 +1049,12 @@ if $METHOD == "POST" then
       db_exec("ROLLBACK")
       return redirect_flash("/biz/services", "No such customer", "danger")
     end
+    $sub_plan = biz_subscription_plan($kind, $plan_id)
+    if not $sub_plan.ok then
+      db_exec("ROLLBACK")
+      return redirect_flash("/biz/services", $sub_plan.error, "danger")
+    end
+    if $kind == "subscription" and $draw == "" then $cents = $sub_plan.price_cents end
     if $editid != "" then
       $sid = to_number($editid)
       if not biz_row_exists("services", $sid) then
@@ -1054,15 +1064,16 @@ if $METHOD == "POST" then
       -- node/vmid/ip/legacy_id are provisioning-owned — the editor never touches them.
       db_exec("UPDATE services SET customer_id = ?1, kind = ?2, label = ?3, plan_id = ?4, units = ?5,
                addon_bulk25 = ?6, addon_ipv4 = ?7, price_cents = ?8, status = ?9, next_due = ?10,
-               payment_pref = ?11, auto_charge = ?12, notes = ?13, updated = ?14 WHERE id = ?15",
+               payment_pref = ?11, auto_charge = ?12, notes = ?13, updated = ?14,
+               period_months = ?16, anchor_day = COALESCE(anchor_day, CAST(substr(?10,9,2) AS INTEGER)) WHERE id = ?15",
               [$custid, $kind, $label, $plan_id, $units, $b25, $ip4, $cents, $status, $duebind,
-               $pref, $auto, fm_val($f, "notes"), biz_now(), $sid])
+               $pref, $auto, fm_val($f, "notes"), biz_now(), $sid, $sub_plan.period_months])
     else
       db_exec("INSERT INTO services (customer_id, kind, label, plan_id, units, addon_bulk25, addon_ipv4,
-               price_cents, status, next_due, payment_pref, auto_charge, notes, created, updated)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)",
+               price_cents, status, next_due, payment_pref, auto_charge, notes, created, updated, period_months, anchor_day)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14, ?15, CAST(substr(?10,9,2) AS INTEGER))",
               [$custid, $kind, $label, $plan_id, $units, $b25, $ip4, $cents, $status, $duebind,
-               $pref, $auto, fm_val($f, "notes"), biz_now()])
+               $pref, $auto, fm_val($f, "notes"), biz_now(), $sub_plan.period_months])
       $nid = db_query("SELECT last_insert_rowid() AS id")
       $sid = to_number($nid[0]["id"])
     end
