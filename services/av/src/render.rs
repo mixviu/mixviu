@@ -53,6 +53,7 @@ struct VflSource {
 struct SourceCatalog {
     paths: HashMap<PathBuf, Arc<VflSource>>,
     resolved: HashMap<PathBuf, Arc<VflSource>>,
+    stills: HashMap<PathBuf, (Input, u64, u64)>,
     #[cfg(test)]
     opens: usize,
     #[cfg(test)]
@@ -287,7 +288,8 @@ impl TryFrom<SegmentSpec> for Segment {
             if !time(duration) || frame(duration) == 0 || !time(s.at_s + duration) {
                 return Err("render: segment_duration_s".into());
             }
-            out.to_slot = frame(duration);
+            out.to_slot = frame(s.at_s + duration).checked_sub(frame(s.at_s))
+                .filter(|n| *n > 0).ok_or("render: segment_duration_s")?;
             if let Some(path) = s.still { out.path = path; out.still = true; }
             if let Some(colour) = s.solid {
                 out.solid = Some(if colour == "black" { [0, 0, 0] } else {
@@ -402,7 +404,13 @@ impl Timeline {
             let (input, w, h) = if let Some(rgb) = s.solid {
                 (Input::Solid(rgb), v.width as u64, v.height as u64)
             } else if s.still {
-                open_still(base, &relative)?
+                if let Some(source) = catalog.stills.get(&relative) {
+                    source.clone()
+                } else {
+                    let source = open_still(base, &relative)?;
+                    catalog.stills.insert(relative, source.clone());
+                    source
+                }
             } else {
                 let source = catalog.get(base, &relative)?;
                 if s.from_slot >= source.count || s.to_slot > source.count {
@@ -550,10 +558,10 @@ impl Source {
         stats: &mut ScaleStats,
     ) -> Result<(Arc<Bgra>, bool)> {
         if self.reader.is_none() {
-            let b = self.current.as_ref().ok_or("missing_frame")?;
             let repeat = self.next != u64::MAX;
             if !repeat {
-                self.current = Some(Arc::new(scale_frame(b.as_ref().clone(), width, height, stats)?));
+                let b = Arc::unwrap_or_clone(self.current.take().ok_or("missing_frame")?);
+                self.current = Some(Arc::new(scale_frame(b, width, height, stats)?));
                 self.next = 0;
             }
             return Ok((self.current.as_ref().ok_or("missing_frame")?.clone(), repeat));
@@ -952,6 +960,91 @@ fn deliver_receipt(receipt: &str, outcome: u8) -> Result<u8> {
 mod tests {
     use super::*;
     use serde_json::json;
+    fn png_file(path: &Path, width: u32, height: u32) {
+        let file = std::fs::File::create(path).unwrap();
+        let mut e = png::Encoder::new(file, width, height);
+        e.set_color(png::ColorType::Rgba);
+        let mut w = e.write_header().unwrap();
+        if u64::from(width) * u64::from(height) <= STILL_PIXELS_LIMIT {
+            w.write_image_data(&[100, 80, 60, 128].repeat(width as usize * height as usize)).unwrap();
+        } else {
+            w.write_chunk(png::chunk::IDAT, &[]).unwrap();
+        }
+    }
+    #[test]
+    fn segment_kinds_refuse_ambiguous_fields_colours_and_durations() {
+        for value in [
+            json!({"solid":"red","at_s":0,"duration_s":1}),
+            json!({"solid":[256,0,0],"at_s":0,"duration_s":1}),
+            json!({"solid":[0,0],"at_s":0,"duration_s":1}),
+            json!({"solid":"black","at_s":0,"duration_s":0}),
+            json!({"solid":"black","at_s":0,"duration_s":-1}),
+            json!({"solid":"black","at_s":0,"duration_s":10801}),
+            json!({"still":"a.png","at_s":0}),
+            json!({"still":"a.png","at_s":0,"duration_s":0.001}),
+            json!({"still":"a.png","solid":"black","at_s":0,"duration_s":1}),
+            json!({"solid":"black","path":"a.vfl","at_s":0,"duration_s":1}),
+            json!({"still":"a.png","from_slot":0,"at_s":0,"duration_s":1}),
+            json!({"solid":"black","to_slot":1,"at_s":0,"duration_s":1}),
+        ] {
+            assert!(serde_json::from_value::<Segment>(value.clone()).is_err(), "{value}");
+        }
+    }
+    #[test]
+    fn solid_needs_no_files_and_repeats_without_scaling() {
+        let mut t = fixture(tempfile::tempdir().unwrap().path());
+        t.video.crossfades.clear();
+        t.video.segments = vec![serde_json::from_value(json!({"solid":[10,20,30],"at_s":0,"duration_s":0.6})).unwrap()];
+        let (_, inputs) = t.validate(Path::new("/does-not-exist")).unwrap();
+        assert_eq!(t.video.segments[0].to_slot, 18);
+        let mut source = Source::new(inputs[0].clone(), 32, 32).unwrap();
+        let mut stats = ScaleStats::default();
+        let (first, repeat) = source.get(0, 32, 32, &mut stats).unwrap();
+        assert!(!repeat);
+        assert_eq!(&first.pixels()[..4], &[30,20,10,255]);
+        let (held, repeat) = source.get(17, 32, 32, &mut stats).unwrap();
+        assert!(repeat && Arc::ptr_eq(&first, &held));
+        assert_eq!(stats.frames, 0);
+    }
+    #[test]
+    fn still_confinement_limits_retained_descriptor_and_scaler() {
+        let root = tempfile::tempdir().unwrap();
+        let mut t = fixture(root.path());
+        png_file(&root.path().join("a.png"), 16, 8);
+        t.video.crossfades.clear();
+        t.video.segments = vec![serde_json::from_value(json!({"still":"a.png","at_s":0,"duration_s":1})).unwrap()];
+        let (_, inputs) = t.validate(root.path()).unwrap();
+        std::fs::rename(root.path().join("a.png"), root.path().join("saved.png")).unwrap();
+        std::os::unix::fs::symlink("/dev/zero", root.path().join("a.png")).unwrap();
+        let mut source = Source::new(inputs[0].clone(), 32, 32).unwrap();
+        let mut stats = ScaleStats::default();
+        let (b, repeat) = source.get(0, 32, 32, &mut stats).unwrap();
+        assert!(!repeat);
+        assert_eq!(b.width(), 32);
+        assert_eq!(&b.pixels()[..4], &[0,0,0,255]); // aspect padding
+        assert_eq!(&b.pixels()[(16*32+16)*4..(16*32+16)*4+4], &[30,40,50,255]);
+        assert!(source.get(1, 32, 32, &mut stats).unwrap().1);
+        assert_eq!(stats.frames, 1);
+        assert!(t.validate(root.path()).unwrap_err().to_string().contains("still_regular_file"));
+        for path in ["../escape.png", "/absolute.png", ""] {
+            t.video.segments[0].path = path.into();
+            assert!(t.validate(root.path()).unwrap_err().to_string().contains("segment_path_relative"));
+        }
+        let outside = tempfile::tempdir().unwrap();
+        png_file(&outside.path().join("outside.png"), 16, 16);
+        std::os::unix::fs::symlink(outside.path(), root.path().join("escape")).unwrap();
+        t.video.segments[0].path = "escape/outside.png".into();
+        assert!(t.validate(root.path()).unwrap_err().to_string().contains("segment_path_escape"));
+        let huge = std::fs::File::create(root.path().join("huge.png")).unwrap();
+        huge.set_len(STILL_FILE_BYTES_LIMIT+1).unwrap();
+        t.video.segments[0].path = "huge.png".into();
+        assert!(t.validate(root.path()).unwrap_err().to_string().contains("still_file_bytes_limit"));
+        png_file(&root.path().join("dimensions.png"), STILL_DIMENSION_LIMIT+1, 4320);
+        t.video.segments[0].path = "dimensions.png".into();
+        assert!(t.validate(root.path()).unwrap_err().to_string().contains("still_dimensions_limit"));
+        t.video.segments = (0..=SOURCE_LIMIT).map(|i| serde_json::from_value(json!({"still":format!("missing-{i}.png"),"at_s":i as f64/30.0,"duration_s":1})).unwrap()).collect();
+        assert!(t.validate(root.path()).unwrap_err().to_string().contains("too_many_sources"));
+    }
     fn fixture(root: &Path) -> Timeline {
         let mut w = media_vfl::Writer::new(root.join("a.vfl"), 32, 32, 30).unwrap();
         w.origin(0).unwrap();
