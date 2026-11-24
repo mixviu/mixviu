@@ -97,8 +97,8 @@ fn mix_decode_length_and_mastering_oracles() {
                 .parse::<f64>()
                 .unwrap()
         };
-        assert!((get("I:") + 14.0).abs() <= 0.5, "{summary}");
-        assert!(get("Peak:") <= -0.9, "{summary}");
+        assert!((get("I:") + 14.0).abs() <= 0.1, "{summary}");
+        assert!(get("Peak:") <= -1.0, "{summary}");
         std::fs::remove_file(out).unwrap();
         std::fs::remove_file(wav).unwrap();
     }
@@ -140,7 +140,7 @@ fn mix_decode_length_and_mastering_oracles() {
         .unwrap()
         .parse::<f64>()
         .unwrap();
-    assert!(peak <= -0.9, "{summary}");
-    assert!(r.codec_passes <= 2);
+    assert!(peak <= -1.0, "{summary}");
+    assert!(r.codec_passes < 6);
     std::fs::remove_dir_all(dir).unwrap();
 }

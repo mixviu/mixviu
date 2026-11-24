@@ -272,6 +272,39 @@ struct Video {
     segments: Vec<Segment>,
     #[serde(default)]
     crossfades: Vec<Fade>,
+    #[serde(default)]
+    fade_in_s: f64,
+    #[serde(default)]
+    fade_out_s: f64,
+}
+
+// Inclusive endpoints: the first/last envelope pictures are exactly black.
+fn programme_gain(v: &Video, k: u64, n: u64) -> Option<(u64, u64)> {
+    let incoming = frame(v.fade_in_s);
+    let outgoing = frame(v.fade_out_s);
+    if incoming > 0 && k < incoming {
+        Some((k, incoming - 1))
+    } else if outgoing > 0 && k >= n - outgoing {
+        Some((n - 1 - k, outgoing - 1))
+    } else {
+        None
+    }
+}
+
+fn programme_picture(v: &Video, b: &Bgra, k: u64, n: u64) -> media_frame::Yuv420 {
+    let mut yuv = b.to_yuv420();
+    if let Some((gain, denominator)) = programme_gain(v, k, n) {
+        // BT.709 limited-range black. Work in the composed delivery planes,
+        // matching ffmpeg fade on yuv420p, with nearest-integer rounding.
+        for (plane, black) in [(&mut yuv.y, 16i64), (&mut yuv.u, 128), (&mut yuv.v, 128)] {
+            for value in plane {
+                let delta = (i64::from(*value) - black) * gain as i64;
+                let rounded = (delta.abs() + denominator as i64 / 2) / denominator as i64;
+                *value = (black + rounded * delta.signum()).clamp(0, 255) as u8;
+            }
+        }
+    }
+    yuv
 }
 #[derive(Deserialize, Default)]
 #[serde(try_from = "SegmentSpec")]
@@ -390,6 +423,19 @@ impl Timeline {
         }
         if !time(self.duration_s) || frame(self.duration_s) == 0 {
             return refuse("duration_s");
+        }
+        for duration in [v.fade_in_s, v.fade_out_s] {
+            if !time(duration)
+                || duration > self.duration_s
+                || (duration > 0.0 && frame(duration) < 2)
+            {
+                return refuse("programme_fade_range");
+            }
+        }
+        if v.fade_in_s + v.fade_out_s > self.duration_s
+            || frame(v.fade_in_s) + frame(v.fade_out_s) > frame(self.duration_s)
+        {
+            return refuse("programme_fade_overlap");
         }
         if v.fps != 30 {
             return refuse("fps: only 30 supported");
@@ -755,8 +801,8 @@ pub fn reference(path: &Path, out: impl std::io::Write) -> Result<()> {
             k,
             &mut scaling,
         )?;
-        if !repeat {
-            yuv = Some(b.to_yuv420());
+        if !repeat || programme_gain(v, k, frame(t.duration_s)).is_some() {
+            yuv = Some(programme_picture(v, &b, k, frame(t.duration_s)));
         }
         let yuv = yuv.as_ref().ok_or("missing_reference_frame")?;
         out.write_all(b"FRAME\n")?;
@@ -798,8 +844,8 @@ fn chunk(t: &Timeline, directories: &[Input], start: u64, end: u64) -> Result<Ch
             &mut scaling,
         )?;
         // The displayed keyframe is not showable. Submit its first successor too.
-        if !repeat || k < start + 2 {
-            let p = enc.prepare(&b.to_yuv420())?;
+        if !repeat || k < start + 2 || programme_gain(v, k, frame(t.duration_s)).is_some() {
+            let p = enc.prepare(&programme_picture(v, &b, k, frame(t.duration_s)))?;
             collect_packets(&mut encoded, &mut encoded_bytes, enc.submit(&p)?)?;
             positions.push(Some(k));
         } else {
@@ -915,7 +961,11 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     let audio_cpu = cpu() - c;
     if a.receipt.refused || !a.receipt.target_reached {
         let _ = media_audio::cli::diagnostic(format_args!(
-            "mastering refused or loudness target missed"
+            "mastering refused: encoded {:.3} LUFS, {:.3} dBTP; target {:.3} LUFS, ceiling {:.3} dBTP",
+            a.receipt.encoded.integrated_lufs,
+            a.receipt.encoded.true_peak_dbtp,
+            audio.master.integrated_lufs,
+            audio.master.true_peak_dbtp
         ));
         return deliver_receipt(&serde_json::to_string(&a.receipt)?, 3);
     }
@@ -1044,6 +1094,56 @@ fn deliver_receipt(receipt: &str, outcome: u8) -> Result<u8> {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn programme_envelope_validation_and_endpoints() {
+        let root = tempfile::tempdir().unwrap();
+        let mut t = fixture(root.path());
+        for (incoming, outgoing, refusal) in [
+            (-0.1, 0.0, "programme_fade_range"),
+            (0.0, -0.1, "programme_fade_range"),
+            (4.1, 0.0, "programme_fade_range"),
+            (0.0, 4.1, "programme_fade_range"),
+            (0.01, 0.0, "programme_fade_range"),
+            (f64::NAN, 0.0, "programme_fade_range"),
+            (0.0, f64::INFINITY, "programme_fade_range"),
+            (2.1, 2.0, "programme_fade_overlap"),
+        ] {
+            t.video.fade_in_s = incoming;
+            t.video.fade_out_s = outgoing;
+            assert!(
+                t.validate(root.path())
+                    .unwrap_err()
+                    .to_string()
+                    .contains(refusal)
+            );
+        }
+        t.video.fade_in_s = 2.0;
+        t.video.fade_out_s = 2.0;
+        t.validate(root.path()).unwrap(); // touching is allowed
+        t.duration_s = 4.016;
+        t.video.fade_in_s = 2.017;
+        t.video.fade_out_s = 1.999;
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("programme_fade_overlap")
+        );
+        t.duration_s = 4.0;
+        t.video.fade_in_s = 0.6;
+        t.video.fade_out_s = 1.0;
+        t.validate(root.path()).unwrap(); // ordinary crossfades remain valid too
+        assert_eq!(programme_gain(&t.video, 0, 120), Some((0, 17)));
+        assert_eq!(programme_gain(&t.video, 17, 120), Some((17, 17)));
+        assert_eq!(programme_gain(&t.video, 18, 120), None);
+        assert_eq!(programme_gain(&t.video, 90, 120), Some((29, 29)));
+        assert_eq!(programme_gain(&t.video, 119, 120), Some((0, 29)));
+        t.video.fade_in_s = 0.0;
+        t.video.fade_out_s = 0.0;
+        for k in 0..120 {
+            assert_eq!(programme_gain(&t.video, k, 120), None);
+        }
+    }
     fn png_file(path: &Path, width: u32, height: u32) {
         let file = std::fs::File::create(path).unwrap();
         let mut e = png::Encoder::new(file, width, height);

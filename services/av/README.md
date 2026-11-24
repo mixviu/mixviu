@@ -13,7 +13,8 @@ executes an explicitly planned video/audio timeline. Mix owns scene planning.
     "segments": [
       {"path": "take.vfl", "from_slot": 0, "to_slot": 120, "at_s": 0}
     ],
-    "crossfades": []
+    "crossfades": [],
+    "fade_in_s": 0.6, "fade_out_s": 1.0
   },
   "audio": {
     "sample_rate": 48000, "channels": 2,
@@ -47,9 +48,7 @@ no files. Solids and stills require a positive duration that rounds to at least
 one slot, and refuse VFL trim fields; VFL segments refuse `duration_s`.
 Their slot count is `round((at_s + duration_s) * 30) - round(at_s * 30)`.
 They hold their last frame using the same rule as VFL trims and participate in
-the same frame-count, memory, chunk and crossfade rules. A 0.6-second fade from
-black starts a VFL segment under an ordinary 0.6-second crossfade; a 1-second
-fade to black starts a black segment under an ordinary 1-second crossfade.
+the same frame-count, memory, chunk and crossfade rules.
 Repeated static frames use `show_existing_frame`, with the existing keyframe
 successor exception. Fade frames encode normally.
 
@@ -82,6 +81,33 @@ not overlap; an advancing cursor replaces per-frame searches. The frame count is
 255 inclusive over that interval (255 for a one-frame fade), using media-frame's
 integer encoded-BGRA interpolation.
 Crossfades always encode. Overlaps without a crossfade are cuts.
+
+Optional `video.fade_in_s` and `video.fade_out_s` apply a programme envelope
+after segment selection, scaling, padding, ordinary crossfades and conversion
+to BT.709 limited-range I420. They fade the composed picture against black
+(Y=16, U=V=128), including across any still, solid or VFL cuts. Mix supplies
+the durations; source trims, holds, cut times and audio remain unchanged.
+Omitted or zero durations disable the envelope and preserve existing output.
+
+Each nonzero duration rounds to N slots and must cover at least two slots.
+Fade-in occupies [0,N); fade-out occupies [programme_slots-N,programme_slots).
+Their first/last weights include both endpoints: fade-in runs from black to
+the composed picture over N-1 steps; fade-out runs from the composed picture
+to black. This matches ffmpeg `fade=t=in:s=0:n=N-1` and
+`fade=t=out:s=programme_slots-N:n=N-1` on the same composed yuv420p source.
+Signed plane deltas from black use nearest-integer rounding.
+
+Negative, non-finite, sub-two-slot and longer-than-programme nonzero durations
+refuse as `programme_fade_range`. Envelopes may touch but cannot overlap
+on either the seconds or rounded-slot grid (`programme_fade_overlap`).
+Every slot inside either envelope encodes, even when the source repeats or
+the envelope endpoint matches a neighbour; no `show_existing_frame` is used
+there. Those slots count in `frames_encoded`, not `repeats`; output frame
+count, timestamps, chunk boundaries and the 64 MiB chunk payload cap remain
+unchanged. The plane transform runs in place on the existing output YUV
+frame, using constant scratch space and the existing memory allowance.
+The CBC oracle test compares decoded AV1 to ffmpeg's fade on that same
+composed source with maximum absolute error of 3 in each 8-bit Y/U/V plane.
 
 Scaling uses media-frame's separable Catmull-Rom bicubic filter (a=-0.5), with
 pixel-centre alignment, clamped edges and an antialias kernel for reduction.

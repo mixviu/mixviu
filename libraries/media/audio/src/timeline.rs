@@ -1,4 +1,5 @@
 //! Flat, absolute-time episode audio. Mix owns scene and join policy.
+use crate::limiter::{TARGET_TOLERANCE_LU, cpu_seconds, target_matches};
 use crate::{Audio, LimiterConfig, Loudness, WavFormat};
 use media_opus::{Channels, Decoder, Encoder, OpusDecoder, OpusEncoder, OpusHead, Packet};
 use serde::{Deserialize, Serialize};
@@ -219,7 +220,7 @@ fn ramp(k: usize, n: usize) -> f64 {
 #[derive(Serialize)]
 pub struct Meter {
     pub integrated_lufs: f64,
-    true_peak_dbtp: f64,
+    pub true_peak_dbtp: f64,
     lra_lu: f64,
 }
 impl From<Loudness> for Meter {
@@ -231,6 +232,17 @@ impl From<Loudness> for Meter {
         }
     }
 }
+#[derive(Serialize)]
+pub struct MasteringCost {
+    pub limiter_passes: u8,
+    pub limiter_cpu_s: Vec<f64>,
+    pub mastering_cpu_s: f64,
+    pub codec_cpu_s: f64,
+}
+
+/// At most six fresh masters and six encode/decode/meter attempts.
+pub const MAX_CODEC_ATTEMPTS: u8 = 6;
+
 #[derive(Serialize)]
 pub struct Receipt {
     pub before: Meter,
@@ -247,7 +259,9 @@ pub struct Receipt {
     pub seconds: f64,
     pub encoded: Meter,
     pub codec_trim_db: f64,
+    /// Number of corrections (attempts minus one).
     pub codec_passes: u8,
+    pub mastering_cost: Vec<MasteringCost>,
 }
 pub struct Encoded {
     pub audio: Audio,
@@ -255,34 +269,59 @@ pub struct Encoded {
     pub packets: Vec<Packet>,
     pub receipt: Receipt,
 }
-/// Mix, master and encode once for either audio-only or combined WebM output.
+/// Mix once, then bounded deterministic mastering from the original mix.
 pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
-    let mut audio = t.mix(base)?;
-    let r = audio.normalise_to_target(
-        t.master.integrated_lufs,
-        t.master.true_peak_dbtp,
-        LimiterConfig::default(),
-    )?;
+    prepare_with_encoder(t, base, encode_checked)
+}
+
+// Private injection point for deterministic codec-budget refusal coverage.
+// Production always supplies the real encode/decode/meter implementation.
+fn prepare_with_encoder(
+    t: &Timeline,
+    base: &Path,
+    mut encode: impl FnMut(&Audio) -> Result<(OpusHead, Vec<Packet>, Loudness)>,
+) -> Result<Encoded> {
+    let original = t.mix(base)?;
+    let mut pcm_target = t.master.integrated_lufs;
     let mut codec_trim_db = 0.0;
     let mut codec_passes = 0;
-    let (head, packets, encoded) = loop {
-        let (head, packets, encoded) = encode_checked(&audio)?;
-        if encoded.true_peak_dbtp <= t.master.true_peak_dbtp {
-            break (head, packets, encoded);
+    let mut mastering_cost = Vec::new();
+    let mut total_passes = 0;
+    let mut max_gain_reduction_db: f64 = 0.0;
+    let (audio, r, head, packets, encoded, reached) = loop {
+        let mut audio = original.try_clone()?;
+        let start = cpu_seconds();
+        let r = audio.normalise_to_target(
+            pcm_target,
+            t.master.true_peak_dbtp + codec_trim_db,
+            LimiterConfig::default(),
+        )?;
+        let mastering_cpu_s = cpu_seconds() - start;
+        total_passes += r.passes;
+        max_gain_reduction_db = max_gain_reduction_db.max(r.max_gain_reduction_db);
+        let start = cpu_seconds();
+        let (head, packets, encoded) = encode(&audio)?;
+        mastering_cost.push(MasteringCost {
+            limiter_passes: r.passes,
+            limiter_cpu_s: r.pass_cpu_s[..usize::from(r.passes)].to_vec(),
+            mastering_cpu_s,
+            codec_cpu_s: cpu_seconds() - start,
+        });
+        let reached = !r.refused
+            && target_matches(
+                t.master.integrated_lufs,
+                encoded.integrated_lufs,
+                TARGET_TOLERANCE_LU,
+            )
+            && encoded.true_peak_dbtp <= t.master.true_peak_dbtp;
+        if reached || r.refused || codec_passes + 1 == MAX_CODEC_ATTEMPTS {
+            break (audio, r, head, packets, encoded, reached);
         }
-        if codec_passes == 2 {
-            return Err(refusal(
-                "Opus: peak ceiling unreachable after two corrections",
-            ));
-        }
-        // Opus reconstruction can overshoot even ceiling-compliant PCM.
-        // Only attenuate, with a 0.02 dB guard; every attempt is remeasured.
-        let trim = t.master.true_peak_dbtp - encoded.true_peak_dbtp - 0.02;
-        let gain = 10.0_f64.powf(trim / 20.0);
-        for sample in &mut audio.samples {
-            *sample *= gain;
-        }
-        codec_trim_db += trim;
+        // Lower the PCM ceiling for reconstruction overshoot and compensate
+        // measured codec loudness loss. Re-limit the ORIGINAL, never an already
+        // limited signal. No random state, adaptive stopping based on time, or AGC.
+        codec_trim_db += (t.master.true_peak_dbtp - encoded.true_peak_dbtp - 0.02).min(0.0);
+        pcm_target += t.master.integrated_lufs - encoded.integrated_lufs;
         codec_passes += 1;
     };
     let after = audio.measure()?;
@@ -290,12 +329,12 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
     let receipt = Receipt {
         before: r.before.into(),
         after: after.into(),
-        gain_db: r.gain_db + codec_trim_db,
-        max_gain_reduction_db: r.max_gain_reduction_db,
+        gain_db: r.gain_db,
+        max_gain_reduction_db,
         shortfall_lu: (t.master.integrated_lufs - encoded.integrated_lufs).max(0.0),
-        target_reached: (t.master.integrated_lufs - encoded.integrated_lufs).abs() <= 0.5,
-        refused: r.refused,
-        passes: r.passes,
+        target_reached: reached,
+        refused: !reached,
+        passes: total_passes,
         sample_count: count,
         packets: packets.len(),
         bytes: packets.iter().map(|p| p.data.len() as u64).sum(),
@@ -303,6 +342,7 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
         encoded: encoded.into(),
         codec_trim_db,
         codec_passes,
+        mastering_cost,
     };
     Ok(Encoded {
         audio,
@@ -313,12 +353,16 @@ pub fn prepare(t: &Timeline, base: &Path) -> Result<Encoded> {
 }
 
 pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Result<Receipt> {
+    render_prepared(prepare(t, base)?, out, wav)
+}
+
+fn render_prepared(prepared: Encoded, out: &Path, wav: Option<&Path>) -> Result<Receipt> {
     let Encoded {
         audio,
         head,
         packets,
         mut receipt,
-    } = prepare(t, base)?;
+    } = prepared;
     // Declare the primary first so rollback drops the optional WAV before
     // removing the WebM, preserving the publication ordering during cleanup.
     let mut output = crate::pending::Pending::new(out)?;
@@ -419,4 +463,72 @@ fn encode_checked(audio: &Audio) -> Result<(OpusHead, Vec<Packet>, Loudness)> {
     }
     let measured = Audio::new(48000, 2, decoded)?.measure()?;
     Ok((head, packets, measured))
+}
+
+#[cfg(test)]
+mod refusal_tests {
+    use super::*;
+
+    #[test]
+    fn persistent_codec_error_exhausts_budget_and_rolls_back_both_outputs() {
+        let dir = std::env::temp_dir().join(format!("codec-exhaustion-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("tone.wav");
+        Audio::new(
+            48000,
+            2,
+            (0..48000)
+                .flat_map(|n| {
+                    let s = 0.05 * (std::f64::consts::TAU * 1000.0 * n as f64 / 48000.0).sin();
+                    [s, s]
+                })
+                .collect(),
+        )
+        .unwrap()
+        .write_wav(std::fs::File::create(&source).unwrap(), WavFormat::Float32)
+        .unwrap();
+        let t: Timeline = serde_json::from_value(serde_json::json!({
+            "version":1,"sample_rate":48000,"channels":2,"duration_s":1,
+            "sources":[{"path":"tone.wav","at_s":0}],
+            "master":{"integrated_lufs":-14,"true_peak_dbtp":-1}
+        }))
+        .unwrap();
+        let mut attempts = 0;
+        let prepared = prepare_with_encoder(&t, &dir, |audio| {
+            attempts += 1;
+            let (head, packets, mut measured) = encode_checked(audio)?;
+            // Model a codec that keeps missing both limits despite corrections.
+            // Real packets exercise staging, but these injected measurements
+            // deliberately prevent convergence without relying on codec quirks.
+            measured.integrated_lufs = -14.3;
+            measured.true_peak_dbtp = -0.8;
+            Ok((head, packets, measured))
+        })
+        .unwrap();
+        assert_eq!(attempts, MAX_CODEC_ATTEMPTS);
+        let out = dir.join("refused.webm");
+        let wav = dir.join("refused.wav");
+        let receipt = render_prepared(prepared, &out, Some(&wav)).unwrap();
+        assert!(receipt.refused && !receipt.target_reached);
+        assert_eq!(receipt.codec_passes, MAX_CODEC_ATTEMPTS - 1);
+        assert_eq!(
+            receipt.mastering_cost.len(),
+            usize::from(MAX_CODEC_ATTEMPTS)
+        );
+        assert_eq!(receipt.passes, 0, "fixture stays on the static PCM path");
+        assert_eq!(receipt.encoded.integrated_lufs, -14.3);
+        assert_eq!(receipt.encoded.true_peak_dbtp, -0.8);
+        assert!((receipt.shortfall_lu - 0.3).abs() < 1e-12);
+        assert!(!out.exists() && !wav.exists());
+        let remaining: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(
+            remaining,
+            vec![source],
+            "no partial output or staging files"
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }
