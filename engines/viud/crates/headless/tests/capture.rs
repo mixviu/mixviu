@@ -30,6 +30,33 @@ use std::{
 use testkit::TestClient;
 use wayland_client::protocol::wl_shm;
 
+#[test]
+fn initial_fullscreen_before_first_buffer_fills_the_output() {
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("initial-fullscreen");
+    let mut process = process::spawn_size("initial-fullscreen", &bus.url, "1600x900");
+    // Pattern requests fullscreen before its first commit. Its initial client
+    // choice is 1280x720, deliberately different from the output.
+    let mut pattern = Pattern::new(connect(&mut process));
+    pattern.wait_callback(0);
+    bus.ready();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        pattern.pump();
+        let row = bus.window(&mut pattern);
+        if row["fullscreen"] == true && row["width"] == 1600 && row["height"] == 900 {
+            assert_eq!(row["window_x"], 0);
+            assert_eq!(row["window_y"], 0);
+            break;
+        }
+        assert!(Instant::now() < deadline, "initial fullscreen slot: {row}");
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert_eq!(pattern.state.size, (1600, 900));
+}
+
 fn binary(name: &str) -> PathBuf {
     std::env::current_exe()
         .unwrap()
