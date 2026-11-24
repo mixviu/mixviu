@@ -3183,8 +3183,10 @@ fn measurement_hash(id: &str, node: &Node, layout: bool) -> u64 {
     id.hash(&mut h);
     node.family.hash(&mut h);
     for (key, v) in &node.ports {
+        // A drawing's bounds come from w/h, not its paint clock. Deck ticks
+        // sample even static bullet dots; that must not cool ancestor heights.
         if layout
-            && matches!(
+            && ((node.family == "drawing" && key == "sample_time") || matches!(
                 key.as_str(),
                 "opacity"
                     | "offset"
@@ -3194,7 +3196,7 @@ fn measurement_hash(id: &str, node: &Node, layout: bool) -> u64 {
                     | "transition"
                     | "motion"
                     | "__measure_key"
-            )
+            ))
         {
             continue;
         }
