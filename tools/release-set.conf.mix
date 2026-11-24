@@ -4,6 +4,7 @@
   {package: "mixd", name: "mixd"},
   {package: "viu", name: "viu"},
   {package: "viud", name: "viud"},
+  {package: "av", name: "av"},
   {package: "inputd", name: "inputd"},
   {package: "portald", name: "portald"},
   {package: "mix-mcp", name: "mix-mcp"}

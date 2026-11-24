@@ -34,6 +34,47 @@ end. A gap before the first segment is refused (`gap_before_first_segment`).
 The output contains exactly `round(duration_s * 30)` video blocks. Audio length
 is `round(duration_s * 48000)` samples, within half a video frame of that grid.
 
+Three segment kinds are accepted, with exactly one source selector:
+
+```json
+{"solid": "black", "at_s": 0, "duration_s": 0.6}
+{"solid": [30, 60, 90], "at_s": 1, "duration_s": 1}
+{"still": "steps/step-01.png", "at_s": 2, "duration_s": 3}
+```
+
+Solid colours are `black` or three integer RGB channels in 0..255. They access
+no files. Solids and stills require a positive duration that rounds to at least
+one slot, and refuse VFL trim fields; VFL segments refuse `duration_s`.
+Their slot count is `round((at_s + duration_s) * 30) - round(at_s * 30)`.
+They hold their last frame using the same rule as VFL trims and participate in
+the same frame-count, memory, chunk and crossfade rules. A 0.6-second fade from
+black starts a VFL segment under an ordinary 0.6-second crossfade; a 1-second
+fade to black starts a black segment under an ordinary 1-second crossfade.
+Repeated static frames use `show_existing_frame`, with the existing keyframe
+successor exception. Fade frames encode normally.
+
+PNG input uses the already locked pure-Rust `png 0.18.1` decoder (foreign-policy
+`allow`, forbidden to the shell by Tier 2). Named bounds are
+`STILL_FILE_BYTES_LIMIT` (64 MiB of input, including a bounded decoder read),
+`STILL_DIMENSION_LIMIT` (7680 on either axis), `STILL_PIXELS_LIMIT` (7680*4320)
+and `STILL_DECODE_BYTES_LIMIT` (256 MiB decoder allocation budget and output
+buffer cap). Dimensions are checked from the header before allocating pixels. The full
+256 MiB decoder allowance is also charged per concurrent chunk in the
+render memory admission estimate whenever the timeline includes stills.
+Animated PNG is refused. Palette, greyscale, RGB, alpha and 16-bit PNGs are
+expanded to 8-bit BGRA; transparency is composited onto black. The existing
+scaler and padding run only when the source differs from the output canvas
+(normally 3840x2160). No alternate image scaler is used.
+
+Still sources use lexical relative-path checks and descriptor-resolved
+confinement beneath the opened timeline directory, require regular files and
+share the 256 video-source-name cap with VFL sources. Repeated still names
+share a retained descriptor. Chunk reads reopen that descriptor through
+`/proc/self/fd` for independent offsets, never the original path. Refusals
+include `segment_kind`, `segment_kind_fields`, `solid_colour`,
+`segment_duration_s`, `still_regular_file`, `still_file_bytes_limit`,
+`still_dimensions_limit`, `still_decode_bytes_limit` and `still_animation`.
+
 A crossfade starts at an incoming segment's start. The preceding segment's held
 last frame can cover a fade after its trim ends. Fades are sorted once and must
 not overlap; an advancing cursor replaces per-frame searches. The frame count is
@@ -95,13 +136,13 @@ resident pages. It is null if Linux process metrics are unavailable.
 `repeats` counts injected units; keyframe successors are included in encoded
 frames. CPU accounting uses Linux process counters, including encoder threads.
 The nested audio byte count is Opus payload bytes; the outer byte count is the
-complete WebM. Only the active/outgoing VFL pair retains decoded canvases per
+complete WebM. Only the active/outgoing segment pair retains decoded canvases per
 chunk. A completed batch is muxed in order and released before another starts;
 at most `chunks` results are retained. Each chunk's coded payload is capped at
 64 MiB (`chunk_bytes_limit`), plus at most 324,000 five-byte repeats and bounded
 frame/position metadata. Whole-episode compressed video is never retained.
 
-At most 256 distinct normalised relative VFL path names are accepted
+At most 256 distinct normalised relative VFL and still path names are accepted
 (`too_many_sources`); this conservative source-name cap is checked before any
 VFL directory is opened, even if some names would resolve to the same source.
 Repeated names share one open and one frame-count scan. Distinct names are opened
