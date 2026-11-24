@@ -360,7 +360,11 @@ fn paint_shadow(
                 ui.ctx().request_repaint();
             }
         } else {
-            shared.lock().unwrap_or_else(|e| e.into_inner()).waiting.retain(|(id, _)| *id != key);
+            shared
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .waiting
+                .retain(|(id, _)| *id != key);
         }
         draw(&cache.texture);
         shared
@@ -559,15 +563,28 @@ mod tests {
         node.ports
             .insert("sample_time".into(), serde_json::json!(0.3));
         let reference_ctx = egui::Context::default();
-        let reference = reference_ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
-        let reference_id = shadows(&reference_ctx).lock().unwrap().entries[0].1.texture.id();
-        let expected = reference.textures_delta.set[&reference_id].last().unwrap().image.clone();
+        let reference =
+            reference_ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
+        let reference_id = shadows(&reference_ctx).lock().unwrap().entries[0]
+            .1
+            .texture
+            .id();
+        let expected = reference.textures_delta.set[&reference_id]
+            .last()
+            .unwrap()
+            .image
+            .clone();
         reference.drop_without_applying_deltas();
         let texture = shadows(&ctx).lock().unwrap().entries[0].1.texture.id();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
         loop {
             let out = ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
-            let image = out.textures_delta.set.get(&texture).and_then(|d| d.last()).map(|d| d.image.clone());
+            let image = out
+                .textures_delta
+                .set
+                .get(&texture)
+                .and_then(|d| d.last())
+                .map(|d| d.image.clone());
             out.drop_without_applying_deltas();
             if let Some(egui::ImageData::Color(actual)) = image {
                 let egui::ImageData::Color(expected) = &expected;
@@ -588,12 +605,14 @@ mod tests {
     fn animated_siblings_take_turns_on_the_shadow_worker() {
         let ctx = egui::Context::default();
         let mut node = sting_node();
-        node.ports.insert("sample_time".into(), serde_json::json!(0.));
+        node.ports
+            .insert("sample_time".into(), serde_json::json!(0.));
         let paint = |node: &scene::Node| {
             ctx.run_ui(egui::RawInput::default(), |ui| {
                 show(ui, "a", node);
                 show(ui, "b", node);
-            }).drop_without_applying_deltas();
+            })
+            .drop_without_applying_deltas();
         };
         paint(&node);
         let shared = shadows(&ctx);
@@ -602,10 +621,15 @@ mod tests {
             let mut store = shared.lock().unwrap();
             let first = store.entries[0].0;
             let second = store.entries[1].0;
-            store.pending = Some(PendingShadow {key: first, signature: "busy".into(), image: receiver});
+            store.pending = Some(PendingShadow {
+                key: first,
+                signature: "busy".into(),
+                image: receiver,
+            });
             second
         };
-        node.ports.insert("sample_time".into(), serde_json::json!(0.3));
+        node.ports
+            .insert("sample_time".into(), serde_json::json!(0.3));
         paint(&node);
         sender.send(None).unwrap();
         paint(&node);
