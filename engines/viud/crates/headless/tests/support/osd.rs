@@ -9,7 +9,7 @@ fn osd_helper(action: &str, root: &Path, rest: &[&str], _url: Option<&str>) -> O
     // one-shot sends use an anonymous lane, even after noded_register.
     let script = root.join("osd-call.mix");
     fs::write(&script, format!(
-        "send \"osd\" {} timeout=10 body={}\nprint(json_encode({{rc:$rc,body:$result}}))\nexit(0)\n",
+        "send \"osd-comp-headless\" {} timeout=10 body={}\nprint(json_encode({{rc:$rc,body:$result}}))\nexit(0)\n",
         serde_json::to_string(rest[0]).unwrap(), serde_json::to_string(rest[1]).unwrap()
     )).unwrap();
     Command::new(binary("mixd"))
