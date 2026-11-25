@@ -32,7 +32,15 @@ fn progress_stderr_preserves_append_and_supports_sockets() {
     let log = fs::OpenOptions::new().append(true).open(&path).unwrap();
     let command = || {
         let mut c = Command::new(env!("CARGO_BIN_EXE_av"));
-        c.args(["render", "missing.json", "--progress", "--cpu", "0", "--out", "unused"]);
+        c.args([
+            "render",
+            "missing.json",
+            "--progress",
+            "--cpu",
+            "0",
+            "--out",
+            "unused",
+        ]);
         c
     };
     let status = command().stderr(Stdio::from(log)).status().unwrap();
@@ -44,8 +52,13 @@ fn progress_stderr_preserves_append_and_supports_sockets() {
     assert!(text.contains("AVP "));
 
     let (mut reader, writer) = UnixStream::pair().unwrap();
-    reader.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
-    let status = command().stderr(Stdio::from(std::os::fd::OwnedFd::from(writer))).status().unwrap();
+    reader
+        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+        .unwrap();
+    let status = command()
+        .stderr(Stdio::from(std::os::fd::OwnedFd::from(writer)))
+        .status()
+        .unwrap();
     assert_eq!(status.code(), Some(2));
     let mut text = String::new();
     reader.read_to_string(&mut text).unwrap();
@@ -61,7 +74,8 @@ fn literal_progress_filename_is_not_a_flag() {
     let output = Command::new(env!("CARGO_BIN_EXE_av"))
         .current_dir(root.path())
         .args(["audio", "--progress", "--out", "output.webm"])
-        .output().unwrap();
+        .output()
+        .unwrap();
     assert_eq!(output.status.code(), Some(2));
     assert!(!String::from_utf8_lossy(&output.stderr).contains("usage:"));
     assert!(String::from_utf8_lossy(&output.stderr).contains("missing field"));
@@ -286,6 +300,18 @@ fn limits_progress_and_default_bytes() {
     let b = invoke(root, "audio", &[], "audio-plain.webm");
     assert!(b.status.success());
     assert!(lines(&b).is_empty());
+    for option in ["--out", "--wav"] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_av"));
+        command.current_dir(root).args(["audio", "timeline.json"]);
+        if option == "--wav" {
+            command.args(["--out", "named-path.webm"]);
+        }
+        let output = command.args([option, "--progress"]).output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(lines(&output).is_empty());
+        assert!(root.join("--progress").is_file());
+        fs::remove_file(root.join("--progress")).unwrap();
+    }
     assert_eq!(
         fs::read(root.join("audio.webm")).unwrap(),
         fs::read(root.join("audio-plain.webm")).unwrap()

@@ -122,40 +122,40 @@ fn write_events(
     done: Receiver<Value>,
     ack: SyncSender<()>,
 ) {
-                let mut next = Instant::now() + TICK;
-                let mut video = false;
-                loop {
-                    match rx.recv_timeout(next.saturating_duration_since(Instant::now())) {
-                        Ok(e) => {
-                            update_stage(&mut video, &e);
-                            emit(&mut stderr, start, &shared, &e.stage, &e.event, e.fields);
-                        }
-                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                        Err(mpsc::RecvTimeoutError::Timeout) => {}
-                    }
-                    // Drain ordered boundaries before the final line. No producer
-                    // can enqueue after done: all chunk workers have joined.
-                    for e in rx.try_iter() {
-                        update_stage(&mut video, &e);
-                        emit(&mut stderr, start, &shared, &e.stage, &e.event, e.fields);
-                    }
-                    if let Ok(fields) = done.try_recv() {
-                        // done may have arrived between the drain and this
-                        // receive. Its send follows all boundary sends.
-                        for e in rx.try_iter() {
-                            emit(&mut stderr, start, &shared, &e.stage, &e.event, e.fields);
-                        }
-                        emit(&mut stderr, start, &shared, "done", "end", fields);
-                        let _ = ack.try_send(());
-                        break;
-                    }
-                    if Instant::now() >= next {
-                        if video {
-                            emit(&mut stderr, start, &shared, "video", "progress", json!({}));
-                        }
-                        next = Instant::now() + TICK;
-                    }
-                }
+    let mut next = Instant::now() + TICK;
+    let mut video = false;
+    loop {
+        match rx.recv_timeout(next.saturating_duration_since(Instant::now())) {
+            Ok(e) => {
+                update_stage(&mut video, &e);
+                emit(&mut stderr, start, &shared, &e.stage, &e.event, e.fields);
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+        }
+        // Drain ordered boundaries before the final line. No producer
+        // can enqueue after done: all chunk workers have joined.
+        for e in rx.try_iter() {
+            update_stage(&mut video, &e);
+            emit(&mut stderr, start, &shared, &e.stage, &e.event, e.fields);
+        }
+        if let Ok(fields) = done.try_recv() {
+            // done may have arrived between the drain and this
+            // receive. Its send follows all boundary sends.
+            for e in rx.try_iter() {
+                emit(&mut stderr, start, &shared, &e.stage, &e.event, e.fields);
+            }
+            emit(&mut stderr, start, &shared, "done", "end", fields);
+            let _ = ack.try_send(());
+            break;
+        }
+        if Instant::now() >= next {
+            if video {
+                emit(&mut stderr, start, &shared, "video", "progress", json!({}));
+            }
+            next = Instant::now() + TICK;
+        }
+    }
 }
 fn emit(
     out: &mut impl Write,
@@ -227,8 +227,7 @@ mod tests {
             assert_eq!(kept, input);
         }
         let (kept, enabled) = split_arguments(
-            ["--progress", "--progress", "--out", "--progress"]
-                .map(std::ffi::OsString::from),
+            ["--progress", "--progress", "--out", "--progress"].map(std::ffi::OsString::from),
         );
         assert!(enabled);
         assert_eq!(kept, ["--progress", "--out", "--progress"]);
@@ -270,21 +269,32 @@ mod tests {
             write_events(capture, Instant::now(), counters, rx, done, ack);
         });
         // Wait for a queue slot, ensuring mux/start survives after the lost end.
-        progress.0.as_ref().unwrap().events.send(Event {
-            stage: "mux".into(), event: "start".into(), fields: json!({}),
-        }).unwrap();
+        progress
+            .0
+            .as_ref()
+            .unwrap()
+            .events
+            .send(Event {
+                stage: "mux".into(),
+                event: "start".into(),
+                fields: json!({}),
+            })
+            .unwrap();
         std::thread::sleep(TICK * 3);
         progress.done(&Ok(0));
         writer.join().unwrap();
         let bytes = output.0.lock().unwrap();
         let text = std::str::from_utf8(&bytes).unwrap();
-        let lines: Vec<Value> = text.lines().map(|line| {
-            serde_json::from_str(line.strip_prefix("AVP ").unwrap()).unwrap()
-        }).collect();
+        let lines: Vec<Value> = text
+            .lines()
+            .map(|line| serde_json::from_str(line.strip_prefix("AVP ").unwrap()).unwrap())
+            .collect();
         let mux = lines.iter().position(|e| e["stage"] == "mux").unwrap();
-        assert!(!lines[mux + 1..].iter().any(|e| {
-            e["stage"] == "video" && e["event"] == "progress"
-        }));
+        assert!(
+            !lines[mux + 1..]
+                .iter()
+                .any(|e| { e["stage"] == "video" && e["event"] == "progress" })
+        );
         assert_eq!(lines.last().unwrap()["events_dropped"], 1);
     }
 }
