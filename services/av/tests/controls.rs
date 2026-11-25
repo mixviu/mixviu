@@ -149,13 +149,19 @@ fn blocked_stderr_render(root: &std::path::Path) {
 #[test]
 fn video_progress_continues_through_overlapping_mux() {
     let root = tempfile::tempdir().unwrap();
-    media_audio::Audio::new(48000, 1, vec![0.1; 48000])
-        .unwrap()
-        .write_wav(
-            fs::File::create(root.path().join("tone.wav")).unwrap(),
-            media_audio::WavFormat::Float32,
-        )
-        .unwrap();
+    media_audio::Audio::new(
+        48000,
+        1,
+        (0..384000)
+            .map(|n| 0.1 * (n as f64 * 440.0 * std::f64::consts::TAU / 48000.0).sin())
+            .collect(),
+    )
+    .unwrap()
+    .write_wav(
+        fs::File::create(root.path().join("tone.wav")).unwrap(),
+        media_audio::WavFormat::Float32,
+    )
+    .unwrap();
     let timeline = json!({"version":1,"duration_s":8,
         "audio":{"sample_rate":48000,"channels":2,"sources":[{"path":"tone.wav","at_s":0}],
             "master":{"integrated_lufs":-14,"true_peak_dbtp":-1}},
