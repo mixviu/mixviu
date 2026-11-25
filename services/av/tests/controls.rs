@@ -147,6 +147,29 @@ fn blocked_stderr_render(root: &std::path::Path) {
     assert_eq!(receipt["frames_out"], 30);
 }
 #[test]
+fn video_progress_continues_through_overlapping_mux() {
+    let root = tempfile::tempdir().unwrap();
+    let timeline = json!({"version":1,"duration_s":8,
+        "video":{"width":128,"height":128,"fps":30,
+            "segments":[{"solid":"black","at_s":0,"duration_s":8}]},
+        "encode":{"speed":8,"qp":100,"tile_cols":1,"tile_rows":1,
+            "threads":1,"chunks":1,"keyint_s":1}});
+    fs::write(root.path().join("timeline.json"), timeline.to_string()).unwrap();
+    let output = invoke(root.path(), "render", &["--progress", "--progress"], "overlap.webm");
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let events = lines(&output);
+    let mux_start = events.iter().position(|e| e["stage"] == "mux" && e["event"] == "start").unwrap();
+    let video_end = events.iter().position(|e| e["stage"] == "video" && e["event"] == "end" && e.get("chunk").is_none()).unwrap();
+    assert!(mux_start < video_end);
+    assert!(events[mux_start + 1..video_end].iter().any(|e| e["stage"] == "video" && e["event"] == "progress"), "{events:#?}");
+    for stage in ["mux", "done"] {
+        let end = events.iter().position(|e| e["stage"] == stage && e["event"] == "end").unwrap();
+        assert!(!events[end + 1..].iter().any(|e| e["stage"] == "video" && e["event"] == "progress"));
+    }
+    assert_eq!(events.last().unwrap()["events_dropped"], 0);
+}
+
+#[test]
 fn limits_progress_and_default_bytes() {
     let root = tempfile::tempdir().unwrap();
     let root = root.path();

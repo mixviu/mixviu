@@ -63,7 +63,10 @@ impl Progress {
                 let stderr = unsafe { std::fs::File::from_raw_fd(fd) };
                 write_events(stderr, start, shared, rx, done, ack);
             });
-        if spawned.is_err() {
+        if let Err(error) = spawned {
+            let _ = crate::cli::diagnostic(format_args!(
+                "progress disabled: cannot spawn writer: {error}"
+            ));
             return Self(None);
         }
         Self(Some(Reporter {
@@ -106,9 +109,9 @@ impl Progress {
     }
 }
 fn update_stage(video: &mut bool, e: &Event) {
-    if e.stage == "mux" || e.stage == "done" {
-        // A video/end may have been dropped. Any later stage boundary
-        // invalidates video sampling before that boundary is written.
+    if (e.stage == "mux" && e.event == "end") || e.stage == "done" {
+        // A video/end may have been dropped. Mux completion still stops
+        // sampling, but mux/start overlaps later video batches.
         *video = false;
     } else if e.stage == "video" && e.fields.get("chunk").is_none() {
         *video = e.event == "start";
@@ -178,7 +181,8 @@ fn emit(
     if stage == "done" {
         value["events_dropped"] = json!(c.dropped.load(Ordering::Relaxed));
     }
-    let _ = writeln!(out, "AVP {value}").and_then(|()| out.flush());
+    let line = format!("AVP {value}\n");
+    let _ = out.write_all(line.as_bytes()).and_then(|()| out.flush());
 }
 
 /// Remove the valueless flag before the command's value-option parser.
@@ -198,7 +202,7 @@ fn split_arguments(
     // The first argument is always the positional timeline path.
     kept.extend(args.next());
     while let Some(arg) = args.next() {
-        if arg == "--progress" && !enabled {
+        if arg == "--progress" {
             enabled = true;
         } else {
             kept.push(arg);
@@ -231,6 +235,12 @@ mod tests {
         );
         assert!(enabled);
         assert_eq!(kept, ["--progress", "--out", "--progress"]);
+        let (kept, enabled) = split_arguments(
+            ["timeline", "--progress", "--out", "--progress", "--progress", "--progress"]
+                .map(std::ffi::OsString::from),
+        );
+        assert!(enabled);
+        assert_eq!(kept, ["timeline", "--out", "--progress"]);
     }
 
     #[derive(Clone)]
@@ -246,7 +256,8 @@ mod tests {
     }
 
     #[test]
-    fn dropped_video_end_cannot_sample_after_mux() {
+    fn dropped_video_end_cannot_sample_after_mux_end_or_done() {
+        for boundary in ["mux", "done"] {
         let counters = Arc::new(Counters::default());
         let (events, rx) = mpsc::sync_channel(64);
         let (final_result, done) = mpsc::sync_channel(1);
@@ -268,15 +279,15 @@ mod tests {
         let writer = std::thread::spawn(move || {
             write_events(capture, Instant::now(), counters, rx, done, ack);
         });
-        // Wait for a queue slot, ensuring mux/start survives after the lost end.
+        // Wait for a queue slot so the terminal boundary survives the lost end.
         progress
             .0
             .as_ref()
             .unwrap()
             .events
             .send(Event {
-                stage: "mux".into(),
-                event: "start".into(),
+                stage: boundary.into(),
+                event: "end".into(),
                 fields: json!({}),
             })
             .unwrap();
@@ -289,12 +300,13 @@ mod tests {
             .lines()
             .map(|line| serde_json::from_str(line.strip_prefix("AVP ").unwrap()).unwrap())
             .collect();
-        let mux = lines.iter().position(|e| e["stage"] == "mux").unwrap();
+        let mux = lines.iter().position(|e| e["stage"] == boundary).unwrap();
         assert!(
             !lines[mux + 1..]
                 .iter()
                 .any(|e| { e["stage"] == "video" && e["event"] == "progress" })
         );
         assert_eq!(lines.last().unwrap()["events_dropped"], 1);
+        }
     }
 }

@@ -1,7 +1,9 @@
 # Render controls and progress
 
 `av render TIMELINE.json --out FILE.webm [--cpu N] [--mem BYTES] [--progress]`
-accepts options in any order after the timeline. `--mem` accepts integer bytes
+accepts options in any order after the timeline. Repeated `--progress` flags are
+accepted by both commands; a token in an option's value position is kept as a
+value, even when it is `--progress`. `--mem` accepts integer bytes
 or uppercase K/M/G suffixes (1024 powers). Default memory admission is 8 GiB.
 CPU must be 1 through `available_parallelism()`. Requests in the timeline are
 clamped by reducing parallel chunks before per-chunk threads. A memory ceiling
@@ -36,7 +38,7 @@ counts encoder packets, excluding repeat packets. Chunk start/end events carry
 zero-based `chunk` and `chunks_total`. Audio boundaries include `audio_pass`
 (codec correction pass, starting at zero); mux end includes output `bytes`.
 The final result has a separate reserved slot. With a responsive stderr reader,
-the last line is done/end, with `ok` true only for exit status zero.
+the last AVP line is done/end, with `ok` true only for exit status zero.
 Completion waits at most one second for the writer to flush it, then silently
 gives up. On success, a blocked stderr reader delays only the writer, never
 encoding or command completion beyond that final timeout. On failure, existing
