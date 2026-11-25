@@ -261,7 +261,9 @@ impl History {
         loop {
             line.clear();
             let n = reader.read_until(b'\n', &mut line)?;
-            if n == 0 || line.last() != Some(&b'\n') { break; }
+            if n == 0 || line.last() != Some(&b'\n') {
+                break;
+            }
             complete += n as u64;
             if let Ok(row) = serde_json::from_slice::<serde_json::Value>(&line) {
                 last = row["ts_utc"].as_str().map(str::to_owned).or(last);
@@ -269,9 +271,14 @@ impl History {
         }
         drop(reader);
         // Modification time is the recording clock, not a possibly old event ts.
-        let modified = file.metadata()?.modified()?.duration_since(std::time::UNIX_EPOCH)?;
+        let modified = file
+            .metadata()?
+            .modified()?
+            .duration_since(std::time::UNIX_EPOCH)?;
         let day = DateTime::from_timestamp(modified.as_secs() as i64, 0)
-            .unwrap_or(now).format("%Y-%m-%d").to_string();
+            .unwrap_or(now)
+            .format("%Y-%m-%d")
+            .to_string();
         file.set_len(complete)?;
         let bytes = file.metadata()?.len();
         let mut history = Self {
@@ -519,7 +526,7 @@ mod tests {
             &tmp.0,
             "beta".into(),
             HistoryConfig {
-                max_file_bytes: 450,
+                max_file_bytes: 400,
                 ..HistoryConfig::default()
             },
             now,
@@ -536,7 +543,7 @@ mod tests {
         assert!(tmp.0.join("bus-2026-11-25-00000002.jsonl").exists());
         for entry in std::fs::read_dir(&tmp.0).unwrap() {
             let meta = entry.unwrap().metadata().unwrap();
-            assert!(meta.len() <= 450);
+            assert!(meta.len() <= 400);
             assert_eq!(meta.permissions().mode() & 0o777, 0o600);
         }
     }
