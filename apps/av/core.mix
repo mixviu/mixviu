@@ -1,0 +1,162 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Host configuration only: none of these settings come from Bus parameters.
+fn defaults()
+  return {av:["/opt/mix/bin/av"], runner:["systemd-run"], control:["systemctl"],
+    roots:[path_join(env("HOME"),".viu/media/runs")], cpu:1, mem:"8G", max_jobs:1}
+end
+fn check_fields($a,$allowed)
+  if type($a)!="map" then raise("AV_PARAMS","object required") end
+  for $k in keys($a)
+    if not contains($allowed,$k) then raise("AV_PARAMS","unknown field: "..$k) end
+  end
+end
+fn positive($v,$name)
+  if type($v)!="number" or $v<1 or floor($v)!=$v then raise("AV_PARAMS",$name..": positive integer required") end
+  return $v
+end
+fn memory($v)
+  if type($v)!="string" or not re_match($v,"^[1-9][0-9]*[KMG]?$") then raise("AV_PARAMS","mem: positive bytes or K/M/G required") end
+  return $v
+end
+fn fresh($cfg)
+  positive($cfg.max_jobs,"max_jobs");positive($cfg.cpu,"cpu");memory($cfg.mem)
+  $roots=[]
+  for $p in $cfg.roots
+    $r=realpath($p)
+    if $r==nil or not is_dir($r) then raise("AV_CONFIG","allowed root must exist") end
+    push($roots,$r)
+  end
+  if len($roots)==0 then raise("AV_CONFIG","at least one allowed root required") end
+  $cfg.roots=$roots
+  return {cfg:$cfg,jobs:{},serial:0,nonce:random_password(16)}
+end
+fn confined($s,$p,$output)
+  if type($p)!="string" or not starts_with($p,"/") or contains($p,chr(0)) then raise("AV_PATH","absolute path required") end
+  $r=realpath($p)
+  if $r==nil and $output then
+    $parent=realpath(dirname($p))
+    if $parent!=nil and basename($p)!="." and basename($p)!=".." then $r=path_join($parent,basename($p)) end
+    -- A dangling final symlink must not become an apparently new output.
+    $link=false
+    try $link=stat($p,{follow_symlinks:false}).is_symlink catch $message $link=false end
+    if $link then raise("AV_PATH","unresolved output") end
+  end
+  if $r==nil then raise("AV_PATH","path does not resolve") end
+  for $root in $s.cfg.roots
+    if $r==$root or starts_with($r,if $root=="/" then "/" else $root.."/" end) then
+      if $output and exists($r) and not is_file($r) then raise("AV_PATH","output must be a regular file") end
+      if not $output and not is_file($r) then raise("AV_PATH","input must be a regular file") end
+      return $r
+    end
+  end
+  raise("AV_PATH","path outside allowed roots")
+end
+fn actions()
+  $rows=[]
+  for $id in ["probe","render","audio","decode","status","cancel"]
+    $p={};$req=[]
+    if $id=="probe" then $req=["file"]
+    elif $id=="render" or $id=="audio" then $req=["timeline","out"]
+    elif $id=="decode" then $req=["file","y4m"]
+    elif $id=="cancel" then $req=["job"] end
+    for $k in $req $p[$k]={type:"string",minLength:1} end
+    if $id=="render" or $id=="audio" then $p.cpu={type:"integer",minimum:1} end
+    if $id=="render" then $p.mem={type:"string",pattern:"^[1-9][0-9]*[KMG]?$"} end
+    if $id=="audio" or $id=="decode" then $p.wav={type:"string",minLength:1} end
+    if $id=="status" then $p.job={type:"string",minLength:1} end
+    push($rows,{id:"av."..$id,label:$id,enabled:true,class:if $id=="probe" or $id=="status" then "query" else "intent" end,
+      schema:{type:"object",additionalProperties:false,properties:$p,required:$req}})
+  end
+  return $rows
+end
+fn perform($s,$id,$a)
+  $action=nil
+  for $row in actions() if $row.id==$id then $action=$row end end
+  if $action==nil then raise("UNKNOWN_ACTION","unknown av action") end
+  check_fields($a,keys($action.schema.properties))
+  for $k in $action.schema.required if $a[$k]==nil then raise("AV_PARAMS","missing "..$k) end end
+  if $id=="av.status" then
+    if $a.job==nil then return {state:$s,result:{jobs:$s.jobs}} end
+    if type($a.job)!="string" or $s.jobs[$a.job]==nil then raise("AV_JOB","unknown job") end
+    return {state:$s,result:$s.jobs[$a.job]}
+  end
+  if $id=="av.cancel" then
+    if type($a.job)!="string" or $s.jobs[$a.job]==nil then raise("AV_JOB","unknown job") end
+    if $s.jobs[$a.job].status=="running" then
+      $r=run_argv(concat($s.cfg.control,["--user","stop",$s.jobs[$a.job].unit]),{timeout:10})
+      if not $r.ok then raise("AV_CANCEL",$r.stderr) end
+      $s.jobs[$a.job].cancelled=true
+    end
+    return {state:$s,result:{job:$a.job}}
+  end
+  $verb=slice($id,3)
+  if $verb=="probe" or $verb=="decode" then $input=confined($s,$a.file,false)
+  else $input=confined($s,$a.timeline,false) end
+  $argv=concat($s.cfg.av,[$verb,$input])
+  if $verb=="probe" then
+    $r=run_argv($argv,{timeout:30,max_output:1048576})
+    if not $r.ok or $r.stdout_truncated then raise("AV_PROBE",$r.stderr) end
+    return {state:$s,result:json_parse($r.stdout)}
+  end
+  $active=0
+  for $j in values($s.jobs) if $j.status=="running" then $active=$active+1 end end
+  if $active >= $s.cfg.max_jobs then raise("AV_BUSY","host job limit reached",{limit:$s.cfg.max_jobs}) end
+  $mem=memory($a.mem ?? $s.cfg.mem)
+  if $verb=="decode" then $argv=concat($argv,["--y4m",confined($s,$a.y4m,true)])
+  else
+    $argv=concat($argv,["--out",confined($s,$a.out,true),"--cpu",to_string(positive($a.cpu ?? $s.cfg.cpu,"cpu")),"--mem",$mem,"--progress"])
+  end
+  if $a.wav!=nil then $argv=concat($argv,["--wav",confined($s,$a.wav,true)]) end
+  $s.serial=$s.serial+1;$job="av-"..$s.nonce.."-"..to_string($s.serial)
+  $unit=$job..".service"
+  $cmd=concat($s.cfg.runner,["--user","--collect","--wait","--pipe","--unit",$unit,"-p","MemoryAccounting=yes","-p","MemoryMax="..$mem,"--"])
+  $watch=process_watch(concat($cmd,$argv),{stderr:"lines",tag:$job,max_line:1048576})
+  $s.jobs[$job]={job:$job,unit:$unit,watch:$watch,action:$id,status:"running",started:time(),cancelled:false,stdout:"",summary:"",progress:nil}
+  return {state:$s,result:{job:$job},event:{event:"start",job:$job,action:$id,unit:$unit}}
+end
+fn line_event($s,$e)
+  $j=$s.jobs[$e.tag]
+  if $j==nil or $j.watch!=$e.watch or $j.status!="running" then return {state:$s} end
+  $out=nil
+  if $e.stream=="stderr" and starts_with($e.line,"AVP ") and not $e.truncated then
+    try
+      $p=json_parse(slice($e.line,4))
+      if type($p)=="map" and $p.v==1 then $j.progress=$p;$out={event:"progress",job:$j.job,progress:$p} end
+    catch $message $j.diagnostic=$message end
+  elif $e.stream=="stdout" then
+    if len($j.stdout)+len($e.line)<1048576 and not $e.truncated then $j.stdout=$j.stdout..$e.line.."\n"
+    else $j.capture_error=true end
+  else
+    $j.summary=slice($j.summary..$e.line.."\n",-65536)
+  end
+  $s.jobs[$e.tag]=$j
+  return {state:$s,event:$out}
+end
+fn field($text,$name)
+  $m=re_find($text,$name..": *([^\n]+)")
+  return if len($m)>0 then trim($m[0].groups[0]) else nil end
+end
+fn seconds_of($text)
+  if $text==nil then return nil end
+  $t=0
+  for $m in re_find($text,"([0-9.]+)(h|min|ms|us|s)")
+    $u=$m.groups[1];$v=to_number($m.groups[0])
+    $t=$t+ $v*(if $u=="h" then 3600 elif $u=="min" then 60 elif $u=="ms" then 0.001 elif $u=="us" then 0.000001 else 1 end)
+  end
+  return $t
+end
+fn finished($s,$e)
+  $j=$s.jobs[$e.tag]
+  if $j==nil or $j.watch!=$e.watch or $j.status!="running" then return {state:$s} end
+  $receipt=nil
+  try $receipt=json_parse($j.stdout) catch $message $j.receipt_error=$message end
+  $m=re_find(field($j.summary,"Memory peak") ?? "","([0-9.]+)([BKMGT])")
+  $mult={B:1,K:1024,M:1048576,G:1073741824,T:1099511627776}
+  $metrics={wall_s:seconds_of(field($j.summary,"Service runtime")),cpu_s:seconds_of(field($j.summary,"CPU time consumed")),
+    memory_peak_bytes:if len($m)>0 then round(to_number($m[0].groups[0])*$mult[$m[0].groups[1]]) else nil end}
+  $j.status=if $j.cancelled then "cancelled" elif $e.exit_code==0 and $receipt!=nil and not ($j.capture_error ?? false) and not ($e.detached_output ?? false) then "finished" else "failed" end
+  $j.ended=time();$j.exit_code=$e.exit_code;$j.signal=$e.signal;$j.receipt=$receipt;$j.metrics=$metrics
+  $j.stdout=nil
+  $s.jobs[$e.tag]=$j
+  return {state:$s,event:{event:"end",job:$j.job,status:$j.status,receipt:$receipt,metrics:$metrics,exit_code:$e.exit_code,signal:$e.signal}}
+end

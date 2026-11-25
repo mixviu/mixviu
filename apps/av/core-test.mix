@@ -1,0 +1,57 @@
+fn check($ok) if not $ok then raise("TEST","assertion failed") end end
+fn equal($a,$b) if not deep_eq($a,$b) then raise("TEST",json_encode({actual:$a,expected:$b})) end end
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$core=require("core.mix")
+$dir=trim(run_argv_must(["mktemp","-d","/tmp/av-test-XXXXXX"]))
+$here=dirname(script_path())
+$mix=which("mix")
+$cfg=$core.defaults();$cfg.roots=[$dir]
+$cfg.av=[$mix,path_join($here,"stub.mix")]
+$cfg.runner=[$mix,path_join($here,"runner-stub.mix"),$dir]
+$cfg.control=$cfg.runner
+$s=$core.fresh($cfg)
+write_file($dir.."/timeline.json","{}")
+$params={timeline:$dir.."/timeline.json",out:$dir.."/out.webm"}
+$events=[]
+fn apply_result($r)
+  global $s,$events
+  $s=$r.state
+  if $r.event!=nil then push($events,$r.event) end
+end
+on proc.line apply_result($core.line_event($s,$event.args)) end
+on proc.watch_exited apply_result($core.finished($s,$event.args)) end
+fn refused($f,$code)
+  $caught=false
+  try $f() catch $message,$error $caught=true;equal($error.code,$code) end
+  check($caught)
+end
+try
+  $rows=$core.actions();equal(len($rows),6)
+  equal($rows[1].schema.properties.cpu.type,"integer")
+  equal($core.perform($s,"av.probe",{file:$params.timeline}).result.probe,true)
+  refused(fn()=$core.perform($s,"av.render",{timeline:"/etc/passwd",out:$params.out}),"AV_PATH")
+  run_argv_must(["ln","-s","/etc/passwd",$dir.."/escape"])
+  refused(fn()=$core.perform($s,"av.probe",{file:$dir.."/escape"}),"AV_PATH")
+  run_argv_must(["ln","-s","/tmp/av-missing-output",$dir.."/dangling"])
+  refused(fn()=$core.perform($s,"av.render",{timeline:$params.timeline,out:$dir.."/dangling"}),"AV_PATH")
+  $r=$core.perform($s,"av.render",$params);$job=$r.result.job;apply_result($r)
+  refused(fn()=$core.perform($s,"av.render",$params),"AV_BUSY")
+  sleep(0.6)
+  equal($s.jobs[$job].status,"finished")
+  equal($s.jobs[$job].receipt.render.frames,3)
+  equal($s.jobs[$job].metrics.memory_peak_bytes,2097152)
+  equal(len($events),4)
+  equal($events[0].event,"start");equal($events[1].progress.v,1);equal($events[3].event,"end")
+  check(contains($s.jobs[$job].receipt.argv,"--progress"))
+  $r=$core.perform($s,"av.render",$params);$job=$r.result.job;apply_result($r)
+  sleep(0.05)
+  apply_result($core.perform($s,"av.cancel",{job:$job}))
+  sleep(0.5)
+  equal($core.perform($s,"av.status",{job:$job}).result.status,"cancelled")
+  equal(len(keys($core.perform($s,"av.status",{}).result.jobs)),2)
+  print("av: actions, argv, progress, receipt, metrics, busy, cancel and root confinement passed")
+finally
+  run_argv_must(["rm","-r",$dir])
+end
+
+exit(0)

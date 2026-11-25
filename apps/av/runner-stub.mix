@@ -1,0 +1,18 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Test systemd edge. The real app always uses systemd-run/systemctl.
+$a=args()
+$dir=$a[0];$a=slice($a,1)
+if $a[1]=="stop" then
+  if not kill(to_number(read_file($dir.."/"..$a[2]..".pid"))) then exit(1) end
+  exit(0)
+end
+$at=index_of($a,"--")
+$unit=$dir.."/"..$a[index_of($a,"--unit")+1]
+$pid=spawn(slice($a,$at+1),{exit_event:true,tag:$unit,stdout:{file:$unit..".out"},stderr:{file:$unit..".err"}})
+write_file($unit..".pid",to_string($pid))
+on proc.exited
+  print(read_file($event.args.tag..".out"))
+  eprint(read_file($event.args.tag..".err"))
+  eprint("Service runtime: 150ms\nCPU time consumed: 50ms\nMemory peak: 2M")
+  exit($event.args.exit_code ?? 1)
+end
