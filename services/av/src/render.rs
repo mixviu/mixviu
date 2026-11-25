@@ -1102,7 +1102,10 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
                 .map(|h| h.join().map_err(|_| "chunk_worker_panicked".to_string())?)
                 .collect::<std::result::Result<Vec<_>, String>>()
         })?;
-        if ranges.last().is_some_and(|r| r[1] == *starts.last().unwrap()) {
+        if ranges
+            .last()
+            .is_some_and(|r| r[1] == *starts.last().unwrap())
+        {
             progress.event("video", "end", serde_json::json!({}));
         }
         video_wall += wall.elapsed().as_secs_f64();
