@@ -16,8 +16,11 @@ StartLimitBurst=5
 [Service]
 Type=simple
 UMask=0077
-ExecStartPre=@{prefix}/bin/settingsd seed --instance %H --root %S/mix/settingsd/%H/default
-ExecStart=@{prefix}/bin/settingsd serve --instance %H --root %S/mix/settingsd/%H/default
+# The root lives in the seat user's home (%h), never in a host root. A user
+# unit's state specifier depends on the systemd version and XDG_STATE_HOME,
+# and tools/host_roots.mix keeps that specifier for system units.
+ExecStartPre=@{prefix}/bin/settingsd seed --instance %H --root %h/.local/state/mix/settingsd/%H/default
+ExecStart=@{prefix}/bin/settingsd serve --instance %H --root %h/.local/state/mix/settingsd/%H/default
 KillMode=control-group
 TimeoutStopSec=10
 Restart=on-failure

@@ -11,8 +11,8 @@ fn plasma_seat_unit_is_packaged_and_requires_an_explicit_profile() {
         "UMask=0077",
         "Restart=on-failure",
         "RestartSec=2",
-        "ExecStartPre=@{prefix}/bin/settingsd seed --instance %H --root %S/mix/settingsd/%H/default",
-        "ExecStart=@{prefix}/bin/settingsd serve --instance %H --root %S/mix/settingsd/%H/default",
+        "ExecStartPre=@{prefix}/bin/settingsd seed --instance %H --root %h/.local/state/mix/settingsd/%H/default",
+        "ExecStart=@{prefix}/bin/settingsd serve --instance %H --root %h/.local/state/mix/settingsd/%H/default",
         "WantedBy=graphical-session.target",
     ] {
         assert!(unit.lines().any(|actual| actual == line), "missing {line}");
