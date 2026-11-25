@@ -899,20 +899,20 @@ mod tests {
         let _guard = subscriber.set_default();
         let tmp = Temp::new();
         let path = tmp.0.join("config.conf.mix");
-        for (block, broker_starts) in [
+        for (case, block, broker_starts) in [
             // An unclosed map invalidates the whole mesh file, so main's
             // broker loader rejects it even though history uses defaults.
-            (Some("history: {"), false),
-            (Some("history: wrong"), true),
-            (Some("history: { max_file_bytes: 0 }"), true),
-            (Some("history: { retention_days: -1 }"), true),
-            (Some("history: { unknown: 1 }"), true),
-            (Some("history: { max_file_bytes: wrong }"), true),
-            (Some("history: { retention_days: 1.5 }"), true),
+            ("invalid mesh syntax", Some("history: {"), false),
+            ("invalid history shape", Some("history: wrong"), true),
+            ("zero limit", Some("history: { max_file_bytes: 0 }"), true),
+            ("negative limit", Some("history: { retention_days: -1 }"), true),
+            ("unknown key", Some("history: { unknown: 1 }"), true),
+            ("wrong type", Some("history: { max_file_bytes: wrong }"), true),
+            ("fractional limit", Some("history: { retention_days: 1.5 }"), true),
             // Missing and unreadable explicit files retain main's fatal
             // mesh-config behaviour; only history disables itself.
-            (None, false),
-            (None, false),
+            ("missing explicit config", None, false),
+            ("unreadable explicit config", None, false),
         ] {
             output.0.lock().unwrap().clear();
             if let Some(block) = block {
@@ -922,10 +922,10 @@ mod tests {
                     HistoryConfig::default().max_file_bytes
                 );
             } else {
-                if path.exists() {
-                    std::fs::remove_file(&path).unwrap();
-                } else {
+                if case == "unreadable explicit config" {
                     std::fs::create_dir(&path).unwrap();
+                } else {
+                    std::fs::remove_file(&path).unwrap();
                 }
                 assert!(HistoryConfig::load(path.to_str()).is_none());
             }
@@ -935,7 +935,12 @@ mod tests {
             } else {
                 "History disabled: config cannot be read"
             };
-            assert!(warnings.contains(expected), "{block:?}: {warnings}");
+            assert!(warnings.contains(expected), "{case}: {warnings}");
+            if case == "zero limit" {
+                assert!(warnings.contains("history limits must be positive"), "{warnings}");
+            }
+            let mesh_error = mesh::MeshConfig::load(path.to_str().unwrap()).err();
+            assert_eq!(mesh_error.is_none(), broker_starts, "{case}");
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let listen = listener.local_addr().unwrap().to_string();
             let (ready, waiting) = tokio::sync::oneshot::channel();
@@ -958,7 +963,7 @@ mod tests {
                     .unwrap()
                     .unwrap()
                     .expect_err("main's broker policy rejects an unavailable or invalid mesh config");
-                assert!(error.to_string().contains("config"), "{error:#}");
+                assert_eq!(error.to_string(), mesh_error.unwrap().to_string(), "{case}");
                 assert!(waiting.await.is_err(), "broker must not signal readiness");
                 continue;
             }
