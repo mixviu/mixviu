@@ -5,6 +5,18 @@ use std::{
     path::PathBuf,
 };
 const MAX_JSON: u64 = 16 * 1024 * 1024;
+/// Audio execution is single-threaded; validate this no-op ceiling consistently.
+pub fn cpu_limit(value: &std::ffi::OsStr) -> timeline::Result<usize> {
+    let value = value.to_str().ok_or("cpu_limit")?;
+    if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
+        return Err("cpu_limit".into());
+    }
+    let n: usize = value.parse().map_err(|_| "cpu_limit")?;
+    if n == 0 || n > std::thread::available_parallelism().map_or(1, |n| n.get()) {
+        return Err("cpu_limit".into());
+    }
+    Ok(n)
+}
 /// Diagnostics must never panic, including when the stderr reader has left.
 pub fn diagnostic(message: std::fmt::Arguments<'_>) -> io::Result<()> {
     let mut out = io::stderr().lock();
@@ -14,13 +26,20 @@ pub fn diagnostic(message: std::fmt::Arguments<'_>) -> io::Result<()> {
     }
 }
 pub fn run(args: impl IntoIterator<Item = OsString>) -> timeline::Result<u8> {
-    let a: Vec<_> = args.into_iter().collect();
+    let (a, progress) = crate::progress::arguments(args);
+    let result = run_inner(a, &progress);
+    progress.done(&result);
+    result
+}
+fn run_inner(a: Vec<OsString>, progress: &crate::progress::Progress) -> timeline::Result<u8> {
+    progress.event("input", "start", serde_json::json!({}));
     if a.len() < 3 {
         return Err("usage: av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]".into());
     }
     let input = PathBuf::from(&a[0]);
     let mut out = None;
     let mut wav = None;
+    let mut cpu = None;
     let mut i = 1;
     while i < a.len() {
         let value = a.get(i + 1).ok_or("missing option value")?;
@@ -28,6 +47,8 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> timeline::Result<u8> {
             out = Some(PathBuf::from(value));
         } else if a[i] == "--wav" && wav.is_none() {
             wav = Some(PathBuf::from(value));
+        } else if a[i] == "--cpu" && cpu.is_none() {
+            cpu = Some(cpu_limit(value)?);
         } else {
             return Err("unknown or duplicate option".into());
         }
@@ -56,12 +77,18 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> timeline::Result<u8> {
         return Err("timeline JSON exceeds 16 MiB".into());
     }
     let t: Timeline = serde_json::from_slice(&bytes)?;
-    let receipt = timeline::render(&t, base, &out, wav.as_deref())?;
+    progress.event("input", "end", serde_json::json!({}));
+    progress.event("audio", "start", serde_json::json!({"audio_pass":0}));
+    let prepared = timeline::prepare(&t, base)?;
+    progress.event("audio", "end", serde_json::json!({"audio_pass":prepared.receipt.codec_passes}));
+    progress.event("mux", "start", serde_json::json!({}));
+    let receipt = timeline::render_prepared(prepared, &out, wav.as_deref())?;
     let outcome = if receipt.refused || !receipt.target_reached {
         3
     } else {
         0
     };
+    progress.event("mux", "end", serde_json::json!({"bytes":if outcome == 0 { std::fs::metadata(&out)?.len() } else { 0 }}));
     let mut stdout = io::stdout().lock();
     if let Err(e) =
         writeln!(stdout, "{}", serde_json::to_string(&receipt)?).and_then(|()| stdout.flush())
