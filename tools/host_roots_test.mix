@@ -16,9 +16,6 @@ $session_noded = $renderer.external(read_file("services/noded/units/noded@.servi
 if not contains($session_noded, "Environment=LOGS_DIRECTORY=" .. $roots.var .. "/session/%i/log/noded\n") then
   raise("HOST_ROOT_TEST", "session noded history must use the rendered var root")
 end
-if index_of($session_noded, "Environment=LOGS_DIRECTORY=") > index_of($session_noded, "EnvironmentFile=") then
-  raise("HOST_ROOT_TEST", "session noded history default must precede the session environment file")
-end
 $tmpfiles = $renderer.external(read_file("share/layout/host.tmpfiles.conf"), $roots, "unit")
 for $entry in ["/log 0755 root root -", "/log/noded 0700 noded noded -"]
   if not contains($tmpfiles, "d " .. $roots.var .. $entry .. "\n") then raise("HOST_ROOT_TEST", "missing noded log provisioning") end

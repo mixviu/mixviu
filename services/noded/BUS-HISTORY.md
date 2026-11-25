@@ -34,12 +34,28 @@ The shipped units provision their roots differently:
   a broker startup dependency.
 
 The logger creates the private per-node child. Rows written under the old
-`$MIX_VAR/log/noded` are not migrated and are outside retention at the new
-location. Direct invocations retain the default path
-unless the caller supplies `LOGS_DIRECTORY`; its ownership checks still apply.
+`$MIX_VAR/log/noded` are not moved automatically. An operator can move the old
+`bus.jsonl` into the new `<node>/` directory as `bus-<last UTC day>.jsonl`,
+using the last row's UTC day. Never overwrite an existing archive: check that
+the target does not exist and use a no-clobber move (`mv -n`, or a
+`renameat2(RENAME_NOREPLACE)` equivalent). If the name is taken, use the next
+free index, `bus-<day>-<NNNNNNNN>.jsonl`. The naming scheme cannot place older
+rows before index 0, so that day's archives are then out of order.
 
-A `<svc>.history` reader must never recompute the history path. It asks noded:
-`log.props.*` already serves the active `bus.jsonl` path.
+The moved file must be a regular file owned by noded's effective UID, mode
+0600. `retain()` skips a file it cannot open, so a wrong-owner copy is never
+expired and is never counted against the byte cap. Recognised archive names
+are expired by date: if the last UTC day is already outside the retention
+window, the next `retain()` run deletes the moved file.
+
+The gap rows mark a discontinuity, not a path change. The old file ends with
+`observer_closed`; on the first start in a new directory, `logger_start` has
+`since_last: null`. The operator records the path change separately, for
+example in a journal. Direct invocations retain the default path unless the
+caller supplies `LOGS_DIRECTORY`; its ownership checks still apply.
+
+A `<svc>.history` reader must never recompute the history path.
+It asks noded with `log.props.get` and reads `config.log_path`.
 
 Each logger holds an exclusive,
 non-blocking advisory `flock` on the pinned per-node directory fd itself for
