@@ -968,10 +968,7 @@ mod tests {
         std::fs::set_permissions(&full, std::fs::Permissions::from_mode(0o600)).unwrap();
         assert!(History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).is_err());
         // Still loose, so the next start refuses to reuse it.
-        assert_eq!(
-            std::fs::metadata(&path).unwrap().mode() & 0o777,
-            0o644
-        );
+        assert_eq!(std::fs::metadata(&path).unwrap().mode() & 0o777, 0o644);
     }
 
     #[test]
