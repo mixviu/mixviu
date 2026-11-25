@@ -25,11 +25,6 @@ fn refused($f,$code)
   try $f() catch $message,$error $caught=true;equal($error.code,$code) end
   check($caught)
 end
-fn await_done($job)
-  $end=monotonic()+3
-  while $s.jobs[$job].status=="running" and monotonic()<$end sleep(0.01) end
-  check($s.jobs[$job].status!="running")
-end
 try
   $rows=$core.actions();equal(len($rows),6)
   equal($rows[1].schema.properties.cpu.type,"integer")
@@ -41,7 +36,9 @@ try
   refused(fn()=$core.perform($s,"av.render",{timeline:$params.timeline,out:$dir.."/dangling"}),"AV_PATH")
   $r=$core.perform($s,"av.render",$params);$job=$r.result.job;apply_result($r)
   refused(fn()=$core.perform($s,"av.render",$params),"AV_BUSY")
-  await_done($job)
+  $end=monotonic()+3
+  while $s.jobs[$job].status=="running" and monotonic()<$end sleep(0.01) end
+  check($s.jobs[$job].status!="running")
   equal($s.jobs[$job].status,"finished")
   equal($s.jobs[$job].receipt.render.frames,3)
   equal($s.jobs[$job].metrics.memory_peak_bytes,2097152)
@@ -53,7 +50,9 @@ try
   while not exists($dir.."/"..$s.jobs[$job].unit..".pid") and monotonic()<$end sleep(0.01) end
   check(exists($dir.."/"..$s.jobs[$job].unit..".pid"))
   apply_result($core.perform($s,"av.cancel",{job:$job}))
-  await_done($job)
+  $end=monotonic()+3
+  while $s.jobs[$job].status=="running" and monotonic()<$end sleep(0.01) end
+  check($s.jobs[$job].status!="running")
   equal($core.perform($s,"av.status",{job:$job}).result.status,"cancelled")
   equal(len(keys($core.perform($s,"av.status",{}).result.jobs)),2)
   print("av: actions, argv, progress, receipt, metrics, busy, cancel and root confinement passed")
