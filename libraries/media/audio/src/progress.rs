@@ -236,8 +236,15 @@ mod tests {
         assert!(enabled);
         assert_eq!(kept, ["--progress", "--out", "--progress"]);
         let (kept, enabled) = split_arguments(
-            ["timeline", "--progress", "--out", "--progress", "--progress", "--progress"]
-                .map(std::ffi::OsString::from),
+            [
+                "timeline",
+                "--progress",
+                "--out",
+                "--progress",
+                "--progress",
+                "--progress",
+            ]
+            .map(std::ffi::OsString::from),
         );
         assert!(enabled);
         assert_eq!(kept, ["timeline", "--out", "--progress"]);
@@ -258,55 +265,55 @@ mod tests {
     #[test]
     fn dropped_video_end_cannot_sample_after_mux_end_or_done() {
         for boundary in ["mux", "done"] {
-        let counters = Arc::new(Counters::default());
-        let (events, rx) = mpsc::sync_channel(64);
-        let (final_result, done) = mpsc::sync_channel(1);
-        let (ack, flushed) = mpsc::sync_channel(1);
-        let progress = Progress(Some(Reporter {
-            counters: counters.clone(),
-            events,
-            final_result,
-            flushed: Mutex::new(flushed),
-        }));
-        progress.event("video", "start", json!({}));
-        for chunk in 0..63 {
-            progress.event("video", "end", json!({"chunk": chunk}));
-        }
-        progress.event("video", "end", json!({}));
-        assert_eq!(counters.dropped.load(Ordering::Relaxed), 1);
-        let capture = Capture(Arc::new(Mutex::new(Vec::new())));
-        let output = capture.clone();
-        let writer = std::thread::spawn(move || {
-            write_events(capture, Instant::now(), counters, rx, done, ack);
-        });
-        // Wait for a queue slot so the terminal boundary survives the lost end.
-        progress
-            .0
-            .as_ref()
-            .unwrap()
-            .events
-            .send(Event {
-                stage: boundary.into(),
-                event: "end".into(),
-                fields: json!({}),
-            })
-            .unwrap();
-        std::thread::sleep(TICK * 3);
-        progress.done(&Ok(0));
-        writer.join().unwrap();
-        let bytes = output.0.lock().unwrap();
-        let text = std::str::from_utf8(&bytes).unwrap();
-        let lines: Vec<Value> = text
-            .lines()
-            .map(|line| serde_json::from_str(line.strip_prefix("AVP ").unwrap()).unwrap())
-            .collect();
-        let mux = lines.iter().position(|e| e["stage"] == boundary).unwrap();
-        assert!(
-            !lines[mux + 1..]
-                .iter()
-                .any(|e| { e["stage"] == "video" && e["event"] == "progress" })
-        );
-        assert_eq!(lines.last().unwrap()["events_dropped"], 1);
+            let counters = Arc::new(Counters::default());
+            let (events, rx) = mpsc::sync_channel(64);
+            let (final_result, done) = mpsc::sync_channel(1);
+            let (ack, flushed) = mpsc::sync_channel(1);
+            let progress = Progress(Some(Reporter {
+                counters: counters.clone(),
+                events,
+                final_result,
+                flushed: Mutex::new(flushed),
+            }));
+            progress.event("video", "start", json!({}));
+            for chunk in 0..63 {
+                progress.event("video", "end", json!({"chunk": chunk}));
+            }
+            progress.event("video", "end", json!({}));
+            assert_eq!(counters.dropped.load(Ordering::Relaxed), 1);
+            let capture = Capture(Arc::new(Mutex::new(Vec::new())));
+            let output = capture.clone();
+            let writer = std::thread::spawn(move || {
+                write_events(capture, Instant::now(), counters, rx, done, ack);
+            });
+            // Wait for a queue slot so the terminal boundary survives the lost end.
+            progress
+                .0
+                .as_ref()
+                .unwrap()
+                .events
+                .send(Event {
+                    stage: boundary.into(),
+                    event: "end".into(),
+                    fields: json!({}),
+                })
+                .unwrap();
+            std::thread::sleep(TICK * 3);
+            progress.done(&Ok(0));
+            writer.join().unwrap();
+            let bytes = output.0.lock().unwrap();
+            let text = std::str::from_utf8(&bytes).unwrap();
+            let lines: Vec<Value> = text
+                .lines()
+                .map(|line| serde_json::from_str(line.strip_prefix("AVP ").unwrap()).unwrap())
+                .collect();
+            let mux = lines.iter().position(|e| e["stage"] == boundary).unwrap();
+            assert!(
+                !lines[mux + 1..]
+                    .iter()
+                    .any(|e| { e["stage"] == "video" && e["event"] == "progress" })
+            );
+            assert_eq!(lines.last().unwrap()["events_dropped"], 1);
         }
     }
 }
