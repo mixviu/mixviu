@@ -72,9 +72,17 @@ fn history_root(directory: Option<std::ffi::OsString>) -> Result<std::path::Path
     match directory.filter(|value| !value.is_empty()) {
         Some(value) => {
             let path = std::path::PathBuf::from(value);
+            // Redundant separators and '.' components are normalised away,
+            // so /, // and /. are root-only.
+            // systemd separates multiple LOGS_DIRECTORY roots with ':'.
             anyhow::ensure!(
-                path.is_absolute() && !path.as_os_str().as_encoded_bytes().contains(&b':'),
-                "LOGS_DIRECTORY must be one absolute directory"
+                path.is_absolute()
+                    && path.components().count() > 1
+                    && !path
+                        .components()
+                        .any(|component| component == std::path::Component::ParentDir)
+                    && !path.as_os_str().as_encoded_bytes().contains(&b':'),
+                "LOGS_DIRECTORY must be one absolute directory (no ':', no '..', not '/')"
             );
             Ok(path)
         }
@@ -1250,7 +1258,7 @@ mod tests {
     }
 
     #[test]
-    fn session_history_root_is_independent_of_var_root() {
+    fn session_history_root_uses_rendered_var_not_profile_mix_var() {
         let root = history_root(Some("/srv/example/var/session/3/log/noded".into())).unwrap();
         assert_eq!(
             root.join("beta"),
@@ -1264,7 +1272,26 @@ mod tests {
             history_root(Some("".into())).unwrap(),
             history_root(None).unwrap()
         );
-        for bad in ["relative", "/var/log/one:/var/log/two"] {
+        assert_eq!(
+            history_root(Some("/x/y/".into())).unwrap(),
+            Path::new("/x/y")
+        );
+        assert_eq!(
+            history_root(Some("/x/./y".into())).unwrap(),
+            Path::new("/x/y")
+        );
+        for bad in [
+            "/",
+            "//",
+            "/.",
+            "/./",
+            "/..",
+            "/srv/../x",
+            "/x/..",
+            "/a:b",
+            "relative",
+            "/var/log/one:/var/log/two",
+        ] {
             assert!(history_root(Some(bad.into())).is_err());
         }
         let unit = include_str!("../units/noded@.service");
