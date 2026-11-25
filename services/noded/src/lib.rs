@@ -138,8 +138,11 @@ async fn async_main() -> Result<()> {
     let listen = cli_listen.unwrap_or_else(|| node_cfg.noded_listen());
     let node = cli_node.unwrap_or_else(|| node_cfg.node.clone());
     let mesh_config = cli_mesh_config.or_else(|| node_cfg.noded.mesh_config.clone());
-    let history_config = if no_log { logger::HistoryConfig::default() }
-        else { logger::HistoryConfig::load(mesh_config.as_deref())? };
+    let history_config = if no_log {
+        logger::HistoryConfig::default()
+    } else {
+        logger::HistoryConfig::load(mesh_config.as_deref())?
+    };
 
     let noded_url = format!("unix://{}", node_cfg.noded.broker_unix_endpoint().display());
 

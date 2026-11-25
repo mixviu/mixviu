@@ -48,7 +48,12 @@ struct ObserveEvent {
     dropped_count: u64,
 }
 
-pub async fn run(noded_url: &str, node: String, limits: HistoryConfig, mut shutdown: tokio::sync::oneshot::Receiver<()>) -> Result<()> {
+pub async fn run(
+    noded_url: &str,
+    node: String,
+    limits: HistoryConfig,
+    mut shutdown: tokio::sync::oneshot::Receiver<()>,
+) -> Result<()> {
     let started_instant = Instant::now();
     let started_at_iso = datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Secs, true);
 
@@ -125,7 +130,9 @@ pub async fn run(noded_url: &str, node: String, limits: HistoryConfig, mut shutd
     });
 
     let result = async {
-        let mut rx = observer_client.incoming_async().await
+        let mut rx = observer_client
+            .incoming_async()
+            .await
             .ok_or_else(|| anyhow::anyhow!("Logger observer has no incoming stream"))?;
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
         loop {
@@ -148,9 +155,13 @@ pub async fn run(noded_url: &str, node: String, limits: HistoryConfig, mut shutd
             }
         }
         Ok::<(), anyhow::Error>(())
-    }.await;
+    }
+    .await;
     stats.tap_subscribed.store(false, Ordering::Relaxed);
-    let closed = history.row(serde_json::json!({"kind": "gap", "reason": "observer_closed"}), Utc::now());
+    let closed = history.row(
+        serde_json::json!({"kind": "gap", "reason": "observer_closed"}),
+        Utc::now(),
+    );
     let flushed = history.flush();
     svc_task.abort();
     result?;
@@ -160,7 +171,7 @@ pub async fn run(noded_url: &str, node: String, limits: HistoryConfig, mut shutd
 }
 
 use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Read, Seek, SeekFrom};
+use std::io::{BufRead, BufReader, BufWriter, Seek, SeekFrom};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
@@ -175,20 +186,33 @@ pub struct HistoryConfig {
 
 impl Default for HistoryConfig {
     fn default() -> Self {
-        Self { retention_days: 30, max_file_bytes: 64 * 1024 * 1024, max_total_bytes: 1024 * 1024 * 1024 }
+        Self {
+            retention_days: 30,
+            max_file_bytes: 64 * 1024 * 1024,
+            max_total_bytes: 1024 * 1024 * 1024,
+        }
     }
 }
 
 impl HistoryConfig {
     pub fn load(explicit: Option<&str>) -> Result<Self> {
         #[derive(Default, serde::Deserialize)]
-        struct Config { #[serde(default)] history: HistoryConfig }
-        let path = explicit.map(PathBuf::from)
+        struct Config {
+            #[serde(default)]
+            history: HistoryConfig,
+        }
+        let path = explicit
+            .map(PathBuf::from)
             .unwrap_or_else(|| config::path(config::Dir::Etc).join("noded/config.conf.mix"));
-        let limits = if explicit.is_none() && !path.exists() { Self::default() }
-            else { config::load_conf_mix_path::<Config>(&path)?.history };
-        anyhow::ensure!(limits.retention_days > 0 && limits.max_file_bytes > 0 && limits.max_total_bytes > 0,
-            "history limits must be positive");
+        let limits = if explicit.is_none() && !path.exists() {
+            Self::default()
+        } else {
+            config::load_conf_mix_path::<Config>(&path)?.history
+        };
+        anyhow::ensure!(
+            limits.retention_days > 0 && limits.max_file_bytes > 0 && limits.max_total_bytes > 0,
+            "history limits must be positive"
+        );
         Ok(limits)
     }
 }
@@ -208,9 +232,17 @@ fn timestamp(now: DateTime<Utc>) -> String {
 }
 
 fn private_file(path: &Path) -> Result<File> {
-    let file = OpenOptions::new().create(true).append(true).read(true)
-        .mode(0o600).custom_flags(libc::O_NOFOLLOW).open(path)?;
-    anyhow::ensure!(file.metadata()?.is_file(), "history path is not a regular file");
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .read(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)?;
+    anyhow::ensure!(
+        file.metadata()?.is_file(),
+        "history path is not a regular file"
+    );
     file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
     Ok(file)
 }
@@ -220,28 +252,49 @@ impl History {
         std::fs::create_dir_all(dir)?;
         let path = dir.join("bus.jsonl");
         let mut file = private_file(&path)?;
-        // Only inspect a bounded tail, never load a day's history into memory.
-        let len = file.metadata()?.len();
-        file.seek(SeekFrom::Start(len.saturating_sub(65536)))?;
-        let mut tail = Vec::new();
-        file.read_to_end(&mut tail)?;
-        // Discard an incomplete crash tail before appending a fresh JSON line.
-        let complete = tail.iter().rposition(|b| *b == b'\n').map_or(0, |i| i + 1);
-        if complete < tail.len() {
-            file.set_len(len - (tail.len() - complete) as u64)?;
+        // Stream one row at a time: the last row may exceed a fixed tail window.
+        file.seek(SeekFrom::Start(0))?;
+        let mut reader = BufReader::new(&file);
+        let mut line = Vec::new();
+        let mut complete = 0;
+        let mut last = None;
+        loop {
+            line.clear();
+            let n = reader.read_until(b'\n', &mut line)?;
+            if n == 0 || line.last() != Some(&b'\n') { break; }
+            complete += n as u64;
+            if let Ok(row) = serde_json::from_slice::<serde_json::Value>(&line) {
+                last = row["ts_utc"].as_str().map(str::to_owned).or(last);
+            }
         }
-        let last = tail[..complete].split(|b| *b == b'\n').rev()
-            .filter_map(|line| serde_json::from_slice::<serde_json::Value>(line).ok())
-            .find_map(|row| row["ts_utc"].as_str().map(str::to_owned));
-        let day = last.as_deref().and_then(|s| s.get(..10)).unwrap_or(&now.format("%Y-%m-%d").to_string()).to_owned();
+        drop(reader);
+        // Modification time is the recording clock, not a possibly old event ts.
+        let modified = file.metadata()?.modified()?.duration_since(std::time::UNIX_EPOCH)?;
+        let day = DateTime::from_timestamp(modified.as_secs() as i64, 0)
+            .unwrap_or(now).format("%Y-%m-%d").to_string();
+        file.set_len(complete)?;
         let bytes = file.metadata()?.len();
-        let mut history = Self { dir: dir.to_owned(), node, limits, writer: BufWriter::new(file), bytes, day, dropped: 0 };
-        history.row(serde_json::json!({"kind": "gap", "reason": "logger_start", "since_last": last}), now)?;
+        let mut history = Self {
+            dir: dir.to_owned(),
+            node,
+            limits,
+            writer: BufWriter::new(file),
+            bytes,
+            day,
+            dropped: 0,
+        };
+        history.row(
+            serde_json::json!({"kind": "gap", "reason": "logger_start", "since_last": last}),
+            now,
+        )?;
         history.flush()?;
         Ok(history)
     }
 
-    fn flush(&mut self) -> Result<()> { self.writer.flush()?; Ok(()) }
+    fn flush(&mut self) -> Result<()> {
+        self.writer.flush()?;
+        Ok(())
+    }
 
     fn rotate(&mut self, now: DateTime<Utc>) -> Result<()> {
         self.flush()?;
@@ -249,7 +302,11 @@ impl History {
             let base = format!("bus-{}", self.day);
             let mut suffix = 0u64;
             loop {
-                let name = if suffix == 0 { format!("{base}.jsonl") } else { format!("{base}-{suffix:08}.jsonl") };
+                let name = if suffix == 0 {
+                    format!("{base}.jsonl")
+                } else {
+                    format!("{base}-{suffix:08}.jsonl")
+                };
                 let archive = self.dir.join(name);
                 // link is atomic and refuses collisions; never overwrite an archive.
                 match std::fs::hard_link(self.dir.join("bus.jsonl"), &archive) {
@@ -267,7 +324,9 @@ impl History {
     }
 
     fn maintain(&mut self, now: DateTime<Utc>) -> Result<()> {
-        if self.day != now.format("%Y-%m-%d").to_string() { self.rotate(now)?; }
+        if self.day != now.format("%Y-%m-%d").to_string() {
+            self.rotate(now)?;
+        }
         self.retain(now, 0)
     }
 
@@ -277,11 +336,29 @@ impl History {
         for entry in std::fs::read_dir(&self.dir)? {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().into_owned();
-            let Some(stem) = name.strip_prefix("bus-").and_then(|s| s.strip_suffix(".jsonl")) else { continue; };
-            let Some(date) = stem.get(..10).and_then(|s| datetime::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()) else { continue; };
+            let Some(stem) = name
+                .strip_prefix("bus-")
+                .and_then(|s| s.strip_suffix(".jsonl"))
+            else {
+                continue;
+            };
+            let Some(date) = stem
+                .get(..10)
+                .and_then(|s| datetime::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+            else {
+                continue;
+            };
             let suffix = &stem[10..];
-            let index = if suffix.is_empty() { 0 } else if let Some(n) = suffix.strip_prefix('-').and_then(|s| s.parse::<u64>().ok()) { n } else { continue; };
-            if !entry.file_type()?.is_file() { continue; }
+            let index = if suffix.is_empty() {
+                0
+            } else if let Some(n) = suffix.strip_prefix('-').and_then(|s| s.parse::<u64>().ok()) {
+                n
+            } else {
+                continue;
+            };
+            if !entry.file_type()?.is_file() {
+                continue;
+            }
             let size = entry.metadata()?.len();
             total = total.saturating_add(size);
             files.push((date, index, entry.path(), size));
@@ -289,7 +366,8 @@ impl History {
         files.sort_by_key(|(date, index, _, _)| (*date, *index));
         for (date, _, path, size) in files {
             if (now.date_naive() - date).num_days() >= i64::from(self.limits.retention_days)
-                || total > self.limits.max_total_bytes {
+                || total > self.limits.max_total_bytes
+            {
                 std::fs::remove_file(path)?;
                 total = total.saturating_sub(size);
             }
@@ -300,14 +378,22 @@ impl History {
     fn row(&mut self, mut row: serde_json::Value, now: DateTime<Utc>) -> Result<u64> {
         row["v"] = 1.into();
         row["node"] = self.node.clone().into();
-        if row.get("ts_utc").is_none() { row["ts_utc"] = timestamp(now).into(); }
+        if row.get("ts_utc").is_none() {
+            row["ts_utc"] = timestamp(now).into();
+        }
         let mut line = serde_json::to_vec(&row)?;
         line.push(b'\n');
         let size = line.len() as u64;
-        anyhow::ensure!(size <= self.limits.max_file_bytes && size <= self.limits.max_total_bytes, "history row exceeds configured byte cap");
+        anyhow::ensure!(
+            size <= self.limits.max_file_bytes && size <= self.limits.max_total_bytes,
+            "history row exceeds configured byte cap"
+        );
         if self.day != now.format("%Y-%m-%d").to_string()
             || self.bytes + size > self.limits.max_file_bytes
-            || self.bytes + size > self.limits.max_total_bytes { self.rotate(now)?; }
+            || self.bytes + size > self.limits.max_total_bytes
+        {
+            self.rotate(now)?;
+        }
         self.retain(now, size)?;
         self.writer.write_all(&line)?;
         self.bytes += size;
@@ -315,10 +401,15 @@ impl History {
     }
 
     fn event(&mut self, event: ObserveEvent, now: DateTime<Utc>) -> Result<u64> {
-        let ts = DateTime::parse_from_rfc3339(&event.ts).map(|t| t.with_timezone(&Utc)).unwrap_or(now);
+        let ts = DateTime::parse_from_rfc3339(&event.ts)
+            .map(|t| t.with_timezone(&Utc))
+            .unwrap_or(now);
         let mut bytes = 0;
         if event.dropped_count > self.dropped {
-            bytes += self.row(serde_json::json!({"kind": "dropped", "count": event.dropped_count - self.dropped}), now)?;
+            bytes += self.row(
+                serde_json::json!({"kind": "dropped", "count": event.dropped_count - self.dropped}),
+                now,
+            )?;
         }
         self.dropped = event.dropped_count;
         let mut row = serde_json::json!({
@@ -327,7 +418,9 @@ impl History {
             "from": event.from, "to": event.to, "command": event.command, "size": event.size,
             "correlation_id": event.correlation_id, "rc": event.rc, "dropped_count": event.dropped_count
         });
-        if let Some(peer) = event.peer { row["peer"] = peer.into(); }
+        if let Some(peer) = event.peer {
+            row["peer"] = peer.into();
+        }
         bytes += self.row(row, now)?;
         Ok(bytes)
     }
@@ -343,16 +436,29 @@ mod tests {
     impl Temp {
         fn new() -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
-            let path = std::env::temp_dir().join(format!("noded-history-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+            let path = std::env::temp_dir().join(format!(
+                "noded-history-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
             std::fs::create_dir(&path).unwrap();
             Self(path)
         }
     }
-    impl Drop for Temp { fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); } }
-    fn at(s: &str) -> DateTime<Utc> { DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc) }
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    fn at(s: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)
+    }
     fn rows(dir: &Path) -> Vec<Value> {
-        std::fs::read_to_string(dir.join("bus.jsonl")).unwrap().lines()
-            .map(|line| serde_json::from_str(line).unwrap()).collect()
+        std::fs::read_to_string(dir.join("bus.jsonl"))
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect()
     }
     fn sample(ts: &str, dropped: u64) -> ObserveEvent {
         // Same metadata shape as observe::EventBody; unexpected body fields are never persisted.
@@ -368,31 +474,57 @@ mod tests {
         let tmp = Temp::new();
         let now = at("2026-11-25T01:02:03.456Z");
         let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
-        h.event(sample("2026-11-25T11:02:03.456+10:00", 2), now).unwrap();
+        h.event(sample("2026-11-25T11:02:03.456+10:00", 2), now)
+            .unwrap();
         h.event(sample("", 2), now).unwrap();
         h.event(sample("", 5), now).unwrap();
         h.flush().unwrap();
         let r = rows(&tmp.0);
-        assert_eq!(r[0], json!({"v":1,"ts_utc":"2026-11-25T01:02:03.456Z","node":"beta","kind":"gap","reason":"logger_start","since_last":null}));
+        assert_eq!(
+            r[0],
+            json!({"v":1,"ts_utc":"2026-11-25T01:02:03.456Z","node":"beta","kind":"gap","reason":"logger_start","since_last":null})
+        );
         assert_eq!(r[1]["kind"], "dropped");
         assert_eq!(r[1]["count"], 2);
-        assert_eq!(r[2], json!({"v":1,"ts_utc":"2026-11-25T01:02:03.456Z","node":"beta","seq":42,"kind":"message",
+        assert_eq!(
+            r[2],
+            json!({"v":1,"ts_utc":"2026-11-25T01:02:03.456Z","node":"beta","seq":42,"kind":"message",
             "direction":"mesh_in","outcome":"delivered","message_type":"request","from":"ced.alpha.bus",
-            "to":"dopus.beta.bus","command":"dopus.open","size":123,"correlation_id":"example-id","peer":"alpha","rc":0,"dropped_count":2}));
+            "to":"dopus.beta.bus","command":"dopus.open","size":123,"correlation_id":"example-id","peer":"alpha","rc":0,"dropped_count":2})
+        );
         assert_eq!(r[3]["ts_utc"], "2026-11-25T01:02:03.456Z");
         assert_eq!(r[4]["count"], 3);
         assert_eq!(r.len(), 6);
-        assert_eq!(std::fs::metadata(tmp.0.join("bus.jsonl")).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(
+            std::fs::metadata(tmp.0.join("bus.jsonl"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
         drop(h);
         let _h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
-        assert_eq!(rows(&tmp.0).last().unwrap()["since_last"], "2026-11-25T01:02:03.456Z");
+        assert_eq!(
+            rows(&tmp.0).last().unwrap()["since_last"],
+            "2026-11-25T01:02:03.456Z"
+        );
     }
 
     #[test]
     fn size_and_idle_utc_day_rotation_preserve_rows() {
         let tmp = Temp::new();
         let now = at("2026-11-25T23:59:59Z");
-        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig { max_file_bytes: 500, ..HistoryConfig::default() }, now).unwrap();
+        let mut h = History::open(
+            &tmp.0,
+            "beta".into(),
+            HistoryConfig {
+                max_file_bytes: 450,
+                ..HistoryConfig::default()
+            },
+            now,
+        )
+        .unwrap();
         h.event(sample("", 0), now).unwrap();
         h.event(sample("", 0), now).unwrap();
         h.flush().unwrap();
@@ -404,7 +536,7 @@ mod tests {
         assert!(tmp.0.join("bus-2026-11-25-00000002.jsonl").exists());
         for entry in std::fs::read_dir(&tmp.0).unwrap() {
             let meta = entry.unwrap().metadata().unwrap();
-            assert!(meta.len() <= 500);
+            assert!(meta.len() <= 450);
             assert_eq!(meta.permissions().mode() & 0o777, 0o600);
         }
     }
@@ -414,7 +546,12 @@ mod tests {
         let tmp = Temp::new();
         let now = at("2026-11-25T00:00:00Z");
         let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
-        for name in ["bus-2026-10-26.jsonl", "bus-2026-11-24.jsonl", "bus-2026-11-24-00000001.jsonl", "bus-2026-11-25.jsonl"] {
+        for name in [
+            "bus-2026-10-26.jsonl",
+            "bus-2026-11-24.jsonl",
+            "bus-2026-11-24-00000001.jsonl",
+            "bus-2026-11-25.jsonl",
+        ] {
             std::fs::write(tmp.0.join(name), [b'x'; 100]).unwrap();
         }
         std::fs::write(tmp.0.join("unrelated.jsonl"), [b'x'; 100]).unwrap();
@@ -431,7 +568,10 @@ mod tests {
 
     #[test]
     fn units_enable_history_and_keep_monitor_disabled() {
-        for unit in [include_str!("../units/noded.service"), include_str!("../units/noded@.service")] {
+        for unit in [
+            include_str!("../units/noded.service"),
+            include_str!("../units/noded@.service"),
+        ] {
             assert!(!unit.contains("--no-log"));
             assert!(unit.contains("--no-monitor"));
         }
@@ -440,12 +580,16 @@ mod tests {
     #[test]
     fn config_defaults_and_overrides() {
         #[derive(serde::Deserialize)]
-        struct Config { history: HistoryConfig }
-        let c: Config = config::from_conf_mix_str("history: { retention_days: 7, max_file_bytes: 1024, max_total_bytes: 4096 }").unwrap();
+        struct Config {
+            history: HistoryConfig,
+        }
+        let c: Config = config::from_conf_mix_str(
+            "history: { retention_days: 7, max_file_bytes: 1024, max_total_bytes: 4096 }",
+        )
+        .unwrap();
         assert_eq!(c.history.retention_days, 7);
         assert_eq!(c.history.max_file_bytes, 1024);
         assert_eq!(c.history.max_total_bytes, 4096);
         assert_eq!(HistoryConfig::default().retention_days, 30);
     }
 }
-
