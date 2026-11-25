@@ -1,0 +1,10 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Test fixture: invoked through Mix, never installed as av.
+$a=args()
+if $a[0]=="probe" then print(json_encode({probe:true}));exit(0) end
+write_file(env("AV_STUB_PID"),to_string(pid()))
+eprint("AVP "..json_encode({v:1,t:0,stage:"input",event:"start"}))
+sleep(0.15)
+eprint("AVP "..json_encode({v:1,t:0.15,stage:"done",event:"end",ok:true}))
+print(json_encode({render:{frames:3},argv:$a}))
+if basename($a[1])=="fail.json" then exit(1) end

@@ -1,0 +1,37 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- mix --serve apps/av/app.mix --name av
+$core=require("core.mix")
+$cfg=$core.defaults()
+$config=env("MIX_AV_CONFIG","")
+if $config!="" then
+  $over=load_data($config)
+  $core.check_fields($over,keys($cfg))
+  for $k in keys($over) $cfg[$k]=$over[$k] end
+end
+$state=$core.fresh($cfg)
+-- One citizen for this user on this host, including accidental alternate
+-- Bus names. A non-blocking process-held lock survives hot reloads.
+$lock=path_join(env("XDG_RUNTIME_DIR",path_join(env("HOME"),".cache")),"mixviu-av-citizen.lock")
+if not flock($lock) then raise("AV_BUSY","av citizen already running for this user") end
+fn accept($r)
+  global $state
+  $r=$core.cancel_returned($state,$r)
+  $state=$r.state
+  if $r.event!=nil then publish("av.state",json_encode($r.event)) end
+end
+on av.actions
+  try $core.check_fields($event.args,[]);reply(0,json_encode({actions:$core.actions()}))
+  catch $message,$error reply(10,json_encode({error_code:$error.code,message:$message})) end
+end
+on av.execute
+  try
+    $core.check_fields($event.args,["id","params"])
+    $r=$core.perform($state,$event.args.id,$event.args.params ?? {})
+    accept($r)
+    reply(0,json_encode($r.result))
+  catch $message,$error reply(10,json_encode({error_code:$error.code ?? "AV_ERROR",message:$message,details:$error.details})) end
+end
+on proc.line accept($core.line_event($state,$event.args)) end
+on proc.watch_exited accept($core.finished($state,$event.args)) end
+on proc.overflow accept($core.overflow_event($state,$event.args)) end

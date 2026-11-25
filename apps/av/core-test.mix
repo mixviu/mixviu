@@ -1,0 +1,142 @@
+fn check($ok) if not $ok then raise("TEST","assertion failed") end end
+fn equal($a,$b) if not deep_eq($a,$b) then raise("TEST",json_encode({actual:$a,expected:$b})) end end
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$core=require("core.mix")
+$dir=trim(run_argv_must(["mktemp","-d","/tmp/av-test-XXXXXX"]))
+$here=dirname(script_path())
+$mix=which("mix")
+$cfg=$core.defaults();$cfg.roots=[$dir]
+$cfg.av=[$mix,path_join($here,"stub.mix")]
+$cfg.runner=[$mix,path_join($here,"runner-stub.mix"),$dir]
+$cfg.control=$cfg.runner
+$s=$core.fresh($cfg)
+write_file($dir.."/timeline.json","{}")
+$params={timeline:$dir.."/timeline.json",out:$dir.."/out.webm"}
+$events=[]
+fn apply_result($r)
+  global $s,$events
+  $r=$core.cancel_returned($s,$r)
+  $s=$r.state
+  if $r.event!=nil then push($events,$r.event) end
+end
+on proc.line apply_result($core.line_event($s,$event.args)) end
+on proc.watch_exited apply_result($core.finished($s,$event.args)) end
+fn refused($f,$code,$text=nil)
+  $caught=false
+  try $f() catch $message,$error
+    $caught=true;equal($error.code,$code)
+    if $text!=nil then check(contains($message,$text)) end
+  end
+  check($caught)
+end
+try
+  $rows=$core.actions();equal(len($rows),6)
+  equal($rows[1].schema.properties.cpu.type,"integer")
+  equal($core.defaults().decode_max_bytes,"64G")
+  equal($core.byte_limit("64G"),68719476736)
+  equal($core.byte_limit("1M"),1048576);equal($core.byte_limit("1K"),1024);equal($core.byte_limit("7"),7)
+  equal($core.perform($s,"av.probe",{file:$params.timeline}).result.probe,true)
+  refused(fn()=$core.perform($s,"av.render",{timeline:"/etc/passwd",out:$params.out}),"AV_PATH")
+  run_argv_must(["ln","-s","/etc/passwd",$dir.."/escape"])
+  refused(fn()=$core.perform($s,"av.probe",{file:$dir.."/escape"}),"AV_PATH")
+  run_argv_must(["ln","-s","/tmp/av-missing-output",$dir.."/dangling"])
+  refused(fn()=$core.perform($s,"av.render",{timeline:$params.timeline,out:$dir.."/dangling"}),"AV_PATH","output exists")
+  refused(fn()=$core.perform($s,"av.render",{timeline:$params.timeline,out:$dir}),"AV_PATH","output exists")
+  refused(fn()=$core.perform($s,"av.render",{timeline:$params.timeline,out:$dir.."/escape"}),"AV_PATH","output exists")
+  write_file($dir.."/existing.webm","keep me")
+  refused(fn()=$core.perform($s,"av.render",{timeline:$params.timeline,out:$dir.."/existing.webm"}),"AV_PATH","output exists")
+  equal(read_file($dir.."/existing.webm"),"keep me")
+  refused(fn()=$core.perform($s,"av.render",{timeline:$params.timeline,out:$params.timeline}),"AV_PATH")
+  refused(fn()=$core.perform($s,"av.decode",{file:$params.timeline,y4m:$dir.."/existing.webm"}),"AV_PATH","output exists")
+  refused(fn()=$core.perform($s,"av.audio",{timeline:$params.timeline,out:$params.out,wav:$dir.."/existing.webm"}),"AV_PATH","output exists")
+  refused(fn()=$core.perform($s,"av.audio",{timeline:$params.timeline,out:$params.out,wav:$dir.."/./out.webm"}),"AV_PATH","duplicate output")
+  refused(fn()=$core.perform($s,"av.decode",{file:$params.timeline,y4m:$params.out,wav:$params.out}),"AV_PATH","duplicate output")
+  write_file($dir.."/live-units","mixviu-av-job-retained.service loaded active running retained")
+  refused(fn()=$core.perform($s,"av.render",$params),"AV_BUSY")
+  remove($dir.."/live-units")
+  $r=$core.perform($s,"av.render",$params);$job=$r.result.job;apply_result($r)
+  $public=$core.perform($s,"av.status",{job:$job}).result
+  check(not contains(keys($public),"watch"));check(not contains(keys($public),"stdout"))
+  refused(fn()=$core.perform($s,"av.render",$params),"AV_BUSY")
+  $end=monotonic()+3
+  while $s.jobs[$job].status=="running" and monotonic()<$end sleep(0.01) end
+  check($s.jobs[$job].status!="running")
+  equal($s.jobs[$job].status,"finished")
+  equal($s.jobs[$job].receipt.render.frames,3)
+  equal($s.jobs[$job].metrics.memory_peak_bytes,2097152)
+  equal(len($events),4)
+  equal($events[0].event,"start");equal($events[1].progress.v,1);equal($events[3].event,"end")
+  check(contains($s.jobs[$job].receipt.argv,"--progress"))
+  $public=$core.perform($s,"av.status",{job:$job}).result
+  equal(len(keys($public)),12)
+  for $k in ["watch","stdout","summary","diagnostic","receipt_error","capture_error"] check(not contains(keys($public),$k)) end
+  equal($core.perform($s,"av.status",{}).result.jobs[$job],$public)
+  -- Old or already-finished overflow events cannot alter history.
+  equal($core.overflow_event($s,{tag:$job,watch:$s.jobs[$job].watch}).state,$s)
+  $r=$core.perform($s,"av.render",$params);$job=$r.result.job;apply_result($r)
+  $end=monotonic()+1
+  while not exists($dir.."/"..$s.jobs[$job].unit..".pid") and monotonic()<$end sleep(0.01) end
+  check(exists($dir.."/"..$s.jobs[$job].unit..".pid"))
+  apply_result($core.perform($s,"av.cancel",{job:$job}))
+  $end=monotonic()+3
+  while $s.jobs[$job].status=="running" and monotonic()<$end sleep(0.01) end
+  check($s.jobs[$job].status!="running")
+  equal($core.perform($s,"av.status",{job:$job}).result.status,"cancelled")
+  equal(len(keys($core.perform($s,"av.status",{}).result.jobs)),2)
+  -- Audio keeps its optional WAV output; decode always receives a disk cap.
+  for $case in [
+    {id:"av.audio",params:{timeline:$params.timeline,out:$dir.."/audio.webm",wav:$dir.."/audio.wav"}},
+    {id:"av.decode",params:{file:$params.timeline,y4m:$dir.."/decode.y4m",wav:$dir.."/decode.wav"}},
+    {id:"av.decode",params:{file:$params.timeline,y4m:$dir.."/lower.y4m",max_output_bytes:1024}}
+  ]
+    $r=$core.perform($s,$case.id,$case.params);$job=$r.result.job;apply_result($r)
+    $end=monotonic()+3
+    while $s.jobs[$job].status=="running" and monotonic()<$end sleep(0.01) end
+    equal($s.jobs[$job].status,"finished")
+    $argv=$s.jobs[$job].receipt.argv
+    if $case.id=="av.audio" then equal($argv[index_of($argv,"--wav")+1],$dir.."/audio.wav")
+    else
+      equal($argv[index_of($argv,"--max-output-bytes")+1],to_string($case.params.max_output_bytes ?? 68719476736))
+      if $case.params.wav!=nil then equal($argv[index_of($argv,"--wav")+1],$case.params.wav) end
+    end
+  end
+  refused(fn()=$core.perform($s,"av.decode",{file:$params.timeline,y4m:$dir.."/over.y4m",max_output_bytes:68719476737}),"AV_PARAMS","exceeds host cap")
+  for $n in [0,-1,0.5,"1024"]
+    $caught=false
+    try $core.perform($s,"av.decode",{file:$params.timeline,y4m:$dir.."/over.y4m",max_output_bytes:$n})
+    catch $message,$error $caught=true;equal($error.code,"AV_PARAMS") end
+    check($caught)
+  end
+  write_file($dir.."/fail.json","{}")
+  $r=$core.perform($s,"av.render",{timeline:$dir.."/fail.json",out:$dir.."/failed.webm"});$job=$r.result.job;apply_result($r)
+  $end=monotonic()+3
+  while $s.jobs[$job].status=="running" and monotonic()<$end sleep(0.01) end
+  equal($s.jobs[$job].status,"failed");equal($s.jobs[$job].exit_code,1)
+  -- A stop result arriving after a recorded failure must preserve it.
+  $old=$s;$old.jobs[$job].status="running"
+  equal($core.cancel_returned($s,{state:$old,cancel_job:$job}).state,$s)
+  -- Exercise retention without launching 34 more processes. Completion order
+  -- (including tied timestamps) defines age; running jobs are never evicted.
+  $h=$core.fresh($cfg)
+  $template=$s.jobs[$job];$template.status="running";$template.cancelled=false;$template.stdout="{}"
+  $h.jobs.still=$template
+  for $i=1 to 34
+    $id="history-"..to_string($i);$h.jobs[$id]=$template;$h.jobs[$id].job=$id
+    $h=$core.finished($h,{tag:$id,watch:$template.watch,exit_code:0,signal:nil}).state
+  end
+  equal(len(keys($h.jobs)),33);equal(len($h.finished_jobs),32)
+  equal($h.jobs.still.status,"running");equal($h.jobs["history-1"],nil);equal($h.jobs["history-2"],nil)
+  equal($h.finished_jobs[0],"history-3");equal($h.finished_jobs[31],"history-34")
+  equal($core.overflow_event($h,{tag:"still",watch:"stale"}).state,$h)
+  $overflow=$core.overflow_event($h,{tag:"still",watch:$template.watch}).state
+  equal($overflow.jobs.still.capture_error,true)
+  equal($core.finished($overflow,{tag:"still",watch:$template.watch,exit_code:0,signal:nil}).event.status,"failed")
+  print("av: actions, render/audio/decode argv, caps, progress, receipts, status, retention, overflow, cancel and path refusals passed")
+finally
+  run_argv_must(["rm","-r",$dir])
+end
+
+-- Standalone scripts with Bus handlers enter a resident pump. The embedded
+-- app-test host completes naturally and deliberately denies process exit.
+try exit(0)
+catch $message check(contains($message,"capability denied: exit")) end
