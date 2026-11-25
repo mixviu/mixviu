@@ -1246,9 +1246,18 @@ mod tests {
     #[test]
     fn systemd_history_root_is_independent_of_var_root() {
         let root = history_root(Some("/var/log/noded-session-3".into())).unwrap();
-        assert_eq!(root.join("beta"), Path::new("/var/log/noded-session-3/beta"));
-        assert_eq!(history_root(None).unwrap(), logging::default_log_dir("noded"));
-        assert_eq!(history_root(Some("".into())).unwrap(), history_root(None).unwrap());
+        assert_eq!(
+            root.join("beta"),
+            Path::new("/var/log/noded-session-3/beta")
+        );
+        assert_eq!(
+            history_root(None).unwrap(),
+            logging::default_log_dir("noded")
+        );
+        assert_eq!(
+            history_root(Some("".into())).unwrap(),
+            history_root(None).unwrap()
+        );
         for bad in ["relative", "/var/log/one:/var/log/two"] {
             assert!(history_root(Some(bad.into())).is_err());
         }
