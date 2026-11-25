@@ -38,8 +38,10 @@ zero-based `chunk` and `chunks_total`. Audio boundaries include `audio_pass`
 The final result has a separate reserved slot. With a responsive stderr reader,
 the last line is done/end, with `ok` true only for exit status zero.
 Completion waits at most one second for the writer to flush it, then silently
-gives up. A blocked stderr reader delays only the writer, never encoding or
-command completion beyond that final timeout. Under backpressure, boundaries
+gives up. On success, a blocked stderr reader delays only the writer, never
+encoding or command completion beyond that final timeout. On failure, existing
+`av:` diagnostics still write directly to fd 2 and can block completion;
+the one-second bound applies only to the progress writer. Under backpressure, boundaries
 and the done line may therefore be absent; surviving events retain queue order
 and counts remain monotonic.
 `receipt` names stdout, the existing receipt destination; callers saving it

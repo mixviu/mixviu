@@ -21,6 +21,52 @@ fn lines(output: &Output) -> Vec<Value> {
         .map(|l| serde_json::from_str(l).unwrap())
         .collect()
 }
+
+#[test]
+fn progress_stderr_preserves_append_and_supports_sockets() {
+    use std::{io::Read, os::unix::net::UnixStream, process::Stdio};
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("stderr.log");
+    let existing = b"existing log bytes\n";
+    fs::write(&path, existing).unwrap();
+    let log = fs::OpenOptions::new().append(true).open(&path).unwrap();
+    let command = || {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_av"));
+        c.args(["render", "missing.json", "--progress", "--cpu", "0", "--out", "unused"]);
+        c
+    };
+    let status = command().stderr(Stdio::from(log)).status().unwrap();
+    assert_eq!(status.code(), Some(2));
+    let bytes = fs::read(path).unwrap();
+    assert!(bytes.starts_with(existing));
+    let text = String::from_utf8(bytes).unwrap();
+    assert!(text.contains("av: cpu_limit\n"));
+    assert!(text.contains("AVP "));
+
+    let (mut reader, writer) = UnixStream::pair().unwrap();
+    reader.set_read_timeout(Some(std::time::Duration::from_secs(5))).unwrap();
+    let status = command().stderr(Stdio::from(std::os::fd::OwnedFd::from(writer))).status().unwrap();
+    assert_eq!(status.code(), Some(2));
+    let mut text = String::new();
+    reader.read_to_string(&mut text).unwrap();
+    assert!(text.contains("AVP "));
+    assert!(text.contains("av: cpu_limit\n"));
+}
+
+#[test]
+fn literal_progress_filename_is_not_a_flag() {
+    let root = tempfile::tempdir().unwrap();
+    fs::write(root.path().join("--progress"), "{}").unwrap();
+    // Reaching JSON validation proves the positional path was opened.
+    let output = Command::new(env!("CARGO_BIN_EXE_av"))
+        .current_dir(root.path())
+        .args(["audio", "--progress", "--out", "output.webm"])
+        .output().unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("usage:"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("missing field"));
+    assert!(lines(&output).is_empty());
+}
 fn blocked_stderr_render(root: &std::path::Path) {
     use std::{
         io::Write,
