@@ -10,8 +10,11 @@ Invalid values refuse with `cpu_limit` or `mem_limit`. Without limits the old
 admission rules remain. The stdout receipt includes `limits` (a null CPU means
 the legacy 2× available CPU admission), `encode_requested` and `encode_effective`.
 
-`av audio` accepts `--cpu N` as a validated no-op ceiling: its work is
-single-threaded. It also accepts `--progress` and its existing `--wav` option.
+`av audio TIMELINE.json --out FILE.webm [--wav FILE.wav] [--cpu N] [--mem BYTES] [--progress]`
+accepts CPU and memory ceilings with the same syntax and validation as render.
+Both are no-ops for audio: its work is single-threaded and it has no memory
+admission ceiling. In particular, zero bytes is valid syntax but render refuses
+it when one chunk cannot fit. It also accepts `--progress` and `--wav`.
 
 With `--progress`, stderr carries flushed `AVP ` lines alongside diagnostics:
 
@@ -23,13 +26,22 @@ AVP {"v":1,"t":1.234,"stage":"done","event":"end","ok":true,"receipt":"stdout","
 
 `t` is monotonic seconds since command start. Stages first appear as input,
 audio, video (render only), mux, done. Video and mux overlap because batches
-are muxed as they finish. Start/end events are unconditional; progress events
-are limited to one every 500 ms globally. Video frame counts are totals across
+are muxed as they finish. Video end marks the last batch joining, before its
+mux accounting. Workers only increment atomic frame counters. A dedicated
+writer samples them roughly every 500 ms and writes all progress stderr lines.
+Start/end events use a bounded 64-event queue with non-blocking sends; a full
+queue drops events, counted as `events_dropped` on done. Video frame counts are totals across
 all chunks; `frames_out` counts composed output frames and `frames_encoded`
 counts encoder packets, excluding repeat packets. Chunk start/end events carry
 zero-based `chunk` and `chunks_total`. Audio boundaries include `audio_pass`
 (codec correction pass, starting at zero); mux end includes output `bytes`.
-The last line is always done/end, with `ok` true only for exit status zero.
+The final result has a separate reserved slot. With a responsive stderr reader,
+the last line is done/end, with `ok` true only for exit status zero.
+Completion waits at most one second for the writer to flush it, then silently
+gives up. A blocked stderr reader delays only the writer, never encoding or
+command completion beyond that final timeout. Under backpressure, boundaries
+and the done line may therefore be absent; surviving events retain queue order
+and counts remain monotonic.
 `receipt` names stdout, the existing receipt destination; callers saving it
 choose the actual file path. On error stdout may have no receipt. No new receipt
 file is created. Progress does not change output bytes or receipt fields.

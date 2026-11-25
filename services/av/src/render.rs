@@ -267,21 +267,7 @@ fn clamp_cpu(chunks: &mut usize, threads: &mut usize, cpu: usize) {
     *threads = (*threads).min(cpu / *chunks);
 }
 fn memory_limit(value: &std::ffi::OsStr) -> Result<u64> {
-    let value = value.to_str().ok_or("render: mem_limit")?;
-    let (digits, multiplier) = match value.as_bytes().last() {
-        Some(b'K') => (&value[..value.len() - 1], 1024u64),
-        Some(b'M') => (&value[..value.len() - 1], 1024u64.pow(2)),
-        Some(b'G') => (&value[..value.len() - 1], 1024u64.pow(3)),
-        _ => (value, 1),
-    };
-    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
-        return refuse("mem_limit");
-    }
-    digits
-        .parse::<u64>()
-        .ok()
-        .and_then(|n| n.checked_mul(multiplier))
-        .ok_or_else(|| "render: mem_limit".into())
+    media_audio::cli::memory_limit(value)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -996,14 +982,14 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
     let mut limits = Limits::default();
     let mut i = 1;
     while i < args.len() {
-        let value = args.get(i + 1).ok_or("render: missing option value")?;
+        let value = args.get(i + 1).ok_or("missing_option_value")?;
         match args[i].to_str() {
             Some("--out") if out.is_none() => out = Some(Path::new(value)),
             Some("--cpu") if limits.cpu.is_none() => {
                 limits.cpu = Some(media_audio::cli::cpu_limit(value)?)
             }
             Some("--mem") if limits.mem.is_none() => limits.mem = Some(memory_limit(value)?),
-            _ => return refuse("unknown_or_duplicate_option"),
+            _ => return Err("unknown_or_duplicate_option".into()),
         }
         i += 2;
     }
@@ -1116,6 +1102,9 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
                 .map(|h| h.join().map_err(|_| "chunk_worker_panicked".to_string())?)
                 .collect::<std::result::Result<Vec<_>, String>>()
         })?;
+        if ranges.last().is_some_and(|r| r[1] == *starts.last().unwrap()) {
+            progress.event("video", "end", serde_json::json!({}));
+        }
         video_wall += wall.elapsed().as_secs_f64();
         video_cpu += cpu() - c;
         if !mux_started {
@@ -1174,7 +1163,6 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
     let size = pending.file.metadata()?.len();
     mux_wall += mux_start.elapsed().as_secs_f64();
     mux_cpu += cpu() - c;
-    progress.event("video", "end", serde_json::json!({}));
     progress.event("mux", "end", serde_json::json!({"bytes":size}));
     let n = frame(t.duration_s);
     let mut receipt = serde_json::json!({"peak_rss_kib":peak_rss_kib(), "scaling": {"filter":"bicubic_catmull_rom_gamma","frames":scaled_frames,"sum_wall_s":scale_wall_s,"mean_ms":scale_wall_s*1000.0/scaled_frames.max(1) as f64}, "frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunk_count, "parallel_chunks": t.encode.chunks, "stages": {"input": {"wall_s": input_wall, "cpu_s": input_cpu}, "audio": {"wall_s": audio_wall, "cpu_s": audio_cpu}, "video": {"wall_s": video_wall, "cpu_s": video_cpu}, "mux": {"wall_s": mux_wall, "cpu_s": mux_cpu}}, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt});

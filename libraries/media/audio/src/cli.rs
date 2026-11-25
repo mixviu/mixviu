@@ -5,6 +5,21 @@ use std::{
     path::PathBuf,
 };
 const MAX_JSON: u64 = 16 * 1024 * 1024;
+/// Shared byte ceiling syntax; audio validates it but has no memory admission.
+pub fn memory_limit(value: &std::ffi::OsStr) -> timeline::Result<u64> {
+    let value = value.to_str().ok_or("mem_limit")?;
+    let (digits, multiplier) = match value.as_bytes().last() {
+        Some(b'K') => (&value[..value.len() - 1], 1024u64),
+        Some(b'M') => (&value[..value.len() - 1], 1024u64.pow(2)),
+        Some(b'G') => (&value[..value.len() - 1], 1024u64.pow(3)),
+        _ => (value, 1),
+    };
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err("mem_limit".into());
+    }
+    digits.parse::<u64>().ok().and_then(|n| n.checked_mul(multiplier))
+        .ok_or_else(|| "mem_limit".into())
+}
 /// Audio execution is single-threaded; validate this no-op ceiling consistently.
 pub fn cpu_limit(value: &std::ffi::OsStr) -> timeline::Result<usize> {
     let value = value.to_str().ok_or("cpu_limit")?;
@@ -34,23 +49,26 @@ pub fn run(args: impl IntoIterator<Item = OsString>) -> timeline::Result<u8> {
 fn run_inner(a: Vec<OsString>, progress: &crate::progress::Progress) -> timeline::Result<u8> {
     progress.event("input", "start", serde_json::json!({}));
     if a.len() < 3 {
-        return Err("usage: av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]".into());
+        return Err("usage: av audio TIMELINE.json --out FILE.webm [--wav FILE.wav] [--cpu N] [--mem BYTES] [--progress]".into());
     }
     let input = PathBuf::from(&a[0]);
     let mut out = None;
     let mut wav = None;
     let mut cpu = None;
+    let mut mem = None;
     let mut i = 1;
     while i < a.len() {
-        let value = a.get(i + 1).ok_or("missing option value")?;
+        let value = a.get(i + 1).ok_or("missing_option_value")?;
         if a[i] == "--out" && out.is_none() {
             out = Some(PathBuf::from(value));
         } else if a[i] == "--wav" && wav.is_none() {
             wav = Some(PathBuf::from(value));
         } else if a[i] == "--cpu" && cpu.is_none() {
             cpu = Some(cpu_limit(value)?);
+        } else if a[i] == "--mem" && mem.is_none() {
+            mem = Some(memory_limit(value)?);
         } else {
-            return Err("unknown or duplicate option".into());
+            return Err("unknown_or_duplicate_option".into());
         }
         i += 2;
     }
