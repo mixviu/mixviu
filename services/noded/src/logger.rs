@@ -16,7 +16,7 @@
 //! the props surface or trigger the symmetric route_local + broadcast_tap
 //! drop pattern that crashed the box on 2026-04-28.
 //!
-//! Each event is appended to `~/.local/log/mix/noded/bus.jsonl`.
+//! Each node has its own exclusively locked history directory.
 
 use std::io::Write;
 use std::sync::Arc;
@@ -54,12 +54,17 @@ pub async fn run(
     limits: HistoryConfig,
     shutdown: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<()> {
+    anyhow::ensure!(
+        !node.is_empty() && node != "." && node != ".." && !node.contains('/'),
+        "invalid history node directory"
+    );
+    let dir = logging::default_log_dir("noded").join(&node);
     run_in(
         noded_url,
         node,
         limits,
         shutdown,
-        &logging::default_log_dir("noded"),
+        &dir,
     )
     .await
 }
@@ -74,7 +79,14 @@ async fn run_in(
     let started_instant = Instant::now();
     let started_at_iso = datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Secs, true);
 
-    let mut history = History::open(log_dir, node, limits, Utc::now())?;
+    let dir = log_dir.to_owned();
+    let history = match tokio::task::spawn_blocking(move || History::open(&dir, node, limits, Utc::now())).await? {
+        Ok(history) => Arc::new(std::sync::Mutex::new(history)),
+        Err(error) => {
+            tracing::warn!(%error, "History disabled: cannot open or lock node directory");
+            return Ok(());
+        }
+    };
     let bus_log_path = log_dir.join("bus.jsonl");
     let log_path_str = bus_log_path.to_string_lossy().to_string();
 
@@ -145,18 +157,24 @@ async fn run_in(
         tracing::info!("Logger service connection closed");
     });
 
+    let _svc_guard = AbortOnDrop(svc_task);
     let result = async {
         let mut rx = observer_client
             .incoming_async()
             .await
             .ok_or_else(|| anyhow::anyhow!("Logger observer has no incoming stream"))?;
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(1));
+        let mut last_warning = None;
         loop {
             tokio::select! {
                 _ = &mut shutdown => break,
                 _ = tick.tick() => {
-                    history.maintain(Utc::now())?;
-                    history.flush()?;
+                    let result = disk(&history, |h| {
+                        let maintained = h.maintain(Utc::now());
+                        let flushed = h.flush();
+                        maintained.and(flushed)
+                    }).await;
+                    warn_retry(result, &mut last_warning);
                 }
                 cmd = rx.recv() => {
                     let Some(cmd) = cmd else { break };
@@ -165,8 +183,10 @@ async fn run_in(
                         tracing::warn!("Logger received malformed noded.observe.event");
                         continue;
                     };
-                    let bytes = history.event(event, Utc::now())?;
-                    stats.record(bytes);
+                    match disk(&history, move |h| h.event(event, Utc::now())).await {
+                        Ok(bytes) => stats.record(bytes),
+                        Err(error) => warn_retry(Err(error), &mut last_warning),
+                    }
                 }
             }
         }
@@ -174,21 +194,40 @@ async fn run_in(
     }
     .await;
     stats.tap_subscribed.store(false, Ordering::Relaxed);
-    let closed = history.row(
-        serde_json::json!({"kind": "gap", "reason": "observer_closed"}),
-        Utc::now(),
-    );
-    let flushed = history.flush();
-    svc_task.abort();
+    let closed = disk(&history, |h| {
+        h.row(serde_json::json!({"kind": "gap", "reason": "observer_closed"}), Utc::now())?;
+        h.flush()
+    }).await;
     result?;
     closed?;
-    flushed?;
     Ok(())
+}
+
+struct AbortOnDrop(tokio::task::JoinHandle<()>);
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) { self.0.abort(); }
+}
+
+async fn disk<T: Send + 'static>(
+    history: &Arc<std::sync::Mutex<History>>,
+    operation: impl FnOnce(&mut History) -> Result<T> + Send + 'static,
+) -> Result<T> {
+    let history = history.clone();
+    tokio::task::spawn_blocking(move || operation(&mut history.lock().unwrap())).await?
+}
+
+fn warn_retry(result: Result<()>, last: &mut Option<Instant>) {
+    if let Err(error) = result
+        && last.is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(60)) {
+        tracing::warn!(%error, "History I/O failed; will retry (warnings limited to once per minute)");
+        *last = Some(Instant::now());
+    }
 }
 
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Seek, SeekFrom};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 
 /// Limits in the `history` map of noded/config.conf.mix (or --mesh-config).
@@ -211,7 +250,7 @@ impl Default for HistoryConfig {
 }
 
 impl HistoryConfig {
-    pub fn load(explicit: Option<&str>) -> Result<Self> {
+    pub fn load(explicit: Option<&str>) -> Option<Self> {
         #[derive(Default, serde::Deserialize)]
         struct Config {
             #[serde(default)]
@@ -220,25 +259,36 @@ impl HistoryConfig {
         let path = explicit
             .map(PathBuf::from)
             .unwrap_or_else(|| config::path(config::Dir::Etc).join("noded/config.conf.mix"));
-        let limits = if explicit.is_none() && !path.exists() {
-            Self::default()
-        } else {
-            config::load_conf_mix_path::<Config>(&path)?.history
+        let source = match std::fs::read_to_string(&path) {
+            Ok(source) => source,
+            Err(error) if explicit.is_none() && error.kind() == std::io::ErrorKind::NotFound => return Some(Self::default()),
+            Err(error) => {
+                tracing::warn!(path = %path.display(), %error, "History disabled: config cannot be read");
+                return None;
+            }
         };
-        anyhow::ensure!(
-            limits.retention_days > 0 && limits.max_file_bytes > 0 && limits.max_total_bytes > 0,
-            "history limits must be positive"
-        );
-        Ok(limits)
+        let parsed = config::from_conf_mix_str::<Config>(&source).map_err(anyhow::Error::from).and_then(|c| {
+            anyhow::ensure!(c.history.retention_days > 0 && c.history.max_file_bytes > 0 && c.history.max_total_bytes > 0, "history limits must be positive");
+            Ok(c.history)
+        });
+        Some(match parsed {
+            Ok(limits) => limits,
+            Err(error) => {
+                tracing::warn!(path = %path.display(), %error, "Invalid history config: using history defaults");
+                Self::default()
+            }
+        })
     }
 }
 
 struct History {
+    _lock: File,
     dir: PathBuf,
     node: String,
     limits: HistoryConfig,
-    writer: BufWriter<File>,
+    writer: BufWriter<Box<dyn Write + Send>>,
     bytes: u64,
+    total: u64,
     day: String,
     dropped: u64,
 }
@@ -278,8 +328,19 @@ fn archive_key(name: &str) -> Option<(datetime::NaiveDate, u64)> {
 impl History {
     fn open(dir: &Path, node: String, limits: HistoryConfig, now: DateTime<Utc>) -> Result<Self> {
         std::fs::create_dir_all(dir)?;
+        let lock = private_file(&dir.join("bus.lock"))?;
+        // SAFETY: flock borrows a valid fd and does not retain a Rust pointer.
+        if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+            return Err(std::io::Error::last_os_error().into());
+        }
         let path = dir.join("bus.jsonl");
         let mut file = private_file(&path)?;
+        if file.metadata()?.nlink() > 1 {
+            // A previous rotation linked the archive but crashed before unlinking.
+            // Never truncate or append to that completed archive inode.
+            std::fs::remove_file(&path)?;
+            file = private_file(&path)?;
+        }
         // Stream one row at a time: the last row may exceed a fixed tail window.
         file.seek(SeekFrom::Start(0))?;
         let mut reader = BufReader::new(&file);
@@ -310,14 +371,17 @@ impl History {
         file.set_len(complete)?;
         let bytes = file.metadata()?.len();
         let mut history = Self {
+            _lock: lock,
             dir: dir.to_owned(),
             node,
             limits,
-            writer: BufWriter::new(file),
+            writer: BufWriter::new(Box::new(file)),
             bytes,
+            total: bytes,
             day,
             dropped: 0,
         };
+        history.retain(now, 0)?;
         history.row(
             serde_json::json!({"kind": "gap", "reason": "logger_start", "since_last": last}),
             now,
@@ -370,9 +434,10 @@ impl History {
             }
             std::fs::remove_file(self.dir.join("bus.jsonl"))?;
         }
-        self.writer = BufWriter::new(private_file(&self.dir.join("bus.jsonl"))?);
+        self.writer = BufWriter::new(Box::new(private_file(&self.dir.join("bus.jsonl"))?));
         self.bytes = 0;
         self.day = now.format("%Y-%m-%d").to_string();
+        self.retain(now, 0)?;
         Ok(())
     }
 
@@ -383,7 +448,7 @@ impl History {
         self.retain(now, 0)
     }
 
-    fn retain(&self, now: DateTime<Utc>, incoming: u64) -> Result<()> {
+    fn retain(&mut self, now: DateTime<Utc>, incoming: u64) -> Result<()> {
         let mut files = Vec::new();
         let mut total = self.bytes.saturating_add(incoming);
         for entry in std::fs::read_dir(&self.dir)? {
@@ -408,6 +473,7 @@ impl History {
                 total = total.saturating_sub(size);
             }
         }
+        self.total = total.saturating_sub(incoming);
         Ok(())
     }
 
@@ -420,19 +486,25 @@ impl History {
         let mut line = serde_json::to_vec(&row)?;
         line.push(b'\n');
         let size = line.len() as u64;
-        anyhow::ensure!(
-            size <= self.limits.max_file_bytes && size <= self.limits.max_total_bytes,
-            "history row exceeds configured byte cap"
-        );
+        if size > self.limits.max_file_bytes || size > self.limits.max_total_bytes {
+            if row["reason"] == "row_too_large" {
+                // Even the marker cannot fit an operator's tiny positive cap.
+                return Ok(0);
+            }
+            return self.row(serde_json::json!({"kind":"dropped", "reason":"row_too_large", "count":1}), now);
+        }
         if self.day != now.format("%Y-%m-%d").to_string()
             || self.bytes + size > self.limits.max_file_bytes
             || self.bytes + size > self.limits.max_total_bytes
         {
             self.rotate(now)?;
         }
-        self.retain(now, size)?;
+        if self.total.saturating_add(size) > self.limits.max_total_bytes {
+            self.retain(now, size)?;
+        }
         self.writer.write_all(&line)?;
         self.bytes += size;
+        self.total += size;
         Ok(size)
     }
 
@@ -627,6 +699,135 @@ mod tests {
         assert_eq!(c.history.max_file_bytes, 1024);
         assert_eq!(c.history.max_total_bytes, 4096);
         assert_eq!(HistoryConfig::default().retention_days, 30);
+    }
+
+    #[test]
+    fn directory_lock_refuses_second_writer_without_touching_first() {
+        let tmp = Temp::new();
+        let now = Utc::now();
+        let mut first = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+        assert!(History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).is_err());
+        first.event(sample("", 0), now).unwrap();
+        first.flush().unwrap();
+        assert_eq!(rows(&tmp.0).len(), 2);
+        drop(first);
+        assert!(History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).is_ok());
+    }
+
+    #[test]
+    fn oversized_row_is_marked_and_next_message_is_recorded() {
+        let tmp = Temp::new();
+        let now = Utc::now();
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig { max_file_bytes: 2048, ..HistoryConfig::default() }, now).unwrap();
+        let mut event = sample("", 0);
+        event.command = Some("x".repeat(4096));
+        h.event(event, now).unwrap();
+        h.event(sample("", 0), now).unwrap();
+        h.flush().unwrap();
+        let r = rows(&tmp.0);
+        assert_eq!(r[1]["kind"], "dropped");
+        assert_eq!(r[1]["reason"], "row_too_large");
+        assert_eq!(r[1]["count"], 1);
+        assert_eq!(r[2]["command"], "dopus.open");
+    }
+
+    #[test]
+    fn restart_after_link_preserves_completed_archive() {
+        let tmp = Temp::new();
+        let now = Utc::now();
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+        h.event(sample("", 0), now).unwrap();
+        h.flush().unwrap();
+        drop(h);
+        let active = tmp.0.join("bus.jsonl");
+        let archive = tmp.0.join(format!("bus-{}.jsonl", now.format("%Y-%m-%d")));
+        std::fs::hard_link(&active, &archive).unwrap();
+        let original = std::fs::read(&archive).unwrap();
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+        h.event(sample("", 0), now).unwrap();
+        h.flush().unwrap();
+        assert_eq!(std::fs::read(&archive).unwrap(), original);
+        assert_ne!(std::fs::metadata(active).unwrap().ino(), std::fs::metadata(archive).unwrap().ino());
+        assert_eq!(rows(&tmp.0).len(), 2);
+    }
+
+    struct BlockingWriter {
+        entered: Option<tokio::sync::oneshot::Sender<()>>,
+        release: std::sync::mpsc::Receiver<()>,
+    }
+    impl Write for BlockingWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> { Ok(bytes.len()) }
+        fn flush(&mut self) -> std::io::Result<()> {
+            if let Some(entered) = self.entered.take() {
+                let _ = entered.send(());
+                self.release.recv().unwrap();
+            }
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn shutdown_is_bounded_with_blocking_writer() {
+        let tmp = Temp::new();
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), Utc::now()).unwrap();
+        let (entered, waiting) = tokio::sync::oneshot::channel();
+        let (release, blocked) = std::sync::mpsc::channel();
+        h.writer = BufWriter::new(Box::new(BlockingWriter { entered: Some(entered), release: blocked }));
+        let h = Arc::new(std::sync::Mutex::new(h));
+        let task = tokio::spawn(async move { let _ = disk(&h, History::flush).await; });
+        waiting.await.unwrap();
+        let abort = task.abort_handle();
+        let started = Instant::now();
+        crate::stop_logger(task).await;
+        let elapsed = started.elapsed();
+        // Release even on failure, so the test runtime cannot hang in Drop.
+        release.send(()).unwrap();
+        assert!(elapsed >= std::time::Duration::from_secs(2));
+        assert!(elapsed < std::time::Duration::from_secs(3));
+        tokio::task::yield_now().await;
+        assert!(abort.is_finished());
+    }
+
+    #[tokio::test]
+    async fn bad_history_config_warns_and_broker_starts() {
+        use tracing_subscriber::prelude::*;
+        #[derive(Clone)]
+        struct Capture(Arc<std::sync::Mutex<Vec<u8>>>);
+        impl Write for Capture {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> { self.0.lock().unwrap().extend_from_slice(b); Ok(b.len()) }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        let output = Capture(Arc::new(std::sync::Mutex::new(Vec::new())));
+        let capture = output.clone();
+        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false).with_writer(move || capture.clone()).finish();
+        let _guard = subscriber.set_default();
+        let tmp = Temp::new();
+        let path = tmp.0.join("config.conf.mix");
+        for block in ["history: {", "history: { max_file_bytes: 0 }", "history: { retention_days: -1 }", "history: { unknown: 1 }", "history: { max_file_bytes: wrong }"] {
+            std::fs::write(&path, format!("node_name: beta\n{block}\n")).unwrap();
+            assert_eq!(HistoryConfig::load(path.to_str()).unwrap().max_file_bytes, HistoryConfig::default().max_file_bytes);
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let listen = listener.local_addr().unwrap().to_string();
+            let (ready, waiting) = tokio::sync::oneshot::channel();
+            let cfg = crate::noded::RunConfig {
+                session_probe: None, unix_socket: None, pending_grants_per_parent: 32,
+                listen: listen.clone(), node: "beta".into(), wg_ip: "127.0.0.1".into(),
+                mesh_config_path: Some(path.to_string_lossy().into_owned()), spec_dir: None,
+                admission_mode: config::node::AdmissionMode::Off,
+                frame_policy: config::node::AdmissionMode::Observe,
+            };
+            let broker = tokio::spawn(crate::noded::run_on(cfg, listener, ready));
+            tokio::time::timeout(std::time::Duration::from_secs(5), waiting).await.unwrap().unwrap();
+            let client = bus::native_client::NodedClient::connect("probe", &format!("ws://{listen}/ws")).await.unwrap();
+            assert!(client.call("noded", "noded.ping", json!({})).await.unwrap().get("pong").is_some());
+            broker.abort();
+        }
+        std::fs::remove_file(&path).unwrap();
+        assert!(HistoryConfig::load(path.to_str()).is_none());
+        let warnings = String::from_utf8(output.0.lock().unwrap().clone()).unwrap();
+        assert!(warnings.contains("using history defaults"), "{warnings}");
+        assert!(warnings.contains("History disabled: config cannot be read"), "{warnings}");
+        assert!(warnings.contains("history limits must be positive"), "{warnings}");
     }
 
     #[tokio::test]

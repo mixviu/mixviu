@@ -95,11 +95,13 @@ pub fn main() -> ExitCode {
     // --version/-V first, before the tokio runtime exists: a thread- or
     // fd-starved host must still get an answer, not a runtime-build panic.
     buildinfo::exit_on_version!();
-    let result = tokio::runtime::Builder::new_multi_thread()
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
-        .expect("build the tokio runtime")
-        .block_on(async_main());
+        .expect("build the tokio runtime");
+    let result = runtime.block_on(async_main());
+    // A wedged history syscall must not hold process shutdown in runtime Drop.
+    runtime.shutdown_timeout(std::time::Duration::ZERO);
     match result {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
@@ -139,9 +141,9 @@ async fn async_main() -> Result<()> {
     let node = cli_node.unwrap_or_else(|| node_cfg.node.clone());
     let mesh_config = cli_mesh_config.or_else(|| node_cfg.noded.mesh_config.clone());
     let history_config = if no_log {
-        logger::HistoryConfig::default()
+        None
     } else {
-        logger::HistoryConfig::load(mesh_config.as_deref())?
+        logger::HistoryConfig::load(mesh_config.as_deref())
     };
 
     let noded_url = format!("unix://{}", node_cfg.noded.broker_unix_endpoint().display());
@@ -211,7 +213,7 @@ async fn async_main() -> Result<()> {
     };
 
     let (logger_stop, logger_shutdown) = tokio::sync::oneshot::channel();
-    let logger_handle = if !no_log {
+    let logger_handle = if let Some(history_config) = history_config {
         let log_url = noded_url.clone();
         Some(tokio::spawn(async move {
             if let Err(e) = logger::run(&log_url, node, history_config, logger_shutdown).await {
@@ -239,7 +241,7 @@ async fn async_main() -> Result<()> {
     }
     if let Some(h) = logger_handle {
         let _ = logger_stop.send(());
-        let _ = h.await;
+        stop_logger(h).await;
     }
 
     if let Some(result) = broker_exit {
@@ -252,6 +254,13 @@ async fn async_main() -> Result<()> {
 
     tracing::info!("noded stopped");
     Ok(())
+}
+
+async fn stop_logger(mut handle: tokio::task::JoinHandle<()>) {
+    if tokio::time::timeout(std::time::Duration::from_secs(2), &mut handle).await.is_err() {
+        tracing::warn!("History shutdown exceeded 2 seconds; aborting logger");
+        handle.abort();
+    }
 }
 
 async fn shutdown_signal() {
