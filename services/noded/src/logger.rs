@@ -52,13 +52,22 @@ pub async fn run(
     noded_url: &str,
     node: String,
     limits: HistoryConfig,
+    shutdown: tokio::sync::oneshot::Receiver<()>,
+) -> Result<()> {
+    run_in(noded_url, node, limits, shutdown, &logging::default_log_dir("noded")).await
+}
+
+async fn run_in(
+    noded_url: &str,
+    node: String,
+    limits: HistoryConfig,
     mut shutdown: tokio::sync::oneshot::Receiver<()>,
+    log_dir: &Path,
 ) -> Result<()> {
     let started_instant = Instant::now();
     let started_at_iso = datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Secs, true);
 
-    let log_dir = logging::default_log_dir("noded");
-    let mut history = History::open(&log_dir, node, limits, Utc::now())?;
+    let mut history = History::open(log_dir, node, limits, Utc::now())?;
     let bus_log_path = log_dir.join("bus.jsonl");
     let log_path_str = bus_log_path.to_string_lossy().to_string();
 
@@ -598,5 +607,58 @@ mod tests {
         assert_eq!(c.history.max_file_bytes, 1024);
         assert_eq!(c.history.max_total_bytes, 4096);
         assert_eq!(HistoryConfig::default().retention_days, 30);
+    }
+
+    #[tokio::test]
+    async fn native_observation_flushes_on_timer_and_shutdown() {
+        let tmp = Temp::new();
+        let broker = test_broker::Broker::start();
+        let (stop, shutdown) = tokio::sync::oneshot::channel();
+        let url = broker.url.clone();
+        let dir = tmp.0.clone();
+        let logger = tokio::spawn(async move {
+            run_in(&url, "beta".into(), HistoryConfig::default(), shutdown, &dir).await
+        });
+        let client = bus::native_client::NodedClient::connect("example-probe", &broker.url).await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                client.call("noded", "noded.ping", json!({})).await.unwrap();
+                if tmp.0.join("bus.jsonl").exists() && rows(&tmp.0).iter().any(|r| r["command"] == "noded.ping") { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        }).await.unwrap();
+        stop.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), logger).await.unwrap().unwrap().unwrap();
+        let r = rows(&tmp.0);
+        assert_eq!(r.first().unwrap()["reason"], "logger_start");
+        assert_eq!(r.last().unwrap()["reason"], "observer_closed");
+        assert!(r.iter().all(|r| r.get("payload").is_none()));
+    }
+
+    #[test]
+    fn restart_recovers_long_row_and_truncated_tail() {
+        let tmp = Temp::new();
+        let now = Utc::now();
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+        h.row(json!({"kind":"message", "command":"x".repeat(70000)}), now).unwrap();
+        h.flush().unwrap();
+        drop(h);
+        OpenOptions::new().append(true).open(tmp.0.join("bus.jsonl")).unwrap().write_all(b"{\"partial\"").unwrap();
+        let _h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+        let r = rows(&tmp.0);
+        assert_eq!(r.len(), 3);
+        assert_eq!(r[2]["since_last"], timestamp(now));
+    }
+
+    #[test]
+    fn total_cap_includes_current_file_and_pending_row() {
+        let tmp = Temp::new();
+        let now = Utc::now();
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig { max_total_bytes: 400, ..HistoryConfig::default() }, now).unwrap();
+        for _ in 0..10 { h.event(sample("", 0), now).unwrap(); }
+        h.flush().unwrap();
+        let total: u64 = std::fs::read_dir(&tmp.0).unwrap().map(|e| e.unwrap().metadata().unwrap().len()).sum();
+        assert!(total <= 400);
+        assert_eq!(rows(&tmp.0).len(), 1);
     }
 }
