@@ -263,6 +263,14 @@ fn private_file(path: &Path) -> Result<File> {
     Ok(file)
 }
 
+fn archive_key(name: &str) -> Option<(datetime::NaiveDate, u64)> {
+    let stem = name.strip_prefix("bus-")?.strip_suffix(".jsonl")?;
+    let date = datetime::NaiveDate::parse_from_str(stem.get(..10)?, "%Y-%m-%d").ok()?;
+    let suffix = &stem[10..];
+    let index = if suffix.is_empty() { 0 } else { suffix.strip_prefix('-')?.parse().ok()? };
+    Some((date, index))
+}
+
 impl History {
     fn open(dir: &Path, node: String, limits: HistoryConfig, now: DateTime<Utc>) -> Result<Self> {
         std::fs::create_dir_all(dir)?;
@@ -323,7 +331,16 @@ impl History {
         self.flush()?;
         if self.bytes > 0 {
             let base = format!("bus-{}", self.day);
+            // Retention can remove the base and low indices. Never fill those
+            // holes: the newest archive must sort after every surviving one.
             let mut suffix = 0u64;
+            for entry in std::fs::read_dir(&self.dir)? {
+                let entry = entry?;
+                if let Some((date, index)) = archive_key(&entry.file_name().to_string_lossy())
+                    && date.to_string() == self.day {
+                    suffix = suffix.max(index.checked_add(1).ok_or_else(|| anyhow::anyhow!("history archive index exhausted"))?);
+                }
+            }
             loop {
                 let name = if suffix == 0 {
                     format!("{base}.jsonl")
@@ -334,7 +351,9 @@ impl History {
                 // link is atomic and refuses collisions; never overwrite an archive.
                 match std::fs::hard_link(self.dir.join("bus.jsonl"), &archive) {
                     Ok(()) => break,
-                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => suffix += 1,
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                        suffix = suffix.checked_add(1).ok_or_else(|| anyhow::anyhow!("history archive index exhausted"))?;
+                    }
                     Err(e) => return Err(e.into()),
                 }
             }
@@ -359,26 +378,7 @@ impl History {
         for entry in std::fs::read_dir(&self.dir)? {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().into_owned();
-            let Some(stem) = name
-                .strip_prefix("bus-")
-                .and_then(|s| s.strip_suffix(".jsonl"))
-            else {
-                continue;
-            };
-            let Some(date) = stem
-                .get(..10)
-                .and_then(|s| datetime::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-            else {
-                continue;
-            };
-            let suffix = &stem[10..];
-            let index = if suffix.is_empty() {
-                0
-            } else if let Some(n) = suffix.strip_prefix('-').and_then(|s| s.parse::<u64>().ok()) {
-                n
-            } else {
-                continue;
-            };
+            let Some((date, index)) = archive_key(&name) else { continue; };
             if !entry.file_type()?.is_file() {
                 continue;
             }
@@ -706,5 +706,26 @@ mod tests {
             .sum();
         assert!(total <= 400);
         assert_eq!(rows(&tmp.0).len(), 1);
+    }
+
+    #[test]
+    fn rotation_never_reuses_deleted_older_archive_indices() {
+        let tmp = Temp::new();
+        let now = at("2026-11-25T00:00:00Z");
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+        h.rotate(now).unwrap();
+        h.event(sample("", 0), now).unwrap();
+        h.rotate(now).unwrap();
+        std::fs::remove_file(tmp.0.join("bus-2026-11-25.jsonl")).unwrap();
+        h.event(sample("", 0), now).unwrap();
+        h.rotate(now).unwrap();
+        assert!(!tmp.0.join("bus-2026-11-25.jsonl").exists());
+        let oldest = tmp.0.join("bus-2026-11-25-00000001.jsonl");
+        let newest = tmp.0.join("bus-2026-11-25-00000002.jsonl");
+        assert!(oldest.exists() && newest.exists());
+        h.limits.max_total_bytes = std::fs::metadata(&newest).unwrap().len();
+        h.retain(now, 0).unwrap();
+        assert!(!oldest.exists());
+        assert!(newest.exists());
     }
 }
