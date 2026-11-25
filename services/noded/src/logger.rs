@@ -169,11 +169,7 @@ async fn run_in(
             tokio::select! {
                 _ = &mut shutdown => break,
                 _ = tick.tick() => {
-                    let result = disk(&history, |h| {
-                        let maintained = h.maintain(Utc::now());
-                        let flushed = h.flush();
-                        maintained.and(flushed)
-                    }).await;
+                    let result = disk(&history, |h| h.tick(Utc::now())).await;
                     warn_retry(result, &mut last_warning);
                 }
                 cmd = rx.recv() => {
@@ -282,7 +278,6 @@ impl HistoryConfig {
 }
 
 struct History {
-    _lock: File,
     dir: PathBuf,
     node: String,
     limits: HistoryConfig,
@@ -291,6 +286,8 @@ struct History {
     total: u64,
     day: String,
     dropped: u64,
+    // Fields drop in declaration order: keep the lock until the writer drops.
+    _lock: File,
 }
 
 fn timestamp(now: DateTime<Utc>) -> String {
@@ -393,6 +390,12 @@ impl History {
     fn flush(&mut self) -> Result<()> {
         self.writer.flush()?;
         Ok(())
+    }
+
+    fn tick(&mut self, now: DateTime<Utc>) -> Result<()> {
+        let maintained = self.maintain(now);
+        let flushed = self.flush();
+        maintained.and(flushed)
     }
 
     fn rotate(&mut self, now: DateTime<Utc>) -> Result<()> {
@@ -729,6 +732,50 @@ mod tests {
         assert_eq!(r[1]["reason"], "row_too_large");
         assert_eq!(r[1]["count"], 1);
         assert_eq!(r[2]["command"], "dopus.open");
+    }
+
+    #[test]
+    fn ordinary_rows_do_not_scan_retention_and_maintenance_recovers() {
+        let tmp = Temp::new();
+        let now = Utc::now();
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+        let old = tmp.0.join("bus-2000-01-01.jsonl");
+        std::fs::write(&old, "old\n").unwrap();
+        h.event(sample("", 0), now).unwrap();
+        assert!(old.exists(), "ordinary rows must not scan archives");
+        let saved = tmp.0.with_extension("saved");
+        std::fs::rename(&tmp.0, &saved).unwrap();
+        assert!(h.tick(now).is_err());
+        std::fs::rename(saved, &tmp.0).unwrap();
+        h.tick(now).unwrap();
+        assert!(!old.exists());
+        h.event(sample("", 0), now).unwrap();
+        h.flush().unwrap();
+        assert_eq!(rows(&tmp.0).len(), 3);
+    }
+
+    #[test]
+    fn transient_flush_is_retried() {
+        struct FailOnce(bool);
+        impl Write for FailOnce {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> { Ok(bytes.len()) }
+            fn flush(&mut self) -> std::io::Result<()> {
+                if std::mem::take(&mut self.0) { return Err(std::io::Error::other("injected flush failure")); }
+                Ok(())
+            }
+        }
+        let tmp = Temp::new();
+        let now = Utc::now();
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+        h.writer = BufWriter::new(Box::new(FailOnce(true)));
+        let mut last = None;
+        warn_retry(h.tick(now), &mut last);
+        let warned = last.unwrap();
+        warn_retry(Err(anyhow::anyhow!("second error")), &mut last);
+        assert_eq!(last.unwrap(), warned);
+        h.tick(now).unwrap();
+        h.event(sample("", 0), now).unwrap();
+        h.flush().unwrap();
     }
 
     #[test]
