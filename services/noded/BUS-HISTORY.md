@@ -17,9 +17,17 @@ effective UID with `fstat`; group- or world-writable directories are refused,
 even when owned by that UID. An accepted owned directory is tightened to 0700.
 Symlink directories, foreign owners and failed checks warn and disable history.
 Files are reached relative to that pinned directory handle with `openat`,
-`linkat` and `unlinkat`, never by resolving the parent again. Active and lock
-files must be regular, owned by the effective UID and opened with `O_NOFOLLOW`
-before being tightened to 0600. Foreign-owned files are never taken over. The old
+`linkat`, `renameat2` and `unlinkat`, never by resolving the parent again.
+The parent path is not pinned before the node directory opens. A writable
+ancestor can cause denial of service during that lookup: owner checks disable
+history if a foreign directory is substituted, and nothing is captured.
+Active and lock files must be regular, owned by the effective UID and opened
+with `O_NOFOLLOW`. Existing files with any group/world permission bits are
+never chmodded and reused: a loose active file is renamed to the next archive
+intact, and a loose lock is unlinked. Fresh files use exclusive creation with
+mode 0600 and are fstat-verified. Recovery writes a gap with
+`reason: "active_file_mode_loose"`. Old held descriptors receive no new rows
+and cannot lock the replacement lock inode. Foreign-owned files are never taken over. The old
 human-readable `bus.log` is neither read nor migrated.
 
 Each line is a JSON object with `v: 1`, `ts_utc` (RFC 3339 UTC with milliseconds),
@@ -50,6 +58,9 @@ async worker. Shutdown allows two seconds, then aborts the logger; runtime
 shutdown does not wait for a wedged disk syscall. The final `observer_closed`
 row may be lost; sudden death or a wedged disk can also lose buffered rows.
 Transient maintenance and flush errors warn at most once a minute and retry.
+Failed event writes are counted; the next successful row write first emits
+`kind: "dropped"`, `reason: "write_failed"` and the accumulated `count`.
+The count remains pending if the marker fails or cannot fit the byte caps.
 Daily rotation uses the logger's
 UTC clock, including while idle; size rotation happens before a row would exceed
 the cap. Archives are `bus-YYYY-MM-DD.jsonl`, then
@@ -90,5 +101,7 @@ The running total includes buffered rows. Archives at least 30 calendar days
 old go first, then oldest dates and rotation
 numbers until the total fits (including the active file and pending row).
 Only recognised history archive names are removed. Retention does not touch old
+files with noncanonical suffixes: a suffix must be exactly eight unsigned
+decimal digits, and the date must be exactly `YYYY-MM-DD`. Retention does not touch old
 `bus.log` files. The shipped units enable history and retain `--no-monitor`;
 host rollout is a later gold operation.

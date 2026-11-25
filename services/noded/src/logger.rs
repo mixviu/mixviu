@@ -314,6 +314,7 @@ struct History {
     total: u64,
     day: String,
     dropped: u64,
+    write_failed: u64,
     // Retain the archive name across unlink failures; after unlink, only reopen.
     rotation: Option<String>,
     active_removed: bool,
@@ -330,6 +331,12 @@ fn timestamp(now: DateTime<Utc>) -> String {
 struct HistoryDir(File);
 
 fn checked_file(file: File, uid: u32) -> Result<File> {
+    let file = owned_file(file, uid)?;
+    anyhow::ensure!(file.metadata()?.mode() & 0o077 == 0, "history file mode is loose");
+    Ok(file)
+}
+
+fn owned_file(file: File, uid: u32) -> Result<File> {
     // File::metadata is fstat, never a second pathname lookup.
     let meta = file.metadata()?;
     anyhow::ensure!(
@@ -376,26 +383,73 @@ impl HistoryDir {
     }
 
     fn file(&self, name: &str, create: bool) -> Result<File> {
+        let file = self.open_file(name, create, false)?;
+        if create {
+            checked_file(file, unsafe { libc::geteuid() })
+        } else {
+            Ok(file)
+        }
+    }
+
+    fn open_file(&self, name: &str, create: bool, exclusive: bool) -> Result<File> {
         let name = CString::new(name)?;
         let flags = if create {
-            libc::O_RDWR | libc::O_CREAT | libc::O_APPEND
+            libc::O_RDWR | libc::O_CREAT | libc::O_EXCL | libc::O_APPEND
         } else {
             libc::O_RDONLY
         };
         // SAFETY: valid directory fd and NUL-terminated single-component name.
-        let fd = syscall(unsafe {
+        let fd = unsafe {
             libc::openat(
                 self.0.as_raw_fd(),
                 name.as_ptr(),
                 flags | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
                 0o600,
             )
-        })?;
-        let file = checked_file(unsafe { File::from_raw_fd(fd) }, unsafe { libc::geteuid() })?;
-        if create {
-            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        };
+        let fd = if fd < 0 && create && !exclusive && std::io::Error::last_os_error().kind() == std::io::ErrorKind::AlreadyExists {
+            // Open an existing inode without creating or changing its mode.
+            syscall(unsafe { libc::openat(self.0.as_raw_fd(), name.as_ptr(),
+                libc::O_RDWR | libc::O_APPEND | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC) })?
+        } else { syscall(fd)? };
+        owned_file(unsafe { File::from_raw_fd(fd) }, unsafe { libc::geteuid() })
+    }
+
+    fn replace_loose(&self, name: &str, now: DateTime<Utc>) -> Result<bool> {
+        let file = self.open_file(name, true, false)?;
+        if file.metadata()?.mode() & 0o077 == 0 {
+            return Ok(false);
         }
-        Ok(file)
+        if name == "bus.jsonl" {
+            let day = now.format("%Y-%m-%d").to_string();
+            let mut index = 0;
+            for entry in self.names()? {
+                if let Some((date, n)) = archive_key(&entry) && date.to_string() == day {
+                    index = index.max(n + 1);
+                }
+            }
+            loop {
+                anyhow::ensure!(index <= 99_999_999, "history archive index exhausted");
+                let archive = if index == 0 { format!("bus-{day}.jsonl") }
+                    else { format!("bus-{day}-{index:08}.jsonl") };
+                let from = CString::new(name)?;
+                let to = CString::new(archive)?;
+                // SAFETY: both names are relative to the pinned directory.
+                // NOREPLACE keeps existing archives intact, even on collision.
+                match syscall(unsafe { libc::renameat2(self.0.as_raw_fd(), from.as_ptr(),
+                    self.0.as_raw_fd(), to.as_ptr(), libc::RENAME_NOREPLACE) }) {
+                    Ok(_) => break,
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => index += 1,
+                    Err(e) => return Err(e.into()),
+                }
+            }
+        } else {
+            self.unlink(name)?;
+        }
+        // Use exclusive creation and fstat verification. Never chmod
+        // an inode whose old descriptors may still be held by another UID.
+        checked_file(self.open_file(name, true, true)?, unsafe { libc::geteuid() })?;
+        Ok(true)
     }
 
     fn unlink(&self, name: &str) -> std::io::Result<()> {
@@ -476,11 +530,14 @@ impl HistoryDir {
 fn archive_key(name: &str) -> Option<(datetime::NaiveDate, u64)> {
     let stem = name.strip_prefix("bus-")?.strip_suffix(".jsonl")?;
     let date = datetime::NaiveDate::parse_from_str(stem.get(..10)?, "%Y-%m-%d").ok()?;
+    if date.format("%Y-%m-%d").to_string() != stem[..10] { return None; }
     let suffix = &stem[10..];
     let index = if suffix.is_empty() {
         0
     } else {
-        suffix.strip_prefix('-')?.parse().ok()?
+        let digits = suffix.strip_prefix('-')?;
+        if digits.len() != 8 || !digits.bytes().all(|b| b.is_ascii_digit()) { return None; }
+        digits.parse().ok()?
     };
     Some((date, index))
 }
@@ -488,11 +545,13 @@ fn archive_key(name: &str) -> Option<(datetime::NaiveDate, u64)> {
 impl History {
     fn open(dir: &Path, node: String, limits: HistoryConfig, now: DateTime<Utc>) -> Result<Self> {
         let dir = HistoryDir::open(dir)?;
+        dir.replace_loose("bus.lock", now)?;
         let lock = dir.file("bus.lock", true)?;
         // SAFETY: flock borrows a valid fd and does not retain a Rust pointer.
         if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             return Err(std::io::Error::last_os_error().into());
         }
+        let loose_active = dir.replace_loose("bus.jsonl", now)?;
         let mut file = dir.file("bus.jsonl", true)?;
         let archived = file.metadata()?.nlink() > 1;
         // Stream one row at a time: the last row may exceed a fixed tail window.
@@ -540,12 +599,16 @@ impl History {
             total: bytes,
             day,
             dropped: 0,
+            write_failed: 0,
             rotation: None,
             active_removed: false,
             #[cfg(test)]
             fail_rotation: None,
         };
         history.retain(now, 0)?;
+        if loose_active {
+            history.row(serde_json::json!({"kind":"gap", "reason":"active_file_mode_loose"}), now)?;
+        }
         history.row(
             serde_json::json!({"kind": "gap", "reason": "logger_start", "since_last": last}),
             now,
@@ -584,6 +647,7 @@ impl History {
                 }
             }
             loop {
+                anyhow::ensure!(suffix <= 99_999_999, "history archive index exhausted");
                 let name = if suffix == 0 {
                     format!("{base}.jsonl")
                 } else {
@@ -675,7 +739,17 @@ impl History {
         Ok(())
     }
 
-    fn row(&mut self, mut row: serde_json::Value, now: DateTime<Utc>) -> Result<u64> {
+    fn row(&mut self, row: serde_json::Value, now: DateTime<Utc>) -> Result<u64> {
+        let mut bytes = 0;
+        if self.write_failed > 0 {
+            bytes = self.row_inner(serde_json::json!({"kind":"dropped", "reason":"write_failed", "count":self.write_failed}), now)?;
+            if bytes == 0 { anyhow::bail!("write failure marker exceeds history limits"); }
+            self.write_failed = 0;
+        }
+        Ok(bytes + self.row_inner(row, now)?)
+    }
+
+    fn row_inner(&mut self, mut row: serde_json::Value, now: DateTime<Utc>) -> Result<u64> {
         row["v"] = 1.into();
         row["node"] = self.node.clone().into();
         if row.get("ts_utc").is_none() {
@@ -685,11 +759,11 @@ impl History {
         line.push(b'\n');
         let size = line.len() as u64;
         if size > self.limits.max_file_bytes || size > self.limits.max_total_bytes {
-            if row["reason"] == "row_too_large" {
+            if row["reason"] == "row_too_large" || row["reason"] == "write_failed" {
                 // Even the marker cannot fit an operator's tiny positive cap.
                 return Ok(0);
             }
-            return self.row(
+            return self.row_inner(
                 serde_json::json!({"kind":"dropped", "reason":"row_too_large", "count":1}),
                 now,
             );
@@ -712,6 +786,14 @@ impl History {
     }
 
     fn event(&mut self, event: ObserveEvent, now: DateTime<Utc>) -> Result<u64> {
+        let result = self.event_inner(event, now);
+        if result.is_err() {
+            self.write_failed = self.write_failed.saturating_add(1);
+        }
+        result
+    }
+
+    fn event_inner(&mut self, event: ObserveEvent, now: DateTime<Utc>) -> Result<u64> {
         let ts = DateTime::parse_from_rfc3339(&event.ts)
             .map(|t| t.with_timezone(&Utc))
             .unwrap_or(now);
@@ -783,6 +865,99 @@ mod tests {
             "to": "dopus.beta.bus", "command": "dopus.open", "size": 123,
             "correlation_id": "example-id", "peer": "alpha", "rc": 0,
             "dropped_count": dropped, "payload": {"body": "never stored"}, "payload_omitted": null})).unwrap()
+    }
+
+    #[test]
+    fn loose_active_is_archived_and_held_descriptor_sees_no_new_rows() {
+        use std::io::Read;
+        let tmp = Temp::new();
+        let path = tmp.0.join("bus.jsonl");
+        let old = b"{\"kind\":\"message\",\"old\":true}\n";
+        std::fs::write(&path, old).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let mut held = File::open(&path).unwrap();
+        let now = at("2026-11-25T00:00:00Z");
+        // Recovery uses the next archive, leaving earlier archives untouched.
+        std::fs::write(tmp.0.join("bus-2026-11-25.jsonl"), b"earlier\n").unwrap();
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+        h.event(sample("", 0), now).unwrap();
+        h.flush().unwrap();
+        let mut seen = Vec::new();
+        held.read_to_end(&mut seen).unwrap();
+        assert_eq!(seen, old);
+        let archive = tmp.0.join("bus-2026-11-25-00000001.jsonl");
+        assert_eq!(std::fs::read(&archive).unwrap(), old);
+        assert_eq!(held.metadata().unwrap().ino(), std::fs::metadata(archive).unwrap().ino());
+        assert_ne!(held.metadata().unwrap().ino(), std::fs::metadata(&path).unwrap().ino());
+        assert_eq!(std::fs::metadata(path).unwrap().mode() & 0o777, 0o600);
+        assert!(rows(&tmp.0).iter().any(|r| r["reason"] == "active_file_mode_loose"));
+        assert!(rows(&tmp.0).iter().any(|r| r["kind"] == "message"));
+    }
+
+    #[test]
+    fn loose_lock_is_replaced_despite_held_old_lock() {
+        let tmp = Temp::new();
+        let path = tmp.0.join("bus.lock");
+        std::fs::write(&path, b"old lock").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let held = File::open(&path).unwrap();
+        assert_eq!(unsafe { libc::flock(held.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) }, 0);
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), Utc::now()).unwrap();
+        h.event(sample("", 0), Utc::now()).unwrap();
+        h.flush().unwrap();
+        let fresh = std::fs::metadata(&path).unwrap();
+        assert_ne!(held.metadata().unwrap().ino(), fresh.ino());
+        assert_eq!(fresh.mode() & 0o777, 0o600);
+        assert_eq!(std::fs::read(path).unwrap(), b"");
+        assert_eq!(held.metadata().unwrap().len(), 8);
+        assert!(History::open(&tmp.0, "beta".into(), HistoryConfig::default(), Utc::now()).is_err());
+    }
+
+    #[test]
+    fn retention_ignores_noncanonical_archive_names() {
+        let tmp = Temp::new();
+        let now = at("2026-11-25T00:00:00Z");
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+        for name in ["bus-2026-11-25-1.jsonl", "bus-2026-11-25-+1.jsonl", "bus-2026-11-25-123456789.jsonl", "bus-2026-1-25.jsonl"] {
+            assert!(archive_key(name).is_none());
+            std::fs::write(tmp.0.join(name), b"keep").unwrap();
+        }
+        h.limits.max_total_bytes = 1;
+        h.retain(now + datetime::Duration::days(31), 0).unwrap();
+        for name in ["bus-2026-11-25-1.jsonl", "bus-2026-11-25-+1.jsonl"] {
+            assert_eq!(std::fs::read(tmp.0.join(name)).unwrap(), b"keep");
+        }
+        assert!(archive_key("bus-2026-11-25-00000001.jsonl").is_some());
+    }
+
+    struct FailingWriter;
+    impl Write for FailingWriter {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("injected write failure"))
+        }
+        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+    }
+
+    #[test]
+    fn failed_event_writes_are_counted_until_marker_succeeds() {
+        let tmp = Temp::new();
+        let now = Utc::now();
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+        let writer = std::mem::replace(&mut h.writer, BufWriter::with_capacity(1, Box::new(FailingWriter)));
+        assert!(h.event(sample("", 0), now).is_err());
+        assert!(h.event(sample("", 0), now).is_err());
+        assert_eq!(h.write_failed, 2);
+        h.writer = writer;
+        h.event(sample("", 0), now).unwrap();
+        h.event(sample("", 0), now).unwrap();
+        h.flush().unwrap();
+        let r = rows(&tmp.0);
+        assert_eq!(r[1]["kind"], "dropped");
+        assert_eq!(r[1]["reason"], "write_failed");
+        assert_eq!(r[1]["count"], 2);
+        assert_eq!(r[2]["kind"], "message");
+        assert_eq!(r.iter().filter(|r| r["reason"] == "write_failed").count(), 1);
+        assert_eq!(h.write_failed, 0);
     }
 
     #[test]
