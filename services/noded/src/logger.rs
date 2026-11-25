@@ -226,16 +226,19 @@ fn parse_event(body: &str, last: &mut Option<Instant>) -> Option<ObserveEvent> {
     match serde_json::from_str(body) {
         Ok(event) => Some(event),
         Err(error) => {
-            warn_retry(Err(anyhow::anyhow!("malformed noded.observe.event: {error}")), last);
+            warn_retry(
+                Err(anyhow::anyhow!("malformed noded.observe.event: {error}")),
+                last,
+            );
             None
         }
     }
 }
 
+use std::ffi::{CStr, CString};
 use std::fs::File;
 #[cfg(test)]
 use std::fs::OpenOptions;
-use std::ffi::{CStr, CString};
 use std::io::{BufRead, BufReader, BufWriter, Seek, SeekFrom};
 use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::ffi::OsStrExt;
@@ -329,12 +332,19 @@ struct HistoryDir(File);
 fn checked_file(file: File, uid: u32) -> Result<File> {
     // File::metadata is fstat, never a second pathname lookup.
     let meta = file.metadata()?;
-    anyhow::ensure!(meta.is_file() && meta.uid() == uid, "history file must be regular and owned by effective UID");
+    anyhow::ensure!(
+        meta.is_file() && meta.uid() == uid,
+        "history file must be regular and owned by effective UID"
+    );
     Ok(file)
 }
 
 fn syscall(rc: libc::c_int) -> std::io::Result<libc::c_int> {
-    if rc < 0 { Err(std::io::Error::last_os_error()) } else { Ok(rc) }
+    if rc < 0 {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(rc)
+    }
 }
 
 impl HistoryDir {
@@ -349,22 +359,42 @@ impl HistoryDir {
         }
         let path = CString::new(path.as_os_str().as_bytes())?;
         // SAFETY: NUL-terminated path; successful fd is owned exactly once.
-        let fd = syscall(unsafe { libc::open(path.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC) })?;
+        let fd = syscall(unsafe {
+            libc::open(
+                path.as_ptr(),
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        })?;
         let file = unsafe { File::from_raw_fd(fd) };
         let meta = file.metadata()?;
-        anyhow::ensure!(meta.is_dir() && meta.uid() == unsafe { libc::geteuid() } && meta.mode() & 0o022 == 0,
-            "history directory must be owned by effective UID and not group/world writable");
+        anyhow::ensure!(
+            meta.is_dir() && meta.uid() == unsafe { libc::geteuid() } && meta.mode() & 0o022 == 0,
+            "history directory must be owned by effective UID and not group/world writable"
+        );
         file.set_permissions(std::fs::Permissions::from_mode(0o700))?;
         Ok(Self(file))
     }
 
     fn file(&self, name: &str, create: bool) -> Result<File> {
         let name = CString::new(name)?;
-        let flags = if create { libc::O_RDWR | libc::O_CREAT | libc::O_APPEND } else { libc::O_RDONLY };
+        let flags = if create {
+            libc::O_RDWR | libc::O_CREAT | libc::O_APPEND
+        } else {
+            libc::O_RDONLY
+        };
         // SAFETY: valid directory fd and NUL-terminated single-component name.
-        let fd = syscall(unsafe { libc::openat(self.0.as_raw_fd(), name.as_ptr(), flags | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC, 0o600) })?;
+        let fd = syscall(unsafe {
+            libc::openat(
+                self.0.as_raw_fd(),
+                name.as_ptr(),
+                flags | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
+                0o600,
+            )
+        })?;
         let file = checked_file(unsafe { File::from_raw_fd(fd) }, unsafe { libc::geteuid() })?;
-        if create { file.set_permissions(std::fs::Permissions::from_mode(0o600))?; }
+        if create {
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        }
         Ok(file)
     }
 
@@ -380,14 +410,28 @@ impl HistoryDir {
         let to = CString::new(to)?;
         // SAFETY: both names are relative to the pinned directory. Flags zero
         // deliberately does not follow a source symlink.
-        syscall(unsafe { libc::linkat(self.0.as_raw_fd(), from.as_ptr(), self.0.as_raw_fd(), to.as_ptr(), 0) })?;
+        syscall(unsafe {
+            libc::linkat(
+                self.0.as_raw_fd(),
+                from.as_ptr(),
+                self.0.as_raw_fd(),
+                to.as_ptr(),
+                0,
+            )
+        })?;
         Ok(())
     }
 
     fn names(&self) -> Result<Vec<String>> {
         // Independent open description: dup would share the directory offset.
         // SAFETY: constant terminated name and valid pinned directory fd.
-        let fd = syscall(unsafe { libc::openat(self.0.as_raw_fd(), c".".as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC) })?;
+        let fd = syscall(unsafe {
+            libc::openat(
+                self.0.as_raw_fd(),
+                c".".as_ptr(),
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
+        })?;
         // SAFETY: fdopendir takes ownership on success only.
         let stream = unsafe { libc::fdopendir(fd) };
         if stream.is_null() {
@@ -399,23 +443,31 @@ impl HistoryDir {
         impl Drop for Entries {
             fn drop(&mut self) {
                 // SAFETY: unique successful fdopendir handle.
-                unsafe { libc::closedir(self.0); }
+                unsafe {
+                    libc::closedir(self.0);
+                }
             }
         }
         let stream = Entries(stream);
         let mut names = Vec::new();
         loop {
             // SAFETY: Linux thread-local errno and exclusively held DIR.
-            unsafe { *libc::__errno_location() = 0; }
+            unsafe {
+                *libc::__errno_location() = 0;
+            }
             let entry = unsafe { libc::readdir(stream.0) };
             if entry.is_null() {
                 let error = std::io::Error::last_os_error();
-                if error.raw_os_error() != Some(0) { return Err(error.into()); }
+                if error.raw_os_error() != Some(0) {
+                    return Err(error.into());
+                }
                 break;
             }
             // SAFETY: readdir's name is terminated and valid until the next call.
             let name = unsafe { CStr::from_ptr((*entry).d_name.as_ptr()) }.to_string_lossy();
-            if name != "." && name != ".." { names.push(name.into_owned()); }
+            if name != "." && name != ".." {
+                names.push(name.into_owned());
+            }
         }
         Ok(names)
     }
@@ -561,7 +613,12 @@ impl History {
             self.rotation_step("unlink")?;
             match self.dir.unlink("bus.jsonl") {
                 Ok(()) => (),
-                Err(e) if e.downcast_ref::<std::io::Error>().is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) => (),
+                Err(e)
+                    if e.downcast_ref::<std::io::Error>()
+                        .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) =>
+                {
+                    ()
+                }
                 Err(e) => return Err(e),
             }
             self.active_removed = true;
@@ -586,7 +643,10 @@ impl History {
     }
 
     fn maintain(&mut self, now: DateTime<Utc>) -> Result<()> {
-        if self.rotation.is_some() || self.active_removed || self.day != now.format("%Y-%m-%d").to_string() {
+        if self.rotation.is_some()
+            || self.active_removed
+            || self.day != now.format("%Y-%m-%d").to_string()
+        {
             self.rotate(now)?;
         }
         self.retain(now, 0)
@@ -639,7 +699,9 @@ impl History {
                 now,
             );
         }
-        if self.rotation.is_some() || self.active_removed || self.day != now.format("%Y-%m-%d").to_string()
+        if self.rotation.is_some()
+            || self.active_removed
+            || self.day != now.format("%Y-%m-%d").to_string()
             || self.bytes + size > self.limits.max_file_bytes
             || self.bytes + size > self.limits.max_total_bytes
         {
@@ -974,10 +1036,21 @@ mod tests {
         drop(dir);
         // Owned read-only-to-others directories are safely tightened.
         std::fs::set_permissions(&node, std::fs::Permissions::from_mode(0o755)).unwrap();
-        assert_eq!(HistoryDir::open(&node).unwrap().0.metadata().unwrap().mode() & 0o777, 0o700);
+        assert_eq!(
+            HistoryDir::open(&node)
+                .unwrap()
+                .0
+                .metadata()
+                .unwrap()
+                .mode()
+                & 0o777,
+            0o700
+        );
         for mode in [0o770, 0o707] {
             std::fs::set_permissions(&node, std::fs::Permissions::from_mode(mode)).unwrap();
-            assert!(History::open(&node, "beta".into(), HistoryConfig::default(), Utc::now()).is_err());
+            assert!(
+                History::open(&node, "beta".into(), HistoryConfig::default(), Utc::now()).is_err()
+            );
             assert!(!node.join("bus.lock").exists());
             assert_eq!(std::fs::metadata(&node).unwrap().mode() & 0o777, mode);
         }
@@ -989,19 +1062,31 @@ mod tests {
         std::fs::write(&target, "untouched").unwrap();
         for name in ["bus.lock", "bus.jsonl"] {
             symlink(&target, node.join(name)).unwrap();
-            assert!(History::open(&node, "beta".into(), HistoryConfig::default(), Utc::now()).is_err());
+            assert!(
+                History::open(&node, "beta".into(), HistoryConfig::default(), Utc::now()).is_err()
+            );
             assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched");
             std::fs::remove_file(node.join(name)).unwrap();
         }
         // Simulate a foreign owner in the same fstat check used by openat.
         // No chown privilege is needed and no write/chmod follows refusal.
         std::fs::write(node.join("bus.jsonl"), "private sentinel").unwrap();
-        let file = OpenOptions::new().read(true).append(true).open(node.join("bus.jsonl")).unwrap();
+        let file = OpenOptions::new()
+            .read(true)
+            .append(true)
+            .open(node.join("bus.jsonl"))
+            .unwrap();
         let uid = file.metadata().unwrap().uid();
         let mode = file.metadata().unwrap().mode();
         assert!(checked_file(file, uid.wrapping_add(1)).is_err());
-        assert_eq!(std::fs::read_to_string(node.join("bus.jsonl")).unwrap(), "private sentinel");
-        assert_eq!(std::fs::metadata(node.join("bus.jsonl")).unwrap().mode(), mode);
+        assert_eq!(
+            std::fs::read_to_string(node.join("bus.jsonl")).unwrap(),
+            "private sentinel"
+        );
+        assert_eq!(
+            std::fs::metadata(node.join("bus.jsonl")).unwrap().mode(),
+            mode
+        );
     }
 
     #[test]
@@ -1010,12 +1095,15 @@ mod tests {
             let tmp = Temp::new();
             let now = at("2026-11-25T12:00:00Z");
             let tomorrow = at("2026-11-26T00:00:00Z");
-            let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+            let mut h =
+                History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
             h.flush().unwrap();
             let original = std::fs::read(tmp.0.join("bus.jsonl")).unwrap();
             h.fail_rotation = Some(step);
             assert!(h.rotate(tomorrow).is_err());
-            if step == "open" { assert!(!tmp.0.join("bus.jsonl").exists()); }
+            if step == "open" {
+                assert!(!tmp.0.join("bus.jsonl").exists());
+            }
             if step == "unlink" {
                 assert!(tmp.0.join("bus.jsonl").exists());
                 // Repeated failures must keep the same single archive link.
@@ -1029,7 +1117,10 @@ mod tests {
             h.flush().unwrap();
             let names = h.dir.names().unwrap();
             assert_eq!(names.iter().filter(|n| archive_key(n).is_some()).count(), 1);
-            assert_eq!(std::fs::read(tmp.0.join("bus-2026-11-25.jsonl")).unwrap(), original);
+            assert_eq!(
+                std::fs::read(tmp.0.join("bus-2026-11-25.jsonl")).unwrap(),
+                original
+            );
             assert_eq!(rows(&tmp.0).len(), 1);
         }
     }
@@ -1066,7 +1157,9 @@ mod tests {
         let tmp = Temp::new();
         let now = Utc::now();
         let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
-        for n in [5, 1, 3] { h.event(sample("", n), now).unwrap(); }
+        for n in [5, 1, 3] {
+            h.event(sample("", n), now).unwrap();
+        }
         h.flush().unwrap();
         let r = rows(&tmp.0);
         assert_eq!(r[3]["kind"], "gap");
