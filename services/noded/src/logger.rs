@@ -359,7 +359,10 @@ fn syscall(rc: libc::c_int) -> std::io::Result<libc::c_int> {
 impl HistoryDir {
     fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
-            std::fs::DirBuilder::new().recursive(true).mode(0o700).create(parent)?;
+            std::fs::DirBuilder::new()
+                .recursive(true)
+                .mode(0o700)
+                .create(parent)?;
         }
         match std::fs::DirBuilder::new().mode(0o700).create(path) {
             Ok(()) => (),
@@ -570,7 +573,8 @@ fn archive_key(name: &str) -> Option<(datetime::NaiveDate, u64)> {
         0
     } else {
         let digits = suffix.strip_prefix('-')?;
-        if digits.len() != 8 || !digits.bytes().all(|b| b.is_ascii_digit()) || digits == "00000000" {
+        if digits.len() != 8 || !digits.bytes().all(|b| b.is_ascii_digit()) || digits == "00000000"
+        {
             return None;
         }
         digits.parse().ok()?
@@ -969,7 +973,13 @@ mod tests {
         );
         h.event(sample("", 0), Utc::now()).unwrap();
         h.flush().unwrap();
-        assert_eq!(rows(&tmp.0).iter().filter(|r| r["kind"] == "message").count(), 2);
+        assert_eq!(
+            rows(&tmp.0)
+                .iter()
+                .filter(|r| r["kind"] == "message")
+                .count(),
+            2
+        );
         drop(h);
         assert!(History::open(&tmp.0, "beta".into(), HistoryConfig::default(), Utc::now()).is_ok());
     }
@@ -982,24 +992,33 @@ mod tests {
         let node = tmp.0.join("node");
         let start = Arc::new(Barrier::new(N));
         let opened = Arc::new(Barrier::new(N));
-        let threads: Vec<_> = (0..N).map(|_| {
-            let node = node.clone();
-            let start = start.clone();
-            let opened = opened.clone();
-            std::thread::spawn(move || {
-                start.wait();
-                let result = History::open(&node, "beta".into(), HistoryConfig::default(), Utc::now());
-                // Keep the winning History alive until every contender has tried.
-                opened.wait();
-                result
+        let threads: Vec<_> = (0..N)
+            .map(|_| {
+                let node = node.clone();
+                let start = start.clone();
+                let opened = opened.clone();
+                std::thread::spawn(move || {
+                    start.wait();
+                    let result =
+                        History::open(&node, "beta".into(), HistoryConfig::default(), Utc::now());
+                    // Keep the winning History alive until every contender has tried.
+                    opened.wait();
+                    result
+                })
             })
-        }).collect();
+            .collect();
         let results: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
         assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
         let mut winner = results.into_iter().find_map(Result::ok).unwrap();
         winner.event(sample("", 0), Utc::now()).unwrap();
         winner.flush().unwrap();
-        assert_eq!(rows(&node).iter().filter(|r| r["kind"] == "message").count(), 1);
+        assert_eq!(
+            rows(&node)
+                .iter()
+                .filter(|r| r["kind"] == "message")
+                .count(),
+            1
+        );
         assert!(!node.join("bus.lock").exists());
     }
 
@@ -1031,7 +1050,11 @@ mod tests {
         }
         h.limits.max_total_bytes = 1;
         h.retain(now + datetime::Duration::days(31), 0).unwrap();
-        for name in ["bus-2026-11-25-1.jsonl", "bus-2026-11-25-+1.jsonl", "bus-2026-11-25-00000000.jsonl"] {
+        for name in [
+            "bus-2026-11-25-1.jsonl",
+            "bus-2026-11-25-+1.jsonl",
+            "bus-2026-11-25-00000000.jsonl",
+        ] {
             assert_eq!(std::fs::read(tmp.0.join(name)).unwrap(), b"keep");
         }
         assert!(archive_key("bus-2026-11-25-00000001.jsonl").is_some());
@@ -1350,6 +1373,9 @@ mod tests {
             let result = History::open(&node, "beta".into(), HistoryConfig::default(), Utc::now());
             assert_eq!(result.is_err(), name == "bus.jsonl");
             drop(result);
+            if name == "bus.lock" {
+                std::fs::remove_file(node.join("bus.jsonl")).unwrap();
+            }
             assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched");
             std::fs::remove_file(node.join(name)).unwrap();
         }
