@@ -25,7 +25,7 @@ EnvironmentFile=@{etc}/noded/service.env
 Environment=MIX_ETC=@{etc}
 Environment=MIX_VAR=@{var}
 Environment=MIX_RUN=@{run}
-ExecStart=@{prefix}/bin/noded serve --listen ${LISTEN} --node ${NODE} --mesh-config @{etc}/noded/config.conf.mix --no-monitor --no-log
+ExecStart=@{prefix}/bin/noded serve --listen ${LISTEN} --node ${NODE} --mesh-config @{etc}/noded/config.conf.mix --no-monitor
 Restart=on-failure
 RestartSec=5s
 
