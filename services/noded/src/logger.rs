@@ -72,7 +72,8 @@ fn history_root(directory: Option<std::ffi::OsString>) -> Result<std::path::Path
     match directory.filter(|value| !value.is_empty()) {
         Some(value) => {
             let path = std::path::PathBuf::from(value);
-            // Components normalise trailing slashes, so both / and // are root-only.
+            // Redundant separators and '.' components are normalised away,
+            // so /, // and /. are root-only.
             // systemd separates multiple LOGS_DIRECTORY roots with ':'.
             anyhow::ensure!(
                 path.is_absolute()
@@ -1282,6 +1283,8 @@ mod tests {
         for bad in [
             "/",
             "//",
+            "/.",
+            "/./",
             "/..",
             "/srv/../x",
             "/x/..",
