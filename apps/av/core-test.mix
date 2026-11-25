@@ -25,6 +25,11 @@ fn refused($f,$code)
   try $f() catch $message,$error $caught=true;equal($error.code,$code) end
   check($caught)
 end
+fn await_done($job)
+  $end=monotonic()+3
+  while $s.jobs[$job].status=="running" and monotonic()<$end sleep(0.01) end
+  check($s.jobs[$job].status!="running")
+end
 try
   $rows=$core.actions();equal(len($rows),6)
   equal($rows[1].schema.properties.cpu.type,"integer")
@@ -36,7 +41,7 @@ try
   refused(fn()=$core.perform($s,"av.render",{timeline:$params.timeline,out:$dir.."/dangling"}),"AV_PATH")
   $r=$core.perform($s,"av.render",$params);$job=$r.result.job;apply_result($r)
   refused(fn()=$core.perform($s,"av.render",$params),"AV_BUSY")
-  sleep(0.6)
+  await_done($job)
   equal($s.jobs[$job].status,"finished")
   equal($s.jobs[$job].receipt.render.frames,3)
   equal($s.jobs[$job].metrics.memory_peak_bytes,2097152)
@@ -44,9 +49,11 @@ try
   equal($events[0].event,"start");equal($events[1].progress.v,1);equal($events[3].event,"end")
   check(contains($s.jobs[$job].receipt.argv,"--progress"))
   $r=$core.perform($s,"av.render",$params);$job=$r.result.job;apply_result($r)
-  sleep(0.05)
+  $end=monotonic()+1
+  while not exists($dir.."/"..$s.jobs[$job].unit..".pid") and monotonic()<$end sleep(0.01) end
+  check(exists($dir.."/"..$s.jobs[$job].unit..".pid"))
   apply_result($core.perform($s,"av.cancel",{job:$job}))
-  sleep(0.5)
+  await_done($job)
   equal($core.perform($s,"av.status",{job:$job}).result.status,"cancelled")
   equal(len(keys($core.perform($s,"av.status",{}).result.jobs)),2)
   print("av: actions, argv, progress, receipt, metrics, busy, cancel and root confinement passed")
@@ -54,4 +61,7 @@ finally
   run_argv_must(["rm","-r",$dir])
 end
 
-exit(0)
+-- Standalone scripts with Bus handlers enter a resident pump. The embedded
+-- app-test host completes naturally and deliberately denies process exit.
+try exit(0)
+catch $message check(contains($message,"capability denied: exit")) end

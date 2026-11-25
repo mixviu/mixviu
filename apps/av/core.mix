@@ -101,13 +101,19 @@ fn perform($s,$id,$a)
   $active=0
   for $j in values($s.jobs) if $j.status=="running" then $active=$active+1 end end
   if $active >= $s.cfg.max_jobs then raise("AV_BUSY","host job limit reached",{limit:$s.cfg.max_jobs}) end
+  -- Account for units retained across a citizen restart, as well as this
+  -- generation's jobs. systemd owns these processes, not the waiting client.
+  $live=run_argv(concat($s.cfg.control,["--user","list-units","--no-legend","--no-pager","--plain","--state=active,activating,deactivating","mixviu-av-job-*.service"]),{timeout:5,max_output:1048576})
+  if not $live.ok or $live.stdout_truncated then raise("AV_SYSTEMD","cannot inspect existing job units") end
+  $units=filter(split(trim($live.stdout),"\n"),fn($v)=$v!="")
+  if len($units)>=$s.cfg.max_jobs then raise("AV_BUSY","host job limit reached",{limit:$s.cfg.max_jobs}) end
   $mem=memory($a.mem ?? $s.cfg.mem)
   if $verb=="decode" then $argv=concat($argv,["--y4m",confined($s,$a.y4m,true)])
   else
     $argv=concat($argv,["--out",confined($s,$a.out,true),"--cpu",to_string(positive($a.cpu ?? $s.cfg.cpu,"cpu")),"--mem",$mem,"--progress"])
   end
   if $a.wav!=nil then $argv=concat($argv,["--wav",confined($s,$a.wav,true)]) end
-  $s.serial=$s.serial+1;$job="av-"..$s.nonce.."-"..to_string($s.serial)
+  $s.serial=$s.serial+1;$job="mixviu-av-job-"..$s.nonce.."-"..to_string($s.serial)
   $unit=$job..".service"
   $cmd=concat($s.cfg.runner,["--user","--collect","--wait","--pipe","--unit",$unit,"-p","MemoryAccounting=yes","-p","MemoryMax="..$mem,"--"])
   $watch=process_watch(concat($cmd,$argv),{stderr:"lines",tag:$job,max_line:1048576})

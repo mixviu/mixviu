@@ -46,9 +46,11 @@ non-regular files are refused. This is a path admission policy, not a sandbox
 against concurrent filesystem changes by the service user. Run as an account
 whose filesystem access is appropriate; Bus callers exercise that account's
 authority. The CLI owns validation of sources inside timelines.
-Keep one citizen per host. Cancel active jobs before restarting/reloading the
-citizen: systemd owns the units and can outlive the client. Job history is
-in memory for the service lifetime.
+The citizen holds a per-user host lock in `XDG_RUNTIME_DIR` (or `~/.cache`),
+refusing duplicate instances. Admission also counts existing active job units
+so a restart cannot bypass the job cap. Cancel active jobs before restarting
+or reloading to retain their receipts: systemd owns the units and can outlive
+the client. Job history is in memory for the evaluator lifetime; reload resets it.
 
 `mix apps/av/core-test.mix` exercises the real process-watch event path with a
 Mix av stub and a Mix systemd edge stub, without a broker or user systemd on
