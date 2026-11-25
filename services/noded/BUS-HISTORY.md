@@ -7,7 +7,32 @@ bounded observer queue and broker drop accounting are unchanged from the
 
 History is operator-private. The active file is
 `default_log_dir("noded")/<node>/bus.jsonl` (normally
-`~/.local/log/mix/noded/<node>/bus.jsonl`). Each logger holds an exclusive,
+`~/.local/log/mix/noded/<node>/bus.jsonl`) unless `LOGS_DIRECTORY` supplies
+a single absolute history root. Empty or absent uses the default; relative
+paths and systemd colon-separated multi-directory values disable history
+with a warning. The node name is always appended.
+
+The shipped units provision their roots differently:
+
+- `noded.service`: `host.tmpfiles.conf` creates `@{var}/log` as root:root
+  0755 and `@{var}/log/noded` as noded:noded 0700 before startup. The unit
+  permits writes and requires mounts for this history root. With the shipped
+  var root, history is `/opt/mix/var/log/noded/<node>/bus.jsonl`. Operators
+  overriding `User=`/`Group=` must also override the history tmpfiles owner
+  and change ownership of any existing history tree before starting noded.
+- `noded@.service`: systemd creates `/var/log/noded-session-<instance>`
+  with mode 0700 for the effective `User=`/`Group=` using `LogsDirectory=`.
+  It exports `LOGS_DIRECTORY` to noded, so history lives at
+  `/var/log/noded-session-<instance>/<node>/bus.jsonl`, regardless of the
+  session environment or mesh-profile `MIX_VAR`. Host-owned identity
+  drop-ins continue to work. This persistent systemd log root is deliberately
+  outside the relocatable prefix so provisioning follows the session account.
+
+The logger creates the private per-node child. These changes do not migrate
+history from an earlier root. Direct invocations retain the default path
+unless the caller supplies `LOGS_DIRECTORY`; its ownership checks still apply.
+
+Each logger holds an exclusive,
 non-blocking advisory `flock` on the pinned per-node directory fd itself for
 its lifetime, through writer destruction. There is no lock file pathname to
 replace: concurrent starts lock the same directory inode. A leftover `bus.lock`

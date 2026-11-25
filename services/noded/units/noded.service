@@ -2,17 +2,19 @@
 # Plain per-host noded: one node per host, running as noded.
 # Operators override User/Group with noded.service.d/user.conf and set
 # noded.account in node.conf.mix to the same operating-system account.
+# Also override the @{var}/log/noded entry in host.tmpfiles.conf with that
+# account/group and chown any existing history tree before starting the unit.
 # Host-local values come from EnvironmentFile (LISTEN, NODE). It is written
 # per host and is never in the repo.
 [Unit]
-RequiresMountsFor=@{var}/noded @{run}/noded
+RequiresMountsFor=@{var}/noded @{run}/noded @{var}/log/noded
 Description=MixViu per-node Bus broker (noded)
 Documentation=https://mixos.dev/noded/
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-ReadWritePaths=@{var}/noded @{run}/noded
+ReadWritePaths=@{var}/noded @{run}/noded @{var}/log/noded
 Environment=STATE_DIRECTORY=@{var}/noded
 ExecStartPre=/usr/bin/mkdir -p @{run}/noded
 ExecStartPre=/usr/bin/find @{run}/noded -mindepth 1 -delete
