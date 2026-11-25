@@ -155,6 +155,7 @@ pub const DBUS_SESSION_BUS_ADDRESS: &str = "DBUS_SESSION_BUS_ADDRESS";
 pub const PIPEWIRE_REMOTE: &str = "PIPEWIRE_REMOTE";
 pub const PIPEWIRE_RUNTIME_DIR: &str = "PIPEWIRE_RUNTIME_DIR";
 pub const STATE_DIRECTORY: &str = "STATE_DIRECTORY";
+pub const LOGS_DIRECTORY: &str = "LOGS_DIRECTORY";
 pub const XDG_RUNTIME_DIR: &str = "XDG_RUNTIME_DIR";
 
 /// Names reserved for tests.

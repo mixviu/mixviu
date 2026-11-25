@@ -7,7 +7,41 @@ bounded observer queue and broker drop accounting are unchanged from the
 
 History is operator-private. The active file is
 `default_log_dir("noded")/<node>/bus.jsonl` (normally
-`~/.local/log/mix/noded/<node>/bus.jsonl`). Each logger holds an exclusive,
+`~/.local/log/mix/noded/<node>/bus.jsonl`) unless `LOGS_DIRECTORY` supplies
+a single absolute history root. Empty or absent uses the default; relative
+paths and systemd colon-separated multi-directory values disable history
+with a warning. The node name is always appended.
+
+The shipped units provision their roots differently:
+
+- `noded.service`: `host.tmpfiles.conf` creates `@{var}/log` as root:root
+  0755 and `@{var}/log/noded` as noded:noded 0700 before startup. The unit
+  lists this history root as an optional write path and requires its mounts.
+  If the directory is missing, the broker still starts and history fails soft.
+  With the shipped
+  var root, history is `/opt/mix/var/log/noded/<node>/bus.jsonl`. Operators
+  overriding `User=`/`Group=` must also override the history tmpfiles owner
+  and change ownership of any existing history tree before starting noded.
+- `noded@.service`: installers create `@{var}/session/<instance>` as the
+  session account, mode 0700, under the same contract used by monitord.
+  The unit sets `LOGS_DIRECTORY=@{var}/session/%i/log/noded` before its
+  session environment file. The logger creates missing children with mode
+  0700, so history lives at
+  `@{var}/session/<instance>/log/noded/<node>/bus.jsonl`. The path is rendered
+  at install time and a mesh-profile `MIX_VAR` does not move it. Host-owned
+  identity drop-ins keep working through the installer ownership contract.
+  A missing or unwritable session directory disables history without adding
+  a broker startup dependency.
+
+The logger creates the private per-node child. Rows written under the old
+`$MIX_VAR/log/noded` are not migrated and are outside retention at the new
+location. Direct invocations retain the default path
+unless the caller supplies `LOGS_DIRECTORY`; its ownership checks still apply.
+
+A `<svc>.history` reader must never recompute the history path. It asks noded:
+`log.props.*` already serves the active `bus.jsonl` path.
+
+Each logger holds an exclusive,
 non-blocking advisory `flock` on the pinned per-node directory fd itself for
 its lifetime, through writer destruction. There is no lock file pathname to
 replace: concurrent starts lock the same directory inode. A leftover `bus.lock`

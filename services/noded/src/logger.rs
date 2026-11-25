@@ -58,8 +58,28 @@ pub async fn run(
         !node.is_empty() && node != "." && node != ".." && !node.contains('/'),
         "invalid history node directory"
     );
-    let dir = logging::default_log_dir("noded").join(&node);
+    let dir = match history_root(std::env::var_os(paths::env::LOGS_DIRECTORY)) {
+        Ok(root) => root.join(&node),
+        Err(error) => {
+            tracing::warn!(%error, "History disabled: invalid log directory");
+            return Ok(());
+        }
+    };
     run_in(noded_url, node, limits, shutdown, &dir).await
+}
+
+fn history_root(directory: Option<std::ffi::OsString>) -> Result<std::path::PathBuf> {
+    match directory.filter(|value| !value.is_empty()) {
+        Some(value) => {
+            let path = std::path::PathBuf::from(value);
+            anyhow::ensure!(
+                path.is_absolute() && !path.as_os_str().as_encoded_bytes().contains(&b':'),
+                "LOGS_DIRECTORY must be one absolute directory"
+            );
+            Ok(path)
+        }
+        None => Ok(logging::default_log_dir("noded")),
+    }
 }
 
 async fn run_in(
@@ -1227,6 +1247,29 @@ mod tests {
             assert!(!unit.contains("--no-log"));
             assert!(unit.contains("--no-monitor"));
         }
+    }
+
+    #[test]
+    fn session_history_root_is_independent_of_var_root() {
+        let root = history_root(Some("/srv/example/var/session/3/log/noded".into())).unwrap();
+        assert_eq!(
+            root.join("beta"),
+            Path::new("/srv/example/var/session/3/log/noded/beta")
+        );
+        assert_eq!(
+            history_root(None).unwrap(),
+            logging::default_log_dir("noded")
+        );
+        assert_eq!(
+            history_root(Some("".into())).unwrap(),
+            history_root(None).unwrap()
+        );
+        for bad in ["relative", "/var/log/one:/var/log/two"] {
+            assert!(history_root(Some(bad.into())).is_err());
+        }
+        let unit = include_str!("../units/noded@.service");
+        assert!(unit.contains("Environment=LOGS_DIRECTORY=@{var}/session/%i/log/noded\n"));
+        assert!(!unit.contains("LogsDirectory="));
     }
 
     #[test]

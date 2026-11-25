@@ -5,6 +5,24 @@ $renderer = require("../share/layout/render.mix")
 $release = require("release_set.mix")
 $roots = {prefix: "/srv/mixtest", etc: "/srv/mixtest/etc", var: "/srv/mixtest/var", run: "/srv/mixtest/run", cache: "/srv/mixtest/cache", share: "/srv/mixtest/share", lib: "/srv/mixtest/lib"}
 $guard.check_sources()
+$noded = $renderer.external(read_file("services/noded/units/noded.service"), $roots, "unit")
+for $directive in ["ReadWritePaths=", "RequiresMountsFor="]
+  $optional = if $directive == "ReadWritePaths=" then "-" else "" end
+  if not contains($noded, $directive .. $roots.var .. "/noded " .. $roots.run .. "/noded " .. $optional .. $roots.var .. "/log/noded\n") then
+    raise("HOST_ROOT_TEST", "noded history missing from " .. $directive)
+  end
+end
+$session_noded = $renderer.external(read_file("services/noded/units/noded@.service"), $roots, "unit")
+if not contains($session_noded, "Environment=LOGS_DIRECTORY=" .. $roots.var .. "/session/%i/log/noded\n") then
+  raise("HOST_ROOT_TEST", "session noded history must use the rendered var root")
+end
+if index_of($session_noded, "Environment=LOGS_DIRECTORY=") > index_of($session_noded, "EnvironmentFile=") then
+  raise("HOST_ROOT_TEST", "session noded history default must precede the session environment file")
+end
+$tmpfiles = $renderer.external(read_file("share/layout/host.tmpfiles.conf"), $roots, "unit")
+for $entry in ["/log 0755 root root -", "/log/noded 0700 noded noded -"]
+  if not contains($tmpfiles, "d " .. $roots.var .. $entry .. "\n") then raise("HOST_ROOT_TEST", "missing noded log provisioning") end
+end
 $paths = lines(trim(run_argv_must(["git", "ls-files"])))
 $sources = map($layout.entries("share/layout"), fn($e) = realpath("share/layout/" .. $e.source))
 for $path in $paths
