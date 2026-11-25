@@ -199,6 +199,27 @@ mod tests {
         );
     }
 
+    // The first load writes knowledge.conf.mix; the second reads it back.
+    // `call_timeout_secs: 120` failed that second read as `120.0` until the
+    // strict deserializer offered whole numbers as integers.
+    #[test]
+    fn knowledge_settings_round_trip_through_written_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let defaults = serde_json::to_value(KnowledgeSettings::default()).unwrap();
+        let first = load_in::<KnowledgeSettings>(dir.path(), "knowledge", defaults.clone())
+            .unwrap();
+        assert!(dir.path().join("knowledge/knowledge.conf.mix").exists());
+        let second = load_in::<KnowledgeSettings>(dir.path(), "knowledge", defaults).unwrap();
+        assert_eq!(
+            serde_json::to_value(&first).unwrap(),
+            serde_json::to_value(&second).unwrap()
+        );
+        assert_eq!(
+            second.indexd.call_timeout_secs,
+            KnowledgeSettings::default().indexd.call_timeout_secs
+        );
+    }
+
     #[test]
     fn knowledge_loader_tolerates_retired_keys_and_ignores_retired_files() {
         let dir = tempfile::tempdir().unwrap();
