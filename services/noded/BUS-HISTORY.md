@@ -16,21 +16,30 @@ The shipped units provision their roots differently:
 
 - `noded.service`: `host.tmpfiles.conf` creates `@{var}/log` as root:root
   0755 and `@{var}/log/noded` as noded:noded 0700 before startup. The unit
-  permits writes and requires mounts for this history root. With the shipped
+  lists this history root as an optional write path and requires its mounts.
+  If the directory is missing, the broker still starts and history fails soft.
+  With the shipped
   var root, history is `/opt/mix/var/log/noded/<node>/bus.jsonl`. Operators
   overriding `User=`/`Group=` must also override the history tmpfiles owner
   and change ownership of any existing history tree before starting noded.
-- `noded@.service`: systemd creates `/var/log/noded-session-<instance>`
-  with mode 0700 for the effective `User=`/`Group=` using `LogsDirectory=`.
-  It exports `LOGS_DIRECTORY` to noded, so history lives at
-  `/var/log/noded-session-<instance>/<node>/bus.jsonl`, regardless of the
-  session environment or mesh-profile `MIX_VAR`. Host-owned identity
-  drop-ins continue to work. This persistent systemd log root is deliberately
-  outside the relocatable prefix so provisioning follows the session account.
+- `noded@.service`: installers create `@{var}/session/<instance>` as the
+  session account, mode 0700, under the same contract used by monitord.
+  The unit sets `LOGS_DIRECTORY=@{var}/session/%i/log/noded` before its
+  session environment file. The logger creates missing children with mode
+  0700, so history lives at
+  `@{var}/session/<instance>/log/noded/<node>/bus.jsonl`. The path is rendered
+  at install time and a mesh-profile `MIX_VAR` does not move it. Host-owned
+  identity drop-ins keep working through the installer ownership contract.
+  A missing or unwritable session directory disables history without adding
+  a broker startup dependency.
 
-The logger creates the private per-node child. These changes do not migrate
-history from an earlier root. Direct invocations retain the default path
+The logger creates the private per-node child. Rows written under the old
+`$MIX_VAR/log/noded` are not migrated and are outside retention at the new
+location. Direct invocations retain the default path
 unless the caller supplies `LOGS_DIRECTORY`; its ownership checks still apply.
+
+A `<svc>.history` reader must never recompute the history path. It asks noded:
+`log.props.*` already serves the active `bus.jsonl` path.
 
 Each logger holds an exclusive,
 non-blocking advisory `flock` on the pinned per-node directory fd itself for

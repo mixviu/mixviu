@@ -58,7 +58,13 @@ pub async fn run(
         !node.is_empty() && node != "." && node != ".." && !node.contains('/'),
         "invalid history node directory"
     );
-    let dir = history_root(std::env::var_os(paths::env::LOGS_DIRECTORY))?.join(&node);
+    let dir = match history_root(std::env::var_os(paths::env::LOGS_DIRECTORY)) {
+        Ok(root) => root.join(&node),
+        Err(error) => {
+            tracing::warn!(%error, "History disabled: invalid log directory");
+            return Ok(());
+        }
+    };
     run_in(noded_url, node, limits, shutdown, &dir).await
 }
 
@@ -1244,11 +1250,11 @@ mod tests {
     }
 
     #[test]
-    fn systemd_history_root_is_independent_of_var_root() {
-        let root = history_root(Some("/var/log/noded-session-3".into())).unwrap();
+    fn session_history_root_is_independent_of_var_root() {
+        let root = history_root(Some("/srv/example/var/session/3/log/noded".into())).unwrap();
         assert_eq!(
             root.join("beta"),
-            Path::new("/var/log/noded-session-3/beta")
+            Path::new("/srv/example/var/session/3/log/noded/beta")
         );
         assert_eq!(
             history_root(None).unwrap(),
@@ -1262,8 +1268,8 @@ mod tests {
             assert!(history_root(Some(bad.into())).is_err());
         }
         let unit = include_str!("../units/noded@.service");
-        assert!(unit.contains("LogsDirectory=noded-session-%i\n"));
-        assert!(unit.contains("LogsDirectoryMode=0700\n"));
+        assert!(unit.contains("Environment=LOGS_DIRECTORY=@{var}/session/%i/log/noded\n"));
+        assert!(!unit.contains("LogsDirectory="));
     }
 
     #[test]

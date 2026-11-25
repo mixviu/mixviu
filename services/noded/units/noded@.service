@@ -10,10 +10,9 @@ ExecStartPre=/usr/bin/find @{run}/session/%i/noded -mindepth 1 -delete
 ExecStopPost=-/usr/bin/find @{run}/session/%i/noded -mindepth 1 -delete
 Type=simple
 User=mix
-# systemd provisions a private persistent log root for the effective User=,
-# including host-owned identity overrides. LOGS_DIRECTORY is passed to noded.
-LogsDirectory=noded-session-%i
-LogsDirectoryMode=0700
+# Installers create @{var}/session/%i as the session account, mode 0700.
+# The logger creates private children there, independent of profile MIX_VAR.
+Environment=LOGS_DIRECTORY=@{var}/session/%i/log/noded
 EnvironmentFile=@{etc}/session/%i.env
 UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE DBUS_SYSTEM_BUS_ADDRESS
 ExecStart=@{prefix}/bin/noded serve --no-monitor
