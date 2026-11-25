@@ -27,7 +27,8 @@ never chmodded and reused: a loose active file is renamed to the next archive
 intact, and a loose lock is unlinked. Fresh files use exclusive creation with
 mode 0600 and are fstat-verified. Recovery writes a gap with
 `reason: "active_file_mode_loose"`. Old held descriptors receive no new rows
-and cannot lock the replacement lock inode. Foreign-owned files are never taken over. The old
+and cannot lock the replacement lock inode. Foreign-owned files are never taken
+over. The old
 human-readable `bus.log` is neither read nor migrated.
 
 Each line is a JSON object with `v: 1`, `ts_utc` (RFC 3339 UTC with milliseconds),
@@ -100,8 +101,8 @@ would exceed the cap; ordinary message rows do not scan the directory.
 The running total includes buffered rows. Archives at least 30 calendar days
 old go first, then oldest dates and rotation
 numbers until the total fits (including the active file and pending row).
-Only recognised history archive names are removed. Retention does not touch old
+Only recognised history archive names are removed. Retention does not touch
 files with noncanonical suffixes: a suffix must be exactly eight unsigned
-decimal digits, and the date must be exactly `YYYY-MM-DD`. Retention does not touch old
+decimal digits, and the date must be exactly `YYYY-MM-DD`. It also leaves old
 `bus.log` files. The shipped units enable history and retain `--no-monitor`;
 host rollout is a later gold operation.

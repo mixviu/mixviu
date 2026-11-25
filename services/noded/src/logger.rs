@@ -562,7 +562,7 @@ impl HistoryDir {
 fn archive_key(name: &str) -> Option<(datetime::NaiveDate, u64)> {
     let stem = name.strip_prefix("bus-")?.strip_suffix(".jsonl")?;
     let date = datetime::NaiveDate::parse_from_str(stem.get(..10)?, "%Y-%m-%d").ok()?;
-    if date.format("%Y-%m-%d").to_string() != stem[..10] {
+    if date.to_string() != stem[..10] {
         return None;
     }
     let suffix = &stem[10..];
