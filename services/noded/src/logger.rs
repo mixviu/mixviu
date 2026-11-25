@@ -441,8 +441,6 @@ impl HistoryDir {
             return Ok(false);
         }
         if name == "bus.jsonl" {
-            // Tighten the owned, already-open inode before it becomes an archive.
-            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
             let day = now.format("%Y-%m-%d").to_string();
             let mut index = 0;
             for entry in self.names()? {
@@ -476,6 +474,13 @@ impl HistoryDir {
                     Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => index += 1,
                     Err(e) => return Err(e.into()),
                 }
+            }
+            // Tighten only after the rename has archived it: if the scan or the
+            // rename fails, `bus.jsonl` must stay loose so the next start still
+            // refuses to reuse it. The fd still names the archived inode. A
+            // failure here leaves the archive inside the 0700 directory.
+            if let Err(e) = file.set_permissions(std::fs::Permissions::from_mode(0o600)) {
+                tracing::warn!("History archive of a loose active file kept its mode: {e}");
             }
         } else {
             self.unlink(name)?;
@@ -946,6 +951,27 @@ mod tests {
                 .any(|r| r["reason"] == "active_file_mode_loose")
         );
         assert!(rows(&tmp.0).iter().any(|r| r["kind"] == "message"));
+    }
+
+    #[test]
+    fn failed_loose_archive_leaves_active_file_loose() {
+        let tmp = Temp::new();
+        let now = Utc::now();
+        let path = tmp.0.join("bus.jsonl");
+        std::fs::write(&path, b"").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        // The highest index already exists, so the archive step fails before any rename.
+        let full = tmp
+            .0
+            .join(format!("bus-{}-99999999.jsonl", now.format("%Y-%m-%d")));
+        std::fs::write(&full, b"").unwrap();
+        std::fs::set_permissions(&full, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert!(History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).is_err());
+        // Still loose, so the next start refuses to reuse it.
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().mode() & 0o777,
+            0o644
+        );
     }
 
     #[test]
