@@ -17,7 +17,10 @@ pub fn memory_limit(value: &std::ffi::OsStr) -> timeline::Result<u64> {
     if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
         return Err("mem_limit".into());
     }
-    digits.parse::<u64>().ok().and_then(|n| n.checked_mul(multiplier))
+    digits
+        .parse::<u64>()
+        .ok()
+        .and_then(|n| n.checked_mul(multiplier))
         .ok_or_else(|| "mem_limit".into())
 }
 /// Audio execution is single-threaded; validate this no-op ceiling consistently.

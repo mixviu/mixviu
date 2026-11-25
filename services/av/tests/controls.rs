@@ -22,31 +22,54 @@ fn lines(output: &Output) -> Vec<Value> {
         .collect()
 }
 fn blocked_stderr_render(root: &std::path::Path) {
-    use std::{io::Write, os::fd::{AsRawFd, FromRawFd}, process::Stdio, time::{Duration, Instant}};
+    use std::{
+        io::Write,
+        os::fd::{AsRawFd, FromRawFd},
+        process::Stdio,
+        time::{Duration, Instant},
+    };
     let mut fds = [-1; 2];
     // SAFETY: valid two-descriptor array; successful descriptors are each
     // transferred exactly once to owned Files below.
-    assert_eq!(unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) }, 0);
+    assert_eq!(
+        unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC | libc::O_NONBLOCK) },
+        0
+    );
     let reader = unsafe { fs::File::from_raw_fd(fds[0]) };
     let mut writer = unsafe { fs::File::from_raw_fd(fds[1]) };
     loop {
         match writer.write(&[b'x'; 4096]) {
             Ok(n) => assert!(n > 0),
-            Err(e) => { assert_eq!(e.kind(), std::io::ErrorKind::WouldBlock); break; }
+            Err(e) => {
+                assert_eq!(e.kind(), std::io::ErrorKind::WouldBlock);
+                break;
+            }
         }
     }
     // SAFETY: owned live pipe descriptor. Restore blocking mode so the AVP
     // writer really blocks; keep the unread read end alive until child exit.
-    assert_eq!(unsafe { libc::fcntl(writer.as_raw_fd(), libc::F_SETFL, 0) }, 0);
+    assert_eq!(
+        unsafe { libc::fcntl(writer.as_raw_fd(), libc::F_SETFL, 0) },
+        0
+    );
     let mut child = Command::new(env!("CARGO_BIN_EXE_av"))
-        .arg("render").arg(root.join("timeline.json")).arg("--progress")
-        .arg("--out").arg(root.join("blocked.webm"))
+        .arg("render")
+        .arg(root.join("timeline.json"))
+        .arg("--progress")
+        .arg("--out")
+        .arg(root.join("blocked.webm"))
         .stderr(Stdio::from(writer))
-        .stdout(Stdio::from(fs::File::create(root.join("blocked-receipt.json")).unwrap()))
-        .spawn().unwrap();
+        .stdout(Stdio::from(
+            fs::File::create(root.join("blocked-receipt.json")).unwrap(),
+        ))
+        .spawn()
+        .unwrap();
     let deadline = Instant::now() + Duration::from_secs(15);
     loop {
-        if let Some(status) = child.try_wait().unwrap() { assert!(status.success()); break; }
+        if let Some(status) = child.try_wait().unwrap() {
+            assert!(status.success());
+            break;
+        }
         if Instant::now() >= deadline {
             child.kill().unwrap();
             child.wait().unwrap();
@@ -55,8 +78,12 @@ fn blocked_stderr_render(root: &std::path::Path) {
         std::thread::sleep(Duration::from_millis(20));
     }
     drop(reader);
-    assert_eq!(fs::read(root.join("blocked.webm")).unwrap(), fs::read(root.join("plain.webm")).unwrap());
-    let receipt: Value = serde_json::from_slice(&fs::read(root.join("blocked-receipt.json")).unwrap()).unwrap();
+    assert_eq!(
+        fs::read(root.join("blocked.webm")).unwrap(),
+        fs::read(root.join("plain.webm")).unwrap()
+    );
+    let receipt: Value =
+        serde_json::from_slice(&fs::read(root.join("blocked-receipt.json")).unwrap()).unwrap();
     assert_eq!(receipt["frames_out"], 30);
 }
 #[test]
@@ -202,7 +229,12 @@ fn limits_progress_and_default_bytes() {
     audio["version"] = json!(1);
     audio["duration_s"] = json!(1);
     fs::write(root.join("timeline.json"), audio.to_string()).unwrap();
-    let a = invoke(root, "audio", &["--cpu", "1", "--mem", "1G", "--progress"], "audio.webm");
+    let a = invoke(
+        root,
+        "audio",
+        &["--cpu", "1", "--mem", "1G", "--progress"],
+        "audio.webm",
+    );
     assert!(a.status.success(), "{}", String::from_utf8_lossy(&a.stderr));
     assert_eq!(lines(&a).last().unwrap()["ok"], true);
     let b = invoke(root, "audio", &[], "audio-plain.webm");
@@ -223,20 +255,39 @@ fn limits_progress_and_default_bytes() {
     }
     let zero = invoke(root, "audio", &["--mem", "0"], "audio-zero.webm");
     assert!(zero.status.success());
-    assert_eq!(fs::read(root.join("audio-zero.webm")).unwrap(), fs::read(root.join("audio-plain.webm")).unwrap());
+    assert_eq!(
+        fs::read(root.join("audio-zero.webm")).unwrap(),
+        fs::read(root.join("audio-plain.webm")).unwrap()
+    );
     for command in ["render", "audio"] {
         for (flags, error) in [
-            (vec!["--cpu", "1", "--cpu", "1"], "unknown_or_duplicate_option"),
-            (vec!["--mem", "1G", "--mem", "1G"], "unknown_or_duplicate_option"),
+            (
+                vec!["--cpu", "1", "--cpu", "1"],
+                "unknown_or_duplicate_option",
+            ),
+            (
+                vec!["--mem", "1G", "--mem", "1G"],
+                "unknown_or_duplicate_option",
+            ),
             (vec!["--unknown", "x"], "unknown_or_duplicate_option"),
         ] {
             let failed = invoke(root, command, &flags, "invalid-options.webm");
             assert_eq!(failed.status.code(), Some(2));
-            assert_eq!(String::from_utf8_lossy(&failed.stderr).trim(), format!("av: {error}"));
+            assert_eq!(
+                String::from_utf8_lossy(&failed.stderr).trim(),
+                format!("av: {error}")
+            );
         }
         let failed = Command::new(env!("CARGO_BIN_EXE_av"))
-            .arg(command).arg(root.join("timeline.json")).args(["--out", "unused", "--mem"]).output().unwrap();
+            .arg(command)
+            .arg(root.join("timeline.json"))
+            .args(["--out", "unused", "--mem"])
+            .output()
+            .unwrap();
         assert_eq!(failed.status.code(), Some(2));
-        assert_eq!(String::from_utf8_lossy(&failed.stderr).trim(), "av: missing_option_value");
+        assert_eq!(
+            String::from_utf8_lossy(&failed.stderr).trim(),
+            "av: missing_option_value"
+        );
     }
 }
