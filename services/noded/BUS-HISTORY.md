@@ -66,8 +66,8 @@ All values must be positive. Parse errors, unknown history keys, type errors and
 non-positive limits warn and use history defaults. An unreadable explicit file
 (including missing files) disables history with a warning. An absent implicit
 default file uses defaults. A readable malformed file uses history defaults.
-These failures never stop the broker: if the explicit mesh file also cannot
-be loaded by the broker, it warns and starts without configured mesh peers.
+History loading never stops the broker. The broker's own mesh-config policy
+is unchanged: an explicit mesh file that cannot be read or parsed is fatal.
 Retention runs at start, on rotation, every second and before the running total
 would exceed the cap; ordinary message rows do not scan the directory.
 The running total includes buffered rows. Archives at least 30 calendar days

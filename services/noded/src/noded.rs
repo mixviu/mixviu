@@ -952,10 +952,7 @@ async fn serve(
         spec_dir
     };
     let mut mesh_config = if let Some(ref path) = mesh_config_path {
-        MeshConfig::load(path).unwrap_or_else(|error| {
-            tracing::warn!(%path, %error, "Mesh config unavailable; starting broker with no configured peers");
-            MeshConfig { node_name: node.clone(), peers: Vec::new(), d2_seed: None }
-        })
+        MeshConfig::load(path)?
     } else {
         MeshConfig::load_default(&node)
     };

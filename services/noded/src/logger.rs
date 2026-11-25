@@ -899,14 +899,22 @@ mod tests {
         let _guard = subscriber.set_default();
         let tmp = Temp::new();
         let path = tmp.0.join("config.conf.mix");
-        for block in [
-            Some("history: {"),
-            Some("history: { max_file_bytes: 0 }"),
-            Some("history: { retention_days: -1 }"),
-            Some("history: { unknown: 1 }"),
-            Some("history: { max_file_bytes: wrong }"),
-            None,
+        for (block, broker_starts) in [
+            // An unclosed map invalidates the whole mesh file, so main's
+            // broker loader rejects it even though history uses defaults.
+            (Some("history: {"), false),
+            (Some("history: wrong"), true),
+            (Some("history: { max_file_bytes: 0 }"), true),
+            (Some("history: { retention_days: -1 }"), true),
+            (Some("history: { unknown: 1 }"), true),
+            (Some("history: { max_file_bytes: wrong }"), true),
+            (Some("history: { retention_days: 1.5 }"), true),
+            // Missing and unreadable explicit files retain main's fatal
+            // mesh-config behaviour; only history disables itself.
+            (None, false),
+            (None, false),
         ] {
+            output.0.lock().unwrap().clear();
             if let Some(block) = block {
                 std::fs::write(&path, format!("node_name: beta\n{block}\n")).unwrap();
                 assert_eq!(
@@ -914,9 +922,20 @@ mod tests {
                     HistoryConfig::default().max_file_bytes
                 );
             } else {
-                std::fs::remove_file(&path).unwrap();
+                if path.exists() {
+                    std::fs::remove_file(&path).unwrap();
+                } else {
+                    std::fs::create_dir(&path).unwrap();
+                }
                 assert!(HistoryConfig::load(path.to_str()).is_none());
             }
+            let warnings = String::from_utf8(output.0.lock().unwrap().clone()).unwrap();
+            let expected = if block.is_some() {
+                "Invalid history config: using history defaults"
+            } else {
+                "History disabled: config cannot be read"
+            };
+            assert!(warnings.contains(expected), "{block:?}: {warnings}");
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let listen = listener.local_addr().unwrap().to_string();
             let (ready, waiting) = tokio::sync::oneshot::channel();
@@ -933,6 +952,16 @@ mod tests {
                 frame_policy: config::node::AdmissionMode::Observe,
             };
             let broker = tokio::spawn(crate::noded::run_on(cfg, listener, ready));
+            if !broker_starts {
+                let error = tokio::time::timeout(std::time::Duration::from_secs(5), broker)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .expect_err("main's broker policy rejects an unavailable or invalid mesh config");
+                assert!(error.to_string().contains("config"), "{error:#}");
+                assert!(waiting.await.is_err(), "broker must not signal readiness");
+                continue;
+            }
             tokio::time::timeout(std::time::Duration::from_secs(5), waiting)
                 .await
                 .unwrap()
@@ -951,18 +980,6 @@ mod tests {
             );
             broker.abort();
         }
-        std::fs::create_dir(&path).unwrap();
-        assert!(HistoryConfig::load(path.to_str()).is_none());
-        let warnings = String::from_utf8(output.0.lock().unwrap().clone()).unwrap();
-        assert!(warnings.contains("using history defaults"), "{warnings}");
-        assert!(
-            warnings.contains("History disabled: config cannot be read"),
-            "{warnings}"
-        );
-        assert!(
-            warnings.contains("history limits must be positive"),
-            "{warnings}"
-        );
     }
 
     #[tokio::test]
