@@ -149,9 +149,20 @@ fn blocked_stderr_render(root: &std::path::Path) {
 #[test]
 fn video_progress_continues_through_overlapping_mux() {
     let root = tempfile::tempdir().unwrap();
+    media_audio::Audio::new(48000, 1, vec![0.1; 48000])
+        .unwrap()
+        .write_wav(
+            fs::File::create(root.path().join("tone.wav")).unwrap(),
+            media_audio::WavFormat::Float32,
+        )
+        .unwrap();
     let timeline = json!({"version":1,"duration_s":8,
-        "video":{"width":128,"height":128,"fps":30,
-            "segments":[{"solid":"black","at_s":0,"duration_s":8}]},
+        "audio":{"sample_rate":48000,"channels":2,"sources":[{"path":"tone.wav","at_s":0}],
+            "master":{"integrated_lufs":-14,"true_peak_dbtp":-1}},
+        "video":{"width":256,"height":256,"fps":30,
+            "segments":[{"solid":"black","at_s":0,"duration_s":8},
+                {"solid":[255,255,255],"at_s":1,"duration_s":7}],
+            "crossfades":[{"at_s":1,"duration_s":6}]},
         "encode":{"speed":8,"qp":100,"tile_cols":1,"tile_rows":1,
             "threads":1,"chunks":1,"keyint_s":1}});
     fs::write(root.path().join("timeline.json"), timeline.to_string()).unwrap();
