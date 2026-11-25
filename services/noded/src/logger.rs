@@ -905,10 +905,22 @@ mod tests {
             ("invalid mesh syntax", Some("history: {"), false),
             ("invalid history shape", Some("history: wrong"), true),
             ("zero limit", Some("history: { max_file_bytes: 0 }"), true),
-            ("negative limit", Some("history: { retention_days: -1 }"), true),
+            (
+                "negative limit",
+                Some("history: { retention_days: -1 }"),
+                true,
+            ),
             ("unknown key", Some("history: { unknown: 1 }"), true),
-            ("wrong type", Some("history: { max_file_bytes: wrong }"), true),
-            ("fractional limit", Some("history: { retention_days: 1.5 }"), true),
+            (
+                "wrong type",
+                Some("history: { max_file_bytes: wrong }"),
+                true,
+            ),
+            (
+                "fractional limit",
+                Some("history: { retention_days: 1.5 }"),
+                true,
+            ),
             // Missing and unreadable explicit files retain main's fatal
             // mesh-config behaviour; only history disables itself.
             ("missing explicit config", None, false),
@@ -937,7 +949,10 @@ mod tests {
             };
             assert!(warnings.contains(expected), "{case}: {warnings}");
             if case == "zero limit" {
-                assert!(warnings.contains("history limits must be positive"), "{warnings}");
+                assert!(
+                    warnings.contains("history limits must be positive"),
+                    "{warnings}"
+                );
             }
             let mesh_error = mesh::MeshConfig::load(path.to_str().unwrap()).err();
             assert_eq!(mesh_error.is_none(), broker_starts, "{case}");
@@ -962,7 +977,9 @@ mod tests {
                     .await
                     .unwrap()
                     .unwrap()
-                    .expect_err("main's broker policy rejects an unavailable or invalid mesh config");
+                    .expect_err(
+                        "main's broker policy rejects an unavailable or invalid mesh config",
+                    );
                 assert_eq!(error.to_string(), mesh_error.unwrap().to_string(), "{case}");
                 assert!(waiting.await.is_err(), "broker must not signal readiness");
                 continue;
