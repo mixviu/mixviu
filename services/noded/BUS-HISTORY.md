@@ -34,12 +34,16 @@ The shipped units provision their roots differently:
   a broker startup dependency.
 
 The logger creates the private per-node child. Rows written under the old
-`$MIX_VAR/log/noded` are not migrated and are outside retention at the new
-location. Direct invocations retain the default path
-unless the caller supplies `LOGS_DIRECTORY`; its ownership checks still apply.
+`$MIX_VAR/log/noded` are not moved automatically. An operator moves the old
+`bus.jsonl` into the new `<node>/` directory as `bus-<last UTC day>.jsonl`,
+using the last row's UTC day. This is the archive name `retain()` expires by
+date. Rotation picks the next index, preserving order. The `observer_closed`
+and `logger_start` gap rows record the change. Direct invocations retain the
+default path unless the caller supplies `LOGS_DIRECTORY`; its ownership checks
+still apply.
 
-A `<svc>.history` reader must never recompute the history path. It asks noded:
-`log.props.*` already serves the active `bus.jsonl` path.
+A `<svc>.history` reader must never recompute the history path.
+It asks noded with `log.props.get` and reads `config.log_path`.
 
 Each logger holds an exclusive,
 non-blocking advisory `flock` on the pinned per-node directory fd itself for
