@@ -29,6 +29,11 @@ fn save_password($id,$password)
 end
 fn settings_call($command,$body)
   send "settingsd" $command body=$body timeout=10
+  -- A send that never reached settingsd (not registered, transport, timeout)
+  -- has no reply map: name the cause instead of failing on $reply.status.
+  -- A timeout may still have been applied: the outcome is unknown, not unavailable.
+  if $rc==-2 then raise("OUTCOME_UNKNOWN","settingsd did not answer within the send timeout: "..to_string($result ?? "no reply")) end
+  if $rc!=0 and type($reply)!="map" then raise("UNAVAILABLE","settingsd unavailable (rc "..to_string($rc).."): "..to_string($result ?? "no reply")) end
   if $rc!=0 then raise(if $reply.status=="conflict" then "CONFLICT" elif $reply.status=="outcome_unknown" then "OUTCOME_UNKNOWN" else "SETTINGS" end,$reply.message ?? json_encode($reply)) end
   return $reply
 end

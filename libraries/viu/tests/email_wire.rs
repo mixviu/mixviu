@@ -202,6 +202,23 @@ fn account_urls_refuse_credentials_before_reaching_settings_and_keep_path_at_sig
 }
 
 #[test]
+fn settings_call_names_an_unreachable_settingsd_instead_of_failing_on_nil() {
+    // No settingsd is registered in the probe runtime, so the send never
+    // reaches it and leaves no reply map.
+    let (rc, body) = probe_module(
+        vec![],
+        r#"$m.settings_call("settings.get",{view:"values"})"#,
+        "accounts.mix",
+        vec![],
+    );
+    assert_eq!(rc, 10, "{body}");
+    assert_eq!(body["code"], "UNAVAILABLE", "{body}");
+    let message = body["message"].as_str().unwrap_or_default();
+    assert!(message.starts_with("settingsd unavailable"), "{body}");
+    assert!(!message.contains("on nil"), "{body}");
+}
+
+#[test]
 fn reply_quotes_strip_signatures_preserve_nesting_and_skip_active_html() {
     for (call, expected) in [
         (r#"$m.unsigned("Lunch?\r\n-- \r\nAnn")"#, "Lunch?"),

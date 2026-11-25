@@ -2604,7 +2604,10 @@ fn create_with_theme(
         session: (bundle.manifest.frame.is_some() || bundle.manifest.follow_settings).then(|| {
             crate::session::Session::embedded(
                 bundle.manifest.app(),
-                &std::env::var("MIX_INSTANCE").unwrap_or_else(|_| "default".into()),
+                &settings::session::app_instance().unwrap_or_else(|error| {
+                    tracing::warn!(message = %error.message, "settings instance unresolved; binding \"default\"");
+                    "default".into()
+                }),
                 wake.clone(),
                 bus.backend(),
             )

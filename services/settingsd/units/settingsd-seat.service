@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: MIT OR Apache-2.0
+# Settings authority for a KDE Plasma user session (systemctl --user).
+# Create the profile once, explicitly, as the operator:
+# settingsd init --instance <host> --root ~/.local/state/mix/settingsd/<host>/default
+# Another desktop sharing the same home must not start this unit.
+[Unit]
+Description=MixViu settings authority for the KDE Plasma seat
+After=graphical-session.target
+PartOf=graphical-session.target
+ConditionEnvironment=XDG_SESSION_DESKTOP=KDE
+# A missing profile fails seed; after five tries the unit parks as failed and
+# stays visible in `systemctl --user status` (restart it after `init`).
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+UMask=0077
+# The root lives in the seat user's home (%h), never in a host root. A user
+# unit's state specifier depends on the systemd version and XDG_STATE_HOME,
+# and tools/host_roots.mix keeps that specifier for system units.
+ExecStartPre=@{prefix}/bin/settingsd seed --instance %H --root %h/.local/state/mix/settingsd/%H/default
+ExecStart=@{prefix}/bin/settingsd serve --instance %H --root %h/.local/state/mix/settingsd/%H/default
+KillMode=control-group
+TimeoutStopSec=10
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=graphical-session.target

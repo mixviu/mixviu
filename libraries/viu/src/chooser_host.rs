@@ -898,13 +898,11 @@ pub fn run(
             let file_theme = toolkit::Theme::load();
             crate::appearance::install_theme(&cc.egui_ctx, &file_theme)
                 .map_err(std::io::Error::other)?;
-            let session = crate::session::Session::embedded(
-                &app,
-                &std::env::var("MIX_INSTANCE").unwrap_or_else(|_| "default".into()),
-                wake.clone(),
-                bus.backend(),
-            )
-            .map_err(std::io::Error::other)?;
+            let instance = settings::session::app_instance()
+                .map_err(|error| std::io::Error::other(error.message))?;
+            let session =
+                crate::session::Session::embedded(&app, &instance, wake.clone(), bus.backend())
+                    .map_err(std::io::Error::other)?;
             let home = std::env::var_os("HOME")
                 .map(PathBuf::from)
                 .filter(|p| p.is_absolute())
