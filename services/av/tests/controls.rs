@@ -307,7 +307,11 @@ fn limits_progress_and_default_bytes() {
             command.args(["--out", "named-path.webm"]);
         }
         let output = command.args([option, "--progress"]).output().unwrap();
-        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
         assert!(lines(&output).is_empty());
         assert!(root.join("--progress").is_file());
         fs::remove_file(root.join("--progress")).unwrap();
