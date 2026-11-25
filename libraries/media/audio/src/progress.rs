@@ -57,6 +57,11 @@ impl Progress {
                     emit(&mut stderr, start, &shared, &e.stage, &e.event, e.fields);
                 }
                 if let Ok(fields) = done.try_recv() {
+                        // done may have arrived between the drain and this
+                        // receive. Its send follows all boundary sends.
+                        for e in rx.try_iter() {
+                            emit(&mut stderr, start, &shared, &e.stage, &e.event, e.fields);
+                        }
                         emit(&mut stderr, start, &shared, "done", "end", fields);
                         let _ = ack.try_send(());
                         break;
