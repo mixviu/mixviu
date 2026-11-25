@@ -39,6 +39,9 @@ pub struct Config {
     pub listen: String,
     /// Public base URL for JMAP
     pub base_url: String,
+    /// Allowed HTTPS front doors for session URLs.
+    #[serde(deserialize_with = "::config::node::deserialize_jmap_origins")]
+    pub jmap_origins: Vec<String>,
     /// SQLite database file path
     #[serde(alias = "database")]
     pub database_path: String,
@@ -283,6 +286,7 @@ impl Default for Config {
         Self {
             listen: "127.0.0.1:8088".into(),
             base_url: "http://127.0.0.1:8088".into(),
+            jmap_origins: Vec::new(),
             database_path: default_db_path(),
             blob_dir: default_blob_dir(),
             mds_dir: default_mds_dir(),
@@ -385,6 +389,7 @@ impl From<&::config::node::NodeConfig> for Config {
         Self {
             listen: nc.jmap_listen(),
             base_url: nc.jmap_upstream(),
+            jmap_origins: m.jmap_origins.clone(),
             database_path: m.database.clone(),
             blob_dir: m.blob_dir.clone(),
             mds_dir: m.mds_dir.clone(),

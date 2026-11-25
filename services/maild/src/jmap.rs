@@ -43,6 +43,7 @@ pub struct StateChange {
 pub struct AppState {
     pub db: Db,
     pub base_url: String,
+    pub jmap_origins: Vec<String>,
     pub classifier: Arc<maild_bayesian::DefaultClassifier>,
     pub state_tx: tokio::sync::broadcast::Sender<StateChange>,
     /// MailStore adapter over `mds`. Wired in Phase A
@@ -125,19 +126,40 @@ pub async fn session(State(state): State<Arc<AppState>>, headers: HeaderMap) -> 
 
     let state_val = "0".to_string();
 
+    let base_url = session_base_url(&state, &headers);
     let session = Session {
         capabilities,
         accounts,
         primary_accounts: primary,
         username: String::new(),
-        api_url: format!("{}/jmap", state.base_url),
-        download_url: format!("{}/jmap/blob/{{blobId}}", state.base_url),
-        upload_url: format!("{}/jmap/upload/{{accountId}}", state.base_url),
-        event_source_url: format!("{}/jmap/eventsource", state.base_url),
+        api_url: format!("{base_url}/jmap"),
+        download_url: format!("{base_url}/jmap/blob/{{blobId}}"),
+        upload_url: format!("{base_url}/jmap/upload/{{accountId}}"),
+        event_source_url: format!("{base_url}/jmap/eventsource"),
         state: state_val,
     };
 
     Json(session).into_response()
+}
+
+fn session_base_url<'a>(state: &'a AppState, headers: &HeaderMap) -> &'a str {
+    if state.jmap_origins.is_empty() {
+        return &state.base_url;
+    }
+    if let Some(host) = headers.get("x-forwarded-host") {
+        let origin = host
+            .to_str()
+            .ok()
+            .and_then(|host| ::config::node::jmap_origin(&format!("https://{host}")));
+        if let Some(allowed) = origin
+            .as_ref()
+            .and_then(|origin| state.jmap_origins.iter().find(|allowed| *allowed == origin))
+        {
+            return allowed;
+        }
+        tracing::debug!(?host, "ignoring unapproved JMAP forwarded origin");
+    }
+    &state.base_url
 }
 
 /// POST /jmap — JMAP request endpoint.

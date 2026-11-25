@@ -463,6 +463,7 @@ fn make_multi_vhost_config(
     Config {
         listen: "127.0.0.1:0".into(),
         base_url: "http://127.0.0.1".into(),
+        jmap_origins: Vec::new(),
         database_path,
         blob_dir,
         mds_dir,

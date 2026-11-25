@@ -136,6 +136,7 @@ async fn run_child() -> Result<()> {
     let config = Config {
         listen: "127.0.0.1:0".into(),
         base_url: "http://127.0.0.1".into(),
+        jmap_origins: Vec::new(),
         hostname: "native-mail.example.test".into(),
         database_path: root.join("mail.sqlite").to_string_lossy().into_owned(),
         blob_dir: root.join("blobs").to_string_lossy().into_owned(),

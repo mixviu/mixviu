@@ -824,6 +824,7 @@ pub async fn build_runtime_with_sockets(
     let app_state = Arc::new(jmap::AppState {
         db: database,
         base_url: cfg.base_url.clone(),
+        jmap_origins: cfg.jmap_origins.clone(),
         classifier: classifier.clone(),
         state_tx,
         mailstore,
