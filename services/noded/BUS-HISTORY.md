@@ -32,7 +32,8 @@ One buffered writer stays open, flushes every second and on graceful shutdown.
 Sudden process death can lose buffered rows. Daily rotation uses the logger's
 UTC clock, including while idle; size rotation happens before a row would exceed
 the cap. Archives are `bus-YYYY-MM-DD.jsonl`, then
-`bus-YYYY-MM-DD-00000001.jsonl`, etc. Existing archives are never overwritten.
+`bus-YYYY-MM-DD-00000001.jsonl`, etc. Existing archives are never overwritten. New indices follow the highest surviving
+index, so deletion of old archives cannot make a new file sort oldest.
 A single row larger than either byte cap stops logging with an error.
 
 Configure the `history` map in noded's `config.conf.mix` (the explicit

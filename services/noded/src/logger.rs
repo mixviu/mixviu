@@ -267,7 +267,11 @@ fn archive_key(name: &str) -> Option<(datetime::NaiveDate, u64)> {
     let stem = name.strip_prefix("bus-")?.strip_suffix(".jsonl")?;
     let date = datetime::NaiveDate::parse_from_str(stem.get(..10)?, "%Y-%m-%d").ok()?;
     let suffix = &stem[10..];
-    let index = if suffix.is_empty() { 0 } else { suffix.strip_prefix('-')?.parse().ok()? };
+    let index = if suffix.is_empty() {
+        0
+    } else {
+        suffix.strip_prefix('-')?.parse().ok()?
+    };
     Some((date, index))
 }
 
@@ -337,8 +341,13 @@ impl History {
             for entry in std::fs::read_dir(&self.dir)? {
                 let entry = entry?;
                 if let Some((date, index)) = archive_key(&entry.file_name().to_string_lossy())
-                    && date.to_string() == self.day {
-                    suffix = suffix.max(index.checked_add(1).ok_or_else(|| anyhow::anyhow!("history archive index exhausted"))?);
+                    && date.to_string() == self.day
+                {
+                    suffix = suffix.max(
+                        index
+                            .checked_add(1)
+                            .ok_or_else(|| anyhow::anyhow!("history archive index exhausted"))?,
+                    );
                 }
             }
             loop {
@@ -352,7 +361,9 @@ impl History {
                 match std::fs::hard_link(self.dir.join("bus.jsonl"), &archive) {
                     Ok(()) => break,
                     Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                        suffix = suffix.checked_add(1).ok_or_else(|| anyhow::anyhow!("history archive index exhausted"))?;
+                        suffix = suffix
+                            .checked_add(1)
+                            .ok_or_else(|| anyhow::anyhow!("history archive index exhausted"))?;
                     }
                     Err(e) => return Err(e.into()),
                 }
@@ -378,7 +389,9 @@ impl History {
         for entry in std::fs::read_dir(&self.dir)? {
             let entry = entry?;
             let name = entry.file_name().to_string_lossy().into_owned();
-            let Some((date, index)) = archive_key(&name) else { continue; };
+            let Some((date, index)) = archive_key(&name) else {
+                continue;
+            };
             if !entry.file_type()?.is_file() {
                 continue;
             }
