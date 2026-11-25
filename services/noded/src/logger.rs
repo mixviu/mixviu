@@ -1003,8 +1003,17 @@ mod tests {
         let (_second_stop, second_shutdown) = tokio::sync::oneshot::channel();
         tokio::time::timeout(
             std::time::Duration::from_secs(1),
-            run_in(&broker.url, "beta".into(), HistoryConfig::default(), second_shutdown, &tmp.0),
-        ).await.unwrap().unwrap();
+            run_in(
+                &broker.url,
+                "beta".into(),
+                HistoryConfig::default(),
+                second_shutdown,
+                &tmp.0,
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap();
         client.call("noded", "noded.ping", json!({})).await.unwrap();
         stop.send(()).unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(5), logger)
@@ -1015,7 +1024,10 @@ mod tests {
         let r = rows(&tmp.0);
         assert_eq!(r.first().unwrap()["reason"], "logger_start");
         assert_eq!(r.last().unwrap()["reason"], "observer_closed");
-        assert_eq!(r.iter().filter(|r| r["reason"] == "logger_start").count(), 1);
+        assert_eq!(
+            r.iter().filter(|r| r["reason"] == "logger_start").count(),
+            1
+        );
         assert!(r.iter().all(|r| r.get("payload").is_none()));
     }
 

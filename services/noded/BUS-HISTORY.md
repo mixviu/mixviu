@@ -38,7 +38,7 @@ async worker. Shutdown allows two seconds, then aborts the logger; runtime
 shutdown does not wait for a wedged disk syscall. The final `observer_closed`
 row may be lost; sudden death or a wedged disk can also lose buffered rows.
 Transient maintenance and flush errors warn at most once a minute and retry.
-Sudden process death can lose buffered rows. Daily rotation uses the logger's
+Daily rotation uses the logger's
 UTC clock, including while idle; size rotation happens before a row would exceed
 the cap. Archives are `bus-YYYY-MM-DD.jsonl`, then
 `bus-YYYY-MM-DD-00000001.jsonl`, etc. Existing archives are never overwritten. New indices follow the highest surviving
@@ -70,8 +70,8 @@ These failures never stop the broker: if the explicit mesh file also cannot
 be loaded by the broker, it warns and starts without configured mesh peers.
 Retention runs at start, on rotation, every second and before the running total
 would exceed the cap; ordinary message rows do not scan the directory.
-The running total includes buffered rows;
-archives at least 30 calendar days old go first, then oldest dates and rotation
+The running total includes buffered rows. Archives at least 30 calendar days
+old go first, then oldest dates and rotation
 numbers until the total fits (including the active file and pending row).
 Only recognised history archive names are removed. Retention does not touch old
 `bus.log` files. The shipped units enable history and retain `--no-monitor`;
