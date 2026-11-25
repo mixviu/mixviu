@@ -2,7 +2,7 @@
 -- Host configuration only: none of these settings come from Bus parameters.
 fn defaults()
   return {av:["/opt/mix/bin/av"], runner:["systemd-run"], control:["systemctl"],
-    roots:[path_join(env("HOME"),".viu/media/runs")], cpu:1, mem:"8G", max_jobs:1}
+    roots:[path_join(env("HOME"),".viu/media/runs")], cpu:1, mem:"8G", decode_max_bytes:"64G", max_jobs:1}
 end
 fn check_fields($a,$allowed)
   if type($a)!="map" then raise("AV_PARAMS","object required") end
@@ -18,8 +18,19 @@ fn memory($v)
   if type($v)!="string" or not re_match($v,"^[1-9][0-9]*[KMG]?$") then raise("AV_PARAMS","mem: positive bytes or K/M/G required") end
   return $v
 end
+fn byte_limit($v)
+  memory($v)
+  $m=re_find($v,"^([0-9]+)([KMG]?)$")[0]
+  $n=to_number($m.groups[0])*({"":1,K:1024,M:1048576,G:1073741824}[$m.groups[1]])
+  return exact_bytes($n)
+end
+fn exact_bytes($n)
+  positive($n,"max_output_bytes")
+  if $n>9007199254740991 then raise("AV_PARAMS","output byte limit exceeds exact integer range") end
+  return $n
+end
 fn fresh($cfg)
-  positive($cfg.max_jobs,"max_jobs");positive($cfg.cpu,"cpu");memory($cfg.mem)
+  positive($cfg.max_jobs,"max_jobs");positive($cfg.cpu,"cpu");memory($cfg.mem);byte_limit($cfg.decode_max_bytes)
   $roots=[]
   for $p in $cfg.roots
     $r=realpath($p)
@@ -28,23 +39,24 @@ fn fresh($cfg)
   end
   if len($roots)==0 then raise("AV_CONFIG","at least one allowed root required") end
   $cfg.roots=$roots
-  return {cfg:$cfg,jobs:{},serial:0,nonce:random_password(16)}
+  return {cfg:$cfg,jobs:{},finished_jobs:[],serial:0,nonce:random_password(16)}
 end
 fn confined($s,$p,$output)
   if type($p)!="string" or not starts_with($p,"/") or contains($p,chr(0)) then raise("AV_PATH","absolute path required") end
+  if $output then
+    $present=false
+    try $info=stat($p,{follow_symlinks:false});$present=true catch $message $present=false end
+    if $present then raise("AV_PATH","output exists") end
+  end
   $r=realpath($p)
   if $r==nil and $output then
     $parent=realpath(dirname($p))
     if $parent!=nil and basename($p)!="." and basename($p)!=".." then $r=path_join($parent,basename($p)) end
-    -- A dangling final symlink must not become an apparently new output.
-    $link=false
-    try $link=stat($p,{follow_symlinks:false}).is_symlink catch $message $link=false end
-    if $link then raise("AV_PATH","unresolved output") end
   end
   if $r==nil then raise("AV_PATH","path does not resolve") end
   for $root in $s.cfg.roots
     if $r==$root or starts_with($r,if $root=="/" then "/" else $root.."/" end) then
-      if $output and exists($r) and not is_file($r) then raise("AV_PATH","output must be a regular file") end
+      if $output and exists($r) then raise("AV_PATH","output exists") end
       if not $output and not is_file($r) then raise("AV_PATH","input must be a regular file") end
       return $r
     end
@@ -63,11 +75,30 @@ fn actions()
     if $id=="render" or $id=="audio" then $p.cpu={type:"integer",minimum:1} end
     if $id=="render" then $p.mem={type:"string",pattern:"^[1-9][0-9]*[KMG]?$"} end
     if $id=="audio" or $id=="decode" then $p.wav={type:"string",minLength:1} end
+    if $id=="decode" then $p.max_output_bytes={type:"integer",minimum:1} end
     if $id=="status" then $p.job={type:"string",minLength:1} end
     push($rows,{id:"av."..$id,label:$id,enabled:true,class:if $id=="probe" or $id=="status" then "query" else "intent" end,
       schema:{type:"object",additionalProperties:false,properties:$p,required:$req}})
   end
   return $rows
+end
+fn public_job($j)
+  $out={}
+  for $k in ["job","action","unit","status","started","ended","exit_code","signal","cancelled","progress","receipt","metrics"]
+    $out[$k]=$j[$k]
+  end
+  return $out
+end
+-- Stop may yield to native exit delivery. Merge only the cancel flag into
+-- the caller's current state after stop returns, never its pre-stop snapshot.
+fn cancel_returned($current,$r)
+  if $r.cancel_job!=nil then
+    $r.state=$current
+    if $r.state.jobs[$r.cancel_job]!=nil and $r.state.jobs[$r.cancel_job].status=="running" then
+      $r.state.jobs[$r.cancel_job].cancelled=true
+    end
+  end
+  return $r
 end
 fn perform($s,$id,$a)
   $action=nil
@@ -76,18 +107,21 @@ fn perform($s,$id,$a)
   check_fields($a,keys($action.schema.properties))
   for $k in $action.schema.required if $a[$k]==nil then raise("AV_PARAMS","missing "..$k) end end
   if $id=="av.status" then
-    if $a.job==nil then return {state:$s,result:{jobs:$s.jobs}} end
+    if $a.job==nil then
+      $public={}
+      for $k in keys($s.jobs) $public[$k]=public_job($s.jobs[$k]) end
+      return {state:$s,result:{jobs:$public}}
+    end
     if type($a.job)!="string" or $s.jobs[$a.job]==nil then raise("AV_JOB","unknown job") end
-    return {state:$s,result:$s.jobs[$a.job]}
+    return {state:$s,result:public_job($s.jobs[$a.job])}
   end
   if $id=="av.cancel" then
     if type($a.job)!="string" or $s.jobs[$a.job]==nil then raise("AV_JOB","unknown job") end
     if $s.jobs[$a.job].status=="running" then
       $r=run_argv(concat($s.cfg.control,["--user","stop",$s.jobs[$a.job].unit]),{timeout:10})
       if not $r.ok then raise("AV_CANCEL",$r.stderr) end
-      $s.jobs[$a.job].cancelled=true
     end
-    return {state:$s,result:{job:$a.job}}
+    return {state:$s,result:{job:$a.job},cancel_job:$a.job}
   end
   $verb=slice($id,3)
   if $verb=="probe" or $verb=="decode" then $input=confined($s,$a.file,false)
@@ -108,17 +142,36 @@ fn perform($s,$id,$a)
   $units=filter(split(trim($live.stdout),"\n"),fn($v)=$v!="")
   if len($units)>=$s.cfg.max_jobs then raise("AV_BUSY","host job limit reached",{limit:$s.cfg.max_jobs}) end
   $mem=memory($a.mem ?? $s.cfg.mem)
-  if $verb=="decode" then $argv=concat($argv,["--y4m",confined($s,$a.y4m,true)])
+  $outputs=[]
+  if $verb=="decode" then
+    $cap=byte_limit($s.cfg.decode_max_bytes)
+    $limit=exact_bytes($a.max_output_bytes ?? $cap)
+    if $limit>$cap then raise("AV_PARAMS","max_output_bytes exceeds host cap") end
+    $output=confined($s,$a.y4m,true)
+    $argv=concat($argv,["--y4m",$output,"--max-output-bytes",to_string($limit)])
   else
-    $argv=concat($argv,["--out",confined($s,$a.out,true),"--cpu",to_string(positive($a.cpu ?? $s.cfg.cpu,"cpu")),"--mem",$mem,"--progress"])
+    $output=confined($s,$a.out,true)
+    $argv=concat($argv,["--out",$output,"--cpu",to_string(positive($a.cpu ?? $s.cfg.cpu,"cpu")),"--mem",$mem,"--progress"])
   end
-  if $a.wav!=nil then $argv=concat($argv,["--wav",confined($s,$a.wav,true)]) end
+  push($outputs,$output)
+  if $a.wav!=nil then
+    $wav=confined($s,$a.wav,true)
+    if contains($outputs,$wav) then raise("AV_PATH","duplicate output path") end
+    push($outputs,$wav)
+    $argv=concat($argv,["--wav",$wav])
+  end
+  if contains($outputs,$input) then raise("AV_PATH","output equals input") end
   $s.serial=$s.serial+1;$job="mixviu-av-job-"..$s.nonce.."-"..to_string($s.serial)
   $unit=$job..".service"
   $cmd=concat($s.cfg.runner,["--user","--collect","--wait","--pipe","--unit",$unit,"-p","MemoryAccounting=yes","-p","MemoryMax="..$mem,"--"])
   $watch=process_watch(concat($cmd,$argv),{stderr:"lines",tag:$job,max_line:1048576})
   $s.jobs[$job]={job:$job,unit:$unit,watch:$watch,action:$id,status:"running",started:time(),cancelled:false,stdout:"",summary:"",progress:nil}
   return {state:$s,result:{job:$job},event:{event:"start",job:$job,action:$id,unit:$unit}}
+end
+fn overflow_event($s,$e)
+  $j=$s.jobs[$e.tag]
+  if $j!=nil and $j.watch==$e.watch and $j.status=="running" then $s.jobs[$e.tag].capture_error=true end
+  return {state:$s}
 end
 fn line_event($s,$e)
   $j=$s.jobs[$e.tag]
@@ -164,5 +217,10 @@ fn finished($s,$e)
   $j.ended=time();$j.exit_code=$e.exit_code;$j.signal=$e.signal;$j.receipt=$receipt;$j.metrics=$metrics
   $j.stdout=nil
   $s.jobs[$e.tag]=$j
+  $s.finished_jobs=push($s.finished_jobs,$e.tag)
+  while len($s.finished_jobs)>32
+    $s.jobs=delete($s.jobs,$s.finished_jobs[0])
+    $s.finished_jobs=slice($s.finished_jobs,1)
+  end
   return {state:$s,event:{event:"end",job:$j.job,status:$j.status,receipt:$receipt,metrics:$metrics,exit_code:$e.exit_code,signal:$e.signal}}
 end

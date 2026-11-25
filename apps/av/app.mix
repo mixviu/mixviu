@@ -16,6 +16,7 @@ $lock=path_join(env("XDG_RUNTIME_DIR",path_join(env("HOME"),".cache")),"mixviu-a
 if not flock($lock) then raise("AV_BUSY","av citizen already running for this user") end
 fn accept($r)
   global $state
+  $r=$core.cancel_returned($state,$r)
   $state=$r.state
   if $r.event!=nil then publish("av.state",json_encode($r.event)) end
 end
@@ -33,7 +34,4 @@ on av.execute
 end
 on proc.line accept($core.line_event($state,$event.args)) end
 on proc.watch_exited accept($core.finished($state,$event.args)) end
-on proc.overflow
-  $j=$event.args.tag
-  if $state.jobs[$j]!=nil then $state.jobs[$j].capture_error=true end
-end
+on proc.overflow accept($core.overflow_event($state,$event.args)) end

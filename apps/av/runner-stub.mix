@@ -2,7 +2,10 @@
 -- Test systemd edge. The real app always uses systemd-run/systemctl.
 $a=args()
 $dir=$a[0];$a=slice($a,1)
-if $a[1]=="list-units" then exit(0) end
+if $a[1]=="list-units" then
+  if is_file($dir.."/live-units") then print(read_file($dir.."/live-units")) end
+  exit(0)
+end
 if $a[1]=="stop" then
   if not kill(to_number(read_file($dir.."/"..$a[2]..".pid"))) then exit(1) end
   exit(0)
