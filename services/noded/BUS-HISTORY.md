@@ -8,7 +8,10 @@ bounded observer queue and broker drop accounting are unchanged from the
 History is operator-private. The active file is
 `default_log_dir("noded")/<node>/bus.jsonl` (normally
 `~/.local/log/mix/noded/<node>/bus.jsonl`). Each logger holds an exclusive,
-non-blocking advisory `flock` on that directory's `bus.lock` for its lifetime.
+non-blocking advisory `flock` on the pinned per-node directory fd itself for
+its lifetime, through writer destruction. There is no lock file pathname to
+replace: concurrent starts lock the same directory inode. A leftover `bus.lock`
+is ignored, never opened, written or unlinked, even if it is a symlink.
 Lock contention or failure warns and disables history for that instance;
 no active file is opened or modified without the lock. Files are
 created with mode 0600. The per-node directory is created with mode 0700 and
@@ -18,16 +21,17 @@ even when owned by that UID. An accepted owned directory is tightened to 0700.
 Symlink directories, foreign owners and failed checks warn and disable history.
 Files are reached relative to that pinned directory handle with `openat`,
 `linkat`, `renameat2` and `unlinkat`, never by resolving the parent again.
-The parent path is not pinned before the node directory opens. A writable
+The parent directory is created 0700 when missing; an existing parent's mode
+is unchanged. The parent path is not pinned before the node directory opens. A writable
 ancestor can cause denial of service during that lookup: owner checks disable
 history if a foreign directory is substituted, and nothing is captured.
-Active and lock files must be regular, owned by the effective UID and opened
+Active files must be regular, owned by the effective UID and opened
 with `O_NOFOLLOW`. Existing files with any group/world permission bits are
-never chmodded and reused: a loose active file is renamed to the next archive
-intact, and a loose lock is unlinked. Fresh files use exclusive creation with
+never reused for new rows: a loose active file is fchmodded to 0600 through its
+already-open handle, then renamed to the next archive intact. Fresh files use exclusive creation with
 mode 0600 and are fstat-verified. Recovery writes a gap with
 `reason: "active_file_mode_loose"`. Old held descriptors receive no new rows
-and cannot lock the replacement lock inode. Foreign-owned files are never taken
+and cannot affect the directory lock. Foreign-owned files are never taken
 over. The old
 human-readable `bus.log` is neither read nor migrated.
 
@@ -103,6 +107,8 @@ old go first, then oldest dates and rotation
 numbers until the total fits (including the active file and pending row).
 Only recognised history archive names are removed. Retention does not touch
 files with noncanonical suffixes: a suffix must be exactly eight unsigned
-decimal digits, and the date must be exactly `YYYY-MM-DD`. It also leaves old
+decimal digits with a nonzero value, and the date must be exactly `YYYY-MM-DD`.
+The zero suffix `-00000000` is rejected rather than aliasing the base archive.
+It also leaves old
 `bus.log` files. The shipped units enable history and retain `--no-monitor`;
 host rollout is a later gold operation.

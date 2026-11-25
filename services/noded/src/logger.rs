@@ -306,7 +306,6 @@ impl HistoryConfig {
 }
 
 struct History {
-    dir: HistoryDir,
     node: String,
     limits: HistoryConfig,
     writer: BufWriter<Box<dyn Write + Send>>,
@@ -321,7 +320,7 @@ struct History {
     #[cfg(test)]
     fail_rotation: Option<&'static str>,
     // Fields drop in declaration order: keep the lock until the writer drops.
-    _lock: File,
+    dir: HistoryDir,
 }
 
 fn timestamp(now: DateTime<Utc>) -> String {
@@ -360,7 +359,7 @@ fn syscall(rc: libc::c_int) -> std::io::Result<libc::c_int> {
 impl HistoryDir {
     fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
+            std::fs::DirBuilder::new().recursive(true).mode(0o700).create(parent)?;
         }
         match std::fs::DirBuilder::new().mode(0o700).create(path) {
             Ok(()) => (),
@@ -439,6 +438,8 @@ impl HistoryDir {
             return Ok(false);
         }
         if name == "bus.jsonl" {
+            // Tighten the owned, already-open inode before it becomes an archive.
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
             let day = now.format("%Y-%m-%d").to_string();
             let mut index = 0;
             for entry in self.names()? {
@@ -476,8 +477,7 @@ impl HistoryDir {
         } else {
             self.unlink(name)?;
         }
-        // Use exclusive creation and fstat verification. Never chmod
-        // an inode whose old descriptors may still be held by another UID.
+        // Use a fresh inode: old descriptors must receive no new rows.
         checked_file(self.open_file(name, true, true)?, unsafe {
             libc::geteuid()
         })?;
@@ -570,7 +570,7 @@ fn archive_key(name: &str) -> Option<(datetime::NaiveDate, u64)> {
         0
     } else {
         let digits = suffix.strip_prefix('-')?;
-        if digits.len() != 8 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        if digits.len() != 8 || !digits.bytes().all(|b| b.is_ascii_digit()) || digits == "00000000" {
             return None;
         }
         digits.parse().ok()?
@@ -581,10 +581,9 @@ fn archive_key(name: &str) -> Option<(datetime::NaiveDate, u64)> {
 impl History {
     fn open(dir: &Path, node: String, limits: HistoryConfig, now: DateTime<Utc>) -> Result<Self> {
         let dir = HistoryDir::open(dir)?;
-        dir.replace_loose("bus.lock", now)?;
-        let lock = dir.file("bus.lock", true)?;
         // SAFETY: flock borrows a valid fd and does not retain a Rust pointer.
-        if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
+        // Lock the pinned directory itself; a legacy bus.lock is never touched.
+        if unsafe { libc::flock(dir.0.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             return Err(std::io::Error::last_os_error().into());
         }
         let loose_active = dir.replace_loose("bus.jsonl", now)?;
@@ -626,7 +625,6 @@ impl History {
         file.set_len(complete)?;
         let bytes = file.metadata()?.len();
         let mut history = Self {
-            _lock: lock,
             dir,
             node,
             limits,
@@ -928,6 +926,7 @@ mod tests {
         assert_eq!(seen, old);
         let archive = tmp.0.join("bus-2026-11-25-00000001.jsonl");
         assert_eq!(std::fs::read(&archive).unwrap(), old);
+        assert_eq!(std::fs::metadata(&archive).unwrap().mode() & 0o777, 0o600);
         assert_eq!(
             held.metadata().unwrap().ino(),
             std::fs::metadata(archive).unwrap().ino()
@@ -946,7 +945,7 @@ mod tests {
     }
 
     #[test]
-    fn loose_lock_is_replaced_despite_held_old_lock() {
+    fn directory_lock_excludes_second_logger_and_ignores_legacy_lock() {
         let tmp = Temp::new();
         let path = tmp.0.join("bus.lock");
         std::fs::write(&path, b"old lock").unwrap();
@@ -960,14 +959,59 @@ mod tests {
             History::open(&tmp.0, "beta".into(), HistoryConfig::default(), Utc::now()).unwrap();
         h.event(sample("", 0), Utc::now()).unwrap();
         h.flush().unwrap();
-        let fresh = std::fs::metadata(&path).unwrap();
-        assert_ne!(held.metadata().unwrap().ino(), fresh.ino());
-        assert_eq!(fresh.mode() & 0o777, 0o600);
-        assert_eq!(std::fs::read(path).unwrap(), b"");
+        let unchanged = std::fs::metadata(&path).unwrap();
+        assert_eq!(held.metadata().unwrap().ino(), unchanged.ino());
+        assert_eq!(unchanged.mode() & 0o777, 0o644);
+        assert_eq!(std::fs::read(path).unwrap(), b"old lock");
         assert_eq!(held.metadata().unwrap().len(), 8);
         assert!(
             History::open(&tmp.0, "beta".into(), HistoryConfig::default(), Utc::now()).is_err()
         );
+        h.event(sample("", 0), Utc::now()).unwrap();
+        h.flush().unwrap();
+        assert_eq!(rows(&tmp.0).iter().filter(|r| r["kind"] == "message").count(), 2);
+        drop(h);
+        assert!(History::open(&tmp.0, "beta".into(), HistoryConfig::default(), Utc::now()).is_ok());
+    }
+
+    #[test]
+    fn concurrent_starts_have_exactly_one_directory_lock_winner() {
+        use std::sync::{Arc, Barrier};
+        const N: usize = 16;
+        let tmp = Temp::new();
+        let node = tmp.0.join("node");
+        let start = Arc::new(Barrier::new(N));
+        let opened = Arc::new(Barrier::new(N));
+        let threads: Vec<_> = (0..N).map(|_| {
+            let node = node.clone();
+            let start = start.clone();
+            let opened = opened.clone();
+            std::thread::spawn(move || {
+                start.wait();
+                let result = History::open(&node, "beta".into(), HistoryConfig::default(), Utc::now());
+                // Keep the winning History alive until every contender has tried.
+                opened.wait();
+                result
+            })
+        }).collect();
+        let results: Vec<_> = threads.into_iter().map(|t| t.join().unwrap()).collect();
+        assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
+        let mut winner = results.into_iter().find_map(Result::ok).unwrap();
+        winner.event(sample("", 0), Utc::now()).unwrap();
+        winner.flush().unwrap();
+        assert_eq!(rows(&node).iter().filter(|r| r["kind"] == "message").count(), 1);
+        assert!(!node.join("bus.lock").exists());
+    }
+
+    #[test]
+    fn parent_creation_is_private_and_existing_parent_is_unchanged() {
+        let tmp = Temp::new();
+        let parent = tmp.0.join("noded");
+        drop(HistoryDir::open(&parent.join("beta")).unwrap());
+        assert_eq!(std::fs::metadata(&parent).unwrap().mode() & 0o777, 0o700);
+        std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+        drop(HistoryDir::open(&parent.join("gamma")).unwrap());
+        assert_eq!(std::fs::metadata(parent).unwrap().mode() & 0o777, 0o755);
     }
 
     #[test]
@@ -979,6 +1023,7 @@ mod tests {
             "bus-2026-11-25-1.jsonl",
             "bus-2026-11-25-+1.jsonl",
             "bus-2026-11-25-123456789.jsonl",
+            "bus-2026-11-25-00000000.jsonl",
             "bus-2026-1-25.jsonl",
         ] {
             assert!(archive_key(name).is_none());
@@ -986,7 +1031,7 @@ mod tests {
         }
         h.limits.max_total_bytes = 1;
         h.retain(now + datetime::Duration::days(31), 0).unwrap();
-        for name in ["bus-2026-11-25-1.jsonl", "bus-2026-11-25-+1.jsonl"] {
+        for name in ["bus-2026-11-25-1.jsonl", "bus-2026-11-25-+1.jsonl", "bus-2026-11-25-00000000.jsonl"] {
             assert_eq!(std::fs::read(tmp.0.join(name)).unwrap(), b"keep");
         }
         assert!(archive_key("bus-2026-11-25-00000001.jsonl").is_some());
@@ -1302,9 +1347,9 @@ mod tests {
         std::fs::write(&target, "untouched").unwrap();
         for name in ["bus.lock", "bus.jsonl"] {
             symlink(&target, node.join(name)).unwrap();
-            assert!(
-                History::open(&node, "beta".into(), HistoryConfig::default(), Utc::now()).is_err()
-            );
+            let result = History::open(&node, "beta".into(), HistoryConfig::default(), Utc::now());
+            assert_eq!(result.is_err(), name == "bus.jsonl");
+            drop(result);
             assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched");
             std::fs::remove_file(node.join(name)).unwrap();
         }
