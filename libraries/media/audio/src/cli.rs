@@ -80,7 +80,11 @@ fn run_inner(a: Vec<OsString>, progress: &crate::progress::Progress) -> timeline
     progress.event("input", "end", serde_json::json!({}));
     progress.event("audio", "start", serde_json::json!({"audio_pass":0}));
     let prepared = timeline::prepare(&t, base)?;
-    progress.event("audio", "end", serde_json::json!({"audio_pass":prepared.receipt.codec_passes}));
+    progress.event(
+        "audio",
+        "end",
+        serde_json::json!({"audio_pass":prepared.receipt.codec_passes}),
+    );
     progress.event("mux", "start", serde_json::json!({}));
     let receipt = timeline::render_prepared(prepared, &out, wav.as_deref())?;
     let outcome = if receipt.refused || !receipt.target_reached {
@@ -88,7 +92,11 @@ fn run_inner(a: Vec<OsString>, progress: &crate::progress::Progress) -> timeline
     } else {
         0
     };
-    progress.event("mux", "end", serde_json::json!({"bytes":if outcome == 0 { std::fs::metadata(&out)?.len() } else { 0 }}));
+    progress.event(
+        "mux",
+        "end",
+        serde_json::json!({"bytes":if outcome == 0 { std::fs::metadata(&out).map_or(0, |m| m.len()) } else { 0 }}),
+    );
     let mut stdout = io::stdout().lock();
     if let Err(e) =
         writeln!(stdout, "{}", serde_json::to_string(&receipt)?).and_then(|()| stdout.flush())
