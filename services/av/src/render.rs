@@ -507,9 +507,10 @@ impl Timeline {
             }
             clamp_cpu(&mut e.chunks, &mut e.threads, cpu);
         }
-        if self.limits.mem.is_none() && e.chunks
-            .checked_mul(e.threads)
-            .is_none_or(|n| n > cores.saturating_mul(2))
+        if self.limits.mem.is_none()
+            && e.chunks
+                .checked_mul(e.threads)
+                .is_none_or(|n| n > cores.saturating_mul(2))
         {
             return refuse("encode_thread_budget");
         }

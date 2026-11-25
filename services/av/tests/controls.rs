@@ -138,7 +138,12 @@ fn limits_progress_and_default_bytes() {
     let r: Value = serde_json::from_slice(&o.stdout).unwrap();
     assert_eq!(r["encode_effective"]["chunks"], 1);
     let above = (std::thread::available_parallelism().unwrap().get() + 1).to_string();
-    let o = invoke(root, "render", &["--cpu", &above, "--progress"], "failed.webm");
+    let o = invoke(
+        root,
+        "render",
+        &["--cpu", &above, "--progress"],
+        "failed.webm",
+    );
     assert_eq!(o.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&o.stderr).contains("cpu_limit"));
     assert_eq!(lines(&o).last().unwrap()["ok"], false);
