@@ -9,6 +9,7 @@ use std::io::{Cursor, Read, Seek, SeekFrom, Write};
 pub mod cli;
 mod limiter;
 pub mod pending;
+pub mod progress;
 mod source;
 pub mod timeline;
 pub use limiter::{LimitReport, LimiterConfig, TargetReport};

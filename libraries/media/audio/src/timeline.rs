@@ -356,7 +356,11 @@ pub fn render(t: &Timeline, base: &Path, out: &Path, wav: Option<&Path>) -> Resu
     render_prepared(prepare(t, base)?, out, wav)
 }
 
-fn render_prepared(prepared: Encoded, out: &Path, wav: Option<&Path>) -> Result<Receipt> {
+pub(crate) fn render_prepared(
+    prepared: Encoded,
+    out: &Path,
+    wav: Option<&Path>,
+) -> Result<Receipt> {
     let Encoded {
         audio,
         head,

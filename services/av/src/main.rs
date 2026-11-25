@@ -2,7 +2,7 @@ use av::render;
 use std::process::ExitCode;
 mod decode;
 
-const USAGE: &str = "usage: av render TIMELINE.json --out FILE.webm\n       av audio TIMELINE.json --out FILE.webm [--wav FILE.wav]\n       av decode FILE.webm --y4m OUT.y4m [--wav OUT.wav] [--max-output-bytes N]\n       av probe FILE.webm";
+const USAGE: &str = "usage: av render TIMELINE.json --out FILE.webm [--cpu N] [--mem BYTES] [--progress]\n       av audio TIMELINE.json --out FILE.webm [--wav FILE.wav] [--cpu N] [--mem BYTES] [--progress]\n       av decode FILE.webm --y4m OUT.y4m [--wav OUT.wav] [--max-output-bytes N]\n       av probe FILE.webm";
 
 fn main() -> ExitCode {
     let mut args = std::env::args_os().skip(1);

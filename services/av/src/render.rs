@@ -254,6 +254,20 @@ struct Timeline {
     video: Video,
     audio: Audio,
     encode: Encode,
+    #[serde(skip)]
+    limits: Limits,
+}
+#[derive(Clone, Copy, Default)]
+struct Limits {
+    cpu: Option<usize>,
+    mem: Option<u64>,
+}
+fn clamp_cpu(chunks: &mut usize, threads: &mut usize, cpu: usize) {
+    *chunks = (*chunks).min((cpu / *threads).max(1));
+    *threads = (*threads).min(cpu / *chunks);
+}
+fn memory_limit(value: &std::ffi::OsStr) -> Result<u64> {
+    media_audio::cli::memory_limit(value)
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -454,7 +468,7 @@ impl Timeline {
         if self.audio.channels != 2 {
             return refuse("audio_channels");
         }
-        let e = &self.encode;
+        let e = &mut self.encode;
         if e.threads == 0
             || e.threads > 64
             || e.tile_cols > 64
@@ -473,9 +487,16 @@ impl Timeline {
             return refuse("encode_settings");
         }
         let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
-        if e.chunks
-            .checked_mul(e.threads)
-            .is_none_or(|n| n > cores.saturating_mul(2))
+        if let Some(cpu) = self.limits.cpu {
+            if cpu == 0 || cpu > cores {
+                return refuse("cpu_limit");
+            }
+            clamp_cpu(&mut e.chunks, &mut e.threads, cpu);
+        }
+        if self.limits.mem.is_none()
+            && e.chunks
+                .checked_mul(e.threads)
+                .is_none_or(|n| n > cores.saturating_mul(2))
         {
             return refuse("encode_thread_budget");
         }
@@ -578,11 +599,20 @@ impl Timeline {
         // Conservative admission estimate, including packet/position metadata,
         // two VFL canvases with payload/scratch, scaler and encoder frame storage.
         let working = working_bytes(source_bytes, scale_bytes, v.width as u64, v.height as u64)?;
+        if let Some(mem) = self.limits.mem {
+            if mem < working {
+                return refuse("encode_memory_budget");
+            }
+            e.chunks = e.chunks.min((mem / working).min(64) as usize);
+        }
         if working
             .checked_mul(e.chunks as u64)
-            .is_none_or(|n| n > 8 * 1024 * 1024 * 1024)
+            .is_none_or(|n| n > self.limits.mem.unwrap_or(8 * 1024 * 1024 * 1024))
         {
             return refuse("encode_memory_budget");
+        }
+        if e.chunks * e.threads > cores.saturating_mul(2) {
+            return refuse("encode_thread_budget");
         }
         let step = frame(e.keyint_s);
         starts.extend((0..n).step_by(step as usize));
@@ -813,7 +843,13 @@ pub fn reference(path: &Path, out: impl std::io::Write) -> Result<()> {
     out.flush()?;
     Ok(())
 }
-fn chunk(t: &Timeline, directories: &[Input], start: u64, end: u64) -> Result<Chunk> {
+fn chunk(
+    t: &Timeline,
+    directories: &[Input],
+    start: u64,
+    end: u64,
+    progress: &media_audio::progress::Progress,
+) -> Result<Chunk> {
     let v = &t.video;
     let e = &t.encode;
     let mut enc = Encoder::new_repeats(Settings {
@@ -846,13 +882,18 @@ fn chunk(t: &Timeline, directories: &[Input], start: u64, end: u64) -> Result<Ch
         // The displayed keyframe is not showable. Submit its first successor too.
         if !repeat || k < start + 2 || programme_gain(v, k, frame(t.duration_s)).is_some() {
             let p = enc.prepare(&programme_picture(v, &b, k, frame(t.duration_s)))?;
-            collect_packets(&mut encoded, &mut encoded_bytes, enc.submit(&p)?)?;
+            let packets = enc.submit(&p)?;
+            progress.frames(0, packets.len() as u64);
+            collect_packets(&mut encoded, &mut encoded_bytes, packets)?;
             positions.push(Some(k));
         } else {
             positions.push(None);
         }
+        progress.frames(1, 0);
     }
-    collect_packets(&mut encoded, &mut encoded_bytes, enc.finish()?)?;
+    let packets = enc.finish()?;
+    progress.frames(0, packets.len() as u64);
+    collect_packets(&mut encoded, &mut encoded_bytes, packets)?;
     let count = positions.iter().filter(|p| p.is_some()).count();
     if count != encoded.len() {
         return refuse("encoder_packet_count");
@@ -927,14 +968,32 @@ fn peak_rss_kib() -> Option<u64> {
         })
 }
 pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
+    let (args, progress) = media_audio::progress::arguments(args);
+    let result = run_inner(args, &progress);
+    progress.done(&result);
+    result
+}
+fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) -> Result<u8> {
     let overall = Instant::now();
     let total_cpu = cpu();
-    let args: Vec<_> = args.collect();
-    if args.len() != 3 || args[1] != "--out" {
-        return refuse("usage: av render TIMELINE.json --out FILE.webm");
+    progress.event("input", "start", serde_json::json!({}));
+    let path = Path::new(args.first().ok_or("render: missing timeline")?);
+    let mut out = None;
+    let mut limits = Limits::default();
+    let mut i = 1;
+    while i < args.len() {
+        let value = args.get(i + 1).ok_or("missing_option_value")?;
+        match args[i].to_str() {
+            Some("--out") if out.is_none() => out = Some(Path::new(value)),
+            Some("--cpu") if limits.cpu.is_none() => {
+                limits.cpu = Some(media_audio::cli::cpu_limit(value)?)
+            }
+            Some("--mem") if limits.mem.is_none() => limits.mem = Some(memory_limit(value)?),
+            _ => return Err("unknown_or_duplicate_option".into()),
+        }
+        i += 2;
     }
-    let path = Path::new(&args[0]);
-    let out = Path::new(&args[2]);
+    let out = out.ok_or("render: missing --out")?;
     let mut bytes = Vec::new();
     let (file, base) = opened_timeline(path)?;
     file.take(16 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
@@ -942,6 +1001,8 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
         return refuse("timeline_size_limit");
     }
     let mut t: Timeline = serde_json::from_slice(&bytes)?;
+    t.limits = limits;
+    let requested = serde_json::json!({"chunks":t.encode.chunks,"threads":t.encode.threads,"tile_cols":t.encode.tile_cols,"tile_rows":t.encode.tile_rows});
     let (starts, directories) = t.validate(&base)?;
     let audio = media_audio::timeline::Timeline {
         version: t.version,
@@ -954,9 +1015,16 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     // Preserve the validated video executor while borrowing the audio specification.
     let input_wall = overall.elapsed().as_secs_f64();
     let input_cpu = cpu() - total_cpu;
+    progress.event("input", "end", serde_json::json!({}));
+    progress.event("audio", "start", serde_json::json!({"audio_pass":0}));
     let wall = Instant::now();
     let c = cpu();
     let a = media_audio::timeline::prepare(&audio, &base)?;
+    progress.event(
+        "audio",
+        "end",
+        serde_json::json!({"audio_pass":a.receipt.codec_passes}),
+    );
     let audio_wall = wall.elapsed().as_secs_f64();
     let audio_cpu = cpu() - c;
     if a.receipt.refused || !a.receipt.target_reached {
@@ -992,6 +1060,12 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     let mut mux_wall = 0.0;
     let mut mux_cpu = 0.0;
     let chunk_count = starts.len() - 1;
+    progress.event(
+        "video",
+        "start",
+        serde_json::json!({"frames_total":frame(t.duration_s),"chunks_total":chunk_count}),
+    );
+    let mut mux_started = false;
     for ranges in starts
         .windows(2)
         .collect::<Vec<_>>()
@@ -1005,8 +1079,22 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
                 .map(|r| {
                     let t = &t;
                     let directories = &directories;
-                    scope
-                        .spawn(move || chunk(t, directories, r[0], r[1]).map_err(|e| e.to_string()))
+                    let index = starts.binary_search(&r[0]).unwrap();
+                    scope.spawn(move || {
+                        progress.event(
+                            "video",
+                            "start",
+                            serde_json::json!({"chunk":index,"chunks_total":chunk_count}),
+                        );
+                        let result =
+                            chunk(t, directories, r[0], r[1], progress).map_err(|e| e.to_string());
+                        progress.event(
+                            "video",
+                            "end",
+                            serde_json::json!({"chunk":index,"chunks_total":chunk_count}),
+                        );
+                        result
+                    })
                 })
                 .collect();
             handles
@@ -1014,8 +1102,18 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
                 .map(|h| h.join().map_err(|_| "chunk_worker_panicked".to_string())?)
                 .collect::<std::result::Result<Vec<_>, String>>()
         })?;
+        if ranges
+            .last()
+            .is_some_and(|r| r[1] == *starts.last().unwrap())
+        {
+            progress.event("video", "end", serde_json::json!({}));
+        }
         video_wall += wall.elapsed().as_secs_f64();
         video_cpu += cpu() - c;
+        if !mux_started {
+            progress.event("mux", "start", serde_json::json!({}));
+            mux_started = true;
+        }
         let wall = Instant::now();
         let c = cpu();
         for chunk in batch {
@@ -1068,10 +1166,13 @@ pub fn run(args: impl Iterator<Item = OsString>) -> Result<u8> {
     let size = pending.file.metadata()?.len();
     mux_wall += mux_start.elapsed().as_secs_f64();
     mux_cpu += cpu() - c;
+    progress.event("mux", "end", serde_json::json!({"bytes":size}));
     let n = frame(t.duration_s);
-    let receipt = serde_json::to_string(
-        &serde_json::json!({"peak_rss_kib":peak_rss_kib(), "scaling": {"filter":"bicubic_catmull_rom_gamma","frames":scaled_frames,"sum_wall_s":scale_wall_s,"mean_ms":scale_wall_s*1000.0/scaled_frames.max(1) as f64}, "frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunk_count, "parallel_chunks": t.encode.chunks, "stages": {"input": {"wall_s": input_wall, "cpu_s": input_cpu}, "audio": {"wall_s": audio_wall, "cpu_s": audio_cpu}, "video": {"wall_s": video_wall, "cpu_s": video_cpu}, "mux": {"wall_s": mux_wall, "cpu_s": mux_cpu}}, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt}),
-    )?;
+    let mut receipt = serde_json::json!({"peak_rss_kib":peak_rss_kib(), "scaling": {"filter":"bicubic_catmull_rom_gamma","frames":scaled_frames,"sum_wall_s":scale_wall_s,"mean_ms":scale_wall_s*1000.0/scaled_frames.max(1) as f64}, "frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunk_count, "parallel_chunks": t.encode.chunks, "stages": {"input": {"wall_s": input_wall, "cpu_s": input_cpu}, "audio": {"wall_s": audio_wall, "cpu_s": audio_cpu}, "video": {"wall_s": video_wall, "cpu_s": video_cpu}, "mux": {"wall_s": mux_wall, "cpu_s": mux_cpu}}, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt});
+    receipt["limits"] = serde_json::json!({"cpu":limits.cpu,"mem_bytes":limits.mem.unwrap_or(8 * 1024 * 1024 * 1024)});
+    receipt["encode_requested"] = requested;
+    receipt["encode_effective"] = serde_json::json!({"chunks":t.encode.chunks,"threads":t.encode.threads,"tile_cols":t.encode.tile_cols,"tile_rows":t.encode.tile_rows});
+    let receipt = serde_json::to_string(&receipt)?;
     pending.publish()?;
     pending.commit();
     deliver_receipt(&receipt, 0)
@@ -1094,6 +1195,48 @@ fn deliver_receipt(receipt: &str, outcome: u8) -> Result<u8> {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn caller_limits_clamp_and_refuse() {
+        let (mut chunks, mut threads) = (4, 8);
+        clamp_cpu(&mut chunks, &mut threads, 16);
+        assert_eq!((chunks, threads), (2, 8));
+        clamp_cpu(&mut chunks, &mut threads, 1);
+        assert_eq!((chunks, threads), (1, 1));
+        let root = tempfile::tempdir().unwrap();
+        let mut t = fixture(root.path());
+        t.encode.chunks = 2;
+        t.encode.threads = 8;
+        t.limits.cpu = Some(1);
+        t.validate(root.path()).unwrap();
+        assert_eq!((t.encode.chunks, t.encode.threads), (1, 1));
+        t.encode.chunks = 2;
+        let working = working_bytes(4096, 16384, 32, 32).unwrap();
+        t.limits.cpu = None;
+        t.limits.mem = Some(working + working / 2);
+        t.validate(root.path()).unwrap();
+        assert_eq!(t.encode.chunks, 1);
+        t.limits.mem = Some(working - 1);
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("encode_memory_budget")
+        );
+        for n in [0, std::thread::available_parallelism().unwrap().get() + 1] {
+            assert!(media_audio::cli::cpu_limit(std::ffi::OsStr::new(&n.to_string())).is_err());
+        }
+        for (s, n) in [
+            ("10", 10),
+            ("2K", 2048),
+            ("3M", 3 * 1024 * 1024),
+            ("8G", 8 * 1024 * 1024 * 1024),
+        ] {
+            assert_eq!(memory_limit(std::ffi::OsStr::new(s)).unwrap(), n);
+        }
+        for s in ["", "-1", "x", "G", "18446744073709551615G"] {
+            assert!(memory_limit(std::ffi::OsStr::new(s)).is_err());
+        }
+    }
     #[test]
     fn programme_envelope_validation_and_endpoints() {
         let root = tempfile::tempdir().unwrap();
