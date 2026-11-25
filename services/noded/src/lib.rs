@@ -138,6 +138,8 @@ async fn async_main() -> Result<()> {
     let listen = cli_listen.unwrap_or_else(|| node_cfg.noded_listen());
     let node = cli_node.unwrap_or_else(|| node_cfg.node.clone());
     let mesh_config = cli_mesh_config.or_else(|| node_cfg.noded.mesh_config.clone());
+    let history_config = if no_log { logger::HistoryConfig::default() }
+        else { logger::HistoryConfig::load(mesh_config.as_deref())? };
 
     let noded_url = format!("unix://{}", node_cfg.noded.broker_unix_endpoint().display());
 
@@ -205,10 +207,11 @@ async fn async_main() -> Result<()> {
         None
     };
 
+    let (logger_stop, logger_shutdown) = tokio::sync::oneshot::channel();
     let logger_handle = if !no_log {
         let log_url = noded_url.clone();
         Some(tokio::spawn(async move {
-            if let Err(e) = logger::run(&log_url).await {
+            if let Err(e) = logger::run(&log_url, node, history_config, logger_shutdown).await {
                 tracing::error!("Logger module failed: {e}");
             }
         }))
@@ -232,7 +235,8 @@ async fn async_main() -> Result<()> {
         h.abort();
     }
     if let Some(h) = logger_handle {
-        h.abort();
+        let _ = logger_stop.send(());
+        let _ = h.await;
     }
 
     if let Some(result) = broker_exit {
