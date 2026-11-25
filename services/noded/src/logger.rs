@@ -171,8 +171,7 @@ async fn run_in(
                 cmd = rx.recv() => {
                     let Some(cmd) = cmd else { break };
                     if cmd.command != "noded.observe.event" { continue; }
-                    let Ok(event) = serde_json::from_str::<ObserveEvent>(&cmd.body) else {
-                        tracing::warn!("Logger received malformed noded.observe.event");
+                    let Some(event) = parse_event(&cmd.body, &mut last_warning) else {
                         continue;
                     };
                     match disk(&history, move |h| h.event(event, Utc::now())).await {
@@ -218,15 +217,29 @@ fn warn_retry(result: Result<()>, last: &mut Option<Instant>) {
     if let Err(error) = result
         && last.is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(60))
     {
-        tracing::warn!(%error, "History I/O failed; will retry (warnings limited to once per minute)");
+        tracing::warn!(%error, "History operation failed; will retry (warnings limited to once per minute)");
         *last = Some(Instant::now());
     }
 }
 
-use std::fs::{File, OpenOptions};
+fn parse_event(body: &str, last: &mut Option<Instant>) -> Option<ObserveEvent> {
+    match serde_json::from_str(body) {
+        Ok(event) => Some(event),
+        Err(error) => {
+            warn_retry(Err(anyhow::anyhow!("malformed noded.observe.event: {error}")), last);
+            None
+        }
+    }
+}
+
+use std::fs::File;
+#[cfg(test)]
+use std::fs::OpenOptions;
+use std::ffi::{CStr, CString};
 use std::io::{BufRead, BufReader, BufWriter, Seek, SeekFrom};
-use std::os::fd::AsRawFd;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 /// Limits in the `history` map of noded/config.conf.mix (or --mesh-config).
@@ -290,7 +303,7 @@ impl HistoryConfig {
 }
 
 struct History {
-    dir: PathBuf,
+    dir: HistoryDir,
     node: String,
     limits: HistoryConfig,
     writer: BufWriter<Box<dyn Write + Send>>,
@@ -298,6 +311,11 @@ struct History {
     total: u64,
     day: String,
     dropped: u64,
+    // Retain the archive name across unlink failures; after unlink, only reopen.
+    rotation: Option<String>,
+    active_removed: bool,
+    #[cfg(test)]
+    fail_rotation: Option<&'static str>,
     // Fields drop in declaration order: keep the lock until the writer drops.
     _lock: File,
 }
@@ -306,20 +324,101 @@ fn timestamp(now: DateTime<Utc>) -> String {
     now.to_rfc3339_opts(datetime::SecondsFormat::Millis, true)
 }
 
-fn private_file(path: &Path) -> Result<File> {
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .read(true)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)?;
-    anyhow::ensure!(
-        file.metadata()?.is_file(),
-        "history path is not a regular file"
-    );
-    file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+struct HistoryDir(File);
+
+fn checked_file(file: File, uid: u32) -> Result<File> {
+    // File::metadata is fstat, never a second pathname lookup.
+    let meta = file.metadata()?;
+    anyhow::ensure!(meta.is_file() && meta.uid() == uid, "history file must be regular and owned by effective UID");
     Ok(file)
+}
+
+fn syscall(rc: libc::c_int) -> std::io::Result<libc::c_int> {
+    if rc < 0 { Err(std::io::Error::last_os_error()) } else { Ok(rc) }
+}
+
+impl HistoryDir {
+    fn open(path: &Path) -> Result<Self> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        match std::fs::DirBuilder::new().mode(0o700).create(path) {
+            Ok(()) => (),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => (),
+            Err(e) => return Err(e.into()),
+        }
+        let path = CString::new(path.as_os_str().as_bytes())?;
+        // SAFETY: NUL-terminated path; successful fd is owned exactly once.
+        let fd = syscall(unsafe { libc::open(path.as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC) })?;
+        let file = unsafe { File::from_raw_fd(fd) };
+        let meta = file.metadata()?;
+        anyhow::ensure!(meta.is_dir() && meta.uid() == unsafe { libc::geteuid() } && meta.mode() & 0o022 == 0,
+            "history directory must be owned by effective UID and not group/world writable");
+        file.set_permissions(std::fs::Permissions::from_mode(0o700))?;
+        Ok(Self(file))
+    }
+
+    fn file(&self, name: &str, create: bool) -> Result<File> {
+        let name = CString::new(name)?;
+        let flags = if create { libc::O_RDWR | libc::O_CREAT | libc::O_APPEND } else { libc::O_RDONLY };
+        // SAFETY: valid directory fd and NUL-terminated single-component name.
+        let fd = syscall(unsafe { libc::openat(self.0.as_raw_fd(), name.as_ptr(), flags | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC, 0o600) })?;
+        let file = checked_file(unsafe { File::from_raw_fd(fd) }, unsafe { libc::geteuid() })?;
+        if create { file.set_permissions(std::fs::Permissions::from_mode(0o600))?; }
+        Ok(file)
+    }
+
+    fn unlink(&self, name: &str) -> Result<()> {
+        let name = CString::new(name)?;
+        // SAFETY: valid directory fd and NUL-terminated name; never follows links.
+        syscall(unsafe { libc::unlinkat(self.0.as_raw_fd(), name.as_ptr(), 0) })?;
+        Ok(())
+    }
+
+    fn link(&self, from: &str, to: &str) -> std::io::Result<()> {
+        let from = CString::new(from)?;
+        let to = CString::new(to)?;
+        // SAFETY: both names are relative to the pinned directory. Flags zero
+        // deliberately does not follow a source symlink.
+        syscall(unsafe { libc::linkat(self.0.as_raw_fd(), from.as_ptr(), self.0.as_raw_fd(), to.as_ptr(), 0) })?;
+        Ok(())
+    }
+
+    fn names(&self) -> Result<Vec<String>> {
+        // Independent open description: dup would share the directory offset.
+        // SAFETY: constant terminated name and valid pinned directory fd.
+        let fd = syscall(unsafe { libc::openat(self.0.as_raw_fd(), c".".as_ptr(), libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC) })?;
+        // SAFETY: fdopendir takes ownership on success only.
+        let stream = unsafe { libc::fdopendir(fd) };
+        if stream.is_null() {
+            let error = std::io::Error::last_os_error();
+            drop(unsafe { File::from_raw_fd(fd) });
+            return Err(error.into());
+        }
+        struct Entries(*mut libc::DIR);
+        impl Drop for Entries {
+            fn drop(&mut self) {
+                // SAFETY: unique successful fdopendir handle.
+                unsafe { libc::closedir(self.0); }
+            }
+        }
+        let stream = Entries(stream);
+        let mut names = Vec::new();
+        loop {
+            // SAFETY: Linux thread-local errno and exclusively held DIR.
+            unsafe { *libc::__errno_location() = 0; }
+            let entry = unsafe { libc::readdir(stream.0) };
+            if entry.is_null() {
+                let error = std::io::Error::last_os_error();
+                if error.raw_os_error() != Some(0) { return Err(error.into()); }
+                break;
+            }
+            // SAFETY: readdir's name is terminated and valid until the next call.
+            let name = unsafe { CStr::from_ptr((*entry).d_name.as_ptr()) }.to_string_lossy();
+            if name != "." && name != ".." { names.push(name.into_owned()); }
+        }
+        Ok(names)
+    }
 }
 
 fn archive_key(name: &str) -> Option<(datetime::NaiveDate, u64)> {
@@ -336,20 +435,14 @@ fn archive_key(name: &str) -> Option<(datetime::NaiveDate, u64)> {
 
 impl History {
     fn open(dir: &Path, node: String, limits: HistoryConfig, now: DateTime<Utc>) -> Result<Self> {
-        std::fs::create_dir_all(dir)?;
-        let lock = private_file(&dir.join("bus.lock"))?;
+        let dir = HistoryDir::open(dir)?;
+        let lock = dir.file("bus.lock", true)?;
         // SAFETY: flock borrows a valid fd and does not retain a Rust pointer.
         if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
             return Err(std::io::Error::last_os_error().into());
         }
-        let path = dir.join("bus.jsonl");
-        let mut file = private_file(&path)?;
-        if file.metadata()?.nlink() > 1 {
-            // A previous rotation linked the archive but crashed before unlinking.
-            // Never truncate or append to that completed archive inode.
-            std::fs::remove_file(&path)?;
-            file = private_file(&path)?;
-        }
+        let mut file = dir.file("bus.jsonl", true)?;
+        let archived = file.metadata()?.nlink() > 1;
         // Stream one row at a time: the last row may exceed a fixed tail window.
         file.seek(SeekFrom::Start(0))?;
         let mut reader = BufReader::new(&file);
@@ -368,6 +461,12 @@ impl History {
             }
         }
         drop(reader);
+        if archived {
+            // Preserve the archive timestamp and bytes, including any crash tail.
+            dir.unlink("bus.jsonl")?;
+            file = dir.file("bus.jsonl", true)?;
+            complete = 0;
+        }
         // Modification time is the recording clock, not a possibly old event ts.
         let modified = file
             .metadata()?
@@ -381,7 +480,7 @@ impl History {
         let bytes = file.metadata()?.len();
         let mut history = Self {
             _lock: lock,
-            dir: dir.to_owned(),
+            dir,
             node,
             limits,
             writer: BufWriter::new(Box::new(file)),
@@ -389,6 +488,10 @@ impl History {
             total: bytes,
             day,
             dropped: 0,
+            rotation: None,
+            active_removed: false,
+            #[cfg(test)]
+            fail_rotation: None,
         };
         history.retain(now, 0)?;
         history.row(
@@ -412,14 +515,13 @@ impl History {
 
     fn rotate(&mut self, now: DateTime<Utc>) -> Result<()> {
         self.flush()?;
-        if self.bytes > 0 {
+        if self.bytes > 0 && self.rotation.is_none() && !self.active_removed {
             let base = format!("bus-{}", self.day);
             // Retention can remove the base and low indices. Never fill those
             // holes: the newest archive must sort after every surviving one.
             let mut suffix = 0u64;
-            for entry in std::fs::read_dir(&self.dir)? {
-                let entry = entry?;
-                if let Some((date, index)) = archive_key(&entry.file_name().to_string_lossy())
+            for name in self.dir.names()? {
+                if let Some((date, index)) = archive_key(&name)
                     && date.to_string() == self.day
                 {
                     suffix = suffix.max(
@@ -435,10 +537,17 @@ impl History {
                 } else {
                     format!("{base}-{suffix:08}.jsonl")
                 };
-                let archive = self.dir.join(name);
                 // link is atomic and refuses collisions; never overwrite an archive.
-                match std::fs::hard_link(self.dir.join("bus.jsonl"), &archive) {
-                    Ok(()) => break,
+                self.rotation_step("link")?;
+                match self.dir.link("bus.jsonl", &name) {
+                    Ok(()) => {
+                        self.rotation = Some(name);
+                        break;
+                    }
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        self.active_removed = true;
+                        break;
+                    }
                     Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                         suffix = suffix
                             .checked_add(1)
@@ -447,17 +556,37 @@ impl History {
                     Err(e) => return Err(e.into()),
                 }
             }
-            std::fs::remove_file(self.dir.join("bus.jsonl"))?;
         }
-        self.writer = BufWriter::new(Box::new(private_file(&self.dir.join("bus.jsonl"))?));
+        if self.rotation.is_some() && !self.active_removed {
+            self.rotation_step("unlink")?;
+            match self.dir.unlink("bus.jsonl") {
+                Ok(()) => (),
+                Err(e) if e.downcast_ref::<std::io::Error>().is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) => (),
+                Err(e) => return Err(e),
+            }
+            self.active_removed = true;
+        }
+        self.rotation_step("open")?;
+        self.writer = BufWriter::new(Box::new(self.dir.file("bus.jsonl", true)?));
         self.bytes = 0;
         self.day = now.format("%Y-%m-%d").to_string();
+        self.rotation = None;
+        self.active_removed = false;
         self.retain(now, 0)?;
         Ok(())
     }
 
+    fn rotation_step(&mut self, _step: &str) -> Result<()> {
+        #[cfg(test)]
+        if self.fail_rotation == Some(_step) {
+            self.fail_rotation = None;
+            anyhow::bail!("injected rotation failure at {_step}");
+        }
+        Ok(())
+    }
+
     fn maintain(&mut self, now: DateTime<Utc>) -> Result<()> {
-        if self.day != now.format("%Y-%m-%d").to_string() {
+        if self.rotation.is_some() || self.active_removed || self.day != now.format("%Y-%m-%d").to_string() {
             self.rotate(now)?;
         }
         self.retain(now, 0)
@@ -466,25 +595,24 @@ impl History {
     fn retain(&mut self, now: DateTime<Utc>, incoming: u64) -> Result<()> {
         let mut files = Vec::new();
         let mut total = self.bytes.saturating_add(incoming);
-        for entry in std::fs::read_dir(&self.dir)? {
-            let entry = entry?;
-            let name = entry.file_name().to_string_lossy().into_owned();
+        for name in self.dir.names()? {
             let Some((date, index)) = archive_key(&name) else {
                 continue;
             };
-            if !entry.file_type()?.is_file() {
-                continue;
-            }
-            let size = entry.metadata()?.len();
+            let file = match self.dir.file(&name, false) {
+                Ok(file) => file,
+                Err(_) => continue, // Never follow or take over untrusted archives.
+            };
+            let size = file.metadata()?.len();
             total = total.saturating_add(size);
-            files.push((date, index, entry.path(), size));
+            files.push((date, index, name, size));
         }
         files.sort_by_key(|(date, index, _, _)| (*date, *index));
         for (date, _, path, size) in files {
             if (now.date_naive() - date).num_days() >= i64::from(self.limits.retention_days)
                 || total > self.limits.max_total_bytes
             {
-                std::fs::remove_file(path)?;
+                self.dir.unlink(&path)?;
                 total = total.saturating_sub(size);
             }
         }
@@ -511,7 +639,7 @@ impl History {
                 now,
             );
         }
-        if self.day != now.format("%Y-%m-%d").to_string()
+        if self.rotation.is_some() || self.active_removed || self.day != now.format("%Y-%m-%d").to_string()
             || self.bytes + size > self.limits.max_file_bytes
             || self.bytes + size > self.limits.max_total_bytes
         {
@@ -534,6 +662,11 @@ impl History {
         if event.dropped_count > self.dropped {
             bytes += self.row(
                 serde_json::json!({"kind": "dropped", "count": event.dropped_count - self.dropped}),
+                now,
+            )?;
+        } else if event.dropped_count < self.dropped {
+            bytes += self.row(
+                serde_json::json!({"kind": "gap", "reason": "dropped_counter_reset"}),
                 now,
             )?;
         }
@@ -770,7 +903,7 @@ mod tests {
         assert!(old.exists(), "ordinary rows must not scan archives");
         let saved = tmp.0.with_extension("saved");
         std::fs::rename(&tmp.0, &saved).unwrap();
-        assert!(h.tick(now).is_err());
+        h.tick(now).unwrap(); // The directory handle survives a parent rename.
         std::fs::rename(saved, &tmp.0).unwrap();
         h.tick(now).unwrap();
         assert!(!old.exists());
@@ -828,6 +961,118 @@ mod tests {
             std::fs::metadata(archive).unwrap().ino()
         );
         assert_eq!(rows(&tmp.0).len(), 2);
+        assert_eq!(rows(&tmp.0)[0]["since_last"], timestamp(now));
+    }
+
+    #[test]
+    fn private_directory_and_untrusted_paths() {
+        use std::os::unix::fs::symlink;
+        let tmp = Temp::new();
+        let node = tmp.0.join("node");
+        let dir = HistoryDir::open(&node).unwrap();
+        assert_eq!(dir.0.metadata().unwrap().mode() & 0o777, 0o700);
+        drop(dir);
+        // Owned read-only-to-others directories are safely tightened.
+        std::fs::set_permissions(&node, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(HistoryDir::open(&node).unwrap().0.metadata().unwrap().mode() & 0o777, 0o700);
+        for mode in [0o770, 0o707] {
+            std::fs::set_permissions(&node, std::fs::Permissions::from_mode(mode)).unwrap();
+            assert!(History::open(&node, "beta".into(), HistoryConfig::default(), Utc::now()).is_err());
+            assert!(!node.join("bus.lock").exists());
+            assert_eq!(std::fs::metadata(&node).unwrap().mode() & 0o777, mode);
+        }
+        std::fs::set_permissions(&node, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let alias = tmp.0.join("alias");
+        symlink(&node, &alias).unwrap();
+        assert!(HistoryDir::open(&alias).is_err());
+        let target = tmp.0.join("target");
+        std::fs::write(&target, "untouched").unwrap();
+        for name in ["bus.lock", "bus.jsonl"] {
+            symlink(&target, node.join(name)).unwrap();
+            assert!(History::open(&node, "beta".into(), HistoryConfig::default(), Utc::now()).is_err());
+            assert_eq!(std::fs::read_to_string(&target).unwrap(), "untouched");
+            std::fs::remove_file(node.join(name)).unwrap();
+        }
+        // Simulate a foreign owner in the same fstat check used by openat.
+        // No chown privilege is needed and no write/chmod follows refusal.
+        std::fs::write(node.join("bus.jsonl"), "private sentinel").unwrap();
+        let file = OpenOptions::new().read(true).append(true).open(node.join("bus.jsonl")).unwrap();
+        let uid = file.metadata().unwrap().uid();
+        let mode = file.metadata().unwrap().mode();
+        assert!(checked_file(file, uid.wrapping_add(1)).is_err());
+        assert_eq!(std::fs::read_to_string(node.join("bus.jsonl")).unwrap(), "private sentinel");
+        assert_eq!(std::fs::metadata(node.join("bus.jsonl")).unwrap().mode(), mode);
+    }
+
+    #[test]
+    fn rotate_resumes_each_failed_step_without_duplicate_archives() {
+        for step in ["link", "unlink", "open"] {
+            let tmp = Temp::new();
+            let now = at("2026-11-25T12:00:00Z");
+            let tomorrow = at("2026-11-26T00:00:00Z");
+            let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+            h.flush().unwrap();
+            let original = std::fs::read(tmp.0.join("bus.jsonl")).unwrap();
+            h.fail_rotation = Some(step);
+            assert!(h.rotate(tomorrow).is_err());
+            if step == "open" { assert!(!tmp.0.join("bus.jsonl").exists()); }
+            if step == "unlink" {
+                assert!(tmp.0.join("bus.jsonl").exists());
+                // Repeated failures must keep the same single archive link.
+                h.fail_rotation = Some(step);
+                assert!(h.rotate(tomorrow).is_err());
+            }
+            h.tick(tomorrow).unwrap();
+            assert_eq!(h.bytes, 0);
+            assert_eq!(h.day, "2026-11-26");
+            h.event(sample("", 0), tomorrow).unwrap();
+            h.flush().unwrap();
+            let names = h.dir.names().unwrap();
+            assert_eq!(names.iter().filter(|n| archive_key(n).is_some()).count(), 1);
+            assert_eq!(std::fs::read(tmp.0.join("bus-2026-11-25.jsonl")).unwrap(), original);
+            assert_eq!(rows(&tmp.0).len(), 1);
+        }
+    }
+
+    #[test]
+    fn missing_active_name_reopens_and_rebases() {
+        let tmp = Temp::new();
+        let now = at("2026-11-25T12:00:00Z");
+        let tomorrow = at("2026-11-26T00:00:00Z");
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+        h.dir.unlink("bus.jsonl").unwrap();
+        h.rotate(tomorrow).unwrap();
+        assert_eq!(h.bytes, 0);
+        assert_eq!(h.day, "2026-11-26");
+        h.event(sample("", 0), tomorrow).unwrap();
+        h.flush().unwrap();
+        assert_eq!(rows(&tmp.0).len(), 1);
+    }
+
+    #[test]
+    fn malformed_events_share_retry_throttle() {
+        let mut last = None;
+        assert!(parse_event("{", &mut last).is_none());
+        let first = last.unwrap();
+        assert!(parse_event("wrong", &mut last).is_none());
+        assert_eq!(last.unwrap(), first);
+        last = Some(Instant::now() - std::time::Duration::from_secs(61));
+        assert!(parse_event("{", &mut last).is_none());
+        assert!(last.unwrap() > first);
+    }
+
+    #[test]
+    fn dropped_counter_reset_marks_gap_and_rebases() {
+        let tmp = Temp::new();
+        let now = Utc::now();
+        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+        for n in [5, 1, 3] { h.event(sample("", n), now).unwrap(); }
+        h.flush().unwrap();
+        let r = rows(&tmp.0);
+        assert_eq!(r[3]["kind"], "gap");
+        assert_eq!(r[3]["reason"], "dropped_counter_reset");
+        assert_eq!(r[5]["kind"], "dropped");
+        assert_eq!(r[5]["count"], 2);
     }
 
     struct BlockingWriter {

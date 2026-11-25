@@ -11,7 +11,15 @@ History is operator-private. The active file is
 non-blocking advisory `flock` on that directory's `bus.lock` for its lifetime.
 Lock contention or failure warns and disables history for that instance;
 no active file is opened or modified without the lock. Files are
-created with mode 0600; an existing active file is tightened to 0600. The old
+created with mode 0600. The per-node directory is created with mode 0700 and
+opened with `O_DIRECTORY|O_NOFOLLOW`. Its handle is owner-checked against the
+effective UID with `fstat`; group- or world-writable directories are refused,
+even when owned by that UID. An accepted owned directory is tightened to 0700.
+Symlink directories, foreign owners and failed checks warn and disable history.
+Files are reached relative to that pinned directory handle with `openat`,
+`linkat` and `unlinkat`, never by resolving the parent again. Active and lock
+files must be regular, owned by the effective UID and opened with `O_NOFOLLOW`
+before being tightened to 0600. Foreign-owned files are never taken over. The old
 human-readable `bus.log` is neither read nor migrated.
 
 Each line is a JSON object with `v: 1`, `ts_utc` (RFC 3339 UTC with milliseconds),
@@ -26,9 +34,13 @@ timestamps use the logger's UTC clock.
 ```
 
 Start writes a `kind: "gap"`, `reason: "logger_start"` row with `since_last`
-equal to the last timestamp in the active file, or null. Incomplete crash tails
+equal to the last timestamp in the active file (or preserved linked archive
+after interrupted rotation), or null. Incomplete crash tails
 are discarded before appending. A rising drop counter writes a `kind: "dropped"`
-row whose `count` is the increase (initial baseline zero). Observer closure or
+row whose `count` is the increase (initial baseline zero). A counter decrease
+writes a gap with `reason: "dropped_counter_reset"` and rebases the counter.
+Malformed observation warnings share the once-per-minute retry throttle.
+Observer closure or
 graceful shutdown writes `kind: "gap"`, `reason: "observer_closed"`. Gaps and
 drops use the logger clock. No global ordering across nodes is promised.
 
@@ -49,6 +61,10 @@ If even that marker exceeds the configured cap, it is skipped too.
 On open, an active file with more than one hard link is treated as a completed
 archive from an interrupted rotation: only the active name is unlinked, and
 a fresh file is opened before crash-tail recovery or appending.
+Rotation tracks its phase explicitly: a successful archive link is remembered
+across unlink failures, and after unlink the next attempt only opens the fresh
+active file and resets its recording day and byte count. Retries create no
+duplicate archive links and cannot append to the completed archive.
 
 Configure the `history` map in noded's `config.conf.mix` (the explicit
 `--mesh-config` file if supplied, otherwise `mix:etc/noded/config.conf.mix`):
