@@ -398,7 +398,7 @@ impl HistoryDir {
         Ok(file)
     }
 
-    fn unlink(&self, name: &str) -> Result<()> {
+    fn unlink(&self, name: &str) -> std::io::Result<()> {
         let name = CString::new(name)?;
         // SAFETY: valid directory fd and NUL-terminated name; never follows links.
         syscall(unsafe { libc::unlinkat(self.0.as_raw_fd(), name.as_ptr(), 0) })?;
@@ -613,13 +613,8 @@ impl History {
             self.rotation_step("unlink")?;
             match self.dir.unlink("bus.jsonl") {
                 Ok(()) => (),
-                Err(e)
-                    if e.downcast_ref::<std::io::Error>()
-                        .is_some_and(|e| e.kind() == std::io::ErrorKind::NotFound) =>
-                {
-                    ()
-                }
-                Err(e) => return Err(e),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => (),
+                Err(e) => return Err(e.into()),
             }
             self.active_removed = true;
         }
