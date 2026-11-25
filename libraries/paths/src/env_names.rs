@@ -22,6 +22,7 @@ pub const AGENTD_SETTLE_S: &str = "MIX_AGENTD_SETTLE_S";
 pub const AGENT_CLI_EXE: &str = "MIX_AGENT_CLI_EXE";
 pub const APP_HOME: &str = "MIX_APP_HOME";
 pub const APPS_HOME: &str = "MIX_APPS_HOME";
+pub const AV_CONFIG: &str = "MIX_AV_CONFIG";
 pub const BIN: &str = "MIX_BIN";
 pub const BROKER_ACCOUNT: &str = "MIX_BROKER_ACCOUNT";
 pub const BUS_SOCKET: &str = "MIX_BUS_SOCKET";
