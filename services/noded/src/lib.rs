@@ -257,7 +257,10 @@ async fn async_main() -> Result<()> {
 }
 
 async fn stop_logger(mut handle: tokio::task::JoinHandle<()>) {
-    if tokio::time::timeout(std::time::Duration::from_secs(2), &mut handle).await.is_err() {
+    if tokio::time::timeout(std::time::Duration::from_secs(2), &mut handle)
+        .await
+        .is_err()
+    {
         tracing::warn!("History shutdown exceeded 2 seconds; aborting logger");
         handle.abort();
     }

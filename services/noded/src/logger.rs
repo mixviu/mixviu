@@ -59,14 +59,7 @@ pub async fn run(
         "invalid history node directory"
     );
     let dir = logging::default_log_dir("noded").join(&node);
-    run_in(
-        noded_url,
-        node,
-        limits,
-        shutdown,
-        &dir,
-    )
-    .await
+    run_in(noded_url, node, limits, shutdown, &dir).await
 }
 
 async fn run_in(
@@ -80,13 +73,16 @@ async fn run_in(
     let started_at_iso = datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Secs, true);
 
     let dir = log_dir.to_owned();
-    let history = match tokio::task::spawn_blocking(move || History::open(&dir, node, limits, Utc::now())).await? {
-        Ok(history) => Arc::new(std::sync::Mutex::new(history)),
-        Err(error) => {
-            tracing::warn!(%error, "History disabled: cannot open or lock node directory");
-            return Ok(());
-        }
-    };
+    let history =
+        match tokio::task::spawn_blocking(move || History::open(&dir, node, limits, Utc::now()))
+            .await?
+        {
+            Ok(history) => Arc::new(std::sync::Mutex::new(history)),
+            Err(error) => {
+                tracing::warn!(%error, "History disabled: cannot open or lock node directory");
+                return Ok(());
+            }
+        };
     let bus_log_path = log_dir.join("bus.jsonl");
     let log_path_str = bus_log_path.to_string_lossy().to_string();
 
@@ -191,9 +187,13 @@ async fn run_in(
     .await;
     stats.tap_subscribed.store(false, Ordering::Relaxed);
     let closed = disk(&history, |h| {
-        h.row(serde_json::json!({"kind": "gap", "reason": "observer_closed"}), Utc::now())?;
+        h.row(
+            serde_json::json!({"kind": "gap", "reason": "observer_closed"}),
+            Utc::now(),
+        )?;
         h.flush()
-    }).await;
+    })
+    .await;
     result?;
     closed?;
     Ok(())
@@ -201,7 +201,9 @@ async fn run_in(
 
 struct AbortOnDrop(tokio::task::JoinHandle<()>);
 impl Drop for AbortOnDrop {
-    fn drop(&mut self) { self.0.abort(); }
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 async fn disk<T: Send + 'static>(
@@ -214,7 +216,8 @@ async fn disk<T: Send + 'static>(
 
 fn warn_retry(result: Result<()>, last: &mut Option<Instant>) {
     if let Err(error) = result
-        && last.is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(60)) {
+        && last.is_none_or(|t| t.elapsed() >= std::time::Duration::from_secs(60))
+    {
         tracing::warn!(%error, "History I/O failed; will retry (warnings limited to once per minute)");
         *last = Some(Instant::now());
     }
@@ -222,8 +225,8 @@ fn warn_retry(result: Result<()>, last: &mut Option<Instant>) {
 
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Seek, SeekFrom};
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::os::fd::AsRawFd;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 /// Limits in the `history` map of noded/config.conf.mix (or --mesh-config).
@@ -257,16 +260,25 @@ impl HistoryConfig {
             .unwrap_or_else(|| config::path(config::Dir::Etc).join("noded/config.conf.mix"));
         let source = match std::fs::read_to_string(&path) {
             Ok(source) => source,
-            Err(error) if explicit.is_none() && error.kind() == std::io::ErrorKind::NotFound => return Some(Self::default()),
+            Err(error) if explicit.is_none() && error.kind() == std::io::ErrorKind::NotFound => {
+                return Some(Self::default());
+            }
             Err(error) => {
                 tracing::warn!(path = %path.display(), %error, "History disabled: config cannot be read");
                 return None;
             }
         };
-        let parsed = config::from_conf_mix_str::<Config>(&source).map_err(anyhow::Error::from).and_then(|c| {
-            anyhow::ensure!(c.history.retention_days > 0 && c.history.max_file_bytes > 0 && c.history.max_total_bytes > 0, "history limits must be positive");
-            Ok(c.history)
-        });
+        let parsed = config::from_conf_mix_str::<Config>(&source)
+            .map_err(anyhow::Error::from)
+            .and_then(|c| {
+                anyhow::ensure!(
+                    c.history.retention_days > 0
+                        && c.history.max_file_bytes > 0
+                        && c.history.max_total_bytes > 0,
+                    "history limits must be positive"
+                );
+                Ok(c.history)
+            });
         Some(match parsed {
             Ok(limits) => limits,
             Err(error) => {
@@ -494,7 +506,10 @@ impl History {
                 // Even the marker cannot fit an operator's tiny positive cap.
                 return Ok(0);
             }
-            return self.row(serde_json::json!({"kind":"dropped", "reason":"row_too_large", "count":1}), now);
+            return self.row(
+                serde_json::json!({"kind":"dropped", "reason":"row_too_large", "count":1}),
+                now,
+            );
         }
         if self.day != now.format("%Y-%m-%d").to_string()
             || self.bytes + size > self.limits.max_file_bytes
@@ -708,7 +723,8 @@ mod tests {
     fn directory_lock_refuses_second_writer_without_touching_first() {
         let tmp = Temp::new();
         let now = Utc::now();
-        let mut first = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
+        let mut first =
+            History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
         assert!(History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).is_err());
         first.event(sample("", 0), now).unwrap();
         first.flush().unwrap();
@@ -721,7 +737,16 @@ mod tests {
     fn oversized_row_is_marked_and_next_message_is_recorded() {
         let tmp = Temp::new();
         let now = Utc::now();
-        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig { max_file_bytes: 2048, ..HistoryConfig::default() }, now).unwrap();
+        let mut h = History::open(
+            &tmp.0,
+            "beta".into(),
+            HistoryConfig {
+                max_file_bytes: 2048,
+                ..HistoryConfig::default()
+            },
+            now,
+        )
+        .unwrap();
         let mut event = sample("", 0);
         event.command = Some("x".repeat(4096));
         h.event(event, now).unwrap();
@@ -758,9 +783,13 @@ mod tests {
     fn transient_flush_is_retried() {
         struct FailOnce(bool);
         impl Write for FailOnce {
-            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> { Ok(bytes.len()) }
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                Ok(bytes.len())
+            }
             fn flush(&mut self) -> std::io::Result<()> {
-                if std::mem::take(&mut self.0) { return Err(std::io::Error::other("injected flush failure")); }
+                if std::mem::take(&mut self.0) {
+                    return Err(std::io::Error::other("injected flush failure"));
+                }
                 Ok(())
             }
         }
@@ -794,7 +823,10 @@ mod tests {
         h.event(sample("", 0), now).unwrap();
         h.flush().unwrap();
         assert_eq!(std::fs::read(&archive).unwrap(), original);
-        assert_ne!(std::fs::metadata(active).unwrap().ino(), std::fs::metadata(archive).unwrap().ino());
+        assert_ne!(
+            std::fs::metadata(active).unwrap().ino(),
+            std::fs::metadata(archive).unwrap().ino()
+        );
         assert_eq!(rows(&tmp.0).len(), 2);
     }
 
@@ -803,7 +835,9 @@ mod tests {
         release: std::sync::mpsc::Receiver<()>,
     }
     impl Write for BlockingWriter {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> { Ok(bytes.len()) }
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            Ok(bytes.len())
+        }
         fn flush(&mut self) -> std::io::Result<()> {
             if let Some(entered) = self.entered.take() {
                 let _ = entered.send(());
@@ -816,12 +850,18 @@ mod tests {
     #[tokio::test]
     async fn shutdown_is_bounded_with_blocking_writer() {
         let tmp = Temp::new();
-        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), Utc::now()).unwrap();
+        let mut h =
+            History::open(&tmp.0, "beta".into(), HistoryConfig::default(), Utc::now()).unwrap();
         let (entered, waiting) = tokio::sync::oneshot::channel();
         let (release, blocked) = std::sync::mpsc::channel();
-        h.writer = BufWriter::new(Box::new(BlockingWriter { entered: Some(entered), release: blocked }));
+        h.writer = BufWriter::new(Box::new(BlockingWriter {
+            entered: Some(entered),
+            release: blocked,
+        }));
         let h = Arc::new(std::sync::Mutex::new(h));
-        let task = tokio::spawn(async move { let _ = disk(&h, History::flush).await; });
+        let task = tokio::spawn(async move {
+            let _ = disk(&h, History::flush).await;
+        });
         waiting.await.unwrap();
         let abort = task.abort_handle();
         let started = Instant::now();
@@ -841,40 +881,88 @@ mod tests {
         #[derive(Clone)]
         struct Capture(Arc<std::sync::Mutex<Vec<u8>>>);
         impl Write for Capture {
-            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> { self.0.lock().unwrap().extend_from_slice(b); Ok(b.len()) }
-            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
         }
         let output = Capture(Arc::new(std::sync::Mutex::new(Vec::new())));
         let capture = output.clone();
-        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false).with_writer(move || capture.clone()).finish();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_writer(move || capture.clone())
+            .finish();
         let _guard = subscriber.set_default();
         let tmp = Temp::new();
         let path = tmp.0.join("config.conf.mix");
-        for block in ["history: {", "history: { max_file_bytes: 0 }", "history: { retention_days: -1 }", "history: { unknown: 1 }", "history: { max_file_bytes: wrong }"] {
-            std::fs::write(&path, format!("node_name: beta\n{block}\n")).unwrap();
-            assert_eq!(HistoryConfig::load(path.to_str()).unwrap().max_file_bytes, HistoryConfig::default().max_file_bytes);
+        for block in [
+            Some("history: {"),
+            Some("history: { max_file_bytes: 0 }"),
+            Some("history: { retention_days: -1 }"),
+            Some("history: { unknown: 1 }"),
+            Some("history: { max_file_bytes: wrong }"),
+            None,
+        ] {
+            if let Some(block) = block {
+                std::fs::write(&path, format!("node_name: beta\n{block}\n")).unwrap();
+                assert_eq!(
+                    HistoryConfig::load(path.to_str()).unwrap().max_file_bytes,
+                    HistoryConfig::default().max_file_bytes
+                );
+            } else {
+                std::fs::remove_file(&path).unwrap();
+                assert!(HistoryConfig::load(path.to_str()).is_none());
+            }
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let listen = listener.local_addr().unwrap().to_string();
             let (ready, waiting) = tokio::sync::oneshot::channel();
             let cfg = crate::noded::RunConfig {
-                session_probe: None, unix_socket: None, pending_grants_per_parent: 32,
-                listen: listen.clone(), node: "beta".into(), wg_ip: "127.0.0.1".into(),
-                mesh_config_path: Some(path.to_string_lossy().into_owned()), spec_dir: None,
+                session_probe: None,
+                unix_socket: None,
+                pending_grants_per_parent: 32,
+                listen: listen.clone(),
+                node: "beta".into(),
+                wg_ip: "127.0.0.1".into(),
+                mesh_config_path: Some(path.to_string_lossy().into_owned()),
+                spec_dir: None,
                 admission_mode: config::node::AdmissionMode::Off,
                 frame_policy: config::node::AdmissionMode::Observe,
             };
             let broker = tokio::spawn(crate::noded::run_on(cfg, listener, ready));
-            tokio::time::timeout(std::time::Duration::from_secs(5), waiting).await.unwrap().unwrap();
-            let client = bus::native_client::NodedClient::connect("probe", &format!("ws://{listen}/ws")).await.unwrap();
-            assert!(client.call("noded", "noded.ping", json!({})).await.unwrap().get("pong").is_some());
+            tokio::time::timeout(std::time::Duration::from_secs(5), waiting)
+                .await
+                .unwrap()
+                .unwrap();
+            let client =
+                bus::native_client::NodedClient::connect("probe", &format!("ws://{listen}/ws"))
+                    .await
+                    .unwrap();
+            assert!(
+                client
+                    .call("noded", "noded.ping", json!({}))
+                    .await
+                    .unwrap()
+                    .get("pong")
+                    .is_some()
+            );
             broker.abort();
         }
-        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
         assert!(HistoryConfig::load(path.to_str()).is_none());
         let warnings = String::from_utf8(output.0.lock().unwrap().clone()).unwrap();
         assert!(warnings.contains("using history defaults"), "{warnings}");
-        assert!(warnings.contains("History disabled: config cannot be read"), "{warnings}");
-        assert!(warnings.contains("history limits must be positive"), "{warnings}");
+        assert!(
+            warnings.contains("History disabled: config cannot be read"),
+            "{warnings}"
+        );
+        assert!(
+            warnings.contains("history limits must be positive"),
+            "{warnings}"
+        );
     }
 
     #[tokio::test]
@@ -910,6 +998,14 @@ mod tests {
         })
         .await
         .unwrap();
+        // The second instance must return before attempting a service
+        // registration, leaving the first observer alive and its file intact.
+        let (_second_stop, second_shutdown) = tokio::sync::oneshot::channel();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            run_in(&broker.url, "beta".into(), HistoryConfig::default(), second_shutdown, &tmp.0),
+        ).await.unwrap().unwrap();
+        client.call("noded", "noded.ping", json!({})).await.unwrap();
         stop.send(()).unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(5), logger)
             .await
@@ -919,6 +1015,7 @@ mod tests {
         let r = rows(&tmp.0);
         assert_eq!(r.first().unwrap()["reason"], "logger_start");
         assert_eq!(r.last().unwrap()["reason"], "observer_closed");
+        assert_eq!(r.iter().filter(|r| r["reason"] == "logger_start").count(), 1);
         assert!(r.iter().all(|r| r.get("payload").is_none()));
     }
 
