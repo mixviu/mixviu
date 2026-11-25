@@ -54,7 +54,14 @@ pub async fn run(
     limits: HistoryConfig,
     shutdown: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<()> {
-    run_in(noded_url, node, limits, shutdown, &logging::default_log_dir("noded")).await
+    run_in(
+        noded_url,
+        node,
+        limits,
+        shutdown,
+        &logging::default_log_dir("noded"),
+    )
+    .await
 }
 
 async fn run_in(
@@ -617,18 +624,37 @@ mod tests {
         let url = broker.url.clone();
         let dir = tmp.0.clone();
         let logger = tokio::spawn(async move {
-            run_in(&url, "beta".into(), HistoryConfig::default(), shutdown, &dir).await
+            run_in(
+                &url,
+                "beta".into(),
+                HistoryConfig::default(),
+                shutdown,
+                &dir,
+            )
+            .await
         });
-        let client = bus::native_client::NodedClient::connect("example-probe", &broker.url).await.unwrap();
+        let client = bus::native_client::NodedClient::connect("example-probe", &broker.url)
+            .await
+            .unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
             loop {
                 client.call("noded", "noded.ping", json!({})).await.unwrap();
-                if tmp.0.join("bus.jsonl").exists() && rows(&tmp.0).iter().any(|r| r["command"] == "noded.ping") { break; }
+                if tmp.0.join("bus.jsonl").exists()
+                    && rows(&tmp.0).iter().any(|r| r["command"] == "noded.ping")
+                {
+                    break;
+                }
                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             }
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
         stop.send(()).unwrap();
-        tokio::time::timeout(std::time::Duration::from_secs(5), logger).await.unwrap().unwrap().unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), logger)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
         let r = rows(&tmp.0);
         assert_eq!(r.first().unwrap()["reason"], "logger_start");
         assert_eq!(r.last().unwrap()["reason"], "observer_closed");
@@ -640,10 +666,16 @@ mod tests {
         let tmp = Temp::new();
         let now = Utc::now();
         let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
-        h.row(json!({"kind":"message", "command":"x".repeat(70000)}), now).unwrap();
+        h.row(json!({"kind":"message", "command":"x".repeat(70000)}), now)
+            .unwrap();
         h.flush().unwrap();
         drop(h);
-        OpenOptions::new().append(true).open(tmp.0.join("bus.jsonl")).unwrap().write_all(b"{\"partial\"").unwrap();
+        OpenOptions::new()
+            .append(true)
+            .open(tmp.0.join("bus.jsonl"))
+            .unwrap()
+            .write_all(b"{\"partial\"")
+            .unwrap();
         let _h = History::open(&tmp.0, "beta".into(), HistoryConfig::default(), now).unwrap();
         let r = rows(&tmp.0);
         assert_eq!(r.len(), 3);
@@ -654,10 +686,24 @@ mod tests {
     fn total_cap_includes_current_file_and_pending_row() {
         let tmp = Temp::new();
         let now = Utc::now();
-        let mut h = History::open(&tmp.0, "beta".into(), HistoryConfig { max_total_bytes: 400, ..HistoryConfig::default() }, now).unwrap();
-        for _ in 0..10 { h.event(sample("", 0), now).unwrap(); }
+        let mut h = History::open(
+            &tmp.0,
+            "beta".into(),
+            HistoryConfig {
+                max_total_bytes: 400,
+                ..HistoryConfig::default()
+            },
+            now,
+        )
+        .unwrap();
+        for _ in 0..10 {
+            h.event(sample("", 0), now).unwrap();
+        }
         h.flush().unwrap();
-        let total: u64 = std::fs::read_dir(&tmp.0).unwrap().map(|e| e.unwrap().metadata().unwrap().len()).sum();
+        let total: u64 = std::fs::read_dir(&tmp.0)
+            .unwrap()
+            .map(|e| e.unwrap().metadata().unwrap().len())
+            .sum();
         assert!(total <= 400);
         assert_eq!(rows(&tmp.0).len(), 1);
     }
