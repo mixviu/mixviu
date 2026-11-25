@@ -206,8 +206,8 @@ mod tests {
     fn knowledge_settings_round_trip_through_written_file() {
         let dir = tempfile::tempdir().unwrap();
         let defaults = serde_json::to_value(KnowledgeSettings::default()).unwrap();
-        let first = load_in::<KnowledgeSettings>(dir.path(), "knowledge", defaults.clone())
-            .unwrap();
+        let first =
+            load_in::<KnowledgeSettings>(dir.path(), "knowledge", defaults.clone()).unwrap();
         assert!(dir.path().join("knowledge/knowledge.conf.mix").exists());
         let second = load_in::<KnowledgeSettings>(dir.path(), "knowledge", defaults).unwrap();
         assert_eq!(
