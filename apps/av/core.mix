@@ -152,7 +152,7 @@ fn perform($s,$id,$a)
   if $verb=="decode" then
     $cap=min(byte_limit($s.cfg.decode_max_bytes,"decode_max_bytes"),$s.cfg.max_output_bytes)
     $limit=exact_bytes($a.max_output_bytes ?? $cap)
-    if $limit>$cap then raise("AV_PARAMS","max_output_bytes exceeds host cap") end
+    if $limit>$cap then raise("AV_MAX_OUTPUT_BYTES","max_output_bytes exceeds host cap") end
     $output=confined($s,$a.y4m,true)
     $argv=concat($argv,["--y4m",$output,"--max-output-bytes",to_string($limit)])
   else
@@ -232,6 +232,9 @@ fn finished($s,$e)
   -- systemd-run forwards signal exits as 128+signal. A normal exit while
   -- stop is pending still owns its outcome, even if delivered after stop.
   $j.cancelled=$j.cancelled and $receipt==nil and (contains([9,15],$e.signal) or contains([137,143],$e.exit_code))
+  if ($e.signal==25 or $e.exit_code==153) and trim($j.stderr_tail ?? "")=="" then
+    $j.stderr_tail=stderr_tail("output exceeded max_output_bytes (LimitFSIZE, SIGXFSZ)\n")
+  end
   $j.status=if $j.cancelled then "cancelled" elif $e.exit_code==0 and $receipt!=nil and not ($j.capture_error ?? false) and not ($e.detached_output ?? false) then "finished" else "failed" end
   $j.ended=time();$j.exit_code=$e.exit_code;$j.signal=$e.signal;$j.receipt=$receipt;$j.metrics=$metrics
   $j.stdout=nil

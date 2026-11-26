@@ -48,6 +48,11 @@ try
   equal(len(split(slice($tail,0,-1),"\n")),20);check(ends_with($tail,"reason\n"))
   $tail=$core.stderr_tail(repeat("é",3000).."reason\n")
   check(len(string_to_bytes($tail))<=4096);check(ends_with($tail,"reason\n"))
+  -- 6007 bytes minus 4096 cuts at odd byte 1911: the trailing byte of é.
+  $cut=bytes_to_string(slice(string_to_bytes(repeat("é",3000).."reason\n"),-4096),{lossy:true})
+  check(starts_with($cut,chr(65533)));equal(len(string_to_bytes($cut)),4098)
+  equal($tail,repeat("é",2044).."reason\n")
+  equal(len(string_to_bytes($tail)),4095)
   equal($core.perform($s,"av.probe",{file:$params.timeline}).result.probe,true)
   refused(fn()=$core.perform($s,"av.render",{timeline:"/etc/passwd",out:$params.out}),"AV_PATH")
   run_argv_must(["ln","-s","/etc/passwd",$dir.."/escape"])
@@ -119,7 +124,7 @@ try
       if $case.params.wav!=nil then equal($argv[index_of($argv,"--wav")+1],$case.params.wav) end
     end
   end
-  refused(fn()=$core.perform($s,"av.decode",{file:$params.timeline,y4m:$dir.."/over.y4m",max_output_bytes:68719476737}),"AV_PARAMS","exceeds host cap")
+  refused(fn()=$core.perform($s,"av.decode",{file:$params.timeline,y4m:$dir.."/over.y4m",max_output_bytes:68719476737}),"AV_MAX_OUTPUT_BYTES","exceeds host cap")
   for $n in [0,-1,0.5,"1024"]
     $caught=false
     try $core.perform($s,"av.decode",{file:$params.timeline,y4m:$dir.."/over.y4m",max_output_bytes:$n})
@@ -166,17 +171,32 @@ try
       check(contains(json_parse(read_file($dir.."/runner-argv")),"LimitFSIZE=2048"))
     else equal($argv[index_of($argv,"--max-output-bytes")+1],"2048") end
   end
-  refused(fn()=$core.perform($s,"av.decode",{file:$params.timeline,y4m:$dir.."/over.y4m",max_output_bytes:2049}),"AV_PARAMS","exceeds host cap")
+  refused(fn()=$core.perform($s,"av.decode",{file:$params.timeline,y4m:$dir.."/over.y4m",max_output_bytes:2049}),"AV_MAX_OUTPUT_BYTES","exceeds host cap")
   $limited.decode_max_bytes="1K"
   $saved=$s
   $s=$core.fresh($limited)
-  refused(fn()=$core.perform($s,"av.decode",{file:$params.timeline,y4m:$dir.."/over.y4m",max_output_bytes:1025}),"AV_PARAMS","exceeds host cap")
+  refused(fn()=$core.perform($s,"av.decode",{file:$params.timeline,y4m:$dir.."/over.y4m",max_output_bytes:1025}),"AV_MAX_OUTPUT_BYTES","exceeds host cap")
   $s=$saved
   -- Exercise retention without launching 34 more processes. Completion order
   -- (including tied timestamps) defines age; running jobs are never evicted.
   $h=$core.fresh($cfg)
   $template=$s.jobs[$job];$template.status="running";$template.cancelled=false;$template.stdout="{}"
   $h.jobs.still=$template
+  -- Both native and systemd-forwarded SIGXFSZ give a public reason, without
+  -- replacing an existing CLI diagnostic or being mistaken for cancellation.
+  for $terminal in [{exit_code:nil,signal:25},{exit_code:153,signal:nil}]
+    for $text in ["","specific CLI reason\n"]
+      $size=$h;$size.jobs.still.stdout="";$size.jobs.still.stderr_tail=$text
+      $size.jobs.still.cancelled=true
+      $r=$core.finished($size,{tag:"still",watch:$template.watch,exit_code:$terminal.exit_code,signal:$terminal.signal})
+      equal($r.event.status,"failed");equal($r.state.jobs.still.cancelled,false)
+      $public=$core.perform($r.state,"av.status",{job:"still"}).result
+      equal($public.stderr_tail,$r.event.stderr_tail)
+      equal($public.stderr_tail,if $text=="" then "output exceeded max_output_bytes (LimitFSIZE, SIGXFSZ)\n" else $text end)
+    end
+  end
+  $size=$h;$size.jobs.still.stdout="";$size.jobs.still.stderr_tail=""
+  equal($core.finished($size,{tag:"still",watch:$template.watch,exit_code:2,signal:nil}).event.stderr_tail,"")
   $p=$core.line_event($h,{tag:"still",watch:$template.watch,stream:"stderr",line:"AVP broken JSON",truncated:false})
   check($p.state.jobs.still.diagnostic!=nil);equal($p.event,nil)
   equal($p.state.jobs.still.status,"running");equal($p.state.jobs.still.progress,$template.progress)

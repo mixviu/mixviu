@@ -56,15 +56,21 @@ Decode also passes `--max-output-bytes` as plain bytes, converted from
 the smaller of `max_output_bytes` (positive integer bytes) and
 `decode_max_bytes` (positive bytes or uppercase K/M/G, powers of 1024).
 The optional positive-integer `max_output_bytes` action parameter may lower
-this disk cap; values above the host cap are refused. Limits must fit Mix's
+this disk cap; values above the host cap are refused with `AV_MAX_OUTPUT_BYTES`.
+Limits must fit Mix's
 exact integer range (at most 9007199254740991 bytes). The cap covers combined
 Y4M and WAV output. Both audio and decode support optional `wav` paths.
 All jobs use user transient units with `--collect --wait --pipe`,
 `MemoryAccounting=yes`, `MemoryMax` and `LimitFSIZE=max_output_bytes` in bytes.
 Render/audio enforce output size through systemd's hard per-file `LimitFSIZE`,
-including optional WAV files; partial outputs may remain on failure. Decode's
-CLI limit additionally caps combined Y4M and WAV bytes. Render/audio also
-receive CPU and memory ceilings through the CLI.
+including optional WAV files. `av` writes through pending temporary files and
+renames them on success: a failure never leaves a partial published output,
+but may orphan a pending temporary file, up to one cap per file.
+The `LimitFSIZE` signature is signal 25 (`SIGXFSZ`) or forwarded exit 153.
+If stderr is empty, the citizen supplies an explicit output-ceiling diagnostic
+in `stderr_tail` on status and the end envelope. Decode's CLI limit additionally
+caps combined Y4M and WAV bytes. Render/audio also receive CPU and memory
+ceilings through the CLI.
 
 All supplied paths must be absolute and canonicalise inside an allowed root.
 Outputs require an existing canonical parent and must not exist: any existing
@@ -75,6 +81,8 @@ against concurrent filesystem changes by the service user. Run as an account
 whose filesystem access is appropriate; Bus callers exercise that account's
 authority. There is no per-job ownership until 2c; this surface is for the
 local operator only. The CLI owns validation of sources inside timelines.
+Deferred, pre-existing: `av.probe` runs synchronously outside any transient
+unit or host resource ceiling; bounding probe is outside this change's scope.
 The citizen holds a per-user host lock in `XDG_RUNTIME_DIR` (or `~/.cache`),
 refusing duplicate instances. Admission also counts existing active job units
 so a restart cannot bypass the job cap. Cancel active jobs before restarting
