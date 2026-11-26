@@ -59,15 +59,6 @@ fn black_vfl_still_black_decoded_frame_hashes() {
         String::from_utf8_lossy(&render.stderr)
     );
     let receipt: Value = serde_json::from_slice(&render.stdout).unwrap();
-    if let Ok(dir) = std::env::var("MIX_TEST_RENDER_ARTIFACT_DIR") {
-        fs::create_dir_all(&dir).unwrap();
-        fs::copy(&out, std::path::Path::new(&dir).join("fixture.webm")).unwrap();
-        fs::write(
-            std::path::Path::new(&dir).join("receipt.json"),
-            &render.stdout,
-        )
-        .unwrap();
-    }
     assert_eq!(receipt["frames_out"], 120);
     assert_eq!(receipt["stages"]["video"]["codec_passes_per_chunk"], 1);
     assert_eq!(
