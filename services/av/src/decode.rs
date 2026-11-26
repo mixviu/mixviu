@@ -295,6 +295,9 @@ fn probe_wav(path: &Path) -> Result<serde_json::Value> {
     // In particular, never send RIFF lengths through the EBML parser.
     use std::io::{Seek, SeekFrom};
     let mut file = File::open(path)?;
+    if file.metadata()?.len() > 256 * 1024 * 1024 {
+        return Err("PROBE_INPUT_LIMIT: WAV input exceeds 256 MiB".into());
+    }
     let audio = media_audio::Audio::read_wav(&mut file)?;
     file.seek(SeekFrom::Start(0))?;
     let spec = hound::WavReader::new(io::BufReader::new(file))?.spec();

@@ -1188,6 +1188,8 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
     t.limits = limits;
     let requested = serde_json::json!({"chunks":t.encode.chunks,"threads":t.encode.threads,"tile_cols":t.encode.tile_cols,"tile_rows":t.encode.tile_rows});
     let (starts, directories) = t.validate(&base)?;
+    let audio_peak_estimate_bytes =
+        media_audio::timeline::peak_memory_bytes(t.duration_s, &t.audio.sources, &base)?;
     let audio = media_audio::timeline::Timeline {
         version: t.version,
         duration_s: t.duration_s,
@@ -1310,6 +1312,7 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
     let n = frame(t.duration_s);
     let mut receipt = serde_json::json!({"peak_rss_kib":peak_rss_kib(), "scaling": {"filter":"bicubic_catmull_rom_gamma","frames":scaled_frames,"sum_wall_s":scale_wall_s,"mean_ms":scale_wall_s*1000.0/scaled_frames.max(1) as f64}, "frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunk_count, "parallel_chunks": t.encode.chunks, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt});
     receipt["limits"] = serde_json::json!({"cpu":limits.cpu,"mem_bytes":limits.mem.unwrap_or(8 * 1024 * 1024 * 1024)});
+    receipt["audio_peak_estimate_bytes"] = serde_json::json!(audio_peak_estimate_bytes);
     receipt["stages"] = stages;
     receipt["stages"]["mux"] = serde_json::json!({"wall_s":mux_wall,"cpu_s":mux_cpu});
     receipt["encode_requested"] = requested;

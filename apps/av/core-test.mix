@@ -39,6 +39,7 @@ try
   $bad=$cfg;$bad.decode_max_bytes="invalid"
   refused(fn()=$core.fresh($bad),"AV_PARAMS","decode_max_bytes:")
   for $verb in ["av.render","av.audio"]
+    refused(fn()=$core.perform($s,$verb,{timeline:$params.timeline,out:$params.out,mem:"999999999999999999999G"}),"AV_PARAMS","mem:")
     refused(fn()=$core.perform($s,$verb,{timeline:$params.timeline,out:$params.out,mem:"9G"}),"AV_MAX_MEM","max_mem")
     refused(fn()=$core.perform($s,$verb,{timeline:$params.timeline,out:$params.out,cpu:2}),"AV_MAX_CPU","max_cpu")
   end
