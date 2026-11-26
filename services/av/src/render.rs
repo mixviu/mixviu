@@ -745,8 +745,11 @@ impl Source {
         if self.reader.is_none() {
             let repeat = self.next != u64::MAX;
             if !repeat {
-                let b = Arc::unwrap_or_clone(self.current.take().ok_or("missing_frame")?);
-                self.current = Some(Arc::new(scale_frame(b, width, height, stats)?));
+                let image = self.current.as_ref().ok_or("missing_frame")?;
+                if image.width() != width || image.height() != height {
+                    let b = Arc::unwrap_or_clone(self.current.take().ok_or("missing_frame")?);
+                    self.current = Some(Arc::new(scale_frame(b, width, height, stats)?));
+                }
                 self.next = 0;
             }
             return Ok((
