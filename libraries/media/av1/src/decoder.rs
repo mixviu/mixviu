@@ -145,7 +145,9 @@ impl Decoder {
             let p = &p.0;
             let (w, h) = (p.p.w as usize, p.p.h as usize);
             if p.p.bpc != 8 || p.p.layout != 1 {
-                return Err(Error("UNSUPPORTED_PIXEL_FORMAT: expected 8-bit I420".into()));
+                return Err(Error(
+                    "UNSUPPORTED_PIXEL_FORMAT: expected 8-bit I420".into(),
+                ));
             }
             if w == 0
                 || h == 0

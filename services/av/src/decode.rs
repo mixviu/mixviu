@@ -1,7 +1,7 @@
+use md5::{Digest, Md5};
 use media_audio::pending::Pending;
 use media_opus::{Channels, Decoder as _, OpusDecoder};
 use media_webm::Demuxer;
-use md5::{Digest, Md5};
 use serde_json::json;
 use std::{
     ffi::OsString,
@@ -126,14 +126,23 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
         .ok_or("no AV1 track")?;
     let frame_duration = video_duration(&d, t)?;
     let max_frames = duration_frame_limit(&d, t, frame_duration)?;
-    let inferred_rate = probe_video_rate(t.default_duration_ns, d.scale_ns,
-        d.packets().iter().filter(|p| p.track == t.number));
+    let inferred_rate = probe_video_rate(
+        t.default_duration_ns,
+        d.scale_ns,
+        d.packets().iter().filter(|p| p.track == t.number),
+    );
     let mut budget = OutputBudget {
         limit: max_output_bytes.unwrap_or(DEFAULT_MAX_OUTPUT_BYTES),
         used: 0,
     };
-    let mut output = y4m.as_ref().map(|p| Pending::new(Path::new(p))).transpose()?;
-    let mut md5_output = framemd5.as_ref().map(|p| Pending::new(Path::new(p))).transpose()?;
+    let mut output = y4m
+        .as_ref()
+        .map(|p| Pending::new(Path::new(p)))
+        .transpose()?;
+    let mut md5_output = framemd5
+        .as_ref()
+        .map(|p| Pending::new(Path::new(p)))
+        .transpose()?;
     let mut wav_output = wav
         .as_ref()
         .map(|path| Pending::new(Path::new(path)))
@@ -154,9 +163,10 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
                 .iter()
                 .try_fold(0u64, |n, p| n.checked_add(p.len() as u64))
                 .ok_or("OUTPUT_LIMIT_EXCEEDED: frame size overflow")?;
-            if video.is_some() && next
-                .checked_mul(frame_bytes)
-                .is_none_or(|n| n > budget.limit)
+            if video.is_some()
+                && next
+                    .checked_mul(frame_bytes)
+                    .is_none_or(|n| n > budget.limit)
             {
                 return Err("OUTPUT_LIMIT_EXCEEDED: frames times frame bytes".into());
             }
@@ -176,15 +186,15 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
             let tag = format!("FRAME XPTS={}\n", f.timestamp_ns);
             if let Some(video) = &mut video {
                 budget.charge(
-                frame_bytes
-                    .checked_add((header.len() + tag.len()) as u64)
-                    .ok_or("OUTPUT_LIMIT_EXCEEDED")?,
-            )?;
-            video.write_all(header.as_bytes())?;
-            video.write_all(tag.as_bytes())?;
-            for plane in &f.planes {
-                video.write_all(plane)?;
-            }
+                    frame_bytes
+                        .checked_add((header.len() + tag.len()) as u64)
+                        .ok_or("OUTPUT_LIMIT_EXCEEDED")?,
+                )?;
+                video.write_all(header.as_bytes())?;
+                video.write_all(tag.as_bytes())?;
+                for plane in &f.planes {
+                    video.write_all(plane)?;
+                }
             }
             if let Some(hashes) = &mut hashes {
                 let mut text = String::new();
@@ -195,7 +205,13 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
                 for plane in &f.planes {
                     digest.update(plane);
                 }
-                text.push_str(&format!("{} {:x} {} {}\n", frames, digest.finalize(), frame_bytes, f.timestamp_ns));
+                text.push_str(&format!(
+                    "{} {:x} {} {}\n",
+                    frames,
+                    digest.finalize(),
+                    frame_bytes,
+                    f.timestamp_ns
+                ));
                 budget.charge(text.len() as u64)?;
                 hashes.write_all(text.as_bytes())?;
             }
@@ -214,8 +230,12 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
     if frames == 0 {
         return Err("NO_VIDEO_FRAMES: AV1 stream emitted no video frames".into());
     }
-    if let Some(video) = &mut video { video.flush()?; }
-    if let Some(hashes) = &mut hashes { hashes.flush()?; }
+    if let Some(video) = &mut video {
+        video.flush()?;
+    }
+    if let Some(hashes) = &mut hashes {
+        hashes.flush()?;
+    }
     drop(video);
     drop(hashes);
     if let Some(wav) = &mut wav_output {
@@ -225,16 +245,24 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
         &json!({"published":true,"frames":frames,"output_bytes":budget.used,
             "framemd5":framemd5.is_some(), "framemd5_lines":if framemd5.is_some() { frames } else { 0 }}),
     )?;
-    if let Some(output) = &mut output { output.publish()?; }
-    if let Some(output) = &mut md5_output { output.publish()?; }
+    if let Some(output) = &mut output {
+        output.publish()?;
+    }
+    if let Some(output) = &mut md5_output {
+        output.publish()?;
+    }
     if let Some(wav) = &mut wav_output {
         wav.publish()?;
     }
     if let Some(wav) = &mut wav_output {
         wav.commit();
     }
-    if let Some(output) = &mut output { output.commit(); }
-    if let Some(output) = &mut md5_output { output.commit(); }
+    if let Some(output) = &mut output {
+        output.commit();
+    }
+    if let Some(output) = &mut md5_output {
+        output.commit();
+    }
     if let Err(e) = receipt_line(&receipt)
         && e.kind() != io::ErrorKind::BrokenPipe
     {
@@ -705,17 +733,45 @@ mod tests {
     fn framemd5_dav1d_oracle_and_transactional_outputs() {
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("changing.webm");
-        ff(&["-f", "lavfi", "-i", "testsrc2=size=64x48:rate=30", "-frames:v", "90",
-            "-c:v", "libaom-av1", "-cpu-used", "8", input.to_str().unwrap()]);
+        ff(&[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x48:rate=30",
+            "-frames:v",
+            "90",
+            "-c:v",
+            "libaom-av1",
+            "-cpu-used",
+            "8",
+            input.to_str().unwrap(),
+        ]);
         let y4m = dir.path().join("out.y4m");
         let hashes = dir.path().join("out.txt");
         let invoke = |flags: &[&str]| {
-            run(false, std::iter::once(input.clone().into_os_string())
-                .chain(flags.iter().map(OsString::from)))
+            run(
+                false,
+                std::iter::once(input.clone().into_os_string())
+                    .chain(flags.iter().map(OsString::from)),
+            )
         };
-        assert!(invoke(&[]).unwrap_err().to_string().contains("VIDEO_OUTPUT_REQUIRED"));
-        assert!(invoke(&["--y4m", hashes.to_str().unwrap(), "--framemd5", hashes.to_str().unwrap()])
-            .unwrap_err().to_string().contains("OUTPUT_PATH_CONFLICT"));
+        assert!(
+            invoke(&[])
+                .unwrap_err()
+                .to_string()
+                .contains("VIDEO_OUTPUT_REQUIRED")
+        );
+        assert!(
+            invoke(&[
+                "--y4m",
+                hashes.to_str().unwrap(),
+                "--framemd5",
+                hashes.to_str().unwrap()
+            ])
+            .unwrap_err()
+            .to_string()
+            .contains("OUTPUT_PATH_CONFLICT")
+        );
         let h = hashes.to_str().unwrap();
         let y = y4m.to_str().unwrap();
         invoke(&["--y4m", y, "--framemd5", h]).unwrap();
@@ -723,19 +779,41 @@ mod tests {
         let encoded = std::fs::read(&input).unwrap();
         let demux = Demuxer::new(&encoded).unwrap();
         assert_eq!(text.lines().next(), Some("#av-framemd5 v1 W64 H48 yuv420p"));
-        let ours: Vec<_> = text.lines().skip(1).enumerate().map(|(i, l)| {
-            let columns: Vec<_> = l.split_whitespace().collect();
-            assert_eq!(columns.len(), 4);
-            assert_eq!(columns[0], i.to_string());
-            assert_eq!(columns[2], "4608");
-            assert_eq!(columns[3].parse::<i64>().unwrap(), demux.packets()[i].timestamp * demux.scale_ns as i64);
-            columns[1]
-        }).collect();
-        let oracle = ff(&["-c:v", "libdav1d", "-i", input.to_str().unwrap(),
-            "-map", "0:v:0", "-fps_mode", "passthrough", "-f", "framemd5", "-"]);
+        let ours: Vec<_> = text
+            .lines()
+            .skip(1)
+            .enumerate()
+            .map(|(i, l)| {
+                let columns: Vec<_> = l.split_whitespace().collect();
+                assert_eq!(columns.len(), 4);
+                assert_eq!(columns[0], i.to_string());
+                assert_eq!(columns[2], "4608");
+                assert_eq!(
+                    columns[3].parse::<i64>().unwrap(),
+                    demux.packets()[i].timestamp * demux.scale_ns as i64
+                );
+                columns[1]
+            })
+            .collect();
+        let oracle = ff(&[
+            "-c:v",
+            "libdav1d",
+            "-i",
+            input.to_str().unwrap(),
+            "-map",
+            "0:v:0",
+            "-fps_mode",
+            "passthrough",
+            "-f",
+            "framemd5",
+            "-",
+        ]);
         let oracle = String::from_utf8(oracle).unwrap();
-        let reference: Vec<_> = oracle.lines().filter(|l| !l.starts_with('#') && !l.is_empty())
-            .map(|l| l.rsplit(',').next().unwrap().trim()).collect();
+        let reference: Vec<_> = oracle
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+            .map(|l| l.rsplit(',').next().unwrap().trim())
+            .collect();
         assert_eq!(ours.len(), 90);
         assert!(ours.windows(2).any(|p| p[0] != p[1]));
         assert_eq!(ours, reference);
@@ -754,9 +832,11 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&hashes).unwrap(), text);
         std::fs::remove_file(&hashes).unwrap();
         let wav = dir.path().join("out.wav");
-        for flags in [vec!["--y4m", y, "--framemd5", h, "--max-output-bytes", "10000"],
+        for flags in [
+            vec!["--y4m", y, "--framemd5", h, "--max-output-bytes", "10000"],
             vec!["--framemd5", h, "--max-output-bytes", "100"],
-            vec!["--y4m", y, "--framemd5", h, "--wav", wav.to_str().unwrap()]] {
+            vec!["--y4m", y, "--framemd5", h, "--wav", wav.to_str().unwrap()],
+        ] {
             assert!(invoke(&flags).is_err());
             assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
         }

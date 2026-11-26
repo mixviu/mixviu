@@ -6,6 +6,36 @@ const FIXTURE: &[u8] = include_bytes!("../../../libraries/media/webm/tests/fixtu
 fn repeats(count: u64) -> Vec<u8> {
     repeat_stream(count, false)
 }
+
+#[test]
+fn framemd5_cli_receipt_budget_and_duration_ceiling() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("input.webm");
+    let hashes = dir.path().join("out.txt");
+    let mut bytes = repeats(20);
+    std::fs::write(&input, &bytes).unwrap();
+    let invoke = || {
+        Command::new(env!("CARGO_BIN_EXE_av"))
+            .arg("decode").arg(&input).arg("--framemd5").arg(&hashes)
+            .args(["--max-output-bytes", "4000"]).output().unwrap()
+    };
+    let result = invoke();
+    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    let receipt: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(receipt["frames"], 20);
+    assert_eq!(receipt["framemd5"], true);
+    assert_eq!(receipt["framemd5_lines"], 20);
+    assert_eq!(receipt["output_bytes"], std::fs::metadata(&hashes).unwrap().len());
+    assert_eq!(std::fs::read_to_string(&hashes).unwrap().lines().count(), 21);
+    std::fs::remove_file(&hashes).unwrap();
+    let at = bytes.windows(2).position(|b| b == [0x44, 0x89]).unwrap() + 10;
+    bytes[at..at + 8].copy_from_slice(&40f64.to_be_bytes());
+    std::fs::write(&input, bytes).unwrap();
+    let result = invoke();
+    assert_eq!(result.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("FRAME_COUNT_LIMIT_EXCEEDED"));
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}
 fn repeat_stream(count: u64, vfr: bool) -> Vec<u8> {
     let d = Demuxer::new(FIXTURE).unwrap();
     let t = &d.tracks[0];
