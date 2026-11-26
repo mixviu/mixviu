@@ -77,12 +77,17 @@ include `segment_kind`, `segment_kind_fields`, `solid_colour`,
 `still_dimensions_limit`, `still_decode_bytes_limit`, `still_colour_type` and
 `still_animation`. `still_colour_type` is a defensive refusal for unexpected
 decoder output after palette expansion and 16-bit stripping.
+`still_cache_poisoned` refuses a still cache whose lock was poisoned by a panic.
 
 `av probe FILE` detects RIFF WAV as well as WebM. WAV uses the audio reader's
 validation and reports format, PCM sample format, rate, channels, sample-frame
 count and duration. PCM16/24/32 and float32 mono/stereo are supported, including
 ancillary RIFF chunks. Streaming WAVs with unbounded chunk lengths are refused
 by the same reader used for render inputs.
+WAV probe input is capped at 256 MiB before sample decoding, matching WebM's
+input cap (`PROBE_INPUT_LIMIT` for oversized WAV files). The `frames` key counts
+audio sample frames for WAV (one sample per channel), and decoded AV1 video
+frames for WebM (zero for audio-only WebM).
 
 A crossfade starts at an incoming segment's start. The preceding segment's held
 last frame can cover a fade after its trim ends. Fades are sorted once and must
@@ -146,6 +151,13 @@ This is an admission estimate, not an operating-system RSS limit. Real episode
 peak RSS is reported with the worker receipt. Audio retains the bounded
 three-hour contract documented by media-audio. Both stages join before mux;
 video packets spool to a temporary file while audio completes.
+The receipt records the audio admission allowance as `audio_peak_estimate_bytes`
+(bytes), alongside `peak_rss_kib` (whole-process high-water RSS in KiB). The
+estimate covers audio only; compare it with RSS allowing for video and caches.
+If video encoding fails while audio mastering returns a refusal, the video
+error takes precedence and no audio refusal receipt is emitted. Both stages
+still join and temporary files are removed. An audio preparation error takes
+precedence over a video error.
 Each render encoder uses pinned rav1e 0.8.1, Main 8-bit 420, low latency,
 error-resilient frames, constant QP,
 no reordering and one GOP. Actual sequence OBUs must match across chunks.

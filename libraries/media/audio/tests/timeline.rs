@@ -4,6 +4,16 @@ fn spec() -> Value {
     json!({"version":1,"sample_rate":48000,"channels":2,"duration_s":1.0,"sources":[],"master":{"integrated_lufs":-14,"true_peak_dbtp":-1}})
 }
 #[test]
+fn ceiling_limited_opt_in_wire_format() {
+    let mut v = spec();
+    let default: Timeline = serde_json::from_value(v.clone()).unwrap();
+    assert!(!default.master.accept_ceiling_limited);
+    v["master"]["accept_ceiling_limited"] = json!(true);
+    let t: Timeline = serde_json::from_str(&v.to_string()).unwrap();
+    assert!(t.master.accept_ceiling_limited);
+    t.validate().unwrap();
+}
+#[test]
 fn validation() {
     for (field, value) in [
         ("version", json!(2)),

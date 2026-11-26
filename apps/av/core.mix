@@ -145,7 +145,7 @@ fn perform($s,$id,$a)
   $units=filter(split(trim($live.stdout),"\n"),fn($v)=$v!="")
   if len($units)>=$s.cfg.max_jobs then raise("AV_BUSY","host job limit reached",{limit:$s.cfg.max_jobs}) end
   $mem=memory($a.mem ?? $s.cfg.max_mem)
-  if byte_limit($mem)>byte_limit($s.cfg.max_mem,"max_mem") then raise("AV_MAX_MEM","mem exceeds max_mem") end
+  if byte_limit($mem,"mem")>byte_limit($s.cfg.max_mem,"max_mem") then raise("AV_MAX_MEM","mem exceeds max_mem") end
   $cpu=positive($a.cpu ?? $s.cfg.max_cpu,"cpu")
   if $cpu>$s.cfg.max_cpu then raise("AV_MAX_CPU","cpu exceeds max_cpu") end
   $outputs=[]

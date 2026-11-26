@@ -322,6 +322,19 @@ fn limits_progress_and_default_bytes() {
     assert_eq!(receipt["encode_effective"]["chunks"], 1);
     assert_eq!(receipt["encode_effective"]["threads"], 1);
     assert_eq!(receipt["limits"]["cpu"], 1);
+    let serial_events = lines(&limited);
+    let audio_end = serial_events.iter().position(|e| e["stage"] == "audio" && e["event"] == "end").unwrap();
+    let video_start = serial_events.iter().position(|e| e["stage"] == "video" && e["event"] == "start").unwrap();
+    assert!(audio_end < video_start, "{serial_events:#?}");
+    let estimate = media_audio::timeline::peak_memory_bytes(
+        1.0,
+        &serde_json::from_value::<media_audio::timeline::Timeline>(json!({
+            "version":1,"duration_s":1,"sample_rate":48000,"channels":2,
+            "sources":audio["sources"],"master":audio["master"]
+        })).unwrap().sources,
+        root,
+    ).unwrap();
+    assert_eq!(receipt["audio_peak_estimate_bytes"], estimate);
     if std::thread::available_parallelism().unwrap().get() >= 16 {
         timeline["encode"]["chunks"] = json!(4);
         fs::write(root.join("timeline.json"), timeline.to_string()).unwrap();
