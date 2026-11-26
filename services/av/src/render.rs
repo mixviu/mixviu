@@ -1339,8 +1339,11 @@ mod tests {
         assert_eq!((t.encode.chunks, t.encode.threads), (1, 1));
         t.encode.chunks = 2;
         let working = working_bytes(4096, 16384, 32, 32).unwrap();
+        let audio_peak =
+            media_audio::timeline::peak_memory_bytes(t.duration_s, &t.audio.sources, root.path())
+                .unwrap();
         t.limits.cpu = None;
-        t.limits.mem = Some(working + working / 2);
+        t.limits.mem = Some(audio_peak + working + working / 2);
         t.validate(root.path()).unwrap();
         assert_eq!(t.encode.chunks, 1);
         t.limits.mem = Some(working - 1);
@@ -1350,9 +1353,6 @@ mod tests {
                 .to_string()
                 .contains("encode_memory_budget")
         );
-        let audio_peak =
-            media_audio::timeline::peak_memory_bytes(t.duration_s, &t.audio.sources, root.path())
-                .unwrap();
         t.limits.mem = Some(working + audio_peak - 1);
         assert!(t.validate(root.path()).is_err());
         t.limits.mem = Some(working + audio_peak);
