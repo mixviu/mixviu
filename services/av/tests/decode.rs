@@ -16,17 +16,32 @@ fn framemd5_cli_receipt_budget_and_duration_ceiling() {
     std::fs::write(&input, &bytes).unwrap();
     let invoke = || {
         Command::new(env!("CARGO_BIN_EXE_av"))
-            .arg("decode").arg(&input).arg("--framemd5").arg(&hashes)
-            .args(["--max-output-bytes", "4000"]).output().unwrap()
+            .arg("decode")
+            .arg(&input)
+            .arg("--framemd5")
+            .arg(&hashes)
+            .args(["--max-output-bytes", "4000"])
+            .output()
+            .unwrap()
     };
     let result = invoke();
-    assert!(result.status.success(), "{}", String::from_utf8_lossy(&result.stderr));
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
     let receipt: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(receipt["frames"], 20);
     assert_eq!(receipt["framemd5"], true);
     assert_eq!(receipt["framemd5_lines"], 20);
-    assert_eq!(receipt["output_bytes"], std::fs::metadata(&hashes).unwrap().len());
-    assert_eq!(std::fs::read_to_string(&hashes).unwrap().lines().count(), 21);
+    assert_eq!(
+        receipt["output_bytes"],
+        std::fs::metadata(&hashes).unwrap().len()
+    );
+    assert_eq!(
+        std::fs::read_to_string(&hashes).unwrap().lines().count(),
+        21
+    );
     std::fs::remove_file(&hashes).unwrap();
     let at = bytes.windows(2).position(|b| b == [0x44, 0x89]).unwrap() + 10;
     bytes[at..at + 8].copy_from_slice(&40f64.to_be_bytes());
