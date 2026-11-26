@@ -162,6 +162,36 @@ fn variable_packet_intervals_do_not_invent_a_frame_rate_ceiling() {
     );
     let receipt: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(receipt["frames"], 20);
+    let bytes = std::fs::read(dir.path().join("out.y4m")).unwrap();
+    let mut at = bytes.iter().position(|b| *b == b'\n').unwrap() + 1;
+    let header = std::str::from_utf8(&bytes[..at]).unwrap();
+    assert!(header.contains(" F1000000000:40000000 "), "{header}");
+    for i in 0..20 {
+        let end = at + bytes[at..].iter().position(|b| *b == b'\n').unwrap() + 1;
+        let timestamp = (i * 40 + if i > 0 { 120 } else { 0 }) * 1_000_000;
+        assert_eq!(&bytes[at..end], format!("FRAME XPTS={timestamp}\n").as_bytes());
+        at = end + 64 * 48 * 3 / 2;
+    }
+    assert_eq!(at, bytes.len());
+}
+
+#[test]
+fn lexical_output_aliases_are_refused_before_staging() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("input.webm"), FIXTURE).unwrap();
+    for flags in [
+        vec!["--y4m", "out", "--framemd5", "./out"],
+        vec!["--framemd5", "out", "--wav", "missing/../out"],
+        vec!["--framemd5", "./input.webm"],
+        vec!["--y4m", "missing/../input.webm"],
+    ] {
+        let result = Command::new(env!("CARGO_BIN_EXE_av"))
+            .current_dir(dir.path()).args(["decode", "input.webm"])
+            .args(flags).output().unwrap();
+        assert_eq!(result.status.code(), Some(2));
+        assert!(String::from_utf8_lossy(&result.stderr).contains("OUTPUT_PATH_CONFLICT"));
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
 }
 
 #[test]
