@@ -43,6 +43,12 @@ fn short_quiet_ceiling_limited_requires_explicit_opt_in() {
     let dir = std::env::temp_dir().join(format!("short-ceiling-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let mut clip = Audio::new(48000, 2, speech().samples()[..120000 * 2].to_vec()).unwrap();
+    // A sparse stronger plosive makes this a ceiling-limited specimen rather
+    // than relying on duration alone to cause a refusal.
+    let samples = clip.samples().iter().enumerate().map(|(i, x)| {
+        x * if (5700..5940).contains(&((i / 2) % 46828)) { 2.7 / 2.2 } else { 1.0 }
+    }).collect();
+    clip = Audio::new(48000, 2, samples).unwrap();
     clip.normalise(-20.5, 0.0).unwrap();
     assert!((clip.measure().unwrap().integrated_lufs + 20.5).abs() < 0.01);
     clip.write_wav(File::create(dir.join("short.wav")).unwrap(), WavFormat::Float32).unwrap();
