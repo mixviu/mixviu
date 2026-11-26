@@ -491,7 +491,7 @@ impl Timeline {
             if cpu == 0 || cpu > cores {
                 return refuse("cpu_limit");
             }
-            clamp_cpu(&mut e.chunks, &mut e.threads, cpu);
+            clamp_cpu(&mut e.chunks, &mut e.threads, cpu.saturating_sub(1).max(1));
         }
         if self.limits.mem.is_none()
             && e.chunks
@@ -599,15 +599,20 @@ impl Timeline {
         // Conservative admission estimate, including packet/position metadata,
         // two VFL canvases with payload/scratch, scaler and encoder frame storage.
         let working = working_bytes(source_bytes, scale_bytes, v.width as u64, v.height as u64)?;
+        let audio_peak = media_audio::timeline::peak_memory_bytes(
+            self.duration_s, &self.audio.sources, base,
+        )?;
+        let budget = self.limits.mem.unwrap_or(8 * 1024 * 1024 * 1024)
+            .checked_sub(audio_peak).ok_or("render: encode_memory_budget")?;
         if let Some(mem) = self.limits.mem {
-            if mem < working {
+            if mem < audio_peak || budget < working {
                 return refuse("encode_memory_budget");
             }
-            e.chunks = e.chunks.min((mem / working).min(64) as usize);
+            e.chunks = e.chunks.min((budget / working).min(64) as usize);
         }
         if working
             .checked_mul(e.chunks as u64)
-            .is_none_or(|n| n > self.limits.mem.unwrap_or(8 * 1024 * 1024 * 1024))
+            .is_none_or(|n| n > budget)
         {
             return refuse("encode_memory_budget");
         }
@@ -934,6 +939,75 @@ fn chunk(
         scaling,
     })
 }
+struct VideoResult {
+    config: Vec<u8>,
+    packets: u64,
+    encoded: usize,
+    scaling: ScaleStats,
+    wall_s: f64,
+}
+
+fn encode_video(
+    t: &Timeline,
+    directories: &[Input],
+    starts: &[u64],
+    progress: &media_audio::progress::Progress,
+    spool: &mut std::fs::File,
+) -> Result<VideoResult> {
+    let wall = Instant::now();
+    let chunk_count = starts.len() - 1;
+    progress.event("video", "start", serde_json::json!({"frames_total":frame(t.duration_s),"chunks_total":chunk_count}));
+    let mut result = VideoResult {
+        config: Vec::new(), packets: 0, encoded: 0,
+        scaling: ScaleStats::default(), wall_s: 0.0,
+    };
+    let mut spool = BufWriter::new(spool);
+    for ranges in starts.windows(2).collect::<Vec<_>>().chunks(t.encode.chunks) {
+        let batch = std::thread::scope(|scope| {
+            let handles: Vec<_> = ranges.iter().map(|r| {
+                let index = starts.binary_search(&r[0]).unwrap();
+                scope.spawn(move || {
+                    progress.event("video", "start", serde_json::json!({"chunk":index,"chunks_total":chunk_count}));
+                    let result = chunk(t, directories, r[0], r[1], progress).map_err(|e| e.to_string());
+                    progress.event("video", "end", serde_json::json!({"chunk":index,"chunks_total":chunk_count}));
+                    result
+                })
+            }).collect();
+            handles.into_iter().map(|h| h.join().map_err(|_| "chunk_worker_panicked".to_string())?)
+                .collect::<std::result::Result<Vec<_>, String>>()
+        })?;
+        for chunk in batch {
+            if result.config.is_empty() {
+                result.config = chunk.config;
+            } else if result.config != chunk.config {
+                return refuse("sequence_header_mismatch");
+            }
+            result.encoded += chunk.encoded;
+            result.scaling.frames += chunk.scaling.frames;
+            result.scaling.wall_s += chunk.scaling.wall_s;
+            for p in chunk.packets {
+                spool.write_all(&p.pts.to_le_bytes())?;
+                spool.write_all(&(p.data.len() as u64).to_le_bytes())?;
+                spool.write_all(&[u8::from(p.key_frame)])?;
+                spool.write_all(&p.data)?;
+                result.packets += 1;
+            }
+        }
+    }
+    spool.flush()?;
+    result.wall_s = wall.elapsed().as_secs_f64();
+    progress.event("video", "end", serde_json::json!({}));
+    Ok(result)
+}
+
+fn thread_cpu() -> f64 {
+    let mut time = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    // SAFETY: valid writable timespec, read only after successful clock call.
+    if unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) } != 0 {
+        return 0.0;
+    }
+    time.tv_sec as f64 + time.tv_nsec as f64 * 1e-9
+}
 fn cpu() -> f64 {
     let ticks = std::fs::read("/proc/self/auxv")
         .ok()
@@ -1009,7 +1083,7 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
         duration_s: t.duration_s,
         sample_rate: t.audio.sample_rate,
         channels: t.audio.channels,
-        sources: t.audio.sources,
+        sources: std::mem::take(&mut t.audio.sources),
         master: t.audio.master,
     };
     // Preserve the validated video executor while borrowing the audio specification.
@@ -1017,144 +1091,92 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
     let input_cpu = cpu() - total_cpu;
     progress.event("input", "end", serde_json::json!({}));
     progress.event("audio", "start", serde_json::json!({"audio_pass":0}));
-    let wall = Instant::now();
-    let c = cpu();
-    let a = media_audio::timeline::prepare(&audio, &base)?;
-    progress.event(
-        "audio",
-        "end",
-        serde_json::json!({"audio_pass":a.receipt.codec_passes}),
-    );
-    let audio_wall = wall.elapsed().as_secs_f64();
-    let audio_cpu = cpu() - c;
-    if a.receipt.refused || !a.receipt.target_reached {
+    let mut pending = media_audio::pending::Pending::new(out)?;
+    // Never published: the same pending-file discipline removes the packet spool
+    // on success, refusal, I/O error or panic.
+    let mut spool = media_audio::pending::Pending::new(out)?;
+    let prepare_audio = || {
+        let wall = Instant::now();
+        let c = thread_cpu();
+        let a = media_audio::timeline::prepare(&audio, &base).map_err(|e| e.to_string())?;
+        progress.event("audio", "end", serde_json::json!({"audio_pass":a.receipt.codec_passes}));
+        Ok::<_, String>((a, wall.elapsed().as_secs_f64(), thread_cpu() - c))
+    };
+    let (a, video) = if limits.cpu == Some(1) {
+        // One total CPU slot cannot run two stages concurrently.
+        let a = prepare_audio();
+        let video = encode_video(&t, &directories, &starts, progress, &mut spool.file);
+        (a, video)
+    } else {
+        std::thread::scope(|scope| {
+            let audio = scope.spawn(prepare_audio);
+            let video = encode_video(&t, &directories, &starts, progress, &mut spool.file);
+            // Always join, even when video failed. Neither result can publish.
+            let audio = audio.join().map_err(|_| "audio_worker_panicked".to_string())
+                .and_then(|r| r);
+            (audio, video)
+        })
+    };
+    let (a, audio_wall, audio_cpu) = a?;
+    let video = video?;
+    if a.receipt.refused {
         let _ = media_audio::cli::diagnostic(format_args!(
             "mastering refused: encoded {:.3} LUFS, {:.3} dBTP; target {:.3} LUFS, ceiling {:.3} dBTP",
-            a.receipt.encoded.integrated_lufs,
-            a.receipt.encoded.true_peak_dbtp,
-            audio.master.integrated_lufs,
-            audio.master.true_peak_dbtp
+            a.receipt.encoded.integrated_lufs, a.receipt.encoded.true_peak_dbtp,
+            audio.master.integrated_lufs, audio.master.true_peak_dbtp
         ));
         return deliver_receipt(&serde_json::to_string(&a.receipt)?, 3);
     }
     drop(a.audio);
-    let t = Timeline {
-        audio: Audio {
-            sample_rate: 48000,
-            channels: 2,
-            sources: Vec::new(),
-            master: audio.master,
-        },
-        ..t
-    };
-    let mut pending = media_audio::pending::Pending::new(out)?;
-    let mut writer = None;
-    let mut config: Option<Vec<u8>> = None;
-    let mut ai = 0;
-    let mut encoded = 0;
+    let video_wall = video.wall_s;
+    // Process CPU over both joined stages, less the serial audio thread's CPU.
+    let video_cpu = (cpu() - total_cpu - input_cpu - audio_cpu).max(0.0);
+    let encoded = video.encoded;
+    let scaled_frames = video.scaling.frames;
+    let scale_wall_s = video.scaling.wall_s;
+    let chunk_count = starts.len() - 1;
     let mut keyframes = 0;
-    let mut scaled_frames = 0;
-    let mut scale_wall_s = 0.0;
-    let mut video_wall = 0.0;
-    let mut video_cpu = 0.0;
+    let mut ai = 0;
     let mut mux_wall = 0.0;
     let mut mux_cpu = 0.0;
-    let chunk_count = starts.len() - 1;
-    progress.event(
-        "video",
-        "start",
-        serde_json::json!({"frames_total":frame(t.duration_s),"chunks_total":chunk_count}),
-    );
-    let mut mux_started = false;
-    for ranges in starts
-        .windows(2)
-        .collect::<Vec<_>>()
-        .chunks(t.encode.chunks)
-    {
-        let wall = Instant::now();
-        let c = cpu();
-        let batch = std::thread::scope(|scope| {
-            let handles: Vec<_> = ranges
-                .iter()
-                .map(|r| {
-                    let t = &t;
-                    let directories = &directories;
-                    let index = starts.binary_search(&r[0]).unwrap();
-                    scope.spawn(move || {
-                        progress.event(
-                            "video",
-                            "start",
-                            serde_json::json!({"chunk":index,"chunks_total":chunk_count}),
-                        );
-                        let result =
-                            chunk(t, directories, r[0], r[1], progress).map_err(|e| e.to_string());
-                        progress.event(
-                            "video",
-                            "end",
-                            serde_json::json!({"chunk":index,"chunks_total":chunk_count}),
-                        );
-                        result
-                    })
-                })
-                .collect();
-            handles
-                .into_iter()
-                .map(|h| h.join().map_err(|_| "chunk_worker_panicked".to_string())?)
-                .collect::<std::result::Result<Vec<_>, String>>()
-        })?;
-        if ranges
-            .last()
-            .is_some_and(|r| r[1] == *starts.last().unwrap())
-        {
-            progress.event("video", "end", serde_json::json!({}));
+    use std::io::{Seek, SeekFrom};
+    spool.file.seek(SeekFrom::Start(0))?;
+    let mut spool_reader = io::BufReader::new(&mut spool.file);
+    progress.event("mux", "start", serde_json::json!({}));
+    let wall = Instant::now();
+    let c = cpu();
+    let mut writer = Some(media_webm::Writer::new(
+        BufWriter::new(pending.file.try_clone()?),
+        media_webm::Video {
+            width: t.video.width as u32, height: t.video.height as u32,
+            codec_private: video.config,
+        },
+        Some(media_webm::Opus {
+            channels: a.head.channels, pre_skip: a.head.pre_skip,
+            input_sample_rate: a.head.input_sample_rate,
+        }),
+    )?);
+    for _ in 0..video.packets {
+        let mut header = [0u8; 17];
+        spool_reader.read_exact(&mut header)?;
+        let pts = u64::from_le_bytes(header[..8].try_into().unwrap());
+        let len = u64::from_le_bytes(header[8..16].try_into().unwrap()) as usize;
+        if len > CHUNK_BYTES_LIMIT { return refuse("spool_packet_limit"); }
+        let mut data = vec![0; len];
+        spool_reader.read_exact(&mut data)?;
+        let ms = pts * 1000 / 30;
+        let w = writer.as_mut().ok_or("missing_muxer")?;
+        while ai < a.packets.len() && ai as u64 * 20 <= ms {
+            let packet = &a.packets[ai];
+            w.opus_packet(ai as u64 * 20, &packet.data, packet.discard_padding)?;
+            ai += 1;
         }
-        video_wall += wall.elapsed().as_secs_f64();
-        video_cpu += cpu() - c;
-        if !mux_started {
-            progress.event("mux", "start", serde_json::json!({}));
-            mux_started = true;
-        }
-        let wall = Instant::now();
-        let c = cpu();
-        for chunk in batch {
-            if let Some(previous) = &config {
-                if *previous != chunk.config {
-                    return refuse("sequence_header_mismatch");
-                }
-            } else {
-                config = Some(chunk.config.clone());
-                writer = Some(media_webm::Writer::new(
-                    BufWriter::new(pending.file.try_clone()?),
-                    media_webm::Video {
-                        width: t.video.width as u32,
-                        height: t.video.height as u32,
-                        codec_private: chunk.config.clone(),
-                    },
-                    Some(media_webm::Opus {
-                        channels: a.head.channels,
-                        pre_skip: a.head.pre_skip,
-                        input_sample_rate: a.head.input_sample_rate,
-                    }),
-                )?);
-            }
-            let w = writer.as_mut().ok_or("missing_muxer")?;
-            encoded += chunk.encoded;
-            scaled_frames += chunk.scaling.frames;
-            scale_wall_s += chunk.scaling.wall_s;
-            for p in chunk.packets {
-                let ms = p.pts * 1000 / 30;
-                while ai < a.packets.len() && ai as u64 * 20 <= ms {
-                    let packet = &a.packets[ai];
-                    w.opus_packet(ai as u64 * 20, &packet.data, packet.discard_padding)?;
-                    ai += 1;
-                }
-                keyframes += usize::from(p.key_frame);
-                w.packet(1, ms, (p.pts + 1) * 1000 / 30 - ms, p.key_frame, &p.data)?;
-            }
-        }
-        mux_wall += wall.elapsed().as_secs_f64();
-        mux_cpu += cpu() - c;
+        let key = header[16] != 0;
+        keyframes += usize::from(key);
+        w.packet(1, ms, (pts + 1) * 1000 / 30 - ms, key, &data)?;
     }
+    mux_wall += wall.elapsed().as_secs_f64();
+    mux_cpu += cpu() - c;
     let mux_start = Instant::now();
     let c = cpu();
     let mut w = writer.ok_or("missing_muxer")?;

@@ -39,6 +39,36 @@ fn speech() -> Audio {
 }
 
 #[test]
+fn short_quiet_ceiling_limited_requires_explicit_opt_in() {
+    let dir = std::env::temp_dir().join(format!("short-ceiling-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut clip = Audio::new(48000, 2, speech().samples()[..120000 * 2].to_vec()).unwrap();
+    clip.normalise(-20.5, 0.0).unwrap();
+    assert!((clip.measure().unwrap().integrated_lufs + 20.5).abs() < 0.01);
+    clip.write_wav(File::create(dir.join("short.wav")).unwrap(), WavFormat::Float32).unwrap();
+    let mut t: Timeline = serde_json::from_value(json!({"version":1,"sample_rate":48000,"channels":2,
+        "duration_s":2.5,"sources":[{"path":"short.wav","at_s":0}],
+        "master":{"integrated_lufs":-14,"true_peak_dbtp":-1}})).unwrap();
+    let out = dir.join("short.webm");
+    let wav = dir.join("short-master.wav");
+    let refused = render(&t, &dir, &out, Some(&wav)).unwrap();
+    println!("short default: {}", serde_json::to_string(&refused).unwrap());
+    assert!(refused.refused && !refused.target_reached);
+    assert!(!out.exists() && !wav.exists());
+    t.master.accept_ceiling_limited = true;
+    let accepted = render(&t, &dir, &out, Some(&wav)).unwrap();
+    assert!(!accepted.refused && !accepted.target_reached);
+    assert!(accepted.shortfall_lu > 0.1);
+    assert!(accepted.encoded.true_peak_dbtp <= -1.0);
+    assert_eq!(accepted.encoded.integrated_lufs, refused.encoded.integrated_lufs);
+    assert_eq!(accepted.passes, refused.passes);
+    assert_eq!(accepted.codec_attempts, accepted.codec_passes + 1);
+    assert_eq!(accepted.mastering_cost.iter().map(|c| c.limiter_passes).sum::<u8>(), accepted.passes);
+    assert!(out.exists() && wav.exists());
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn speech_encoded_target_and_oracle() {
     let dir = std::env::temp_dir().join(format!("mastering-speech-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();

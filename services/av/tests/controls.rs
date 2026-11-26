@@ -192,13 +192,10 @@ fn video_progress_continues_through_overlapping_mux() {
         .iter()
         .position(|e| e["stage"] == "video" && e["event"] == "end" && e.get("chunk").is_none())
         .unwrap();
-    assert!(mux_start < video_end);
-    assert!(
-        events[mux_start + 1..video_end]
-            .iter()
-            .any(|e| e["stage"] == "video" && e["event"] == "progress"),
-        "{events:#?}"
-    );
+    assert!(video_end < mux_start);
+    let audio_end = events.iter().position(|e| e["stage"] == "audio" && e["event"] == "end").unwrap();
+    let video_start = events.iter().position(|e| e["stage"] == "video" && e["event"] == "start").unwrap();
+    assert!(video_start < audio_end && audio_end < mux_start, "{events:#?}");
     for stage in ["mux", "done"] {
         let end = events
             .iter()
@@ -322,7 +319,7 @@ fn limits_progress_and_default_bytes() {
         let o = invoke(root, "render", &["--cpu", "16"], "cpu16.webm");
         assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
         let r: Value = serde_json::from_slice(&o.stdout).unwrap();
-        assert_eq!(r["encode_effective"]["chunks"], 2);
+        assert_eq!(r["encode_effective"]["chunks"], 1);
         assert_eq!(r["encode_effective"]["threads"], 8);
     }
     timeline["encode"]["chunks"] = json!(2);
