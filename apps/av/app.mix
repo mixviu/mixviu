@@ -8,6 +8,9 @@ if $config!="" then
   $over=load_data($config)
   $core.check_fields($over,keys($cfg))
   for $k in keys($over) $cfg[$k]=$over[$k] end
+  -- Old host defaults become ceilings unless a new ceiling is explicit.
+  if $over.max_cpu==nil and $over.cpu!=nil then $cfg.max_cpu=$over.cpu end
+  if $over.max_mem==nil and $over.mem!=nil then $cfg.max_mem=$over.mem end
 end
 $state=$core.fresh($cfg)
 -- One citizen for this user on this host, including accidental alternate

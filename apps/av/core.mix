@@ -2,7 +2,8 @@
 -- Host configuration only: none of these settings come from Bus parameters.
 fn defaults()
   return {av:["/opt/mix/bin/av"], runner:["systemd-run"], control:["systemctl"],
-    roots:[path_join(env("HOME"),".viu/media/runs")], cpu:1, mem:"8G", decode_max_bytes:"64G", max_jobs:1}
+    roots:[path_join(env("HOME"),".viu/media/runs")], cpu:1, mem:"8G", max_cpu:1, max_mem:"8G",
+    max_output_bytes:68719476736, decode_max_bytes:"64G", max_jobs:1}
 end
 fn check_fields($a,$allowed)
   if type($a)!="map" then raise("AV_PARAMS","object required") end
@@ -14,23 +15,25 @@ fn positive($v,$name)
   if type($v)!="number" or $v<1 or floor($v)!=$v then raise("AV_PARAMS",$name..": positive integer required") end
   return $v
 end
-fn memory($v)
-  if type($v)!="string" or not re_match($v,"^[1-9][0-9]*[KMG]?$") then raise("AV_PARAMS","mem: positive bytes or K/M/G required") end
+fn memory($v,$name="mem")
+  if type($v)!="string" or not re_match($v,"^[1-9][0-9]*[KMG]?$") then raise("AV_PARAMS",$name..": positive bytes or K/M/G required") end
   return $v
 end
-fn byte_limit($v)
-  memory($v)
+fn byte_limit($v,$name="max_output_bytes")
+  memory($v,$name)
   $m=re_find($v,"^([0-9]+)([KMG]?)$")[0]
   $n=to_number($m.groups[0])*({"":1,K:1024,M:1048576,G:1073741824}[$m.groups[1]])
-  return exact_bytes($n)
+  return exact_bytes($n,$name)
 end
-fn exact_bytes($n)
-  positive($n,"max_output_bytes")
-  if $n>9007199254740991 then raise("AV_PARAMS","output byte limit exceeds exact integer range") end
+fn exact_bytes($n,$name="max_output_bytes")
+  positive($n,$name)
+  if $n>9007199254740991 then raise("AV_PARAMS",$name..": byte limit exceeds exact integer range") end
   return $n
 end
 fn fresh($cfg)
-  positive($cfg.max_jobs,"max_jobs");positive($cfg.cpu,"cpu");memory($cfg.mem);byte_limit($cfg.decode_max_bytes)
+  positive($cfg.max_jobs,"max_jobs");positive($cfg.cpu,"cpu");memory($cfg.mem)
+  positive($cfg.max_cpu,"max_cpu");byte_limit($cfg.max_mem,"max_mem")
+  byte_limit($cfg.decode_max_bytes,"decode_max_bytes");exact_bytes($cfg.max_output_bytes)
   $roots=[]
   for $p in $cfg.roots
     $r=realpath($p)
@@ -73,7 +76,7 @@ fn actions()
     elif $id=="cancel" then $req=["job"] end
     for $k in $req $p[$k]={type:"string",minLength:1} end
     if $id=="render" or $id=="audio" then $p.cpu={type:"integer",minimum:1} end
-    if $id=="render" then $p.mem={type:"string",pattern:"^[1-9][0-9]*[KMG]?$"} end
+    if $id=="render" or $id=="audio" then $p.mem={type:"string",pattern:"^[1-9][0-9]*[KMG]?$"} end
     if $id=="audio" or $id=="decode" then $p.wav={type:"string",minLength:1} end
     if $id=="decode" then $p.max_output_bytes={type:"integer",minimum:1} end
     if $id=="status" then $p.job={type:"string",minLength:1} end
@@ -84,7 +87,7 @@ fn actions()
 end
 fn public_job($j)
   $out={}
-  for $k in ["job","action","unit","status","started","ended","exit_code","signal","cancelled","progress","receipt","metrics"]
+  for $k in ["job","action","unit","status","started","ended","exit_code","signal","cancelled","progress","receipt","metrics","stderr_tail"]
     $out[$k]=$j[$k]
   end
   return $out
@@ -141,17 +144,20 @@ fn perform($s,$id,$a)
   if not $live.ok or $live.stdout_truncated then raise("AV_SYSTEMD","cannot inspect existing job units") end
   $units=filter(split(trim($live.stdout),"\n"),fn($v)=$v!="")
   if len($units)>=$s.cfg.max_jobs then raise("AV_BUSY","host job limit reached",{limit:$s.cfg.max_jobs}) end
-  $mem=memory($a.mem ?? $s.cfg.mem)
+  $mem=memory($a.mem ?? $s.cfg.max_mem)
+  if byte_limit($mem)>byte_limit($s.cfg.max_mem,"max_mem") then raise("AV_MAX_MEM","mem exceeds max_mem") end
+  $cpu=positive($a.cpu ?? $s.cfg.max_cpu,"cpu")
+  if $cpu>$s.cfg.max_cpu then raise("AV_MAX_CPU","cpu exceeds max_cpu") end
   $outputs=[]
   if $verb=="decode" then
-    $cap=byte_limit($s.cfg.decode_max_bytes)
+    $cap=min(byte_limit($s.cfg.decode_max_bytes,"decode_max_bytes"),$s.cfg.max_output_bytes)
     $limit=exact_bytes($a.max_output_bytes ?? $cap)
-    if $limit>$cap then raise("AV_PARAMS","max_output_bytes exceeds host cap") end
+    if $limit>$cap then raise("AV_MAX_OUTPUT_BYTES","max_output_bytes exceeds host cap") end
     $output=confined($s,$a.y4m,true)
     $argv=concat($argv,["--y4m",$output,"--max-output-bytes",to_string($limit)])
   else
     $output=confined($s,$a.out,true)
-    $argv=concat($argv,["--out",$output,"--cpu",to_string(positive($a.cpu ?? $s.cfg.cpu,"cpu")),"--mem",$mem,"--progress"])
+    $argv=concat($argv,["--out",$output,"--cpu",to_string($cpu),"--mem",$mem,"--progress"])
   end
   push($outputs,$output)
   if $a.wav!=nil then
@@ -163,9 +169,10 @@ fn perform($s,$id,$a)
   if contains($outputs,$input) then raise("AV_PATH","output equals input") end
   $s.serial=$s.serial+1;$job="mixviu-av-job-"..$s.nonce.."-"..to_string($s.serial)
   $unit=$job..".service"
-  $cmd=concat($s.cfg.runner,["--user","--collect","--wait","--pipe","--unit",$unit,"-p","MemoryAccounting=yes","-p","MemoryMax="..$mem,"--"])
+  $cmd=concat($s.cfg.runner,["--user","--collect","--wait","--pipe","--unit",$unit,"-p","MemoryAccounting=yes","-p","MemoryMax="..$mem,
+    "-p","LimitFSIZE="..to_string($s.cfg.max_output_bytes),"--"])
   $watch=process_watch(concat($cmd,$argv),{stderr:"lines",tag:$job,max_line:1048576})
-  $s.jobs[$job]={job:$job,unit:$unit,watch:$watch,action:$id,status:"running",started:time(),cancelled:false,stdout:"",summary:"",progress:nil}
+  $s.jobs[$job]={job:$job,unit:$unit,watch:$watch,action:$id,status:"running",started:time(),cancelled:false,stdout:"",summary:"",stderr_tail:"",progress:nil}
   return {state:$s,result:{job:$job},event:{event:"start",job:$job,action:$id,unit:$unit}}
 end
 fn overflow_event($s,$e)
@@ -177,19 +184,28 @@ fn line_event($s,$e)
   $j=$s.jobs[$e.tag]
   if $j==nil or $j.watch!=$e.watch or $j.status!="running" then return {state:$s} end
   $out=nil
-  if $e.stream=="stderr" and starts_with($e.line,"AVP ") and not $e.truncated then
+  if $e.stream=="stderr" and starts_with($e.line,"AVP ") then
     try
       $p=json_parse(slice($e.line,4))
-      if type($p)=="map" and $p.v==1 then $j.progress=$p;$out={event:"progress",job:$j.job,progress:$p} end
+      if type($p)!="map" or $p.v!=1 or $e.truncated then raise("AV_PROGRESS","invalid AVP record") end
+      $j.progress=$p;$out={event:"progress",job:$j.job,progress:$p}
     catch $message $j.diagnostic=$message end
   elif $e.stream=="stdout" then
     if len($j.stdout)+len($e.line)<1048576 and not $e.truncated then $j.stdout=$j.stdout..$e.line.."\n"
     else $j.capture_error=true end
   else
     $j.summary=slice($j.summary..$e.line.."\n",-65536)
+    $j.stderr_tail=stderr_tail(($j.stderr_tail ?? "")..$e.line.."\n")
   end
   $s.jobs[$e.tag]=$j
   return {state:$s,event:$out}
+end
+fn stderr_tail($text)
+  $text=join(slice(split(slice($text,0,-1),"\n"),-20),"\n").."\n"
+  $text=bytes_to_string(slice(string_to_bytes($text),-4096),{lossy:true})
+  -- A lossy leading partial codepoint can expand to three bytes.
+  while len(string_to_bytes($text))>4096 $text=slice($text,1) end
+  return $text
 end
 fn field($text,$name)
   $m=re_find($text,$name..": *([^\n]+)")
@@ -213,6 +229,12 @@ fn finished($s,$e)
   $mult={B:1,K:1024,M:1048576,G:1073741824,T:1099511627776}
   $metrics={wall_s:seconds_of(field($j.summary,"Service runtime")),cpu_s:seconds_of(field($j.summary,"CPU time consumed")),
     memory_peak_bytes:if len($m)>0 then round(to_number($m[0].groups[0])*$mult[$m[0].groups[1]]) else nil end}
+  -- systemd-run forwards signal exits as 128+signal. A normal exit while
+  -- stop is pending still owns its outcome, even if delivered after stop.
+  $j.cancelled=$j.cancelled and $receipt==nil and (contains([9,15],$e.signal) or contains([137,143],$e.exit_code))
+  if ($e.signal==25 or $e.exit_code==153) and trim($j.stderr_tail ?? "")=="" then
+    $j.stderr_tail=stderr_tail("output exceeded max_output_bytes (LimitFSIZE, SIGXFSZ)\n")
+  end
   $j.status=if $j.cancelled then "cancelled" elif $e.exit_code==0 and $receipt!=nil and not ($j.capture_error ?? false) and not ($e.detached_output ?? false) then "finished" else "failed" end
   $j.ended=time();$j.exit_code=$e.exit_code;$j.signal=$e.signal;$j.receipt=$receipt;$j.metrics=$metrics
   $j.stdout=nil
@@ -222,5 +244,5 @@ fn finished($s,$e)
     $s.jobs=delete($s.jobs,$s.finished_jobs[0])
     $s.finished_jobs=slice($s.finished_jobs,1)
   end
-  return {state:$s,event:{event:"end",job:$j.job,status:$j.status,receipt:$receipt,metrics:$metrics,exit_code:$e.exit_code,signal:$e.signal}}
+  return {state:$s,event:{event:"end",job:$j.job,status:$j.status,receipt:$receipt,metrics:$metrics,exit_code:$e.exit_code,signal:$e.signal,stderr_tail:$j.stderr_tail}}
 end
