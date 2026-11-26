@@ -72,6 +72,19 @@ fn black_vfl_still_black_decoded_frame_hashes() {
         Some("a8e1a7067438aef5fbd4b2e10a23aa653ba924f3ac61e5e8ac3f7a930f610381")
     );
     assert_eq!(receipt["frames_out"], 120);
+    assert_eq!(receipt["stages"]["video"]["codec_passes_per_chunk"], 1);
+    assert_eq!(
+        receipt["stages"]["video"]["codec_attempts"],
+        receipt["chunks"]
+    );
+    assert_eq!(
+        receipt["stages"]["audio"]["limiter_passes"],
+        receipt["audio"]["passes"]
+    );
+    assert_eq!(
+        receipt["stages"]["audio"]["codec_attempts"],
+        receipt["audio"]["codec_attempts"]
+    );
     assert!(receipt["repeats"].as_u64().unwrap() > 40);
     assert!(receipt["scaling"]["frames"].as_u64().unwrap() > 0);
     let y4m = root.path().join("decoded.y4m");

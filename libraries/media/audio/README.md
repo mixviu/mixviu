@@ -179,18 +179,30 @@ sparse peaks, most samples remain outside limiting, so a gain correction
 recovers most of that deficit; repeated residual corrections shrink the error.
 The outer loop compensates codec loss and tightens the ceiling for overshoot.
 Eight and six are convergence budgets, not a guarantee for arbitrary gated or
-heavily limited audio: every final encoded result must independently meet
+heavily limited audio: by default every final encoded result must independently meet
 inclusive ±0.1 LU and the true-peak ceiling. Reduction refusal or budget
 exhaustion returns measured values with `refused=true`, `target_reached=false`
 and publishes neither output. No limiter redesign or relaxation of the cap
 is hidden in the correction loop.
 
+An individual timeline may explicitly set `master.accept_ceiling_limited: true`
+to publish a ceiling-limited shortfall. It defaults to false and must never be
+enabled by configuration defaults or timeline generators. There is no duration
+exception. Acceptance requires a PCM limiter refusal with a shortfall above
+0.1 LU, a finite decoded loudness below target, and decoded true peak at or below
+the requested ceiling. The existing limiter/reduction bound still applies;
+this permission accepts its retained in-bound output without changing DSP or
+trying extra passes. Codec-only misses, overshoots and unmeasurable audio remain
+refused. An accepted shortfall reports `refused: false`, `target_reached: false`
+and the decoded `shortfall_lu`. Callers use `refused` to decide publication.
+
 The receipt reports `codec_trim_db` (cumulative PCM ceiling adjustment),
-`codec_passes` (corrections), and encoded loudness. `passes` is the total
+`codec_passes` (corrections), `codec_attempts` (including the initial cycle), and encoded loudness. `passes` is the total
 limiter attempts over all masters. `mastering_cost` gives thread CPU seconds
 for mastering and encode/decode/meter separately on every codec attempt,
 plus its limiter attempt count and individual `limiter_cpu_s` costs (including
-gain application and candidate copying). These observational timings never affect
+gain application and candidate copying). Each entry also gives `mastering_wall_s`
+and `codec_wall_s`. These observational timings never affect
 iteration or encoded output. Shortfall and success use decoded audio.
 Encoded packets, decisions and metered values are deterministic for identical
 inputs and encoder builds. Receipts as a whole are **not byte-reproducible**:

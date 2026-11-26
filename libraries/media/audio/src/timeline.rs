@@ -34,11 +34,14 @@ pub struct Source {
     #[serde(default)]
     pub fade_out_s: f64,
 }
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Master {
     pub integrated_lufs: f64,
     pub true_peak_dbtp: f64,
+    /// Explicit per-timeline permission; never enabled by a default.
+    #[serde(default)]
+    pub accept_ceiling_limited: bool,
 }
 fn frames(s: f64) -> usize {
     (s * 48000.0).round() as usize
@@ -48,6 +51,28 @@ fn valid_time(s: f64) -> bool {
 }
 fn refusal(name: &str) -> Box<dyn std::error::Error> {
     format!("timeline: {name}").into()
+}
+/// Conservative offline peak: twelve stereo f64 buffers, detector envelope,
+/// packet/index storage, and the largest native decode/resampling window.
+/// Headers only; no PCM allocation. Also used while video encoding overlaps.
+pub fn peak_memory_bytes(duration_s: f64, sources: &[Source], base: &Path) -> Result<u64> {
+    let output = frames(duration_s);
+    let mut largest = 0;
+    for s in sources {
+        let source = crate::source::wav(crate::source::open(base, &s.path)?)?;
+        let from = frames(s.from_s);
+        let to = s.to_s.map(frames).unwrap_or(source.frames);
+        if from > to || to > source.frames || frames(s.at_s) > output {
+            return Err(refusal("source_memory_range"));
+        }
+        let placed = (to - from).min(output - frames(s.at_s));
+        largest = largest.max(source.decoded_samples(from..from + placed)?);
+    }
+    (output as u64)
+        .checked_mul(224)
+        .and_then(|n| largest.checked_mul(24)?.checked_add(n))
+        .and_then(|n| n.checked_add(32 * 1024 * 1024))
+        .ok_or_else(|| refusal("audio_memory_budget"))
 }
 impl Timeline {
     pub fn validate(&self) -> Result<()> {
@@ -238,6 +263,8 @@ pub struct MasteringCost {
     pub limiter_cpu_s: Vec<f64>,
     pub mastering_cpu_s: f64,
     pub codec_cpu_s: f64,
+    pub mastering_wall_s: f64,
+    pub codec_wall_s: f64,
 }
 
 /// At most six fresh masters and six encode/decode/meter attempts.
@@ -261,6 +288,7 @@ pub struct Receipt {
     pub codec_trim_db: f64,
     /// Number of corrections (attempts minus one).
     pub codec_passes: u8,
+    pub codec_attempts: u8,
     pub mastering_cost: Vec<MasteringCost>,
 }
 pub struct Encoded {
@@ -290,6 +318,7 @@ fn prepare_with_encoder(
     let mut max_gain_reduction_db: f64 = 0.0;
     let (audio, r, head, packets, encoded, reached) = loop {
         let mut audio = original.try_clone()?;
+        let wall = std::time::Instant::now();
         let start = cpu_seconds();
         let r = audio.normalise_to_target(
             pcm_target,
@@ -297,15 +326,19 @@ fn prepare_with_encoder(
             LimiterConfig::default(),
         )?;
         let mastering_cpu_s = cpu_seconds() - start;
+        let mastering_wall_s = wall.elapsed().as_secs_f64();
         total_passes += r.passes;
         max_gain_reduction_db = max_gain_reduction_db.max(r.max_gain_reduction_db);
         let start = cpu_seconds();
+        let wall = std::time::Instant::now();
         let (head, packets, encoded) = encode(&audio)?;
         mastering_cost.push(MasteringCost {
             limiter_passes: r.passes,
             limiter_cpu_s: r.pass_cpu_s[..usize::from(r.passes)].to_vec(),
             mastering_cpu_s,
             codec_cpu_s: cpu_seconds() - start,
+            mastering_wall_s,
+            codec_wall_s: wall.elapsed().as_secs_f64(),
         });
         let reached = !r.refused
             && target_matches(
@@ -333,7 +366,15 @@ fn prepare_with_encoder(
         max_gain_reduction_db,
         shortfall_lu: (t.master.integrated_lufs - encoded.integrated_lufs).max(0.0),
         target_reached: reached,
-        refused: !reached,
+        // Only a PCM ceiling/reduction-limited shortfall qualifies. A codec
+        // correction budget miss alone does not grant this exception.
+        refused: !reached
+            && !(t.master.accept_ceiling_limited
+                && r.refused
+                && r.shortfall_lu > TARGET_TOLERANCE_LU
+                && encoded.integrated_lufs.is_finite()
+                && encoded.integrated_lufs < t.master.integrated_lufs - TARGET_TOLERANCE_LU
+                && encoded.true_peak_dbtp <= t.master.true_peak_dbtp),
         passes: total_passes,
         sample_count: count,
         packets: packets.len(),
@@ -342,6 +383,7 @@ fn prepare_with_encoder(
         encoded: encoded.into(),
         codec_trim_db,
         codec_passes,
+        codec_attempts: codec_passes + 1,
         mastering_cost,
     };
     Ok(Encoded {
@@ -395,7 +437,7 @@ pub(crate) fn render_prepared(
         wav.file.sync_all()?;
     }
     receipt.bytes = output.file.metadata()?.len();
-    if !receipt.refused && receipt.target_reached {
+    if !receipt.refused {
         output.publish()?;
         if let Some(wav) = &mut wav_output {
             wav.publish()?;
@@ -491,7 +533,7 @@ mod refusal_tests {
         .unwrap()
         .write_wav(std::fs::File::create(&source).unwrap(), WavFormat::Float32)
         .unwrap();
-        let t: Timeline = serde_json::from_value(serde_json::json!({
+        let mut t: Timeline = serde_json::from_value(serde_json::json!({
             "version":1,"sample_rate":48000,"channels":2,"duration_s":1,
             "sources":[{"path":"tone.wav","at_s":0}],
             "master":{"integrated_lufs":-14,"true_peak_dbtp":-1}
@@ -533,6 +575,16 @@ mod refusal_tests {
             vec![source],
             "no partial output or staging files"
         );
+        // Permission never excuses a codec-only miss, even below the ceiling.
+        t.master.accept_ceiling_limited = true;
+        let codec_only = prepare_with_encoder(&t, &dir, |audio| {
+            let (head, packets, mut measured) = encode_checked(audio)?;
+            measured.integrated_lufs = -14.3;
+            measured.true_peak_dbtp = -1.2;
+            Ok((head, packets, measured))
+        })
+        .unwrap();
+        assert!(codec_only.receipt.refused && !codec_only.receipt.target_reached);
         std::fs::remove_dir_all(dir).unwrap();
     }
 }
