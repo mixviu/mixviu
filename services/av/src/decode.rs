@@ -64,6 +64,18 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
             );
         }
     }
+    if probe {
+        let mut file = File::open(&input)?;
+        let mut magic = [0; 12];
+        let n = file.read(&mut magic)?;
+        if n == 12 && &magic[..4] == b"RIFF" && &magic[8..] == b"WAVE" {
+            let receipt = probe_wav(Path::new(&input))?;
+            match receipt_line(&serde_json::to_string(&receipt)?) {
+                Err(e) if e.kind() != io::ErrorKind::BrokenPipe => return Err(e.into()),
+                _ => return Ok(0),
+            }
+        }
+    }
     let mut bytes = Vec::new();
     File::open(&input)?
         .take(256 * 1024 * 1024 + 1)
@@ -276,6 +288,26 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
         return Ok(4);
     }
     Ok(0)
+}
+
+fn probe_wav(path: &Path) -> Result<serde_json::Value> {
+    // Reuse the audio reader's RIFF validation and supported sample formats.
+    // In particular, never send RIFF lengths through the EBML parser.
+    use std::io::{Seek, SeekFrom};
+    let mut file = File::open(path)?;
+    let audio = media_audio::Audio::read_wav(&mut file)?;
+    file.seek(SeekFrom::Start(0))?;
+    let spec = hound::WavReader::new(io::BufReader::new(file))?.spec();
+    Ok(json!({
+        "format": "RIFF WAV",
+        "duration": audio.frames() as f64 / f64::from(audio.rate()),
+        "frames": audio.frames(),
+        "tracks": [{"number": 1, "codec": if spec.sample_format == hound::SampleFormat::Float {
+            format!("PCM_F{}LE", spec.bits_per_sample)
+        } else { format!("PCM_S{}LE", spec.bits_per_sample) },
+            "sample_rate": audio.rate(), "channels": audio.channels(),
+            "bits_per_sample": spec.bits_per_sample}]
+    }))
 }
 
 // Compare lexical aliases without resolving symlinks or requiring outputs to exist.

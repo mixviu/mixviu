@@ -59,6 +59,18 @@ fn black_vfl_still_black_decoded_frame_hashes() {
         String::from_utf8_lossy(&render.stderr)
     );
     let receipt: Value = serde_json::from_slice(&render.stdout).unwrap();
+    let hash = Command::new("sha256sum").arg(&out).output().unwrap();
+    assert!(hash.status.success());
+    println!(
+        "RENDER_WEBM_SHA256 {}",
+        String::from_utf8_lossy(&hash.stdout)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&hash.stdout)
+            .split_whitespace()
+            .next(),
+        Some("a8e1a7067438aef5fbd4b2e10a23aa653ba924f3ac61e5e8ac3f7a930f610381")
+    );
     assert_eq!(receipt["frames_out"], 120);
     assert_eq!(receipt["stages"]["video"]["codec_passes_per_chunk"], 1);
     assert_eq!(

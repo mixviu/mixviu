@@ -74,5 +74,10 @@ Memory admission includes twelve stereo f64 programme buffers, envelope and
 packet/index allowance (224 bytes/output frame), three buffers for the largest
 native source window and 32 MiB scratch, plus every concurrent video chunk's
 existing estimate. This conservative estimate also applies with `--cpu 1`.
+Scaled stills add one output-sized BGRA canvas per distinct source, shared by
+all segments and chunk workers at the render's output size. Admission requires
+`audio_peak + still_cache_bytes + chunks * video_working_bytes <= mem`.
+Only the video working allowance is multiplied by the concurrent chunk count;
+audio and the shared still cache are each reserved once before chunk clamping.
 It is admission accounting, not an OS-enforced RSS limit. Packet spooling uses
 temporary disk space alongside the output; disk errors fail without publishing.
