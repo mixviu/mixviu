@@ -44,6 +44,10 @@ pub use strict::{
     from_file as load_conf_mix_path, from_str as from_conf_mix_str,
     to_string_pretty as to_conf_mix_string,
 };
+// Typed reads of a tree a caller merged as JSON: `from_conf_value` takes the
+// exact integer path, where `serde_json::from_value` would see every strict
+// number as a float and refuse it for an integer field.
+pub use strict::{from_json as conf_value_from_json, from_value as from_conf_value};
 
 pub mod acme_policy;
 mod webd;

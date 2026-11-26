@@ -200,8 +200,8 @@ mod tests {
     }
 
     // The first load writes knowledge.conf.mix; the second reads it back.
-    // `call_timeout_secs: 120` failed that second read as `120.0` until the
-    // strict deserializer offered whole numbers as integers.
+    // `call_timeout_secs: 120` failed that second read as `120.0` while the
+    // merged tree was hydrated with `serde_json::from_value`.
     #[test]
     fn knowledge_settings_round_trip_through_written_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -395,7 +395,10 @@ fn load_in<T: serde::de::DeserializeOwned + serde::Serialize>(
             config::store::load_conf_mix_path::<serde_json::Value>(&file)?,
         );
     }
-    let result: T = serde_json::from_value(value)?;
+    // Hydrate through strict, not serde_json: the file's numbers arrive as
+    // floats (strict has one number type), and only strict's typed path
+    // converts `120.0` back to a `u64` exactly.
+    let result: T = config::from_conf_value(&config::conf_value_from_json(&value))?;
     if !file.exists() {
         std::fs::create_dir_all(
             file.parent()

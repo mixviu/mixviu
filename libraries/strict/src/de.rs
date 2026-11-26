@@ -118,23 +118,6 @@ impl<'de> ValueDeserializer<'de> {
     }
 }
 
-/// A self-describing number: a whole value within the exact range is
-/// offered as an integer, anything else as `f64`. Without this, a type that
-/// buffers through `deserialize_any` (`serde_json::Value`, `untagged` enums,
-/// `flatten`) turns `120` into `120.0`, and a `u64` field read from that
-/// buffer then refuses it.
-fn visit_number<'de, V: Visitor<'de>>(n: f64, visitor: V) -> Result<V::Value> {
-    if n.is_finite() && n.fract() == 0.0 && n.abs() <= MAX_EXACT_INT {
-        if n >= 0.0 {
-            visitor.visit_u64(n as u64)
-        } else {
-            visitor.visit_i64(n as i64)
-        }
-    } else {
-        visitor.visit_f64(n)
-    }
-}
-
 macro_rules! deserialize_signed {
     ($method:ident) => {
         fn $method<V: Visitor<'de>>(self, visitor: V) -> Result<V::Value> {
@@ -158,7 +141,7 @@ impl<'de> de::Deserializer<'de> for ValueDeserializer<'de> {
         match self.value {
             Value::Nil => visitor.visit_unit(),
             Value::Bool(b) => visitor.visit_bool(*b),
-            Value::Number(n) => visit_number(*n, visitor),
+            Value::Number(n) => visitor.visit_f64(*n),
             Value::String(s) => visitor.visit_borrowed_str(s),
             Value::List(items) => visitor.visit_seq(SeqDeserializer { iter: items.iter() }),
             Value::Map(entries) => visitor.visit_map(MapDeserializer::new(entries)),
