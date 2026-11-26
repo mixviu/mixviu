@@ -1437,7 +1437,13 @@ mod tests {
                 .unwrap()
             })
             .collect();
-        let working = working_bytes(16 * 8 * 4, 32 * 8 * 16 + STILL_DECODE_BYTES_LIMIT as u64, 32, 32).unwrap();
+        let working = working_bytes(
+            16 * 8 * 4,
+            32 * 8 * 16 + STILL_DECODE_BYTES_LIMIT as u64,
+            32,
+            32,
+        )
+        .unwrap();
         let cached = 32 * 32 * 4;
         t.encode.chunks = 2;
         t.limits.mem = Some(working * 2 + cached);
@@ -1447,7 +1453,12 @@ mod tests {
         t.validate(root.path()).unwrap();
         assert_eq!(t.encode.chunks, 1);
         t.limits.mem = Some(working + cached - 1);
-        assert!(t.validate(root.path()).unwrap_err().to_string().contains("encode_memory_budget"));
+        assert!(
+            t.validate(root.path())
+                .unwrap_err()
+                .to_string()
+                .contains("encode_memory_budget")
+        );
     }
     #[test]
     fn solid_needs_no_files_and_repeats_without_scaling() {
