@@ -71,12 +71,16 @@ fn open_still(base: &Path, relative: &Path) -> Result<(Input, u64, u64)> {
     }
     let reader = png_reader(&file)?;
     let (w, h) = (reader.info().width, reader.info().height);
-    Ok((Input::Still(Arc::new(Still {
-        file,
-        scaled: Default::default(),
-        #[cfg(test)]
-        decodes: Default::default(),
-    })), u64::from(w), u64::from(h)))
+    Ok((
+        Input::Still(Arc::new(Still {
+            file,
+            scaled: Default::default(),
+            #[cfg(test)]
+            decodes: Default::default(),
+        })),
+        u64::from(w),
+        u64::from(h),
+    ))
 }
 const SOURCE_LIMIT: usize = 256;
 use std::collections::{HashMap, HashSet};
@@ -687,9 +691,16 @@ impl Source {
             Input::Still(still) => {
                 // Hold the lock through decode and scale: concurrent chunks
                 // must not duplicate work or temporary decoded images.
-                let mut cache = still.scaled.lock().map_err(|_| "render: still_cache_poisoned")?;
+                let mut cache = still
+                    .scaled
+                    .lock()
+                    .map_err(|_| "render: still_cache_poisoned")?;
                 if let Some(image) = cache.get(&(width, height)) {
-                    return Ok(Self { reader: None, next: u64::MAX, current: Some(image.clone()) });
+                    return Ok(Self {
+                        reader: None,
+                        next: u64::MAX,
+                        current: Some(image.clone()),
+                    });
                 }
                 let file = &still.file;
                 // Each chunk has an independent open file description: cloned FDs share offsets.
@@ -718,13 +729,16 @@ impl Source {
                     }
                     bgra.push(255);
                 }
-                let image = Arc::new(scale_frame(Bgra::new(
-                        info.width as usize,
-                        info.height as usize,
-                        bgra,
-                    )?, width, height, stats)?);
+                let image = Arc::new(scale_frame(
+                    Bgra::new(info.width as usize, info.height as usize, bgra)?,
+                    width,
+                    height,
+                    stats,
+                )?);
                 #[cfg(test)]
-                still.decodes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                still
+                    .decodes
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 cache.insert((width, height), image.clone());
                 (None, Some(image))
             }
@@ -803,7 +817,12 @@ fn compose(
     }
     let s = &v.segments[j];
     if sources[j].is_none() {
-        sources[j] = Some(Source::new(directories[j].clone(), v.width, v.height, stats)?);
+        sources[j] = Some(Source::new(
+            directories[j].clone(),
+            v.width,
+            v.height,
+            stats,
+        )?);
     }
     let current_slot = slot(s, k)?;
     let (mut b, mut repeat) = sources[j].as_mut().ok_or("missing_segment_reader")?.get(
@@ -822,7 +841,12 @@ fn compose(
     if let Some(f) = v.crossfades.get(*fade_index).filter(|f| k >= frame(f.at_s)) {
         let old = &v.segments[j - 1];
         if sources[j - 1].is_none() {
-            sources[j - 1] = Some(Source::new(directories[j - 1].clone(), v.width, v.height, stats)?);
+            sources[j - 1] = Some(Source::new(
+                directories[j - 1].clone(),
+                v.width,
+                v.height,
+                stats,
+            )?);
         }
         let old_slot = slot(old, k)?;
         let (a, _) = sources[j - 1]
@@ -1335,8 +1359,16 @@ mod tests {
         for colour in [json!("white"), json!("#ffffff"), json!([256, 0, 0])] {
             let error = serde_json::from_value::<Segment>(json!({
                 "solid":colour,"at_s":0,"duration_s":1
-            })).err().unwrap().to_string();
-            for expected in [colour.to_string(), "\"black\"".into(), "[r,g,b]".into(), "0..255".into()] {
+            }))
+            .err()
+            .unwrap()
+            .to_string();
+            for expected in [
+                colour.to_string(),
+                "\"black\"".into(),
+                "[r,g,b]".into(),
+                "0..255".into(),
+            ] {
                 assert!(error.contains(&expected), "{error}");
             }
         }
@@ -1366,9 +1398,14 @@ mod tests {
         let mut t = fixture(root.path());
         png_file(&root.path().join("a.png"), 16, 8);
         t.video.crossfades.clear();
-        t.video.segments = (0..3).map(|i| serde_json::from_value(json!({
-            "still":"a.png", "at_s":i, "duration_s":1
-        })).unwrap()).collect();
+        t.video.segments = (0..3)
+            .map(|i| {
+                serde_json::from_value(json!({
+                    "still":"a.png", "at_s":i, "duration_s":1
+                }))
+                .unwrap()
+            })
+            .collect();
         let (_, inputs) = t.validate(root.path()).unwrap();
         let mut stats = ScaleStats::default();
         let mut pictures = Vec::new();
@@ -1380,9 +1417,37 @@ mod tests {
             pictures.push(picture);
         }
         assert!(pictures.iter().all(|p| Arc::ptr_eq(p, &pictures[0])));
-        let Input::Still(still) = &inputs[0] else { panic!("expected still") };
+        let Input::Still(still) = &inputs[0] else {
+            panic!("expected still")
+        };
         assert_eq!(still.decodes.load(std::sync::atomic::Ordering::Relaxed), 1);
         assert_eq!(stats.frames, 1);
+    }
+    #[test]
+    fn still_memory_admission_counts_each_cached_source_once() {
+        let root = tempfile::tempdir().unwrap();
+        let mut t = fixture(root.path());
+        png_file(&root.path().join("a.png"), 16, 8);
+        t.video.crossfades.clear();
+        t.video.segments = (0..3)
+            .map(|i| {
+                serde_json::from_value(json!({
+                    "still":"a.png", "at_s":i, "duration_s":1
+                }))
+                .unwrap()
+            })
+            .collect();
+        let working = working_bytes(16 * 8 * 4, 32 * 8 * 16 + STILL_DECODE_BYTES_LIMIT as u64, 32, 32).unwrap();
+        let cached = 32 * 32 * 4;
+        t.encode.chunks = 2;
+        t.limits.mem = Some(working * 2 + cached);
+        t.validate(root.path()).unwrap();
+        assert_eq!(t.encode.chunks, 2);
+        t.limits.mem = Some(working + cached);
+        t.validate(root.path()).unwrap();
+        assert_eq!(t.encode.chunks, 1);
+        t.limits.mem = Some(working + cached - 1);
+        assert!(t.validate(root.path()).unwrap_err().to_string().contains("encode_memory_budget"));
     }
     #[test]
     fn solid_needs_no_files_and_repeats_without_scaling() {
@@ -1449,7 +1514,12 @@ mod tests {
         png_file(&outside.path().join("outside.png"), 16, 16);
         std::os::unix::fs::symlink(outside.path(), root.path().join("escape")).unwrap();
         t.video.segments[0].path = "escape/outside.png".into();
-        assert!(t.validate(&noncanonical).unwrap_err().to_string().contains("segment_path_escape"));
+        assert!(
+            t.validate(&noncanonical)
+                .unwrap_err()
+                .to_string()
+                .contains("segment_path_escape")
+        );
         assert!(
             t.validate(root.path())
                 .unwrap_err()
@@ -1595,7 +1665,8 @@ mod tests {
         std::fs::rename(root.path().join("a.vfl"), root.path().join("original.vfl")).unwrap();
         let outside = tempfile::tempdir().unwrap();
         std::os::unix::fs::symlink(outside.path(), root.path().join("a.vfl")).unwrap();
-        let mut source = Source::new(directories[0].clone(), 32, 32, &mut ScaleStats::default()).unwrap();
+        let mut source =
+            Source::new(directories[0].clone(), 32, 32, &mut ScaleStats::default()).unwrap();
         assert_eq!(
             source
                 .get(0, 32, 32, &mut ScaleStats::default())
