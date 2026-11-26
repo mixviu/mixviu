@@ -10,9 +10,10 @@ clamped by reducing parallel chunks before per-chunk threads. Audio reserves one
 CPU slot, leaving N−1 for video; `--cpu 1` runs audio then video serially.
 A memory ceiling reserves the conservative audio peak alongside the video peak
 and reduces chunks; audio plus one chunk must fit or `encode_memory_budget` refuses the job.
-Invalid values refuse with `cpu_limit` or `mem_limit`. Without limits the old
-admission rules remain. The stdout receipt includes `limits` (a null CPU means
-the legacy 2× available CPU admission), `encode_requested` and `encode_effective`.
+Invalid values refuse with `cpu_limit` or `mem_limit`. Without a CPU ceiling,
+video retains its legacy 2× available CPU admission alongside one audio thread.
+The stdout receipt includes `limits` (a null CPU means no caller CPU ceiling),
+`encode_requested` and `encode_effective`.
 
 `av audio TIMELINE.json --out FILE.webm [--wav FILE.wav] [--cpu N] [--mem BYTES] [--progress]`
 accepts CPU and memory ceilings with the same syntax and validation as render.

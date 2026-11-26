@@ -582,7 +582,8 @@ mod refusal_tests {
             measured.integrated_lufs = -14.3;
             measured.true_peak_dbtp = -1.2;
             Ok((head, packets, measured))
-        }).unwrap();
+        })
+        .unwrap();
         assert!(codec_only.receipt.refused && !codec_only.receipt.target_reached);
         std::fs::remove_dir_all(dir).unwrap();
     }

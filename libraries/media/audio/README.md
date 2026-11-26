@@ -179,7 +179,7 @@ sparse peaks, most samples remain outside limiting, so a gain correction
 recovers most of that deficit; repeated residual corrections shrink the error.
 The outer loop compensates codec loss and tightens the ceiling for overshoot.
 Eight and six are convergence budgets, not a guarantee for arbitrary gated or
-heavily limited audio: every final encoded result must independently meet
+heavily limited audio: by default every final encoded result must independently meet
 inclusive ±0.1 LU and the true-peak ceiling. Reduction refusal or budget
 exhaustion returns measured values with `refused=true`, `target_reached=false`
 and publishes neither output. No limiter redesign or relaxation of the cap
