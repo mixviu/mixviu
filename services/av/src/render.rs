@@ -947,6 +947,26 @@ struct VideoResult {
     wall_s: f64,
 }
 
+// Return both outcomes only after both stages have ended, including failures.
+fn join_stages<A: Send, V>(
+    serial: bool,
+    audio: impl FnOnce() -> std::result::Result<A, String> + Send,
+    video: impl FnOnce() -> Result<V>,
+) -> (std::result::Result<A, String>, Result<V>) {
+    if serial {
+        let a = audio();
+        (a, video())
+    } else {
+        std::thread::scope(|scope| {
+            let audio = scope.spawn(audio);
+            let video = video();
+            let audio = audio.join().map_err(|_| "audio_worker_panicked".to_string())
+                .and_then(|r| r);
+            (audio, video)
+        })
+    }
+}
+
 fn encode_video(
     t: &Timeline,
     directories: &[Input],
@@ -1102,21 +1122,9 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
         progress.event("audio", "end", serde_json::json!({"audio_pass":a.receipt.codec_passes}));
         Ok::<_, String>((a, wall.elapsed().as_secs_f64(), thread_cpu() - c))
     };
-    let (a, video) = if limits.cpu == Some(1) {
-        // One total CPU slot cannot run two stages concurrently.
-        let a = prepare_audio();
-        let video = encode_video(&t, &directories, &starts, progress, &mut spool.file);
-        (a, video)
-    } else {
-        std::thread::scope(|scope| {
-            let audio = scope.spawn(prepare_audio);
-            let video = encode_video(&t, &directories, &starts, progress, &mut spool.file);
-            // Always join, even when video failed. Neither result can publish.
-            let audio = audio.join().map_err(|_| "audio_worker_panicked".to_string())
-                .and_then(|r| r);
-            (audio, video)
-        })
-    };
+    let (a, video) = join_stages(limits.cpu == Some(1), prepare_audio, || {
+        encode_video(&t, &directories, &starts, progress, &mut spool.file)
+    });
     let (a, audio_wall, audio_cpu) = a?;
     let video = video?;
     if a.receipt.refused {
@@ -1218,6 +1226,34 @@ mod tests {
     use super::*;
     use serde_json::json;
     #[test]
+    fn either_failure_joins_the_other_stage_and_removes_staging() {
+        use std::sync::{Barrier, atomic::{AtomicBool, Ordering}};
+        for audio_fails in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let out = root.path().join("out.webm");
+            let ended = AtomicBool::new(false);
+            let barrier = Barrier::new(2);
+            {
+                let _pending = media_audio::pending::Pending::new(&out).unwrap();
+                let _spool = media_audio::pending::Pending::new(&out).unwrap();
+                let (a, v) = join_stages(false, || {
+                    barrier.wait();
+                    if audio_fails { Err("audio failure".to_string()) }
+                    else { ended.store(true, Ordering::SeqCst); Ok(()) }
+                }, || {
+                    barrier.wait();
+                    if audio_fails { ended.store(true, Ordering::SeqCst); Ok(()) }
+                    else { Err("video failure".into()) }
+                });
+                assert_eq!(a.is_err(), audio_fails);
+                assert_eq!(v.is_err(), !audio_fails);
+                assert!(ended.load(Ordering::SeqCst));
+            }
+            assert!(!out.exists());
+            assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+        }
+    }
+    #[test]
     fn caller_limits_clamp_and_refuse() {
         let (mut chunks, mut threads) = (4, 8);
         clamp_cpu(&mut chunks, &mut threads, 16);
@@ -1244,6 +1280,11 @@ mod tests {
                 .to_string()
                 .contains("encode_memory_budget")
         );
+        let audio_peak = media_audio::timeline::peak_memory_bytes(t.duration_s, &t.audio.sources, root.path()).unwrap();
+        t.limits.mem = Some(working + audio_peak - 1);
+        assert!(t.validate(root.path()).is_err());
+        t.limits.mem = Some(working + audio_peak);
+        t.validate(root.path()).unwrap();
         for n in [0, std::thread::available_parallelism().unwrap().get() + 1] {
             assert!(media_audio::cli::cpu_limit(std::ffi::OsStr::new(&n.to_string())).is_err());
         }

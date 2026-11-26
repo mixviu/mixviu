@@ -147,7 +147,7 @@ fn blocked_stderr_render(root: &std::path::Path) {
     assert_eq!(receipt["frames_out"], 30);
 }
 #[test]
-fn video_progress_continues_through_overlapping_mux() {
+fn audio_and_video_join_before_mux() {
     let root = tempfile::tempdir().unwrap();
     media_audio::Audio::new(
         48000,
