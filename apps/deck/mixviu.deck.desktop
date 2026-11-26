@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Deck
+Comment=Present slide decks
+Exec=/opt/mix/bin/deck
+Icon=dev.mixos-symbolic
+Terminal=false
+Categories=Office;Presentation;
+StartupWMClass=mixviu.deck

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Workshop
+Comment=Agent workshop
+Exec=/opt/mix/bin/workshop
+Icon=dev.mixos.workshop-symbolic
+Terminal=false
+Categories=Development;
+StartupWMClass=dev.mixos.workshop

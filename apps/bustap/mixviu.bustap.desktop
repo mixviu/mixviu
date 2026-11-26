@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Bus Tap
+Comment=Watch Bus traffic live
+Exec=/opt/mix/bin/bustap
+Icon=dev.mixos-symbolic
+Terminal=false
+Categories=System;Development;
+StartupWMClass=mixviu.bustap

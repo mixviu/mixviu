@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Screenshot
+Comment=Capture the screen
+Exec=/opt/mix/bin/screenshot
+Icon=dev.mixos.screenshot-symbolic
+Terminal=false
+Categories=Utility;Graphics;
+StartupWMClass=dev.mixos.screenshot

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=DOpus
+Comment=Twin-pane file manager
+Exec=/opt/mix/bin/dopus
+Icon=dev.mixos.dopus-symbolic
+Terminal=false
+Categories=System;FileManager;
+StartupWMClass=dev.mixos.dopus

@@ -26,7 +26,7 @@
 --   share/mixviu/libraries/viu/mix/   the Viu Mix library the apps require
 --   share/mixviu/units/               unit templates (@{prefix} placeholders)
 --   share/mixviu/{LICENSE-*,NOTICE}, share/mixviu/BUNDLE.conf.mix (manifest)
---   bin/term, share/applications/mixviu.term.desktop
+--   bin/<app>, share/applications/<id>.desktop   one per app with a desktop entry
 --   share/scenes/, share/viud/scripts/
 --   lib/{clipd,notifyd,exportd,dlnad}/   the Mix services
 --   share/icons/, share/assets/, share/wallpapers/, share/layout/, share/daylight/
@@ -86,10 +86,32 @@ for $f in tracked("apps")
   end
 end
 for $f in tracked("libraries/viu/mix") place($stage, $f, "share/mixviu/" .. $f) end
--- Term uses the same app/library layout as every bundled Mix app.
-place($stage, "apps/term/term.mix", "bin/term")
-chmod($stage .. "/bin/term", 0o755)
-place($stage, "apps/term/mixviu.term.desktop", "share/applications/mixviu.term.desktop")
+-- Launchers: every app that carries a desktop entry (apps/<app>/<id>.desktop,
+-- Exec=/opt/mix/bin/<app>) gets bin/<app> and share/applications/<id>.desktop.
+-- Term brings its own launcher (term.mix); the others are copies of
+-- tools/app_launcher.mix. A launcher may not shadow a release-set binary.
+$engines = map(load_data("tools/release-set.conf.mix").binaries, fn($b) = $b.name)
+$template = read_file("tools/app_launcher.mix")
+$launchers = []
+mkdir($stage .. "/bin", {parents: true})
+for $f in tracked("apps")
+  if not ends_with($f, ".desktop") then continue end
+  $app = split($f, "/")[1]
+  if not contains(lines(read_file($f)), "Exec=/opt/mix/bin/" .. $app) then
+    raise("LAUNCHER", $f .. " must say Exec=/opt/mix/bin/" .. $app)
+  end
+  if contains($engines, $app) then raise("LAUNCHER", "bin/" .. $app .. " would shadow the " .. $app .. " engine binary") end
+  if contains($launchers, $app) then raise("LAUNCHER", $app .. " carries more than one desktop entry") end
+  push($launchers, $app)
+  place($stage, $f, "share/applications/" .. basename($f))
+  if $app == "term" then
+    place($stage, "apps/term/term.mix", "bin/term")
+  else
+    write_file($stage .. "/bin/" .. $app, replace($template, "__APP__", $app))
+  end
+  chmod($stage .. "/bin/" .. $app, 0o755)
+end
+if not contains($launchers, "term") then raise("LAUNCHER", "apps/term lost its desktop entry") end
 for $f in ["LICENSE-APACHE", "LICENSE-MIT", "NOTICE"] place($stage, $f, "share/mixviu/" .. $f) end
 for $f in tracked("share/scenes") place($stage, $f, $f) end
 for $f in tracked("share/fonts") place($stage, $f, $f) end
