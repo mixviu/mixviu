@@ -169,7 +169,10 @@ fn variable_packet_intervals_do_not_invent_a_frame_rate_ceiling() {
     for i in 0..20 {
         let end = at + bytes[at..].iter().position(|b| *b == b'\n').unwrap() + 1;
         let timestamp = (i * 40 + if i > 0 { 120 } else { 0 }) * 1_000_000;
-        assert_eq!(&bytes[at..end], format!("FRAME XPTS={timestamp}\n").as_bytes());
+        assert_eq!(
+            &bytes[at..end],
+            format!("FRAME XPTS={timestamp}\n").as_bytes()
+        );
         at = end + 64 * 48 * 3 / 2;
     }
     assert_eq!(at, bytes.len());
@@ -186,8 +189,11 @@ fn lexical_output_aliases_are_refused_before_staging() {
         vec!["--y4m", "missing/../input.webm"],
     ] {
         let result = Command::new(env!("CARGO_BIN_EXE_av"))
-            .current_dir(dir.path()).args(["decode", "input.webm"])
-            .args(flags).output().unwrap();
+            .current_dir(dir.path())
+            .args(["decode", "input.webm"])
+            .args(flags)
+            .output()
+            .unwrap();
         assert_eq!(result.status.code(), Some(2));
         assert!(String::from_utf8_lossy(&result.stderr).contains("OUTPUT_PATH_CONFLICT"));
         assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);

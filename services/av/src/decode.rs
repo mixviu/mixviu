@@ -114,8 +114,11 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
         return Err("VIDEO_OUTPUT_REQUIRED: --y4m or --framemd5 is required".into());
     }
     let input_path = lexical_path(Path::new(&input))?;
-    let paths: Vec<_> = [&y4m, &framemd5, &wav].into_iter().flatten()
-        .map(|p| lexical_path(Path::new(p))).collect::<io::Result<_>>()?;
+    let paths: Vec<_> = [&y4m, &framemd5, &wav]
+        .into_iter()
+        .flatten()
+        .map(|p| lexical_path(Path::new(p)))
+        .collect::<io::Result<_>>()?;
     for (i, path) in paths.iter().enumerate() {
         if *path == input_path || paths[..i].contains(path) {
             return Err("OUTPUT_PATH_CONFLICT: input and output paths must differ".into());
@@ -277,12 +280,18 @@ pub fn run(probe: bool, mut args: impl Iterator<Item = OsString>) -> Result<u8> 
 
 // Compare lexical aliases without resolving symlinks or requiring outputs to exist.
 fn lexical_path(path: &Path) -> io::Result<PathBuf> {
-    let absolute = if path.is_absolute() { path.to_owned() } else { std::env::current_dir()?.join(path) };
+    let absolute = if path.is_absolute() {
+        path.to_owned()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
     let mut normal = PathBuf::new();
     for component in absolute.components() {
         match component {
-            Component::CurDir => {},
-            Component::ParentDir => { normal.pop(); },
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normal.pop();
+            }
             other => normal.push(other.as_os_str()),
         }
     }
@@ -301,7 +310,10 @@ fn header_rate(rate: Option<f64>, duration: Option<u64>) -> String {
         // Exact uniform intervals and DefaultDuration need not be standard grids.
         return format!("1000000000:{}", (1e9 / rate).round() as u64);
     }
-    format!("1000000000:{}", duration.filter(|n| *n > 0).unwrap_or(1_000_000_000))
+    format!(
+        "1000000000:{}",
+        duration.filter(|n| *n > 0).unwrap_or(1_000_000_000)
+    )
 }
 
 fn receipt_line(receipt: &str) -> io::Result<()> {
@@ -862,23 +874,57 @@ mod tests {
     fn framemd5_odd_dimensions_dav1d_oracle() {
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("odd.webm");
-        ff(&["-f", "lavfi", "-i", "testsrc=size=33x17:rate=30,format=yuv420p",
-            "-frames:v", "30", "-c:v", "libaom-av1", "-cpu-used", "8", input.to_str().unwrap()]);
+        ff(&[
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=size=33x17:rate=30,format=yuv420p",
+            "-frames:v",
+            "30",
+            "-c:v",
+            "libaom-av1",
+            "-cpu-used",
+            "8",
+            input.to_str().unwrap(),
+        ]);
         let hashes = dir.path().join("out.txt");
-        run(false, [input.as_os_str(), "--framemd5".as_ref(), hashes.as_os_str()]
-            .into_iter().map(OsString::from)).unwrap();
+        run(
+            false,
+            [input.as_os_str(), "--framemd5".as_ref(), hashes.as_os_str()]
+                .into_iter()
+                .map(OsString::from),
+        )
+        .unwrap();
         let text = std::fs::read_to_string(&hashes).unwrap();
         assert_eq!(text.lines().next(), Some("#av-framemd5 v1 W33 H17 yuv420p"));
-        let ours: Vec<_> = text.lines().skip(1).map(|l| {
-            let columns: Vec<_> = l.split_whitespace().collect();
-            assert_eq!(columns[2], (33 * 17 + 2 * 17 * 9).to_string());
-            columns[1]
-        }).collect();
-        let oracle = ff(&["-c:v", "libdav1d", "-i", input.to_str().unwrap(),
-            "-map", "0:v:0", "-fps_mode", "passthrough", "-f", "framemd5", "-"]);
+        let ours: Vec<_> = text
+            .lines()
+            .skip(1)
+            .map(|l| {
+                let columns: Vec<_> = l.split_whitespace().collect();
+                assert_eq!(columns[2], (33 * 17 + 2 * 17 * 9).to_string());
+                columns[1]
+            })
+            .collect();
+        let oracle = ff(&[
+            "-c:v",
+            "libdav1d",
+            "-i",
+            input.to_str().unwrap(),
+            "-map",
+            "0:v:0",
+            "-fps_mode",
+            "passthrough",
+            "-f",
+            "framemd5",
+            "-",
+        ]);
         let oracle = String::from_utf8(oracle).unwrap();
-        let reference: Vec<_> = oracle.lines().filter(|l| !l.starts_with('#') && !l.is_empty())
-            .map(|l| l.rsplit(',').next().unwrap().trim()).collect();
+        let reference: Vec<_> = oracle
+            .lines()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+            .map(|l| l.rsplit(',').next().unwrap().trim())
+            .collect();
         assert_eq!(ours.len(), 30);
         assert!(ours.windows(2).any(|p| p[0] != p[1]));
         assert_eq!(ours, reference);
@@ -889,13 +935,38 @@ mod tests {
         for format in ["yuv420p10le", "yuv444p"] {
             let dir = tempfile::tempdir().unwrap();
             let input = dir.path().join("unsupported.webm");
-            ff(&["-f", "lavfi", "-i", &format!("testsrc=size=32x32:rate=30,format={format}"),
-                "-frames:v", "1", "-c:v", "libaom-av1", "-cpu-used", "8", input.to_str().unwrap()]);
+            ff(&[
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("testsrc=size=32x32:rate=30,format={format}"),
+                "-frames:v",
+                "1",
+                "-c:v",
+                "libaom-av1",
+                "-cpu-used",
+                "8",
+                input.to_str().unwrap(),
+            ]);
             let hashes = dir.path().join("out.txt");
             let y4m = dir.path().join("out.y4m");
-            let error = run(false, [input.as_os_str(), "--framemd5".as_ref(), hashes.as_os_str(),
-                "--y4m".as_ref(), y4m.as_os_str()].into_iter().map(OsString::from)).unwrap_err();
-            assert!(error.to_string().contains("UNSUPPORTED_AV1_SEQUENCE"), "{format}: {error}");
+            let error = run(
+                false,
+                [
+                    input.as_os_str(),
+                    "--framemd5".as_ref(),
+                    hashes.as_os_str(),
+                    "--y4m".as_ref(),
+                    y4m.as_os_str(),
+                ]
+                .into_iter()
+                .map(OsString::from),
+            )
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("UNSUPPORTED_AV1_SEQUENCE"),
+                "{format}: {error}"
+            );
             assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
         }
     }
