@@ -91,6 +91,11 @@ fn black_vfl_still_black_decoded_frame_hashes() {
     assert_eq!(receipt["frames"], 120);
     let bytes = fs::read(y4m).unwrap();
     let header = bytes.iter().position(|b| *b == b'\n').unwrap() + 1;
+    assert!(
+        std::str::from_utf8(&bytes[..header])
+            .unwrap()
+            .contains(" F30:1 ")
+    );
     let mut frames = Vec::new();
     let mut offset = header;
     while offset < bytes.len() {

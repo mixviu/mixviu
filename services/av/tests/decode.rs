@@ -6,6 +6,51 @@ const FIXTURE: &[u8] = include_bytes!("../../../libraries/media/webm/tests/fixtu
 fn repeats(count: u64) -> Vec<u8> {
     repeat_stream(count, false)
 }
+
+#[test]
+fn framemd5_cli_receipt_budget_and_duration_ceiling() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("input.webm");
+    let hashes = dir.path().join("out.txt");
+    let mut bytes = repeats(20);
+    std::fs::write(&input, &bytes).unwrap();
+    let invoke = || {
+        Command::new(env!("CARGO_BIN_EXE_av"))
+            .arg("decode")
+            .arg(&input)
+            .arg("--framemd5")
+            .arg(&hashes)
+            .args(["--max-output-bytes", "4000"])
+            .output()
+            .unwrap()
+    };
+    let result = invoke();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let receipt: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(receipt["frames"], 20);
+    assert_eq!(receipt["framemd5"], true);
+    assert_eq!(receipt["framemd5_lines"], 20);
+    assert_eq!(
+        receipt["output_bytes"],
+        std::fs::metadata(&hashes).unwrap().len()
+    );
+    assert_eq!(
+        std::fs::read_to_string(&hashes).unwrap().lines().count(),
+        21
+    );
+    std::fs::remove_file(&hashes).unwrap();
+    let at = bytes.windows(2).position(|b| b == [0x44, 0x89]).unwrap() + 10;
+    bytes[at..at + 8].copy_from_slice(&40f64.to_be_bytes());
+    std::fs::write(&input, bytes).unwrap();
+    let result = invoke();
+    assert_eq!(result.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&result.stderr).contains("FRAME_COUNT_LIMIT_EXCEEDED"));
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+}
 fn repeat_stream(count: u64, vfr: bool) -> Vec<u8> {
     let d = Demuxer::new(FIXTURE).unwrap();
     let t = &d.tracks[0];
@@ -117,6 +162,42 @@ fn variable_packet_intervals_do_not_invent_a_frame_rate_ceiling() {
     );
     let receipt: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
     assert_eq!(receipt["frames"], 20);
+    let bytes = std::fs::read(dir.path().join("out.y4m")).unwrap();
+    let mut at = bytes.iter().position(|b| *b == b'\n').unwrap() + 1;
+    let header = std::str::from_utf8(&bytes[..at]).unwrap();
+    assert!(header.contains(" F1000000000:40000000 "), "{header}");
+    for i in 0..20 {
+        let end = at + bytes[at..].iter().position(|b| *b == b'\n').unwrap() + 1;
+        let timestamp = (i * 40 + if i > 0 { 120 } else { 0 }) * 1_000_000;
+        assert_eq!(
+            &bytes[at..end],
+            format!("FRAME XPTS={timestamp}\n").as_bytes()
+        );
+        at = end + 64 * 48 * 3 / 2;
+    }
+    assert_eq!(at, bytes.len());
+}
+
+#[test]
+fn lexical_output_aliases_are_refused_before_staging() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("input.webm"), FIXTURE).unwrap();
+    for flags in [
+        vec!["--y4m", "out", "--framemd5", "./out"],
+        vec!["--framemd5", "out", "--wav", "missing/../out"],
+        vec!["--framemd5", "./input.webm"],
+        vec!["--y4m", "missing/../input.webm"],
+    ] {
+        let result = Command::new(env!("CARGO_BIN_EXE_av"))
+            .current_dir(dir.path())
+            .args(["decode", "input.webm"])
+            .args(flags)
+            .output()
+            .unwrap();
+        assert_eq!(result.status.code(), Some(2));
+        assert!(String::from_utf8_lossy(&result.stderr).contains("OUTPUT_PATH_CONFLICT"));
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
 }
 
 #[test]

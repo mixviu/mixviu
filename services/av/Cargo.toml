@@ -27,6 +27,7 @@ media-opus = { path = "../../libraries/media/opus" }
 serde_json.workspace = true
 hound = "=3.5.1"
 png = "=0.18.1"
+md-5 = "=0.10.6"
 
 media-frame = { path = "../../libraries/media/frame" }
 media-vfl = { path = "../../libraries/media/vfl" }
