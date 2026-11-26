@@ -68,11 +68,21 @@ scaler and padding run only when the source differs from the output canvas
 Still sources use lexical relative-path checks and descriptor-resolved
 confinement beneath the opened timeline directory, require regular files and
 share the 256 video-source-name cap with VFL sources. Repeated still names
-share a retained descriptor. Chunk reads reopen that descriptor through
+share a retained descriptor and one decoded, scaled canvas per output size,
+across all segments and chunks. Admission counts each retained canvas once,
+in addition to each chunk's working allowance. Decode reads reopen the descriptor through
 `/proc/self/fd` for independent offsets, never the original path. Refusals
 include `segment_kind`, `segment_kind_fields`, `solid_colour`,
 `segment_duration_s`, `still_regular_file`, `still_file_bytes_limit`,
-`still_dimensions_limit`, `still_decode_bytes_limit` and `still_animation`.
+`still_dimensions_limit`, `still_decode_bytes_limit`, `still_colour_type` and
+`still_animation`. `still_colour_type` is a defensive refusal for unexpected
+decoder output after palette expansion and 16-bit stripping.
+
+`av probe FILE` detects RIFF WAV as well as WebM. WAV uses the audio reader's
+validation and reports format, PCM sample format, rate, channels, sample-frame
+count and duration. PCM16/24/32 and float32 mono/stereo are supported, including
+ancillary RIFF chunks. Streaming WAVs with unbounded chunk lengths are refused
+by the same reader used for render inputs.
 
 A crossfade starts at an incoming segment's start. The preceding segment's held
 last frame can cover a fade after its trim ends. Fades are sorted once and must
