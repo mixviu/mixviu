@@ -5,6 +5,13 @@ if $a[0]=="probe" then print(json_encode({probe:true}));exit(0) end
 write_file(env("AV_STUB_PID"),to_string(pid()))
 eprint("AVP "..json_encode({v:1,t:0,stage:"input",event:"start"}))
 sleep(0.15)
+if starts_with(basename($a[1]),"race-") then
+  $end=monotonic()+1
+  while not exists(path_join(dirname(env("AV_STUB_PID")),"release")) and monotonic()<$end sleep(0.005) end
+end
+if contains(["fail.json","race-fail.json"],basename($a[1])) then
+  eprint("bad timeline: missing video source")
+  exit(2)
+end
 eprint("AVP "..json_encode({v:1,t:0.15,stage:"done",event:"end",ok:true}))
 print(json_encode({render:{frames:3},argv:$a}))
-if basename($a[1])=="fail.json" then exit(1) end

@@ -24,7 +24,8 @@ on proc.watch_exited apply_result($core.finished($s,$event.args)) end
 fn refused($f,$code,$text=nil)
   $caught=false
   try $f() catch $message,$error
-    $caught=true;equal($error.code,$code)
+    $caught=true
+    if $error.code!=$code then raise("TEST",$message) end
     if $text!=nil then check(contains($message,$text)) end
   end
   check($caught)
@@ -35,6 +36,18 @@ try
   equal($core.defaults().decode_max_bytes,"64G")
   equal($core.byte_limit("64G"),68719476736)
   equal($core.byte_limit("1M"),1048576);equal($core.byte_limit("1K"),1024);equal($core.byte_limit("7"),7)
+  $bad=$cfg;$bad.decode_max_bytes="invalid"
+  refused(fn()=$core.fresh($bad),"AV_PARAMS","decode_max_bytes:")
+  for $verb in ["av.render","av.audio"]
+    refused(fn()=$core.perform($s,$verb,{timeline:$params.timeline,out:$params.out,mem:"9G"}),"AV_MAX_MEM","max_mem")
+    refused(fn()=$core.perform($s,$verb,{timeline:$params.timeline,out:$params.out,cpu:2}),"AV_MAX_CPU","max_cpu")
+  end
+  check(not exists($dir.."/runner-argv"))
+  -- Byte and line caps are independent, including a cut through UTF-8.
+  $tail=$core.stderr_tail(repeat("old\n",25).."reason\n")
+  equal(len(split(slice($tail,0,-1),"\n")),20);check(ends_with($tail,"reason\n"))
+  $tail=$core.stderr_tail(repeat("é",3000).."reason\n")
+  check(len(string_to_bytes($tail))<=4096);check(ends_with($tail,"reason\n"))
   equal($core.perform($s,"av.probe",{file:$params.timeline}).result.probe,true)
   refused(fn()=$core.perform($s,"av.render",{timeline:"/etc/passwd",out:$params.out}),"AV_PATH")
   run_argv_must(["ln","-s","/etc/passwd",$dir.."/escape"])
@@ -67,8 +80,14 @@ try
   equal(len($events),4)
   equal($events[0].event,"start");equal($events[1].progress.v,1);equal($events[3].event,"end")
   check(contains($s.jobs[$job].receipt.argv,"--progress"))
+  $argv=$s.jobs[$job].receipt.argv
+  equal($argv[index_of($argv,"--mem")+1],$cfg.max_mem)
+  equal($argv[index_of($argv,"--cpu")+1],to_string($cfg.max_cpu))
+  $unit_args=json_parse(read_file($dir.."/runner-argv"))
+  check(contains($unit_args,"MemoryMax="..$cfg.max_mem))
+  check(contains($unit_args,"LimitFSIZE="..to_string($cfg.max_output_bytes)))
   $public=$core.perform($s,"av.status",{job:$job}).result
-  equal(len(keys($public)),12)
+  equal(len(keys($public)),13)
   for $k in ["watch","stdout","summary","diagnostic","receipt_error","capture_error"] check(not contains(keys($public),$k)) end
   equal($core.perform($s,"av.status",{}).result.jobs[$job],$public)
   -- Old or already-finished overflow events cannot alter history.
@@ -111,15 +130,59 @@ try
   $r=$core.perform($s,"av.render",{timeline:$dir.."/fail.json",out:$dir.."/failed.webm"});$job=$r.result.job;apply_result($r)
   $end=monotonic()+3
   while $s.jobs[$job].status=="running" and monotonic()<$end sleep(0.01) end
-  equal($s.jobs[$job].status,"failed");equal($s.jobs[$job].exit_code,1)
+  equal($s.jobs[$job].status,"failed");equal($s.jobs[$job].exit_code,2)
+  equal($s.jobs[$job].receipt,nil)
+  $public=$core.perform($s,"av.status",{job:$job}).result
+  check(contains($public.stderr_tail,"bad timeline: missing video source"))
+  equal($events[len($events)-1].stderr_tail,$public.stderr_tail)
+  check(not contains($public.stderr_tail,"AVP "))
   -- A stop result arriving after a recorded failure must preserve it.
   $old=$s;$old.jobs[$job].status="running"
   equal($core.cancel_returned($s,{state:$old,cancel_job:$job}).state,$s)
+  -- Real stub exits while stop is still pending, both with and without receipt.
+  write_file($dir.."/stop-natural","")
+  for $name in ["race-ok.json","race-fail.json"]
+    if exists($dir.."/done") then remove($dir.."/done") end
+    if exists($dir.."/release") then remove($dir.."/release") end
+    write_file($dir.."/"..$name,"{}")
+    $r=$core.perform($s,"av.render",{timeline:$dir.."/"..$name,out:$dir.."/race.webm"});$job=$r.result.job;apply_result($r)
+    apply_result($core.perform($s,"av.cancel",{job:$job}))
+    $end=monotonic()+1
+    while $s.jobs[$job].status=="running" and monotonic()<$end sleep(0.005) end
+    equal($s.jobs[$job].status,if $name=="race-ok.json" then "finished" else "failed" end)
+    equal($s.jobs[$job].cancelled,false)
+  end
+  $limited=$cfg;$limited.max_cpu=3;$limited.max_mem="2M";$limited.max_output_bytes=2048
+  $s=$core.fresh($limited)
+  for $verb in ["render","decode"]
+    $a=if $verb=="render" then $params else {file:$params.timeline,y4m:$dir.."/small.y4m"} end
+    $r=$core.perform($s,"av."..$verb,$a);$job=$r.result.job;apply_result($r)
+    $end=monotonic()+1
+    while $s.jobs[$job].status=="running" and monotonic()<$end sleep(0.005) end
+    equal($s.jobs[$job].status,"finished")
+    $argv=$s.jobs[$job].receipt.argv
+    if $verb=="render" then
+      equal($argv[index_of($argv,"--cpu")+1],"3");equal($argv[index_of($argv,"--mem")+1],"2M")
+      check(contains(json_parse(read_file($dir.."/runner-argv")),"LimitFSIZE=2048"))
+    else equal($argv[index_of($argv,"--max-output-bytes")+1],"2048") end
+  end
+  refused(fn()=$core.perform($s,"av.decode",{file:$params.timeline,y4m:$dir.."/over.y4m",max_output_bytes:2049}),"AV_PARAMS","exceeds host cap")
+  $limited.decode_max_bytes="1K"
+  $saved=$s
+  $s=$core.fresh($limited)
+  refused(fn()=$core.perform($s,"av.decode",{file:$params.timeline,y4m:$dir.."/over.y4m",max_output_bytes:1025}),"AV_PARAMS","exceeds host cap")
+  $s=$saved
   -- Exercise retention without launching 34 more processes. Completion order
   -- (including tied timestamps) defines age; running jobs are never evicted.
   $h=$core.fresh($cfg)
   $template=$s.jobs[$job];$template.status="running";$template.cancelled=false;$template.stdout="{}"
   $h.jobs.still=$template
+  $p=$core.line_event($h,{tag:"still",watch:$template.watch,stream:"stderr",line:"AVP broken JSON",truncated:false})
+  check($p.state.jobs.still.diagnostic!=nil);equal($p.event,nil)
+  equal($p.state.jobs.still.status,"running");equal($p.state.jobs.still.progress,$template.progress)
+  equal($p.state.jobs.still.stderr_tail,$template.stderr_tail)
+  $p=$core.line_event($p.state,{tag:"still",watch:$template.watch,stream:"stderr",line:'AVP {"v":1}',truncated:false})
+  equal($p.event.progress.v,1)
   for $i=1 to 34
     $id="history-"..to_string($i);$h.jobs[$id]=$template;$h.jobs[$id].job=$id
     $h=$core.finished($h,{tag:$id,watch:$template.watch,exit_code:0,signal:nil}).state

@@ -7,11 +7,19 @@ if $a[1]=="list-units" then
   exit(0)
 end
 if $a[1]=="stop" then
+  if exists($dir.."/stop-natural") then
+    write_file($dir.."/release","")
+    $end=monotonic()+1
+    while not exists($dir.."/done") and monotonic()<$end sleep(0.005) end
+    if not exists($dir.."/done") then exit(1) end
+    exit(0)
+  end
   if not kill(to_number(read_file($dir.."/"..$a[2]..".pid"))) then exit(1) end
   exit(0)
 end
 $at=index_of($a,"--")
 $unit=$dir.."/"..$a[index_of($a,"--unit")+1]
+write_file($dir.."/runner-argv",json_encode($a))
 $watch=process_watch(slice($a,$at+1),{stderr:"lines",env:{AV_STUB_PID:$unit..".pid"}})
 on proc.line
   if $event.args.stream=="stdout" then print($event.args.line)
@@ -19,5 +27,6 @@ on proc.line
 end
 on proc.watch_exited
   eprint("Service runtime: 150ms\nCPU time consumed: 50ms\nMemory peak: 2M")
-  exit($event.args.exit_code ?? 1)
+  write_file($dir.."/done","")
+  exit($event.args.exit_code ?? (128+($event.args.signal ?? 0)))
 end
