@@ -731,6 +731,7 @@ version = "0.1.2"
 dependencies = [
  "hound",
  "libc",
+ "md-5",
  "media-audio",
  "media-av1",
  "media-frame",

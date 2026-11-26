@@ -144,6 +144,9 @@ impl Decoder {
             check(code)?;
             let p = &p.0;
             let (w, h) = (p.p.w as usize, p.p.h as usize);
+            if p.p.bpc != 8 || p.p.layout != 1 {
+                return Err(Error("UNSUPPORTED_PIXEL_FORMAT: expected 8-bit I420".into()));
+            }
             if w == 0
                 || h == 0
                 || w > 8192
@@ -250,7 +253,7 @@ fn validate_obus(bytes: &[u8]) -> Result<(), Error> {
                 || seq.layout != 1
             {
                 return Err(Error(
-                    "AV1 sequence exceeds 8192x4320 8-bit I420 limits".into(),
+                    "UNSUPPORTED_AV1_SEQUENCE: exceeds 8192x4320 8-bit I420 limits".into(),
                 ));
             }
         }
