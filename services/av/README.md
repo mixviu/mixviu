@@ -129,16 +129,23 @@ crossfade contract; it does not introduce a separate linear-light workflow.
 Each chunk starts at a segment boundary or at most `keyint_s` apart. `chunks`
 limits concurrent encoders; omitted, it is available cores / 8, minimum one.
 `chunks * threads` must not exceed twice the available cores
-(`encode_thread_budget`). A conservative live-video admission estimate must
-also fit 8 GiB (`encode_memory_budget`): per concurrent chunk, eight times the
+(`encode_thread_budget`). Explicit `--cpu N` reserves one slot for audio and
+clamps video to N−1; N=1 runs the stages serially. A conservative admission
+estimate must fit `--mem` (8 GiB by default, `encode_memory_budget`): per concurrent chunk, eight times the
 largest source BGRA canvas, the largest horizontal scaler intermediate
 (`scaled_width * source_height * 16`), 448 bytes per output pixel for frame and
 encoder working storage, 64 MiB for compressed payloads and 64 MiB for metadata.
 The encoder allowance was raised after a 4K episode measured 6.61 GiB process
-high-water RSS. This is an admission estimate, not an operating-system RSS limit; rav1e's internal
-allocator and audio mastering add their own storage. Real episode peak RSS is
-reported with the worker receipt. Audio has the bounded three-hour contract
-documented by media-audio; its mastering storage is released before video work.
+high-water RSS. The shared scaled-still cache adds one output-sized BGRA canvas
+per distinct source, charged once across segments and chunks. Audio mastering
+runs alongside the full video encode, so its conservative peak is reserved once
+alongside that cache before clamping concurrent chunks:
+`audio_peak + still_cache_bytes + chunks * video_working_bytes <= mem`.
+See [PROGRESS.md](PROGRESS.md) for the audio allowance and stage accounting.
+This is an admission estimate, not an operating-system RSS limit. Real episode
+peak RSS is reported with the worker receipt. Audio retains the bounded
+three-hour contract documented by media-audio. Both stages join before mux;
+video packets spool to a temporary file while audio completes.
 Each render encoder uses pinned rav1e 0.8.1, Main 8-bit 420, low latency,
 error-resilient frames, constant QP,
 no reordering and one GOP. Actual sequence OBUs must match across chunks.
