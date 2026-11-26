@@ -59,6 +59,9 @@ fn black_vfl_still_black_decoded_frame_hashes() {
         String::from_utf8_lossy(&render.stderr)
     );
     let receipt: Value = serde_json::from_slice(&render.stdout).unwrap();
+    let hash = Command::new("sha256sum").arg(&out).output().unwrap();
+    assert!(hash.status.success());
+    println!("RENDER_WEBM_SHA256 {}", String::from_utf8_lossy(&hash.stdout));
     assert_eq!(receipt["frames_out"], 120);
     assert!(receipt["repeats"].as_u64().unwrap() > 40);
     assert!(receipt["scaling"]["frames"].as_u64().unwrap() > 0);
