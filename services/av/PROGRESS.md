@@ -65,6 +65,10 @@ encoder worker CPU and orchestration. `audio.passes` totals all limiter attempts
 encode/decode/meter cycle. `audio.mastering_cost` has each attempt's limiter count,
 per-limiter CPU times, mastering CPU/wall seconds and codec CPU/wall seconds.
 Each video chunk uses one codec pass (no two-pass video encode).
+Stage entries also expose `audio.limiter_passes`, `audio.codec_attempts`,
+`video.codec_passes_per_chunk` and `video.codec_attempts` (the chunk count).
+A mastering-refusal receipt retains its existing top-level audio fields and
+adds these stage entries, with zero mux cost because mux did not run.
 
 Memory admission includes twelve stereo f64 programme buffers, envelope and
 packet/index allowance (224 bytes/output frame), three buffers for the largest

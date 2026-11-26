@@ -1164,6 +1164,16 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
     });
     let (a, audio_wall, audio_cpu) = a?;
     let video = video?;
+    // Process CPU over both joined stages, less the serial audio thread's CPU.
+    let video_cpu = (cpu() - total_cpu - input_cpu - audio_cpu).max(0.0);
+    let stages = serde_json::json!({
+        "input": {"wall_s": input_wall, "cpu_s": input_cpu},
+        "audio": {"wall_s": audio_wall, "cpu_s": audio_cpu,
+            "limiter_passes": a.receipt.passes, "codec_attempts": a.receipt.codec_attempts},
+        "video": {"wall_s": video.wall_s, "cpu_s": video_cpu,
+            "codec_passes_per_chunk": 1, "codec_attempts": starts.len() - 1},
+        "mux": {"wall_s": 0.0, "cpu_s": 0.0}
+    });
     if a.receipt.refused {
         let _ = media_audio::cli::diagnostic(format_args!(
             "mastering refused: encoded {:.3} LUFS, {:.3} dBTP; target {:.3} LUFS, ceiling {:.3} dBTP",
@@ -1172,12 +1182,12 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
             audio.master.integrated_lufs,
             audio.master.true_peak_dbtp
         ));
-        return deliver_receipt(&serde_json::to_string(&a.receipt)?, 3);
+        let mut receipt = serde_json::to_value(&a.receipt)?;
+        receipt["stages"] = stages;
+        receipt["wall_s"] = serde_json::json!(overall.elapsed().as_secs_f64());
+        return deliver_receipt(&serde_json::to_string(&receipt)?, 3);
     }
     drop(a.audio);
-    let video_wall = video.wall_s;
-    // Process CPU over both joined stages, less the serial audio thread's CPU.
-    let video_cpu = (cpu() - total_cpu - input_cpu - audio_cpu).max(0.0);
     let encoded = video.encoded;
     let scaled_frames = video.scaling.frames;
     let scale_wall_s = video.scaling.wall_s;
@@ -1241,8 +1251,10 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
     mux_cpu += cpu() - c;
     progress.event("mux", "end", serde_json::json!({"bytes":size}));
     let n = frame(t.duration_s);
-    let mut receipt = serde_json::json!({"peak_rss_kib":peak_rss_kib(), "scaling": {"filter":"bicubic_catmull_rom_gamma","frames":scaled_frames,"sum_wall_s":scale_wall_s,"mean_ms":scale_wall_s*1000.0/scaled_frames.max(1) as f64}, "frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunk_count, "parallel_chunks": t.encode.chunks, "stages": {"input": {"wall_s": input_wall, "cpu_s": input_cpu}, "audio": {"wall_s": audio_wall, "cpu_s": audio_cpu}, "video": {"wall_s": video_wall, "cpu_s": video_cpu}, "mux": {"wall_s": mux_wall, "cpu_s": mux_cpu}}, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt});
+    let mut receipt = serde_json::json!({"peak_rss_kib":peak_rss_kib(), "scaling": {"filter":"bicubic_catmull_rom_gamma","frames":scaled_frames,"sum_wall_s":scale_wall_s,"mean_ms":scale_wall_s*1000.0/scaled_frames.max(1) as f64}, "frames_out": n, "frames_encoded": encoded, "repeats": n-encoded as u64, "keyframes": keyframes, "chunks": chunk_count, "parallel_chunks": t.encode.chunks, "wall_s": overall.elapsed().as_secs_f64(), "cpu_s": cpu()-total_cpu, "effective_fps": n as f64/overall.elapsed().as_secs_f64(), "bytes": size, "audio": a.receipt});
     receipt["limits"] = serde_json::json!({"cpu":limits.cpu,"mem_bytes":limits.mem.unwrap_or(8 * 1024 * 1024 * 1024)});
+    receipt["stages"] = stages;
+    receipt["stages"]["mux"] = serde_json::json!({"wall_s":mux_wall,"cpu_s":mux_cpu});
     receipt["encode_requested"] = requested;
     receipt["encode_effective"] = serde_json::json!({"chunks":t.encode.chunks,"threads":t.encode.threads,"tile_cols":t.encode.tile_cols,"tile_rows":t.encode.tile_rows});
     let receipt = serde_json::to_string(&receipt)?;
