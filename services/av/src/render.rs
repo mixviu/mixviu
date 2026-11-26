@@ -599,11 +599,14 @@ impl Timeline {
         // Conservative admission estimate, including packet/position metadata,
         // two VFL canvases with payload/scratch, scaler and encoder frame storage.
         let working = working_bytes(source_bytes, scale_bytes, v.width as u64, v.height as u64)?;
-        let audio_peak = media_audio::timeline::peak_memory_bytes(
-            self.duration_s, &self.audio.sources, base,
-        )?;
-        let budget = self.limits.mem.unwrap_or(8 * 1024 * 1024 * 1024)
-            .checked_sub(audio_peak).ok_or("render: encode_memory_budget")?;
+        let audio_peak =
+            media_audio::timeline::peak_memory_bytes(self.duration_s, &self.audio.sources, base)?;
+        let budget = self
+            .limits
+            .mem
+            .unwrap_or(8 * 1024 * 1024 * 1024)
+            .checked_sub(audio_peak)
+            .ok_or("render: encode_memory_budget")?;
         if let Some(mem) = self.limits.mem {
             if mem < audio_peak || budget < working {
                 return refuse("encode_memory_budget");
@@ -960,7 +963,9 @@ fn join_stages<A: Send, V>(
         std::thread::scope(|scope| {
             let audio = scope.spawn(audio);
             let video = video();
-            let audio = audio.join().map_err(|_| "audio_worker_panicked".to_string())
+            let audio = audio
+                .join()
+                .map_err(|_| "audio_worker_panicked".to_string())
                 .and_then(|r| r);
             (audio, video)
         })
@@ -976,24 +981,49 @@ fn encode_video(
 ) -> Result<VideoResult> {
     let wall = Instant::now();
     let chunk_count = starts.len() - 1;
-    progress.event("video", "start", serde_json::json!({"frames_total":frame(t.duration_s),"chunks_total":chunk_count}));
+    progress.event(
+        "video",
+        "start",
+        serde_json::json!({"frames_total":frame(t.duration_s),"chunks_total":chunk_count}),
+    );
     let mut result = VideoResult {
-        config: Vec::new(), packets: 0, encoded: 0,
-        scaling: ScaleStats::default(), wall_s: 0.0,
+        config: Vec::new(),
+        packets: 0,
+        encoded: 0,
+        scaling: ScaleStats::default(),
+        wall_s: 0.0,
     };
     let mut spool = BufWriter::new(spool);
-    for ranges in starts.windows(2).collect::<Vec<_>>().chunks(t.encode.chunks) {
+    for ranges in starts
+        .windows(2)
+        .collect::<Vec<_>>()
+        .chunks(t.encode.chunks)
+    {
         let batch = std::thread::scope(|scope| {
-            let handles: Vec<_> = ranges.iter().map(|r| {
-                let index = starts.binary_search(&r[0]).unwrap();
-                scope.spawn(move || {
-                    progress.event("video", "start", serde_json::json!({"chunk":index,"chunks_total":chunk_count}));
-                    let result = chunk(t, directories, r[0], r[1], progress).map_err(|e| e.to_string());
-                    progress.event("video", "end", serde_json::json!({"chunk":index,"chunks_total":chunk_count}));
-                    result
+            let handles: Vec<_> = ranges
+                .iter()
+                .map(|r| {
+                    let index = starts.binary_search(&r[0]).unwrap();
+                    scope.spawn(move || {
+                        progress.event(
+                            "video",
+                            "start",
+                            serde_json::json!({"chunk":index,"chunks_total":chunk_count}),
+                        );
+                        let result =
+                            chunk(t, directories, r[0], r[1], progress).map_err(|e| e.to_string());
+                        progress.event(
+                            "video",
+                            "end",
+                            serde_json::json!({"chunk":index,"chunks_total":chunk_count}),
+                        );
+                        result
+                    })
                 })
-            }).collect();
-            handles.into_iter().map(|h| h.join().map_err(|_| "chunk_worker_panicked".to_string())?)
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| h.join().map_err(|_| "chunk_worker_panicked".to_string())?)
                 .collect::<std::result::Result<Vec<_>, String>>()
         })?;
         for chunk in batch {
@@ -1021,7 +1051,10 @@ fn encode_video(
 }
 
 fn thread_cpu() -> f64 {
-    let mut time = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut time = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     // SAFETY: valid writable timespec, read only after successful clock call.
     if unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &mut time) } != 0 {
         return 0.0;
@@ -1119,7 +1152,11 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
         let wall = Instant::now();
         let c = thread_cpu();
         let a = media_audio::timeline::prepare(&audio, &base).map_err(|e| e.to_string())?;
-        progress.event("audio", "end", serde_json::json!({"audio_pass":a.receipt.codec_passes}));
+        progress.event(
+            "audio",
+            "end",
+            serde_json::json!({"audio_pass":a.receipt.codec_passes}),
+        );
         Ok::<_, String>((a, wall.elapsed().as_secs_f64(), thread_cpu() - c))
     };
     let (a, video) = join_stages(limits.cpu == Some(1), prepare_audio, || {
@@ -1130,8 +1167,10 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
     if a.receipt.refused {
         let _ = media_audio::cli::diagnostic(format_args!(
             "mastering refused: encoded {:.3} LUFS, {:.3} dBTP; target {:.3} LUFS, ceiling {:.3} dBTP",
-            a.receipt.encoded.integrated_lufs, a.receipt.encoded.true_peak_dbtp,
-            audio.master.integrated_lufs, audio.master.true_peak_dbtp
+            a.receipt.encoded.integrated_lufs,
+            a.receipt.encoded.true_peak_dbtp,
+            audio.master.integrated_lufs,
+            audio.master.true_peak_dbtp
         ));
         return deliver_receipt(&serde_json::to_string(&a.receipt)?, 3);
     }
@@ -1156,11 +1195,13 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
     let mut writer = Some(media_webm::Writer::new(
         BufWriter::new(pending.file.try_clone()?),
         media_webm::Video {
-            width: t.video.width as u32, height: t.video.height as u32,
+            width: t.video.width as u32,
+            height: t.video.height as u32,
             codec_private: video.config,
         },
         Some(media_webm::Opus {
-            channels: a.head.channels, pre_skip: a.head.pre_skip,
+            channels: a.head.channels,
+            pre_skip: a.head.pre_skip,
             input_sample_rate: a.head.input_sample_rate,
         }),
     )?);
@@ -1169,7 +1210,9 @@ fn run_inner(args: Vec<OsString>, progress: &media_audio::progress::Progress) ->
         spool_reader.read_exact(&mut header)?;
         let pts = u64::from_le_bytes(header[..8].try_into().unwrap());
         let len = u64::from_le_bytes(header[8..16].try_into().unwrap()) as usize;
-        if len > CHUNK_BYTES_LIMIT { return refuse("spool_packet_limit"); }
+        if len > CHUNK_BYTES_LIMIT {
+            return refuse("spool_packet_limit");
+        }
         let mut data = vec![0; len];
         spool_reader.read_exact(&mut data)?;
         let ms = pts * 1000 / 30;
@@ -1227,7 +1270,10 @@ mod tests {
     use serde_json::json;
     #[test]
     fn either_failure_joins_the_other_stage_and_removes_staging() {
-        use std::sync::{Barrier, atomic::{AtomicBool, Ordering}};
+        use std::sync::{
+            Barrier,
+            atomic::{AtomicBool, Ordering},
+        };
         for audio_fails in [false, true] {
             let root = tempfile::tempdir().unwrap();
             let out = root.path().join("out.webm");
@@ -1236,15 +1282,27 @@ mod tests {
             {
                 let _pending = media_audio::pending::Pending::new(&out).unwrap();
                 let _spool = media_audio::pending::Pending::new(&out).unwrap();
-                let (a, v) = join_stages(false, || {
-                    barrier.wait();
-                    if audio_fails { Err("audio failure".to_string()) }
-                    else { ended.store(true, Ordering::SeqCst); Ok(()) }
-                }, || {
-                    barrier.wait();
-                    if audio_fails { ended.store(true, Ordering::SeqCst); Ok(()) }
-                    else { Err("video failure".into()) }
-                });
+                let (a, v) = join_stages(
+                    false,
+                    || {
+                        barrier.wait();
+                        if audio_fails {
+                            Err("audio failure".to_string())
+                        } else {
+                            ended.store(true, Ordering::SeqCst);
+                            Ok(())
+                        }
+                    },
+                    || {
+                        barrier.wait();
+                        if audio_fails {
+                            ended.store(true, Ordering::SeqCst);
+                            Ok(())
+                        } else {
+                            Err("video failure".into())
+                        }
+                    },
+                );
                 assert_eq!(a.is_err(), audio_fails);
                 assert_eq!(v.is_err(), !audio_fails);
                 assert!(ended.load(Ordering::SeqCst));
@@ -1280,7 +1338,9 @@ mod tests {
                 .to_string()
                 .contains("encode_memory_budget")
         );
-        let audio_peak = media_audio::timeline::peak_memory_bytes(t.duration_s, &t.audio.sources, root.path()).unwrap();
+        let audio_peak =
+            media_audio::timeline::peak_memory_bytes(t.duration_s, &t.audio.sources, root.path())
+                .unwrap();
         t.limits.mem = Some(working + audio_peak - 1);
         assert!(t.validate(root.path()).is_err());
         t.limits.mem = Some(working + audio_peak);

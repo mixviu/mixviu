@@ -193,9 +193,18 @@ fn audio_and_video_join_before_mux() {
         .position(|e| e["stage"] == "video" && e["event"] == "end" && e.get("chunk").is_none())
         .unwrap();
     assert!(video_end < mux_start);
-    let audio_end = events.iter().position(|e| e["stage"] == "audio" && e["event"] == "end").unwrap();
-    let video_start = events.iter().position(|e| e["stage"] == "video" && e["event"] == "start").unwrap();
-    assert!(video_start < audio_end && audio_end < mux_start, "{events:#?}");
+    let audio_end = events
+        .iter()
+        .position(|e| e["stage"] == "audio" && e["event"] == "end")
+        .unwrap();
+    let video_start = events
+        .iter()
+        .position(|e| e["stage"] == "video" && e["event"] == "start")
+        .unwrap();
+    assert!(
+        video_start < audio_end && audio_end < mux_start,
+        "{events:#?}"
+    );
     for stage in ["mux", "done"] {
         let end = events
             .iter()

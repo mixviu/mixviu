@@ -46,7 +46,7 @@ fn short_quiet_ceiling_limited_requires_explicit_opt_in() {
     // A sparse stronger plosive makes this a ceiling-limited specimen rather
     // than relying on duration alone to cause a refusal.
     let samples = clip.samples().iter().enumerate().map(|(i, x)| {
-        x * if (5700..5940).contains(&((i / 2) % 46828)) { 2.7 / 2.2 } else { 1.0 }
+        x * if (5700..5940).contains(&((i / 2) % 46828)) { 4.0 / 2.2 } else { 1.0 }
     }).collect();
     clip = Audio::new(48000, 2, samples).unwrap();
     clip.normalise(-20.5, 0.0).unwrap();

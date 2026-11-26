@@ -533,7 +533,7 @@ mod refusal_tests {
         .unwrap()
         .write_wav(std::fs::File::create(&source).unwrap(), WavFormat::Float32)
         .unwrap();
-        let t: Timeline = serde_json::from_value(serde_json::json!({
+        let mut t: Timeline = serde_json::from_value(serde_json::json!({
             "version":1,"sample_rate":48000,"channels":2,"duration_s":1,
             "sources":[{"path":"tone.wav","at_s":0}],
             "master":{"integrated_lufs":-14,"true_peak_dbtp":-1}
@@ -575,6 +575,15 @@ mod refusal_tests {
             vec![source],
             "no partial output or staging files"
         );
+        // Permission never excuses a codec-only miss, even below the ceiling.
+        t.master.accept_ceiling_limited = true;
+        let codec_only = prepare_with_encoder(&t, &dir, |audio| {
+            let (head, packets, mut measured) = encode_checked(audio)?;
+            measured.integrated_lufs = -14.3;
+            measured.true_peak_dbtp = -1.2;
+            Ok((head, packets, measured))
+        }).unwrap();
+        assert!(codec_only.receipt.refused && !codec_only.receipt.target_reached);
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

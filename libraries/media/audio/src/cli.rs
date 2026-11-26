@@ -108,11 +108,7 @@ fn run_inner(a: Vec<OsString>, progress: &crate::progress::Progress) -> timeline
     );
     progress.event("mux", "start", serde_json::json!({}));
     let receipt = timeline::render_prepared(prepared, &out, wav.as_deref())?;
-    let outcome = if receipt.refused {
-        3
-    } else {
-        0
-    };
+    let outcome = if receipt.refused { 3 } else { 0 };
     progress.event(
         "mux",
         "end",
