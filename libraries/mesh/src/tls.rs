@@ -533,17 +533,27 @@ mod tests {
         for case in 0..3 {
             let mut members = base.clone();
             match case {
-                0 => { members.insert("gamma".into(), record(&a)); }
-                1 => { members.get_mut("alpha").unwrap()["status"] = json!("tombstoned"); }
-                2 => { members.get_mut("alpha").unwrap()["bus"] = json!(false); }
+                0 => {
+                    members.insert("gamma".into(), record(&a));
+                }
+                1 => {
+                    members.get_mut("alpha").unwrap()["status"] = json!("tombstoned");
+                }
+                2 => {
+                    members.get_mut("alpha").unwrap()["bus"] = json!(false);
+                }
                 _ => unreachable!(),
             }
             let client_authority = live(members, 1);
             let server_authority = live(base.clone(), 1);
-            assert!(handshake(
-                b.client_config(client_authority, "alpha".into()).unwrap(),
-                a.server_config(server_authority).unwrap(),
-            ).is_err(), "client case {case}");
+            assert!(
+                handshake(
+                    b.client_config(client_authority, "alpha".into()).unwrap(),
+                    a.server_config(server_authority).unwrap(),
+                )
+                .is_err(),
+                "client case {case}"
+            );
         }
     }
     #[test]
@@ -651,7 +661,10 @@ mod tests {
         file.set_len(32).unwrap();
         file.set_permissions(std::fs::Permissions::from_mode(0o640))
             .unwrap();
-        assert!(matches!(load_seed(&path), Err(SeedFileError::Insecure { .. })));
+        assert!(matches!(
+            load_seed(&path),
+            Err(SeedFileError::Insecure { .. })
+        ));
         for mode in [0o604, 0o644, 0o660] {
             file.set_permissions(std::fs::Permissions::from_mode(mode))
                 .unwrap();
