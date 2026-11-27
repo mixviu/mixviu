@@ -34,7 +34,7 @@ Rust holds the native foundations.
 | Engine | What it is |
 |---|---|
 | **[mix](engines/mix)** | The shell and the language. It is a login shell, REPL, script runner and manual. Values are structured, not text streams. External programs run by argv, so there are no quoting traps. Mix is also the language for automation and app behaviour. |
-| **[mixd](engines/mixd)** | The headless host. It is one multi-call binary for servers, with no display code. `mixd serve` runs Mix services as Bus citizens. The daemons are personalities chosen by argv[0], linked to the one binary: `noded` (the Bus), `maild`, `webd`, `dnsd`, `indexd`, `settingsd`, `hostd` and others. Run `mixd --personalities` for the full list. |
+| **[mixd](engines/mixd)** | The headless host. It is one multi-call binary for servers, with no display code. `mixd serve` runs Mix services as Bus citizens. The daemons are personalities chosen by argv[0], linked to the one binary: `noded` (the Bus), `maild`, `webd`, `dnsd`, `indexd`, `settingsd`, `hostd` and others. `mixd --personalities` lists them all. |
 | **[viud](engines/viud)** | The Wayland compositor and nothing more: scanout, rendering, input, capture, and window and output authority. It is exposed as the `comp` Bus service. |
 | **[viu](engines/viu)** | The widget toolkit and scene host. Scene documents describe the layout and bindings, and Mix behaviours make the decisions. The same widgets serve the desktop shell and ordinary app windows. |
 
@@ -152,8 +152,8 @@ in [CONTRIBUTING.md](CONTRIBUTING.md); in short:
   change each, with the template filled in: risk tier, how it was tested and
   how to undo it.
 - **Check what you touched.** Run formatting, clippy and the tests of the
-  crates you changed (`mix tools/ci.mix fmt`, `clippy`, or
-  `cargo test -p <crate>`). The full `mix tools/ci.mix all` runs once per PR,
+  crates you changed (`mix tools/ci.mix fmt`, `mix tools/ci.mix clippy`,
+  or `cargo test -p <crate>`). The full `mix tools/ci.mix all` runs once per PR,
   in the merge gate.
 - **Mix, not shell or Python.** Scripts, tools and automation in this
   repository are `.mix` files. `mix lint` diagnostics may only go down
