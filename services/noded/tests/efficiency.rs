@@ -220,7 +220,7 @@ impl Mesh {
             write(
                 &root.join("etc/node.conf.mix"),
                 &json!({
-                    "node": NAMES[i], "mesh_addr": ips[i],
+                    "node": NAMES[i], "wg_ip": ips[i],
                     "noded": {"port": ports[i], "unix_socket": root.join("run/bus.sock")}
                 }),
             );

@@ -8,7 +8,7 @@ use std::time::Duration;
 use axum::extract::connect_info::Connected;
 use axum::serve::{IncomingStream, Listener};
 pub use mesh::tls::Refusals;
-use mesh::tls::{Credential, LiveAuthority, verified_member};
+use mesh::tls::{Credential, verified_member};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -38,6 +38,7 @@ pub(crate) fn prepare(
         credential,
         authority: Arc::new(std::sync::RwLock::new(keys)),
         sessions: mesh::tls_limits::Sessions::new(settings.max_sessions_per_member),
+        source_rate: Arc::new(std::sync::Mutex::new(mesh::tls_limits::SourceRate::new(settings.per_source_rate, settings.per_source_burst))),
     })
 }
 
@@ -57,11 +58,9 @@ pub(crate) struct TlsListener {
 impl TlsListener {
     pub fn new(
         tcp: TcpListener,
-        credential: &Credential,
-        authority: LiveAuthority,
+        runtime: &mesh::TlsRuntime,
         limits: &config::node::NodedTls,
         refusals: Arc<Refusals>,
-        sessions: Arc<mesh::tls_limits::Sessions>,
     ) -> anyhow::Result<Self> {
         anyhow::ensure!(
             limits.handshake_timeout_s > 0,
@@ -73,12 +72,14 @@ impl TlsListener {
         );
         anyhow::ensure!(limits.per_source_rate > 0 && limits.per_source_burst > 0
             && limits.max_sessions_per_member > 0, "TLS rate, burst and session cap must be positive");
-        let acceptor = TlsAcceptor::from(credential.server_config(authority.clone())?);
+        let acceptor = TlsAcceptor::from(runtime.credential.server_config(runtime.authority.clone())?);
         let (tx, ready) = mpsc::channel(limits.max_handshakes);
         let deadline = Duration::from_secs(limits.handshake_timeout_s);
         let max_handshakes = limits.max_handshakes;
         let max_queue = limits.max_queue;
-        let mut rate = mesh::tls_limits::SourceRate::new(limits.per_source_rate, limits.per_source_burst);
+        let rate = runtime.source_rate.clone();
+        let sessions = runtime.sessions.clone();
+        let authority = runtime.authority.clone();
         let driver = tokio::spawn(async move {
             let mut running = JoinSet::new();
             let mut queue = VecDeque::new();
@@ -138,7 +139,7 @@ impl TlsListener {
                     accepted = tcp.accept() => {
                         match accepted {
                             Ok((tcp, peer)) => {
-                                if !rate.allow(peer, std::time::Instant::now()) {
+                                if !rate.lock().expect("TLS rate poisoned").allow(peer, std::time::Instant::now()) {
                                     refusals.record(peer, "rate-limited");
                                     continue;
                                 }

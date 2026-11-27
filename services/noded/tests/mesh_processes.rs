@@ -60,7 +60,7 @@ fn frame_enforcement_refuses_startup_without_identity_source() {
     let config = fixture.root.join("etc/node.conf.mix");
     write(
         &config,
-        &json!({"node":"alpha","mesh_addr":"127.0.0.1","noded":{"port":0,"frame_policy":"enforce","admission":"off","unix_socket":fixture.root.join("run/bus.sock")}}),
+        &json!({"node":"alpha","wg_ip":"127.0.0.1","noded":{"port":0,"frame_policy":"enforce","admission":"off","unix_socket":fixture.root.join("run/bus.sock")}}),
     );
     let result = Command::new(env!("CARGO_BIN_EXE_noded"))
         .args(["serve", "--no-monitor", "--no-log"])
@@ -188,7 +188,7 @@ async fn production_mesh(dialler_epoch: u64, listener_epoch: u64, frame_policy: 
             fs::set_permissions(root.join("etc/noded/d2.seed"), fs::Permissions::from_mode(0o600)).unwrap();
             write(&root.join("var/noded/inventory.signed"), &signed);
             write(&root.join("etc/node.conf.mix"), &json!({
-                "node":names[i], "mesh_addr":ips[i],
+                "node":names[i], "wg_ip":ips[i],
                 "noded":{"port":ports[i],"unix_socket":root.join("run/bus.sock"),"admission":"enforce","frame_policy":frame_policy}
             }));
             write(&root.join("etc/mesh.conf.mix"), &json!({"node_name":names[i],"peers":[]}));

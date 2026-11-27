@@ -1279,11 +1279,9 @@ async fn serve(
             let tls = state.tls.as_ref().expect("TLS startup validated");
             let listener = crate::tls_ingress::TlsListener::new(
                 tcp,
-                &tls.credential,
-                tls.authority.clone(),
+                tls,
                 &network.tls,
                 state.tls_refusals.clone(),
-                tls.sessions.clone(),
             )?;
             let app = Router::new()
                 .route("/ws", axum::routing::get(tls_ws_handler))

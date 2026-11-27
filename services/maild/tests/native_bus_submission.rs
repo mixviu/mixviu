@@ -45,7 +45,7 @@ fn native_bus_submission_replays_across_actors_without_duplicate_mail() -> Resul
     let node_config = root.join("node.conf.mix");
     std::fs::write(
         &node_config,
-        json!({"node":"mail-fixture","mesh_addr":"127.0.0.1",
+        json!({"node":"mail-fixture","wg_ip":"127.0.0.1",
         "noded":{"port":port,"unix_socket":root.join("broker.sock")}})
         .to_string(),
     )?;

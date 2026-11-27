@@ -527,6 +527,7 @@ pub struct TlsRuntime {
     pub credential: crate::tls::Credential,
     pub authority: crate::tls::LiveAuthority,
     pub sessions: Arc<crate::tls_limits::Sessions>,
+    pub source_rate: Arc<Mutex<crate::tls_limits::SourceRate>>,
 }
 
 /// Manages connections to remote mesh peers.
@@ -1101,12 +1102,12 @@ async fn dial(
             crate::tls::DIAL_REFUSALS.record(peer.noded_addr(), "session-cap");
             anyhow::bail!("TLS session-cap");
         };
-        crate::tls::DIAL_REFUSALS.admitted();
         (Box::new(crate::tls_limits::LeasedIo { io: stream, session }), Some((member, binding)))
     } else {
         (Box::new(tcp), None)
     };
     let (ws, _) = tokio_tungstenite::client_async_with_config(peer.noded_url(), io, None).await?;
+    if identity.is_some() { crate::tls::DIAL_REFUSALS.admitted(); }
     Ok((ws, identity))
 }
 

@@ -58,7 +58,7 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
         .unwrap();
     std::fs::write(
         &node_config,
-        json!({"mesh_addr":"127.0.0.1","noded":{"port":port,"unix_socket":broker.endpoint}})
+        json!({"wg_ip":"127.0.0.1","noded":{"port":port,"unix_socket":broker.endpoint}})
             .to_string(),
     )
     .unwrap();
@@ -85,7 +85,7 @@ async fn serve_reconnect_bridge_flush_eof_and_sigterm() {
         .unwrap();
     std::fs::write(
         &node_config,
-        json!({"mesh_addr":"127.0.0.1","noded":{"port":port,"unix_socket":broker.endpoint}})
+        json!({"wg_ip":"127.0.0.1","noded":{"port":port,"unix_socket":broker.endpoint}})
             .to_string(),
     )
     .unwrap();
@@ -267,7 +267,7 @@ async fn bridge_discovers_runtime_unix_socket_without_config_socket_key() {
     std::fs::rename(&broker.endpoint, socket_dir.join("bus.sock")).unwrap();
     let node_config = dir.path().join("node.conf.mix");
     // Legacy TCP would fail: this test must reach the Unix broker.
-    std::fs::write(&node_config, "mesh_addr: '192.0.2.1'\nnoded: { port: 1 }").unwrap();
+    std::fs::write(&node_config, "wg_ip: '192.0.2.1'\nnoded: { port: 1 }").unwrap();
     let mut child = Child(
         tokio::process::Command::new(env!("CARGO_BIN_EXE_indexd"))
             .arg("bridge")
