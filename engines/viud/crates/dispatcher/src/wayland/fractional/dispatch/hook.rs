@@ -168,12 +168,8 @@ mod tests {
         use smithay::reexports::wayland_server::{
             Client, DataInit, Dispatch, Display, DisplayHandle,
         };
-        use smithay::wayland::fractional_scale::{
-            FractionalScaleHandler, FractionalScaleManagerState,
-        };
+        use smithay::wayland::fractional_scale::FractionalScaleManagerState;
         struct State;
-        impl FractionalScaleHandler for State {}
-        smithay::delegate_fractional_scale!(State);
         impl Dispatch<WlSurface, ()> for State {
             fn request(
                 _: &mut Self,
@@ -194,7 +190,7 @@ mod tests {
             .create_resource::<WlSurface, (), State>(&dh, 6, ())
             .unwrap();
         let mut fractional = fractional_base::Fractional {
-            state: FractionalScaleManagerState::new::<State>(&dh),
+            state: FractionalScaleManagerState::new::<crate::state::Dispatch>(&dh),
             cfg: Default::default(),
             last_observed: None,
             cycle: None,
