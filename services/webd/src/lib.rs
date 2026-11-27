@@ -6263,6 +6263,31 @@ fn build_router(node: Arc<NodeState>) -> Router {
     let autoconfig = autoconfig_routes().with_state(node.clone());
     let per_vhost = build_per_vhost_router(node);
     Router::new().merge(autoconfig).merge(per_vhost)
+        .layer(axum::middleware::from_fn(normalise_request_authority))
+}
+
+/// Normalise before every routing/authentication branch, including autoconfig.
+/// Keep one Host view for existing handlers, proxy metadata and origin checks.
+async fn normalise_request_authority(
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    if req.version() == axum::http::Version::HTTP_2 {
+        let Some(authority) = req.uri().authority().cloned() else {
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        let hosts = req.headers().get_all(axum::http::header::HOST);
+        if hosts.iter().count() > 1 || hosts.iter().any(|host| {
+            host.to_str().ok().is_none_or(|host| !host.eq_ignore_ascii_case(authority.as_str()))
+        }) {
+            return (StatusCode::BAD_REQUEST, "Host disagrees with authority").into_response();
+        }
+        let Ok(host) = axum::http::HeaderValue::from_str(authority.as_str()) else {
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        req.headers_mut().insert(axum::http::header::HOST, host);
+    }
+    next.run(req).await
 }
 
 /// RFC 8555 §8.3 token shape validator. ACME HTTP-01 tokens are
@@ -6428,6 +6453,7 @@ fn build_http_redirect_router(node: Arc<NodeState>) -> Router {
                 plain_http_host_admit,
             ));
     Router::new().merge(acme).merge(autoconfig).merge(redirect)
+        .layer(axum::middleware::from_fn(normalise_request_authority))
 }
 
 /// `301 → https://$host$request_uri`, mirroring the NS 3.0 nginx

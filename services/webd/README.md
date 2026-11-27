@@ -99,3 +99,10 @@ ALPN, so adoption is opt-in. Plain listeners remain HTTP/1.1. Extended CONNECT
 is disabled; WebSockets use a separate HTTP/1.1 connection. Certificate renewal
 retains the listener's ALPN policy.
 
+Before routing an h2 request, webd copies `:authority` to `Host`. If both
+are supplied they must agree (case-insensitive, including the port); duplicate
+Host fields are refused. This gives JMAP forwarding metadata, Mix `$HOST` and
+`$HEADERS.host`, authentication/origin checks and routing the same host view.
+The JMAP upstream's own Host remains its upstream authority; the public host is
+forwarded as `X-Forwarded-Host`. HTTP/1.1 Host handling is unchanged.
+

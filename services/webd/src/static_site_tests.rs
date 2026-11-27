@@ -1,6 +1,65 @@
 use std::collections::BTreeMap;
 
 #[tokio::test]
+async fn static_site_config_bootstrap_directory_and_routes_roundtrip() {
+    let td = TempDir::new().unwrap();
+    let config: config::node::WebdConfig = config::from_conf_mix_str(r#"
+http_listen: "127.0.0.1:80"
+listener: [{ id: "public", bind: "192.0.2.1:443", vhosts: ["www.example.com"], http2: true }]
+vhost: [{ host: "www.example.com", redirect: "https://example.com",
+  headers: { "content-security-policy": "default-src 'self'" },
+  future_field: "ignored",
+  acme: { provider: "letsencrypt_staging", challenge: "http01", contact_email: "ops@example.com" } }]
+"#).unwrap();
+    let config: config::node::WebdConfig = serde_json::from_value(serde_json::to_value(config).unwrap()).unwrap();
+    assert!(config.listener[0].http2);
+    let resolved = resolve_node_state(base_inputs(&config, &td)).unwrap();
+    let state = &resolved.vhosts["www.example.com"];
+    assert_eq!(state.redirect.as_deref(), Some("https://example.com"));
+    assert_eq!(state.headers["content-security-policy"], "default-src 'self'");
+    let store = Arc::new(props::sqlite::SqliteStore::new("webd", Connection::open_in_memory().unwrap()).unwrap());
+    let mut router = props::PropsRouter::new("webd");
+    let (runtime, _events) = vhosts_namespace::register_vhosts_namespace(&mut router, &store).unwrap();
+    vhosts_bootstrap::bootstrap_upsert_from_config(&runtime, &config, 1000).await.unwrap();
+    let rows = vhosts_namespace::snapshot_rows(&runtime).await.unwrap();
+    assert_eq!(rows[0].redirect, state.redirect);
+    assert_eq!(rows[0].headers["content-security-policy"], "default-src 'self'");
+    let directory = vhost_directory::from_namespace_rows(&rows, &resolved.vhosts, &HashSet::new()).unwrap();
+    assert_eq!(directory.primaries[0].state.redirect, state.redirect);
+    let mut runtime_rows = rows;
+    runtime_rows[0].source = Some("bus_runtime".into());
+    let runtime_directory = vhost_directory::from_namespace_rows(&runtime_rows, &HashMap::new(), &HashSet::new()).unwrap();
+    assert_eq!(runtime_directory.primaries[0].state.redirect, state.redirect);
+    assert_eq!(runtime_directory.primaries[0].state.headers, state.headers);
+    let node = synth_node(&td);
+    node.vhosts.store(Arc::new(directory));
+    let routes: serde_json::Value = serde_json::from_str(&bus::routes::list_body(&node)).unwrap();
+    assert_eq!(routes["vhosts"][0]["redirect"], "https://example.com");
+}
+
+#[tokio::test]
+async fn static_site_plain_listener_remains_http1() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let td = TempDir::new().unwrap();
+    let app = build_router(static_site_node(&td, None));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (stream, peer_addr) = listener.accept().await.unwrap();
+        WebdConnHandler { app }.handle(AcceptedStream::Tcp(stream), ConnCtx {
+            listener_id: "plain".into(), local_addr: addr, peer_addr, external: false, sni: None, tls: None,
+        }).await;
+    });
+    let mut client = tokio::net::TcpStream::connect(addr).await.unwrap();
+    client.write_all(b"GET /index.html HTTP/1.1\r\nHost: site-a.example\r\nConnection: close\r\n\r\n").await.unwrap();
+    let mut response = String::new();
+    client.read_to_string(&mut response).await.unwrap();
+    assert!(response.starts_with("HTTP/1.1 200"));
+    assert!(response.ends_with("SITE-A"));
+    server.await.unwrap();
+}
+
+#[tokio::test]
 async fn static_site_handler_owns_headers() {
     let td = TempDir::new().unwrap();
     let node = static_site_node(&td, None);
@@ -40,6 +99,9 @@ fn static_site_node_with_ws(
     redirect: Option<&str>,
     ws: Option<String>,
 ) -> Arc<NodeState> {
+    static_site_node_with_upstreams(td, redirect, ws, None)
+}
+fn static_site_node_with_upstreams(td: &TempDir, redirect: Option<&str>, ws: Option<String>, jmap: Option<String>) -> Arc<NodeState> {
     let node = synth_node(td);
     let root = node.vhosts.load().primaries[0].state.www_dir.clone();
     let vhost = Arc::new(VhostState {
@@ -52,7 +114,7 @@ fn static_site_node_with_ws(
         )]))
         .unwrap(),
         db: None,
-        jmap_upstream: None,
+        jmap_upstream: jmap,
         noded_ws: ws,
         docs_dir: None,
         dev_session_email: None,
@@ -305,7 +367,34 @@ async fn static_site_tls_alpn_serves_h2_and_http1() {
         let message = socket.next().await.unwrap().unwrap();
         socket.send(message).await.unwrap();
     });
-    let node = static_site_node_with_ws(&td, None, Some(format!("ws://{upstream_addr}/ws")));
+    let mail = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mail_addr = mail.local_addr().unwrap();
+    let upstream_app = Router::new()
+        .route("/jmap", axum::routing::post(|headers: HeaderMap| async move {
+            format!("{}|{}", headers["host"].to_str().unwrap(), headers["x-forwarded-host"].to_str().unwrap())
+        }))
+        .route("/jmap/blob/test", axum::routing::get(|headers: HeaderMap| async move {
+            assert_eq!(headers["x-forwarded-host"], "site-a.example");
+            "blob-bytes"
+        }))
+        .route("/jmap/eventsource", axum::routing::get(|headers: HeaderMap| async move {
+            assert_eq!(headers["x-forwarded-host"], "site-a.example");
+            let stream = futures_util::stream::unfold(0, |n| async move {
+                if n == 2 { return None; }
+                if n == 1 { tokio::time::sleep(std::time::Duration::from_millis(200)).await; }
+                Some((Ok::<_, std::io::Error>(axum::body::Bytes::from_static(b"data: ping\\n\\n")), n+1))
+            });
+            ([(axum::http::header::CONTENT_TYPE, "text/event-stream")], Body::from_stream(stream))
+        }));
+    let mail_task = tokio::spawn(async move { axum::serve(mail, upstream_app).await.unwrap(); });
+    let node = static_site_node_with_upstreams(&td, None, Some(format!("ws://{upstream_addr}/ws")), Some(format!("http://{mail_addr}")));
+    let root = node.vhosts.load().primaries[0].state.www_dir.clone();
+    std::fs::write(root.join("host.mix"), "return $HOST .. \"|\" .. $HEADERS.host\\n").unwrap();
+    node.handlers.store(Arc::new(mix_handler::HandlerTable::from_rows(vec![handlers_namespace::HandlerRow {
+        route_id: "host".into(), vhost_fqdn: "site-a.example".into(), method: "GET".into(),
+        path_pattern: "/host".into(), handler_kind: "mix".into(), handler_ref: "host.mix".into(),
+        enabled: true, capabilities: vec![],
+    }])));
     let app = build_router(node);
     let task = tokio::spawn(async move {
         for protocol in [&b"h2"[..], &b"http/1.1"[..]] {
@@ -358,6 +447,33 @@ async fn static_site_tls_alpn_serves_h2_and_http1() {
         response.into_body().collect().await.unwrap().to_bytes(),
         "SITE-A"
     );
+    for (method, path, expected) in [
+        ("POST", "/jmap", format!("{mail_addr}|site-a.example")),
+        ("GET", "/jmap/blob/test", "blob-bytes".into()),
+        ("GET", "/host", "site-a.example|site-a.example".into()),
+    ] {
+        let request = axum::http::Request::builder().method(method)
+            .uri(format!("https://site-a.example{path}"))
+            .body(http_body_util::Empty::<axum::body::Bytes>::new()).unwrap();
+        let response = client.send_request(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), expected);
+    }
+    let request = axum::http::Request::builder().uri("https://site-a.example/jmap/eventsource")
+        .body(http_body_util::Empty::<axum::body::Bytes>::new()).unwrap();
+    let response = client.send_request(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["content-type"], "text/event-stream");
+    let mut body = response.into_body();
+    assert!(body.frame().await.unwrap().unwrap().is_data());
+    assert!(tokio::time::timeout(std::time::Duration::from_millis(50), body.frame()).await.is_err());
+    assert!(body.frame().await.unwrap().unwrap().is_data());
+    let request = axum::http::Request::builder().uri("https://site-a.example/index.html")
+        .header("host", "other.example")
+        .body(http_body_util::Empty::<axum::body::Bytes>::new()).unwrap();
+    let response = client.send_request(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    mail_task.abort();
     // No RFC 8441: a WebSocket uses its own HTTP/1.1 TLS connection,
     // while the same listener also serves h2.
     client_config.alpn_protocols = vec![b"http/1.1".to_vec()];
