@@ -130,7 +130,10 @@ fn activation_raises_switches_restores_and_has_noop_targets() {
             .effects
             .contains(&Effect::Restore(sid))
     );
-    assert!(!registry.get(sid).unwrap().minimized(), "restore clears registry flag");
+    assert!(
+        !registry.get(sid).unwrap().minimized(),
+        "restore clears registry flag"
+    );
     registry.set_focused(sid, true).unwrap();
     assert!(decide(&mut registry, &mut state).effects.is_empty());
     registry.set_focused(sid, false).unwrap();
