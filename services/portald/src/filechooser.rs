@@ -420,7 +420,7 @@ impl Bridge {
         if let Ok(Ok(services)) =
             tokio::time::timeout(IO_TIMEOUT, self.client.list_services()).await
         {
-            let session = paths::env::raw(paths::env::MIX_RUN)
+            let session = paths::env::raw(paths::env::RUN)
                 .and_then(|p| {
                     std::path::Path::new(&p)
                         .file_name()
