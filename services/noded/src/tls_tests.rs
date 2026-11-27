@@ -516,14 +516,20 @@ fn outbound_only_tls_startup_refuses_zero_shared_limits() {
     std::fs::write(&path, [1; 32]).unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
     let credential = mesh::tls::Credential::new(mesh::tls::load_seed(&path).unwrap()).unwrap();
-    let mut posture = reload_posture(1, vec![active_route("alpha", "127.0.0.1".parse().unwrap(), 4200)]);
+    let mut posture = reload_posture(
+        1,
+        vec![active_route("alpha", "127.0.0.1".parse().unwrap(), 4200)],
+    );
     if let crate::authority::Posture::Verified(a) = &mut posture {
-        a.members_full.insert("alpha".into(), serde_json::json!({
-            "name": "alpha", "status": "active", "bus": true,
-            "credentials": [{"kind": "bus-tls", "from_epoch": 1,
-                "pubkey": base64::engine::general_purpose::STANDARD.encode(
-                    mesh::tls::public_key(&credential.certificate).unwrap())}]
-        }));
+        a.members_full.insert(
+            "alpha".into(),
+            serde_json::json!({
+                "name": "alpha", "status": "active", "bus": true,
+                "credentials": [{"kind": "bus-tls", "from_epoch": 1,
+                    "pubkey": base64::engine::general_purpose::STANDARD.encode(
+                        mesh::tls::public_key(&credential.certificate).unwrap())}]
+            }),
+        );
     }
     let settings = config::node::NodedTls {
         key: path.to_str().unwrap().into(),
@@ -532,7 +538,11 @@ fn outbound_only_tls_startup_refuses_zero_shared_limits() {
     // Outbound TLS startup prepares the runtime without constructing a
     // TlsListener. Valid credentials must not hide invalid shared limits.
     assert!(crate::tls_ingress::prepare(&posture, "alpha", &settings).is_ok());
-    for field in ["per_source_rate", "per_source_burst", "max_sessions_per_member"] {
+    for field in [
+        "per_source_rate",
+        "per_source_burst",
+        "max_sessions_per_member",
+    ] {
         let mut invalid = settings.clone();
         match field {
             "per_source_rate" => invalid.per_source_rate = 0,
@@ -543,7 +553,11 @@ fn outbound_only_tls_startup_refuses_zero_shared_limits() {
         let error = crate::tls_ingress::prepare(&posture, "alpha", &invalid)
             .err()
             .expect("outbound-only startup must reject zero limits");
-        assert_eq!(error.to_string(), "TLS rate, burst and session cap must be positive", "{field}");
+        assert_eq!(
+            error.to_string(),
+            "TLS rate, burst and session cap must be positive",
+            "{field}"
+        );
     }
     std::fs::remove_file(path).unwrap();
 }
