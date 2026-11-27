@@ -1282,11 +1282,30 @@ mod doorway_tests {
         )
         .await?;
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
-        verify.spf = SpfCheck::MailFrom { result: SpfResult::Fail, domain: "EXAMPLE.COM.".into() };
-        assert!(enforce_own_spf(&runtime, &external, "mc@example.com.", raw, &verify).await.is_err());
-        assert!(enforce_own_spf(&runtime, &external, "", raw, &verify).await.is_err(), "inconsistent verifier identity must fail closed");
-        verify.spf = SpfCheck::Helo { result: SpfResult::Fail, domain: "EXAMPLE.COM.".into() };
-        assert!(enforce_own_spf(&runtime, &external, "", raw, &verify).await.is_err());
+        verify.spf = SpfCheck::MailFrom {
+            result: SpfResult::Fail,
+            domain: "EXAMPLE.COM.".into(),
+        };
+        assert!(
+            enforce_own_spf(&runtime, &external, "mc@example.com.", raw, &verify)
+                .await
+                .is_err()
+        );
+        assert!(
+            enforce_own_spf(&runtime, &external, "", raw, &verify)
+                .await
+                .is_err(),
+            "inconsistent verifier identity must fail closed"
+        );
+        verify.spf = SpfCheck::Helo {
+            result: SpfResult::Fail,
+            domain: "EXAMPLE.COM.".into(),
+        };
+        assert!(
+            enforce_own_spf(&runtime, &external, "", raw, &verify)
+                .await
+                .is_err()
+        );
         Ok(())
     }
 }
@@ -1387,16 +1406,19 @@ pub(crate) async fn enforce_own_spf(
         return Ok(());
     }
     let domain = match &verify.spf {
-        SpfCheck::MailFrom { result: SpfResult::Fail, .. } if from.is_empty() => {
-            anyhow::bail!("SPF verifier returned a failed MAIL FROM identity for an empty reverse path");
+        SpfCheck::MailFrom {
+            result: SpfResult::Fail,
+            ..
+        } if from.is_empty() => {
+            anyhow::bail!(
+                "SPF verifier returned a failed MAIL FROM identity for an empty reverse path"
+            );
         }
         SpfCheck::MailFrom {
             result: SpfResult::Fail,
             domain,
         } if !from.is_empty() => {
-            let claimed = from
-                .rsplit_once('@')
-                .and_then(|(_, d)| spf_domain(d));
+            let claimed = from.rsplit_once('@').and_then(|(_, d)| spf_domain(d));
             if claimed != spf_domain(domain) {
                 return Ok(());
             }
