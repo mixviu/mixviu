@@ -121,7 +121,7 @@ $live = {}
 $generation = substr(replace(uuid(), "-", ""), 0, 4)
 $serial = 0
 $allow_argv = false
-$history_seq = 0
+$history = {seq: 0, path: "", day: "", bytes: 0, line: 0}
 $history_dir = mix_path("var", "apps/history")
 mkdir($history_dir, {parents: true})
 
@@ -129,47 +129,36 @@ fn utc_now()
   return date_format(time(), "%Y-%m-%dT%H:%M:%SZ", {utc: true})
 end
 
-fn record_row($seq, $kind, $data)
-  -- Daily append-only segments; prune old segments and cap total bytes at
-  -- 8 MiB, deleting oldest whole segments. The active segment rolls at 1 MiB.
-  $files = sort(glob($history_dir .. "/*.jsonl"))
-  $total = 0
-  for $f in $files
-    if stat($f).mtime < time() - 30 * 86400 then remove($f) else $total = $total + stat($f).size end
-  end
-  $date = substr(utc_now(), 0, 10)
-  $path = $history_dir .. "/" .. $date .. "-" .. $generation .. ".jsonl"
-  if exists($path) and stat($path).size >= 1048576 then $path = $history_dir .. "/" .. $date .. "-" .. $generation .. "-" .. $seq .. ".jsonl" end
-  for $f in $files
-    if $total < 7340032 then break end
-    if exists($f) and $f != $path then $total = $total - stat($f).size; remove($f) end
-  end
-  $seq = $seq + 1
-  $line = exists($path) ? len(lines(trim(read_file($path)))) + 1 : 1
-  append_file($path, json_encode({ts_utc: utc_now(), node: hostname(), source: "apps", seq: $generation .. "-" .. $seq, kind: $kind, class: "operator", ref: {file: basename($path), line: $line}, data: $a.history_data($data)}) .. "\n")
-  return $seq
+fn record_row($kind, $data)
+  global $history
+  $history.seq = $history.seq + 1
+  $row = {ts_utc: utc_now(), node: hostname(), source: "apps", seq: $generation .. "-" .. $history.seq, kind: $kind, class: "operator", data: $a.history_data($data)}
+  -- No Bus await in this append: its cached segment state cannot be stale.
+  $history = $a.history_append($history_dir, $history, $row, time())
 end
-if not is_reload_candidate() then $history_seq = record_row($history_seq, "gap", {reason: "citizen_start"}) end
+if not is_reload_candidate() then record_row("gap", {reason: "citizen_start"}) end
 on lifecycle.commit
-  $history_seq = record_row($history_seq, "gap", {reason: "reload"})
+  record_row("gap", {reason: "reload"})
 end
 
 fn local_origin()
   return $event.headers.broker_origin == "local"
 end
 
-fn start_app($request, $live, $serial)
+fn start_app($request)
+  global $serial
+  global $live
   $bad = $a.request_error("invalid_request")
-  if not $a.start_valid($request) then return merge($bad, {live: $live, serial: $serial}) end
+  if not $a.start_valid($request) then return $bad end
   if has_key($request, "argv") and (not $allow_argv or not local_origin()) then
-    return {rc: 10, body: {error: "forbidden", error_code: "FORBIDDEN"}, live: $live, serial: $serial}
+    return {rc: 10, body: {error: "forbidden", error_code: "FORBIDDEN"}}
   end
-  if len(keys($live)) >= 120 then return {rc: 10, body: {error: "limit", error_code: "RESOURCE_LIMIT"}, live: $live, serial: $serial} end
+  if len(keys($live)) >= 120 then return {rc: 10, body: {error: "limit", error_code: "RESOURCE_LIMIT"}} end
   $id = $request.id
   $opts = {exit_event: true}
   if $id != nil then
     $entry = $a.find_app($apps, $id)
-    if $entry == nil then return {rc: 14, body: {error: "not_found"}, live: $live, serial: $serial} end
+    if $entry == nil then return {rc: 14, body: {error: "not_found"}} end
     $argv = $a.expand_exec($entry.exec, $entry, $request.uris)
     if $entry.terminal then $argv = concat($a.parse_exec($terminal_cmd), $argv) end
     $name = $id
@@ -180,11 +169,14 @@ fn start_app($request, $live, $serial)
     if $request.cwd != nil then $opts.cwd = $request.cwd end
   end
   $exe = len($argv) > 0 ? $a.resolve_exec($argv[0], $opts.cwd ?? "") : nil
-  if $exe == nil then return {rc: 11, body: {error: "spawn_failed", id: $id}, live: $live, serial: $serial} end
+  if $exe == nil then
+    eprint("apps.start: executable unavailable: " .. to_string($argv[0]))
+    return {rc: 11, body: {error: "spawn_failed", id: $id}}
+  end
   $serial = $serial + 1
   $handle = $generation .. "-" .. $serial
   $opts.tag = $handle
-  $opts.journal = $name
+  $opts.journal = re_replace($name, "[\\x00-\\x1f\\x7f]", "_")
   $x = $a.launch_display(env("XDG_RUNTIME_DIR"), env("WAYLAND_DISPLAY"))
   if $x.display == nil then eprint("apps.launch " .. ($id ?? $name) .. ": DISPLAY unset: " .. $x.why) end
   $launch = $a.launch_spawn($argv, $exe, $x.display)
@@ -192,12 +184,15 @@ fn start_app($request, $live, $serial)
   try
     $pid = spawn($launch.argv, $opts)
   catch $err
-    return {rc: 11, body: {error: "spawn_failed", id: $id}, live: $live, serial: $serial}
+    eprint("apps.start " .. ($id ?? $name) .. ": " .. to_string($err))
+    return {rc: 11, body: {error: "spawn_failed", id: $id}}
   end
   $body = {handle: $handle, id: $id, pid: $pid, argv: $argv, started_utc: utc_now()}
   $live[$handle] = merge($body, {name: $name, since: monotonic(), state: "running", reason: "exit", timers: []})
-  publish(serve_name() .. ".started", json_encode($body), {command: "apps.started"})
-  return {rc: 0, body: $body, live: $live, serial: $serial}
+  -- Commit before publishing: an exit or another request may be dispatched
+  -- at any Bus boundary. Only the caller's reply contains argument values.
+  publish(serve_name() .. ".started", json_encode({handle: $handle, id: $id, pid: $pid, executable: $argv[0], argc: len($argv), started_utc: $body.started_utc}), {command: "apps.started"})
+  return {rc: 0, body: $body}
 end
 
 fn window_snapshot()
@@ -220,72 +215,89 @@ fn window_groups($windows)
   return $groups
 end
 
-fn stop_apps($request, $live)
-  if not $a.stop_valid($request) then return {rc: 10, body: {error: "invalid_request"}, live: $live} end
+fn signal_app($handle, $signal)
+  -- No await between the current-table/managed-child checks and the signal.
+  -- kill returns false for ESRCH; process_alive uses the managed pidfd.
+  if $live[$handle] == nil or not process_alive($live[$handle].pid) then return end
+  try
+    kill(-$live[$handle].pid, $signal)
+  catch $gone
+    eprint("apps.stop " .. $handle .. ": " .. to_string($gone))
+  end
+end
+
+fn stop_apps($request)
+  global $live
+  if not $a.stop_valid($request) then return {rc: 10, body: {error: "invalid_request"}} end
   $selected = $a.live_select($live, $request)
-  if len($selected) == 0 then return {rc: 14, body: {error: "not_found"}, live: $live} end
+  if len($selected) == 0 then return {rc: 14, body: {error: "not_found"}} end
   $stopping = []
+  $pending = []
   $force = ($request.mode ?? "graceful") == "force"
-  $snapshot = $force ? {ok: false, windows: []} : window_snapshot()
-  $groups = window_groups($snapshot.windows)
+  $timeout = ($request.timeout_ms ?? 5000) / 1000
+  -- Commit state and arm timers before any comp send. Never write a copied
+  -- table or row back after a send: proc.exited may have deleted it.
   for $r in $selected
     push($stopping, {handle: $r.handle, pid: $r.pid})
-    if $r.state == "stopping" then continue end
-    $r.state = "stopping"
-    $r.reason = $force ? "force" : "stop"
-    if $force then
-      kill(-$r.pid, 9)
-    else
-      $owned = $a.owned_windows($r, $snapshot.windows, $groups)
-      $close_ok = $snapshot.ok and len($owned) > 0
-      for $w in $owned
-        send comp comp.window.close timeout=0.2 body=json_encode({id: $w.id, generation: $w.generation})
-        if $rc != 0 then $close_ok = false end
-      end
-      $timeout = ($request.timeout_ms ?? 5000) / 1000
-      if $close_ok then
-        $r.timers = concat($r.timers, [timer_once($timeout * 0.4, "term:" .. $r.handle)])
-      else
-        kill(-$r.pid, 15)
-      end
-      $r.timers = concat($r.timers, [timer_once($timeout, "kill:" .. $r.handle)])
+    if $live[$r.handle] == nil then continue end
+    if not $force and $live[$r.handle].state == "stopping" and $live[$r.handle].deadline <= monotonic() + $timeout then continue end
+    for $timer in $live[$r.handle].timers
+      cancel_timer($timer)
     end
-    $live[$r.handle] = $r
+    $live[$r.handle].timers = []
+    $live[$r.handle].state = "stopping"
+    $live[$r.handle].reason = $force ? "force" : "stop"
+    $live[$r.handle].stop_token = uuid()
+    $live[$r.handle].deadline = monotonic() + $timeout
+    record_row("stop_request", $live[$r.handle])
+    if $force then
+      signal_app($r.handle, 9)
+    else
+      $live[$r.handle].timers = [timer_once($timeout * 0.4, "term:" .. $r.handle), timer_once($timeout, "kill:" .. $r.handle)]
+      push($pending, {handle: $r.handle, token: $live[$r.handle].stop_token})
+    end
   end
-  return {rc: 0, body: {stopping: $stopping}, live: $live}
+  if len($pending) > 0 then
+    $snapshot = window_snapshot()
+    $groups = window_groups($snapshot.windows)
+    for $p in $pending
+      if $live[$p.handle] == nil or $live[$p.handle].stop_token != $p.token then continue end
+      $owned = $a.owned_windows($live[$p.handle], $snapshot.windows, $groups)
+      if not $snapshot.ok or len($owned) == 0 then
+        signal_app($p.handle, 15)
+      else
+        for $w in $owned
+          if $live[$p.handle] == nil or $live[$p.handle].stop_token != $p.token then break end
+          send comp comp.window.close timeout=0.2 body=json_encode({id: $w.id, generation: $w.generation})
+          -- A failed close retains the 40% TERM timer; it is not evidence
+          -- of a windowless app. Re-check the live row before the next send.
+        end
+      end
+    end
+  end
+  return {rc: 0, body: {stopping: $stopping}}
 end
 
 -- Both names call this same implementation and return the identical superset.
 on apps.start desc "start an app by desktop id or locally authorised argv"
-  $r = start_app(event_args(), $live, $serial)
-  $live = $r.live
-  $serial = $r.serial
-  $history_seq = record_row($history_seq, $r.rc == 0 ? "start" : "refused", $r.body)
+  $r = start_app(event_args())
+  record_row($r.rc == 0 ? "start" : "refused", $r.body)
   reply($r.rc, json_encode($r.body))
 end
 on apps.launch desc "alias of apps.start"
-  $r = start_app(event_args(), $live, $serial)
-  $live = $r.live
-  $serial = $r.serial
-  $history_seq = record_row($history_seq, $r.rc == 0 ? "start" : "refused", $r.body)
+  $r = start_app(event_args())
+  record_row($r.rc == 0 ? "start" : "refused", $r.body)
   reply($r.rc, json_encode($r.body))
 end
 on apps.stop desc "stop owned apps by handle or desktop id; never by pid"
   $request = event_args()
-  $r = stop_apps($request, $live)
-  $live = $r.live
-  if $r.rc == 0 then
-    for $s in $r.body.stopping
-      $history_seq = record_row($history_seq, "stop_request", $live[$s.handle])
-    end
-  else
-    $history_seq = record_row($history_seq, "refused", {reason: $r.body.error})
-  end
+  $r = stop_apps($request)
+  if $r.rc != 0 then record_row("refused", {reason: $r.body.error}) end
   reply($r.rc, json_encode($r.body))
 end
 on apps.running desc "list managed app handles, optionally filtered by id"
   $request = event_args()
-  if has_key($request, "id") and (type($request.id) != "string" or $request.id == "") then
+  if len(filter(keys($request), fn($k) = $k != "id")) > 0 or (has_key($request, "id") and (type($request.id) != "string" or $request.id == "")) then
     reply(10, json_encode({error: "invalid_request"}))
   else
     $snapshot = window_snapshot()
@@ -300,36 +312,34 @@ end
 on apps.toggle desc "start, focus or stop a desktop app"
   $request = event_args()
   $mode = $request.on_running ?? "focus_or_stop"
-  if type($request.id) != "string" or $request.id == "" or not contains(["focus_or_stop", "focus", "stop"], $mode) then
+  if len(filter(keys($request), fn($k) = not contains(["id", "on_running"], $k))) > 0 or type($request.id) != "string" or $request.id == "" or not contains(["focus_or_stop", "focus", "stop"], $mode) then
     reply(10, json_encode({error: "invalid_request"}))
   else
     $selected = $a.live_select($live, {id: $request.id})
     if len($selected) == 0 then
-      $r = start_app({id: $request.id}, $live, $serial)
-      $serial = $r.serial
-      $live = $r.live
-      $history_seq = record_row($history_seq, $r.rc == 0 ? "start" : "refused", $r.body)
-      reply($r.rc, json_encode(merge($r.body, {action: "started"})))
+      $r = start_app({id: $request.id})
+      record_row($r.rc == 0 ? "start" : "refused", $r.body)
+      reply($r.rc, json_encode($r.rc == 0 ? merge($r.body, {action: "started"}) : $r.body))
     else
       $snapshot = window_snapshot()
       $groups = window_groups($snapshot.windows)
+      $selected = $a.live_select($live, {id: $request.id})
       $windows = []
       for $r in $selected
         $windows = concat($windows, $a.owned_windows($r, $snapshot.windows, $groups))
       end
       $focused = len(filter($windows, fn($w) = $w.focused == true)) > 0
       if $mode == "stop" or ($mode == "focus_or_stop" and $focused) then
-        $r = stop_apps({id: $request.id}, $live)
-        $live = $r.live
-        for $s in $r.body.stopping
-          $history_seq = record_row($history_seq, "stop_request", $live[$s.handle])
-        end
-        reply($r.rc, json_encode(merge($r.body, {action: "stopping"})))
+        $r = stop_apps({id: $request.id})
+        reply($r.rc, json_encode($r.rc == 0 ? merge($r.body, {action: "stopping"}) : $r.body))
       elif len($windows) > 0 then
         $w = $windows[0]
+        $owner = filter($selected, fn($row) = len($a.owned_windows($row, [$w], $groups)) > 0)[0]
         send comp comp.window.focus timeout=0.2 body=json_encode({id: $w.id, generation: $w.generation})
         $focus_rc = $rc
-        reply($focus_rc, json_encode($focus_rc == 0 ? {action: "focused", handle: $selected[0].handle} : {error: "focus_failed"}))
+        reply($focus_rc, json_encode($focus_rc == 0 and $live[$owner.handle] != nil ? {action: "focused", handle: $owner.handle} : {error: "focus_failed"}))
+      elif len($selected) == 0 then
+        reply(14, json_encode({error: "not_found"}))
       else
         reply(0, json_encode({action: "none", reason: "no_window", handle: $selected[0].handle}))
       end
@@ -346,7 +356,7 @@ on proc.exited
   end
   $body = {handle: $r.handle, id: $r.id, pid: $r.pid, exit_code: $exit.exit_code, signal: $exit.signal, reason: $r.reason, ran_ms: floor((monotonic() - $r.since) * 1000)}
   $live = delete($live, $r.handle)
-  $history_seq = record_row($history_seq, "exit", merge($r, $body))
+  record_row("exit", merge($r, $body))
   publish(serve_name() .. ".exited", json_encode($body), {command: "apps.exited"})
 end
 on timer.tick
@@ -355,7 +365,7 @@ on timer.tick
   $handle = after($tag, ":")
   $r = $live[$handle]
   if $r == nil or not contains($r.timers, $event.args.id) then return end
-  kill(-$r.pid, starts_with($tag, "term:") ? 15 : 9)
+  signal_app($handle, starts_with($tag, "term:") ? 15 : 9)
 end
 on apps.history desc "local operator history {since?,until?,limit?}"
   $request = event_args()
@@ -366,17 +376,19 @@ on apps.history desc "local operator history {since?,until?,limit?}"
     reply(10, json_encode({error: "invalid_request"}))
   else
     $rows = []
-    $truncated = false
     for $file in sort(glob($history_dir .. "/*.jsonl"))
       for $line in lines(read_file($file))
         if trim($line) == "" then continue end
         $row = json_parse($line)
         if $row.ts_utc >= ($request.since ?? "") and $row.ts_utc <= ($request.until ?? "9999") then
-          if len($rows) < $limit then push($rows, $row) else $truncated = true end
+          push($rows, $row)
         end
       end
     end
-    reply(0, json_encode({rows: $rows, truncated: $truncated}))
+    -- Legacy segment names were not chronological. Sort content timestamps
+    -- and numeric serials before applying the requested limit.
+    $rows = sort_by($rows, fn($row) = $a.history_order($row))
+    reply(0, json_encode({rows: slice($rows, 0, $limit), truncated: len($rows) > $limit}))
   end
 end
 
@@ -436,7 +448,9 @@ on "apps.props.set" desc "set a citizen property (icon_theme, terminal; count is
     elif type($value) != "bool" then
       reply(10, json_encode({error: "invalid_request"}))
     else
+      $old = $allow_argv
       $allow_argv = $value
+      record_row("allow_argv", {old: $old, value: $value})
       reply(0, json_encode({path: $path, value: $allow_argv}))
     end
   elif type($path) != "string" or $path == "" or type($value) != "string" or trim($value) == "" then

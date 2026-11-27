@@ -19,6 +19,8 @@ fn request_error($r)
 end
 
 fn start_valid($r)
+  $allowed = has_key($r, "id") ? ["id", "uris"] : ["argv", "name", "cwd"]
+  if len(filter(keys($r), fn($k) = not contains($allowed, $k))) > 0 then return false end
   if has_key($r, "id") == has_key($r, "argv") or has_key($r, "env") then return false end
   if has_key($r, "id") then
     if type($r.id) != "string" or $r.id == "" then return false end
@@ -29,7 +31,7 @@ fn start_valid($r)
     end
     if $r.argv[0] == "" then return false end
     if has_key($r, "cwd") and type($r.cwd) != "string" then return false end
-    if has_key($r, "name") and (type($r.name) != "string" or trim($r.name) == "") then return false end
+    if has_key($r, "name") and (type($r.name) != "string" or trim($r.name) == "" or re_match($r.name, "[\\x00-\\x1f\\x7f]")) then return false end
   end
   if has_key($r, "uris") then
     if type($r.uris) != "list" then return false end
@@ -41,6 +43,7 @@ fn start_valid($r)
 end
 
 fn stop_valid($r)
+  if len(filter(keys($r), fn($k) = not contains(["handle", "id", "mode", "timeout_ms"], $k))) > 0 then return false end
   if has_key($r, "handle") == has_key($r, "id") or has_key($r, "pid") or has_key($r, "wait") then return false end
   $key = has_key($r, "handle") ? "handle" : "id"
   $ms = $r.timeout_ms ?? 5000
@@ -60,7 +63,63 @@ fn running_row($r, $windows)
 end
 
 fn history_data($r)
-  return {handle: $r.handle, id: $r.id, pid: $r.pid, executable: ($r.argv ?? [])[0], argc: len($r.argv ?? []), exit_code: $r.exit_code, signal: $r.signal, reason: $r.reason}
+  $data = {handle: $r.handle, id: $r.id, pid: $r.pid, executable: ($r.argv ?? [])[0], argc: len($r.argv ?? []), exit_code: $r.exit_code, signal: $r.signal, reason: $r.reason}
+  if has_key($r, "old") then $data = merge($data, {old: $r.old, value: $r.value}) end
+  return $data
+end
+
+fn history_append($dir, $state, $row, $now)
+  -- One current segment, with byte/line counters retained across appends.
+  -- Native append_file opens/closes its descriptor; Mix has no persistent
+  -- file-handle API. Directory/stat work happens only when rolling.
+  $day = substr($row.ts_utc, 0, 10)
+  $encoded = json_encode(merge($row, {ref: {file: basename($state.path), line: $state.line + 1}})) .. "\n"
+  if $state.path == "" or $state.day != $day or $state.bytes + byte_length($encoded) > 1048576 then
+    $state.path = $dir .. "/" .. $day .. "-" .. replace(uuid(), "-", "") .. ".jsonl"
+    $state.day = $day
+    $state.bytes = 0
+    $state.line = 0
+    $files = []
+    for $path in glob($dir .. "/*.jsonl")
+      $s = stat($path)
+      push($files, {path: $path, size: $s.size, mtime: $s.mtime})
+    end
+    for $path in history_prune($files, $now)
+      remove($path)
+    end
+    $encoded = json_encode(merge($row, {ref: {file: basename($state.path), line: 1}})) .. "\n"
+  end
+  append_file($state.path, $encoded)
+  $state.bytes = $state.bytes + byte_length($encoded)
+  $state.line = $state.line + 1
+  return $state
+end
+
+fn history_prune($files, $now)
+  -- Reserve one full 1 MiB segment within the 8 MiB total cap.
+  $remove = []
+  $kept = []
+  $total = 0
+  for $f in sort_by($files, fn($f) = $f.mtime)
+    if $f.mtime < $now - 30 * 86400 then
+      push($remove, $f.path)
+    else
+      push($kept, $f)
+      $total = $total + $f.size
+    end
+  end
+  for $f in $kept
+    if $total <= 7340032 then break end
+    push($remove, $f.path)
+    $total = $total - $f.size
+  end
+  return $remove
+end
+
+fn history_order($row)
+  -- Numeric serial order also handles files written by the old rollover.
+  $cut = last_index_of($row.seq, "-")
+  return $row.ts_utc .. "|" .. substr($row.seq, 0, $cut) .. "|" .. lpad(slice($row.seq, $cut + 1), 16, "0")
 end
 
 fn is_int($v)

@@ -1,7 +1,9 @@
 -- Private apps lifecycle fixture. Never connects to a host compositor.
 $window = nil
+$options = {}
 on fake.set
   $window = {id: 1, generation: 1, pid: $event.args.pid, focused: false}
+  $options = $event.args
   reply(0, "{}")
 end
 on fake.clear
@@ -9,6 +11,10 @@ on fake.clear
   reply(0, "{}")
 end
 on "comp.windows.list"
+  if $options.exit_on_list == true and $window != nil then
+    $_signal = kill($window.pid, 15)
+    sleep(0.03)
+  end
   reply(0, json_encode({windows: $window == nil ? [] : [$window]}))
 end
 on "comp.window.focus"
@@ -16,6 +22,7 @@ on "comp.window.focus"
   reply(0, "{}")
 end
 on "comp.window.close"
-  if $window != nil then kill($window.pid, 15) end
+  if $window != nil and $options.ignore_close != true then kill($window.pid, 15) end
+  if $options.close_delay != nil then sleep($options.close_delay) end
   reply(0, "{}")
 end

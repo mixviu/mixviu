@@ -138,8 +138,12 @@ end
 
 -- Events use the test process's private-broker client, no collector daemon.
 $exits = []
+$starts = []
 on apps.exited
   $exits = concat($exits, [$event.args])
+end
+on apps.started
+  $starts = concat($starts, [$event.args])
 end
 fn await_exit($handle)
   $until = monotonic() + 1
@@ -154,6 +158,40 @@ end
 try
   write_client()
   write_recorder()
+  $a = require("../scripts/lib/apps.mix")
+  -- Real segment appends reuse one path and cached line/byte counters.
+  -- Seed full old segments to exercise the production 8 MiB cap cheaply.
+  $hd = $tmp .. "/history-unit"
+  mkdir($hd)
+  $meg = repeat("x", 1048576)
+  for $i = 1 to 9
+    write_file($hd .. "/seed-" .. $i .. ".jsonl", $meg)
+  end
+  write_file($hd .. "/expired.jsonl", "expired")
+  run_argv_must(["touch", "-d", "2000-01-01T00:00:00Z", $hd .. "/expired.jsonl"])
+  $hs = {seq: 1, path: "", day: "", bytes: 0, line: 0}
+  $hr = {ts_utc: "2026-11-28T00:00:00Z", seq: "abcd-1", data: {executable: "/home/user/example", argc: 1}}
+  $hs = $a.history_append($hd, $hs, $hr, time())
+  $first = $hs.path
+  $hs = $a.history_append($hd, $hs, merge($hr, {seq: "abcd-2"}), time())
+  check($hs.path == $first and $hs.line == 2 and len(lines(trim(read_file($first)))) == 2, "history made a file per row")
+  check(not exists($hd .. "/expired.jsonl"), "history 30-day cap")
+  $total_bytes = 0
+  for $file in glob($hd .. "/*.jsonl")
+    $total_bytes = $total_bytes + stat($file).size
+  end
+  check($total_bytes <= 8388608 and len(glob($hd .. "/*.jsonl")) <= 8, "history size cap")
+  -- Force a real size rollover, then confirm later rows reuse that segment.
+  $padding = merge($hr, {seq: "abcd-3", data: {example: repeat("x", 600000)}})
+  $hs = $a.history_append($hd, $hs, $padding, time())
+  $hs = $a.history_append($hd, $hs, merge($padding, {seq: "abcd-4"}), time())
+  check($hs.path != $first and $hs.line == 1, "history size rollover")
+  $second = $hs.path
+  $hs = $a.history_append($hd, $hs, merge($hr, {seq: "abcd-5"}), time())
+  check($hs.path == $second and $hs.line == 2, "history rolled segment not reused")
+  $hs = $a.history_append($hd, $hs, merge($hr, {ts_utc: "2026-11-29T00:00:00Z"}), time())
+  check($hs.path != $second and $hs.line == 1, "history daily rollover")
+  check($a.history_order(merge($hr, {seq: "abcd-9"})) < $a.history_order(merge($hr, {seq: "abcd-10"})), "history numeric ordering")
   fixture("data/applications/plain.desktop", "[Desktop Entry]\n" ..
     "Type=Application\nName=Plain App\nExec=" .. $tmp .. "/bin/recorder plain-arg\n" ..
     "Icon=apps-bus-test-icon\nTerminal=false\nCategories=Utility;\n")
@@ -197,7 +235,16 @@ try
     -- The static value the desk-boot units carry: must never leak to a child.
     DISPLAY: ":0"
   })
-  $svc_pid = spawn([$mix, "--serve", $scripts .. "/apps.mix", "--name", "apps"],
+  -- Trace only actual citizen signal attempts in a private copy. All logic
+  -- is production source; no test Bus endpoint or new external oracle.
+  mkdir($tmp .. "/citizen")
+  run_argv_must(["ln", "-s", $scripts .. "/lib", $tmp .. "/citizen/lib"])
+  $source = read_file($scripts .. "/apps.mix")
+  $signal_line = "kill(-$live[$handle].pid, $signal)"
+  check(contains($source, $signal_line), "signal trace site changed")
+  $source = replace($source, $signal_line, "append_file(env(\"HOME\") .. \"/signals.jsonl\", json_encode({pid: $live[$handle].pid, signal: $signal}) .. \"\\n\"); " .. $signal_line)
+  write_file($tmp .. "/citizen/apps.mix", $source)
+  $svc_pid = spawn([$mix, "--serve", $tmp .. "/citizen/apps.mix", "--name", "apps"],
     {detach: true, clear_env: true, env: $citizen_env, stdout: {file: $tmp .. "/svc.log"}, stderr: "stdout"})
   wait_ready()
   fixture("data/applications/hold.desktop", "[Desktop Entry]\nType=Application\nName=Hold\nExec=/usr/bin/sleep 30\n")
@@ -218,7 +265,7 @@ try
   check($got.rc == 0 and $got.result.no_display == true, "apps.get did not find the NoDisplay entry")
   check(call("apps", "apps.get", json_encode({id: "no-such-app"})).rc == 14, "apps.get invented an app")
 
-  -- apps.launch spawns detached; the fixture recorder proves the argv.
+  -- apps.launch spawns managed children; the fixture recorder proves argv.
   $launch = call("apps", "apps.launch", json_encode({id: "plain"}))
   check($launch.rc == 0 and type($launch.result.pid) == "number", "apps.launch failed")
   check(wait_file($tmp .. "/launched-recorder") == "plain-arg\n", "launched argv wrong")
@@ -291,7 +338,7 @@ try
   fixture("data/applications/late.desktop", "[Desktop Entry]\n" ..
     "Type=Application\nName=Late App\nExec=" .. $tmp .. "/bin/recorder late-arg\n")
   $reload = call("apps", "apps.reload", "{}")
-  check($reload.rc == 0 and $reload.result.count == 9, "apps.reload count wrong (expected 7 index entries)")
+  check($reload.rc == 0 and $reload.result.count == 9, "apps.reload count wrong (expected 9 index entries)")
   check(call("apps", "apps.get", json_encode({id: "late"})).rc == 0, "apps.reload did not rebind the index")
   $resolved_late = call("apps", "apps.icon", json_encode($late_icon))
   check($resolved_late.rc == 0 and ends_with($resolved_late.result.path, "/late-theme/symbolic/late-symbolic.svg"),
@@ -369,15 +416,23 @@ try
     "the third-party hicolor fixture no longer resolves")
 
   subscribe("apps.exited")
+  subscribe("apps.started")
   -- Exercise both attested origins against the same broker. WS is mesh even
   -- on loopback; only the Unix socket is local.
   check(call("apps", "apps.start", json_encode({argv: ["/usr/bin/sleep", "30"]})).rc == 10, "argv enabled by default")
   export MIX_NODED_URL="unix://" .. $bus.dir .. "/run/noded/bus.sock"
   bus_reconnect()
   subscribe("apps.exited")
+  subscribe("apps.started")
   $enable = call("apps", "apps.props.set", json_encode({path: "apps.allow_argv", value: true}))
   check($enable.rc == 0, "local argv enable: " .. json_encode($enable) .. " endpoint=" .. env("MIX_NODED_URL"))
   check(call("apps", "apps.start", json_encode({id: "plain", argv: ["/usr/bin/true"]})).rc == 10, "both selectors accepted")
+  for $bad in [{argv: ["/usr/bin/true"], uris: ["https://example.com/private"]}, {argv: ["/usr/bin/true"], env: {}}, {argv: ["/usr/bin/true"], name: "bad\ntag"}]
+    check(call("apps", "apps.start", json_encode($bad)).rc == 10, "invalid start fields accepted")
+  end
+  check(call("apps", "apps.running", "{\"handle\":\"foreign\"}").rc == 10, "unknown running filter accepted")
+  $failed = call("apps", "apps.toggle", "{\"id\":\"ghost\"}")
+  check($failed.rc == 11 and not contains(to_string($failed.result), "started"), "failed toggle claims started")
   -- Receive the first event at top level before helper functions pump events.
   $natural = call("apps", "apps.start", json_encode({id: "plain"}))
   $deadline = monotonic() + 1
@@ -391,6 +446,9 @@ try
   $listing = call("apps", "apps.running", json_encode({id: "hold"}))
   check($listing.rc == 0 and $listing.result[0].handle == $h and $listing.result[0].state == "running", "running handle")
   check(call("apps", "apps.stop", json_encode({pid: $r.result.pid})).rc == 10, "stop accepts pid")
+  for $bad in [{handle: $h, timeout_ms: 99}, {handle: $h, timeout_ms: 30001}, {handle: $h, mode: "bad"}, {handle: $h, wait: true}, {handle: $h, id: "hold"}]
+    check(call("apps", "apps.stop", json_encode($bad)).rc == 10, "invalid stop fields accepted")
+  end
   check(call("apps", "apps.stop", json_encode({handle: "foreign-1"})).rc == 14, "foreign handle")
   check(call("apps", "apps.stop", json_encode({handle: $h})).rc == 0, "graceful stop")
   check(await_exit($h).reason == "stop", "graceful reason")
@@ -404,6 +462,13 @@ try
   check(call("apps", "apps.stop", json_encode({handle: $h, timeout_ms: 300})).rc == 0, "idempotent stop")
   $exit = await_exit($h)
   check($exit.signal == 9 and $exit.reason == "stop" and $exit.ran_ms >= 290, "timeout escalation")
+  $r = call("apps", "apps.start", json_encode({argv: ["/usr/bin/env", "--ignore-signal=TERM", "/usr/bin/sleep", "30"], name: "escalate"}))
+  $h = $r.result.handle
+  check(call("apps", "apps.stop", json_encode({handle: $h, timeout_ms: 30000})).rc == 0, "long graceful stop")
+  $force_at = monotonic()
+  check(call("apps", "apps.stop", json_encode({handle: $h, mode: "force"})).rc == 0, "force while stopping")
+  $exit = await_exit($h)
+  check($exit.signal == 9 and $exit.reason == "force" and monotonic() - $force_at < 0.2, "force did not escalate immediately")
   $r = call("apps", "apps.start", json_encode({id: "hold"}))
   $h = $r.result.handle
   check(call("apps", "apps.stop", json_encode({handle: $h, mode: "force"})).rc == 0, "force stop")
@@ -453,11 +518,50 @@ try
   check($r.rc == 0 and $r.result.action == "stopping", "toggle stop")
   check(await_exit($h).reason == "stop", "toggle stop exit")
   check(call("comp", "fake.clear", "{}").rc == 0, "fake clear")
+  -- Exit while apps.stop is awaiting comp.window.close, before its timers.
+  -- The old by-value implementation restored this row after proc.exited.
+  $r = call("apps", "apps.start", json_encode({id: "hold"}))
+  $h = $r.result.handle
+  $dead_pid = $r.result.pid
+  call("comp", "fake.set", json_encode({pid: $dead_pid, close_delay: 0.03}))
+  check(call("apps", "apps.stop", json_encode({handle: $h, timeout_ms: 100})).rc == 0, "raced stop")
+  check(await_exit($h).reason == "stop", "raced exit missing")
+  sleep(0.11)
+  check(len(call("apps", "apps.running", "{}").result) == 0, "exited row resurrected")
+  check(call("apps", "apps.stop", json_encode({handle: $h})).rc == 14, "exited handle accepted")
+  $signals = map(lines(trim(read_file($tmp .. "/signals.jsonl"))), fn($line) = json_parse($line))
+  check(len(filter($signals, fn($s) = $s.pid == $dead_pid)) == 0, "signal sent to exited child's pgid")
+  -- Also exit during the snapshot boundary; the handler must re-read live.
+  $r = call("apps", "apps.start", json_encode({id: "hold"}))
+  $h = $r.result.handle
+  call("comp", "fake.set", json_encode({pid: $r.result.pid, exit_on_list: true}))
+  check(call("apps", "apps.stop", json_encode({handle: $h, timeout_ms: 100})).rc == 0, "snapshot race stop")
+  await_exit($h)
+  check(len(call("apps", "apps.running", "{}").result) == 0, "snapshot race restored row")
+  -- Window stays open: TERM must come at 40%, not immediately on close.
+  $r = call("apps", "apps.start", json_encode({id: "hold"}))
+  $h = $r.result.handle
+  call("comp", "fake.set", json_encode({pid: $r.result.pid, ignore_close: true}))
+  $term_at = monotonic()
+  call("apps", "apps.stop", json_encode({handle: $h, timeout_ms: 150}))
+  $exit = await_exit($h)
+  check($exit.signal == 15 and monotonic() - $term_at >= 0.05, "windowed 40% TERM timer")
+  call("comp", "fake.clear", "{}")
+  for $started in $starts
+    check(not has_key($started, "argv") and not has_key($started, "uris") and $started.executable != nil and $started.argc != nil, "started topic leaks argument values")
+    check(not contains(json_encode($started), "--ignore-signal") and not contains(json_encode($started), "plain-arg"), "started topic contains argument value")
+  end
+  check(len($starts) > 0, "no started topics received")
   $history = call("apps", "apps.history", "{}")
   check($history.rc == 0 and len($history.result.rows) > 0, "history unavailable")
   for $row in $history.result.rows
     check($row.class == "operator" and $row.source == "apps" and not has_key($row.data, "argv") and not has_key($row.data, "uris"), "history leaks argv/uris")
   end
+  check(len(filter($history.result.rows, fn($row) = $row.kind == "allow_argv" and $row.data.old == false and $row.data.value == true)) == 1, "argv gate change not audited")
+  $limited = call("apps", "apps.history", "{\"limit\":1}")
+  check(len($limited.result.rows) == 1 and $limited.result.truncated == true, "history limit/truncated")
+  check(len(call("apps", "apps.history", "{\"until\":\"2000\"}").result.rows) == 0, "history until filter")
+  check(len(call("apps", "apps.history", "{\"since\":\"9999\"}").result.rows) == 0, "history since filter")
   -- A separate client has no local endpoint candidate. The interpreter
   -- normally prefers verified Unix even when a WebSocket URL is configured.
   fixture("remote/node.conf.mix", json_encode({node: "example-remote", noded: {unix_socket: $tmp .. "/remote/absent.sock"}}))
@@ -466,6 +570,8 @@ try
   check($refused.rc == 10, "mesh argv accepted")
   $refused = json_parse(run_argv_must([$mix, $tmp .. "/cli.mix", "apps", "apps.history", "{}"], {clear_env: true, env: $remote}))
   check($refused.rc == 10, "mesh history accepted")
+  $refused = json_parse(run_argv_must([$mix, $tmp .. "/cli.mix", "apps", "apps.props.set", "{\"path\":\"apps.allow_argv\",\"value\":true}"], {clear_env: true, env: $remote}))
+  check($refused.rc == 10, "mesh enabled argv gate")
   $old = call("apps", "apps.start", json_encode({id: "hold"})).result.handle
   check(call("apps", "RELOAD", "{}").rc == 0, "reload refused")
   $until = monotonic() + 1
@@ -474,6 +580,7 @@ try
     sleep(0.005)
   end
   check(call("apps", "apps.stop", json_encode({handle: $old})).rc == 14, "previous generation handle accepted")
+  check(call("apps", "apps.props.watch", "{\"path\":\"apps.allow_argv\"}").result.value == false, "argv gate survived reload")
 
   print("PASS apps Bus surface: list/get/launch, argv, DISPLAY, reload, manifest icon resolution, brand mark and explicit theme preference")
 finally
