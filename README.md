@@ -90,7 +90,7 @@ on the first build. Every MixViu binary lives in one prefix, `/opt/mix`.
 **1. Build each engine with its own `-p`.** A workspace-wide build mixes the
 two Mix profiles' features and is refused.
 
-```sh
+```bash
 git clone https://github.com/mixviu/mixviu && cd mixviu
 cargo build --release --locked -p mix  --bin mix
 cargo build --release --locked -p mixd --bin mixd
@@ -99,12 +99,12 @@ cargo build --release --locked -p viud --bin viud
 ```
 
 For a server, `mix` and `mixd` are enough. The release set also includes
-`inputd`, `portald` and `mix-mcp`; see
+`av`, `inputd`, `portald` and `mix-mcp`; see
 [`tools/release-set.conf.mix`](tools/release-set.conf.mix).
 
 **2. Install the binaries and the Mix shell.**
 
-```sh
+```bash
 sudo install -Dm755 -t /opt/mix/bin target/release/{mix,mixd,viu,viud}
 sudo ln -sf /opt/mix/bin/mix /usr/local/bin/mix
 mix --version
@@ -112,9 +112,9 @@ mix --version
 
 **3. Link the daemons you want to run** (each one is a personality of mixd):
 
-```sh
-mixd --personalities          # what this build carries
-cd /opt/mix/bin && sudo ln -s mixd noded && sudo ln -s mixd webd
+```bash
+/opt/mix/bin/mixd --personalities     # what this build carries
+cd /opt/mix/bin && sudo ln -sf mixd noded && sudo ln -sf mixd webd
 ```
 
 **4. Add the apps and shared data** (Mix apps, the Viu Mix library, scenes,
@@ -122,7 +122,7 @@ icons, fonts, wallpapers and unit templates). The bundler needs `viu` built
 next to `mix`. It downloads the pinned fonts and wallpapers and checks every
 byte against its hash.
 
-```sh
+```bash
 target/release/mix tools/apps_bundle.mix apps.tar \
     --mix target/release/mix --assets ~/.cache/mixviu-assets
 sudo tar -xf apps.tar -C /opt/mix
@@ -131,8 +131,15 @@ sudo tar -xf apps.tar -C /opt/mix
 The systemd unit templates land in `/opt/mix/share/mixviu/units/`. Start with
 `noded`: everything else joins its Bus.
 
-Then try it out: `mix` opens the shell, `mix man overview` explains the
-model, and `mix builtins` lists all ~400 built-in functions.
+**5. Try it.** `mix` opens the Mix shell (a REPL, not the desktop),
+`mix man overview` explains the model, and `mix builtins` lists all ~400
+built-in functions.
+
+**The desktop** runs one session per virtual terminal: `session@N.target`
+brings up `viud@N` (on seatd), then the `apps@`, `scenes@` and `files@` units
+for that VT. The templates are in [`engines/viud/units`](engines/viud/units).
+Setting up a desktop by hand is not documented for newcomers yet, so start
+with the shell and the services, and open an issue if you want to try it.
 
 ## Contributing
 
@@ -153,9 +160,10 @@ in [CONTRIBUTING.md](CONTRIBUTING.md); in short:
   ([ratchet](docs/development/mix-lint-ratchet.md)).
 - **Rust for primitives.** New behaviour starts in Mix. Code moves to Rust
   only after a measured, diagnosed performance problem.
-- **Foreign code has a high bar.** Pure-Rust crates must pass `cargo deny`
-  and the foreign-code gate. C or C++ inside a MixViu binary is a short,
-  justified allowlist.
+- **Foreign code has a high bar.** New crates must pass `cargo deny`
+  (permissive licences, known sources) and the
+  [foreign-code gate](tools/foreign_gate.mix). C or C++ inside a MixViu
+  binary is a short, justified allowlist.
 - **Review and landing.** `main` is protected. Every PR is reviewed (Tier 2
   paths by their code owner, see [REVIEW.md](REVIEW.md)) and lands through a
   serial merge queue that runs the full gate.
