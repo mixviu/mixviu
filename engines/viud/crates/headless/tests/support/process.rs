@@ -181,7 +181,7 @@ fn oom_evidence() -> String {
 #[allow(dead_code)] // The timing target uses spawn_measurement instead.
 pub fn spawn(scale: i32, explicit_node: Option<&str>, label: &str, bus: Option<&str>) -> Process {
     spawn_options(Options {
-        scale,
+        scale: scale as f64,
         explicit_node,
         label,
         bus,
@@ -218,7 +218,7 @@ pub fn spawn_measurement() -> Process {
 }
 
 struct Options<'a> {
-    scale: i32,
+    scale: f64,
     explicit_node: Option<&'a str>,
     label: &'a str,
     bus: Option<&'a str>,
@@ -235,7 +235,7 @@ struct Options<'a> {
 impl Default for Options<'_> {
     fn default() -> Self {
         Self {
-            scale: 1,
+            scale: 1.0,
             explicit_node: None,
             label: "",
             bus: None,
@@ -428,7 +428,7 @@ fn spawn_options(options: Options<'_>) -> Process {
     if let Some(node) = explicit_node {
         command.args(["--render-node", node]);
     }
-    if scale != 1 {
+    if scale != 1.0 {
         command.args(["--scale", &scale.to_string()]);
     }
     if let Some(service) = service {
@@ -541,6 +541,14 @@ pub fn spawn_size(label: &str, bus: &str, size: &str) -> Process {
 #[allow(dead_code)] // Used by window motion's isolated lifecycle fixture.
 pub fn spawn_preferences(label: &str, bus: &str, preferences: serde_json::Value) -> Process {
     spawn_preferences_size(label, bus, "1280x720", preferences)
+}
+
+pub fn spawn_scale_probe(label: &str, bus: &str) -> Process {
+    spawn_options(Options {
+        label, bus: Some(bus), scale: 2.5,
+        preferences: Some(serde_json::json!({"fractional_invisible":"full", "workspaces_count":2})),
+        ..Options::default()
+    })
 }
 
 #[allow(dead_code)]

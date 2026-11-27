@@ -62,16 +62,15 @@ pub fn decorations_ssd() -> bool {
     DECORATIONS_SSD.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// Default for `fractional_invisible`: `"full"` — invisible windows are frozen
-/// and published scale 1 (with the grace band pre-publishing real scales near
-/// pane edges), so both fresh installs and older `preferences.json` files get
-/// the resource-saving behavior unless explicitly set back to "optimized"/"off".
 /// Default for `input_edge_pan_continuous`: on. An older `preferences.json` gets
 /// the RTS-style behaviour, which is what the edge pan is expected to feel like.
 fn default_edge_pan_continuous() -> bool {
     true
 }
 
+/// Default `"full"`: spatially off-pane windows publish scale 1, with real
+/// scales inside the grace band. Workspace-hidden and minimised windows keep
+/// their pane's scale so an instant reveal uses the retained high-resolution buffer.
 fn default_fractional_invisible() -> String {
     "full".to_string()
 }

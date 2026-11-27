@@ -235,6 +235,76 @@ fn target(row: &Value) -> Value {
     json!({"id":row["id"],"generation":row["generation"]})
 }
 
+fn scale_pump(pattern: &mut Pattern, duration: Duration) {
+    let until = Instant::now() + duration;
+    while Instant::now() < until {
+        pattern.pump();
+        thread::sleep(Duration::from_millis(2));
+    }
+}
+
+#[test]
+fn fractional_workspace_return_keeps_scale_and_first_buffer() {
+    fractional_return(false, false);
+}
+
+#[test]
+fn fractional_unminimize_keeps_scale_and_first_buffer() {
+    fractional_return(true, false);
+}
+
+#[test]
+fn fractional_wake_precedes_first_returned_presentation() {
+    fractional_return(false, true);
+}
+
+fn fractional_return(minimized: bool, suspended: bool) {
+    use pattern::ScaleEvent;
+    if !process::record_available() { return; }
+    let bus = Bus::start("fractional-return");
+    let mut process = process::spawn_scale_probe("fractional-return", &bus.url);
+    let mut client = Pattern::scale_probe(connect(&mut process));
+    client.wait_callback(0);
+    bus.ready();
+    let row = bus.window(&mut client);
+    scale_pump(&mut client, Duration::from_secs(2));
+    assert_eq!(client.state.scale120, 300, "{:?}", client.state.events);
+    let start = client.state.events.len();
+    if minimized {
+        bus.call("comp.window.minimize", target(&row));
+    } else {
+        bus.call("comp.workspace.switch", json!({"index":2}));
+    }
+    // debounce_max is 750 ms. Also cover the five-second suspend dwell.
+    scale_pump(&mut client, Duration::from_secs(if suspended { 7 } else { 2 }));
+    assert!(!client.state.events[start..].iter().any(|(_, e)| matches!(e, ScaleEvent::Preferred(_))), "{:?}", client.state.events);
+    if suspended {
+        assert!(client.state.events[start..].iter().any(|(_, e)| matches!(e, ScaleEvent::Configure(_, _, states) if states.contains(&9))), "missing suspended configure: {:?}", client.state.events);
+    }
+    // Queue a callback while hidden; the arriving-window path must answer it
+    // before a presentation of the returned content, without waiting for trickle.
+    client.commit(true);
+    client.pump();
+    let returning = client.state.events.len();
+    if minimized {
+        let mut args = target(&row);
+        args["activate"] = json!(false);
+        bus.call("comp.window.restore", args);
+    } else {
+        bus.call("comp.workspace.switch", json!({"index":1}));
+    }
+    scale_pump(&mut client, Duration::from_secs(2));
+    let events = &client.state.events[returning..];
+    assert!(!events.iter().any(|(_, e)| matches!(e, ScaleEvent::Preferred(_))), "{events:?}");
+    let first = events.iter().position(|(_, e)| matches!(e, ScaleEvent::Presented)).expect("returned presentation");
+    if suspended {
+        assert!(events[..first].iter().any(|(_, e)| matches!(e, ScaleEvent::Configure(_, _, states) if !states.contains(&9))), "wake configure after reveal: {events:?}");
+        assert!(events[..first].iter().any(|(_, e)| matches!(e, ScaleEvent::Callback)), "callback after reveal: {events:?}");
+    }
+    let last_commit = client.state.events.iter().rev().find_map(|(_, e)| match e { ScaleEvent::Commit(w,h,s) => Some((*w,*h,*s)), _=>None }).unwrap();
+    assert_eq!(last_commit, (500, 400, 300));
+}
+
 #[test]
 fn record_cold_start_under_load_has_no_capture_drops() {
     if !process::record_available() {
