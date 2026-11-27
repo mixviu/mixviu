@@ -11,6 +11,8 @@ pub mod continuation;
 mod desktop_events;
 pub mod error;
 pub mod evaluator;
+#[cfg(target_os = "linux")]
+mod exec_replace;
 pub mod fd_hygiene;
 #[cfg(unix)]
 mod fifo_io;

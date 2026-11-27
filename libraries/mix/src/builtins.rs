@@ -344,6 +344,7 @@ builtin_table! {
     ("run", CapabilityClass::Process,             "system",  "Run shell command via sh, return trimmed stdout as string. run(cmd, [{timeout: seconds}]) — 0 (default) = no deadline; a timed-out child is PG-killed and run dies (catchable)", contract!((cmd: string, opts?: any_of(map, nil)) -> string; effects[blocking, shell]; failure[raises])),
     ("run_rc", CapabilityClass::Process,          "system",  "Run shell command, return {rc, stdout, stderr, timed_out, interrupted} map. run_rc(cmd, [{timeout: seconds}]) — 0 (default) = no deadline; timeout → rc=-1 timed_out=true", contract!((cmd: string, opts?: any_of(map, nil)) -> map("run_rc_result", {rc: number, stdout: string, stderr: string, timed_out: bool, interrupted: bool}); effects[must_use, blocking, shell]; failure[returns_result])),
     ("run_stream", CapabilityClass::Process,      "system",  "Run an argv LIST directly (no sh), inheriting stdio so output streams live and the child can use the terminal (interactive when it has a pty, e.g. ssh -t); returns the exit code. run_stream(argv, [{env, clear_env, cwd}]) — same env/cwd semantics as run_argv, so an interactive child gets variables without an `env` prefix exposing them in its ps argv (v0.51.0). The run_argv-only opts (timeout, stdin, stdout, stderr, max_output, stream) are rejected by name: this runner blocks until the child exits and captures nothing", contract!((argv: list(string), opts?: any_of(map("run_stream_options", {env: map, clear_env: bool, cwd: any_of(string, nil)}), nil)) -> number; effects[must_use, blocking]; failure[returns_result])),
+    ("exec_argv", CapabilityClass::Process, "system", "Replace this process directly, preserving pid/pgid and stdio. Only env, clear_env and cwd options. Never returns on success; failure raises with errno and restores cwd, mask and dispositions. Refused in serve mode, handlers or with managed children. Inherited ignores survive except SIGPIPE; target mask is empty. Mix-owned descriptors are CLOEXEC; inherited non-CLOEXEC descriptors pass through", contract!((argv: list(string), opts?: any_of(map("exec_argv_options", {env: map, clear_env: bool, cwd: any_of(string, nil)}), nil)) -> nil; effects[blocking]; failure[raises])),
     ("run_argv", CapabilityClass::Process,        "system",  "Run an argv list directly (no shell) with structured stdio routing and a whole-call deadline that starts before route opening. opts: timeout; grace (seconds: at the deadline SIGTERM the process group, wait up to grace for it, then SIGKILL — default 0 = SIGKILL at once; refused with timeout:0); stdin nil|string|bytes|buffer|{file}|{null:true}|{inherit:true} (only when mix's own stdin is not a terminal, else STDIN_TERMINAL — use run_stream); stdout capture|inherit|null|{file,append?,mode?}; stderr capture|inherit|null|stdout|{file,append?,mode?}; cwd/env/clear_env; max_output; stream. stdout/stderr default capture; output files default truncate, mode 0o600. Routed non-capture streams return \"\" with truncation false and are not capped. stderr:stdout merges into stdout. File-open failure or route-open deadline is a PROCESS_STDIO value and the child is not spawned. Captured output abandoned at a deadline is returned partially with its truncation flag true. stream:true + stdout:inherit and all bad options raise OPTION_INVALID before spawn. opts may be nil (defaults). Ordinary command/setup failure is encoded in the VALUE; timeout default 30s; max_output default 8 MiB per captured stream", contract!((argv: list(string), opts?: any_of(map("run_argv_options", {timeout: number, grace: number, stdin: any_of(string, bytes, buffer, map, nil), stdout: any_of(string, map), stderr: any_of(string, map), cwd: any_of(string, nil), env: map, clear_env: bool, max_output: number, stream: bool}), nil)) -> map("process_result", {ok: bool, exit_code: any, stdout: string, stderr: string, timed_out: bool, interrupted: bool, signal: any, duration_ms: number, stdout_truncated: bool, stderr_truncated: bool, utf8_lossy: bool, error_code: any, error: any}); effects[must_use, blocking]; failure[returns_result])),
     ("run_parallel", CapabilityClass::Process,    "system",  "Run many argv jobs concurrently with a bounded worker pool: run_parallel(jobs[, {max, timeout}]) -> list of process_result maps in INPUT order. Each job is an argv list (like run_argv's first arg) OR a {argv, stdin, cwd, env, clear_env, stdout, stderr, max_output, timeout, grace} map mirroring run_argv's options. max bounds concurrency (default 8, hard-capped at 256 live workers — excess jobs still run, drained by index); a top-level timeout (seconds) overrides every job's own. A job may NOT disable its deadline (timeout: 0 is refused) — one hung job would park the whole batch. Each result is EXACTLY run_argv's process_result map, so existing result-handling code ports unchanged; one job's ordinary failure (nonzero/timeout/spawn) is DATA in its map, never a raise. Process-level fan-out (std::thread over the run_argv engine), NOT in-language concurrency — the evaluator is single-threaded and Values never cross a thread; a job's `stream` flag is ignored (parallel tee would interleave). The killer use is ssh_mix fan-out: run_parallel of ssh argvs. A parse error in ANY job fails the whole call before spawning (v0.82.0)", contract!((jobs: list, opts?: any_of(map("run_parallel_options", {max: number, timeout: number}), nil)) -> list; effects[must_use, blocking]; failure[returns_result])),
     ("run_argv_must", CapabilityClass::Process,   "system",  "Fail-fast run_argv with the same structured stdio opts: returns captured stdout unchanged when ok and no captured stream truncated (\"\" when stdout is routed), else raises PROCESS_EXIT_NONZERO / PROCESS_TIMEOUT / PROCESS_SIGNAL / PROCESS_INTERRUPTED / PROCESS_OUTPUT_LIMIT or the result's setup/lifecycle error_code (PROCESS_STDIO / PROCESS_SPAWN / PROCESS_IO / PROCESS_INTERNAL) with the complete result map in $err.details.result", contract!((argv: list(string), opts?: any_of(map("run_argv_options", {timeout: number, grace: number, stdin: any_of(string, bytes, buffer, map, nil), stdout: any_of(string, map), stderr: any_of(string, map), cwd: any_of(string, nil), env: map, clear_env: bool, max_output: number, stream: bool}), nil)) -> string; effects[blocking]; failure[raises])),
@@ -626,6 +627,10 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "ssh_exec" => builtin_ssh_exec(args),
         "run_rc" => builtin_run_rc(args),
         "run_stream" => builtin_run_stream(args),
+        "exec_argv" => Err(MixError::structured(
+            "EXEC_REFUSED",
+            "exec_argv requires evaluator context",
+        )),
         "run_argv" => builtin_run_argv(args),
         "run_parallel" => builtin_run_parallel(args),
         "run_argv_must" => builtin_run_argv_must(args),
@@ -4927,6 +4932,16 @@ pub mod owned_spawns {
     /// the other side of the swap.
     static OWNED: Mutex<Vec<(libc::pid_t, Option<u64>)>> = Mutex::new(Vec::new());
 
+    pub(crate) fn holds_for(owner: u64) -> bool {
+        let mut owned = OWNED.lock().unwrap_or_else(|e| e.into_inner());
+        // Retain a zombie leader while its group still has live members; its
+        // PID pins the group identity until the existing sole-reaper cleanup.
+        owned.retain(|(pid, _)| retain_entry(*pid));
+        owned
+            .iter()
+            .any(|(_, registered)| *registered == Some(owner))
+    }
+
     /// The one thread allowed to create owned children. PDEATHSIG is keyed to
     /// the creating THREAD and the registry is process-wide, so the facility
     /// is only sound when a host owns a long-lived evaluator thread and sweeps
@@ -6985,6 +7000,98 @@ pub(crate) fn process_watch_command(args: &[Value]) -> MixResult<ProcessWatchSpe
 
 fn map_has(value: Option<&Value>, key: &str) -> bool {
     matches!(value, Some(Value::Map(map)) if map.contains_key(key))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn exec_argv(
+    _args: &[Value],
+    _flush: impl FnOnce() -> MixResult<()>,
+) -> MixResult<Option<Value>> {
+    Err(MixError::structured(
+        "EXEC_FAILED",
+        "exec_argv: unsupported on this platform (requires Linux)",
+    ))
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn exec_argv(
+    args: &[Value],
+    flush: impl FnOnce() -> MixResult<()>,
+) -> MixResult<Option<Value>> {
+    let caller = "exec_argv";
+    if !(1..=2).contains(&args.len()) {
+        return Err(opt_invalid(caller, "expected argv[, opts]"));
+    }
+    let argv = parse_run_argv_argv(caller, &args[0])?;
+    if let Some(Value::Map(map)) = args.get(1) {
+        if let Some(Value::Map(env)) = map.get("env")
+            && env.keys().any(|key| key.contains('\0'))
+        {
+            return Err(opt_invalid(caller, "env key contains a NUL byte"));
+        }
+        for key in map.keys() {
+            if !matches!(key.as_str(), "env" | "clear_env" | "cwd") {
+                return Err(opt_invalid(
+                    caller,
+                    format!("unknown option '{key}' (supported: env, clear_env, cwd)"),
+                ));
+            }
+        }
+    }
+    let opts = parse_run_argv_opts(caller, args.get(1))?;
+    let mut command = std::process::Command::new(&argv[0]);
+    command.args(&argv[1..]);
+    if opts.clear_env {
+        command.env_clear();
+    }
+    command.envs(opts.env);
+    for key in opts.env_unset {
+        command.env_remove(key);
+    }
+    flush()?;
+    crate::exec_replace::replace(&mut command, opts.cwd.as_deref()).map_err(|failure| {
+        let mut message = format!("exec_argv: {}", exec_io_message(&failure.error));
+        for (phase, error) in failure.rollback {
+            message.push_str(&format!(
+                "; {phase} rollback failed: {}",
+                exec_io_message(&error)
+            ));
+        }
+        MixError::structured("EXEC_FAILED", message)
+    })?;
+    unreachable!("successful exec never returns")
+}
+
+pub(crate) fn exec_io_message(error: &std::io::Error) -> String {
+    let errno = error.raw_os_error();
+    let name = match errno {
+        Some(libc::ENOENT) => "ENOENT",
+        Some(libc::EACCES) => "EACCES",
+        Some(libc::ENOEXEC) => "ENOEXEC",
+        Some(libc::ENOTDIR) => "ENOTDIR",
+        Some(libc::E2BIG) => "E2BIG",
+        Some(libc::ETXTBSY) => "ETXTBSY",
+        Some(libc::ELOOP) => "ELOOP",
+        Some(libc::ENAMETOOLONG) => "ENAMETOOLONG",
+        Some(libc::ENOMEM) => "ENOMEM",
+        Some(libc::EMFILE) => "EMFILE",
+        Some(libc::ENFILE) => "ENFILE",
+        Some(libc::EPERM) => "EPERM",
+        Some(libc::EPIPE) => "EPIPE",
+        Some(libc::EBADF) => "EBADF",
+        Some(libc::EIO) => "EIO",
+        Some(libc::EINVAL) => "EINVAL",
+        #[cfg(target_os = "linux")]
+        Some(libc::ELIBBAD) => "ELIBBAD",
+        Some(libc::EAGAIN) => "EAGAIN",
+        Some(libc::EFAULT) => "EFAULT",
+        Some(libc::EISDIR) => "EISDIR",
+        _ => "errno",
+    };
+    match errno {
+        Some(number) => format!("{name} ({number}): {error}"),
+        None => error.to_string(),
+    }
 }
 
 fn parse_run_argv_opts(caller: &str, v: Option<&Value>) -> MixResult<RunArgvOpts> {
