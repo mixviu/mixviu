@@ -93,7 +93,7 @@ spamlite = { git = "https://github.com/markc/spamlite", rev = "a4d8202a4d78bbcd1
 tokio-stream = "0.1"
 tower-http = { version = "0.6", features = ["fs", "cors"] }
 unicode-normalization = "0.1"
-webpki-roots = "0.26"
+webpki-roots = "1.0"
 x509-parser = "0.18"
 zeroize = "1"
 anyhow = "1"
