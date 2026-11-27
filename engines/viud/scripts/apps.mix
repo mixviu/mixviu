@@ -143,6 +143,9 @@ fn record_row($kind, $data)
   $row = {ts_utc: utc_now(), node: hostname(), source: "apps", seq: $generation .. "-" .. $history.seq, kind: $kind, class: "operator", data: $a.history_data($data)}
   -- No Bus await in this append: its cached segment state cannot be stale.
   $history = $a.history_append($history_dir, $history, $row, time())
+  -- Commit invalidation before reporting the error; the next append heals
+  -- any partial write instead of trusting the old cached counters.
+  if has_key($history, "append_error") then raise("APPS_HISTORY", to_string($history.append_error)) end
 end
 if not is_reload_candidate() then record_row("gap", {reason: "citizen_start"}) end
 on lifecycle.commit

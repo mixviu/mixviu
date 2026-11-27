@@ -87,9 +87,13 @@ fn history_open($path, $day)
 end
 
 fn history_append($dir, $state, $row, $now)
-  -- Segment readiness and counters are cached for its entire lifetime.
-  -- The only open is inside rollover; a normal append reads no segment.
-  if $state.ready != true then raise("APPS_HISTORY", "segment must be opened before append") end
+  -- A normal append reads no segment. Only rollover or a failed previous
+  -- append opens it again. State must reach the caller before it re-raises:
+  -- Mix values are copied, so raising here would lose ready=false.
+  $state = delete($state, "append_error")
+  if $state.ready != true then
+    $state = merge($state, history_open($state.path, $state.day))
+  end
   $day = substr($row.ts_utc, 0, 10)
   $encoded = json_encode(merge($row, {ref: {file: basename($state.path), line: $state.line + 1}})) .. "\n"
   if $state.path == "" or $state.day != $day or $state.bytes + byte_length($encoded) > 1048576 then
@@ -104,7 +108,11 @@ fn history_append($dir, $state, $row, $now)
     end
     $encoded = json_encode(merge($row, {ref: {file: basename($state.path), line: 1}})) .. "\n"
   end
-  append_file($state.path, $encoded)
+  try
+    append_file($state.path, $encoded)
+  catch $err
+    return merge($state, {ready: false, append_error: $err})
+  end
   $state.bytes = $state.bytes + byte_length($encoded)
   $state.line = $state.line + 1
   return $state
