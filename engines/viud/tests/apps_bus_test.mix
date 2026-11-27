@@ -421,9 +421,7 @@ try
   await_exit($h)
   check(not process_alive($grandchild), "grandchild survived group stop")
   -- Fake comp gives the handle a window; no real window or display needed.
-  $fake = spawn([$mix, "--serve", $root .. "/engines/viud/tests/fixtures/apps_comp.mix", "--name", "comp"], {env: $pb.client_env($bus), stdout: {file: $tmp .. "/comp.log"}, stderr: "stdout"})
-  -- Function cannot rebind the outer pid; the caller owns cleanup via return.
-  write_file($tmp .. "/comp.pid", to_string($fake))
+  $comp_pid = spawn([$mix, "--serve", $root .. "/engines/viud/tests/fixtures/apps_comp.mix", "--name", "comp"], {env: $pb.client_env($bus), stdout: {file: $tmp .. "/comp.log"}, stderr: "stdout"})
   for $i = 1 to 100
     if call("comp", "fake.clear", "{}").rc == 0 then break end
     sleep(0.005)
@@ -455,7 +453,7 @@ try
   check(call("apps", "RELOAD", "{}").rc == 0, "reload refused")
   $until = monotonic() + 1
   while monotonic() < $until
-    if call("apps", "apps.running", "{}").result == [] then break end
+    if len(call("apps", "apps.running", "{}").result) == 0 then break end
     sleep(0.005)
   end
   check(call("apps", "apps.stop", json_encode({handle: $old})).rc == 14, "previous generation handle accepted")
@@ -464,7 +462,6 @@ try
 finally
   stop_pid($svc_pid)
   stop_pid($comp_pid)
-  if is_file($tmp .. "/comp.pid") then stop_pid(to_number(read_file($tmp .. "/comp.pid"))) end
   if $bus != nil then $pb.stop($bus) end
   -- Only the unique mktemp tree created by this test is removed.
   if starts_with($tmp, "/tmp/mix-apps-bus-test.") then remove_dir($tmp) end
