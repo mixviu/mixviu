@@ -256,6 +256,11 @@ try
   $_ln = run_argv_must(["ln", "-s", $tmp .. "/linked-real", $tmp .. "/linked"])
 
   $bus = $pb.start({dir: $tmp .. "/bus", name: "apps-bus-test-" .. $tag, noded: $noded})
+  -- The broker runs as this test's OS account. Unix clients verify that
+  -- account independently of socket ownership; never assume the system noded uid.
+  $conf = json_parse(read_file($bus.conf))
+  $conf.noded.account = trim(run_argv_must(["id", "-un"]))
+  write_file($bus.conf, json_encode($conf))
   $env = merge($pb.client_env($bus), {MIX_STATS: "off", PATH: "/usr/bin:/bin", HOME: $tmp .. "/bus/home"})
   $citizen_env = merge($pb.client_env($bus), {
     MIX_STATS: "off", PATH: "/usr/bin:/bin",
