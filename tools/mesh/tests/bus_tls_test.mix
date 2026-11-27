@@ -49,7 +49,8 @@ end
 $tomb = $inv
 $tomb.members[0].status = "tombstoned"
 $tomb.members[0].bus = false
-$tomb.hub = []
+$tomb.hub = ["beta"]
+$tomb.members = concat($tomb.members,[{name:"beta",mesh_ip:"192.0.2.6",bus:true,status:"active",credentials:[{kind:"wg",pubkey:"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA=",from_epoch:1,until_epoch:nil}]}])
 $m.validate_inventory($tomb)
 $target = $targets.parse_targets({schema_version:1,project:"example",targets:[{node:"alpha",host:"example-host",kind:"desk",machine:"example-desk",profile:"/var/lib/example/desk",session:3,account:"desktop",admission:"observe"}]}).targets[0]
 fn fake_guest($job)
