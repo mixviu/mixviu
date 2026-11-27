@@ -90,6 +90,33 @@ retired member that is on the wire (`STALE-ON-WIRE`), but prints the
 The tools call native project components:
 
 - `mix mesh` signs the inventory and prints its public key.
+
+Bus TLS enrolment generates its independent Ed25519 seed inside the guest:
+`mix mesh bus-tls-gen [--path /opt/mix/etc/noded/bus-tls.seed]`. The parent
+directory must already exist. The command creates the file exclusively,
+root:noded 0640 as root or euid-owned 0600 otherwise. Its JSON output contains
+only `path`, base64 `pubkey` and a BLAKE3 public-key `fingerprint`. It never
+stores the seed in the hub secrets database. `--rotate` creates a unique
+`.next-<uuid>` sibling without replacing the active seed; the owner authors
+the new key's future epoch window and activates that file separately.
+`mesh_join.mix` collects this public credential from the node or configured
+desk guest and includes it alongside the existing D2 and WG credentials.
+Desk key authoring is available independently of the guarded desk distributor.
+
+Optional member `endpoints` are signed fallback locations, each with numeric
+`addr` and `transport: "tls"` or `"ws-wg"`. Routed TLS addresses may differ
+from `mesh_ip` during migration. Duplicate typed address/transport pairs,
+hostnames, unknown transports and ports outside 1..=65535 are refused. This
+change exposes locations without dialling them. Missing endpoints preserve
+the existing routing view and behaviour.
+
+`mix mesh verify inventory.signed --genesis-pub genesis.pub` prints the
+authenticated payload JSON and exits non-zero on refusal. Use
+`--genesis-pub-base64` for a literal public key; omitting both uses the
+signer's secrets-DB root. Existing `--json` report and `--include-payload`
+options remain available. Closed keys and tombstoned records must stay in
+authored inventories; reload also checks against the currently accepted
+inventory, without persisted key history.
 - `noded` is the broker each node runs.
 
 `noded` is found under the remote node's reported prefix.

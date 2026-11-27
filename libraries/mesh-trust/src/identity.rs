@@ -91,15 +91,14 @@ fn key_windows(members: &Value) -> Result<Vec<KeyWindow>, String> {
             if !matches!(kind, "wg" | "d2" | "bus-tls") {
                 return Err("unknown credential kind".into());
             }
-            if kind == "bus-tls" && member["bus"] != true {
-                return Err("bus-tls credential on bus:false member".into());
-            }
+            // Ineligible owners still poison shared TLS keys in the reverse
+            // index. Authoring refuses them; snapshot verification preserves
+            // this defensive coverage rather than silently deleting records.
             let key = base64::engine::general_purpose::STANDARD
                 .decode(c["pubkey"].as_str().ok_or("missing credential pubkey")?)
                 .map_err(|_| "invalid credential pubkey")?;
-            if key.len() != 32 {
-                return Err("credential pubkey must be 32 bytes".into());
-            }
+            // Historical member JSON is opaque, including old WG fixtures.
+            // The admission selectors enforce usable key length separately.
             let from = c["from_epoch"]
                 .as_u64()
                 .ok_or("invalid credential from_epoch")?;

@@ -61,7 +61,7 @@ end
 end
 
 fn live_execute($job)
-  if not $ROLLOUT_READY then fail("desk distributor integration is not yet released; hermetic fixtures only") end
+  if not $ROLLOUT_READY and $job.operation != "bus-tls-gen" then fail("desk distributor integration is not yet released; hermetic fixtures only") end
   return ssh_mix($job.host,
     '$r=run_argv($command,{stdin:$text,env:$environment,timeout:130}); print($r.stdout); if not $r.ok then raise("DESK_TRANSPORT","namespace process refused") end',
     {mix_bin:$job.mix_bin,bindings:{command:$job.argv,text:$job.stdin,environment:$job.env},connect_timeout:8,timeout:145})

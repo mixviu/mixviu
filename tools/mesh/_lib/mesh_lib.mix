@@ -348,7 +348,7 @@ function endpoint_identity($endpoint)
       if $half != "" then
         for $group in split($half,":")
           if contains($group,".") then
-            if not ends_with($text,$group) or not is_valid_ipv4($group) then return nil end
+            if not ends_with($text,$group) or not endpoint_ipv4($group) then return nil end
             $v4 = split($group,".")
             push($groups,to_number($v4[0]) * 256 + to_number($v4[1]))
             push($groups,to_number($v4[2]) * 256 + to_number($v4[3]))
@@ -384,12 +384,20 @@ function endpoint_identity($endpoint)
     $port = $parts[1]
   else
     $parts = split($address,":")
-    if len($parts) != 2 or not is_valid_ipv4($parts[0]) then return nil end
+    if len($parts) != 2 or not endpoint_ipv4($parts[0]) then return nil end
     $ip = ["v4",map(split($parts[0],"."),fn($v)=to_number($v))]
     $port = $parts[1]
   end
   if not re_match($port,"^[0-9]+$") or not is_valid_noded_port(to_number($port)) then return nil end
   return json_encode([$ip,to_number($port),$endpoint.transport])
+end
+
+function endpoint_ipv4($text)
+  if not is_valid_ipv4($text) then return false end
+  for $part in split($text,".")
+    if len($part) > 1 and starts_with($part,"0") then return false end
+  end
+  return true
 end
 
 function validate_member_endpoints($member)

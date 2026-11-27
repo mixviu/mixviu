@@ -158,7 +158,10 @@ pub static DIAL_REFUSALS: LazyLock<Refusals> = LazyLock::new(Default::default);
 /// Metadata is checked on the opened file, avoiding a stat/open race.
 pub fn load_seed(path: &std::path::Path) -> Result<BusTlsSeed, SeedFileError> {
     let mut opened = crate::seed::open_seed(path)?;
-    if !opened.secure {
+    // Root generation uses root:noded 0640 even when loading as root. Keep
+    // this TLS allowance separate from the legacy D2 warning policy.
+    let root_readable = opened.owner == 0 && opened.mode & 0o037 == 0;
+    if !opened.secure && !root_readable {
         return Err(SeedFileError::Insecure {
             mode: opened.mode,
             owner: opened.owner,
@@ -914,10 +917,12 @@ mod tests {
         file.set_len(32).unwrap();
         file.set_permissions(std::fs::Permissions::from_mode(0o640))
             .unwrap();
-        assert!(matches!(
-            load_seed(&path),
-            Err(SeedFileError::Insecure { .. })
-        ));
+        // SAFETY: geteuid has no arguments or preconditions.
+        if unsafe { libc::geteuid() } == 0 {
+            assert!(load_seed(&path).is_ok());
+        } else {
+            assert!(matches!(load_seed(&path), Err(SeedFileError::Insecure { .. })));
+        }
         for mode in [0o604, 0o644, 0o660] {
             file.set_permissions(std::fs::Permissions::from_mode(mode))
                 .unwrap();

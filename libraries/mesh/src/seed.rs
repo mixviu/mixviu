@@ -133,12 +133,10 @@ pub fn open_seed(path: &Path) -> Result<SeedFile, SeedFileError> {
 }
 
 fn secure_mode(mode: u32, owner: u32, effective_uid: u32) -> bool {
-    if owner == 0 {
-        mode & 0o037 == 0
-    } else if owner == effective_uid {
+    if owner == effective_uid {
         mode & 0o077 == 0
     } else {
-        false
+        owner == 0 && mode & 0o037 == 0
     }
 }
 
@@ -269,7 +267,7 @@ mod tests {
         assert!(secure_mode(0o600, 1000, 1000));
         assert!(!secure_mode(0o640, 1000, 1000));
         assert!(secure_mode(0o640, 0, 1000));
-        assert!(secure_mode(0o640, 0, 0));
+        assert!(!secure_mode(0o640, 0, 0));
         assert!(!secure_mode(0o600, 1001, 1000));
         for mode in [0o620, 0o604, 0o644, 0o666] {
             assert!(!secure_mode(mode, 0, 1000));
