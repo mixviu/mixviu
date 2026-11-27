@@ -16490,20 +16490,27 @@ impl Evaluator {
             } else if self.ctx.in_handler > 0 {
                 Some("inside a handler")
             } else if g.native_events.holds_managed_children()
-                || builtins::owned_spawns::holds_for(g.native_events.owner_id()) {
+                || builtins::owned_spawns::holds_for(g.native_events.owner_id())
+            {
                 Some("evaluator holds managed children")
             } else {
                 None
             };
             if let Some(reason) = refusal {
-                return Err(MixError::structured("EXEC_REFUSED", format!("exec_argv refused: {reason}")));
+                return Err(MixError::structured(
+                    "EXEC_REFUSED",
+                    format!("exec_argv refused: {reason}"),
+                ));
             }
             drop(g);
             return builtins::exec_argv(&args, || {
                 let mut g = self.globals.borrow_mut();
-                g.stdout.flush().and_then(|()| g.stderr.flush()).map_err(|error| {
-                    MixError::structured("EXEC_FAILED", format!("exec_argv flush: {error}"))
-                })
+                g.stdout
+                    .flush()
+                    .and_then(|()| g.stderr.flush())
+                    .map_err(|error| {
+                        MixError::structured("EXEC_FAILED", format!("exec_argv flush: {error}"))
+                    })
             });
         }
         if name == "has_builtin" && args.len() == 1 {

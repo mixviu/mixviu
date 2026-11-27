@@ -627,7 +627,10 @@ pub fn call_builtin(name: &str, args: Vec<Value>) -> MixResult<Option<Value>> {
         "ssh_exec" => builtin_ssh_exec(args),
         "run_rc" => builtin_run_rc(args),
         "run_stream" => builtin_run_stream(args),
-        "exec_argv" => Err(MixError::structured("EXEC_REFUSED", "exec_argv requires evaluator context")),
+        "exec_argv" => Err(MixError::structured(
+            "EXEC_REFUSED",
+            "exec_argv requires evaluator context",
+        )),
         "run_argv" => builtin_run_argv(args),
         "run_parallel" => builtin_run_parallel(args),
         "run_argv_must" => builtin_run_argv_must(args),
@@ -4930,7 +4933,10 @@ pub mod owned_spawns {
     static OWNED: Mutex<Vec<(libc::pid_t, Option<u64>)>> = Mutex::new(Vec::new());
 
     pub(crate) fn holds_for(owner: u64) -> bool {
-        OWNED.lock().unwrap_or_else(|e| e.into_inner()).iter()
+        OWNED
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
             .any(|(_, registered)| *registered == Some(owner))
     }
 
@@ -6994,7 +7000,10 @@ fn map_has(value: Option<&Value>, key: &str) -> bool {
     matches!(value, Some(Value::Map(map)) if map.contains_key(key))
 }
 
-pub(crate) fn exec_argv(args: &[Value], flush: impl FnOnce() -> MixResult<()>) -> MixResult<Option<Value>> {
+pub(crate) fn exec_argv(
+    args: &[Value],
+    flush: impl FnOnce() -> MixResult<()>,
+) -> MixResult<Option<Value>> {
     let caller = "exec_argv";
     if !(1..=2).contains(&args.len()) {
         return Err(opt_invalid(caller, "expected argv[, opts]"));
@@ -7003,7 +7012,10 @@ pub(crate) fn exec_argv(args: &[Value], flush: impl FnOnce() -> MixResult<()>) -
     if let Some(Value::Map(map)) = args.get(1) {
         for key in map.keys() {
             if !matches!(key.as_str(), "env" | "clear_env" | "cwd") {
-                return Err(opt_invalid(caller, format!("unknown option '{key}' (supported: env, clear_env, cwd)")));
+                return Err(opt_invalid(
+                    caller,
+                    format!("unknown option '{key}' (supported: env, clear_env, cwd)"),
+                ));
             }
         }
     }
@@ -7041,7 +7053,10 @@ pub(crate) fn exec_argv(args: &[Value], flush: impl FnOnce() -> MixResult<()>) -
             Some(libc::EISDIR) => "EISDIR",
             _ => "errno",
         };
-        MixError::structured("EXEC_FAILED", format!("exec_argv: {name} {errno:?}: {error}"))
+        MixError::structured(
+            "EXEC_FAILED",
+            format!("exec_argv: {name} {errno:?}: {error}"),
+        )
     })?;
     unreachable!("successful exec never returns")
 }

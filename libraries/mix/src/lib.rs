@@ -11,8 +11,8 @@ pub mod continuation;
 mod desktop_events;
 pub mod error;
 pub mod evaluator;
-pub mod fd_hygiene;
 mod exec_replace;
+pub mod fd_hygiene;
 #[cfg(unix)]
 mod fifo_io;
 mod fs_watch;
