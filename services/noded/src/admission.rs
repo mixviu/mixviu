@@ -185,13 +185,20 @@ impl WireError {
 /// `u64`). The broker supplies `mesh_fqdn`/`verifying_broker_node` from its own
 /// accepted authority + identity, never from the wire. This is the single
 /// codec boundary — see the module-level hazard note.
+#[cfg(test)]
 pub fn reconstruct_proof(
     challenge: &OutstandingChallenge,
     response_body: &Value,
     mesh_fqdn: &str,
     verifying_broker_node: &str,
 ) -> Result<ReconstructedProof, WireError> {
-    reconstruct_bound_proof(challenge, response_body, mesh_fqdn, verifying_broker_node, None)
+    reconstruct_bound_proof(
+        challenge,
+        response_body,
+        mesh_fqdn,
+        verifying_broker_node,
+        None,
+    )
 }
 
 pub fn reconstruct_bound_proof(

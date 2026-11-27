@@ -15,13 +15,26 @@ pub fn link_refusal(
     d2: &KeyAuthority,
     tls: &TlsAuthority,
 ) -> Option<&'static str> {
-    let Some((node, key)) = context.mesh_peer() else { return Some("unproven-link") };
-    if !d2.contains(node, key) { return Some("d2-key-revoked") }
+    let Some((node, key)) = context.mesh_peer() else {
+        return Some("unproven-link");
+    };
+    if !d2.contains(node, key) {
+        return Some("d2-key-revoked");
+    }
     if let Some(bus::native_session::TransportIdentity::MeshTls {
-        member, tls_key, d2_key, ..
-    }) = &context.transport {
-        if member != node || d2_key != key { return Some("credential-member-mismatch") }
-        if !tls.member_for(tls_key).is_some_and(|identity| identity.member == node) {
+        member,
+        tls_key,
+        d2_key,
+        ..
+    }) = &context.transport
+    {
+        if member != node || d2_key != key {
+            return Some("credential-member-mismatch");
+        }
+        if !tls
+            .member_for(tls_key)
+            .is_some_and(|identity| identity.member == node)
+        {
             return Some("tls-key-revoked");
         }
     }

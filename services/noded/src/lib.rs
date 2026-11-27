@@ -21,7 +21,6 @@ mod logger;
 mod mon_props;
 mod monitor;
 mod native_ingress;
-mod tls_ingress;
 mod noded;
 mod observe;
 mod props;
@@ -31,6 +30,7 @@ mod routing;
 mod spec;
 mod spec_release;
 mod subscription;
+mod tls_ingress;
 
 /// `--version` line including git sha + build time (build-provenance
 /// contract). `MIX_*` are set by `build.rs` → `buildinfo::emit()`.
@@ -174,7 +174,7 @@ async fn async_main() -> Result<()> {
     let mut noded_handle = tokio::spawn(async move {
         noded::run(
             noded::RunConfig {
-    network,
+                network,
                 #[cfg(test)]
                 session_probe: None,
                 listen,

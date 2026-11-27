@@ -29,12 +29,22 @@ pub type LiveAuthority = Arc<RwLock<Arc<TlsAuthority>>>;
 #[derive(Default)]
 pub struct Refusals {
     total: std::sync::atomic::AtomicU64,
-    peers: std::sync::Mutex<std::collections::HashMap<(std::net::SocketAddr, &'static str), (std::time::Instant, u64, bool)>>,
+    peers: std::sync::Mutex<
+        std::collections::HashMap<
+            (std::net::SocketAddr, &'static str),
+            (std::time::Instant, u64, bool),
+        >,
+    >,
 }
 impl Refusals {
-    pub fn total(&self) -> u64 { self.total.load(std::sync::atomic::Ordering::Relaxed) }
+    pub fn total(&self) -> u64 {
+        self.total.load(std::sync::atomic::Ordering::Relaxed)
+    }
     pub fn record(&self, peer: std::net::SocketAddr, class: &'static str) {
-        let total = self.total.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let total = self
+            .total
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            + 1;
         let now = std::time::Instant::now();
         let mut peers = self.peers.lock().expect("TLS refusals poisoned");
         let entry = peers.entry((peer, class)).or_insert((now, 0, false));

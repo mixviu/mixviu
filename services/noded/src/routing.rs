@@ -44,7 +44,7 @@ impl RouteTarget {
     fn signed(name: &str, mesh_ip: IpAddr, noded_port: u16) -> Self {
         Self {
             peer: PeerConfig {
-    tls_port: None,
+                tls_port: None,
                 name: name.to_string(),
                 mesh_ip,
                 noded_port,
@@ -254,12 +254,16 @@ impl RoutingAuthority {
         // Temporary endpoint overlay: the inventory still owns membership and
         // addresses; only the local per-member TLS port comes from the roster.
         for peer in routes.peers.values_mut() {
-            peer.peer.tls_port = etc_roster.iter().find(|p| p.name == peer.peer.name)
+            peer.peer.tls_port = etc_roster
+                .iter()
+                .find(|p| p.name == peer.peer.name)
                 .and_then(|p| p.tls_port);
         }
         let tls_keys = std::sync::Arc::new(match &posture {
             Posture::Verified(a) => mesh_trust::identity::TlsAuthority::new(
-                &a.members_full, a.epoch, a.recovery_generation,
+                &a.members_full,
+                a.epoch,
+                a.recovery_generation,
             ),
             Posture::Unverified { .. } => Default::default(),
         });
@@ -370,7 +374,7 @@ mod tests {
 
     fn etc_peer(name: &str, ip: &str, port: u16) -> PeerConfig {
         PeerConfig {
-    tls_port: None,
+            tls_port: None,
             name: name.into(),
             mesh_ip: ip.parse().unwrap(),
             noded_port: port,

@@ -7,25 +7,37 @@ use std::time::Duration;
 
 use axum::extract::connect_info::Connected;
 use axum::serve::{IncomingStream, Listener};
+pub use mesh::tls::Refusals;
 use mesh::tls::{Credential, LiveAuthority, verified_member};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tokio_rustls::{TlsAcceptor, server::TlsStream};
-pub use mesh::tls::Refusals;
 
 pub(crate) fn prepare(
-    posture: &crate::authority::Posture, node: &str, settings: &config::node::NodedTls,
+    posture: &crate::authority::Posture,
+    node: &str,
+    settings: &config::node::NodedTls,
 ) -> anyhow::Result<mesh::TlsRuntime> {
     let crate::authority::Posture::Verified(a) = posture else {
         anyhow::bail!("TLS requires a verified accepted inventory");
     };
-    let keys = Arc::new(mesh_trust::identity::TlsAuthority::new(&a.members_full, a.epoch, a.recovery_generation));
+    let keys = Arc::new(mesh_trust::identity::TlsAuthority::new(
+        &a.members_full,
+        a.epoch,
+        a.recovery_generation,
+    ));
     let path = paths::resolve(&settings.key).map_err(anyhow::Error::msg)?;
     let credential = Credential::new(mesh::tls::load_seed(&path)?)?;
     let own_key = mesh::tls::public_key(&credential.certificate)?;
-    anyhow::ensure!(keys.member_for(&own_key).is_some_and(|m| m.member == node), "TLS requires a current own bus-tls key");
-    Ok(mesh::TlsRuntime { credential, authority: Arc::new(std::sync::RwLock::new(keys)) })
+    anyhow::ensure!(
+        keys.member_for(&own_key).is_some_and(|m| m.member == node),
+        "TLS requires a current own bus-tls key"
+    );
+    Ok(mesh::TlsRuntime {
+        credential,
+        authority: Arc::new(std::sync::RwLock::new(keys)),
+    })
 }
 
 #[derive(Clone, Debug)]
@@ -49,8 +61,14 @@ impl TlsListener {
         limits: &config::node::NodedTls,
         refusals: Arc<Refusals>,
     ) -> anyhow::Result<Self> {
-        anyhow::ensure!(limits.handshake_timeout_s > 0, "TLS handshake timeout must be positive");
-        anyhow::ensure!(limits.max_handshakes > 0, "TLS max_handshakes must be positive");
+        anyhow::ensure!(
+            limits.handshake_timeout_s > 0,
+            "TLS handshake timeout must be positive"
+        );
+        anyhow::ensure!(
+            limits.max_handshakes > 0,
+            "TLS max_handshakes must be positive"
+        );
         let acceptor = TlsAcceptor::from(credential.server_config(authority.clone())?);
         let (tx, ready) = mpsc::channel(limits.max_handshakes);
         let deadline = Duration::from_secs(limits.handshake_timeout_s);
@@ -63,7 +81,9 @@ impl TlsListener {
                 // JoinSet length is the concurrency permit. A queued socket
                 // does not enter it until a completed handshake is reaped.
                 while running.len() < max_handshakes {
-                    let Some((tcp, peer)) = queue.pop_front() else { break };
+                    let Some((tcp, peer)) = queue.pop_front() else {
+                        break;
+                    };
                     let acceptor = acceptor.clone();
                     let authority = authority.clone();
                     let tx = tx.clone();
@@ -73,11 +93,23 @@ impl TlsListener {
                             let tls = acceptor.accept(tcp).await.map_err(|_| "protocol-or-key")?;
                             let conn = tls.get_ref().1;
                             let member = verified_member(
-                                &authority, conn.peer_certificates().unwrap_or(&[]), None,
-                            ).map_err(|_| "membership")?;
-                            let binding = mesh::tls::server_channel_binding(conn).map_err(|_| "exporter")?;
-                            Ok::<_, &'static str>((tls, TlsPeer { address: peer, member, binding }))
-                        }).await;
+                                &authority,
+                                conn.peer_certificates().unwrap_or(&[]),
+                                None,
+                            )
+                            .map_err(|_| "membership")?;
+                            let binding =
+                                mesh::tls::server_channel_binding(conn).map_err(|_| "exporter")?;
+                            Ok::<_, &'static str>((
+                                tls,
+                                TlsPeer {
+                                    address: peer,
+                                    member,
+                                    binding,
+                                },
+                            ))
+                        })
+                        .await;
                         match result {
                             Err(_) => refusals.record(peer, "timeout"),
                             Ok(Err(class)) => refusals.record(peer, class),
@@ -118,7 +150,9 @@ impl TlsListener {
     }
 }
 impl Drop for TlsListener {
-    fn drop(&mut self) { self.driver.abort(); }
+    fn drop(&mut self) {
+        self.driver.abort();
+    }
 }
 impl Listener for TlsListener {
     type Io = TlsStream<TcpStream>;
@@ -127,10 +161,16 @@ impl Listener for TlsListener {
         let (stream, peer) = self.ready.recv().await.expect("TLS driver stopped");
         (stream, Some(peer))
     }
-    fn local_addr(&self) -> std::io::Result<Self::Addr> { Ok(None) }
+    fn local_addr(&self) -> std::io::Result<Self::Addr> {
+        Ok(None)
+    }
 }
 impl Connected<IncomingStream<'_, TlsListener>> for TlsPeer {
     fn connect_info(stream: IncomingStream<'_, TlsListener>) -> Self {
-        stream.remote_addr().as_ref().expect("accepted TLS peer").clone()
+        stream
+            .remote_addr()
+            .as_ref()
+            .expect("accepted TLS peer")
+            .clone()
     }
 }
