@@ -311,23 +311,23 @@ async fn deliver_inner(
                 .rsplit_once('@')
                 .map(|(_, d)| d)
                 .unwrap_or("example.com");
-            let bytes = rejection_report(domain, delivery.from, delivery.to, reason);
             let result = async {
-                let reply_ms = ms.clone();
-                let hash = tokio::task::spawn_blocking(move || reply_ms.put_blob(&bytes)).await??;
-                store::queue_automatic_reply(
+                let Some(reservation) = store::reserve_automatic_reply(
                     db,
                     store::AutomaticReply {
                         account: delivery.account.id,
                         sender: delivery.from.into(),
                         handle: "guarded-reject".into(),
                         days: 1,
-                        hash,
                         verified_sender: reply_proof(&delivery),
                         guarded_only_suppression: true,
                     },
                 )
-                .await
+                .await? else { return Ok::<(), anyhow::Error>(()); };
+                let bytes = rejection_report(domain, delivery.from, delivery.to, reason);
+                let reply_ms = ms.clone();
+                let hash = tokio::task::spawn_blocking(move || reply_ms.put_blob(&bytes)).await??;
+                reservation.enqueue(db, hash).await
             }
             .await;
             if let Err(error) = result {
@@ -860,6 +860,17 @@ async fn vacation_reply(
     {
         return Ok(());
     }
+    let Some(reservation) = store::reserve_automatic_reply(
+        db,
+        store::AutomaticReply {
+            account: delivery.account.id,
+            sender: delivery.from.into(),
+            handle: vacation.handle.clone(),
+            days: vacation.days,
+            verified_sender: reply_proof(delivery),
+            guarded_only_suppression: false,
+        },
+    ).await? else { return Ok(()); };
     // subject() is MIME-decoded. The builder emits encoded words only when
     // necessary, so an encoded original cannot acquire a raw ASCII prefix.
     let default_subject = message
@@ -917,19 +928,7 @@ async fn vacation_reply(
     // identifies the account for the normal queue worker's DKIM selection.
     let ms = ms.clone();
     let hash = tokio::task::spawn_blocking(move || ms.mds().put_blob(&bytes)).await??;
-    store::queue_automatic_reply(
-        db,
-        store::AutomaticReply {
-            account: delivery.account.id,
-            sender: delivery.from.into(),
-            handle: vacation.handle.clone(),
-            days: vacation.days,
-            hash,
-            verified_sender: reply_proof(delivery),
-            guarded_only_suppression: false,
-        },
-    )
-    .await?;
+    reservation.enqueue(db, hash).await?;
     Ok(())
 }
 

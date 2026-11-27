@@ -58,8 +58,13 @@ strict (exact-domain) alignment to that envelope domain. A bare aggregate pass,
 HELO pass, unrelated signing domain or a supplied Authentication-Results header
 cannot authorize a reply. Authenticated local ingress remains trusted.
 Guarded reject DSNs are suppressed for one day per account/sender, independently
-of rejection text; vacation retains its interval. Proof, suppression, quota and
-queue insertion are atomic, so forged and repeated input consumes no send slots.
+of rejection text; vacation retains its interval. Proof, suppression and quota
+commit atomically **before generating or storing reply bytes**. Forged, repeated,
+off-list or over-quota replies create no reply blob or queue entry and consume no
+send slots. Building, blob storage and enqueue happen only after reservation;
+failure or a crash at that stage keeps the slot and suppression stamp, favouring
+under-sending over duplicates. Enqueue failure after a successful blob write can
+still leave an orphan, but cannot bypass the account's admission or quota.
 Set spf_policy to strict on the doorway's domain when it is local, and publish
 the corresponding SPF hard-fail policy.
 
@@ -75,6 +80,8 @@ The inbound Mix filter also receives:
 | `$REMOTE_IP` | Socket peer address |
 
 These facts are never taken from sender-supplied Authentication-Results.
+`$HEADER_FROM` joins all parsed From headers, including lists and groups; filters
+using exact matches must account for that, and its content remains untrusted.
 Local authentication is independent of SPF/DKIM/DMARC results. Bare SPF/DKIM
 pass is not mailbox authentication: it may authenticate an attacker's own domain.
 Do not treat an unbound pass as proof that a claimed doorway sent the message.
@@ -103,7 +110,9 @@ Authenticated submissions are exempt. Other domains and SPF results retain
 existing behaviour. All-token sessions preserve their immediate 250 unless a
 DNS-free policy lookup identifies an opted-in own strict domain. Only those
 sender identities undergo verification before the 250; recipient token validity
-does not influence this choice.
+does not influence this choice. This opt-in moves one verification's DNS and
+message-hashing work before the 250. Policy-store errors return temporary 451
+even on this path, rather than accepting mail without the opted-in check.
 
 SPF and REMOTE_IP assume direct socket exposure. There is no PROXY/XCLIENT
 support; putting a proxy in front would change the peer used for SPF.
@@ -122,7 +131,8 @@ The recipient glob `?` matches one byte, including in UTF-8 local parts.
 Rate limits count messages rather than recipient instances; duplicate RCPTs still
 cost one slot for a submission. Queue retries, including messages queued before
 guard deployment, are not re-admitted after a policy tightening. Operators must
-inspect/cancel already queued messages separately during incident response.
+inspect/cancel already queued messages separately during incident response;
+native queue inspection/cancellation tooling remains a follow-up.
 
 Remaining work: wider SPF enforcement and DMARC policy enforcement, including
 the existing DMARC result computation issue. Relay and the other doorway gaps

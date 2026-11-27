@@ -261,16 +261,17 @@ pub async fn reply_due(
     let sender = sender.to_ascii_lowercase();
     let handle = blake3::hash(handle.as_bytes()).to_hex().to_string();
     access(db, move |conn| {
-        // Advisory check avoids building a reply/blob for already-suppressed
-        // senders. queue_reply repeats it atomically with the queue insert.
+        // Advisory optimisation only; reserve_automatic_reply repeats this
+        // atomically with proof and quota before callers build any reply bytes.
         Ok(conn.query_row("SELECT NOT EXISTS(SELECT 1 FROM sieve_replies WHERE account_id=?1 AND sender=?2 AND handle=?3 AND sent_at>unixepoch()-?4) AND (EXISTS(SELECT 1 FROM sieve_replies WHERE account_id=?1 AND sender=?2 AND handle=?3) OR (SELECT count(*) FROM sieve_replies WHERE account_id=?1 AND sent_at>unixepoch()-31*86400)<?5)",params![account,sender,handle,i64::from(days.clamp(1,31))*86400,MAX_REPLY_STAMPS as i64],|r| r.get(0))?)
     }).await
 }
 
 pub const MAX_REPLY_STAMPS: usize = 10_000;
 
-/// Callers without authentication facts may use this compatibility API.
-/// Guarded accounts fail closed; SMTP supplies proof via queue_automatic_reply.
+/// Compatibility API for an already-existing blob, not for generated replies.
+/// Guarded accounts fail closed. New callers must reserve before building bytes.
+#[deprecated(note = "reserve_automatic_reply before generating/storing reply bytes")]
 pub async fn queue_reply(
     db: &Db,
     account: i32,
@@ -279,19 +280,20 @@ pub async fn queue_reply(
     days: u32,
     hash: mds::BlobHash,
 ) -> Result<bool> {
-    queue_automatic_reply(
+    let Some(reservation) = reserve_automatic_reply(
         db,
         AutomaticReply {
             account,
             sender: sender.into(),
             handle: handle.into(),
             days,
-            hash,
             verified_sender: false,
             guarded_only_suppression: false,
         },
     )
-    .await
+    .await? else { return Ok(false); };
+    reservation.enqueue(db, hash).await?;
+    Ok(true)
 }
 
 pub(crate) struct AutomaticReply {
@@ -299,20 +301,33 @@ pub(crate) struct AutomaticReply {
     pub sender: String,
     pub handle: String,
     pub days: u32,
-    pub hash: mds::BlobHash,
     pub verified_sender: bool,
     pub guarded_only_suppression: bool,
 }
 
-/// Proof check, suppression stamp, quota and queue insert share one transaction.
-/// Refusal rolls everything back: forged/repeated input consumes zero quota.
-pub(crate) async fn queue_automatic_reply(db: &Db, reply: AutomaticReply) -> Result<bool> {
+/// Successful admission must precede generating or storing any reply bytes.
+/// Proof, suppression stamp and quota commit together. Suppression creates no
+/// blob/stamp/slot. Subsequent build, blob or enqueue failures never refund the
+/// reservation or stamp (including a crash between admission and enqueue).
+pub(crate) struct ReservedReply {
+    account: i32,
+    recipient: String,
+}
+
+impl ReservedReply {
+    pub(crate) async fn enqueue(self, db: &Db, hash: mds::BlobHash) -> Result<()> {
+        let queue_id = crate::smtp::queue::enqueue(&db.conn, "", &[self.recipient], hash).await?;
+        tracing::info!(queue_id, account = self.account, "Automatic reply queued");
+        Ok(())
+    }
+}
+
+pub(crate) async fn reserve_automatic_reply(db: &Db, reply: AutomaticReply) -> Result<Option<ReservedReply>> {
     let AutomaticReply {
         account,
         sender,
         handle,
         days,
-        hash,
         verified_sender,
         guarded_only_suppression,
     } = reply;
@@ -324,25 +339,25 @@ pub(crate) async fn queue_automatic_reply(db: &Db, reply: AutomaticReply) -> Res
         let guarded = crate::submission_guard::guarded_on(&tx, account)?;
         if guarded && !verified_sender {
             tracing::warn!(account, "Automatic reply suppressed: unverified envelope sender");
-            return Ok(false);
+            return Ok(None);
         }
         if guarded || !guarded_only_suppression {
             tx.execute("DELETE FROM sieve_replies WHERE account_id=?1 AND sent_at<=unixepoch()-31*86400",[account])?;
             let known: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM sieve_replies WHERE account_id=?1 AND sender=?2 AND handle=?3)",params![account,sender,handle],|r|r.get(0))?;
             let count: i64 = tx.query_row("SELECT count(*) FROM sieve_replies WHERE account_id=?1",[account],|r|r.get(0))?;
-            if !known && count >= MAX_REPLY_STAMPS as i64 { return Ok(false); }
+            if !known && count >= MAX_REPLY_STAMPS as i64 { return Ok(None); }
             let due = tx.execute("INSERT INTO sieve_replies(account_id,sender,handle,sent_at) VALUES(?1,?2,?3,unixepoch()) ON CONFLICT(account_id,sender,handle) DO UPDATE SET sent_at=unixepoch() WHERE sent_at<=unixepoch()-?4",params![account,sender,handle,i64::from(days.clamp(1,31))*86400])? > 0;
-            if !due { return Ok(false); }
+            if !due { return Ok(None); }
         }
+        // SQLite unixepoch() and submission_guard's SystemTime both read the
+        // host's UTC wall clock; backwards jumps retain future reservations.
         let now: i64 = tx.query_row("SELECT unixepoch()", [], |r| r.get(0))?;
         if let Err(error) = crate::submission_guard::reserve_on(&tx, account, std::slice::from_ref(&recipient), now, 1) {
             tracing::warn!(account, %error, "Automatic reply suppressed by submission guard");
-            return Ok(false);
+            return Ok(None);
         }
-        let queue_id = crate::smtp::queue::enqueue_on(&tx, "", std::slice::from_ref(&recipient), hash)?;
         tx.commit()?;
-        tracing::info!(queue_id, account, "Automatic reply queued");
-        Ok(true)
+        Ok(Some(ReservedReply { account, recipient }))
     }).await
 }
 
@@ -366,11 +381,10 @@ mod automatic_reply_tests {
             sender: "mc@example.com".into(),
             handle: "guarded-reject".into(),
             days: 1,
-            hash,
             verified_sender,
             guarded_only_suppression: true,
         };
-        assert!(!queue_automatic_reply(&db, reply(false)).await?);
+        assert!(reserve_automatic_reply(&db, reply(false)).await?.is_none());
         {
             let conn = db.conn.lock().unwrap();
             assert_eq!(
@@ -389,7 +403,11 @@ mod automatic_reply_tests {
             let db = db.clone();
             let reply = reply(true);
             tasks.push(tokio::spawn(async move {
-                queue_automatic_reply(&db, reply).await
+                let Some(reservation) = reserve_automatic_reply(&db, reply).await? else {
+                    return Ok::<bool, anyhow::Error>(false);
+                };
+                reservation.enqueue(&db, hash).await?;
+                Ok(true)
             }));
         }
         let mut queued = 0;
@@ -397,12 +415,23 @@ mod automatic_reply_tests {
             queued += usize::from(task.await??);
         }
         assert_eq!(queued, 1);
+        // An admitted reply can fail while building/storing bytes, or enqueue
+        // can fail. Neither failure refunds its durable stamp or rate slot.
+        let mut abandoned = reply(true);
+        abandoned.handle = "failed-build".into();
+        drop(reserve_automatic_reply(&db, abandoned).await?.unwrap());
+        let mut failed = reply(true);
+        failed.handle = "failed-enqueue".into();
+        let reservation = reserve_automatic_reply(&db, failed).await?.unwrap();
+        db.conn.lock().unwrap().execute_batch("CREATE TRIGGER reject_reply BEFORE INSERT ON smtp_queue BEGIN SELECT RAISE(ABORT,'test enqueue failure'); END;")?;
+        assert!(reservation.enqueue(&db, hash).await.is_err());
         let conn = db.conn.lock().unwrap();
         assert_eq!(
             conn.query_row("SELECT count(*) FROM submission_rate", [], |r| r
                 .get::<_, i64>(0))?,
-            1
+            3
         );
+        assert_eq!(conn.query_row("SELECT count(*) FROM sieve_replies", [], |r| r.get::<_, i64>(0))?, 3);
         assert_eq!(
             conn.query_row("SELECT count(*) FROM smtp_queue", [], |r| r
                 .get::<_, i64>(0))?,

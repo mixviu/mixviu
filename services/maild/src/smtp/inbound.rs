@@ -836,6 +836,28 @@ pub async fn deliver(
                     Ok(true)
                 ))
         {
+            // Decide proof, suppression and quota before generating or storing
+            // reply bytes. Failures after reservation under-send, never refund.
+            let reservation = crate::sieve::store::reserve_automatic_reply(
+                &state.db,
+                crate::sieve::store::AutomaticReply {
+                    account: account.id,
+                    sender: mail_from.into(),
+                    handle: "guarded-legacy-vacation".into(),
+                    days: 1,
+                    verified_sender: ingress.is_local_auth()
+                        || reply_sender_verified(&verify_result, mail_from),
+                    guarded_only_suppression: true,
+                },
+            ).await;
+            let reservation = match reservation {
+                Ok(Some(reservation)) => reservation,
+                Ok(None) => continue,
+                Err(error) => {
+                    tracing::warn!(account = account.id, %error, "Legacy vacation admission failed; suppressing reply");
+                    continue;
+                }
+            };
             // Fixed fallback subject — the inbound Subject is attacker-
             // controlled and is NOT reflected (the pre-audit `Auto: {subject}`
             // made the responder a content-reflection vector). The account
@@ -896,21 +918,8 @@ pub async fn deliver(
             let put_outcome = tokio::task::spawn_blocking(move || mds.put_blob(&reply_data)).await;
             match put_outcome {
                 Ok(Ok(blob_hash)) => {
-                    let result = crate::sieve::store::queue_automatic_reply(
-                        &state.db,
-                        crate::sieve::store::AutomaticReply {
-                            account: account.id,
-                            sender: mail_from.into(),
-                            handle: "guarded-legacy-vacation".into(),
-                            days: 1,
-                            hash: blob_hash,
-                            verified_sender: ingress.is_local_auth()
-                                || reply_sender_verified(&verify_result, mail_from),
-                            guarded_only_suppression: true,
-                        },
-                    )
-                    .await;
-                    if !matches!(result, Ok(true)) {
+                    let result = reservation.enqueue(&state.db, blob_hash).await;
+                    if result.is_err() {
                         tracing::info!(
                             account = account.id,
                             ?result,
