@@ -65,12 +65,8 @@ fn black_vfl_still_black_decoded_frame_hashes() {
         "RENDER_WEBM_SHA256 {}",
         String::from_utf8_lossy(&hash.stdout)
     );
-    assert_eq!(
-        String::from_utf8_lossy(&hash.stdout)
-            .split_whitespace()
-            .next(),
-        Some("a8e1a7067438aef5fbd4b2e10a23aa653ba924f3ac61e5e8ac3f7a930f610381")
-    );
+    // The WebM digest includes lossy video and audio encoder output. The
+    // decoded-frame relationships below are this fixture's portable oracle.
     assert_eq!(receipt["frames_out"], 120);
     assert_eq!(receipt["stages"]["video"]["codec_passes_per_chunk"], 1);
     assert_eq!(
