@@ -332,14 +332,18 @@ pub fn from_namespace_rows(
             // operator-repairable but the directory doesn't
             // register a vhost whose every request would 5xx.
             let www_dir = PathBuf::from(&row.www_dir);
-            if crate::static_site::validate(
+            if let Err(reason) = crate::static_site::validate(
                 &row.fqdn,
                 &row.aliases,
                 row.redirect.as_deref(),
                 &row.headers,
             )
-            .is_err()
             {
+                tracing::error!(
+                    target: "webd::vhost_directory",
+                    fqdn = %row.fqdn, source = ?row.source, reason = %reason,
+                    "invalid bus_runtime static-site policy; skipping from VhostDirectory; namespace row preserved",
+                );
                 continue;
             }
             if row.redirect.is_none() && !www_dir.is_dir() {

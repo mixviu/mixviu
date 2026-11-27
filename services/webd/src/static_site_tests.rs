@@ -1,6 +1,34 @@
 use std::collections::BTreeMap;
 
 #[tokio::test]
+async fn static_site_redirect_options_asterisk_uses_root() {
+    let td = TempDir::new().unwrap();
+    let node = static_site_node(&td, Some("https://example.com"));
+    for app in [build_router(node.clone()), build_http_redirect_router(node)] {
+        let request = axum::http::Request::builder().method("OPTIONS").uri("*")
+            .header("host", "site-a.example").body(Body::empty()).unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
+        assert_eq!(response.headers()["location"], "https://example.com/");
+    }
+}
+
+#[test]
+fn static_site_vary_tokens_are_case_insensitive_and_unique() {
+    let mut headers = HeaderMap::new();
+    headers.append("vary", "Origin, Accept-Encoding".parse().unwrap());
+    let defaults = static_site::headers(&BTreeMap::from([
+        ("vary".into(), "ACCEPT-ENCODING, Accept-Language".into())
+    ])).unwrap();
+    static_site::apply(&mut headers, &defaults);
+    static_site::ensure_vary(&mut headers, "accept-encoding");
+    assert_eq!(headers.get_all("vary").iter()
+        .flat_map(|v| v.to_str().unwrap().split(','))
+        .filter(|v| v.trim().eq_ignore_ascii_case("accept-encoding")).count(), 1);
+    assert!(headers.get_all("vary").iter().any(|v| v == "Accept-Language"));
+}
+
+#[tokio::test]
 async fn static_site_config_bootstrap_directory_and_routes_roundtrip() {
     let td = TempDir::new().unwrap();
     let config: config::node::WebdConfig = config::from_conf_mix_str(r#"
@@ -68,7 +96,7 @@ async fn static_site_plain_listener_remains_http1() {
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
         let (stream, peer_addr) = listener.accept().await.unwrap();
-        WebdConnHandler { app }
+        WebdConnHandler { app, http2: false }
             .handle(
                 AcceptedStream::Tcp(stream),
                 ConnCtx {
@@ -229,8 +257,8 @@ async fn static_site_encoding_headers_ranges_and_revalidation() {
     let app = build_router(node);
     for (accept, encoding, expected) in [
         ("br", Some("br"), &b"brotli-css"[..]),
-        ("gzip", Some("gzip"), &b"gzip-css"[..]),
         ("identity", None, &b"plain-css"[..]),
+        ("gzip", Some("gzip"), &b"gzip-css"[..]),
         ("br;q=0, gzip;q=0", None, &b"plain-css"[..]),
     ] {
         let mut request = req("site-a.example", "/probe.css");
@@ -246,13 +274,9 @@ async fn static_site_encoding_headers_ranges_and_revalidation() {
                 .map(|v| v.to_str().unwrap()),
             encoding
         );
-        assert!(
-            response
-                .headers()
-                .get_all("vary")
-                .iter()
-                .any(|v| v.to_str().unwrap().contains("accept-encoding"))
-        );
+        assert_eq!(response.headers().get_all("vary").iter()
+            .flat_map(|v| v.to_str().unwrap().split(','))
+            .filter(|v| v.trim().eq_ignore_ascii_case("accept-encoding")).count(), 1);
         assert_eq!(
             response.headers()["content-security-policy"],
             "default-src 'self'"
@@ -413,6 +437,8 @@ async fn static_site_tls_alpn_serves_h2_and_http1() {
         .route(
             "/jmap",
             axum::routing::post(|headers: HeaderMap| async move {
+                assert_eq!(headers.get_all("x-forwarded-host").iter().count(), 1);
+                assert!(!headers.contains_key("forwarded"));
                 format!(
                     "{}|{}",
                     headers["host"].to_str().unwrap(),
@@ -479,9 +505,13 @@ async fn static_site_tls_alpn_serves_h2_and_http1() {
         ])));
     let app = build_router(node);
     let task = tokio::spawn(async move {
-        for protocol in [&b"h2"[..], &b"http/1.1"[..]] {
+        for (index, protocol) in [&b"h2"[..], &b"http/1.1"[..], &b"http/1.1"[..], &b"http/1.1"[..]].into_iter().enumerate() {
             let (stream, peer_addr) = listener.accept().await.unwrap();
-            let stream = tokio_rustls::TlsAcceptor::from(server_config.clone())
+            let mut accepting_config = (*server_config).clone();
+            if index == 3 {
+                accepting_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+            }
+            let stream = tokio_rustls::TlsAcceptor::from(Arc::new(accepting_config))
                 .accept(stream)
                 .await
                 .unwrap();
@@ -489,7 +519,7 @@ async fn static_site_tls_alpn_serves_h2_and_http1() {
             let app = app.clone();
             let tls = tls.clone();
             tokio::spawn(async move {
-                WebdConnHandler { app }
+                WebdConnHandler { app, http2: index != 3 }
                     .handle(
                         AcceptedStream::Tls(Box::new(stream)),
                         ConnCtx {
@@ -537,6 +567,8 @@ async fn static_site_tls_alpn_serves_h2_and_http1() {
         let request = axum::http::Request::builder()
             .method(method)
             .uri(format!("https://site-a.example{path}"))
+            .header("x-forwarded-host", "forged.example")
+            .header("forwarded", "host=forged.example")
             .body(http_body_util::Empty::<axum::body::Bytes>::new())
             .unwrap();
         let response = client.send_request(request).await.unwrap();
@@ -568,12 +600,27 @@ async fn static_site_tls_alpn_serves_h2_and_http1() {
         .unwrap();
     let response = client.send_request(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    client_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+    let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let stream = tokio_rustls::TlsConnector::from(Arc::new(client_config.clone()))
+        .connect("site-a.example".try_into().unwrap(), stream).await.unwrap();
+    let (mut h1, connection) = hyper::client::conn::http1::handshake(hyper_util::rt::TokioIo::new(stream)).await.unwrap();
+    let h1_driver = tokio::spawn(connection);
+    let request = axum::http::Request::builder().method("POST").uri("/jmap")
+        .header("host", "site-a.example").header("x-forwarded-host", "forged.example")
+        .header("forwarded", "host=forged.example")
+        .body(http_body_util::Empty::<axum::body::Bytes>::new()).unwrap();
+    let response = h1.send_request(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), format!("{mail_addr}|site-a.example"));
+    drop(h1);
+    h1_driver.abort();
     mail_task.abort();
     // No RFC 8441: a WebSocket uses its own HTTP/1.1 TLS connection,
     // while the same listener also serves h2.
     client_config.alpn_protocols = vec![b"http/1.1".to_vec()];
     let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
-    let stream = tokio_rustls::TlsConnector::from(Arc::new(client_config))
+    let stream = tokio_rustls::TlsConnector::from(Arc::new(client_config.clone()))
         .connect("site-a.example".try_into().unwrap(), stream)
         .await
         .unwrap();
@@ -596,6 +643,17 @@ async fn static_site_tls_alpn_serves_h2_and_http1() {
         .unwrap();
     assert_eq!(message.into_text().unwrap(), "roundtrip");
     echo.await.unwrap();
+    // A listener configured http2=false refuses a prior-knowledge preface,
+    // even after a successful HTTP/1.1 ALPN handshake.
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let mut stream = tokio_rustls::TlsConnector::from(Arc::new(client_config))
+        .connect("site-a.example".try_into().unwrap(), stream).await.unwrap();
+    assert_eq!(stream.get_ref().1.alpn_protocol(), Some(&b"http/1.1"[..]));
+    stream.write_all(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").await.unwrap();
+    let mut refused = Vec::new();
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), stream.read_to_end(&mut refused)).await.unwrap();
+    assert!(refused.is_empty() || refused.starts_with(b"HTTP/1.1 400"), "{refused:?}");
     task.await.unwrap();
     drop(client);
     driver.abort();

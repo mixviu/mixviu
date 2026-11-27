@@ -695,6 +695,7 @@ mod dev_session_gate_tests {
 /// surfaces under one handler makes the behaviour consistent.
 struct WebdConnHandler {
     app: Router,
+    http2: bool,
 }
 
 #[async_trait::async_trait]
@@ -706,8 +707,17 @@ impl ConnHandler for WebdConnHandler {
         };
         let svc =
             hyper_util::service::TowerToHyperService::new(self.app.clone().layer(Extension(peer)));
-        let builder =
+        let mut builder =
             hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
+        if self.http2 {
+            builder.http2()
+                .max_concurrent_streams(100)
+                .max_header_list_size(64 * 1024)
+                .max_pending_accept_reset_streams(100)
+                .timer(hyper_util::rt::TokioTimer::new())
+                .keep_alive_interval(std::time::Duration::from_secs(30))
+                .keep_alive_timeout(std::time::Duration::from_secs(10));
+        }
         match stream {
             AcceptedStream::Tcp(s) => {
                 let builder = builder.http1_only();
@@ -715,6 +725,12 @@ impl ConnHandler for WebdConnHandler {
                 let _ = builder.serve_connection_with_upgrades(io, svc).await;
             }
             AcceptedStream::Tls(s) => {
+                // ALPN alone does not constrain auto's preface detection.
+                let builder = if self.http2 && s.get_ref().1.alpn_protocol() == Some(b"h2") {
+                    builder
+                } else {
+                    builder.http1_only()
+                };
                 let io = hyper_util::rt::TokioIo::new(*s);
                 let _ = builder.serve_connection_with_upgrades(io, svc).await;
             }
@@ -4514,11 +4530,8 @@ async fn serve_static(
             );
             // Vary even for identity and 304 responses: intermediaries must
             // negotiate each representation rather than reuse compressed bytes.
-            resp.headers_mut().append(
-                axum::http::header::VARY,
-                axum::http::HeaderValue::from_static("accept-encoding"),
-            );
             static_site::apply(resp.headers_mut(), &vhost.headers);
+            static_site::ensure_vary(resp.headers_mut(), "accept-encoding");
             resp.into_response()
         }
         Err(infallible) => match infallible {},
@@ -8405,6 +8418,9 @@ async fn async_main() -> Result<()> {
                 };
                 let handler = Arc::new(WebdConnHandler {
                     app: app_for_listener,
+                    http2: node_cfg.as_ref().is_some_and(|c| {
+                        c.webd.listener.iter().any(|row| row.id == l.id && row.http2)
+                    }),
                 });
                 // Decided after runtime-cert adoption: a runtime-only
                 // listener whose certs were adopted terminates TLS; one

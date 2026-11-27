@@ -99,6 +99,15 @@ ALPN, so adoption is opt-in. Plain listeners remain HTTP/1.1. Extended CONNECT
 is disabled; WebSockets use a separate HTTP/1.1 connection. Certificate renewal
 retains the listener's ALPN policy.
 
+The connection handler also enforces the listener opt-in: TLS accepts h2 only
+when `http2: true` and ALPN negotiated h2. A prior-knowledge h2 preface after
+HTTP/1.1 (or no ALPN) is refused. Opted-in connections allow 100 concurrent
+streams, a 64 KiB decoded header list and 100 pending accept-reset streams.
+These bounds accommodate ordinary browser/JMAP traffic while limiting work
+from a single public connection. A 30-second keep-alive ping interval with a
+10-second timeout detects stalled peers without frequent pings. Extended
+CONNECT remains disabled.
+
 Before routing an h2 request, webd copies `:authority` to `Host`. If both
 are supplied they must agree (case-insensitive, including the port); duplicate
 Host fields are refused. This gives JMAP forwarding metadata, Mix `$HOST` and

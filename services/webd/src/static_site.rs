@@ -66,17 +66,28 @@ pub(crate) fn validate(
 pub(crate) fn apply(response: &mut HeaderMap, defaults: &HeaderMap) {
     for (name, value) in defaults {
         if name == axum::http::header::VARY {
-            response.append(name, value.clone());
+            for token in value.to_str().unwrap_or("").split(',').map(str::trim).filter(|s| !s.is_empty()) {
+                ensure_vary(response, token);
+            }
         } else if !response.contains_key(name) {
             response.insert(name, value.clone());
         }
     }
 }
 
+pub(crate) fn ensure_vary(headers: &mut HeaderMap, token: &str) {
+    let present = headers.get_all(axum::http::header::VARY).iter().any(|value| {
+        value.to_str().is_ok_and(|value| value.split(',').any(|item| item.trim().eq_ignore_ascii_case(token)))
+    });
+    if !present && let Ok(value) = HeaderValue::from_str(token) {
+        headers.append(axum::http::header::VARY, value);
+    }
+}
+
 pub(crate) fn redirect(target: &str, uri: &Uri, defaults: &HeaderMap) -> Response {
     let location = format!(
         "{target}{}",
-        uri.path_and_query().map_or("/", |p| p.as_str())
+        uri.path_and_query().map(|p| p.as_str()).filter(|p| p.starts_with('/')).unwrap_or("/")
     );
     let mut response = (
         StatusCode::PERMANENT_REDIRECT,
