@@ -165,7 +165,9 @@ pub struct Config {
     /// and should `return` a mailbox name (e.g. "Inbox", "Work").
     /// Also exposes $AUTH (local-auth/external), $AUTH_USER (session identity,
     /// empty for external), $SPF, $DKIM, $DMARC (lowercase computed results),
-    /// and $REMOTE_IP (socket peer, never a supplied header).
+    /// and $REMOTE_IP (socket peer, never a supplied header; direct socket exposure required).
+    /// $DMARC currently has a known computation issue: none may mean fail.
+    /// Do not use it as a security guard until the DMARC result defect is fixed.
     /// Return "junk-if-missing:Folder" to route to Junk if Folder is absent;
     /// a plain folder name retains the historical Inbox fallback.
     pub inbound_filter: Option<String>,

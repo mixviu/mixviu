@@ -3,7 +3,9 @@
 The `maild.accounts` properties `allowed_recipients` and `send_rate` apply
 to JMAP EmailSubmission, native Bus submission and SMTP-AUTH submission.
 Set them through `maild.props.set` with namespace `accounts`, the account
-email as key, `merge: patch` and the current `if_version`.
+email as key, `merge: patch` and the current `if_version`. A full Replace
+resets omitted guards to unrestricted defaults: password/config automation must
+use Patch or explicitly retain both guard fields.
 
 - `allowed_recipients: null` (or unset) permits any envelope recipient.
   A list contains anchored, ASCII case-insensitive globs: `*` matches any
@@ -15,19 +17,27 @@ For example, patch an enclave account with
 `{"allowed_recipients":["mc@example.com"],"send_rate":20}`.
 All envelope recipients must pass before any local delivery or queue write.
 JMAP's automatic envelope includes To, Cc and Bcc; delivery copies omit the
-Bcc header. An explicit JMAP envelope supplies the delivery recipients.
+Bcc and Resent-Bcc headers. An explicit JMAP envelope supplies its complete
+rcptTo list to admission. SMTP submission retains its existing header handling.
 
 Rate reservations are atomic and persisted in SQLite, shared by all submission
 paths. A rejected recipient list consumes no reservation. A later delivery
 failure or client resubmission does consume one; reservations are not refunded
 after crashes. Queue retries continue the admitted submission without another
 reservation. Entries expire exactly 3600 seconds after admission; a backwards
-clock retains future reservations.
+clock retains future reservations. A forward wall-clock jump can expire them early.
+Unlimited accounts also reserve, preserving the window if a cap is enabled later.
 
 Recipient refusals return SMTP `550 5.7.1 recipientNotAllowed` or JMAP
 `notCreated` with type `forbiddenToSend`. Rate refusals return SMTP
 `451 4.7.0 sendRateExceeded` or JMAP type `tooManyRequests`.
-Storage failures refuse admission.
+Storage failures refuse admission (JMAP `serverFail` for internal/storage errors).
+
+Account-authored vacation (Sieve and legacy), rejection DSNs and operator-enabled
+remote Sieve redirects use the same account recipient/rate admission. Denied
+automatic replies are dropped and logged; denied redirect plans keep the original
+message. External redirect configuration never overrides account guards. Aliases
+remain local-only. Server-generated transport failure reports are separate.
 
 The inbound Mix filter also receives:
 
@@ -37,7 +47,7 @@ The inbound Mix filter also receives:
 | `$AUTH_USER` | Authenticated account email; empty for external mail |
 | `$SPF` | Computed SPF result, lowercase |
 | `$DKIM` | Computed aggregate DKIM result, lowercase |
-| `$DMARC` | Computed DMARC result: pass, fail or none |
+| `$DMARC` | Computed pass, fail or none; known computation defect can report none instead of fail, so it is not a reliable guard until fixed |
 | `$REMOTE_IP` | Socket peer address |
 
 These facts are never taken from sender-supplied Authentication-Results.
@@ -59,10 +69,20 @@ Sieve local redirects. Filter execution errors retain the existing behaviour.
 JMAP local delivery still runs recipient Sieve rather than the global filter.
 
 Unauthenticated SMTP mail is refused with `550 5.7.1 ownDomainSpfFail`
-when SPF is `fail` and either the envelope sender or any parsed header From
-address claims an enabled authoritative domain with `spf_policy: strict`.
+when the failing SPF identity belongs to the same strict own domain: MAIL FROM
+for a nonempty reverse path, or HELO for an empty one. The verifier's failed
+domain must match that identity. This is exact-domain only; subdomains do not
+inherit the policy. Header From alignment is DMARC work and is not checked by G3.
 Authenticated submissions are exempt. Other domains and SPF results retain
-existing behaviour.
+existing behaviour. All-token sessions preserve their immediate 250 unless a
+DNS-free policy lookup identifies an opted-in own strict domain. Only those
+sender identities undergo verification before the 250; recipient token validity
+does not influence this choice.
+
+SPF and REMOTE_IP assume direct socket exposure. There is no PROXY/XCLIENT
+support; putting a proxy in front would change the peer used for SPF.
+Deleting Junk while using fail-closed routing can produce delivery failures and
+backscatter to forged senders. Keep the quarantine and Junk folders provisioned.
 
 Remaining work: wider SPF enforcement and DMARC policy enforcement, including
 the existing DMARC result computation issue. Relay and the other doorway gaps

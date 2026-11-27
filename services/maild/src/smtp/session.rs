@@ -415,8 +415,8 @@ where
                 // (see token_spf_preflight), we write 250 immediately: no resolve/delivery
                 // work and NO permit await before it (either re-introduces a
                 // load-dependent timing channel) — then dispatch on a bounded,
-                // SHED-on-overflow background task. The token namespace never
-                // returns 451/552 from delivery; an oversize message is 250+dropped.
+                // SHED-on-overflow background task. Non-opted-in token senders
+                // never get 451/552 from delivery; oversize is 250+dropped.
                 // (Mixed/normal recipients keep the synchronous path below.)
                 // Flag-aware: when the pre-flight disabled opaque acceptance,
                 // an opaque-shaped recipient is a NORMAL mailbox and must take the
@@ -430,15 +430,24 @@ where
                         .all(|r| crate::vtoken::is_active_token_shaped(r, opaque_enabled));
                 if all_token_shaped && !ingress.is_local_auth() {
                     let result = super::inbound::token_spf_preflight(
-                        &session.state.domains_runtime, &ingress,
+                        &session.state.domains_runtime,
+                        &ingress,
                         session.mail_from.as_deref().unwrap_or(""),
                         session.ehlo_host.as_deref().unwrap_or("unknown"),
-                        || async { Ok(session.state.mail_auth.verify(
-                            session.peer.ip(),
-                            session.mail_from.as_deref().unwrap_or(""),
-                            session.ehlo_host.as_deref().unwrap_or("unknown"),
-                            &data_buf,
-                        ).await?) }).await;
+                        || async {
+                            Ok(session
+                                .state
+                                .mail_auth
+                                .verify(
+                                    session.peer.ip(),
+                                    session.mail_from.as_deref().unwrap_or(""),
+                                    session.ehlo_host.as_deref().unwrap_or("unknown"),
+                                    &data_buf,
+                                )
+                                .await?)
+                        },
+                    )
+                    .await;
                     if let Err(error) = result {
                         let reply = if error.is::<crate::sieve::delivery::Rejected>() {
                             "550 5.7.1 ownDomainSpfFail"

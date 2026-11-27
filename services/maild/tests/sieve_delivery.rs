@@ -120,15 +120,19 @@ const MESSAGE: &[u8] = b"From: sender@example.org\r\nTo: bob@example.com\r\nSubj
 
 #[tokio::test]
 async fn doorway_generated_replies_and_remote_redirects_obey_account_guards() -> Result<()> {
+    assert!(maild::sieve::compile(r#"require "enotify"; notify "mailto:outside@example.org";"#).is_err());
     let f = Fixture::new().await?;
     f.db.conn.lock().unwrap().execute(
         "UPDATE accounts SET allowed_recipients='[\"mc@example.com\"]',send_rate=1 WHERE id=?1",
-        [f.account.id])?;
-    f.script(r#"require "vacation"; vacation "Account-authored reply";"#).await?;
+        [f.account.id],
+    )?;
+    f.script(r#"require "vacation"; vacation "Account-authored reply";"#)
+        .await?;
     f.deliver(MESSAGE, true, false).await?;
     assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
     assert_eq!(f.count("Inbox"), 1);
-    f.script(r#"require "reject"; reject "Account-authored rejection";"#).await?;
+    f.script(r#"require "reject"; reject "Account-authored rejection";"#)
+        .await?;
     f.deliver(MESSAGE, true, false).await?;
     assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
     // Even operator-enabled external redirects cannot bypass account guards.
@@ -138,7 +142,8 @@ async fn doorway_generated_replies_and_remote_redirects_obey_account_guards() ->
     assert_eq!(f.count("Inbox"), 2);
     f.db.conn.lock().unwrap().execute(
         "UPDATE accounts SET allowed_recipients='[\"sender@example.org\",\"remote@example.net\"]' WHERE id=?1", [f.account.id])?;
-    f.script(r#"require "vacation"; vacation "Allowed";"#).await?;
+    f.script(r#"require "vacation"; vacation "Allowed";"#)
+        .await?;
     f.deliver(MESSAGE, true, false).await?;
     assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 1);
     // A different generated-message mechanism shares that same quota.

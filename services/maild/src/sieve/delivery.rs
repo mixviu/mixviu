@@ -303,7 +303,13 @@ async fn deliver_inner(
                 .map(|(_, d)| d)
                 .unwrap_or("example.com");
             let bytes = rejection_report(domain, delivery.from, delivery.to, reason);
-            if crate::submission_guard::generated_allowed(db, delivery.account.id, &[delivery.from.to_string()]).await {
+            if crate::submission_guard::generated_allowed(
+                db,
+                delivery.account.id,
+                &[delivery.from.to_string()],
+            )
+            .await
+            {
                 enqueue(db, ms, "", delivery.from, &bytes).await?;
             }
         } else {
@@ -595,8 +601,14 @@ async fn validate(
             );
         }
     }
-    let remote: Vec<String> = redirects.iter().filter(|(_, local)| local.is_none()).map(|(target, _)| target.clone()).collect();
-    if !remote.is_empty() && !crate::submission_guard::generated_allowed(db, delivery.account.id, &remote).await {
+    let remote: Vec<String> = redirects
+        .iter()
+        .filter(|(_, local)| local.is_none())
+        .map(|(target, _)| target.clone())
+        .collect();
+    if !remote.is_empty()
+        && !crate::submission_guard::generated_allowed(db, delivery.account.id, &remote).await
+    {
         anyhow::bail!("account submission guard refused remote redirects");
     }
     Ok(redirects)
@@ -881,7 +893,15 @@ async fn vacation_reply(
         }
         bytes = mime_reply;
     }
-    if !crate::submission_guard::generated_allowed(db, delivery.account.id, &[delivery.from.to_string()]).await { return Ok(()); }
+    if !crate::submission_guard::generated_allowed(
+        db,
+        delivery.account.id,
+        &[delivery.from.to_string()],
+    )
+    .await
+    {
+        return Ok(());
+    }
     // Null reverse path prevents replies to this automatic response; From
     // identifies the account for the normal queue worker's DKIM selection.
     let ms = ms.clone();
