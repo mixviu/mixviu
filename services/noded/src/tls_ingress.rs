@@ -14,11 +14,22 @@ use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tokio_rustls::{TlsAcceptor, server::TlsStream};
 
+fn validate_shared_limits(limits: &config::node::NodedTls) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        limits.per_source_rate > 0
+            && limits.per_source_burst > 0
+            && limits.max_sessions_per_member > 0,
+        "TLS rate, burst and session cap must be positive"
+    );
+    Ok(())
+}
+
 pub(crate) fn prepare(
     posture: &crate::authority::Posture,
     node: &str,
     settings: &config::node::NodedTls,
 ) -> anyhow::Result<mesh::TlsRuntime> {
+    validate_shared_limits(settings)?;
     let crate::authority::Posture::Verified(a) = posture else {
         anyhow::bail!("TLS requires a verified accepted inventory");
     };
@@ -73,12 +84,7 @@ impl TlsListener {
             limits.max_handshakes > 0,
             "TLS max_handshakes must be positive"
         );
-        anyhow::ensure!(
-            limits.per_source_rate > 0
-                && limits.per_source_burst > 0
-                && limits.max_sessions_per_member > 0,
-            "TLS rate, burst and session cap must be positive"
-        );
+        validate_shared_limits(limits)?;
         let acceptor = TlsAcceptor::from(
             runtime
                 .credential
