@@ -1,0 +1,47 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Mixed roster and native layout fixtures only; no SSH or broker.
+$t = require("../_lib/targets.mix")
+$p = require("../_lib/desk_prepare.mix")
+$w = require("../_lib/desk_worker.mix")
+fn check($ok,$message)
+  if not $ok then raise("ENVIRONMENT_TEST",$message) end
+end
+$settings = {
+  legacy:{mix_bin:"/srv/legacy/bin/mix",legacy_defaults:true,roots:{prefix:"/srv/legacy",etc:"/etc/example",var:"/var/lib/example"}},
+  gold:{mix_bin:"/opt/mix/bin/mix",roots:{prefix:"/opt/mix",etc:"/opt/mix/etc",var:"/opt/mix/var"}},
+  desk:{mix_bin:"/opt/mix/bin/mix",legacy_defaults:true,roots:{prefix:"/opt/mix",etc:"/opt/mix/etc",var:"/opt/mix/var"}}
+}
+$deployment = {node_settings:fn($node)=$settings[$node],remote_mix:fn($node)=$settings[$node].mix_bin,
+  remote_roots:fn($node,$host)=$settings[$node].roots,checked_roots:fn($roots,$node)=$roots}
+$targets = $t.parse_targets({schema_version:1,project:"example",targets:[
+  {node:"legacy",host:"legacy",kind:"system"},{node:"gold",host:"gold",kind:"system"},
+  {node:"desk",host:"host",kind:"desk",transport:"pct",ct:123,session:5,account:"desktop",profile:"/opt/mix/var/lib/example/desk-bus",admission:"enforce"}
+]}).targets
+for $target in $targets
+  $native = $t.node_native($target,$deployment)
+  $prefix = if $target.node=="legacy" then "EXAMPLE" else "MIX" end
+  check($native.environment_prefix==$prefix,"mixed roster prefix differs")
+  $job = $t.stdin_job($target,"print(1)",{},"admin",$native.mix_bin,$native)
+  if $target.kind=="system" then
+    check($target.unit=="noded.service","system unit changed")
+    check($job.env[$prefix .. "_ETC"]==$settings[$target.node].roots.etc,"system job ignored native etc")
+    check($job.env[$prefix .. "_VAR"]==$settings[$target.node].roots.var,"system job ignored native var")
+    check($job.env[$prefix .. "_NODE_CONFIG"]==$settings[$target.node].roots.etc .. "/node.conf.mix","system node config differs")
+    check($job.env[$prefix .. "_NODED_URL"]=="","system broker override not cleared")
+    check(not has_key($job.env,if $prefix=="MIX" then "EXAMPLE_ETC" else "MIX_ETC" end),"other node prefix leaked into system job")
+  else
+    $text = $p.service_text($target,$native)
+    check(starts_with($text,"MIX_ETC=" .. $target.etc) and not contains($text,"EXAMPLE_"),"pct service used artifact namespace")
+    check(contains($job.stdin,"MIX_NODE_CONFIG") and not contains($job.stdin,"EXAMPLE_NODE_CONFIG"),"pct job used artifact namespace")
+    $props = $w.parse_unit_properties(read_file(dirname(realpath($0)) .. "/fixtures/pct-unit-show.txt"),"pct")
+    $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$props,$text,$native)
+    $refused = false
+    try
+      $w.validate_service($target,1000,{present:true,uid:0,gid:1000,perm:0o640},$props,replace($text,"MIX_","EXAMPLE_"),$native)
+    catch $message,$detail
+      $refused = $detail.code=="DESK_DISTRIBUTOR" and $message=="service environment differs from target plan"
+    end
+    check($refused,"old-prefix service environment accepted")
+  end
+end
+print("PASS mixed legacy/gold/pct native environment prefixes, system roots/unit and old-prefix service refusal")

@@ -111,7 +111,7 @@ if is_file($path) then
 else
   print("__ABSENT__")
 end
-', {mix_bin:$d.remote_mix($node),bindings:{path:$path}})
+', {mix_bin:$d.remote_mix($node),env:$d.node_environment($node),bindings:{path:$path}})
   if not $r["ok"] then
     $why = trim($r["stderr"])
     if $why == "" then
@@ -152,7 +152,7 @@ catch $err
   print("ERROR: create-only anchor install refused: " .. $err)
   exit(1)
 end
-', {mix_bin:$d.remote_mix($node),bindings: {path:$d.remote_roots($node).etc .. "/noded/genesis.pub",pub: $pub, token: uuid()}})
+', {mix_bin:$d.remote_mix($node),env:$d.node_environment($node),bindings: {path:$d.remote_roots($node).etc .. "/noded/genesis.pub",pub: $pub, token: uuid()}})
       $d.die_if(not $created["ok"] or not contains($created["stdout"], "MESH_GENESIS_CREATED"),
         "creating genesis anchor on " .. $node ..
         " (it may have appeared concurrently; create-only refuses replacement): " ..
@@ -201,7 +201,7 @@ if read_file($dst) != $bytes then
   fail("installed bytes do not read back byte-identically: " .. $dst)
 end
 print("MESH_INSTALL_OK " .. $token .. " " .. $dst)
-', {mix_bin:$d.remote_mix($node),bindings: {
+', {mix_bin:$d.remote_mix($node),env:$d.node_environment($node),bindings: {
     dst: $dst,
     bytes: $bytes,
     owner_group: $owner_group,
@@ -227,7 +227,7 @@ mkdir($state, {parents: true})
 chmod($etc, "0755")
 chmod($state, "0755")
 print("MESH_DIRS_OK " .. $token)
-', {mix_bin:$d.remote_mix($node),bindings: {etc:$d.remote_roots($node).etc .. "/noded",state:$d.remote_roots($node).var .. "/noded",token: uuid()}})
+', {mix_bin:$d.remote_mix($node),env:$d.node_environment($node),bindings: {etc:$d.remote_roots($node).etc .. "/noded",state:$d.remote_roots($node).var .. "/noded",token: uuid()}})
   $d.die_if(not $r["ok"] or not contains($r["stdout"], "MESH_DIRS_OK"),
     "mkdir on " .. $node .. ": " .. trim($r["stdout"]) .. " " .. trim($r["stderr"]))
 end
@@ -247,7 +247,7 @@ fn restart_noded($node, $is_local)
       "restart " .. $d.unit_name("noded") .. " (local): " .. trim($r["stderr"]))
     return nil
   end
-  $r = ssh_mix($node, 'run_argv_must(["systemctl","restart",$unit])', {mix_bin:$d.remote_mix($node),bindings:{unit:$d.unit_name("noded")}})
+  $r = ssh_mix($node, 'run_argv_must(["systemctl","restart",$unit])', {mix_bin:$d.remote_mix($node),env:$d.node_environment($node),bindings:{unit:$d.unit_name("noded")}})
   $d.die_if(not $r["ok"],
     "restart " .. $d.unit_name("noded") .. " on " .. $node .. ": " .. trim($r["stdout"]) .. " " .. trim($r["stderr"]))
 end
@@ -274,7 +274,7 @@ fn verify_node($node, $is_local, $epoch, $hash, $is_new)
       end
     end
     if $on_target then
-      $remote = ssh_mix($node, $verify_policy.probe("noded", $epoch, $hash), {mix_bin:$d.remote_mix($node), timeout: 30})
+      $remote = ssh_mix($node, $verify_policy.probe("noded", $epoch, $hash), {mix_bin:$d.remote_mix($node),env:$d.node_environment($node), timeout: 30})
       $ok = $remote.ok and trim($remote.stdout) == "MESH_VERIFY_OK"
     end
     if $ok then
@@ -461,7 +461,7 @@ $endpoint_mesh = $planned
 $endpoint_mesh.members = []
 for $member in $planned.members
   if has_key($DESKS,$member.name) and contains($bus_active,$member.name) then
-    $base = $desk.request($DESKS[$member.name],$planned,$DESK_GENESIS,$d.remote_mix($member.name),$d.remote_roots($member.name,$DESKS[$member.name].host).prefix)
+    $base = $desk.request($DESKS[$member.name],$planned,$DESK_GENESIS,$d.remote_mix($member.name),$desk.node_prefix($DESKS[$member.name],$d),$d.node_settings($member.name).legacy_defaults == true)
     if $dry then
       $DESK_BASE[$member.name] = $base
       continue
@@ -636,10 +636,10 @@ for each $node in $order
     $d.die_if(not is_file($roster_file), "missing generated roster " .. $roster_file)
     if has_key($DESKS,$node) then
       -- Rebuild identity from authenticated bytes, never just authored input.
-      $base = $desk.request($DESKS[$node],$vi.inventory,$pub,$d.remote_mix($node),$d.remote_roots($node,$DESKS[$node].host).prefix)
+      $base = $desk.request($DESKS[$node],$vi.inventory,$pub,$d.remote_mix($node),$desk.node_prefix($DESKS[$node],$d),$d.node_settings($node).legacy_defaults == true)
       $d.die_if(not deep_eq($base,$DESK_BASE[$node]),"authenticated desk plan differs from preflight")
-      $placed = $desk.place_sync($base,$DESK_BEFORE[$node],read_file($roster_file),read_file($SIGNED_PRIV),$DESK_PROGRAM,nil)
-      $authority = $desk.verify_authority($base,$epoch,$vi.canonical_blake3,nil)
+      $placed = $desk.place_sync($base,$DESK_BEFORE[$node],read_file($roster_file),read_file($SIGNED_PRIV),$DESK_PROGRAM,nil,$epoch,$vi.canonical_blake3)
+      $authority = $placed.authority
       print("  desk placement receipt: " .. $placed.placement.receipt)
       print("  verified desk epoch=" .. to_string($authority.epoch) .. " hash=" .. $authority.hash)
       if not $floor_raised then

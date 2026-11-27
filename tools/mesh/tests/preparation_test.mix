@@ -1,0 +1,60 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Real signed public preparation plan; no SSH, CT, service or live custody.
+$exe = realpath("/proc/self/exe")
+$root = trim(run_argv_must(["mktemp","-d"]))
+$state = trim(run_argv_must(["mktemp","-d"]))
+fn check($ok,$message)
+  if not $ok then raise("DESK_PREPARATION_TEST",$message) end
+end
+try
+  mkdir($root .. "/_etc/mesh",{parents:true})
+  mkdir($root .. "/etc/noded",{parents:true})
+  mkdir($state .. "/mesh")
+  $pub = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+  $inventory = {schema_version:1,mesh:"example.org",subnet:"192.0.2.0/24",epoch:1,hub:["hub"],unsigned:true,members:[]}
+  for $name in ["hub","desk"]
+    $inventory.members = push($inventory.members,{name:$name,mesh_ip:if $name=="hub" then "192.0.2.1" else "192.0.2.2" end,bus:true,status:"active",last_touched_epoch:1,credentials:[{kind:"wg",from_epoch:1,pubkey:if $name=="hub" then $pub else "BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=" end},{kind:"d2",from_epoch:1,pubkey:$pub}]})
+  end
+  $authored = $root .. "/_etc/mesh/inventory.mix"
+  write_file($authored,data_encode({inventory:$inventory}))
+  $db = $root .. "/secrets.db"
+  $command = [$exe,"mesh","--secrets-db",$db,"--mesh","example.org"]
+  run_argv_must(concat($command,["genesis"]))
+  $genesis = trim(run_argv_must(concat($command,["pubkey"])))
+  write_file($root .. "/etc/noded/genesis.pub",$genesis .. chr(10))
+  $signed = $root .. "/signed"
+  run_argv_must(concat($command,["sign",$authored,"--out",$signed,"--recovery-generation","0"]))
+  $verification = json_parse(run_argv_must(concat($command,["verify",$signed,"--genesis-pub-base64",$genesis,"--json"])))
+  write_file($root .. "/_etc/mesh/epoch.baseline.mix",data_encode({baseline:{mesh:"example.org",epoch:1,recovery_generation:0,canonical_blake3:$verification.canonical_blake3}}))
+  write_file($root .. "/_etc/mesh_gen.conf.mix",data_encode({mesh_gen:{schema_version:1,expected_mesh:"example.org"}}))
+  write_file($root .. "/_etc/mesh_targets.conf.mix",data_encode({schema_version:1,project:"example",targets:[{node:"desk",host:"pve-host",kind:"desk",transport:"pct",ct:123,profile:"/opt/mix/var/lib/example/desk-bus",session:5,account:"desktop",admission:"enforce"}]}))
+  $settings = $root .. "/nodes.mix"
+  write_file($settings,data_encode({nodes:{local:{roots:{prefix:$root,etc:$root .. "/etc",var:$state}},desk:{mix_bin:"/opt/mix/bin/mix",roots:{prefix:"/opt/mix",etc:"/opt/mix/etc",var:"/opt/mix/var"}}}}))
+  $environment = {MESH_HUB:$root,MESH_PROJECT:"example",MESH_NODES_CONFIG:$settings}
+  $tool = dirname(dirname(realpath($0))) .. "/_bin/mesh_desk_prepare.mix"
+  $plan = $root .. "/plan.mix"
+  $result = run_argv([$exe,$tool,"--plan",$signed,"desk","192.0.2.1:51822",$plan],{env:$environment})
+  check($result.ok,"signed plan failed: " .. $result.stdout .. $result.stderr)
+  $request = load_data($plan)
+  check($request.ip=="192.0.2.2" and $request.hub_key==$pub and $request.target.ct==123,"plan differs from signed inventory")
+  check(not contains(read_file($plan),"PrivateKey"),"plan contains WG private material")
+  check(not exists($root .. "/_share/example/gen"),"preparation plan unexpectedly sealed artifacts")
+  $settings_text = read_file($settings)
+  for $changes in [{mix_bin:"/opt/other/bin/mix"},{roots:{prefix:"/opt/other",etc:"/opt/mix/etc",var:"/opt/mix/var"}},{roots:{prefix:"/opt/mix"}}]
+    $bad_settings = data_parse($settings_text)
+    for $key in keys($changes) $bad_settings.nodes.desk[$key] = $changes[$key] end
+    write_file($settings,data_encode($bad_settings))
+    $refused_plan = $root .. "/bad-layout-plan"
+    $result = run_argv([$exe,$tool,"--plan",$signed,"desk","192.0.2.1:51822",$refused_plan],{env:$environment})
+    check(not $result.ok and not exists($refused_plan),"invalid native layout produced a plan")
+  end
+  write_file($settings,$settings_text)
+  $original = read_file($signed)
+  write_file($signed,replace($original,"192.0.2.2","192.0.2.3"))
+  $result = run_argv([$exe,$tool,"--plan",$signed,"desk","192.0.2.1:51822",$root .. "/bad-plan"],{env:$environment})
+  check(not $result.ok and not exists($root .. "/bad-plan"),"tampered inventory produced a preparation plan")
+finally
+  run_argv_must(["rm","-rf",$root])
+  run_argv_must(["rm","-rf",$state])
+end
+print("PASS signed CT preparation plan and tamper refusal; no namespace or network actions")

@@ -1,0 +1,118 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Real namespace_context, service binding, activation and release restart.
+-- Only OS primitives/native subprocesses are replaced by virtual CT fixtures.
+$targets = require("../_lib/targets.mix")
+$prep = require("../_lib/desk_prepare.mix")
+$root = trim(run_argv_must(["mktemp","-d"]))
+fn check($ok,$message)
+  if not $ok then raise("RECOVERY_TEST",$message) end
+end
+try
+  $lib = dirname(dirname(realpath($0))) .. "/_lib"
+  $source = read_file($lib .. "/desk_worker.mix")
+  for $name in ["file_state","native_binary"]
+    $source = replace($source,"fn " .. $name .. "(","fn unused_" .. $name .. "(")
+    $source = replace($source,$name .. "(","fixture_" .. $name .. "(")
+  end
+  for $name in ["exists","stat","read_file","hash_file"]
+    $source = replace($source,$name .. "(","fixture_" .. $name .. "(")
+  end
+  $source = replace($source,"run_argv_must(","recovery_command(")
+  $source = replace($source,"rename(","recovery_rename(")
+  $stubs = read_file(dirname(realpath($0)) .. "/fixtures/desk_prepare_primitives.mix") .. chr(10) .. '
+$_recovery_schema=sqlexec($fixture_db,"CREATE TABLE runtime (pid TEXT, damage INTEGER)")
+fn recovery_init($damage)
+  $_clear=sqlexec($fixture_db,"DELETE FROM runtime")
+  $_set=sqlexec($fixture_db,"INSERT INTO runtime VALUES (?,?)",["41",$damage])
+end
+fn recovery_rename($from,$to)
+  if fixture_exists($to) then raise("RECOVERY_FIXTURE","rename collision") end
+  fixture_put($to,fixture_stat($from))
+  fixture_remove($from)
+  fixture_event(if ends_with($to,".parked") then "park" else "activate" end,"")
+end
+fn fixture_hash_file($path,$algorithm)
+  if $path != "/proc/43/exe" or $algorithm!="sha256" then raise("RECOVERY_FIXTURE","unexpected process binary query") end
+  return "fixture-native-hash"
+end
+fn recovery_command($argv,$options={})
+  if $argv[0]=="id" then return fixture_run_argv_must($argv,$options) end
+  if deep_eq($argv,["/opt/mix/bin/mix","builtins","--names"]) then return "fs_watch\nfs_wait\nfs_unwatch\nflock\nwrite_new\nstat\nhash_sha256\ndata_encode\nrun_argv\n" end
+  if $argv[len($argv)-1]=="--version" then return "fixture-native-version" end
+  if deep_eq($argv,["systemctl","show","noded@5.service","--property=MainPID","--value"]) then return sqlexec($fixture_db,"SELECT pid FROM runtime")[0].pid end
+  if $argv[0]=="systemctl" and $argv[1]=="show" then
+    $active=fixture_exists($fixture_active)
+    fixture_event(if $active then "profile_binding" else "release_binding" end,"")
+    return if $active then $fixture_unit else replace($fixture_unit,$fixture_env_line,"") end
+  end
+  if deep_eq($argv,["systemctl","daemon-reload"]) and $options.timeout==5 then
+    fixture_event("reload","")
+    if fixture_exists($fixture_active) and sqlexec($fixture_db,"SELECT damage FROM runtime")[0].damage==1 then
+      fixture_chmod($fixture_env,0o600)
+    end
+    return ""
+  end
+  if deep_eq($argv,["systemctl","reset-failed","noded@5.service"]) and $options.timeout==5 then fixture_event("reset_failed",""); return "" end
+  if deep_eq($argv,["systemctl","restart","noded@5.service"]) and $options.timeout==20 then
+    if fixture_exists($fixture_active) then raise("RECOVERY_FIXTURE","profile start failure") end
+    if len(sqlexec($fixture_db,"SELECT operation FROM events WHERE operation=?",["reset_failed"]))!=1 then raise("RECOVERY_FIXTURE","restart before reset-failed") end
+    fixture_event("restart_release","")
+    $_pid=sqlexec($fixture_db,"UPDATE runtime SET pid=?",["43"])
+    fixture_put("/proc/43",{uid:1000})
+    fixture_put("/opt/mix/run/session/5/noded/bus.sock",{uid:1000,mode:0o140600,is_symlink:false})
+    return ""
+  end
+  if deep_eq($argv,["/opt/mix/bin/mix","-"]) and $options.timeout==10 and contains($options.stdin,"fs_watch(") then
+    fixture_event("wait_socket","")
+    return ""
+  end
+  raise("RECOVERY_FIXTURE","unexpected command " .. json_encode($argv))
+end
+'
+  $target = $targets.parse_targets({schema_version:1,project:"example",targets:[{node:"desk",host:"host",kind:"desk",transport:"pct",ct:123,session:5,account:"desktop",profile:"/opt/mix/var/lib/example/desk-bus",admission:"enforce"}]}).targets[0]
+  $native = {node:"desk",prefix:"/opt/mix",mix_bin:"/opt/mix/bin/mix",environment_prefix:"MIX"}
+  $env = $target.etc .. "/noded/service.env"
+  $active = "/etc/systemd/system/" .. $target.unit .. ".d/zzzz-mesh-profile.conf"
+  $env_line = "EnvironmentFiles=" .. $env .. " (ignore_errors=no)\n"
+  $unit = read_file(dirname(realpath($0)) .. "/fixtures/pct-unit-show.txt")
+  $stubs = "$fixture_active=" .. data_encode($active) .. chr(10) .. "$fixture_env=" .. data_encode($env) .. chr(10) .. "$fixture_env_line=" .. data_encode($env_line) .. chr(10) .. "$fixture_unit=" .. data_encode($unit) .. chr(10) .. $stubs
+  $file = $root .. "/recovery.mix"
+  write_file($file,$stubs .. chr(10) .. $source)
+  $w = require($file)
+  $request = {target:$target,native:$native,mix_bin:$native.mix_bin,mesh:"example.org",ip:"192.0.2.2",port:4200,admission:"enforce",genesis:"fixture-genesis",epoch:7,hash:"fixture-hash"}
+  for $damage in [0,1]
+    $w.fixture_reset()
+    $w.recovery_init($damage)
+    for $path in ["/opt/mix/var","/opt/mix/var/lib","/opt/mix/var/lib/example",dirname($active)]
+      $w.fixture_put($path,{is_dir:true,uid:0,gid:0,perm:0o755})
+    end
+    for $path in [$target.profile,$target.etc,$target.etc .. "/noded",$target.var]
+      $w.fixture_put($path,{is_dir:true,uid:0,gid:1000,perm:0o750})
+    end
+    $w.fixture_put($target.var .. "/noded",{is_dir:true,uid:1000,gid:1000,perm:0o700})
+    $config = {node:"desk",mesh:$request.mesh,wg_ip:$request.ip,noded:{port:4200,mesh_config:$target.etc .. "/noded/config.conf.mix",unix_socket:$target.run .. "/noded/bus.sock",admission:"enforce"}}
+    $entries = [{path:$env,bytes:$prep.service_text($target,$native)},{path:$active .. ".parked",bytes:"[Service]\nEnvironmentFile=" .. $env .. "\n"},{path:$target.etc .. "/node.conf.mix",bytes:data_encode($config)}]
+    for $path in [$target.etc .. "/noded/genesis.pub",$target.etc .. "/noded/d2.seed",$target.etc .. "/noded/d2-receipt.json",$target.etc .. "/noded/config.conf.mix",$target.var .. "/noded/inventory.signed"]
+      push($entries,{path:$path,bytes:if ends_with($path,"genesis.pub") then $request.genesis else "fixture-authority" end})
+    end
+    for $entry in $entries $w.fixture_put($entry.path,{is_dir:false,uid:0,gid:1000,perm:0o640,bytes:$entry.bytes}) end
+    -- These are the production functions, with only primitive I/O virtualised.
+    $ctx = $w.namespace_context($request)
+    check(not $ctx.binding.active,"initial namespace did not use release-only unit")
+    $refused = false
+    $actual = "no refusal"
+    try $w.activate_profile($ctx,$request) catch $message,$detail
+      $actual = $message
+      $cause = if $damage==1 then "validate profile: dedicated service environment is not root-owned 0640" else "restart profile broker: profile start failure" end
+      $refused = $detail.code=="DESK_DISTRIBUTOR" and $message=="activation failed [" .. $cause .. "]; profile parked and release broker restarted"
+    end
+    check($refused,"activation/recovery lost the original cause: " .. $actual)
+    $events = map(sqlexec($w.fixture_db,"SELECT operation FROM events WHERE operation NOT IN ('chmod')"),fn($row)=$row.operation)
+    check(deep_eq(take($events,-6),["park","reload","release_binding","reset_failed","restart_release","wait_socket"]),"real release restart recovery order differs")
+    check(not $w.fixture_exists($active) and $w.fixture_exists($active .. ".parked"),"recovery left active drop-in")
+    if $damage==1 then check($w.fixture_stat($env).perm==0o600,"test did not retain the invalid profile file") end
+  end
+finally
+  run_argv_must(["rm","-rf",$root])
+end
+print("PASS real namespace and release restart: failed profile start and invalid profile mode still recover release broker")

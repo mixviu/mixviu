@@ -1,0 +1,126 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Real activation control flow; virtual filesystem and bounded command stubs.
+$targets = require("../_lib/targets.mix")
+$root = trim(run_argv_must(["mktemp","-d"]))
+fn check($ok,$message)
+  if not $ok then raise("ACTIVATION_TEST",$message) end
+end
+try
+  $lib = dirname(dirname(realpath($0))) .. "/_lib"
+  $source = read_file($lib .. "/desk_worker.mix")
+  for $name in ["file_state","namespace_context","restart_session","verify_profile_authority","unit_properties"]
+    $source = replace($source,"fn " .. $name .. "(","fn unused_" .. $name .. "(")
+    $source = replace($source,$name .. "(","activation_" .. $name .. "(")
+  end
+  for $name in ["exists","stat","mkdir","chown","chmod","write_new","read_file"]
+    $source = replace($source,$name .. "(","fixture_" .. $name .. "(")
+  end
+  $source = replace($source,"run_argv_must(","activation_command(")
+  $source = replace($source,"rename(","activation_rename(")
+  $stubs = "$targets=require(" .. data_encode($lib .. "/targets.mix") .. ")" .. chr(10)
+  $stubs = $stubs .. read_file(dirname(realpath($0)) .. "/fixtures/desk_prepare_primitives.mix") .. chr(10) .. '
+$_activation_schema=sqlexec($fixture_db,"CREATE TABLE fault (phase TEXT)")
+fn activation_fault($phase)
+  $_clear=sqlexec($fixture_db,"DELETE FROM fault")
+  for $entry in split($phase,",") $_set=sqlexec($fixture_db,"INSERT INTO fault VALUES (?)",[$entry]) end
+end
+fn activation_event($phase)
+  fixture_event($phase,"")
+  if len(sqlexec($fixture_db,"SELECT phase FROM fault WHERE phase=?",[$phase]))>0 then
+    $_clear=sqlexec($fixture_db,"DELETE FROM fault WHERE phase=?",[$phase])
+    raise("INJECTED",$phase)
+  end
+end
+fn activation_file_state($path)
+  return fixture_file_state($path)
+end
+fn activation_rename($from,$to)
+  if fixture_exists($to) then raise("FIXTURE","rename would overwrite") end
+  fixture_put($to,fixture_stat($from))
+  fixture_remove($from)
+  activation_event(if ends_with($to,".parked") then "park" else "activate" end)
+end
+fn activation_command($argv,$options)
+  if len($argv)==3 and $argv[0]=="systemctl" and $argv[1]=="reset-failed" and $options.timeout==5 then activation_event("reset_failed"); return "" end
+  if not deep_eq($argv,["systemctl","daemon-reload"]) or $options.timeout!=5 then raise("FIXTURE","unexpected service command") end
+  activation_event("reload")
+  return ""
+end
+fn activation_namespace_context($request)
+  $ctx=$request.before
+  $ctx.binding={active:fixture_exists(dropin_paths($ctx.target).active)}
+  activation_event(if $ctx.binding.active then "profile_binding" else "release_binding" end)
+  return $ctx
+end
+fn activation_unit_properties($unit,$transport)
+  activation_event("release_binding")
+  return $request_properties
+end
+fn activation_restart_session($ctx,$request,$profile)
+  if $ctx.binding.active != $profile then raise("FIXTURE","restart selected wrong environment") end
+  if not $profile and len(sqlexec($fixture_db,"SELECT operation FROM events WHERE operation=?",["reset_failed"]))==0 then raise("FIXTURE","release restart did not clear start limit") end
+  activation_event(if $profile then "restart_profile" else "restart_release" end)
+  return {pid:42}
+end
+fn activation_verify_profile_authority($ctx,$request)
+  activation_event("authority")
+  if not $ctx.binding.active or $request.epoch!=7 or $request.hash!="fixture-hash" then raise("FIXTURE","authority mismatch") end
+  return {verified:true,epoch:$request.epoch,hash:$request.hash}
+end
+fn activation_events()
+  return map(sqlexec($fixture_db,"SELECT operation FROM events"),fn($row)=$row.operation)
+end
+'
+  $path = $root .. "/activation.mix"
+  $properties = require("../_lib/desk_worker.mix").parse_unit_properties(read_file(dirname(realpath($0)) .. "/fixtures/pct-unit-show.txt"),"pct")
+  $properties.EnvironmentFiles = take($properties.EnvironmentFiles,1)
+  $stubs = "$request_properties=" .. data_encode($properties) .. chr(10) .. $stubs
+  write_file($path,$stubs .. chr(10) .. $source)
+  $w = require($path)
+  $target = $targets.parse_targets({schema_version:1,project:"example",targets:[{node:"desk",host:"host",kind:"desk",transport:"pct",ct:123,session:5,account:"desktop",profile:"/opt/mix/var/lib/example/desk-bus",admission:"enforce"}]}).targets[0]
+  $ctx = {target:$target,gid:1000,states:{}}
+  for $kind in ["seed","seed_receipt","genesis","roster","inventory"] $ctx.states[$kind]={present:true} end
+  $request = {before:$ctx,epoch:7,hash:"fixture-hash",native:{prefix:"/opt/mix",environment_prefix:"MIX"}}
+  $paths = $w.dropin_paths($target)
+  $bytes = "[Service]\nEnvironmentFile=" .. $target.etc .. "/noded/service.env\n"
+  $success = ["activate","reload","profile_binding","restart_profile","authority"]
+  $stages = {activate:"activate drop-in",reload:"reload profile unit",profile_binding:"validate profile",restart_profile:"restart profile broker",authority:"verify profile authority"}
+  for $phase in ["","activate","reload","profile_binding","restart_profile","authority","authority,restart_release"]
+    $w.fixture_reset()
+    $w.fixture_put(dirname($paths.active),{is_dir:true,uid:0,gid:0,perm:0o755})
+    $w.fixture_put($paths.parked,{is_dir:false,uid:0,gid:1000,perm:0o640,bytes:$bytes})
+    $w.activation_fault($phase)
+    if $phase=="" then
+      check($w.activate_profile($ctx,$request).authority.verified,"activation did not verify authority")
+      check(deep_eq($w.activation_events(),$success),"activation order differs")
+      check($w.fixture_exists($paths.active) and not $w.fixture_exists($paths.parked),"successful activation was not retained")
+    else
+      $refused=false
+      $actual="no refusal"
+      try $w.activate_profile($ctx,$request) catch $message,$detail
+        $actual=$message
+        if $phase=="authority,restart_release" then
+          $expected="activation failed [verify profile authority: authority]; release broker recovery also failed [restart release broker: restart_release]"
+        else
+          $expected="activation failed [" .. $stages[$phase] .. ": " .. $phase .. "]; profile parked and release broker restarted"
+        end
+        $refused=$detail.code=="DESK_DISTRIBUTOR" and $message==$expected
+      end
+      check($refused,"activation failure escaped owning recovery refusal at " .. $phase .. ": " .. $actual)
+      $events=$w.activation_events()
+      check(deep_eq(take($events,-5),["park","reload","release_binding","reset_failed","restart_release"]),"release recovery order differs")
+      check(not $w.fixture_exists($paths.active) and $w.fixture_read_file($paths.parked)==$bytes,"failure left profile armed or changed parked bytes")
+    end
+  end
+  $incomplete=$ctx
+  $incomplete.states.seed.present=false
+  $before=$w.fixture_snapshot()
+  $refused=false
+  try $w.activate_profile($incomplete,$request) catch $message,$detail
+    $refused=$detail.code=="DESK_DISTRIBUTOR" and $message=="activation requires complete placed authority"
+  end
+  check($refused and deep_eq($before,$w.fixture_snapshot()),"incomplete authority armed the profile")
+finally
+  run_argv_must(["rm","-rf",$root])
+end
+print("PASS staged activation, exact success order and five failpoints restoring parked/reload/release restart")

@@ -1,0 +1,11 @@
+RequiresMountsFor=/opt/mix/run/session/5/noded
+Type=simple
+ExecStartPre={ path=/usr/bin/install ; argv[]=/usr/bin/install -d -m 0711 /opt/mix/run/session/5/noded ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }
+ExecStartPre={ path=/usr/bin/find ; argv[]=/usr/bin/find /opt/mix/run/session/5/noded -mindepth 1 -delete ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }
+ExecStart={ path=/opt/mix/bin/noded ; argv[]=/opt/mix/bin/noded serve --no-monitor --no-log ; ignore_errors=no ; start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0 }
+EnvironmentFiles=/opt/mix/etc/session/5.env (ignore_errors=no)
+EnvironmentFiles=/opt/mix/var/lib/example/desk-bus/etc/noded/service.env (ignore_errors=no)
+UnsetEnvironment=DBUS_SESSION_BUS_ADDRESS DBUS_STARTER_ADDRESS DBUS_STARTER_BUS_TYPE DBUS_SYSTEM_BUS_ADDRESS
+User=desktop
+RuntimeDirectory=
+KillMode=control-group

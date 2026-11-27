@@ -2,7 +2,7 @@
 -- Shared guarded desk path for the signed-inventory and private-seed owners.
 -- Loading this module does not contact a host or read private configuration.
 $targets = require("targets.mix")
-$ROLLOUT_READY = false
+$ROLLOUT_READY = true
 
 fn fail($message)
   raise("DESK_DISTRIBUTOR",$message)
@@ -35,9 +35,9 @@ fn member_named($inventory, $node)
   fail("desk must be an authenticated active Bus member")
 end
 
-fn request($target, $inventory, $genesis, $mix_bin, $prefix)
+fn request($target, $inventory, $genesis, $mix_bin, $prefix, $legacy_defaults = false)
   $target = $targets.checked_target($target)
-  $native = $targets.checked_native($target,{node:$target.node,mix_bin:$mix_bin,prefix:$prefix})
+  $native = $targets.checked_native($target,{node:$target.node,mix_bin:$mix_bin,prefix:$prefix,legacy_defaults:$legacy_defaults})
   if $target.kind != "desk" or $target.admission == nil then fail("desk target lacks explicit policy") end
   $member = member_named($inventory,$target.node)
   $d2_keys = []
@@ -48,6 +48,10 @@ fn request($target, $inventory, $genesis, $mix_bin, $prefix)
   if type($genesis) != "string" or not re_match($genesis,"^[A-Za-z0-9+/]{43}=$") then fail("invalid authenticated genesis public key") end
   return {target:$target,mesh:$inventory.mesh,ip:$member.mesh_ip,port:$member.noded_port ?? 4200,
     admission:$target.admission,genesis:$genesis,mix_bin:$mix_bin,native:$native,d2_keys:$d2_keys}
+end
+
+fn node_prefix($target,$deployment)
+  return $targets.node_prefix($target,$deployment)
 end
 
 fn worker_program($path)
@@ -69,11 +73,11 @@ end
 
 -- Executor injection is used by hermetic fixtures. All real callers pass nil.
 fn call($base, $operation, $extra, $program, $executor)
-  if not contains(["preflight","seed","sync","restart","live","restore"],$operation) then fail("invalid operation") end
+  if not contains(["preflight","seed","sync","activate","live","restore"],$operation) then fail("invalid operation") end
   $bound = $base
   $bound.operation = $operation
   for $key in keys($extra)
-    if not contains(["before","payloads","token"],$key) then fail("unexpected request override") end
+    if not contains(["before","payloads","token","epoch","hash"],$key) then fail("unexpected request override") end
     $bound[$key] = $extra[$key]
   end
   $job = $targets.stdin_job($base.target,$program,{request:$bound},"admin",$base.mix_bin,$base.native)
@@ -134,16 +138,14 @@ fn place_seed($base, $before, $bytes, $public_key, $program, $executor)
   return {placement:$placed,verified:$after.states.seed}
 end
 
-fn place_sync($base, $before, $roster, $signed, $program, $executor)
+fn place_sync($base, $before, $roster, $signed, $program, $executor, $epoch, $hash)
   $files = [payload("roster",$roster),payload("inventory",$signed)]
   $placed = call($base,"sync",{before:$before,payloads:$files,token:uuid()},$program,$executor)
   $expected = $files
   if not $before.states.genesis.present then push($expected,payload("genesis",$base.genesis .. chr(10))) end
   $after = stable_after($before,preflight($base,$program,$executor),$expected)
-  call($base,"restart",{before:$after},$program,$executor)
-  $live_before = stable_after($after,preflight($base,$program,$executor),$files)
-  $live = call($base,"live",{before:$live_before},$program,$executor)
-  return {placement:$placed,live:$live}
+  $activated = call($base,"activate",{before:$after,epoch:$epoch,hash:$hash},$program,$executor)
+  return {placement:$placed,live:$activated.live,authority:$activated.authority}
 end
 
 fn verify_authority($base, $epoch, $hash, $executor)

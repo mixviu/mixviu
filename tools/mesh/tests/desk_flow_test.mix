@@ -42,8 +42,8 @@ fn simulated($job,$path)
   elif $job.operation == "sync" then
     $state.ctx.states = $state.sync_states
     $value = {status:"placed",receipt:"protected-fixture/sync"}
-  elif $job.operation == "restart" then
-    $value = {restarted:$state.ctx.target.unit}
+  elif $job.operation == "activate" then
+    $value = {restarted:$state.ctx.target.unit,live:{pid:42},authority:{verified:$state.hash=="canonical-fixture",epoch:7,hash:$state.hash}}
   elif $job.operation == "live" then
     $value = {pid:42,uid:1000,sha256:"fixture-native-binary"}
   end
@@ -59,8 +59,9 @@ fn flow($base,$program,$execute)
   $before = $ops.preflight($base,$program,$execute)
   $ops.place_seed($base,$before,"synthetic-secret","AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",$program,$execute)
   $before = $ops.preflight($base,$program,$execute)
-  $ops.place_sync($base,$before,"synthetic-roster","synthetic-signed",$program,$execute)
-  return $ops.verify_authority($base,7,"canonical-fixture",$execute)
+  $placed = $ops.place_sync($base,$before,"synthetic-roster","synthetic-signed",$program,$execute,7,"canonical-fixture")
+  check($placed.authority.verified,"activation authority failed")
+  return $placed.authority
 end
 
 $root = trim(run_argv_must(["mktemp","-d"]))
@@ -83,7 +84,7 @@ $execute = fn($job)=simulated($job,$path)
 $program = $ops.worker_program(dirname(dirname(realpath($0))) .. "/_lib/desk_worker.mix")
 write_file($path,json_encode($state))
 check(flow($base,$program,$execute).verified,"complete simulated flow failed")
-$expected = ["preflight","seed","preflight","preflight","sync","preflight","restart","preflight","live","authority"]
+$expected = ["preflight","seed","preflight","preflight","sync","preflight","activate"]
 check(deep_eq(json_parse(read_file($path)).calls,$expected),"unexpected distributor stage order")
 for $index = 1 to len($expected)
   $fault = $state
@@ -126,15 +127,15 @@ check(refused(fn()=$ops.load_targets($config_path,"example",["desk"])),"implicit
 -- Effective unit/environment validation is pure over one captured unit reply.
 $text = "EXAMPLE_ETC=/var/lib/example/desk-bus/etc\nEXAMPLE_VAR=/var/lib/example/desk-bus/var\nEXAMPLE_NODE_CONFIG=/var/lib/example/desk-bus/etc/node.conf.mix\nEXAMPLE_RUN=/run/example/session/3\nEXAMPLE_BROKER_ACCOUNT=desktop\nEXAMPLE_NODED_URL=\n"
 $metadata = {present:true,uid:0,gid:1000,perm:0o640}
-$properties = {Type:"simple",KillMode:"control-group",RuntimeDirectory:"example/session/3/noded",User:"desktop",EnvironmentFiles:"/var/lib/example/desk-bus/etc/noded/service.env (ignore_errors=no)",UnsetEnvironment:"",ExecStart:"{ path=/srv/example/bin/noded ; argv[]=/srv/example/bin/noded serve --no-monitor --no-log ; ignore_errors=no ; start_time=[old] ; pid=42 }"}
-$w.validate_service($target,1000,$metadata,$properties,$text)
-for $bad in [{User:"root"},{EnvironmentFiles:"/evil/var/lib/example/desk-bus/etc/noded/service.env (ignore_errors=no)"},{EnvironmentFiles:$properties.EnvironmentFiles .. " /tmp/later.env (ignore_errors=no)"},{UnsetEnvironment:"EXAMPLE_ETC"},{ExecStart:"native noded serve --node other"}]
+$properties = {Type:"simple",KillMode:"control-group",RuntimeDirectory:["example/session/3/noded"],User:"desktop",EnvironmentFiles:[{path:"/var/lib/example/desk-bus/etc/noded/service.env",ignore_errors:false}],UnsetEnvironment:[],ExecStart:[$w.parse_exec_property("{ path=/srv/example/bin/noded ; argv[]=/srv/example/bin/noded serve --no-monitor --no-log ; ignore_errors=no ; start_time=[old] ; pid=42 }")]}
+$w.validate_service($target,1000,$metadata,$properties,$text,$base.native)
+for $bad in [{User:"root"},{EnvironmentFiles:[{path:"/evil/var/lib/example/desk-bus/etc/noded/service.env",ignore_errors:false}]},{EnvironmentFiles:concat($properties.EnvironmentFiles,[{path:"/tmp/later.env",ignore_errors:false}])},{UnsetEnvironment:["EXAMPLE_ETC"]},{ExecStart:[{path:"/srv/example/bin/noded",argv:["/srv/example/bin/noded","serve","--node","other"],ignore_errors:false}]}]
   $changed = $properties
   for $key in keys($bad) $changed[$key]=$bad[$key] end
-  check(refused(fn()=$w.validate_service($target,1000,$metadata,$changed,$text)),"unsafe service binding accepted")
+  check(refused(fn()=$w.validate_service($target,1000,$metadata,$changed,$text,$base.native)),"unsafe service binding accepted")
 end
-check(refused(fn()=$w.validate_service($target,1000,$metadata,$properties,$text .. "EXAMPLE_ETC=/tmp/other\n")),"duplicate environment assignment accepted")
-check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:1000,gid:1000,perm:0o640},$properties,$text)),"user-owned service environment accepted")
+check(refused(fn()=$w.validate_service($target,1000,$metadata,$properties,$text .. "EXAMPLE_ETC=/tmp/other\n",$base.native)),"duplicate environment assignment accepted")
+check(refused(fn()=$w.validate_service($target,1000,{present:true,uid:1000,gid:1000,perm:0o640},$properties,$text,$base.native)),"user-owned service environment accepted")
 
 -- Exercise actual generated source parsing/RPC without any namespace I/O:
 -- the invalid operation is rejected before dispatch can inspect a target.
@@ -146,5 +147,39 @@ check(type($native_mix)=="string" and starts_with($native_mix,"/"),"running inte
 run_argv_must([$native_mix,"lint",$generated])
 $rpc = json_parse(run_argv_must([$native_mix,$generated]))
 check($rpc.ok==false and $rpc.error=="DESK_DISTRIBUTOR","generated native RPC refusal failed")
+$prep = require("../_lib/desk_prepare.mix")
+$ctdoc = $description
+$ctdoc.targets[0] = {node:"desk",host:"pve-host",kind:"desk",transport:"pct",ct:123,profile:"/opt/mix/var/lib/example/desk-bus",session:5,account:"desktop",admission:"observe"}
+$ct = $targets.parse_targets($ctdoc).targets[0]
+$ctbase = $ops.request($ct,$inventory,$base.genesis,"/opt/mix/bin/mix","/opt/mix")
+$ctstate = $state
+$ctstate.ctx.target = $ct
+write_file($path,json_encode($ctstate))
+check(flow($ctbase,$program,$execute).verified,"CT typed flow failed")
+$ctbase.endpoint = "192.0.2.1:51822"
+$ctbase.hub_key = $base.genesis
+$ctbase.subnet = "192.0.2.0/24"
+$ctbase.wg_keys = [$base.genesis]
+$wg = $prep.wireguard_text($ctbase,$base.genesis,$base.genesis)
+check(contains($wg,"Address = 192.0.2.14/32") and contains($wg,"Endpoint = 192.0.2.1:51822") and contains($wg,"AllowedIPs = 192.0.2.0/24"),"desk WG recipe")
+check(refused(fn()=$prep.wireguard_text($ctbase,$base.genesis,"wrong-key")),"unadmitted WG key accepted")
+$files = $prep.files($ctbase)
+check(len($files)==3 and $files[2].bytes == "[Service]\nEnvironmentFile=/opt/mix/var/lib/example/desk-bus/etc/noded/service.env\n","preparation drop-in")
+$ctprops = $properties
+$ctprops.ExecStart = [$w.parse_exec_property("{ path=/opt/mix/bin/noded ; argv[]=/opt/mix/bin/noded serve --no-monitor --no-log ; ignore_errors=no }")]
+$ctprops.RuntimeDirectory = []
+$ctprops.RequiresMountsFor = [$ct.run .. "/noded"]
+$ctprops.ExecStartPre = [$w.parse_exec_property("{ path=/usr/bin/install ; argv[]=/usr/bin/install -d -m 0711 " .. $ct.run .. "/noded ; ignore_errors=no }")]
+$ctprops.EnvironmentFiles = [{path:"/opt/mix/etc/session/5.env",ignore_errors:false},{path:"/opt/mix/var/lib/example/desk-bus/etc/noded/service.env",ignore_errors:false}]
+$w.validate_service($ct,1000,$metadata,$ctprops,$files[0].bytes,$ctbase.native)
+$wrong_runtime = $ctprops
+$wrong_runtime.ExecStartPre = []
+check(refused(fn()=$w.validate_service($ct,1000,$metadata,$wrong_runtime,$files[0].bytes,$ctbase.native)),"CT missing runtime creation accepted")
+$ctprops.EnvironmentFiles = push($ctprops.EnvironmentFiles,{path:"/tmp/later",ignore_errors:false})
+check(refused(fn()=$w.validate_service($ct,1000,$metadata,$ctprops,$files[0].bytes,$ctbase.native)),"CT final environment refusal")
+$flattened = $root .. "/prepare-generated.mix"
+write_file($flattened,$prep.program(dirname(dirname(realpath($0))) .. "/_lib") .. chr(10) .. "print(1)")
+run_argv_must([$native_mix,"lint",$flattened])
+check(trim(run_argv_must([$native_mix,$flattened]))=="1","generated preparation source failed")
 print("PASS hermetic desk flow: exact namespace stages, ten fail-stop boundaries, policy, effective unit and generated RPC")
 run_argv_must(["rm","-rf",$root])
