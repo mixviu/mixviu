@@ -223,7 +223,14 @@ pub async fn deliver(
     // "Mail Delivery System" display name and a "MAILER-DAEMON@" address
     // are each matchable.
     let header_from = render_header_from(&message);
-    enforce_own_spf(&state.domains_runtime, ingress, mail_from, data, &verify_result).await?;
+    enforce_own_spf(
+        &state.domains_runtime,
+        ingress,
+        mail_from,
+        data,
+        &verify_result,
+    )
+    .await?;
 
     // F3 caps inputs (the 20-attachment lesson, email-gateway-vtoken.md §10):
     // surface attachment count + message size to the inbound filter so the
@@ -604,8 +611,10 @@ pub async fn deliver(
                     return Ok::<_, anyhow::Error>((id, true));
                 }
                 if closed {
-                    return inbound_ms.mailbox_by_role(inbound_account_id, MailboxRole::Junk)?
-                        .map(|id| (id, false)).ok_or_else(|| anyhow::anyhow!("guard target and Junk missing"));
+                    return inbound_ms
+                        .mailbox_by_role(inbound_account_id, MailboxRole::Junk)?
+                        .map(|id| (id, false))
+                        .ok_or_else(|| anyhow::anyhow!("guard target and Junk missing"));
                 }
                 tracing::warn!(
                     mailbox = %name,
@@ -1086,7 +1095,11 @@ pub(crate) async fn route_sieve_redirect(
             if let Some(target) = ms.mailbox_by_name(id, name)? {
                 return Ok(target);
             }
-            if closed { return ms.mailbox_by_role(id, MailboxRole::Junk)?.ok_or_else(|| anyhow::anyhow!("guard target and Junk missing")); }
+            if closed {
+                return ms
+                    .mailbox_by_role(id, MailboxRole::Junk)?
+                    .ok_or_else(|| anyhow::anyhow!("guard target and Junk missing"));
+            }
         } else if spam && let Some(target) = ms.mailbox_by_role(id, MailboxRole::Junk)? {
             return Ok(target);
         }
@@ -1116,7 +1129,8 @@ async fn legacy_vacation(
 }
 
 fn filter_target_policy(name: &str) -> (&str, bool) {
-    name.strip_prefix("junk-if-missing:").map_or((name, false), |n| (n, true))
+    name.strip_prefix("junk-if-missing:")
+        .map_or((name, false), |n| (n, true))
 }
 
 #[cfg(test)]
@@ -1124,74 +1138,181 @@ mod doorway_tests {
     use super::*;
     #[tokio::test]
     async fn strict_own_domain_spf_proof_five() -> Result<()> {
-        let runtime = Arc::new(::props::Runtime::new("maild",
+        let runtime = Arc::new(::props::Runtime::new(
+            "maild",
             crate::props::domains::spec(::props::Hooks::noop()),
-            Arc::new(::props::MemoryStore::new("maild"))));
+            Arc::new(::props::MemoryStore::new("maild")),
+        ));
         let mut value = crate::props::domains::defaults_value("example.com");
         if let ::props::value::PropValue::Object(obj) = &mut value {
-            obj.insert("spf_policy".into(), ::props::value::PropValue::String("strict".into()));
+            obj.insert(
+                "spf_policy".into(),
+                ::props::value::PropValue::String("strict".into()),
+            );
         }
-        runtime.set(::props::RecordKey::collection(crate::props::domains::namespace_name(), "example.com"), value,
-            ::props::SetOpts { expected_version: None, merge: ::props::MergeMode::Replace,
-                actor: ::props::Actor::service("guard-test")?, cause: None, ts_ms: 0 }).await?;
+        runtime
+            .set(
+                ::props::RecordKey::collection(
+                    crate::props::domains::namespace_name(),
+                    "example.com",
+                ),
+                value,
+                ::props::SetOpts {
+                    expected_version: Some(::props::Version::zero()),
+                    merge: ::props::MergeMode::Replace,
+                    actor: ::props::Actor::service("guard-test")?,
+                    cause: None,
+                    ts_ms: 0,
+                },
+            )
+            .await?;
         let ip = "192.0.2.1".parse()?;
-        let mut verify = synthesize_temperror_verify("mail.example.com", ip, "mc@example.com", "forged.example");
-        verify.spf = SpfCheck::MailFrom { result: SpfResult::Fail, domain: "example.com".into() };
+        let mut verify =
+            synthesize_temperror_verify("mail.example.com", ip, "mc@example.com", "forged.example");
+        verify.spf = SpfCheck::MailFrom {
+            result: SpfResult::Fail,
+            domain: "example.com".into(),
+        };
         let external = IngressAuth::ExternalUnverified;
         let raw = b"From: mc@example.com\r\nTo: cast@example.com\r\n\r\nforged";
-        assert!(enforce_own_spf(&runtime, &external, "mc@example.com", raw, &verify).await.unwrap_err().is::<crate::sieve::delivery::Rejected>());
+        assert!(
+            enforce_own_spf(&runtime, &external, "mc@example.com", raw, &verify)
+                .await
+                .unwrap_err()
+                .is::<crate::sieve::delivery::Rejected>()
+        );
         // Header-only own-domain claims and forged envelope-only claims are both checked.
-        assert!(enforce_own_spf(&runtime, &external, "other@example.org", raw, &verify).await.is_err());
-        assert!(enforce_own_spf(&runtime, &external, "mc@example.com", b"From: other@example.org\r\n\r\nx", &verify).await.is_err());
-        assert!(enforce_own_spf(&runtime, &external, "other@example.org", b"From: other@example.org\r\n\r\nx", &verify).await.is_ok());
-        let local = IngressAuth::LocalAuth { account_id: 1, email: "mc@example.com".into() };
+        assert!(
+            enforce_own_spf(&runtime, &external, "other@example.org", raw, &verify)
+                .await
+                .is_err()
+        );
+        assert!(
+            enforce_own_spf(
+                &runtime,
+                &external,
+                "mc@example.com",
+                b"From: other@example.org\r\n\r\nx",
+                &verify
+            )
+            .await
+            .is_err()
+        );
+        assert!(
+            enforce_own_spf(
+                &runtime,
+                &external,
+                "other@example.org",
+                b"From: other@example.org\r\n\r\nx",
+                &verify
+            )
+            .await
+            .is_ok()
+        );
+        let local = IngressAuth::LocalAuth {
+            account_id: 1,
+            email: "mc@example.com".into(),
+        };
         enforce_own_spf(&runtime, &local, "mc@example.com", raw, &verify).await?;
-        verify.spf = SpfCheck::MailFrom { result: SpfResult::Pass, domain: "example.com".into() };
+        verify.spf = SpfCheck::MailFrom {
+            result: SpfResult::Pass,
+            domain: "example.com".into(),
+        };
         enforce_own_spf(&runtime, &external, "mc@example.com", raw, &verify).await?;
         Ok(())
     }
 }
 
-fn filter_auth(ingress: &IngressAuth, verify: &VerifyResult, ip: IpAddr) -> Vec<(&'static str, String)> {
+fn filter_auth(
+    ingress: &IngressAuth,
+    verify: &VerifyResult,
+    ip: IpAddr,
+) -> Vec<(&'static str, String)> {
     use maild_auth::types::SpfCheck;
     let (auth, user) = match ingress {
         IngressAuth::LocalAuth { email, .. } => ("local-auth", email.as_str()),
         IngressAuth::ExternalUnverified => ("external", ""),
     };
-    let spf = match &verify.spf { SpfCheck::MailFrom { result, .. } | SpfCheck::Helo { result, .. } => result };
+    let spf = match &verify.spf {
+        SpfCheck::MailFrom { result, .. } | SpfCheck::Helo { result, .. } => result,
+    };
     let outcome = |s: String| s.to_ascii_lowercase();
-    vec![("AUTH", auth.into()), ("AUTH_USER", user.into()),
+    vec![
+        ("AUTH", auth.into()),
+        ("AUTH_USER", user.into()),
         ("SPF", outcome(format!("{spf:?}"))),
         ("DKIM", outcome(format!("{:?}", verify.dkim.overall))),
-        ("DMARC", match verify.dmarc.outcome { DmarcOutcome::Pass => "pass", DmarcOutcome::Fail { .. } => "fail", DmarcOutcome::None => "none" }.into()),
-        ("REMOTE_IP", ip.to_string())]
+        (
+            "DMARC",
+            match verify.dmarc.outcome {
+                DmarcOutcome::Pass => "pass",
+                DmarcOutcome::Fail { .. } => "fail",
+                DmarcOutcome::None => "none",
+            }
+            .into(),
+        ),
+        ("REMOTE_IP", ip.to_string()),
+    ]
 }
 
-pub(crate) async fn enforce_own_spf(domains: &Arc<::props::Runtime>, ingress: &IngressAuth, from: &str, data: &[u8], verify: &VerifyResult) -> Result<()> {
+pub(crate) async fn enforce_own_spf(
+    domains: &Arc<::props::Runtime>,
+    ingress: &IngressAuth,
+    from: &str,
+    data: &[u8],
+    verify: &VerifyResult,
+) -> Result<()> {
     use maild_auth::types::{SpfCheck, SpfResult};
-    if ingress.is_local_auth() { return Ok(()); }
-    let failing = matches!(verify.spf, SpfCheck::MailFrom { result: SpfResult::Fail, .. } | SpfCheck::Helo { result: SpfResult::Fail, .. });
-    if !failing { return Ok(()); }
+    if ingress.is_local_auth() {
+        return Ok(());
+    }
+    let failing = matches!(
+        verify.spf,
+        SpfCheck::MailFrom {
+            result: SpfResult::Fail,
+            ..
+        } | SpfCheck::Helo {
+            result: SpfResult::Fail,
+            ..
+        }
+    );
+    if !failing {
+        return Ok(());
+    }
     let message = MessageParser::default().parse(data);
     let mut claims = vec![from.to_string()];
     if let Some(message) = &message {
         if let Some(addresses) = message.from() {
             for addr in addresses.iter() {
-                if let Some(addr) = addr.address() { claims.push(addr.to_string()); }
+                if let Some(addr) = addr.address() {
+                    claims.push(addr.to_string());
+                }
             }
         }
     }
     for claim in claims {
-        let Some((_, domain)) = claim.rsplit_once('@') else { continue; };
-        let key = ::props::record::RecordKey::collection(crate::props::domains::namespace_name(), domain.to_ascii_lowercase());
+        let Some((_, domain)) = claim.rsplit_once('@') else {
+            continue;
+        };
+        let key = ::props::record::RecordKey::collection(
+            crate::props::domains::namespace_name(),
+            domain.to_ascii_lowercase(),
+        );
         let record = match domains.store().get(&key).await {
             Ok(record) => record,
             Err(::props::store::StoreError::NotFound) => continue,
             Err(error) => return Err(error.into()),
         };
         let view = crate::props::domains::view(&record.value)?;
-        let obj = record.value.value.as_object().ok_or_else(|| anyhow::anyhow!("invalid domain policy"))?;
-        if view.enabled && view.role == "authoritative" && matches!(obj.get("spf_policy"), Some(::props::value::PropValue::String(s)) if s == "strict") {
+        let obj = record
+            .value
+            .value
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("invalid domain policy"))?;
+        if view.enabled
+            && view.role == "authoritative"
+            && matches!(obj.get("spf_policy"), Some(::props::value::PropValue::String(s)) if s == "strict")
+        {
             return Err(crate::sieve::delivery::Rejected("ownDomainSpfFail".into()).into());
         }
     }
@@ -1279,7 +1400,9 @@ async fn run_inbound_filter(
                 mix::CapabilityClass::FsRead,
             ])));
 
-            for (key, value) in auth_facts { eval.set_global(key, mix::value::Value::String(value)); }
+            for (key, value) in auth_facts {
+                eval.set_global(key, mix::value::Value::String(value));
+            }
             // Inject email metadata as Mix globals
             eval.set_global("FROM", mix::value::Value::String(from));
             eval.set_global("TO", mix::value::Value::String(to));
