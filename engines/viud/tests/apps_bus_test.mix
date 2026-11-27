@@ -55,7 +55,10 @@ fn write_recorder()
     "write_file(env(\"HOME\") .. \"/launched-display\", $seen .. \"\\n\")\n")
 end
 fn check($condition, $message)
-  if not $condition then raise("APPS_BUS_TEST", $message) end
+  if not $condition then
+    if is_file($tmp .. "/svc.log") then print(read_file($tmp .. "/svc.log")) end
+    raise("APPS_BUS_TEST", $message)
+  end
 end
 fn fixture($path, $content)
   mkdir(dirname($tmp .. "/" .. $path), {parents: true})

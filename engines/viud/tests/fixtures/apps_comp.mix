@@ -16,5 +16,6 @@ on "comp.window.focus"
   reply(0, "{}")
 end
 on "comp.window.close"
+  if $window != nil then kill($window.pid, 15) end
   reply(0, "{}")
 end

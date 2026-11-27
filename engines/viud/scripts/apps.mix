@@ -131,7 +131,7 @@ fn record_row($seq, $kind, $data)
   $files = sort(glob($history_dir .. "/*.jsonl"))
   $total = 0
   for $f in $files
-    if stat($f).mtime < now() - 30 * 86400 then remove($f) else $total = $total + stat($f).size end
+    if stat($f).mtime < time() - 30 * 86400 then remove($f) else $total = $total + stat($f).size end
   end
   $date = substr(now_iso(), 0, 10)
   $path = $history_dir .. "/" .. $date .. "-" .. $generation .. ".jsonl"
