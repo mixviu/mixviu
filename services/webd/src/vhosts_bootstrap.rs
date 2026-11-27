@@ -223,11 +223,19 @@ pub async fn bootstrap_upsert_from_config(
     let mut configured: BTreeMap<String, &WebdVhostConfig> = BTreeMap::new();
     for row in &webd_cfg.vhost {
         let policy = crate::static_site::validate(
-            &row.host, &row.aliases, row.redirect.as_deref(), &row.headers,
-        ).and_then(|()| {
-            anyhow::ensure!(row.redirect.is_none() || (row.cms_db_path.is_none()
-                && row.jmap_upstream.is_none() && row.noded_ws.is_none()),
-                "redirect conflicts with cms_db_path, jmap_upstream or noded_ws");
+            &row.host,
+            &row.aliases,
+            row.redirect.as_deref(),
+            &row.headers,
+        )
+        .and_then(|()| {
+            anyhow::ensure!(
+                row.redirect.is_none()
+                    || (row.cms_db_path.is_none()
+                        && row.jmap_upstream.is_none()
+                        && row.noded_ws.is_none()),
+                "redirect conflicts with cms_db_path, jmap_upstream or noded_ws"
+            );
             Ok(())
         });
         if let Err(reason) = policy {
@@ -617,8 +625,8 @@ mod tests {
 
     fn acme_row(host: &str, www_dir: &str) -> WebdVhostConfig {
         WebdVhostConfig {
-redirect: None,
-headers: Default::default(),
+            redirect: None,
+            headers: Default::default(),
             host: host.into(),
             aliases: Vec::new(),
             www_dir: www_dir.into(),
@@ -646,8 +654,8 @@ headers: Default::default(),
 
     fn manual_tls_row(host: &str, www_dir: &str) -> WebdVhostConfig {
         WebdVhostConfig {
-redirect: None,
-headers: Default::default(),
+            redirect: None,
+            headers: Default::default(),
             host: host.into(),
             aliases: Vec::new(),
             www_dir: www_dir.into(),
@@ -671,8 +679,8 @@ headers: Default::default(),
 
     fn http_only_row(host: &str, www_dir: &str) -> WebdVhostConfig {
         WebdVhostConfig {
-redirect: None,
-headers: Default::default(),
+            redirect: None,
+            headers: Default::default(),
             host: host.into(),
             aliases: Vec::new(),
             www_dir: www_dir.into(),
