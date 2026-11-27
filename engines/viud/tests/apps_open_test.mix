@@ -44,6 +44,20 @@ try
   check($a.resolve_handler($entries, $mime, $paths) == "three", "declared type fallback minus removals")
   fixture("config/mixos-mimeapps.list", "[Default Applications]\n" .. $mime .. "=two.desktop;\n")
   check($a.resolve_handler($entries, $mime, $paths) == "two", "reread without cache")
+  export XDG_CONFIG_HOME=$tmp .. "/config"
+  export XDG_CONFIG_DIRS=$tmp .. "/system:" .. $tmp .. "/system2"
+  export XDG_DATA_HOME=$tmp .. "/data"
+  export XDG_DATA_DIRS=$tmp .. "/share"
+  export XDG_CURRENT_DESKTOP="MIXOS:Other"
+  $expected = []
+  for $dir in [$tmp .. "/config", $tmp .. "/system", $tmp .. "/system2", $tmp .. "/data/applications", $tmp .. "/share/applications"]
+    for $name in ["mixos-mimeapps.list", "other-mimeapps.list", "mimeapps.list"]
+      push($expected, $dir .. "/" .. $name)
+    end
+  end
+  check(deep_eq($a.mimeapps_paths(), $expected), "complete XDG and desktop search order")
+  check($a.uri_scheme("https://example.invalid/" .. repeat("x", 8192 - byte_length("https://example.invalid/"))) == "https", "8192-byte boundary")
+  check($a.token_valid(repeat("x", 256)) and $a.token_valid(""), "token boundaries")
   $bus = $pb.start({dir: $tmp .. "/bus", name: "open-" .. uuid(), noded: $noded})
   $conf = json_parse(read_file($bus.conf))
   $conf.noded.account = trim(run_argv_must(["id", "-un"]))
@@ -68,7 +82,7 @@ try
   end
   $seen = json_parse(read_file($tmp .. "/seen.json"))
   check(deep_eq($seen.argv, [$hostile]) and $seen.token == "test-token", "one literal argv and token env")
-  for $uri in ["file:///etc/passwd", "javascript:alert(1)", "foo:bar", "https://example.invalid/a b", "https://example.invalid/a\n", "https://example.invalid/\u{7f}", "--profile", "https:///", "https:example.invalid", "1foo:bar", "https://example.invalid/" .. repeat("x", 9000)]
+  for $uri in [nil, 1, "", "file:///etc/passwd", "javascript:alert(1)", "foo:bar", "https://example.invalid/a b", "https://example.invalid/a\n", "https://example.invalid/\u{0}", "https://example.invalid/\u{7f}", "--profile", "https:///", "https:///foo", "https:example.invalid", "1foo:bar", "https://example.invalid/" .. repeat("x", 9000)]
     check(call("apps.open", {uri: $uri}).rc == 10, "URI refusal")
   end
   for $token in [repeat("x", 257), "bad\n", "bad\u{7f}", "é", 1, nil]
