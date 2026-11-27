@@ -263,7 +263,7 @@ pub struct WebdVhostConfig {
     /// alias goes through the same LDH validation as `host`.
     pub aliases: Vec<String>,
     /// Filesystem path to this vhost's document root. Must exist at
-    /// startup; webd hard-fails the bind otherwise.
+    /// startup unless redirect is set; invalid rows are dropped.
     pub www_dir: String,
     /// Permanent redirect to an absolute HTTPS origin, without a path.
     pub redirect: Option<String>,

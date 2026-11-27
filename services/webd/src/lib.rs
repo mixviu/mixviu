@@ -3959,7 +3959,6 @@ async fn host_router(
         .headers()
         .get(axum::http::header::HOST)
         .and_then(|h| h.to_str().ok())
-        .or_else(|| req.uri().authority().map(|a| a.as_str()))
         .unwrap_or("");
     let Some(host) = daemon::http_host::parse_request_host(raw) else {
         return (StatusCode::BAD_REQUEST, "missing or invalid Host header").into_response();
@@ -4036,7 +4035,6 @@ async fn plain_http_host_admit(
         .headers()
         .get(axum::http::header::HOST)
         .and_then(|h| h.to_str().ok())
-        .or_else(|| req.uri().authority().map(|a| a.as_str()))
         .unwrap_or("");
     let Some(host) = daemon::http_host::parse_request_host(raw) else {
         return (StatusCode::BAD_REQUEST, "missing or invalid Host header").into_response();
@@ -6483,7 +6481,6 @@ async fn redirect_to_https(req: axum::extract::Request) -> Response {
         .headers()
         .get(axum::http::header::HOST)
         .and_then(|h| h.to_str().ok())
-        .or_else(|| req.uri().authority().map(|a| a.as_str()))
         .unwrap_or("");
     // Strict Host parse (the canonical implementation of these rules
     // now lives in `daemon::http_host`; this site was its

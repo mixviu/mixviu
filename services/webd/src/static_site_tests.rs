@@ -53,7 +53,10 @@ vhost: [{ host: "www.example.com", redirect: "https://example.com",
     node.vhosts.store(Arc::new(directory));
     let routes: serde_json::Value = serde_json::from_str(&bus::routes::list_body(&node)).unwrap();
     assert_eq!(routes["vhosts"][0]["redirect"], "https://example.com");
-    assert_eq!(routes["vhosts"][0]["headers"]["content-security-policy"], "default-src 'self'");
+    assert_eq!(
+        routes["vhosts"][0]["headers"]["content-security-policy"],
+        "default-src 'self'"
+    );
 }
 
 #[tokio::test]
@@ -436,9 +439,7 @@ async fn static_site_tls_alpn_serves_h2_and_http1() {
                         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                     }
                     Some((
-                        Ok::<_, std::io::Error>(axum::body::Bytes::from_static(
-                            b"data: ping\n\n",
-                        )),
+                        Ok::<_, std::io::Error>(axum::body::Bytes::from_static(b"data: ping\n\n")),
                         n + 1,
                     ))
                 });
