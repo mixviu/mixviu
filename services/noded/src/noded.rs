@@ -5818,6 +5818,7 @@ fn escape_json_string(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    //! Broker regression tests, including bounded diagnostic emission.
     #[tokio::test]
     async fn reload_observation_bounds_receivers_that_never_drop() {
         let (tx, rx) = tokio::sync::mpsc::channel::<String>(1);
@@ -5833,7 +5834,6 @@ mod tests {
         // A later observation can proceed after the first one expires.
         assert_eq!(super::observe_reload_teardown(vec![], vec![], deadline).await, (0, 0));
     }
-    //! Broker regression tests, including bounded diagnostic emission.
     // A thread-local subscriber cannot isolate process-wide callsite interest.
     fn log_capture_subprocess(test: &str) -> bool {
         let test = format!("{}::{test}", module_path!().split_once("::").unwrap().1);

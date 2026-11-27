@@ -418,7 +418,8 @@ fn build_search_paths(primary_dir: &Path, mix_etc_set: bool) -> Vec<PathBuf> {
 pub fn load_from(path: &Path) -> Result<NodeConfig> {
     let contents = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
-    parse_node_config(&contents, path).with_context(|| format!("failed to parse {}", path.display()))
+    parse_node_config(&contents, path)
+        .with_context(|| format!("failed to parse {}", path.display()))
 }
 
 fn parse_node_config(contents: &str, path: &Path) -> Result<NodeConfig> {
