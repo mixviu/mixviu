@@ -13,6 +13,56 @@
 
 -- ── small shared helpers ────────────────────────────────────────────────
 
+-- Lifecycle policy. Effects and state ownership stay with the citizen.
+fn request_error($r)
+  return {rc: 10, body: {error: $r}}
+end
+
+fn start_valid($r)
+  if has_key($r, "id") == has_key($r, "argv") or has_key($r, "env") then return false end
+  if has_key($r, "id") then
+    if type($r.id) != "string" or $r.id == "" then return false end
+  else
+    if type($r.argv) != "list" or len($r.argv) == 0 then return false end
+    for $v in $r.argv
+      if type($v) != "string" then return false end
+    end
+    if $r.argv[0] == "" then return false end
+    if has_key($r, "cwd") and type($r.cwd) != "string" then return false end
+    if has_key($r, "name") and (type($r.name) != "string" or trim($r.name) == "") then return false end
+  end
+  if has_key($r, "uris") then
+    if type($r.uris) != "list" then return false end
+    for $v in $r.uris
+      if type($v) != "string" then return false end
+    end
+  end
+  return true
+end
+
+fn stop_valid($r)
+  if has_key($r, "handle") == has_key($r, "id") or has_key($r, "pid") or has_key($r, "wait") then return false end
+  $key = has_key($r, "handle") ? "handle" : "id"
+  $ms = $r.timeout_ms ?? 5000
+  return type($r[$key]) == "string" and $r[$key] != "" and contains(["graceful", "force"], $r.mode ?? "graceful") and is_int($ms) and $ms >= 100 and $ms <= 30000
+end
+
+fn live_select($live, $r)
+  return filter(values($live), fn($v) = has_key($r, "handle") ? $v.handle == $r.handle : $v.id == $r.id)
+end
+
+fn owned_windows($row, $windows, $groups)
+  return filter($windows, fn($w) = $w.pid != nil and ($w.pid == $row.pid or $groups[to_string($w.pid)] == $row.pid))
+end
+
+fn running_row($r, $windows)
+  return {handle: $r.handle, id: $r.id, name: $r.name, pid: $r.pid, started_utc: $r.started_utc, state: $r.state, windows: map($windows, fn($w) = $w.id)}
+end
+
+fn history_data($r)
+  return {handle: $r.handle, id: $r.id, pid: $r.pid, executable: ($r.argv ?? [])[0], argc: len($r.argv ?? []), exit_code: $r.exit_code, signal: $r.signal, reason: $r.reason}
+end
+
 fn is_int($v)
   return type($v) == "number" and $v == floor($v)
 end
