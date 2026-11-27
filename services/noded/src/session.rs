@@ -60,8 +60,18 @@ pub(super) fn deadline_timer() -> std::io::Result<tokio::io::unix::AsyncFd<std::
     if fd < 0 {
         return Err(std::io::Error::last_os_error());
     }
-    // SAFETY: this is the sole owner of the newly created descriptor.
-    tokio::io::unix::AsyncFd::new(unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) })
+    // SAFETY: successful timerfd_create returned a valid, open fd with no
+    // other owner; OwnedFd becomes its sole owner.
+    let owned = unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) };
+    // SAFETY: owned is moved into AsyncFd and always returns the same open fd
+    // referring to the same file description. noded::serve moves the timer
+    // into spawn_maintenance, as does this module's scheduler test. The task
+    // only lends it to sleep_until for readiness and timer I/O; these callers
+    // never close, extract or replace the fd while registered.
+    // AsyncFd deregisters before dropping
+    // OwnedFd; forgetting it keeps the fd open. On failure io::Error::from
+    // drops the retained OwnedFd exactly once.
+    unsafe { tokio::io::unix::AsyncFd::register(owned) }.map_err(std::io::Error::from)
 }
 
 /// Sleep until an absolute BOOTTIME deadline, including time spent suspended.

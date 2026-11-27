@@ -25862,6 +25862,51 @@ pub(crate) mod socket_sources {
         Ok((listener, deadline_after(timeout_seconds)))
     }
 
+    #[cfg(unix)]
+    mod socket_readiness {
+        use std::io;
+        use std::os::fd::OwnedFd;
+        use tokio::io::Interest;
+        use tokio::io::unix::AsyncFd;
+
+        // The field is private to this module; neither it nor a guard escapes.
+        pub(super) struct SocketReadiness(AsyncFd<OwnedFd>);
+
+        impl SocketReadiness {
+            pub(super) async fn readable(&self) -> io::Result<()> {
+                let mut guard = self.0.readable().await?;
+                guard.clear_ready();
+                Ok(())
+            }
+
+            pub(super) async fn writable(&self) -> io::Result<()> {
+                let mut guard = self.0.writable().await?;
+                guard.clear_ready();
+                Ok(())
+            }
+        }
+
+        pub(super) fn register_socket_readiness(
+            owned: OwnedFd,
+            interest: Interest,
+        ) -> io::Result<SocketReadiness> {
+            // SAFETY: OwnedFd solely owns a valid, open fd and is moved into AsyncFd.
+            // It always returns that same fd, referring to the same file description.
+            // The field is private to this module, whose only methods await and
+            // clear readiness internally, returning (). No fd, AsyncFd or guard
+            // escapes, so callers cannot close or replace the fd while registered.
+            // AsyncFd deregisters before dropping OwnedFd; forgetting the wrapper
+            // keeps the fd open. On failure io::Error::from drops the retained
+            // OwnedFd exactly once.
+            unsafe { AsyncFd::register_with_interest(owned, interest) }
+                .map(SocketReadiness)
+                .map_err(io::Error::from)
+        }
+    }
+
+    #[cfg(unix)]
+    use socket_readiness::{SocketReadiness, register_socket_readiness};
+
     /// Class C numeric accept: non-blocking accepts with readiness awaited
     /// on an AsyncFd dup of the listener under the call's deadline, so the
     /// read permit is released while no connection is pending. Several
@@ -25884,12 +25929,11 @@ pub(crate) mod socket_sources {
         interruptible: bool,
     ) -> MixResult<Value> {
         use tokio::io::Interest;
-        use tokio::io::unix::AsyncFd;
         let dup = listener
             .sock
             .try_clone()
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
-        let ready = AsyncFd::with_interest(dup, Interest::READABLE)
+        let ready = register_socket_readiness(std::os::fd::OwnedFd::from(dup), Interest::READABLE)
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
         let mut entered = false;
         loop {
@@ -25929,8 +25973,8 @@ pub(crate) mod socket_sources {
     /// and Class S evaluation) also rechecks the interrupt flag every
     /// ACCEPT_SLICE, so an embedder without a Ctrl-C select still stops.
     #[cfg(unix)]
-    async fn wait_ready<T: std::os::fd::AsRawFd>(
-        ready: &tokio::io::unix::AsyncFd<T>,
+    async fn wait_ready(
+        ready: &SocketReadiness,
         deadline: Option<std::time::Instant>,
         interruptible: bool,
     ) -> Wait {
@@ -25961,10 +26005,7 @@ pub(crate) mod socket_sources {
                 },
             };
             match outcome {
-                Ok(Some(mut r)) => {
-                    r.clear_ready();
-                    return Wait::Ready;
-                }
+                Ok(Some(())) => return Wait::Ready,
                 // The slice or the deadline ran out: the loop top decides.
                 Ok(None) => continue,
                 Err(e) => return Wait::Failed(e),
@@ -26437,13 +26478,13 @@ pub(crate) mod socket_sources {
         interruptible: bool,
     ) -> MixResult<Value> {
         use tokio::io::Interest;
-        use tokio::io::unix::AsyncFd;
         let payload = payload.as_slice();
         let dup = guard
             .tcp()
             .try_clone()
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
-        let ready = AsyncFd::with_interest(dup, Interest::WRITABLE)
+        // SockRef::try_clone already returns an OwnedFd.
+        let ready = register_socket_readiness(dup, Interest::WRITABLE)
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
         let deadline = deadline_after(timeout_seconds);
         let mut off = 0usize;
@@ -26539,8 +26580,8 @@ pub(crate) mod socket_sources {
     /// wait_ready for writability: the same deadline, slice and interrupt
     /// rules.
     #[cfg(unix)]
-    async fn wait_writable<T: std::os::fd::AsRawFd>(
-        ready: &tokio::io::unix::AsyncFd<T>,
+    async fn wait_writable(
+        ready: &SocketReadiness,
         deadline: Option<std::time::Instant>,
         interruptible: bool,
     ) -> Wait {
@@ -26571,10 +26612,7 @@ pub(crate) mod socket_sources {
                 },
             };
             match outcome {
-                Ok(Some(mut r)) => {
-                    r.clear_ready();
-                    return Wait::Ready;
-                }
+                Ok(Some(())) => return Wait::Ready,
                 Ok(None) => continue,
                 Err(e) => return Wait::Failed(e),
             }
@@ -26616,12 +26654,12 @@ pub(crate) mod socket_sources {
         interruptible: bool,
     ) -> MixResult<Value> {
         use tokio::io::Interest;
-        use tokio::io::unix::AsyncFd;
         let dup = guard
             .tcp()
             .try_clone()
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
-        let ready = AsyncFd::with_interest(dup, Interest::READABLE)
+        // SockRef::try_clone already returns an OwnedFd.
+        let ready = register_socket_readiness(dup, Interest::READABLE)
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
         // checked_add: a huge timeout waits forever instead of panicking.
         let deadline = deadline_after(timeout_seconds);
@@ -27908,6 +27946,34 @@ pub(crate) mod socket_sources {
         use crate::error::MixError;
         use crate::native_events::{NativeEvents, Queue, SocketNext};
         use std::io::{Read, Write};
+
+        #[cfg(target_os = "linux")]
+        #[tokio::test]
+        async fn readiness_registration_failure_closes_fd() {
+            use std::os::fd::{AsRawFd, OwnedFd};
+            let path = std::env::temp_dir().join(format!(
+                "mix-readiness-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            let file = std::fs::File::create_new(&path).unwrap();
+            std::fs::remove_file(&path).unwrap();
+            let fd_path = format!("/proc/self/fd/{}", file.as_raw_fd());
+            let target = std::fs::read_link(&fd_path).unwrap();
+            let result =
+                register_socket_readiness(OwnedFd::from(file), tokio::io::Interest::READABLE);
+            let err = match result {
+                Ok(_) => panic!("epoll must refuse a regular file"),
+                Err(err) => err,
+            };
+            assert_eq!(err.raw_os_error(), Some(libc::EPERM));
+            // Other tests may reuse the fd number, but cannot reopen this
+            // unlinked file. A retained descriptor would still name target.
+            assert_ne!(std::fs::read_link(&fd_path).ok(), Some(target));
+        }
 
         /// Plain-ws client for fixtures: ws_connect's shape minus the
         /// builtin option surface. Loopback (127.0.0.1) only.
