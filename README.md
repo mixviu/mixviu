@@ -81,6 +81,38 @@ it is not a finished product. There is no packaged release yet.
   widget catalogue, binds it only to declared actions, and viu shows it as a
   clearly marked agent surface.
 
+## Where it runs
+
+MixViu's recommended foundation is [Proxmox VE](https://www.proxmox.com/),
+with Proxmox Backup Server alongside it. It sounds odd to put a hypervisor
+under a desktop. But on the maintainer's machines every MixViu desktop is a
+Proxmox container with its own screen on its own virtual terminal, and the
+servers run the same way. In daily use that combination is hard to give up:
+
+- **Snapshot before every upgrade.** A bad build costs a rollback, not a
+  reinstall. Every desktop is snapshotted before each new build lands on it.
+- **Whole-desktop backups.** Backup Server keeps incremental, deduplicated
+  backups of entire desktops.
+- **A desktop is a container.** You can clone it, move it to another host,
+  restore it anywhere, or run several on one machine.
+- **Less to build.** Proxmox already provides networking (SDN), a firewall,
+  certificates and notifications, so MixViu uses those instead of writing its
+  own. MixViu keeps its own layers: Bus identity and authorisation, the
+  desktops and the Mix services.
+
+Proxmox is not a hard requirement. The engines do not depend on it, and
+`mix` already runs as the login shell on plain servers. Several pieces are
+still in progress:
+
+- **Input and graphics inside a container.** The host's keyboard, mouse and
+  GPU reach a desktop container through `inputd` and the
+  [udev forwarder](services/udev-forwarder), and the details are still being
+  worked out.
+- **Networking.** Links between machines are moving from the original custom
+  WireGuard mesh to Proxmox SDN.
+- **Other installs.** Bare-metal installs and lightweight `spawnd`
+  containers are planned as alternatives to Proxmox.
+
 ## Install from source
 
 You need Linux on x86-64 and [rustup](https://rustup.rs). The toolchain is
