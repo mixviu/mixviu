@@ -3,7 +3,7 @@
 //! correlation belongs to this connection on the test's private native Bus.
 use anyhow::{Context, ensure};
 use bus::native_client::SupervisedClient;
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use portald::filechooser::{INTERFACE, mapping::Options};
 use portald::portal::{BUS_NAME, OBJECT_PATH};
 use serde_json::{Value as Json, json};
@@ -103,16 +103,22 @@ async fn one(
     })
     .await
     .context("waiting for the chooser UI to become ready")?;
+    ensure!(responses.next().now_or_never().is_none(), "portal responded before chooser input");
     if cancel {
-        // Closing the viewport can retire its input reply. The portal
-        // Response below is the authoritative cancellation acknowledgement.
-        let _ = drive(
+        let click = tokio::time::timeout(WAIT, drive(
             bus,
             &id,
             "files.ui.click",
             json!({"id":"footer.command.cancel"}),
-        )
-        .await;
+        ))
+        .await.context("cancel click timed out")?;
+        // The consumed Cancel input may close the viewport before its reply
+        // drains. Accept only this exact retirement error, never a refusal,
+        // transport loss or timeout; still require portal Response 1 below.
+        if let Err(error) = click {
+            let value: Json = serde_json::from_str(&error.to_string())?;
+            ensure!(value == json!({"error_code":"CHOOSER_CLOSED"}), "cancel click failed: {error}");
+        }
     } else if method == "OpenFile" {
         drive(bus, &id, "files.ui.click", json!({"label":"notes.txt"})).await?;
         let _ = drive(bus, &id, "files.ui.click", json!({"label":"Open"})).await;

@@ -210,6 +210,18 @@ mod tests {
     }
 
     #[test]
+    fn timeout_answers_failure_and_cannot_become_a_late_cancel() {
+        let mut state = State::default();
+        let effects = state.apply(Event::Timeout);
+        assert_eq!(effects.response.unwrap()["response"], 2);
+        assert!(effects.unexport);
+        let effects = state.apply(Event::Reply(Some("inc-1".into())));
+        assert_eq!(effects.cancel.as_deref(), Some("inc-1"));
+        assert!(effects.response.is_none());
+        assert!(state.apply(Event::Outcome(json!({"request":"inc-1", "response":1}))).response.is_none());
+    }
+
+    #[test]
     fn only_reply_request_can_consume_a_parked_outcome() {
         let mut state = State::default();
         state.apply(Event::Outcome(json!({"request":"old", "response":0})));

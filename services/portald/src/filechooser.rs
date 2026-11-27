@@ -31,17 +31,43 @@ const CHOOSE_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_secs(5);
 const CANCEL_ATTEMPTS: u8 = 3;
 
-#[derive(Default)]
-struct ProviderWarning(Option<std::time::Instant>);
+const PROVIDER_GRACE: Duration = Duration::from_secs(30);
+
+struct ProviderWarning {
+    started: std::time::Instant,
+    seen: bool,
+    last: Option<std::time::Instant>,
+}
+
+impl Default for ProviderWarning {
+    fn default() -> Self {
+        Self::new(std::time::Instant::now())
+    }
+}
+
+fn chooser_session(run: &std::path::Path) -> Option<&str> {
+    if !run.is_absolute() || run.parent()?.file_name()? != "session" {
+        return None;
+    }
+    let session = run.file_name()?.to_str()?;
+    (session.bytes().all(|c| c.is_ascii_digit()) && session.parse::<u16>().ok()? > 0)
+        .then_some(session)
+}
 
 impl ProviderWarning {
+    fn new(started: std::time::Instant) -> Self {
+        Self { started, seen: false, last: None }
+    }
+
     fn observe(&mut self, present: bool, session: &str, now: std::time::Instant) {
+        self.seen |= present;
         if !present
+            && (self.seen || now.duration_since(self.started) >= PROVIDER_GRACE)
             && self
-                .0
+                .last
                 .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(60))
         {
-            self.0 = Some(now);
+            self.last = Some(now);
             tracing::warn!(
                 "FileChooser provider 'files' is not registered; start files@{session}.service"
             );
@@ -422,9 +448,7 @@ impl Bridge {
         {
             let session = paths::env::raw(paths::env::RUN)
                 .and_then(|p| {
-                    std::path::Path::new(&p)
-                        .file_name()
-                        .map(|s| s.to_string_lossy().into_owned())
+                    chooser_session(std::path::Path::new(&p)).map(str::to_owned)
                 })
                 .unwrap_or_else(|| "<session>".into());
             self.provider_warning.lock().unwrap().observe(
