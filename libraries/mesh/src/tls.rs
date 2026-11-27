@@ -26,34 +26,94 @@ use zeroize::Zeroizing;
 /// Replace the immutable cache only after accepting a signed inventory.
 pub type LiveAuthority = Arc<RwLock<Arc<TlsAuthority>>>;
 
-type RefusalWindows = std::collections::HashMap<
-    (std::net::SocketAddr, &'static str),
-    (std::time::Instant, u64, bool),
->;
+const REFUSAL_WINDOW: std::time::Duration = std::time::Duration::from_secs(60);
+const MAX_REFUSAL_WINDOWS: usize = 4096;
+
+struct RefusalWindow {
+    started: std::time::Instant,
+    pending: u64,
+}
+
+#[derive(Default)]
+struct RefusalWindows {
+    peers: std::collections::HashMap<(std::net::IpAddr, &'static str), RefusalWindow>,
+    overflow: Option<RefusalWindow>,
+    next_expiry: Option<std::time::Instant>,
+}
+
+fn refusal_network(peer: std::net::SocketAddr) -> std::net::IpAddr {
+    match peer.ip() {
+        std::net::IpAddr::V4(ip) => ip.into(),
+        std::net::IpAddr::V6(ip) => {
+            // IPv4-mapped addresses must share the native IPv4 bucket.
+            if let Some(ip) = ip.to_ipv4_mapped() {
+                return ip.into();
+            }
+            let mut bytes = ip.octets();
+            bytes[8..].fill(0);
+            std::net::Ipv6Addr::from(bytes).into()
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct Refusals {
     total: std::sync::atomic::AtomicU64,
+    overflow_total: std::sync::atomic::AtomicU64,
     peers: std::sync::Mutex<RefusalWindows>,
 }
 impl Refusals {
     pub fn total(&self) -> u64 {
         self.total.load(std::sync::atomic::Ordering::Relaxed)
     }
+    pub fn overflow_total(&self) -> u64 {
+        self.overflow_total.load(std::sync::atomic::Ordering::Relaxed)
+    }
     pub fn record(&self, peer: std::net::SocketAddr, class: &'static str) {
+        self.record_at(peer, class, std::time::Instant::now());
+    }
+    fn record_at(&self, peer: std::net::SocketAddr, class: &'static str, now: std::time::Instant) {
         let total = self
             .total
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             + 1;
-        let now = std::time::Instant::now();
-        let mut peers = self.peers.lock().expect("TLS refusals poisoned");
-        let entry = peers.entry((peer, class)).or_insert((now, 0, false));
-        entry.1 += 1;
-        if !entry.2 || now.duration_since(entry.0) >= std::time::Duration::from_secs(60) {
-            tracing::warn!(event = "tls.refused", %peer, class, count = entry.1, total, "TLS handshake refused");
-            entry.0 = now;
-            entry.1 = 0;
-            entry.2 = true;
+        let mut windows = self.peers.lock().expect("TLS refusals poisoned");
+        // Scan only when the earliest window expires, not on every connection.
+        if windows.next_expiry.is_some_and(|expiry| now >= expiry) {
+        windows.peers.retain(|(network, class), window| {
+            if now.duration_since(window.started) < REFUSAL_WINDOW {
+                return true;
+            }
+            if window.pending > 0 {
+                tracing::warn!(event = "tls.refused", %network, class, count = window.pending, total, "TLS refusals coalesced");
+            }
+            false
+        });
+        if windows.overflow.as_ref().is_some_and(|w| now.duration_since(w.started) >= REFUSAL_WINDOW) {
+            let window = windows.overflow.take().expect("overflow window");
+            if window.pending > 0 {
+                tracing::warn!(event = "tls.refused", class = "overflow", count = window.pending, total, overflow_total = self.overflow_total(), "TLS refusals coalesced");
+            }
+        }
+        windows.next_expiry = windows.peers.values().map(|w| w.started + REFUSAL_WINDOW)
+            .chain(windows.overflow.iter().map(|w| w.started + REFUSAL_WINDOW)).min();
+        }
+        let network = refusal_network(peer);
+        if let Some(window) = windows.peers.get_mut(&(network, class)) {
+            window.pending += 1;
+        } else if windows.peers.len() < MAX_REFUSAL_WINDOWS {
+            tracing::warn!(event = "tls.refused", %peer, %network, class, count = 1u64, total, "TLS handshake refused");
+            windows.peers.insert((network, class), RefusalWindow { started: now, pending: 0 });
+            windows.next_expiry.get_or_insert(now + REFUSAL_WINDOW);
+        } else {
+            let overflow_total = self.overflow_total.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            if let Some(window) = &mut windows.overflow {
+                window.pending += 1;
+            } else {
+                tracing::warn!(event = "tls.refused", class = "overflow", count = 1u64, total, overflow_total, "TLS refusal map full");
+                windows.overflow = Some(RefusalWindow { started: now, pending: 0 });
+                windows.next_expiry.get_or_insert(now + REFUSAL_WINDOW);
+            }
         }
     }
 }
@@ -416,6 +476,82 @@ mod tests {
     use mesh_trust::inventory::*;
     use serde_json::{Value, json};
     use std::collections::BTreeMap;
+
+    #[test]
+    fn refusal_networks_group_ipv6_by_64_and_keep_classes_separate() {
+        let refusals = Refusals::default();
+        for peer in ["[2001:db8:1:2::1]:1", "[2001:db8:1:2:ffff::2]:2", "[2001:db8:1:3::1]:1"] {
+            refusals.record(peer.parse().unwrap(), "timeout");
+        }
+        assert_eq!(refusals.peers.lock().unwrap().peers.len(), 2);
+        refusals.record("[2001:db8:1:2::1]:3".parse().unwrap(), "queue-full");
+        assert_eq!(refusals.peers.lock().unwrap().peers.len(), 3);
+        assert_eq!(refusal_network("[::ffff:192.0.2.1]:1".parse().unwrap()), "192.0.2.1".parse::<std::net::IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn refusal_windows_are_capped_and_pruned_with_a_counted_overflow() {
+        let refusals = Refusals::default();
+        let now = std::time::Instant::now();
+        for n in 0..MAX_REFUSAL_WINDOWS + 1000 {
+            let ip = std::net::Ipv6Addr::new(0x2001, 0xdb8, n as u16, 0, 0, 0, 0, 1);
+            refusals.record_at((ip, 1).into(), "timeout", now);
+            assert!(refusals.peers.lock().unwrap().peers.len() <= MAX_REFUSAL_WINDOWS);
+        }
+        assert_eq!(refusals.overflow_total(), 1000);
+        assert_eq!(refusals.peers.lock().unwrap().overflow.as_ref().unwrap().pending, 999);
+        let next = "192.0.2.1:2".parse().unwrap();
+        refusals.record_at(next, "timeout", now + REFUSAL_WINDOW);
+        let windows = refusals.peers.lock().unwrap();
+        assert_eq!(windows.peers.len(), 1);
+        assert!(windows.peers.contains_key(&(next.ip(), "timeout")));
+        assert!(windows.overflow.is_none());
+        assert_eq!(refusals.total(), (MAX_REFUSAL_WINDOWS + 1001) as u64);
+        assert_eq!(refusals.overflow_total(), 1000);
+    }
+
+    #[test]
+    fn refusal_expiry_reports_pending_counts_before_pruning_or_reuse() {
+        // Run alone so process-wide tracing interest cannot race other tests.
+        let test = "tls::tests::refusal_expiry_reports_pending_counts_before_pruning_or_reuse";
+        if std::env::var("MIXVIU_LOG_CAPTURE_TEST").as_deref() != Ok(test) {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", test, "--nocapture"])
+                .env("MIXVIU_LOG_CAPTURE_TEST", test).output().unwrap();
+            assert!(output.status.success(), "{}\n{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+            return;
+        }
+        #[derive(Clone, Default)]
+        struct Capture(Arc<std::sync::Mutex<Vec<u8>>>);
+        impl std::io::Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        let capture = Capture::default();
+        let writer = capture.clone();
+        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
+            .with_writer(move || writer.clone()).finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+        let refusals = Refusals::default();
+        let now = std::time::Instant::now();
+        for port in 1..=1000 {
+            refusals.record_at(([192, 0, 2, 1], port).into(), "timeout", now);
+        }
+        // Expiry with another peer prunes, rather than silently losing 999.
+        refusals.record_at("192.0.2.2:1".parse().unwrap(), "timeout", now + REFUSAL_WINDOW);
+        // Reuse starts a fresh window, whose pending count is also reported.
+        refusals.record_at("192.0.2.2:2".parse().unwrap(), "timeout", now + REFUSAL_WINDOW);
+        refusals.record_at("192.0.2.2:3".parse().unwrap(), "timeout", now + 2 * REFUSAL_WINDOW);
+        let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
+        assert_eq!(log.lines().count(), 5, "{log}");
+        assert!(log.contains("count=999"), "{log}");
+        assert!(log.contains("total=1003"), "{log}");
+        assert_eq!(refusals.total(), 1003);
+    }
 
     fn credential(n: u8) -> Credential {
         Credential::new(BusTlsSeed::new([n; 32])).unwrap()

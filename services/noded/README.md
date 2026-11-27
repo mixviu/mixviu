@@ -5,6 +5,11 @@
 An absent `noded.listen` preserves the legacy listener. An explicit list is
 complete, including an empty list; Unix ingress is configured separately.
 Legacy listeners remain available under admission `enforce` during migration.
+The first legacy (`tls: false`) entry supplies the SPEC 13 §9a bind self-check
+and legacy route port, independent of TLS entry order. With no legacy entry,
+`wg_bound` is false and the legacy port is zero: there is no legacy WG trust
+boundary to assert. TLS sessions use verified TLS membership and bound D2
+proofs instead of the legacy WG-bind check.
 
 ```mix
 noded: {
@@ -16,9 +21,12 @@ noded: {
 The TLS values shown are defaults. TLS requires an accepted verified inventory,
 a current own `bus-tls` key and a secure seed. The handshake deadline starts
 when a queued socket enters the active handshake set. Queued sockets hold no
-handshake slot; a full queue refuses new arrivals. Refusals warn once per peer
-socket address and class, then coalesce for 60 seconds; `noded.info` exposes
+handshake slot; a full queue refuses new arrivals. Refusals warn once per IP
+address (IPv6 /64) and class, then coalesce for 60 seconds. Expired windows
+report pending counts before removal. At most 4096 windows are retained;
+additional sources share one overflow window and counter. `noded.info` exposes
 `meta.tls_refusals`, including suppressed listener and dialler attempts.
+`meta.tls_refusal_overflow` counts attempts assigned to the overflow bucket.
 
 A mesh peer's optional `tls_port` selects `wss://` with a mandatory member pin.
 It is temporary until PR 4 adds inventory endpoints and DNS-SD. A failed TLS

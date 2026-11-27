@@ -602,7 +602,7 @@ impl MeshPeers {
         keys: mesh_trust::identity::KeyAuthority,
         mesh: String,
     ) -> ReconcileReport {
-        self.reconcile(desired, revision, Some((keys, mesh)), Default::default())
+        self.reconcile(desired, revision, Some((keys, mesh)), None)
             .await
     }
 
@@ -611,7 +611,7 @@ impl MeshPeers {
         desired: HashMap<String, SocketAddr>,
         revision: AuthorityRevision,
     ) -> ReconcileReport {
-        self.reconcile(desired, revision, None, Default::default())
+        self.reconcile(desired, revision, None, None)
             .await
     }
 
@@ -623,7 +623,7 @@ impl MeshPeers {
         mesh: String,
         tls_keys: Arc<mesh_trust::identity::TlsAuthority>,
     ) -> ReconcileReport {
-        self.reconcile(desired, revision, Some((keys, mesh)), tls_keys)
+        self.reconcile(desired, revision, Some((keys, mesh)), Some(tls_keys))
             .await
     }
 
@@ -632,9 +632,11 @@ impl MeshPeers {
         desired: HashMap<String, SocketAddr>,
         revision: AuthorityRevision,
         keys: Option<(mesh_trust::identity::KeyAuthority, String)>,
-        tls_keys: Arc<mesh_trust::identity::TlsAuthority>,
+        tls_keys: Option<Arc<mesh_trust::identity::TlsAuthority>>,
     ) -> ReconcileReport {
         let mut state = self.state.write().await;
+        // Older callers update D2 or endpoints only; they have no opinion on TLS.
+        let tls_keys = tls_keys.unwrap_or_else(|| state.tls_keys.clone());
         let mut report = ReconcileReport::default();
         let mut reasons = HashMap::new();
 

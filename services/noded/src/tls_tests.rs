@@ -17,6 +17,10 @@ async fn absent_listen_preserves_hostname_bind_and_explicit_list_is_complete() {
     let client = tokio::net::TcpStream::connect(address).await.unwrap();
     let (_, remote) = listener.accept().await.unwrap();
     assert_eq!(remote, client.local_addr().unwrap());
+    let listeners = super::bind_tcp_listeners("localhost:0", None, Some(listener))
+        .await
+        .unwrap();
+    assert_eq!(listeners[0].0.local_addr().unwrap(), address);
     let explicit = [
         config::node::NodedListener {
             addr: "127.0.0.1:0".parse().unwrap(),
@@ -39,6 +43,22 @@ async fn absent_listen_preserves_hostname_bind_and_explicit_list_is_complete() {
             .unwrap()
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn legacy_posture_ignores_tls_listener_order_and_tls_only_has_no_wg_bind() {
+    let legacy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = legacy.local_addr().unwrap().port();
+    let tls = tokio::net::TcpListener::bind("0.0.0.0:0").await.unwrap();
+    let mut listeners = vec![(legacy, false), (tls, true)];
+    let before = super::legacy_listener_posture("ignored:0", true, &listeners, "127.0.0.1").unwrap();
+    assert_eq!(before, (format!("127.0.0.1:{port}"), port, true));
+    listeners.swap(0, 1);
+    assert_eq!(super::legacy_listener_posture("ignored:0", true, &listeners, "127.0.0.1").unwrap(), before);
+    listeners.pop();
+    let (listen, port, wg_bound) = super::legacy_listener_posture("127.0.0.1:4200", true, &listeners, "127.0.0.1").unwrap();
+    assert_eq!((listen.as_str(), port, wg_bound), ("", 0, false));
+    assert_eq!(super::admission_effective(AdmissionMode::Enforce, wg_bound, true), ("refuse-all", "non-wg-bind"));
 }
 
 fn tls_credential(seed: u8) -> mesh::tls::Credential {
@@ -188,6 +208,20 @@ async fn tls_brokers_prove_both_directions_and_revoke_either_exact_key_only() {
             assert_eq!(context.mesh_peer().unwrap(), (member.as_str(), d2_key));
         }
         assert_eq!(states[0].live_sessions.read().await.len(), 2);
+        // The older reconciliation APIs have no TLS opinion. They must keep
+        // both established TLS connections and their authority intact.
+        let authority = states[0].authority.load_full();
+        let report = states[0].mesh.reconcile_identity(
+            authority.routes.desired_endpoints(), authority.revision(),
+            authority.keys.clone(), "example.test".into(),
+        ).await;
+        assert_eq!(report.connections_retained, 2);
+        assert!(report.connections_retired.is_empty());
+        states[0].mesh.reconcile_endpoints(authority.routes.desired_endpoints(), authority.revision()).await;
+        for peer in &peers[1..] {
+            assert!(states[0].mesh.peer_context(&peer.name).await.is_some());
+            tls_ping(&states[0], peer).await;
+        }
         let beta_context = states[0].mesh.peer_context("beta").await.unwrap();
         let mut next = states[0].authority.load().posture.clone();
         if let crate::authority::Posture::Verified(a) = &mut next {
@@ -366,8 +400,13 @@ fn tls_refusal_logs_once_per_peer_and_class_and_counts_every_attempt() {
         .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
     let refusals = mesh::tls::Refusals::default();
+    for port in 1..=1000 {
+        refusals.record(std::net::SocketAddr::from(([192, 0, 2, 1], port)), "timeout");
+    }
+    assert_eq!(refusals.total(), 1000);
+    let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
+    assert_eq!(log.lines().count(), 1, "{log}");
     for (peer, class) in [
-        ("192.0.2.1:4200", "timeout"),
         ("192.0.2.1:4200", "protocol-or-key"),
         ("192.0.2.2:4200", "timeout"),
     ] {
@@ -375,7 +414,7 @@ fn tls_refusal_logs_once_per_peer_and_class_and_counts_every_attempt() {
             refusals.record(peer.parse().unwrap(), class);
         }
     }
-    assert_eq!(refusals.total(), 30);
+    assert_eq!(refusals.total(), 1020);
     let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
     assert_eq!(log.lines().count(), 3, "{log}");
 }

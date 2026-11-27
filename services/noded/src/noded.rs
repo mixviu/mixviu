@@ -939,7 +939,7 @@ async fn bind_tcp_listeners(
     for (address, encrypted) in entries {
         let tcp = if bound
             .as_ref()
-            .is_some_and(|tcp| tcp.local_addr().ok() == address.parse().ok())
+            .is_some_and(|tcp| configured.is_none() || tcp.local_addr().ok() == address.parse().ok())
         {
             bound.take().expect("prebound listener")
         } else {
@@ -954,6 +954,23 @@ async fn bind_tcp_listeners(
     Ok(listeners)
 }
 
+fn legacy_listener_posture(
+    legacy: &str,
+    explicit: bool,
+    listeners: &[(tokio::net::TcpListener, bool)],
+    wg_ip: &str,
+) -> Result<(String, u16, bool)> {
+    let address = listeners.iter().find(|(_, tls)| !tls)
+        .map(|(tcp, _)| tcp.local_addr()).transpose()?;
+    let listen = if explicit {
+        address.map(|a| a.to_string()).unwrap_or_default()
+    } else {
+        legacy.to_owned()
+    };
+    let wg_bound = address.is_some() && bind_is_wg(&listen, wg_ip);
+    Ok((listen, address.map(|a| a.port()).unwrap_or(0), wg_bound))
+}
+
 async fn serve(
     config: RunConfig,
     bound: Option<tokio::net::TcpListener>,
@@ -965,7 +982,7 @@ async fn serve(
         session_probe,
         unix_socket,
         pending_grants_per_parent,
-        mut listen,
+        listen,
         node,
         wg_ip,
         mesh_config_path,
@@ -1038,9 +1055,8 @@ async fn serve(
     };
     let tls_refusals = Arc::new(crate::tls_ingress::Refusals::default());
     let listeners = bind_tcp_listeners(&listen, network.listen.as_deref(), bound).await?;
-    if explicit_listen && let Some((tcp, _)) = listeners.first() {
-        listen = tcp.local_addr()?.to_string();
-    }
+    let (listen, listener_port, wg_bound) =
+        legacy_listener_posture(&listen, explicit_listen, &listeners, &wg_ip)?;
     let mut unix_listener = match unix_socket.as_deref() {
         Some(path) => match crate::native_ingress::bind(path).await {
             Ok(listener) => Some(listener),
@@ -1065,14 +1081,8 @@ async fn serve(
     } else {
         None
     };
-    let listener_port = listeners
-        .first()
-        .map(|(tcp, _)| tcp.local_addr().map(|a| a.port()))
-        .transpose()?
-        .unwrap_or(0);
     // SPEC 13 §9a B1 self-check — is the listener bound to our own WG IP?
     // Start-immutable; computed once and shared with the reload watcher.
-    let wg_bound = bind_is_wg(&listen, &wg_ip);
     let initial_authority = crate::routing::RoutingAuthority::new(
         initial_posture,
         &node,
@@ -1277,7 +1287,9 @@ async fn serve(
             }));
         } else {
             let tcp = axum::serve::ListenerExt::tap_io(tcp, |tcp| {
-                let _ = tcp.set_nodelay(true);
+                if let Err(error) = tcp.set_nodelay(true) {
+                    tracing::debug!(%error, "TCP_NODELAY not set on an accepted socket");
+                }
             });
             let app = Router::new()
                 .route("/ws", axum::routing::get(ws_handler))
@@ -4920,6 +4932,10 @@ async fn handle_noded_command(
             meta.insert(
                 "tls_refusals".into(),
                 serde_json::json!(state.tls_refusals.total() + mesh::tls::DIAL_REFUSALS.total()),
+            );
+            meta.insert(
+                "tls_refusal_overflow".into(),
+                serde_json::json!(state.tls_refusals.overflow_total() + mesh::tls::DIAL_REFUSALS.overflow_total()),
             );
             let info = bus::NodeInfo {
                 node: state.node_name.clone(),
