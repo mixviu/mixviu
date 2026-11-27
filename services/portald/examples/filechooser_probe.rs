@@ -3,7 +3,7 @@
 //! correlation belongs to this connection on the test's private native Bus.
 use anyhow::{Context, ensure};
 use bus::native_client::SupervisedClient;
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use portald::filechooser::{INTERFACE, mapping::Options};
 use portald::portal::{BUS_NAME, OBJECT_PATH};
 use serde_json::{Value as Json, json};
@@ -89,20 +89,36 @@ async fn one(
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     })
-    .await??;
+    .await
+    .context("waiting for the portal's native chooser request")??;
     tokio::time::timeout(WAIT, async {
         loop {
             if let Ok(tree) = drive(bus, &id, "files.ui.tree", json!({})).await
-                && tree.to_string().contains("Places")
+                && tree["ready"].as_bool() == Some(true)
             {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
-    .await?;
+    .await
+    .context("waiting for the chooser UI to become ready")?;
+    ensure!(
+        responses.next().now_or_never().is_none(),
+        "portal responded before chooser input"
+    );
     if cancel {
-        let _ = drive(bus, &id, "files.ui.click", json!({"label":"Cancel"})).await;
+        let click = tokio::time::timeout(
+            WAIT,
+            bus.call_typed(
+                "files",
+                "files.ui.click",
+                json!({"viewport":id,"id":"footer.command.cancel"}),
+            ),
+        )
+        .await
+        .context("cancel click timed out")??;
+        check_cancel_click(click)?;
     } else if method == "OpenFile" {
         drive(bus, &id, "files.ui.click", json!({"label":"notes.txt"})).await?;
         let _ = drive(bus, &id, "files.ui.click", json!({"label":"Open"})).await;
@@ -124,7 +140,8 @@ async fn one(
         }
     }
     let message = tokio::time::timeout(WAIT, responses.next())
-        .await?
+        .await
+        .context("waiting for the portal Response after chooser input")?
         .context("Response stream ended")??;
     let (code, results): (u32, HashMap<String, OwnedValue>) = message.body().deserialize()?;
     ensure!(
@@ -161,6 +178,57 @@ async fn one(
     Ok(())
 }
 
+fn check_cancel_click(reply: bus::PortReply) -> anyhow::Result<()> {
+    match reply {
+        bus::PortReply::Ok { rc: 0, .. } => Ok(()),
+        // The chooser retires pending input replies when its viewport closes.
+        // Check that exact status; transport errors, timeouts and every other
+        // refusal fail. The caller must still receive portal Response 1 below.
+        bus::PortReply::AppError { rc: 20, message }
+            if serde_json::from_str::<Json>(&message).ok()
+                == Some(json!({"error_code":"CHOOSER_CLOSED"})) =>
+        {
+            Ok(())
+        }
+        other => anyhow::bail!("cancel click failed: {other:?}"),
+    }
+}
+
+#[test]
+fn cancel_click_rejects_every_status_except_success_and_viewport_retirement() {
+    use bus::PortReply;
+    assert!(
+        check_cancel_click(PortReply::Ok {
+            rc: 0,
+            value: json!({})
+        })
+        .is_ok()
+    );
+    assert!(
+        check_cancel_click(PortReply::AppError {
+            rc: 20,
+            message: json!({"error_code":"CHOOSER_CLOSED"}).to_string()
+        })
+        .is_ok()
+    );
+    for reply in [
+        PortReply::Ok {
+            rc: 5,
+            value: json!({}),
+        },
+        PortReply::AppError {
+            rc: 20,
+            message: json!({"error_code":"INPUT_REFUSED"}).to_string(),
+        },
+        PortReply::AppError {
+            rc: 10,
+            message: json!({"error_code":"CHOOSER_CLOSED"}).to_string(),
+        },
+    ] {
+        assert!(check_cancel_click(reply).is_err());
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let folder = std::env::args().nth(1).context("folder argument")?;
@@ -190,6 +258,13 @@ async fn main() -> anyhow::Result<()> {
         }
     })
     .await?;
+    // Staging smoke proof: open one real chooser and cancel it, without
+    // requiring a file fixture or exercising any accepting dialogs.
+    if std::env::args().any(|arg| arg == "--cancel-only") {
+        one(&client, &bus, &folder, "OpenFile", true).await?;
+        bus.close().await;
+        return Ok(());
+    }
     for method in ["OpenFile", "SaveFile", "SaveFiles"] {
         one(&client, &bus, &folder, method, false).await?;
         one(&client, &bus, &folder, method, true).await?;
