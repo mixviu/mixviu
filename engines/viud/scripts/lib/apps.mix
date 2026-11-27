@@ -67,8 +67,14 @@ fn start_valid($r)
     if type($r.uris) != "list" then return false end
     for $v in $r.uris
       if type($v) != "string" then return false end
-      if not starts_with($v, "/") and uri_scheme($v) == nil then return false end
-      if contains($v, "\u{0}") then return false end
+      -- An absolute path takes the OpenURI byte caps: at most 8192 bytes
+      -- and none below 0x20 or 0x7f (spaces stay legal). Anything else
+      -- must be a URI of the shape uri_scheme accepts.
+      if starts_with($v, "/") then
+        if byte_length($v) > 8192 or re_match($v, "[\\x00-\\x1f\\x7f]") then return false end
+      elif uri_scheme($v) == nil then
+        return false
+      end
     end
   end
   return true
@@ -437,11 +443,13 @@ fn find_app($apps, $id)
 end
 
 fn mimeapps_paths()
+  -- XDG base directory rule: a non-absolute XDG_CONFIG_HOME or
+  -- XDG_CONFIG_DIRS entry is ignored; the default applies instead.
   $home = env("XDG_CONFIG_HOME")
-  if $home == "" then $home = env("HOME") .. "/.config" end
+  if not starts_with($home, "/") then $home = env("HOME") .. "/.config" end
   $dirs = env("XDG_CONFIG_DIRS")
   if $dirs == "" then $dirs = "/etc/xdg" end
-  $locations = concat([$home], filter(split($dirs, ":"), fn($d) = $d != ""))
+  $locations = concat([$home], filter(split($dirs, ":"), fn($d) = starts_with($d, "/")))
   $locations = concat($locations, application_dirs())
   $paths = []
   for $dir in $locations
@@ -482,16 +490,20 @@ fn resolve_handler($apps, $mime, $paths)
       end
     end
     $defaults = concat($defaults, split_semis(($ini["Default Applications"] ?? {})[$mime] ?? ""))
-    for $value in split_semis(($ini["Removed Associations"] ?? {})[$mime] ?? "")
-      $entry = find_app($apps, strip_suffix($value, ".desktop"))
-      if $entry != nil and association_applies($entry, dirname($path), $directories) then push($removed, $value) end
-    end
-    for $value in split_semis(($ini["Added Associations"] ?? {})[$mime] ?? "")
-      $entry = ends_with($value, ".desktop") ? find_app($apps, strip_suffix($value, ".desktop")) : nil
-      if $entry != nil and not contains($removed, $value) and association_applies($entry, dirname($path), $directories) then push($associated, $value) end
-    end
-    -- Declarations join at their data directory, after its association edits.
+    -- Association edits come only from the plain mimeapps.list; a
+    -- desktop-prefixed file supplies defaults. Within one file Added is
+    -- processed before Removed, so the user's own addition beats their own
+    -- removal; the removal still blacklists later files and declarations.
     if basename($path) == "mimeapps.list" then
+      for $value in split_semis(($ini["Added Associations"] ?? {})[$mime] ?? "")
+        $entry = ends_with($value, ".desktop") ? find_app($apps, strip_suffix($value, ".desktop")) : nil
+        if $entry != nil and not contains($removed, $value) and association_applies($entry, dirname($path), $directories) then push($associated, $value) end
+      end
+      for $value in split_semis(($ini["Removed Associations"] ?? {})[$mime] ?? "")
+        $entry = find_app($apps, strip_suffix($value, ".desktop"))
+        if $entry != nil and association_applies($entry, dirname($path), $directories) then push($removed, $value) end
+      end
+      -- Declarations join at their data directory, after its association edits.
       for $entry in $apps
         $value = $entry.id .. ".desktop"
         if starts_with($entry.path, dirname($path) .. "/") and contains($entry.mime_types ?? [], $mime) and not contains($removed, $value) then push($associated, $value) end
@@ -506,7 +518,7 @@ fn resolve_handler($apps, $mime, $paths)
   for $value in concat($defaults, $associated)
     if not contains($associated, $value) then continue end
     $entry = find_app($apps, strip_suffix($value, ".desktop"))
-    if $entry != nil and not $entry.terminal and uri_exec_valid($entry.exec) and len(expand_exec($entry.exec, $entry, nil)) > 0 then return $entry.id end
+    if $entry != nil and not $entry.terminal and uri_exec_valid($entry.exec, $entry, true) then return $entry.id end
   end
   return nil
 end
@@ -601,16 +613,41 @@ fn uri_to_path($uri)
   return $uri
 end
 
--- Match the actual field-code parser, including %% escapes. URI-bearing
--- launches may not substitute content into a larger argument or argv[0].
-fn uri_exec_valid($exec)
-  $first = true
-  for $arg in parse_exec($exec)
-    $exp = expand_codes($arg, {icon: "", name: "", path: ""}, [], [])
-    if $exp.file_code and ($first or not contains(["%u", "%U", "%f", "%F"], $arg)) then return false end
-    $first = false
+-- Desktop entries are trusted code: an operator or a package installs them,
+-- and no check can prove a program treats an argument as data (a wrapper
+-- that evals $1 defeats any denylist). This gate therefore guarantees only
+-- placement, checked on the EXPANDED argv with a per-call random sentinel
+-- standing in for the URI: the sentinel must survive as a whole argv
+-- element after the executable -- never inside a larger element, never
+-- argv[0] (a leading %d or an empty %i expands away and would shift the URI
+-- into the executable slot) and never immediately after a code flag.
+-- $exact (the OpenURI resolver) demands exactly one sentinel, from a
+-- standalone %u or %U: no implicit append. Otherwise (URI-bearing START)
+-- at least one sentinel suffices and the spec's implicit append stays.
+-- The flag test is a malformed-entry tripwire, not a security boundary.
+fn uri_exec_valid($exec, $entry = nil, $exact = false)
+  $entry = $entry ?? {icon: "", name: "", path: ""}
+  $s = "x-sentinel:" .. uuid()
+  $argv = expand_exec($exec, $entry, [$s])
+  if len($argv) == 0 or $argv[0] == "" or contains($argv[0], $s) then return false end
+  if $exact then
+    $codes = 0
+    for $arg in parse_exec($exec)
+      if $arg == "%u" or $arg == "%U" then $codes = $codes + 1 end
+    end
+    if $codes != 1 then return false end
   end
-  return not $first
+  $found = 0
+  for $i = 1 to len($argv) - 1
+    $arg = $argv[$i]
+    if contains($arg, $s) then
+      if $arg != $s then return false end
+      $prev = $argv[$i - 1]
+      if re_match($prev, "^-[A-Za-z]*[ce]$") or contains(["--command", "--eval", "--exec", "--execute"], $prev) then return false end
+      $found = $found + 1
+    end
+  end
+  return $exact ? $found == 1 : $found >= 1
 end
 
 fn expand_codes($arg, $entry, $uris, $paths)
@@ -618,8 +655,8 @@ fn expand_codes($arg, $entry, $uris, $paths)
   -- {argv: replacement elements, file_code: whether a %f/%F/%u/%U was seen}.
   -- An argument that is exactly one field code is replaced whole (and is
   -- dropped when its value is absent); embedded codes substitute in place.
-  -- Legacy embedded expansion is retained for callers without URI input.
-  -- uri_exec_valid gates resolver and URI-bearing START before expansion.
+  -- Embedded expansion stays for non-URI launches; uri_exec_valid's
+  -- sentinel gate refuses it before any URI-bearing resolver or START use.
   if $arg == "%f" then
     if len($paths) == 0 then return {argv: [], file_code: true} end
     return {argv: [$paths[0]], file_code: true}

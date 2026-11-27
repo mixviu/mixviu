@@ -1,4 +1,4 @@
--- version: 0.1.3
+-- version: 0.1.4
 -- apps -- the application-registry citizen: the data foundation for the
 -- desktop launcher and the taskbar's app icons. It scans the freedesktop
 -- desktop-entry directories, resolves icons through the icon-theme spec and
@@ -18,9 +18,10 @@
 -- after the request. focus_or_stop stops every instance of the desktop id
 -- when one of its windows is focused.
 -- apps.terminal is a command whose executable must be an absolute path.
--- Mesh start/launch by desktop id, stop, toggle and running remain open
--- until Bus 2c. open/handler and property mutation are local-only. Mesh
--- callers can flood refused-history rows: a known limit.
+-- Mesh start/launch by desktop id (without uris), stop, toggle and running
+-- remain open until Bus 2c. START/LAUNCH with uris, open/handler and
+-- property mutation are local-only. Mesh callers can flood refused-history
+-- rows: a known limit.
 $a = require("lib/apps.mix")
 
 $apps = $a.scan_apps($a.application_dirs(), $a.locale_id(), "MIXOS")
@@ -168,13 +169,16 @@ fn start_app($request, $activation_token = nil)
   if has_key($request, "argv") and (not $allow_argv or not local_origin()) then
     return {rc: 10, body: {error: "forbidden", error_code: "FORBIDDEN"}}
   end
+  if len($request.uris ?? []) > 0 and not local_origin() then
+    return {rc: 10, body: {error: "forbidden", error_code: "FORBIDDEN"}}
+  end
   if len(keys($live)) >= 120 then return {rc: 10, body: {error: "limit", error_code: "RESOURCE_LIMIT"}} end
   $id = $request.id
   $opts = {exit_event: true}
   if $id != nil then
     $entry = $a.find_app($apps, $id)
     if $entry == nil then return {rc: 14, body: {error: "not_found"}} end
-    if len($request.uris ?? []) > 0 and not $a.uri_exec_valid($entry.exec) then
+    if len($request.uris ?? []) > 0 and not $a.uri_exec_valid($entry.exec, $entry) then
       return {rc: 10, body: {error: "invalid_request", id: $id}}
     end
     $argv = $a.expand_exec($entry.exec, $entry, $request.uris)
@@ -188,7 +192,7 @@ fn start_app($request, $activation_token = nil)
   end
   $exe = len($argv) > 0 ? $a.resolve_exec($argv[0], $opts.cwd ?? "") : nil
   if $exe == nil then
-    eprint("apps.start: executable unavailable: " .. to_string($argv[0]))
+    eprint("apps.start: executable unavailable: " .. ($id ?? to_string($argv[0])))
     return {rc: 11, body: {error: "spawn_failed", id: $id}}
   end
   $serial = $serial + 1
