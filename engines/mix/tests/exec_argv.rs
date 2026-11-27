@@ -11,7 +11,10 @@ use std::process::{Command, Output, Stdio};
 const MIX: &str = env!("CARGO_BIN_EXE_mix");
 
 fn run(source: &str) -> Output {
-    Command::new(MIX).args(["--no-prelude", "-c", source])
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("probe.mix");
+    std::fs::write(&script, source).unwrap();
+    Command::new(MIX).arg("--no-prelude").arg(script)
         .env("MIX_STATS", "off").output().unwrap()
 }
 
@@ -62,7 +65,10 @@ fn fixture() {
         }
     }
     let source = std::env::var("EXEC_SOURCE").unwrap();
-    panic!("mix exec failed: {}", Command::new(MIX).args(["--no-prelude", "-c", &source]).exec());
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("fixture.mix");
+    std::fs::write(&script, source).unwrap();
+    panic!("mix exec failed: {}", Command::new(MIX).arg("--no-prelude").arg(script).exec());
 }
 
 #[test]
