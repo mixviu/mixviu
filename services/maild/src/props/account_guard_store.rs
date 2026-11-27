@@ -49,16 +49,15 @@ impl PropertyStore for AccountGuardStore {
                     }
                     _ => op.expected_version = Some(observed),
                 }
-                if let Some(prior) = prior {
-                    if let (PropValue::Object(new), PropValue::Object(old)) =
+                if let Some(prior) = prior
+                    && let (PropValue::Object(new), PropValue::Object(old)) =
                         (&mut op.new_value, prior.value)
-                    {
-                        for field in ["allowed_recipients", "send_rate"] {
-                            if !new.contains_key(field)
-                                && let Some(value) = old.get(field)
-                            {
-                                new.insert(field.into(), value.clone());
-                            }
+                {
+                    for field in ["allowed_recipients", "send_rate"] {
+                        if !new.contains_key(field)
+                            && let Some(value) = old.get(field)
+                        {
+                            new.insert(field.into(), value.clone());
                         }
                     }
                 }
