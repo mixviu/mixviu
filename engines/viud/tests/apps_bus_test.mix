@@ -325,6 +325,7 @@ try
   -- prefixed as terminal argv + app argv (B7 over the Bus).
   $set = call("apps", "apps.props.set", json_encode({path: "apps.terminal", value: $tmp .. "/bin/recorder -e"}))
   check($set.rc == 0 and $set.result.value == $tmp .. "/bin/recorder -e", "apps.props.set terminal failed")
+  remove($tmp .. "/launched-recorder")
   $launch = call("apps", "apps.launch", json_encode({id: "term"}))
   check($launch.rc == 0, "terminal apps.launch failed")
   check(wait_file($tmp .. "/launched-recorder") == "-e\n" .. $tmp .. "/bin/recorder\nterm-arg\n",

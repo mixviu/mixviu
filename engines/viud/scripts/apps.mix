@@ -125,6 +125,10 @@ $history_seq = 0
 $history_dir = mix_path("var", "apps/history")
 mkdir($history_dir, {parents: true})
 
+fn utc_now()
+  return date_format(time(), "%Y-%m-%dT%H:%M:%SZ", {utc: true})
+end
+
 fn record_row($seq, $kind, $data)
   -- Daily append-only segments; prune old segments and cap total bytes at
   -- 8 MiB, deleting oldest whole segments. The active segment rolls at 1 MiB.
@@ -133,7 +137,7 @@ fn record_row($seq, $kind, $data)
   for $f in $files
     if stat($f).mtime < time() - 30 * 86400 then remove($f) else $total = $total + stat($f).size end
   end
-  $date = substr(now_iso(), 0, 10)
+  $date = substr(utc_now(), 0, 10)
   $path = $history_dir .. "/" .. $date .. "-" .. $generation .. ".jsonl"
   if exists($path) and stat($path).size >= 1048576 then $path = $history_dir .. "/" .. $date .. "-" .. $generation .. "-" .. $seq .. ".jsonl" end
   for $f in $files
@@ -141,7 +145,8 @@ fn record_row($seq, $kind, $data)
     if exists($f) and $f != $path then $total = $total - stat($f).size; remove($f) end
   end
   $seq = $seq + 1
-  append_file($path, json_encode({ts_utc: now_iso(), node: hostname(), source: "apps", seq: $generation .. "-" .. $seq, kind: $kind, class: "operator", ref: {file: basename($path)}, data: $a.history_data($data)}) .. "\n")
+  $line = exists($path) ? len(lines(trim(read_file($path)))) + 1 : 1
+  append_file($path, json_encode({ts_utc: utc_now(), node: hostname(), source: "apps", seq: $generation .. "-" .. $seq, kind: $kind, class: "operator", ref: {file: basename($path), line: $line}, data: $a.history_data($data)}) .. "\n")
   return $seq
 end
 if not is_reload_candidate() then $history_seq = record_row($history_seq, "gap", {reason: "citizen_start"}) end
@@ -189,7 +194,7 @@ fn start_app($request, $live, $serial)
   catch $err
     return {rc: 11, body: {error: "spawn_failed", id: $id}, live: $live, serial: $serial}
   end
-  $body = {handle: $handle, id: $id, pid: $pid, argv: $argv, started_utc: now_iso()}
+  $body = {handle: $handle, id: $id, pid: $pid, argv: $argv, started_utc: utc_now()}
   $live[$handle] = merge($body, {name: $name, since: monotonic(), state: "running", reason: "exit", timers: []})
   publish(serve_name() .. ".started", json_encode($body), {command: "apps.started"})
   return {rc: 0, body: $body, live: $live, serial: $serial}
