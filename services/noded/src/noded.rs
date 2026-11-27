@@ -1389,11 +1389,15 @@ impl std::fmt::Debug for SeedRead {
 fn classify_seed_read(raw: std::io::Result<zeroize::Zeroizing<Vec<u8>>>) -> SeedRead {
     match raw {
         Ok(source) => {
-            let Ok(text) = std::str::from_utf8(&source) else { return SeedRead::Malformed; };
+            let Ok(text) = std::str::from_utf8(&source) else {
+                return SeedRead::Malformed;
+            };
             // Both successful and partially decoded error bytes belong to this
             // erasing buffer. base64 never allocates a secret output Vec.
             let mut decoded = zeroize::Zeroizing::new([0; 33]);
-            match base64::engine::general_purpose::STANDARD.decode_slice(text.trim(), decoded.as_mut()) {
+            match base64::engine::general_purpose::STANDARD
+                .decode_slice(text.trim(), decoded.as_mut())
+            {
                 Ok(32) => {
                     let mut seed = zeroize::Zeroizing::new([0; 32]);
                     seed.copy_from_slice(&decoded[..32]);
@@ -6014,7 +6018,10 @@ mod tests {
         let dir = std::env::temp_dir();
         let good = dir.join("mixos_test_d2_good.seed");
         std::fs::write(&good, b64.encode([7u8; 32])).unwrap();
-        assert_eq!(load_d2_seed(&good), Some(mesh::seed::D2Seed::new([7u8; 32])));
+        assert_eq!(
+            load_d2_seed(&good),
+            Some(mesh::seed::D2Seed::new([7u8; 32]))
+        );
         std::fs::remove_file(&good).ok();
         let short = dir.join("mixos_test_d2_short.seed");
         std::fs::write(&short, b64.encode([7u8; 16])).unwrap();
@@ -6050,12 +6057,16 @@ mod tests {
         }
         // Readable + valid base64-32 → Loaded.
         assert_eq!(
-            classify_seed_read(Ok(zeroize::Zeroizing::new(b64.encode([7u8; 32]).into_bytes()))),
+            classify_seed_read(Ok(zeroize::Zeroizing::new(
+                b64.encode([7u8; 32]).into_bytes()
+            ))),
             SeedRead::Loaded(mesh::seed::D2Seed::new([7u8; 32]))
         );
         // Readable but wrong length / not base64 → Malformed (LOUD).
         assert_eq!(
-            classify_seed_read(Ok(zeroize::Zeroizing::new(b64.encode([7u8; 16]).into_bytes()))),
+            classify_seed_read(Ok(zeroize::Zeroizing::new(
+                b64.encode([7u8; 16]).into_bytes()
+            ))),
             SeedRead::Malformed
         );
         assert_eq!(
@@ -6066,20 +6077,26 @@ mod tests {
 
     #[test]
     fn d2_seed_debug_and_malformed_buffers() {
-        let read = super::SeedRead::Loaded(mesh::seed::D2Seed::new([173;32]));
+        let read = super::SeedRead::Loaded(mesh::seed::D2Seed::new([173; 32]));
         let debug = format!("{read:?}");
         assert_eq!(debug, "<redacted>");
         assert!(!debug.contains("173"));
-        for source in [vec![0xff;44], b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA!".to_vec()] {
-            assert_eq!(super::classify_seed_read(Ok(zeroize::Zeroizing::new(source))), super::SeedRead::Malformed);
+        for source in [
+            vec![0xff; 44],
+            b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA!".to_vec(),
+        ] {
+            assert_eq!(
+                super::classify_seed_read(Ok(zeroize::Zeroizing::new(source))),
+                super::SeedRead::Malformed
+            );
         }
     }
 
     #[test]
     fn d2_seed_file_policy_warns_once_and_never_follows_or_blocks() {
         use base64::Engine as _;
-        use std::os::unix::fs::{symlink, PermissionsExt};
         use std::io::Write;
+        use std::os::unix::fs::{PermissionsExt, symlink};
         #[derive(Clone)]
         struct Capture(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
         impl Write for Capture {
@@ -6087,41 +6104,60 @@ mod tests {
                 self.0.lock().unwrap().extend_from_slice(bytes);
                 Ok(bytes.len())
             }
-            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
         }
         let capture = Capture(Default::default());
         let writer = capture.clone();
-        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
-            .with_max_level(tracing::Level::WARN).with_writer(move || writer.clone()).finish();
+        let subscriber = tracing_subscriber::fmt()
+            .without_time()
+            .with_ansi(false)
+            .with_max_level(tracing::Level::WARN)
+            .with_writer(move || writer.clone())
+            .finish();
         let _guard = tracing::subscriber::set_default(subscriber);
         let directory = std::env::temp_dir().join(format!("d2-policy-{}", rand::random::<u64>()));
         std::fs::create_dir(&directory).unwrap();
         let target = directory.join("seed");
         let b64 = base64::engine::general_purpose::STANDARD;
-        std::fs::write(&target, b64.encode([173;32])).unwrap();
+        std::fs::write(&target, b64.encode([173; 32])).unwrap();
         for mode in [0o640, 0o660, 0o644] {
             capture.0.lock().unwrap().clear();
-            std::fs::set_permissions(&target,std::fs::Permissions::from_mode(mode)).unwrap();
-            assert_eq!(super::load_d2_seed(&target),Some(mesh::seed::D2Seed::new([173;32])));
+            std::fs::set_permissions(&target, std::fs::Permissions::from_mode(mode)).unwrap();
+            assert_eq!(
+                super::load_d2_seed(&target),
+                Some(mesh::seed::D2Seed::new([173; 32]))
+            );
             let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
-            assert_eq!(log.matches("WARN").count(),usize::from(mode != 0o640),"{log}");
+            assert_eq!(
+                log.matches("WARN").count(),
+                usize::from(mode != 0o640),
+                "{log}"
+            );
             if mode != 0o640 {
                 assert!(log.contains(&target.display().to_string()));
                 assert!(log.contains(&format!("mode={mode:o}")));
                 // SAFETY: geteuid has no preconditions.
-                assert!(log.contains(&format!("owner={}",unsafe { libc::geteuid() })));
+                assert!(log.contains(&format!("owner={}", unsafe { libc::geteuid() })));
             }
         }
         let link = directory.join("link");
-        symlink(&target,&link).unwrap();
+        symlink(&target, &link).unwrap();
         assert!(super::load_d2_seed(&link).is_none());
         let fifo = directory.join("fifo");
         let name = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
         // SAFETY: name is a live NUL-terminated path, and mode is valid.
-        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(),0o600) },0);
-        let (tx,rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || { let _ = tx.send(super::load_d2_seed(&fifo)); });
-        assert!(rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap().is_none());
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(super::load_d2_seed(&fifo));
+        });
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_secs(1))
+                .unwrap()
+                .is_none()
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 

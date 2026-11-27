@@ -213,10 +213,15 @@ mod tests {
         tls["credentials"][0]["kind"] = serde_json::json!("bus-tls");
         let mut no_bus = tls.clone();
         no_bus["bus"] = serde_json::json!(false);
-        let authority = TlsAuthority::new(&BTreeMap::from([
-            ("alpha".into(), tls), (ineligible.into(), no_bus),
-        ]),1,42);
-        assert!(authority.member_for(&key).is_none(), "ineligible {ineligible}");
+        let authority = TlsAuthority::new(
+            &BTreeMap::from([("alpha".into(), tls), (ineligible.into(), no_bus)]),
+            1,
+            42,
+        );
+        assert!(
+            authority.member_for(&key).is_none(),
+            "ineligible {ineligible}"
+        );
     }
 
     #[test]

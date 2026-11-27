@@ -13,15 +13,15 @@
 //! fail closed if a reload has already revoked it). Never record peer identity
 //! in a shared verifier: concurrent handshakes would overwrite one another.
 
+pub use crate::seed::{BusTlsSeed, SeedFileError};
 use ed25519_dalek::Signer as _;
 use mesh_trust::identity::{TlsAuthority, TlsMember};
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
 use rustls::{DigitallySignedStruct, Error, SignatureScheme};
-use std::sync::{Arc, RwLock, LazyLock};
+use std::sync::{Arc, LazyLock, RwLock};
 use zeroize::Zeroizing;
-pub use crate::seed::{BusTlsSeed, SeedFileError};
 
 /// Replace the immutable cache only after accepting a signed inventory.
 pub type LiveAuthority = Arc<RwLock<Arc<TlsAuthority>>>;
@@ -32,7 +32,10 @@ pub fn load_seed(path: &std::path::Path) -> Result<BusTlsSeed, SeedFileError> {
     use std::io::Read;
     let opened = crate::seed::open_seed(path)?;
     if !opened.secure {
-        return Err(SeedFileError::Insecure { mode: opened.mode, owner: opened.owner });
+        return Err(SeedFileError::Insecure {
+            mode: opened.mode,
+            owner: opened.owner,
+        });
     }
     let mut file = opened.file;
     let mut bytes = Zeroizing::new([0; 33]);
@@ -620,33 +623,45 @@ mod tests {
             assert_eq!(load_seed(&path).is_ok(), len == 32);
         }
         file.set_len(32).unwrap();
-        file.set_permissions(std::fs::Permissions::from_mode(0o640)).unwrap();
+        file.set_permissions(std::fs::Permissions::from_mode(0o640))
+            .unwrap();
         assert!(load_seed(&path).is_ok());
         for mode in [0o644, 0o660] {
-            file.set_permissions(std::fs::Permissions::from_mode(mode)).unwrap();
-            assert!(matches!(load_seed(&path), Err(SeedFileError::Insecure { .. })));
+            file.set_permissions(std::fs::Permissions::from_mode(mode))
+                .unwrap();
+            assert!(matches!(
+                load_seed(&path),
+                Err(SeedFileError::Insecure { .. })
+            ));
         }
         std::fs::remove_file(path).unwrap();
     }
 
     #[test]
     fn seed_loader_refuses_symlink_and_fifo_promptly() {
-        use std::os::unix::fs::{symlink, PermissionsExt};
+        use std::os::unix::fs::{PermissionsExt, symlink};
         let directory = std::env::temp_dir().join(format!("bus-tls-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&directory).unwrap();
         let target = directory.join("seed");
-        std::fs::write(&target, [7;32]).unwrap();
+        std::fs::write(&target, [7; 32]).unwrap();
         std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
         let link = directory.join("link");
         symlink(&target, &link).unwrap();
-        assert!(matches!(load_seed(&link), Err(SeedFileError::Io(error)) if error.raw_os_error() == Some(libc::ELOOP)));
+        assert!(
+            matches!(load_seed(&link), Err(SeedFileError::Io(error)) if error.raw_os_error() == Some(libc::ELOOP))
+        );
         let fifo = directory.join("fifo");
         let name = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
         // SAFETY: name is a live NUL-terminated path, and mode is valid.
         assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || { let _ = tx.send(load_seed(&fifo)); });
-        assert!(matches!(rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap(), Err(SeedFileError::NotRegular)));
+        std::thread::spawn(move || {
+            let _ = tx.send(load_seed(&fifo));
+        });
+        assert!(matches!(
+            rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap(),
+            Err(SeedFileError::NotRegular)
+        ));
         std::fs::remove_dir_all(directory).unwrap();
     }
 }
