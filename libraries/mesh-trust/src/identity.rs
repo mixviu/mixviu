@@ -14,12 +14,17 @@ pub fn validate_member_keys(members: &Value, epoch: u64) -> Result<(), String> {
     let records = key_windows(members)?;
     for (i, a) in records.iter().enumerate() {
         for b in records.iter().skip(i + 1) {
-            if a.key != b.key { continue; }
+            if a.key != b.key {
+                continue;
+            }
             if (a.kind == "d2" && b.kind == "bus-tls") || (a.kind == "bus-tls" && b.kind == "d2") {
                 return Err("pubkey is shared by d2 and bus-tls credentials".into());
             }
-            if a.until.is_some_and(|end| b.from >= end) || b.until.is_some_and(|end| a.from >= end)
-                || (a.tombstoned && b.current(epoch)) || (b.tombstoned && a.current(epoch)) {
+            if a.until.is_some_and(|end| b.from >= end)
+                || b.until.is_some_and(|end| a.from >= end)
+                || (a.tombstoned && b.current(epoch))
+                || (b.tombstoned && a.current(epoch))
+            {
                 return Err("pubkey reopens a closed credential window".into());
             }
         }
@@ -28,44 +33,91 @@ pub fn validate_member_keys(members: &Value, epoch: u64) -> Result<(), String> {
 }
 
 /// Only the accepted snapshot supplies history; nothing is persisted or pruned.
-pub fn validate_key_reload(current: &Value, current_epoch: u64, candidate: &Value, candidate_epoch: u64) -> Result<(), String> {
+pub fn validate_key_reload(
+    current: &Value,
+    current_epoch: u64,
+    candidate: &Value,
+    candidate_epoch: u64,
+) -> Result<(), String> {
     validate_member_keys(candidate, candidate_epoch)?;
     let old = key_windows(current)?;
     let next = key_windows(candidate)?;
-    for closed in old.iter().filter(|key| key.tombstoned || key.until.is_some_and(|end| end <= current_epoch)) {
-        if next.iter().any(|key| key.key == closed.key && key.current(candidate_epoch)) {
-            return Err("candidate makes a key current that is closed in the accepted inventory".into());
+    for closed in old
+        .iter()
+        .filter(|key| key.tombstoned || key.until.is_some_and(|end| end <= current_epoch))
+    {
+        if next
+            .iter()
+            .any(|key| key.key == closed.key && key.current(candidate_epoch))
+        {
+            return Err(
+                "candidate makes a key current that is closed in the accepted inventory".into(),
+            );
         }
     }
     Ok(())
 }
 
 struct KeyWindow {
-    key: Vec<u8>, kind: String, from: u64, until: Option<u64>, tombstoned: bool, eligible: bool,
+    key: Vec<u8>,
+    kind: String,
+    from: u64,
+    until: Option<u64>,
+    tombstoned: bool,
+    eligible: bool,
 }
 impl KeyWindow {
     fn current(&self, epoch: u64) -> bool {
-        self.eligible && !self.tombstoned && self.from <= epoch && self.until.is_none_or(|end| epoch < end)
+        self.eligible
+            && !self.tombstoned
+            && self.from <= epoch
+            && self.until.is_none_or(|end| epoch < end)
     }
 }
 fn key_windows(members: &Value) -> Result<Vec<KeyWindow>, String> {
     use base64::Engine as _;
     let mut out = Vec::new();
     for member in members.as_array().ok_or("members must be an array")? {
-        let Some(credentials) = member.get("credentials") else { continue };
-        for c in credentials.as_array().ok_or("credentials must be an array")? {
-            let kind = c["kind"].as_str().ok_or("credential kind must be a string")?;
-            if !matches!(kind, "wg" | "d2" | "bus-tls") { return Err("unknown credential kind".into()); }
-            if kind == "bus-tls" && member["bus"] != true { return Err("bus-tls credential on bus:false member".into()); }
-            let key = base64::engine::general_purpose::STANDARD.decode(c["pubkey"].as_str().ok_or("missing credential pubkey")?).map_err(|_| "invalid credential pubkey")?;
-            if key.len() != 32 { return Err("credential pubkey must be 32 bytes".into()); }
-            let from = c["from_epoch"].as_u64().ok_or("invalid credential from_epoch")?;
+        let Some(credentials) = member.get("credentials") else {
+            continue;
+        };
+        for c in credentials
+            .as_array()
+            .ok_or("credentials must be an array")?
+        {
+            let kind = c["kind"]
+                .as_str()
+                .ok_or("credential kind must be a string")?;
+            if !matches!(kind, "wg" | "d2" | "bus-tls") {
+                return Err("unknown credential kind".into());
+            }
+            if kind == "bus-tls" && member["bus"] != true {
+                return Err("bus-tls credential on bus:false member".into());
+            }
+            let key = base64::engine::general_purpose::STANDARD
+                .decode(c["pubkey"].as_str().ok_or("missing credential pubkey")?)
+                .map_err(|_| "invalid credential pubkey")?;
+            if key.len() != 32 {
+                return Err("credential pubkey must be 32 bytes".into());
+            }
+            let from = c["from_epoch"]
+                .as_u64()
+                .ok_or("invalid credential from_epoch")?;
             let until = match c.get("until_epoch") {
                 None | Some(Value::Null) => None,
                 Some(value) => Some(value.as_u64().ok_or("invalid credential until_epoch")?),
             };
-            if until.is_some_and(|end| end <= from) { return Err("empty credential window".into()); }
-            out.push(KeyWindow { key, kind: kind.into(), from, until, tombstoned: member["status"] == "tombstoned", eligible: kind == "wg" || member["bus"] == true });
+            if until.is_some_and(|end| end <= from) {
+                return Err("empty credential window".into());
+            }
+            out.push(KeyWindow {
+                key,
+                kind: kind.into(),
+                from,
+                until,
+                tombstoned: member["status"] == "tombstoned",
+                eligible: kind == "wg" || member["bus"] == true,
+            });
         }
     }
     Ok(out)
@@ -287,20 +339,50 @@ mod tests {
 
     #[test]
     fn purpose_and_closed_windows_reject_independent_of_order() {
-        let mut old = member(&[[7;32]]);
+        let mut old = member(&[[7; 32]]);
         old["credentials"][0]["until_epoch"] = serde_json::json!(2);
-        let mut next = member(&[[7;32]]);
+        let mut next = member(&[[7; 32]]);
         next["credentials"][0]["kind"] = serde_json::json!("bus-tls");
-        for records in [serde_json::json!([old.clone(),next.clone()]),serde_json::json!([next.clone(),old.clone()])] {
-            assert!(validate_member_keys(&records,3).unwrap_err().contains("d2 and bus-tls"));
+        for records in [
+            serde_json::json!([old.clone(), next.clone()]),
+            serde_json::json!([next.clone(), old.clone()]),
+        ] {
+            assert!(
+                validate_member_keys(&records, 3)
+                    .unwrap_err()
+                    .contains("d2 and bus-tls")
+            );
         }
         next["credentials"][0]["kind"] = serde_json::json!("d2");
         next["credentials"][0]["from_epoch"] = serde_json::json!(2);
-        for records in [serde_json::json!([old.clone(),next.clone()]),serde_json::json!([next.clone(),old.clone()])] {
-            assert!(validate_member_keys(&records,3).unwrap_err().contains("closed"));
+        for records in [
+            serde_json::json!([old.clone(), next.clone()]),
+            serde_json::json!([next.clone(), old.clone()]),
+        ] {
+            assert!(
+                validate_member_keys(&records, 3)
+                    .unwrap_err()
+                    .contains("closed")
+            );
         }
-        assert!(validate_key_reload(&serde_json::json!([old.clone()]),2,&serde_json::json!([next]),3).is_err());
-        assert!(validate_key_reload(&serde_json::json!([old.clone()]),2,&serde_json::json!([old,member(&[[8;32]])]),3).is_ok());
+        assert!(
+            validate_key_reload(
+                &serde_json::json!([old.clone()]),
+                2,
+                &serde_json::json!([next]),
+                3
+            )
+            .is_err()
+        );
+        assert!(
+            validate_key_reload(
+                &serde_json::json!([old.clone()]),
+                2,
+                &serde_json::json!([old, member(&[[8; 32]])]),
+                3
+            )
+            .is_ok()
+        );
     }
 
     #[test]

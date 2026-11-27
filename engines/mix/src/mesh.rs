@@ -205,11 +205,15 @@ pub(crate) fn run(args: Vec<std::ffi::OsString>) -> Result<()> {
     let db = expand_tilde(&cli.secrets_db);
     match cli.cmd {
         Cmd::BusTlsGen { path, rotate } => {
-            let path = path.unwrap_or_else(|| config::path(config::Dir::Etc).join("noded/bus-tls.seed"));
+            let path =
+                path.unwrap_or_else(|| config::path(config::Dir::Etc).join("noded/bus-tls.seed"));
             let generated = mesh::seed::generate_bus_tls_seed(&path, rotate)?;
-            println!("{}", serde_json::json!({"path": generated.path, "pubkey": B64.encode(generated.public_key), "fingerprint": blake3::hash(&generated.public_key).to_hex().to_string()}));
+            println!(
+                "{}",
+                serde_json::json!({"path": generated.path, "pubkey": B64.encode(generated.public_key), "fingerprint": blake3::hash(&generated.public_key).to_hex().to_string()})
+            );
             Ok(())
-        },
+        }
         Cmd::Genesis { force } => cmd_genesis(&db, &cli.mesh, force),
         Cmd::Sign {
             inventory,

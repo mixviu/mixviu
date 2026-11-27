@@ -2119,7 +2119,11 @@ async fn reconcile_transport_authority(
 /// legible. A kept-last-good load returns before touching transport state.
 async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture) {
     let current = state.authority.load();
-    if let (crate::authority::Posture::Verified(old), crate::authority::Posture::Verified(candidate)) = (&current.posture, &new) {
+    if let (
+        crate::authority::Posture::Verified(old),
+        crate::authority::Posture::Verified(candidate),
+    ) = (&current.posture, &new)
+    {
         if let Err(reason) = crate::authority::validate_reload_keys(old, candidate) {
             tracing::warn!(event = "inventory.rejected", %reason, kept_last_good = true, "inventory reload refused");
             return;

@@ -21,7 +21,9 @@ pub struct Endpoint {
     pub transport: EndpointTransport,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub enum EndpointTransport {
     #[serde(rename = "tls")]
     Tls,
@@ -30,13 +32,19 @@ pub enum EndpointTransport {
 }
 
 pub fn parse_endpoints(record: &serde_json::Value) -> Result<Option<Vec<Endpoint>>, String> {
-    let Some(value) = record.get("endpoints") else { return Ok(None) };
+    let Some(value) = record.get("endpoints") else {
+        return Ok(None);
+    };
     let endpoints: Vec<Endpoint> = serde_json::from_value(value.clone())
         .map_err(|error| format!("invalid endpoints: {error}"))?;
     let mut seen = BTreeSet::new();
     for endpoint in &endpoints {
-        if endpoint.addr.port() == 0 { return Err("endpoint port must be in 1..=65535".into()); }
-        if !seen.insert(endpoint.clone()) { return Err("duplicate endpoint".into()); }
+        if endpoint.addr.port() == 0 {
+            return Err("endpoint port must be in 1..=65535".into());
+        }
+        if !seen.insert(endpoint.clone()) {
+            return Err("duplicate endpoint".into());
+        }
     }
     Ok(Some(endpoints))
 }
@@ -87,9 +95,11 @@ impl RoutingMember {
                 "mesh_ip": mesh_ip,
                 "noded_port": noded_port,
                 });
-                if let Some(endpoints) = endpoints { value["endpoints"] = serde_json::json!(endpoints); }
+                if let Some(endpoints) = endpoints {
+                    value["endpoints"] = serde_json::json!(endpoints);
+                }
                 value
-            },
+            }
             Self::Tombstoned { name } => serde_json::json!({
                 "class": "tombstoned",
                 "name": name,
@@ -317,7 +327,9 @@ mod tests {
         let view = strict_routing_view(&json!([member.clone()]), SUBNET).unwrap();
         assert_eq!(view[0].to_json()["endpoints"], member["endpoints"]);
         for bad in [
-            json!(null), json!({}), json!([{"addr":"node.example.org:4200","transport":"tls"}]),
+            json!(null),
+            json!({}),
+            json!([{"addr":"node.example.org:4200","transport":"tls"}]),
             json!([{"addr":"192.0.2.5:0","transport":"tls"}]),
             json!([{"addr":"192.0.2.5:65536","transport":"tls"}]),
             json!([{"addr":"192.0.2.5:4200","transport":"tcp"}]),
@@ -325,7 +337,10 @@ mod tests {
             json!([{"addr":"[2001:db8::5]:4200","transport":"tls"},{"addr":"[2001:db8:0:0:0:0:0:5]:4200","transport":"tls"}]),
         ] {
             member["endpoints"] = bad;
-            assert!(strict_routing_view(&json!([member.clone()]), SUBNET).is_err(), "{member}");
+            assert!(
+                strict_routing_view(&json!([member.clone()]), SUBNET).is_err(),
+                "{member}"
+            );
         }
     }
 
@@ -498,7 +513,7 @@ mod tests {
             &view[0],
             RoutingMember::ActiveBus {
                 noded_port: DEFAULT_NODED_PORT,
-                    endpoints: None,
+                endpoints: None,
                 ..
             }
         ));

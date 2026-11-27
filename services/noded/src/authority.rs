@@ -118,8 +118,15 @@ pub struct Accepted {
 }
 
 pub fn validate_reload_keys(current: &Accepted, candidate: &Accepted) -> Result<(), String> {
-    let records = |accepted: &Accepted| serde_json::Value::Array(accepted.members_full.values().cloned().collect());
-    mesh_trust::identity::validate_key_reload(&records(current), current.epoch, &records(candidate), candidate.epoch)
+    let records = |accepted: &Accepted| {
+        serde_json::Value::Array(accepted.members_full.values().cloned().collect())
+    };
+    mesh_trust::identity::validate_key_reload(
+        &records(current),
+        current.epoch,
+        &records(candidate),
+        candidate.epoch,
+    )
 }
 
 #[derive(Debug, Clone)]
