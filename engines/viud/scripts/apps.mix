@@ -451,6 +451,7 @@ on "apps.props.set" desc "set a citizen property (icon_theme, terminal; count is
     reply(10, json_encode({error: "forbidden", error_code: "FORBIDDEN"}))
   elif $path == "apps.allow_argv" then
     if type($value) != "bool" then
+      record_row("refused", {reason: "invalid_property_value"})
       reply(10, json_encode({error: "invalid_request"}))
     else
       $old = $allow_argv
@@ -459,6 +460,7 @@ on "apps.props.set" desc "set a citizen property (icon_theme, terminal; count is
       reply(0, json_encode({path: $path, value: $allow_argv}))
     end
   elif type($path) != "string" or $path == "" or type($value) != "string" or trim($value) == "" then
+    record_row("refused", {reason: "invalid_property_value"})
     reply(10, json_encode({error: "invalid_request"}))
   elif $path == "apps.icon_theme" then
     $icon_theme = trim($value)
@@ -474,8 +476,10 @@ on "apps.props.set" desc "set a citizen property (icon_theme, terminal; count is
       reply(0, json_encode({path: $path, value: $terminal_cmd}))
     end
   elif $path == "apps.count" then
+    record_row("refused", {reason: "read_only_property"})
     reply(10, json_encode({error: "read_only"}))
   else
+    record_row("refused", {reason: "unknown_property"})
     reply(14, json_encode({error: "not_found"}))
   end
 end

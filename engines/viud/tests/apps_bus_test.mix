@@ -503,10 +503,11 @@ try
   check(not process_alive($grandchild), "grandchild survived group stop")
   -- Managed ChildWatch kills the original group before reaping its leader.
   -- A native fixture leader exits naturally while its same-group helper sleeps.
-  fixture("orphan.mix", "$p = spawn([\"/usr/bin/sleep\", \"30\"])\nwrite_file(env(\"HOME\") .. \"/orphan-helper\", to_string($p))\nsleep(0.05)\n")
+  fixture("orphan.mix", "$p = spawn([\"/usr/bin/sleep\", \"30\"])\nwrite_file(env(\"HOME\") .. \"/orphan-helper\", json_encode({pid: $p, stat: read_file(\"/proc/\" .. $p .. \"/stat\")}))\nsleep(0.05)\n")
   $r = call("apps", "apps.start", json_encode({argv: [$mix, $tmp .. "/orphan.mix"], name: "leader-exit"}))
-  $helper = to_number(wait_file($tmp .. "/orphan-helper"))
-  $helper_stat = read_file("/proc/" .. $helper .. "/stat")
+  $helper_info = json_parse(wait_file($tmp .. "/orphan-helper"))
+  $helper = $helper_info.pid
+  $helper_stat = $helper_info.stat
   $fields = split(slice($helper_stat, last_index_of($helper_stat, ")") + 2), " ")
   check(to_number($fields[2]) == $r.result.pid, "helper fixture escaped leader group")
   check(await_exit($r.result.handle).reason == "exit", "leader natural exit missing")
