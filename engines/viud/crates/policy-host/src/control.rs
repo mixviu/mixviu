@@ -1520,6 +1520,22 @@ fn persist_workspaces(lp: &mut Loop, body: &mut Value) {
 /// Carry out the effects the workspace policy returned.
 pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
     let _span = ledger::frame_trace::span("comp_workspace_effects", 0);
+    // Policy has already updated visibility. Wake every arrival and flush the
+    // protocol batch before any effect can schedule its first redraw.
+    let mut waking = false;
+    for effect in &effects {
+        let id = match effect {
+            Effect::Present { id, .. } | Effect::Unminimize(id) | Effect::Restore(id) => *id,
+            _ => continue,
+        };
+        if let Some(window) = window_of(lp, id) {
+            lp.inner.wake_now(&window);
+            waking = true;
+        }
+    }
+    if waking {
+        let _ = lp.inner.loader.display_handle.flush_clients();
+    }
     crate::x11::sync_windows(
         lp,
         effects.iter().filter_map(|effect| match effect {
