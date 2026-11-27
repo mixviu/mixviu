@@ -149,6 +149,12 @@ pub enum InteractiveOp {
 /// A window state a client asked for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WindowRequest {
+    /// A known xdg token, recorded before queuing. Age is checked at the drain.
+    TokenActivation {
+        refusal: Option<&'static str>,
+        created: std::time::Instant,
+        spent: bool,
+    },
     Maximize(bool),
     Minimize,
     /// The window's own close control was used (viud's server-side chrome):

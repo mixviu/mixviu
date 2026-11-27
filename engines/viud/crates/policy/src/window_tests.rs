@@ -9,6 +9,67 @@ use comp_model::snapshot::RectSnapshot;
 
 const OUT: &str = "o_dp_1";
 
+#[test]
+fn activation_creation_requires_focus_and_serial_authority() {
+    assert_eq!(activation_grant(true, true, true, true, true), None);
+    for (facts, reason) in [
+        ([false,true,true,true,true], "no_serial"),
+        ([true,false,true,true,true], "wrong_seat"),
+        ([true,true,false,true,true], "creator_not_focused"),
+        ([true,true,true,false,true], "old_serial"),
+        ([true,true,true,true,false], "foreign_surface"),
+    ] {
+        assert_eq!(activation_grant(facts[0],facts[1],facts[2],facts[3],facts[4]),Some(reason));
+    }
+}
+
+#[test]
+fn activation_refusals_do_not_change_workspaces_or_emit_effects() {
+    use std::time::Duration;
+    let (mut registry, (id, generation), _) = two_windows();
+    registry.set_workspace(SurfaceId(id),3).unwrap();
+    for (grant, age, spent, scene, reason) in [
+        (Some("no_serial"),Duration::ZERO,false,SceneFacts::default(),"no_serial"),
+        (None,ACTIVATION_MAX_AGE + Duration::from_nanos(1),false,SceneFacts::default(),"expired"),
+        (None,Duration::ZERO,true,SceneFacts::default(),"spent"),
+        (None,Duration::ZERO,false,SceneFacts {session_lock:true,exclusive_layer:false},"locked"),
+        (None,Duration::ZERO,false,SceneFacts {session_lock:false,exclusive_layer:true},"exclusive_layer"),
+    ] {
+        let mut state = WorkspaceState::default();
+        let decision = activation(&registry,&mut state,Some(&default_output()),scene,&facts(),id,generation,grant,age,spent).unwrap();
+        assert_eq!(decision.reason,Some(reason));
+        assert!(decision.effects.is_empty());
+        assert_eq!(state.current(Some(&default_output())),1);
+    }
+}
+
+#[test]
+fn activation_raises_switches_restores_and_has_noop_targets() {
+    use std::time::Duration;
+    let (mut registry, (id, generation), _) = two_windows();
+    let sid = SurfaceId(id);
+    let mut state = WorkspaceState::default();
+    let decide = |registry: &Registry<u32>, state: &mut WorkspaceState| activation(registry,state,Some(&default_output()),SceneFacts::default(),&facts(),id,generation,None,ACTIVATION_MAX_AGE,false).unwrap();
+    let decision = decide(&registry,&mut state);
+    assert_eq!(decision.reason,None);
+    assert!(decision.effects.contains(&Effect::Activate(sid)));
+    assert!(decision.effects.contains(&Effect::MarkDirty {id:sid,cause:"xdg.activation"}));
+    registry.set_workspace(sid,3).unwrap();
+    assert!(decide(&registry,&mut state).effects.contains(&Effect::Activate(sid)));
+    assert_eq!(state.current(Some(&default_output())),3);
+    assert_eq!(registry.get(sid).unwrap().workspace(),Some(3));
+    registry.set_minimized(sid,true).unwrap();
+    assert!(decide(&registry,&mut state).effects.contains(&Effect::Restore(sid)));
+    registry.set_minimized(sid,false).unwrap();
+    registry.set_focused(sid,true).unwrap();
+    assert!(decide(&registry,&mut state).effects.is_empty());
+    registry.set_focused(sid,false).unwrap();
+    registry.set_mapped(sid,false).unwrap();
+    let decision = activation(&registry,&mut state,Some(&default_output()),SceneFacts::default(),&facts(),id,generation,None,Duration::ZERO,false).unwrap();
+    assert_eq!(decision.reason,Some("unmapped"));
+    assert!(decision.effects.is_empty());
+}
+
 fn default_output() -> DefaultOutput {
     DefaultOutput {
         key: OUT.into(),

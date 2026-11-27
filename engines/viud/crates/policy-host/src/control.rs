@@ -1519,6 +1519,14 @@ fn persist_workspaces(lp: &mut Loop, body: &mut Value) {
 
 /// Carry out the effects the workspace policy returned.
 pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
+    execute_with_origin(lp, effects, ActivationOrigin::Foreign);
+}
+
+fn execute_with_origin(lp: &mut Loop, effects: Vec<Effect>, origin: ActivationOrigin) {
+    let dirty: Vec<_> = effects.iter().filter_map(|effect| match effect {
+        Effect::MarkDirty { id, cause } => Some((*id, *cause)),
+        _ => None,
+    }).collect();
     let _span = ledger::frame_trace::span("comp_workspace_effects", 0);
     crate::x11::sync_windows(
         lp,
@@ -1545,7 +1553,7 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
                 moved = true;
             }
             Effect::Activate(id) => {
-                activate(lp, id);
+                activate(lp, id, origin);
                 moved = true;
             }
             Effect::Focus(id) => focus_keyboard(lp, id),
@@ -1565,7 +1573,7 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
                 lp.inner.comp.note_minimized(id, false);
                 crate::x11::sync_window(lp, id);
                 bring_into_view(lp, id);
-                activate(lp, id);
+                activate(lp, id, origin);
                 moved = true;
             }
             // Shown again where it is. The focus is left exactly as it is,
@@ -1664,6 +1672,9 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
         // projects its reply, including windows hidden on the destination.
         refresh_usable(lp);
     }
+    for (id, cause) in dirty {
+        lp.inner.comp.causes.note_window(id.0, cause);
+    }
 }
 
 /// The engine `Window` behind a registry record, wherever it lives.
@@ -1701,11 +1712,11 @@ fn raise_now(lp: &mut Loop, id: SurfaceId) {
 /// the next frame step, and a command that follows before that frame (a hit test,
 /// `comp_control_smoke`'s occluded refusal) must already see the new
 /// order. Idempotent with the engine's later activation.
-fn activate(lp: &mut Loop, id: SurfaceId) {
+fn activate(lp: &mut Loop, id: SurfaceId, origin: ActivationOrigin) {
     raise_now(lp, id);
     if let Some(window) = window_of(lp, id) {
         lp.inner
-            .request_activation(window, ActivationOrigin::Foreign);
+            .request_activation(window, origin);
     }
 }
 
@@ -1774,6 +1785,27 @@ pub fn apply_client_requests(lp: &mut Loop) {
             continue;
         };
         match request {
+            WindowRequest::TokenActivation { refusal, created, spent } => {
+                let facts = window_facts(lp, id);
+                let scene = policy::window::SceneFacts {
+                    session_lock: world::comp::session_lock::active(lp),
+                    exclusive_layer: world::comp::latch::active(lp),
+                };
+                let comp = &mut lp.inner.comp;
+                let default_output = comp.default_output.clone();
+                match policy::window::activation(
+                    &comp.registry, &mut comp.workspaces, default_output.as_ref(),
+                    scene, &facts, window_id, generation, refusal, created.elapsed(), spent,
+                ) {
+                    Ok(decision) => {
+                        if let Some(reason) = decision.reason {
+                            model::debug!("xdg.activation refused: {reason}");
+                        }
+                        execute_with_origin(lp, decision.effects, ActivationOrigin::Token);
+                    }
+                    Err(reason) => model::debug!("xdg.activation refused: {reason:?}"),
+                }
+            }
             WindowRequest::Maximize(enabled) => {
                 if window_state(
                     lp,
@@ -2220,7 +2252,7 @@ fn settle(lp: &mut Loop, prefer: Option<SurfaceId>) {
             .find(|id| shown(*id))
     });
     match target {
-        Some(id) => activate(lp, id),
+        Some(id) => activate(lp, id, ActivationOrigin::Foreign),
         None => {
             lp.inner.set_activated_exclusive(None);
             if let Some(keyboard) = lp.state.seat.seat.get_keyboard() {
