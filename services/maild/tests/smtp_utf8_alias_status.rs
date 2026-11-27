@@ -57,6 +57,11 @@ async fn fixture_with_overrides(
         tls_cert: Some(cert_path.to_string_lossy().into_owned()),
         tls_key: Some(key_path.to_string_lossy().into_owned()),
         spam_enabled: Some(false),
+        inbound_filter: tmp
+            .path()
+            .join("guard.mix")
+            .exists()
+            .then(|| tmp.path().join("guard.mix").display().to_string()),
         ..Config::default()
     };
     let opts = RuntimeOpts {
@@ -71,6 +76,298 @@ async fn fixture_with_overrides(
         .with_root_certificates(roots)
         .with_no_client_auth();
     Ok((built, tokio_rustls::TlsConnector::from(Arc::new(client))))
+}
+
+async fn guard_props(
+    built: &BuiltMaild,
+    allowed: Option<Vec<&str>>,
+    rate: Option<i64>,
+) -> Result<()> {
+    let value = json!({"email":"alice@example.com","allowed_recipients":allowed,"send_rate":rate});
+    let version = built
+        .accounts_runtime()
+        .store()
+        .get(&RecordKey::collection(
+            maild::props::accounts::namespace_name(),
+            "alice@example.com",
+        ))
+        .await?
+        .value
+        .version;
+    built
+        .accounts_runtime()
+        .set(
+            RecordKey::collection(
+                maild::props::accounts::namespace_name(),
+                "alice@example.com",
+            ),
+            serde_json::from_value(value)?,
+            SetOpts {
+                expected_version: Some(version),
+                merge: MergeMode::Patch,
+                actor: Actor::service("guard-test")?,
+                cause: None,
+                ts_ms: 0,
+            },
+        )
+        .await?;
+    Ok(())
+}
+
+async fn guard_message<S: AsyncRead + AsyncWrite + Unpin>(
+    io: &mut BufReader<S>,
+    recipients: &[&str],
+    expected: &str,
+) -> Result<()> {
+    command(io, "MAIL FROM:<alice@example.com>", "250").await?;
+    for recipient in recipients {
+        command(io, &format!("RCPT TO:<{recipient}>"), "250").await?;
+    }
+    command(io, "DATA", "354").await?;
+    command(
+        io,
+        "From: alice@example.com\r\nSubject: guard\r\n\r\nbody\r\n.",
+        expected,
+    )
+    .await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn doorway_replace_preserves_omitted_guards_and_explicit_null_clears() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let (built, _) = fixture(&tmp, None).await?;
+    let alice = account(&built, "alice@example.com").await?;
+    guard_props(&built, Some(vec!["bob@example.com"]), Some(1)).await?;
+    let runtime = built.accounts_runtime();
+    let key = RecordKey::collection(
+        maild::props::accounts::namespace_name(),
+        "alice@example.com",
+    );
+    let prior = runtime.store().get(&key).await?.value;
+    let replacement: PropValue = serde_json::from_value(json!({
+        "email":"alice@example.com", "password":bcrypt::hash("rotated-password", 4)?
+    }))?;
+    let outcome = runtime
+        .set(key.clone(), replacement.clone(), opts(prior.version))
+        .await?;
+    assert!(
+        !outcome
+            .set_event
+            .fields_changed
+            .iter()
+            .any(|f| f == "allowed_recipients" || f == "send_rate")
+    );
+    let after = runtime.store().get(&key).await?.value;
+    assert_eq!(
+        after.value.as_object().unwrap().get("allowed_recipients"),
+        prior.value.as_object().unwrap().get("allowed_recipients")
+    );
+    assert_eq!(
+        after.value.as_object().unwrap().get("send_rate"),
+        Some(&PropValue::Int(1))
+    );
+    let bad =
+        maild::submission_guard::admit(&built.app_state.db, alice, &["outside@example.net".into()])
+            .await
+            .unwrap_err();
+    assert!(matches!(
+        bad.downcast_ref(),
+        Some(maild::submission_guard::Refusal::Recipient)
+    ));
+    maild::submission_guard::admit(&built.app_state.db, alice, &["bob@example.com".into()]).await?;
+    assert!(matches!(
+        maild::submission_guard::admit(&built.app_state.db, alice, &["bob@example.com".into()])
+            .await
+            .unwrap_err()
+            .downcast_ref(),
+        Some(maild::submission_guard::Refusal::Rate)
+    ));
+    // A stale full Replace must not restore old guards over a newer policy.
+    assert!(
+        runtime
+            .set(key.clone(), replacement, opts(prior.version))
+            .await
+            .is_err()
+    );
+    let clear: PropValue = serde_json::from_value(json!({
+        "email":"alice@example.com", "password":"new-hash",
+        "allowed_recipients":null, "send_rate":null
+    }))?;
+    runtime.set(key.clone(), clear, opts(after.version)).await?;
+    let cleared = runtime.store().get(&key).await?.value;
+    assert!(
+        !cleared
+            .value
+            .as_object()
+            .unwrap()
+            .contains_key("allowed_recipients")
+    );
+    assert!(!cleared.value.as_object().unwrap().contains_key("send_rate"));
+    maild::submission_guard::admit(&built.app_state.db, alice, &["outside@example.net".into()])
+        .await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn doorway_guards_whole_smtp_and_jmap_envelopes() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let (built, tls) = fixture(&tmp, None).await?;
+    let alice = account(&built, "alice@example.com").await?;
+    let bob = account(&built, "bob@example.com").await?;
+    account(&built, "carol@example.com").await?;
+    guard_props(&built, Some(vec!["bob@example.com"]), Some(2)).await?;
+    assert!(
+        alias(
+            &built,
+            "door@example.com",
+            &["remote@example.net"],
+            Version::zero()
+        )
+        .await
+        .unwrap_err()
+        .to_string()
+        .contains("off-site forwarding")
+    );
+    let tcp = TcpStream::connect(built.smtp_handle.smtps_addrs[0]).await?;
+    let stream = tls
+        .connect(rustls::pki_types::ServerName::try_from("localhost")?, tcp)
+        .await?;
+    let mut io = BufReader::new(stream);
+    reply(&mut io).await?;
+    command(&mut io, "EHLO localhost", "250").await?;
+    command(&mut io, "BDAT 0 LAST", "502").await?;
+    command(
+        &mut io,
+        &format!(
+            "AUTH PLAIN {}",
+            base64::engine::general_purpose::STANDARD.encode(b"\0alice@example.com\0test-password")
+        ),
+        "235",
+    )
+    .await?;
+    guard_message(
+        &mut io,
+        &["bob@example.com", "carol@example.com"],
+        "550 5.7.1 recipientNotAllowed",
+    )
+    .await?;
+    assert_eq!(inbox_count(&built, bob)?, 0);
+    guard_message(&mut io, &["bob@example.com"], "250").await?;
+
+    let ms = &built.app_state.mailstore;
+    let drafts = ms.mailbox_by_role(alice, MailboxRole::Drafts)?.unwrap();
+    let hash = ms.put_blob(
+        b"From: alice@example.com\r\nTo: bob@example.com\r\nBcc: carol@example.com\r\nResent-Bcc: hidden@example.net\r\n\r\nbody",
+    )?;
+    let (item, _) = ms.create_email(
+        alice,
+        drafts,
+        hash,
+        maild::mailstore::EmailEnvelope {
+            from: "alice@example.com".into(),
+            to: vec!["bob@example.com".into()],
+            cc: vec![],
+            bcc: vec!["carol@example.com".into()],
+            reply_to: vec![],
+            subject: "guard".into(),
+            date: 0,
+            message_id: None,
+        },
+        &[],
+        mds::Flags(0),
+        mds::Tags::new(),
+        datetime::Utc::now().timestamp_millis(),
+    )?;
+    let args = json!({"create":{"s":{"emailId":item.0.to_string()}}});
+    let result = maild::jmap::submission::set(
+        &built.app_state.db,
+        ms,
+        &built.app_state.aliases_runtime,
+        alice,
+        args.clone(),
+    )
+    .await?;
+    assert_eq!(
+        result["notCreated"]["s"]["type"], "forbiddenToSend",
+        "{result}"
+    );
+    assert_eq!(inbox_count(&built, bob)?, 1);
+    guard_props(&built, Some(vec!["*@example.com"]), Some(2)).await?;
+    let result = maild::jmap::submission::set(
+        &built.app_state.db,
+        ms,
+        &built.app_state.aliases_runtime,
+        alice,
+        args.clone(),
+    )
+    .await?;
+    assert!(result["created"]["s"]["id"].is_string(), "{result}");
+    guard_message(&mut io, &["bob@example.com"], "451 4.7.0 sendRateExceeded").await?;
+    let result = maild::jmap::submission::set(
+        &built.app_state.db,
+        ms,
+        &built.app_state.aliases_runtime,
+        alice,
+        args,
+    )
+    .await?;
+    assert_eq!(
+        result["notCreated"]["s"]["type"], "tooManyRequests",
+        "{result}"
+    );
+    let bob_inbox = ms.mailbox_by_role(bob, MailboxRole::Inbox)?.unwrap();
+    for record in ms.list_emails_in_mailbox(bob, bob_inbox, ListOpts::default())? {
+        assert!(!String::from_utf8_lossy(&ms.read_blob(record.blob_hash)?).contains("Bcc:"));
+    }
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn doorway_filter_trusts_session_and_missing_target_is_opt_in() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let filter = tmp.path().join("guard.mix");
+    std::fs::write(
+        &filter,
+        "if $AUTH == \"local-auth\" and $AUTH_USER == \"alice@example.com\" then return \"Inbox\" end\nreturn \"junk-if-missing:GuardQuarantine\"\n",
+    )?;
+    let (built, tls) = fixture(&tmp, None).await?;
+    account(&built, "alice@example.com").await?;
+    let bob = account(&built, "bob@example.com").await?;
+    let tcp = TcpStream::connect(built.smtp_handle.smtps_addrs[0]).await?;
+    let stream = tls
+        .connect(rustls::pki_types::ServerName::try_from("localhost")?, tcp)
+        .await?;
+    let mut io = BufReader::new(stream);
+    reply(&mut io).await?;
+    command(&mut io, "EHLO localhost", "250").await?;
+    command(
+        &mut io,
+        &format!(
+            "AUTH PLAIN {}",
+            base64::engine::general_purpose::STANDARD.encode(b"\0alice@example.com\0test-password")
+        ),
+        "235",
+    )
+    .await?;
+    guard_message(&mut io, &["bob@example.com"], "250").await?;
+    let mut external =
+        BufReader::new(TcpStream::connect(built.smtp_handle.inbound_addrs[0]).await?);
+    reply(&mut external).await?;
+    command(&mut external, "EHLO forged.example", "250").await?;
+    guard_message(&mut external, &["bob@example.com"], "250").await?;
+    assert_eq!(inbox_count(&built, bob)?, 1);
+    let ms = &built.app_state.mailstore;
+    let junk = ms.mailbox_by_role(bob, MailboxRole::Junk)?.unwrap();
+    assert_eq!(
+        ms.list_emails_in_mailbox(bob, junk, ListOpts::default())?
+            .len(),
+        1
+    );
+    std::fs::write(filter, "return \"GuardQuarantine\"\n")?;
+    guard_message(&mut external, &["bob@example.com"], "250").await?;
+    assert_eq!(inbox_count(&built, bob)?, 2);
+    Ok(())
 }
 
 fn opts(version: Version) -> SetOpts {

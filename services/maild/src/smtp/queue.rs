@@ -156,28 +156,6 @@ async fn enqueue_entry(
     .await?
 }
 
-/// Native queue insert for callers that must atomically commit related mail.db
-/// state. The caller owns the transaction and reports success after commit.
-pub(crate) fn enqueue_on(
-    conn: &Connection,
-    from: &str,
-    to: &[String],
-    hash: BlobHash,
-) -> Result<i64> {
-    conn.execute(
-        "INSERT INTO smtp_queue (from_addr,to_addrs,blob_hash) VALUES(?1,?2,?3)",
-        params![from, serde_json::to_string(to)?, mds::blob::hex(&hash)],
-    )?;
-    let id = conn.last_insert_rowid();
-    for recipient in to {
-        conn.execute(
-            "INSERT OR IGNORE INTO smtp_delivery(queue_id,recipient) VALUES(?1,?2)",
-            params![id, recipient],
-        )?;
-    }
-    Ok(id)
-}
-
 /// Recipients still owed this message. Terminal results are never retried.
 pub async fn pending(conn: &Arc<Mutex<Connection>>, id: i64) -> Result<Vec<String>> {
     let conn = conn.clone();

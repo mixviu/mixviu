@@ -4,6 +4,7 @@
 //! SMTP session state machine.
 //!
 //! Handles the SMTP conversation: EHLO → STARTTLS → AUTH → MAIL FROM → RCPT TO → DATA.
+use maild_auth::Verifier;
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -390,12 +391,32 @@ where
                     },
                     _ => super::inbound::IngressAuth::ExternalUnverified,
                 };
+                if let Some(account) = session.authenticated_account
+                    && let Err(error) =
+                        crate::submission_guard::admit(&session.state.db, account, &session.rcpt_to)
+                            .await
+                {
+                    let reply = match error.downcast_ref::<crate::submission_guard::Refusal>() {
+                        Some(crate::submission_guard::Refusal::Recipient) => {
+                            "550 5.7.1 recipientNotAllowed"
+                        }
+                        Some(crate::submission_guard::Refusal::Rate) => {
+                            "451 4.7.0 sendRateExceeded"
+                        }
+                        None => "451 4.3.0 Submission guard unavailable",
+                    };
+                    write_line(writer, reply).await?;
+                    session.reset_transaction();
+                    data_buf.clear();
+                    continue;
+                }
                 // : fire-and-forget for an ALL-token-shaped message closes the
-                // timing oracle. We write 250 IMMEDIATELY — no resolve/delivery
+                // timing oracle. Except for the explicit strict-own-domain SPF opt-in
+                // (see token_spf_preflight), we write 250 immediately: no resolve/delivery
                 // work and NO permit await before it (either re-introduces a
                 // load-dependent timing channel) — then dispatch on a bounded,
-                // SHED-on-overflow background task. The token namespace never
-                // returns 451/552 from delivery; an oversize message is 250+dropped.
+                // SHED-on-overflow background task. Non-opted-in token senders
+                // never get 451/552 from delivery; oversize is 250+dropped.
                 // (Mixed/normal recipients keep the synchronous path below.)
                 // Flag-aware: when the pre-flight disabled opaque acceptance,
                 // an opaque-shaped recipient is a NORMAL mailbox and must take the
@@ -407,6 +428,38 @@ where
                         .rcpt_to
                         .iter()
                         .all(|r| crate::vtoken::is_active_token_shaped(r, opaque_enabled));
+                if all_token_shaped && !ingress.is_local_auth() {
+                    let result = super::inbound::token_spf_preflight(
+                        &session.state.domains_runtime,
+                        &ingress,
+                        session.mail_from.as_deref().unwrap_or(""),
+                        session.ehlo_host.as_deref().unwrap_or("unknown"),
+                        || async {
+                            Ok(session
+                                .state
+                                .mail_auth
+                                .verify(
+                                    session.peer.ip(),
+                                    session.mail_from.as_deref().unwrap_or(""),
+                                    session.ehlo_host.as_deref().unwrap_or("unknown"),
+                                    &data_buf,
+                                )
+                                .await?)
+                        },
+                    )
+                    .await;
+                    if let Err(error) = result {
+                        let reply = if error.is::<crate::sieve::delivery::Rejected>() {
+                            "550 5.7.1 ownDomainSpfFail"
+                        } else {
+                            "451 4.3.0 Authentication policy unavailable"
+                        };
+                        write_line(writer, reply).await?;
+                        session.reset_transaction();
+                        data_buf.clear();
+                        continue;
+                    }
+                }
                 if all_token_shaped {
                     crate::maillog::smtp_accepted(
                         session.peer,

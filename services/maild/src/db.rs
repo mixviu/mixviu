@@ -225,6 +225,10 @@ impl Db {
                     AND NOT EXISTS(SELECT 1 FROM smtp_queue q WHERE q.id=smtp_delivery.queue_id);
                 CREATE INDEX IF NOT EXISTS idx_delivery_updated ON smtp_delivery(updated_at);
             "#)?;
+            for column in ["allowed_recipients TEXT", "send_rate INTEGER"] {
+                if let Err(e) = conn.execute(&format!("ALTER TABLE accounts ADD COLUMN {column}"), [])
+                    && !e.to_string().contains("duplicate column name") { return Err(e.into()); }
+            }
             // (email-2FA): per-account opt-in second-factor flag. Pre-existing
             // accounts tables lack the column, so the COALESCE(mfa_enabled, 0)
             // SELECTs in props/accounts.rs would fail without it; an additive
@@ -315,8 +319,16 @@ CREATE TABLE IF NOT EXISTS accounts (
     spam_enabled    INTEGER DEFAULT 1,
     spam_threshold  REAL DEFAULT 0.5,
     mfa_enabled     INTEGER DEFAULT 0,
+    allowed_recipients TEXT,
+    send_rate INTEGER,
     created_at      TEXT DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS submission_rate (
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    reserved_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_submission_rate ON submission_rate(account_id, reserved_at);
 
 -- mailboxes
 CREATE TABLE IF NOT EXISTS mailboxes (

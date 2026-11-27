@@ -80,6 +80,16 @@ impl Fixture {
         smtp: bool,
         to: &str,
     ) -> Result<Option<mds::ItemId>> {
+        self.deliver_proof(bytes, external, smtp, to, true).await
+    }
+    async fn deliver_proof(
+        &self,
+        bytes: &[u8],
+        external: bool,
+        smtp: bool,
+        to: &str,
+        verified: bool,
+    ) -> Result<Option<mds::ItemId>> {
         let domains = ["example.com".to_string()];
         delivery::deliver(
             &self.db,
@@ -95,7 +105,7 @@ impl Fixture {
                     .unwrap(),
                 default_tags: Tags::new(),
                 external_domains: if external { &domains } else { &[] },
-                sender_verified: true,
+                sender_verified: verified,
                 spam: false,
                 smtp_reject: smtp,
                 routing: None,
@@ -117,6 +127,303 @@ impl Fixture {
     }
 }
 const MESSAGE: &[u8] = b"From: sender@example.org\r\nTo: bob@example.com\r\nSubject: test\r\nMessage-ID: <one@example.org>\r\n\r\nHello\r\n";
+
+#[tokio::test]
+async fn doorway_local_redirects_are_guarded_and_unguarded_local_is_unchanged() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.db.conn.lock().unwrap().execute(
+        "UPDATE accounts SET allowed_recipients='[\"mc@example.org\"]',send_rate=1 WHERE id=1",
+        [],
+    )?;
+    f.script(r#"redirect "alice@example.com";"#).await?;
+    f.deliver(MESSAGE, false, false).await?;
+    let inbox = f.ms.mailbox_by_role(2, MailboxRole::Inbox)?.unwrap();
+    assert!(
+        f.ms.list_emails_in_mailbox(2, inbox, ListOpts::default())?
+            .is_empty()
+    );
+    assert_eq!(f.count("Inbox"), 1);
+    f.db.conn.lock().unwrap().execute(
+        "UPDATE accounts SET allowed_recipients='[\"alice@example.com\"]' WHERE id=1",
+        [],
+    )?;
+    f.deliver(MESSAGE, false, false).await?;
+    assert_eq!(
+        f.ms.list_emails_in_mailbox(2, inbox, ListOpts::default())?
+            .len(),
+        1
+    );
+    assert_eq!(
+        f.db.conn.lock().unwrap().query_row(
+            "SELECT count(*) FROM submission_rate WHERE account_id=1",
+            [],
+            |r| r.get::<_, i64>(0)
+        )?,
+        1
+    );
+    f.deliver(MESSAGE, false, false).await?;
+    assert_eq!(
+        f.ms.list_emails_in_mailbox(2, inbox, ListOpts::default())?
+            .len(),
+        1
+    );
+    assert_eq!(f.count("Inbox"), 2);
+    let f = Fixture::new().await?;
+    f.script(r#"redirect "alice@example.com";"#).await?;
+    f.deliver(MESSAGE, false, false).await?;
+    let inbox = f.ms.mailbox_by_role(2, MailboxRole::Inbox)?.unwrap();
+    assert_eq!(
+        f.ms.list_emails_in_mailbox(2, inbox, ListOpts::default())?
+            .len(),
+        1
+    );
+    assert_eq!(
+        f.db.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM submission_rate", [], |r| r
+                .get::<_, i64>(0))?,
+        0
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn doorway_forged_replies_cost_nothing_and_verified_reject_is_suppressed() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.db.conn.lock().unwrap().execute(
+        "UPDATE accounts SET allowed_recipients='[\"sender@example.org\"]',send_rate=10 WHERE id=1",
+        [],
+    )?;
+    for script in [
+        r#"require "vacation"; vacation "Away";"#,
+        r#"require "reject"; reject "No";"#,
+    ] {
+        f.script(script).await?;
+        f.deliver_proof(MESSAGE, true, false, "bob@example.com", false)
+            .await?;
+    }
+    assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
+    assert_eq!(
+        f.db.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM submission_rate", [], |r| r
+                .get::<_, i64>(0))?,
+        0
+    );
+    // Same envelope sender, now verified. A stable account-wide reject handle
+    // suppresses repeats even if the script's rejection text changes.
+    f.deliver_proof(MESSAGE, true, false, "bob@example.com", true)
+        .await?;
+    f.script(r#"require "reject"; reject "Changed reason";"#)
+        .await?;
+    f.deliver_proof(MESSAGE, true, false, "bob@example.com", true)
+        .await?;
+    assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 1);
+    assert_eq!(
+        f.db.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM submission_rate", [], |r| r
+                .get::<_, i64>(0))?,
+        1
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn suppressed_rejects_do_not_create_blobs() -> Result<()> {
+    fn blobs(path: &std::path::Path) -> Result<usize> {
+        let mut count = 0;
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            count += if entry.file_type()?.is_dir() {
+                blobs(&entry.path())?
+            } else {
+                1
+            };
+        }
+        Ok(count)
+    }
+    let f = Fixture::new().await?;
+    f.db.conn.lock().unwrap().execute(
+        "UPDATE accounts SET allowed_recipients='[\"sender@example.org\"]',send_rate=1 WHERE id=1",
+        [],
+    )?;
+    f.script(r#"require "reject"; reject "No";"#).await?;
+    let root = f._tmp.path().join("mds/blobs");
+    let initial = blobs(&root)?;
+    f.deliver_proof(MESSAGE, true, false, "bob@example.com", false)
+        .await?;
+    assert_eq!(
+        blobs(&root)?,
+        initial,
+        "unverified sender must not store a reply"
+    );
+    assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
+    assert_eq!(
+        f.db.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM submission_rate", [], |r| r
+                .get::<_, i64>(0))?,
+        0
+    );
+    assert_eq!(
+        f.db.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM sieve_replies", [], |r| r
+                .get::<_, i64>(0))?,
+        0
+    );
+
+    f.deliver_proof(MESSAGE, true, false, "bob@example.com", true)
+        .await?;
+    let admitted = blobs(&root)?;
+    assert_eq!(admitted, initial + 1);
+    // Reports have random boundaries/Message-IDs. If generated before
+    // suppression, each of these attempts would leave a new permanent blob.
+    f.script(r#"require "reject"; reject "Changed reason";"#)
+        .await?;
+    f.deliver_proof(MESSAGE, true, false, "bob@example.com", true)
+        .await?;
+    assert_eq!(
+        blobs(&root)?,
+        admitted,
+        "suppressed repeat must not store a reply"
+    );
+    // Remove the suppression stamp to exercise quota refusal independently.
+    f.db.conn
+        .lock()
+        .unwrap()
+        .execute("DELETE FROM sieve_replies", [])?;
+    f.deliver_proof(MESSAGE, true, false, "bob@example.com", true)
+        .await?;
+    assert_eq!(
+        blobs(&root)?,
+        admitted,
+        "rate refusal must not store a reply"
+    );
+    assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 1);
+    assert_eq!(
+        f.db.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM submission_rate", [], |r| r
+                .get::<_, i64>(0))?,
+        1
+    );
+    assert_eq!(
+        f.db.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM sieve_replies", [], |r| r
+                .get::<_, i64>(0))?,
+        0
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn native_bus_submission_enforces_recipient_and_rate_guards() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.db.conn.lock().unwrap().execute(
+        "UPDATE accounts SET allowed_recipients='[\"bob@example.com\"]',send_rate=1 WHERE id=2",
+        [],
+    )?;
+    let aliases = Arc::new(::props::Runtime::new(
+        "maild",
+        maild::props::aliases::spec(::props::Hooks::noop()),
+        Arc::new(::props::MemoryStore::new("maild")),
+    ));
+    for (id, to, ok) in [
+        ("denied", "outside@example.net", false),
+        ("allowed", "bob@example.com", true),
+        ("limited", "bob@example.com", false),
+    ] {
+        let cmd = ::bus::IncomingCommand { generation:0,from:"test".into(),command:"maild.submit".into(),id:None,args:serde_json::Value::Null,headers:Default::default(),body:serde_json::json!({"operation_id":id,"account":"alice@example.com","to":[to],"subject":"guard","text":"body"}).to_string() };
+        let (rc, body) =
+            maild::bus::submission::dispatch(&cmd, &f.db, &f.ms, &aliases, 1024 * 1024).await;
+        assert_eq!(rc == 0, ok, "{body}");
+    }
+    assert_eq!(f.count("Inbox"), 1);
+    assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
+    Ok(())
+}
+
+#[tokio::test]
+async fn doorway_redirect_fanout_reserves_every_message_atomically() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.db.conn.lock().unwrap().execute(
+        "UPDATE accounts SET allowed_recipients='[\"*@example.net\"]',send_rate=2 WHERE id=?1",
+        [f.account.id],
+    )?;
+    f.script(
+        r#"redirect "one@example.net"; redirect "two@example.net"; redirect "three@example.net";"#,
+    )
+    .await?;
+    f.deliver(MESSAGE, true, false).await?;
+    assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
+    assert_eq!(f.count("Inbox"), 1);
+    let reservations = || -> Result<i64> {
+        Ok(f.db.conn.lock().unwrap().query_row(
+            "SELECT count(*) FROM submission_rate WHERE account_id=?1",
+            [f.account.id],
+            |r| r.get(0),
+        )?)
+    };
+    assert_eq!(reservations()?, 0, "failed batch reserved a partial quota");
+    f.db.conn.lock().unwrap().execute(
+        "UPDATE accounts SET send_rate=3 WHERE id=?1",
+        [f.account.id],
+    )?;
+    f.deliver(MESSAGE, true, false).await?;
+    assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 3);
+    assert_eq!(reservations()?, 3);
+    Ok(())
+}
+
+#[tokio::test]
+async fn doorway_generated_replies_and_remote_redirects_obey_account_guards() -> Result<()> {
+    assert!(
+        maild::sieve::compile(r#"require "enotify"; notify "mailto:outside@example.org";"#)
+            .is_err()
+    );
+    let f = Fixture::new().await?;
+    f.db.conn.lock().unwrap().execute(
+        "UPDATE accounts SET allowed_recipients='[\"mc@example.com\"]',send_rate=1 WHERE id=?1",
+        [f.account.id],
+    )?;
+    f.script(r#"require "vacation"; vacation "Account-authored reply";"#)
+        .await?;
+    f.deliver(MESSAGE, true, false).await?;
+    assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
+    assert_eq!(f.count("Inbox"), 1);
+    f.script(r#"require "reject"; reject "Account-authored rejection";"#)
+        .await?;
+    f.deliver(MESSAGE, true, false).await?;
+    assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
+    // Even operator-enabled external redirects cannot bypass account guards.
+    f.script(r#"redirect "remote@example.net";"#).await?;
+    f.deliver(MESSAGE, true, false).await?;
+    assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
+    assert_eq!(f.count("Inbox"), 2);
+    f.db.conn.lock().unwrap().execute(
+        "UPDATE accounts SET allowed_recipients='[\"sender@example.org\",\"remote@example.net\"]' WHERE id=?1", [f.account.id])?;
+    f.script(r#"require "vacation"; vacation "Allowed";"#)
+        .await?;
+    f.deliver(MESSAGE, true, false).await?;
+    assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 1);
+    // A different generated-message mechanism shares that same quota.
+    f.script(r#"redirect "remote@example.net";"#).await?;
+    f.deliver(MESSAGE, true, false).await?;
+    f.script(r#"require "reject"; reject "Over rate";"#).await?;
+    f.deliver(MESSAGE, true, false).await?;
+    assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 1);
+    Ok(())
+}
 
 #[tokio::test]
 async fn forged_hop_is_ignored_and_exhausted_received_drops_only_redirects() -> Result<()> {
@@ -791,18 +1098,26 @@ async fn outbound_failure_after_keep_does_not_request_duplicate_delivery() -> Re
     f.script(r#"require "vacation"; vacation "Away";"#).await?;
     assert!(f.deliver(MESSAGE, true, false).await?.is_some());
     assert_eq!(f.count("Inbox"), 2);
+    // Admission now commits before building/storing reply bytes. A later
+    // enqueue failure keeps the suppression stamp and slot (no refund).
     assert_eq!(
         f.db.conn
             .lock()
             .unwrap()
             .query_row("SELECT count(*) FROM sieve_replies", [], |r| r
                 .get::<_, i64>(0))?,
-        0
+        1
     );
     f.db.conn
         .lock()
         .unwrap()
         .execute_batch("DROP TRIGGER fail_sieve_queue;")?;
+    f.deliver(MESSAGE, true, false).await?;
+    assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
+    f.db.conn
+        .lock()
+        .unwrap()
+        .execute("UPDATE sieve_replies SET sent_at=unixepoch()-32*86400", [])?;
     f.deliver(MESSAGE, true, false).await?;
     assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 1);
     Ok(())

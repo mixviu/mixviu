@@ -29,6 +29,7 @@ pub async fn set(
     // is its own JMAP type and has no MailStore-side surface.
     let old_state = db::changelog::current_state(&db.conn, account_id, "EmailSubmission").await?;
 
+    let mut not_created = std::collections::HashMap::new();
     let mut created_map = std::collections::HashMap::new();
 
     // Handle create
@@ -57,7 +58,24 @@ pub async fn set(
                     );
                 }
                 Err(e) => {
-                    tracing::warn!(error = %e, "EmailSubmission create failed");
+                    let kind = match e.downcast_ref::<crate::submission_guard::Refusal>() {
+                        Some(crate::submission_guard::Refusal::Recipient) => "forbiddenToSend",
+                        Some(crate::submission_guard::Refusal::Rate) => "tooManyRequests",
+                        None => "serverFail",
+                    };
+                    let description = if kind == "serverFail" {
+                        tracing::warn!(error = %e, "EmailSubmission create failed");
+                        "Submission could not be completed".to_string()
+                    } else {
+                        e.to_string()
+                    };
+                    not_created.insert(
+                        client_id.clone(),
+                        SetError {
+                            error_type: kind.into(),
+                            description: Some(description),
+                        },
+                    );
                 }
             }
         }
@@ -77,7 +95,11 @@ pub async fn set(
         },
         updated: None,
         destroyed: None,
-        not_created: None,
+        not_created: if not_created.is_empty() {
+            None
+        } else {
+            Some(not_created)
+        },
         not_updated: None,
         not_destroyed: None,
     };
@@ -152,21 +174,17 @@ async fn create_submission(
     } else {
         // Auto-detect from substrate `EmailEnvelope`. RFC 8621
         // §7.1.2 specifies `rcptTo` is the union of To, Cc, and
-        // Bcc, but BCC fan-out is intentionally deferred: the
-        // substrate stores the message bytes once, and shipping
-        // the same blob to BCC recipients while To/Cc recipients
-        // also receive a copy would expose the BCC list (the
-        // `Bcc:` header is in the bytes). Proper BCC-aware
-        // delivery requires either header stripping for the
-        // To/Cc copy or per-recipient blob generation, neither of
-        // which is in this task's scope. `EmailEnvelope.bcc` is
-        // still populated by `build_envelope` so the
-        // data is available for that follow-up work.
+        // Bcc. All three lists pass admission before any fan-out.
+        // Delivery uses a Bcc-stripped blob; the draft remains intact.
         // Empty strings are filtered out so a missing header
         // doesn't enqueue an empty rcpt.
         let from = record.envelope.from.clone();
         let mut tos: Vec<String> = Vec::new();
-        for list in [record.envelope.to.as_slice(), record.envelope.cc.as_slice()] {
+        for list in [
+            record.envelope.to.as_slice(),
+            record.envelope.cc.as_slice(),
+            record.envelope.bcc.as_slice(),
+        ] {
             for addr in list {
                 if !addr.is_empty() {
                     tos.push(addr.clone());
@@ -205,7 +223,16 @@ async fn create_submission(
         }
     }
 
-    let blob_hash = record.blob_hash;
+    crate::submission_guard::admit(db, account_id, &to_addrs).await?;
+    let ms = mailstore.clone();
+    let hash = record.blob_hash;
+    let blob_hash = tokio::task::spawn_blocking(move || -> Result<_> {
+        let bytes = ms.read_blob(hash)?;
+        ms.put_blob(&crate::sieve::delivery::strip_headers(&bytes, |n| {
+            n.eq_ignore_ascii_case("Bcc") || n.eq_ignore_ascii_case("Resent-Bcc")
+        }))
+    })
+    .await??;
     let submission_id = Uuid::new_v4();
 
     // Separate local vs remote recipients

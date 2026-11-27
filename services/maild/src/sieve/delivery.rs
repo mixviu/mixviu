@@ -14,7 +14,7 @@ use std::{
     sync::Arc,
 };
 
-fn strip_headers(data: &[u8], remove: impl Fn(&str) -> bool) -> Vec<u8> {
+pub(crate) fn strip_headers(data: &[u8], remove: impl Fn(&str) -> bool) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(data.len());
     let mut cursor = 0;
     if let Some(message) = MessageParser::default().parse_headers(data) {
@@ -78,6 +78,15 @@ pub struct Delivery<'a> {
     pub spam: bool,
     pub smtp_reject: bool,
     pub routing: Option<&'a Routing<'a>>,
+}
+
+fn reply_proof(delivery: &Delivery<'_>) -> bool {
+    delivery
+        .routing
+        .map_or(delivery.sender_verified, |routing| {
+            routing.ingress.is_local_auth()
+                || crate::smtp::inbound::reply_sender_verified(routing.verify, delivery.from)
+        })
 }
 
 fn flags(raw: &[String]) -> Result<(Flags, Tags)> {
@@ -302,8 +311,31 @@ async fn deliver_inner(
                 .rsplit_once('@')
                 .map(|(_, d)| d)
                 .unwrap_or("example.com");
-            let bytes = rejection_report(domain, delivery.from, delivery.to, reason);
-            enqueue(db, ms, "", delivery.from, &bytes).await?;
+            let result = async {
+                let Some(reservation) = store::reserve_automatic_reply(
+                    db,
+                    store::AutomaticReply {
+                        account: delivery.account.id,
+                        sender: delivery.from.into(),
+                        handle: "guarded-reject".into(),
+                        days: 1,
+                        verified_sender: reply_proof(&delivery),
+                        guarded_only_suppression: true,
+                    },
+                )
+                .await?
+                else {
+                    return Ok::<(), anyhow::Error>(());
+                };
+                let bytes = rejection_report(domain, delivery.from, delivery.to, reason);
+                let reply_ms = ms.clone();
+                let hash = tokio::task::spawn_blocking(move || reply_ms.put_blob(&bytes)).await??;
+                reservation.enqueue(db, hash).await
+            }
+            .await;
+            if let Err(error) = result {
+                tracing::warn!(account=delivery.account.id, %error, "Rejection reply failed; suppressing without bouncing original");
+            }
         } else {
             tracing::info!(
                 account = delivery.account.id,
@@ -593,6 +625,15 @@ async fn validate(
             );
         }
     }
+    let targets: Vec<(String, bool)> = redirects
+        .iter()
+        .map(|(target, local)| (target.clone(), local.is_some()))
+        .collect();
+    if !targets.is_empty()
+        && !crate::submission_guard::redirects_allowed(db, delivery.account.id, targets).await
+    {
+        anyhow::bail!("account submission guard refused redirects");
+    }
     Ok(redirects)
 }
 
@@ -822,6 +863,21 @@ async fn vacation_reply(
     {
         return Ok(());
     }
+    let Some(reservation) = store::reserve_automatic_reply(
+        db,
+        store::AutomaticReply {
+            account: delivery.account.id,
+            sender: delivery.from.into(),
+            handle: vacation.handle.clone(),
+            days: vacation.days,
+            verified_sender: reply_proof(delivery),
+            guarded_only_suppression: false,
+        },
+    )
+    .await?
+    else {
+        return Ok(());
+    };
     // subject() is MIME-decoded. The builder emits encoded words only when
     // necessary, so an encoded original cannot acquire a raw ASCII prefix.
     let default_subject = message
@@ -879,15 +935,7 @@ async fn vacation_reply(
     // identifies the account for the normal queue worker's DKIM selection.
     let ms = ms.clone();
     let hash = tokio::task::spawn_blocking(move || ms.mds().put_blob(&bytes)).await??;
-    store::queue_reply(
-        db,
-        delivery.account.id,
-        delivery.from,
-        &vacation.handle,
-        vacation.days,
-        hash,
-    )
-    .await?;
+    reservation.enqueue(db, hash).await?;
     Ok(())
 }
 
