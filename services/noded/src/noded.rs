@@ -2134,18 +2134,27 @@ async fn observe_reload_teardown(
     let mut inbound_unsettled = 0;
     let mut outbound_unsettled = 0;
     for tx in closing {
-        if tokio::time::timeout_at(deadline, tx.closed()).await.is_err() {
+        if tokio::time::timeout_at(deadline, tx.closed())
+            .await
+            .is_err()
+        {
             inbound_unsettled += 1;
         }
     }
     for transport in outbound {
-        if tokio::time::timeout_at(deadline, transport.wait_if_retired()).await.is_err() {
+        if tokio::time::timeout_at(deadline, transport.wait_if_retired())
+            .await
+            .is_err()
+        {
             outbound_unsettled += 1;
         }
     }
     if inbound_unsettled + outbound_unsettled > 0 {
-        tracing::warn!(inbound_unsettled, outbound_unsettled,
-            "Reload teardown observation timed out; authority remains applied");
+        tracing::warn!(
+            inbound_unsettled,
+            outbound_unsettled,
+            "Reload teardown observation timed out; authority remains applied"
+        );
     }
     (inbound_unsettled, outbound_unsettled)
 }
@@ -5828,11 +5837,16 @@ mod tests {
         let result = tokio::time::timeout(
             std::time::Duration::from_secs(1),
             super::observe_reload_teardown(vec![tx.clone(), tx, settled_tx], vec![], deadline),
-        ).await.expect("teardown observation wedged");
+        )
+        .await
+        .expect("teardown observation wedged");
         assert_eq!(result, (2, 0));
         drop(rx);
         // A later observation can proceed after the first one expires.
-        assert_eq!(super::observe_reload_teardown(vec![], vec![], deadline).await, (0, 0));
+        assert_eq!(
+            super::observe_reload_teardown(vec![], vec![], deadline).await,
+            (0, 0)
+        );
     }
     // A thread-local subscriber cannot isolate process-wide callsite interest.
     fn log_capture_subprocess(test: &str) -> bool {
