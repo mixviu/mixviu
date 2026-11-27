@@ -25862,40 +25862,50 @@ pub(crate) mod socket_sources {
         Ok((listener, deadline_after(timeout_seconds)))
     }
 
-    /// Readiness only: safe callers cannot replace or extract the registered fd.
     #[cfg(unix)]
-    struct SocketReadiness(tokio::io::unix::AsyncFd<std::os::fd::OwnedFd>);
+    mod socket_readiness {
+        use std::io;
+        use std::os::fd::OwnedFd;
+        use tokio::io::Interest;
+        use tokio::io::unix::AsyncFd;
 
-    #[cfg(unix)]
-    impl SocketReadiness {
-        async fn readable(
-            &self,
-        ) -> std::io::Result<tokio::io::unix::AsyncFdReadyGuard<'_, std::os::fd::OwnedFd>> {
-            self.0.readable().await
+        // The field is private to this module; neither it nor a guard escapes.
+        pub(super) struct SocketReadiness(AsyncFd<OwnedFd>);
+
+        impl SocketReadiness {
+            pub(super) async fn readable(&self) -> io::Result<()> {
+                let mut guard = self.0.readable().await?;
+                guard.clear_ready();
+                Ok(())
+            }
+
+            pub(super) async fn writable(&self) -> io::Result<()> {
+                let mut guard = self.0.writable().await?;
+                guard.clear_ready();
+                Ok(())
+            }
         }
 
-        async fn writable(
-            &self,
-        ) -> std::io::Result<tokio::io::unix::AsyncFdReadyGuard<'_, std::os::fd::OwnedFd>> {
-            self.0.writable().await
+        pub(super) fn register_socket_readiness(
+            owned: OwnedFd,
+            interest: Interest,
+        ) -> io::Result<SocketReadiness> {
+            // SAFETY: OwnedFd solely owns a valid, open fd and is moved into AsyncFd.
+            // It always returns that same fd, referring to the same file description.
+            // The field is private to this module, whose only methods await and
+            // clear readiness internally, returning (). No fd, AsyncFd or guard
+            // escapes, so callers cannot close or replace the fd while registered.
+            // AsyncFd deregisters before dropping OwnedFd; forgetting the wrapper
+            // keeps the fd open. On failure io::Error::from drops the retained
+            // OwnedFd exactly once.
+            unsafe { AsyncFd::register_with_interest(owned, interest) }
+                .map(SocketReadiness)
+                .map_err(io::Error::from)
         }
     }
 
     #[cfg(unix)]
-    fn register_socket_readiness(
-        owned: std::os::fd::OwnedFd,
-        interest: tokio::io::Interest,
-    ) -> std::io::Result<SocketReadiness> {
-        // SAFETY: OwnedFd solely owns a valid, open fd and is moved into AsyncFd.
-        // It always returns that same fd, referring to the same file description.
-        // The private wrapper exposes only shared readiness guards, so the fd
-        // cannot be closed or replaced while registered. AsyncFd deregisters
-        // before dropping OwnedFd; forgetting the wrapper keeps the fd open.
-        // On failure io::Error::from drops the retained OwnedFd exactly once.
-        unsafe { tokio::io::unix::AsyncFd::register_with_interest(owned, interest) }
-            .map(SocketReadiness)
-            .map_err(std::io::Error::from)
-    }
+    use socket_readiness::{SocketReadiness, register_socket_readiness};
 
     /// Class C numeric accept: non-blocking accepts with readiness awaited
     /// on an AsyncFd dup of the listener under the call's deadline, so the
@@ -25995,10 +26005,7 @@ pub(crate) mod socket_sources {
                 },
             };
             match outcome {
-                Ok(Some(mut r)) => {
-                    r.clear_ready();
-                    return Wait::Ready;
-                }
+                Ok(Some(())) => return Wait::Ready,
                 // The slice or the deadline ran out: the loop top decides.
                 Ok(None) => continue,
                 Err(e) => return Wait::Failed(e),
@@ -26605,10 +26612,7 @@ pub(crate) mod socket_sources {
                 },
             };
             match outcome {
-                Ok(Some(mut r)) => {
-                    r.clear_ready();
-                    return Wait::Ready;
-                }
+                Ok(Some(())) => return Wait::Ready,
                 Ok(None) => continue,
                 Err(e) => return Wait::Failed(e),
             }
@@ -27943,6 +27947,7 @@ pub(crate) mod socket_sources {
         use crate::native_events::{NativeEvents, Queue, SocketNext};
         use std::io::{Read, Write};
 
+        #[cfg(target_os = "linux")]
         #[tokio::test]
         async fn readiness_registration_failure_closes_fd() {
             use std::os::fd::{AsRawFd, OwnedFd};

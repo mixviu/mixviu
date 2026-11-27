@@ -64,9 +64,11 @@ pub(super) fn deadline_timer() -> std::io::Result<tokio::io::unix::AsyncFd<std::
     // other owner; OwnedFd becomes its sole owner.
     let owned = unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) };
     // SAFETY: owned is moved into AsyncFd and always returns the same open fd
-    // referring to the same file description. This module's private timer
-    // users only borrow it for readiness and timer I/O; none closes, extracts
-    // or replaces it while registered. AsyncFd deregisters before dropping
+    // referring to the same file description. noded::serve moves the timer
+    // into spawn_maintenance, as does this module's scheduler test. The task
+    // only lends it to sleep_until for readiness and timer I/O; these callers
+    // never close, extract or replace the fd while registered.
+    // AsyncFd deregisters before dropping
     // OwnedFd; forgetting it keeps the fd open. On failure io::Error::from
     // drops the retained OwnedFd exactly once.
     unsafe { tokio::io::unix::AsyncFd::register(owned) }.map_err(std::io::Error::from)
