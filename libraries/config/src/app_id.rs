@@ -58,7 +58,10 @@ mod tests {
     use super::*;
     #[test]
     fn canonical_keys_preserve_secondary_windows_and_vendor_ids() {
-        let cases: Vec<serde_json::Value> = strict::from_str(include_str!("../../../engines/viud/tests/fixtures/apps/legacy-ids.conf.mix")).unwrap();
+        let cases: Vec<serde_json::Value> = strict::from_str(include_str!(
+            "../../../engines/viud/tests/fixtures/apps/legacy-ids.conf.mix"
+        ))
+        .unwrap();
         for case in cases {
             let old = case["old"].as_str().unwrap();
             let current = case["current"].as_str().unwrap();

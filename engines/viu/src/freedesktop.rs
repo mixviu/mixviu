@@ -213,7 +213,11 @@ impl Lookup {
         candidates
             .iter()
             .find_map(|name| self.find_exact(name, size))
-            .or_else(|| candidates.iter().find_map(|name| self.find_alternate(name, size)))
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .find_map(|name| self.find_alternate(name, size))
+            })
     }
 
     fn find_exact(&self, name: &str, size: u32) -> Option<PathBuf> {
@@ -880,7 +884,7 @@ mod tests {
         for case in cases {
             let old = case["old"].as_str().unwrap();
             let scratch = Scratch::new();
-            let new = config::app_id::canonical(old);
+            let new = case["current"].as_str().unwrap().to_owned();
             let old_icon = format!("icons/hicolor/scalable/apps/{old}-symbolic.svg");
             let new_icon = format!("icons/hicolor/scalable/apps/{new}-symbolic.svg");
             scratch.write(&old_icon, "svg");
@@ -932,25 +936,46 @@ mod tests {
     }
 
     fn strict_fixture() -> Vec<serde_json::Value> {
-        config::from_conf_mix_str(include_str!("../../viud/tests/fixtures/apps/legacy-ids.conf.mix")).unwrap()
+        config::from_conf_mix_str(include_str!(
+            "../../viud/tests/fixtures/apps/legacy-ids.conf.mix"
+        ))
+        .unwrap()
     }
 
     #[test]
     fn exact_legacy_plain_icon_precedes_all_symbolic_alternates() {
         let scratch = Scratch::new();
         scratch.write("icons/hicolor/scalable/apps/dev.mixos.prefs.svg", "plain");
-        scratch.write("icons/hicolor/scalable/apps/dev.mixos.prefs-symbolic.svg", "symbolic");
+        scratch.write(
+            "icons/hicolor/scalable/apps/dev.mixos.prefs-symbolic.svg",
+            "symbolic",
+        );
         let lookup = scratch.lookup("hicolor");
         for id in ["dev.mixos.prefs", "dev.mix.prefs"] {
-            assert_eq!(lookup.find(id, 24), Some(scratch.0.join("icons/hicolor/scalable/apps/dev.mixos.prefs.svg")));
+            assert_eq!(
+                lookup.find(id, 24),
+                Some(
+                    scratch
+                        .0
+                        .join("icons/hicolor/scalable/apps/dev.mixos.prefs.svg")
+                )
+            );
         }
     }
 
     #[test]
     fn similar_names_and_reference_gallery_are_not_identity_aliases() {
         let scratch = Scratch::new();
-        for id in ["dev.mixos.ced-extra", "mixviu.terminal", "mixviu.term-mixer", "mixviu.gallery.native"] {
-            scratch.write(&format!("applications/{id}.desktop"), &format!("[Desktop Entry]\nIcon={id}\n"));
+        for id in [
+            "dev.mixos.ced-extra",
+            "mixviu.terminal",
+            "mixviu.term-mixer",
+            "mixviu.gallery.native",
+        ] {
+            scratch.write(
+                &format!("applications/{id}.desktop"),
+                &format!("[Desktop Entry]\nIcon={id}\n"),
+            );
             scratch.write(&format!("icons/hicolor/scalable/apps/{id}.svg"), "svg");
         }
         let lookup = scratch.lookup("hicolor");
