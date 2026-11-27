@@ -93,7 +93,7 @@ async fn one(
     tokio::time::timeout(WAIT, async {
         loop {
             if let Ok(tree) = drive(bus, &id, "files.ui.tree", json!({})).await
-                && tree.to_string().contains("Places")
+                && tree["ready"].as_bool() == Some(true)
             {
                 break;
             }
