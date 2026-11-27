@@ -2118,7 +2118,20 @@ async fn reconcile_transport_authority(
 /// completes before the §17 applied events make the new state externally
 /// legible. A kept-last-good load returns before touching transport state.
 async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture) {
+    // Compare, reconcile and publish against one accepted snapshot: concurrent
+    // reloads must never validate against an authority another reload replaces.
+    static RELOAD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _reload = RELOAD.lock().await;
     let current = state.authority.load();
+    if let (
+        crate::authority::Posture::Verified(old),
+        crate::authority::Posture::Verified(candidate),
+    ) = (&current.posture, &new)
+        && let Err(reason) = crate::authority::validate_reload_keys(old, candidate)
+    {
+        tracing::warn!(event = "inventory.rejected", %reason, kept_last_good = true, "inventory reload refused");
+        return;
+    }
     let keep = reload_keeps_last_good(&new, &current.posture);
     drop(current);
     if keep {
@@ -6036,11 +6049,13 @@ mod tests {
                     name: "alpha".into(),
                     mesh_ip: "192.0.2.5".parse().unwrap(),
                     noded_port: 4200,
+                    endpoints: None,
                 },
                 RoutingMember::ActiveBus {
                     name: PEER.into(),
                     mesh_ip: "192.0.2.6".parse().unwrap(),
                     noded_port: 4300,
+                    endpoints: None,
                 },
             ],
             members_full: std::collections::BTreeMap::new(),
@@ -6078,6 +6093,7 @@ mod tests {
                     name: PEER.into(),
                     mesh_ip: "192.0.2.6".parse().unwrap(),
                     noded_port: 4300,
+                    endpoints: None,
                 }],
                 members_full: std::collections::BTreeMap::new(),
             }),
@@ -6647,7 +6663,21 @@ mod tests {
             name: name.into(),
             mesh_ip,
             noded_port,
+            endpoints: None,
         }
+    }
+
+    // Revoke the fixture peer without discarding R1's accepted key history.
+    fn revoked_delivery_posture(state: &AppState) -> crate::authority::Posture {
+        let mut posture = state.authority.load().posture.clone();
+        if let crate::authority::Posture::Verified(a) = &mut posture {
+            a.epoch += 1;
+            a.routing_view.clear();
+            for member in a.members_full.values_mut() {
+                member["status"] = serde_json::json!("tombstoned");
+            }
+        }
+        posture
     }
 
     async fn reload_test_state(
@@ -8744,7 +8774,7 @@ mod tests {
                     state.peer_context.identity =
                         bus::native_session::PeerIdentity::UnixPeer { uid: 1000, pid: 1 }
                 }
-                "revoked" => apply_inventory_reload(&state, reload_posture(2, vec![])).await,
+                "revoked" => apply_inventory_reload(&state, revoked_delivery_posture(&state)).await,
                 _ => {}
             }
             {
@@ -8951,7 +8981,7 @@ mod tests {
         assert!(target_rx.try_recv().is_err());
         tokio::time::timeout(
             Duration::from_secs(3),
-            apply_inventory_reload(&state, reload_posture(2, vec![])),
+            apply_inventory_reload(&state, revoked_delivery_posture(&state)),
         )
         .await
         .unwrap();

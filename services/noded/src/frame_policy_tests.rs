@@ -8,7 +8,7 @@ async fn registration_rechecks_exact_key_after_rotation_before_dispatch() {
     let mut posture = state.authority.load().posture.clone();
     if let crate::authority::Posture::Verified(a) = &mut posture {
         a.epoch += 1;
-        a.members_full.get_mut("beta").unwrap()["credentials"] = serde_json::json!([]);
+        a.members_full.get_mut("beta").unwrap()["credentials"][0]["until_epoch"] = serde_json::json!(a.epoch);
     }
     apply_inventory_reload(&state, posture).await;
     registration.admitted_node =
@@ -123,8 +123,9 @@ async fn accepted_rotation_drops_exact_inbound_key_within_one_second() {
     if let crate::authority::Posture::Verified(a) = &mut posture {
         use base64::Engine as _;
         a.epoch += 1;
-        a.members_full.get_mut("beta").unwrap()["credentials"][0]["pubkey"] =
-            serde_json::json!(base64::engine::general_purpose::STANDARD.encode([4; 32]));
+        let credentials = a.members_full.get_mut("beta").unwrap()["credentials"].as_array_mut().unwrap();
+        credentials[0]["until_epoch"] = serde_json::json!(a.epoch);
+        credentials.push(serde_json::json!({"kind":"d2", "pubkey":base64::engine::general_purpose::STANDARD.encode([4;32]),"from_epoch":a.epoch,"until_epoch":null}));
     }
     let start = Instant::now();
     apply_inventory_reload(&state, posture).await;

@@ -117,6 +117,18 @@ pub struct Accepted {
     pub members_full: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
+pub fn validate_reload_keys(current: &Accepted, candidate: &Accepted) -> Result<(), String> {
+    let records = |accepted: &Accepted| {
+        serde_json::Value::Array(accepted.members_full.values().cloned().collect())
+    };
+    mesh_trust::identity::validate_key_reload(
+        &records(current),
+        current.epoch,
+        &records(candidate),
+        candidate.epoch,
+    )
+}
+
 #[derive(Debug, Clone)]
 pub struct VerifyKeySummary {
     pub key_id: String,
@@ -537,6 +549,77 @@ fn members_by_name(members: &serde_json::Value) -> BTreeMap<String, serde_json::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loader_retains_tombstone_credentials_and_signed_endpoints() {
+        let dir = tmpdir("retention_endpoints");
+        let paths = paths_in(&dir);
+        let signer = SigningKey::from_bytes(&[17; 32]);
+        let endpoints = serde_json::json!([{"addr":"198.51.100.5:4200","transport":"tls"}]);
+        let mut member = serde_json::json!({"name":"alpha","mesh_ip":"192.0.2.5","bus":true,"status":"active","endpoints":endpoints,"credentials":[{"kind":"bus-tls","pubkey":B64.encode([7;32]),"from_epoch":1,"until_epoch":null}]});
+        let keeper =
+            serde_json::json!({"name":"beta","mesh_ip":"192.0.2.6","bus":true,"status":"active"});
+        write_signed_inventory(
+            &paths,
+            &signer,
+            1,
+            serde_json::json!([member.clone(), keeper.clone()]),
+        );
+        let Posture::Verified(active) = load_and_verify(&paths) else {
+            panic!("active load")
+        };
+        assert_eq!(active.members_full["alpha"]["endpoints"], endpoints);
+        assert_eq!(active.routing_view[0].to_json()["endpoints"], endpoints);
+        member["status"] = serde_json::json!("tombstoned");
+        write_signed_inventory(
+            &paths,
+            &signer,
+            2,
+            serde_json::json!([member.clone(), keeper.clone()]),
+        );
+        let Posture::Verified(retired) = load_and_verify(&paths) else {
+            panic!("tombstone load")
+        };
+        assert_eq!(
+            retired.members_full["alpha"]["credentials"],
+            member["credentials"]
+        );
+        assert!(validate_reload_keys(&active, &retired).is_ok());
+        member["status"] = serde_json::json!("active");
+        write_signed_inventory(&paths, &signer, 3, serde_json::json!([member, keeper]));
+        let Posture::Verified(resurrected) = load_and_verify(&paths) else {
+            panic!("candidate load")
+        };
+        assert!(
+            validate_reload_keys(&retired, &resurrected)
+                .unwrap_err()
+                .contains("closed")
+        );
+    }
+
+    #[test]
+    fn signed_cross_purpose_duplicate_refuses_authority_before_ratchet() {
+        let dir = tmpdir("duplicate_bus_tls");
+        let paths = paths_in(&dir);
+        let signing_key = SigningKey::from_bytes(&[17; 32]);
+        let pubkey = B64.encode([7; 32]);
+        write_signed_inventory(
+            &paths,
+            &signing_key,
+            1,
+            serde_json::json!([{
+                "name":"alpha","mesh_ip":"192.0.2.5","bus":true,"status":"active","credentials":[
+                    {"kind":"d2","pubkey":pubkey,"from_epoch":1,"until_epoch":null},
+                    {"kind":"bus-tls","pubkey":pubkey,"from_epoch":1,"until_epoch":null}
+                ]
+            }]),
+        );
+        let Posture::Unverified { reason } = load_and_verify(&paths) else {
+            panic!("duplicate must refuse authority")
+        };
+        assert!(reason.contains("d2 and bus-tls"), "{reason}");
+        assert!(!paths.baseline.exists());
+    }
     use ed25519_dalek::{Signer as _, SigningKey};
     use mesh_trust::inventory::{
         ALG_ED25519, CANONICAL_ENCODING_V1, InvSignature, InventoryPayload, VerifyKey,

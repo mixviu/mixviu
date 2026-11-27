@@ -8,6 +8,149 @@ use serde_json::Value;
 
 use crate::admission::{AdmissionTranscript, select_d2_pubkeys};
 
+/// Validate purpose separation and irreversible closed windows in one snapshot.
+/// Missing credential lists remain valid for inventories predating admission.
+pub fn validate_member_keys(members: &Value, epoch: u64) -> Result<(), String> {
+    let records = key_windows(members)?;
+    for (i, a) in records.iter().enumerate() {
+        for b in records.iter().skip(i + 1) {
+            if a.key != b.key {
+                continue;
+            }
+            if (a.kind == "d2" && b.kind == "bus-tls") || (a.kind == "bus-tls" && b.kind == "d2") {
+                return Err("pubkey is shared by d2 and bus-tls credentials".into());
+            }
+            if a.until.is_some_and(|end| b.from >= end)
+                || b.until.is_some_and(|end| a.from >= end)
+                || (a.tombstoned && b.current(epoch))
+                || (b.tombstoned && a.current(epoch))
+            {
+                return Err("pubkey reopens a closed credential window".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Only the accepted snapshot supplies history; nothing is persisted or pruned.
+pub fn validate_key_reload(
+    current: &Value,
+    current_epoch: u64,
+    candidate: &Value,
+    candidate_epoch: u64,
+) -> Result<(), String> {
+    validate_member_keys(candidate, candidate_epoch)?;
+    let old = key_windows(current)?;
+    let next = key_windows(candidate)?;
+    for retained in old
+        .iter()
+        .filter(|key| matches!(key.kind.as_str(), "d2" | "bus-tls"))
+    {
+        let same = |key: &&KeyWindow| key.kind == retained.kind && key.key == retained.key;
+        if !next.iter().any(|key| same(&key)) {
+            return Err(format!(
+                "member '{}' candidate drops retained {} key",
+                retained.member, retained.kind
+            ));
+        }
+        let closed = old
+            .iter()
+            .filter(same)
+            .all(|key| key.tombstoned || key.until.is_some_and(|end| end <= current_epoch));
+        if closed {
+            for key in next.iter().filter(same) {
+                if !key.tombstoned && !key.until.is_some_and(|end| end <= candidate_epoch) {
+                    return Err(format!(
+                        "member '{}' candidate reopens closed {} key",
+                        key.member, key.kind
+                    ));
+                }
+            }
+        }
+    }
+    for retained in old.iter().filter(|key| key.kind == "wg") {
+        let closed = old
+            .iter()
+            .filter(|key| key.kind == "wg" && key.key == retained.key)
+            .all(|key| key.tombstoned || key.until.is_some_and(|end| end <= current_epoch));
+        if closed
+            && next
+                .iter()
+                .any(|key| key.key == retained.key && key.current(candidate_epoch))
+        {
+            return Err(
+                "candidate makes a key current that is closed in the accepted inventory".into(),
+            );
+        }
+    }
+    Ok(())
+}
+
+struct KeyWindow {
+    member: String,
+    key: Vec<u8>,
+    kind: String,
+    from: u64,
+    until: Option<u64>,
+    tombstoned: bool,
+    eligible: bool,
+}
+impl KeyWindow {
+    fn current(&self, epoch: u64) -> bool {
+        self.eligible
+            && !self.tombstoned
+            && self.from <= epoch
+            && self.until.is_none_or(|end| epoch < end)
+    }
+}
+fn key_windows(members: &Value) -> Result<Vec<KeyWindow>, String> {
+    use base64::Engine as _;
+    let mut out = Vec::new();
+    for member in members.as_array().ok_or("members must be an array")? {
+        let Some(credentials) = member.get("credentials") else {
+            continue;
+        };
+        for c in credentials
+            .as_array()
+            .ok_or("credentials must be an array")?
+        {
+            let kind = c["kind"]
+                .as_str()
+                .ok_or("credential kind must be a string")?;
+            if !matches!(kind, "wg" | "d2" | "bus-tls") {
+                return Err("unknown credential kind".into());
+            }
+            // Ineligible owners still poison shared TLS keys in the reverse
+            // index. Authoring refuses them; snapshot verification preserves
+            // this defensive coverage rather than silently deleting records.
+            let key = base64::engine::general_purpose::STANDARD
+                .decode(c["pubkey"].as_str().ok_or("missing credential pubkey")?)
+                .map_err(|_| "invalid credential pubkey")?;
+            // Historical member JSON is opaque, including old WG fixtures.
+            // The admission selectors enforce usable key length separately.
+            let from = c["from_epoch"]
+                .as_u64()
+                .ok_or("invalid credential from_epoch")?;
+            let until = match c.get("until_epoch") {
+                None | Some(Value::Null) => None,
+                Some(value) => Some(value.as_u64().ok_or("invalid credential until_epoch")?),
+            };
+            // Empty historical windows are inert in the selectors. Retain
+            // them as closed-key evidence without adding a new schema gate.
+            out.push(KeyWindow {
+                member: member["name"].as_str().unwrap_or("<unnamed>").into(),
+                key,
+                kind: kind.into(),
+                from,
+                until,
+                tombstoned: member["status"] == "tombstoned",
+                eligible: kind == "wg" || member["bus"] == true,
+            });
+        }
+    }
+    Ok(out)
+}
+
 /// Shared inbound/outbound revocation policy. Both caches must come from the
 /// same accepted inventory. Legacy transports retain the D2-only check.
 pub fn link_refusal(
@@ -221,6 +364,222 @@ mod tests {
     use super::*;
     use crate::admission::sign_admission_transcript;
     use base64::Engine as _;
+
+    #[test]
+    fn wg_overlapping_records_keep_key_open_independent_of_order() {
+        let mut accepted = member(&[[7; 32], [7; 32]]);
+        accepted["credentials"][0]["kind"] = serde_json::json!("wg");
+        accepted["credentials"][0]["until_epoch"] = serde_json::json!(9);
+        accepted["credentials"][1]["kind"] = serde_json::json!("wg");
+        accepted["credentials"][1]["from_epoch"] = serde_json::json!(8);
+        for reverse_old in [false, true] {
+            for reverse_next in [false, true] {
+                let mut old = accepted.clone();
+                let mut next = accepted.clone();
+                if reverse_old {
+                    old["credentials"].as_array_mut().unwrap().reverse();
+                }
+                if reverse_next {
+                    next["credentials"].as_array_mut().unwrap().reverse();
+                }
+                assert!(validate_member_keys(&serde_json::json!([old.clone()]), 10).is_ok());
+                assert!(
+                    validate_key_reload(
+                        &serde_json::json!([old]),
+                        10,
+                        &serde_json::json!([next]),
+                        11
+                    )
+                    .is_ok()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn wg_closed_key_cannot_reopen_with_overlapping_record_independent_of_order() {
+        let mut accepted = member(&[[7; 32]]);
+        accepted["credentials"][0]["kind"] = serde_json::json!("wg");
+        accepted["credentials"][0]["until_epoch"] = serde_json::json!(9);
+        let mut next = accepted.clone();
+        let mut reopened = next["credentials"][0].clone();
+        reopened["from_epoch"] = serde_json::json!(8);
+        reopened["until_epoch"] = Value::Null;
+        next["credentials"].as_array_mut().unwrap().push(reopened);
+        for reverse in [false, true] {
+            let mut candidate = next.clone();
+            if reverse {
+                candidate["credentials"].as_array_mut().unwrap().reverse();
+            }
+            let candidate = serde_json::json!([candidate]);
+            assert!(validate_member_keys(&candidate, 11).is_ok());
+            assert!(
+                validate_key_reload(&serde_json::json!([accepted.clone()]), 10, &candidate, 11)
+                    .unwrap_err()
+                    .contains("closed in the accepted inventory")
+            );
+        }
+    }
+
+    #[test]
+    fn live_d2_key_allows_signed_suspension() {
+        let live = member(&[[7; 32]]);
+        let mut future = live.clone();
+        future["credentials"][0]["from_epoch"] = serde_json::json!(12);
+        let mut no_bus = live.clone();
+        no_bus["bus"] = serde_json::json!(false);
+        for suspended in [future, no_bus] {
+            assert!(
+                validate_key_reload(
+                    &serde_json::json!([live.clone()]),
+                    10,
+                    &serde_json::json!([suspended]),
+                    11
+                )
+                .is_ok()
+            );
+        }
+    }
+
+    #[test]
+    fn reload_retention_staging_and_rotation_table() {
+        for kind in ["d2", "bus-tls"] {
+            let mut live = member(&[[7; 32]]);
+            live["name"] = serde_json::json!("alpha");
+            live["credentials"][0]["kind"] = serde_json::json!(kind);
+            let mut closed = live.clone();
+            closed["credentials"][0]["until_epoch"] = serde_json::json!(2);
+            let mut tombstone = live.clone();
+            tombstone["status"] = serde_json::json!("tombstoned");
+            let mut dropped = live.clone();
+            dropped["credentials"] = serde_json::json!([]);
+            let mut future = live.clone();
+            future["credentials"][0]["from_epoch"] = serde_json::json!(5);
+            let mut staged = live.clone();
+            staged["bus"] = serde_json::json!(false);
+            let mut relabel = live.clone();
+            relabel["credentials"][0]["kind"] =
+                serde_json::json!(if kind == "d2" { "bus-tls" } else { "d2" });
+            let mut rotated = closed.clone();
+            let mut fresh = live["credentials"][0].clone();
+            fresh["pubkey"] =
+                serde_json::json!(base64::engine::general_purpose::STANDARD.encode([8; 32]));
+            fresh["from_epoch"] = serde_json::json!(3);
+            rotated["credentials"]
+                .as_array_mut()
+                .unwrap()
+                .push(fresh.clone());
+            let mut overlap = live.clone();
+            overlap["credentials"].as_array_mut().unwrap().push(fresh);
+            for (label, old, next, ok) in [
+                (
+                    "drop record",
+                    live.clone(),
+                    serde_json::json!([dropped]),
+                    false,
+                ),
+                (
+                    "drop tombstoned member",
+                    tombstone.clone(),
+                    serde_json::json!([]),
+                    false,
+                ),
+                (
+                    "future staging",
+                    closed.clone(),
+                    serde_json::json!([future]),
+                    false,
+                ),
+                (
+                    "bus:false staging",
+                    closed.clone(),
+                    serde_json::json!([staged]),
+                    false,
+                ),
+                ("relabel", live.clone(), serde_json::json!([relabel]), false),
+                (
+                    "un-tombstone",
+                    tombstone,
+                    serde_json::json!([live.clone()]),
+                    false,
+                ),
+                ("overlap", live.clone(), serde_json::json!([overlap]), true),
+                (
+                    "readmission",
+                    closed,
+                    serde_json::json!([rotated.clone()]),
+                    true,
+                ),
+                ("rotation", live, serde_json::json!([rotated]), true),
+            ] {
+                assert_eq!(
+                    validate_key_reload(&serde_json::json!([old]), 2, &next, 3).is_ok(),
+                    ok,
+                    "{kind}: {label}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn two_eligible_tls_owners_identify_neither() {
+        let mut tls = member(&[[7; 32]]);
+        tls["credentials"][0]["kind"] = serde_json::json!("bus-tls");
+        let authority = TlsAuthority::new(
+            &BTreeMap::from([("alpha".into(), tls.clone()), ("beta".into(), tls)]),
+            1,
+            1,
+        );
+        assert!(authority.member_for(&[7; 32]).is_none());
+    }
+
+    #[test]
+    fn purpose_and_closed_windows_reject_independent_of_order() {
+        let mut old = member(&[[7; 32]]);
+        old["credentials"][0]["until_epoch"] = serde_json::json!(2);
+        let mut next = member(&[[7; 32]]);
+        next["credentials"][0]["kind"] = serde_json::json!("bus-tls");
+        for records in [
+            serde_json::json!([old.clone(), next.clone()]),
+            serde_json::json!([next.clone(), old.clone()]),
+        ] {
+            assert!(
+                validate_member_keys(&records, 3)
+                    .unwrap_err()
+                    .contains("d2 and bus-tls")
+            );
+        }
+        next["credentials"][0]["kind"] = serde_json::json!("d2");
+        next["credentials"][0]["from_epoch"] = serde_json::json!(2);
+        for records in [
+            serde_json::json!([old.clone(), next.clone()]),
+            serde_json::json!([next.clone(), old.clone()]),
+        ] {
+            assert!(
+                validate_member_keys(&records, 3)
+                    .unwrap_err()
+                    .contains("closed")
+            );
+        }
+        assert!(
+            validate_key_reload(
+                &serde_json::json!([old.clone()]),
+                2,
+                &serde_json::json!([next]),
+                3
+            )
+            .is_err()
+        );
+        assert!(
+            validate_key_reload(
+                &serde_json::json!([old.clone()]),
+                2,
+                &serde_json::json!([old, member(&[[8; 32]])]),
+                3
+            )
+            .is_ok()
+        );
+    }
 
     #[test]
     fn tls_reverse_index_is_purpose_separated_and_fail_closed() {

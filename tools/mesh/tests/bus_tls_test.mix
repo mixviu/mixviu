@@ -1,0 +1,63 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$m = require("../_lib/mesh_lib.mix")
+$desk = require("../_lib/desk_ops.mix")
+$targets = require("../_lib/targets.mix")
+fn check($ok,$message)
+  if not $ok then raise("TEST",$message) end
+end
+$key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+$inv = {epoch:3,subnet:"192.0.2.0/24",hub:["alpha"],members:[{name:"alpha",mesh_ip:"192.0.2.5",bus:true,status:"active",credentials:[
+  {kind:"wg",pubkey:"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA=",from_epoch:1,until_epoch:nil},
+  {kind:"bus-tls",pubkey:$key,from_epoch:1,until_epoch:nil}]}]}
+if len(args()) > 0 then
+  $case = args()[0]
+  if $case == "no-bus" then $inv.members[0].bus = false end
+  if $case == "duplicate" then $inv.members[0].credentials = concat($inv.members[0].credentials,[{kind:"d2",pubkey:$key,from_epoch:1,until_epoch:nil}]) end
+  if $case == "reuse" then
+    $inv.members[0].credentials[1].until_epoch = 2
+    $inv.members[0].credentials = concat($inv.members[0].credentials,[{kind:"bus-tls",pubkey:$key,from_epoch:2,until_epoch:nil}])
+  end
+  if $case == "endpoint" then $inv.members[0].endpoints = [{addr:"node.example.org:4200",transport:"tls"}] end
+  if $case == "endpoint-duplicate" then $inv.members[0].endpoints = [{addr:"192.0.2.5:4200",transport:"tls"},{addr:"192.0.2.5:4200",transport:"ws-wg"}] end
+  if $case == "endpoint-wg" then $inv.members[0].endpoints = [{addr:"198.51.100.5:4200",transport:"ws-wg"}] end
+  if $case == "endpoint-no-bus" then $inv.members[0].bus = false; $inv.members[0].endpoints = [] end
+  if contains(["shared-d2","shared-bus-tls"],$case) then
+    $kind = if $case == "shared-d2" then "d2" else "bus-tls" end
+    $inv.members[0].credentials[1].kind = $kind
+    $other = $inv.members[0]
+    $other.name = "beta"
+    $other.mesh_ip = "192.0.2.6"
+    $other.credentials[1].from_epoch = 5
+    $inv.members = concat($inv.members,[$other])
+  end
+  $m.validate_inventory($inv)
+  exit(0)
+end
+$m.validate_inventory($inv)
+for $case in ["no-bus","duplicate","reuse","endpoint","endpoint-duplicate","endpoint-wg","endpoint-no-bus","shared-d2","shared-bus-tls"]
+  $r = run_argv([realpath("/proc/self/exe"),$0,$case])
+  check($r.exit_code == 1 and contains($r.stdout,"ERROR:"),"refuse " .. $case)
+  if $case == "endpoint-duplicate" then check(contains($r.stdout,"duplicate endpoint") and contains($r.stdout,"alpha") and contains($r.stdout,"192.0.2.5:4200"),"duplicate path names member and address") end
+end
+for $address in ["198.51.100.5:4200","[2001:db8::5]:4200","[::1]:1","127.0.0.1:42"]
+  check($m.endpoint_identity({addr:$address,transport:"tls"}) != nil,"parse " .. $address)
+end
+check($m.endpoint_identity({addr:"[2001:db8::5]:4200",transport:"tls"}) == $m.endpoint_identity({addr:"[2001:db8:0:0:0:0:0:5]:4200",transport:"tls"}),"canonical IPv6 duplicates")
+for $address in ["example.org:4200","192.0.2.5:0","192.0.2.5:65536","[2001:::5]:42","[2001:db8]:42","[::]:-1","[::]:42","0.0.0.0:42","224.0.0.1:42","[ff02::1]:42","255.255.255.255:42","[::ffff:192.0.2.5]:65535","[::ffff:c000:205]:42"]
+  check($m.endpoint_identity({addr:$address,transport:"tls"}) == nil,"refuse " .. $address)
+end
+$tomb = $inv
+$tomb.members[0].status = "tombstoned"
+$tomb.members[0].bus = false
+$tomb.hub = ["beta"]
+$tomb.members = concat($tomb.members,[{name:"beta",mesh_ip:"192.0.2.6",bus:true,status:"active",credentials:[{kind:"wg",pubkey:"CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA=",from_epoch:1,until_epoch:nil}]}])
+$m.validate_inventory($tomb)
+$target = $targets.parse_targets({schema_version:1,project:"example",targets:[{node:"alpha",host:"example-host",kind:"desk",machine:"example-desk",profile:"/var/lib/example/desk",session:3,account:"desktop",admission:"observe"}]}).targets[0]
+fn fake_guest($job)
+  check(contains($job.stdin,"bus-tls-gen"),"generator must run in guest")
+  check(contains(json_encode($job.argv),"--machine=example-desk"),"guest namespace required")
+  return {ok:true,stdout:json_encode({pubkey:"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",fingerprint:"public-only"}),stdout_truncated:false,stderr_truncated:false}
+end
+$credential = $desk.enrol_bus_tls($target,"/opt/mix/bin/mix","/opt/mix",4,fn($job)=fake_guest($job))
+check($credential.kind == "bus-tls" and $credential.from_epoch == 4 and $credential.until_epoch == nil,"guest public key authored with epoch window")
+print("PASS bus-tls inventory validation, endpoints and guest authoring")

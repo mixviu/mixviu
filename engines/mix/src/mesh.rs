@@ -87,6 +87,14 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
+    /// Generate a node-local TLS seed; only public information is emitted.
+    BusTlsGen {
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// Write alongside the active seed for activation at a future epoch.
+        #[arg(long)]
+        rotate: bool,
+    },
     /// Generate the genesis Ed25519 keypair and store the signing key in
     /// the secrets DB. Refuses to overwrite an existing key unless
     /// --force (rotating genesis invalidates every prior signature).
@@ -196,6 +204,16 @@ pub(crate) fn run(args: Vec<std::ffi::OsString>) -> Result<()> {
     let cli = Cli::parse_from(std::iter::once(std::ffi::OsString::from("mix mesh")).chain(args));
     let db = expand_tilde(&cli.secrets_db);
     match cli.cmd {
+        Cmd::BusTlsGen { path, rotate } => {
+            let path =
+                path.unwrap_or_else(|| config::path(config::Dir::Etc).join("noded/bus-tls.seed"));
+            let generated = mesh::seed::generate_bus_tls_seed(&path, rotate)?;
+            println!(
+                "{}",
+                serde_json::json!({"path": generated.path, "pubkey": B64.encode(generated.public_key), "fingerprint": blake3::hash(&generated.public_key).to_hex().to_string()})
+            );
+            Ok(())
+        }
         Cmd::Genesis { force } => cmd_genesis(&db, &cli.mesh, force),
         Cmd::Sign {
             inventory,
@@ -229,7 +247,7 @@ pub(crate) fn run(args: Vec<std::ffi::OsString>) -> Result<()> {
                 genesis_pub: genesis_pub.as_deref(),
                 genesis_pub_base64: genesis_pub_base64.as_deref(),
                 expected_mesh: expected_mesh.as_deref(),
-                include_payload,
+                include_payload: include_payload || !json,
                 against_authored: against_authored.as_deref(),
             },
         ),
@@ -692,23 +710,14 @@ fn emit_verify(
             if json_output {
                 println!("{}", serde_json::to_string(&report)?);
             } else {
-                println!(
-                    "VERIFIED {}\n  epoch={}  mesh={}  recovery_generation={}  payload_recovery_generation={}  via_recovery={}  verified_by={}",
-                    signed_path.display(),
-                    report["epoch"],
-                    report["mesh"].as_str().unwrap_or(""),
-                    report["recovery_generation"],
-                    report["payload_recovery_generation"],
-                    report["via_recovery"],
-                    report["verified_by"]
-                );
+                println!("{}", serde_json::to_string(&report["payload"])?);
                 if report["payload_recovery_generation"].is_null() {
                     eprintln!(
                         "NOTE: legacy generation-silent payload; this command verified it against a synthetic recovery-generation floor of 0. A node whose cached generation exceeds 0 refuses it with NormalMissingRecoveryGeneration."
                     );
                 }
                 if let Some(against) = report.get("against_authored") {
-                    println!(
+                    eprintln!(
                         "  authored_match={}  authoring_blake3={}",
                         against["matches"],
                         against["signed_authoring_blake3"].as_str().unwrap_or("")

@@ -332,7 +332,7 @@ fn verify_reports_payload_recovery_generation_when_present() {
 }
 
 #[test]
-fn human_verify_reports_effective_and_payload_generation() {
+fn default_verify_prints_authenticated_payload_json() {
     let fixture = Fixture::new();
     let output = run(&strings(&[
         "verify",
@@ -345,12 +345,9 @@ fn human_verify_reports_effective_and_payload_generation() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("recovery_generation=0"), "{stdout}");
-    assert!(
-        stdout.contains("payload_recovery_generation=null"),
-        "{stdout}"
-    );
+    let payload = json_stdout(&output);
+    assert_eq!(payload["epoch"], 7);
+    assert_eq!(payload["members"][0]["mesh_ip"], "192.0.2.5");
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(
         stderr.contains("legacy generation-silent payload"),
@@ -361,6 +358,33 @@ fn human_verify_reports_effective_and_payload_generation() {
         "{stderr}"
     );
     assert!(stderr.contains("cached generation exceeds 0"), "{stderr}");
+}
+
+#[test]
+fn signed_endpoints_survive_verify_and_hostname_refuses() {
+    let fixture = Fixture::new();
+    let signer = SigningKey::from_bytes(&[7; 32]);
+    let mut envelope = SignedInventory::parse(&std::fs::read(&fixture.signed).unwrap()).unwrap();
+    for (addr, ok) in [
+        ("198.51.100.5:4200", true),
+        ("node.example.org:4200", false),
+    ] {
+        let endpoints = json!([{"addr":addr,"transport":"tls"}]);
+        envelope.payload.members[0]["endpoints"] = endpoints.clone();
+        envelope.signatures[0].sig =
+            B64.encode(signer.sign(&envelope.payload.canonical_bytes()).to_bytes());
+        std::fs::write(&fixture.signed, serde_json::to_vec(&envelope).unwrap()).unwrap();
+        let output = run(&strings(&[
+            "verify",
+            fixture.signed.to_str().unwrap(),
+            "--genesis-pub",
+            fixture.genesis_pub.to_str().unwrap(),
+        ]));
+        assert_eq!(output.status.success(), ok);
+        if ok {
+            assert_eq!(json_stdout(&output)["members"][0]["endpoints"], endpoints);
+        }
+    }
 }
 
 #[test]

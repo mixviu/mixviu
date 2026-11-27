@@ -38,6 +38,9 @@ rand.workspace = true
 rusqlite.workspace = true
 serde_json.workspace = true
 mesh-trust.workspace = true
+mesh.workspace = true
+config.workspace = true
+blake3.workspace = true
 
 [features]
 test-hooks = ["mix-shell/test-hooks"]
