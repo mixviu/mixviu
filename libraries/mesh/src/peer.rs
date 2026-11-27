@@ -77,7 +77,7 @@ pub struct MeshConfig {
     /// `mix:etc/noded/d2.seed`. `None` ⇒ the node cannot prove itself
     /// (prover-incapable; the broker logs `unproven:no-proof`).
     #[serde(skip)]
-    pub d2_seed: Option<crate::tls::Seed>,
+    pub d2_seed: Option<crate::seed::D2Seed>,
 }
 
 impl MeshConfig {
@@ -137,7 +137,7 @@ impl MeshConfig {
 pub fn build_admit_response(
     challenge: &BusMessage,
     node_name: &str,
-    d2_seed: &Option<crate::tls::Seed>,
+    d2_seed: &Option<crate::seed::D2Seed>,
     expected_verifier: &str,
     expected_mesh: &str,
     local_epoch: u64,
@@ -989,7 +989,7 @@ async fn connect_and_publish(
     attempt_id: uuid::Uuid,
     mut attempt_cancel: watch::Receiver<bool>,
     node_name: String,
-    d2_seed: Option<crate::tls::Seed>,
+    d2_seed: Option<crate::seed::D2Seed>,
     state: Arc<RwLock<TransportState>>,
     pending: Arc<Mutex<HashMap<String, PendingCall>>>,
     incoming_tx: mpsc::UnboundedSender<MeshInbound>,
@@ -1537,7 +1537,7 @@ mod tests {
                 build_admit_response(
                     &challenge,
                     "local",
-                    &Some(crate::tls::Seed::new([9; 32])),
+                    &Some(crate::seed::D2Seed::new([9; 32])),
                     peer,
                     "example.test",
                     6
@@ -1551,7 +1551,7 @@ mod tests {
             build_admit_response(
                 &challenge,
                 "local",
-                &Some(crate::tls::Seed::new([9; 32])),
+                &Some(crate::seed::D2Seed::new([9; 32])),
                 "epoch-alpha",
                 "example.test",
                 6
@@ -1650,7 +1650,7 @@ mod tests {
             build_admit_response(
                 &ch,
                 "delta",
-                &Some(crate::tls::Seed::new([9; 32])),
+                &Some(crate::seed::D2Seed::new([9; 32])),
                 "gamma",
                 "bus",
                 7
@@ -1661,7 +1661,7 @@ mod tests {
             build_admit_response(
                 &ch,
                 "delta",
-                &Some(crate::tls::Seed::new([9; 32])),
+                &Some(crate::seed::D2Seed::new([9; 32])),
                 "beta",
                 "other.example",
                 7
@@ -1673,7 +1673,7 @@ mod tests {
                 build_admit_response(
                     &ch,
                     "delta",
-                    &Some(crate::tls::Seed::new([9; 32])),
+                    &Some(crate::seed::D2Seed::new([9; 32])),
                     "beta",
                     "bus",
                     epoch
@@ -1689,7 +1689,7 @@ mod tests {
         let wire = build_admit_response(
             &ch,
             "delta",
-            &Some(crate::tls::Seed::new([9u8; 32])),
+            &Some(crate::seed::D2Seed::new([9u8; 32])),
             "beta",
             "bus",
             7,
@@ -2419,7 +2419,7 @@ mod tests {
                 MeshConfig {
                     node_name: "alpha".into(),
                     peers: vec![beta.clone()],
-                    d2_seed: Some(crate::tls::Seed::new([9; 32])),
+                    d2_seed: Some(crate::seed::D2Seed::new([9; 32])),
                 },
                 tx,
             );

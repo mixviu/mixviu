@@ -35,6 +35,8 @@ rcgen.workspace = true
 x509-parser.workspace = true
 zeroize.workspace = true
 ed25519-dalek.workspace = true
+libc.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

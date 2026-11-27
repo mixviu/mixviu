@@ -471,7 +471,7 @@ impl PendingResponseTable {
 
 #[derive(Clone)]
 struct AppState {
-    d2_seed: Option<mesh::tls::Seed>,
+    d2_seed: Option<mesh::seed::D2Seed>,
     peer_context: bus::native_session::PeerContext,
     sessions: Arc<tokio::sync::Mutex<session::Sessions>>,
     protected_responses: Arc<AtomicBool>,
@@ -1364,9 +1364,9 @@ fn d2_seed_path() -> std::path::PathBuf {
 /// silently disabled proving until the observe-flip surfaced it (a root-only
 /// `0600` seed is unreadable by the unprivileged `noded` user). Absent
 /// is silent; unreadable/malformed are LOUD.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(PartialEq, Eq)]
 enum SeedRead {
-    Loaded(mesh::tls::Seed),
+    Loaded(mesh::seed::D2Seed),
     /// `NotFound` — the seed has not been provisioned yet (ceremony Part B).
     Absent,
     /// Present but not readable (e.g. `PermissionDenied`). Carries the io
@@ -1376,30 +1376,53 @@ enum SeedRead {
     Malformed,
 }
 
+impl std::fmt::Debug for SeedRead {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("<redacted>")
+    }
+}
+
 /// Pure classifier (testable without root or the filesystem): map a read result
 /// to a [`SeedRead`]. `NotFound` → `Absent` (silent, normal pre-ceremony); any
 /// other IO error (notably `PermissionDenied`) → `Unreadable` (loud); a
 /// readable-but-non-base64-32 body → `Malformed` (loud).
-fn classify_seed_read(raw: std::io::Result<String>) -> SeedRead {
+fn classify_seed_read(raw: std::io::Result<zeroize::Zeroizing<Vec<u8>>>) -> SeedRead {
     match raw {
-        Ok(s) => match base64::engine::general_purpose::STANDARD
-            .decode(zeroize::Zeroizing::new(s).trim())
-            .ok()
-            .and_then(|b| {
-                let bytes = zeroize::Zeroizing::new(b);
-                let mut seed = mesh::tls::Seed::new([0; 32]);
-                if bytes.len() != 32 {
-                    return None;
+        Ok(source) => {
+            let Ok(text) = std::str::from_utf8(&source) else { return SeedRead::Malformed; };
+            // Both successful and partially decoded error bytes belong to this
+            // erasing buffer. base64 never allocates a secret output Vec.
+            let mut decoded = zeroize::Zeroizing::new([0; 33]);
+            match base64::engine::general_purpose::STANDARD.decode_slice(text.trim(), decoded.as_mut()) {
+                Ok(32) => {
+                    let mut seed = zeroize::Zeroizing::new([0; 32]);
+                    seed.copy_from_slice(&decoded[..32]);
+                    SeedRead::Loaded(mesh::seed::D2Seed::new(*seed))
                 }
-                seed.copy_from_slice(&bytes);
-                Some(seed)
-            }) {
-            Some(seed) => SeedRead::Loaded(seed),
-            None => SeedRead::Malformed,
-        },
+                _ => SeedRead::Malformed,
+            }
+        }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => SeedRead::Absent,
         Err(e) => SeedRead::Unreadable(e.kind().to_string()),
     }
+}
+
+fn read_d2_seed(path: &std::path::Path) -> std::io::Result<zeroize::Zeroizing<Vec<u8>>> {
+    use std::io::Read;
+    let opened = mesh::seed::open_seed(path).map_err(|error| match error {
+        mesh::seed::SeedFileError::Io(error) => error,
+        other => std::io::Error::other(other),
+    })?;
+    // Rollout policy: warn once per load, but continue with this same fd.
+    if !opened.secure {
+        tracing::warn!(
+            path = %path.display(), mode = format_args!("{:o}", opened.mode), owner = opened.owner,
+            "INSECURE d2 seed permissions or owner; expected root:noded 0640; loading during rollout"
+        );
+    }
+    let mut bytes = zeroize::Zeroizing::new(Vec::new());
+    opened.file.take(u64::MAX).read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 /// Read this node's `kind:"d2"` admission seed (SPEC 13 §9a, slice 2-c-1) —
@@ -1413,8 +1436,8 @@ fn classify_seed_read(raw: std::io::Result<String>) -> SeedRead {
 /// decoupling). **2-c-2a:** a present-but-unreadable seed is now LOUD (a
 /// `tracing::warn!` naming the fix) instead of a silent `None`, closing the
 /// legibility gap that hid the perms bug.
-fn load_d2_seed(path: &std::path::Path) -> Option<mesh::tls::Seed> {
-    match classify_seed_read(std::fs::read_to_string(path)) {
+fn load_d2_seed(path: &std::path::Path) -> Option<mesh::seed::D2Seed> {
+    match classify_seed_read(read_d2_seed(path)) {
         SeedRead::Loaded(seed) => Some(seed),
         // Normal pre-ceremony state — the seed simply isn't provisioned yet.
         SeedRead::Absent => None,
@@ -5531,7 +5554,7 @@ mod tests {
             mesh::build_admit_response(
                 &challenge,
                 "local",
-                &Some(mesh::tls::Seed::new([9; 32])),
+                &Some(mesh::seed::D2Seed::new([9; 32])),
                 "info-peer",
                 "example.test",
                 1
@@ -5774,7 +5797,7 @@ mod tests {
             mesh::build_admit_response(
                 &challenge,
                 "alpha",
-                &Some(mesh::tls::Seed::new([9; 32])),
+                &Some(mesh::seed::D2Seed::new([9; 32])),
                 PEER,
                 "example.internal",
                 7,
@@ -5991,7 +6014,7 @@ mod tests {
         let dir = std::env::temp_dir();
         let good = dir.join("mixos_test_d2_good.seed");
         std::fs::write(&good, b64.encode([7u8; 32])).unwrap();
-        assert_eq!(load_d2_seed(&good), Some(mesh::tls::Seed::new([7u8; 32])));
+        assert_eq!(load_d2_seed(&good), Some(mesh::seed::D2Seed::new([7u8; 32])));
         std::fs::remove_file(&good).ok();
         let short = dir.join("mixos_test_d2_short.seed");
         std::fs::write(&short, b64.encode([7u8; 16])).unwrap();
@@ -6027,18 +6050,78 @@ mod tests {
         }
         // Readable + valid base64-32 → Loaded.
         assert_eq!(
-            classify_seed_read(Ok(b64.encode([7u8; 32]))),
-            SeedRead::Loaded(mesh::tls::Seed::new([7u8; 32]))
+            classify_seed_read(Ok(zeroize::Zeroizing::new(b64.encode([7u8; 32]).into_bytes()))),
+            SeedRead::Loaded(mesh::seed::D2Seed::new([7u8; 32]))
         );
         // Readable but wrong length / not base64 → Malformed (LOUD).
         assert_eq!(
-            classify_seed_read(Ok(b64.encode([7u8; 16]))),
+            classify_seed_read(Ok(zeroize::Zeroizing::new(b64.encode([7u8; 16]).into_bytes()))),
             SeedRead::Malformed
         );
         assert_eq!(
-            classify_seed_read(Ok("!!! not base64 !!!".into())),
+            classify_seed_read(Ok(zeroize::Zeroizing::new(b"!!! not base64 !!!".to_vec()))),
             SeedRead::Malformed
         );
+    }
+
+    #[test]
+    fn d2_seed_debug_and_malformed_buffers() {
+        let read = super::SeedRead::Loaded(mesh::seed::D2Seed::new([173;32]));
+        let debug = format!("{read:?}");
+        assert_eq!(debug, "<redacted>");
+        assert!(!debug.contains("173"));
+        for source in [vec![0xff;44], b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA!".to_vec()] {
+            assert_eq!(super::classify_seed_read(Ok(zeroize::Zeroizing::new(source))), super::SeedRead::Malformed);
+        }
+    }
+
+    #[test]
+    fn d2_seed_file_policy_warns_once_and_never_follows_or_blocks() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        use std::io::Write;
+        #[derive(Clone)]
+        struct Capture(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+        impl Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        let capture = Capture(Default::default());
+        let writer = capture.clone();
+        let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
+            .with_max_level(tracing::Level::WARN).with_writer(move || writer.clone()).finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+        let directory = std::env::temp_dir().join(format!("d2-policy-{}", rand::random::<u64>()));
+        std::fs::create_dir(&directory).unwrap();
+        let target = directory.join("seed");
+        let b64 = base64::engine::general_purpose::STANDARD;
+        std::fs::write(&target, b64.encode([173;32])).unwrap();
+        for mode in [0o640, 0o660, 0o644] {
+            capture.0.lock().unwrap().clear();
+            std::fs::set_permissions(&target,std::fs::Permissions::from_mode(mode)).unwrap();
+            assert_eq!(super::load_d2_seed(&target),Some(mesh::seed::D2Seed::new([173;32])));
+            let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
+            assert_eq!(log.matches("WARN").count(),usize::from(mode != 0o640),"{log}");
+            if mode != 0o640 {
+                assert!(log.contains(&target.display().to_string()));
+                assert!(log.contains(&format!("mode={mode:o}")));
+                // SAFETY: geteuid has no preconditions.
+                assert!(log.contains(&format!("owner={}",unsafe { libc::geteuid() })));
+            }
+        }
+        let link = directory.join("link");
+        symlink(&target,&link).unwrap();
+        assert!(super::load_d2_seed(&link).is_none());
+        let fifo = directory.join("fifo");
+        let name = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+        // SAFETY: name is a live NUL-terminated path, and mode is valid.
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(),0o600) },0);
+        let (tx,rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || { let _ = tx.send(super::load_d2_seed(&fifo)); });
+        assert!(rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap().is_none());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     /// SPEC 13 §9a (2-c-1a): observe never refuses; enforce degrades to

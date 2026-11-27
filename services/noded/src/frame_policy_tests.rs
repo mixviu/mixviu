@@ -42,7 +42,7 @@ async fn inventory_rotation_during_inbound_proof_refuses_stale_handshake() {
     let challenge = BusMessage::new()
         .with_header("id", &issued.id)
         .with_body(&issued.body);
-    let wire = mesh::build_admit_response(&challenge, "beta", &Some(mesh::tls::Seed::new([7; 32])), &state.node_name, &a.mesh, a.epoch).unwrap();
+    let wire = mesh::build_admit_response(&challenge, "beta", &Some(mesh::seed::D2Seed::new([7; 32])), &state.node_name, &a.mesh, a.epoch).unwrap();
     let mut posture = authority.posture.clone();
     if let crate::authority::Posture::Verified(a) = &mut posture {
         a.epoch += 1;
@@ -195,7 +195,7 @@ async fn next_mesh_frame(
 async fn prove_policy_peer(socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) {
     let challenge = next_mesh_frame(socket).await;
     assert_eq!(challenge.command_name(), Some("noded.identity.challenge"));
-    let wire = mesh::build_admit_response(&challenge, "beta", &Some(mesh::tls::Seed::new([8; 32])), "alpha", "bus", 1).unwrap();
+    let wire = mesh::build_admit_response(&challenge, "beta", &Some(mesh::seed::D2Seed::new([8; 32])), "alpha", "bus", 1).unwrap();
     let mut response = bus_mod::parse(&wire).unwrap();
     response.set("command", "noded.identity.response");
     socket

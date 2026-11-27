@@ -19,26 +19,22 @@ use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, Server
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::server::danger::{ClientCertVerified, ClientCertVerifier};
 use rustls::{DigitallySignedStruct, Error, SignatureScheme};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, LazyLock};
 use zeroize::Zeroizing;
+pub use crate::seed::{BusTlsSeed, SeedFileError};
 
 /// Replace the immutable cache only after accepting a signed inventory.
 pub type LiveAuthority = Arc<RwLock<Arc<TlsAuthority>>>;
-pub type Seed = Zeroizing<[u8; 32]>;
 
 /// Raw 32-byte TLS seed, normally mix:etc/noded/bus-tls.seed.
 /// Metadata is checked on the opened file, avoiding a stat/open race.
-pub fn load_seed(path: &std::path::Path) -> std::io::Result<Seed> {
+pub fn load_seed(path: &std::path::Path) -> Result<BusTlsSeed, SeedFileError> {
     use std::io::Read;
-    use std::os::unix::fs::PermissionsExt;
-    let mut file = std::fs::File::open(path)?;
-    let metadata = file.metadata()?;
-    if !metadata.is_file() || metadata.permissions().mode() & 0o077 != 0 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            "TLS seed must be private",
-        ));
+    let opened = crate::seed::open_seed(path)?;
+    if !opened.secure {
+        return Err(SeedFileError::Insecure { mode: opened.mode, owner: opened.owner });
     }
+    let mut file = opened.file;
     let mut bytes = Zeroizing::new([0; 33]);
     let mut len = 0;
     while len < bytes.len() {
@@ -49,14 +45,11 @@ pub fn load_seed(path: &std::path::Path) -> std::io::Result<Seed> {
         len += n;
     }
     if len != 32 {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            "TLS seed must be exactly 32 bytes",
-        ));
+        return Err(SeedFileError::Length);
     }
     let mut seed = Zeroizing::new([0; 32]);
     seed.copy_from_slice(&bytes[..32]);
-    Ok(seed)
+    Ok(BusTlsSeed::new(*seed))
 }
 
 // Dalek's zeroize feature erases the signing key on final drop. Keeping rcgen
@@ -110,20 +103,13 @@ impl rustls::sign::SigningKey for TlsSigningKey {
 pub struct Credential {
     pub certificate: CertificateDer<'static>,
     certified: Arc<rustls::sign::CertifiedKey>,
-    _seed: Seed,
-    _pkcs8: Zeroizing<Vec<u8>>,
+    _seed: BusTlsSeed,
 }
 impl Credential {
-    pub fn new(seed: Seed) -> anyhow::Result<Self> {
-        let key = ed25519_dalek::SigningKey::from_bytes(&seed);
+    pub fn new(seed: BusTlsSeed) -> anyhow::Result<Self> {
+        let key = ed25519_dalek::SigningKey::from_bytes(seed.bytes());
         let public = key.verifying_key().to_bytes();
         let signing = Arc::new(Signing { key, public });
-        // RFC 8410 PKCS#8 v1, kept once in an erasing allocation.
-        let mut pkcs8 = Zeroizing::new(vec![
-            0x30, 0x2e, 0x02, 0x01, 0, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04,
-            0x20,
-        ]);
-        pkcs8.extend_from_slice(seed.as_ref());
         let pair = rcgen::KeyPair::from_remote(Box::new(CertificateSigner(signing.clone())))?;
         let params = rcgen::CertificateParams::new(Vec::<String>::new())?;
         let certificate = params.self_signed(&pair)?.der().clone();
@@ -135,7 +121,6 @@ impl Credential {
             certificate,
             certified,
             _seed: seed,
-            _pkcs8: pkcs8,
         })
     }
     pub fn server_config(
@@ -173,7 +158,9 @@ impl Credential {
     }
 }
 fn provider() -> Arc<rustls::crypto::CryptoProvider> {
-    Arc::new(rustls::crypto::ring::default_provider())
+    static PROVIDER: LazyLock<Arc<rustls::crypto::CryptoProvider>> =
+        LazyLock::new(|| Arc::new(rustls::crypto::ring::default_provider()));
+    PROVIDER.clone()
 }
 #[derive(Debug)]
 struct Resolver(Arc<rustls::sign::CertifiedKey>);
@@ -243,6 +230,11 @@ pub fn public_key(cert: &CertificateDer<'_>) -> Result<[u8; 32], Error> {
 
 /// Obtain a typed identity from the exact certificate rustls authenticated.
 /// Call only after handshake completion; no certificate-only API proves possession.
+///
+/// Callers MUST call this after EVERY handshake: membership is checked in
+/// certificate verification, but not re-checked inside verify_tls13_signature.
+/// Diallers MUST pass the same member pin used to build the client config as
+/// expected, including when a revision changes between verification and lookup.
 pub fn verified_member(
     authority: &LiveAuthority,
     certificates: &[CertificateDer<'_>],
@@ -379,7 +371,7 @@ mod tests {
     use std::collections::BTreeMap;
 
     fn credential(n: u8) -> Credential {
-        Credential::new(Seed::new([n; 32])).unwrap()
+        Credential::new(BusTlsSeed::new([n; 32])).unwrap()
     }
     fn record(c: &Credential) -> Value {
         json!({"status":"active", "bus":true, "credentials":[{
@@ -627,12 +619,34 @@ mod tests {
             file.write_all(&vec![7; len]).unwrap();
             assert_eq!(load_seed(&path).is_ok(), len == 32);
         }
-        file.set_permissions(std::fs::Permissions::from_mode(0o644))
-            .unwrap();
-        assert_eq!(
-            load_seed(&path).unwrap_err().kind(),
-            std::io::ErrorKind::PermissionDenied
-        );
+        file.set_len(32).unwrap();
+        file.set_permissions(std::fs::Permissions::from_mode(0o640)).unwrap();
+        assert!(load_seed(&path).is_ok());
+        for mode in [0o644, 0o660] {
+            file.set_permissions(std::fs::Permissions::from_mode(mode)).unwrap();
+            assert!(matches!(load_seed(&path), Err(SeedFileError::Insecure { .. })));
+        }
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn seed_loader_refuses_symlink_and_fifo_promptly() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let directory = std::env::temp_dir().join(format!("bus-tls-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let target = directory.join("seed");
+        std::fs::write(&target, [7;32]).unwrap();
+        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o640)).unwrap();
+        let link = directory.join("link");
+        symlink(&target, &link).unwrap();
+        assert!(matches!(load_seed(&link), Err(SeedFileError::Io(error)) if error.raw_os_error() == Some(libc::ELOOP)));
+        let fifo = directory.join("fifo");
+        let name = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
+        // SAFETY: name is a live NUL-terminated path, and mode is valid.
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || { let _ = tx.send(load_seed(&fifo)); });
+        assert!(matches!(rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap(), Err(SeedFileError::NotRegular)));
+        std::fs::remove_dir_all(directory).unwrap();
     }
 }

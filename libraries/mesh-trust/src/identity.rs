@@ -205,14 +205,28 @@ mod tests {
         closed["credentials"][0]["until_epoch"] = serde_json::json!(2);
         assert_eq!(select_bus_tls_pubkeys(&closed, 1).len(), 1);
         assert!(select_bus_tls_pubkeys(&closed, 2).is_empty());
+    }
+
+    fn assert_tls_ineligible_poison(ineligible: &str) {
+        let key = [7; 32];
+        let mut tls = member(&[key]);
+        tls["credentials"][0]["kind"] = serde_json::json!("bus-tls");
         let mut no_bus = tls.clone();
         no_bus["bus"] = serde_json::json!(false);
-        let ambiguous = index(BTreeMap::from([
-            ("alpha".into(), tls.clone()),
-            ("beta".into(), no_bus),
-            ("gamma".into(), tls),
-        ]));
-        assert!(ambiguous.member_for(&key).is_none());
+        let authority = TlsAuthority::new(&BTreeMap::from([
+            ("alpha".into(), tls), (ineligible.into(), no_bus),
+        ]),1,42);
+        assert!(authority.member_for(&key).is_none(), "ineligible {ineligible}");
+    }
+
+    #[test]
+    fn tls_ineligible_owner_after_eligible_poisons_key() {
+        assert_tls_ineligible_poison("beta");
+    }
+
+    #[test]
+    fn tls_ineligible_owner_before_eligible_poisons_key() {
+        assert_tls_ineligible_poison("aardvark");
     }
 
     fn member(keys: &[[u8; 32]]) -> Value {
