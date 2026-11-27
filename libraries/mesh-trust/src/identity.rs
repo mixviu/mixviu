@@ -73,9 +73,10 @@ pub fn validate_key_reload(
             .iter()
             .filter(|key| key.kind == "wg" && key.key == retained.key)
             .all(|key| key.tombstoned || key.until.is_some_and(|end| end <= current_epoch));
-        if closed && next
-            .iter()
-            .any(|key| key.key == retained.key && key.current(candidate_epoch))
+        if closed
+            && next
+                .iter()
+                .any(|key| key.key == retained.key && key.current(candidate_epoch))
         {
             return Err(
                 "candidate makes a key current that is closed in the accepted inventory".into(),
@@ -382,9 +383,15 @@ mod tests {
                     next["credentials"].as_array_mut().unwrap().reverse();
                 }
                 assert!(validate_member_keys(&serde_json::json!([old.clone()]), 10).is_ok());
-                assert!(validate_key_reload(
-                    &serde_json::json!([old]), 10, &serde_json::json!([next]), 11
-                ).is_ok());
+                assert!(
+                    validate_key_reload(
+                        &serde_json::json!([old]),
+                        10,
+                        &serde_json::json!([next]),
+                        11
+                    )
+                    .is_ok()
+                );
             }
         }
     }
@@ -406,8 +413,11 @@ mod tests {
             }
             let candidate = serde_json::json!([candidate]);
             assert!(validate_member_keys(&candidate, 11).is_ok());
-            assert!(validate_key_reload(&serde_json::json!([accepted.clone()]), 10, &candidate, 11)
-                .unwrap_err().contains("closed in the accepted inventory"));
+            assert!(
+                validate_key_reload(&serde_json::json!([accepted.clone()]), 10, &candidate, 11)
+                    .unwrap_err()
+                    .contains("closed in the accepted inventory")
+            );
         }
     }
 
@@ -419,9 +429,15 @@ mod tests {
         let mut no_bus = live.clone();
         no_bus["bus"] = serde_json::json!(false);
         for suspended in [future, no_bus] {
-            assert!(validate_key_reload(
-                &serde_json::json!([live.clone()]), 10, &serde_json::json!([suspended]), 11
-            ).is_ok());
+            assert!(
+                validate_key_reload(
+                    &serde_json::json!([live.clone()]),
+                    10,
+                    &serde_json::json!([suspended]),
+                    11
+                )
+                .is_ok()
+            );
         }
     }
 
