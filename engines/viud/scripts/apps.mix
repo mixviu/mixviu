@@ -129,6 +129,7 @@ $live = {}
 $generation = substr(replace(uuid(), "-", ""), 0, 12)
 $serial = 0
 $allow_argv = false
+$open_schemes = ["http", "https", "mailto"]
 $history = merge({seq: 0}, $a.history_open("", ""))
 $history_dir = mix_path("var", "apps/history")
 mkdir($history_dir, {parents: true})
@@ -156,7 +157,7 @@ fn local_origin()
   return $event.headers.broker_origin == "local"
 end
 
-fn start_app($request)
+fn start_app($request, $activation_token = nil)
   global $serial
   global $live
   $bad = $a.request_error("invalid_request")
@@ -192,12 +193,13 @@ fn start_app($request)
   $opts.journal = re_replace($name, "[\\x00-\\x1f\\x7f]", "_")
   $x = $a.launch_display(env("XDG_RUNTIME_DIR"), env("WAYLAND_DISPLAY"))
   if $x.display == nil then eprint("apps.launch " .. ($id ?? $name) .. ": DISPLAY unset: " .. $x.why) end
-  $launch = $a.launch_spawn($argv, $exe, $x.display)
+  $launch = $a.launch_spawn($argv, $exe, $x.display, $activation_token)
   if len(keys($launch.env)) > 0 then $opts.env = $launch.env end
   try
     $pid = spawn($launch.argv, $opts)
   catch $err
-    eprint("apps.start " .. ($id ?? $name) .. ": " .. to_string($err))
+    -- Spawn diagnostics may contain argv; keep hostile URI content private.
+    eprint("apps.start " .. ($id ?? $name) .. ": spawn failed")
     return {rc: 11, body: {error: "spawn_failed", id: $id}}
   end
   $body = {handle: $handle, id: $id, pid: $pid, argv: $argv, started_utc: utc_now()}
@@ -206,6 +208,39 @@ fn start_app($request)
   -- at any Bus boundary. Only the caller's reply contains argument values.
   publish(serve_name() .. ".started", json_encode({handle: $handle, id: $id, pid: $pid, executable: $argv[0], argc: len($argv), started_utc: $body.started_utc}), {command: "apps.started"})
   return {rc: 0, body: $body}
+end
+
+fn handler_request($request)
+  if not local_origin() then return {rc: 10, body: {error: "forbidden", error_code: "FORBIDDEN"}} end
+  if not $a.scheme_valid($request.scheme) then return $a.request_error("invalid_request") end
+  $scheme = lower($request.scheme)
+  if $scheme == "file" or not contains($open_schemes, $scheme) then return {rc: 14, body: {error: "not_found"}} end
+  $id = $a.resolve_handler($apps, "x-scheme-handler/" .. $scheme, $a.mimeapps_paths())
+  return $id == nil ? {rc: 14, body: {error: "not_found"}} : {rc: 0, body: {id: $id}}
+end
+
+fn open_request($request)
+  if not local_origin() then return {rc: 10, body: {error: "forbidden", error_code: "FORBIDDEN"}} end
+  $scheme = $a.uri_scheme($request.uri)
+  if $scheme == nil or $scheme == "file" then return $a.request_error("invalid_request") end
+  if has_key($request, "activation_token") and not $a.token_valid($request.activation_token) then return $a.request_error("invalid_request") end
+  if not contains($open_schemes, $scheme) then return {rc: 10, body: {error: "forbidden", error_code: "FORBIDDEN", scheme: $scheme}} end
+  $handler = handler_request({scheme: $scheme})
+  if $handler.rc != 0 then return $handler end
+  $r = start_app({id: $handler.body.id, uris: [$request.uri]}, $request.activation_token)
+  $r.body = merge($r.body, {scheme: $scheme})
+  return $r
+end
+
+on apps.handler desc "local-only allowlisted scheme handler lookup {scheme}"
+  $r = handler_request(event_args())
+  if $r.rc != 0 then record_row("refused", {reason: $r.body.error}) end
+  reply($r.rc, json_encode($r.body))
+end
+on apps.open desc "local-only OpenURI {uri,activation_token?}; response means spawned, never tab opened"
+  $r = open_request(event_args())
+  record_row($r.rc == 0 ? "open" : "refused", merge($r.body, {reason: $r.body.error}))
+  reply($r.rc, json_encode($r.body))
 end
 
 fn window_snapshot($timeout = 0.2)
@@ -461,7 +496,9 @@ on "apps.props.watch" desc "read citizen properties: apps.count, apps.icon_theme
   $args = event_args()
   $path = get_or($args, "path", "")
   if $path == "" then
-    reply(0, json_encode({"apps.count": len($apps), "apps.icon_theme": $icon_theme, "apps.terminal": $terminal_cmd, "apps.allow_argv": $allow_argv}))
+    reply(0, json_encode({"apps.count": len($apps), "apps.icon_theme": $icon_theme, "apps.terminal": $terminal_cmd, "apps.allow_argv": $allow_argv, "apps.open_schemes": $open_schemes}))
+  elif $path == "apps.open_schemes" then
+    reply(0, json_encode({path: $path, value: $open_schemes}))
   elif $path == "apps.allow_argv" then
     reply(0, json_encode({path: $path, value: $allow_argv}))
   elif $path == "apps.count" then
@@ -482,6 +519,16 @@ on "apps.props.set" desc "set a local citizen property (icon_theme, terminal, al
   if not local_origin() then
     record_row("refused", {reason: "property_set_forbidden"})
     reply(10, json_encode({error: "forbidden", error_code: "FORBIDDEN"}))
+  elif $path == "apps.open_schemes" then
+    if type($value) != "list" or len(filter($value, fn($s) = not $a.scheme_valid($s) or $s != lower($s) or $s == "file")) > 0 then
+      record_row("refused", {reason: "invalid_property_value"})
+      reply(10, json_encode({error: "invalid_request"}))
+    else
+      $old = $open_schemes
+      $open_schemes = $value
+      record_row("open_schemes", {old: $old, value: $value})
+      reply(0, json_encode({path: $path, value: $open_schemes}))
+    end
   elif $path == "apps.allow_argv" then
     if type($value) != "bool" then
       record_row("refused", {reason: "invalid_property_value"})

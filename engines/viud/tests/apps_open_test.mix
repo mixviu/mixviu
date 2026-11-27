@@ -1,0 +1,102 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- OpenURI policy and real private-Bus launch. Requires tree-built binaries.
+-- Not yet enrolled in tools/ci.mix; enrollment belongs to a tools-only PR.
+$a = require("../scripts/lib/apps.mix")
+$pb = require("../../../tests/lib/private_bus.mix")
+$mix = env("MIX_TEST_MIX_EXE")
+$noded = env("MIX_TEST_NODED_EXE")
+if $mix == "" or $noded == "" then raise("TEST", "set MIX_TEST_MIX_EXE and MIX_TEST_NODED_EXE to tree-built binaries") end
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-apps-open.XXXXXXXX"]))
+$bus = nil
+$pid = nil
+$began = monotonic()
+fn check($ok, $why)
+  if not $ok then raise("APPS_OPEN", $why) end
+end
+fn fixture($path, $text)
+  mkdir(dirname($tmp .. "/" .. $path), {parents: true})
+  write_file($tmp .. "/" .. $path, $text)
+end
+fn call($verb, $body)
+  send apps $verb timeout=1 body=json_encode($body)
+  return {rc: $rc, body: $result}
+end
+try
+  chmod($tmp, 0o711)
+  fixture("record.mix", "print(json_encode(args()))\nwrite_file(env(\"HOME\") .. \"/seen.json\", json_encode({argv: args(), token: env(\"XDG_ACTIVATION_TOKEN\")}))\n")
+  for $id in ["one", "two", "three"]
+    fixture("data/applications/" .. $id .. ".desktop", "[Desktop Entry]\nType=Application\nName=" .. $id .. "\nExec=" .. $mix .. " " .. $tmp .. "/record.mix %U\nMimeType=x-scheme-handler/https;\n")
+  end
+  $entries = $a.scan_apps([$tmp .. "/data/applications"], "", "MIXOS")
+  check(deep_eq($entries[0].mime_types, ["x-scheme-handler/https"]), "MimeType retained")
+  $mime = "x-scheme-handler/https"
+  fixture("config/mixos-mimeapps.list", "[Default Applications]\n" .. $mime .. "=missing.desktop;two.desktop;\n")
+  fixture("config/mimeapps.list", "[Default Applications]\n" .. $mime .. "=one.desktop;\n")
+  fixture("system/mimeapps.list", "[Default Applications]\n" .. $mime .. "=three.desktop;\n")
+  $paths = [$tmp .. "/config/mixos-mimeapps.list", $tmp .. "/config/mimeapps.list", $tmp .. "/system/mimeapps.list"]
+  check($a.resolve_handler($entries, $mime, $paths) == "two", "desktop prefix before plain")
+  fixture("config/mixos-mimeapps.list", "[Removed Associations]\n" .. $mime .. "=two.desktop;one.desktop;\n")
+  check($a.resolve_handler($entries, $mime, $paths) == "three", "higher removals mask lower defaults")
+  fixture("config/mimeapps.list", "[Added Associations]\n" .. $mime .. "=one.desktop;three.desktop;\n")
+  fixture("system/mimeapps.list", "")
+  check($a.resolve_handler($entries, $mime, $paths) == "three", "added associations minus removals")
+  fixture("config/mimeapps.list", "")
+  check($a.resolve_handler($entries, $mime, $paths) == "three", "declared type fallback minus removals")
+  fixture("config/mixos-mimeapps.list", "[Default Applications]\n" .. $mime .. "=two.desktop;\n")
+  check($a.resolve_handler($entries, $mime, $paths) == "two", "reread without cache")
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "open-" .. uuid(), noded: $noded})
+  $conf = json_parse(read_file($bus.conf))
+  $conf.noded.account = trim(run_argv_must(["id", "-un"]))
+  write_file($bus.conf, json_encode($conf))
+  $ce = merge($pb.client_env($bus), {HOME: $tmp, PATH: "/usr/bin:/bin", MIX_STATS: "off", XDG_CONFIG_HOME: $tmp .. "/config", XDG_CONFIG_DIRS: $tmp .. "/system", XDG_CURRENT_DESKTOP: "MIXOS", XDG_DATA_HOME: $tmp .. "/data", XDG_DATA_DIRS: $tmp .. "/empty"})
+  $script = realpath(dirname($0) .. "/../scripts/apps.mix")
+  $pid = spawn([$mix, "--serve", $script, "--name", "apps"], {detach: true, clear_env: true, env: $ce, stdout: {file: $tmp .. "/log"}, stderr: "stdout"})
+  export MIX_NODED_URL="unix://" .. $bus.dir .. "/run/noded/bus.sock"
+  bus_reconnect()
+  for $i = 1 to 80
+    if call("apps.list", {}).rc == 0 then break end
+    sleep(0.005)
+  end
+  check(call("apps.handler", {scheme: "HTTPS"}).body.id == "two", "handler lookup")
+  check(call("apps.handler", {scheme: "mailto"}).rc == 14, "missing handler")
+  $hostile = "HTTPS://example.invalid/;$(touch%20/tmp/nope)?a='&b=`id`"
+  $opened = call("apps.open", {uri: $hostile, activation_token: "test-token"})
+  check($opened.rc == 0 and $opened.body.scheme == "https", "open success")
+  for $i = 1 to 100
+    if is_file($tmp .. "/seen.json") then break end
+    sleep(0.005)
+  end
+  $seen = json_parse(read_file($tmp .. "/seen.json"))
+  check(deep_eq($seen.argv, [$hostile]) and $seen.token == "test-token", "one literal argv and token env")
+  for $uri in ["file:///etc/passwd", "javascript:alert(1)", "foo:bar", "https://example.invalid/a b", "https://example.invalid/a\n", "https://example.invalid/\u{7f}", "--profile", "https:///", "https:example.invalid", "1foo:bar", "https://example.invalid/" .. repeat("x", 9000)]
+    check(call("apps.open", {uri: $uri}).rc == 10, "URI refusal")
+  end
+  for $token in [repeat("x", 257), "bad\n", "bad\u{7f}", "é", 1, nil]
+    check(call("apps.open", {uri: "https://example.invalid/", activation_token: $token}).rc == 10, "token refusal")
+  end
+  check(call("apps.props.set", {path: "apps.open_schemes", value: ["mailto"]}).rc == 0, "local policy mutation")
+  check(call("apps.open", {uri: "https://example.invalid/"}).rc == 10, "allowlist enforced")
+  check(call("apps.handler", {scheme: "https"}).rc == 14, "handler honours allowlist")
+  for $v in ["--x", "relative", "https:///", "https://example.invalid/a b"]
+    check(call("apps.start", {id: "two", uris: [$v]}).rc == 10, "start URI hardening")
+  end
+  check($a.start_valid({id: "two", uris: ["/tmp/a b", "file:///tmp/a", "mailto:a@example.invalid"]}), "start absolute paths and URI compatibility")
+  $rows = call("apps.history", {}).body.rows
+  $opens = filter($rows, fn($r) = $r.kind == "open")
+  check(len($opens) == 1 and $opens[0].data.scheme == "https" and $opens[0].data.id == "two" and $opens[0].data.handle == $opened.body.handle, "open history metadata")
+  check(not contains(json_encode($rows), "example.invalid") and not contains(json_encode($rows), "uri"), "history contains no URI")
+  check(not contains(read_file($tmp .. "/log"), $hostile), "citizen journal contains no URI")
+  export MIX_NODED_URL=$bus.url
+  bus_reconnect()
+  for $verb in ["apps.open", "apps.handler"]
+    $r = call($verb, {uri: "https://example.invalid/", scheme: "https"})
+    check($r.rc == 10 and contains(to_string($r.body), "forbidden"), "mesh origin forbidden")
+  end
+  check(call("apps.props.set", {path: "apps.open_schemes", value: ["https"]}).rc == 10, "mesh policy mutation forbidden")
+  print("PASS apps OpenURI resolver, policy, argv, token, origin, hardening and history")
+finally
+  if $pid != nil and process_alive($pid) then kill($pid, 15) end
+  if $bus != nil then $pb.stop($bus) end
+  run_argv_must(["rm", "-rf", "--", $tmp])
+end
+check(monotonic() - $began <= 5, "standalone budget exceeded")

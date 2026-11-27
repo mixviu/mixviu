@@ -18,6 +18,36 @@ fn request_error($r)
   return {rc: 10, body: {error: $r}}
 end
 
+-- Shape only: start-by-id also accepts file URIs and arbitrary schemes.
+-- OpenURI applies its narrower policy after this validation.
+fn uri_scheme($uri)
+  if type($uri) != "string" then return nil end
+  if byte_length($uri) > 8192 or re_match($uri, "[\\x00-\\x20\\x7f]") then return nil end
+  if not re_match($uri, "^[A-Za-z][A-Za-z0-9+.-]*:") then return nil end
+  $scheme = lower(before($uri, ":"))
+  if contains(["http", "https"], $scheme) then
+    if not starts_with(after($uri, ":"), "//") then return nil end
+    -- url_parse normalises https:///host to https://host; OpenURI must
+    -- reject the original empty authority before that normalisation.
+    if re_match(after($uri, ":"), "^//([/?#]|$)") then return nil end
+    try
+      $url = url_parse($uri)
+      if ($url.host ?? "") == "" then return nil end
+    catch $err
+      return nil
+    end
+  end
+  return $scheme
+end
+
+fn scheme_valid($scheme)
+  return type($scheme) == "string" and re_match($scheme, "^[A-Za-z][A-Za-z0-9+.-]*$")
+end
+
+fn token_valid($token)
+  return type($token) == "string" and byte_length($token) <= 256 and not re_match($token, "[^\\x20-\\x7e]")
+end
+
 fn start_valid($r)
   $allowed = has_key($r, "id") ? ["id", "uris"] : ["argv", "name", "cwd"]
   if len(filter(keys($r), fn($k) = not contains($allowed, $k))) > 0 then return false end
@@ -37,6 +67,8 @@ fn start_valid($r)
     if type($r.uris) != "list" then return false end
     for $v in $r.uris
       if type($v) != "string" then return false end
+      if not starts_with($v, "/") and uri_scheme($v) == nil then return false end
+      if contains($v, "\u{0}") then return false end
     end
   end
   return true
@@ -65,6 +97,7 @@ end
 fn history_data($r)
   $data = {handle: $r.handle, id: $r.id, pid: $r.pid, executable: ($r.argv ?? [])[0], argc: len($r.argv ?? []), exit_code: $r.exit_code, signal: $r.signal, reason: $r.reason}
   if has_key($r, "old") then $data = merge($data, {old: $r.old, value: $r.value}) end
+  if has_key($r, "scheme") then $data.scheme = $r.scheme end
   return $data
 end
 
@@ -359,6 +392,7 @@ fn parse_entry($path, $id, $locale, $desktop_name)
     icon: get_or($g, "Icon", ""),
     keywords: split_semis(loc_key($g, "Keywords", $locale)),
     categories: split_semis(get_or($g, "Categories", "")),
+    mime_types: split_semis(get_or($g, "MimeType", "")),
     exec: $exec,
     try_exec: $try_exec,
     terminal: to_bool(get_or($g, "Terminal", "false")),
@@ -398,6 +432,56 @@ end
 fn find_app($apps, $id)
   for each $entry in $apps
     if $entry.id == $id then return $entry end
+  end
+  return nil
+end
+
+fn mimeapps_paths()
+  $home = env("XDG_CONFIG_HOME")
+  if $home == "" then $home = env("HOME") .. "/.config" end
+  $dirs = env("XDG_CONFIG_DIRS")
+  if $dirs == "" then $dirs = "/etc/xdg" end
+  $locations = concat([$home], filter(split($dirs, ":"), fn($d) = $d != ""))
+  $locations = concat($locations, application_dirs())
+  $paths = []
+  for $dir in $locations
+    for $desktop in split(env("XDG_CURRENT_DESKTOP"), ":")
+      -- Desktop names are filenames, never paths supplied by a caller.
+      if re_match($desktop, "^[A-Za-z0-9_-]+$") then push($paths, $dir .. "/" .. lower($desktop) .. "-mimeapps.list") end
+    end
+    push($paths, $dir .. "/mimeapps.list")
+  end
+  return $paths
+end
+
+-- Explicit inputs make precedence testable without a Bus or global cache.
+-- Higher-priority removals mask the same file and all later candidates.
+fn resolve_handler($apps, $mime, $paths)
+  $removed = []
+  $added = []
+  for $path in $paths
+    if not is_file($path) then continue end
+    try
+      $ini = ini_parse(read_file($path))
+    catch $err
+      continue
+    end
+    $removed = concat($removed, split_semis(($ini["Removed Associations"] ?? {})[$mime] ?? ""))
+    for $value in split_semis(($ini["Default Applications"] ?? {})[$mime] ?? "")
+      if not ends_with($value, ".desktop") or contains($removed, $value) then continue end
+      $entry = find_app($apps, strip_suffix($value, ".desktop"))
+      if $entry != nil and len(expand_exec($entry.exec, $entry, nil)) > 0 then return $entry.id end
+    end
+    for $value in split_semis(($ini["Added Associations"] ?? {})[$mime] ?? "")
+      if not contains($removed, $value) then push($added, $value) end
+    end
+  end
+  for $value in $added
+    $entry = ends_with($value, ".desktop") ? find_app($apps, strip_suffix($value, ".desktop")) : nil
+    if $entry != nil then return $entry.id end
+  end
+  for $entry in $apps
+    if contains($entry.mime_types ?? [], $mime) and not contains($removed, $entry.id .. ".desktop") then return $entry.id end
   end
   return nil
 end
@@ -657,16 +741,16 @@ fn resolve_exec($cmd, $cwd)
   return nil
 end
 
-fn launch_spawn($argv, $exe, $display)
+fn launch_spawn($argv, $exe, $display, $activation_token = nil)
   -- The argv and env for one launch; $exe is resolve_exec's absolute path
   -- for $argv[0]. With a display the child gets DISPLAY=:N over its
   -- inherited environment; without one DISPLAY is REMOVED via a nil env
   -- value — the native unset (mix 0.101.0), which retired the /usr/bin/env
   -- -u prefix this file used to build.
   if $display == nil then
-    return {argv: concat([$exe], slice($argv, 1)), env: {DISPLAY: nil}}
+    return {argv: concat([$exe], slice($argv, 1)), env: {DISPLAY: nil, XDG_ACTIVATION_TOKEN: $activation_token}}
   end
-  return {argv: concat([$exe], slice($argv, 1)), env: {DISPLAY: $display}}
+  return {argv: concat([$exe], slice($argv, 1)), env: {DISPLAY: $display, XDG_ACTIVATION_TOKEN: $activation_token}}
 end
 
 -- ── icon-theme lookup ───────────────────────────────────────────────────
