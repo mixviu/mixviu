@@ -134,7 +134,9 @@ async fn tls_brokers() -> (
         let tls = Arc::new(mesh::TlsRuntime {
             credential,
             sessions: mesh::tls_limits::Sessions::new(8),
-            source_rate: Arc::new(std::sync::Mutex::new(mesh::tls_limits::SourceRate::new(10,20))),
+            source_rate: Arc::new(std::sync::Mutex::new(mesh::tls_limits::SourceRate::new(
+                10, 20,
+            ))),
             authority: Arc::new(std::sync::RwLock::new(authority.tls_keys.clone())),
         });
         let (incoming, _rx) = mpsc::unbounded_channel();
@@ -194,10 +196,18 @@ async fn tls_ping(state: &AppState, peer: &PeerConfig) {
 async fn tls_info(state: &AppState) -> serde_json::Value {
     let (tx, mut rx) = mpsc::channel(2);
     super::handle_noded_command(
-        &BusMessage::new().with_header("command", "noded.info").with_header("from", "probe").with_header("id", "info"),
-        &tx, state, &mut None, "anon-info", "192.0.2.1".parse().unwrap(),
+        &BusMessage::new()
+            .with_header("command", "noded.info")
+            .with_header("from", "probe")
+            .with_header("id", "info"),
+        &tx,
+        state,
+        &mut None,
+        "anon-info",
+        "192.0.2.1".parse().unwrap(),
         &mut crate::observe::Outcome::BrokerHandled,
-    ).await;
+    )
+    .await;
     let reply = bus::wire::parse(&rx.recv().await.unwrap()).unwrap();
     serde_json::from_str(&reply.body).unwrap()
 }
@@ -232,7 +242,12 @@ async fn tls_brokers_prove_both_directions_and_revoke_either_exact_key_only() {
         assert_eq!(info["mesh_addr"], info["wg_ip"]);
         assert_eq!(info["meta"]["tls_sessions_per_member"]["beta"], 2);
         assert_eq!(info["meta"]["tls_inbound"]["outcomes"]["admitted"], 2);
-        assert!(info["meta"]["tls_dial"]["outcomes"]["admitted"].as_u64().unwrap() >= 2);
+        assert!(
+            info["meta"]["tls_dial"]["outcomes"]["admitted"]
+                .as_u64()
+                .unwrap()
+                >= 2
+        );
         assert!(info["meta"]["reload_to_drop_ms"].is_null());
         // D2-only reconciliation preserves the current TLS authority.
         let authority = states[0].authority.load_full();
@@ -571,52 +586,92 @@ async fn tls_d2_binding_refuses_zero_relay_and_another_member() {
 async fn explicit_port_zero_uses_matching_prebound_listener() {
     let tcp = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let actual = tcp.local_addr().unwrap();
-    let configured = [config::node::NodedListener { addr: "127.0.0.1:0".parse().unwrap(), tls: true }];
-    let bound = super::bind_tcp_listeners("127.0.0.1:0", Some(&configured), Some(tcp)).await.unwrap();
+    let configured = [config::node::NodedListener {
+        addr: "127.0.0.1:0".parse().unwrap(),
+        tls: true,
+    }];
+    let bound = super::bind_tcp_listeners("127.0.0.1:0", Some(&configured), Some(tcp))
+        .await
+        .unwrap();
     assert_eq!(bound.len(), 1);
     assert_eq!(bound[0].0.local_addr().unwrap(), actual);
     assert!(bound[0].1);
-    assert!(!super::prebound_matches(Some(actual), Some("192.0.2.1:0".parse().unwrap())));
+    assert!(!super::prebound_matches(
+        Some(actual),
+        Some("192.0.2.1:0".parse().unwrap())
+    ));
     assert!(!super::prebound_matches(None, None));
 }
 
 #[test]
 fn legacy_node_config_warns_once_and_new_name_loads() {
-    if log_capture_subprocess("legacy_node_config_warns_once_and_new_name_loads") { return; }
+    if log_capture_subprocess("legacy_node_config_warns_once_and_new_name_loads") {
+        return;
+    }
     #[derive(Clone, Default)]
     struct Capture(Arc<StdMutex<Vec<u8>>>);
     impl std::io::Write for Capture {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> { self.0.lock().unwrap().extend_from_slice(bytes); Ok(bytes.len()) }
-        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
     }
     let capture = Capture::default();
     let writer = capture.clone();
-    let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false).with_writer(move || writer.clone()).finish();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
-    let path = std::env::temp_dir().join(format!("pr4c-node-{:032x}.conf.mix", rand::random::<u128>()));
+    let path = std::env::temp_dir().join(format!(
+        "pr4c-node-{:032x}.conf.mix",
+        rand::random::<u128>()
+    ));
     for key in ["wg_ip", "wg_ip", "mesh_addr"] {
         std::fs::write(&path, format!("{key}: '192.0.2.1'\n")).unwrap();
-        assert_eq!(config::node::load_from(&path).unwrap().mesh_addr, "192.0.2.1");
+        assert_eq!(
+            config::node::load_from(&path).unwrap().mesh_addr,
+            "192.0.2.1"
+        );
     }
     std::fs::write(&path, "wg_ip: '192.0.2.1'\nmesh_addr: '192.0.2.1'\n").unwrap();
     assert!(config::node::load_from(&path).is_err());
     std::fs::remove_file(path).unwrap();
     let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
-    assert_eq!(log.matches("wg_ip is deprecated; use mesh_addr").count(), 1, "{log}");
+    assert_eq!(
+        log.matches("wg_ip is deprecated; use mesh_addr").count(),
+        1,
+        "{log}"
+    );
 }
 
 #[tokio::test]
 async fn tls_dial_timeout_is_counted_and_coalesced() {
-    if log_capture_subprocess("tls_dial_timeout_is_counted_and_coalesced") { return; }
+    if log_capture_subprocess("tls_dial_timeout_is_counted_and_coalesced") {
+        return;
+    }
     #[derive(Clone, Default)]
     struct Capture(Arc<StdMutex<Vec<u8>>>);
     impl std::io::Write for Capture {
-        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> { self.0.lock().unwrap().extend_from_slice(bytes); Ok(bytes.len()) }
-        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
     }
     let capture = Capture::default();
     let writer = capture.clone();
-    let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false).with_writer(move || writer.clone()).finish();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
     let (states, peers, tasks) = tls_brokers().await;
     let tcp = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -624,14 +679,31 @@ async fn tls_dial_timeout_is_counted_and_coalesced() {
     peer.tls_port = Some(tcp.local_addr().unwrap().port());
     let hold = tokio::spawn(async move {
         let mut sockets = Vec::new();
-        loop { sockets.push(tcp.accept().await.unwrap().0); }
+        loop {
+            sockets.push(tcp.accept().await.unwrap().0);
+        }
     });
     let authority = states[0].authority.load_full();
-    states[0].mesh.reconcile_security(
-        std::collections::HashMap::from([(peer.name.clone(), peer.noded_addr())]), authority.revision(), authority.keys.clone(), "example.test".into(), authority.tls_keys.clone()
-    ).await;
+    states[0]
+        .mesh
+        .reconcile_security(
+            std::collections::HashMap::from([(peer.name.clone(), peer.noded_addr())]),
+            authority.revision(),
+            authority.keys.clone(),
+            "example.test".into(),
+            authority.tls_keys.clone(),
+        )
+        .await;
     for _ in 0..2 {
-        let result = states[0].mesh.call(peer.clone(), BusMessage::new().with_header("command", "noded.ping").with_header("to", "noded")).await;
+        let result = states[0]
+            .mesh
+            .call(
+                peer.clone(),
+                BusMessage::new()
+                    .with_header("command", "noded.ping")
+                    .with_header("to", "noded"),
+            )
+            .await;
         assert!(result.unwrap_err().to_string().contains("timed out"));
     }
     let info = tls_info(&states[0]).await;
@@ -639,9 +711,17 @@ async fn tls_dial_timeout_is_counted_and_coalesced() {
     assert_eq!(info["meta"]["tls_dial"]["outcomes"]["timeout"], 2);
     assert_eq!(info["meta"]["tls_refusals"], 2);
     let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
-    assert_eq!(log.lines().filter(|line| line.contains("TLS handshake refused") && line.contains("timeout")).count(), 1, "{log}");
+    assert_eq!(
+        log.lines()
+            .filter(|line| line.contains("TLS handshake refused") && line.contains("timeout"))
+            .count(),
+        1,
+        "{log}"
+    );
     hold.abort();
-    for task in tasks { task.abort(); }
+    for task in tasks {
+        task.abort();
+    }
 }
 
 #[tokio::test]
@@ -653,18 +733,29 @@ async fn tls_rate_limit_precedes_handshake_and_isolates_source_addresses() {
     let tcp = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = tcp.local_addr().unwrap();
     let refusals = Arc::new(mesh::tls::Refusals::default());
-    let _listener = crate::tls_ingress::TlsListener::new(tcp, runtime, &Default::default(), refusals.clone()).unwrap();
+    let _listener =
+        crate::tls_ingress::TlsListener::new(tcp, runtime, &Default::default(), refusals.clone())
+            .unwrap();
     let _first = tokio::net::TcpStream::connect(addr).await.unwrap();
     let mut excess = tokio::net::TcpStream::connect(addr).await.unwrap();
-    assert!(matches!(tokio::time::timeout(Duration::from_millis(500), excess.read(&mut [0; 1])).await, Ok(Ok(0)) | Ok(Err(_))));
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_millis(500), excess.read(&mut [0; 1])).await,
+        Ok(Ok(0)) | Ok(Err(_))
+    ));
     assert_eq!(refusals.snapshot()["classes"]["rate-limited"], 1);
     assert!(refusals.snapshot()["classes"].get("timeout").is_none());
     let socket = tokio::net::TcpSocket::new_v4().unwrap();
     socket.bind("127.0.0.2:0".parse().unwrap()).unwrap();
     let mut other = socket.connect(addr).await.unwrap();
-    assert!(tokio::time::timeout(Duration::from_millis(100), other.read(&mut [0; 1])).await.is_err());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), other.read(&mut [0; 1]))
+            .await
+            .is_err()
+    );
     assert_eq!(refusals.total(), 1);
-    for task in tasks { task.abort(); }
+    for task in tasks {
+        task.abort();
+    }
 }
 
 #[tokio::test]
@@ -675,33 +766,54 @@ async fn tls_member_session_cap_releases_with_transport_and_isolates_members() {
         credential: tls_credential(1),
         authority: states[0].tls.as_ref().unwrap().authority.clone(),
         sessions: mesh::tls_limits::Sessions::new(1),
-        source_rate: Arc::new(std::sync::Mutex::new(mesh::tls_limits::SourceRate::new(10,20))),
+        source_rate: Arc::new(std::sync::Mutex::new(mesh::tls_limits::SourceRate::new(
+            10, 20,
+        ))),
     };
     let tcp = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = tcp.local_addr().unwrap();
     let refusals = Arc::new(mesh::tls::Refusals::default());
-    let _listener = crate::tls_ingress::TlsListener::new(tcp, &runtime, &Default::default(), refusals.clone()).unwrap();
+    let _listener =
+        crate::tls_ingress::TlsListener::new(tcp, &runtime, &Default::default(), refusals.clone())
+            .unwrap();
     let mut clients = Vec::new();
     for seed in [2, 2, 3] {
         let credential = tls_credential(seed);
-        let config = credential.client_config(runtime.authority.clone(), "alpha".into()).unwrap();
+        let config = credential
+            .client_config(runtime.authority.clone(), "alpha".into())
+            .unwrap();
         let tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
-        let mut client = tokio_rustls::TlsConnector::from(config).connect(
-            tokio_rustls::rustls::pki_types::ServerName::try_from("bus.example.test").unwrap(), tcp
-        ).await.unwrap();
+        let mut client = tokio_rustls::TlsConnector::from(config)
+            .connect(
+                tokio_rustls::rustls::pki_types::ServerName::try_from("bus.example.test").unwrap(),
+                tcp,
+            )
+            .await
+            .unwrap();
         if seed == 2 && !clients.is_empty() {
-            assert!(matches!(tokio::time::timeout(Duration::from_secs(1), client.read(&mut [0; 1])).await, Ok(Ok(0)) | Ok(Err(_))));
-        } else { clients.push(client); }
+            assert!(matches!(
+                tokio::time::timeout(Duration::from_secs(1), client.read(&mut [0; 1])).await,
+                Ok(Ok(0)) | Ok(Err(_))
+            ));
+        } else {
+            clients.push(client);
+        }
     }
     tokio::time::timeout(Duration::from_secs(1), async {
-        while refusals.snapshot()["outcomes"]["admitted"] != 2 { tokio::task::yield_now().await; }
-    }).await.unwrap();
+        while refusals.snapshot()["outcomes"]["admitted"] != 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(refusals.snapshot()["classes"]["session-cap"], 1);
     assert_eq!(runtime.sessions.snapshot()["beta"], 1);
     assert_eq!(runtime.sessions.snapshot()["gamma"], 1);
     drop(_listener); // queued accepted transports own their leases too
     assert!(runtime.sessions.snapshot().is_empty());
-    for task in tasks { task.abort(); }
+    for task in tasks {
+        task.abort();
+    }
 }
 
 #[tokio::test]
