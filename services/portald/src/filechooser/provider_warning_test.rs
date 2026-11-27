@@ -52,15 +52,31 @@ fn missing_provider_warns_at_startup_and_after_loss_with_a_rate_limit() {
         let mut warning = ProviderWarning::new(now);
         warning.observe(true, "4", now);
         warning.observe(false, "4", now + Duration::from_secs(1));
-        assert_eq!(String::from_utf8_lossy(&log.0.lock().unwrap()).matches("WARN").count(), 3);
+        assert_eq!(
+            String::from_utf8_lossy(&log.0.lock().unwrap())
+                .matches("WARN")
+                .count(),
+            3
+        );
     });
 }
 
 #[test]
 fn session_unit_requires_an_absolute_numeric_session_run_root() {
     use std::path::Path;
-    assert_eq!(chooser_session(Path::new("/opt/mix/run/session/4")), Some("4"));
-    for run in ["/run/mixviu", "/tmp/4", "session/4", "/run/session/name", "/run/session/0", "/run/session/-1", "/run/session/65536"] {
+    assert_eq!(
+        chooser_session(Path::new("/opt/mix/run/session/4")),
+        Some("4")
+    );
+    for run in [
+        "/run/mixviu",
+        "/tmp/4",
+        "session/4",
+        "/run/session/name",
+        "/run/session/0",
+        "/run/session/-1",
+        "/run/session/65536",
+    ] {
         assert_eq!(chooser_session(Path::new(run)), None, "{run}");
     }
 }

@@ -218,7 +218,12 @@ mod tests {
         let effects = state.apply(Event::Reply(Some("inc-1".into())));
         assert_eq!(effects.cancel.as_deref(), Some("inc-1"));
         assert!(effects.response.is_none());
-        assert!(state.apply(Event::Outcome(json!({"request":"inc-1", "response":1}))).response.is_none());
+        assert!(
+            state
+                .apply(Event::Outcome(json!({"request":"inc-1", "response":1})))
+                .response
+                .is_none()
+        );
     }
 
     #[test]

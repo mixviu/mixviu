@@ -103,12 +103,21 @@ async fn one(
     })
     .await
     .context("waiting for the chooser UI to become ready")?;
-    ensure!(responses.next().now_or_never().is_none(), "portal responded before chooser input");
+    ensure!(
+        responses.next().now_or_never().is_none(),
+        "portal responded before chooser input"
+    );
     if cancel {
-        let click = tokio::time::timeout(WAIT, bus.call_typed(
-            "files", "files.ui.click",
-            json!({"viewport":id,"id":"footer.command.cancel"}),
-        )).await.context("cancel click timed out")??;
+        let click = tokio::time::timeout(
+            WAIT,
+            bus.call_typed(
+                "files",
+                "files.ui.click",
+                json!({"viewport":id,"id":"footer.command.cancel"}),
+            ),
+        )
+        .await
+        .context("cancel click timed out")??;
         check_cancel_click(click)?;
     } else if method == "OpenFile" {
         drive(bus, &id, "files.ui.click", json!({"label":"notes.txt"})).await?;
@@ -177,7 +186,10 @@ fn check_cancel_click(reply: bus::PortReply) -> anyhow::Result<()> {
         // refusal fail. The caller must still receive portal Response 1 below.
         bus::PortReply::AppError { rc: 20, message }
             if serde_json::from_str::<Json>(&message).ok()
-                == Some(json!({"error_code":"CHOOSER_CLOSED"})) => Ok(()),
+                == Some(json!({"error_code":"CHOOSER_CLOSED"})) =>
+        {
+            Ok(())
+        }
         other => anyhow::bail!("cancel click failed: {other:?}"),
     }
 }
@@ -185,12 +197,33 @@ fn check_cancel_click(reply: bus::PortReply) -> anyhow::Result<()> {
 #[test]
 fn cancel_click_rejects_every_status_except_success_and_viewport_retirement() {
     use bus::PortReply;
-    assert!(check_cancel_click(PortReply::Ok { rc: 0, value: json!({}) }).is_ok());
-    assert!(check_cancel_click(PortReply::AppError { rc: 20, message: json!({"error_code":"CHOOSER_CLOSED"}).to_string() }).is_ok());
+    assert!(
+        check_cancel_click(PortReply::Ok {
+            rc: 0,
+            value: json!({})
+        })
+        .is_ok()
+    );
+    assert!(
+        check_cancel_click(PortReply::AppError {
+            rc: 20,
+            message: json!({"error_code":"CHOOSER_CLOSED"}).to_string()
+        })
+        .is_ok()
+    );
     for reply in [
-        PortReply::Ok { rc: 5, value: json!({}) },
-        PortReply::AppError { rc: 20, message: json!({"error_code":"INPUT_REFUSED"}).to_string() },
-        PortReply::AppError { rc: 10, message: json!({"error_code":"CHOOSER_CLOSED"}).to_string() },
+        PortReply::Ok {
+            rc: 5,
+            value: json!({}),
+        },
+        PortReply::AppError {
+            rc: 20,
+            message: json!({"error_code":"INPUT_REFUSED"}).to_string(),
+        },
+        PortReply::AppError {
+            rc: 10,
+            message: json!({"error_code":"CHOOSER_CLOSED"}).to_string(),
+        },
     ] {
         assert!(check_cancel_click(reply).is_err());
     }

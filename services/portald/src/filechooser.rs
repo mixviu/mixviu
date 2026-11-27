@@ -56,7 +56,11 @@ fn chooser_session(run: &std::path::Path) -> Option<&str> {
 
 impl ProviderWarning {
     fn new(started: std::time::Instant) -> Self {
-        Self { started, seen: false, last: None }
+        Self {
+            started,
+            seen: false,
+            last: None,
+        }
     }
 
     fn observe(&mut self, present: bool, session: &str, now: std::time::Instant) {
@@ -447,9 +451,7 @@ impl Bridge {
             tokio::time::timeout(IO_TIMEOUT, self.client.list_services()).await
         {
             let session = paths::env::raw(paths::env::RUN)
-                .and_then(|p| {
-                    chooser_session(std::path::Path::new(&p)).map(str::to_owned)
-                })
+                .and_then(|p| chooser_session(std::path::Path::new(&p)).map(str::to_owned))
                 .unwrap_or_else(|| "<session>".into());
             self.provider_warning.lock().unwrap().observe(
                 services.iter().any(|name| name == "files"),
