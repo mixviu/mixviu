@@ -258,6 +258,44 @@ end
 }
 
 #[test]
+fn suggest_timer_keeps_the_core_module_for_later_publishes() {
+    // Handler bodies share app.mix's module scope: the suggest branch of
+    // `on viu.timer` once bound its composer to $c, replacing
+    // $c=require("core.mix"), and every later publish faulted with
+    // "undefined function 'model'" (seen on desk4, gold 42f15fc6).
+    let bundle = Bundle::load(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
+        &[],
+    )
+    .unwrap();
+    let mut program = bundle.program;
+    program.source.push_str(
+        r#"
+on test.publish.after.suggest
+  publish_email();reply(0,json_encode({published:true}))
+end
+"#,
+    );
+    let (_root, mut runtime, rx) = isolated_runtime();
+    runtime.load(program).unwrap();
+    complete(&runtime, &rx);
+    for window in ["no-such-composer", "another"] {
+        runtime
+            .event(
+                "viu.timer".into(),
+                json!({"value":{"kind":"suggest","window":window,"account":"a","field":"to","text":"cy","query":"cy"}}),
+            )
+            .unwrap();
+        complete(&runtime, &rx);
+    }
+    runtime
+        .event("test.publish.after.suggest".into(), json!({}))
+        .unwrap();
+    let reply = complete(&runtime, &rx).reply.unwrap();
+    assert_eq!(reply.body["published"], true);
+}
+
+#[test]
 fn compose_launch_keeps_one_fixed_root_and_owner_close_waits_for_children() {
     let bundle = Bundle::load(
         &PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../apps/email"),
