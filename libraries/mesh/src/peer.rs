@@ -1353,7 +1353,7 @@ async fn connect_and_publish(
             "Unproven dialled peer cannot be published"
         );
         if let Some((keys, _)) = &locked.keys
-            && let Some((node, key)) = context.mesh_peer()
+            && context.mesh_peer().is_some()
         {
             anyhow::ensure!(
                 mesh_trust::identity::link_refusal(&context, keys, &locked.tls_keys).is_none(),
