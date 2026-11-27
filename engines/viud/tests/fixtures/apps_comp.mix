@@ -12,6 +12,7 @@ on fake.clear
 end
 on "comp.windows.list"
   if $options.exit_on_list == true and $window != nil then
+    $options.exit_on_list = false
     $_signal = kill($window.pid, 15)
     sleep(0.03)
   end

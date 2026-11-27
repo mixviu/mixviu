@@ -158,6 +158,7 @@ end
 try
   write_client()
   write_recorder()
+  check(kill(-2147483647, 15) == false, "kill ESRCH must return false without raising")
   $a = require("../scripts/lib/apps.mix")
   -- Real segment appends reuse one path and cached line/byte counters.
   -- Seed full old segments to exercise the production 8 MiB cap cheaply.
@@ -440,6 +441,9 @@ try
     sleep(0.005)
   end
   check(await_exit($natural.result.handle).reason == "exit", "natural exit")
+  $secret = call("apps", "apps.start", json_encode({argv: ["/usr/bin/true", "example-private-token", "https://example.com/private"], name: "redaction"}))
+  check($secret.rc == 0 and len($secret.result.argv) == 3, "caller START reply lost argv")
+  await_exit($secret.result.handle)
   $r = call("apps", "apps.start", json_encode({id: "hold"}))
   check($r.rc == 0 and type($r.result.handle) == "string", "start id handle")
   $h = $r.result.handle
@@ -530,7 +534,9 @@ try
   check(len(call("apps", "apps.running", "{}").result) == 0, "exited row resurrected")
   check(call("apps", "apps.stop", json_encode({handle: $h})).rc == 14, "exited handle accepted")
   $signals = map(lines(trim(read_file($tmp .. "/signals.jsonl"))), fn($line) = json_parse($line))
-  check(len(filter($signals, fn($s) = $s.pid == $dead_pid)) == 0, "signal sent to exited child's pgid")
+  for $s in $signals
+    check($s.pid != $dead_pid, "signal sent to exited child's pgid")
+  end
   -- Also exit during the snapshot boundary; the handler must re-read live.
   $r = call("apps", "apps.start", json_encode({id: "hold"}))
   $h = $r.result.handle
@@ -550,6 +556,7 @@ try
   for $started in $starts
     check(not has_key($started, "argv") and not has_key($started, "uris") and $started.executable != nil and $started.argc != nil, "started topic leaks argument values")
     check(not contains(json_encode($started), "--ignore-signal") and not contains(json_encode($started), "plain-arg"), "started topic contains argument value")
+    check(not contains(json_encode($started), "example-private-token") and not contains(json_encode($started), "https://example.com/private"), "started topic leaked token/URI")
   end
   check(len($starts) > 0, "no started topics received")
   $history = call("apps", "apps.history", "{}")

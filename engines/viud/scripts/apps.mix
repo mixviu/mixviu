@@ -240,7 +240,7 @@ fn stop_apps($request)
   for $r in $selected
     push($stopping, {handle: $r.handle, pid: $r.pid})
     if $live[$r.handle] == nil then continue end
-    if not $force and $live[$r.handle].state == "stopping" and $live[$r.handle].deadline <= monotonic() + $timeout then continue end
+    if not $force and $live[$r.handle].state == "stopping" and ($live[$r.handle].reason == "force" or $live[$r.handle].deadline <= monotonic() + $timeout) then continue end
     for $timer in $live[$r.handle].timers
       cancel_timer($timer)
     end
@@ -337,7 +337,8 @@ on apps.toggle desc "start, focus or stop a desktop app"
         $owner = filter($selected, fn($row) = len($a.owned_windows($row, [$w], $groups)) > 0)[0]
         send comp comp.window.focus timeout=0.2 body=json_encode({id: $w.id, generation: $w.generation})
         $focus_rc = $rc
-        reply($focus_rc, json_encode($focus_rc == 0 and $live[$owner.handle] != nil ? {action: "focused", handle: $owner.handle} : {error: "focus_failed"}))
+        if $focus_rc == 0 and $live[$owner.handle] == nil then $focus_rc = 14 end
+        reply($focus_rc, json_encode($focus_rc == 0 ? {action: "focused", handle: $owner.handle} : {error: "focus_failed"}))
       elif len($selected) == 0 then
         reply(14, json_encode({error: "not_found"}))
       else
