@@ -194,6 +194,8 @@ pub struct WebdListenerConfig {
     /// appear only once here and must be a known vhost
     /// (`synthesize_listeners` rejects both gaps).
     pub vhosts: Vec<String>,
+    /// Opt in to HTTP/2 over TLS. Extended CONNECT remains disabled.
+    pub http2: bool,
 }
 
 impl Default for WebdListenerConfig {
@@ -206,6 +208,7 @@ impl Default for WebdListenerConfig {
             // serde(default) fallback must not silently disable it.
             enabled: true,
             vhosts: Vec::new(),
+            http2: false,
         }
     }
 }
@@ -262,6 +265,10 @@ pub struct WebdVhostConfig {
     /// Filesystem path to this vhost's document root. Must exist at
     /// startup; webd hard-fails the bind otherwise.
     pub www_dir: String,
+    /// Permanent redirect to an absolute HTTPS origin, without a path.
+    pub redirect: Option<String>,
+    /// Response defaults for docroot files and redirects; handlers own their headers.
+    pub headers: std::collections::BTreeMap<String, String>,
     /// Path to operator-supplied PEM cert chain (leaf +
     /// intermediates). Required in Phase 1; mutually exclusive with
     /// `acme` once Phase 2 lands. Validated by
@@ -373,6 +380,8 @@ impl std::fmt::Debug for WebdVhostConfig {
             .field("host", &self.host)
             .field("aliases", &self.aliases)
             .field("www_dir", &self.www_dir)
+            .field("redirect", &self.redirect)
+            .field("headers", &self.headers)
             .field("tls_cert", &self.tls_cert)
             .field("tls_key", &self.tls_key)
             .field("acme", &self.acme)

@@ -332,7 +332,8 @@ pub fn from_namespace_rows(
             // operator-repairable but the directory doesn't
             // register a vhost whose every request would 5xx.
             let www_dir = PathBuf::from(&row.www_dir);
-            if !www_dir.is_dir() {
+            if crate::static_site::validate(&row.fqdn, &row.aliases, row.redirect.as_deref(), &row.headers).is_err() { continue; }
+            if row.redirect.is_none() && !www_dir.is_dir() {
                 tracing::error!(
                     target: "webd::vhost_directory",
                     fqdn = %row.fqdn,
@@ -349,6 +350,8 @@ pub fn from_namespace_rows(
                 fqdn: row.fqdn.clone(),
                 db: None,
                 www_dir,
+                redirect: row.redirect.clone(),
+                headers: crate::static_site::headers(&row.headers).expect("validated headers"),
                 jmap_upstream: None,
                 noded_ws: None,
                 docs_dir: None,
@@ -449,6 +452,8 @@ mod tests {
 
     fn make_state(fqdn: &str) -> Arc<VhostState> {
         Arc::new(VhostState {
+            redirect: None,
+            headers: Default::default(),
             fqdn: fqdn.to_string(),
             db: None,
             www_dir: PathBuf::from("/srv/www"),
@@ -470,6 +475,8 @@ mod tests {
 
     fn runtime_row(fqdn: &str, www_dir: &str, enabled: bool) -> VhostRow {
         VhostRow {
+            redirect: None,
+            headers: Default::default(),
             fqdn: fqdn.to_string(),
             enabled,
             www_dir: www_dir.to_string(),
@@ -518,6 +525,7 @@ mod tests {
 
         let mut cfg = NodeConfig::default();
         cfg.webd.listener = vec![WebdListenerConfig {
+http2: false,
             id: "pub".to_string(),
             bind: "192.0.2.1:443".to_string(),
             external: true,
@@ -771,6 +779,8 @@ mod tests {
     /// presence).
     fn make_row(fqdn: &str, www_dir: &str, source: &str) -> VhostRow {
         VhostRow {
+            redirect: None,
+            headers: Default::default(),
             fqdn: fqdn.into(),
             enabled: true,
             www_dir: www_dir.into(),

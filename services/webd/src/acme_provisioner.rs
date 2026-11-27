@@ -5228,6 +5228,8 @@ mod tests {
     /// `Some` to flip the coverage gate.
     fn _acme_prod_row(fqdn: &str) -> VhostRow {
         VhostRow {
+            redirect: None,
+            headers: Default::default(),
             fqdn: fqdn.to_string(),
             enabled: true,
             www_dir: "/var/www/test".to_string(),

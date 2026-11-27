@@ -240,6 +240,10 @@ pub struct VhostRow {
     pub enabled: bool,
     pub www_dir: String,
     #[serde(default)]
+    pub redirect: Option<String>,
+    #[serde(default)]
+    pub headers: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
     pub aliases: Vec<String>,
     /// Daemon-stamped. `None` until the first backend-origin write.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -307,6 +311,22 @@ pub fn schema() -> PropertySchema {
             since: None,
             until: None,
             validators: Vec::new(),
+        },
+        FieldSchema {
+            name: "redirect".into(),
+            ty: FieldType::Option { inner: Box::new(FieldType::String) },
+            default: Some(PropValue::Null),
+            secret: false,
+            help: "Permanent redirect to an HTTPS origin.".into(),
+            since: None, until: None, validators: Vec::new(),
+        },
+        FieldSchema {
+            name: "headers".into(),
+            ty: FieldType::Map { value: Box::new(FieldType::String) },
+            default: Some(PropValue::Object(Default::default())),
+            secret: false,
+            help: "Docroot and redirect response header defaults.".into(),
+            since: None, until: None, validators: Vec::new(),
         },
         FieldSchema {
             name: "aliases".into(),
@@ -1001,6 +1021,10 @@ impl HookHandler for VhostsNamespaceHooks {
                 )));
             }
 
+            let row = vhost_row_from_value(&effective_value).map_err(|e| HookError::validation(e.to_string()))?;
+            crate::static_site::validate(&row.fqdn, &row.aliases, row.redirect.as_deref(), &row.headers)
+                .map_err(|e| HookError::validation(e.to_string()))?;
+
             // Rule 7 — the next restart must accept a row this write
             // makes routable. Only a transition INTO enabled is checked
             // (create, re-create over a tombstone, false→true): a write
@@ -1424,6 +1448,8 @@ mod tests {
 
     fn full_row() -> VhostRow {
         VhostRow {
+            redirect: None,
+            headers: Default::default(),
             fqdn: "example.com".into(),
             enabled: true,
             www_dir: "/srv/www/example".into(),

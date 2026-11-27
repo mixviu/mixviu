@@ -425,6 +425,8 @@ fn build_bootstrap_body(fqdn: &str, cfg: &WebdVhostConfig) -> Result<PropValue> 
     let mut body: BTreeMap<String, PropValue> = BTreeMap::new();
     body.insert("fqdn".into(), PropValue::String(fqdn.to_string()));
     body.insert("www_dir".into(), PropValue::String(cfg.www_dir.clone()));
+    body.insert("redirect".into(), cfg.redirect.clone().map(PropValue::String).unwrap_or(PropValue::Null));
+    body.insert("headers".into(), PropValue::Object(cfg.headers.iter().map(|(k,v)| (k.clone(), PropValue::String(v.clone()))).collect()));
     body.insert(
         "source".into(),
         PropValue::String(SOURCE_CONFIG_BOOTSTRAP.into()),
@@ -1152,6 +1154,7 @@ mod tests {
             webd: {
                 let mut w = webd.clone();
                 w.listener = vec![WebdListenerConfig {
+http2: false,
                     id: "pub".to_string(),
                     bind: "192.0.2.1:443".to_string(),
                     external: true,

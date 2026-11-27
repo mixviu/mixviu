@@ -35,6 +35,7 @@ pub fn list_body(node: &Arc<NodeState>) -> String {
             serde_json::json!({
                 "host": p.state.fqdn,
                 "aliases": p.aliases,
+                "redirect": p.state.redirect,
                 "has_cms": p.state.db.is_some(),
                 "has_jmap": p.state.jmap_upstream.is_some(),
                 "has_ws": p.state.noded_ws.is_some(),
