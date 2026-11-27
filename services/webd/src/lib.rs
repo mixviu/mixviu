@@ -6262,7 +6262,9 @@ fn build_per_vhost_router(node: Arc<NodeState>) -> Router {
 fn build_router(node: Arc<NodeState>) -> Router {
     let autoconfig = autoconfig_routes().with_state(node.clone());
     let per_vhost = build_per_vhost_router(node);
-    Router::new().merge(autoconfig).merge(per_vhost)
+    Router::new()
+        .merge(autoconfig)
+        .merge(per_vhost)
         .layer(axum::middleware::from_fn(normalise_request_authority))
 }
 
@@ -6277,9 +6279,13 @@ async fn normalise_request_authority(
             return StatusCode::BAD_REQUEST.into_response();
         };
         let hosts = req.headers().get_all(axum::http::header::HOST);
-        if hosts.iter().count() > 1 || hosts.iter().any(|host| {
-            host.to_str().ok().is_none_or(|host| !host.eq_ignore_ascii_case(authority.as_str()))
-        }) {
+        if hosts.iter().count() > 1
+            || hosts.iter().any(|host| {
+                host.to_str()
+                    .ok()
+                    .is_none_or(|host| !host.eq_ignore_ascii_case(authority.as_str()))
+            })
+        {
             return (StatusCode::BAD_REQUEST, "Host disagrees with authority").into_response();
         }
         let Ok(host) = axum::http::HeaderValue::from_str(authority.as_str()) else {
@@ -6452,7 +6458,10 @@ fn build_http_redirect_router(node: Arc<NodeState>) -> Router {
                 node.clone(),
                 plain_http_host_admit,
             ));
-    Router::new().merge(acme).merge(autoconfig).merge(redirect)
+    Router::new()
+        .merge(acme)
+        .merge(autoconfig)
+        .merge(redirect)
         .layer(axum::middleware::from_fn(normalise_request_authority))
 }
 

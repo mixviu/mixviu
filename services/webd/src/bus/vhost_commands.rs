@@ -1046,7 +1046,10 @@ mod tests {
                 ("fqdn", "list.example.com"),
                 ("www_dir", "/srv/list"),
                 ("redirect", "https://example.com"),
-                ("headers", r#"{"content-security-policy":"default-src self"}"#),
+                (
+                    "headers",
+                    r#"{"content-security-policy":"default-src self"}"#,
+                ),
                 ("acme.provider", "letsencrypt_staging"),
                 ("acme.challenge", "http01"),
                 ("acme.contact_email", "ops@example.com"),
@@ -1062,7 +1065,10 @@ mod tests {
         let row = &v["rows"][0];
         assert_eq!(row["fqdn"], "list.example.com");
         assert_eq!(row["redirect"], "https://example.com");
-        assert_eq!(row["headers"]["content-security-policy"], "default-src self");
+        assert_eq!(
+            row["headers"]["content-security-policy"],
+            "default-src self"
+        );
         assert_eq!(row["acme_status"], "pending");
         // No certificate has been issued yet, so the field is present but null.
         assert!(row.get("cert_blob_id").is_some());
