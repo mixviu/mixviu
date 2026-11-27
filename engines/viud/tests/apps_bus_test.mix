@@ -426,6 +426,23 @@ try
     if call("comp", "fake.clear", "{}").rc == 0 then break end
     sleep(0.005)
   end
+  -- A reachable comp with no owned window must neither duplicate nor stop
+  -- the handle on toggle. Explicit stop must TERM immediately, not at 40%.
+  $r = call("apps", "apps.start", json_encode({id: "hold"}))
+  check($r.rc == 0, "start windowless fixture")
+  $h = $r.result.handle
+  $pid = $r.result.pid
+  for $mode in ["focus_or_stop", "focus"]
+    $r = call("apps", "apps.toggle", json_encode({id: "hold", on_running: $mode}))
+    check($r.rc == 0 and $r.result.action == "none" and $r.result.reason == "no_window" and $r.result.handle == $h, "windowless toggle must be a no-op")
+    $rows = call("apps", "apps.running", json_encode({id: "hold"})).result
+    check(len($rows) == 1 and $rows[0].pid == $pid and $rows[0].state == "running", "windowless toggle duplicated or stopped the handle")
+  end
+  $stop_started = monotonic()
+  $r = call("apps", "apps.toggle", json_encode({id: "hold", on_running: "stop"}))
+  check($r.rc == 0 and $r.result.action == "stopping", "explicit windowless toggle stop")
+  $exit = await_exit($h)
+  check($exit.signal == 15 and $exit.reason == "stop" and monotonic() - $stop_started < 1, "windowless stop must TERM well before 40% of default 5000ms")
   $r = call("apps", "apps.toggle", json_encode({id: "hold"}))
   check($r.rc == 0 and $r.result.action == "started", "toggle start")
   $h = $r.result.handle

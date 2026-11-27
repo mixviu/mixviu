@@ -236,8 +236,9 @@ fn stop_apps($request, $live)
     if $force then
       kill(-$r.pid, 9)
     else
-      $close_ok = $snapshot.ok
-      for $w in $a.owned_windows($r, $snapshot.windows, $groups)
+      $owned = $a.owned_windows($r, $snapshot.windows, $groups)
+      $close_ok = $snapshot.ok and len($owned) > 0
+      for $w in $owned
         send comp comp.window.close timeout=0.2 body=json_encode({id: $w.id, generation: $w.generation})
         if $rc != 0 then $close_ok = false end
       end
@@ -330,7 +331,7 @@ on apps.toggle desc "start, focus or stop a desktop app"
         $focus_rc = $rc
         reply($focus_rc, json_encode($focus_rc == 0 ? {action: "focused", handle: $selected[0].handle} : {error: "focus_failed"}))
       else
-        reply(14, json_encode({error: "not_found"}))
+        reply(0, json_encode({action: "none", reason: "no_window", handle: $selected[0].handle}))
       end
     end
   end
