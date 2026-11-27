@@ -15,10 +15,19 @@ fn policy_loop(h: &Harness) -> Loop {
         world::kind::build::base::spatial(
             world::world::manager::MAIN_WORLD,
             "main",
-            vec![Box::new(world::window::system::base::WindowSystem),Box::new(world::surface::system::base::SurfaceSystem)],
+            vec![
+                Box::new(world::window::system::base::WindowSystem),
+Box::new(world::canvas::system::base::CanvasSystem),
+                Box::new(world::surface::system::base::SurfaceSystem),
+            ],
             &kernel,
         ),
-        world::kind::build::base::overlay(world::world::manager::KERNEL, "kernel", vec![Box::new(world::surface::system::base::SurfaceSystem)], &kernel),
+        world::kind::build::base::overlay(
+            world::world::manager::KERNEL,
+            "kernel",
+            vec![Box::new(world::surface::system::base::SurfaceSystem)],
+            &kernel,
+        ),
         &kernel,
     );
     let dh = h.wire.state.output.display_handle.clone();

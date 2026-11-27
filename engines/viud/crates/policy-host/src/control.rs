@@ -1813,11 +1813,11 @@ pub fn apply_client_requests(lp: &mut Loop) {
                 ) {
                     Ok(decision) => {
                         if let Some(reason) = decision.reason {
-                            logging::debug!("xdg.activation refused: {reason}");
+                            protocols::xdg::activation::request::refused(reason);
                         }
                         execute_with_origin(lp, decision.effects, ActivationOrigin::Token);
                     }
-                    Err(reason) => logging::debug!("xdg.activation refused: {reason:?}"),
+                    Err(reason) => protocols::xdg::activation::request::refused(&format!("{reason:?}")),
                 }
             }
             WindowRequest::Maximize(enabled) => {

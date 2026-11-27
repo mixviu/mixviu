@@ -26,6 +26,11 @@ impl ActivationGrant {
     }
 }
 
+/// One diagnostic for a known request that the host cannot honour. Never log token strings.
+pub fn refused(reason: &str) {
+    logging::debug!("xdg.activation refused: {reason}");
+}
+
 /// One activation token a surface has been named by.
 #[derive(Clone)]
 pub struct ActivationDetails {

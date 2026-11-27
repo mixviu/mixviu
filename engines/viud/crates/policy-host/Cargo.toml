@@ -22,7 +22,6 @@ contract = "none"
 wlcs = []
 
 [dependencies]
-logging.workspace = true
 recorder.workspace = true
 ui-surface.workspace = true
 # The MixViu etc dir rule.

@@ -464,6 +464,8 @@ impl CompState {
             SurfaceEvent::Request { handle, request } => {
                 if let Some(id) = self.registry.id_for_handle(&handle) {
                     self.requests.push((id, request));
+                } else if matches!(request, WindowRequest::TokenActivation { .. }) {
+                    protocols::xdg::activation::request::refused("unmapped");
                 }
             }
             SurfaceEvent::CurrentDesktop(desktop) => self.desktop_requests.push(desktop),
