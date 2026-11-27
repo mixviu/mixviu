@@ -26,25 +26,23 @@ impl PropertyStore for AccountGuardStore {
             if op.key.namespace == super::accounts::namespace_name()
                 && op.merge == MergeMode::Replace
             {
+                // Read the tombstone-aware anchor before the value. For an
+                // absent account this fences a concurrent create/recreate.
+                let anchor = self.0.version_anchor(&op.key).await?.unwrap_or(Version::zero());
                 let prior = match self.0.get(&op.key).await {
                     Ok(snap) => Some(snap.value),
                     Err(StoreError::NotFound) => None,
                     Err(error) => return Err(error),
                 };
-                if let Some(prior) = prior {
-                    // Accounts require OCC on all writes. Fence the snapshot
-                    // used to fill omitted fields, including defensive callers
-                    // bypassing Runtime. A concurrent change fails, never gets
-                    // overwritten with stale guard values.
-                    match op.expected_version {
-                        Some(expected) if expected != prior.version => {
-                            return Err(StoreError::VersionMismatch {
-                                expected,
-                                current: prior.version,
-                            });
-                        }
-                        _ => op.expected_version = Some(prior.version),
+                let observed = prior.as_ref().map_or(anchor, |record| record.version);
+                // Fence preservation even when an operator omits if_version.
+                match op.expected_version {
+                    Some(expected) if expected != observed => {
+                        return Err(StoreError::VersionMismatch { expected, current: observed });
                     }
+                    _ => op.expected_version = Some(observed),
+                }
+                if let Some(prior) = prior {
                     if let (PropValue::Object(new), PropValue::Object(old)) =
                         (&mut op.new_value, prior.value)
                     {
