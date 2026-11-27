@@ -78,7 +78,7 @@ close-on-exec deliberately pass through, including descriptors above stderr.
 Failure raises a catchable `EXEC_FAILED` error naming the errno. Failed exec
 leaves signal dispositions, the mask, cwd and environment as they were;
 the script can catch the error and continue. A bad cwd fails before signal
-state changes. If rollback itself fails, the exec errno remains primary and
+state changes. If rollback after a failed exec fails, the exec errno remains primary and
 the rollback errors are attached. A shell-mode `exec` keyword is separate
 future work.
 
