@@ -6159,7 +6159,9 @@ mod tests {
         let target = directory.join("seed");
         let b64 = base64::engine::general_purpose::STANDARD;
         std::fs::write(&target, b64.encode([173; 32])).unwrap();
-        for mode in [0o640, 0o660, 0o644] {
+        // This fixture is owned by the euid, so group read warns even when
+        // the tests run as root. Root-owned 0640 is for a different euid.
+        for mode in [0o600, 0o640, 0o660, 0o644] {
             capture.0.lock().unwrap().clear();
             std::fs::set_permissions(&target, std::fs::Permissions::from_mode(mode)).unwrap();
             assert_eq!(
@@ -6169,10 +6171,10 @@ mod tests {
             let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
             assert_eq!(
                 log.matches("WARN").count(),
-                usize::from(mode != 0o640),
+                usize::from(mode != 0o600),
                 "{log}"
             );
-            if mode != 0o640 {
+            if mode != 0o600 {
                 assert!(log.contains(&target.display().to_string()));
                 assert!(log.contains(&format!("mode={mode:o}")));
                 // SAFETY: geteuid has no preconditions.
