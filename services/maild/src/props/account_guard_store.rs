@@ -28,7 +28,11 @@ impl PropertyStore for AccountGuardStore {
             {
                 // Read the tombstone-aware anchor before the value. For an
                 // absent account this fences a concurrent create/recreate.
-                let anchor = self.0.version_anchor(&op.key).await?.unwrap_or(Version::zero());
+                let anchor = self
+                    .0
+                    .version_anchor(&op.key)
+                    .await?
+                    .unwrap_or(Version::zero());
                 let prior = match self.0.get(&op.key).await {
                     Ok(snap) => Some(snap.value),
                     Err(StoreError::NotFound) => None,
@@ -38,7 +42,10 @@ impl PropertyStore for AccountGuardStore {
                 // Fence preservation even when an operator omits if_version.
                 match op.expected_version {
                     Some(expected) if expected != observed => {
-                        return Err(StoreError::VersionMismatch { expected, current: observed });
+                        return Err(StoreError::VersionMismatch {
+                            expected,
+                            current: observed,
+                        });
                     }
                     _ => op.expected_version = Some(observed),
                 }
