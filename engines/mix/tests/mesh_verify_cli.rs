@@ -361,6 +361,22 @@ fn default_verify_prints_authenticated_payload_json() {
 }
 
 #[test]
+fn signed_endpoints_survive_verify_and_hostname_refuses() {
+    let fixture = Fixture::new();
+    let signer = SigningKey::from_bytes(&[7;32]);
+    let mut envelope = SignedInventory::parse(&std::fs::read(&fixture.signed).unwrap()).unwrap();
+    for (addr, ok) in [("198.51.100.5:4200", true), ("node.example.org:4200", false)] {
+        let endpoints = json!([{"addr":addr,"transport":"tls"}]);
+        envelope.payload.members[0]["endpoints"] = endpoints.clone();
+        envelope.signatures[0].sig = B64.encode(signer.sign(&envelope.payload.canonical_bytes()).to_bytes());
+        std::fs::write(&fixture.signed, serde_json::to_vec(&envelope).unwrap()).unwrap();
+        let output = run(&strings(&["verify",fixture.signed.to_str().unwrap(),"--genesis-pub",fixture.genesis_pub.to_str().unwrap()]));
+        assert_eq!(output.status.success(), ok);
+        if ok { assert_eq!(json_stdout(&output)["members"][0]["endpoints"], endpoints); }
+    }
+}
+
+#[test]
 fn against_authored_fails_when_a_member_field_changes() {
     let fixture = Fixture::new();
     let output = run(&strings(&[

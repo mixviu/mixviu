@@ -337,8 +337,7 @@ $tls_pub = $tls.pubkey
 
 -- Insert the member first and bump only indented inventory keys, preserving the
 -- hand-authored comments and formatting around the strict-data map.
-$member_text = "    {\n      name: \"" .. $node .. "\",\n      mesh_ip: \"" .. $ip .. "\",\n      bus: true,\n      status: \"active\",\n      credentials: [\n        { kind: \"wg\", pubkey: \"" .. $wgpub .. "\", from_epoch: " .. ("" .. $new_epoch) .. ", until_epoch: nil },\n        { kind: \"d2\", pubkey: \"" .. $d2pub .. "\", from_epoch: " .. ("" .. $new_epoch) .. ", until_epoch: nil }\n      ],\n      last_touched_epoch: " .. ("" .. $new_epoch) .. "\n    },"
-$member_text = replace($member_text,"until_epoch: nil }\n      ]", "until_epoch: nil },\n        { kind: \"bus-tls\", pubkey: \"" .. $tls_pub .. "\", from_epoch: " .. $new_epoch .. ", until_epoch: nil }\n      ]")
+$member_text = "    {\n      name: \"" .. $node .. "\",\n      mesh_ip: \"" .. $ip .. "\",\n      bus: true,\n      status: \"active\",\n      credentials: [\n        { kind: \"wg\", pubkey: \"" .. $wgpub .. "\", from_epoch: " .. ("" .. $new_epoch) .. ", until_epoch: nil },\n        { kind: \"d2\", pubkey: \"" .. $d2pub .. "\", from_epoch: " .. ("" .. $new_epoch) .. ", until_epoch: nil },\n        { kind: \"bus-tls\", pubkey: \"" .. $tls_pub .. "\", from_epoch: " .. ("" .. $new_epoch) .. ", until_epoch: nil }\n      ],\n      last_touched_epoch: " .. ("" .. $new_epoch) .. "\n    },"
 
 $source = read_file($INVENTORY)
 $output = []

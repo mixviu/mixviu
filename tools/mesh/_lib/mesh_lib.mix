@@ -380,16 +380,18 @@ function endpoint_identity($endpoint)
       end
       $groups = $expanded
     end
+    if $groups == [0,0,0,0,0,0,0,0] or $groups[0] >= 65280 or ($groups[0] == 0 and $groups[1] == 0 and $groups[2] == 0 and $groups[3] == 0 and $groups[4] == 0 and $groups[5] == 65535) then return nil end
     $ip = ["v6",$groups]
     $port = $parts[1]
   else
     $parts = split($address,":")
     if len($parts) != 2 or not endpoint_ipv4($parts[0]) then return nil end
     $ip = ["v4",map(split($parts[0],"."),fn($v)=to_number($v))]
+    if $ip[1] == [0,0,0,0] or ($ip[1][0] >= 224 and $ip[1][0] <= 239) or $ip[1] == [255,255,255,255] then return nil end
     $port = $parts[1]
   end
   if not re_match($port,"^[0-9]+$") or not is_valid_noded_port(to_number($port)) then return nil end
-  return json_encode([$ip,to_number($port),$endpoint.transport])
+  return json_encode([$ip,to_number($port)])
 end
 
 function endpoint_ipv4($text)
@@ -402,12 +404,19 @@ end
 
 function validate_member_endpoints($member)
   if not has_key($member,"endpoints") then return end
-  if type($member.endpoints) != "list" then print("ERROR: endpoints must be a list"); mesh_fatal() end
+  $who = "member '" .. $member.name .. "'"
+  if $member.status == "active" and $member.bus == false then print("ERROR: " .. $who .. " has endpoints on bus:false member: " .. json_encode($member.endpoints)); mesh_fatal() end
+  if type($member.endpoints) != "list" then print("ERROR: " .. $who .. " endpoints must be a list: " .. json_encode($member.endpoints)); mesh_fatal() end
   $seen = []
   for $endpoint in $member.endpoints
     $identity = endpoint_identity($endpoint)
-    if $identity == nil then print("ERROR: invalid endpoint"); mesh_fatal() end
-    if contains($seen,$identity) then print("ERROR: duplicate endpoint"); mesh_fatal() end
+    $address = json_encode($endpoint)
+    if $identity == nil then print("ERROR: " .. $who .. " invalid endpoint " .. $address); mesh_fatal() end
+    if $endpoint.transport == "ws-wg" then
+      $mesh_identity = endpoint_identity({addr:$member.mesh_ip .. ":1",transport:"tls"})
+      if $mesh_identity == nil or json_decode($identity)[0] != json_decode($mesh_identity)[0] then print("ERROR: " .. $who .. " ws-wg endpoint differs from mesh_ip: " .. $address); mesh_fatal() end
+    end
+    if contains($seen,$identity) then print("ERROR: " .. $who .. " duplicate endpoint " .. $address); mesh_fatal() end
     push($seen,$identity)
   end
 end
@@ -492,8 +501,8 @@ function validate_inventory($inv)
         print("ERROR: member '" .. $name .. "' has a credential of unknown kind '" .. ("" .. $c["kind"]) .. "' (must be wg|d2|bus-tls)")
         mesh_fatal()
       end
-      if $c.kind == "bus-tls" and $m.bus != true then
-        print("ERROR: bus-tls credential on bus:false member")
+      if $c.kind == "bus-tls" and $m.bus != true and $m.status == "active" then
+        print("ERROR: member '" .. $name .. "' bus-tls credential on bus:false member")
         mesh_fatal()
       end
       if $c["pubkey"] == nil or $c["pubkey"] == "" then
@@ -516,16 +525,26 @@ function validate_inventory($inv)
       end
       for $old in $all_credentials
         if $old.pubkey != $c.pubkey then continue end
-        if ($old.kind == "d2" and $c.kind == "bus-tls") or ($old.kind == "bus-tls" and $c.kind == "d2") then
-          print("ERROR: pubkey is shared by d2 and bus-tls")
+        if $old.member != $name and $old.kind == $c.kind and contains(["d2","bus-tls"],$c.kind) then
+          print("ERROR: member '" .. $name .. "' shares " .. $c.kind .. " key with member '" .. $old.member .. "'")
           mesh_fatal()
         end
-        if ($old.until_epoch != nil and $c.from_epoch >= $old.until_epoch) or ($c.until_epoch != nil and $old.from_epoch >= $c.until_epoch) or ($old.tombstoned and $m.status == "active") or ($m.status == "tombstoned" and not $old.tombstoned) then
-          print("ERROR: pubkey reopens a closed credential window")
+        if ($old.kind == "d2" and $c.kind == "bus-tls") or ($old.kind == "bus-tls" and $c.kind == "d2") then
+          print("ERROR: member '" .. $name .. "' pubkey is shared by d2 and bus-tls")
+          mesh_fatal()
+        end
+        if ($old.tombstoned and $m.status == "active") or ($m.status == "tombstoned" and not $old.tombstoned) then
+          print("ERROR: member '" .. $name .. "' pubkey shared by tombstoned and active records")
+          mesh_fatal()
+        end
+        if ($old.until_epoch != nil and $c.from_epoch >= $old.until_epoch) or ($c.until_epoch != nil and $old.from_epoch >= $c.until_epoch) then
+          print("ERROR: member '" .. $name .. "' pubkey reopens a closed credential window")
           mesh_fatal()
         end
       end
+      -- Mix copies values: annotate the validation record, not the authored credential.
       $record = $c
+      $record.member = $name
       $record.tombstoned = $m.status == "tombstoned"
       push($all_credentials,$record)
     end

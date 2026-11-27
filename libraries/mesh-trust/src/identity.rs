@@ -42,9 +42,23 @@ pub fn validate_key_reload(
     validate_member_keys(candidate, candidate_epoch)?;
     let old = key_windows(current)?;
     let next = key_windows(candidate)?;
+    for retained in old.iter().filter(|key| matches!(key.kind.as_str(), "d2" | "bus-tls")) {
+        let same = |key: &&KeyWindow| key.kind == retained.kind && key.key == retained.key;
+        if !next.iter().any(|key| same(&key)) {
+            return Err(format!("member '{}' candidate drops retained {} key", retained.member, retained.kind));
+        }
+        let closed = old.iter().filter(same).all(|key| key.tombstoned || key.until.is_some_and(|end| end <= current_epoch));
+        if closed {
+            for key in next.iter().filter(same) {
+                if !key.tombstoned && !key.until.is_some_and(|end| end <= candidate_epoch) {
+                    return Err(format!("member '{}' candidate reopens closed {} key", key.member, key.kind));
+                }
+            }
+        }
+    }
     for closed in old
         .iter()
-        .filter(|key| key.tombstoned || key.until.is_some_and(|end| end <= current_epoch))
+        .filter(|key| key.kind == "wg" && (key.tombstoned || key.until.is_some_and(|end| end <= current_epoch)))
     {
         if next
             .iter()
@@ -59,6 +73,7 @@ pub fn validate_key_reload(
 }
 
 struct KeyWindow {
+    member: String,
     key: Vec<u8>,
     kind: String,
     from: u64,
@@ -109,6 +124,7 @@ fn key_windows(members: &Value) -> Result<Vec<KeyWindow>, String> {
             // Empty historical windows are inert in the selectors. Retain
             // them as closed-key evidence without adding a new schema gate.
             out.push(KeyWindow {
+                member: member["name"].as_str().unwrap_or("<unnamed>").into(),
                 key,
                 kind: kind.into(),
                 from,
@@ -334,6 +350,55 @@ mod tests {
     use super::*;
     use crate::admission::sign_admission_transcript;
     use base64::Engine as _;
+
+    #[test]
+    fn reload_retention_staging_and_rotation_table() {
+        for kind in ["d2", "bus-tls"] {
+            let mut live = member(&[[7; 32]]);
+            live["name"] = serde_json::json!("alpha");
+            live["credentials"][0]["kind"] = serde_json::json!(kind);
+            let mut closed = live.clone();
+            closed["credentials"][0]["until_epoch"] = serde_json::json!(2);
+            let mut tombstone = live.clone();
+            tombstone["status"] = serde_json::json!("tombstoned");
+            let mut dropped = live.clone();
+            dropped["credentials"] = serde_json::json!([]);
+            let mut future = live.clone();
+            future["credentials"][0]["from_epoch"] = serde_json::json!(5);
+            let mut staged = live.clone();
+            staged["bus"] = serde_json::json!(false);
+            let mut relabel = live.clone();
+            relabel["credentials"][0]["kind"] = serde_json::json!(if kind == "d2" { "bus-tls" } else { "d2" });
+            let mut rotated = closed.clone();
+            let mut fresh = live["credentials"][0].clone();
+            fresh["pubkey"] = serde_json::json!(base64::engine::general_purpose::STANDARD.encode([8; 32]));
+            fresh["from_epoch"] = serde_json::json!(3);
+            rotated["credentials"].as_array_mut().unwrap().push(fresh.clone());
+            let mut overlap = live.clone();
+            overlap["credentials"].as_array_mut().unwrap().push(fresh);
+            for (label, old, next, ok) in [
+                ("drop record", live.clone(), serde_json::json!([dropped]), false),
+                ("drop tombstoned member", tombstone.clone(), serde_json::json!([]), false),
+                ("future staging", closed.clone(), serde_json::json!([future]), false),
+                ("bus:false staging", closed.clone(), serde_json::json!([staged]), false),
+                ("relabel", live.clone(), serde_json::json!([relabel]), false),
+                ("un-tombstone", tombstone, serde_json::json!([live.clone()]), false),
+                ("overlap", live.clone(), serde_json::json!([overlap]), true),
+                ("readmission", closed, serde_json::json!([rotated.clone()]), true),
+                ("rotation", live, serde_json::json!([rotated]), true),
+            ] {
+                assert_eq!(validate_key_reload(&serde_json::json!([old]), 2, &next, 3).is_ok(), ok, "{kind}: {label}");
+            }
+        }
+    }
+
+    #[test]
+    fn two_eligible_tls_owners_identify_neither() {
+        let mut tls = member(&[[7; 32]]);
+        tls["credentials"][0]["kind"] = serde_json::json!("bus-tls");
+        let authority = TlsAuthority::new(&BTreeMap::from([("alpha".into(), tls.clone()), ("beta".into(), tls)]), 1, 1);
+        assert!(authority.member_for(&[7; 32]).is_none());
+    }
 
     #[test]
     fn purpose_and_closed_windows_reject_independent_of_order() {

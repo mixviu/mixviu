@@ -2118,6 +2118,10 @@ async fn reconcile_transport_authority(
 /// completes before the §17 applied events make the new state externally
 /// legible. A kept-last-good load returns before touching transport state.
 async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture) {
+    // Compare, reconcile and publish against one accepted snapshot: concurrent
+    // reloads must never validate against an authority another reload replaces.
+    static RELOAD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _reload = RELOAD.lock().await;
     let current = state.authority.load();
     if let (
         crate::authority::Posture::Verified(old),

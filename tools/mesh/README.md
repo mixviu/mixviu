@@ -116,7 +116,15 @@ authenticated payload JSON and exits non-zero on refusal. Use
 signer's secrets-DB root. Existing `--json` report and `--include-payload`
 options remain available. Closed keys and tombstoned records must stay in
 authored inventories; reload also checks against the currently accepted
-inventory, without persisted key history.
+inventory, without persisted key history. Every accepted `d2` and `bus-tls`
+key must remain under the same purpose. If all its accepted records are
+tombstoned or closed at the accepted epoch, every candidate record must be
+tombstoned or closed at the candidate epoch; future and bus:false staging
+cannot reopen it. Overlapping keys and rotation to a new key remain legal.
+Recover a refused reload by signing a higher epoch with the retained records
+restored. This protection carries only the process's accepted snapshot:
+restarting resets key history to the signed inventory on disk. The persisted
+epoch baseline still refuses older inventories.
 - `noded` is the broker each node runs.
 
 `noded` is found under the remote node's reported prefix.

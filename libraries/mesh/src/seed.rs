@@ -105,7 +105,9 @@ pub fn open_seed(path: &Path) -> Result<SeedFile, SeedFileError> {
     let file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
-        .open(path)?;
+        .open(path).map_err(|error| std::io::Error::new(error.kind(), format!("{}: {error}", path.display())))?;
+    // Arm cleanup only after this call has exclusively created the file.
+    let result = (|| -> Result<GeneratedBusTlsSeed, SeedFileError> {
     let metadata = file.metadata()?;
     if !metadata.is_file() {
         return Err(SeedFileError::NotRegular);
@@ -233,11 +235,23 @@ fn write_generated_seed(
         path: path.to_owned(),
         public_key,
     })
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(path);
+    }
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn failed_ownership_setup_unlinks_created_seed() {
+        if unsafe { libc::geteuid() } == 0 { return; }
+        let path = std::env::temp_dir().join(format!("seed-chown-{}", uuid::Uuid::new_v4()));
+        assert!(write_generated_seed(&path, Some(u32::MAX - 1)).is_err());
+        assert!(!path.exists());
+    }
     #[test]
     fn generated_seed_loads_and_is_create_only() {
         let dir = std::env::temp_dir().join(format!("bus-tls-gen-{}", uuid::Uuid::new_v4()));
