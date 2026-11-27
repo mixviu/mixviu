@@ -305,13 +305,13 @@ on apps.launch desc "alias of apps.start"
   record_row($r.rc == 0 ? "start" : "refused", $r.body)
   reply($r.rc, json_encode($r.body))
 end
-on apps.stop desc "stop owned apps by handle or desktop id; never by pid"
+on apps.stop desc "stop owned apps by opaque handle or id; timeout_ms starts after window classification (up to 200 ms later); mesh callers allowed until Bus 2c"
   $request = event_args()
   $r = stop_apps($request)
   if $r.rc != 0 then record_row("refused", {reason: $r.body.error}) end
   reply($r.rc, json_encode($r.body))
 end
-on apps.running desc "list managed app handles, optionally filtered by id"
+on apps.running desc "list managed app handles, optionally filtered by id; mesh callers allowed until Bus 2c"
   $request = event_args()
   if len(filter(keys($request), fn($k) = $k != "id")) > 0 or (has_key($request, "id") and (type($request.id) != "string" or $request.id == "")) then
     reply(10, json_encode({error: "invalid_request"}))
@@ -325,7 +325,7 @@ on apps.running desc "list managed app handles, optionally filtered by id"
     reply(0, json_encode($out))
   end
 end
-on apps.toggle desc "start, focus or stop a desktop app"
+on apps.toggle desc "start, focus or stop a desktop app; focus_or_stop stops every instance of the id when focused; mesh callers allowed until Bus 2c"
   $request = event_args()
   $mode = $request.on_running ?? "focus_or_stop"
   if len(filter(keys($request), fn($k) = not contains(["id", "on_running"], $k))) > 0 or type($request.id) != "string" or $request.id == "" or not contains(["focus_or_stop", "focus", "stop"], $mode) then
@@ -386,7 +386,7 @@ on timer.tick
     return
   end
 end
-on apps.history desc "local operator history {since?,until?,limit?}: newest N rows in ascending order"
+on apps.history desc "local operator history {since?,until?,limit?}: newest N rows ascending; known limit: mesh callers can flood refused rows"
   $request = event_args()
   $limit = $request.limit ?? 500
   if not local_origin() then
@@ -467,7 +467,7 @@ on "apps.props.watch" desc "read citizen properties: apps.count, apps.icon_theme
   end
 end
 
-on "apps.props.set" desc "set a citizen property (icon_theme, terminal; count is read-only)"
+on "apps.props.set" desc "set a local citizen property (icon_theme, terminal, allow_argv; count is read-only); apps.terminal executable must be an absolute path"
   $args = event_args()
   $path = get_or($args, "path", "")
   $value = get_or($args, "value", nil)

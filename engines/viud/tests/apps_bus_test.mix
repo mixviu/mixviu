@@ -101,16 +101,16 @@ fn read_file_or_nil($path)
 end
 -- Watches deliver asynchronously: wait (bounded) for apps.get to answer $rc.
 fn wait_app($id, $rc)
-  for each $i in range(1, 50)
+  for each $i in range(1, 500)
     if call("apps", "apps.get", json_encode({id: $id})).rc == $rc then return true end
-    sleep(0.1)
+    sleep(0.01)
   end
   return false
 end
 fn wait_file($path)
-  for each $i in range(1, 50)
+  for each $i in range(1, 500)
     if read_file_or_nil($path) != nil then return read_file($path) end
-    sleep(0.1)
+    sleep(0.01)
   end
   raise("APPS_BUS_TEST", "launched fixture never ran: " .. $path)
 end
