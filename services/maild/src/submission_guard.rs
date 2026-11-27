@@ -103,6 +103,18 @@ pub async fn admit(db: &Db, account: i32, recipients: &[String]) -> Result<()> {
     .await?
 }
 
+/// Account-authored automatic mail must not reopen a doorway. Suppression,
+/// including storage failure, never turns the original delivery into a bounce.
+pub(crate) async fn generated_allowed(db: &Db, account: i32, recipients: &[String]) -> bool {
+    match admit(db, account, recipients).await {
+        Ok(()) => true,
+        Err(error) => {
+            tracing::warn!(account, %error, "Account-generated outbound mail suppressed by submission guard");
+            false
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

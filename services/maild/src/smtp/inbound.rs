@@ -885,6 +885,7 @@ pub async fn deliver(
             // `mds.put_blob` (idempotent on hash); the legacy
             // `db::blob::store` write is replaced and the resulting
             // `BlobHash` is what the queue addresses by.
+            if !crate::submission_guard::generated_allowed(&state.db, account.id, &[mail_from.to_string()]).await { continue; }
             let reply_data = reply_msg.into_bytes();
             let mds = state.mailstore.mds().clone();
             let put_outcome = tokio::task::spawn_blocking(move || mds.put_blob(&reply_data)).await;
@@ -943,7 +944,7 @@ fn render_header_from(message: &mail_parser::Message<'_>) -> String {
             parts.push(s.to_string());
         }
     };
-    if let Some(addr) = message.from() {
+    for addr in message.header_values("From").filter_map(|h| h.as_address()) {
         match addr {
             mail_parser::Address::List(list) => list.iter().for_each(&mut push_addr),
             mail_parser::Address::Group(groups) => groups
@@ -1181,11 +1182,11 @@ mod doorway_tests {
                 .unwrap_err()
                 .is::<crate::sieve::delivery::Rejected>()
         );
-        // Header-only own-domain claims and forged envelope-only claims are both checked.
+        // A verifier failure for a different identity cannot be borrowed.
         assert!(
             enforce_own_spf(&runtime, &external, "other@example.org", raw, &verify)
                 .await
-                .is_err()
+                .is_ok()
         );
         assert!(
             enforce_own_spf(
@@ -1214,11 +1215,43 @@ mod doorway_tests {
             email: "mc@example.com".into(),
         };
         enforce_own_spf(&runtime, &local, "mc@example.com", raw, &verify).await?;
+        verify.spf = SpfCheck::Helo { result: SpfResult::Fail, domain: "example.com".into() };
+        assert!(enforce_own_spf(&runtime, &external, "", raw, &verify).await.is_err());
+        enforce_own_spf(&runtime, &external, "other@example.org", raw, &verify).await?;
+        verify.spf = SpfCheck::MailFrom { result: SpfResult::Fail, domain: "example.org".into() };
+        for raw in [
+            b"From: mc@example.com\r\n\r\nx".as_slice(),
+            b"From: mc@example.com, other@example.org\r\n\r\nx".as_slice(),
+            b"From: Team: mc@example.com, other@example.org;\r\n\r\nx".as_slice(),
+            b"From: mc@example.com\r\nFrom: other@example.org\r\n\r\nx".as_slice(),
+        ] {
+            enforce_own_spf(&runtime, &external, "other@example.org", raw, &verify).await?;
+            let message = MessageParser::default().parse(raw).unwrap();
+            let rendered = render_header_from(&message);
+            assert!(rendered.contains("mc@example.com"), "{rendered}");
+            if raw.windows(17).any(|w| w == b"other@example.org") {
+                assert!(rendered.contains("other@example.org"), "{rendered}");
+            }
+        }
         verify.spf = SpfCheck::MailFrom {
             result: SpfResult::Pass,
             domain: "example.com".into(),
         };
         enforce_own_spf(&runtime, &external, "mc@example.com", raw, &verify).await?;
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        for (from, ehlo) in [("other@example.org", "example.com"), ("", "other.example"), ("mc@sub.example.com", "example.com")] {
+            token_spf_preflight(&runtime, &external, from, ehlo, || async {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(verify.clone())
+            }).await?;
+        }
+        // The actual pre-250 verifier seam is observed, without a timing assertion.
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+        token_spf_preflight(&runtime, &external, "mc@example.com", "other.example", || async {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(verify.clone())
+        }).await?;
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
         Ok(())
     }
 }
@@ -1255,71 +1288,61 @@ fn filter_auth(
     ]
 }
 
+/// Exact configured domains only. No DNS here: this is the token-path opt-in gate.
+pub(crate) async fn strict_own_domain(domains: &Arc<::props::Runtime>, domain: &str) -> Result<bool> {
+    let Some(domain) = super::envelope::dns_domain(domain) else { return Ok(false); };
+    let key = ::props::record::RecordKey::collection(crate::props::domains::namespace_name(), domain);
+    let record = match domains.store().get(&key).await {
+        Ok(record) => record,
+        Err(::props::store::StoreError::NotFound) => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
+    let view = crate::props::domains::view(&record.value)?;
+    if !view.enabled || view.role != "authoritative" { return Ok(false); }
+    let obj = record.value.value.as_object().ok_or_else(|| anyhow::anyhow!("invalid domain policy"))?;
+    match obj.get("spf_policy") {
+        Some(::props::value::PropValue::String(s)) if s == "strict" => Ok(true),
+        Some(::props::value::PropValue::String(s)) if s == "lenient" || s == "off" => Ok(false),
+        _ => anyhow::bail!("invalid domain SPF policy"),
+    }
+}
+
+/// Header From alignment belongs to DMARC, not this SPF identity check.
 pub(crate) async fn enforce_own_spf(
-    domains: &Arc<::props::Runtime>,
-    ingress: &IngressAuth,
-    from: &str,
-    data: &[u8],
-    verify: &VerifyResult,
+    domains: &Arc<::props::Runtime>, ingress: &IngressAuth, from: &str,
+    _data: &[u8], verify: &VerifyResult,
 ) -> Result<()> {
-    use maild_auth::types::{SpfCheck, SpfResult};
-    if ingress.is_local_auth() {
-        return Ok(());
-    }
-    let failing = matches!(
-        verify.spf,
-        SpfCheck::MailFrom {
-            result: SpfResult::Fail,
-            ..
-        } | SpfCheck::Helo {
-            result: SpfResult::Fail,
-            ..
+    if ingress.is_local_auth() { return Ok(()); }
+    let domain = match &verify.spf {
+        SpfCheck::MailFrom { result: SpfResult::Fail, domain } if !from.is_empty() => {
+            let claimed = from.rsplit_once('@').and_then(|(_, d)| super::envelope::dns_domain(d));
+            if claimed != super::envelope::dns_domain(domain) { return Ok(()); }
+            domain
         }
-    );
-    if !failing {
-        return Ok(());
-    }
-    let message = MessageParser::default().parse(data);
-    let mut claims = vec![from.to_string()];
-    if let Some(message) = &message {
-        for addresses in message.header_values("From").filter_map(|h| h.as_address()) {
-            for addr in addresses.iter() {
-                if let Some(addr) = addr.address() {
-                    claims.push(addr.to_string());
-                }
-            }
-        }
-    }
-    for claim in claims {
-        let Some((_, domain)) = claim.rsplit_once('@') else {
-            continue;
-        };
-        let Some(domain) = super::envelope::dns_domain(domain) else {
-            continue;
-        };
-        let key =
-            ::props::record::RecordKey::collection(crate::props::domains::namespace_name(), domain);
-        let record = match domains.store().get(&key).await {
-            Ok(record) => record,
-            Err(::props::store::StoreError::NotFound) => continue,
-            Err(error) => return Err(error.into()),
-        };
-        let view = crate::props::domains::view(&record.value)?;
-        let obj = record
-            .value
-            .value
-            .as_object()
-            .ok_or_else(|| anyhow::anyhow!("invalid domain policy"))?;
-        let strict = match obj.get("spf_policy") {
-            Some(::props::value::PropValue::String(s)) if s == "strict" => true,
-            Some(::props::value::PropValue::String(s)) if s == "lenient" || s == "off" => false,
-            _ => anyhow::bail!("invalid domain SPF policy"),
-        };
-        if view.enabled && view.role == "authoritative" && strict {
-            return Err(crate::sieve::delivery::Rejected("ownDomainSpfFail".into()).into());
-        }
+        SpfCheck::Helo { result: SpfResult::Fail, domain } if from.is_empty() => domain,
+        _ => return Ok(()),
+    };
+    if strict_own_domain(domains, domain).await? {
+        return Err(crate::sieve::delivery::Rejected("ownDomainSpfFail".into()).into());
     }
     Ok(())
+}
+
+/// The verifier closure is never called for non-opted-in senders. In particular,
+/// token validity cannot influence this decision or trigger pre-250 DNS work.
+/// Own strict domains opted in: their pre-250 verification reveals only that
+/// the sender claimed our strict domain, never whether the recipient token exists.
+pub(crate) async fn token_spf_preflight<F, Fut>(
+    domains: &Arc<::props::Runtime>, ingress: &IngressAuth, from: &str, ehlo: &str,
+    verify: F,
+) -> Result<()>
+where F: FnOnce() -> Fut, Fut: std::future::Future<Output = Result<VerifyResult>> {
+    if ingress.is_local_auth() { return Ok(()); }
+    let domain = if from.is_empty() { Some(ehlo) } else { from.rsplit_once('@').map(|(_, d)| d) };
+    let Some(domain) = domain else { return Ok(()); };
+    if !strict_own_domain(domains, domain).await? { return Ok(()); }
+    let result = verify().await?;
+    enforce_own_spf(domains, ingress, from, &[], &result).await
 }
 
 async fn run_inbound_filter(

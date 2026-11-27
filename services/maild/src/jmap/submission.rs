@@ -61,7 +61,7 @@ pub async fn set(
                     let kind = match e.downcast_ref::<crate::submission_guard::Refusal>() {
                         Some(crate::submission_guard::Refusal::Recipient) => "forbiddenToSend",
                         Some(crate::submission_guard::Refusal::Rate) => "tooManyRequests",
-                        None => "invalidProperties",
+                        None => "serverFail",
                     };
                     not_created.insert(
                         client_id.clone(),
@@ -223,7 +223,7 @@ async fn create_submission(
     let blob_hash = tokio::task::spawn_blocking(move || -> Result<_> {
         let bytes = ms.read_blob(hash)?;
         ms.put_blob(&crate::sieve::delivery::strip_headers(&bytes, |n| {
-            n.eq_ignore_ascii_case("Bcc")
+            n.eq_ignore_ascii_case("Bcc") || n.eq_ignore_ascii_case("Resent-Bcc")
         }))
     })
     .await??;

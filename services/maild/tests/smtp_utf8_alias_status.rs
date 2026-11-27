@@ -141,6 +141,8 @@ async fn doorway_guards_whole_smtp_and_jmap_envelopes() -> Result<()> {
     let bob = account(&built, "bob@example.com").await?;
     account(&built, "carol@example.com").await?;
     guard_props(&built, Some(vec!["bob@example.com"]), Some(2)).await?;
+    assert!(alias(&built, "door@example.com", &["remote@example.net"], Version::zero())
+        .await.unwrap_err().to_string().contains("off-site forwarding"));
     let tcp = TcpStream::connect(built.smtp_handle.smtps_addrs[0]).await?;
     let stream = tls
         .connect(rustls::pki_types::ServerName::try_from("localhost")?, tcp)
@@ -169,7 +171,7 @@ async fn doorway_guards_whole_smtp_and_jmap_envelopes() -> Result<()> {
     let ms = &built.app_state.mailstore;
     let drafts = ms.mailbox_by_role(alice, MailboxRole::Drafts)?.unwrap();
     let hash = ms.put_blob(
-        b"From: alice@example.com\r\nTo: bob@example.com\r\nBcc: carol@example.com\r\n\r\nbody",
+        b"From: alice@example.com\r\nTo: bob@example.com\r\nBcc: carol@example.com\r\nResent-Bcc: hidden@example.net\r\n\r\nbody",
     )?;
     let (item, _) = ms.create_email(
         alice,

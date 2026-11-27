@@ -411,7 +411,8 @@ where
                     continue;
                 }
                 // : fire-and-forget for an ALL-token-shaped message closes the
-                // timing oracle. We write 250 IMMEDIATELY — no resolve/delivery
+                // timing oracle. Except for the explicit strict-own-domain SPF opt-in
+                // (see token_spf_preflight), we write 250 immediately: no resolve/delivery
                 // work and NO permit await before it (either re-introduces a
                 // load-dependent timing channel) — then dispatch on a bounded,
                 // SHED-on-overflow background task. The token namespace never
@@ -428,29 +429,16 @@ where
                         .iter()
                         .all(|r| crate::vtoken::is_active_token_shaped(r, opaque_enabled));
                 if all_token_shaped && !ingress.is_local_auth() {
-                    let verify = session
-                        .state
-                        .mail_auth
-                        .verify(
+                    let result = super::inbound::token_spf_preflight(
+                        &session.state.domains_runtime, &ingress,
+                        session.mail_from.as_deref().unwrap_or(""),
+                        session.ehlo_host.as_deref().unwrap_or("unknown"),
+                        || async { Ok(session.state.mail_auth.verify(
                             session.peer.ip(),
                             session.mail_from.as_deref().unwrap_or(""),
                             session.ehlo_host.as_deref().unwrap_or("unknown"),
                             &data_buf,
-                        )
-                        .await;
-                    let result = match verify {
-                        Ok(verify) => {
-                            super::inbound::enforce_own_spf(
-                                &session.state.domains_runtime,
-                                &ingress,
-                                session.mail_from.as_deref().unwrap_or(""),
-                                &data_buf,
-                                &verify,
-                            )
-                            .await
-                        }
-                        Err(error) => Err(error.into()),
-                    };
+                        ).await?) }).await;
                     if let Err(error) = result {
                         let reply = if error.is::<crate::sieve::delivery::Rejected>() {
                             "550 5.7.1 ownDomainSpfFail"
