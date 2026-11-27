@@ -2123,11 +2123,10 @@ async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture
         crate::authority::Posture::Verified(old),
         crate::authority::Posture::Verified(candidate),
     ) = (&current.posture, &new)
+        && let Err(reason) = crate::authority::validate_reload_keys(old, candidate)
     {
-        if let Err(reason) = crate::authority::validate_reload_keys(old, candidate) {
-            tracing::warn!(event = "inventory.rejected", %reason, kept_last_good = true, "inventory reload refused");
-            return;
-        }
+        tracing::warn!(event = "inventory.rejected", %reason, kept_last_good = true, "inventory reload refused");
+        return;
     }
     let keep = reload_keeps_last_good(&new, &current.posture);
     drop(current);
