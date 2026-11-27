@@ -133,6 +133,10 @@ async fn tls_brokers() -> (
         );
         let tls = Arc::new(mesh::TlsRuntime {
             credential,
+            sessions: mesh::tls_limits::Sessions::new(8),
+            source_rate: Arc::new(std::sync::Mutex::new(mesh::tls_limits::SourceRate::new(
+                10, 20,
+            ))),
             authority: Arc::new(std::sync::RwLock::new(authority.tls_keys.clone())),
         });
         let (incoming, _rx) = mpsc::unbounded_channel();
@@ -151,8 +155,7 @@ async fn tls_brokers() -> (
         state.tls = Some(tls.clone());
         let listener = crate::tls_ingress::TlsListener::new(
             tcp,
-            &tls.credential,
-            tls.authority.clone(),
+            &tls,
             &Default::default(),
             state.tls_refusals.clone(),
         )
@@ -190,6 +193,25 @@ async fn tls_ping(state: &AppState, peer: &PeerConfig) {
     assert_eq!(reply.rc(), Some(0));
 }
 
+async fn tls_info(state: &AppState) -> serde_json::Value {
+    let (tx, mut rx) = mpsc::channel(2);
+    super::handle_noded_command(
+        &BusMessage::new()
+            .with_header("command", "noded.info")
+            .with_header("from", "probe")
+            .with_header("id", "info"),
+        &tx,
+        state,
+        &mut None,
+        "anon-info",
+        "192.0.2.1".parse().unwrap(),
+        &mut crate::observe::Outcome::BrokerHandled,
+    )
+    .await;
+    let reply = bus::wire::parse(&rx.recv().await.unwrap()).unwrap();
+    serde_json::from_str(&reply.body).unwrap()
+}
+
 #[tokio::test]
 async fn tls_brokers_prove_both_directions_and_revoke_either_exact_key_only() {
     for revoked in [None, Some("d2"), Some("bus-tls")] {
@@ -216,8 +238,18 @@ async fn tls_brokers_prove_both_directions_and_revoke_either_exact_key_only() {
             assert_eq!(context.mesh_peer().unwrap(), (member.as_str(), d2_key));
         }
         assert_eq!(states[0].live_sessions.read().await.len(), 2);
-        // The older reconciliation APIs have no TLS opinion. They must keep
-        // both established TLS connections and their authority intact.
+        let info = tls_info(&states[0]).await;
+        assert_eq!(info["mesh_addr"], info["wg_ip"]);
+        assert_eq!(info["meta"]["tls_sessions_per_member"]["beta"], 2);
+        assert_eq!(info["meta"]["tls_inbound"]["outcomes"]["admitted"], 2);
+        assert!(
+            info["meta"]["tls_dial"]["outcomes"]["admitted"]
+                .as_u64()
+                .unwrap()
+                >= 2
+        );
+        assert!(info["meta"]["reload_to_drop_ms"].is_null());
+        // D2-only reconciliation preserves the current TLS authority.
         let authority = states[0].authority.load_full();
         let report = states[0]
             .mesh
@@ -234,6 +266,9 @@ async fn tls_brokers_prove_both_directions_and_revoke_either_exact_key_only() {
             .mesh
             .reconcile_endpoints(authority.routes.desired_endpoints(), authority.revision())
             .await;
+        // Endpoint-only reconciliation clears both authorities symmetrically.
+        // Install the accepted security snapshot again before sending frames.
+        super::reconcile_transport_authority(&states[0].mesh, &authority).await;
         for peer in &peers[1..] {
             assert!(states[0].mesh.peer_context(&peer.name).await.is_some());
             tls_ping(&states[0], peer).await;
@@ -253,7 +288,9 @@ async fn tls_brokers_prove_both_directions_and_revoke_either_exact_key_only() {
                 }
             }
         }
-        super::apply_inventory_reload(&states[0], next).await;
+        super::apply_observed_inventory_reload(&states[0], next).await;
+        assert!(states[0].reload_to_drop_ms.lock().unwrap().is_some());
+        assert!(tls_info(&states[0]).await["meta"]["reload_to_drop_ms"].is_u64());
         assert_eq!(
             states[0].mesh.peer_context("beta").await.is_some(),
             revoked.is_none()
@@ -471,6 +508,60 @@ async fn tls_startup_requires_inventory_seed_mode_and_current_own_key() {
     }
 }
 
+#[test]
+fn outbound_only_tls_startup_refuses_zero_shared_limits() {
+    use base64::Engine as _;
+    use std::os::unix::fs::PermissionsExt;
+    let path = std::env::temp_dir().join(format!("tls-limits-{:032x}", rand::random::<u128>()));
+    std::fs::write(&path, [1; 32]).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    let credential = mesh::tls::Credential::new(mesh::tls::load_seed(&path).unwrap()).unwrap();
+    let mut posture = reload_posture(
+        1,
+        vec![active_route("alpha", "127.0.0.1".parse().unwrap(), 4200)],
+    );
+    if let crate::authority::Posture::Verified(a) = &mut posture {
+        a.members_full.insert(
+            "alpha".into(),
+            serde_json::json!({
+                "name": "alpha", "status": "active", "bus": true,
+                "credentials": [{"kind": "bus-tls", "from_epoch": 1,
+                    "pubkey": base64::engine::general_purpose::STANDARD.encode(
+                        mesh::tls::public_key(&credential.certificate).unwrap())}]
+            }),
+        );
+    }
+    let settings = config::node::NodedTls {
+        key: path.to_str().unwrap().into(),
+        ..Default::default()
+    };
+    // Outbound TLS startup prepares the runtime without constructing a
+    // TlsListener. Valid credentials must not hide invalid shared limits.
+    assert!(crate::tls_ingress::prepare(&posture, "alpha", &settings).is_ok());
+    for field in [
+        "per_source_rate",
+        "per_source_burst",
+        "max_sessions_per_member",
+    ] {
+        let mut invalid = settings.clone();
+        match field {
+            "per_source_rate" => invalid.per_source_rate = 0,
+            "per_source_burst" => invalid.per_source_burst = 0,
+            "max_sessions_per_member" => invalid.max_sessions_per_member = 0,
+            _ => unreachable!(),
+        }
+        let error = crate::tls_ingress::prepare(&posture, "alpha", &invalid)
+            .err()
+            .expect("outbound-only startup must reject zero limits");
+        assert_eq!(
+            error.to_string(),
+            "TLS rate, burst and session cap must be positive",
+            "{field}"
+        );
+    }
+    std::fs::remove_file(path).unwrap();
+}
+
 #[tokio::test]
 async fn tls_d2_binding_refuses_zero_relay_and_another_member() {
     let (states, peers, tasks) = tls_brokers().await;
@@ -546,6 +637,240 @@ async fn tls_d2_binding_refuses_zero_relay_and_another_member() {
 }
 
 #[tokio::test]
+async fn explicit_port_zero_uses_matching_prebound_listener() {
+    let tcp = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let actual = tcp.local_addr().unwrap();
+    let configured = [config::node::NodedListener {
+        addr: "127.0.0.1:0".parse().unwrap(),
+        tls: true,
+    }];
+    let bound = super::bind_tcp_listeners("127.0.0.1:0", Some(&configured), Some(tcp))
+        .await
+        .unwrap();
+    assert_eq!(bound.len(), 1);
+    assert_eq!(bound[0].0.local_addr().unwrap(), actual);
+    assert!(bound[0].1);
+    assert!(!super::prebound_matches(
+        Some(actual),
+        Some("192.0.2.1:0".parse().unwrap())
+    ));
+    assert!(!super::prebound_matches(None, None));
+}
+
+#[test]
+fn legacy_node_config_warns_once_and_new_name_loads() {
+    if log_capture_subprocess("legacy_node_config_warns_once_and_new_name_loads") {
+        return;
+    }
+    #[derive(Clone, Default)]
+    struct Capture(Arc<StdMutex<Vec<u8>>>);
+    impl std::io::Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let capture = Capture::default();
+    let writer = capture.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let path = std::env::temp_dir().join(format!(
+        "pr4c-node-{:032x}.conf.mix",
+        rand::random::<u128>()
+    ));
+    for key in ["wg_ip", "wg_ip", "mesh_addr"] {
+        std::fs::write(&path, format!("{key}: '192.0.2.1'\n")).unwrap();
+        assert_eq!(
+            config::node::load_from(&path).unwrap().mesh_addr,
+            "192.0.2.1"
+        );
+    }
+    std::fs::write(&path, "wg_ip: '192.0.2.1'\nmesh_addr: '192.0.2.1'\n").unwrap();
+    assert!(config::node::load_from(&path).is_err());
+    std::fs::remove_file(path).unwrap();
+    let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
+    assert_eq!(
+        log.matches("wg_ip is deprecated; use mesh_addr").count(),
+        1,
+        "{log}"
+    );
+}
+
+#[tokio::test]
+async fn tls_dial_timeout_is_counted_and_coalesced() {
+    if log_capture_subprocess("tls_dial_timeout_is_counted_and_coalesced") {
+        return;
+    }
+    #[derive(Clone, Default)]
+    struct Capture(Arc<StdMutex<Vec<u8>>>);
+    impl std::io::Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let capture = Capture::default();
+    let writer = capture.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let (states, peers, tasks) = tls_brokers().await;
+    let tcp = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut peer = peers[1].clone();
+    peer.tls_port = Some(tcp.local_addr().unwrap().port());
+    let hold = tokio::spawn(async move {
+        let mut sockets = Vec::new();
+        loop {
+            sockets.push(tcp.accept().await.unwrap().0);
+        }
+    });
+    let authority = states[0].authority.load_full();
+    states[0]
+        .mesh
+        .reconcile_security(
+            std::collections::HashMap::from([(peer.name.clone(), peer.noded_addr())]),
+            authority.revision(),
+            authority.keys.clone(),
+            "example.test".into(),
+            authority.tls_keys.clone(),
+        )
+        .await;
+    for _ in 0..2 {
+        let result = states[0]
+            .mesh
+            .call(
+                peer.clone(),
+                BusMessage::new()
+                    .with_header("command", "noded.ping")
+                    .with_header("to", "noded"),
+            )
+            .await;
+        assert!(result.unwrap_err().to_string().contains("timed out"));
+    }
+    let info = tls_info(&states[0]).await;
+    assert_eq!(info["meta"]["tls_dial"]["classes"]["timeout"], 2);
+    assert_eq!(info["meta"]["tls_dial"]["outcomes"]["timeout"], 2);
+    assert_eq!(info["meta"]["tls_refusals"], 2);
+    let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
+    assert_eq!(
+        log.lines()
+            .filter(|line| line.contains("TLS attempt: timeout"))
+            .count(),
+        1,
+        "{log}"
+    );
+    hold.abort();
+    for task in tasks {
+        task.abort();
+    }
+}
+
+#[tokio::test]
+async fn tls_rate_limit_precedes_handshake_and_isolates_source_addresses() {
+    use tokio::io::AsyncReadExt;
+    let (states, _, tasks) = tls_brokers().await;
+    let runtime = states[0].tls.as_ref().unwrap();
+    *runtime.source_rate.lock().unwrap() = mesh::tls_limits::SourceRate::new(1, 1);
+    let tcp = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = tcp.local_addr().unwrap();
+    let refusals = Arc::new(mesh::tls::Refusals::default());
+    let _listener =
+        crate::tls_ingress::TlsListener::new(tcp, runtime, &Default::default(), refusals.clone())
+            .unwrap();
+    let _first = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let mut excess = tokio::net::TcpStream::connect(addr).await.unwrap();
+    assert!(matches!(
+        tokio::time::timeout(Duration::from_millis(500), excess.read(&mut [0; 1])).await,
+        Ok(Ok(0)) | Ok(Err(_))
+    ));
+    assert_eq!(refusals.snapshot()["classes"]["rate-limited"], 1);
+    assert!(refusals.snapshot()["classes"].get("timeout").is_none());
+    let socket = tokio::net::TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.2:0".parse().unwrap()).unwrap();
+    let mut other = socket.connect(addr).await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), other.read(&mut [0; 1]))
+            .await
+            .is_err()
+    );
+    assert_eq!(refusals.total(), 1);
+    for task in tasks {
+        task.abort();
+    }
+}
+
+#[tokio::test]
+async fn tls_member_session_cap_releases_with_transport_and_isolates_members() {
+    use tokio::io::AsyncReadExt;
+    let (states, _, tasks) = tls_brokers().await;
+    let runtime = mesh::TlsRuntime {
+        credential: tls_credential(1),
+        authority: states[0].tls.as_ref().unwrap().authority.clone(),
+        sessions: mesh::tls_limits::Sessions::new(1),
+        source_rate: Arc::new(std::sync::Mutex::new(mesh::tls_limits::SourceRate::new(
+            10, 20,
+        ))),
+    };
+    let tcp = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = tcp.local_addr().unwrap();
+    let refusals = Arc::new(mesh::tls::Refusals::default());
+    let _listener =
+        crate::tls_ingress::TlsListener::new(tcp, &runtime, &Default::default(), refusals.clone())
+            .unwrap();
+    let mut clients = Vec::new();
+    for seed in [2, 2, 3] {
+        let credential = tls_credential(seed);
+        let config = credential
+            .client_config(runtime.authority.clone(), "alpha".into())
+            .unwrap();
+        let tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let mut client = tokio_rustls::TlsConnector::from(config)
+            .connect(
+                tokio_rustls::rustls::pki_types::ServerName::try_from("bus.example.test").unwrap(),
+                tcp,
+            )
+            .await
+            .unwrap();
+        if seed == 2 && !clients.is_empty() {
+            assert!(matches!(
+                tokio::time::timeout(Duration::from_secs(1), client.read(&mut [0; 1])).await,
+                Ok(Ok(0)) | Ok(Err(_))
+            ));
+        } else {
+            clients.push(client);
+        }
+    }
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while refusals.snapshot()["outcomes"]["admitted"] != 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(refusals.snapshot()["classes"]["session-cap"], 1);
+    assert_eq!(runtime.sessions.snapshot()["beta"], 1);
+    assert_eq!(runtime.sessions.snapshot()["gamma"], 1);
+    drop(_listener); // queued accepted transports own their leases too
+    assert!(runtime.sessions.snapshot().is_empty());
+    for task in tasks {
+        task.abort();
+    }
+}
+
+#[tokio::test]
 async fn tls_handshake_timeout_queue_and_refusals() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let (states, peers, tasks) = tls_brokers().await;
@@ -555,8 +880,7 @@ async fn tls_handshake_timeout_queue_and_refusals() {
     let refusals = Arc::new(mesh::tls::Refusals::default());
     let listener = crate::tls_ingress::TlsListener::new(
         tcp,
-        &runtime.credential,
-        runtime.authority.clone(),
+        runtime,
         &config::node::NodedTls {
             handshake_timeout_s: 1,
             max_handshakes: 1,
@@ -601,6 +925,8 @@ async fn tls_handshake_timeout_queue_and_refusals() {
         .unwrap();
     assert!(started.elapsed() >= Duration::from_millis(1500));
     assert_eq!(refusals.total(), 3);
+    assert_eq!(refusals.snapshot()["outcomes"]["timeout"], 2);
+    assert_eq!(refusals.snapshot()["classes"]["queue-full"], 1);
     let mut plaintext = tokio::net::TcpStream::connect(address).await.unwrap();
     plaintext
         .write_all(b"GET /ws HTTP/1.1\r\n\r\n")

@@ -66,7 +66,7 @@ pub struct Config {
     pub name: Option<String>,
     /// Byte-lane bind `<ip>:<port>`. The listener exists only when
     /// this is set, and only after `bind_is_wg` has proved the IP is
-    /// this node's `wg_ip` (fail closed, exit 2).
+    /// this node's `mesh_addr` (fail closed, exit 2).
     pub lane_bind: Option<SocketAddr>,
     /// Concurrent lane uploads admitted at once; beyond it, 503.
     pub lane_max_uploads: usize,

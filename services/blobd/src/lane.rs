@@ -7,7 +7,7 @@
 //!
 //! **Bind proof, fail closed:** a lane is only ever constructed by
 //! `main`, after [`bind_is_wg`] has proved the bind IP equals this
-//! node's `wg_ip` (from `node.conf.mix`, the same source noded uses) —
+//! node's `mesh_addr` (from `node.conf.mix`, the same source noded uses) —
 //! never unspecified, never loopback, never another interface. A
 //! mismatch is exit 2 before any socket is opened.
 //!
@@ -94,12 +94,12 @@ fn abort_error(abort: LaneAbort) -> io::Error {
 }
 
 /// Fail-closed WG bind proof, copied from noded (`bind_is_wg`): the
-/// bind IP must be this node's **own WG/mesh IP** (`wg_ip`), never
+/// bind IP must be this node's **own WG/mesh IP** (`mesh_addr`), never
 /// `0.0.0.0`/any (which would expose the lane off-mesh) and never some
 /// other concrete public/LAN/loopback address (which is not the WG
-/// interface). An unparseable bind or `wg_ip` fails closed — blobd
+/// interface). An unparseable bind or `mesh_addr` fails closed — blobd
 /// proves it is on the WG address, it does not trust its own config.
-pub fn bind_is_wg(bind: &str, wg_ip: &str) -> bool {
+pub fn bind_is_wg(bind: &str, mesh_addr: &str) -> bool {
     let bind_ip = match bind.parse::<SocketAddr>() {
         Ok(addr) => addr.ip(),
         Err(_) => return false,
@@ -107,7 +107,7 @@ pub fn bind_is_wg(bind: &str, wg_ip: &str) -> bool {
     if bind_ip.is_unspecified() {
         return false;
     }
-    match wg_ip.parse::<std::net::IpAddr>() {
+    match mesh_addr.parse::<std::net::IpAddr>() {
         Ok(wg) => bind_ip == wg,
         Err(_) => false,
     }
@@ -189,9 +189,9 @@ pub enum LaneBindError {
 }
 
 impl WgProvenBind {
-    /// Prove `bind` against `wg_ip` (fail closed), then bind it.
-    pub async fn bind(bind: SocketAddr, wg_ip: &str) -> Result<Self, LaneBindError> {
-        if !bind_is_wg(&bind.to_string(), wg_ip) {
+    /// Prove `bind` against `mesh_addr` (fail closed), then bind it.
+    pub async fn bind(bind: SocketAddr, mesh_addr: &str) -> Result<Self, LaneBindError> {
+        if !bind_is_wg(&bind.to_string(), mesh_addr) {
             return Err(LaneBindError::NotWg);
         }
         let listener = TcpListener::bind(bind).await.map_err(LaneBindError::Io)?;
@@ -1460,7 +1460,7 @@ mod tests {
         assert!(!bind_is_wg("[::1]:4210", wg));
         assert!(!bind_is_wg("10.42.0.6:4210", wg));
         assert!(!bind_is_wg("192.168.1.10:4210", wg));
-        // Unparseable bind, absent or unparseable wg_ip: fail closed.
+        // Unparseable bind, absent or unparseable mesh_addr: fail closed.
         assert!(!bind_is_wg("10.42.0.5", wg));
         assert!(!bind_is_wg("not-an-addr:4210", wg));
         assert!(!bind_is_wg("10.42.0.5:4210", ""));

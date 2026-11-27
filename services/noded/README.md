@@ -14,7 +14,7 @@ proofs instead of the legacy WG-bind check.
 ```mix
 noded: {
   listen: [{addr: "192.0.2.1:4200", tls: false}, {addr: "192.0.2.1:4201", tls: true}]
-  tls: {key: "mix:etc/noded/bus-tls.seed", handshake_timeout_s: 3, max_handshakes: 64, max_queue: 64}
+  tls: {key: "mix:etc/noded/bus-tls.seed", handshake_timeout_s: 3, max_handshakes: 64, max_queue: 64, per_source_rate: 10, per_source_burst: 20, max_sessions_per_member: 8}
 }
 ```
 
@@ -25,8 +25,43 @@ handshake slot; a full queue refuses new arrivals. Refusals warn once per IP
 address (IPv6 /64) and class, then coalesce for 60 seconds. Expired windows
 report pending counts before removal. At most 4096 windows are retained;
 additional sources share one overflow window and counter. `noded.info` exposes
-`meta.tls_refusals`, including suppressed listener and dialler attempts.
+`meta.tls_refusals`, the combined total of listener and dialler refusals and
+timeouts (including connect timeouts and suppressed attempts).
 `meta.tls_refusal_overflow` counts attempts assigned to the overflow bucket.
+
+Source buckets start with 20 tokens and refill at 10 tokens per second. IPv4
+addresses, including mapped IPv4, share one bucket; IPv6 uses /64 networks.
+Buckets are shared across TLS listeners and checked before queuing or starting
+TLS work. There are at most 4096 buckets; new sources are refused until a fully
+replenished bucket can be reclaimed. Refusals use class `rate-limited`.
+Each member may hold eight TLS sessions, counted across inbound and outbound
+connections and all listeners. The cap is checked after TLS membership is
+verified, before handing the transport to HTTP; excess sessions use class
+`session-cap`. A lease lasts until the transport drops, including queued
+accepted sockets and failed HTTP upgrades. Rate, burst and cap must be positive.
+These settings do not affect legacy connections when TLS is absent.
+
+Reading `noded.info` flushes expired TLS refusal summaries, including a burst
+followed by silence. The first overflow for each class retains its peer address.
+`tls_refusals` now includes dial connect timeouts; use the separate `outcomes`
+counters below to distinguish refusals from timeouts. Additive `meta` fields are:
+
+- `tls_inbound` and `tls_dial`: separate `classes` maps of lifetime totals,
+  `total`, `overflow`, and `outcomes` (`admitted`, `refused`, `timeout`).
+  Timeout is exclusive of refused. Pre-handshake rate/queue refusals and
+  post-handshake capacity refusals count as refused attempts. Admission here
+  means TLS transport handoff; D2 and frame admission remain separate checks.
+- `tls_sessions_per_member`: current TLS transport leases by signed member.
+- `reload_to_drop_ms`: null before an accepted reload; then elapsed local
+  reload application time, excluding watch debounce. It waits for retired
+  outbound TLS transports to drop and for revoked inbound outboxes to close. It does
+  not measure remote TCP acknowledgement. Rejected reloads retain the last value.
+
+Use top-level `mesh_addr` in `node.conf.mix`. The former `wg_ip` spelling is
+accepted for one release and warns once per process when loaded. Setting both
+names, even to the same value, refuses startup. `noded.peers` emits `mesh_addr`
+for self and each peer, with `wg_ip` retained as a one-release JSON alias;
+`noded.info` also preserves that alias.
 
 A mesh peer's optional `tls_port` selects `wss://` with a mandatory member pin.
 It is temporary until PR 4 adds inventory endpoints and DNS-SD. A failed TLS
@@ -38,6 +73,9 @@ TLS admission always requires both credentials, including when legacy admission
 is off or observe. The D2 node must match the TLS member. An accepted reload
 checks both exact keys; revoking either closes only affected links and records
 which credential failed. Legacy links retain their D2-only check.
+Inbound teardown reasons are `d2-key-revoked` for the exact D2 credential,
+`tls-key-revoked` for the exact TLS credential, and `unproven-link` when the
+link lacks a valid bound proof. Overlapping current credentials remain admitted.
 
 Refusal diagnostics emit the first occurrence, then at most one line per 60
 seconds per peer and frame reason (or per peer for admission challenges).

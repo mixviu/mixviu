@@ -205,7 +205,7 @@ impl RoutingAuthority {
     pub(crate) fn new(
         posture: Posture,
         canonical_node: &str,
-        configured_wg_ip: &str,
+        configured_mesh_addr: &str,
         _listener_port: u16,
         etc_roster: &[PeerConfig],
     ) -> Self {
@@ -215,18 +215,18 @@ impl RoutingAuthority {
                 let eligibility = local_eligibility(&accepted.routing_view, canonical_node);
                 let routes = match eligibility {
                     LocalEligibility::ActiveBus { mesh_ip, .. } => {
-                        match configured_wg_ip.parse::<IpAddr>() {
+                        match configured_mesh_addr.parse::<IpAddr>() {
                             Ok(configured) if configured != mesh_ip => tracing::warn!(
                                 node = canonical_node,
                                 signed_mesh_ip = %mesh_ip,
-                                configured_wg_ip = %configured,
-                                "signed self mesh_ip differs from local WG configuration; routing remains enabled by name"
+                                configured_mesh_addr = %configured,
+                                "signed self routed address differs from local mesh configuration; routing remains enabled by name"
                             ),
                             Err(error) => tracing::warn!(
                                 node = canonical_node,
-                                configured_wg_ip,
+                                configured_mesh_addr,
                                 error = %error,
-                                "local WG configuration is not an IP address; signed routing remains enabled by name"
+                                "local mesh address is not an IP address; signed routing remains enabled by name"
                             ),
                             _ => {}
                         }
@@ -506,7 +506,7 @@ mod tests {
     }
 
     #[test]
-    fn wrong_local_wg_ip_warns_but_does_not_disable_name_eligible_routes() {
+    fn wrong_local_mesh_addr_warns_but_does_not_disable_name_eligible_routes() {
         let warns = Arc::new(AtomicU64::new(0));
         let subscriber = tracing_subscriber::registry().with(CountWarns(warns.clone()));
         let authority = tracing::subscriber::with_default(subscriber, || {

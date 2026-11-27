@@ -1,0 +1,20 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Both names remain accepted by the separate-principal config validator.
+$targets = require("../mesh/_lib/targets.mix")
+$identity = require("../mesh/_lib/broker_identity.mix")
+$raw = {node:"desk-a",host:"host-a",kind:"desk",machine:"desk-a",profile:"/var/lib/example/broker-a",session:3,client_account:"desktop",broker_account:"noded",admission:"enforce"}
+$t = $targets.parse_targets({schema_version:2,project:"example",targets:[$raw]}).targets[0]
+for $broker_key in ["mesh_addr","wg_ip"]
+  for $client_key in ["mesh_addr","wg_ip"]
+    $broker = {node:"desk-a",mesh:"example.internal",noded:{port:4200,unix_socket:$t.broker_endpoint}}
+    $broker[$broker_key] = "192.0.2.14"
+    $client = {node:"desk-a",mesh:"example.internal",noded:$broker.noded}
+    $client[$client_key] = "192.0.2.14"
+    if $identity.node_configs($t,$broker,$client).endpoint != $t.broker_endpoint then raise("TEST","address alias refused") end
+    $client[$client_key] = "192.0.2.15"
+    $refused = false
+    try $identity.node_configs($t,$broker,$client) catch $error $refused = true end
+    if not $refused then raise("TEST","mismatched address accepted") end
+  end
+end
+print("PASS mesh_addr and wg_ip broker/client compatibility")

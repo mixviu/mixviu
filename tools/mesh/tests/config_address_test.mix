@@ -1,0 +1,26 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+$targets = require("../_lib/targets.mix")
+$identity = require("../_lib/broker_identity.mix")
+$worker = require("../_lib/desk_worker.mix")
+fn check($ok,$message)
+  if not $ok then raise("ADDRESS_TEST",$message) end
+end
+fn refuses($action)
+  try $action(); return false catch $failure return true end
+end
+$raw = {node:"desk-a",host:"host-a",kind:"desk",machine:"desk-a",profile:"/var/lib/example/broker-a",session:3,client_account:"desktop",broker_account:"noded",admission:"enforce"}
+$t = $targets.parse_targets({schema_version:2,project:"example",targets:[$raw]}).targets[0]
+for $key in ["mesh_addr","wg_ip"]
+  $broker = {node:"desk-a",mesh:"example.internal",noded:{port:4200,unix_socket:$t.broker_endpoint}}
+  $broker[$key] = "192.0.2.14"
+  $client = $broker
+  check($identity.node_configs($t,$broker,$client).endpoint==$t.broker_endpoint,"single address refused")
+  check($worker.config_address($broker)=="192.0.2.14","single address worker fallback refused")
+  for $other in ["192.0.2.14","192.0.2.15",nil]
+    $bad = $broker
+    $bad[if $key=="mesh_addr" then "wg_ip" else "mesh_addr" end] = $other
+    check(refuses(fn()=$identity.node_configs($t,$bad,$client)),"both broker keys accepted")
+    check(refuses(fn()=$worker.config_address($bad)),"both worker keys accepted")
+  end
+end
+print("PASS single address aliases and both-present refusal in both validators")

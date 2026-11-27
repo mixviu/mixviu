@@ -449,6 +449,20 @@ struct RemoteBroker {
     tx: mpsc::UnboundedSender<String>,
     connected: Arc<AtomicBool>,
     cancel: watch::Sender<bool>,
+    transport_closed: Option<watch::Receiver<bool>>,
+}
+
+/// Observe local transport destruction for a connection retired by a reload.
+pub struct TeardownWatch {
+    connected: Arc<AtomicBool>,
+    closed: watch::Receiver<bool>,
+}
+impl TeardownWatch {
+    pub async fn wait_if_retired(mut self) {
+        if !self.connected.load(Ordering::Acquire) {
+            let _ = self.closed.wait_for(|closed| *closed).await;
+        }
+    }
 }
 
 impl RemoteBroker {
@@ -526,6 +540,8 @@ impl TransportState {
 pub struct TlsRuntime {
     pub credential: crate::tls::Credential,
     pub authority: crate::tls::LiveAuthority,
+    pub sessions: Arc<crate::tls_limits::Sessions>,
+    pub source_rate: Arc<Mutex<crate::tls_limits::SourceRate>>,
 }
 
 /// Manages connections to remote mesh peers.
@@ -592,6 +608,24 @@ impl MeshPeers {
         &self.config.node_name
     }
 
+    pub async fn teardown_watches(&self) -> Vec<TeardownWatch> {
+        self.state
+            .read()
+            .await
+            .connections
+            .values()
+            .filter_map(|connection| {
+                connection
+                    .transport_closed
+                    .as_ref()
+                    .map(|closed| TeardownWatch {
+                        connected: connection.connected.clone(),
+                        closed: closed.clone(),
+                    })
+            })
+            .collect()
+    }
+
     /// Atomically install the route authority's desired endpoint projection.
     /// Established transports and in-progress attempts which no longer match
     /// are fenced before this method returns.
@@ -635,7 +669,13 @@ impl MeshPeers {
     ) -> ReconcileReport {
         let mut state = self.state.write().await;
         // Older callers update D2 or endpoints only; they have no opinion on TLS.
-        let tls_keys = tls_keys.unwrap_or_else(|| state.tls_keys.clone());
+        let tls_keys = tls_keys.unwrap_or_else(|| {
+            if keys.is_some() {
+                state.tls_keys.clone()
+            } else {
+                Default::default()
+            }
+        });
         let mut report = ReconcileReport::default();
         let mut reasons = HashMap::new();
 
@@ -1068,16 +1108,21 @@ async fn wait_for_attempt(
 trait PeerIo: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
 impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> PeerIo for T {}
 
+#[derive(Debug, thiserror::Error)]
+#[error("TLS session-cap")]
+struct TlsSessionCap;
+
 async fn dial(
     peer: &PeerConfig,
     tls: Option<Arc<TlsRuntime>>,
 ) -> Result<(
     tokio_tungstenite::WebSocketStream<Box<dyn PeerIo>>,
     Option<(mesh_trust::identity::TlsMember, [u8; 32])>,
+    Option<watch::Receiver<bool>>,
 )> {
     let tcp = tokio::net::TcpStream::connect(peer.noded_addr()).await?;
     tcp.set_nodelay(true)?;
-    let (io, identity): (Box<dyn PeerIo>, _) = if peer.tls_port.is_some() {
+    let (io, identity, closed): (Box<dyn PeerIo>, _, _) = if peer.tls_port.is_some() {
         let tls =
             tls.ok_or_else(|| anyhow::anyhow!("TLS peer configured without TLS credential"))?;
         let config = tls
@@ -1096,12 +1141,27 @@ async fn dial(
             Some(&peer.name),
         )?;
         let binding = crate::tls::client_channel_binding(conn)?;
-        (Box::new(stream), Some((member, binding)))
+        let Some(session) = tls.sessions.acquire(&member.member) else {
+            crate::tls::DIAL_REFUSALS.record(peer.noded_addr(), "session-cap");
+            return Err(TlsSessionCap.into());
+        };
+        let closed = session.closed();
+        (
+            Box::new(crate::tls_limits::LeasedIo {
+                io: stream,
+                session,
+            }),
+            Some((member, binding)),
+            Some(closed),
+        )
     } else {
-        (Box::new(tcp), None)
+        (Box::new(tcp), None, None)
     };
     let (ws, _) = tokio_tungstenite::client_async_with_config(peer.noded_url(), io, None).await?;
-    Ok((ws, identity))
+    if identity.is_some() {
+        crate::tls::DIAL_REFUSALS.admitted();
+    }
+    Ok((ws, identity, closed))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1123,7 +1183,7 @@ async fn connect_and_publish(
     // broker's accept hook cannot cover the side that dialled.
     let tls = state.read().await.tls.clone();
     let connect = tokio::time::timeout(CONNECT_TIMEOUT, dial(&peer, tls));
-    let (ws_stream, tls_peer) = tokio::select! {
+    let (ws_stream, tls_peer, transport_closed) = tokio::select! {
         biased;
         changed = attempt_cancel.changed() => {
             let _ = changed;
@@ -1131,6 +1191,9 @@ async fn connect_and_publish(
         }
         result = connect => match result {
             Err(_) => {
+                if peer.tls_port.is_some() {
+                    crate::tls::DIAL_REFUSALS.record(target, "timeout");
+                } else {
                 tracing::warn!(
                     event = "mesh.connection.failed",
                     cause = "connect-timeout",
@@ -1138,10 +1201,11 @@ async fn connect_and_publish(
                     endpoint = %target,
                     timeout_ms = CONNECT_TIMEOUT.as_millis() as u64,
                 );
+                }
                 anyhow::bail!("Connection to {} timed out after {}ms", peer.name, CONNECT_TIMEOUT.as_millis());
             }
             Ok(Err(error)) => {
-                if peer.tls_port.is_some() { crate::tls::DIAL_REFUSALS.record(target, "dial-or-pin"); }
+                if peer.tls_port.is_some() && !error.is::<TlsSessionCap>() { crate::tls::DIAL_REFUSALS.record(target, "dial-or-pin"); }
                 anyhow::bail!("Failed to connect to {}: {error}", peer.name)
             },
             Ok(Ok(connected)) => connected,
@@ -1318,6 +1382,7 @@ async fn connect_and_publish(
         tx,
         connected: connected.clone(),
         cancel: connection_cancel,
+        transport_closed,
     });
 
     let mut register_msg = BusMessage::new()
@@ -1622,6 +1687,12 @@ async fn fail_pending_generation(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn session_cap_kind_survives_error_context() {
+        let error = anyhow::Error::new(super::TlsSessionCap).context("dial failed");
+        assert!(error.is::<super::TlsSessionCap>());
+        assert!(!anyhow::anyhow!("TLS session-cap").is::<super::TlsSessionCap>());
+    }
     // Callsite interest is process-wide; a rebuild can still race another test.
     // Run captures alone, with a fresh cache and diagnostic counters.
     fn log_capture_subprocess(test: &str) -> bool {
@@ -2010,6 +2081,7 @@ mod tests {
             tx,
             connected: Arc::new(AtomicBool::new(true)),
             cancel,
+            transport_closed: None,
         })
     }
 
@@ -2063,6 +2135,28 @@ mod tests {
         assert!(text.contains("posture=\"observe\""), "{text}");
         assert_eq!(log.total, 1128);
         assert!(unauthenticated_frame_total() >= before + 1128);
+    }
+
+    #[tokio::test]
+    async fn endpoint_only_reconciliation_clears_both_key_authorities() {
+        let mesh = test_mesh();
+        let keys = mesh_trust::identity::KeyAuthority::new(&Default::default(), 2, 0);
+        let tls = Arc::new(mesh_trust::identity::TlsAuthority::default());
+        mesh.reconcile_security(
+            HashMap::new(),
+            AuthorityRevision::default(),
+            keys,
+            "example.test".into(),
+            tls.clone(),
+        )
+        .await;
+        assert!(mesh.state.read().await.keys.is_some());
+        assert!(Arc::ptr_eq(&mesh.state.read().await.tls_keys, &tls));
+        mesh.reconcile_endpoints(HashMap::new(), AuthorityRevision::default())
+            .await;
+        let state = mesh.state.read().await;
+        assert!(state.keys.is_none());
+        assert!(!Arc::ptr_eq(&state.tls_keys, &tls));
     }
 
     #[tokio::test]

@@ -14,7 +14,8 @@ pub struct NodeConfig {
     #[serde(flatten)]
     pub extra: std::collections::BTreeMap<String, serde_json::Value>,
     pub node: String,
-    pub wg_ip: String,
+    #[serde(alias = "wg_ip")]
+    pub mesh_addr: String,
     pub mesh: Option<String>,
     pub noded: NodedConfig,
     pub observe: ObserveConfig,
@@ -34,10 +35,10 @@ pub struct NodeConfig {
 
 impl NodeConfig {
     pub fn noded_listen(&self) -> String {
-        let host = if self.wg_ip.is_empty() {
+        let host = if self.mesh_addr.is_empty() {
             "127.0.0.1"
         } else {
-            &self.wg_ip
+            &self.mesh_addr
         };
         format!("{host}:{}", self.noded.port)
     }
@@ -50,7 +51,7 @@ impl NodeConfig {
         self.jmap_listen.clone().unwrap_or_else(|| {
             format!(
                 "{}:{}",
-                self.wg_ip,
+                self.mesh_addr,
                 self.maild.as_ref().map_or(8443, |m| m.jmap_port)
             )
         })
@@ -68,7 +69,7 @@ impl NodeConfig {
         self.smtp_inbound_listen.clone().unwrap_or_else(|| {
             format!(
                 "{}:{}",
-                self.wg_ip,
+                self.mesh_addr,
                 self.maild.as_ref().map_or(25, |m| m.smtp_port)
             )
         })
@@ -79,7 +80,7 @@ impl NodeConfig {
         self.smtps_listen.clone().unwrap_or_else(|| {
             format!(
                 "{}:{}",
-                self.wg_ip,
+                self.mesh_addr,
                 self.maild.as_ref().map_or(465, |m| m.smtps_port)
             )
         })
@@ -295,6 +296,10 @@ pub struct NodedTls {
     pub handshake_timeout_s: u64,
     pub max_handshakes: usize,
     pub max_queue: usize,
+    /// Tokens per second and initial burst capacity, per IPv4 address / IPv6 /64.
+    pub per_source_rate: u32,
+    pub per_source_burst: u32,
+    pub max_sessions_per_member: usize,
 }
 
 impl Default for NodedTls {
@@ -304,6 +309,9 @@ impl Default for NodedTls {
             handshake_timeout_s: 3,
             max_handshakes: 64,
             max_queue: 64,
+            per_source_rate: 10,
+            per_source_burst: 20,
+            max_sessions_per_member: 8,
         }
     }
 }
@@ -410,8 +418,17 @@ fn build_search_paths(primary_dir: &Path, mix_etc_set: bool) -> Vec<PathBuf> {
 pub fn load_from(path: &Path) -> Result<NodeConfig> {
     let contents = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
-    let config: NodeConfig = strict::from_str(&contents)
-        .map_err(|e| anyhow::anyhow!("failed to parse {}: {e}", path.display()))?;
+    parse_node_config(&contents, path)
+        .with_context(|| format!("failed to parse {}", path.display()))
+}
+
+fn parse_node_config(contents: &str, path: &Path) -> Result<NodeConfig> {
+    let config: NodeConfig = strict::from_str(contents)?;
+    let raw: serde_json::Value = strict::from_str(contents)?;
+    if raw.get("wg_ip").is_some() {
+        static WARNED: std::sync::Once = std::sync::Once::new();
+        WARNED.call_once(|| tracing::warn!(path = %path.display(), "node.conf.mix wg_ip is deprecated; use mesh_addr"));
+    }
     Ok(config)
 }
 
@@ -508,7 +525,7 @@ impl NodeConfigSearch {
     pub fn load(&self) -> Result<Option<NodeConfig>> {
         self.read()?
             .map(|(path, source)| {
-                strict::from_str(&source)
+                parse_node_config(&source, &path)
                     .map_err(|error| anyhow::anyhow!("failed to parse {}: {error}", path.display()))
             })
             .transpose()
@@ -675,7 +692,7 @@ mod tests {
     }
     #[test]
     fn unrelated_service_fields_are_forward_compatible() {
-        let config: NodeConfig = strict::from_str("node: beta\nwg_ip: '192.0.2.2'\nwebd: { port: 443 }\nobserve: { allowed_services: [tower] }\n").unwrap();
+        let config: NodeConfig = strict::from_str("node: beta\nmesh_addr: '192.0.2.2'\nwebd: { port: 443 }\nobserve: { allowed_services: [tower] }\n").unwrap();
         assert_eq!(config.noded_url(), "ws://192.0.2.2:4200/ws");
         assert_eq!(
             config.observe.extra["allowed_services"],
@@ -699,9 +716,9 @@ mod tests {
 }
 
 impl NodeConfig {
-    /// Web server listen address: `{wg_ip}:{webd.port}`.
+    /// Web server listen address: `{mesh_addr}:{webd.port}`.
     pub fn web_listen(&self) -> String {
-        format!("{}:{}", self.wg_ip, self.webd.port)
+        format!("{}:{}", self.mesh_addr, self.webd.port)
     }
 
     /// Resolve the webd listener set, validating per-interface listeners
@@ -712,7 +729,7 @@ impl NodeConfig {
     /// `tls_server_name` entries (caller-deduplicated, host-parsed).
     ///
     /// **Empty `[webd] listener` ⇒ back-compat:** one implicit `wg`
-    /// listener at `web_listen()` (`wg_ip:port`), internal, serving every
+    /// listener at `web_listen()` (`mesh_addr:port`), internal, serving every
     /// host — byte-identical to the pre-listener single bind.
     ///
     /// **Non-empty ⇒** the array is used and validated:
@@ -941,15 +958,15 @@ mod transplanted_tests {
     }
 
     #[test]
-    fn noded_url_empty_wg_ip_falls_back_to_loopback() {
-        // A standalone / non-mesh node omits wg_ip; the broker URL must resolve
+    fn noded_url_empty_mesh_addr_falls_back_to_loopback() {
+        // A standalone / non-mesh node omits mesh_addr; the broker URL must resolve
         // to loopback, not a hostless ws://:PORT/ws no client can reach (mix#1).
         let mut cfg = NodeConfig {
-            wg_ip: String::new(),
+            mesh_addr: String::new(),
             ..Default::default()
         };
         assert_eq!(cfg.noded_url(), "ws://127.0.0.1:4200/ws");
-        cfg.wg_ip = "192.0.2.9".into();
+        cfg.mesh_addr = "192.0.2.9".into();
         assert_eq!(cfg.noded_url(), "ws://192.0.2.9:4200/ws");
     }
 
@@ -1007,7 +1024,7 @@ mod transplanted_tests {
     fn maild_tls_identities_parse_multi() {
         let src = r#"
             node: "alpha"
-            wg_ip: "192.0.2.5"
+            mesh_addr: "192.0.2.5"
             maild: {
               hostname: "alpha.example.org",
               tls: {
@@ -1158,11 +1175,15 @@ mod transplanted_tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let conf_mix_path = dir.join("node.conf.mix");
-        std::fs::write(&conf_mix_path, "node: \"alpha\"\nwg_ip: \"192.0.2.5\"\n").unwrap();
+        std::fs::write(
+            &conf_mix_path,
+            "node: \"alpha\"\nmesh_addr: \"192.0.2.5\"\n",
+        )
+        .unwrap();
 
         let cfg = load_from(&conf_mix_path).expect("conf.mix load");
         assert_eq!(cfg.node, "alpha");
-        assert_eq!(cfg.wg_ip, "192.0.2.5");
+        assert_eq!(cfg.mesh_addr, "192.0.2.5");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1173,7 +1194,7 @@ mod transplanted_tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let toml_path = dir.join("node.toml");
-        std::fs::write(&toml_path, "node = \"alpha\"\nwg_ip = \"192.0.2.5\"\n").unwrap();
+        std::fs::write(&toml_path, "node = \"alpha\"\nmesh_addr = \"192.0.2.5\"\n").unwrap();
         assert!(load_from(&toml_path).is_err());
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1223,10 +1244,10 @@ mod transplanted_tests {
     #[test]
     fn synthesize_listeners_empty_is_backcompat_single_wg() {
         // No `[webd] listener` array ⇒ one implicit internal `wg`
-        // listener at wg_ip:port serving every host (byte-identical to
+        // listener at mesh_addr:port serving every host (byte-identical to
         // the pre-listener single bind).
         let nc =
-            node_with_listeners("node: \"alpha\"\nwg_ip: \"192.0.2.5\"\nwebd: { port: 443 }\n");
+            node_with_listeners("node: \"alpha\"\nmesh_addr: \"192.0.2.5\"\nwebd: { port: 443 }\n");
         let hosts = vec!["a.example.org".to_string(), "b.example.org".to_string()];
         let out = nc
             .synthesize_listeners(&hosts, &HashSet::new())
@@ -1243,7 +1264,7 @@ mod transplanted_tests {
     fn synthesize_listeners_enabled_defaults_true_when_omitted() {
         // A row omitting `enabled` must be on (serde(default) → true).
         let nc = node_with_listeners(
-            "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \
+            "mesh_addr: \"192.0.2.5\"\nwebd: { listener: [ \
              { id: \"wg\", bind: \"192.0.2.5:443\", vhosts: [\"a.example.org\"] } ] }\n",
         );
         let hosts = vec!["a.example.org".to_string()];
@@ -1257,7 +1278,7 @@ mod transplanted_tests {
     #[test]
     fn synthesize_listeners_two_interface_split_ok() {
         let nc = node_with_listeners(
-            "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \
+            "mesh_addr: \"192.0.2.5\"\nwebd: { listener: [ \
              { id: \"wg\", bind: \"192.0.2.5:443\", vhosts: [\"int.example.org\"] }, \
              { id: \"pub\", bind: \"203.0.113.5:443\", external: true, vhosts: [\"ext.example.org\"] } ] }\n",
         );
@@ -1275,7 +1296,7 @@ mod transplanted_tests {
     #[test]
     fn synthesize_listeners_rejects_dup_id_and_bind() {
         let dup_id = node_with_listeners(
-            "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \
+            "mesh_addr: \"192.0.2.5\"\nwebd: { listener: [ \
              { id: \"x\", bind: \"192.0.2.5:443\", vhosts: [\"a.example.org\"] }, \
              { id: \"x\", bind: \"203.0.113.5:443\", vhosts: [\"b.example.org\"] } ] }\n",
         );
@@ -1289,7 +1310,7 @@ mod transplanted_tests {
         );
 
         let dup_bind = node_with_listeners(
-            "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \
+            "mesh_addr: \"192.0.2.5\"\nwebd: { listener: [ \
              { id: \"x\", bind: \"192.0.2.5:443\", vhosts: [\"a.example.org\"] }, \
              { id: \"y\", bind: \"192.0.2.5:443\", vhosts: [\"b.example.org\"] } ] }\n",
         );
@@ -1306,7 +1327,7 @@ mod transplanted_tests {
     #[test]
     fn synthesize_listeners_rejects_wildcard_specific_same_port() {
         let nc = node_with_listeners(
-            "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \
+            "mesh_addr: \"192.0.2.5\"\nwebd: { listener: [ \
              { id: \"wg\", bind: \"192.0.2.5:443\", vhosts: [\"a.example.org\"] }, \
              { id: \"any\", bind: \"0.0.0.0:443\", external: true, vhosts: [\"b.example.org\"] } ] }\n",
         );
@@ -1322,7 +1343,7 @@ mod transplanted_tests {
         // dual-stack default `[::]:443` already covers v4, so the pair
         // would EADDRINUSE. A wildcard must be the only bind on its port.
         let dual_wild = node_with_listeners(
-            "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \
+            "mesh_addr: \"192.0.2.5\"\nwebd: { listener: [ \
              { id: \"v4\", bind: \"0.0.0.0:443\", external: true, vhosts: [\"a.example.org\"] }, \
              { id: \"v6\", bind: \"[::]:443\", external: true, vhosts: [\"b.example.org\"] } ] }\n",
         );
@@ -1338,7 +1359,7 @@ mod transplanted_tests {
         // Two specific IPs on the same port are fine — distinct
         // interfaces, no kernel conflict (the WG + public split).
         let two_specific = node_with_listeners(
-            "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \
+            "mesh_addr: \"192.0.2.5\"\nwebd: { listener: [ \
              { id: \"wg\", bind: \"192.0.2.5:443\", vhosts: [\"a.example.org\"] }, \
              { id: \"pub\", bind: \"203.0.113.5:443\", external: true, vhosts: [\"b.example.org\"] } ] }\n",
         );
@@ -1357,7 +1378,7 @@ mod transplanted_tests {
         // Text variants of one IPv6 address resolve to the same socket;
         // must be caught as a duplicate, not slip two listeners onto it.
         let nc = node_with_listeners(
-            "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \
+            "mesh_addr: \"192.0.2.5\"\nwebd: { listener: [ \
              { id: \"a\", bind: \"[::1]:443\", vhosts: [\"a.example.org\"] }, \
              { id: \"b\", bind: \"[0:0:0:0:0:0:0:1]:443\", vhosts: [\"b.example.org\"] } ] }\n",
         );
@@ -1377,7 +1398,7 @@ mod transplanted_tests {
     fn synthesize_listeners_rejects_unknown_and_uncovered_hosts() {
         // A listener naming a host that is not a known vhost.
         let unknown = node_with_listeners(
-            "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \
+            "mesh_addr: \"192.0.2.5\"\nwebd: { listener: [ \
              { id: \"wg\", bind: \"192.0.2.5:443\", vhosts: [\"ghost.example.org\"] } ] }\n",
         );
         assert!(
@@ -1388,7 +1409,7 @@ mod transplanted_tests {
 
         // A served host claimed by no listener (silent-drop guard).
         let uncovered = node_with_listeners(
-            "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \
+            "mesh_addr: \"192.0.2.5\"\nwebd: { listener: [ \
              { id: \"wg\", bind: \"192.0.2.5:443\", vhosts: [\"a.example.org\"] } ] }\n",
         );
         assert!(
@@ -1405,7 +1426,7 @@ mod transplanted_tests {
     fn synthesize_listeners_rejects_disabled_only_even_with_double_claim() {
         // Host served only by a disabled listener ⇒ unreachable ⇒ error.
         let disabled_only = node_with_listeners(
-            "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \
+            "mesh_addr: \"192.0.2.5\"\nwebd: { listener: [ \
              { id: \"wg\", bind: \"192.0.2.5:443\", enabled: false, vhosts: [\"a.example.org\"] } ] }\n",
         );
         assert!(
@@ -1416,7 +1437,7 @@ mod transplanted_tests {
 
         // Two claims still fail when neither listener is enabled.
         let double = node_with_listeners(
-            "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \
+            "mesh_addr: \"192.0.2.5\"\nwebd: { listener: [ \
              { id: \"wg\", bind: \"192.0.2.5:443\", enabled: false, vhosts: [\"a.example.org\"] }, \
              { id: \"pub\", bind: \"203.0.113.5:443\", enabled: false, external: true, vhosts: [\"a.example.org\"] } ] }\n",
         );
@@ -1469,7 +1490,7 @@ mod transplanted_tests {
         // resolves — `pub` simply serves nothing — instead of failing
         // the whole node with "unknown vhost".
         let nc = node_with_listeners(
-            "wg_ip: \"192.0.2.5\"\nwebd: { listener: [ \
+            "mesh_addr: \"192.0.2.5\"\nwebd: { listener: [ \
              { id: \"wg\", bind: \"192.0.2.5:443\", vhosts: [\"int.example.org\"] }, \
              { id: \"pub\", bind: \"203.0.113.5:443\", external: true, vhosts: [\"ext.example.org\"] } ] }\n",
         );
