@@ -77,14 +77,18 @@ fn replacement_preserves_identity_stdio_exit_and_cwd_without_owned_fds() {
     let exe = std::env::current_exe().unwrap();
     for planted in [false, true] {
         let source = format!(r#"$lock = flock({lock:?})
-$db = sqlopen(":memory:")
+$db = sqlopen({db:?}, "rwc")
+sqlexec($db, "CREATE TABLE IF NOT EXISTS exec_probe (x INTEGER)")
+sqlexec($db, "INSERT INTO exec_probe VALUES (1)")
 $socket = tcp_listen("127.0.0.1", 0)
 print("BEFORE")
 exec_argv([{exe:?}, "--exact", "fixture", "--nocapture"], {{cwd: {cwd:?}, env: {{EXEC_FIXTURE: "target"}}}})
-die("RETURNED")"#, lock=dir.path().join("lock"), cwd=dir.path());
+die("RETURNED")"#, lock=dir.path().join("lock"), db=dir.path().join("probe.db"), cwd=dir.path());
+        let script = dir.path().join("identity.mix");
+        std::fs::write(&script, &source).unwrap();
         let mut cmd = if planted { fixture_command("planted") } else {
             let mut c = Command::new(MIX);
-            c.args(["--no-prelude", "-c", &source]); c
+            c.arg("--no-prelude").arg(&script); c
         };
         cmd.env("EXEC_SOURCE", &source).env("MIX_STATS", "off").process_group(0)
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -131,14 +135,23 @@ fn target_signal_and_path_env_options() {
 }
 
 #[test]
-fn executable_text_without_shebang_never_runs_a_shell() {
+fn executable_text_without_shebang_matches_run_argv() {
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("plain-text");
-    std::fs::write(&target, "/usr/bin/true\n").unwrap();
-    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let out = run(&format!("try; exec_argv([{target:?}]); catch $e; print($e); end; print(\"CONTINUED\")"));
-    let stdout = text(&out);
-    assert!(stdout.contains("ENOEXEC") && stdout.contains("CONTINUED"), "{stdout}");
+    std::fs::write(&target, "/usr/bin/printf 'fallback parity\\n'\nexit 23\n").unwrap();
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let direct = run(&format!("print(json_encode(run_argv([{target:?}])))"));
+    let result: serde_json::Value = serde_json::from_str(text(&direct).trim()).unwrap();
+    let replaced = run(&format!("try; exec_argv([{target:?}]); catch $e; print($e); exit(126); end"));
+    if let Some(rc) = result["exit_code"].as_i64() {
+        assert_eq!(replaced.status.code(), Some(rc as i32), "{replaced:?}");
+        assert_eq!(String::from_utf8_lossy(&replaced.stdout), result["stdout"].as_str().unwrap());
+        assert_eq!(String::from_utf8_lossy(&replaced.stderr), result["stderr"].as_str().unwrap());
+    } else {
+        assert!(result["error"].as_str().unwrap().contains("os error 8"), "{result}");
+        assert_eq!(replaced.status.code(), Some(126), "{replaced:?}");
+        assert!(String::from_utf8_lossy(&replaced.stdout).contains("ENOEXEC"), "{replaced:?}");
+    }
 }
 
 #[test]
@@ -155,7 +168,7 @@ catch $e
   print($e)
 end
 print("CWD_SAME=" .. (cwd() == $cwd))
-print("ENV_SAME=" .. (env("EXEC_SENTINEL") == nil))
+print("ENV_SAME=" .. (env("EXEC_SENTINEL") == ""))
 write_file({before:?}, $before)
 write_file({after:?}, read_file("/proc/self/status"))
 print("CONTINUED")"#, dir=dir.path(), before=dir.path().join("before"), after=dir.path().join("after"));
@@ -174,11 +187,16 @@ print("CONTINUED")"#, dir=dir.path(), before=dir.path().join("before"), after=di
 #[test]
 fn failed_exec_restores_epipe_not_sigpipe_death() {
     let dir = tempfile::tempdir().unwrap();
-    let ready = dir.path().join("ready");
-    let go = dir.path().join("go");
-    let result = dir.path().join("result");
+    let denied = dir.path().join("denied");
+    std::fs::write(&denied, "not executable").unwrap();
+    for (index, target) in ["/no/such/exec_argv", denied.to_str().unwrap()].iter().enumerate() {
+    let case = dir.path().join(index.to_string());
+    std::fs::create_dir(&case).unwrap();
+    let ready = case.join("ready");
+    let go = case.join("go");
+    let result = case.join("result");
     let source = format!(r#"try
-  exec_argv(["/no/such/exec_argv"])
+  exec_argv([{target:?}], {{cwd: {case:?}}})
 catch $e
   write_file({ready:?}, "ready")
 end
@@ -190,7 +208,7 @@ try
 catch $e
   write_file({result:?}, to_string($e))
 end"#);
-    let mut child = Command::new(MIX).args(["--no-prelude", "-c", &source])
+    let mut child = fixture_command("signals").env("EXEC_SOURCE", source)
         .env("MIX_STATS", "off").stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
     while !ready.exists() {
@@ -203,6 +221,39 @@ end"#);
     assert!(out.status.success(), "{out:?}");
     let error = std::fs::read_to_string(result).unwrap();
     assert!(error.contains("Broken pipe") || error.contains("os error 32"), "{error}");
+    }
+}
+
+#[test]
+fn relative_executable_uses_requested_cwd_and_argv_is_literal() {
+    let dir = tempfile::tempdir().unwrap();
+    std::os::unix::fs::symlink("/usr/bin/printf", dir.path().join("target")).unwrap();
+    let out = run(&format!(r#"exec_argv(["./target", "%s\n", "$HOME", "*", "a b", ";"], {{cwd: {:?}}})"#, dir.path()));
+    assert_eq!(text(&out), "$HOME\n*\na b\n;\n");
+}
+
+#[test]
+fn bad_cwd_fails_before_signal_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let before = dir.path().join("before");
+    let after = dir.path().join("after");
+    let source = format!(r#"write_file({before:?}, read_file("/proc/self/status"))
+$cwd = cwd()
+try
+  exec_argv(["/usr/bin/true"], {{cwd: "/no/such/exec_argv/cwd"}})
+catch $e
+  print($e)
+end
+print("CWD_SAME=" .. (cwd() == $cwd))
+write_file({after:?}, read_file("/proc/self/status"))"#);
+    let out = fixture_command("signals").env("EXEC_SOURCE", source).output().unwrap();
+    let stdout = text(&out);
+    assert!(stdout.contains("ENOENT") && stdout.contains("CWD_SAME=true"), "{stdout}");
+    let before = std::fs::read_to_string(before).unwrap();
+    let after = std::fs::read_to_string(after).unwrap();
+    for field in ["SigIgn:", "SigBlk:", "SigCgt:"] {
+        assert_eq!(sigfield(&before, field), sigfield(&after, field), "{field}");
+    }
 }
 
 #[test]

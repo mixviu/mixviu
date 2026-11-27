@@ -47,7 +47,9 @@ input). Tee mode does not give the child a terminal or inherited stdin.
 
 ### run_argv — structured argv execution (v0.29.0)
 
-`run_argv(argv, [opts])` runs an argv **list** directly (no shell anywhere),
+A no-shebang executable text file may be run by `/bin/sh` through the platform's `execvp` fallback, so scripts should carry a shebang.
+
+`run_argv(argv, [opts])` runs an argv **list** directly (no shell parsing of argv),
 routes stdin/stdout/stderr explicitly, enforces a deadline, and returns one
 consistent map:
 
@@ -2517,8 +2519,12 @@ for now; the identifier is caller-supplied metadata, not a security identity.
 # Process replacement: `exec_argv(argv[, opts])`
 
 `exec_argv(["/usr/bin/env", "example"])` replaces Mix directly, without a
-shell, preserving the PID, process group and inherited stdin/stdout/stderr.
+shell parsing of argv, preserving the PID, process group and inherited stdin/stdout/stderr.
 It never returns on success; the target supplies the exit status or signal.
+`exec_argv` replaces the process with `argv[0]` and passes argv verbatim: no
+`sh -c`, word-splitting, globbing or expansion. A no-shebang executable text
+file may be run by `/bin/sh` through the platform's `execvp` fallback, so
+scripts should carry a shebang.
 An absolute executable path runs directly; a bare name is searched on PATH.
 A relative path containing a slash resolves against the requested cwd.
 

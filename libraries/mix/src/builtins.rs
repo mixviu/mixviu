@@ -7033,6 +7033,12 @@ pub(crate) fn exec_argv(args: &[Value], flush: impl FnOnce() -> MixResult<()>) -
             Some(libc::EMFILE) => "EMFILE",
             Some(libc::ENFILE) => "ENFILE",
             Some(libc::EPERM) => "EPERM",
+            Some(libc::EIO) => "EIO",
+            Some(libc::EINVAL) => "EINVAL",
+            Some(libc::ELIBBAD) => "ELIBBAD",
+            Some(libc::EAGAIN) => "EAGAIN",
+            Some(libc::EFAULT) => "EFAULT",
+            Some(libc::EISDIR) => "EISDIR",
             _ => "errno",
         };
         MixError::structured("EXEC_FAILED", format!("exec_argv: {name} {errno:?}: {error}"))
