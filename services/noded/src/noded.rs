@@ -1370,7 +1370,7 @@ enum SeedRead {
     /// `NotFound` — the seed has not been provisioned yet (ceremony Part B).
     Absent,
     /// Present but not readable (e.g. `PermissionDenied`). Carries the io
-    /// `ErrorKind` text for the warning.
+    /// error detail for the warning, including descriptor-policy refusals.
     Unreadable(String),
     /// Readable but not a base64 32-byte seed.
     Malformed,
@@ -1413,7 +1413,7 @@ fn classify_seed_read(raw: std::io::Result<Option<zeroize::Zeroizing<Vec<u8>>>>)
         }
         Ok(None) => SeedRead::Malformed,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => SeedRead::Absent,
-        Err(e) => SeedRead::Unreadable(e.kind().to_string()),
+        Err(e) => SeedRead::Unreadable(e.to_string()),
     }
 }
 
