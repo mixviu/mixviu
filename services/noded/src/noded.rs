@@ -1515,16 +1515,26 @@ fn classify_seed_read(raw: std::io::Result<Option<zeroize::Zeroizing<Vec<u8>>>>)
 }
 
 fn read_d2_seed(path: &std::path::Path) -> std::io::Result<Option<zeroize::Zeroizing<Vec<u8>>>> {
+    read_d2_seed_with(path, |path, mode, owner| {
+        tracing::warn!(
+            path = %path.display(), mode = format_args!("{mode:o}"), owner,
+            "INSECURE d2 seed permissions or owner; expected root:noded 0640; loading during rollout"
+        );
+    })
+}
+
+/// Report descriptor-policy findings independently of tracing's global filters.
+fn read_d2_seed_with(
+    path: &std::path::Path,
+    on_insecure: impl FnOnce(&std::path::Path, u32, u32),
+) -> std::io::Result<Option<zeroize::Zeroizing<Vec<u8>>>> {
     let mut opened = mesh::seed::open_seed(path).map_err(|error| match error {
         mesh::seed::SeedFileError::Io(error) => error,
         other => std::io::Error::other(other),
     })?;
     // Rollout policy: warn once per load, but continue with this same fd.
     if !opened.secure {
-        tracing::warn!(
-            path = %path.display(), mode = format_args!("{:o}", opened.mode), owner = opened.owner,
-            "INSECURE d2 seed permissions or owner; expected root:noded 0640; loading during rollout"
-        );
+        on_insecure(path, opened.mode, opened.owner);
     }
     opened.read_bounded(128)
 }
@@ -6327,32 +6337,7 @@ mod tests {
     #[test]
     fn d2_seed_file_policy_warns_once_and_never_follows_or_blocks() {
         use base64::Engine as _;
-        use std::io::Write;
         use std::os::unix::fs::{PermissionsExt, symlink};
-        #[derive(Clone)]
-        struct Capture(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
-        impl Write for Capture {
-            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-                self.0.lock().unwrap().extend_from_slice(bytes);
-                Ok(bytes.len())
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-        let capture = Capture(Default::default());
-        let writer = capture.clone();
-        let subscriber = tracing_subscriber::fmt()
-            .without_time()
-            .with_ansi(false)
-            .with_max_level(tracing::Level::WARN)
-            .with_writer(move || writer.clone())
-            .finish();
-        let _guard = tracing::subscriber::set_default(subscriber);
-        // Another test thread may have cached these warn! callsites as
-        // never-interested; without a rebuild the capture can see nothing
-        // (merge-queue candidate 53d88ace, 2026-11-27).
-        tracing::callsite::rebuild_interest_cache();
         let directory = std::env::temp_dir().join(format!("d2-policy-{}", rand::random::<u64>()));
         std::fs::create_dir(&directory).unwrap();
         let target = directory.join("seed");
@@ -6361,35 +6346,41 @@ mod tests {
         // This fixture is owned by the euid, so group read warns even when
         // the tests run as root. Root-owned 0640 is for a different euid.
         for mode in [0o600, 0o640, 0o660, 0o644] {
-            capture.0.lock().unwrap().clear();
             std::fs::set_permissions(&target, std::fs::Permissions::from_mode(mode)).unwrap();
+            let mut findings = Vec::new();
             assert_eq!(
-                super::load_d2_seed(&target),
-                Some(mesh::seed::D2Seed::new([173; 32]))
+                super::classify_seed_read(super::read_d2_seed_with(
+                    &target,
+                    |path, mode, owner| findings.push((path.to_path_buf(), mode, owner)),
+                )),
+                super::SeedRead::Loaded(mesh::seed::D2Seed::new([173; 32]))
             );
-            let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
-            assert_eq!(
-                log.matches("WARN").count(),
-                usize::from(mode != 0o600),
-                "{log}"
-            );
-            if mode != 0o600 {
-                assert!(log.contains(&target.display().to_string()));
-                assert!(log.contains(&format!("mode={mode:o}")));
+            if mode == 0o600 {
+                assert!(findings.is_empty(), "{findings:?}");
+            } else {
                 // SAFETY: geteuid has no preconditions.
-                assert!(log.contains(&format!("owner={}", unsafe { libc::geteuid() })));
+                let owner = unsafe { libc::geteuid() };
+                assert_eq!(findings, vec![(target.clone(), mode, owner)]);
             }
         }
         let link = directory.join("link");
         symlink(&target, &link).unwrap();
-        assert!(super::load_d2_seed(&link).is_none());
+        assert!(matches!(
+            super::classify_seed_read(super::read_d2_seed_with(&link, |_, _, _| {
+                panic!("symlink must be refused before checking permissions")
+            })),
+            super::SeedRead::Unreadable(_)
+        ));
         let fifo = directory.join("fifo");
         let name = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
         // SAFETY: name is a live NUL-terminated path, and mode is valid.
         assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(super::classify_seed_read(super::read_d2_seed(&fifo)));
+            let _ = tx.send(super::classify_seed_read(super::read_d2_seed_with(
+                &fifo,
+                |_, _, _| panic!("FIFO must be refused before checking permissions"),
+            )));
         });
         assert_eq!(
             rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap(),
