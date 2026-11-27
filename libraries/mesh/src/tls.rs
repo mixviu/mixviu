@@ -27,7 +27,8 @@ use zeroize::Zeroizing;
 pub type LiveAuthority = Arc<RwLock<Arc<TlsAuthority>>>;
 
 type RefusalWindows = std::collections::HashMap<
-    (std::net::SocketAddr, &'static str), (std::time::Instant, u64, bool),
+    (std::net::SocketAddr, &'static str),
+    (std::time::Instant, u64, bool),
 >;
 
 #[derive(Default)]

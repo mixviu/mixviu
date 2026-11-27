@@ -929,19 +929,28 @@ async fn bind_tcp_listeners(
     mut bound: Option<tokio::net::TcpListener>,
 ) -> Result<Vec<(tokio::net::TcpListener, bool)>> {
     let entries = match configured {
-        Some(entries) => entries.iter().map(|entry| (entry.addr.to_string(), entry.tls)).collect(),
+        Some(entries) => entries
+            .iter()
+            .map(|entry| (entry.addr.to_string(), entry.tls))
+            .collect(),
         None => vec![(legacy.to_owned(), false)],
     };
     let mut listeners = Vec::new();
     for (address, encrypted) in entries {
-        let tcp = if bound.as_ref().is_some_and(|tcp| tcp.local_addr().ok() == address.parse().ok()) {
+        let tcp = if bound
+            .as_ref()
+            .is_some_and(|tcp| tcp.local_addr().ok() == address.parse().ok())
+        {
             bound.take().expect("prebound listener")
         } else {
             tokio::net::TcpListener::bind(&address).await?
         };
         listeners.push((tcp, encrypted));
     }
-    anyhow::ensure!(bound.is_none(), "prebound listener absent from explicit listen list");
+    anyhow::ensure!(
+        bound.is_none(),
+        "prebound listener absent from explicit listen list"
+    );
     Ok(listeners)
 }
 
@@ -1013,7 +1022,10 @@ async fn serve(
     };
     let network = network.unwrap_or_default();
     let explicit_listen = network.listen.is_some();
-    let tls_configured = network.listen.as_ref().is_some_and(|entries| entries.iter().any(|entry| entry.tls))
+    let tls_configured = network
+        .listen
+        .as_ref()
+        .is_some_and(|entries| entries.iter().any(|entry| entry.tls))
         || mesh_config.peers.iter().any(|peer| peer.tls_port.is_some());
     let tls = if tls_configured {
         Some(Arc::new(crate::tls_ingress::prepare(
