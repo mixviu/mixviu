@@ -449,6 +449,20 @@ struct RemoteBroker {
     tx: mpsc::UnboundedSender<String>,
     connected: Arc<AtomicBool>,
     cancel: watch::Sender<bool>,
+    transport_closed: Option<watch::Receiver<bool>>,
+}
+
+/// Observe local transport destruction for a connection retired by a reload.
+pub struct TeardownWatch {
+    connected: Arc<AtomicBool>,
+    closed: watch::Receiver<bool>,
+}
+impl TeardownWatch {
+    pub async fn wait_if_retired(mut self) {
+        if !self.connected.load(Ordering::Acquire) {
+            let _ = self.closed.wait_for(|closed| *closed).await;
+        }
+    }
 }
 
 impl RemoteBroker {
@@ -592,6 +606,14 @@ impl MeshPeers {
 
     pub fn node_name(&self) -> &str {
         &self.config.node_name
+    }
+
+    pub async fn teardown_watches(&self) -> Vec<TeardownWatch> {
+        self.state.read().await.connections.values().filter_map(|connection| {
+            connection.transport_closed.as_ref().map(|closed| TeardownWatch {
+                connected: connection.connected.clone(), closed: closed.clone(),
+            })
+        }).collect()
     }
 
     /// Atomically install the route authority's desired endpoint projection.
@@ -1082,10 +1104,11 @@ async fn dial(
 ) -> Result<(
     tokio_tungstenite::WebSocketStream<Box<dyn PeerIo>>,
     Option<(mesh_trust::identity::TlsMember, [u8; 32])>,
+    Option<watch::Receiver<bool>>,
 )> {
     let tcp = tokio::net::TcpStream::connect(peer.noded_addr()).await?;
     tcp.set_nodelay(true)?;
-    let (io, identity): (Box<dyn PeerIo>, _) = if peer.tls_port.is_some() {
+    let (io, identity, closed): (Box<dyn PeerIo>, _, _) = if peer.tls_port.is_some() {
         let tls =
             tls.ok_or_else(|| anyhow::anyhow!("TLS peer configured without TLS credential"))?;
         let config = tls
@@ -1108,21 +1131,23 @@ async fn dial(
             crate::tls::DIAL_REFUSALS.record(peer.noded_addr(), "session-cap");
             anyhow::bail!("TLS session-cap");
         };
+        let closed = session.closed();
         (
             Box::new(crate::tls_limits::LeasedIo {
                 io: stream,
                 session,
             }),
             Some((member, binding)),
+            Some(closed),
         )
     } else {
-        (Box::new(tcp), None)
+        (Box::new(tcp), None, None)
     };
     let (ws, _) = tokio_tungstenite::client_async_with_config(peer.noded_url(), io, None).await?;
     if identity.is_some() {
         crate::tls::DIAL_REFUSALS.admitted();
     }
-    Ok((ws, identity))
+    Ok((ws, identity, closed))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1144,7 +1169,7 @@ async fn connect_and_publish(
     // broker's accept hook cannot cover the side that dialled.
     let tls = state.read().await.tls.clone();
     let connect = tokio::time::timeout(CONNECT_TIMEOUT, dial(&peer, tls));
-    let (ws_stream, tls_peer) = tokio::select! {
+    let (ws_stream, tls_peer, transport_closed) = tokio::select! {
         biased;
         changed = attempt_cancel.changed() => {
             let _ = changed;
@@ -1343,6 +1368,7 @@ async fn connect_and_publish(
         tx,
         connected: connected.clone(),
         cancel: connection_cancel,
+        transport_closed,
     });
 
     let mut register_msg = BusMessage::new()
@@ -2035,6 +2061,7 @@ mod tests {
             tx,
             connected: Arc::new(AtomicBool::new(true)),
             cancel,
+            transport_closed: None,
         })
     }
 

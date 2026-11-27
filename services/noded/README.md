@@ -51,8 +51,8 @@ Existing aggregate counters retain their meaning. Additive `meta` fields are:
   means TLS transport handoff; D2 and frame admission remain separate checks.
 - `tls_sessions_per_member`: current TLS transport leases by signed member.
 - `reload_to_drop_ms`: null before an accepted reload; then elapsed local
-  reload application time, excluding watch debounce. It includes outbound
-  cancellation/fencing and waits for revoked inbound outbox closure. It does
+  reload application time, excluding watch debounce. It waits for retired
+  outbound TLS transports to drop and for revoked inbound outboxes to close. It does
   not measure remote TCP acknowledgement. Rejected reloads retain the last value.
 
 Use top-level `mesh_addr` in `node.conf.mix`. The former `wg_ip` spelling is

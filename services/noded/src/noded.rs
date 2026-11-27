@@ -2129,7 +2129,8 @@ async fn apply_observed_inventory_reload(state: &AppState, new: crate::authority
     let verified = matches!(new, crate::authority::Posture::Verified(_));
     let previous = state.authority.load_full();
     let started = Instant::now();
-    let before = state.live_sessions.read().await.clone();
+    let before = if state.tls.is_some() { state.live_sessions.read().await.clone() } else { Default::default() };
+    let outbound = state.mesh.teardown_watches().await;
     apply_inventory_reload(state, new).await;
     if verified && !Arc::ptr_eq(&previous, &state.authority.load_full()) {
         let after = state.live_sessions.read().await;
@@ -2142,6 +2143,7 @@ async fn apply_observed_inventory_reload(state: &AppState, new: crate::authority
         for tx in closing {
             tx.closed().await;
         }
+        for transport in outbound { transport.wait_if_retired().await; }
         *state
             .reload_to_drop_ms
             .lock()

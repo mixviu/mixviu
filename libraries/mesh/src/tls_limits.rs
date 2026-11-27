@@ -70,6 +70,7 @@ impl Sessions {
         Some(Session {
             owner: self.clone(),
             member: member.to_owned(),
+            closed: tokio::sync::watch::channel(false).0,
         })
     }
     pub fn snapshot(&self) -> BTreeMap<String, usize> {
@@ -80,9 +81,14 @@ impl Sessions {
 pub struct Session {
     owner: Arc<Sessions>,
     member: String,
+    closed: tokio::sync::watch::Sender<bool>,
+}
+impl Session {
+    pub fn closed(&self) -> tokio::sync::watch::Receiver<bool> { self.closed.subscribe() }
 }
 impl Drop for Session {
     fn drop(&mut self) {
+        self.closed.send_replace(true);
         let mut members = self.owner.members.lock().expect("TLS sessions poisoned");
         let count = members.get_mut(&self.member).expect("live TLS session");
         *count -= 1;
