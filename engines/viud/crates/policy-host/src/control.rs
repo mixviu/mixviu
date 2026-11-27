@@ -1552,7 +1552,7 @@ fn execute_with_origin(lp: &mut Loop, effects: Vec<Effect>, origin: ActivationOr
             }
             Effect::MarkDirty { .. } | Effect::WorkspacesDirty(_) => moved = true,
             Effect::Settle { prefer } => {
-                settle(lp, prefer);
+                settle_with_origin(lp, prefer, origin);
                 moved = true;
             }
             Effect::Activate(id) => {
@@ -1575,7 +1575,7 @@ fn execute_with_origin(lp: &mut Loop, effects: Vec<Effect>, origin: ActivationOr
             Effect::Restore(id) => {
                 lp.inner.comp.note_minimized(id, false);
                 crate::x11::sync_window(lp, id);
-                bring_into_view(lp, id);
+                bring_into_view(lp, id, origin);
                 activate(lp, id, origin);
                 moved = true;
             }
@@ -1724,7 +1724,7 @@ fn activate(lp: &mut Loop, id: SurfaceId, origin: ActivationOrigin) {
 
 /// A restored window on another workspace is brought on screen by switching
 /// to it.
-fn bring_into_view(lp: &mut Loop, id: SurfaceId) {
+fn bring_into_view(lp: &mut Loop, id: SurfaceId, origin: ActivationOrigin) {
     let locked = world::comp::session_lock::active(lp);
     let latched = world::comp::latch::active(lp);
     let comp = &mut lp.inner.comp;
@@ -1743,7 +1743,7 @@ fn bring_into_view(lp: &mut Loop, id: SurfaceId) {
         comp.workspaces
             .ensure_shown(&comp.registry, default_output.as_ref(), id, allowed)
     {
-        execute(lp, effects);
+        execute_with_origin(lp, effects, origin);
     }
 }
 
@@ -2248,6 +2248,10 @@ fn kill_wayland_client(lp: &Loop, window: &Window) -> Result<Killed, &'static st
 /// (or `prefer` names a shown one), focus `prefer`, else the topmost shown
 /// managed window on the current workspace, else nothing.
 fn settle(lp: &mut Loop, prefer: Option<SurfaceId>) {
+    settle_with_origin(lp, prefer, ActivationOrigin::Foreign);
+}
+
+fn settle_with_origin(lp: &mut Loop, prefer: Option<SurfaceId>, origin: ActivationOrigin) {
     let comp = &lp.inner.comp;
     let shown = |id: SurfaceId| {
         comp.registry
@@ -2268,7 +2272,7 @@ fn settle(lp: &mut Loop, prefer: Option<SurfaceId>) {
             .find(|id| shown(*id))
     });
     match target {
-        Some(id) => activate(lp, id, ActivationOrigin::Foreign),
+        Some(id) => activate(lp, id, origin),
         None => {
             lp.inner.set_activated_exclusive(None);
             if let Some(keyboard) = lp.state.seat.seat.get_keyboard() {
