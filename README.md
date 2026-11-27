@@ -83,11 +83,14 @@ it is not a finished product. There is no packaged release yet.
 
 ## Where it runs
 
-MixViu's recommended foundation is [Proxmox VE](https://www.proxmox.com/),
-with Proxmox Backup Server alongside it. It sounds odd to put a hypervisor
-under a desktop. But on the maintainer's machines every MixViu desktop is a
-Proxmox container with its own screen on its own virtual terminal, and the
-servers run the same way. In daily use that combination is hard to give up:
+MixViu's recommended foundation is [Proxmox VE](https://www.proxmox.com/), a
+Debian-based virtualisation platform, with
+[Proxmox Backup Server](https://www.proxmox.com/en/products/proxmox-backup-server/overview)
+alongside it. It sounds odd to put a hypervisor under a desktop. But on the
+maintainer's machines every MixViu desktop is a Proxmox LXC container (a
+system container that shares the host kernel, not a virtual machine), with
+its own screen on its own virtual terminal. The servers are Proxmox
+containers too. In daily use that combination is hard to give up:
 
 - **Snapshot before every upgrade.** A bad build costs a rollback, not a
   reinstall. Every desktop is snapshotted before each new build lands on it.
@@ -96,22 +99,24 @@ servers run the same way. In daily use that combination is hard to give up:
 - **A desktop is a container.** You can clone it, move it to another host,
   restore it anywhere, or run several on one machine.
 - **Less to build.** Proxmox already provides networking (SDN), a firewall,
-  certificates and notifications, so MixViu uses those instead of writing its
-  own. MixViu keeps its own layers: Bus identity and authorisation, the
-  desktops and the Mix services.
+  certificates and notifications, so MixViu is standardising on those rather
+  than maintaining its own. MixViu keeps its own layers: Bus identity and
+  authorisation, the desktops and the Mix services.
 
-Proxmox is not a hard requirement. The engines do not depend on it, and
-`mix` already runs as the login shell on plain servers. Several pieces are
-still in progress:
+Proxmox is not a hard requirement: the engines do not depend on it. Today,
+though, the desktop is only exercised in Proxmox containers, and the
+alternatives below are what will change that. Several pieces are still in
+progress:
 
-- **Input and graphics inside a container.** The host's keyboard, mouse and
-  GPU reach a desktop container through `inputd` and the
-  [udev forwarder](services/udev-forwarder), and the details are still being
-  worked out.
+- **Devices inside a container.** Keyboard and mouse events reach a desktop
+  container through `inputd` and the
+  [udev forwarder](services/udev-forwarder). The GPU and other device nodes
+  are passed through by Proxmox. The details are still being worked out.
 - **Networking.** Links between machines are moving from the original custom
   WireGuard mesh to Proxmox SDN.
-- **Other installs.** Bare-metal installs and lightweight `spawnd`
-  containers are planned as alternatives to Proxmox.
+- **Other installs.** Bare-metal installs, and `spawnd`, a planned
+  lightweight container runtime managed by MixViu itself, will be the
+  alternatives to Proxmox.
 
 ## Install from source
 
