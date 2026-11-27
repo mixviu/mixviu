@@ -133,6 +133,7 @@ async fn tls_brokers() -> (
         );
         let tls = Arc::new(mesh::TlsRuntime {
             credential,
+            sessions: mesh::tls_limits::Sessions::new(8),
             authority: Arc::new(std::sync::RwLock::new(authority.tls_keys.clone())),
         });
         let (incoming, _rx) = mpsc::unbounded_channel();
@@ -155,6 +156,7 @@ async fn tls_brokers() -> (
             tls.authority.clone(),
             &Default::default(),
             state.tls_refusals.clone(),
+            tls.sessions.clone(),
         )
         .unwrap();
         let app = axum::Router::new()
@@ -564,6 +566,7 @@ async fn tls_handshake_timeout_queue_and_refusals() {
             ..Default::default()
         },
         refusals.clone(),
+        runtime.sessions.clone(),
     )
     .unwrap();
     let app = axum::Router::new()

@@ -6,7 +6,7 @@ use config::{Dir, Error, ErrorKind, from_conf_mix_str, load_conf_mix_path, to_co
 
 #[test]
 fn absent_mail_sections_are_optional_and_not_serialised() {
-    let nc: NodeConfig = from_conf_mix_str("node: alpha\nwg_ip: '192.0.2.5'\n").unwrap();
+    let nc: NodeConfig = from_conf_mix_str("node: alpha\nmesh_addr: '192.0.2.5'\n").unwrap();
     assert!(nc.maild.is_none());
     assert!(nc.jmap_listen.is_none());
     assert!(nc.jmap_upstream.is_none());
@@ -24,7 +24,7 @@ fn absent_mail_sections_are_optional_and_not_serialised() {
 #[test]
 fn mail_ports_and_address_overrides_are_typed() {
     let nc: NodeConfig = from_conf_mix_str(
-        "wg_ip: '192.0.2.5'\nmaild: { jmap_port: 9443, smtp_port: 2525, smtps_port: 2465 }\n",
+        "mesh_addr: '192.0.2.5'\nmaild: { jmap_port: 9443, smtp_port: 2525, smtps_port: 2465 }\n",
     )
     .unwrap();
     assert_eq!(nc.jmap_listen(), "192.0.2.5:9443");
@@ -93,7 +93,7 @@ fn typed_loader_errors_keep_existing_public_types() {
 fn maild_tls_identities_parse_multi() {
     let src = r#"
             node: "alpha"
-            wg_ip: "192.0.2.5"
+            mesh_addr: "192.0.2.5"
             maild: {
               hostname: "alpha.example.org",
               tls: {

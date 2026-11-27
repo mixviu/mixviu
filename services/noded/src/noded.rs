@@ -474,6 +474,7 @@ struct AppState {
     tls: Option<Arc<mesh::TlsRuntime>>,
     tls_peer: Option<crate::tls_ingress::TlsPeer>,
     tls_refusals: Arc<crate::tls_ingress::Refusals>,
+    reload_to_drop_ms: Arc<std::sync::Mutex<Option<u64>>>,
     d2_seed: Option<mesh::seed::D2Seed>,
     peer_context: bus::native_session::PeerContext,
     sessions: Arc<tokio::sync::Mutex<session::Sessions>>,
@@ -513,7 +514,7 @@ struct AppState {
     etc_roster: Arc<Vec<PeerConfig>>,
     /// Start-immutable configured local WG address. It is warning-only for a
     /// signed self-address mismatch; §9a `wg_bound` owns bind enforcement.
-    wg_ip: String,
+    mesh_addr: String,
     /// Actual start-immutable broker listener port, read back from the bound
     /// socket. Compared with signed self membership as a warning-only
     /// consistency check.
@@ -629,7 +630,7 @@ pub struct RunConfig {
     pub pending_grants_per_parent: usize,
     pub listen: String,
     pub node: String,
-    pub wg_ip: String,
+    pub mesh_addr: String,
     pub mesh_config_path: Option<String>,
     pub spec_dir: Option<PathBuf>,
     pub admission_mode: AdmissionMode,
@@ -938,7 +939,7 @@ async fn bind_tcp_listeners(
     let mut listeners = Vec::new();
     for (address, encrypted) in entries {
         let tcp = if bound.as_ref().is_some_and(|tcp| {
-            configured.is_none() || tcp.local_addr().ok() == address.parse().ok()
+            configured.is_none() || prebound_matches(tcp.local_addr().ok(), address.parse().ok())
         }) {
             bound.take().expect("prebound listener")
         } else {
@@ -953,11 +954,16 @@ async fn bind_tcp_listeners(
     Ok(listeners)
 }
 
+fn prebound_matches(actual: Option<std::net::SocketAddr>, requested: Option<std::net::SocketAddr>) -> bool {
+    matches!((actual, requested), (Some(actual), Some(requested))
+        if actual == requested || (requested.port() == 0 && actual.ip() == requested.ip()))
+}
+
 fn legacy_listener_posture(
     legacy: &str,
     explicit: bool,
     listeners: &[(tokio::net::TcpListener, bool)],
-    wg_ip: &str,
+    mesh_addr: &str,
 ) -> Result<(String, u16, bool)> {
     let address = listeners
         .iter()
@@ -969,7 +975,7 @@ fn legacy_listener_posture(
     } else {
         legacy.to_owned()
     };
-    let wg_bound = address.is_some() && bind_is_wg(&listen, wg_ip);
+    let wg_bound = address.is_some() && bind_is_wg(&listen, mesh_addr);
     Ok((listen, address.map(|a| a.port()).unwrap_or(0), wg_bound))
 }
 
@@ -986,7 +992,7 @@ async fn serve(
         pending_grants_per_parent,
         listen,
         node,
-        wg_ip,
+        mesh_addr,
         mesh_config_path,
         spec_dir,
         admission_mode,
@@ -1058,7 +1064,7 @@ async fn serve(
     let tls_refusals = Arc::new(crate::tls_ingress::Refusals::default());
     let listeners = bind_tcp_listeners(&listen, network.listen.as_deref(), bound).await?;
     let (listen, listener_port, wg_bound) =
-        legacy_listener_posture(&listen, explicit_listen, &listeners, &wg_ip)?;
+        legacy_listener_posture(&listen, explicit_listen, &listeners, &mesh_addr)?;
     let mut unix_listener = match unix_socket.as_deref() {
         Some(path) => match crate::native_ingress::bind(path).await {
             Ok(listener) => Some(listener),
@@ -1088,7 +1094,7 @@ async fn serve(
     let initial_authority = crate::routing::RoutingAuthority::new(
         initial_posture,
         &node,
-        &wg_ip,
+        &mesh_addr,
         listener_port,
         etc_roster.as_ref(),
     );
@@ -1179,6 +1185,7 @@ async fn serve(
         tls,
         tls_peer: None,
         tls_refusals,
+        reload_to_drop_ms: Default::default(),
         d2_seed,
         peer_context: Default::default(),
         session_admission: SessionAdmission::default(),
@@ -1208,7 +1215,7 @@ async fn serve(
         authority: authority.clone(),
         delivery_fence: Arc::new(std::sync::RwLock::new(())),
         etc_roster,
-        wg_ip,
+        mesh_addr,
         listener_port,
         listener_endpoint_diverged,
         admission_mode,
@@ -1276,6 +1283,7 @@ async fn serve(
                 tls.authority.clone(),
                 &network.tls,
                 state.tls_refusals.clone(),
+                tls.sessions.clone(),
             )?;
             let app = Router::new()
                 .route("/ws", axum::routing::get(tls_ws_handler))
@@ -1574,12 +1582,12 @@ fn load_d2_seed(path: &std::path::Path) -> Option<mesh::seed::D2Seed> {
 }
 
 /// SPEC 13 §9a fail-closed bind (B1 self-check): the broker's listener must be
-/// bound to this node's **own WG/mesh IP** (`wg_ip`), never `0.0.0.0`/any (which
+/// bound to this node's **own WG/mesh IP** (`mesh_addr`), never `0.0.0.0`/any (which
 /// exposes the boundary to off-mesh hosts) and never some other concrete
 /// public/LAN/loopback address (which is not the WG interface). The listener is
-/// `wg_ip:port` by construction, so this enforces that and guards a `--listen`
-/// override; an unparseable bind or `wg_ip` fails closed.
-fn bind_is_wg(bind: &str, wg_ip: &str) -> bool {
+/// `mesh_addr:port` by construction, so this enforces that and guards a `--listen`
+/// override; an unparseable bind or `mesh_addr` fails closed.
+fn bind_is_wg(bind: &str, mesh_addr: &str) -> bool {
     let bind_ip = match bind.parse::<std::net::SocketAddr>() {
         Ok(addr) => addr.ip(),
         Err(_) => return false,
@@ -1587,7 +1595,7 @@ fn bind_is_wg(bind: &str, wg_ip: &str) -> bool {
     if bind_ip.is_unspecified() {
         return false;
     }
-    match wg_ip.parse::<std::net::IpAddr>() {
+    match mesh_addr.parse::<std::net::IpAddr>() {
         Ok(wg) => bind_ip == wg,
         Err(_) => false,
     }
@@ -2085,7 +2093,7 @@ fn spawn_inventory_reload_watcher(state: AppState) {
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
             while sig_rx.try_recv().is_ok() {}
 
-            apply_inventory_reload(&state, crate::authority::load_and_verify(&paths)).await;
+            apply_observed_inventory_reload(&state, crate::authority::load_and_verify(&paths)).await;
         }
     });
 }
@@ -2113,6 +2121,19 @@ async fn reconcile_transport_authority(
     }
 }
 
+/// Measure accepted reload application, excluding debounce and rejected loads.
+/// Keep this wrapper separate from the authority transaction owned by PR 4a.
+async fn apply_observed_inventory_reload(state: &AppState, new: crate::authority::Posture) {
+    let accepted = matches!(new, crate::authority::Posture::Verified(_))
+        && !reload_keeps_last_good(&new, &state.authority.load().posture);
+    let started = Instant::now();
+    apply_inventory_reload(state, new).await;
+    if accepted {
+        *state.reload_to_drop_ms.lock().expect("reload metric poisoned") =
+            Some(started.elapsed().as_millis().min(u64::MAX as u128) as u64);
+    }
+}
+
 /// Apply one verified reload as a transport-and-authority transaction. The
 /// transport fence precedes authority publication; inbound enforce teardown
 /// completes before the §17 applied events make the new state externally
@@ -2129,7 +2150,7 @@ async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture
     let next = Arc::new(crate::routing::RoutingAuthority::new(
         new,
         &state.node_name,
-        &state.wg_ip,
+        &state.mesh_addr,
         state.listener_port,
         state.etc_roster.as_ref(),
     ));
@@ -2311,6 +2332,7 @@ async fn reload_revocation_teardown(state: &AppState, a: &crate::authority::Acce
             })
             .collect()
     };
+    let closing: Vec<_> = victims.iter().map(|(_, s, _)| s.tx.clone()).collect();
     for (sid, s, detail) in victims {
         // Drain THIS session's in-flight rpcs first (claims them so the
         // natural-drop drain finds none → no double session-churn emit).
@@ -2344,6 +2366,9 @@ async fn reload_revocation_teardown(state: &AppState, a: &crate::authority::Acce
         s.close.notify_one();
         state.live_sessions.write().await.remove(&sid);
     }
+    // The connection cleanup aborts and joins its writer before releasing the
+    // outbox receiver. Observe local teardown, not a remote TCP acknowledgement.
+    for tx in closing { tx.closed().await; }
 }
 
 async fn ws_handler(
@@ -3822,6 +3847,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
     }
 
     send_task.abort();
+    let _ = send_task.await;
 }
 
 /// SPEC 07 §3 — re-collect the noded props snapshot and let the change bus
@@ -4531,6 +4557,7 @@ fn noded_peers_body(
         .map(|p| {
             serde_json::json!({
                 "name": p.name(),
+                "mesh_addr": p.mesh_ip(),
                 "wg_ip": p.mesh_ip(),
                 "port": p.noded_port(),
                 "challenge_epoch": mesh::peer_challenge_epoch(p.name()),
@@ -4538,13 +4565,14 @@ fn noded_peers_body(
         })
         .collect();
     let self_addr = bind.parse::<std::net::SocketAddr>().ok();
-    let self_wg_ip = match self_addr {
+    let self_mesh_addr = match self_addr {
         Some(sa) => Some(sa.ip().to_string()),
         None => bind.rsplit_once(':').map(|(h, _)| h.to_string()),
     };
     let mut body = serde_json::json!({
         "node": node_name,
-        "wg_ip": self_wg_ip,
+        "mesh_addr": self_mesh_addr,
+        "wg_ip": self_mesh_addr,
         "port": listener_port,
         "peers": peers,
         "source": authority.routes.source_label(),
@@ -4941,6 +4969,14 @@ async fn handle_noded_command(
             meta.insert("pending_responses".into(), pending.into());
             meta.insert("pending_responder_closed".into(), responder_closed.into());
             meta.insert("refusal_totals".into(), refusal_totals());
+            meta.insert("tls_inbound".into(), state.tls_refusals.snapshot());
+            meta.insert("tls_dial".into(), mesh::tls::DIAL_REFUSALS.snapshot());
+            meta.insert("tls_sessions_per_member".into(), serde_json::json!(
+                state.tls.as_ref().map(|tls| tls.sessions.snapshot()).unwrap_or_default()
+            ));
+            meta.insert("reload_to_drop_ms".into(), serde_json::json!(
+                *state.reload_to_drop_ms.lock().expect("reload metric poisoned")
+            ));
             meta.insert(
                 "tls_refusals".into(),
                 serde_json::json!(state.tls_refusals.total() + mesh::tls::DIAL_REFUSALS.total()),
@@ -4951,13 +4987,14 @@ async fn handle_noded_command(
                     state.tls_refusals.overflow_total() + mesh::tls::DIAL_REFUSALS.overflow_total()
                 ),
             );
-            let info = bus::NodeInfo {
+            let mut info = bus::NodeInfo {
+                wg_ip: None,
                 node: state.node_name.clone(),
                 // `bind` is `<host>:<port>`; the host is the WG IP. Parse
                 // as SocketAddr so IPv6 (`[fd00::1]:p`) yields `fd00::1`,
                 // not `[fd00::1]`; fall back to rsplit for any non-addr
                 // bind string.
-                wg_ip: state
+                mesh_addr: state
                     .bind
                     .parse::<std::net::SocketAddr>()
                     .map(|sa| sa.ip().to_string())
@@ -4970,6 +5007,7 @@ async fn handle_noded_command(
                 schema_version: bus::SCHEMA_VERSION,
                 meta,
             };
+            info.wg_ip = info.mesh_addr.clone();
             let body = serde_json::to_string(&info).unwrap_or_else(|_| "{}".to_string());
 
             let mut resp = respond("0");
@@ -6051,10 +6089,10 @@ mod tests {
         let body = noded_peers_body("alpha", "192.0.2.5:0", 4200, &verified);
         // Existing fields and per-peer shape remain byte-semantically compatible.
         assert_eq!(body["node"], "alpha");
-        assert_eq!(body["wg_ip"], "192.0.2.5");
+        assert_eq!(body["mesh_addr"], "192.0.2.5");
         assert_eq!(body["port"], 4200);
         assert_eq!(body["peers"][0]["name"], PEER);
-        assert_eq!(body["peers"][0]["wg_ip"], "192.0.2.6");
+        assert_eq!(body["peers"][0]["mesh_addr"], "192.0.2.6");
         assert_eq!(body["peers"][0]["port"], 4300);
         assert_eq!(body["peers"][0]["challenge_epoch"], serde_json::json!(7));
         assert_eq!(body["source"], "signed-inventory");
@@ -6101,7 +6139,7 @@ mod tests {
         );
         let fallback = noded_peers_body("alpha", "192.0.2.5:0", 4200, &unverified);
         assert_eq!(fallback["source"], "etc-roster-fallback");
-        assert_eq!(fallback["peers"][0]["wg_ip"], "192.0.2.99");
+        assert_eq!(fallback["peers"][0]["mesh_addr"], "192.0.2.99");
         assert_eq!(fallback["peers"][0]["port"], 4300);
         assert_eq!(fallback["peers"][0]["name"], PEER);
         assert_eq!(fallback["peers"][0]["challenge_epoch"], 7);
@@ -6194,10 +6232,10 @@ mod tests {
     /// SPEC 13 §9a B1 self-check (2-c-1a): a `0.0.0.0`/`::`/unparseable bind is
     /// not WG-bound (fails closed); a specific mesh IP is.
     #[test]
-    fn bind_is_wg_requires_own_wg_ip() {
+    fn bind_is_wg_requires_own_mesh_addr() {
         use super::bind_is_wg;
         let wg = "192.0.2.5";
-        assert!(bind_is_wg("192.0.2.5:4200", wg), "bound to own wg_ip");
+        assert!(bind_is_wg("192.0.2.5:4200", wg), "bound to own mesh_addr");
         assert!(!bind_is_wg("0.0.0.0:4200", wg), "0.0.0.0 exposes off-mesh");
         assert!(!bind_is_wg("[::]:4200", wg), ":: exposes off-mesh");
         assert!(
@@ -6211,7 +6249,7 @@ mod tests {
         assert!(!bind_is_wg("not-an-addr", wg), "unparseable fails closed");
         assert!(
             !bind_is_wg("192.0.2.5:4200", "bad-ip"),
-            "bad wg_ip fails closed"
+            "bad mesh_addr fails closed"
         );
     }
 
@@ -6682,6 +6720,7 @@ mod tests {
             tls: None,
             tls_peer: None,
             tls_refusals: Default::default(),
+            reload_to_drop_ms: Default::default(),
             d2_seed: None,
             peer_context: Default::default(),
             session_admission: SessionAdmission::default(),
@@ -6707,7 +6746,7 @@ mod tests {
             authority: Arc::new(ArcSwap::from_pointee(authority_value)),
             delivery_fence: Arc::new(std::sync::RwLock::new(())),
             etc_roster: Arc::new(etc_roster),
-            wg_ip: "127.0.0.1".into(),
+            mesh_addr: "127.0.0.1".into(),
             listener_port,
             listener_endpoint_diverged: Arc::new(AtomicBool::new(false)),
             admission_mode: AdmissionMode::Off,
@@ -7017,7 +7056,7 @@ mod tests {
             pending_grants_per_parent: 32,
             listen,
             node: "test-node".into(),
-            wg_ip: "127.0.0.1".into(),
+            mesh_addr: "127.0.0.1".into(),
             mesh_config_path: None,
             spec_dir: None,
             admission_mode: config::node::AdmissionMode::Off,
@@ -7067,7 +7106,7 @@ mod tests {
                     pending_grants_per_parent: 32,
                     listen: listen_for_run,
                     node: "test-node".into(),
-                    wg_ip: "127.0.0.1".into(),
+                    mesh_addr: "127.0.0.1".into(),
                     mesh_config_path: None,
                     spec_dir: None,
                     admission_mode: config::node::AdmissionMode::Off,
@@ -7157,7 +7196,7 @@ mod tests {
                     pending_grants_per_parent: 32,
                     listen: listen_for_run,
                     node: "test-node".into(),
-                    wg_ip: "127.0.0.1".into(),
+                    mesh_addr: "127.0.0.1".into(),
                     mesh_config_path: None,
                     spec_dir: None,
                     admission_mode: config::node::AdmissionMode::Observe,
@@ -7315,7 +7354,7 @@ mod tests {
                     pending_grants_per_parent: 32,
                     listen: listen_for_run,
                     node: "test-node".into(),
-                    wg_ip: "127.0.0.1".into(),
+                    mesh_addr: "127.0.0.1".into(),
                     mesh_config_path: None,
                     spec_dir: None,
                     admission_mode: config::node::AdmissionMode::Off,

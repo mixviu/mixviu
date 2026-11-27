@@ -4,4 +4,5 @@
 pub mod peer;
 pub mod seed;
 pub mod tls;
+pub mod tls_limits;
 pub use peer::*;

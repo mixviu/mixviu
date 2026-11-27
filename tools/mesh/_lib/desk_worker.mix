@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.0.1
 -- Namespace-local primitives. dispatch is the only remote entry point.
 -- Requiring this module never performs I/O or runs a service command.
 

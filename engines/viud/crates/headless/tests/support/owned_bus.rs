@@ -232,7 +232,7 @@ fn owner_process() {
     }
     let conf = root.path().join("etc/node.conf.mix");
     fs::write(&conf, serde_json::json!({
-        "node":"headless-test", "mesh":"headless-test.invalid", "wg_ip":"127.0.0.1",
+        "node":"headless-test", "mesh":"headless-test.invalid", "mesh_addr":"127.0.0.1",
         "noded":{"port":0,"admission":"off","unix_socket":root.path().join("run/noded/bus.sock")}
     }).to_string()).unwrap();
     let mesh = root.path().join("etc/mesh.conf.mix");

@@ -39,9 +39,11 @@ struct RefusalWindows {
     peers: std::collections::HashMap<(std::net::IpAddr, &'static str), RefusalWindow>,
     overflow: Option<RefusalWindow>,
     next_expiry: Option<std::time::Instant>,
+    classes: std::collections::BTreeMap<&'static str, u64>,
+    overflow_classes: std::collections::HashSet<&'static str>,
 }
 
-fn refusal_network(peer: std::net::SocketAddr) -> std::net::IpAddr {
+pub(crate) fn refusal_network(peer: std::net::SocketAddr) -> std::net::IpAddr {
     match peer.ip() {
         std::net::IpAddr::V4(ip) => ip.into(),
         std::net::IpAddr::V6(ip) => {
@@ -61,8 +63,33 @@ pub struct Refusals {
     total: std::sync::atomic::AtomicU64,
     overflow_total: std::sync::atomic::AtomicU64,
     peers: std::sync::Mutex<RefusalWindows>,
+    admitted: std::sync::atomic::AtomicU64,
 }
 impl Refusals {
+    pub fn admitted(&self) {
+        self.admitted.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+    /// Snapshot also flushes expired coalesced windows after a silent burst.
+    pub fn snapshot(&self) -> serde_json::Value {
+        self.flush();
+        let windows = self.peers.lock().expect("TLS refusals poisoned");
+        let timeout = windows.classes.get("timeout").copied().unwrap_or(0);
+        serde_json::json!({
+            "classes": windows.classes, "total": self.total(),
+            "overflow": self.overflow_total(),
+            "outcomes": {
+                "admitted": self.admitted.load(std::sync::atomic::Ordering::Relaxed),
+                "refused": self.total() - timeout, "timeout": timeout
+            }
+        })
+    }
+    pub fn flush(&self) {
+        self.flush_at(std::time::Instant::now());
+    }
+    fn flush_at(&self, now: std::time::Instant) {
+        let mut windows = self.peers.lock().expect("TLS refusals poisoned");
+        self.expire(&mut windows, now, self.total());
+    }
     pub fn total(&self) -> u64 {
         self.total.load(std::sync::atomic::Ordering::Relaxed)
     }
@@ -79,6 +106,29 @@ impl Refusals {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             + 1;
         let mut windows = self.peers.lock().expect("TLS refusals poisoned");
+        *windows.classes.entry(class).or_default() += 1;
+        self.expire(&mut windows, now, total);
+        let network = refusal_network(peer);
+        if let Some(window) = windows.peers.get_mut(&(network, class)) {
+            window.pending += 1;
+        } else if windows.peers.len() < MAX_REFUSAL_WINDOWS {
+            tracing::warn!(event = "tls.refused", %peer, %network, class, count = 1u64, total, "TLS handshake refused");
+            windows.peers.insert((network, class), RefusalWindow { started: now, pending: 0 });
+            windows.next_expiry.get_or_insert(now + REFUSAL_WINDOW);
+        } else {
+            let overflow_total = self.overflow_total.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            if windows.overflow_classes.insert(class) {
+                tracing::warn!(event = "tls.refused", %peer, %network, class, overflow_total, "TLS refusal map full");
+            }
+            if let Some(window) = &mut windows.overflow {
+                window.pending += 1;
+            } else {
+                windows.overflow = Some(RefusalWindow { started: now, pending: 0 });
+                windows.next_expiry.get_or_insert(now + REFUSAL_WINDOW);
+            }
+        }
+    }
+    fn expire(&self, windows: &mut RefusalWindows, now: std::time::Instant, total: u64) {
         // Scan only when the earliest window expires, not on every connection.
         if windows.next_expiry.is_some_and(|expiry| now >= expiry) {
             windows.peers.retain(|(network, class), window| {
@@ -96,6 +146,7 @@ impl Refusals {
                 .is_some_and(|w| now.duration_since(w.started) >= REFUSAL_WINDOW)
             {
                 let window = windows.overflow.take().expect("overflow window");
+                windows.overflow_classes.clear();
                 if window.pending > 0 {
                     tracing::warn!(
                         event = "tls.refused",
@@ -113,42 +164,6 @@ impl Refusals {
                 .map(|w| w.started + REFUSAL_WINDOW)
                 .chain(windows.overflow.iter().map(|w| w.started + REFUSAL_WINDOW))
                 .min();
-        }
-        let network = refusal_network(peer);
-        if let Some(window) = windows.peers.get_mut(&(network, class)) {
-            window.pending += 1;
-        } else if windows.peers.len() < MAX_REFUSAL_WINDOWS {
-            tracing::warn!(event = "tls.refused", %peer, %network, class, count = 1u64, total, "TLS handshake refused");
-            windows.peers.insert(
-                (network, class),
-                RefusalWindow {
-                    started: now,
-                    pending: 0,
-                },
-            );
-            windows.next_expiry.get_or_insert(now + REFUSAL_WINDOW);
-        } else {
-            let overflow_total = self
-                .overflow_total
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
-                + 1;
-            if let Some(window) = &mut windows.overflow {
-                window.pending += 1;
-            } else {
-                tracing::warn!(
-                    event = "tls.refused",
-                    class = "overflow",
-                    count = 1u64,
-                    total,
-                    overflow_total,
-                    "TLS refusal map full"
-                );
-                windows.overflow = Some(RefusalWindow {
-                    started: now,
-                    pending: 0,
-                });
-                windows.next_expiry.get_or_insert(now + REFUSAL_WINDOW);
-            }
         }
     }
 }

@@ -526,6 +526,7 @@ impl TransportState {
 pub struct TlsRuntime {
     pub credential: crate::tls::Credential,
     pub authority: crate::tls::LiveAuthority,
+    pub sessions: Arc<crate::tls_limits::Sessions>,
 }
 
 /// Manages connections to remote mesh peers.
@@ -635,7 +636,7 @@ impl MeshPeers {
     ) -> ReconcileReport {
         let mut state = self.state.write().await;
         // Older callers update D2 or endpoints only; they have no opinion on TLS.
-        let tls_keys = tls_keys.unwrap_or_else(|| state.tls_keys.clone());
+        let tls_keys = tls_keys.unwrap_or_default();
         let mut report = ReconcileReport::default();
         let mut reasons = HashMap::new();
 
@@ -1096,7 +1097,12 @@ async fn dial(
             Some(&peer.name),
         )?;
         let binding = crate::tls::client_channel_binding(conn)?;
-        (Box::new(stream), Some((member, binding)))
+        let Some(session) = tls.sessions.acquire(&member.member) else {
+            crate::tls::DIAL_REFUSALS.record(peer.noded_addr(), "session-cap");
+            anyhow::bail!("TLS session-cap");
+        };
+        crate::tls::DIAL_REFUSALS.admitted();
+        (Box::new(crate::tls_limits::LeasedIo { io: stream, session }), Some((member, binding)))
     } else {
         (Box::new(tcp), None)
     };
@@ -1131,6 +1137,9 @@ async fn connect_and_publish(
         }
         result = connect => match result {
             Err(_) => {
+                if peer.tls_port.is_some() {
+                    crate::tls::DIAL_REFUSALS.record(target, "timeout");
+                } else {
                 tracing::warn!(
                     event = "mesh.connection.failed",
                     cause = "connect-timeout",
@@ -1138,10 +1147,11 @@ async fn connect_and_publish(
                     endpoint = %target,
                     timeout_ms = CONNECT_TIMEOUT.as_millis() as u64,
                 );
+                }
                 anyhow::bail!("Connection to {} timed out after {}ms", peer.name, CONNECT_TIMEOUT.as_millis());
             }
             Ok(Err(error)) => {
-                if peer.tls_port.is_some() { crate::tls::DIAL_REFUSALS.record(target, "dial-or-pin"); }
+                if peer.tls_port.is_some() && error.to_string() != "TLS session-cap" { crate::tls::DIAL_REFUSALS.record(target, "dial-or-pin"); }
                 anyhow::bail!("Failed to connect to {}: {error}", peer.name)
             },
             Ok(Ok(connected)) => connected,

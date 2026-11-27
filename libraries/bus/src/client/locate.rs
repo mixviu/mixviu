@@ -132,8 +132,8 @@ fn candidate_paths(
 
 /// An endpoint explicitly described by a node configuration. A configured
 /// `noded.unix_socket` takes precedence. Older configurations describe legacy
-/// TCP as `ws://{wg_ip}:{port}/ws`, with loopback for a missing or empty
-/// `wg_ip` and 4200 for a missing `noded.port`. Such TCP URLs grant no local
+/// TCP as `ws://{mesh_addr}:{port}/ws`, with loopback for a missing or empty
+/// `mesh_addr` and 4200 for a missing `noded.port`. Such TCP URLs grant no local
 /// trust. [`noded_url`] uses only Unix settings for implicit local discovery.
 /// `None` when the document or explicit socket is invalid, or neither endpoint
 /// has readable settings.
@@ -152,15 +152,19 @@ fn url_from_node_value(config: &Value) -> Option<String> {
             .filter(|path| std::path::Path::new(path).is_absolute())
             .map(|path| format!("unix://{path}"));
     }
-    let wg_ip = config.get("wg_ip").and_then(Value::as_str);
+    // Raw config readers need the same one-release alias as typed config.
+    if config.get("mesh_addr").is_some() && config.get("wg_ip").is_some() {
+        return None;
+    }
+    let mesh_addr = config.get("mesh_addr").or_else(|| config.get("wg_ip")).and_then(Value::as_str);
     let port = config
         .get("noded")
         .and_then(|noded| noded.get("port"))
         .and_then(port_of);
-    if wg_ip.is_none() && port.is_none() {
+    if mesh_addr.is_none() && port.is_none() {
         return None;
     }
-    let host = wg_ip.filter(|ip| !ip.is_empty()).unwrap_or("127.0.0.1");
+    let host = mesh_addr.filter(|ip| !ip.is_empty()).unwrap_or("127.0.0.1");
     Some(format!("ws://{host}:{}/ws", port.unwrap_or(DEFAULT_PORT)))
 }
 
@@ -183,7 +187,7 @@ mod tests {
     fn explicit_unix_socket_precedes_legacy_tcp_and_must_be_absolute() {
         assert_eq!(
             url_from_node_config(
-                "wg_ip: '192.0.2.1'\nnoded: { port: 4300, unix_socket: '/run/example/bus.sock' }"
+                "mesh_addr: '192.0.2.1'\nnoded: { port: 4300, unix_socket: '/run/example/bus.sock' }"
             )
             .as_deref(),
             Some("unix:///run/example/bus.sock")
@@ -201,7 +205,7 @@ mod tests {
         let source = r#"
 -- A node's identity and services.
 node: "alpha"
-wg_ip: "192.0.2.10"
+mesh_addr: "192.0.2.10"
 mesh: "example.com"
 
 noded: {
@@ -224,7 +228,7 @@ noded: {
     "admission": "enforce",
     "port": 4200
   },
-  "wg_ip": "192.0.2.9"
+  "mesh_addr": "192.0.2.9"
 }"#;
         assert_eq!(
             url_from_node_config(source).as_deref(),
@@ -233,13 +237,13 @@ noded: {
     }
 
     #[test]
-    fn empty_wg_ip_falls_back_to_loopback_and_missing_port_to_default() {
+    fn empty_mesh_addr_falls_back_to_loopback_and_missing_port_to_default() {
         assert_eq!(
-            url_from_node_config("wg_ip: \"\"\nnoded: { port: 4300 }\n").as_deref(),
+            url_from_node_config("mesh_addr: \"\"\nnoded: { port: 4300 }\n").as_deref(),
             Some("ws://127.0.0.1:4300/ws")
         );
         assert_eq!(
-            url_from_node_config("node: \"solo\"\nwg_ip: \"10.0.0.2\"\n").as_deref(),
+            url_from_node_config("node: \"solo\"\nmesh_addr: \"10.0.0.2\"\n").as_deref(),
             Some("ws://10.0.0.2:4200/ws")
         );
         assert_eq!(url_from_node_config("node: \"solo\"\n"), None);
@@ -248,9 +252,9 @@ noded: {
 
     #[test]
     fn nested_port_keys_do_not_leak_into_noded() {
-        // `port` inside maild, and a `wg_ip` inside a nested map, are not the
+        // `port` inside maild, and a `mesh_addr` inside a nested map, are not the
         // top-level keys.
-        let source = "maild: { port: 25, wg_ip: \"9.9.9.9\" }\nnoded: { port: 4444 }\nwg_ip: \"192.0.2.1\"\n";
+        let source = "maild: { port: 25, mesh_addr: \"9.9.9.9\" }\nnoded: { port: 4444 }\nmesh_addr: \"192.0.2.1\"\n";
         assert_eq!(
             url_from_node_config(source).as_deref(),
             Some("ws://192.0.2.1:4444/ws")
@@ -265,7 +269,7 @@ noded: {
 
     #[test]
     fn comments_and_strings_with_dashes_are_handled() {
-        let source = "wg_ip: \"10.0.0.1\" -- the mesh address\n# hash comment\nnoded: { port: 4200, note: \"a--b\" }\n";
+        let source = "mesh_addr: \"10.0.0.1\" -- the mesh address\n# hash comment\nnoded: { port: 4200, note: \"a--b\" }\n";
         assert_eq!(
             url_from_node_config(source).as_deref(),
             Some("ws://10.0.0.1:4200/ws")
@@ -278,10 +282,10 @@ noded: {
             url_from_node_config("noded: { port: \"4301\" }\n").as_deref(),
             Some("ws://127.0.0.1:4301/ws")
         );
-        // An unreadable port is missing: the default applies when wg_ip is
+        // An unreadable port is missing: the default applies when mesh_addr is
         // there, and nothing is readable when it is not.
         assert_eq!(
-            url_from_node_config("wg_ip: \"10.0.0.3\"\nnoded: { port: 70000 }\n").as_deref(),
+            url_from_node_config("mesh_addr: \"10.0.0.3\"\nnoded: { port: 70000 }\n").as_deref(),
             Some("ws://10.0.0.3:4200/ws")
         );
         assert_eq!(url_from_node_config("noded: { port: 42.5 }\n"), None);
@@ -291,15 +295,15 @@ noded: {
     #[test]
     fn a_document_that_is_not_strict_data_reads_as_nothing() {
         // Executable constructs and broken syntax are refused, not scanned.
-        assert_eq!(url_from_node_config("wg_ip: $addr\n"), None);
+        assert_eq!(url_from_node_config("mesh_addr: $addr\n"), None);
         assert_eq!(
-            url_from_node_config("wg_ip: \"10.0.0.4\"\nnoded: {\n"),
+            url_from_node_config("mesh_addr: \"10.0.0.4\"\nnoded: {\n"),
             None
         );
         // Entries inside braces need commas; a newline alone is a refusal.
         assert_eq!(
             url_from_node_config(
-                "wg_ip: \"10.0.0.5\"\nnoded: {\n  port: 4200\n  admission: \"off\"\n}\n"
+                "mesh_addr: \"10.0.0.5\"\nnoded: {\n  port: 4200\n  admission: \"off\"\n}\n"
             ),
             None
         );

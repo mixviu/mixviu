@@ -41,7 +41,7 @@ pub struct WebdConfig {
     /// everything (mail-client autoconfig / ACME paths are carved out
     /// in a follow-up — see `_doc/planned/maild-autoconfig.md`).
     ///
-    /// Deliberately a full `addr:port` string, **not** a `wg_ip`-derived
+    /// Deliberately a full `addr:port` string, **not** a `mesh_addr`-derived
     /// port like `web_listen()`. Mail-client autoconfig is fetched from
     /// the public internet, so this listener must bind a publicly
     /// reachable address — deriving it from the WireGuard IP would make
@@ -111,7 +111,7 @@ pub struct WebdConfig {
     /// Per-interface listeners (one `[[webd.listener]]` block each).
     ///
     /// **Empty (the default) ⇒ back-compat:** webd synthesizes one
-    /// implicit WG listener at `web_listen()` (`wg_ip:port`) serving
+    /// implicit WG listener at `web_listen()` (`mesh_addr:port`) serving
     /// every vhost — byte-identical to the pre-listener single-bind
     /// behaviour, so existing nodes are untouched.
     ///
@@ -167,7 +167,7 @@ impl Default for WebdConfig {
 /// One `[[webd.listener]]` row — a per-interface listener with a vhost
 /// allowlist. The bind is an **explicit** interface IP (e.g. the WG
 /// address `192.0.2.5:443` or a public `203.0.113.5:443`), never a
-/// `wg_ip`-derived port like `web_listen()`: binding a specific
+/// `mesh_addr`-derived port like `web_listen()`: binding a specific
 /// interface is the kernel-level isolation boundary
 /// (`feedback_wg_only_binding` — public is an explicit opt-in).
 #[derive(Debug, Clone, Serialize, Deserialize)]

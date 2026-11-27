@@ -47,7 +47,7 @@ impl BrokerFixture {
             .unwrap()
             .port();
         let config = directory.path().join("node.conf.mix");
-        std::fs::write(&config, serde_json::to_vec(&json!({"node":"settings-reconnect-gate","wg_ip":"","mesh":"settings-gate.invalid","noded":{"port":port,"admission":"off","unix_socket":directory.path().join("run/noded/bus.sock")}})).unwrap()).unwrap();
+        std::fs::write(&config, serde_json::to_vec(&json!({"node":"settings-reconnect-gate","mesh_addr":"","mesh":"settings-gate.invalid","noded":{"port":port,"admission":"off","unix_socket":directory.path().join("run/noded/bus.sock")}})).unwrap()).unwrap();
         let mut fixture = Self {
             directory,
             daemon: Daemon(None),

@@ -58,7 +58,7 @@ impl Broker {
                 session_probe: Some(probe_tx),
                 listen: listen.clone(),
                 node,
-                wg_ip: "127.0.0.1".into(),
+                mesh_addr: "127.0.0.1".into(),
                 mesh_config_path: None,
                 spec_dir: None,
                 admission_mode: AdmissionMode::Off,

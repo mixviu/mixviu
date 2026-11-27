@@ -1017,7 +1017,7 @@ pub(crate) mod tests {
         let dir = TestDir::new();
         let path = dir.0.join("node.conf.mix");
         let socket = dir.0.join("configured.sock");
-        std::fs::write(&path, format!("wg_ip: '192.0.2.10'\nnoded: {{ port: 4300, unix_socket: '{}', account: 'config-user' }}", socket.display())).unwrap();
+        std::fs::write(&path, format!("mesh_addr: '192.0.2.10'\nnoded: {{ port: 4300, unix_socket: '{}', account: 'config-user' }}", socket.display())).unwrap();
         let directories = config::Environment {
             run: Some(dir.0.join("run")),
             prefix: Some(dir.0.clone()),

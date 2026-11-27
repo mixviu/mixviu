@@ -316,9 +316,9 @@ async fn async_main() -> ExitCode {
     }
     #[cfg(feature = "mix")]
     {
-        let wg_ip = citizen::configured_wg_ip();
+        let mesh_addr = citizen::configured_mesh_addr();
         for sa in &args.listen {
-            if let Err(e) = citizen::citizen_check_bind(sa, args.allow_non_loopback, wg_ip) {
+            if let Err(e) = citizen::citizen_check_bind(sa, args.allow_non_loopback, mesh_addr) {
                 tracing::error!("{e}");
                 return ExitCode::from(2);
             }

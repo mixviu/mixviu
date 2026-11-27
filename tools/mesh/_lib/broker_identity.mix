@@ -1,4 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.0.1
 -- Pure separate-principal contract. No account, path or service is created.
 $targets = require("targets.mix")
 
@@ -57,7 +58,7 @@ fn node_configs($target,$broker,$client)
   if type($broker) != "map" or type($broker.noded) != "map" or type($client) != "map" then fail("broker and public client configurations required") end
   -- Public client config contains identity and endpoint only, never a private
   -- seed, authority store or an application runtime/state override.
-  $expected = {node:$broker.node,mesh:$broker.mesh,wg_ip:$broker.wg_ip,noded:{port:$broker.noded.port,unix_socket:$t.broker_endpoint}}
-  if $broker.node != $t.node or type($broker.mesh) != "string" or type($broker.wg_ip) != "string" or type($broker.noded.port) != "number" or floor($broker.noded.port) != $broker.noded.port or $broker.noded.port < 1 or $broker.noded.port > 65535 or $broker.noded.unix_socket != $t.broker_endpoint or not deep_eq($client,$expected) then fail("broker/client identity or explicit native endpoint differs") end
+  $expected = {node:$broker.node,mesh:$broker.mesh,noded:{port:$broker.noded.port,unix_socket:$t.broker_endpoint}}; $expected[if $client.mesh_addr != nil then "mesh_addr" else "wg_ip" end] = $broker.mesh_addr ?? $broker.wg_ip
+  if $broker.node != $t.node or type($broker.mesh) != "string" or type($broker.mesh_addr ?? $broker.wg_ip) != "string" or type($broker.noded.port) != "number" or floor($broker.noded.port) != $broker.noded.port or $broker.noded.port < 1 or $broker.noded.port > 65535 or $broker.noded.unix_socket != $t.broker_endpoint or not deep_eq($client,$expected) then fail("broker/client identity or explicit native endpoint differs") end
   return {endpoint:$t.broker_endpoint,client_config:$t.client_config,mutation_supported:false}
 end

@@ -216,7 +216,7 @@ impl Fixture {
             fs::write(
                 broker_root.join("etc/node.conf.mix"),
                 serde_json::to_vec_pretty(&json!({
-                    "node": name, "wg_ip": ips[i],
+                    "node": name, "mesh_addr": ips[i],
                     "noded": {"port": ports[i], "admission": "off",
                         "unix_socket": broker_root.join("run/bus.sock")}
                 }))
