@@ -426,9 +426,9 @@ where
                         session.mail_from.as_deref().unwrap_or(""),
                         session.ehlo_host.as_deref().unwrap_or("unknown"), &data_buf).await;
                     let result = match verify {
-                        Ok(verify) => super::inbound::enforce_own_spf(&session.state, &ingress,
+                        Ok(verify) => super::inbound::enforce_own_spf(&session.state.domains_runtime, &ingress,
                             session.mail_from.as_deref().unwrap_or(""), &data_buf, &verify).await,
-                        Err(error) => Err(error),
+                        Err(error) => Err(error.into()),
                     };
                     if let Err(error) = result {
                         let reply = if error.is::<crate::sieve::delivery::Rejected>() { "550 5.7.1 ownDomainSpfFail" } else { "451 4.3.0 Authentication policy unavailable" };
