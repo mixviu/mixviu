@@ -135,9 +135,9 @@ The systemd unit templates land in `/opt/mix/share/mixviu/units/`. Start with
 `mix man overview` explains the model, and `mix builtins` lists all ~400
 built-in functions.
 
-**The desktop** runs one session per virtual terminal: `session@N.target`
-brings up `viud@N` (on seatd), then the `apps@`, `scenes@` and `files@` units
-for that VT. The templates are in [`engines/viud/units`](engines/viud/units).
+**The desktop** runs one session per virtual terminal, as systemd units:
+`viud@N` (the compositor on VT N, which needs `seatd`) plus `apps@N`,
+`scenes@N` and `files@N`. The templates are in [`engines/viud/units`](engines/viud/units).
 Setting up a desktop by hand is not documented for newcomers yet, so start
 with the shell and the services, and open an issue if you want to try it.
 
