@@ -86,13 +86,17 @@ try
   check(len($opens) == 1 and $opens[0].data.scheme == "https" and $opens[0].data.id == "two" and $opens[0].data.handle == $opened.body.handle, "open history metadata")
   check(not contains(json_encode($rows), "example.invalid") and not contains(json_encode($rows), "uri"), "history contains no URI")
   check(not contains(read_file($tmp .. "/log"), $hostile), "citizen journal contains no URI")
-  export MIX_NODED_URL=$bus.url
-  bus_reconnect()
-  for $verb in ["apps.open", "apps.handler"]
-    $r = call($verb, {uri: "https://example.invalid/", scheme: "https"})
-    check($r.rc == 10 and contains(to_string($r.body), "forbidden"), "mesh origin forbidden")
+  -- A WS URL alone does not force mesh: native auto-discovery prefers the
+  -- configured Unix socket. Use a separate client with no discoverable socket.
+  fixture("remote/node.conf.mix", json_encode({node: "example-remote", noded: {unix_socket: $tmp .. "/remote/absent.sock"}}))
+  fixture("remote.mix", '$out = []; for $r in json_parse($1); $v = $r.verb; send apps $v timeout=1 body=json_encode($r.body); push($out, {rc: $rc, body: $result}); end; print(json_encode($out))')
+  $remote = merge($pb.client_env($bus), {MIX_NODE_CONFIG: $tmp .. "/remote/node.conf.mix", MIX_RUN: $tmp .. "/remote/run", MIX_ETC: $tmp .. "/remote/etc", HOME: $tmp .. "/remote", PATH: "/usr/bin:/bin"})
+  $requests = [{verb: "apps.open", body: {uri: "https://example.invalid/"}}, {verb: "apps.handler", body: {scheme: "https"}}, {verb: "apps.props.set", body: {path: "apps.open_schemes", value: ["https"]}}]
+  $refusals = json_parse(run_argv_must([$mix, $tmp .. "/remote.mix", json_encode($requests)], {clear_env: true, env: $remote}))
+  for $r in $refusals
+    if type($r.body) == "string" then $r.body = json_parse($r.body) end
+    check($r.rc == 10 and $r.body.error == "forbidden", "mesh origin forbidden")
   end
-  check(call("apps.props.set", {path: "apps.open_schemes", value: ["https"]}).rc == 10, "mesh policy mutation forbidden")
   print("PASS apps OpenURI resolver, policy, argv, token, origin, hardening and history")
 finally
   if $pid != nil and process_alive($pid) then kill($pid, 15) end
