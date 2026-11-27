@@ -352,33 +352,62 @@ mod automatic_reply_tests {
     #[tokio::test]
     async fn guarded_proof_and_concurrent_suppression_precede_quota() -> Result<()> {
         let tmp = tempfile::tempdir()?;
-        let db = Db::connect(tmp.path().join("mail.db").to_str().unwrap(), tmp.path().join("blobs").to_str().unwrap()).await?;
+        let db = Db::connect(
+            tmp.path().join("mail.db").to_str().unwrap(),
+            tmp.path().join("blobs").to_str().unwrap(),
+        )
+        .await?;
         db.migrate().await?;
         db.conn.lock().unwrap().execute("INSERT INTO accounts(id,email,password,allowed_recipients,send_rate) VALUES(1,'cast@example.com','x','[\"mc@example.com\"]',10)", [])?;
         let mds = mds::SqliteCasMds::open(tmp.path().join("mds"))?;
         let hash = mds::Mds::put_blob(&mds, b"reply")?;
         let reply = |verified_sender| AutomaticReply {
-            account: 1, sender: "mc@example.com".into(), handle: "guarded-reject".into(),
-            days: 1, hash, verified_sender, guarded_only_suppression: true,
+            account: 1,
+            sender: "mc@example.com".into(),
+            handle: "guarded-reject".into(),
+            days: 1,
+            hash,
+            verified_sender,
+            guarded_only_suppression: true,
         };
         assert!(!queue_automatic_reply(&db, reply(false)).await?);
         {
             let conn = db.conn.lock().unwrap();
-            assert_eq!(conn.query_row("SELECT count(*) FROM submission_rate", [], |r| r.get::<_, i64>(0))?, 0);
-            assert_eq!(conn.query_row("SELECT count(*) FROM sieve_replies", [], |r| r.get::<_, i64>(0))?, 0);
+            assert_eq!(
+                conn.query_row("SELECT count(*) FROM submission_rate", [], |r| r
+                    .get::<_, i64>(0))?,
+                0
+            );
+            assert_eq!(
+                conn.query_row("SELECT count(*) FROM sieve_replies", [], |r| r
+                    .get::<_, i64>(0))?,
+                0
+            );
         }
         let mut tasks = Vec::new();
         for _ in 0..8 {
             let db = db.clone();
             let reply = reply(true);
-            tasks.push(tokio::spawn(async move { queue_automatic_reply(&db, reply).await }));
+            tasks.push(tokio::spawn(async move {
+                queue_automatic_reply(&db, reply).await
+            }));
         }
         let mut queued = 0;
-        for task in tasks { queued += usize::from(task.await??); }
+        for task in tasks {
+            queued += usize::from(task.await??);
+        }
         assert_eq!(queued, 1);
         let conn = db.conn.lock().unwrap();
-        assert_eq!(conn.query_row("SELECT count(*) FROM submission_rate", [], |r| r.get::<_, i64>(0))?, 1);
-        assert_eq!(conn.query_row("SELECT count(*) FROM smtp_queue", [], |r| r.get::<_, i64>(0))?, 1);
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM submission_rate", [], |r| r
+                .get::<_, i64>(0))?,
+            1
+        );
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM smtp_queue", [], |r| r
+                .get::<_, i64>(0))?,
+            1
+        );
         Ok(())
     }
 }

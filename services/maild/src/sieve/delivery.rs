@@ -312,9 +312,10 @@ async fn deliver_inner(
                 .map(|(_, d)| d)
                 .unwrap_or("example.com");
             let bytes = rejection_report(domain, delivery.from, delivery.to, reason);
-            let reply_ms = ms.clone();
-            let hash = tokio::task::spawn_blocking(move || reply_ms.put_blob(&bytes)).await??;
-            store::queue_automatic_reply(
+            let result = async {
+                let reply_ms = ms.clone();
+                let hash = tokio::task::spawn_blocking(move || reply_ms.put_blob(&bytes)).await??;
+                store::queue_automatic_reply(
                 db,
                 store::AutomaticReply {
                     account: delivery.account.id,
@@ -326,7 +327,11 @@ async fn deliver_inner(
                     guarded_only_suppression: true,
                 },
             )
-            .await?;
+                .await
+            }.await;
+            if let Err(error) = result {
+                tracing::warn!(account=delivery.account.id, %error, "Rejection reply failed; suppressing without bouncing original");
+            }
         } else {
             tracing::info!(
                 account = delivery.account.id,
