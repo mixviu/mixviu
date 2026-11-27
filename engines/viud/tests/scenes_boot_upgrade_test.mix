@@ -331,7 +331,7 @@ end
   $deadline = monotonic() + 15
   while monotonic() < $deadline
     $view = call("scenes", "scenes.list", {}, $deadline).value
-    $r = rows().alpha
+    $r = rows($deadline).alpha
     if ($view.diagnostic ?? {}).error_code == "SCENES_STATE_UNREADABLE" and $r.upgrade.error_code == "SCENES_UPSTREAM" and $r.upgrade.retryable == false then $done = true; break end
     sleep(min(0.1, max(0, $deadline - monotonic())))
   end
