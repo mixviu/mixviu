@@ -165,29 +165,51 @@ mod tests {
 
     #[test]
     fn policy_hidden_surface_with_held_scale_keeps_record_and_emits_nothing() {
-        use smithay::reexports::wayland_server::{Client, DataInit, Display, DisplayHandle, Dispatch};
-        use smithay::wayland::fractional_scale::{FractionalScaleHandler, FractionalScaleManagerState};
+        use smithay::reexports::wayland_server::{
+            Client, DataInit, Dispatch, Display, DisplayHandle,
+        };
+        use smithay::wayland::fractional_scale::{
+            FractionalScaleHandler, FractionalScaleManagerState,
+        };
         struct State;
         impl FractionalScaleHandler for State {}
         smithay::delegate_fractional_scale!(State);
         impl Dispatch<WlSurface, ()> for State {
-            fn request(_: &mut Self, _: &Client, _: &WlSurface, _: <WlSurface as Resource>::Request, _: &(), _: &DisplayHandle, _: &mut DataInit<'_, Self>) {}
+            fn request(
+                _: &mut Self,
+                _: &Client,
+                _: &WlSurface,
+                _: <WlSurface as Resource>::Request,
+                _: &(),
+                _: &DisplayHandle,
+                _: &mut DataInit<'_, Self>,
+            ) {
+            }
         }
         let display = Display::<State>::new().unwrap();
         let mut dh = display.handle();
         let (server, _peer) = std::os::unix::net::UnixStream::pair().unwrap();
         let client = dh.insert_client(server, std::sync::Arc::new(())).unwrap();
-        let surface = client.create_resource::<WlSurface, (), State>(&dh, 6, ()).unwrap();
+        let surface = client
+            .create_resource::<WlSurface, (), State>(&dh, 6, ())
+            .unwrap();
         let mut fractional = fractional_base::Fractional {
             state: FractionalScaleManagerState::new::<State>(&dh),
-            cfg: Default::default(), last_observed: None, cycle: None, armed: false,
-            last_emit_at: None, last_emitted_scale: Some(2.5),
+            cfg: Default::default(),
+            last_observed: None,
+            cycle: None,
+            armed: false,
+            last_emit_at: None,
+            last_emitted_scale: Some(2.5),
         };
         let mut sent = SurfaceScales::default();
         sent.insert(surface.id(), Published::visible(2.5));
         // Policy-hidden on-pane surfaces remain in per_surface, never idle.
         for _ in 0..3 {
-            assert!(emit_best_per_surface(&mut fractional, &mut sent, &[(2.5, surface.clone())], &[]).is_empty());
+            assert!(
+                emit_best_per_surface(&mut fractional, &mut sent, &[(2.5, surface.clone())], &[])
+                    .is_empty()
+            );
             assert_eq!(sent.get(&surface.id()), Some(&Published::visible(2.5)));
             assert!(fractional.cycle.is_none());
         }

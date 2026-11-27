@@ -15,7 +15,10 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
     // The production camera is pinned. Exercise fractional pan/zoom contracts
     // through the existing opt-in fixture, after pinning and before composition.
     if let Some(args) = mode.strip_prefix("fractional-camera:") {
-        let values: Vec<f64> = args.split(':').map(|v| v.parse().expect("fixture camera number")).collect();
+        let values: Vec<f64> = args
+            .split(':')
+            .map(|v| v.parse().expect("fixture camera number"))
+            .collect();
         assert_eq!(values.len(), 3);
         let camera = state.inner.camera_mut();
         camera.transform.position.x = values[0];
