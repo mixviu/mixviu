@@ -14,7 +14,7 @@ use std::{
     sync::Arc,
 };
 
-fn strip_headers(data: &[u8], remove: impl Fn(&str) -> bool) -> Vec<u8> {
+pub(crate) fn strip_headers(data: &[u8], remove: impl Fn(&str) -> bool) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(data.len());
     let mut cursor = 0;
     if let Some(message) = MessageParser::default().parse_headers(data) {

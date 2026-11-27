@@ -163,6 +163,11 @@ pub struct Config {
     /// $HEADER_FROM (From: header display-name + address, survives a null
     /// envelope sender — i.e. bounces), $SPAM_VERDICT, $SPAM_SCORE as globals
     /// and should `return` a mailbox name (e.g. "Inbox", "Work").
+    /// Also exposes $AUTH (local-auth/external), $AUTH_USER (session identity,
+    /// empty for external), $SPF, $DKIM, $DMARC (lowercase computed results),
+    /// and $REMOTE_IP (socket peer, never a supplied header).
+    /// Return "junk-if-missing:Folder" to route to Junk if Folder is absent;
+    /// a plain folder name retains the historical Inbox fallback.
     pub inbound_filter: Option<String>,
 
     // Spam filter settings

@@ -390,6 +390,19 @@ where
                     },
                     _ => super::inbound::IngressAuth::ExternalUnverified,
                 };
+                if let Some(account) = session.authenticated_account {
+                    if let Err(error) = crate::submission_guard::admit(&session.state.db, account, &session.rcpt_to).await {
+                        let reply = match error.downcast_ref::<crate::submission_guard::Refusal>() {
+                            Some(crate::submission_guard::Refusal::Recipient) => "550 5.7.1 recipientNotAllowed",
+                            Some(crate::submission_guard::Refusal::Rate) => "451 4.7.0 sendRateExceeded",
+                            None => "451 4.3.0 Submission guard unavailable",
+                        };
+                        write_line(writer, reply).await?;
+                        session.reset_transaction();
+                        data_buf.clear();
+                        continue;
+                    }
+                }
                 // : fire-and-forget for an ALL-token-shaped message closes the
                 // timing oracle. We write 250 IMMEDIATELY — no resolve/delivery
                 // work and NO permit await before it (either re-introduces a
@@ -407,6 +420,21 @@ where
                         .rcpt_to
                         .iter()
                         .all(|r| crate::vtoken::is_active_token_shaped(r, opaque_enabled));
+                if all_token_shaped && !ingress.is_local_auth() {
+                    let verify = session.state.mail_auth.verify(session.peer.ip(),
+                        session.mail_from.as_deref().unwrap_or(""),
+                        session.ehlo_host.as_deref().unwrap_or("unknown"), &data_buf).await;
+                    let result = match verify {
+                        Ok(verify) => super::inbound::enforce_own_spf(&session.state, &ingress,
+                            session.mail_from.as_deref().unwrap_or(""), &data_buf, &verify).await,
+                        Err(error) => Err(error),
+                    };
+                    if let Err(error) = result {
+                        let reply = if error.is::<crate::sieve::delivery::Rejected>() { "550 5.7.1 ownDomainSpfFail" } else { "451 4.3.0 Authentication policy unavailable" };
+                        write_line(writer, reply).await?;
+                        session.reset_transaction(); data_buf.clear(); continue;
+                    }
+                }
                 if all_token_shaped {
                     crate::maillog::smtp_accepted(
                         session.peer,

@@ -222,6 +222,7 @@ pub async fn deliver(
     // "Mail Delivery System" display name and a "MAILER-DAEMON@" address
     // are each matchable.
     let header_from = render_header_from(&message);
+    enforce_own_spf(state, ingress, mail_from, data, &verify_result).await?;
 
     // F3 caps inputs (the 20-attachment lesson, email-gateway-vtoken.md §10):
     // surface attachment count + message size to the inbound filter so the
@@ -581,6 +582,7 @@ pub async fn deliver(
             vt_service,
             attachment_count,
             message_size,
+            filter_auth(ingress, &verify_result, remote_ip),
         )
         .await;
 
@@ -596,8 +598,13 @@ pub async fn deliver(
         // edge.
         let target_outcome = tokio::task::spawn_blocking(move || {
             if let Some(name) = inbound_filter_target {
-                if let Some(id) = inbound_ms.mailbox_by_name(inbound_account_id, &name)? {
+                let (name, closed) = filter_target_policy(&name);
+                if let Some(id) = inbound_ms.mailbox_by_name(inbound_account_id, name)? {
                     return Ok::<_, anyhow::Error>((id, true));
+                }
+                if closed {
+                    return inbound_ms.mailbox_by_role(inbound_account_id, MailboxRole::Junk)?
+                        .map(|id| (id, false)).ok_or_else(|| anyhow::anyhow!("guard target and Junk missing"));
                 }
                 tracing::warn!(
                     mailbox = %name,
@@ -1066,6 +1073,7 @@ pub(crate) async fn route_sieve_redirect(
         "",
         message.attachment_count() as i64,
         routing.raw_data.len() as i64,
+        filter_auth(routing.ingress, routing.verify, routing.remote_ip),
     )
     .await;
     let spam = verdict.as_deref() == Some("SPAM");
@@ -1073,9 +1081,11 @@ pub(crate) async fn route_sieve_redirect(
     let id = account.id;
     let target = tokio::task::spawn_blocking(move || -> Result<_> {
         if let Some(name) = filter {
-            if let Some(target) = ms.mailbox_by_name(id, &name)? {
+            let (name, closed) = filter_target_policy(&name);
+            if let Some(target) = ms.mailbox_by_name(id, name)? {
                 return Ok(target);
             }
+            if closed { return ms.mailbox_by_role(id, MailboxRole::Junk)?.ok_or_else(|| anyhow::anyhow!("guard target and Junk missing")); }
         } else if spam && let Some(target) = ms.mailbox_by_role(id, MailboxRole::Junk)? {
             return Ok(target);
         }
@@ -1104,6 +1114,56 @@ async fn legacy_vacation(
     db::vacation::is_active(&db.conn, account).await
 }
 
+fn filter_target_policy(name: &str) -> (&str, bool) {
+    name.strip_prefix("junk-if-missing:").map_or((name, false), |n| (n, true))
+}
+
+fn filter_auth(ingress: &IngressAuth, verify: &VerifyResult, ip: IpAddr) -> Vec<(&'static str, String)> {
+    use maild_auth::types::SpfCheck;
+    let (auth, user) = match ingress {
+        IngressAuth::LocalAuth { email, .. } => ("local-auth", email.as_str()),
+        IngressAuth::ExternalUnverified => ("external", ""),
+    };
+    let spf = match &verify.spf { SpfCheck::MailFrom { result, .. } | SpfCheck::Helo { result, .. } => result };
+    let outcome = |s: String| s.to_ascii_lowercase();
+    vec![("AUTH", auth.into()), ("AUTH_USER", user.into()),
+        ("SPF", outcome(format!("{spf:?}"))),
+        ("DKIM", outcome(format!("{:?}", verify.dkim.overall))),
+        ("DMARC", match verify.dmarc.outcome { DmarcOutcome::Pass => "pass", DmarcOutcome::Fail { .. } => "fail", DmarcOutcome::None => "none" }.into()),
+        ("REMOTE_IP", ip.to_string())]
+}
+
+pub(crate) async fn enforce_own_spf(state: &SmtpState, ingress: &IngressAuth, from: &str, data: &[u8], verify: &VerifyResult) -> Result<()> {
+    use maild_auth::types::{SpfCheck, SpfResult};
+    if ingress.is_local_auth() { return Ok(()); }
+    let failing = matches!(verify.spf, SpfCheck::MailFrom { result: SpfResult::Fail, .. } | SpfCheck::Helo { result: SpfResult::Fail, .. });
+    if !failing { return Ok(()); }
+    let message = MessageParser::default().parse(data);
+    let mut claims = vec![from.to_string()];
+    if let Some(message) = &message {
+        if let Some(addresses) = message.from() {
+            for addr in addresses.iter() {
+                if let Some(addr) = addr.address() { claims.push(addr.to_string()); }
+            }
+        }
+    }
+    for claim in claims {
+        let Some((_, domain)) = claim.rsplit_once('@') else { continue; };
+        let key = ::props::record::RecordKey::collection(crate::props::domains::namespace_name(), domain.to_ascii_lowercase());
+        let record = match state.domains_runtime.store().get(&key).await {
+            Ok(record) => record,
+            Err(::props::store::StoreError::NotFound) => continue,
+            Err(error) => return Err(error.into()),
+        };
+        let view = crate::props::domains::view(&record.value)?;
+        let obj = record.value.value.as_object().ok_or_else(|| anyhow::anyhow!("invalid domain policy"))?;
+        if view.enabled && view.role == "authoritative" && matches!(obj.get("spf_policy"), Some(::props::value::PropValue::String(s)) if s == "strict") {
+            return Err(crate::sieve::delivery::Rejected("ownDomainSpfFail".into()).into());
+        }
+    }
+    Ok(())
+}
+
 async fn run_inbound_filter(
     config: &super::SmtpConfig,
     from: &str,
@@ -1117,6 +1177,7 @@ async fn run_inbound_filter(
     vtoken_service: &str,
     attachment_count: i64,
     message_size: i64,
+    auth_facts: Vec<(&'static str, String)>,
 ) -> Option<String> {
     let filter_path = config.inbound_filter.as_deref()?;
 
@@ -1184,6 +1245,7 @@ async fn run_inbound_filter(
                 mix::CapabilityClass::FsRead,
             ])));
 
+            for (key, value) in auth_facts { eval.set_global(key, mix::value::Value::String(value)); }
             // Inject email metadata as Mix globals
             eval.set_global("FROM", mix::value::Value::String(from));
             eval.set_global("TO", mix::value::Value::String(to));

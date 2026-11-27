@@ -148,6 +148,18 @@ pub fn schema() -> PropertySchema {
             validators: Vec::new(),
         },
         FieldSchema {
+            name: "allowed_recipients".into(),
+            ty: FieldType::Option { inner: Box::new(FieldType::List { item: Box::new(FieldType::String) }) },
+            default: None, secret: false, help: "Outbound recipient globs; null/unset unrestricted, empty list denies all".into(),
+            since: None, until: None, validators: Vec::new(),
+        },
+        FieldSchema {
+            name: "send_rate".into(),
+            ty: FieldType::Option { inner: Box::new(FieldType::I64) },
+            default: None, secret: false, help: "Messages per rolling hour; null/unset unlimited, zero denies all".into(),
+            since: None, until: None, validators: Vec::new(),
+        },
+        FieldSchema {
             name: "mfa_enabled".into(),
             ty: FieldType::Bool,
             default: Some(PropValue::Bool(false)),
@@ -197,7 +209,11 @@ impl SqliteTableMapping for AccountsMapping {
                 },
             )
             .optional()?;
-        Ok(row.map(account_row_to_value))
+        row.map(|row| {
+            let mut value = account_row_to_value(row);
+            read_guards(conn, key, &mut value)?;
+            Ok(value)
+        }).transpose()
     }
 
     fn list(&self, conn: &Connection) -> rusqlite::Result<Vec<(String, PropValue)>> {
@@ -223,7 +239,9 @@ impl SqliteTableMapping for AccountsMapping {
         for row in rows {
             let tup = row?;
             let key = tup.0.clone();
-            out.push((key, account_row_to_value(tup)));
+            let mut value = account_row_to_value(tup);
+            read_guards(conn, &key, &mut value)?;
+            out.push((key, value));
         }
         Ok(out)
     }
@@ -261,6 +279,26 @@ impl SqliteTableMapping for AccountsMapping {
                 fields.mfa_enabled as i32,
             ],
         )?;
+        let obj = value.as_object().expect("validated object");
+        let allowed = match obj.get("allowed_recipients") {
+            None | Some(PropValue::Null) => None,
+            Some(PropValue::List(items)) => {
+                let mut patterns = Vec::new();
+                for item in items {
+                    let PropValue::String(pattern) = item else { return Err(rusqlite::Error::InvalidQuery); };
+                    maild_rules::glob_match::validate_sender_glob(pattern).map_err(|_| rusqlite::Error::InvalidQuery)?;
+                    patterns.push(pattern);
+                }
+                Some(serde_json::to_string(&patterns).map_err(|_| rusqlite::Error::InvalidQuery)?)
+            }
+            _ => return Err(rusqlite::Error::InvalidQuery),
+        };
+        let rate = match obj.get("send_rate") {
+            None | Some(PropValue::Null) => None,
+            Some(PropValue::Int(n)) if *n >= 0 => Some(*n),
+            _ => return Err(rusqlite::Error::InvalidQuery),
+        };
+        conn.execute("UPDATE accounts SET allowed_recipients=?2, send_rate=?3 WHERE email=?1", params![key, allowed, rate])?;
         // NOTE: the positive Basic-credential cache is invalidated POST-commit in
         // `AccountsHooks::after_set`, NOT here. Clearing inside this BEGIN IMMEDIATE
         // txn would race a concurrent Basic verify on the auth connection: in WAL it
@@ -284,6 +322,20 @@ impl SqliteTableMapping for AccountsMapping {
         // makes an in-txn clear here ineffective.
         Ok(())
     }
+}
+
+fn read_guards(conn: &Connection, key: &str, value: &mut PropValue) -> rusqlite::Result<()> {
+    let (allowed, rate): (Option<String>, Option<i64>) = conn.query_row(
+        "SELECT allowed_recipients, send_rate FROM accounts WHERE email=?1", [key],
+        |r| Ok((r.get(0)?, r.get(1)?)))?;
+    if let PropValue::Object(obj) = value {
+        if let Some(allowed) = allowed {
+            let patterns: Vec<String> = serde_json::from_str(&allowed).map_err(|_| rusqlite::Error::InvalidQuery)?;
+            obj.insert("allowed_recipients".into(), PropValue::List(patterns.into_iter().map(PropValue::String).collect()));
+        }
+        if let Some(rate) = rate { obj.insert("send_rate".into(), PropValue::Int(rate)); }
+    }
+    Ok(())
 }
 
 struct AccountFields {
