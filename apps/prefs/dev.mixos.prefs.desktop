@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Preferences
+Comment=Desktop settings
+Exec=/opt/mix/bin/prefs
+Icon=dev.mixos.prefs-symbolic
+Terminal=false
+Categories=Settings;
+StartupWMClass=dev.mixos.prefs

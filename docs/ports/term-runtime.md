@@ -25,6 +25,13 @@ and `--headless`. Put application arguments after the host options.
 | `apps/term/` | `/opt/mix/share/mixviu/apps/term/` | files 0644 |
 | `libraries/viu/mix/` | `/opt/mix/share/mixviu/libraries/viu/mix/` | files 0644 |
 
+Every other user app that carries a desktop entry
+(`apps/<app>/<app-id>.desktop`, `Exec=/opt/mix/bin/<app>`) ships the same
+pair: `bin/<app>` is a copy of `tools/app_launcher.mix` that runs
+`viu run /opt/mix/share/mixviu/apps/<app>` with the caller's arguments, and
+the entry installs as `share/applications/<app-id>.desktop`. A launcher may
+not take a release-set binary's name (`av` is the engine).
+
 Keep the relative-import layout. The topbar selects `mixviu.term`; the app
 registry and `mix --gui` already select the prefix's `bin/term`.
 No compatibility alias or migration shim is shipped. At upgrade, remove the

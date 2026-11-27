@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Widget Gallery
+Comment=Viu widget gallery
+Exec=/opt/mix/bin/gallery
+Icon=dev.mixos-symbolic
+Terminal=false
+Categories=Development;
+StartupWMClass=dev.mixos.gallery

@@ -1,0 +1,9 @@
+#!/opt/mix/bin/mix
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- version: 0.1.0
+-- Launcher template: tools/apps_bundle.mix writes one copy per app that
+-- carries a desktop entry, as /opt/mix/bin/<app>, naming that app's directory.
+-- Arguments are forwarded to viu run (host options first, then the app's).
+$r = run_argv(concat(["/opt/mix/bin/viu", "run", "/opt/mix/share/mixviu/apps/__APP__"], args()),
+  {timeout: 0, stdout: "inherit", stderr: "inherit"})
+exit($r.exit_code ?? 1)

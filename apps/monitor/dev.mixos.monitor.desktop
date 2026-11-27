@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Monitor
+Comment=System monitor
+Exec=/opt/mix/bin/monitor
+Icon=dev.mixos.monitor-symbolic
+Terminal=false
+Categories=System;Monitor;
+StartupWMClass=dev.mixos.monitor

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Editor
+Comment=MixViu text editor
+Exec=/opt/mix/bin/ced
+Icon=dev.mixos.ced-symbolic
+Terminal=false
+Categories=Utility;TextEditor;
+StartupWMClass=mixviu.ced

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Email
+Comment=Read and send mail
+Exec=/opt/mix/bin/email
+Icon=dev.mixos.email-symbolic
+Terminal=false
+Categories=Network;Email;
+StartupWMClass=dev.mixos.email
