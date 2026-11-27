@@ -6,7 +6,15 @@ pub fn canonical(id: &str) -> String {
         return format!("dev.mix.{rest}");
     }
     if let Some(rest) = id.strip_prefix("mixviu.") {
-        for app in ["term-mix", "gallery-mix", "ced", "term", "deck", "bustap", "gallery"] {
+        for app in [
+            "term-mix",
+            "gallery-mix",
+            "ced",
+            "term",
+            "deck",
+            "bustap",
+            "gallery",
+        ] {
             if let Some(tail) = rest.strip_prefix(app)
                 && (tail.is_empty() || tail.starts_with('.') || tail.starts_with("-symbolic"))
             {
@@ -24,7 +32,9 @@ pub fn candidates(id: &str) -> Vec<String> {
     if let Some(rest) = key.strip_prefix("dev.mix.") {
         out.push(format!("dev.mixos.{rest}"));
         let mixed = format!("mixviu.{rest}");
-        if canonical(&mixed) == key { out.push(mixed); }
+        if canonical(&mixed) == key {
+            out.push(mixed);
+        }
         for app in ["term", "gallery"] {
             if let Some(tail) = rest.strip_prefix(app)
                 && (tail.is_empty() || tail.starts_with('.') || tail.starts_with("-symbolic"))
@@ -48,9 +58,17 @@ mod tests {
             assert_eq!(candidates(&new)[0], new);
         }
         assert_eq!(canonical("mixviu.term-mix"), "dev.mix.term");
-        assert_eq!(canonical("dev.mixos.email.compose-2"), "dev.mix.email.compose-2");
+        assert_eq!(
+            canonical("dev.mixos.email.compose-2"),
+            "dev.mix.email.compose-2"
+        );
         assert_eq!(canonical("mixviu.ced-symbolic"), "dev.mix.ced-symbolic");
-        for id in ["org.example.app", "mixviu.terminal", "dev.mixos", "/icons/dev.mixos.ced.svg"] {
+        for id in [
+            "org.example.app",
+            "mixviu.terminal",
+            "dev.mixos",
+            "/icons/dev.mixos.ced.svg",
+        ] {
             assert_eq!(canonical(id), id);
             assert_eq!(candidates(id), [id]);
         }

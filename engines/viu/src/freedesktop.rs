@@ -166,7 +166,9 @@ impl Lookup {
     /// `/` to `-` in their ID). An entry without `Icon=` but with an
     /// `AudioVideo` category gives `applications-multimedia`.
     pub fn application_icon(&self, id: &str) -> Option<String> {
-        config::app_id::candidates(id).iter().find_map(|id| self.application_icon_exact(id))
+        config::app_id::candidates(id)
+            .iter()
+            .find_map(|id| self.application_icon_exact(id))
     }
 
     fn application_icon_exact(&self, id: &str) -> Option<String> {
@@ -207,7 +209,9 @@ impl Lookup {
     /// (optionally `file://`) is returned as is; a name with a path
     /// separator never leaves the icon directories.
     pub fn find(&self, name: &str, size: u32) -> Option<PathBuf> {
-        config::app_id::candidates(name).iter().find_map(|name| self.find_exact(name, size))
+        config::app_id::candidates(name)
+            .iter()
+            .find_map(|name| self.find_exact(name, size))
     }
 
     fn find_exact(&self, name: &str, size: u32) -> Option<PathBuf> {
@@ -863,27 +867,61 @@ mod tests {
 
     #[test]
     fn legacy_app_and_icon_references_resolve_both_ways_with_canonical_priority() {
-        for old in ["dev.mixos.ced", "mixviu.ced", "mixviu.term-mix", "dev.mixos.prefs"] {
+        for old in [
+            "dev.mixos.ced",
+            "mixviu.ced",
+            "mixviu.term-mix",
+            "dev.mixos.prefs",
+        ] {
             let scratch = Scratch::new();
             let new = config::app_id::canonical(old);
             let old_icon = format!("icons/hicolor/scalable/apps/{old}-symbolic.svg");
             let new_icon = format!("icons/hicolor/scalable/apps/{new}-symbolic.svg");
             scratch.write(&old_icon, "svg");
-            scratch.write(&format!("applications/{old}.desktop"), "[Desktop Entry]\nIcon=legacy-icon\n");
+            scratch.write(
+                &format!("applications/{old}.desktop"),
+                "[Desktop Entry]\nIcon=legacy-icon\n",
+            );
             let lookup = scratch.lookup("hicolor");
-            assert_eq!(lookup.find(&format!("{new}-symbolic"), 24), Some(scratch.0.join(&old_icon)));
-            assert_eq!(lookup.application_icon(&new).as_deref(), Some("legacy-icon"));
+            assert_eq!(
+                lookup.find(&format!("{new}-symbolic"), 24),
+                Some(scratch.0.join(&old_icon))
+            );
+            assert_eq!(
+                lookup.application_icon(&new).as_deref(),
+                Some("legacy-icon")
+            );
             scratch.write(&new_icon, "svg");
-            scratch.write(&format!("applications/{new}.desktop"), "[Desktop Entry]\nIcon=current-icon\n");
+            scratch.write(
+                &format!("applications/{new}.desktop"),
+                "[Desktop Entry]\nIcon=current-icon\n",
+            );
             for reference in [old, new.as_str()] {
-                assert_eq!(lookup.find(&format!("{reference}-symbolic"), 24), Some(scratch.0.join(&new_icon)));
-                assert_eq!(lookup.application_icon(reference).as_deref(), Some("current-icon"));
-                assert_eq!(lookup.application_icon(&format!("{reference}.desktop")).as_deref(), Some("current-icon"));
+                assert_eq!(
+                    lookup.find(&format!("{reference}-symbolic"), 24),
+                    Some(scratch.0.join(&new_icon))
+                );
+                assert_eq!(
+                    lookup.application_icon(reference).as_deref(),
+                    Some("current-icon")
+                );
+                assert_eq!(
+                    lookup
+                        .application_icon(&format!("{reference}.desktop"))
+                        .as_deref(),
+                    Some("current-icon")
+                );
             }
             std::fs::remove_file(scratch.0.join(old_icon)).unwrap();
             std::fs::remove_file(scratch.0.join(format!("applications/{old}.desktop"))).unwrap();
-            assert_eq!(lookup.find(&format!("{old}-symbolic"), 24), Some(scratch.0.join(new_icon)));
-            assert_eq!(lookup.application_icon(old).as_deref(), Some("current-icon"));
+            assert_eq!(
+                lookup.find(&format!("{old}-symbolic"), 24),
+                Some(scratch.0.join(new_icon))
+            );
+            assert_eq!(
+                lookup.application_icon(old).as_deref(),
+                Some("current-icon")
+            );
             assert!(lookup.application_icon("org.example.ced").is_none());
         }
     }
