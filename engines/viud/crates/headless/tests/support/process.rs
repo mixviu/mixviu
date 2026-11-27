@@ -322,7 +322,7 @@ fn spawn_options(options: Options<'_>) -> Process {
     let log = root.join("viud.log");
     let stderr = fs::File::create(&log).unwrap();
     let mut command = Command::new(binary);
-    if label.starts_with("record-privacy-") {
+    if label.starts_with("record-privacy-") || label.starts_with("fractional-") {
         command.env(paths::env::test::TEST_RECORD_FIXTURE, &root);
     }
     if label == "cold-record" {
@@ -543,6 +543,7 @@ pub fn spawn_preferences(label: &str, bus: &str, preferences: serde_json::Value)
     spawn_preferences_size(label, bus, "1280x720", preferences)
 }
 
+#[allow(dead_code)]
 pub fn spawn_scale_probe(label: &str, bus: &str) -> Process {
     spawn_options(Options {
         label,

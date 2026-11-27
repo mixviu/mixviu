@@ -12,6 +12,17 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
     };
     let mode = std::fs::read_to_string(std::path::Path::new(&root).join("record-input"))
         .unwrap_or_default();
+    // The production camera is pinned. Exercise fractional pan/zoom contracts
+    // through the existing opt-in fixture, after pinning and before composition.
+    if let Some(args) = mode.strip_prefix("fractional-camera:") {
+        let values: Vec<f64> = args.split(':').map(|v| v.parse().expect("fixture camera number")).collect();
+        assert_eq!(values.len(), 3);
+        let camera = state.inner.camera_mut();
+        camera.transform.position.x = values[0];
+        camera.transform.position.y = values[1];
+        camera.transform.zoom = values[2];
+        return;
+    }
     if mode == "cold-readback" {
         screencopy::file::testing::penalize_first_readback();
         return;

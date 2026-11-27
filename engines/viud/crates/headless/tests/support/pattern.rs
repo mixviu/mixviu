@@ -69,6 +69,7 @@ pub struct State {
     pub scale120: u32,
     pub events: Vec<(Instant, ScaleEvent)>,
     scale_dirty: bool,
+    fractional_received: bool,
     globals: Vec<(u32, String, u32)>,
     configured: bool,
     pointers: Vec<WlPointer>,
@@ -114,7 +115,7 @@ impl State {
 
 pub struct Pattern {
     viewport: Option<WpViewport>,
-    fractional: Option<WpFractionalScaleV1>,
+    _fractional: Option<WpFractionalScaleV1>,
     conn: Connection,
     queue: EventQueue<State>,
     pub state: State,
@@ -501,7 +502,7 @@ impl Pattern {
         });
         let mut client = Self {
             viewport,
-            fractional,
+            _fractional: fractional,
             conn,
             queue,
             state,
@@ -909,7 +910,7 @@ impl Dispatch<WlSurface, ()> for State {
         if let wayland_client::protocol::wl_surface::Event::PreferredBufferScale { factor } = event
         {
             state.log_scale(ScaleEvent::BufferScale(factor));
-            if state.scale_probe && state.scale120 == 120 {
+            if state.scale_probe && !state.fractional_received {
                 state.scale120 = factor as u32 * 120;
                 state.scale_dirty = true;
             }
@@ -931,6 +932,7 @@ impl Dispatch<WpFractionalScaleV1, ()> for State {
         if let wp_fractional_scale_v1::Event::PreferredScale { scale } = event {
             state.log_scale(ScaleEvent::Preferred(scale));
             state.scale120 = scale;
+            state.fractional_received = true;
             state.scale_dirty = true;
         }
     }
