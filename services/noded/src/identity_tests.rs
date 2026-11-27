@@ -121,7 +121,7 @@ async fn reverse_answers_are_one_shot_and_bound_to_current_admitted_peer() {
             "verifier" => body["verifying_broker_node"] = serde_json::json!("gamma"),
             "mesh" => body["mesh_fqdn"] = serde_json::json!("other.example"),
             "unproven" => candidate.peer_context.identity = Default::default(),
-            "revoked" => apply_inventory_reload(&candidate, reload_posture(2, vec![])).await,
+            "revoked" => apply_inventory_reload(&candidate, revoked_delivery_posture(&candidate)).await,
             _ => {}
         }
         let mut answered = false;

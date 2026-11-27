@@ -414,7 +414,7 @@ function validate_member_endpoints($member)
     if $identity == nil then print("ERROR: " .. $who .. " invalid endpoint " .. $address); mesh_fatal() end
     if $endpoint.transport == "ws-wg" then
       $mesh_identity = endpoint_identity({addr:$member.mesh_ip .. ":1",transport:"tls"})
-      if $mesh_identity == nil or not deep_eq(json_decode($identity)[0],json_decode($mesh_identity)[0]) then print("ERROR: " .. $who .. " ws-wg endpoint differs from mesh_ip: " .. $address); mesh_fatal() end
+      if $mesh_identity == nil or not deep_eq(json_parse($identity)[0],json_parse($mesh_identity)[0]) then print("ERROR: " .. $who .. " ws-wg endpoint differs from mesh_ip: " .. $address); mesh_fatal() end
     end
     if contains($seen,$identity) then print("ERROR: " .. $who .. " duplicate endpoint " .. $address); mesh_fatal() end
     push($seen,$identity)

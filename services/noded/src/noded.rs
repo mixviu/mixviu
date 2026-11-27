@@ -6667,6 +6667,19 @@ mod tests {
         }
     }
 
+    // Revoke the fixture peer without discarding R1's accepted key history.
+    fn revoked_delivery_posture(state: &AppState) -> crate::authority::Posture {
+        let mut posture = state.authority.load().posture.clone();
+        if let crate::authority::Posture::Verified(a) = &mut posture {
+            a.epoch += 1;
+            a.routing_view.clear();
+            for member in a.members_full.values_mut() {
+                member["status"] = serde_json::json!("tombstoned");
+            }
+        }
+        posture
+    }
+
     async fn reload_test_state(
         posture: crate::authority::Posture,
         etc_roster: Vec<PeerConfig>,
@@ -8761,7 +8774,7 @@ mod tests {
                     state.peer_context.identity =
                         bus::native_session::PeerIdentity::UnixPeer { uid: 1000, pid: 1 }
                 }
-                "revoked" => apply_inventory_reload(&state, reload_posture(2, vec![])).await,
+                "revoked" => apply_inventory_reload(&state, revoked_delivery_posture(&state)).await,
                 _ => {}
             }
             {
@@ -8968,7 +8981,7 @@ mod tests {
         assert!(target_rx.try_recv().is_err());
         tokio::time::timeout(
             Duration::from_secs(3),
-            apply_inventory_reload(&state, reload_posture(2, vec![])),
+            apply_inventory_reload(&state, revoked_delivery_posture(&state)),
         )
         .await
         .unwrap();

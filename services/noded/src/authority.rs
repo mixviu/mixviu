@@ -557,14 +557,15 @@ mod tests {
         let signer = SigningKey::from_bytes(&[17; 32]);
         let endpoints = serde_json::json!([{"addr":"198.51.100.5:4200","transport":"tls"}]);
         let mut member = serde_json::json!({"name":"alpha","mesh_ip":"192.0.2.5","bus":true,"status":"active","endpoints":endpoints,"credentials":[{"kind":"bus-tls","pubkey":B64.encode([7;32]),"from_epoch":1,"until_epoch":null}]});
-        write_signed_inventory(&paths, &signer, 1, serde_json::json!([member.clone()]));
+        let keeper = serde_json::json!({"name":"beta","mesh_ip":"192.0.2.6","bus":true,"status":"active"});
+        write_signed_inventory(&paths, &signer, 1, serde_json::json!([member.clone(), keeper.clone()]));
         let Posture::Verified(active) = load_and_verify(&paths) else {
             panic!("active load")
         };
         assert_eq!(active.members_full["alpha"]["endpoints"], endpoints);
         assert_eq!(active.routing_view[0].to_json()["endpoints"], endpoints);
         member["status"] = serde_json::json!("tombstoned");
-        write_signed_inventory(&paths, &signer, 2, serde_json::json!([member.clone()]));
+        write_signed_inventory(&paths, &signer, 2, serde_json::json!([member.clone(), keeper.clone()]));
         let Posture::Verified(retired) = load_and_verify(&paths) else {
             panic!("tombstone load")
         };
@@ -574,7 +575,7 @@ mod tests {
         );
         assert!(validate_reload_keys(&active, &retired).is_ok());
         member["status"] = serde_json::json!("active");
-        write_signed_inventory(&paths, &signer, 3, serde_json::json!([member]));
+        write_signed_inventory(&paths, &signer, 3, serde_json::json!([member, keeper]));
         let Posture::Verified(resurrected) = load_and_verify(&paths) else {
             panic!("candidate load")
         };
