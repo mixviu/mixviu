@@ -616,7 +616,14 @@ end
 -- Desktop entries are trusted code: an operator or a package installs them,
 -- and no check can prove a program treats an argument as data (a wrapper
 -- that evals $1 defeats any denylist). This gate therefore guarantees only
--- placement, checked on the EXPANDED argv with a per-call random sentinel
+-- placement, and both of its checks must pass on every path. First, the
+-- raw-Exec rule: the spec allows %u/%U/%f/%F only as whole arguments, so
+-- one of those codes inside a larger parsed element (handler %u%c,
+-- --url=%u, sh -c "true %u") is refused outright, whatever the entry's
+-- values -- surrounding text can expand away (an empty %c under a
+-- nameless entry) and would otherwise hand the expanded check a sentinel
+-- that looks whole. %% escapes stay literal, so --literal=%%u is fine.
+-- Second, the EXPANDED argv is checked with a per-call random sentinel
 -- standing in for the URI: the sentinel must survive as a whole argv
 -- element after the executable -- never inside a larger element, never
 -- argv[0] (a leading %d or an empty %i expands away and would shift the URI
@@ -627,6 +634,11 @@ end
 -- The flag test is a malformed-entry tripwire, not a security boundary.
 fn uri_exec_valid($exec, $entry = nil, $exact = false)
   $entry = $entry ?? {icon: "", name: "", path: ""}
+  -- First check, raw Exec: the four file/URI codes are whole arguments
+  -- only (spec). Only the value-independent file_code flag is read here.
+  for $arg in parse_exec($exec)
+    if not contains(["%f", "%F", "%u", "%U"], $arg) and expand_codes($arg, $entry, [], []).file_code then return false end
+  end
   $s = "x-sentinel:" .. uuid()
   $argv = expand_exec($exec, $entry, [$s])
   if len($argv) == 0 or $argv[0] == "" or contains($argv[0], $s) then return false end
