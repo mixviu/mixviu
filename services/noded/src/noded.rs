@@ -636,7 +636,8 @@ pub struct RunConfig {
     pub frame_policy: AdmissionMode,
 }
 
-type ListenerFuture = std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send>>;
+type ListenerFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send>>;
 
 pub async fn run(config: RunConfig, ready_tx: oneshot::Sender<()>) -> Result<()> {
     serve(config, None, ready_tx).await
@@ -989,14 +990,12 @@ async fn serve(
         crate::authority::Posture::Unverified { .. } => (false, 0),
     };
     let network = network.unwrap_or_default();
+    let explicit_listen = network.listen.is_some();
     let entries = match network.listen.clone() {
-        Some(entries) => entries,
-        None => vec![config::node::NodedListener {
-            addr: listen.parse()?,
-            tls: false,
-        }],
+        Some(entries) => entries.into_iter().map(|entry| (entry.addr.to_string(), entry.tls)).collect(),
+        None => vec![(listen.clone(), false)],
     };
-    let tls_configured = entries.iter().any(|entry| entry.tls)
+    let tls_configured = entries.iter().any(|(_, encrypted)| *encrypted)
         || mesh_config.peers.iter().any(|peer| peer.tls_port.is_some());
     let tls = if tls_configured {
         Some(Arc::new(crate::tls_ingress::prepare(
@@ -1010,22 +1009,22 @@ async fn serve(
     let tls_refusals = Arc::new(crate::tls_ingress::Refusals::default());
     let mut bound = bound;
     let mut listeners = Vec::new();
-    for entry in &entries {
+    for (address, encrypted) in &entries {
         let tcp = if bound
             .as_ref()
-            .is_some_and(|tcp| tcp.local_addr().ok() == Some(entry.addr))
+            .is_some_and(|tcp| tcp.local_addr().ok() == address.parse().ok())
         {
             bound.take().expect("prebound listener")
         } else {
-            tokio::net::TcpListener::bind(entry.addr).await?
+            tokio::net::TcpListener::bind(address).await?
         };
-        listeners.push((tcp, entry.tls));
+        listeners.push((tcp, *encrypted));
     }
     anyhow::ensure!(
         bound.is_none(),
         "prebound listener absent from explicit listen list"
     );
-    if let Some((tcp, _)) = listeners.first() {
+    if explicit_listen && let Some((tcp, _)) = listeners.first() {
         listen = tcp.local_addr()?.to_string();
     }
     let mut unix_listener = match unix_socket.as_deref() {
@@ -2504,10 +2503,19 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             }
         }
         TransportIdentity::Mesh { admission, .. } => admission.identity.clone(),
-        TransportIdentity::MeshTls { member, d2_key, epoch, revision, .. } => {
-            bus::native_session::PeerIdentity::MeshAdmitted { node: member.clone(), key: *d2_key,
-                fingerprint: blake3::hash(d2_key).to_hex().to_string(), epoch: *epoch, revision: *revision }
-        }
+        TransportIdentity::MeshTls {
+            member,
+            d2_key,
+            epoch,
+            revision,
+            ..
+        } => bus::native_session::PeerIdentity::MeshAdmitted {
+            node: member.clone(),
+            key: *d2_key,
+            fingerprint: blake3::hash(d2_key).to_hex().to_string(),
+            epoch: *epoch,
+            revision: *revision,
+        },
         _ => bus::native_session::PeerIdentity::Unauthenticated,
     };
     if matches!(transport, TransportIdentity::MeshTls { .. }) {

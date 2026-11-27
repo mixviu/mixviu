@@ -26,15 +26,14 @@ use zeroize::Zeroizing;
 /// Replace the immutable cache only after accepting a signed inventory.
 pub type LiveAuthority = Arc<RwLock<Arc<TlsAuthority>>>;
 
+type RefusalWindows = std::collections::HashMap<
+    (std::net::SocketAddr, &'static str), (std::time::Instant, u64, bool),
+>;
+
 #[derive(Default)]
 pub struct Refusals {
     total: std::sync::atomic::AtomicU64,
-    peers: std::sync::Mutex<
-        std::collections::HashMap<
-            (std::net::SocketAddr, &'static str),
-            (std::time::Instant, u64, bool),
-        >,
-    >,
+    peers: std::sync::Mutex<RefusalWindows>,
 }
 impl Refusals {
     pub fn total(&self) -> u64 {
