@@ -7007,7 +7007,10 @@ pub(crate) fn exec_argv(
     _args: &[Value],
     _flush: impl FnOnce() -> MixResult<()>,
 ) -> MixResult<Option<Value>> {
-    Err(MixError::structured("EXEC_FAILED", "exec_argv: unsupported on this platform (requires Linux)"))
+    Err(MixError::structured(
+        "EXEC_FAILED",
+        "exec_argv: unsupported on this platform (requires Linux)",
+    ))
 }
 
 #[cfg(target_os = "linux")]
@@ -7049,7 +7052,10 @@ pub(crate) fn exec_argv(
     crate::exec_replace::replace(&mut command, opts.cwd.as_deref()).map_err(|failure| {
         let mut message = format!("exec_argv: {}", exec_io_message(&failure.error));
         for (phase, error) in failure.rollback {
-            message.push_str(&format!("; {phase} rollback failed: {}", exec_io_message(&error)));
+            message.push_str(&format!(
+                "; {phase} rollback failed: {}",
+                exec_io_message(&error)
+            ));
         }
         MixError::structured("EXEC_FAILED", message)
     })?;
@@ -7057,35 +7063,35 @@ pub(crate) fn exec_argv(
 }
 
 pub(crate) fn exec_io_message(error: &std::io::Error) -> String {
-        let errno = error.raw_os_error();
-        let name = match errno {
-            Some(libc::ENOENT) => "ENOENT",
-            Some(libc::EACCES) => "EACCES",
-            Some(libc::ENOEXEC) => "ENOEXEC",
-            Some(libc::ENOTDIR) => "ENOTDIR",
-            Some(libc::E2BIG) => "E2BIG",
-            Some(libc::ETXTBSY) => "ETXTBSY",
-            Some(libc::ELOOP) => "ELOOP",
-            Some(libc::ENAMETOOLONG) => "ENAMETOOLONG",
-            Some(libc::ENOMEM) => "ENOMEM",
-            Some(libc::EMFILE) => "EMFILE",
-            Some(libc::ENFILE) => "ENFILE",
-            Some(libc::EPERM) => "EPERM",
-            Some(libc::EPIPE) => "EPIPE",
-            Some(libc::EBADF) => "EBADF",
-            Some(libc::EIO) => "EIO",
-            Some(libc::EINVAL) => "EINVAL",
-            #[cfg(target_os = "linux")]
-            Some(libc::ELIBBAD) => "ELIBBAD",
-            Some(libc::EAGAIN) => "EAGAIN",
-            Some(libc::EFAULT) => "EFAULT",
-            Some(libc::EISDIR) => "EISDIR",
-            _ => "errno",
-        };
-        match errno {
-            Some(number) => format!("{name} ({number}): {error}"),
-            None => error.to_string(),
-        }
+    let errno = error.raw_os_error();
+    let name = match errno {
+        Some(libc::ENOENT) => "ENOENT",
+        Some(libc::EACCES) => "EACCES",
+        Some(libc::ENOEXEC) => "ENOEXEC",
+        Some(libc::ENOTDIR) => "ENOTDIR",
+        Some(libc::E2BIG) => "E2BIG",
+        Some(libc::ETXTBSY) => "ETXTBSY",
+        Some(libc::ELOOP) => "ELOOP",
+        Some(libc::ENAMETOOLONG) => "ENAMETOOLONG",
+        Some(libc::ENOMEM) => "ENOMEM",
+        Some(libc::EMFILE) => "EMFILE",
+        Some(libc::ENFILE) => "ENFILE",
+        Some(libc::EPERM) => "EPERM",
+        Some(libc::EPIPE) => "EPIPE",
+        Some(libc::EBADF) => "EBADF",
+        Some(libc::EIO) => "EIO",
+        Some(libc::EINVAL) => "EINVAL",
+        #[cfg(target_os = "linux")]
+        Some(libc::ELIBBAD) => "ELIBBAD",
+        Some(libc::EAGAIN) => "EAGAIN",
+        Some(libc::EFAULT) => "EFAULT",
+        Some(libc::EISDIR) => "EISDIR",
+        _ => "errno",
+    };
+    match errno {
+        Some(number) => format!("{name} ({number}): {error}"),
+        None => error.to_string(),
+    }
 }
 
 fn parse_run_argv_opts(caller: &str, v: Option<&Value>) -> MixResult<RunArgvOpts> {

@@ -108,15 +108,14 @@ pub(crate) struct Failure {
 
 impl From<io::Error> for Failure {
     fn from(error: io::Error) -> Self {
-        Self { error, rollback: Vec::new() }
+        Self {
+            error,
+            rollback: Vec::new(),
+        }
     }
 }
 
-fn failed_exec(
-    error: io::Error,
-    signals: io::Result<()>,
-    cwd: io::Result<()>,
-) -> Failure {
+fn failed_exec(error: io::Error, signals: io::Result<()>, cwd: io::Result<()>) -> Failure {
     let rollback = [("signal", signals), ("cwd", cwd)]
         .into_iter()
         .filter_map(|(phase, result)| result.err().map(|error| (phase, error)))
@@ -148,10 +147,16 @@ mod tests {
     fn io_error_messages_name_errno_without_option_wrappers() {
         for (number, name) in [(libc::EPIPE, "EPIPE"), (libc::EBADF, "EBADF")] {
             let message = crate::builtins::exec_io_message(&io::Error::from_raw_os_error(number));
-            assert!(message.starts_with(&format!("{name} ({number}):")), "{message}");
+            assert!(
+                message.starts_with(&format!("{name} ({number}):")),
+                "{message}"
+            );
             assert!(!message.contains("Some("));
         }
-        let message = crate::builtins::exec_io_message(&io::Error::new(io::ErrorKind::InvalidInput, "validation failure"));
+        let message = crate::builtins::exec_io_message(&io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "validation failure",
+        ));
         assert_eq!(message, "validation failure");
     }
 

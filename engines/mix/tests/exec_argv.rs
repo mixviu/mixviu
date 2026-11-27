@@ -412,23 +412,63 @@ write_file({after:?}, read_file("/proc/self/status"))"#
         assert_eq!(sigfield(&before, field), sigfield(&after, field), "{field}");
     }
     let pending = sigfield(&before, "SigPnd:") | sigfield(&before, "ShdPnd:");
-    assert_ne!(pending & (1 << (libc::SIGUSR1 - 1)), 0, "ordering oracle was not armed");
+    assert_ne!(
+        pending & (1 << (libc::SIGUSR1 - 1)),
+        0,
+        "ordering oracle was not armed"
+    );
 }
 
 #[test]
 fn nul_fields_are_rejected_before_cwd_and_signal_changes() {
     for (call, field, code) in [
-        (r#"exec_argv(["/usr/bin/tr\u{0}ue"], {cwd: "/no/such/exec-nul-cwd"})"#, "argv[0]", "TYPE_MISMATCH"),
-        (r#"exec_argv(["/usr/bin/true", "arg\u{0}value"], {cwd: "/no/such/exec-nul-cwd"})"#, "argv[1]", "TYPE_MISMATCH"),
-        (r#"exec_argv(["/usr/bin/true"], {env: {"BAD\u{0}KEY": "value"}, cwd: "/no/such/exec-nul-cwd"})"#, "env key", "OPTION_INVALID"),
-        (r#"exec_argv(["/usr/bin/true"], {env: {KEY: "bad\u{0}value"}, cwd: "/no/such/exec-nul-cwd"})"#, "KEY", "OPTION_INVALID"),
-        (r#"exec_argv(["/usr/bin/true"], {cwd: "bad\u{0}cwd"})"#, "cwd", "OPTION_INVALID"),
+        (
+            r#"exec_argv(["/usr/bin/tr\u{0}ue"], {cwd: "/no/such/exec-nul-cwd"})"#,
+            "argv[0]",
+            "TYPE_MISMATCH",
+        ),
+        (
+            r#"exec_argv(["/usr/bin/true", "arg\u{0}value"], {cwd: "/no/such/exec-nul-cwd"})"#,
+            "argv[1]",
+            "TYPE_MISMATCH",
+        ),
+        (
+            r#"exec_argv(["/usr/bin/true"], {env: {"BAD\u{0}KEY": "value"}, cwd: "/no/such/exec-nul-cwd"})"#,
+            "env key",
+            "OPTION_INVALID",
+        ),
+        (
+            r#"exec_argv(["/usr/bin/true"], {env: {KEY: "bad\u{0}value"}, cwd: "/no/such/exec-nul-cwd"})"#,
+            "KEY",
+            "OPTION_INVALID",
+        ),
+        (
+            r#"exec_argv(["/usr/bin/true"], {cwd: "bad\u{0}cwd"})"#,
+            "cwd",
+            "OPTION_INVALID",
+        ),
     ] {
-        let source = format!("$cwd = cwd()\ntry\n  {call}\ncatch $e, $error\n  print($error.code .. \":\" .. $e)\nend\nprint(\"CWD_SAME=\" .. (cwd() == $cwd))\n");
-        let out = fixture_command("pending").env("EXEC_SOURCE", source).output().unwrap();
+        let source = format!(
+            "$cwd = cwd()\ntry\n  {call}\ncatch $e, $error\n  print($error.code .. \":\" .. $e)\nend\nprint(\"CWD_SAME=\" .. (cwd() == $cwd))\n"
+        );
+        let out = fixture_command("pending")
+            .env("EXEC_SOURCE", source)
+            .output()
+            .unwrap();
         let stdout = text(&out);
-        assert!(stdout.contains(code) && stdout.contains(field) && stdout.contains("NUL") && stdout.contains("CWD_SAME=true"), "{stdout}");
-        assert!(!stdout.contains("errno None") && !stdout.contains("Some(") && !stdout.contains("ENOENT"), "{stdout}");
+        assert!(
+            stdout.contains(code)
+                && stdout.contains(field)
+                && stdout.contains("NUL")
+                && stdout.contains("CWD_SAME=true"),
+            "{stdout}"
+        );
+        assert!(
+            !stdout.contains("errno None")
+                && !stdout.contains("Some(")
+                && !stdout.contains("ENOENT"),
+            "{stdout}"
+        );
     }
 }
 

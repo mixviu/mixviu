@@ -16509,7 +16509,10 @@ impl Evaluator {
                     .flush()
                     .and_then(|()| g.stderr.flush())
                     .map_err(|error| {
-                        MixError::structured("EXEC_FAILED", format!("exec_argv flush: {}", builtins::exec_io_message(&error)))
+                        MixError::structured(
+                            "EXEC_FAILED",
+                            format!("exec_argv flush: {}", builtins::exec_io_message(&error)),
+                        )
                     })
             });
         }
