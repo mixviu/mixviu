@@ -937,10 +937,9 @@ async fn bind_tcp_listeners(
     };
     let mut listeners = Vec::new();
     for (address, encrypted) in entries {
-        let tcp = if bound
-            .as_ref()
-            .is_some_and(|tcp| configured.is_none() || tcp.local_addr().ok() == address.parse().ok())
-        {
+        let tcp = if bound.as_ref().is_some_and(|tcp| {
+            configured.is_none() || tcp.local_addr().ok() == address.parse().ok()
+        }) {
             bound.take().expect("prebound listener")
         } else {
             tokio::net::TcpListener::bind(&address).await?
@@ -960,8 +959,11 @@ fn legacy_listener_posture(
     listeners: &[(tokio::net::TcpListener, bool)],
     wg_ip: &str,
 ) -> Result<(String, u16, bool)> {
-    let address = listeners.iter().find(|(_, tls)| !tls)
-        .map(|(tcp, _)| tcp.local_addr()).transpose()?;
+    let address = listeners
+        .iter()
+        .find(|(_, tls)| !tls)
+        .map(|(tcp, _)| tcp.local_addr())
+        .transpose()?;
     let listen = if explicit {
         address.map(|a| a.to_string()).unwrap_or_default()
     } else {
@@ -4935,7 +4937,9 @@ async fn handle_noded_command(
             );
             meta.insert(
                 "tls_refusal_overflow".into(),
-                serde_json::json!(state.tls_refusals.overflow_total() + mesh::tls::DIAL_REFUSALS.overflow_total()),
+                serde_json::json!(
+                    state.tls_refusals.overflow_total() + mesh::tls::DIAL_REFUSALS.overflow_total()
+                ),
             );
             let info = bus::NodeInfo {
                 node: state.node_name.clone(),

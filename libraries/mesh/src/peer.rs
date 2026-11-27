@@ -611,8 +611,7 @@ impl MeshPeers {
         desired: HashMap<String, SocketAddr>,
         revision: AuthorityRevision,
     ) -> ReconcileReport {
-        self.reconcile(desired, revision, None, None)
-            .await
+        self.reconcile(desired, revision, None, None).await
     }
 
     pub async fn reconcile_security(
