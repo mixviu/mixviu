@@ -1,4 +1,4 @@
--- version: 0.1.1
+-- version: 0.1.2
 -- apps -- the application-registry citizen: the data foundation for the
 -- desktop launcher and the taskbar's app icons. It scans the freedesktop
 -- desktop-entry directories, resolves icons through the icon-theme spec and
@@ -18,8 +18,9 @@
 -- after the request. focus_or_stop stops every instance of the desktop id
 -- when one of its windows is focused.
 -- apps.terminal is a command whose executable must be an absolute path.
--- Mesh apps.stop, apps.toggle and apps.running are open by design until
--- Bus 2c. Mesh callers can flood refused-history rows: a known limit.
+-- Mesh start/launch by desktop id, stop, toggle and running remain open
+-- until Bus 2c. open/handler and property mutation are local-only. Mesh
+-- callers can flood refused-history rows: a known limit.
 $a = require("lib/apps.mix")
 
 $apps = $a.scan_apps($a.application_dirs(), $a.locale_id(), "MIXOS")
