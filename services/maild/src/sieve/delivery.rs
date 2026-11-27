@@ -323,7 +323,10 @@ async fn deliver_inner(
                         guarded_only_suppression: true,
                     },
                 )
-                .await? else { return Ok::<(), anyhow::Error>(()); };
+                .await?
+                else {
+                    return Ok::<(), anyhow::Error>(());
+                };
                 let bytes = rejection_report(domain, delivery.from, delivery.to, reason);
                 let reply_ms = ms.clone();
                 let hash = tokio::task::spawn_blocking(move || reply_ms.put_blob(&bytes)).await??;
@@ -870,7 +873,11 @@ async fn vacation_reply(
             verified_sender: reply_proof(delivery),
             guarded_only_suppression: false,
         },
-    ).await? else { return Ok(()); };
+    )
+    .await?
+    else {
+        return Ok(());
+    };
     // subject() is MIME-decoded. The builder emits encoded words only when
     // necessary, so an encoded original cannot acquire a raw ASCII prefix.
     let default_subject = message

@@ -849,7 +849,8 @@ pub async fn deliver(
                         || reply_sender_verified(&verify_result, mail_from),
                     guarded_only_suppression: true,
                 },
-            ).await;
+            )
+            .await;
             let reservation = match reservation {
                 Ok(Some(reservation)) => reservation,
                 Ok(None) => continue,

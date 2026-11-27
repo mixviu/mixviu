@@ -291,7 +291,10 @@ pub async fn queue_reply(
             guarded_only_suppression: false,
         },
     )
-    .await? else { return Ok(false); };
+    .await?
+    else {
+        return Ok(false);
+    };
     reservation.enqueue(db, hash).await?;
     Ok(true)
 }
@@ -322,7 +325,10 @@ impl ReservedReply {
     }
 }
 
-pub(crate) async fn reserve_automatic_reply(db: &Db, reply: AutomaticReply) -> Result<Option<ReservedReply>> {
+pub(crate) async fn reserve_automatic_reply(
+    db: &Db,
+    reply: AutomaticReply,
+) -> Result<Option<ReservedReply>> {
     let AutomaticReply {
         account,
         sender,
@@ -419,7 +425,9 @@ mod automatic_reply_tests {
         // can fail. Neither failure refunds its durable stamp or rate slot.
         let mut abandoned = reply(true);
         abandoned.handle = "failed-build".into();
-        drop(reserve_automatic_reply(&db, abandoned).await?.unwrap());
+        {
+            let _abandoned = reserve_automatic_reply(&db, abandoned).await?.unwrap();
+        }
         let mut failed = reply(true);
         failed.handle = "failed-enqueue".into();
         let reservation = reserve_automatic_reply(&db, failed).await?.unwrap();
@@ -431,7 +439,11 @@ mod automatic_reply_tests {
                 .get::<_, i64>(0))?,
             3
         );
-        assert_eq!(conn.query_row("SELECT count(*) FROM sieve_replies", [], |r| r.get::<_, i64>(0))?, 3);
+        assert_eq!(
+            conn.query_row("SELECT count(*) FROM sieve_replies", [], |r| r
+                .get::<_, i64>(0))?,
+            3
+        );
         assert_eq!(
             conn.query_row("SELECT count(*) FROM smtp_queue", [], |r| r
                 .get::<_, i64>(0))?,

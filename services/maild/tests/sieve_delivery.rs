@@ -248,32 +248,81 @@ async fn suppressed_rejects_do_not_create_blobs() -> Result<()> {
     }
     let f = Fixture::new().await?;
     f.db.conn.lock().unwrap().execute(
-        "UPDATE accounts SET allowed_recipients='[\"sender@example.org\"]',send_rate=1 WHERE id=1", [],
+        "UPDATE accounts SET allowed_recipients='[\"sender@example.org\"]',send_rate=1 WHERE id=1",
+        [],
     )?;
     f.script(r#"require "reject"; reject "No";"#).await?;
     let root = f._tmp.path().join("mds/blobs");
     let initial = blobs(&root)?;
-    f.deliver_proof(MESSAGE, true, false, "bob@example.com", false).await?;
-    assert_eq!(blobs(&root)?, initial, "unverified sender must not store a reply");
+    f.deliver_proof(MESSAGE, true, false, "bob@example.com", false)
+        .await?;
+    assert_eq!(
+        blobs(&root)?,
+        initial,
+        "unverified sender must not store a reply"
+    );
     assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
-    assert_eq!(f.db.conn.lock().unwrap().query_row("SELECT count(*) FROM submission_rate", [], |r| r.get::<_, i64>(0))?, 0);
-    assert_eq!(f.db.conn.lock().unwrap().query_row("SELECT count(*) FROM sieve_replies", [], |r| r.get::<_, i64>(0))?, 0);
+    assert_eq!(
+        f.db.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM submission_rate", [], |r| r
+                .get::<_, i64>(0))?,
+        0
+    );
+    assert_eq!(
+        f.db.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM sieve_replies", [], |r| r
+                .get::<_, i64>(0))?,
+        0
+    );
 
-    f.deliver_proof(MESSAGE, true, false, "bob@example.com", true).await?;
+    f.deliver_proof(MESSAGE, true, false, "bob@example.com", true)
+        .await?;
     let admitted = blobs(&root)?;
     assert_eq!(admitted, initial + 1);
     // Reports have random boundaries/Message-IDs. If generated before
     // suppression, each of these attempts would leave a new permanent blob.
-    f.script(r#"require "reject"; reject "Changed reason";"#).await?;
-    f.deliver_proof(MESSAGE, true, false, "bob@example.com", true).await?;
-    assert_eq!(blobs(&root)?, admitted, "suppressed repeat must not store a reply");
+    f.script(r#"require "reject"; reject "Changed reason";"#)
+        .await?;
+    f.deliver_proof(MESSAGE, true, false, "bob@example.com", true)
+        .await?;
+    assert_eq!(
+        blobs(&root)?,
+        admitted,
+        "suppressed repeat must not store a reply"
+    );
     // Remove the suppression stamp to exercise quota refusal independently.
-    f.db.conn.lock().unwrap().execute("DELETE FROM sieve_replies", [])?;
-    f.deliver_proof(MESSAGE, true, false, "bob@example.com", true).await?;
-    assert_eq!(blobs(&root)?, admitted, "rate refusal must not store a reply");
+    f.db.conn
+        .lock()
+        .unwrap()
+        .execute("DELETE FROM sieve_replies", [])?;
+    f.deliver_proof(MESSAGE, true, false, "bob@example.com", true)
+        .await?;
+    assert_eq!(
+        blobs(&root)?,
+        admitted,
+        "rate refusal must not store a reply"
+    );
     assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 1);
-    assert_eq!(f.db.conn.lock().unwrap().query_row("SELECT count(*) FROM submission_rate", [], |r| r.get::<_, i64>(0))?, 1);
-    assert_eq!(f.db.conn.lock().unwrap().query_row("SELECT count(*) FROM sieve_replies", [], |r| r.get::<_, i64>(0))?, 0);
+    assert_eq!(
+        f.db.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM submission_rate", [], |r| r
+                .get::<_, i64>(0))?,
+        1
+    );
+    assert_eq!(
+        f.db.conn
+            .lock()
+            .unwrap()
+            .query_row("SELECT count(*) FROM sieve_replies", [], |r| r
+                .get::<_, i64>(0))?,
+        0
+    );
     Ok(())
 }
 
