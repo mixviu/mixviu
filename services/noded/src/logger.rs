@@ -1702,6 +1702,7 @@ mod tests {
             let listen = listener.local_addr().unwrap().to_string();
             let (ready, waiting) = tokio::sync::oneshot::channel();
             let cfg = crate::noded::RunConfig {
+                network: None,
                 session_probe: None,
                 unix_socket: None,
                 pending_grants_per_parent: 32,

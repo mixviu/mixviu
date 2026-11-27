@@ -262,6 +262,9 @@ pub struct NodedConfig {
     #[serde(flatten)]
     pub extra: std::collections::BTreeMap<String, serde_json::Value>,
     pub port: u16,
+    /// Absent preserves the legacy bind; present is the complete TCP list.
+    pub listen: Option<Vec<NodedListener>>,
+    pub tls: NodedTls,
     /// Absolute broker endpoint override (BUS-013); defaults to this environment's run directory.
     #[serde(deserialize_with = "absolute_unix_socket")]
     pub unix_socket: Option<std::path::PathBuf>,
@@ -276,6 +279,33 @@ pub struct NodedConfig {
     pub mesh_config: Option<String>,
     /// SPEC 13 §9a D2 admission posture (off | observe | enforce). Default off.
     pub admission: AdmissionMode,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NodedListener {
+    pub addr: std::net::SocketAddr,
+    pub tls: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct NodedTls {
+    pub key: String,
+    pub handshake_timeout_s: u64,
+    pub max_handshakes: usize,
+    pub max_queue: usize,
+}
+
+impl Default for NodedTls {
+    fn default() -> Self {
+        Self {
+            key: "mix:etc/noded/bus-tls.seed".into(),
+            handshake_timeout_s: 3,
+            max_handshakes: 64,
+            max_queue: 64,
+        }
+    }
 }
 
 fn absolute_unix_socket<'de, D: serde::Deserializer<'de>>(
@@ -314,6 +344,8 @@ impl Default for NodedConfig {
         Self {
             extra: Default::default(),
             port: 4200,
+            listen: None,
+            tls: NodedTls::default(),
             unix_socket: None,
             account: None,
             pending_grants_per_parent: 32,
@@ -1038,6 +1070,37 @@ mod transplanted_tests {
             let src = format!("noded: {{ admission: \"{s}\" }}\n");
             let nc: NodeConfig = crate::from_conf_mix_str(&src).expect("parse");
             assert_eq!(nc.noded.admission, want, "admission={s}");
+        }
+    }
+
+    #[test]
+    fn noded_listener_list_distinguishes_absent_and_empty() {
+        let absent: NodeConfig = crate::from_conf_mix_str("node: alpha\n").unwrap();
+        assert!(absent.noded.listen.is_none());
+        assert_eq!(absent.noded.tls.key, "mix:etc/noded/bus-tls.seed");
+        assert_eq!(absent.noded.tls.handshake_timeout_s, 3);
+        assert_eq!(absent.noded.tls.max_handshakes, 64);
+        assert_eq!(absent.noded.tls.max_queue, 64);
+        let empty: NodeConfig = crate::from_conf_mix_str("noded: { listen: [] }\n").unwrap();
+        assert!(empty.noded.listen.unwrap().is_empty());
+        let dual: NodeConfig = crate::from_conf_mix_str(
+            "noded: { listen: [{addr: '192.0.2.1:4200', tls: false}, {addr: '[2001:db8::1]:4201', tls: true}], tls: {max_queue: 8} }\n",
+        ).unwrap();
+        let listeners = dual.noded.listen.unwrap();
+        assert_eq!(listeners.len(), 2);
+        assert!(!listeners[0].tls);
+        assert!(listeners[1].tls);
+        assert_eq!(dual.noded.tls.max_queue, 8);
+    }
+
+    #[test]
+    fn noded_listener_and_tls_typos_fail_closed() {
+        for source in [
+            "noded: {listen: [{addr: '192.0.2.1:4200', tsl: true}]}",
+            "noded: {listen: [{addr: '192.0.2.1:4200'}]}",
+            "noded: {tls: {max_handshake: 8}}",
+        ] {
+            assert!(crate::from_conf_mix_str::<NodeConfig>(source).is_err());
         }
     }
 

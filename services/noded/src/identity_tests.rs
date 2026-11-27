@@ -317,6 +317,7 @@ async fn mutual_proof_orders_listener_challenge_client_proof_then_reverse_answer
 async fn unverified_authority_skips_reverse_challenge() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let peer = PeerConfig {
+    tls_port: None,
         name: "beta".into(),
         mesh_ip: listener.local_addr().unwrap().ip(),
         noded_port: listener.local_addr().unwrap().port(),

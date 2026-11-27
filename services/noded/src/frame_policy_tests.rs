@@ -111,6 +111,7 @@ async fn accepted_rotation_drops_exact_inbound_key_within_one_second() {
     state.live_sessions.write().await.insert(
         "rotating".into(),
         super::GatedSession {
+            transport: None,
             identity: state.peer_context.identity.clone(),
             claimed_source_node: "beta".into(),
             source_ip: "192.0.2.2".into(),
@@ -208,6 +209,7 @@ async fn policy_mesh_state(
     endpoint: std::net::SocketAddr,
 ) -> (AppState, mpsc::UnboundedReceiver<MeshInbound>, PeerConfig) {
     let peer = PeerConfig {
+    tls_port: None,
         name: "beta".into(),
         mesh_ip: endpoint.ip(),
         noded_port: endpoint.port(),

@@ -471,6 +471,9 @@ impl PendingResponseTable {
 
 #[derive(Clone)]
 struct AppState {
+    tls: Option<Arc<mesh::TlsRuntime>>,
+    tls_peer: Option<crate::tls_ingress::TlsPeer>,
+    tls_refusals: Arc<crate::tls_ingress::Refusals>,
     d2_seed: Option<mesh::seed::D2Seed>,
     peer_context: bus::native_session::PeerContext,
     sessions: Arc<tokio::sync::Mutex<session::Sessions>>,
@@ -552,6 +555,7 @@ struct PendingMeshObservation {
 /// `select!`s on it, so `notify_one()` breaks the loop and drops the socket.
 #[derive(Clone)]
 struct GatedSession {
+    transport: Option<TransportIdentity>,
     identity: bus::native_session::PeerIdentity,
     /// The cryptographically-proven member name established at admission — the
     /// key re-checked against the new inventory snapshot on reload.
@@ -617,6 +621,7 @@ enum AdmitOutcome {
 // ── Entry point ──
 
 pub struct RunConfig {
+    pub network: Option<config::node::NodedConfig>,
     #[cfg(test)]
     pub session_probe: Option<oneshot::Sender<Arc<tokio::sync::Mutex<session::Sessions>>>>,
     /// None disables native ingress for isolated legacy test brokers.
@@ -630,6 +635,9 @@ pub struct RunConfig {
     pub admission_mode: AdmissionMode,
     pub frame_policy: AdmissionMode,
 }
+
+type ListenerFuture =
+    std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send>>;
 
 pub async fn run(config: RunConfig, ready_tx: oneshot::Sender<()>) -> Result<()> {
     serve(config, None, ready_tx).await
@@ -915,12 +923,63 @@ async fn mesh_incoming_loop(
     }
 }
 
+async fn bind_tcp_listeners(
+    legacy: &str,
+    configured: Option<&[config::node::NodedListener]>,
+    mut bound: Option<tokio::net::TcpListener>,
+) -> Result<Vec<(tokio::net::TcpListener, bool)>> {
+    let entries = match configured {
+        Some(entries) => entries
+            .iter()
+            .map(|entry| (entry.addr.to_string(), entry.tls))
+            .collect(),
+        None => vec![(legacy.to_owned(), false)],
+    };
+    let mut listeners = Vec::new();
+    for (address, encrypted) in entries {
+        let tcp = if bound.as_ref().is_some_and(|tcp| {
+            configured.is_none() || tcp.local_addr().ok() == address.parse().ok()
+        }) {
+            bound.take().expect("prebound listener")
+        } else {
+            tokio::net::TcpListener::bind(&address).await?
+        };
+        listeners.push((tcp, encrypted));
+    }
+    anyhow::ensure!(
+        bound.is_none(),
+        "prebound listener absent from explicit listen list"
+    );
+    Ok(listeners)
+}
+
+fn legacy_listener_posture(
+    legacy: &str,
+    explicit: bool,
+    listeners: &[(tokio::net::TcpListener, bool)],
+    wg_ip: &str,
+) -> Result<(String, u16, bool)> {
+    let address = listeners
+        .iter()
+        .find(|(_, tls)| !tls)
+        .map(|(tcp, _)| tcp.local_addr())
+        .transpose()?;
+    let listen = if explicit {
+        address.map(|a| a.to_string()).unwrap_or_default()
+    } else {
+        legacy.to_owned()
+    };
+    let wg_bound = address.is_some() && bind_is_wg(&listen, wg_ip);
+    Ok((listen, address.map(|a| a.port()).unwrap_or(0), wg_bound))
+}
+
 async fn serve(
     config: RunConfig,
     bound: Option<tokio::net::TcpListener>,
     ready_tx: oneshot::Sender<()>,
 ) -> Result<()> {
     let RunConfig {
+        network,
         #[cfg(test)]
         session_probe,
         unix_socket,
@@ -980,11 +1039,26 @@ async fn serve(
         crate::authority::Posture::Verified(a) => (true, a.epoch),
         crate::authority::Posture::Unverified { .. } => (false, 0),
     };
-    // Same point in start-up either way: validation above runs first.
-    let listener = match bound {
-        Some(listener) => listener,
-        None => tokio::net::TcpListener::bind(&listen).await?,
+    let network = network.unwrap_or_default();
+    let explicit_listen = network.listen.is_some();
+    let tls_configured = network
+        .listen
+        .as_ref()
+        .is_some_and(|entries| entries.iter().any(|entry| entry.tls))
+        || mesh_config.peers.iter().any(|peer| peer.tls_port.is_some());
+    let tls = if tls_configured {
+        Some(Arc::new(crate::tls_ingress::prepare(
+            &initial_posture,
+            &node,
+            &network.tls,
+        )?))
+    } else {
+        None
     };
+    let tls_refusals = Arc::new(crate::tls_ingress::Refusals::default());
+    let listeners = bind_tcp_listeners(&listen, network.listen.as_deref(), bound).await?;
+    let (listen, listener_port, wg_bound) =
+        legacy_listener_posture(&listen, explicit_listen, &listeners, &wg_ip)?;
     let mut unix_listener = match unix_socket.as_deref() {
         Some(path) => match crate::native_ingress::bind(path).await {
             Ok(listener) => Some(listener),
@@ -1009,10 +1083,8 @@ async fn serve(
     } else {
         None
     };
-    let listener_port = listener.local_addr()?.port();
     // SPEC 13 §9a B1 self-check — is the listener bound to our own WG IP?
     // Start-immutable; computed once and shared with the reload watcher.
-    let wg_bound = bind_is_wg(&listen, &wg_ip);
     let initial_authority = crate::routing::RoutingAuthority::new(
         initial_posture,
         &node,
@@ -1036,6 +1108,9 @@ async fn serve(
     let (mesh_incoming_tx, mesh_incoming_rx) = mpsc::unbounded_channel::<MeshInbound>();
     let d2_seed = mesh_config.d2_seed.clone();
     let mesh = Arc::new(MeshPeers::new(mesh_config, mesh_incoming_tx));
+    if let Some(tls) = &tls {
+        mesh.set_tls(tls.clone()).await;
+    }
     mesh.set_frame_enforce(frame_policy == AdmissionMode::Enforce)
         .await;
     reconcile_transport_authority(&mesh, &initial_authority).await;
@@ -1101,6 +1176,9 @@ async fn serve(
     let change_bus = crate::props::ChangeBus::new(broker.clone());
 
     let state = AppState {
+        tls,
+        tls_peer: None,
+        tls_refusals,
         d2_seed,
         peer_context: Default::default(),
         session_admission: SessionAdmission::default(),
@@ -1187,42 +1265,61 @@ async fn serve(
         seed_world_specs(&broker, dir).await;
     }
 
-    let app = Router::new()
-        .route("/ws", axum::routing::get(ws_handler))
-        .with_state(state.clone());
-
-    tracing::info!(node = %node, "Broker listening on ws://{}", listen);
-
-    // Signal that the listener is bound and ready
-    let _ = ready_tx.send(());
-
-    // SPEC 13 §9a (2-c-2a) — serve WITH connect-info so each accepted socket
-    // carries its real address for audit. It grants no identity or local trust.
-    // Nagle off on every accepted socket: a reply or delivery written in two
-    // parts otherwise waits on the peer's delayed ACK (40 ms on Linux).
-    let listener = axum::serve::ListenerExt::tap_io(listener, |tcp| {
-        if let Err(error) = tcp.set_nodelay(true) {
-            tracing::debug!(%error, "TCP_NODELAY not set on an accepted socket");
+    let mut servers: Vec<ListenerFuture> = Vec::new();
+    for (tcp, encrypted) in listeners {
+        tracing::info!(node = %node, "Broker listening on {}://{}", if encrypted { "wss" } else { "ws" }, tcp.local_addr()?);
+        if encrypted {
+            let tls = state.tls.as_ref().expect("TLS startup validated");
+            let listener = crate::tls_ingress::TlsListener::new(
+                tcp,
+                &tls.credential,
+                tls.authority.clone(),
+                &network.tls,
+                state.tls_refusals.clone(),
+            )?;
+            let app = Router::new()
+                .route("/ws", axum::routing::get(tls_ws_handler))
+                .with_state(state.clone());
+            servers.push(Box::pin(async move {
+                axum::serve(
+                    listener,
+                    app.into_make_service_with_connect_info::<crate::tls_ingress::TlsPeer>(),
+                )
+                .await
+            }));
+        } else {
+            let tcp = axum::serve::ListenerExt::tap_io(tcp, |tcp| {
+                if let Err(error) = tcp.set_nodelay(true) {
+                    tracing::debug!(%error, "TCP_NODELAY not set on an accepted socket");
+                }
+            });
+            let app = Router::new()
+                .route("/ws", axum::routing::get(ws_handler))
+                .with_state(state.clone());
+            servers.push(Box::pin(async move {
+                axum::serve(
+                    tcp,
+                    app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                )
+                .await
+            }));
         }
-    });
-    let tcp_server = axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-    );
-    if let Some((listener, _socket_guard)) = unix_listener {
-        let unix_app = Router::new()
+    }
+    if let Some((listener, guard)) = unix_listener {
+        let app = Router::new()
             .route("/ws", axum::routing::get(unix_ws_handler))
             .with_state(state);
-        tokio::try_join!(async { tcp_server.await }, async {
+        servers.push(Box::pin(async move {
+            let _guard = guard;
             axum::serve(
                 listener,
-                unix_app.into_make_service_with_connect_info::<crate::native_ingress::UnixPeer>(),
+                app.into_make_service_with_connect_info::<crate::native_ingress::UnixPeer>(),
             )
             .await
-        })?;
-    } else {
-        tcp_server.await?;
+        }));
     }
+    let _ = ready_tx.send(());
+    futures_util::future::try_join_all(servers).await?;
 
     Ok(())
 }
@@ -1418,16 +1515,26 @@ fn classify_seed_read(raw: std::io::Result<Option<zeroize::Zeroizing<Vec<u8>>>>)
 }
 
 fn read_d2_seed(path: &std::path::Path) -> std::io::Result<Option<zeroize::Zeroizing<Vec<u8>>>> {
+    read_d2_seed_with(path, |path, mode, owner| {
+        tracing::warn!(
+            path = %path.display(), mode = format_args!("{mode:o}"), owner,
+            "INSECURE d2 seed permissions or owner; expected root:noded 0640; loading during rollout"
+        );
+    })
+}
+
+/// Report descriptor-policy findings independently of tracing's global filters.
+fn read_d2_seed_with(
+    path: &std::path::Path,
+    on_insecure: impl FnOnce(&std::path::Path, u32, u32),
+) -> std::io::Result<Option<zeroize::Zeroizing<Vec<u8>>>> {
     let mut opened = mesh::seed::open_seed(path).map_err(|error| match error {
         mesh::seed::SeedFileError::Io(error) => error,
         other => std::io::Error::other(other),
     })?;
     // Rollout policy: warn once per load, but continue with this same fd.
     if !opened.secure {
-        tracing::warn!(
-            path = %path.display(), mode = format_args!("{:o}", opened.mode), owner = opened.owner,
-            "INSECURE d2 seed permissions or owner; expected root:noded 0640; loading during rollout"
-        );
+        on_insecure(path, opened.mode, opened.owner);
     }
     opened.read_bounded(128)
 }
@@ -1825,25 +1932,37 @@ async fn process_admit_response(
     };
     let body: serde_json::Value =
         serde_json::from_str(&msg.body).unwrap_or(serde_json::Value::Null);
-    let proof =
-        match crate::admission::reconstruct_proof(&challenge, &body, &a.mesh, &state.node_name) {
-            Ok(p) => p,
-            Err(e) => {
-                emit_admission_observed(
-                    state,
-                    "would-refuse",
-                    e.detail(),
-                    "?",
-                    source_ip,
-                    session_id,
-                    a.epoch,
-                    "",
-                );
-                return Some(AdmitOutcome::Refuse(e.detail()));
-            }
-        };
+    let proof = match crate::admission::reconstruct_bound_proof(
+        &challenge,
+        &body,
+        &a.mesh,
+        &state.node_name,
+        state.tls_peer.as_ref().map(|p| &p.binding),
+    ) {
+        Ok(p) => p,
+        Err(e) => {
+            emit_admission_observed(
+                state,
+                "would-refuse",
+                e.detail(),
+                "?",
+                source_ip,
+                session_id,
+                a.epoch,
+                "",
+            );
+            return Some(AdmitOutcome::Refuse(e.detail()));
+        }
+    };
     let digest = crate::admission::canon_digest(&proof.transcript);
     let identity = snap.keys.prove(&proof.transcript, &proof.signature);
+    if state
+        .tls_peer
+        .as_ref()
+        .is_some_and(|peer| peer.member.member != proof.claimed_source_node)
+    {
+        return Some(AdmitOutcome::Refuse("tls-d2-member-mismatch"));
+    }
     let (verdict, detail) = match a.members_full.get(&proof.claimed_source_node) {
         None => ("would-refuse", "no-current-d2-credential"),
         Some(member) => {
@@ -1978,11 +2097,12 @@ async fn reconcile_transport_authority(
 ) -> ReconcileReport {
     match &authority.posture {
         crate::authority::Posture::Verified(a) => {
-            mesh.reconcile_identity(
+            mesh.reconcile_security(
                 authority.routes.desired_endpoints(),
                 authority.revision(),
                 authority.keys.clone(),
                 a.mesh.clone(),
+                authority.tls_keys.clone(),
             )
             .await
         }
@@ -2027,6 +2147,9 @@ async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture
             .write()
             .expect("delivery fence poisoned");
         state.authority.store(next.clone());
+        if let Some(tls) = &state.tls {
+            *tls.authority.write().expect("TLS authority poisoned") = next.tls_keys.clone();
+        }
     }
     if let crate::authority::Posture::Verified(accepted) = &next.posture {
         reload_revocation_teardown(state, accepted).await;
@@ -2140,12 +2263,17 @@ async fn track_mesh_session(
         .delivery_fence
         .read()
         .expect("delivery fence poisoned");
-    if !state.authority.load().keys.contains(node, key) {
+    let authority = state.authority.load();
+    let _ = key;
+    if mesh_trust::identity::link_refusal(&state.peer_context, &authority.keys, &authority.tls_keys)
+        .is_some()
+    {
         return false;
     }
     live.insert(
         id.to_owned(),
         GatedSession {
+            transport: state.peer_context.transport.clone(),
             identity: state.peer_context.identity.clone(),
             claimed_source_node: node.to_owned(),
             source_ip: address.to_owned(),
@@ -2172,14 +2300,14 @@ async fn reload_revocation_teardown(state: &AppState, a: &crate::authority::Acce
         let live = state.live_sessions.read().await;
         live.iter()
             .filter_map(|(sid, s)| {
-                let keys = &state.authority.load().keys;
-                let current = match &s.identity {
-                    bus::native_session::PeerIdentity::MeshAdmitted { node, key, .. } => {
-                        keys.contains(node, key)
-                    }
-                    _ => false,
+                let authority = state.authority.load();
+                let context = bus::native_session::PeerContext {
+                    identity: s.identity.clone(),
+                    transport: s.transport.clone(),
+                    address: None,
                 };
-                (!current).then(|| (sid.clone(), s.clone(), "exact-key-revoked"))
+                mesh_trust::identity::link_refusal(&context, &authority.keys, &authority.tls_keys)
+                    .map(|reason| (sid.clone(), s.clone(), reason))
             })
             .collect()
     };
@@ -2235,6 +2363,29 @@ async fn ws_handler(
         .max_frame_size(bus::WS_MAX_FRAME_BYTES)
         .on_upgrade(move |socket| {
             handle_socket(socket, state, TransportIdentity::LegacyTcp { source_ip })
+        })
+}
+
+async fn tls_ws_handler(
+    ws: WebSocketUpgrade,
+    ConnectInfo(peer): ConnectInfo<crate::tls_ingress::TlsPeer>,
+    State(mut state): State<AppState>,
+) -> impl IntoResponse {
+    state.peer_context.address = Some(peer.address);
+    state.tls_peer = Some(peer.clone());
+    // TLS always requires both proofs; WG bind policy is not a trust input.
+    state.admission_mode = AdmissionMode::Enforce;
+    state.wg_bound = true;
+    ws.max_message_size(WS_MAX_MESSAGE_BYTES)
+        .max_frame_size(bus::WS_MAX_FRAME_BYTES)
+        .on_upgrade(move |socket| {
+            handle_socket(
+                socket,
+                state,
+                TransportIdentity::LegacyTcp {
+                    source_ip: peer.address.ip(),
+                },
+            )
         })
 }
 
@@ -2339,18 +2490,26 @@ fn reverse_identity_answer(
         return None;
     };
     let (node, key) = state.peer_context.mesh_peer()?;
-    if !authority.keys.contains(node, key) {
+    let _ = key;
+    if mesh_trust::identity::link_refusal(&state.peer_context, &authority.keys, &authority.tls_keys)
+        .is_some()
+    {
         return None;
     }
     // The admitted peer owns the reverse challenge and verifies its epoch.
     // Keep verifier/mesh binding in the shared signer, accepting publish skew.
-    let wire = mesh::build_admit_response(
+    let wire = mesh::build_bound_admit_response(
         message,
         &state.node_name,
         &state.d2_seed,
         node,
         &a.mesh,
         a.epoch,
+        state
+            .tls_peer
+            .as_ref()
+            .map(|p| &p.binding)
+            .unwrap_or(&[0; 32]),
     )?;
     let mut response = bus::parse(&wire).ok()?;
     response.set("command", "noded.identity.response");
@@ -2382,8 +2541,24 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             }
         }
         TransportIdentity::Mesh { admission, .. } => admission.identity.clone(),
+        TransportIdentity::MeshTls {
+            member,
+            d2_key,
+            epoch,
+            revision,
+            ..
+        } => bus::native_session::PeerIdentity::MeshAdmitted {
+            node: member.clone(),
+            key: *d2_key,
+            fingerprint: blake3::hash(d2_key).to_hex().to_string(),
+            epoch: *epoch,
+            revision: *revision,
+        },
         _ => bus::native_session::PeerIdentity::Unauthenticated,
     };
+    if matches!(transport, TransportIdentity::MeshTls { .. }) {
+        state.peer_context.transport = Some(transport.clone());
+    }
     if matches!(&transport, TransportIdentity::LocalUnix { .. }) {
         state.observe = state.observe.for_class(TrafficClass::NativeSession);
     }
@@ -2392,6 +2567,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         TransportIdentity::LegacyTcp { source_ip } | TransportIdentity::Mesh { source_ip, .. } => {
             *source_ip
         }
+        TransportIdentity::MeshTls { source, .. } => source.ip(),
         TransportIdentity::LocalUnix { .. } => std::net::Ipv4Addr::LOCALHOST.into(),
     };
     let (mut ws_sink, mut ws_stream) = socket.split();
@@ -2776,8 +2952,27 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 None
             };
             if let Some(outcome) = outcome {
+                if state.tls_peer.is_some() && !matches!(&outcome, AdmitOutcome::Admit(_, _)) {
+                    break;
+                }
                 if let AdmitOutcome::Admit(_, identity) = &outcome {
                     state.peer_context.identity = identity.clone();
+                    if let Some(peer) = &state.tls_peer {
+                        let Some((node, d2_key)) = state.peer_context.mesh_peer() else {
+                            break;
+                        };
+                        if node != peer.member.member {
+                            break;
+                        }
+                        state.peer_context.transport = Some(TransportIdentity::MeshTls {
+                            member: peer.member.member.clone(),
+                            tls_key: peer.member.key,
+                            d2_key: *d2_key,
+                            epoch: peer.member.epoch,
+                            revision: peer.member.revision,
+                            source: peer.address,
+                        });
+                    }
                 } else {
                     state.peer_context.identity =
                         bus::native_session::PeerIdentity::Unauthenticated;
@@ -3797,12 +3992,10 @@ fn stamp_mesh_connection(message: &mut BusMessage, peer: &str, connection: Optio
 /// Caller holds delivery_fence through enqueue and the registry read lock
 /// proving that the registered bridge still belongs to this connection.
 fn admitted_delivery_peer(state: &AppState, _source_ip: std::net::IpAddr) -> Option<String> {
-    let (node, key) = state.peer_context.mesh_peer()?;
-    state
-        .authority
-        .load()
-        .keys
-        .contains(node, key)
+    let (node, _) = state.peer_context.mesh_peer()?;
+    let authority = state.authority.load();
+    mesh_trust::identity::link_refusal(&state.peer_context, &authority.keys, &authority.tls_keys)
+        .is_none()
         .then(|| node.to_owned())
 }
 
@@ -4748,6 +4941,16 @@ async fn handle_noded_command(
             meta.insert("pending_responses".into(), pending.into());
             meta.insert("pending_responder_closed".into(), responder_closed.into());
             meta.insert("refusal_totals".into(), refusal_totals());
+            meta.insert(
+                "tls_refusals".into(),
+                serde_json::json!(state.tls_refusals.total() + mesh::tls::DIAL_REFUSALS.total()),
+            );
+            meta.insert(
+                "tls_refusal_overflow".into(),
+                serde_json::json!(
+                    state.tls_refusals.overflow_total() + mesh::tls::DIAL_REFUSALS.overflow_total()
+                ),
+            );
             let info = bus::NodeInfo {
                 node: state.node_name.clone(),
                 // `bind` is `<host>:<port>`; the host is the WG IP. Parse
@@ -5670,6 +5873,7 @@ mod tests {
 
     include!("frame_policy_tests.rs");
     include!("identity_tests.rs");
+    include!("tls_tests.rs");
     use std::collections::HashMap;
     use std::net::{Ipv4Addr, TcpListener};
     use std::sync::Arc;
@@ -5813,6 +6017,7 @@ mod tests {
         );
 
         let etc_roster = vec![PeerConfig {
+            tls_port: None,
             name: PEER.into(),
             mesh_ip: "192.0.2.99".parse().unwrap(),
             noded_port: 4300,
@@ -6132,63 +6337,50 @@ mod tests {
     #[test]
     fn d2_seed_file_policy_warns_once_and_never_follows_or_blocks() {
         use base64::Engine as _;
-        use std::io::Write;
         use std::os::unix::fs::{PermissionsExt, symlink};
-        #[derive(Clone)]
-        struct Capture(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
-        impl Write for Capture {
-            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-                self.0.lock().unwrap().extend_from_slice(bytes);
-                Ok(bytes.len())
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-        let capture = Capture(Default::default());
-        let writer = capture.clone();
-        let subscriber = tracing_subscriber::fmt()
-            .without_time()
-            .with_ansi(false)
-            .with_max_level(tracing::Level::WARN)
-            .with_writer(move || writer.clone())
-            .finish();
-        let _guard = tracing::subscriber::set_default(subscriber);
         let directory = std::env::temp_dir().join(format!("d2-policy-{}", rand::random::<u64>()));
         std::fs::create_dir(&directory).unwrap();
         let target = directory.join("seed");
         let b64 = base64::engine::general_purpose::STANDARD;
         std::fs::write(&target, b64.encode([173; 32])).unwrap();
-        for mode in [0o640, 0o660, 0o644] {
-            capture.0.lock().unwrap().clear();
+        // This fixture is owned by the euid, so group read warns even when
+        // the tests run as root. Root-owned 0640 is for a different euid.
+        for mode in [0o600, 0o640, 0o660, 0o644] {
             std::fs::set_permissions(&target, std::fs::Permissions::from_mode(mode)).unwrap();
+            let mut findings = Vec::new();
             assert_eq!(
-                super::load_d2_seed(&target),
-                Some(mesh::seed::D2Seed::new([173; 32]))
+                super::classify_seed_read(super::read_d2_seed_with(
+                    &target,
+                    |path, mode, owner| findings.push((path.to_path_buf(), mode, owner)),
+                )),
+                super::SeedRead::Loaded(mesh::seed::D2Seed::new([173; 32]))
             );
-            let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
-            assert_eq!(
-                log.matches("WARN").count(),
-                usize::from(mode != 0o640),
-                "{log}"
-            );
-            if mode != 0o640 {
-                assert!(log.contains(&target.display().to_string()));
-                assert!(log.contains(&format!("mode={mode:o}")));
+            if mode == 0o600 {
+                assert!(findings.is_empty(), "{findings:?}");
+            } else {
                 // SAFETY: geteuid has no preconditions.
-                assert!(log.contains(&format!("owner={}", unsafe { libc::geteuid() })));
+                let owner = unsafe { libc::geteuid() };
+                assert_eq!(findings, vec![(target.clone(), mode, owner)]);
             }
         }
         let link = directory.join("link");
         symlink(&target, &link).unwrap();
-        assert!(super::load_d2_seed(&link).is_none());
+        assert!(matches!(
+            super::classify_seed_read(super::read_d2_seed_with(&link, |_, _, _| {
+                panic!("symlink must be refused before checking permissions")
+            })),
+            super::SeedRead::Unreadable(_)
+        ));
         let fifo = directory.join("fifo");
         let name = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
         // SAFETY: name is a live NUL-terminated path, and mode is valid.
         assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(super::classify_seed_read(super::read_d2_seed(&fifo)));
+            let _ = tx.send(super::classify_seed_read(super::read_d2_seed_with(
+                &fifo,
+                |_, _, _| panic!("FIFO must be refused before checking permissions"),
+            )));
         });
         assert_eq!(
             rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap(),
@@ -6487,6 +6679,9 @@ mod tests {
         let broker = Arc::new(SubscriptionBroker::new());
         let started = Instant::now();
         AppState {
+            tls: None,
+            tls_peer: None,
+            tls_refusals: Default::default(),
             d2_seed: None,
             peer_context: Default::default(),
             session_admission: SessionAdmission::default(),
@@ -6627,6 +6822,7 @@ mod tests {
         });
         let self_ip: std::net::IpAddr = "127.0.0.1".parse().unwrap();
         let beta = PeerConfig {
+            tls_port: None,
             name: "beta".into(),
             mesh_ip: endpoint.ip(),
             noded_port: endpoint.port(),
@@ -6815,6 +7011,7 @@ mod tests {
         let bound = listener.local_addr().unwrap();
         let other = if bound.port() == 1 { 2 } else { 1 };
         let config = |listen: String| super::RunConfig {
+            network: None,
             session_probe: None,
             unix_socket: None,
             pending_grants_per_parent: 32,
@@ -6864,6 +7061,7 @@ mod tests {
         tokio::spawn(async move {
             let _ = super::run_on(
                 super::RunConfig {
+                    network: None,
                     session_probe: None,
                     unix_socket: None,
                     pending_grants_per_parent: 32,
@@ -6953,6 +7151,7 @@ mod tests {
         tokio::spawn(async move {
             let _ = super::run_on(
                 super::RunConfig {
+                    network: None,
                     session_probe: None,
                     unix_socket: None,
                     pending_grants_per_parent: 32,
@@ -7110,6 +7309,7 @@ mod tests {
         tokio::spawn(async move {
             let _ = super::run_on(
                 super::RunConfig {
+                    network: None,
                     session_probe: None,
                     unix_socket: None,
                     pending_grants_per_parent: 32,
@@ -7944,6 +8144,7 @@ mod tests {
         ] {
             for address in ["127.0.0.1:4200", "[::1]:4200", "192.0.2.5:4200"] {
                 let remote = PeerContext {
+                    transport: None,
                     identity: PeerIdentity::Unauthenticated,
                     address: Some(address.parse().unwrap()),
                 };
@@ -7953,6 +8154,7 @@ mod tests {
                     super::BrokerOrigin::Mesh
                 );
                 let local = PeerContext {
+                    transport: None,
                     identity: PeerIdentity::UnixPeer { uid: 1000, pid: 1 },
                     address: None,
                 };

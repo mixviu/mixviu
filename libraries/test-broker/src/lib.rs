@@ -39,6 +39,8 @@ mod spec;
 mod spec_release;
 #[path = "../../../services/noded/src/subscription.rs"]
 mod subscription;
+#[path = "../../../services/noded/src/tls_ingress.rs"]
+mod tls_ingress;
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -227,6 +229,7 @@ impl Broker {
                 let tcp = tokio::net::TcpListener::from_std(tcp).unwrap();
                 let broker = tokio::spawn(noded::run_on(
                     noded::RunConfig {
+                        network: None,
                         unix_socket: Some(endpoint),
                         pending_grants_per_parent: grant_limit,
                         listen,
