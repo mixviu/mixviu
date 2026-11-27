@@ -83,6 +83,10 @@ fn focused(lp: &Loop) -> Option<WlSurface> {
 #[test]
 fn focused_creator_can_raise_another_client_but_background_unknown_and_reuse_cannot() {
     let mut h = Harness::new();
+    h.wire.inner.comp.default_output = Some(policy::workspaces::DefaultOutput {
+        key: comp_model::snapshot::output_key(&h.wire.inner.output.name()),
+        name: h.wire.inner.output.name(),
+    });
     let (a, _, _) = h.mapped_toplevel(64, 48);
     let b_client = h.add_client();
     let b = h.extra_clients[b_client].create_surface();
@@ -269,4 +273,27 @@ fn focused_creator_can_raise_another_client_but_background_unknown_and_reuse_can
             .iter()
             .any(|entry| entry.token.to_string() == old_token)
     );
+
+    // Restore through the production executor: registry, visibility, workspace
+    // and keyboard must agree, rather than just returning a Restore effect.
+    let bid = h.comp().registry.id_for_handle(&h.handle_of_client(b_client,&b)).unwrap();
+    let generation = h.comp().registry.get(bid).unwrap().generation();
+    h.wire.inner.comp.registry.set_workspace(bid,3).unwrap();
+    std::mem::swap(&mut h.wire.inner.comp,&mut lp.inner.comp);
+    policy_host::control::window(&mut lp,&comp_model::request::WindowOp::Minimize {id:bid.0,generation}).unwrap();
+    frames::hook::window::interface::drain_lifecycle(&mut lp);
+    std::mem::swap(&mut h.wire.inner.comp,&mut lp.inner.comp);
+    assert!(h.comp().registry.get(bid).unwrap().minimized());
+    h.focus_keyboard(&a);
+    let serial = h.wire.state.seat.seat.get_keyboard().unwrap().last_enter().unwrap();
+    h.client.activation_token(Some(serial.into()),Some(&a));
+    h.roundtrip();
+    let restore_token = h.client.state.activation_tokens.last().unwrap().clone();
+    h.extra_clients[b_client].activation().activate(restore_token,&b);
+    h.roundtrip_client(b_client);
+    service(&mut h,&mut lp);
+    assert!(!h.comp().registry.get(bid).unwrap().minimized());
+    assert_eq!(h.comp().registry.get(bid).unwrap().workspace(),Some(3));
+    assert_eq!(h.comp().current_workspace(),3);
+    assert_eq!(focused(&lp),Some(server_b));
 }

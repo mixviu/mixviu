@@ -1523,6 +1523,8 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
 }
 
 fn execute_with_origin(lp: &mut Loop, effects: Vec<Effect>, origin: ActivationOrigin) {
+    // Apply effect causes after visibility bookkeeping. Command wrappers can
+    // still override them; protocol tokens have no command wrapper.
     let dirty: Vec<_> = effects
         .iter()
         .filter_map(|effect| match effect {
@@ -1784,6 +1786,9 @@ pub fn apply_client_requests(lp: &mut Loop) {
             .get(id)
             .map(|record| (record.id().0, record.generation()))
         else {
+            if matches!(request, WindowRequest::TokenActivation { .. }) {
+                protocols::xdg::activation::request::refused("gone");
+            }
             continue;
         };
         match request {
@@ -1800,7 +1805,7 @@ pub fn apply_client_requests(lp: &mut Loop) {
                 let comp = &mut lp.inner.comp;
                 let default_output = comp.default_output.clone();
                 match policy::window::activation(
-                    &comp.registry,
+                    &mut comp.registry,
                     &mut comp.workspaces,
                     default_output.as_ref(),
                     scene,

@@ -70,7 +70,7 @@ fn activation_refusals_do_not_change_workspaces_or_emit_effects() {
     ] {
         let mut state = WorkspaceState::default();
         let decision = activation(
-            &registry,
+            &mut registry,
             &mut state,
             Some(&default_output()),
             scene,
@@ -94,7 +94,7 @@ fn activation_raises_switches_restores_and_has_noop_targets() {
     let (mut registry, (id, generation), _) = two_windows();
     let sid = SurfaceId(id);
     let mut state = WorkspaceState::default();
-    let decide = |registry: &Registry<u32>, state: &mut WorkspaceState| {
+    let decide = |registry: &mut Registry<u32>, state: &mut WorkspaceState| {
         activation(
             registry,
             state,
@@ -109,7 +109,7 @@ fn activation_raises_switches_restores_and_has_noop_targets() {
         )
         .unwrap()
     };
-    let decision = decide(&registry, &mut state);
+    let decision = decide(&mut registry, &mut state);
     assert_eq!(decision.reason, None);
     assert!(decision.effects.contains(&Effect::Activate(sid)));
     assert!(decision.effects.contains(&Effect::MarkDirty {
@@ -118,7 +118,7 @@ fn activation_raises_switches_restores_and_has_noop_targets() {
     }));
     registry.set_workspace(sid, 3).unwrap();
     assert!(
-        decide(&registry, &mut state)
+        decide(&mut registry, &mut state)
             .effects
             .contains(&Effect::Activate(sid))
     );
@@ -126,17 +126,17 @@ fn activation_raises_switches_restores_and_has_noop_targets() {
     assert_eq!(registry.get(sid).unwrap().workspace(), Some(3));
     registry.set_minimized(sid, true).unwrap();
     assert!(
-        decide(&registry, &mut state)
+        decide(&mut registry, &mut state)
             .effects
             .contains(&Effect::Restore(sid))
     );
-    registry.set_minimized(sid, false).unwrap();
+    assert!(!registry.get(sid).unwrap().minimized(), "restore clears registry flag");
     registry.set_focused(sid, true).unwrap();
-    assert!(decide(&registry, &mut state).effects.is_empty());
+    assert!(decide(&mut registry, &mut state).effects.is_empty());
     registry.set_focused(sid, false).unwrap();
     registry.set_mapped(sid, false).unwrap();
     let decision = activation(
-        &registry,
+        &mut registry,
         &mut state,
         Some(&default_output()),
         SceneFacts::default(),

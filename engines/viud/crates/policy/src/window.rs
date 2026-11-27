@@ -305,7 +305,7 @@ pub fn activation_grant(
 /// A known token's activation. Refusals have no effects and never switch workspace.
 #[allow(clippy::too_many_arguments)]
 pub fn activation<H: Clone + Eq + Hash>(
-    registry: &Registry<H>,
+    registry: &mut Registry<H>,
     workspace_state: &mut WorkspaceState,
     default_output: Option<&DefaultOutput>,
     scene: SceneFacts,
@@ -330,14 +330,9 @@ pub fn activation<H: Clone + Eq + Hash>(
         });
     }
     let mut decision = if record.minimized() {
+        let (_, effects) = set_minimized(registry, id, generation, false)?;
         FocusDecision {
-            effects: vec![
-                Effect::MarkDirty {
-                    id: record.id(),
-                    cause: "xdg.activation",
-                },
-                Effect::Restore(record.id()),
-            ],
+            effects,
             reason: None,
         }
     } else {
