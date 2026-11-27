@@ -1,0 +1,8 @@
+[
+  {old: "dev.mixos.ced", current: "dev.mix.ced"},
+  {old: "mixviu.ced", current: "dev.mix.ced"},
+  {old: "dev.mixos.term", current: "dev.mix.term"},
+  {old: "mixviu.term", current: "dev.mix.term"},
+  {old: "mixviu.term-mix", current: "dev.mix.term"},
+  {old: "dev.mixos.prefs", current: "dev.mix.prefs"}
+]

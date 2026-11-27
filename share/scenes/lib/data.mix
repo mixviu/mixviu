@@ -116,15 +116,41 @@ $PINNED_CATEGORY = "Pinned"
 $PINNED_APPS = ["firefox", "org.mozilla.firefox", "thunderbird", "org.mozilla.Thunderbird",
   "net.thunderbird.Thunderbird"]
 
--- The launcher's default view: every dev.mixos.* app, plus Firefox and
--- Thunderbird under their usual desktop IDs.
+-- Same identity compatibility as apps.canonical_app_id / config::app_id.
+-- Kept pure here so scene data helpers need no installed apps service.
+fn canonical_app_id($id)
+  if starts_with($id, "dev.mixos.") then return "dev.mix." .. substr($id, 10) end
+  if starts_with($id, "mixviu.") then
+    $rest = substr($id, 7)
+    for $app in ["term-mix", "gallery-mix", "ced", "term", "deck", "bustap", "gallery"]
+      if starts_with($rest, $app) then
+        $tail = substr($rest, len($app))
+        if $tail == "" or starts_with($tail, ".") or starts_with($tail, "-symbolic") then
+          $service = ends_with($app, "-mix") ? substr($app, 0, len($app)-4) : $app
+          return "dev.mix." .. $service .. $tail
+        end
+      end
+    end
+  end
+  return $id
+end
+
+-- The launcher's default view: Mix apps plus Firefox and Thunderbird.
+-- Keep the real entry ID for launch; canonical entries win duplicate aliases.
 fn pinned($apps)
-  $out = []
+  $order = []
+  $chosen = {}
   for each $a in $apps
     $id = $a.id ?? ""
-    if starts_with($id, "dev.mixos.") or contains($PINNED_APPS, $id) then push($out, $a) end
+    $key = canonical_app_id($id)
+    if (starts_with($id, "dev.mixos.") or starts_with($id, "dev.mix.") or
+      contains(["mixviu.ced", "mixviu.term", "mixviu.term-mix", "mixviu.deck", "mixviu.bustap", "mixviu.gallery", "mixviu.gallery-mix"], $id) or
+      contains($PINNED_APPS, $id)) then
+      if not has_key($chosen, $key) then push($order, $key) end
+      if not has_key($chosen, $key) or $id == $key then $chosen[$key] = $a end
+    end
   end
-  return $out
+  return map($order, fn($key) = $chosen[$key])
 end
 
 fn category_label($cat)

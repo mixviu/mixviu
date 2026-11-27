@@ -264,31 +264,69 @@ try
   check(not $a.watch_relevant($apps_dir, $tmp, {changes: [{kind: "modified", path: $tmp .. "/other"}], overflow: false}), "unrelated ancestor activity is ignored")
   check($a.watch_relevant($apps_dir, $tmp, {changes: [], overflow: true}), "an overflow always rescans")
 
-  -- ── The shipped entry templates: apps/NAME/assets/dev.mixos.NAME.desktop ──
-  -- Each names its own binary in Exec and TryExec (so an entry whose binary
-  -- is gone hides itself) and uses an icon the Lucide manifest provides.
+  -- Saved app references, including panel/topbar launch and window matching,
+  -- resolve across the cutover; an installed canonical entry wins collisions.
   $root = realpath(dirname(realpath($0)) .. "/../../..")
+  $legacy_ids = load_data(dirname(realpath($0)) .. "/fixtures/apps/legacy-ids.conf.mix")
+  $data = require("../../../share/scenes/lib/data.mix")
+  for $ids in $legacy_ids
+    check($a.canonical_app_id($ids.old) == $ids.current, "legacy canonical key")
+    check($data.canonical_app_id($ids.old) == $ids.current, "scene compatibility agrees with apps")
+    check($a.find_app([{id:$ids.old}], $ids.current).id == $ids.old, "new window resolves old desktop entry")
+    check($a.find_app([{id:$ids.current}], $ids.old).id == $ids.current, "old pin resolves new desktop entry")
+    check($a.find_app([{id:$ids.old}, {id:$ids.current}], $ids.old).id == $ids.current, "canonical desktop wins")
+    check($data.pinned([{id:$ids.old}])[0].id == $ids.old, "launcher retains legacy-only entries")
+    for $entries in [[{id:$ids.old}, {id:$ids.current}], [{id:$ids.current}, {id:$ids.old}]]
+      $pins = $data.pinned($entries)
+      check(len($pins) == 1 and $pins[0].id == $ids.current, "launcher prefers canonical entry in either order")
+    end
+    -- Old icon only, then canonical only, then a collision. Fresh context for
+    -- each fixture prevents a cached theme from hiding a lookup regression.
+    $base = "compat/" .. $ids.old
+    fixture($base .. "/icons/Compat/index.theme", "[Icon Theme]\nDirectories=scalable/apps\n[scalable/apps]\nSize=24\nType=Scalable\nMinSize=1\nMaxSize=128\n")
+    $old_icon = $base .. "/icons/Compat/scalable/apps/" .. $ids.old .. "-symbolic.svg"
+    $new_icon = $base .. "/icons/Compat/scalable/apps/" .. $ids.current .. "-symbolic.svg"
+    fixture($old_icon, "<svg/>")
+    $ctx = {icon_dirs:[$tmp .. "/" .. $base .. "/icons"], pixmaps:$tmp .. "/absent", cache:{}}
+    $hit = $a.resolve_icon($ctx, $ids.current .. "-symbolic", 24, 1, "Compat")
+    check($hit.hit.path == $tmp .. "/" .. $old_icon, "canonical request reads old icon")
+    fixture($new_icon, "<svg/>")
+    $hit = $a.resolve_icon($ctx, $ids.old .. "-symbolic", 24, 1, "Compat")
+    check($hit.hit.path == $tmp .. "/" .. $new_icon, "canonical icon wins old request")
+    remove($tmp .. "/" .. $old_icon)
+    $hit = $a.resolve_icon($ctx, $ids.old .. "-symbolic", 24, 1, "Compat")
+    check($hit.hit.path == $tmp .. "/" .. $new_icon, "old request reads new icon")
+  end
+  check($a.find_app([{id:"org.example.ced"}], "dev.mix.ced") == nil, "vendor IDs stay separate")
+  check(len($data.pinned([{id:"mixviu.terminal"}, {id:"org.example.ced"}])) == 0, "unrelated IDs are not pinned")
+
+  -- #300 ships apps/<app>/<id>.desktop, already rendered for /opt/mix.
+  -- TryExec is optional in the desktop-entry spec and absent in these entries;
+  -- when supplied it must name the same launcher. No binaries are launched.
   $aliases = []
   for each $i in load_data($root .. "/share/icons/manifest.conf.mix").icons
     push($aliases, $i.name)
   end
   $shipped = 0
-  for each $app in ls($root .. "/apps")
-    $path = $root .. "/apps/" .. $app .. "/assets/dev.mixos." .. $app .. ".desktop"
-    if not is_file($path) then continue end
+  $seen_apps = []
+  for $path in glob($root .. "/apps/*/*.desktop")
+    $app = basename(dirname($path))
+    check(not contains($seen_apps, $app), $app .. ": duplicate shipped entry")
+    push($seen_apps, $app)
     $shipped = $shipped + 1
     $keys = {}
     for each $line in split(before(read_file($path) .. "\n[Desktop Action", "\n[Desktop Action"), "\n")
       if contains($line, "=") and not starts_with($line, "#") then $keys[before($line, "=")] = after($line, "=") end
     end
-    -- Sources are layout templates; mix layout apply renders @{prefix}.
-    $bin = "@{prefix}/bin/" .. $app
+    $bin = "/opt/mix/bin/" .. $app
     check(starts_with($keys.Exec ?? "", $bin) and (($keys.Exec ?? "") == $bin or starts_with($keys.Exec, $bin .. " ")), $app .. ": Exec must run " .. $bin)
-    check($keys.TryExec == $bin, $app .. ": TryExec must be " .. $bin)
-    check(contains($aliases, $keys.Icon ?? ""), $app .. ": Icon is not a manifest alias: " .. to_string($keys.Icon))
-    check($keys.StartupWMClass == "dev.mixos." .. $app, $app .. ": StartupWMClass must be the app ID")
+    check($keys.TryExec == nil or $keys.TryExec == $bin, $app .. ": TryExec must be " .. $bin)
+    check(contains($aliases, $keys.Icon ?? "") or contains(["dev.mixos-symbolic", "utilities-terminal"], $keys.Icon), $app .. ": unknown shipped Icon: " .. to_string($keys.Icon))
+    $id = (contains(["ced", "term", "deck", "bustap"], $app) ? "mixviu." : "dev.mixos.") .. $app
+    check(basename($path) == $id .. ".desktop", $app .. ": desktop filename must be the app ID")
+    check($keys.StartupWMClass == $id, $app .. ": StartupWMClass must be the app ID")
   end
-  check($shipped >= 7, "expected at least 7 shipped entries, found " .. to_string($shipped))
+  check($shipped >= 11, "expected at least 11 shipped entries, found " .. to_string($shipped))
 
   print("PASS apps scan filters, locale precedence, subdir ids, dir precedence, queries, Exec quoting and field codes, icon exact/closest/scaled/inherit/hicolor/pixmap/absolute resolution, theme cache, XWayland launch DISPLAY, watch placement, shipped entries")
 finally

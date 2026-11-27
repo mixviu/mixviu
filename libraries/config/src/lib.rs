@@ -27,6 +27,7 @@
 //! ```
 
 mod app_dirs;
+pub mod app_id;
 pub mod atomic;
 mod dir;
 pub mod node;

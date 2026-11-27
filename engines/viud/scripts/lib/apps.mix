@@ -264,10 +264,48 @@ fn scan_apps($dirs, $locale, $desktop_name)
 end
 
 fn find_app($apps, $id)
-  for each $entry in $apps
-    if $entry.id == $id then return $entry end
+  for $candidate in app_id_candidates($id)
+    for each $entry in $apps
+      if $entry.id == $candidate then return $entry end
+    end
   end
   return nil
+end
+
+-- Keep in step with config::app_id: identity aliases, never launch policy.
+fn canonical_app_id($id)
+  if starts_with($id, "dev.mixos.") then return "dev.mix." .. substr($id, 10) end
+  if starts_with($id, "mixviu.") then
+    $rest = substr($id, 7)
+    for $app in ["term-mix", "gallery-mix", "ced", "term", "deck", "bustap", "gallery"]
+      if starts_with($rest, $app) then
+        $tail = substr($rest, len($app))
+        if $tail == "" or starts_with($tail, ".") or starts_with($tail, "-symbolic") then
+          $service = ends_with($app, "-mix") ? substr($app, 0, len($app)-4) : $app
+          return "dev.mix." .. $service .. $tail
+        end
+      end
+    end
+  end
+  return $id
+end
+
+fn app_id_candidates($id)
+  $key = canonical_app_id($id)
+  $out = [$key]
+  if starts_with($key, "dev.mix.") then
+    $rest = substr($key, 8)
+    push($out, "dev.mixos." .. $rest)
+    $mixed = "mixviu." .. $rest
+    if canonical_app_id($mixed) == $key then push($out, $mixed) end
+    for $app in ["term", "gallery"]
+      if starts_with($rest, $app) then
+        $tail = substr($rest, len($app))
+        if $tail == "" or starts_with($tail, ".") or starts_with($tail, "-symbolic") then push($out, "mixviu." .. $app .. "-mix" .. $tail) end
+      end
+    end
+  end
+  return $out
 end
 
 fn project_list($entry)
@@ -691,6 +729,15 @@ fn theme_chain($ctx, $theme)
 end
 
 fn resolve_icon($ctx, $name, $size, $scale, $theme)
+  for $candidate in app_id_candidates($name)
+    $result = resolve_icon_exact($ctx, $candidate, $size, $scale, $theme)
+    $ctx = $result.ctx
+    if $result.hit != nil then return $result end
+  end
+  return {hit: nil, ctx: $ctx}
+end
+
+fn resolve_icon_exact($ctx, $name, $size, $scale, $theme)
   -- Resolve an icon name to a file. $name may be an absolute path (Icon=
   -- allows it): it is returned verbatim when it exists. That is a plain
   -- existence check outside the theme tree -- intentional (WONTFIX): the
