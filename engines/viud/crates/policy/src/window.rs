@@ -318,10 +318,14 @@ pub fn activation<H: Clone + Eq + Hash>(
 ) -> Result<FocusDecision, ControlReply> {
     // Normal window commands reject unmapped targets during resolution. A
     // known token for a current, unmapped surface instead records only.
-    if registry.get(SurfaceId(id)).is_some_and(|record| {
-        record.generation() == generation && !record.mapped()
-    }) {
-        return Ok(FocusDecision { effects: Vec::new(), reason: Some("unmapped") });
+    if registry
+        .get(SurfaceId(id))
+        .is_some_and(|record| record.generation() == generation && !record.mapped())
+    {
+        return Ok(FocusDecision {
+            effects: Vec::new(),
+            reason: Some("unmapped"),
+        });
     }
     let record = resolve(registry, id, generation)?;
     let reason = grant_refusal
