@@ -15,10 +15,10 @@ fn policy_loop(h: &Harness) -> Loop {
         world::kind::build::base::spatial(
             world::world::manager::MAIN_WORLD,
             "main",
-            vec![Box::new(world::window::system::base::WindowSystem)],
+            vec![Box::new(world::window::system::base::WindowSystem),Box::new(world::surface::system::base::SurfaceSystem)],
             &kernel,
         ),
-        world::kind::build::base::overlay(world::world::manager::KERNEL, "kernel", vec![], &kernel),
+        world::kind::build::base::overlay(world::world::manager::KERNEL, "kernel", vec![Box::new(world::surface::system::base::SurfaceSystem)], &kernel),
         &kernel,
     );
     let dh = h.wire.state.output.display_handle.clone();
@@ -37,10 +37,14 @@ fn policy_loop(h: &Harness) -> Loop {
         worlds,
     );
     let mut lp = Loop::new(inner, &dh, None, event_loop.handle());
-    lp.inner.worlds.get_mut(world::world::manager::MAIN_WORLD).storage_mut().insert(
-        &world::viewport::state::OUTPUT_VIEWS,
-        world::viewport::state::OutputViews::default(),
-    );
+    lp.inner
+        .worlds
+        .get_mut(world::world::manager::MAIN_WORLD)
+        .storage_mut()
+        .insert(
+            &world::viewport::state::OUTPUT_VIEWS,
+            world::viewport::state::OutputViews::default(),
+        );
     lp.inner
         .host_space_mut()
         .state
@@ -202,23 +206,58 @@ fn focused_creator_can_raise_another_client_but_background_unknown_and_reuse_can
     // Known expired grants are still logged; policy age is deterministic.
     let mut expired = smithay::wayland::xdg_activation::XdgActivationTokenData::default();
     expired.timestamp = std::time::Instant::now() - std::time::Duration::from_secs(31);
-    expired.user_data.insert_if_missing_threadsafe(|| protocols::xdg::activation::request::ActivationGrant::new(None));
-    let expired_token = h.wire.state.xdg_activation.xdg_activation.create_external_token(expired).0.to_string();
-    h.extra_clients[b_client].activation().activate(expired_token.clone(),&b);
+    expired.user_data.insert_if_missing_threadsafe(|| {
+        protocols::xdg::activation::request::ActivationGrant::new(None)
+    });
+    let expired_token = h
+        .wire
+        .state
+        .xdg_activation
+        .xdg_activation
+        .create_external_token(expired)
+        .0
+        .to_string();
+    h.extra_clients[b_client]
+        .activation()
+        .activate(expired_token.clone(), &b);
     h.roundtrip_client(b_client);
-    service(&mut h,&mut lp);
-    assert_eq!(focused(&lp),Some(server_a.clone()));
-    assert!(protocols::xdg::activation::request::activations(&server_b).iter().any(|entry| entry.token.to_string() == expired_token));
+    service(&mut h, &mut lp);
+    assert_eq!(focused(&lp), Some(server_a.clone()));
+    assert!(
+        protocols::xdg::activation::request::activations(&server_b)
+            .iter()
+            .any(|entry| entry.token.to_string() == expired_token)
+    );
 
     // GC does not erase the independent log clones used for correlation.
     let mut old = smithay::wayland::xdg_activation::XdgActivationTokenData::default();
     old.timestamp = std::time::Instant::now() - std::time::Duration::from_secs(601);
-    let old_token = h.wire.state.xdg_activation.xdg_activation.create_external_token(old).0.to_string();
-    h.extra_clients[b_client].activation().activate(old_token.clone(),&b);
+    let old_token = h
+        .wire
+        .state
+        .xdg_activation
+        .xdg_activation
+        .create_external_token(old)
+        .0
+        .to_string();
+    h.extra_clients[b_client]
+        .activation()
+        .activate(old_token.clone(), &b);
     h.roundtrip_client(b_client);
-    service(&mut h,&mut lp);
-    h.client.activation_token(None,None);
+    service(&mut h, &mut lp);
+    h.client.activation_token(None, None);
     h.roundtrip();
-    assert!(h.wire.state.xdg_activation.xdg_activation.data_for_token(&old_token.clone().into()).is_none());
-    assert!(protocols::xdg::activation::request::activations(&server_b).iter().any(|entry| entry.token.to_string() == old_token));
+    assert!(
+        h.wire
+            .state
+            .xdg_activation
+            .xdg_activation
+            .data_for_token(&old_token.clone().into())
+            .is_none()
+    );
+    assert!(
+        protocols::xdg::activation::request::activations(&server_b)
+            .iter()
+            .any(|entry| entry.token.to_string() == old_token)
+    );
 }
