@@ -170,6 +170,38 @@ mod tests {
     use crate::admission::sign_admission_transcript;
     use base64::Engine as _;
 
+    #[test]
+    fn tls_reverse_index_is_purpose_separated_and_fail_closed() {
+        use crate::admission::select_bus_tls_pubkeys;
+        let key = [7; 32];
+        let mut tls = member(&[key]);
+        assert!(select_bus_tls_pubkeys(&tls, 1).is_empty());
+        tls["credentials"][0]["kind"] = serde_json::json!("bus-tls");
+        let index = |members| TlsAuthority::new(&members, 1, 42);
+        let records = BTreeMap::from([("alpha".into(), tls.clone())]);
+        let identity = index(records).member_for(&key).unwrap();
+        assert_eq!(identity.member, "alpha");
+        assert_eq!((identity.epoch, identity.revision), (1, 42));
+        for field in ["from_epoch", "until_epoch", "pubkey"] {
+            let mut bad = tls.clone();
+            bad["credentials"][0][field] = serde_json::json!(false);
+            assert!(select_bus_tls_pubkeys(&bad, 1).is_empty());
+        }
+        let mut missing = tls.clone();
+        missing["credentials"][0].as_object_mut().unwrap().remove("from_epoch");
+        assert!(select_bus_tls_pubkeys(&missing, 1).is_empty());
+        let mut closed = tls.clone();
+        closed["credentials"][0]["until_epoch"] = serde_json::json!(2);
+        assert_eq!(select_bus_tls_pubkeys(&closed, 1).len(), 1);
+        assert!(select_bus_tls_pubkeys(&closed, 2).is_empty());
+        let mut no_bus = tls.clone();
+        no_bus["bus"] = serde_json::json!(false);
+        let ambiguous = index(BTreeMap::from([
+            ("alpha".into(),tls.clone()), ("beta".into(),no_bus), ("gamma".into(),tls)
+        ]));
+        assert!(ambiguous.member_for(&key).is_none());
+    }
+
     fn member(keys: &[[u8; 32]]) -> Value {
         serde_json::json!({"status":"active", "bus":true, "credentials": keys.iter().map(|key|
             serde_json::json!({"kind":"d2", "pubkey":base64::engine::general_purpose::STANDARD.encode(key), "from_epoch":1, "until_epoch":null})
