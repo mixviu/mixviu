@@ -342,7 +342,6 @@ fn grace_windows(
 ) -> Vec<uuid::Uuid> {
     use world::window::interface::draw::visible::DrawWindow;
     let ctx = state.viewport_context();
-    let pad = (FRACTIONAL_GRACE_RANGE * ctx.scale).round() as i32;
     let windows: Vec<(uuid::Uuid, Window)> = state
         .inner
         .space_state()
@@ -358,20 +357,7 @@ fn grace_windows(
         };
         let sz = world::camera::transform::translate::slot::expected_size(&w)
             .unwrap_or_else(|| w.geometry().size);
-        if sz.w <= 0 || sz.h <= 0 {
-            continue;
-        }
-        let project = |x: f64, y: f64| -> Point<i32, Physical> {
-            let t: world::camera::transform::translate::transform::Transform = ((x, y), ctx).into();
-            t.into()
-        };
-        let tl = project(loc.x as f64, loc.y as f64);
-        let br = project((loc.x + sz.w) as f64, (loc.y + sz.h) as f64);
-        if tl.x < pane.loc.x + pane.size.w + pad
-            && pane.loc.x - pad < br.x
-            && tl.y < pane.loc.y + pane.size.h + pad
-            && pane.loc.y - pad < br.y
-        {
+        if slot_in_grace(loc, sz, ctx, pane) {
             out.push(u);
         }
     }
