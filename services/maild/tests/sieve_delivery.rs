@@ -120,7 +120,10 @@ const MESSAGE: &[u8] = b"From: sender@example.org\r\nTo: bob@example.com\r\nSubj
 
 #[tokio::test]
 async fn doorway_generated_replies_and_remote_redirects_obey_account_guards() -> Result<()> {
-    assert!(maild::sieve::compile(r#"require "enotify"; notify "mailto:outside@example.org";"#).is_err());
+    assert!(
+        maild::sieve::compile(r#"require "enotify"; notify "mailto:outside@example.org";"#)
+            .is_err()
+    );
     let f = Fixture::new().await?;
     f.db.conn.lock().unwrap().execute(
         "UPDATE accounts SET allowed_recipients='[\"mc@example.com\"]',send_rate=1 WHERE id=?1",

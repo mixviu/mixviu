@@ -45,8 +45,8 @@ The inbound Mix filter also receives:
 | --- | --- |
 | `$AUTH` | `local-auth` or `external`, from the SMTP session |
 | `$AUTH_USER` | Authenticated account email; empty for external mail |
-| `$SPF` | Computed SPF result, lowercase |
-| `$DKIM` | Computed aggregate DKIM result, lowercase |
+| `$SPF` | pass, fail, softfail, neutral, none, temperror or permerror |
+| `$DKIM` | Computed aggregate: pass, fail, none, temperror or permerror |
 | `$DMARC` | Computed pass, fail or none; known computation defect can report none instead of fail, so it is not a reliable guard until fixed |
 | `$REMOTE_IP` | Socket peer address |
 

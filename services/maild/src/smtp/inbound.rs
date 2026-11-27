@@ -1299,12 +1299,27 @@ fn filter_auth(
     let spf = match &verify.spf {
         SpfCheck::MailFrom { result, .. } | SpfCheck::Helo { result, .. } => result,
     };
-    let outcome = |s: String| s.to_ascii_lowercase();
+    let spf = match spf {
+        SpfResult::Pass => "pass",
+        SpfResult::Fail => "fail",
+        SpfResult::SoftFail => "softfail",
+        SpfResult::Neutral => "neutral",
+        SpfResult::None => "none",
+        SpfResult::TempError => "temperror",
+        SpfResult::PermError => "permerror",
+    };
+    let dkim = match verify.dkim.overall {
+        DkimOutcome::Pass => "pass",
+        DkimOutcome::Fail => "fail",
+        DkimOutcome::None => "none",
+        DkimOutcome::TempError => "temperror",
+        DkimOutcome::PermError => "permerror",
+    };
     vec![
         ("AUTH", auth.into()),
         ("AUTH_USER", user.into()),
-        ("SPF", outcome(format!("{spf:?}"))),
-        ("DKIM", outcome(format!("{:?}", verify.dkim.overall))),
+        ("SPF", spf.into()),
+        ("DKIM", dkim.into()),
         (
             "DMARC",
             match verify.dmarc.outcome {
