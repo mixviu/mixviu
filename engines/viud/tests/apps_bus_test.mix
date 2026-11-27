@@ -169,6 +169,9 @@ try
   check(not contains($append_source, "read_file("), "history append must not read its segment")
   $rollover = after($append_source, "if $state.path == \"\"")
   check($rollover != nil and len(split($append_source, "history_open(")) == 2 and contains($rollover, "history_open("), "history append may open only on rollover")
+  write_file($tmp .. "/empty-segment.jsonl", "")
+  $empty = $a.history_open($tmp .. "/empty-segment.jsonl", "2001-01-01")
+  check($empty.ready == true and $empty.line == 0 and $empty.bytes == 0, "empty segment opens with zero counters")
   -- Real segment appends reuse one path and cached line/byte counters.
   -- Seed full old segments to exercise the production 8 MiB cap cheaply.
   $hd = $tmp .. "/history-unit"
@@ -639,6 +642,7 @@ try
   check($recovery.rc == 0 and len($recovery.result.rows) == 2, "append after torn fragment must preserve valid rows")
   check($recovery.result.rows[1].seq == $next.seq and $recovery.result.rows[1].ref.line == 3, "new row after torn fragment must be intact")
   check($hs.line == 3 and $hs.bytes == stat($torn).size, "torn append counters")
+  check(deep_eq($a.history_open($torn, "2001-01-01"), $hs), "terminated segment reopening must not heal twice")
   remove($torn)
   check(len(call("apps", "apps.history", "{\"until\":\"2000\"}").result.rows) == 0, "history until filter")
   check(len(call("apps", "apps.history", "{\"since\":\"9999\"}").result.rows) == 0, "history since filter")

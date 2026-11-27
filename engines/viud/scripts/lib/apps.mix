@@ -76,7 +76,7 @@ fn history_open($path, $day)
   if $path != "" and is_file($path) then
     $content = read_file($path)
     $state.bytes = byte_length($content)
-    $state.line = len(split($content, "\n")) - 1
+    $state.line = max(0, len(split($content, "\n")) - 1)
     if $content != "" and not ends_with($content, "\n") then
       append_file($path, "\n")
       $state.bytes = $state.bytes + 1
