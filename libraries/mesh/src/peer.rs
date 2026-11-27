@@ -638,7 +638,11 @@ impl MeshPeers {
         let mut state = self.state.write().await;
         // Older callers update D2 or endpoints only; they have no opinion on TLS.
         let tls_keys = tls_keys.unwrap_or_else(|| {
-            if keys.is_some() { state.tls_keys.clone() } else { Default::default() }
+            if keys.is_some() {
+                state.tls_keys.clone()
+            } else {
+                Default::default()
+            }
         });
         let mut report = ReconcileReport::default();
         let mut reasons = HashMap::new();
@@ -2091,10 +2095,18 @@ mod tests {
         let mesh = test_mesh();
         let keys = mesh_trust::identity::KeyAuthority::new(&Default::default(), 2, 0);
         let tls = Arc::new(mesh_trust::identity::TlsAuthority::default());
-        mesh.reconcile_security(HashMap::new(), AuthorityRevision::default(), keys, "example.test".into(), tls.clone()).await;
+        mesh.reconcile_security(
+            HashMap::new(),
+            AuthorityRevision::default(),
+            keys,
+            "example.test".into(),
+            tls.clone(),
+        )
+        .await;
         assert!(mesh.state.read().await.keys.is_some());
         assert!(Arc::ptr_eq(&mesh.state.read().await.tls_keys, &tls));
-        mesh.reconcile_endpoints(HashMap::new(), AuthorityRevision::default()).await;
+        mesh.reconcile_endpoints(HashMap::new(), AuthorityRevision::default())
+            .await;
         let state = mesh.state.read().await;
         assert!(state.keys.is_none());
         assert!(!Arc::ptr_eq(&state.tls_keys, &tls));

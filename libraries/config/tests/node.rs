@@ -14,9 +14,10 @@ fn mesh_address_accepts_each_spelling_but_never_both() {
         assert!(!encoded.contains("wg_ip"));
     }
     for old in ["192.0.2.5", ""] {
-        assert!(from_conf_mix_str::<NodeConfig>(&format!(
-            "mesh_addr: '192.0.2.5'\nwg_ip: '{old}'\n"
-        )).is_err());
+        assert!(
+            from_conf_mix_str::<NodeConfig>(&format!("mesh_addr: '192.0.2.5'\nwg_ip: '{old}'\n"))
+                .is_err()
+        );
     }
 }
 

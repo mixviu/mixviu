@@ -2133,9 +2133,15 @@ async fn apply_observed_inventory_reload(state: &AppState, new: crate::authority
     apply_inventory_reload(state, new).await;
     if verified && !Arc::ptr_eq(&previous, &state.authority.load_full()) {
         let after = state.live_sessions.read().await;
-        let closing: Vec<_> = before.into_iter().filter(|(id, _)| !after.contains_key(id)).map(|(_, s)| s.tx).collect();
+        let closing: Vec<_> = before
+            .into_iter()
+            .filter(|(id, _)| !after.contains_key(id))
+            .map(|(_, s)| s.tx)
+            .collect();
         drop(after);
-        for tx in closing { tx.closed().await; }
+        for tx in closing {
+            tx.closed().await;
+        }
         *state
             .reload_to_drop_ms
             .lock()

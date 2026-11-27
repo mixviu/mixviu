@@ -656,7 +656,11 @@ mod tests {
         assert!(log.contains("total=1003"), "{log}");
         assert_eq!(refusals.total(), 1003);
         // No later refusal is needed to emit the pending count.
-        refusals.record_at("192.0.2.2:4".parse().unwrap(), "timeout", now + 2 * REFUSAL_WINDOW);
+        refusals.record_at(
+            "192.0.2.2:4".parse().unwrap(),
+            "timeout",
+            now + 2 * REFUSAL_WINDOW,
+        );
         refusals.flush_at(now + 3 * REFUSAL_WINDOW);
         let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
         assert!(log.lines().last().unwrap().contains("count=1"), "{log}");

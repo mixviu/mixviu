@@ -418,9 +418,13 @@ fn build_search_paths(primary_dir: &Path, mix_etc_set: bool) -> Vec<PathBuf> {
 pub fn load_from(path: &Path) -> Result<NodeConfig> {
     let contents = std::fs::read_to_string(path)
         .with_context(|| format!("failed to read {}", path.display()))?;
-    let config: NodeConfig = strict::from_str(&contents)
-        .map_err(|e| anyhow::anyhow!("failed to parse {}: {e}", path.display()))?;
-    let raw: serde_json::Value = strict::from_str(&contents)?;
+    parse_node_config(&contents)
+        .with_context(|| format!("failed to parse {}", path.display()))
+}
+
+fn parse_node_config(contents: &str) -> Result<NodeConfig> {
+    let config: NodeConfig = strict::from_str(contents)?;
+    let raw: serde_json::Value = strict::from_str(contents)?;
     if raw.get("wg_ip").is_some() {
         static WARNED: std::sync::Once = std::sync::Once::new();
         WARNED.call_once(|| tracing::warn!("node.conf.mix wg_ip is deprecated; use mesh_addr"));
@@ -521,7 +525,7 @@ impl NodeConfigSearch {
     pub fn load(&self) -> Result<Option<NodeConfig>> {
         self.read()?
             .map(|(path, source)| {
-                strict::from_str(&source)
+                parse_node_config(&source)
                     .map_err(|error| anyhow::anyhow!("failed to parse {}: {error}", path.display()))
             })
             .transpose()
