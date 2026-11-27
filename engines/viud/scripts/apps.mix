@@ -129,7 +129,7 @@ $live = {}
 $generation = substr(replace(uuid(), "-", ""), 0, 12)
 $serial = 0
 $allow_argv = false
-$history = {seq: 0, path: "", day: "", bytes: 0, line: 0}
+$history = merge({seq: 0}, $a.history_open("", ""))
 $history_dir = mix_path("var", "apps/history")
 mkdir($history_dir, {parents: true})
 

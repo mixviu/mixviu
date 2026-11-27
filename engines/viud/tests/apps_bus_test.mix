@@ -162,6 +162,13 @@ try
   write_recorder()
   check(kill(-2147483647, 15) == false, "kill ESRCH must return false without raising")
   $a = require("../scripts/lib/apps.mix")
+  -- Structural no-read assertion: history_append contains no read_file,
+  -- and its sole history_open call is confined to the rollover branch.
+  $lib_source = read_file($scripts .. "/lib/apps.mix")
+  $append_source = before(after($lib_source, "fn history_append("), "\nfn history_prune(")
+  check(not contains($append_source, "read_file("), "history append must not read its segment")
+  $rollover = after($append_source, "if $state.path == \"\"")
+  check($rollover != nil and len(split($append_source, "history_open(")) == 2 and contains($rollover, "history_open("), "history append may open only on rollover")
   -- Real segment appends reuse one path and cached line/byte counters.
   -- Seed full old segments to exercise the production 8 MiB cap cheaply.
   $hd = $tmp .. "/history-unit"
@@ -172,7 +179,7 @@ try
   end
   write_file($hd .. "/expired.jsonl", "expired")
   run_argv_must(["touch", "-d", "2000-01-01T00:00:00Z", $hd .. "/expired.jsonl"])
-  $hs = {seq: 1, path: "", day: "", bytes: 0, line: 0}
+  $hs = merge({seq: 1}, $a.history_open("", ""))
   $hr = {ts_utc: "2026-11-28T00:00:00Z", seq: "abcd-1", data: {executable: "/home/user/example", argc: 1}}
   $hs = $a.history_append($hd, $hs, $hr, time())
   $first = $hs.path
@@ -625,8 +632,9 @@ try
   check($recovery.rc == 0 and deep_eq($recovery.result.rows, [$recovered]), "torn trailing history line lost valid rows or failed call")
   check(contains(read_file($tmp .. "/svc.log"), "WARN apps.history: skipping torn trailing line in " .. $torn), "torn trailing history line must WARN")
   $next = merge($recovered, {seq: "recovered-2"})
-  -- Cached counters still describe the last successful append (line 1).
-  $hs = $a.history_append(dirname($torn), {path: $torn, day: "2001-01-01", bytes: byte_length(json_encode($recovered)) + 1, line: 1}, $next, time())
+  $hs = $a.history_open($torn, "2001-01-01")
+  check($hs.ready == true and $hs.line == 2 and ends_with(read_file($torn), "\n"), "opening torn segment must heal once and cache readiness")
+  $hs = $a.history_append(dirname($torn), $hs, $next, time())
   $recovery = call("apps", "apps.history", "{\"until\":\"2002\"}")
   check($recovery.rc == 0 and len($recovery.result.rows) == 2, "append after torn fragment must preserve valid rows")
   check($recovery.result.rows[1].seq == $next.seq and $recovery.result.rows[1].ref.line == 3, "new row after torn fragment must be intact")
