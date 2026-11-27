@@ -335,8 +335,10 @@ on viu.timer
     return
   end
   if $a.kind=="suggest" then
-    $c=$composers[$a.window]
-    if $c!=nil and $c.account==$a.account and $c.suggest.text==$a.text then wire_start("email.contacts.suggest",{account:$a.account,window:$a.window,field:$a.field,typed:$a.text,text:$a.query,limit:50},nil,"compose-suggest") end
+    -- Handler bodies share the module scope: a local named $c would replace
+    -- $c=require("core.mix") and fault every later publish (2026-11-27).
+    $cmp=$composers[$a.window]
+    if $cmp!=nil and $cmp.account==$a.account and $cmp.suggest.text==$a.text then wire_start("email.contacts.suggest",{account:$a.account,window:$a.window,field:$a.field,typed:$a.text,text:$a.query,limit:50},nil,"compose-suggest") end
     return
   end
   if $a.kind=="draft" and $composers[$a.window]!=nil then
