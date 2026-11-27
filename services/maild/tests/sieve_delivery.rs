@@ -1114,7 +1114,10 @@ async fn outbound_failure_after_keep_does_not_request_duplicate_delivery() -> Re
         .execute_batch("DROP TRIGGER fail_sieve_queue;")?;
     f.deliver(MESSAGE, true, false).await?;
     assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
-    f.db.conn.lock().unwrap().execute("UPDATE sieve_replies SET sent_at=unixepoch()-32*86400", [])?;
+    f.db.conn
+        .lock()
+        .unwrap()
+        .execute("UPDATE sieve_replies SET sent_at=unixepoch()-32*86400", [])?;
     f.deliver(MESSAGE, true, false).await?;
     assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 1);
     Ok(())
