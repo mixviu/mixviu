@@ -12,6 +12,14 @@
 -- apps.reload or when an inotify watch on the applications directories
 -- reports a change (an entry installed, replaced or removed). There is
 -- timers only schedule STOP escalation; no process polling.
+-- Lifecycle contract:
+-- Handles are opaque strings; callers must retain and match them exactly.
+-- Graceful timeout_ms counts from after window classification, up to 200 ms
+-- after the request. focus_or_stop stops every instance of the desktop id
+-- when one of its windows is focused.
+-- apps.terminal is a command whose executable must be an absolute path.
+-- Mesh apps.stop, apps.toggle and apps.running are open by design until
+-- Bus 2c. Mesh callers can flood refused-history rows: a known limit.
 $a = require("lib/apps.mix")
 
 $apps = $a.scan_apps($a.application_dirs(), $a.locale_id(), "MIXOS")
@@ -118,10 +126,10 @@ end
 
 -- Managed app state belongs to this evaluator generation.
 $live = {}
-$generation = substr(replace(uuid(), "-", ""), 0, 4)
+$generation = substr(replace(uuid(), "-", ""), 0, 12)
 $serial = 0
 $allow_argv = false
-$history = {seq: 0, path: "", day: "", bytes: 0, line: 0}
+$history = merge({seq: 0}, $a.history_open("", ""))
 $history_dir = mix_path("var", "apps/history")
 mkdir($history_dir, {parents: true})
 
@@ -135,6 +143,9 @@ fn record_row($kind, $data)
   $row = {ts_utc: utc_now(), node: hostname(), source: "apps", seq: $generation .. "-" .. $history.seq, kind: $kind, class: "operator", data: $a.history_data($data)}
   -- No Bus await in this append: its cached segment state cannot be stale.
   $history = $a.history_append($history_dir, $history, $row, time())
+  -- Commit invalidation before reporting the error; the next append heals
+  -- any partial write instead of trusting the old cached counters.
+  if has_key($history, "append_error") then raise("APPS_HISTORY", to_string($history.append_error)) end
 end
 if not is_reload_candidate() then record_row("gap", {reason: "citizen_start"}) end
 on lifecycle.commit
@@ -150,6 +161,8 @@ fn start_app($request)
   global $live
   $bad = $a.request_error("invalid_request")
   if not $a.start_valid($request) then return $bad end
+  -- Bus native_session/bootstrap.rs SessionError::rc maps both Forbidden
+  -- and ResourceLimit to bus::RC_ERROR (10); error_code distinguishes them.
   if has_key($request, "argv") and (not $allow_argv or not local_origin()) then
     return {rc: 10, body: {error: "forbidden", error_code: "FORBIDDEN"}}
   end
@@ -297,13 +310,13 @@ on apps.launch desc "alias of apps.start"
   record_row($r.rc == 0 ? "start" : "refused", $r.body)
   reply($r.rc, json_encode($r.body))
 end
-on apps.stop desc "stop owned apps by handle or desktop id; never by pid"
+on apps.stop desc "stop owned apps by opaque handle or id; timeout_ms starts after window classification (up to 200 ms later); mesh callers allowed until Bus 2c"
   $request = event_args()
   $r = stop_apps($request)
   if $r.rc != 0 then record_row("refused", {reason: $r.body.error}) end
   reply($r.rc, json_encode($r.body))
 end
-on apps.running desc "list managed app handles, optionally filtered by id"
+on apps.running desc "list managed app handles, optionally filtered by id; mesh callers allowed until Bus 2c"
   $request = event_args()
   if len(filter(keys($request), fn($k) = $k != "id")) > 0 or (has_key($request, "id") and (type($request.id) != "string" or $request.id == "")) then
     reply(10, json_encode({error: "invalid_request"}))
@@ -317,7 +330,7 @@ on apps.running desc "list managed app handles, optionally filtered by id"
     reply(0, json_encode($out))
   end
 end
-on apps.toggle desc "start, focus or stop a desktop app"
+on apps.toggle desc "start, focus or stop a desktop app; focus_or_stop stops every instance of the id when focused; mesh callers allowed until Bus 2c"
   $request = event_args()
   $mode = $request.on_running ?? "focus_or_stop"
   if len(filter(keys($request), fn($k) = not contains(["id", "on_running"], $k))) > 0 or type($request.id) != "string" or $request.id == "" or not contains(["focus_or_stop", "focus", "stop"], $mode) then
@@ -370,13 +383,15 @@ on proc.exited
 end
 on timer.tick
   if len(keys($event.headers ?? {})) != 0 then return end
-  $tag = $event.args.tag
-  $handle = after($tag, ":")
-  $r = $live[$handle]
-  if $r == nil or not contains($r.timers, $event.args.id) then return end
-  signal_app($handle, starts_with($tag, "term:") ? 15 : 9)
+  -- Find the owning timer without interpreting any part of its handle.
+  for $r in values($live)
+    if not contains($r.timers, $event.args.id) then continue end
+    if $event.args.tag == "term:" .. $r.handle then signal_app($r.handle, 15) end
+    if $event.args.tag == "kill:" .. $r.handle then signal_app($r.handle, 9) end
+    return
+  end
 end
-on apps.history desc "local operator history {since?,until?,limit?}"
+on apps.history desc "local operator history {since?,until?,limit?}: newest N rows ascending; known limit: mesh callers can flood refused rows"
   $request = event_args()
   $limit = $request.limit ?? 500
   if not local_origin() then
@@ -386,9 +401,22 @@ on apps.history desc "local operator history {since?,until?,limit?}"
   else
     $rows = []
     for $file in sort(glob($history_dir .. "/*.jsonl"))
-      for $line in lines(read_file($file))
+      $lines = split(read_file($file), "\n")
+      for $i = 0 to len($lines) - 1
+        $line = $lines[$i]
         if trim($line) == "" then continue end
-        $row = json_parse($line)
+        try
+          $row = json_parse($line)
+        catch $err
+          if $i == len($lines) - 1 then
+            eprint("WARN apps.history: skipping torn trailing line in " .. $file)
+            continue
+          end
+          -- An appender may have terminated a crash fragment before a new
+          -- valid row. Keep subsequent rows readable and disclose the loss.
+          eprint("WARN apps.history: skipping invalid JSONL line " .. ($i + 1) .. " in " .. $file .. ": " .. $err)
+          continue
+        end
         if $row.ts_utc >= ($request.since ?? "") and $row.ts_utc <= ($request.until ?? "9999") then
           push($rows, $row)
         end
@@ -397,7 +425,7 @@ on apps.history desc "local operator history {since?,until?,limit?}"
     -- Legacy segment names were not chronological. Sort content timestamps
     -- and numeric serials before applying the requested limit.
     $rows = sort_by($rows, fn($row) = $a.history_order($row))
-    reply(0, json_encode({rows: slice($rows, 0, $limit), truncated: len($rows) > $limit}))
+    reply(0, json_encode({rows: slice($rows, max(0, len($rows) - $limit)), truncated: len($rows) > $limit}))
   end
 end
 
@@ -447,7 +475,7 @@ on "apps.props.watch" desc "read citizen properties: apps.count, apps.icon_theme
   end
 end
 
-on "apps.props.set" desc "set a citizen property (icon_theme, terminal; count is read-only)"
+on "apps.props.set" desc "set a local citizen property (icon_theme, terminal, allow_argv; count is read-only); apps.terminal executable must be an absolute path"
   $args = event_args()
   $path = get_or($args, "path", "")
   $value = get_or($args, "value", nil)
