@@ -93,7 +93,8 @@ fn fixture() {
         if mode == "pending" {
             // A pending default-fatal signal makes even a temporary unmask
             // observable: entering block A kills us before any rollback.
-            assert_eq!(libc::kill(std::process::id() as i32, libc::SIGUSR1), 0);
+            // Thread-directed: libtest's main thread has a different mask.
+            assert_eq!(libc::raise(libc::SIGUSR1), 0);
         }
     }
     let source = std::env::var("EXEC_SOURCE").unwrap();
