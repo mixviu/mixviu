@@ -89,7 +89,8 @@ async fn one(
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     })
-    .await.context("waiting for the portal's native chooser request")??;
+    .await
+    .context("waiting for the portal's native chooser request")??;
     tokio::time::timeout(WAIT, async {
         loop {
             if let Ok(tree) = drive(bus, &id, "files.ui.tree", json!({})).await
@@ -100,9 +101,18 @@ async fn one(
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
-    .await.context("waiting for the chooser UI to become ready")?;
+    .await
+    .context("waiting for the chooser UI to become ready")?;
     if cancel {
-        drive(bus, &id, "files.ui.click", json!({"id":"footer.command.cancel"})).await?;
+        // Closing the viewport can retire its input reply. The portal
+        // Response below is the authoritative cancellation acknowledgement.
+        let _ = drive(
+            bus,
+            &id,
+            "files.ui.click",
+            json!({"id":"footer.command.cancel"}),
+        )
+        .await;
     } else if method == "OpenFile" {
         drive(bus, &id, "files.ui.click", json!({"label":"notes.txt"})).await?;
         let _ = drive(bus, &id, "files.ui.click", json!({"label":"Open"})).await;
@@ -124,7 +134,8 @@ async fn one(
         }
     }
     let message = tokio::time::timeout(WAIT, responses.next())
-        .await.context("waiting for the portal Response after chooser input")?
+        .await
+        .context("waiting for the portal Response after chooser input")?
         .context("Response stream ended")??;
     let (code, results): (u32, HashMap<String, OwnedValue>) = message.body().deserialize()?;
     ensure!(
