@@ -87,13 +87,22 @@ impl ListenerTls {
     pub fn with_alpn(initial: Option<Arc<SniCertResolver>>, alpn: Vec<Vec<u8>>) -> Self {
         Self {
             slot: Arc::new(ArcSwap::from_pointee(initial)),
-            cache: Arc::new(ConfigCache { alpn, ..Default::default() }),
+            cache: Arc::new(ConfigCache {
+                alpn,
+                ..Default::default()
+            }),
         }
     }
 
     /// Select application protocols without changing the shared resolver slot.
     pub fn with_protocols(self, alpn: Vec<Vec<u8>>) -> Self {
-        Self { slot: self.slot, cache: Arc::new(ConfigCache { alpn, ..Default::default() }) }
+        Self {
+            slot: self.slot,
+            cache: Arc::new(ConfigCache {
+                alpn,
+                ..Default::default()
+            }),
+        }
     }
 
     /// Replace this listener's resolver (and clear the config cache).

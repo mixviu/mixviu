@@ -1,5 +1,30 @@
+use std::collections::BTreeMap;
+
+    #[tokio::test]
+    async fn static_site_handler_owns_headers() {
+        let td = TempDir::new().unwrap();
+        let node = static_site_node(&td, None);
+        let root = node.vhosts.load().primaries[0].state.www_dir.clone();
+        std::fs::write(root.join("owned.mix"),
+            "return { status: 200, headers: { \"content-security-policy\": \"default-src 'none'\" }, body: \"handler\" }\n").unwrap();
+        node.handlers.store(Arc::new(mix_handler::HandlerTable::from_rows(vec![
+            handlers_namespace::HandlerRow {
+                route_id: "owned".into(), vhost_fqdn: "site-a.example".into(),
+                method: "GET".into(), path_pattern: "/owned".into(),
+                handler_kind: "mix".into(), handler_ref: "owned.mix".into(),
+                enabled: true, capabilities: vec![],
+            }
+        ])));
+        let response = build_router(node).oneshot(req("site-a.example", "/owned")).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.headers()["content-security-policy"], "default-src 'none'");
+        assert_eq!(body_bytes(response).await, b"handler");
+    }
 
     fn static_site_node(td: &TempDir, redirect: Option<&str>) -> Arc<NodeState> {
+        static_site_node_with_ws(td, redirect, None)
+    }
+    fn static_site_node_with_ws(td: &TempDir, redirect: Option<&str>, ws: Option<String>) -> Arc<NodeState> {
         let node = synth_node(td);
         let root = node.vhosts.load().primaries[0].state.www_dir.clone();
         let vhost = Arc::new(VhostState {
@@ -8,7 +33,7 @@
             headers: static_site::headers(&BTreeMap::from([
                 ("content-security-policy".into(), "default-src 'self'".into())
             ])).unwrap(),
-            db: None, jmap_upstream: None, noded_ws: None, docs_dir: None,
+            db: None, jmap_upstream: None, noded_ws: ws, docs_dir: None,
             dev_session_email: None, dev_session_password: None,
             public_read_email: None, public_read_password: None,
             system_sender_email: None, system_sender_password: None,
@@ -160,19 +185,34 @@
         client_config.alpn_protocols = vec![b"h2".to_vec()];
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let node = static_site_node(&td, None);
+        use futures_util::{SinkExt, StreamExt};
+        let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_addr = upstream.local_addr().unwrap();
+        let echo = tokio::spawn(async move {
+            let (stream, _) = upstream.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let message = socket.next().await.unwrap().unwrap();
+            socket.send(message).await.unwrap();
+        });
+        let node = static_site_node_with_ws(&td, None, Some(format!("ws://{upstream_addr}/ws")));
         let app = build_router(node);
         let task = tokio::spawn(async move {
-            let (stream, peer_addr) = listener.accept().await.unwrap();
-            let stream = tokio_rustls::TlsAcceptor::from(server_config).accept(stream).await.unwrap();
-            assert_eq!(stream.get_ref().1.alpn_protocol(), Some(&b"h2"[..]));
-            WebdConnHandler { app }.handle(AcceptedStream::Tls(Box::new(stream)), ConnCtx {
-                listener_id: "test".into(), local_addr: addr, peer_addr, external: false,
-                sni: Some("site-a.example".into()), tls: Some(tls),
-            }).await;
+            for protocol in [&b"h2"[..], &b"http/1.1"[..]] {
+                let (stream, peer_addr) = listener.accept().await.unwrap();
+                let stream = tokio_rustls::TlsAcceptor::from(server_config.clone()).accept(stream).await.unwrap();
+                assert_eq!(stream.get_ref().1.alpn_protocol(), Some(protocol));
+                let app = app.clone();
+                let tls = tls.clone();
+                tokio::spawn(async move {
+                    WebdConnHandler { app }.handle(AcceptedStream::Tls(Box::new(stream)), ConnCtx {
+                        listener_id: "test".into(), local_addr: addr, peer_addr, external: false,
+                        sni: Some("site-a.example".into()), tls: Some(tls),
+                    }).await;
+                });
+            }
         });
         let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
-        let stream = tokio_rustls::TlsConnector::from(Arc::new(client_config))
+        let stream = tokio_rustls::TlsConnector::from(Arc::new(client_config.clone()))
             .connect("site-a.example".try_into().unwrap(), stream).await.unwrap();
         let (mut client, connection) = hyper::client::conn::http2::handshake(
             hyper_util::rt::TokioExecutor::new(), hyper_util::rt::TokioIo::new(stream)).await.unwrap();
@@ -184,7 +224,20 @@
         assert_eq!(response.version(), axum::http::Version::HTTP_2);
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), "SITE-A");
+        // No RFC 8441: a WebSocket uses its own HTTP/1.1 TLS connection,
+        // while the same listener also serves h2.
+        client_config.alpn_protocols = vec![b"http/1.1".to_vec()];
+        let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let stream = tokio_rustls::TlsConnector::from(Arc::new(client_config))
+            .connect("site-a.example".try_into().unwrap(), stream).await.unwrap();
+        assert_eq!(stream.get_ref().1.alpn_protocol(), Some(&b"http/1.1"[..]));
+        let (mut websocket, response) = tokio_tungstenite::client_async("wss://site-a.example/ws", stream).await.unwrap();
+        assert_eq!(response.status(), StatusCode::SWITCHING_PROTOCOLS);
+        websocket.send(tokio_tungstenite::tungstenite::Message::Text("roundtrip".into())).await.unwrap();
+        let message = tokio::time::timeout(std::time::Duration::from_secs(5), websocket.next()).await.unwrap().unwrap().unwrap();
+        assert_eq!(message.into_text().unwrap(), "roundtrip");
+        echo.await.unwrap();
+        task.await.unwrap();
         drop(client);
         driver.abort();
-        task.abort();
     }

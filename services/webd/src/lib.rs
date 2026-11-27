@@ -17,10 +17,10 @@ mod mix_handler;
 mod mxresolve;
 mod portal_auth;
 mod public_response_cache;
-mod static_site;
 mod session;
 mod shared_assets;
 mod shares;
+mod static_site;
 mod stats;
 mod tls_status;
 #[cfg(test)]
@@ -4045,7 +4045,8 @@ async fn plain_http_host_admit(
         return (StatusCode::BAD_REQUEST, "unknown host").into_response();
     }
     if let Some(vhost) = node.vhost_for_host(&host)
-        && let Some(target) = &vhost.redirect {
+        && let Some(target) = &vhost.redirect
+    {
         return static_site::redirect(target, req.uri(), &vhost.headers);
     }
     next.run(req).await
@@ -4500,7 +4501,9 @@ async fn serve_static(
         }
         return resp;
     }
-    let serve = ServeDir::new(&vhost.www_dir).precompressed_br().precompressed_gzip();
+    let serve = ServeDir::new(&vhost.www_dir)
+        .precompressed_br()
+        .precompressed_gzip();
     match serve.oneshot(req).await {
         Ok(mut resp) => {
             // Defence-in-depth on every static asset (CSS/JS and the
@@ -4513,7 +4516,10 @@ async fn serve_static(
             );
             // Vary even for identity and 304 responses: intermediaries must
             // negotiate each representation rather than reuse compressed bytes.
-            resp.headers_mut().append(axum::http::header::VARY, axum::http::HeaderValue::from_static("accept-encoding"));
+            resp.headers_mut().append(
+                axum::http::header::VARY,
+                axum::http::HeaderValue::from_static("accept-encoding"),
+            );
             static_site::apply(resp.headers_mut(), &vhost.headers);
             resp.into_response()
         }
@@ -5624,8 +5630,17 @@ fn resolve_node_state(inputs: ResolveInputs<'_>) -> Result<ResolvedNodeState> {
             Option<Arc<Mutex<Connection>>>,
         );
         let prepared: Result<PreparedVhost> = (|| {
-            static_site::validate(&row.host, &row.aliases, row.redirect.as_deref(), &row.headers)?;
-            if row.redirect.is_some() && (row.cms_db_path.is_some() || row.jmap_upstream.is_some() || row.noded_ws.is_some()) {
+            static_site::validate(
+                &row.host,
+                &row.aliases,
+                row.redirect.as_deref(),
+                &row.headers,
+            )?;
+            if row.redirect.is_some()
+                && (row.cms_db_path.is_some()
+                    || row.jmap_upstream.is_some()
+                    || row.noded_ws.is_some())
+            {
                 anyhow::bail!("redirect conflicts with cms_db_path, jmap_upstream or noded_ws");
             }
             let www_dir = PathBuf::from(&row.www_dir);
@@ -6026,8 +6041,8 @@ fn resolve_node_state(inputs: ResolveInputs<'_>) -> Result<ResolvedNodeState> {
         conn.execute_batch(SCHEMA)?;
 
         let legacy_state = Arc::new(VhostState {
-redirect: None,
-headers: Default::default(),
+            redirect: None,
+            headers: Default::default(),
             // Use the first tls_server_name entry as the informational
             // fqdn (matches what the legacy operator would describe as
             // "the primary identity").
@@ -6515,8 +6530,8 @@ async fn run_static_dev_server(
         aliases.push(bound_ip);
     }
     let vhost = Arc::new(VhostState {
-            redirect: None,
-            headers: Default::default(),
+        redirect: None,
+        headers: Default::default(),
         fqdn: "localhost".to_string(),
         db: None,
         www_dir: www_dir.clone(),
@@ -7973,9 +7988,14 @@ async fn async_main() -> Result<()> {
             // resolver slot, so a renewal swap is seen by the live
             // accept loop.
             let alpn_for = |id: &str| {
-                if node_cfg.as_ref().is_some_and(|c| c.webd.listener.iter().any(|l| l.id == id && l.http2)) {
+                if node_cfg
+                    .as_ref()
+                    .is_some_and(|c| c.webd.listener.iter().any(|l| l.id == id && l.http2))
+                {
                     vec![b"h2".to_vec(), b"http/1.1".to_vec()]
-                } else { vec![b"http/1.1".to_vec()] }
+                } else {
+                    vec![b"http/1.1".to_vec()]
+                }
             };
             let mut listener_buckets =
                 partition_identities_by_listener(&identities, &resolved_listeners);
@@ -7998,7 +8018,10 @@ async fn async_main() -> Result<()> {
                 let strict_sni = listener_rows.get(&l.id).is_some_and(|r| r.strict_sni);
                 let resolver = SniCertResolver::from_config(&bucket, strict_sni)
                     .with_context(|| format!("building TLS resolver for listener {:?}", l.id))?;
-                tls_listeners.insert(l.id.clone(), ListenerTls::with_alpn(Some(Arc::new(resolver)), alpn_for(&l.id)));
+                tls_listeners.insert(
+                    l.id.clone(),
+                    ListenerTls::with_alpn(Some(Arc::new(resolver)), alpn_for(&l.id)),
+                );
             }
             // Each listener's boot-time strict_sni: seeds the empty
             // runtime-cert handles below, and is the ACME provisioner's
@@ -11064,8 +11087,8 @@ mod session_login_tests {
         };
         let vhost = |fqdn: &str| {
             Arc::new(VhostState {
-            redirect: None,
-            headers: Default::default(),
+                redirect: None,
+                headers: Default::default(),
                 fqdn: fqdn.into(),
                 db: Some(mk_db()),
                 www_dir: www.clone(),

@@ -332,7 +332,16 @@ pub fn from_namespace_rows(
             // operator-repairable but the directory doesn't
             // register a vhost whose every request would 5xx.
             let www_dir = PathBuf::from(&row.www_dir);
-            if crate::static_site::validate(&row.fqdn, &row.aliases, row.redirect.as_deref(), &row.headers).is_err() { continue; }
+            if crate::static_site::validate(
+                &row.fqdn,
+                &row.aliases,
+                row.redirect.as_deref(),
+                &row.headers,
+            )
+            .is_err()
+            {
+                continue;
+            }
             if row.redirect.is_none() && !www_dir.is_dir() {
                 tracing::error!(
                     target: "webd::vhost_directory",
@@ -525,7 +534,7 @@ mod tests {
 
         let mut cfg = NodeConfig::default();
         cfg.webd.listener = vec![WebdListenerConfig {
-http2: false,
+            http2: false,
             id: "pub".to_string(),
             bind: "192.0.2.1:443".to_string(),
             external: true,

@@ -54,3 +54,48 @@ from `node.conf.mix`. Restart webd after changing either file; credentials
 are read once at startup. The startup log reports the vhost count and field
 names, never passwords. An email whose password was removed requires its
 replacement in the credential before restarting.
+## Static sites
+
+A redirect vhost needs its usual TLS or ACME settings but no document root:
+
+```text
+webd: {
+  vhost: [{
+    host: "www.example.com",
+    redirect: "https://example.com",
+    acme: { provider: "letsencrypt_staging", challenge: "http01",
+            contact_email: "ops@example.com" }
+  }]
+}
+```
+
+`redirect` must be an HTTPS origin without a trailing slash, path, query,
+fragment or user information. It cannot name this vhost or an alias, or coexist
+with `cms_db_path`, `jmap_upstream` or `noded_ws`. Responses use 308, retaining
+the method, path and query. Plain HTTP keeps its ACME and autoconfig branches.
+
+Docroot vhosts can set response defaults:
+
+```text
+{ host: "example.com", www_dir: "/srv/www/example",
+  headers: { "content-security-policy": "default-src 'self'",
+             "referrer-policy": "strict-origin-when-cross-origin" } }
+```
+
+The `headers` string map applies to docroot files and redirects only. Mix and
+CMS responses own their headers. Existing response headers win. Header syntax
+is validated; framing, hop-by-hop, content-encoding and content-range overrides
+are refused. Unknown vhost fields remain forward compatible.
+
+Docroot files negotiate adjacent `.br` and `.gz` representations using
+`Accept-Encoding`; no compression runs at request time. Responses vary on
+`accept-encoding`, including identity and conditional responses. Shared assets
+and media retain their existing serving paths. ServeDir uses Last-Modified/304;
+this change adds no ETag generator.
+
+Explicit `webd.listener` rows can set `http2: true` (default false) to offer
+`h2, http/1.1` over TLS. HTTP/2 needs authority-based host routing as well as
+ALPN, so adoption is opt-in. Plain listeners remain HTTP/1.1. Extended CONNECT
+is disabled; WebSockets use a separate HTTP/1.1 connection. Certificate renewal
+retains the listener's ALPN policy.
+

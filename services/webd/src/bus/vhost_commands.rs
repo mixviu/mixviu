@@ -129,7 +129,15 @@ async fn vhost_add(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String)
             Ok(values) => values,
             Err(e) => return caller_error(&format!("headers must be a JSON string map: {e}")),
         };
-        body.insert("headers".into(), PropValue::Object(values.into_iter().map(|(k,v)| (k, PropValue::String(v))).collect()));
+        body.insert(
+            "headers".into(),
+            PropValue::Object(
+                values
+                    .into_iter()
+                    .map(|(k, v)| (k, PropValue::String(v)))
+                    .collect(),
+            ),
+        );
     }
     body.insert("enabled".into(), PropValue::Bool(enabled));
     body.insert(
@@ -1401,7 +1409,7 @@ mod tests {
 
     fn listener(id: &str, bind: &str, enabled: bool, hosts: &[&str]) -> WebdListenerConfig {
         WebdListenerConfig {
-http2: false,
+            http2: false,
             id: id.to_string(),
             bind: bind.to_string(),
             external: true,

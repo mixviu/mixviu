@@ -314,19 +314,27 @@ pub fn schema() -> PropertySchema {
         },
         FieldSchema {
             name: "redirect".into(),
-            ty: FieldType::Option { inner: Box::new(FieldType::String) },
+            ty: FieldType::Option {
+                inner: Box::new(FieldType::String),
+            },
             default: Some(PropValue::Null),
             secret: false,
             help: "Permanent redirect to an HTTPS origin.".into(),
-            since: None, until: None, validators: Vec::new(),
+            since: None,
+            until: None,
+            validators: Vec::new(),
         },
         FieldSchema {
             name: "headers".into(),
-            ty: FieldType::Map { value: Box::new(FieldType::String) },
+            ty: FieldType::Map {
+                value: Box::new(FieldType::String),
+            },
             default: Some(PropValue::Object(Default::default())),
             secret: false,
             help: "Docroot and redirect response header defaults.".into(),
-            since: None, until: None, validators: Vec::new(),
+            since: None,
+            until: None,
+            validators: Vec::new(),
         },
         FieldSchema {
             name: "aliases".into(),
@@ -1021,9 +1029,15 @@ impl HookHandler for VhostsNamespaceHooks {
                 )));
             }
 
-            let row = vhost_row_from_value(&effective_value).map_err(|e| HookError::validation(e.to_string()))?;
-            crate::static_site::validate(&row.fqdn, &row.aliases, row.redirect.as_deref(), &row.headers)
+            let row = vhost_row_from_value(&effective_value)
                 .map_err(|e| HookError::validation(e.to_string()))?;
+            crate::static_site::validate(
+                &row.fqdn,
+                &row.aliases,
+                row.redirect.as_deref(),
+                &row.headers,
+            )
+            .map_err(|e| HookError::validation(e.to_string()))?;
 
             // Rule 7 — the next restart must accept a row this write
             // makes routable. Only a transition INTO enabled is checked
