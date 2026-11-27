@@ -108,8 +108,10 @@ fn wait_app($id, $rc)
   return false
 end
 fn wait_file($path)
-  for each $i in range(1, 500)
-    if read_file_or_nil($path) != nil then return read_file($path) end
+  $until = monotonic() + 5
+  while monotonic() < $until
+    $content = read_file_or_nil($path)
+    if $content != nil and $content != "" then return $content end
     sleep(0.01)
   end
   raise("APPS_BUS_TEST", "launched fixture never ran: " .. $path)
@@ -118,9 +120,9 @@ end
 fn stop_pid($pid)
   if $pid == nil or not process_alive($pid) then return nil end
   $_term = kill($pid, 15)
-  for $wait = 1 to 40
+  for $wait = 1 to 400
     if not process_alive($pid) then return nil end
-    sleep(0.05)
+    sleep(0.005)
   end
   $_kill = kill($pid, 9)
   return nil
@@ -425,7 +427,8 @@ try
   subscribe("apps.started")
   -- Exercise both attested origins against the same broker. WS is mesh even
   -- on loopback; only the Unix socket is local.
-  check(call("apps", "apps.start", json_encode({argv: ["/usr/bin/sleep", "30"]})).rc == 10, "argv enabled by default")
+  $disabled = call("apps", "apps.start", json_encode({argv: ["/usr/bin/sleep", "30"]}))
+  check($disabled.rc == 10 and $disabled.result.error_code == "FORBIDDEN", "argv enabled by default")
   export MIX_NODED_URL="unix://" .. $bus.dir .. "/run/noded/bus.sock"
   bus_reconnect()
   subscribe("apps.exited")
@@ -600,11 +603,19 @@ try
     check($row.class == "operator" and $row.source == "apps" and not has_key($row.data, "argv") and not has_key($row.data, "uris"), "history leaks argv/uris")
   end
   check(len(filter($history.result.rows, fn($row) = $row.kind == "allow_argv" and $row.data.old == false and $row.data.value == true)) == 1, "argv gate change not audited")
-  $limited = call("apps", "apps.history", "{\"limit\":1}")
-  check(len($limited.result.rows) == 1 and $limited.result.truncated == true, "history limit/truncated")
-  check(deep_eq($limited.result.rows, slice($history.result.rows, len($history.result.rows) - 1)), "history limit must return newest row")
-  $limited = call("apps", "apps.history", "{\"limit\":3}")
-  check(deep_eq($limited.result.rows, slice($history.result.rows, len($history.result.rows) - 3)), "newest history rows must remain ascending")
+  -- A closed timestamp interval containing only our own seeded rows cannot
+  -- change when asynchronous app exits land between the limited reads.
+  $seed = $citizen_env.MIX_VAR .. "/apps/history/newest.jsonl"
+  $expected = []
+  for $i = 1 to 5
+    push($expected, merge($history.result.rows[0], {seq: "newest-" .. $i, ts_utc: "2003-01-01T00:00:00Z"}))
+  end
+  write_file($seed, join(map($expected, fn($row) = json_encode($row)), "\n") .. "\n")
+  for $n in [1, 3]
+    $limited = call("apps", "apps.history", json_encode({since: "2003", until: "2004", limit: $n}))
+    check($limited.rc == 0 and $limited.result.truncated == true and deep_eq($limited.result.rows, slice($expected, len($expected) - $n)), "newest-N history must remain ascending")
+  end
+  remove($seed)
   -- Simulate a crash leaving an incomplete final JSONL record. Keep a valid
   -- row before it so skipping the whole segment cannot satisfy this check.
   $torn = $citizen_env.MIX_VAR .. "/apps/history/torn.jsonl"
@@ -613,6 +624,13 @@ try
   $recovery = call("apps", "apps.history", "{\"until\":\"2002\"}")
   check($recovery.rc == 0 and deep_eq($recovery.result.rows, [$recovered]), "torn trailing history line lost valid rows or failed call")
   check(contains(read_file($tmp .. "/svc.log"), "WARN apps.history: skipping torn trailing line in " .. $torn), "torn trailing history line must WARN")
+  $next = merge($recovered, {seq: "recovered-2"})
+  -- Cached counters still describe the last successful append (line 1).
+  $hs = $a.history_append(dirname($torn), {path: $torn, day: "2001-01-01", bytes: byte_length(json_encode($recovered)) + 1, line: 1}, $next, time())
+  $recovery = call("apps", "apps.history", "{\"until\":\"2002\"}")
+  check($recovery.rc == 0 and len($recovery.result.rows) == 2, "append after torn fragment must preserve valid rows")
+  check($recovery.result.rows[1].seq == $next.seq and $recovery.result.rows[1].ref.line == 3, "new row after torn fragment must be intact")
+  check($hs.line == 3 and $hs.bytes == stat($torn).size, "torn append counters")
   remove($torn)
   check(len(call("apps", "apps.history", "{\"until\":\"2000\"}").result.rows) == 0, "history until filter")
   check(len(call("apps", "apps.history", "{\"since\":\"9999\"}").result.rows) == 0, "history since filter")
@@ -620,17 +638,20 @@ try
   -- normally prefers verified Unix even when a WebSocket URL is configured.
   fixture("remote/node.conf.mix", json_encode({node: "example-remote", noded: {unix_socket: $tmp .. "/remote/absent.sock"}}))
   $remote = merge($env, {MIX_NODE_CONFIG: $tmp .. "/remote/node.conf.mix", MIX_RUN: $tmp .. "/remote/run", MIX_ETC: $tmp .. "/remote/etc"})
-  $refused = json_parse(run_argv_must([$mix, $tmp .. "/cli.mix", "apps", "apps.start", json_encode({argv: ["/usr/bin/true"]})], {clear_env: true, env: $remote}))
-  check($refused.rc == 10, "mesh argv accepted")
-  $refused = json_parse(run_argv_must([$mix, $tmp .. "/cli.mix", "apps", "apps.history", "{}"], {clear_env: true, env: $remote}))
-  check($refused.rc == 10, "mesh history accepted")
-  $refused = json_parse(run_argv_must([$mix, $tmp .. "/cli.mix", "apps", "apps.props.set", "{\"path\":\"apps.allow_argv\",\"value\":true}"], {clear_env: true, env: $remote}))
-  check($refused.rc == 10, "mesh enabled argv gate")
-  check(call("apps", "apps.props.set", json_encode({path: "apps.allow_argv", value: false})).rc == 0, "local disable argv")
+  $requests = [{verb: "apps.start", body: {argv: ["/usr/bin/true"]}}, {verb: "apps.history", body: {}}, {verb: "apps.props.set", body: {path: "apps.allow_argv", value: true}}]
   for $setting in [{path: "apps.terminal", value: "/usr/bin/false"}, {path: "apps.icon_theme", value: "example-theme"}, {path: "apps.count", value: "1"}, {path: "unknown", value: "example"}]
-    $refused = json_parse(run_argv_must([$mix, $tmp .. "/cli.mix", "apps", "apps.props.set", json_encode($setting)], {clear_env: true, env: $remote}))
-    check($refused.rc == 10 and contains(to_string($refused.result), "forbidden"), "mesh property set accepted")
+    push($requests, {verb: "apps.props.set", body: $setting})
   end
+  fixture("remote-batch.mix", '$out = []; for $r in json_parse($1); $verb = $r.verb; send apps $verb timeout=1 body=json_encode($r.body); push($out, {rc: $rc, result: $result}); end; print(json_encode($out))')
+  $refusals = json_parse(run_argv_must([$mix, $tmp .. "/remote-batch.mix", json_encode($requests)], {clear_env: true, env: $remote}))
+  check(len($refusals) == len($requests), "missing mesh refusal replies")
+  -- Bus SessionError::rc maps Forbidden and ResourceLimit to RC_ERROR=10
+  -- (libraries/bus/src/native_session/bootstrap.rs and bus/src/lib.rs).
+  for $i = 0 to len($requests) - 1
+    $refused = $refusals[$i]
+    check($refused.rc == 10 and $refused.result.error_code == "FORBIDDEN" and $refused.result.error == "forbidden", "mesh request accepted: " .. json_encode($requests[$i]))
+  end
+  check(call("apps", "apps.props.set", json_encode({path: "apps.allow_argv", value: false})).rc == 0, "local disable argv")
   for $terminal in ["\"\"", "relative-terminal -e"]
     check(call("apps", "apps.props.set", json_encode({path: "apps.terminal", value: $terminal})).rc == 10, "invalid terminal accepted")
   end
@@ -644,20 +665,30 @@ try
   -- Native sleep processes are cheaper than 120 interpreter fixtures and
   -- stay alive until explicitly stopped. Exercise the real citizen limit.
   $handles = []
-  for $i = 1 to 120
-    $admitted = call("apps", "apps.start", "{\"id\":\"hold\"}")
-    check($admitted.rc == 0, "limit refused before 120 live handles: " .. $i)
-    push($handles, $admitted.result.handle)
+  $limit_failure = nil
+  try
+    for $i = 1 to 120
+      $admitted = call("apps", "apps.start", "{\"id\":\"hold\"}")
+      check($admitted.rc == 0, "limit refused before 120 live handles: " .. $i)
+      push($handles, $admitted.result.handle)
+    end
+    $full = call("apps", "apps.running", "{\"id\":\"hold\"}")
+    check($full.rc == 0 and len($full.result) == 120, "limit fixture must have 120 live handles")
+    check(deep_eq(sort(map($full.result, fn($row) = $row.handle)), sort($handles)), "running must retain exact opaque handles")
+    $refused = call("apps", "apps.start", "{\"id\":\"hold\"}")
+    check($refused.rc == 10 and $refused.result.error == "limit" and $refused.result.error_code == "RESOURCE_LIMIT", "121st START must return existing Bus RC_ERROR/RESOURCE_LIMIT")
+  catch $err
+    $limit_failure = $err
+  finally
+    $stopped = call("apps", "apps.stop", "{\"id\":\"hold\",\"mode\":\"force\"}")
+    for $handle in $handles
+      check(await_exit($handle).reason == "force", "limit fixture survived stop")
+    end
   end
-  $full = call("apps", "apps.running", "{\"id\":\"hold\"}")
-  check($full.rc == 0 and len($full.result) == 120, "limit fixture must have 120 live handles")
-  check(deep_eq(sort(map($full.result, fn($row) = $row.handle)), sort($handles)), "running must retain exact opaque handles")
-  $refused = call("apps", "apps.start", "{\"id\":\"hold\"}")
-  check($refused.rc == 10 and $refused.result.error == "limit" and $refused.result.error_code == "RESOURCE_LIMIT", "121st START must return existing resource code")
-  $stopped = call("apps", "apps.stop", "{\"id\":\"hold\",\"mode\":\"force\"}")
-  check($stopped.rc == 0 and len($stopped.result.stopping) == 120, "stop all limit fixtures")
-  for $handle in $handles
-    check(await_exit($handle).reason == "force", "limit fixture survived stop")
+  -- Defer a limit assertion failure until after RELOAD coverage, while the
+  -- finally above always retires every admitted fixture.
+  if $limit_failure == nil then
+    check($stopped.rc == 0 and len($stopped.result.stopping) == 120, "stop all limit fixtures")
   end
   $old_app = call("apps", "apps.start", json_encode({id: "hold"})).result
   $old = $old_app.handle
@@ -670,6 +701,7 @@ try
   check(call("apps", "apps.stop", json_encode({handle: $old})).rc == 14, "previous generation handle accepted")
   check(not process_alive($old_app.pid), "RELOAD left managed child alive")
   check(call("apps", "apps.props.watch", "{\"path\":\"apps.allow_argv\"}").result.value == false, "argv gate survived reload")
+  if $limit_failure != nil then raise("APPS_BUS_TEST", $limit_failure) end
 
   print("PASS apps Bus surface: list/get/launch, argv, DISPLAY, reload, manifest icon resolution, brand mark and explicit theme preference")
 finally

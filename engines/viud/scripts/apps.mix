@@ -158,6 +158,8 @@ fn start_app($request)
   global $live
   $bad = $a.request_error("invalid_request")
   if not $a.start_valid($request) then return $bad end
+  -- Bus native_session/bootstrap.rs SessionError::rc maps both Forbidden
+  -- and ResourceLimit to bus::RC_ERROR (10); error_code distinguishes them.
   if has_key($request, "argv") and (not $allow_argv or not local_origin()) then
     return {rc: 10, body: {error: "forbidden", error_code: "FORBIDDEN"}}
   end
@@ -407,7 +409,10 @@ on apps.history desc "local operator history {since?,until?,limit?}: newest N ro
             eprint("WARN apps.history: skipping torn trailing line in " .. $file)
             continue
           end
-          raise("APPS_HISTORY", "invalid JSONL record in " .. $file .. ": " .. $err)
+          -- An appender may have terminated a crash fragment before a new
+          -- valid row. Keep subsequent rows readable and disclose the loss.
+          eprint("WARN apps.history: skipping invalid JSONL line " .. ($i + 1) .. " in " .. $file .. ": " .. $err)
+          continue
         end
         if $row.ts_utc >= ($request.since ?? "") and $row.ts_utc <= ($request.until ?? "9999") then
           push($rows, $row)

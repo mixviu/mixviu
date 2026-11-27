@@ -71,8 +71,17 @@ end
 fn history_append($dir, $state, $row, $now)
   -- One current segment, with byte/line counters retained across appends.
   -- Native append_file opens/closes its descriptor; Mix has no persistent
-  -- file-handle API. Directory/stat work happens only when rolling.
+  -- file-handle API. Check the existing segment before each append so a
+  -- failed short append cannot glue its fragment to the next valid row.
   $day = substr($row.ts_utc, 0, 10)
+  if $state.path != "" and is_file($state.path) then
+    $content = read_file($state.path)
+    if $content != "" and not ends_with($content, "\n") then
+      append_file($state.path, "\n")
+      $state.bytes = byte_length($content) + 1
+      $state.line = len(split($content, "\n"))
+    end
+  end
   $encoded = json_encode(merge($row, {ref: {file: basename($state.path), line: $state.line + 1}})) .. "\n"
   if $state.path == "" or $state.day != $day or $state.bytes + byte_length($encoded) > 1048576 then
     $state.path = $dir .. "/" .. $day .. "-" .. replace(uuid(), "-", "") .. ".jsonl"
