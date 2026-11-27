@@ -53,6 +53,7 @@ use wayland_protocols_wlr::screencopy::v1::client::{
 /// What the client's event handlers record.
 #[derive(Default)]
 pub struct ClientState {
+    pub keyboard_enter_serial: Option<u32>,
     pub activation_tokens: Vec<String>,
     pub idle_events: Vec<bool>,
     pub tablet: tablet::State,
@@ -751,6 +752,9 @@ impl Dispatch<WlKeyboard, ()> for ClientState {
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
     ) {
+        if let wl_keyboard::Event::Enter { serial, .. } = &event {
+            state.keyboard_enter_serial = Some(*serial);
+        }
         if let wl_keyboard::Event::Key {
             key,
             state: pressed,
