@@ -378,6 +378,13 @@ try
   $enable = call("apps", "apps.props.set", json_encode({path: "apps.allow_argv", value: true}))
   check($enable.rc == 0, "local argv enable: " .. json_encode($enable) .. " endpoint=" .. env("MIX_NODED_URL"))
   check(call("apps", "apps.start", json_encode({id: "plain", argv: ["/usr/bin/true"]})).rc == 10, "both selectors accepted")
+  -- Receive the first event at top level before helper functions pump events.
+  $natural = call("apps", "apps.start", json_encode({id: "plain"}))
+  $deadline = monotonic() + 1
+  while len(filter($exits, fn($row) = $row.handle == $natural.result.handle)) == 0 and monotonic() < $deadline
+    sleep(0.005)
+  end
+  check(await_exit($natural.result.handle).reason == "exit", "natural exit")
   $r = call("apps", "apps.start", json_encode({id: "hold"}))
   check($r.rc == 0 and type($r.result.handle) == "string", "start id handle")
   $h = $r.result.handle
