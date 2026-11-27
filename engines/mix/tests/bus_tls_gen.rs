@@ -45,6 +45,7 @@ fn guest_generator_emits_only_public_material_and_stages_rotation() {
     );
     let refused = invoke(false);
     assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains(path.to_str().unwrap()));
     let rotated = invoke(true);
     assert!(
         rotated.status.success(),

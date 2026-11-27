@@ -37,6 +37,7 @@ $m.validate_inventory($inv)
 for $case in ["no-bus","duplicate","reuse","endpoint","endpoint-duplicate","endpoint-wg","endpoint-no-bus","shared-d2","shared-bus-tls"]
   $r = run_argv([realpath("/proc/self/exe"),$0,$case])
   check($r.exit_code == 1 and contains($r.stdout,"ERROR:"),"refuse " .. $case)
+  if $case == "endpoint-duplicate" then check(contains($r.stdout,"duplicate endpoint") and contains($r.stdout,"alpha") and contains($r.stdout,"192.0.2.5:4200"),"duplicate path names member and address") end
 end
 for $address in ["198.51.100.5:4200","[2001:db8::5]:4200","[::1]:1","127.0.0.1:42"]
   check($m.endpoint_identity({addr:$address,transport:"tls"}) != nil,"parse " .. $address)
