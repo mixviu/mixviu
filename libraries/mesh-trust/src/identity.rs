@@ -68,12 +68,14 @@ pub fn validate_key_reload(
             }
         }
     }
-    for closed in old.iter().filter(|key| {
-        key.kind == "wg" && (key.tombstoned || key.until.is_some_and(|end| end <= current_epoch))
-    }) {
-        if next
+    for retained in old.iter().filter(|key| key.kind == "wg") {
+        let closed = old
             .iter()
-            .any(|key| key.key == closed.key && key.current(candidate_epoch))
+            .filter(|key| key.kind == "wg" && key.key == retained.key)
+            .all(|key| key.tombstoned || key.until.is_some_and(|end| end <= current_epoch));
+        if closed && next
+            .iter()
+            .any(|key| key.key == retained.key && key.current(candidate_epoch))
         {
             return Err(
                 "candidate makes a key current that is closed in the accepted inventory".into(),
@@ -361,6 +363,67 @@ mod tests {
     use super::*;
     use crate::admission::sign_admission_transcript;
     use base64::Engine as _;
+
+    #[test]
+    fn wg_overlapping_records_keep_key_open_independent_of_order() {
+        let mut accepted = member(&[[7; 32], [7; 32]]);
+        accepted["credentials"][0]["kind"] = serde_json::json!("wg");
+        accepted["credentials"][0]["until_epoch"] = serde_json::json!(9);
+        accepted["credentials"][1]["kind"] = serde_json::json!("wg");
+        accepted["credentials"][1]["from_epoch"] = serde_json::json!(8);
+        for reverse_old in [false, true] {
+            for reverse_next in [false, true] {
+                let mut old = accepted.clone();
+                let mut next = accepted.clone();
+                if reverse_old {
+                    old["credentials"].as_array_mut().unwrap().reverse();
+                }
+                if reverse_next {
+                    next["credentials"].as_array_mut().unwrap().reverse();
+                }
+                assert!(validate_member_keys(&serde_json::json!([old.clone()]), 10).is_ok());
+                assert!(validate_key_reload(
+                    &serde_json::json!([old]), 10, &serde_json::json!([next]), 11
+                ).is_ok());
+            }
+        }
+    }
+
+    #[test]
+    fn wg_closed_key_cannot_reopen_with_overlapping_record_independent_of_order() {
+        let mut accepted = member(&[[7; 32]]);
+        accepted["credentials"][0]["kind"] = serde_json::json!("wg");
+        accepted["credentials"][0]["until_epoch"] = serde_json::json!(9);
+        let mut next = accepted.clone();
+        let mut reopened = next["credentials"][0].clone();
+        reopened["from_epoch"] = serde_json::json!(8);
+        reopened["until_epoch"] = Value::Null;
+        next["credentials"].as_array_mut().unwrap().push(reopened);
+        for reverse in [false, true] {
+            let mut candidate = next.clone();
+            if reverse {
+                candidate["credentials"].as_array_mut().unwrap().reverse();
+            }
+            let candidate = serde_json::json!([candidate]);
+            assert!(validate_member_keys(&candidate, 11).is_ok());
+            assert!(validate_key_reload(&serde_json::json!([accepted.clone()]), 10, &candidate, 11)
+                .unwrap_err().contains("closed in the accepted inventory"));
+        }
+    }
+
+    #[test]
+    fn live_d2_key_allows_signed_suspension() {
+        let live = member(&[[7; 32]]);
+        let mut future = live.clone();
+        future["credentials"][0]["from_epoch"] = serde_json::json!(12);
+        let mut no_bus = live.clone();
+        no_bus["bus"] = serde_json::json!(false);
+        for suspended in [future, no_bus] {
+            assert!(validate_key_reload(
+                &serde_json::json!([live.clone()]), 10, &serde_json::json!([suspended]), 11
+            ).is_ok());
+        }
+    }
 
     #[test]
     fn reload_retention_staging_and_rotation_table() {
