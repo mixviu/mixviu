@@ -216,9 +216,14 @@ fn window_groups($windows)
 end
 
 fn signal_app($handle, $signal)
+  global $live
   -- No await between the current-table/managed-child checks and the signal.
   -- kill returns false for ESRCH; process_alive uses the managed pidfd.
   if $live[$handle] == nil or not process_alive($live[$handle].pid) then return end
+  if $signal == 15 then
+    if $live[$handle].term_sent == true then return end
+    $live[$handle].term_sent = true
+  end
   try
     kill(-$live[$handle].pid, $signal)
   catch $gone
