@@ -190,6 +190,13 @@ async fn main() -> anyhow::Result<()> {
         }
     })
     .await?;
+    // Staging smoke proof: open one real chooser and cancel it, without
+    // requiring a file fixture or exercising any accepting dialogs.
+    if std::env::args().any(|arg| arg == "--cancel-only") {
+        one(&client, &bus, &folder, "OpenFile", true).await?;
+        bus.close().await;
+        return Ok(());
+    }
     for method in ["OpenFile", "SaveFile", "SaveFiles"] {
         one(&client, &bus, &folder, method, false).await?;
         one(&client, &bus, &folder, method, true).await?;
