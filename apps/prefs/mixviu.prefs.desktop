@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Preferences
+Comment=MixViu settings
+Exec=/opt/mix/bin/viu run /opt/mix/share/mixviu/apps/prefs
+Icon=preferences-system
+Terminal=false
+Categories=Settings;

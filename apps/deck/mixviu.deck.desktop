@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Deck
+Comment=MixViu media player
+Exec=/opt/mix/bin/viu run /opt/mix/share/mixviu/apps/deck
+Icon=multimedia-video-player
+Terminal=false
+Categories=AudioVideo;Player;

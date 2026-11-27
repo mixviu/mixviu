@@ -6,6 +6,55 @@ $repo = dirname(dirname(script_path()))
 $roots = {prefix: "/srv/fixture", lib: "/srv/fixture/lib", etc: "/srv/fixture/etc", var: "/srv/fixture/var",
   run: "/srv/fixture/run", cache: "/srv/fixture/cache", share: "/srv/fixture/share"}
 try
+  -- Use the archive builder's actual app placement, without fetching assets
+  -- or building the engines. The registry must see every staged launcher.
+  $app_files = require("../tools/apps_bundle_files.mix")
+  $registry = require("../engines/viud/scripts/lib/apps.mix")
+  $staged_apps = $app_files.stage_apps($tmp .. "/apps")
+  $launchers = $tmp .. "/apps/share/applications"
+  $expected = ["term", "dopus", "email", "ced", "deck", "gallery", "monitor", "prefs", "screenshot", "workshop"]
+  $entries = glob($launchers .. "/*.desktop")
+  if len($entries) != len($expected) then raise("BUNDLE", "expected exactly ten launcher entries") end
+  $visible = filter($registry.scan_apps([$launchers], "", "MIXOS"), fn($e) = not $e.no_display)
+  if len($visible) != len($expected) then raise("BUNDLE", "registry hid a bundled launcher") end
+  $launcher_data = require("../share/scenes/lib/data.mix")
+  $listed = map($visible, fn($e) = $registry.project_list($e))
+  if not deep_eq($launcher_data.pinned($listed), $listed) then
+    raise("BUNDLE", "default launcher view hid a bundled app")
+  end
+  for $app in $expected
+    $id = "mixviu." .. $app
+    $sources = $app_files.tracked("apps/" .. $app .. "/mixviu.*.desktop")
+    if not deep_eq($sources, ["apps/" .. $app .. "/" .. $id .. ".desktop"]) then
+      raise("BUNDLE", "expected one tracked launcher source for " .. $app)
+    end
+    if len(filter($entries, fn($p) = basename($p) == $id .. ".desktop")) != 1 then
+      raise("BUNDLE", "missing or duplicate launcher for " .. $app)
+    end
+    $entry = $registry.find_app($visible, $id)
+    if $entry == nil or $registry.project_list($entry).id != $id or not $registry.match_query($entry, "") then
+      raise("BUNDLE", "apps.list cannot list " .. $app)
+    end
+    if not contains($staged_apps, $app) or not is_file($tmp .. "/apps/share/mixviu/apps/" .. $app .. "/contract.json") then
+      raise("BUNDLE", "launcher app was not placed: " .. $app)
+    end
+    if $app == "term" then
+      if $entry.exec != "/opt/mix/bin/term" or not is_file($tmp .. "/apps/bin/term") then
+        raise("BUNDLE", "Term launcher wrapper missing")
+      end
+      if not contains(read_file($tmp .. "/apps/bin/term"), "\"/opt/mix/bin/viu\", \"run\", \"/opt/mix/share/mixviu/apps/term\"") then
+        raise("BUNDLE", "Term wrapper does not name its bundled app")
+      end
+    elif not deep_eq($registry.parse_exec($entry.exec), ["/opt/mix/bin/viu", "run", "/opt/mix/share/mixviu/apps/" .. $app]) then
+      raise("BUNDLE", "Exec does not name the bundled app: " .. $app)
+    end
+  end
+  for $app in ["backdrop", "bustap", "osd", "volume-lab", "gallery-reference"]
+    if len(glob($repo .. "/apps/" .. $app .. "/mixviu.*.desktop")) != 0 or $registry.find_app($visible, "mixviu." .. $app) != nil then
+      raise("BUNDLE", "non-launcher app has an entry: " .. $app)
+    end
+  end
+  print("PASS ten bundled launcher entries target staged apps and remain visible to apps.list; five excluded apps have no entry")
   mkdir($tmp .. "/source", {parents: true})
   $entries = []
   for $svc in ["agentd", "peersd", "releasesd", "daylight"]

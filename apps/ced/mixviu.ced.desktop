@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Ced
+Comment=MixViu text editor
+Exec=/opt/mix/bin/viu run /opt/mix/share/mixviu/apps/ced
+Icon=accessories-text-editor
+Terminal=false
+Categories=Utility;TextEditor;

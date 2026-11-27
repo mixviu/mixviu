@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Gallery
+Comment=MixViu widget gallery
+Exec=/opt/mix/bin/viu run /opt/mix/share/mixviu/apps/gallery
+Icon=applications-graphics
+Terminal=false
+Categories=Development;GUIDesigner;

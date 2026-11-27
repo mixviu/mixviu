@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Monitor
+Comment=MixViu system monitor
+Exec=/opt/mix/bin/viu run /opt/mix/share/mixviu/apps/monitor
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Monitor;

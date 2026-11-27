@@ -26,7 +26,7 @@
 --   share/mixviu/libraries/viu/mix/   the Viu Mix library the apps require
 --   share/mixviu/units/               unit templates (@{prefix} placeholders)
 --   share/mixviu/{LICENSE-*,NOTICE}, share/mixviu/BUNDLE.conf.mix (manifest)
---   bin/term, share/applications/mixviu.term.desktop
+--   bin/term, share/applications/mixviu.*.desktop (tracked launcher entries)
 --   share/scenes/, share/viud/scripts/
 --   lib/{clipd,notifyd,exportd,dlnad}/   the Mix services
 --   share/icons/, share/assets/, share/wallpapers/, share/layout/, share/daylight/
@@ -66,30 +66,9 @@ fn place($stage, $src, $dst)
   mkdir(dirname($stage .. "/" .. $dst), {parents: true})
   copy($src, $stage .. "/" .. $dst)
 end
--- Runtime files of a Mix app: no Rust, no tests, no gate or build drivers.
-fn runtime_file($f)
-  $base = basename($f)
-  if ends_with($f, ".rs") or $base == "Cargo.toml" or contains($f, "/src/") or contains($f, "/rust-core/") then return false end
-  if contains($f, "/units/") then return false end
-  if contains($f, "/tests/") or ends_with($base, "-test.mix") or ends_with($base, "_test.mix") then return false end
-  if $base == "gate.mix" or $base == "capture-build.mix" then return false end
-  return true
-end
-
--- Apps (gallery-reference is a Rust reference build, not a Mix app).
-$apps = []
-for $f in tracked("apps")
-  $app = split($f, "/")[1]
-  if $app != "gallery-reference" and runtime_file($f) then
-    place($stage, $f, "share/mixviu/" .. $f)
-    if not contains($apps, $app) then push($apps, $app) end
-  end
-end
+$app_files = require("apps_bundle_files.mix")
+$apps = $app_files.stage_apps($stage)
 for $f in tracked("libraries/viu/mix") place($stage, $f, "share/mixviu/" .. $f) end
--- Term uses the same app/library layout as every bundled Mix app.
-place($stage, "apps/term/term.mix", "bin/term")
-chmod($stage .. "/bin/term", 0o755)
-place($stage, "apps/term/mixviu.term.desktop", "share/applications/mixviu.term.desktop")
 for $f in ["LICENSE-APACHE", "LICENSE-MIT", "NOTICE"] place($stage, $f, "share/mixviu/" .. $f) end
 for $f in tracked("share/scenes") place($stage, $f, $f) end
 for $f in tracked("share/fonts") place($stage, $f, $f) end

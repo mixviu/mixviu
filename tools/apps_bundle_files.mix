@@ -1,0 +1,37 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- App payload shared by the archive builder and its offline staging test.
+fn tracked($dir)
+  return filter(lines(trim(run_argv_must(["git", "ls-files", $dir]))), fn($f) = $f != "")
+end
+fn place($stage, $src, $dst)
+  mkdir(dirname($stage .. "/" .. $dst), {parents: true})
+  copy($src, $stage .. "/" .. $dst)
+end
+-- Runtime files of a Mix app: no Rust, no tests, no gate or build drivers.
+fn runtime_file($f)
+  $base = basename($f)
+  if ends_with($f, ".rs") or $base == "Cargo.toml" or contains($f, "/src/") or contains($f, "/rust-core/") then return false end
+  if contains($f, "/units/") then return false end
+  if contains($f, "/tests/") or ends_with($base, "-test.mix") or ends_with($base, "_test.mix") then return false end
+  if $base == "gate.mix" or $base == "capture-build.mix" then return false end
+  return true
+end
+fn stage_apps($stage)
+  $apps = []
+  for $f in tracked("apps")
+    $app = split($f, "/")[1]
+    -- gallery-reference is a Rust reference build, not a Mix app.
+    if $app != "gallery-reference" and runtime_file($f) then
+      place($stage, $f, "share/mixviu/" .. $f)
+      if not contains($apps, $app) then push($apps, $app) end
+    end
+    -- Only tracked apps/*/mixviu.*.desktop files enter the launcher.
+    if re_match($f, "^apps/[^/]+/mixviu\\.[^/]+\\.desktop$") then
+      place($stage, $f, "share/applications/" .. basename($f))
+    end
+  end
+  -- Term uses the same app/library layout as every bundled Mix app.
+  place($stage, "apps/term/term.mix", "bin/term")
+  chmod($stage .. "/bin/term", 0o755)
+  return $apps
+end

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Screenshot
+Comment=MixViu screen capture
+Exec=/opt/mix/bin/viu run /opt/mix/share/mixviu/apps/screenshot
+Icon=camera-photo
+Terminal=false
+Categories=Utility;Graphics;
