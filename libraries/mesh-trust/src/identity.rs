@@ -8,6 +8,50 @@ use serde_json::Value;
 
 use crate::admission::{AdmissionTranscript, select_d2_pubkeys};
 
+/// Identity authenticated by the TLS CertificateVerify proof.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TlsMember {
+    pub member: String,
+    pub epoch: u64,
+    pub revision: u64,
+    pub key: [u8; 32],
+}
+
+/// Immutable reverse index built once per accepted revision. Ineligible owners
+/// poison shared keys too, so a duplicate never identifies an eligible owner.
+#[derive(Debug, Default)]
+pub struct TlsAuthority {
+    epoch: u64,
+    revision: u64,
+    keys: HashMap<[u8; 32], Option<String>>,
+}
+
+impl TlsAuthority {
+    pub fn new(members: &BTreeMap<String, Value>, epoch: u64, revision: u64) -> Self {
+        let mut keys = HashMap::new();
+        for (name, member) in members {
+            for key in crate::admission::select_bus_tls_pubkeys(member, epoch) {
+                let key: [u8; 32] = key.try_into().expect("selector checks length");
+                let owner = (member["status"] == "active" && member["bus"] == true)
+                    .then(|| name.clone());
+                keys.entry(key).and_modify(|old| {
+                    if old != &owner { *old = None; }
+                }).or_insert(owner);
+            }
+        }
+        Self { epoch, revision, keys }
+    }
+
+    pub fn member_for(&self, key: &[u8; 32]) -> Option<TlsMember> {
+        Some(TlsMember {
+            member: self.keys.get(key)?.as_ref()?.clone(),
+            epoch: self.epoch,
+            revision: self.revision,
+            key: *key,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct KeyAuthority {
     epoch: u64,

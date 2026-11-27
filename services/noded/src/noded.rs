@@ -471,7 +471,7 @@ impl PendingResponseTable {
 
 #[derive(Clone)]
 struct AppState {
-    d2_seed: Option<[u8; 32]>,
+    d2_seed: Option<mesh::tls::Seed>,
     peer_context: bus::native_session::PeerContext,
     sessions: Arc<tokio::sync::Mutex<session::Sessions>>,
     protected_responses: Arc<AtomicBool>,
@@ -1034,7 +1034,7 @@ async fn serve(
     );
 
     let (mesh_incoming_tx, mesh_incoming_rx) = mpsc::unbounded_channel::<MeshInbound>();
-    let d2_seed = mesh_config.d2_seed;
+    let d2_seed = mesh_config.d2_seed.clone();
     let mesh = Arc::new(MeshPeers::new(mesh_config, mesh_incoming_tx));
     mesh.set_frame_enforce(frame_policy == AdmissionMode::Enforce)
         .await;
@@ -1366,7 +1366,7 @@ fn d2_seed_path() -> std::path::PathBuf {
 /// is silent; unreadable/malformed are LOUD.
 #[derive(Debug, PartialEq, Eq)]
 enum SeedRead {
-    Loaded([u8; 32]),
+    Loaded(mesh::tls::Seed),
     /// `NotFound` — the seed has not been provisioned yet (ceremony Part B).
     Absent,
     /// Present but not readable (e.g. `PermissionDenied`). Carries the io
@@ -1383,9 +1383,15 @@ enum SeedRead {
 fn classify_seed_read(raw: std::io::Result<String>) -> SeedRead {
     match raw {
         Ok(s) => match base64::engine::general_purpose::STANDARD
-            .decode(s.trim())
+            .decode(zeroize::Zeroizing::new(s).trim())
             .ok()
-            .and_then(|b| <[u8; 32]>::try_from(b).ok())
+            .and_then(|b| {
+                let bytes = zeroize::Zeroizing::new(b);
+                let mut seed = mesh::tls::Seed::new([0; 32]);
+                if bytes.len() != 32 { return None; }
+                seed.copy_from_slice(&bytes);
+                Some(seed)
+            })
         {
             Some(seed) => SeedRead::Loaded(seed),
             None => SeedRead::Malformed,
@@ -1406,7 +1412,7 @@ fn classify_seed_read(raw: std::io::Result<String>) -> SeedRead {
 /// decoupling). **2-c-2a:** a present-but-unreadable seed is now LOUD (a
 /// `tracing::warn!` naming the fix) instead of a silent `None`, closing the
 /// legibility gap that hid the perms bug.
-fn load_d2_seed(path: &std::path::Path) -> Option<[u8; 32]> {
+fn load_d2_seed(path: &std::path::Path) -> Option<mesh::tls::Seed> {
     match classify_seed_read(std::fs::read_to_string(path)) {
         SeedRead::Loaded(seed) => Some(seed),
         // Normal pre-ceremony state — the seed simply isn't provisioned yet.
@@ -5524,7 +5530,7 @@ mod tests {
             mesh::build_admit_response(
                 &challenge,
                 "local",
-                &Some([9; 32]),
+                &Some(mesh::tls::Seed::new([9; 32])),
                 "info-peer",
                 "example.test",
                 1
@@ -5767,7 +5773,7 @@ mod tests {
             mesh::build_admit_response(
                 &challenge,
                 "alpha",
-                &Some([9; 32]),
+                &Some(mesh::tls::Seed::new([9; 32])),
                 PEER,
                 "example.internal",
                 7,
@@ -5984,7 +5990,7 @@ mod tests {
         let dir = std::env::temp_dir();
         let good = dir.join("mixos_test_d2_good.seed");
         std::fs::write(&good, b64.encode([7u8; 32])).unwrap();
-        assert_eq!(load_d2_seed(&good), Some([7u8; 32]));
+        assert_eq!(load_d2_seed(&good), Some(mesh::tls::Seed::new([7u8; 32])));
         std::fs::remove_file(&good).ok();
         let short = dir.join("mixos_test_d2_short.seed");
         std::fs::write(&short, b64.encode([7u8; 16])).unwrap();
@@ -6021,7 +6027,7 @@ mod tests {
         // Readable + valid base64-32 → Loaded.
         assert_eq!(
             classify_seed_read(Ok(b64.encode([7u8; 32]))),
-            SeedRead::Loaded([7u8; 32])
+            SeedRead::Loaded(mesh::tls::Seed::new([7u8; 32]))
         );
         // Readable but wrong length / not base64 → Malformed (LOUD).
         assert_eq!(
