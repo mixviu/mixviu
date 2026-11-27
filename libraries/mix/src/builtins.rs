@@ -27963,7 +27963,8 @@ pub(crate) mod socket_sources {
             std::fs::remove_file(&path).unwrap();
             let fd_path = format!("/proc/self/fd/{}", file.as_raw_fd());
             let target = std::fs::read_link(&fd_path).unwrap();
-            let result = register_socket_readiness(OwnedFd::from(file), tokio::io::Interest::READABLE);
+            let result =
+                register_socket_readiness(OwnedFd::from(file), tokio::io::Interest::READABLE);
             let err = match result {
                 Ok(_) => panic!("epoll must refuse a regular file"),
                 Err(err) => err,
