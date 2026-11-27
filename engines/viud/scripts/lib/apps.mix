@@ -454,34 +454,59 @@ fn mimeapps_paths()
   return $paths
 end
 
+-- Association edits at a data directory cannot modify an overriding entry
+-- from an earlier data directory. Config directories precede every data dir.
+fn association_applies($entry, $directory, $directories)
+  for $dir in $directories
+    if $dir == $directory then return true end
+    if starts_with($entry.path, $dir .. "/") then return false end
+  end
+  return true
+end
+
 -- Explicit inputs make precedence testable without a Bus or global cache.
--- Higher-priority removals mask the same file and all later candidates.
+-- Build associations first, then try defaults in search order. A default
+-- must actually be associated with this type, not just name an installed app.
 fn resolve_handler($apps, $mime, $paths)
   $removed = []
-  $added = []
+  $associated = []
+  $defaults = []
+  $directories = unique(map($paths, fn($p) = dirname($p)))
   for $path in $paths
-    if not is_file($path) then continue end
-    try
-      $ini = ini_parse(read_file($path))
-    catch $err
-      continue
+    $ini = {}
+    if is_file($path) then
+      try
+        $ini = ini_parse(read_file($path))
+      catch $err
+        $ini = {}
+      end
     end
-    $removed = concat($removed, split_semis(($ini["Removed Associations"] ?? {})[$mime] ?? ""))
-    for $value in split_semis(($ini["Default Applications"] ?? {})[$mime] ?? "")
-      if not ends_with($value, ".desktop") or contains($removed, $value) then continue end
+    $defaults = concat($defaults, split_semis(($ini["Default Applications"] ?? {})[$mime] ?? ""))
+    for $value in split_semis(($ini["Removed Associations"] ?? {})[$mime] ?? "")
       $entry = find_app($apps, strip_suffix($value, ".desktop"))
-      if $entry != nil and len(expand_exec($entry.exec, $entry, nil)) > 0 then return $entry.id end
+      if $entry != nil and association_applies($entry, dirname($path), $directories) then push($removed, $value) end
     end
     for $value in split_semis(($ini["Added Associations"] ?? {})[$mime] ?? "")
-      if not contains($removed, $value) then push($added, $value) end
+      $entry = ends_with($value, ".desktop") ? find_app($apps, strip_suffix($value, ".desktop")) : nil
+      if $entry != nil and not contains($removed, $value) and association_applies($entry, dirname($path), $directories) then push($associated, $value) end
+    end
+    -- Declarations join at their data directory, after its association edits.
+    if basename($path) == "mimeapps.list" then
+      for $entry in $apps
+        $value = $entry.id .. ".desktop"
+        if starts_with($entry.path, dirname($path) .. "/") and contains($entry.mime_types ?? [], $mime) and not contains($removed, $value) then push($associated, $value) end
+      end
     end
   end
-  for $value in $added
-    $entry = ends_with($value, ".desktop") ? find_app($apps, strip_suffix($value, ".desktop")) : nil
-    if $entry != nil then return $entry.id end
-  end
+  -- Also support an explicitly supplied registry whose data directories were
+  -- omitted by a caller (the citizen always passes the full search path).
   for $entry in $apps
-    if contains($entry.mime_types ?? [], $mime) and not contains($removed, $entry.id .. ".desktop") then return $entry.id end
+    if contains($entry.mime_types ?? [], $mime) and not contains($removed, $entry.id .. ".desktop") then push($associated, $entry.id .. ".desktop") end
+  end
+  for $value in concat($defaults, $associated)
+    if not contains($associated, $value) then continue end
+    $entry = find_app($apps, strip_suffix($value, ".desktop"))
+    if $entry != nil and len(expand_exec($entry.exec, $entry, nil)) > 0 then return $entry.id end
   end
   return nil
 end

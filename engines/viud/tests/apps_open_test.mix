@@ -44,6 +44,12 @@ try
   check($a.resolve_handler($entries, $mime, $paths) == "three", "declared type fallback minus removals")
   fixture("config/mixos-mimeapps.list", "[Default Applications]\n" .. $mime .. "=two.desktop;\n")
   check($a.resolve_handler($entries, $mime, $paths) == "two", "reread without cache")
+  $unsupported = merge($entries[0], {id: "unsupported", mime_types: []})
+  fixture("config/mixos-mimeapps.list", "[Default Applications]\n" .. $mime .. "=unsupported.desktop;two.desktop;\n")
+  check($a.resolve_handler(concat([$unsupported], $entries), $mime, $paths) == "two", "default must be associated with type")
+  fixture("data/applications/mimeapps.list", "")
+  fixture("share/applications/mimeapps.list", "[Removed Associations]\n" .. $mime .. "=two.desktop;\n")
+  check($a.resolve_handler($entries, $mime, concat($paths, [$tmp .. "/data/applications/mimeapps.list", $tmp .. "/share/applications/mimeapps.list"])) == "two", "lower data removal cannot mask user desktop entry")
   export XDG_CONFIG_HOME=$tmp .. "/config"
   export XDG_CONFIG_DIRS=$tmp .. "/system:" .. $tmp .. "/system2"
   export XDG_DATA_HOME=$tmp .. "/data"
