@@ -29,6 +29,7 @@ name = "webd"
 path = "src/main.rs"
 
 [dependencies]
+hyper = { workspace = true, features = ["http1"] }
 libc.workspace = true
 paths = { path = "../../libraries/paths" }
 assets.workspace = true
@@ -133,6 +134,7 @@ blake3.workspace = true
 argon2 = "0.5"
 
 [dev-dependencies]
+hyper = { workspace = true, features = ["client", "http2"] }
 tracing-subscriber.workspace = true
 # Synthetic rejection-class chains for the LE-validator gauntlet on
 # the legacy and per-vhost configs (Bucket E). Same crates/versions

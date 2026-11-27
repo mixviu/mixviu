@@ -70,6 +70,7 @@ async fn vhost_add(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String)
     };
     let www_dir = match kwarg(cmd, "www_dir") {
         Some(s) => s,
+        None if kwarg(cmd, "redirect").is_some() => String::new(),
         None => return caller_error("missing required kwarg: www_dir"),
     };
 
@@ -120,6 +121,24 @@ async fn vhost_add(node: &Arc<NodeState>, cmd: &IncomingCommand) -> (u8, String)
     let mut body: BTreeMap<String, PropValue> = BTreeMap::new();
     body.insert("fqdn".into(), PropValue::String(fqdn.clone()));
     body.insert("www_dir".into(), PropValue::String(www_dir));
+    if let Some(target) = kwarg(cmd, "redirect") {
+        body.insert("redirect".into(), PropValue::String(target));
+    }
+    if let Some(values) = kwarg(cmd, "headers") {
+        let values: BTreeMap<String, String> = match serde_json::from_str(&values) {
+            Ok(values) => values,
+            Err(e) => return caller_error(&format!("headers must be a JSON string map: {e}")),
+        };
+        body.insert(
+            "headers".into(),
+            PropValue::Object(
+                values
+                    .into_iter()
+                    .map(|(k, v)| (k, PropValue::String(v)))
+                    .collect(),
+            ),
+        );
+    }
     body.insert("enabled".into(), PropValue::Bool(enabled));
     body.insert(
         "source".into(),
@@ -567,6 +586,8 @@ fn project_row(row: &VhostRow, acme_status: &str) -> JsonValue {
         "fqdn": row.fqdn,
         "enabled": row.enabled,
         "www_dir": row.www_dir,
+        "redirect": row.redirect,
+        "headers": row.headers,
         "aliases": row.aliases,
         "source": row.source,
         "acme_provider": row.acme_provider,
@@ -1024,6 +1045,11 @@ mod tests {
             &[
                 ("fqdn", "list.example.com"),
                 ("www_dir", "/srv/list"),
+                ("redirect", "https://example.com"),
+                (
+                    "headers",
+                    r#"{"content-security-policy":"default-src self"}"#,
+                ),
                 ("acme.provider", "letsencrypt_staging"),
                 ("acme.challenge", "http01"),
                 ("acme.contact_email", "ops@example.com"),
@@ -1038,6 +1064,11 @@ mod tests {
         assert_eq!(v["count"], 1);
         let row = &v["rows"][0];
         assert_eq!(row["fqdn"], "list.example.com");
+        assert_eq!(row["redirect"], "https://example.com");
+        assert_eq!(
+            row["headers"]["content-security-policy"],
+            "default-src self"
+        );
         assert_eq!(row["acme_status"], "pending");
         // No certificate has been issued yet, so the field is present but null.
         assert!(row.get("cert_blob_id").is_some());
@@ -1388,6 +1419,7 @@ mod tests {
 
     fn listener(id: &str, bind: &str, enabled: bool, hosts: &[&str]) -> WebdListenerConfig {
         WebdListenerConfig {
+            http2: false,
             id: id.to_string(),
             bind: bind.to_string(),
             external: true,

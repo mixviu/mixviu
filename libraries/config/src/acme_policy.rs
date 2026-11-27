@@ -538,6 +538,8 @@ mod resolve_tests {
 
     fn vhost_row(host: &str, acme: Option<WebdVhostAcmeConfig>) -> WebdVhostConfig {
         WebdVhostConfig {
+            redirect: None,
+            headers: Default::default(),
             host: host.into(),
             aliases: Vec::new(),
             www_dir: "/tmp".into(),

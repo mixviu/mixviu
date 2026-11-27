@@ -222,6 +222,26 @@ pub async fn bootstrap_upsert_from_config(
     // byte shape (lowercased, port-stripped) and rule 2 passes.
     let mut configured: BTreeMap<String, &WebdVhostConfig> = BTreeMap::new();
     for row in &webd_cfg.vhost {
+        let policy = crate::static_site::validate(
+            &row.host,
+            &row.aliases,
+            row.redirect.as_deref(),
+            &row.headers,
+        )
+        .and_then(|()| {
+            anyhow::ensure!(
+                row.redirect.is_none()
+                    || (row.cms_db_path.is_none()
+                        && row.jmap_upstream.is_none()
+                        && row.noded_ws.is_none()),
+                "redirect conflicts with cms_db_path, jmap_upstream or noded_ws"
+            );
+            Ok(())
+        });
+        if let Err(reason) = policy {
+            tracing::warn!(host = %row.host, %reason, "invalid static-site config row skipped during bootstrap");
+            continue;
+        }
         let host = daemon::http_host::parse_request_host(&row.host).ok_or_else(|| {
             anyhow!(
                 "config bootstrap: vhost row host={:?} is not a valid LDH hostname \
@@ -426,6 +446,22 @@ fn build_bootstrap_body(fqdn: &str, cfg: &WebdVhostConfig) -> Result<PropValue> 
     body.insert("fqdn".into(), PropValue::String(fqdn.to_string()));
     body.insert("www_dir".into(), PropValue::String(cfg.www_dir.clone()));
     body.insert(
+        "redirect".into(),
+        cfg.redirect
+            .clone()
+            .map(PropValue::String)
+            .unwrap_or(PropValue::Null),
+    );
+    body.insert(
+        "headers".into(),
+        PropValue::Object(
+            cfg.headers
+                .iter()
+                .map(|(k, v)| (k.clone(), PropValue::String(v.clone())))
+                .collect(),
+        ),
+    );
+    body.insert(
         "source".into(),
         PropValue::String(SOURCE_CONFIG_BOOTSTRAP.into()),
     );
@@ -589,6 +625,8 @@ mod tests {
 
     fn acme_row(host: &str, www_dir: &str) -> WebdVhostConfig {
         WebdVhostConfig {
+            redirect: None,
+            headers: Default::default(),
             host: host.into(),
             aliases: Vec::new(),
             www_dir: www_dir.into(),
@@ -616,6 +654,8 @@ mod tests {
 
     fn manual_tls_row(host: &str, www_dir: &str) -> WebdVhostConfig {
         WebdVhostConfig {
+            redirect: None,
+            headers: Default::default(),
             host: host.into(),
             aliases: Vec::new(),
             www_dir: www_dir.into(),
@@ -639,6 +679,8 @@ mod tests {
 
     fn http_only_row(host: &str, www_dir: &str) -> WebdVhostConfig {
         WebdVhostConfig {
+            redirect: None,
+            headers: Default::default(),
             host: host.into(),
             aliases: Vec::new(),
             www_dir: www_dir.into(),
@@ -1152,6 +1194,7 @@ mod tests {
             webd: {
                 let mut w = webd.clone();
                 w.listener = vec![WebdListenerConfig {
+                    http2: false,
                     id: "pub".to_string(),
                     bind: "192.0.2.1:443".to_string(),
                     external: true,

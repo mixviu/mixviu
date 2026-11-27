@@ -20,6 +20,7 @@ mod public_response_cache;
 mod session;
 mod shared_assets;
 mod shares;
+mod static_site;
 mod stats;
 mod tls_status;
 #[cfg(test)]
@@ -460,6 +461,8 @@ pub(crate) struct VhostState {
     db: Option<Arc<Mutex<Connection>>>,
     /// Static-file root for this vhost.
     www_dir: PathBuf,
+    redirect: Option<String>,
+    headers: HeaderMap,
     /// Per-vhost JMAP upstream URL. `None` ⇒ `/jmap` routes 404.
     jmap_upstream: Option<String>,
     /// Per-vhost broker WebSocket URL. `None` ⇒ `/ws` routes 404.
@@ -530,6 +533,8 @@ impl std::fmt::Debug for VhostState {
             .field("fqdn", &self.fqdn)
             .field("db", &self.db.is_some())
             .field("www_dir", &self.www_dir)
+            .field("redirect", &self.redirect)
+            .field("headers", &self.headers)
             .field("jmap_upstream", &self.jmap_upstream)
             .field("noded_ws", &self.noded_ws)
             .field("docs_dir", &self.docs_dir)
@@ -682,14 +687,12 @@ mod dev_session_gate_tests {
 /// the accepted stream via hyper. One instance per resolved listener,
 /// each holding its own scoped `app` clone.
 ///
-/// Replaces the old free-standing `serve_tls` / `serve_plain`
-/// primary-listener loop. `serve_connection_with_upgrades` (rather
-/// than the bare `serve_connection` the old `serve_tls` used) so a
-/// `wss://` WebSocket upgrade works over the TLS path too — the plain
-/// primary already had upgrades via `axum::serve`, and unifying both
-/// surfaces under one handler makes the behaviour consistent.
+/// HTTP/1 uses Hyper's protocol-specific server with upgrades, preserving
+/// WebSockets without auto-detecting h2. HTTP/2 requires the listener's
+/// startup opt-in and h2 ALPN; extended CONNECT is not enabled.
 struct WebdConnHandler {
     app: Router,
+    http2: bool,
 }
 
 #[async_trait::async_trait]
@@ -701,16 +704,40 @@ impl ConnHandler for WebdConnHandler {
         };
         let svc =
             hyper_util::service::TowerToHyperService::new(self.app.clone().layer(Extension(peer)));
-        let builder =
+        let mut builder =
             hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
+        if self.http2 {
+            builder
+                .http2()
+                .max_concurrent_streams(100)
+                .max_header_list_size(64 * 1024)
+                .max_pending_accept_reset_streams(100)
+                .timer(hyper_util::rt::TokioTimer::new())
+                .keep_alive_interval(std::time::Duration::from_secs(30))
+                .keep_alive_timeout(std::time::Duration::from_secs(10));
+        }
         match stream {
             AcceptedStream::Tcp(s) => {
                 let io = hyper_util::rt::TokioIo::new(s);
-                let _ = builder.serve_connection_with_upgrades(io, svc).await;
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(io, svc)
+                    .with_upgrades()
+                    .await;
             }
             AcceptedStream::Tls(s) => {
+                // auto::serve_connection_with_upgrades ignores http1_only().
+                // Use the protocol-specific h1 server so preface sniffing
+                // cannot bypass the listener policy or ALPN.
+                let negotiated_h2 = self.http2 && s.get_ref().1.alpn_protocol() == Some(b"h2");
                 let io = hyper_util::rt::TokioIo::new(*s);
-                let _ = builder.serve_connection_with_upgrades(io, svc).await;
+                if negotiated_h2 {
+                    let _ = builder.http2_only().serve_connection(io, svc).await;
+                } else {
+                    let _ = hyper::server::conn::http1::Builder::new()
+                        .serve_connection(io, svc)
+                        .with_upgrades()
+                        .await;
+                }
             }
             // `AcceptedStream` is `#[non_exhaustive]`; webd only ever
             // sees `Tcp` (Plain listener) or `Tls` (Terminate). A new
@@ -3968,6 +3995,9 @@ async fn host_router(
     let Some(vhost) = node.vhost_for_host(&host) else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    if let Some(target) = &vhost.redirect {
+        return static_site::redirect(target, req.uri(), &vhost.headers);
+    }
     req.extensions_mut().insert(vhost);
     next.run(req).await
 }
@@ -4032,6 +4062,11 @@ async fn plain_http_host_admit(
     };
     if !node.vhosts.load().admit_plain_http.contains(&host) {
         return (StatusCode::BAD_REQUEST, "unknown host").into_response();
+    }
+    if let Some(vhost) = node.vhost_for_host(&host)
+        && let Some(target) = &vhost.redirect
+    {
+        return static_site::redirect(target, req.uri(), &vhost.headers);
     }
     next.run(req).await
 }
@@ -4485,7 +4520,9 @@ async fn serve_static(
         }
         return resp;
     }
-    let serve = ServeDir::new(&vhost.www_dir);
+    let serve = ServeDir::new(&vhost.www_dir)
+        .precompressed_br()
+        .precompressed_gzip();
     match serve.oneshot(req).await {
         Ok(mut resp) => {
             // Defence-in-depth on every static asset (CSS/JS and the
@@ -4496,6 +4533,10 @@ async fn serve_static(
                 axum::http::header::X_CONTENT_TYPE_OPTIONS,
                 axum::http::HeaderValue::from_static("nosniff"),
             );
+            // Vary even for identity and 304 responses: intermediaries must
+            // negotiate each representation rather than reuse compressed bytes.
+            static_site::apply(resp.headers_mut(), &vhost.headers);
+            static_site::ensure_vary(resp.headers_mut(), "accept-encoding");
             resp.into_response()
         }
         Err(infallible) => match infallible {},
@@ -5605,8 +5646,21 @@ fn resolve_node_state(inputs: ResolveInputs<'_>) -> Result<ResolvedNodeState> {
             Option<Arc<Mutex<Connection>>>,
         );
         let prepared: Result<PreparedVhost> = (|| {
+            static_site::validate(
+                &row.host,
+                &row.aliases,
+                row.redirect.as_deref(),
+                &row.headers,
+            )?;
+            if row.redirect.is_some()
+                && (row.cms_db_path.is_some()
+                    || row.jmap_upstream.is_some()
+                    || row.noded_ws.is_some())
+            {
+                anyhow::bail!("redirect conflicts with cms_db_path, jmap_upstream or noded_ws");
+            }
             let www_dir = PathBuf::from(&row.www_dir);
-            if !www_dir.is_dir() {
+            if row.redirect.is_none() && !www_dir.is_dir() {
                 return Err(anyhow!(
                     "[[webd.vhost]] #{idx} ({}): www_dir {:?} is not a directory",
                     host,
@@ -5840,6 +5894,8 @@ fn resolve_node_state(inputs: ResolveInputs<'_>) -> Result<ResolvedNodeState> {
         let docs_dir = row.docs_dir.as_ref().map(PathBuf::from);
         let vhost_state = Arc::new(VhostState {
             fqdn: host.clone(),
+            redirect: row.redirect.clone(),
+            headers: static_site::headers(&row.headers)?,
             db,
             www_dir,
             jmap_upstream: row.jmap_upstream.clone(),
@@ -6001,6 +6057,8 @@ fn resolve_node_state(inputs: ResolveInputs<'_>) -> Result<ResolvedNodeState> {
         conn.execute_batch(SCHEMA)?;
 
         let legacy_state = Arc::new(VhostState {
+            redirect: None,
+            headers: Default::default(),
             // Use the first tls_server_name entry as the informational
             // fqdn (matches what the legacy operator would describe as
             // "the primary identity").
@@ -6220,7 +6278,38 @@ fn build_per_vhost_router(node: Arc<NodeState>) -> Router {
 fn build_router(node: Arc<NodeState>) -> Router {
     let autoconfig = autoconfig_routes().with_state(node.clone());
     let per_vhost = build_per_vhost_router(node);
-    Router::new().merge(autoconfig).merge(per_vhost)
+    Router::new()
+        .merge(autoconfig)
+        .merge(per_vhost)
+        .layer(axum::middleware::from_fn(normalise_request_authority))
+}
+
+/// Normalise before every routing/authentication branch, including autoconfig.
+/// Keep one Host view for existing handlers, proxy metadata and origin checks.
+async fn normalise_request_authority(
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    if req.version() == axum::http::Version::HTTP_2 {
+        let Some(authority) = req.uri().authority().cloned() else {
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        let hosts = req.headers().get_all(axum::http::header::HOST);
+        if hosts.iter().count() > 1
+            || hosts.iter().any(|host| {
+                host.to_str()
+                    .ok()
+                    .is_none_or(|host| !host.eq_ignore_ascii_case(authority.as_str()))
+            })
+        {
+            return (StatusCode::BAD_REQUEST, "Host disagrees with authority").into_response();
+        }
+        let Ok(host) = axum::http::HeaderValue::from_str(authority.as_str()) else {
+            return StatusCode::BAD_REQUEST.into_response();
+        };
+        req.headers_mut().insert(axum::http::header::HOST, host);
+    }
+    next.run(req).await
 }
 
 /// RFC 8555 §8.3 token shape validator. ACME HTTP-01 tokens are
@@ -6385,7 +6474,11 @@ fn build_http_redirect_router(node: Arc<NodeState>) -> Router {
                 node.clone(),
                 plain_http_host_admit,
             ));
-    Router::new().merge(acme).merge(autoconfig).merge(redirect)
+    Router::new()
+        .merge(acme)
+        .merge(autoconfig)
+        .merge(redirect)
+        .layer(axum::middleware::from_fn(normalise_request_authority))
 }
 
 /// `301 → https://$host$request_uri`, mirroring the NS 3.0 nginx
@@ -6487,6 +6580,8 @@ async fn run_static_dev_server(
         aliases.push(bound_ip);
     }
     let vhost = Arc::new(VhostState {
+        redirect: None,
+        headers: Default::default(),
         fqdn: "localhost".to_string(),
         db: None,
         www_dir: www_dir.clone(),
@@ -7942,6 +8037,16 @@ async fn async_main() -> Result<()> {
             // provisioner (the renewal swap); cloning shares the inner
             // resolver slot, so a renewal swap is seen by the live
             // accept loop.
+            let alpn_for = |id: &str| {
+                if node_cfg
+                    .as_ref()
+                    .is_some_and(|c| c.webd.listener.iter().any(|l| l.id == id && l.http2))
+                {
+                    vec![b"h2".to_vec(), b"http/1.1".to_vec()]
+                } else {
+                    vec![b"http/1.1".to_vec()]
+                }
+            };
             let mut listener_buckets =
                 partition_identities_by_listener(&identities, &resolved_listeners);
             let mut tls_listeners: HashMap<String, ListenerTls> = HashMap::new();
@@ -7963,7 +8068,10 @@ async fn async_main() -> Result<()> {
                 let strict_sni = listener_rows.get(&l.id).is_some_and(|r| r.strict_sni);
                 let resolver = SniCertResolver::from_config(&bucket, strict_sni)
                     .with_context(|| format!("building TLS resolver for listener {:?}", l.id))?;
-                tls_listeners.insert(l.id.clone(), ListenerTls::new(Some(Arc::new(resolver))));
+                tls_listeners.insert(
+                    l.id.clone(),
+                    ListenerTls::with_alpn(Some(Arc::new(resolver)), alpn_for(&l.id)),
+                );
             }
             // Each listener's boot-time strict_sni: seeds the empty
             // runtime-cert handles below, and is the ACME provisioner's
@@ -7996,7 +8104,8 @@ async fn async_main() -> Result<()> {
                     &tls_listeners,
                 ) {
                     let strict = listener_strict_sni.get(&lid).copied().unwrap_or(false);
-                    tls_listeners.insert(lid, empty_listener_tls(strict)?);
+                    let handle = empty_listener_tls(strict)?.with_protocols(alpn_for(&lid));
+                    tls_listeners.insert(lid, handle);
                 }
             }
 
@@ -8314,6 +8423,12 @@ async fn async_main() -> Result<()> {
                 };
                 let handler = Arc::new(WebdConnHandler {
                     app: app_for_listener,
+                    http2: node_cfg.as_ref().is_some_and(|c| {
+                        c.webd
+                            .listener
+                            .iter()
+                            .any(|row| row.id == l.id && row.http2)
+                    }),
                 });
                 // Decided after runtime-cert adoption: a runtime-only
                 // listener whose certs were adopted terminates TLS; one
@@ -8790,6 +8905,8 @@ mod vhost_tests {
         }
     }
 
+    include!("static_site_tests.rs");
+
     fn mkdir(td: &TempDir, name: &str) -> PathBuf {
         let p = td.path().join(name);
         std::fs::create_dir_all(&p).unwrap();
@@ -9120,6 +9237,8 @@ vhost: [
             .write_all(b"SITE-B")
             .unwrap();
         let a = Arc::new(VhostState {
+            redirect: None,
+            headers: Default::default(),
             fqdn: "site-a.example".into(),
             db: None,
             www_dir: www_a,
@@ -9138,6 +9257,8 @@ vhost: [
             public_response_cache: public_response_cache::Cache::default(),
         });
         let b = Arc::new(VhostState {
+            redirect: None,
+            headers: Default::default(),
             fqdn: "site-b.example".into(),
             db: None,
             www_dir: www_b,
@@ -9484,6 +9605,8 @@ vhost: [
             .write_all(b"SITE-C")
             .unwrap();
         let c = Arc::new(VhostState {
+            redirect: None,
+            headers: Default::default(),
             fqdn: "site-c.example".into(),
             db: None,
             www_dir: www_c,
@@ -10492,6 +10615,8 @@ mod session_login_tests {
         let mem = Connection::open_in_memory().expect("in-memory cms db");
         mem.execute_batch(SCHEMA).expect("apply SCHEMA");
         let vhost = Arc::new(VhostState {
+            redirect: None,
+            headers: Default::default(),
             fqdn: VHOST.into(),
             db: Some(Arc::new(tokio::sync::Mutex::new(mem))),
             www_dir: www,
@@ -10755,6 +10880,8 @@ mod session_login_tests {
         let db = Arc::new(tokio::sync::Mutex::new(mem));
 
         let vhost = Arc::new(VhostState {
+            redirect: None,
+            headers: Default::default(),
             fqdn: VHOST.into(),
             db: Some(db.clone()),
             www_dir: www,
@@ -11016,6 +11143,8 @@ mod session_login_tests {
         };
         let vhost = |fqdn: &str| {
             Arc::new(VhostState {
+                redirect: None,
+                headers: Default::default(),
                 fqdn: fqdn.into(),
                 db: Some(mk_db()),
                 www_dir: www.clone(),

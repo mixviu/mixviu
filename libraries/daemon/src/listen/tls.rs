@@ -38,6 +38,7 @@ type ResolverSlot = Arc<ArcSwap<Option<Arc<SniCertResolver>>>>;
 #[derive(Debug, Default)]
 struct ConfigCache {
     by_resolver: Mutex<HashMap<usize, Arc<ServerConfig>>>,
+    alpn: Vec<Vec<u8>>,
 }
 
 impl ConfigCache {
@@ -47,11 +48,11 @@ impl ConfigCache {
         if let Some(cfg) = by.get(&key) {
             return cfg.clone();
         }
-        let cfg = Arc::new(
-            ServerConfig::builder()
-                .with_no_client_auth()
-                .with_cert_resolver(resolver.clone()),
-        );
+        let mut cfg = ServerConfig::builder()
+            .with_no_client_auth()
+            .with_cert_resolver(resolver.clone());
+        cfg.alpn_protocols.clone_from(&self.alpn);
+        let cfg = Arc::new(cfg);
         by.insert(key, cfg.clone());
         cfg
     }
@@ -79,9 +80,28 @@ impl ListenerTls {
     /// [`is_enabled`](Self::is_enabled) reports `false` and a
     /// `Terminate` listener refuses to bind until a resolver is set.
     pub fn new(initial: Option<Arc<SniCertResolver>>) -> Self {
+        Self::with_alpn(initial, Vec::new())
+    }
+
+    /// Build a listener with explicit application protocols, retained on renewal.
+    pub fn with_alpn(initial: Option<Arc<SniCertResolver>>, alpn: Vec<Vec<u8>>) -> Self {
         Self {
             slot: Arc::new(ArcSwap::from_pointee(initial)),
-            cache: Arc::new(ConfigCache::default()),
+            cache: Arc::new(ConfigCache {
+                alpn,
+                ..Default::default()
+            }),
+        }
+    }
+
+    /// Select application protocols without changing the shared resolver slot.
+    pub fn with_protocols(self, alpn: Vec<Vec<u8>>) -> Self {
+        Self {
+            slot: self.slot,
+            cache: Arc::new(ConfigCache {
+                alpn,
+                ..Default::default()
+            }),
         }
     }
 
