@@ -115,29 +115,58 @@ fn update_fractional(state: &mut Loop) {
     // scale in every mode, using geometry rather than the draw visibility sets.
     // visual.visible=false (including collapsed groups) retains its old behaviour.
     for output in state.inner.space_state().state.outputs() {
-        let Some(mode) = output.current_mode() else { continue };
-        let Some(vps) = state.inner.output_views().map.get(&world::state::output_key(output)) else { continue };
+        let Some(mode) = output.current_mode() else {
+            continue;
+        };
+        let Some(vps) = state
+            .inner
+            .output_views()
+            .map
+            .get(&world::state::output_key(output))
+        else {
+            continue;
+        };
         let scale = output.current_scale().fractional_scale();
-        let layout = world::viewport::layout::compute(vps, smithay::utils::Rectangle::from_size(mode.size));
+        let layout =
+            world::viewport::layout::compute(vps, smithay::utils::Rectangle::from_size(mode.size));
         for region in layout.regions {
-            let Some(camera) = vps.camera_of(region.slot) else { continue };
+            let Some(camera) = vps.camera_of(region.slot) else {
+                continue;
+            };
             let camera = &camera.transform;
             let ctx = world::camera::transform::translate::transform::Context::new_region(
-                (camera.position.x, camera.position.y), camera.zoom,
-                (region.rect.loc.x as f64 / scale, region.rect.loc.y as f64 / scale),
-                (region.rect.size.w as f64, region.rect.size.h as f64), scale,
+                (camera.position.x, camera.position.y),
+                camera.zoom,
+                (
+                    region.rect.loc.x as f64 / scale,
+                    region.rect.loc.y as f64 / scale,
+                ),
+                (region.rect.size.w as f64, region.rect.size.h as f64),
+                scale,
             );
             let want = protocols::fractional::debounce::published(&cfg, camera.zoom, scale);
             for window in state.inner.space_state().state.elements() {
                 use dispatcher::wire::trait_::surface_event::SurfaceHandle;
-                let Some(handle) = SurfaceHandle::of_window(window) else { continue };
+                let Some(handle) = SurfaceHandle::of_window(window) else {
+                    continue;
+                };
                 let comp = &state.inner.comp;
-                if !comp.hidden(&handle) || !comp.registry.id_for_handle(&handle).is_some_and(|id| comp.visual(id).visible) {
+                if !comp.hidden(&handle)
+                    || !comp
+                        .registry
+                        .id_for_handle(&handle)
+                        .is_some_and(|id| comp.visual(id).visible)
+                {
                     continue;
                 }
-                let Some(loc) = state.inner.space_state().state.element_location(window) else { continue };
-                let size = world::camera::transform::translate::slot::expected_size(window).unwrap_or_else(|| window.geometry().size);
-                if !slot_in_grace(loc, size, ctx, region.rect) { continue; }
+                let Some(loc) = state.inner.space_state().state.element_location(window) else {
+                    continue;
+                };
+                let size = world::camera::transform::translate::slot::expected_size(window)
+                    .unwrap_or_else(|| window.geometry().size);
+                if !slot_in_grace(loc, size, ctx, region.rect) {
+                    continue;
+                }
                 if let Some(surface) = window.wl_surface() {
                     let surface = surface.into_owned();
                     if best.get(&surface.id()).is_none_or(|entry| want > entry.0) {
@@ -285,7 +314,9 @@ fn slot_in_grace(
     ctx: world::camera::transform::translate::transform::Context,
     pane: smithay::utils::Rectangle<i32, Physical>,
 ) -> bool {
-    if size.w <= 0 || size.h <= 0 { return false; }
+    if size.w <= 0 || size.h <= 0 {
+        return false;
+    }
     let project = |x: f64, y: f64| -> Point<i32, Physical> {
         let t: world::camera::transform::translate::transform::Transform = ((x, y), ctx).into();
         t.into()
@@ -293,8 +324,10 @@ fn slot_in_grace(
     let tl = project(loc.x as f64, loc.y as f64);
     let br = project((loc.x + size.w) as f64, (loc.y + size.h) as f64);
     let pad = (FRACTIONAL_GRACE_RANGE * ctx.scale).round() as i32;
-    tl.x < pane.loc.x + pane.size.w + pad && pane.loc.x - pad < br.x
-        && tl.y < pane.loc.y + pane.size.h + pad && pane.loc.y - pad < br.y
+    tl.x < pane.loc.x + pane.size.w + pad
+        && pane.loc.x - pad < br.x
+        && tl.y < pane.loc.y + pane.size.h + pad
+        && pane.loc.y - pad < br.y
 }
 
 /// The "full" strategy's grace band: uuids of group-visible windows whose slot

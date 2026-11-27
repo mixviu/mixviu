@@ -260,7 +260,9 @@ fn fractional_wake_precedes_first_returned_presentation() {
 
 fn fractional_return(minimized: bool, suspended: bool) {
     use pattern::ScaleEvent;
-    if !process::record_available() { return; }
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("fractional-return");
     let mut process = process::spawn_scale_probe("fractional-return", &bus.url);
     let mut client = Pattern::scale_probe(connect(&mut process));
@@ -276,10 +278,25 @@ fn fractional_return(minimized: bool, suspended: bool) {
         bus.call("comp.workspace.switch", json!({"index":2}));
     }
     // debounce_max is 750 ms. Also cover the five-second suspend dwell.
-    scale_pump(&mut client, Duration::from_secs(if suspended { 7 } else { 2 }));
-    assert!(!client.state.events[start..].iter().any(|(_, e)| matches!(e, ScaleEvent::Preferred(_))), "{:?}", client.state.events);
+    scale_pump(
+        &mut client,
+        Duration::from_secs(if suspended { 7 } else { 2 }),
+    );
+    assert!(
+        !client.state.events[start..]
+            .iter()
+            .any(|(_, e)| matches!(e, ScaleEvent::Preferred(_))),
+        "{:?}",
+        client.state.events
+    );
     if suspended {
-        assert!(client.state.events[start..].iter().any(|(_, e)| matches!(e, ScaleEvent::Configure(_, _, states) if states.contains(&9))), "missing suspended configure: {:?}", client.state.events);
+        assert!(
+            client.state.events[start..].iter().any(
+                |(_, e)| matches!(e, ScaleEvent::Configure(_, _, states) if states.contains(&9))
+            ),
+            "missing suspended configure: {:?}",
+            client.state.events
+        );
     }
     // Queue a callback while hidden; the arriving-window path must answer it
     // before a presentation of the returned content, without waiting for trickle.
@@ -295,13 +312,40 @@ fn fractional_return(minimized: bool, suspended: bool) {
     }
     scale_pump(&mut client, Duration::from_secs(2));
     let events = &client.state.events[returning..];
-    assert!(!events.iter().any(|(_, e)| matches!(e, ScaleEvent::Preferred(_))), "{events:?}");
-    let first = events.iter().position(|(_, e)| matches!(e, ScaleEvent::Presented)).expect("returned presentation");
+    assert!(
+        !events
+            .iter()
+            .any(|(_, e)| matches!(e, ScaleEvent::Preferred(_))),
+        "{events:?}"
+    );
+    let first = events
+        .iter()
+        .position(|(_, e)| matches!(e, ScaleEvent::Presented))
+        .expect("returned presentation");
     if suspended {
-        assert!(events[..first].iter().any(|(_, e)| matches!(e, ScaleEvent::Configure(_, _, states) if !states.contains(&9))), "wake configure after reveal: {events:?}");
-        assert!(events[..first].iter().any(|(_, e)| matches!(e, ScaleEvent::Callback)), "callback after reveal: {events:?}");
+        assert!(
+            events[..first].iter().any(
+                |(_, e)| matches!(e, ScaleEvent::Configure(_, _, states) if !states.contains(&9))
+            ),
+            "wake configure after reveal: {events:?}"
+        );
+        assert!(
+            events[..first]
+                .iter()
+                .any(|(_, e)| matches!(e, ScaleEvent::Callback)),
+            "callback after reveal: {events:?}"
+        );
     }
-    let last_commit = client.state.events.iter().rev().find_map(|(_, e)| match e { ScaleEvent::Commit(w,h,s) => Some((*w,*h,*s)), _=>None }).unwrap();
+    let last_commit = client
+        .state
+        .events
+        .iter()
+        .rev()
+        .find_map(|(_, e)| match e {
+            ScaleEvent::Commit(w, h, s) => Some((*w, *h, *s)),
+            _ => None,
+        })
+        .unwrap();
     assert_eq!(last_commit, (500, 400, 300));
 }
 

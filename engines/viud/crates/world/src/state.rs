@@ -633,7 +633,8 @@ impl Orchestrator {
     pub fn wake_now(&mut self, window: &smithay::desktop::Window) {
         use crate::window::interface::record::window::LoopWindow;
         let Some(uuid) = window.uuid() else { return };
-        self.last_on_pane_awake.insert(uuid, self.start_time.elapsed().as_secs_f32());
+        self.last_on_pane_awake
+            .insert(uuid, self.start_time.elapsed().as_secs_f32());
         if self.suspended.remove(&uuid) {
             shell::set_suspended(window, false);
             shell::send_pending(window);
@@ -642,7 +643,12 @@ impl Orchestrator {
         // surfaces that do not await a callback. Zero throttle bypasses the
         // hidden-window 1 Hz trickle, without holding presentation for a reply.
         let output = self.current_output();
-        window.send_frame(&output, self.start_time.elapsed(), Some(std::time::Duration::ZERO), |_, _| Some(output.clone()));
+        window.send_frame(
+            &output,
+            self.start_time.elapsed(),
+            Some(std::time::Duration::ZERO),
+            |_, _| Some(output.clone()),
+        );
     }
 
     pub fn refresh_suspended(&mut self) {

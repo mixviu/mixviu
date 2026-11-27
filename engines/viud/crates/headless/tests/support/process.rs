@@ -545,7 +545,9 @@ pub fn spawn_preferences(label: &str, bus: &str, preferences: serde_json::Value)
 
 pub fn spawn_scale_probe(label: &str, bus: &str) -> Process {
     spawn_options(Options {
-        label, bus: Some(bus), scale: 2.5,
+        label,
+        bus: Some(bus),
+        scale: 2.5,
         preferences: Some(serde_json::json!({"fractional_invisible":"full", "workspaces_count":2})),
         ..Options::default()
     })
