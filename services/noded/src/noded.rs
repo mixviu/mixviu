@@ -6073,7 +6073,9 @@ mod tests {
             SeedRead::Malformed
         );
         assert_eq!(
-            classify_seed_read(Ok(Some(zeroize::Zeroizing::new(b"!!! not base64 !!!".to_vec())))),
+            classify_seed_read(Ok(Some(zeroize::Zeroizing::new(
+                b"!!! not base64 !!!".to_vec()
+            )))),
             SeedRead::Malformed
         );
     }
@@ -6086,7 +6088,13 @@ mod tests {
         assert!(!debug.contains("173"));
         assert_eq!(format!("{:?}", super::SeedRead::Absent), "Absent");
         assert_eq!(format!("{:?}", super::SeedRead::Malformed), "Malformed");
-        assert_eq!(format!("{:?}", super::SeedRead::Unreadable("PermissionDenied".into())), "Unreadable(\"PermissionDenied\")");
+        assert_eq!(
+            format!(
+                "{:?}",
+                super::SeedRead::Unreadable("PermissionDenied".into())
+            ),
+            "Unreadable(\"PermissionDenied\")"
+        );
         for source in [
             vec![0xff; 44],
             b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA!".to_vec(),
@@ -6103,15 +6111,20 @@ mod tests {
         use base64::Engine as _;
         use std::os::unix::fs::PermissionsExt;
         let path = std::env::temp_dir().join(format!("d2-size-{}", rand::random::<u64>()));
-        let mut source = base64::engine::general_purpose::STANDARD.encode([173;32]).into_bytes();
+        let mut source = base64::engine::general_purpose::STANDARD
+            .encode([173; 32])
+            .into_bytes();
         source.resize(128, b' ');
         std::fs::write(&path, &source).unwrap();
-        std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o640)).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o640)).unwrap();
         assert!(super::load_d2_seed(&path).is_some());
         source.resize(4096, b' ');
         std::fs::write(&path, &source).unwrap();
         assert!(super::read_d2_seed(&path).unwrap().is_none());
-        assert_eq!(super::classify_seed_read(super::read_d2_seed(&path)), super::SeedRead::Malformed);
+        assert_eq!(
+            super::classify_seed_read(super::read_d2_seed(&path)),
+            super::SeedRead::Malformed
+        );
         assert!(super::load_d2_seed(&path).is_none());
         std::fs::remove_file(path).unwrap();
     }
