@@ -921,7 +921,10 @@ mod tests {
         if unsafe { libc::geteuid() } == 0 {
             assert!(load_seed(&path).is_ok());
         } else {
-            assert!(matches!(load_seed(&path), Err(SeedFileError::Insecure { .. })));
+            assert!(matches!(
+                load_seed(&path),
+                Err(SeedFileError::Insecure { .. })
+            ));
         }
         for mode in [0o604, 0o644, 0o660] {
             file.set_permissions(std::fs::Permissions::from_mode(mode))

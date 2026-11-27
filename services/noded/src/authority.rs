@@ -554,16 +554,23 @@ mod tests {
     fn signed_cross_purpose_duplicate_refuses_authority_before_ratchet() {
         let dir = tmpdir("duplicate_bus_tls");
         let paths = paths_in(&dir);
-        let signing_key = SigningKey::from_bytes(&[17;32]);
-        let pubkey = B64.encode([7;32]);
-        write_signed_inventory(&paths,&signing_key,1,serde_json::json!([{
-            "name":"alpha","mesh_ip":"192.0.2.5","bus":true,"status":"active","credentials":[
-                {"kind":"d2","pubkey":pubkey,"from_epoch":1,"until_epoch":null},
-                {"kind":"bus-tls","pubkey":pubkey,"from_epoch":1,"until_epoch":null}
-            ]
-        }]));
-        let Posture::Unverified { reason } = load_and_verify(&paths) else { panic!("duplicate must refuse authority") };
-        assert!(reason.contains("d2 and bus-tls"),"{reason}");
+        let signing_key = SigningKey::from_bytes(&[17; 32]);
+        let pubkey = B64.encode([7; 32]);
+        write_signed_inventory(
+            &paths,
+            &signing_key,
+            1,
+            serde_json::json!([{
+                "name":"alpha","mesh_ip":"192.0.2.5","bus":true,"status":"active","credentials":[
+                    {"kind":"d2","pubkey":pubkey,"from_epoch":1,"until_epoch":null},
+                    {"kind":"bus-tls","pubkey":pubkey,"from_epoch":1,"until_epoch":null}
+                ]
+            }]),
+        );
+        let Posture::Unverified { reason } = load_and_verify(&paths) else {
+            panic!("duplicate must refuse authority")
+        };
+        assert!(reason.contains("d2 and bus-tls"), "{reason}");
         assert!(!paths.baseline.exists());
     }
     use ed25519_dalek::{Signer as _, SigningKey};
