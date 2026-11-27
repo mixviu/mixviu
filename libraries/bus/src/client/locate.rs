@@ -156,7 +156,10 @@ fn url_from_node_value(config: &Value) -> Option<String> {
     if config.get("mesh_addr").is_some() && config.get("wg_ip").is_some() {
         return None;
     }
-    let mesh_addr = config.get("mesh_addr").or_else(|| config.get("wg_ip")).and_then(Value::as_str);
+    let mesh_addr = config
+        .get("mesh_addr")
+        .or_else(|| config.get("wg_ip"))
+        .and_then(Value::as_str);
     let port = config
         .get("noded")
         .and_then(|noded| noded.get("port"))

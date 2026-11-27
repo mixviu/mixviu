@@ -14,7 +14,11 @@ pub struct SourceRate {
 }
 impl SourceRate {
     pub fn new(rate: u32, burst: u32) -> Self {
-        Self { rate, burst, buckets: HashMap::new() }
+        Self {
+            rate,
+            burst,
+            buckets: HashMap::new(),
+        }
     }
     pub fn allow(&mut self, peer: SocketAddr, now: Instant) -> bool {
         let network = super::tls::refusal_network(peer);
@@ -25,13 +29,20 @@ impl SourceRate {
             self.buckets.retain(|_, (tokens, at)| {
                 *tokens + now.duration_since(*at).as_secs_f64() * rate < burst
             });
-            if self.buckets.len() >= 4096 { return false; }
+            if self.buckets.len() >= 4096 {
+                return false;
+            }
         }
-        let (tokens, at) = self.buckets.entry(network).or_insert((self.burst as f64, now));
+        let (tokens, at) = self
+            .buckets
+            .entry(network)
+            .or_insert((self.burst as f64, now));
         *tokens = (*tokens + now.duration_since(*at).as_secs_f64() * self.rate as f64)
             .min(self.burst as f64);
         *at = now;
-        if *tokens < 1.0 { return false; }
+        if *tokens < 1.0 {
+            return false;
+        }
         *tokens -= 1.0;
         true
     }
@@ -44,14 +55,22 @@ pub struct Sessions {
 }
 impl Sessions {
     pub fn new(cap: usize) -> Arc<Self> {
-        Arc::new(Self { cap, members: Mutex::new(BTreeMap::new()) })
+        Arc::new(Self {
+            cap,
+            members: Mutex::new(BTreeMap::new()),
+        })
     }
     pub fn acquire(self: &Arc<Self>, member: &str) -> Option<Session> {
         let mut members = self.members.lock().expect("TLS sessions poisoned");
         let count = members.entry(member.to_owned()).or_default();
-        if *count >= self.cap { return None; }
+        if *count >= self.cap {
+            return None;
+        }
         *count += 1;
-        Some(Session { owner: self.clone(), member: member.to_owned() })
+        Some(Session {
+            owner: self.clone(),
+            member: member.to_owned(),
+        })
     }
     pub fn snapshot(&self) -> BTreeMap<String, usize> {
         self.members.lock().expect("TLS sessions poisoned").clone()
@@ -67,7 +86,9 @@ impl Drop for Session {
         let mut members = self.owner.members.lock().expect("TLS sessions poisoned");
         let count = members.get_mut(&self.member).expect("live TLS session");
         *count -= 1;
-        if *count == 0 { members.remove(&self.member); }
+        if *count == 0 {
+            members.remove(&self.member);
+        }
     }
 }
 
@@ -78,18 +99,32 @@ pub struct LeasedIo<T> {
     pub session: Session,
 }
 impl<T: tokio::io::AsyncRead + Unpin> tokio::io::AsyncRead for LeasedIo<T> {
-    fn poll_read(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, buf: &mut tokio::io::ReadBuf<'_>) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         std::pin::Pin::new(&mut self.io).poll_read(cx, buf)
     }
 }
 impl<T: tokio::io::AsyncWrite + Unpin> tokio::io::AsyncWrite for LeasedIo<T> {
-    fn poll_write(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>, buf: &[u8]) -> std::task::Poll<std::io::Result<usize>> {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
         std::pin::Pin::new(&mut self.io).poll_write(cx, buf)
     }
-    fn poll_flush(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         std::pin::Pin::new(&mut self.io).poll_flush(cx)
     }
-    fn poll_shutdown(mut self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<std::io::Result<()>> {
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
         std::pin::Pin::new(&mut self.io).poll_shutdown(cx)
     }
 }
@@ -107,7 +142,10 @@ mod tests {
         assert!(!rate.allow(a, now));
         assert!(rate.allow("192.0.2.2:1".parse().unwrap(), now));
         assert!(rate.allow(a, now + std::time::Duration::from_millis(500)));
-        assert!(!rate.allow("[::ffff:192.0.2.1]:2".parse().unwrap(), now + std::time::Duration::from_millis(500)));
+        assert!(!rate.allow(
+            "[::ffff:192.0.2.1]:2".parse().unwrap(),
+            now + std::time::Duration::from_millis(500)
+        ));
         assert!(rate.allow("[2001:db8::1]:1".parse().unwrap(), now));
         assert!(rate.allow("[2001:db8::2]:1".parse().unwrap(), now));
         assert!(!rate.allow("[2001:db8::3]:1".parse().unwrap(), now));

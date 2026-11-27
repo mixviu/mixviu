@@ -5,6 +5,22 @@ use config::node::{MaildConfig, NodeConfig, load_from};
 use config::{Dir, Error, ErrorKind, from_conf_mix_str, load_conf_mix_path, to_conf_mix_string};
 
 #[test]
+fn mesh_address_accepts_each_spelling_but_never_both() {
+    for key in ["mesh_addr", "wg_ip"] {
+        let node: NodeConfig = from_conf_mix_str(&format!("{key}: '192.0.2.5'\n")).unwrap();
+        assert_eq!(node.mesh_addr, "192.0.2.5");
+        let encoded = to_conf_mix_string(&node).unwrap();
+        assert!(encoded.contains("mesh_addr"));
+        assert!(!encoded.contains("wg_ip"));
+    }
+    for old in ["192.0.2.5", ""] {
+        assert!(from_conf_mix_str::<NodeConfig>(&format!(
+            "mesh_addr: '192.0.2.5'\nwg_ip: '{old}'\n"
+        )).is_err());
+    }
+}
+
+#[test]
 fn absent_mail_sections_are_optional_and_not_serialised() {
     let nc: NodeConfig = from_conf_mix_str("node: alpha\nwg_ip: '192.0.2.5'\n").unwrap();
     assert!(nc.maild.is_none());

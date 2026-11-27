@@ -21,7 +21,11 @@ pub fn fatal(message: &str) -> ! {
 
 /// The WG bind proof failed: `bind` is not this node's routed mesh address.
 pub fn not_wg(bind: SocketAddr, mesh_addr: &str) -> String {
-    let shown = if mesh_addr.is_empty() { "<absent>" } else { mesh_addr };
+    let shown = if mesh_addr.is_empty() {
+        "<absent>"
+    } else {
+        mesh_addr
+    };
     format!(
         "lane_bind {bind} is not this node's routed mesh address (mesh_addr {shown:?}) — the lane serves only the mesh; refusing to start"
     )

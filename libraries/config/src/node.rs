@@ -1171,7 +1171,11 @@ mod transplanted_tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let conf_mix_path = dir.join("node.conf.mix");
-        std::fs::write(&conf_mix_path, "node: \"alpha\"\nmesh_addr: \"192.0.2.5\"\n").unwrap();
+        std::fs::write(
+            &conf_mix_path,
+            "node: \"alpha\"\nmesh_addr: \"192.0.2.5\"\n",
+        )
+        .unwrap();
 
         let cfg = load_from(&conf_mix_path).expect("conf.mix load");
         assert_eq!(cfg.node, "alpha");

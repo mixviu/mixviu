@@ -38,7 +38,10 @@ pub(crate) fn prepare(
         credential,
         authority: Arc::new(std::sync::RwLock::new(keys)),
         sessions: mesh::tls_limits::Sessions::new(settings.max_sessions_per_member),
-        source_rate: Arc::new(std::sync::Mutex::new(mesh::tls_limits::SourceRate::new(settings.per_source_rate, settings.per_source_burst))),
+        source_rate: Arc::new(std::sync::Mutex::new(mesh::tls_limits::SourceRate::new(
+            settings.per_source_rate,
+            settings.per_source_burst,
+        ))),
     })
 }
 
@@ -70,9 +73,17 @@ impl TlsListener {
             limits.max_handshakes > 0,
             "TLS max_handshakes must be positive"
         );
-        anyhow::ensure!(limits.per_source_rate > 0 && limits.per_source_burst > 0
-            && limits.max_sessions_per_member > 0, "TLS rate, burst and session cap must be positive");
-        let acceptor = TlsAcceptor::from(runtime.credential.server_config(runtime.authority.clone())?);
+        anyhow::ensure!(
+            limits.per_source_rate > 0
+                && limits.per_source_burst > 0
+                && limits.max_sessions_per_member > 0,
+            "TLS rate, burst and session cap must be positive"
+        );
+        let acceptor = TlsAcceptor::from(
+            runtime
+                .credential
+                .server_config(runtime.authority.clone())?,
+        );
         let (tx, ready) = mpsc::channel(limits.max_handshakes);
         let deadline = Duration::from_secs(limits.handshake_timeout_s);
         let max_handshakes = limits.max_handshakes;

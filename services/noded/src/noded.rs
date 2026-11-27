@@ -954,7 +954,10 @@ async fn bind_tcp_listeners(
     Ok(listeners)
 }
 
-fn prebound_matches(actual: Option<std::net::SocketAddr>, requested: Option<std::net::SocketAddr>) -> bool {
+fn prebound_matches(
+    actual: Option<std::net::SocketAddr>,
+    requested: Option<std::net::SocketAddr>,
+) -> bool {
     matches!((actual, requested), (Some(actual), Some(requested))
         if actual == requested || (requested.port() == 0 && actual.ip() == requested.ip()))
 }
@@ -2091,7 +2094,8 @@ fn spawn_inventory_reload_watcher(state: AppState) {
             tokio::time::sleep(std::time::Duration::from_millis(300)).await;
             while sig_rx.try_recv().is_ok() {}
 
-            apply_observed_inventory_reload(&state, crate::authority::load_and_verify(&paths)).await;
+            apply_observed_inventory_reload(&state, crate::authority::load_and_verify(&paths))
+                .await;
         }
     });
 }
@@ -2122,12 +2126,20 @@ async fn reconcile_transport_authority(
 /// Measure accepted reload application, excluding debounce and rejected loads.
 /// Keep this wrapper separate from the authority transaction owned by PR 4a.
 async fn apply_observed_inventory_reload(state: &AppState, new: crate::authority::Posture) {
-    let accepted = matches!(new, crate::authority::Posture::Verified(_))
-        && !reload_keeps_last_good(&new, &state.authority.load().posture);
+    let verified = matches!(new, crate::authority::Posture::Verified(_));
+    let previous = state.authority.load_full();
     let started = Instant::now();
+    let before = state.live_sessions.read().await.clone();
     apply_inventory_reload(state, new).await;
-    if accepted {
-        *state.reload_to_drop_ms.lock().expect("reload metric poisoned") =
+    if verified && !Arc::ptr_eq(&previous, &state.authority.load_full()) {
+        let after = state.live_sessions.read().await;
+        let closing: Vec<_> = before.into_iter().filter(|(id, _)| !after.contains_key(id)).map(|(_, s)| s.tx).collect();
+        drop(after);
+        for tx in closing { tx.closed().await; }
+        *state
+            .reload_to_drop_ms
+            .lock()
+            .expect("reload metric poisoned") =
             Some(started.elapsed().as_millis().min(u64::MAX as u128) as u64);
     }
 }
@@ -2330,7 +2342,6 @@ async fn reload_revocation_teardown(state: &AppState, a: &crate::authority::Acce
             })
             .collect()
     };
-    let closing: Vec<_> = victims.iter().map(|(_, s, _)| s.tx.clone()).collect();
     for (sid, s, detail) in victims {
         // Drain THIS session's in-flight rpcs first (claims them so the
         // natural-drop drain finds none → no double session-churn emit).
@@ -2364,9 +2375,6 @@ async fn reload_revocation_teardown(state: &AppState, a: &crate::authority::Acce
         s.close.notify_one();
         state.live_sessions.write().await.remove(&sid);
     }
-    // The connection cleanup aborts and joins its writer before releasing the
-    // outbox receiver. Observe local teardown, not a remote TCP acknowledgement.
-    for tx in closing { tx.closed().await; }
 }
 
 async fn ws_handler(
@@ -4969,12 +4977,25 @@ async fn handle_noded_command(
             meta.insert("refusal_totals".into(), refusal_totals());
             meta.insert("tls_inbound".into(), state.tls_refusals.snapshot());
             meta.insert("tls_dial".into(), mesh::tls::DIAL_REFUSALS.snapshot());
-            meta.insert("tls_sessions_per_member".into(), serde_json::json!(
-                state.tls.as_ref().map(|tls| tls.sessions.snapshot()).unwrap_or_default()
-            ));
-            meta.insert("reload_to_drop_ms".into(), serde_json::json!(
-                *state.reload_to_drop_ms.lock().expect("reload metric poisoned")
-            ));
+            meta.insert(
+                "tls_sessions_per_member".into(),
+                serde_json::json!(
+                    state
+                        .tls
+                        .as_ref()
+                        .map(|tls| tls.sessions.snapshot())
+                        .unwrap_or_default()
+                ),
+            );
+            meta.insert(
+                "reload_to_drop_ms".into(),
+                serde_json::json!(
+                    *state
+                        .reload_to_drop_ms
+                        .lock()
+                        .expect("reload metric poisoned")
+                ),
+            );
             meta.insert(
                 "tls_refusals".into(),
                 serde_json::json!(state.tls_refusals.total() + mesh::tls::DIAL_REFUSALS.total()),
@@ -6088,9 +6109,11 @@ mod tests {
         // Existing fields and per-peer shape remain byte-semantically compatible.
         assert_eq!(body["node"], "alpha");
         assert_eq!(body["mesh_addr"], "192.0.2.5");
+        assert_eq!(body["wg_ip"], body["mesh_addr"]);
         assert_eq!(body["port"], 4200);
         assert_eq!(body["peers"][0]["name"], PEER);
         assert_eq!(body["peers"][0]["mesh_addr"], "192.0.2.6");
+        assert_eq!(body["peers"][0]["wg_ip"], body["peers"][0]["mesh_addr"]);
         assert_eq!(body["peers"][0]["port"], 4300);
         assert_eq!(body["peers"][0]["challenge_epoch"], serde_json::json!(7));
         assert_eq!(body["source"], "signed-inventory");

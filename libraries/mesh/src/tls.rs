@@ -67,7 +67,8 @@ pub struct Refusals {
 }
 impl Refusals {
     pub fn admitted(&self) {
-        self.admitted.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.admitted
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
     /// Snapshot also flushes expired coalesced windows after a silent burst.
     pub fn snapshot(&self) -> serde_json::Value {
@@ -113,17 +114,29 @@ impl Refusals {
             window.pending += 1;
         } else if windows.peers.len() < MAX_REFUSAL_WINDOWS {
             tracing::warn!(event = "tls.refused", %peer, %network, class, count = 1u64, total, "TLS handshake refused");
-            windows.peers.insert((network, class), RefusalWindow { started: now, pending: 0 });
+            windows.peers.insert(
+                (network, class),
+                RefusalWindow {
+                    started: now,
+                    pending: 0,
+                },
+            );
             windows.next_expiry.get_or_insert(now + REFUSAL_WINDOW);
         } else {
-            let overflow_total = self.overflow_total.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            let overflow_total = self
+                .overflow_total
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                + 1;
             if windows.overflow_classes.insert(class) {
                 tracing::warn!(event = "tls.refused", %peer, %network, class, overflow_total, "TLS refusal map full");
             }
             if let Some(window) = &mut windows.overflow {
                 window.pending += 1;
             } else {
-                windows.overflow = Some(RefusalWindow { started: now, pending: 0 });
+                windows.overflow = Some(RefusalWindow {
+                    started: now,
+                    pending: 0,
+                });
                 windows.next_expiry.get_or_insert(now + REFUSAL_WINDOW);
             }
         }
@@ -642,6 +655,16 @@ mod tests {
         assert!(log.contains("count=999"), "{log}");
         assert!(log.contains("total=1003"), "{log}");
         assert_eq!(refusals.total(), 1003);
+        // No later refusal is needed to emit the pending count.
+        refusals.record_at("192.0.2.2:4".parse().unwrap(), "timeout", now + 2 * REFUSAL_WINDOW);
+        refusals.flush_at(now + 3 * REFUSAL_WINDOW);
+        let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
+        assert!(log.lines().last().unwrap().contains("count=1"), "{log}");
+        assert!(refusals.peers.lock().unwrap().peers.is_empty());
+        let metric = refusals.snapshot();
+        assert_eq!(metric["classes"]["timeout"], 1004);
+        assert_eq!(metric["outcomes"]["timeout"], 1004);
+        assert_eq!(metric["outcomes"]["refused"], 0);
     }
 
     fn credential(n: u8) -> Credential {

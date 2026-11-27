@@ -637,7 +637,9 @@ impl MeshPeers {
     ) -> ReconcileReport {
         let mut state = self.state.write().await;
         // Older callers update D2 or endpoints only; they have no opinion on TLS.
-        let tls_keys = tls_keys.unwrap_or_default();
+        let tls_keys = tls_keys.unwrap_or_else(|| {
+            if keys.is_some() { state.tls_keys.clone() } else { Default::default() }
+        });
         let mut report = ReconcileReport::default();
         let mut reasons = HashMap::new();
 
@@ -1102,12 +1104,20 @@ async fn dial(
             crate::tls::DIAL_REFUSALS.record(peer.noded_addr(), "session-cap");
             anyhow::bail!("TLS session-cap");
         };
-        (Box::new(crate::tls_limits::LeasedIo { io: stream, session }), Some((member, binding)))
+        (
+            Box::new(crate::tls_limits::LeasedIo {
+                io: stream,
+                session,
+            }),
+            Some((member, binding)),
+        )
     } else {
         (Box::new(tcp), None)
     };
     let (ws, _) = tokio_tungstenite::client_async_with_config(peer.noded_url(), io, None).await?;
-    if identity.is_some() { crate::tls::DIAL_REFUSALS.admitted(); }
+    if identity.is_some() {
+        crate::tls::DIAL_REFUSALS.admitted();
+    }
     Ok((ws, identity))
 }
 
@@ -2074,6 +2084,20 @@ mod tests {
         assert!(text.contains("posture=\"observe\""), "{text}");
         assert_eq!(log.total, 1128);
         assert!(unauthenticated_frame_total() >= before + 1128);
+    }
+
+    #[tokio::test]
+    async fn endpoint_only_reconciliation_clears_both_key_authorities() {
+        let mesh = test_mesh();
+        let keys = mesh_trust::identity::KeyAuthority::new(&Default::default(), 2, 0);
+        let tls = Arc::new(mesh_trust::identity::TlsAuthority::default());
+        mesh.reconcile_security(HashMap::new(), AuthorityRevision::default(), keys, "example.test".into(), tls.clone()).await;
+        assert!(mesh.state.read().await.keys.is_some());
+        assert!(Arc::ptr_eq(&mesh.state.read().await.tls_keys, &tls));
+        mesh.reconcile_endpoints(HashMap::new(), AuthorityRevision::default()).await;
+        let state = mesh.state.read().await;
+        assert!(state.keys.is_none());
+        assert!(!Arc::ptr_eq(&state.tls_keys, &tls));
     }
 
     #[tokio::test]
