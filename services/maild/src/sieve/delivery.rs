@@ -81,10 +81,12 @@ pub struct Delivery<'a> {
 }
 
 fn reply_proof(delivery: &Delivery<'_>) -> bool {
-    delivery.routing.map_or(delivery.sender_verified, |routing| {
-        routing.ingress.is_local_auth()
-            || crate::smtp::inbound::reply_sender_verified(routing.verify, delivery.from)
-    })
+    delivery
+        .routing
+        .map_or(delivery.sender_verified, |routing| {
+            routing.ingress.is_local_auth()
+                || crate::smtp::inbound::reply_sender_verified(routing.verify, delivery.from)
+        })
 }
 
 fn flags(raw: &[String]) -> Result<(Flags, Tags)> {
@@ -310,12 +312,21 @@ async fn deliver_inner(
                 .map(|(_, d)| d)
                 .unwrap_or("example.com");
             let bytes = rejection_report(domain, delivery.from, delivery.to, reason);
-            let hash = ms.put_blob(&bytes)?;
-            store::queue_automatic_reply(db, store::AutomaticReply {
-                account: delivery.account.id, sender: delivery.from.into(),
-                handle: "guarded-reject".into(), days: 1, hash,
-                verified_sender: reply_proof(&delivery), guarded_only_suppression: true,
-            }).await?;
+            let reply_ms = ms.clone();
+            let hash = tokio::task::spawn_blocking(move || reply_ms.put_blob(&bytes)).await??;
+            store::queue_automatic_reply(
+                db,
+                store::AutomaticReply {
+                    account: delivery.account.id,
+                    sender: delivery.from.into(),
+                    handle: "guarded-reject".into(),
+                    days: 1,
+                    hash,
+                    verified_sender: reply_proof(&delivery),
+                    guarded_only_suppression: true,
+                },
+            )
+            .await?;
         } else {
             tracing::info!(
                 account = delivery.account.id,
@@ -900,11 +911,19 @@ async fn vacation_reply(
     // identifies the account for the normal queue worker's DKIM selection.
     let ms = ms.clone();
     let hash = tokio::task::spawn_blocking(move || ms.mds().put_blob(&bytes)).await??;
-    store::queue_automatic_reply(db, store::AutomaticReply {
-        account: delivery.account.id, sender: delivery.from.into(),
-        handle: vacation.handle.clone(), days: vacation.days, hash,
-        verified_sender: reply_proof(delivery), guarded_only_suppression: false,
-    }).await?;
+    store::queue_automatic_reply(
+        db,
+        store::AutomaticReply {
+            account: delivery.account.id,
+            sender: delivery.from.into(),
+            handle: vacation.handle.clone(),
+            days: vacation.days,
+            hash,
+            verified_sender: reply_proof(delivery),
+            guarded_only_suppression: false,
+        },
+    )
+    .await?;
     Ok(())
 }
 

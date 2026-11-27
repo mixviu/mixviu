@@ -7,6 +7,7 @@ email as key, `merge: patch` and the current `if_version`. Both guards are
 preserved when omitted from a full Replace (including password rotations).
 Clear a guard explicitly with null to restore its unrestricted default. An empty
 recipient list still denies all recipients, and a zero rate still denies sends.
+Deleting and recreating an account also clears its guards: it is a new account.
 
 - `allowed_recipients: null` (or unset) permits any envelope recipient.
   A list contains anchored, ASCII case-insensitive globs: `*` matches any
@@ -23,8 +24,10 @@ rcptTo list to admission. SMTP submission retains its existing header handling.
 
 Rate reservations are atomic and persisted in SQLite, shared by all submission
 paths. SMTP/JMAP submissions cost one message slot even with multiple recipients;
-separately queued remote Sieve redirects cost one slot per target. The whole
-redirect fan-out is reserved atomically: either every message fits or none is sent.
+redirects from guarded accounts cost one slot per target, local or remote.
+The whole redirect fan-out is checked against the allowlist and reserved atomically:
+either every target fits or none is forwarded. Unguarded local redirects retain
+their previous behaviour; unguarded remote redirects still reserve without a cap.
 Vacation and account-authored rejection DSNs each cost one slot.
 A rejected recipient list consumes no reservation. A later delivery
 failure or client resubmission does consume one; reservations are not refunded
@@ -39,10 +42,24 @@ Recipient refusals return SMTP `550 5.7.1 recipientNotAllowed` or JMAP
 Storage failures refuse admission (JMAP `serverFail` for internal/storage errors).
 
 Account-authored vacation (Sieve and legacy), rejection DSNs and operator-enabled
-remote Sieve redirects use the same account recipient/rate admission. Denied
-automatic replies are dropped and logged; denied redirect plans keep the original
-message. External redirect configuration never overrides account guards. Aliases
+Sieve redirects use the same account recipient/rate admission. For guarded
+accounts this includes local targets, even when they belong to another domain on
+the same node. Denied automatic replies are dropped and logged. A denied redirect
+plan, local or remote, keeps the original in the recipient's normal default
+mailbox instead of forwarding any part of the plan. External redirect configuration
+never overrides account guards. Aliases
 remain local-only. Server-generated transport failure reports are separate.
+
+For an account with either guard set, unauthenticated automatic replies require
+SPF pass bound to the envelope MAIL FROM domain or a valid DKIM signature with
+strict (exact-domain) alignment to that envelope domain. A bare aggregate pass,
+HELO pass, unrelated signing domain or a supplied Authentication-Results header
+cannot authorize a reply. Authenticated local ingress remains trusted.
+Guarded reject DSNs are suppressed for one day per account/sender, independently
+of rejection text; vacation retains its interval. Proof, suppression, quota and
+queue insertion are atomic, so forged and repeated input consumes no send slots.
+Set spf_policy to strict on the doorway's domain when it is local, and publish
+the corresponding SPF hard-fail policy.
 
 The inbound Mix filter also receives:
 
@@ -56,7 +73,9 @@ The inbound Mix filter also receives:
 | `$REMOTE_IP` | Socket peer address |
 
 These facts are never taken from sender-supplied Authentication-Results.
-Local authentication is independent of SPF/DKIM/DMARC results.
+Local authentication is independent of SPF/DKIM/DMARC results. Bare SPF/DKIM
+pass is not mailbox authentication: it may authenticate an attacker's own domain.
+Do not treat an unbound pass as proof that a claimed doorway sent the message.
 For example:
 
 ```mix

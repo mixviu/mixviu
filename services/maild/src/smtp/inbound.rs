@@ -824,12 +824,17 @@ pub async fn deliver(
         if spam_verdict.as_deref() != Some("SPAM")
             && !mail_from.is_empty()
             && !is_auto_submitted(&message)
-            && (ingress.is_local_auth() || vacation_sender_verified(&verify_result, mail_from) || reply_sender_verified(&verify_result, mail_from))
+            && (ingress.is_local_auth()
+                || vacation_sender_verified(&verify_result, mail_from)
+                || reply_sender_verified(&verify_result, mail_from))
             && let Ok(Some(vr)) = legacy_vacation(&state.db, account.id).await
-            && (crate::submission_guard::is_guarded(&state.db, account.id).await.unwrap_or(true) || matches!(
-                db::vacation::mark_reply_if_due(&state.db.conn, account.id, mail_from).await,
-                Ok(true)
-            ))
+            && (crate::submission_guard::is_guarded(&state.db, account.id)
+                .await
+                .unwrap_or(true)
+                || matches!(
+                    db::vacation::mark_reply_if_due(&state.db.conn, account.id, mail_from).await,
+                    Ok(true)
+                ))
         {
             // Fixed fallback subject — the inbound Subject is attacker-
             // controlled and is NOT reflected (the pre-audit `Auto: {subject}`
@@ -891,14 +896,26 @@ pub async fn deliver(
             let put_outcome = tokio::task::spawn_blocking(move || mds.put_blob(&reply_data)).await;
             match put_outcome {
                 Ok(Ok(blob_hash)) => {
-                    let result = crate::sieve::store::queue_automatic_reply(&state.db, crate::sieve::store::AutomaticReply {
-                        account: account.id, sender: mail_from.into(),
-                        handle: "guarded-legacy-vacation".into(), days: 1, hash: blob_hash,
-                        verified_sender: ingress.is_local_auth() || reply_sender_verified(&verify_result, mail_from),
-                        guarded_only_suppression: true,
-                    }).await;
+                    let result = crate::sieve::store::queue_automatic_reply(
+                        &state.db,
+                        crate::sieve::store::AutomaticReply {
+                            account: account.id,
+                            sender: mail_from.into(),
+                            handle: "guarded-legacy-vacation".into(),
+                            days: 1,
+                            hash: blob_hash,
+                            verified_sender: ingress.is_local_auth()
+                                || reply_sender_verified(&verify_result, mail_from),
+                            guarded_only_suppression: true,
+                        },
+                    )
+                    .await;
                     if !matches!(result, Ok(true)) {
-                        tracing::info!(account=account.id, ?result, "Legacy vacation reply suppressed or failed");
+                        tracing::info!(
+                            account = account.id,
+                            ?result,
+                            "Legacy vacation reply suppressed or failed"
+                        );
                         continue;
                     }
                     tracing::info!(
@@ -1042,13 +1059,22 @@ fn vacation_sender_verified(verify_result: &VerifyResult, mail_from: &str) -> bo
 /// pass or sender-provided header. DKIM uses strict (exact-domain) alignment;
 /// this avoids depending on the known DMARC/organisational-domain defects.
 pub(crate) fn reply_sender_verified(verify: &VerifyResult, from: &str) -> bool {
-    let Some(domain) = from.rsplit_once('@').and_then(|(_, d)| spf_domain(d)) else { return false; };
-    if let SpfCheck::MailFrom { result: SpfResult::Pass, domain: spf } = &verify.spf
-        && spf_domain(spf).as_ref() == Some(&domain) { return true; }
-    verify.dkim.overall == DkimOutcome::Pass && verify.dkim.signatures.iter().any(|signature| {
-        signature.result == maild_auth::DkimSignatureOutcome::Pass
-            && spf_domain(&signature.d).as_ref() == Some(&domain)
-    })
+    let Some(domain) = from.rsplit_once('@').and_then(|(_, d)| spf_domain(d)) else {
+        return false;
+    };
+    if let SpfCheck::MailFrom {
+        result: SpfResult::Pass,
+        domain: spf,
+    } = &verify.spf
+        && spf_domain(spf).as_ref() == Some(&domain)
+    {
+        return true;
+    }
+    verify.dkim.overall == DkimOutcome::Pass
+        && verify.dkim.signatures.iter().any(|signature| {
+            signature.result == maild_auth::DkimSignatureOutcome::Pass
+                && spf_domain(&signature.d).as_ref() == Some(&domain)
+        })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1156,16 +1182,34 @@ mod doorway_tests {
     #[test]
     fn guarded_reply_proof_binds_spf_and_dkim_to_envelope_domain() {
         let from = "mc@example.com";
-        let mut verify = synthesize_temperror_verify("mail.example.com", "192.0.2.1".parse().unwrap(), from, "other.example");
+        let mut verify = synthesize_temperror_verify(
+            "mail.example.com",
+            "192.0.2.1".parse().unwrap(),
+            from,
+            "other.example",
+        );
         assert!(!reply_sender_verified(&verify, from));
-        verify.spf = SpfCheck::MailFrom { result: SpfResult::Pass, domain: "attacker.example".into() };
+        verify.spf = SpfCheck::MailFrom {
+            result: SpfResult::Pass,
+            domain: "attacker.example".into(),
+        };
         assert!(!reply_sender_verified(&verify, from));
-        verify.spf = SpfCheck::MailFrom { result: SpfResult::Pass, domain: "EXAMPLE.COM.".into() };
+        verify.spf = SpfCheck::MailFrom {
+            result: SpfResult::Pass,
+            domain: "EXAMPLE.COM.".into(),
+        };
         assert!(reply_sender_verified(&verify, from));
-        verify.spf = SpfCheck::Helo { result: SpfResult::Pass, domain: "example.com".into() };
+        verify.spf = SpfCheck::Helo {
+            result: SpfResult::Pass,
+            domain: "example.com".into(),
+        };
         assert!(!reply_sender_verified(&verify, from));
         verify.dkim.overall = DkimOutcome::Pass;
-        verify.dkim.signatures = vec![maild_auth::DkimSignatureResult { d: "attacker.example".into(), s: "test".into(), result: maild_auth::DkimSignatureOutcome::Pass }];
+        verify.dkim.signatures = vec![maild_auth::DkimSignatureResult {
+            d: "attacker.example".into(),
+            s: "test".into(),
+            result: maild_auth::DkimSignatureOutcome::Pass,
+        }];
         assert!(!reply_sender_verified(&verify, from));
         verify.dkim.signatures[0].d = "example.com".into();
         assert!(reply_sender_verified(&verify, from));
@@ -1175,10 +1219,31 @@ mod doorway_tests {
 
     #[tokio::test]
     async fn missing_domain_spf_policy_is_not_opted_in() -> Result<()> {
-        let runtime = Arc::new(::props::Runtime::new("maild", crate::props::domains::spec(::props::Hooks::noop()), Arc::new(::props::MemoryStore::new("maild"))));
+        let runtime = Arc::new(::props::Runtime::new(
+            "maild",
+            crate::props::domains::spec(::props::Hooks::noop()),
+            Arc::new(::props::MemoryStore::new("maild")),
+        ));
         let mut value = crate::props::domains::defaults_value("example.com");
-        if let ::props::value::PropValue::Object(obj) = &mut value { obj.remove("spf_policy"); }
-        runtime.set(::props::RecordKey::collection(crate::props::domains::namespace_name(), "example.com"), value, ::props::SetOpts { expected_version: Some(::props::Version::zero()), merge: ::props::MergeMode::Replace, actor: ::props::Actor::service("test")?, cause: None, ts_ms: 0 }).await?;
+        if let ::props::value::PropValue::Object(obj) = &mut value {
+            obj.remove("spf_policy");
+        }
+        runtime
+            .set(
+                ::props::RecordKey::collection(
+                    crate::props::domains::namespace_name(),
+                    "example.com",
+                ),
+                value,
+                ::props::SetOpts {
+                    expected_version: Some(::props::Version::zero()),
+                    merge: ::props::MergeMode::Replace,
+                    actor: ::props::Actor::service("test")?,
+                    cause: None,
+                    ts_ms: 0,
+                },
+            )
+            .await?;
         assert!(!strict_own_domain(&runtime, "example.com").await?);
         Ok(())
     }

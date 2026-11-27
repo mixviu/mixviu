@@ -269,15 +269,29 @@ pub async fn reply_due(
 
 pub const MAX_REPLY_STAMPS: usize = 10_000;
 
-/// Trusted internal callers may use this compatibility API. SMTP delivery must
-/// supply its envelope-bound proof through queue_automatic_reply.
+/// Callers without authentication facts may use this compatibility API.
+/// Guarded accounts fail closed; SMTP supplies proof via queue_automatic_reply.
 pub async fn queue_reply(
-    db: &Db, account: i32, sender: &str, handle: &str, days: u32, hash: mds::BlobHash,
+    db: &Db,
+    account: i32,
+    sender: &str,
+    handle: &str,
+    days: u32,
+    hash: mds::BlobHash,
 ) -> Result<bool> {
-    queue_automatic_reply(db, AutomaticReply {
-        account, sender: sender.into(), handle: handle.into(), days, hash,
-        verified_sender: true, guarded_only_suppression: false,
-    }).await
+    queue_automatic_reply(
+        db,
+        AutomaticReply {
+            account,
+            sender: sender.into(),
+            handle: handle.into(),
+            days,
+            hash,
+            verified_sender: false,
+            guarded_only_suppression: false,
+        },
+    )
+    .await
 }
 
 pub(crate) struct AutomaticReply {
@@ -293,7 +307,15 @@ pub(crate) struct AutomaticReply {
 /// Proof check, suppression stamp, quota and queue insert share one transaction.
 /// Refusal rolls everything back: forged/repeated input consumes zero quota.
 pub(crate) async fn queue_automatic_reply(db: &Db, reply: AutomaticReply) -> Result<bool> {
-    let AutomaticReply { account, sender, handle, days, hash, verified_sender, guarded_only_suppression } = reply;
+    let AutomaticReply {
+        account,
+        sender,
+        handle,
+        days,
+        hash,
+        verified_sender,
+        guarded_only_suppression,
+    } = reply;
     let recipient = sender.clone();
     let sender = sender.to_ascii_lowercase();
     let handle = blake3::hash(handle.as_bytes()).to_hex().to_string();
@@ -322,4 +344,41 @@ pub(crate) async fn queue_automatic_reply(db: &Db, reply: AutomaticReply) -> Res
         tracing::info!(queue_id, account, "Automatic reply queued");
         Ok(true)
     }).await
+}
+
+#[cfg(test)]
+mod automatic_reply_tests {
+    use super::*;
+    #[tokio::test]
+    async fn guarded_proof_and_concurrent_suppression_precede_quota() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let db = Db::connect(tmp.path().join("mail.db").to_str().unwrap(), tmp.path().join("blobs").to_str().unwrap()).await?;
+        db.migrate().await?;
+        db.conn.lock().unwrap().execute("INSERT INTO accounts(id,email,password,allowed_recipients,send_rate) VALUES(1,'cast@example.com','x','[\"mc@example.com\"]',10)", [])?;
+        let mds = mds::SqliteCasMds::open(tmp.path().join("mds"))?;
+        let hash = mds::Mds::put_blob(&mds, b"reply")?;
+        let reply = |verified_sender| AutomaticReply {
+            account: 1, sender: "mc@example.com".into(), handle: "guarded-reject".into(),
+            days: 1, hash, verified_sender, guarded_only_suppression: true,
+        };
+        assert!(!queue_automatic_reply(&db, reply(false)).await?);
+        {
+            let conn = db.conn.lock().unwrap();
+            assert_eq!(conn.query_row("SELECT count(*) FROM submission_rate", [], |r| r.get::<_, i64>(0))?, 0);
+            assert_eq!(conn.query_row("SELECT count(*) FROM sieve_replies", [], |r| r.get::<_, i64>(0))?, 0);
+        }
+        let mut tasks = Vec::new();
+        for _ in 0..8 {
+            let db = db.clone();
+            let reply = reply(true);
+            tasks.push(tokio::spawn(async move { queue_automatic_reply(&db, reply).await }));
+        }
+        let mut queued = 0;
+        for task in tasks { queued += usize::from(task.await??); }
+        assert_eq!(queued, 1);
+        let conn = db.conn.lock().unwrap();
+        assert_eq!(conn.query_row("SELECT count(*) FROM submission_rate", [], |r| r.get::<_, i64>(0))?, 1);
+        assert_eq!(conn.query_row("SELECT count(*) FROM smtp_queue", [], |r| r.get::<_, i64>(0))?, 1);
+        Ok(())
+    }
 }

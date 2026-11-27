@@ -57,7 +57,11 @@ fn reserve(
 }
 
 fn reserve_messages(
-    conn: &mut rusqlite::Connection, account: i32, recipients: &[String], now: i64, messages: usize,
+    conn: &mut rusqlite::Connection,
+    account: i32,
+    recipients: &[String],
+    now: i64,
+    messages: usize,
 ) -> Result<()> {
     let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     reserve_on(&tx, account, recipients, now, messages)?;
@@ -119,35 +123,55 @@ pub async fn admit(db: &Db, account: i32, recipients: &[String]) -> Result<()> {
 }
 
 pub(crate) fn guarded_on(conn: &rusqlite::Connection, account: i32) -> Result<bool> {
-    Ok(conn.query_row("SELECT allowed_recipients IS NOT NULL OR send_rate IS NOT NULL FROM accounts WHERE id=?1", [account], |r| r.get(0))?)
+    Ok(conn.query_row(
+        "SELECT allowed_recipients IS NOT NULL OR send_rate IS NOT NULL FROM accounts WHERE id=?1",
+        [account],
+        |r| r.get(0),
+    )?)
 }
 
 pub(crate) async fn is_guarded(db: &Db, account: i32) -> Result<bool> {
     let conn = db.conn.clone();
     tokio::task::spawn_blocking(move || {
-        let conn = conn.lock().map_err(|_| anyhow::anyhow!("submission DB lock poisoned"))?;
+        let conn = conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("submission DB lock poisoned"))?;
         guarded_on(&conn, account)
-    }).await?
+    })
+    .await?
 }
 
 pub(crate) async fn redirects_allowed(db: &Db, account: i32, targets: Vec<(String, bool)>) -> bool {
     let conn = db.conn.clone();
     let result = tokio::task::spawn_blocking(move || -> Result<()> {
-        let mut conn = conn.lock().map_err(|_| anyhow::anyhow!("submission DB lock poisoned"))?;
+        let mut conn = conn
+            .lock()
+            .map_err(|_| anyhow::anyhow!("submission DB lock poisoned"))?;
         let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let guarded = guarded_on(&tx, account)?;
-        let recipients: Vec<String> = targets.into_iter().filter(|(_, local)| guarded || !local).map(|(target, _)| target).collect();
+        let recipients: Vec<String> = targets
+            .into_iter()
+            .filter(|(_, local)| guarded || !local)
+            .map(|(target, _)| target)
+            .collect();
         if !recipients.is_empty() {
-            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs() as i64;
             reserve_on(&tx, account, &recipients, now, recipients.len())?;
         }
         tx.commit()?;
         Ok(())
-    }).await;
+    })
+    .await;
     match result {
         Ok(Ok(())) => true,
         error => {
-            tracing::warn!(account, ?error, "Account redirect batch suppressed by submission guard");
+            tracing::warn!(
+                account,
+                ?error,
+                "Account redirect batch suppressed by submission guard"
+            );
             false
         }
     }
