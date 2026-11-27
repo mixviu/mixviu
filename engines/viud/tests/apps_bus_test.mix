@@ -150,88 +150,6 @@ fn await_exit($handle)
   end
   raise("APPS_BUS_TEST", "no apps.exited for " .. $handle)
 end
-fn lifecycle_checks()
-  subscribe("apps.exited")
-  -- Exercise both attested origins against the same broker. WS is mesh even
-  -- on loopback; only the Unix socket is local.
-  check(call("apps", "apps.start", json_encode({argv: ["/usr/bin/sleep", "30"]})).rc == 10, "argv enabled by default")
-  export MIX_NODED_URL="unix://" .. $bus.dir .. "/run/noded/bus.sock"
-  bus_reconnect()
-  subscribe("apps.exited")
-  $enable = call("apps", "apps.props.set", json_encode({path: "apps.allow_argv", value: true}))
-  check($enable.rc == 0, "local argv enable: " .. json_encode($enable) .. " endpoint=" .. env("MIX_NODED_URL"))
-  check(call("apps", "apps.start", json_encode({id: "plain", argv: ["/usr/bin/true"]})).rc == 10, "both selectors accepted")
-  $r = call("apps", "apps.start", json_encode({id: "hold"}))
-  check($r.rc == 0 and type($r.result.handle) == "string", "start id handle")
-  $h = $r.result.handle
-  $listing = call("apps", "apps.running", json_encode({id: "hold"}))
-  check($listing.rc == 0 and $listing.result[0].handle == $h and $listing.result[0].state == "running", "running handle")
-  check(call("apps", "apps.stop", json_encode({pid: $r.result.pid})).rc == 10, "stop accepts pid")
-  check(call("apps", "apps.stop", json_encode({handle: "foreign-1"})).rc == 14, "foreign handle")
-  check(call("apps", "apps.stop", json_encode({handle: $h})).rc == 0, "graceful stop")
-  check(await_exit($h).reason == "stop", "graceful reason")
-  $r = call("apps", "apps.launch", json_encode({id: "plain"}))
-  check($r.rc == 0 and $r.result.id == "plain" and type($r.result.pid) == "number" and type($r.result.argv) == "list" and $r.result.started_utc != nil, "launch superset")
-  check(await_exit($r.result.handle).reason == "exit", "natural exit")
-  $r = call("apps", "apps.start", json_encode({argv: ["/usr/bin/env", "--ignore-signal=TERM", "/usr/bin/sleep", "30"], name: "stuck"}))
-  check($r.rc == 0, "local argv refused")
-  $h = $r.result.handle
-  check(call("apps", "apps.stop", json_encode({handle: $h, timeout_ms: 300})).rc == 0, "stuck stop")
-  check(call("apps", "apps.stop", json_encode({handle: $h, timeout_ms: 300})).rc == 0, "idempotent stop")
-  $exit = await_exit($h)
-  check($exit.signal == 9 and $exit.reason == "stop" and $exit.ran_ms >= 290, "timeout escalation")
-  $r = call("apps", "apps.start", json_encode({id: "hold"}))
-  $h = $r.result.handle
-  check(call("apps", "apps.stop", json_encode({handle: $h, mode: "force"})).rc == 0, "force stop")
-  $exit = await_exit($h)
-  check($exit.signal == 9 and $exit.reason == "force", "force outcome")
-  $one = call("apps", "apps.start", json_encode({id: "hold"})).result.handle
-  $two = call("apps", "apps.start", json_encode({id: "hold"})).result.handle
-  check(len(call("apps", "apps.stop", json_encode({id: "hold"})).result.stopping) == 2, "stop id instances")
-  await_exit($one)
-  await_exit($two)
-  $r = call("apps", "apps.start", json_encode({id: "fork"}))
-  $h = $r.result.handle
-  $grandchild = to_number(wait_file($tmp .. "/grandchild"))
-  check(call("apps", "apps.stop", json_encode({handle: $h})).rc == 0, "fork stop")
-  await_exit($h)
-  check(not process_alive($grandchild), "grandchild survived group stop")
-  -- Fake comp gives the handle a window; no real window or display needed.
-  $fake = spawn([$mix, "--serve", $root .. "/engines/viud/tests/fixtures/apps_comp.mix", "--name", "comp"], {env: $pb.client_env($bus), stdout: {file: $tmp .. "/comp.log"}, stderr: "stdout"})
-  -- Function cannot rebind the outer pid; the caller owns cleanup via return.
-  write_file($tmp .. "/comp.pid", to_string($fake))
-  for $i = 1 to 100
-    if call("comp", "fake.clear", "{}").rc == 0 then break end
-    sleep(0.005)
-  end
-  $r = call("apps", "apps.toggle", json_encode({id: "hold"}))
-  check($r.rc == 0 and $r.result.action == "started", "toggle start")
-  $h = $r.result.handle
-  check(call("comp", "fake.set", json_encode({pid: $r.result.pid})).rc == 0, "fake window")
-  $r = call("apps", "apps.toggle", json_encode({id: "hold"}))
-  check($r.rc == 0 and $r.result.action == "focused", "toggle focus")
-  $r = call("apps", "apps.toggle", json_encode({id: "hold"}))
-  check($r.rc == 0 and $r.result.action == "stopping", "toggle stop")
-  check(await_exit($h).reason == "stop", "toggle stop exit")
-  check(call("comp", "fake.clear", "{}").rc == 0, "fake clear")
-  $history = call("apps", "apps.history", "{}")
-  check($history.rc == 0 and len($history.result.rows) > 0, "history unavailable")
-  for $row in $history.result.rows
-    check($row.class == "operator" and $row.source == "apps" and not has_key($row.data, "argv") and not has_key($row.data, "uris"), "history leaks argv/uris")
-  end
-  export MIX_NODED_URL=$bus.url
-  bus_reconnect()
-  check(call("apps", "apps.start", json_encode({argv: ["/usr/bin/true"]})).rc == 10, "mesh argv accepted")
-  check(call("apps", "apps.history", "{}").rc == 10, "mesh history accepted")
-  $old = call("apps", "apps.start", json_encode({id: "hold"})).result.handle
-  check(call("apps", "RELOAD", "{}").rc == 0, "reload refused")
-  $until = monotonic() + 1
-  while monotonic() < $until
-    if call("apps", "apps.running", "{}").result == [] then break end
-    sleep(0.005)
-  end
-  check(call("apps", "apps.stop", json_encode({handle: $old})).rc == 14, "previous generation handle accepted")
-end
 
 try
   write_client()
@@ -450,7 +368,91 @@ try
   check($fixture_icon.rc == 0 and ends_with($fixture_icon.result.path, "/data/icons/hicolor/22x22/apps-bus-test-icon.png"),
     "the third-party hicolor fixture no longer resolves")
 
-  lifecycle_checks()
+  subscribe("apps.exited")
+  -- Exercise both attested origins against the same broker. WS is mesh even
+  -- on loopback; only the Unix socket is local.
+  check(call("apps", "apps.start", json_encode({argv: ["/usr/bin/sleep", "30"]})).rc == 10, "argv enabled by default")
+  export MIX_NODED_URL="unix://" .. $bus.dir .. "/run/noded/bus.sock"
+  bus_reconnect()
+  subscribe("apps.exited")
+  $enable = call("apps", "apps.props.set", json_encode({path: "apps.allow_argv", value: true}))
+  check($enable.rc == 0, "local argv enable: " .. json_encode($enable) .. " endpoint=" .. env("MIX_NODED_URL"))
+  check(call("apps", "apps.start", json_encode({id: "plain", argv: ["/usr/bin/true"]})).rc == 10, "both selectors accepted")
+  $r = call("apps", "apps.start", json_encode({id: "hold"}))
+  check($r.rc == 0 and type($r.result.handle) == "string", "start id handle")
+  $h = $r.result.handle
+  $listing = call("apps", "apps.running", json_encode({id: "hold"}))
+  check($listing.rc == 0 and $listing.result[0].handle == $h and $listing.result[0].state == "running", "running handle")
+  check(call("apps", "apps.stop", json_encode({pid: $r.result.pid})).rc == 10, "stop accepts pid")
+  check(call("apps", "apps.stop", json_encode({handle: "foreign-1"})).rc == 14, "foreign handle")
+  check(call("apps", "apps.stop", json_encode({handle: $h})).rc == 0, "graceful stop")
+  check(await_exit($h).reason == "stop", "graceful reason")
+  $r = call("apps", "apps.launch", json_encode({id: "plain"}))
+  check($r.rc == 0 and $r.result.id == "plain" and type($r.result.pid) == "number" and type($r.result.argv) == "list" and $r.result.started_utc != nil, "launch superset")
+  check(await_exit($r.result.handle).reason == "exit", "natural exit")
+  $r = call("apps", "apps.start", json_encode({argv: ["/usr/bin/env", "--ignore-signal=TERM", "/usr/bin/sleep", "30"], name: "stuck"}))
+  check($r.rc == 0, "local argv refused")
+  $h = $r.result.handle
+  check(call("apps", "apps.stop", json_encode({handle: $h, timeout_ms: 300})).rc == 0, "stuck stop")
+  check(call("apps", "apps.stop", json_encode({handle: $h, timeout_ms: 300})).rc == 0, "idempotent stop")
+  $exit = await_exit($h)
+  check($exit.signal == 9 and $exit.reason == "stop" and $exit.ran_ms >= 290, "timeout escalation")
+  $r = call("apps", "apps.start", json_encode({id: "hold"}))
+  $h = $r.result.handle
+  check(call("apps", "apps.stop", json_encode({handle: $h, mode: "force"})).rc == 0, "force stop")
+  $exit = await_exit($h)
+  check($exit.signal == 9 and $exit.reason == "force", "force outcome")
+  $one = call("apps", "apps.start", json_encode({id: "hold"})).result.handle
+  $two = call("apps", "apps.start", json_encode({id: "hold"})).result.handle
+  check(len(call("apps", "apps.stop", json_encode({id: "hold"})).result.stopping) == 2, "stop id instances")
+  await_exit($one)
+  await_exit($two)
+  $r = call("apps", "apps.start", json_encode({id: "fork"}))
+  $h = $r.result.handle
+  $grandchild = to_number(wait_file($tmp .. "/grandchild"))
+  check(call("apps", "apps.stop", json_encode({handle: $h})).rc == 0, "fork stop")
+  await_exit($h)
+  check(not process_alive($grandchild), "grandchild survived group stop")
+  -- Fake comp gives the handle a window; no real window or display needed.
+  $fake = spawn([$mix, "--serve", $root .. "/engines/viud/tests/fixtures/apps_comp.mix", "--name", "comp"], {env: $pb.client_env($bus), stdout: {file: $tmp .. "/comp.log"}, stderr: "stdout"})
+  -- Function cannot rebind the outer pid; the caller owns cleanup via return.
+  write_file($tmp .. "/comp.pid", to_string($fake))
+  for $i = 1 to 100
+    if call("comp", "fake.clear", "{}").rc == 0 then break end
+    sleep(0.005)
+  end
+  $r = call("apps", "apps.toggle", json_encode({id: "hold"}))
+  check($r.rc == 0 and $r.result.action == "started", "toggle start")
+  $h = $r.result.handle
+  check(call("comp", "fake.set", json_encode({pid: $r.result.pid})).rc == 0, "fake window")
+  $r = call("apps", "apps.toggle", json_encode({id: "hold"}))
+  check($r.rc == 0 and $r.result.action == "focused", "toggle focus")
+  $r = call("apps", "apps.toggle", json_encode({id: "hold"}))
+  check($r.rc == 0 and $r.result.action == "stopping", "toggle stop")
+  check(await_exit($h).reason == "stop", "toggle stop exit")
+  check(call("comp", "fake.clear", "{}").rc == 0, "fake clear")
+  $history = call("apps", "apps.history", "{}")
+  check($history.rc == 0 and len($history.result.rows) > 0, "history unavailable")
+  for $row in $history.result.rows
+    check($row.class == "operator" and $row.source == "apps" and not has_key($row.data, "argv") and not has_key($row.data, "uris"), "history leaks argv/uris")
+  end
+  -- A separate client has no local endpoint candidate. The interpreter
+  -- normally prefers verified Unix even when a WebSocket URL is configured.
+  fixture("remote/node.conf.mix", json_encode({node: "example-remote", noded: {unix_socket: $tmp .. "/remote/absent.sock"}}))
+  $remote = merge($env, {MIX_NODE_CONFIG: $tmp .. "/remote/node.conf.mix", MIX_RUN: $tmp .. "/remote/run", MIX_ETC: $tmp .. "/remote/etc"})
+  $refused = json_parse(run_argv_must([$mix, $tmp .. "/cli.mix", "apps", "apps.start", json_encode({argv: ["/usr/bin/true"]})], {clear_env: true, env: $remote}))
+  check($refused.rc == 10, "mesh argv accepted")
+  $refused = json_parse(run_argv_must([$mix, $tmp .. "/cli.mix", "apps", "apps.history", "{}"], {clear_env: true, env: $remote}))
+  check($refused.rc == 10, "mesh history accepted")
+  $old = call("apps", "apps.start", json_encode({id: "hold"})).result.handle
+  check(call("apps", "RELOAD", "{}").rc == 0, "reload refused")
+  $until = monotonic() + 1
+  while monotonic() < $until
+    if call("apps", "apps.running", "{}").result == [] then break end
+    sleep(0.005)
+  end
+  check(call("apps", "apps.stop", json_encode({handle: $old})).rc == 14, "previous generation handle accepted")
+
   print("PASS apps Bus surface: list/get/launch, argv, DISPLAY, reload, manifest icon resolution, brand mark and explicit theme preference")
 finally
   stop_pid($svc_pid)
