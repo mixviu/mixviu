@@ -607,7 +607,13 @@ async fn validate(
         .map(|(target, _)| target.clone())
         .collect();
     if !remote.is_empty()
-        && !crate::submission_guard::generated_messages_allowed(db, delivery.account.id, &remote, remote.len()).await
+        && !crate::submission_guard::generated_messages_allowed(
+            db,
+            delivery.account.id,
+            &remote,
+            remote.len(),
+        )
+        .await
     {
         anyhow::bail!("account submission guard refused remote redirects");
     }

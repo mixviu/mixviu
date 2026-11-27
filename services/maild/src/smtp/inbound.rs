@@ -1282,6 +1282,11 @@ mod doorway_tests {
         )
         .await?;
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        verify.spf = SpfCheck::MailFrom { result: SpfResult::Fail, domain: "EXAMPLE.COM.".into() };
+        assert!(enforce_own_spf(&runtime, &external, "mc@example.com.", raw, &verify).await.is_err());
+        assert!(enforce_own_spf(&runtime, &external, "", raw, &verify).await.is_err(), "inconsistent verifier identity must fail closed");
+        verify.spf = SpfCheck::Helo { result: SpfResult::Fail, domain: "EXAMPLE.COM.".into() };
+        assert!(enforce_own_spf(&runtime, &external, "", raw, &verify).await.is_err());
         Ok(())
     }
 }
@@ -1334,11 +1339,17 @@ fn filter_auth(
 }
 
 /// Exact configured domains only. No DNS here: this is the token-path opt-in gate.
+fn spf_domain(domain: &str) -> Option<String> {
+    // A single trailing root dot spells the same DNS identity. Do not relax
+    // SMTP address syntax or accept multiple trailing dots.
+    super::envelope::dns_domain(domain.strip_suffix('.').unwrap_or(domain))
+}
+
 pub(crate) async fn strict_own_domain(
     domains: &Arc<::props::Runtime>,
     domain: &str,
 ) -> Result<bool> {
-    let Some(domain) = super::envelope::dns_domain(domain) else {
+    let Some(domain) = spf_domain(domain) else {
         return Ok(false);
     };
     let key =
@@ -1376,14 +1387,17 @@ pub(crate) async fn enforce_own_spf(
         return Ok(());
     }
     let domain = match &verify.spf {
+        SpfCheck::MailFrom { result: SpfResult::Fail, .. } if from.is_empty() => {
+            anyhow::bail!("SPF verifier returned a failed MAIL FROM identity for an empty reverse path");
+        }
         SpfCheck::MailFrom {
             result: SpfResult::Fail,
             domain,
         } if !from.is_empty() => {
             let claimed = from
                 .rsplit_once('@')
-                .and_then(|(_, d)| super::envelope::dns_domain(d));
-            if claimed != super::envelope::dns_domain(domain) {
+                .and_then(|(_, d)| spf_domain(d));
+            if claimed != spf_domain(domain) {
                 return Ok(());
             }
             domain

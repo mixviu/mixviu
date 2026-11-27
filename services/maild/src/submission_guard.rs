@@ -57,11 +57,17 @@ fn reserve(
 }
 
 fn reserve_messages(
-    conn: &mut rusqlite::Connection, account: i32, recipients: &[String],
-    now: i64, messages: usize,
+    conn: &mut rusqlite::Connection,
+    account: i32,
+    recipients: &[String],
+    now: i64,
+    messages: usize,
 ) -> Result<()> {
     let messages = i64::try_from(messages)?;
-    anyhow::ensure!(messages > 0, "reservation must contain at least one message");
+    anyhow::ensure!(
+        messages > 0,
+        "reservation must contain at least one message"
+    );
     let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let (allowed, rate): (Option<String>, Option<i64>) = tx.query_row(
         "SELECT allowed_recipients, send_rate FROM accounts WHERE id=?1",
@@ -92,8 +98,8 @@ fn reserve_messages(
     }
     for _ in 0..messages {
         tx.execute(
-        "INSERT INTO submission_rate(account_id,reserved_at) VALUES (?1,?2)",
-        rusqlite::params![account, now],
+            "INSERT INTO submission_rate(account_id,reserved_at) VALUES (?1,?2)",
+            rusqlite::params![account, now],
         )?;
     }
     tx.commit()?;
@@ -104,7 +110,12 @@ pub async fn admit(db: &Db, account: i32, recipients: &[String]) -> Result<()> {
     admit_messages(db, account, recipients, 1).await
 }
 
-async fn admit_messages(db: &Db, account: i32, recipients: &[String], messages: usize) -> Result<()> {
+async fn admit_messages(
+    db: &Db,
+    account: i32,
+    recipients: &[String],
+    messages: usize,
+) -> Result<()> {
     let conn = db.conn.clone();
     let recipients = recipients.to_vec();
     tokio::task::spawn_blocking(move || {
@@ -127,7 +138,12 @@ pub(crate) async fn generated_allowed(db: &Db, account: i32, recipients: &[Strin
 
 /// Reserve the entire fan-out atomically: each separately queued message costs
 /// one slot. Ordinary multi-recipient submissions and single replies cost one.
-pub(crate) async fn generated_messages_allowed(db: &Db, account: i32, recipients: &[String], messages: usize) -> bool {
+pub(crate) async fn generated_messages_allowed(
+    db: &Db,
+    account: i32,
+    recipients: &[String],
+    messages: usize,
+) -> bool {
     match admit_messages(db, account, recipients, messages).await {
         Ok(()) => true,
         Err(error) => {

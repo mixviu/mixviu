@@ -63,11 +63,17 @@ pub async fn set(
                         Some(crate::submission_guard::Refusal::Rate) => "tooManyRequests",
                         None => "serverFail",
                     };
+                    let description = if kind == "serverFail" {
+                        tracing::warn!(error = %e, "EmailSubmission create failed");
+                        "Submission could not be completed".to_string()
+                    } else {
+                        e.to_string()
+                    };
                     not_created.insert(
                         client_id.clone(),
                         SetError {
                             error_type: kind.into(),
-                            description: Some(e.to_string()),
+                            description: Some(description),
                         },
                     );
                 }

@@ -122,16 +122,28 @@ const MESSAGE: &[u8] = b"From: sender@example.org\r\nTo: bob@example.com\r\nSubj
 async fn doorway_redirect_fanout_reserves_every_message_atomically() -> Result<()> {
     let f = Fixture::new().await?;
     f.db.conn.lock().unwrap().execute(
-        "UPDATE accounts SET allowed_recipients='[\"*@example.net\"]',send_rate=2 WHERE id=?1", [f.account.id])?;
-    f.script(r#"redirect "one@example.net"; redirect "two@example.net"; redirect "three@example.net";"#).await?;
+        "UPDATE accounts SET allowed_recipients='[\"*@example.net\"]',send_rate=2 WHERE id=?1",
+        [f.account.id],
+    )?;
+    f.script(
+        r#"redirect "one@example.net"; redirect "two@example.net"; redirect "three@example.net";"#,
+    )
+    .await?;
     f.deliver(MESSAGE, true, false).await?;
     assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
     assert_eq!(f.count("Inbox"), 1);
     let reservations = || -> Result<i64> {
-        Ok(f.db.conn.lock().unwrap().query_row("SELECT count(*) FROM submission_rate WHERE account_id=?1", [f.account.id], |r| r.get(0))?)
+        Ok(f.db.conn.lock().unwrap().query_row(
+            "SELECT count(*) FROM submission_rate WHERE account_id=?1",
+            [f.account.id],
+            |r| r.get(0),
+        )?)
     };
     assert_eq!(reservations()?, 0, "failed batch reserved a partial quota");
-    f.db.conn.lock().unwrap().execute("UPDATE accounts SET send_rate=3 WHERE id=?1", [f.account.id])?;
+    f.db.conn.lock().unwrap().execute(
+        "UPDATE accounts SET send_rate=3 WHERE id=?1",
+        [f.account.id],
+    )?;
     f.deliver(MESSAGE, true, false).await?;
     assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 3);
     assert_eq!(reservations()?, 3);

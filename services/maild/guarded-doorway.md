@@ -3,9 +3,10 @@
 The `maild.accounts` properties `allowed_recipients` and `send_rate` apply
 to JMAP EmailSubmission, native Bus submission and SMTP-AUTH submission.
 Set them through `maild.props.set` with namespace `accounts`, the account
-email as key, `merge: patch` and the current `if_version`. A full Replace
-resets omitted guards to unrestricted defaults: password/config automation must
-use Patch or explicitly retain both guard fields.
+email as key, `merge: patch` and the current `if_version`. Both guards are
+preserved when omitted from a full Replace (including password rotations).
+Clear a guard explicitly with null to restore its unrestricted default. An empty
+recipient list still denies all recipients, and a zero rate still denies sends.
 
 - `allowed_recipients: null` (or unset) permits any envelope recipient.
   A list contains anchored, ASCII case-insensitive globs: `*` matches any
@@ -21,7 +22,11 @@ Bcc and Resent-Bcc headers. An explicit JMAP envelope supplies its complete
 rcptTo list to admission. SMTP submission retains its existing header handling.
 
 Rate reservations are atomic and persisted in SQLite, shared by all submission
-paths. A rejected recipient list consumes no reservation. A later delivery
+paths. SMTP/JMAP submissions cost one message slot even with multiple recipients;
+separately queued remote Sieve redirects cost one slot per target. The whole
+redirect fan-out is reserved atomically: either every message fits or none is sent.
+Vacation and account-authored rejection DSNs each cost one slot.
+A rejected recipient list consumes no reservation. A later delivery
 failure or client resubmission does consume one; reservations are not refunded
 after crashes. Queue retries continue the admitted submission without another
 reservation. Entries expire exactly 3600 seconds after admission; a backwards
@@ -81,8 +86,22 @@ does not influence this choice.
 
 SPF and REMOTE_IP assume direct socket exposure. There is no PROXY/XCLIENT
 support; putting a proxy in front would change the peer used for SPF.
-Deleting Junk while using fail-closed routing can produce delivery failures and
-backscatter to forged senders. Keep the quarantine and Junk folders provisioned.
+Missing Junk during fail-closed routing causes recipient delivery failure.
+On the post-250 token path this can silently lose external mail; the transport
+failure reporter only reports to local senders, not remote senders. Keep and monitor
+quarantine/Junk provisioning. Synchronous failures may instead return 451 if no
+recipient was accepted.
+
+Strict SPF refusal requires a published hard-fail policy such as `-all`; SoftFail
+and None do not reject. Check direct socket exposure and SPF records when enabling
+strict policy. The `junk-if-missing:` prefix is case-sensitive and reserved, so a
+literal mailbox name beginning with that prefix cannot be selected literally.
+The recipient glob `?` matches one byte, including in UTF-8 local parts.
+
+Rate limits count messages rather than recipient instances; duplicate RCPTs still
+cost one slot for a submission. Queue retries, including messages queued before
+guard deployment, are not re-admitted after a policy tightening. Operators must
+inspect/cancel already queued messages separately during incident response.
 
 Remaining work: wider SPF enforcement and DMARC policy enforcement, including
 the existing DMARC result computation issue. Relay and the other doorway gaps

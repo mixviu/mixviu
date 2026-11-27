@@ -8,8 +8,8 @@
 //! wires them into a single `PropsRouter` and dispatches
 //! `maild.props.*` Bus requests through it.
 
-pub mod account_overrides;
 mod account_guard_store;
+pub mod account_overrides;
 pub mod accounts;
 pub mod aliases;
 pub mod domains;
