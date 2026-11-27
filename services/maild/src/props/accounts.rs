@@ -963,7 +963,8 @@ pub fn register(
     store
         .register_namespace(&spec, Arc::new(AccountsMapping))
         .map_err(|e| anyhow::anyhow!("register accounts namespace in store: {e}"))?;
-    let runtime = Arc::new(Runtime::new(router.service(), spec, store.clone()));
+    let guarded_store = Arc::new(super::account_guard_store::AccountGuardStore(store.clone()));
+    let runtime = Arc::new(Runtime::new(router.service(), spec, guarded_store));
     router
         .register(runtime.clone())
         .map_err(|e| anyhow::anyhow!("register accounts runtime on router: {e}"))?;

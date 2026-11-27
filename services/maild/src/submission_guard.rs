@@ -46,12 +46,22 @@ fn matches(pattern: &str, address: &str) -> bool {
     i == p.len()
 }
 
+#[cfg(test)]
 fn reserve(
     conn: &mut rusqlite::Connection,
     account: i32,
     recipients: &[String],
     now: i64,
 ) -> Result<()> {
+    reserve_messages(conn, account, recipients, now, 1)
+}
+
+fn reserve_messages(
+    conn: &mut rusqlite::Connection, account: i32, recipients: &[String],
+    now: i64, messages: usize,
+) -> Result<()> {
+    let messages = i64::try_from(messages)?;
+    anyhow::ensure!(messages > 0, "reservation must contain at least one message");
     let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let (allowed, rate): (Option<String>, Option<i64>) = tx.query_row(
         "SELECT allowed_recipients, send_rate FROM accounts WHERE id=?1",
@@ -77,18 +87,24 @@ fn reserve(
         [account],
         |r| r.get(0),
     )?;
-    if rate.is_some_and(|r| used >= r) {
+    if rate.is_some_and(|r| used.checked_add(messages).is_none_or(|total| total > r)) {
         return Err(Refusal::Rate.into());
     }
-    tx.execute(
+    for _ in 0..messages {
+        tx.execute(
         "INSERT INTO submission_rate(account_id,reserved_at) VALUES (?1,?2)",
         rusqlite::params![account, now],
-    )?;
+        )?;
+    }
     tx.commit()?;
     Ok(())
 }
 
 pub async fn admit(db: &Db, account: i32, recipients: &[String]) -> Result<()> {
+    admit_messages(db, account, recipients, 1).await
+}
+
+async fn admit_messages(db: &Db, account: i32, recipients: &[String], messages: usize) -> Result<()> {
     let conn = db.conn.clone();
     let recipients = recipients.to_vec();
     tokio::task::spawn_blocking(move || {
@@ -98,7 +114,7 @@ pub async fn admit(db: &Db, account: i32, recipients: &[String]) -> Result<()> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs() as i64;
-        reserve(&mut conn, account, &recipients, now)
+        reserve_messages(&mut conn, account, &recipients, now, messages)
     })
     .await?
 }
@@ -106,7 +122,13 @@ pub async fn admit(db: &Db, account: i32, recipients: &[String]) -> Result<()> {
 /// Account-authored automatic mail must not reopen a doorway. Suppression,
 /// including storage failure, never turns the original delivery into a bounce.
 pub(crate) async fn generated_allowed(db: &Db, account: i32, recipients: &[String]) -> bool {
-    match admit(db, account, recipients).await {
+    generated_messages_allowed(db, account, recipients, 1).await
+}
+
+/// Reserve the entire fan-out atomically: each separately queued message costs
+/// one slot. Ordinary multi-recipient submissions and single replies cost one.
+pub(crate) async fn generated_messages_allowed(db: &Db, account: i32, recipients: &[String], messages: usize) -> bool {
+    match admit_messages(db, account, recipients, messages).await {
         Ok(()) => true,
         Err(error) => {
             tracing::warn!(account, %error, "Account-generated outbound mail suppressed by submission guard");

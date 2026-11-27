@@ -134,6 +134,41 @@ async fn guard_message<S: AsyncRead + AsyncWrite + Unpin>(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn doorway_replace_preserves_omitted_guards_and_explicit_null_clears() -> Result<()> {
+    let tmp = tempfile::tempdir()?;
+    let (built, _) = fixture(&tmp, None).await?;
+    let alice = account(&built, "alice@example.com").await?;
+    guard_props(&built, Some(vec!["bob@example.com"]), Some(1)).await?;
+    let runtime = built.accounts_runtime();
+    let key = RecordKey::collection(maild::props::accounts::namespace_name(), "alice@example.com");
+    let prior = runtime.store().get(&key).await?.value;
+    let replacement: PropValue = serde_json::from_value(json!({
+        "email":"alice@example.com", "password":bcrypt::hash("rotated-password", 4)?
+    }))?;
+    let outcome = runtime.set(key.clone(), replacement.clone(), opts(prior.version)).await?;
+    assert!(!outcome.set_event.fields_changed.iter().any(|f| f == "allowed_recipients" || f == "send_rate"));
+    let after = runtime.store().get(&key).await?.value;
+    assert_eq!(after.value.as_object().unwrap().get("allowed_recipients"), prior.value.as_object().unwrap().get("allowed_recipients"));
+    assert_eq!(after.value.as_object().unwrap().get("send_rate"), Some(&PropValue::Int(1)));
+    let bad = maild::submission_guard::admit(&built.app_state.db, alice, &["outside@example.net".into()]).await.unwrap_err();
+    assert!(matches!(bad.downcast_ref(), Some(maild::submission_guard::Refusal::Recipient)));
+    maild::submission_guard::admit(&built.app_state.db, alice, &["bob@example.com".into()]).await?;
+    assert!(matches!(maild::submission_guard::admit(&built.app_state.db, alice, &["bob@example.com".into()]).await.unwrap_err().downcast_ref(), Some(maild::submission_guard::Refusal::Rate)));
+    // A stale full Replace must not restore old guards over a newer policy.
+    assert!(runtime.set(key.clone(), replacement, opts(prior.version)).await.is_err());
+    let clear: PropValue = serde_json::from_value(json!({
+        "email":"alice@example.com", "password":"new-hash",
+        "allowed_recipients":null, "send_rate":null
+    }))?;
+    runtime.set(key.clone(), clear, opts(after.version)).await?;
+    let cleared = runtime.store().get(&key).await?.value;
+    assert!(!cleared.value.as_object().unwrap().contains_key("allowed_recipients"));
+    assert!(!cleared.value.as_object().unwrap().contains_key("send_rate"));
+    maild::submission_guard::admit(&built.app_state.db, alice, &["outside@example.net".into()]).await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn doorway_guards_whole_smtp_and_jmap_envelopes() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     let (built, tls) = fixture(&tmp, None).await?;
