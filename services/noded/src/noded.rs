@@ -2119,6 +2119,12 @@ async fn reconcile_transport_authority(
 /// legible. A kept-last-good load returns before touching transport state.
 async fn apply_inventory_reload(state: &AppState, new: crate::authority::Posture) {
     let current = state.authority.load();
+    if let (crate::authority::Posture::Verified(old), crate::authority::Posture::Verified(candidate)) = (&current.posture, &new) {
+        if let Err(reason) = crate::authority::validate_reload_keys(old, candidate) {
+            tracing::warn!(event = "inventory.rejected", %reason, kept_last_good = true, "inventory reload refused");
+            return;
+        }
+    }
     let keep = reload_keeps_last_good(&new, &current.posture);
     drop(current);
     if keep {
@@ -6036,11 +6042,13 @@ mod tests {
                     name: "alpha".into(),
                     mesh_ip: "192.0.2.5".parse().unwrap(),
                     noded_port: 4200,
+                    endpoints: None,
                 },
                 RoutingMember::ActiveBus {
                     name: PEER.into(),
                     mesh_ip: "192.0.2.6".parse().unwrap(),
                     noded_port: 4300,
+                    endpoints: None,
                 },
             ],
             members_full: std::collections::BTreeMap::new(),
@@ -6078,6 +6086,7 @@ mod tests {
                     name: PEER.into(),
                     mesh_ip: "192.0.2.6".parse().unwrap(),
                     noded_port: 4300,
+                    endpoints: None,
                 }],
                 members_full: std::collections::BTreeMap::new(),
             }),
@@ -6647,6 +6656,7 @@ mod tests {
             name: name.into(),
             mesh_ip,
             noded_port,
+            endpoints: None,
         }
     }
 

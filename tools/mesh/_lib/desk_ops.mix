@@ -134,6 +134,28 @@ fn place_seed($base, $before, $bytes, $public_key, $program, $executor)
   return {placement:$placed,verified:$after.states.seed}
 end
 
+-- Authoring only: execute inside the guest and return a public credential.
+-- The D2 distributor above keeps its existing custody and placement policy.
+fn enrol_bus_tls($target, $mix_bin, $prefix, $epoch, $executor = nil)
+  $target = $targets.checked_target($target)
+  if type($epoch) != "number" or floor($epoch) != $epoch or $epoch < 1 then fail("invalid enrolment epoch") end
+  $native = $targets.checked_native($target,{node:$target.node,mix_bin:$mix_bin,prefix:$prefix})
+  $path = $target.etc .. "/noded/bus-tls.seed"
+  $program = '$r = run_argv([$mix_bin,"mesh","bus-tls-gen","--path",$path]); if not $r.ok then raise("BUS_TLS_GEN","guest key generation refused") end; print($r.stdout)'
+  $job = $targets.stdin_job($target,$program,{mix_bin:$mix_bin,path:$path},"admin",$mix_bin,$native)
+  $job.mix_bin = $mix_bin
+  $job.operation = "bus-tls-gen"
+  $r = if $executor == nil then live_execute($job) else $executor($job) end
+  return bus_tls_credential($r,$epoch)
+end
+
+fn bus_tls_credential($result, $epoch)
+  if not $result.ok or $result.stdout_truncated or $result.stderr_truncated then fail("guest bus-tls-gen failed or truncated") end
+  $public = json_parse($result.stdout)
+  if type($public) != "map" or type($public.pubkey) != "string" or not re_match($public.pubkey,"^[A-Za-z0-9+/]{43}=$") then fail("guest returned invalid bus-tls public key") end
+  return {kind:"bus-tls",pubkey:$public.pubkey,from_epoch:$epoch,until_epoch:nil}
+end
+
 fn place_sync($base, $before, $roster, $signed, $program, $executor)
   $files = [payload("roster",$roster),payload("inventory",$signed)]
   $placed = call($base,"sync",{before:$before,payloads:$files,token:uuid()},$program,$executor)

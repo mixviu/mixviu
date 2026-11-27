@@ -325,6 +325,85 @@ end
 -- ASSUMES one /24 per inventory (INV-1: one subnet per signed inventory) —
 -- asserted, so the /24-prefix containment check below is exact, not a
 -- silent approximation for a narrower CIDR.
+-- Return a canonical typed socket identity, never resolving a hostname.
+function endpoint_identity($endpoint)
+  if type($endpoint) != "map" or type($endpoint.addr) != "string" or not contains(["tls","ws-wg"],$endpoint.transport) then return nil end
+  for $key in keys($endpoint)
+    if not contains(["addr","transport"],$key) then return nil end
+  end
+  $address = $endpoint.addr
+  $ip = nil
+  $port = nil
+  if starts_with($address,"[") then
+    $parts = split($address,"]:")
+    if len($parts) != 2 then return nil end
+    $text = substr($parts[0],1)
+    if contains($text,"%") then return nil end
+    $halves = split($text,"::")
+    if len($halves) > 2 then return nil end
+    $groups = []
+    $left_count = 0
+    for $half_index = 0 to len($halves) - 1
+      $half = $halves[$half_index]
+      if $half != "" then
+        for $group in split($half,":")
+          if contains($group,".") then
+            if not ends_with($text,$group) or not is_valid_ipv4($group) then return nil end
+            $v4 = split($group,".")
+            push($groups,to_number($v4[0]) * 256 + to_number($v4[1]))
+            push($groups,to_number($v4[2]) * 256 + to_number($v4[3]))
+          else
+            if not re_match($group,"^[0-9a-fA-F]{1,4}$") then return nil end
+            $number = 0
+            for $digit in split(lower($group),"")
+              if $digit == "" then continue end
+              $number = $number * 16 + pos($digit,"0123456789abcdef") - 1
+            end
+            push($groups,$number)
+          end
+        end
+      end
+      if len($halves) == 2 and $half_index == 0 then $left_count = len($groups) end
+    end
+    if len($halves) == 1 and len($groups) != 8 then return nil end
+    if len($halves) == 2 then
+      if len($groups) >= 8 then return nil end
+      $expanded = []
+      for $i = 0 to $left_count - 1
+        push($expanded,$groups[$i])
+      end
+      for $i = 1 to 8 - len($groups)
+        push($expanded,0)
+      end
+      for $i = $left_count to len($groups) - 1
+        push($expanded,$groups[$i])
+      end
+      $groups = $expanded
+    end
+    $ip = ["v6",$groups]
+    $port = $parts[1]
+  else
+    $parts = split($address,":")
+    if len($parts) != 2 or not is_valid_ipv4($parts[0]) then return nil end
+    $ip = ["v4",map(split($parts[0],"."),fn($v)=to_number($v))]
+    $port = $parts[1]
+  end
+  if not re_match($port,"^[0-9]+$") or not is_valid_noded_port(to_number($port)) then return nil end
+  return json_encode([$ip,to_number($port),$endpoint.transport])
+end
+
+function validate_member_endpoints($member)
+  if not has_key($member,"endpoints") then return end
+  if type($member.endpoints) != "list" then print("ERROR: endpoints must be a list"); mesh_fatal() end
+  $seen = []
+  for $endpoint in $member.endpoints
+    $identity = endpoint_identity($endpoint)
+    if $identity == nil then print("ERROR: invalid endpoint"); mesh_fatal() end
+    if contains($seen,$identity) then print("ERROR: duplicate endpoint"); mesh_fatal() end
+    push($seen,$identity)
+  end
+end
+
 function validate_inventory($inv)
   -- SHAPE BEFORE FIELDS, on the container and on every member. Everything
   -- below indexes $inv and $m; a payload whose `members` holds a scalar (or
@@ -364,8 +443,10 @@ function validate_inventory($inv)
   $seen_name = {}
   $seen_ip = {}
   $member_by_name = {}
+  $all_credentials = []
   for each $m in $inv["members"]
     $name = $m["name"]
+    validate_member_endpoints($m)
     $ip = $m["mesh_ip"]
     if not is_valid_label($name) then
       print("ERROR: invalid node name (must match §6.1/§9b label grammar): '" .. ("" .. $name) .. "'")
@@ -399,8 +480,12 @@ function validate_inventory($inv)
       mesh_fatal()
     end
     for each $c in $creds
-      if $c["kind"] != "wg" and $c["kind"] != "d2" then
-        print("ERROR: member '" .. $name .. "' has a credential of unknown kind '" .. ("" .. $c["kind"]) .. "' (must be wg|d2)")
+      if $c["kind"] != "wg" and $c["kind"] != "d2" and $c["kind"] != "bus-tls" then
+        print("ERROR: member '" .. $name .. "' has a credential of unknown kind '" .. ("" .. $c["kind"]) .. "' (must be wg|d2|bus-tls)")
+        mesh_fatal()
+      end
+      if $c.kind == "bus-tls" and $m.bus != true then
+        print("ERROR: bus-tls credential on bus:false member")
         mesh_fatal()
       end
       if $c["pubkey"] == nil or $c["pubkey"] == "" then
@@ -421,6 +506,20 @@ function validate_inventory($inv)
         print("ERROR: member '" .. $name .. "' has a " .. $c["kind"] .. " credential with an inverted/empty epoch window (until_epoch <= from_epoch)")
         mesh_fatal()
       end
+      for $old in $all_credentials
+        if $old.pubkey != $c.pubkey then continue end
+        if ($old.kind == "d2" and $c.kind == "bus-tls") or ($old.kind == "bus-tls" and $c.kind == "d2") then
+          print("ERROR: pubkey is shared by d2 and bus-tls")
+          mesh_fatal()
+        end
+        if ($old.until_epoch != nil and $c.from_epoch >= $old.until_epoch) or ($c.until_epoch != nil and $old.from_epoch >= $c.until_epoch) or ($old.tombstoned and $m.status == "active") or ($m.status == "tombstoned" and not $old.tombstoned) then
+          print("ERROR: pubkey reopens a closed credential window")
+          mesh_fatal()
+        end
+      end
+      $record = $c
+      $record.tombstoned = $m.status == "tombstoned"
+      push($all_credentials,$record)
     end
     -- an active bus member MUST have a kind:wg credential current at the mesh
     -- epoch — else generation/routing would treat it as a member with no

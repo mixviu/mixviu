@@ -332,7 +332,7 @@ fn verify_reports_payload_recovery_generation_when_present() {
 }
 
 #[test]
-fn human_verify_reports_effective_and_payload_generation() {
+fn default_verify_prints_authenticated_payload_json() {
     let fixture = Fixture::new();
     let output = run(&strings(&[
         "verify",
@@ -345,12 +345,9 @@ fn human_verify_reports_effective_and_payload_generation() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    assert!(stdout.contains("recovery_generation=0"), "{stdout}");
-    assert!(
-        stdout.contains("payload_recovery_generation=null"),
-        "{stdout}"
-    );
+    let payload = json_stdout(&output);
+    assert_eq!(payload["epoch"], 7);
+    assert_eq!(payload["members"][0]["mesh_ip"], "192.0.2.5");
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(
         stderr.contains("legacy generation-silent payload"),

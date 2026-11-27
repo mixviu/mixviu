@@ -422,6 +422,8 @@ pub struct AcceptedInventory {
 /// `inventory.rejected` event reasons.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum VerifyError {
+    #[error("invalid member credentials: {0}")]
+    MemberCredentials(String),
     #[error("unknown canonical_encoding {0:?} (only {CANONICAL_ENCODING_V1:?} is accepted)")]
     UnknownCanonicalEncoding(String),
 
@@ -744,6 +746,8 @@ impl SignedInventory {
             }
         }
 
+        crate::identity::validate_member_keys(&p.members, p.epoch)
+            .map_err(VerifyError::MemberCredentials)?;
         Ok(AcceptedInventory {
             epoch: p.epoch,
             recovery_generation: accepted_generation,

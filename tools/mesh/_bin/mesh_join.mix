@@ -315,9 +315,30 @@ $d.die_if(not $m.is_valid_b64key($d2pub),
   "minted d2 pubkey is not a 44-char base64 key: '" .. $d2pub .. "'")
 print("[join] d2 minted: " .. $d2pub)
 
+-- TLS private material is minted in the guest, never in the hub secrets DB.
+$desk = require("../_lib/desk_ops.mix")
+$targets = require("../_lib/targets.mix")
+$desk_target = nil
+$targets_path = $HUB .. "/_etc/mesh_targets.conf.mix"
+if is_file($targets_path) then
+  for $target in $targets.parse_targets(load_data($targets_path)).targets
+    if $target.node == $node and $target.kind == "desk" then $desk_target = $target end
+  end
+end
+$remote_mix = $d.remote_mix($node)
+if $desk_target != nil then
+  $tls = $desk.enrol_bus_tls($desk_target,$remote_mix,$d.remote_roots($node,$desk_target.host).prefix,$new_epoch)
+else
+  $tls_path = $d.remote_roots($node).etc .. "/noded/bus-tls.seed"
+  $tls_result = ssh_exec($node,[$remote_mix,"mesh","bus-tls-gen","--path",$tls_path],{mix_bin:$remote_mix,timeout:60})
+  $tls = $desk.bus_tls_credential($tls_result,$new_epoch)
+end
+$tls_pub = $tls.pubkey
+
 -- Insert the member first and bump only indented inventory keys, preserving the
 -- hand-authored comments and formatting around the strict-data map.
 $member_text = "    {\n      name: \"" .. $node .. "\",\n      mesh_ip: \"" .. $ip .. "\",\n      bus: true,\n      status: \"active\",\n      credentials: [\n        { kind: \"wg\", pubkey: \"" .. $wgpub .. "\", from_epoch: " .. ("" .. $new_epoch) .. ", until_epoch: nil },\n        { kind: \"d2\", pubkey: \"" .. $d2pub .. "\", from_epoch: " .. ("" .. $new_epoch) .. ", until_epoch: nil }\n      ],\n      last_touched_epoch: " .. ("" .. $new_epoch) .. "\n    },"
+$member_text = replace($member_text,"until_epoch: nil }\n      ]", "until_epoch: nil },\n        { kind: \"bus-tls\", pubkey: \"" .. $tls_pub .. "\", from_epoch: " .. $new_epoch .. ", until_epoch: nil }\n      ]")
 
 $source = read_file($INVENTORY)
 $output = []

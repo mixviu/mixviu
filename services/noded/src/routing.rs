@@ -89,6 +89,7 @@ impl RouterTable {
                     name,
                     mesh_ip,
                     noded_port,
+                    ..
                 } if name != canonical_node => Some((
                     name.clone(),
                     RouteTarget::signed(name, *mesh_ip, *noded_port),
@@ -173,6 +174,7 @@ pub(crate) fn local_eligibility(view: &[RoutingMember], canonical_node: &str) ->
                 name,
                 mesh_ip,
                 noded_port,
+                ..
             } if name == canonical_node => Some(LocalEligibility::ActiveBus {
                 mesh_ip: *mesh_ip,
                 noded_port: *noded_port,
@@ -365,6 +367,7 @@ mod tests {
             name: name.into(),
             mesh_ip: ip.parse().unwrap(),
             noded_port,
+            endpoints: None,
         }
     }
 

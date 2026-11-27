@@ -11,7 +11,35 @@
 //! interpreted for `status:"tombstoned"`.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
+
+/// Signed fallback location. Routed addresses may differ from mesh_ip (§7).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Endpoint {
+    pub addr: SocketAddr,
+    pub transport: EndpointTransport,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+pub enum EndpointTransport {
+    #[serde(rename = "tls")]
+    Tls,
+    #[serde(rename = "ws-wg")]
+    WsWg,
+}
+
+pub fn parse_endpoints(record: &serde_json::Value) -> Result<Option<Vec<Endpoint>>, String> {
+    let Some(value) = record.get("endpoints") else { return Ok(None) };
+    let endpoints: Vec<Endpoint> = serde_json::from_value(value.clone())
+        .map_err(|error| format!("invalid endpoints: {error}"))?;
+    let mut seen = BTreeSet::new();
+    for endpoint in &endpoints {
+        if endpoint.addr.port() == 0 { return Err("endpoint port must be in 1..=65535".into()); }
+        if !seen.insert(endpoint.clone()) { return Err("duplicate endpoint".into()); }
+    }
+    Ok(Some(endpoints))
+}
 
 use bus::wire::is_valid_label;
 
@@ -28,6 +56,7 @@ pub enum RoutingMember {
         name: String,
         mesh_ip: IpAddr,
         noded_port: u16,
+        endpoints: Option<Vec<Endpoint>>,
     },
     Tombstoned {
         name: String,
@@ -50,12 +79,17 @@ impl RoutingMember {
                 name,
                 mesh_ip,
                 noded_port,
-            } => serde_json::json!({
+                endpoints,
+            } => {
+                let mut value = serde_json::json!({
                 "class": "active-bus",
                 "name": name,
                 "mesh_ip": mesh_ip,
                 "noded_port": noded_port,
-            }),
+                });
+                if let Some(endpoints) = endpoints { value["endpoints"] = serde_json::json!(endpoints); }
+                value
+            },
             Self::Tombstoned { name } => serde_json::json!({
                 "class": "tombstoned",
                 "name": name,
@@ -187,6 +221,7 @@ pub fn strict_routing_view(
             return Err(reject("missing string status".into()));
         };
 
+        let endpoints = parse_endpoints(record).map_err(reject)?;
         match status {
             "tombstoned" => {
                 view.push(RoutingMember::Tombstoned {
@@ -233,6 +268,7 @@ pub fn strict_routing_view(
                 name: name_value.clone(),
                 mesh_ip,
                 noded_port,
+                endpoints,
             });
         } else {
             view.push(RoutingMember::TransportOnly {
@@ -269,6 +305,31 @@ mod tests {
     const SUBNET: &str = "192.0.2.0/24";
 
     #[test]
+    fn signed_endpoints_are_typed_optional_and_may_be_routed() {
+        let mut member = json!({"name":"alpha","mesh_ip":"192.0.2.5","bus":true,"status":"active"});
+        let absent = strict_routing_view(&json!([member.clone()]), SUBNET).unwrap();
+        assert!(absent[0].to_json().get("endpoints").is_none());
+        member["endpoints"] = json!([
+            {"addr":"198.51.100.5:4200","transport":"tls"},
+            {"addr":"[2001:db8::5]:4200","transport":"tls"},
+            {"addr":"192.0.2.5:4200","transport":"ws-wg"}
+        ]);
+        let view = strict_routing_view(&json!([member.clone()]), SUBNET).unwrap();
+        assert_eq!(view[0].to_json()["endpoints"], member["endpoints"]);
+        for bad in [
+            json!(null), json!({}), json!([{"addr":"node.example.org:4200","transport":"tls"}]),
+            json!([{"addr":"192.0.2.5:0","transport":"tls"}]),
+            json!([{"addr":"192.0.2.5:65536","transport":"tls"}]),
+            json!([{"addr":"192.0.2.5:4200","transport":"tcp"}]),
+            json!([{"addr":"192.0.2.5","transport":"tls"}]),
+            json!([{"addr":"[2001:db8::5]:4200","transport":"tls"},{"addr":"[2001:db8:0:0:0:0:0:5]:4200","transport":"tls"}]),
+        ] {
+            member["endpoints"] = bad;
+            assert!(strict_routing_view(&json!([member.clone()]), SUBNET).is_err(), "{member}");
+        }
+    }
+
+    #[test]
     fn classifies_active_transport_and_route_free_tombstone() {
         let view = strict_routing_view(
             &json!([
@@ -286,6 +347,7 @@ mod tests {
                     name: "alpha".into(),
                     mesh_ip: "192.0.2.5".parse().unwrap(),
                     noded_port: DEFAULT_NODED_PORT,
+                    endpoints: None,
                 },
                 RoutingMember::TransportOnly {
                     name: "beta".into(),
@@ -436,6 +498,7 @@ mod tests {
             &view[0],
             RoutingMember::ActiveBus {
                 noded_port: DEFAULT_NODED_PORT,
+                    endpoints: None,
                 ..
             }
         ));

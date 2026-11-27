@@ -117,6 +117,11 @@ pub struct Accepted {
     pub members_full: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
+pub fn validate_reload_keys(current: &Accepted, candidate: &Accepted) -> Result<(), String> {
+    let records = |accepted: &Accepted| serde_json::Value::Array(accepted.members_full.values().cloned().collect());
+    mesh_trust::identity::validate_key_reload(&records(current), current.epoch, &records(candidate), candidate.epoch)
+}
+
 #[derive(Debug, Clone)]
 pub struct VerifyKeySummary {
     pub key_id: String,

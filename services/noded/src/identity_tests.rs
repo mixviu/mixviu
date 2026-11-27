@@ -508,3 +508,27 @@ async fn real_unix_registration_survives_reload_and_tcp_loopback_is_refused() {
     std::fs::remove_file(path).unwrap();
     std::fs::remove_dir(root).unwrap();
 }
+#[tokio::test]
+async fn reload_refuses_reopened_key_and_accepts_new_key_rotation() {
+    use base64::Engine as _;
+    fn snapshot(epoch: u64, key: u8, until: Option<u64>) -> crate::authority::Posture {
+        let mut posture = reload_posture(epoch, vec![]);
+        if let crate::authority::Posture::Verified(a) = &mut posture {
+            a.members_full.insert("alpha".into(), serde_json::json!({"name":"alpha","status":"active","bus":true,"credentials":[{
+                "kind":"bus-tls","pubkey":base64::engine::general_purpose::STANDARD.encode([key;32]),"from_epoch":1,"until_epoch":until
+            }]}));
+        }
+        posture
+    }
+    let state = reload_test_state(snapshot(2,7,Some(2)), vec![]).await;
+    let before = state.authority.load_full();
+    apply_inventory_reload(&state, snapshot(3,7,None)).await;
+    assert!(std::sync::Arc::ptr_eq(&before, &state.authority.load_full()));
+    let mut rotated = snapshot(3,8,None);
+    if let crate::authority::Posture::Verified(a) = &mut rotated {
+        let crate::authority::Posture::Verified(old) = &before.posture else { unreachable!() };
+        a.members_full.get_mut("alpha").unwrap()["credentials"].as_array_mut().unwrap().push(old.members_full["alpha"]["credentials"][0].clone());
+    }
+    apply_inventory_reload(&state, rotated).await;
+    assert_eq!(state.authority.load().revision().epoch, 3);
+}
