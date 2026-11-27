@@ -8826,6 +8826,8 @@ mod vhost_tests {
         }
     }
 
+    include!("static_site_tests.rs");
+
     fn mkdir(td: &TempDir, name: &str) -> PathBuf {
         let p = td.path().join(name);
         std::fs::create_dir_all(&p).unwrap();
