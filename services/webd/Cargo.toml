@@ -29,6 +29,7 @@ name = "webd"
 path = "src/main.rs"
 
 [dependencies]
+hyper = { workspace = true, features = ["http1"] }
 libc.workspace = true
 paths = { path = "../../libraries/paths" }
 assets.workspace = true

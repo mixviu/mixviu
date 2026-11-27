@@ -720,19 +720,22 @@ impl ConnHandler for WebdConnHandler {
         }
         match stream {
             AcceptedStream::Tcp(s) => {
-                let builder = builder.http1_only();
                 let io = hyper_util::rt::TokioIo::new(s);
-                let _ = builder.serve_connection_with_upgrades(io, svc).await;
+                let _ = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(io, svc).with_upgrades().await;
             }
             AcceptedStream::Tls(s) => {
-                // ALPN alone does not constrain auto's preface detection.
-                let builder = if self.http2 && s.get_ref().1.alpn_protocol() == Some(b"h2") {
-                    builder
-                } else {
-                    builder.http1_only()
-                };
+                // auto::serve_connection_with_upgrades ignores http1_only().
+                // Use the protocol-specific h1 server so preface sniffing
+                // cannot bypass the listener policy or ALPN.
+                let negotiated_h2 = self.http2 && s.get_ref().1.alpn_protocol() == Some(b"h2");
                 let io = hyper_util::rt::TokioIo::new(*s);
-                let _ = builder.serve_connection_with_upgrades(io, svc).await;
+                if negotiated_h2 {
+                    let _ = builder.http2_only().serve_connection(io, svc).await;
+                } else {
+                    let _ = hyper::server::conn::http1::Builder::new()
+                        .serve_connection(io, svc).with_upgrades().await;
+                }
             }
             // `AcceptedStream` is `#[non_exhaustive]`; webd only ever
             // sees `Tcp` (Plain listener) or `Tls` (Terminate). A new
