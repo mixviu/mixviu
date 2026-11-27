@@ -1379,6 +1379,10 @@ impl NativeEvents {
         Ok(pid)
     }
 
+    pub(crate) fn holds_managed_children(&self) -> bool {
+        !self.children.is_empty() || !self.processes.is_empty()
+    }
+
     pub fn signal_child(&self, pid: u32, signal: i32) -> Option<bool> {
         // A freshly admitted child can reuse a reaped worker's PID before
         // that old worker finishes publishing its terminal record.

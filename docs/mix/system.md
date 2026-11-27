@@ -2514,3 +2514,28 @@ may be persisted and read by journal administrators. Do not print secrets.
 The launcher establishes the stream, so peer credentials identify the launcher,
 while SYSLOG_IDENTIFIER names the app. This is acceptable for desk diagnostics
 for now; the identifier is caller-supplied metadata, not a security identity.
+# Process replacement: `exec_argv(argv[, opts])`
+
+`exec_argv(["/usr/bin/env", "example"])` replaces Mix directly, without a
+shell, preserving the PID, process group and inherited stdin/stdout/stderr.
+It never returns on success; the target supplies the exit status or signal.
+An absolute executable path runs directly; a bare name is searched on PATH.
+A relative path containing a slash resolves against the requested cwd.
+
+Only `env`, `clear_env` and `cwd` options are accepted (the same validation
+and environment overlay/removal rules as `run_argv`; nil opts means defaults).
+`cwd` is applied before replacement, without changing the parent environment.
+Replacement is refused under `--serve`, inside a handler, or while the
+evaluator holds managed children. The capability is `process`.
+
+Mix flushes stdout and stderr first. SIGPIPE becomes default, inherited
+ignored signals remain ignored, and caught handlers reset at exec according
+to POSIX. The target's signal mask is empty. Mix-owned descriptors are
+close-on-exec; there is no descriptor sweep. Inherited descriptors without
+close-on-exec deliberately pass through, including descriptors above stderr.
+
+Failure raises a catchable `EXEC_FAILED` error naming the errno. Failed exec
+leaves signal dispositions, the mask, cwd and environment as they were;
+the script can catch the error and continue. A bad cwd fails before signal
+state changes. A shell-mode `exec` keyword is separate future work.
+
