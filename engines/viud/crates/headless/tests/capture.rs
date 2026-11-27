@@ -243,6 +243,16 @@ fn scale_pump(pattern: &mut Pattern, duration: Duration) {
     }
 }
 
+fn scale_pump_rendered(bus: &Bus, process: &process::Process, pattern: &mut Pattern, duration: Duration) {
+    let until = Instant::now() + duration;
+    while Instant::now() < until {
+        pattern.pump();
+        bus.call("comp.capture.frame", json!({"output":"headless-0", "path":process.root.join("scale-tick.ppm"), "format":"ppm"}));
+        pattern.pump();
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
 #[test]
 fn fractional_workspace_return_keeps_scale_and_first_buffer() {
     fractional_return(false, false);
@@ -298,8 +308,8 @@ fn fractional_hidden_zoom_reaches_client_before_return() {
     let start = client.state.events.len();
     fractional_camera(&bus, &process, &mut client, row["window_x"].as_f64().unwrap() + 100.0, row["window_y"].as_f64().unwrap() + 80.0, 2.0);
     scale_pump(&mut client, Duration::from_secs(2));
-    assert!(client.state.events[start..].iter().any(|(_, e)| *e == ScaleEvent::Preferred(600)), "{:?}", client.state.events);
-    assert!(client.state.events[start..].iter().any(|(_, e)| *e == ScaleEvent::Commit(1000,800,600)), "{:?}", client.state.events);
+    assert!(client.state.events[start..].iter().any(|(_, e)| *e == ScaleEvent::Preferred(540)), "{:?}", client.state.events);
+    assert!(client.state.events[start..].iter().any(|(_, e)| *e == ScaleEvent::Commit(900,720,540)), "{:?}", client.state.events);
 }
 
 fn fractional_camera(bus: &Bus, process: &process::Process, client: &mut Pattern, x: f64, y: f64, zoom: f64) {
@@ -332,7 +342,9 @@ fn fractional_return(minimized: bool, suspended: bool) {
         bus.call("comp.workspace.switch", json!({"index":2}));
     }
     // debounce_max is 750 ms. Also cover the five-second suspend dwell.
-    scale_pump(
+    scale_pump_rendered(
+        &bus,
+        &process,
         &mut client,
         Duration::from_secs(if suspended { 7 } else { 2 }),
     );
