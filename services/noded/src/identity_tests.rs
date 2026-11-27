@@ -520,14 +520,22 @@ async fn reload_refuses_reopened_key_and_accepts_new_key_rotation() {
         }
         posture
     }
-    let state = reload_test_state(snapshot(2,7,Some(2)), vec![]).await;
+    let state = reload_test_state(snapshot(2, 7, Some(2)), vec![]).await;
     let before = state.authority.load_full();
-    apply_inventory_reload(&state, snapshot(3,7,None)).await;
-    assert!(std::sync::Arc::ptr_eq(&before, &state.authority.load_full()));
-    let mut rotated = snapshot(3,8,None);
+    apply_inventory_reload(&state, snapshot(3, 7, None)).await;
+    assert!(std::sync::Arc::ptr_eq(
+        &before,
+        &state.authority.load_full()
+    ));
+    let mut rotated = snapshot(3, 8, None);
     if let crate::authority::Posture::Verified(a) = &mut rotated {
-        let crate::authority::Posture::Verified(old) = &before.posture else { unreachable!() };
-        a.members_full.get_mut("alpha").unwrap()["credentials"].as_array_mut().unwrap().push(old.members_full["alpha"]["credentials"][0].clone());
+        let crate::authority::Posture::Verified(old) = &before.posture else {
+            unreachable!()
+        };
+        a.members_full.get_mut("alpha").unwrap()["credentials"]
+            .as_array_mut()
+            .unwrap()
+            .push(old.members_full["alpha"]["credentials"][0].clone());
     }
     apply_inventory_reload(&state, rotated).await;
     assert_eq!(state.authority.load().revision().epoch, 3);

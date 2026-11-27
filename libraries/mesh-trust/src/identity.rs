@@ -106,9 +106,8 @@ fn key_windows(members: &Value) -> Result<Vec<KeyWindow>, String> {
                 None | Some(Value::Null) => None,
                 Some(value) => Some(value.as_u64().ok_or("invalid credential until_epoch")?),
             };
-            if until.is_some_and(|end| end <= from) {
-                return Err("empty credential window".into());
-            }
+            // Empty historical windows are inert in the selectors. Retain
+            // them as closed-key evidence without adding a new schema gate.
             out.push(KeyWindow {
                 key,
                 kind: kind.into(),
