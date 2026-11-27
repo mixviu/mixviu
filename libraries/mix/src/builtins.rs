@@ -26476,7 +26476,8 @@ pub(crate) mod socket_sources {
             .tcp()
             .try_clone()
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
-        let ready = register_socket_readiness(std::os::fd::OwnedFd::from(dup), Interest::WRITABLE)
+        // SockRef::try_clone already returns an OwnedFd.
+        let ready = register_socket_readiness(dup, Interest::WRITABLE)
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
         let deadline = deadline_after(timeout_seconds);
         let mut off = 0usize;
@@ -26653,7 +26654,8 @@ pub(crate) mod socket_sources {
             .tcp()
             .try_clone()
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
-        let ready = register_socket_readiness(std::os::fd::OwnedFd::from(dup), Interest::READABLE)
+        // SockRef::try_clone already returns an OwnedFd.
+        let ready = register_socket_readiness(dup, Interest::READABLE)
             .map_err(|e| refusal("SOCKET_PULL", e.to_string()))?;
         // checked_add: a huge timeout waits forever instead of panicking.
         let deadline = deadline_after(timeout_seconds);
