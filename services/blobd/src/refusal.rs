@@ -1,11 +1,9 @@
 //! Fatal startup refusals — the exact texts and the one way out.
 //!
 //! A refusal must reach the operator on both channels before the exit:
-//! stderr via `eprintln!` (a binary run by hand — or the live gate
-//! asserting the token — must see the reason without `journalctl`) and
-//! journald via `tracing::error!`. The texts are the gate's tokens
-//! ("is not this node's routed mesh address" is matched verbatim): change
-//! nothing here without changing the gate.
+//! stderr via `eprintln!` (a binary run by hand must see the reason without
+//! `journalctl`) and journald via `tracing::error!`. Unit tests below pin
+//! the operator-facing texts; no repository gate matches them verbatim.
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -59,7 +57,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn not_wg_keeps_the_gate_token() {
+    fn not_wg_keeps_the_operator_text() {
         assert_eq!(
             not_wg("127.0.0.1:4210".parse().unwrap(), "10.7.0.9"),
             "lane_bind 127.0.0.1:4210 is not this node's routed mesh address (mesh_addr \"10.7.0.9\") — the lane serves only the mesh; refusing to start"

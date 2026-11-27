@@ -113,7 +113,7 @@ impl Refusals {
         if let Some(window) = windows.peers.get_mut(&(network, class)) {
             window.pending += 1;
         } else if windows.peers.len() < MAX_REFUSAL_WINDOWS {
-            tracing::warn!(event = "tls.refused", %peer, %network, class, count = 1u64, total, "TLS handshake refused");
+            tracing::warn!(event = "tls.refused", %peer, %network, class, count = 1u64, total, "TLS attempt: {class}");
             windows.peers.insert(
                 (network, class),
                 RefusalWindow {

@@ -713,7 +713,7 @@ async fn tls_dial_timeout_is_counted_and_coalesced() {
     let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
     assert_eq!(
         log.lines()
-            .filter(|line| line.contains("TLS handshake refused") && line.contains("timeout"))
+            .filter(|line| line.contains("TLS attempt: timeout"))
             .count(),
         1,
         "{log}"

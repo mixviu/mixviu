@@ -5042,6 +5042,7 @@ async fn handle_noded_command(
                         .expect("reload metric poisoned")
                 ),
             );
+            // Combined refusal and timeout attempts, including dial connect timeouts.
             meta.insert(
                 "tls_refusals".into(),
                 serde_json::json!(state.tls_refusals.total() + mesh::tls::DIAL_REFUSALS.total()),

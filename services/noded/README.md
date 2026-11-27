@@ -25,7 +25,8 @@ handshake slot; a full queue refuses new arrivals. Refusals warn once per IP
 address (IPv6 /64) and class, then coalesce for 60 seconds. Expired windows
 report pending counts before removal. At most 4096 windows are retained;
 additional sources share one overflow window and counter. `noded.info` exposes
-`meta.tls_refusals`, including suppressed listener and dialler attempts.
+`meta.tls_refusals`, the combined total of listener and dialler refusals and
+timeouts (including connect timeouts and suppressed attempts).
 `meta.tls_refusal_overflow` counts attempts assigned to the overflow bucket.
 
 Source buckets start with 20 tokens and refill at 10 tokens per second. IPv4
@@ -42,7 +43,8 @@ These settings do not affect legacy connections when TLS is absent.
 
 Reading `noded.info` flushes expired TLS refusal summaries, including a burst
 followed by silence. The first overflow for each class retains its peer address.
-Existing aggregate counters retain their meaning. Additive `meta` fields are:
+`tls_refusals` now includes dial connect timeouts; use the separate `outcomes`
+counters below to distinguish refusals from timeouts. Additive `meta` fields are:
 
 - `tls_inbound` and `tls_dial`: separate `classes` maps of lifetime totals,
   `total`, `overflow`, and `outcomes` (`admitted`, `refused`, `timeout`).

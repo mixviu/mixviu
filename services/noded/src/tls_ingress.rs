@@ -135,10 +135,14 @@ impl TlsListener {
                             Ok(Ok(accepted)) => {
                                 // A slow HTTP accept consumer cannot retain a
                                 // handshake slot waiting for delivery capacity.
-                                if tx.try_send(accepted).is_err() {
-                                    refusals.record(peer, "ready-queue-full");
-                                } else {
-                                    refusals.admitted();
+                                match tx.try_send(accepted) {
+                                    Ok(()) => refusals.admitted(),
+                                    Err(mpsc::error::TrySendError::Full(_)) => {
+                                        refusals.record(peer, "ready-queue-full");
+                                    }
+                                    Err(mpsc::error::TrySendError::Closed(_)) => {
+                                        refusals.record(peer, "ready-queue-closed");
+                                    }
                                 }
                             }
                         }
