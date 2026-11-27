@@ -80,6 +80,11 @@ impl Fixture {
         smtp: bool,
         to: &str,
     ) -> Result<Option<mds::ItemId>> {
+        self.deliver_proof(bytes, external, smtp, to, true).await
+    }
+    async fn deliver_proof(
+        &self, bytes: &[u8], external: bool, smtp: bool, to: &str, verified: bool,
+    ) -> Result<Option<mds::ItemId>> {
         let domains = ["example.com".to_string()];
         delivery::deliver(
             &self.db,
@@ -95,7 +100,7 @@ impl Fixture {
                     .unwrap(),
                 default_tags: Tags::new(),
                 external_domains: if external { &domains } else { &[] },
-                sender_verified: true,
+                sender_verified: verified,
                 spam: false,
                 smtp_reject: smtp,
                 routing: None,
@@ -117,6 +122,66 @@ impl Fixture {
     }
 }
 const MESSAGE: &[u8] = b"From: sender@example.org\r\nTo: bob@example.com\r\nSubject: test\r\nMessage-ID: <one@example.org>\r\n\r\nHello\r\n";
+
+#[tokio::test]
+async fn doorway_local_redirects_are_guarded_and_unguarded_local_is_unchanged() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.db.conn.lock().unwrap().execute("UPDATE accounts SET allowed_recipients='[\"mc@example.org\"]',send_rate=1 WHERE id=1", [])?;
+    f.script(r#"redirect "alice@example.com";"#).await?;
+    f.deliver(MESSAGE, false, false).await?;
+    let inbox = f.ms.mailbox_by_role(2, MailboxRole::Inbox)?.unwrap();
+    assert!(f.ms.list_emails_in_mailbox(2, inbox, ListOpts::default())?.is_empty());
+    assert_eq!(f.count("Inbox"), 1);
+    f.db.conn.lock().unwrap().execute("UPDATE accounts SET allowed_recipients='[\"alice@example.com\"]' WHERE id=1", [])?;
+    f.deliver(MESSAGE, false, false).await?;
+    assert_eq!(f.ms.list_emails_in_mailbox(2, inbox, ListOpts::default())?.len(), 1);
+    assert_eq!(f.db.conn.lock().unwrap().query_row("SELECT count(*) FROM submission_rate WHERE account_id=1", [], |r| r.get::<_, i64>(0))?, 1);
+    f.deliver(MESSAGE, false, false).await?;
+    assert_eq!(f.ms.list_emails_in_mailbox(2, inbox, ListOpts::default())?.len(), 1);
+    assert_eq!(f.count("Inbox"), 2);
+    let f = Fixture::new().await?;
+    f.script(r#"redirect "alice@example.com";"#).await?;
+    f.deliver(MESSAGE, false, false).await?;
+    let inbox = f.ms.mailbox_by_role(2, MailboxRole::Inbox)?.unwrap();
+    assert_eq!(f.ms.list_emails_in_mailbox(2, inbox, ListOpts::default())?.len(), 1);
+    assert_eq!(f.db.conn.lock().unwrap().query_row("SELECT count(*) FROM submission_rate", [], |r| r.get::<_, i64>(0))?, 0);
+    Ok(())
+}
+
+#[tokio::test]
+async fn doorway_forged_replies_cost_nothing_and_verified_reject_is_suppressed() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.db.conn.lock().unwrap().execute("UPDATE accounts SET allowed_recipients='[\"sender@example.org\"]',send_rate=10 WHERE id=1", [])?;
+    for script in [r#"require "vacation"; vacation "Away";"#, r#"require "reject"; reject "No";"#] {
+        f.script(script).await?;
+        f.deliver_proof(MESSAGE, true, false, "bob@example.com", false).await?;
+    }
+    assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
+    assert_eq!(f.db.conn.lock().unwrap().query_row("SELECT count(*) FROM submission_rate", [], |r| r.get::<_, i64>(0))?, 0);
+    // Same envelope sender, now verified. A stable account-wide reject handle
+    // suppresses repeats even if the script's rejection text changes.
+    f.deliver_proof(MESSAGE, true, false, "bob@example.com", true).await?;
+    f.script(r#"require "reject"; reject "Changed reason";"#).await?;
+    f.deliver_proof(MESSAGE, true, false, "bob@example.com", true).await?;
+    assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 1);
+    assert_eq!(f.db.conn.lock().unwrap().query_row("SELECT count(*) FROM submission_rate", [], |r| r.get::<_, i64>(0))?, 1);
+    Ok(())
+}
+
+#[tokio::test]
+async fn native_bus_submission_enforces_recipient_and_rate_guards() -> Result<()> {
+    let f = Fixture::new().await?;
+    f.db.conn.lock().unwrap().execute("UPDATE accounts SET allowed_recipients='[\"bob@example.com\"]',send_rate=1 WHERE id=2", [])?;
+    let aliases = Arc::new(::props::Runtime::new("maild", maild::props::aliases::spec(::props::Hooks::noop()), Arc::new(::props::MemoryStore::new("maild"))));
+    for (id, to, ok) in [("denied", "outside@example.net", false), ("allowed", "bob@example.com", true), ("limited", "bob@example.com", false)] {
+        let cmd = ::bus::IncomingCommand { generation:0,from:"test".into(),command:"maild.submit".into(),id:None,args:serde_json::Value::Null,headers:Default::default(),body:serde_json::json!({"operation_id":id,"account":"alice@example.com","to":[to],"subject":"guard","text":"body"}).to_string() };
+        let (rc, body) = maild::bus::submission::dispatch(&cmd, &f.db, &f.ms, &aliases, 1024 * 1024).await;
+        assert_eq!(rc == 0, ok, "{body}");
+    }
+    assert_eq!(f.count("Inbox"), 1);
+    assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
+    Ok(())
+}
 
 #[tokio::test]
 async fn doorway_redirect_fanout_reserves_every_message_atomically() -> Result<()> {

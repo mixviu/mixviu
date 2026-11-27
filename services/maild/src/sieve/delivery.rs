@@ -80,6 +80,13 @@ pub struct Delivery<'a> {
     pub routing: Option<&'a Routing<'a>>,
 }
 
+fn reply_proof(delivery: &Delivery<'_>) -> bool {
+    delivery.routing.map_or(delivery.sender_verified, |routing| {
+        routing.ingress.is_local_auth()
+            || crate::smtp::inbound::reply_sender_verified(routing.verify, delivery.from)
+    })
+}
+
 fn flags(raw: &[String]) -> Result<(Flags, Tags)> {
     let mut bits = 0;
     let mut tags = Vec::new();
@@ -303,15 +310,12 @@ async fn deliver_inner(
                 .map(|(_, d)| d)
                 .unwrap_or("example.com");
             let bytes = rejection_report(domain, delivery.from, delivery.to, reason);
-            if crate::submission_guard::generated_allowed(
-                db,
-                delivery.account.id,
-                &[delivery.from.to_string()],
-            )
-            .await
-            {
-                enqueue(db, ms, "", delivery.from, &bytes).await?;
-            }
+            let hash = ms.put_blob(&bytes)?;
+            store::queue_automatic_reply(db, store::AutomaticReply {
+                account: delivery.account.id, sender: delivery.from.into(),
+                handle: "guarded-reject".into(), days: 1, hash,
+                verified_sender: reply_proof(&delivery), guarded_only_suppression: true,
+            }).await?;
         } else {
             tracing::info!(
                 account = delivery.account.id,
@@ -601,21 +605,14 @@ async fn validate(
             );
         }
     }
-    let remote: Vec<String> = redirects
+    let targets: Vec<(String, bool)> = redirects
         .iter()
-        .filter(|(_, local)| local.is_none())
-        .map(|(target, _)| target.clone())
+        .map(|(target, local)| (target.clone(), local.is_some()))
         .collect();
-    if !remote.is_empty()
-        && !crate::submission_guard::generated_messages_allowed(
-            db,
-            delivery.account.id,
-            &remote,
-            remote.len(),
-        )
-        .await
+    if !targets.is_empty()
+        && !crate::submission_guard::redirects_allowed(db, delivery.account.id, targets).await
     {
-        anyhow::bail!("account submission guard refused remote redirects");
+        anyhow::bail!("account submission guard refused redirects");
     }
     Ok(redirects)
 }
@@ -899,28 +896,15 @@ async fn vacation_reply(
         }
         bytes = mime_reply;
     }
-    if !crate::submission_guard::generated_allowed(
-        db,
-        delivery.account.id,
-        &[delivery.from.to_string()],
-    )
-    .await
-    {
-        return Ok(());
-    }
     // Null reverse path prevents replies to this automatic response; From
     // identifies the account for the normal queue worker's DKIM selection.
     let ms = ms.clone();
     let hash = tokio::task::spawn_blocking(move || ms.mds().put_blob(&bytes)).await??;
-    store::queue_reply(
-        db,
-        delivery.account.id,
-        delivery.from,
-        &vacation.handle,
-        vacation.days,
-        hash,
-    )
-    .await?;
+    store::queue_automatic_reply(db, store::AutomaticReply {
+        account: delivery.account.id, sender: delivery.from.into(),
+        handle: vacation.handle.clone(), days: vacation.days, hash,
+        verified_sender: reply_proof(delivery), guarded_only_suppression: false,
+    }).await?;
     Ok(())
 }
 

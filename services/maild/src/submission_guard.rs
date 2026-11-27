@@ -57,7 +57,17 @@ fn reserve(
 }
 
 fn reserve_messages(
-    conn: &mut rusqlite::Connection,
+    conn: &mut rusqlite::Connection, account: i32, recipients: &[String], now: i64, messages: usize,
+) -> Result<()> {
+    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+    reserve_on(&tx, account, recipients, now, messages)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Caller holds an IMMEDIATE transaction, shared with reply suppression/queueing.
+pub(crate) fn reserve_on(
+    tx: &rusqlite::Connection,
     account: i32,
     recipients: &[String],
     now: i64,
@@ -68,7 +78,6 @@ fn reserve_messages(
         messages > 0,
         "reservation must contain at least one message"
     );
-    let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let (allowed, rate): (Option<String>, Option<i64>) = tx.query_row(
         "SELECT allowed_recipients, send_rate FROM accounts WHERE id=?1",
         [account],
@@ -102,12 +111,46 @@ fn reserve_messages(
             rusqlite::params![account, now],
         )?;
     }
-    tx.commit()?;
     Ok(())
 }
 
 pub async fn admit(db: &Db, account: i32, recipients: &[String]) -> Result<()> {
     admit_messages(db, account, recipients, 1).await
+}
+
+pub(crate) fn guarded_on(conn: &rusqlite::Connection, account: i32) -> Result<bool> {
+    Ok(conn.query_row("SELECT allowed_recipients IS NOT NULL OR send_rate IS NOT NULL FROM accounts WHERE id=?1", [account], |r| r.get(0))?)
+}
+
+pub(crate) async fn is_guarded(db: &Db, account: i32) -> Result<bool> {
+    let conn = db.conn.clone();
+    tokio::task::spawn_blocking(move || {
+        let conn = conn.lock().map_err(|_| anyhow::anyhow!("submission DB lock poisoned"))?;
+        guarded_on(&conn, account)
+    }).await?
+}
+
+pub(crate) async fn redirects_allowed(db: &Db, account: i32, targets: Vec<(String, bool)>) -> bool {
+    let conn = db.conn.clone();
+    let result = tokio::task::spawn_blocking(move || -> Result<()> {
+        let mut conn = conn.lock().map_err(|_| anyhow::anyhow!("submission DB lock poisoned"))?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let guarded = guarded_on(&tx, account)?;
+        let recipients: Vec<String> = targets.into_iter().filter(|(_, local)| guarded || !local).map(|(target, _)| target).collect();
+        if !recipients.is_empty() {
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
+            reserve_on(&tx, account, &recipients, now, recipients.len())?;
+        }
+        tx.commit()?;
+        Ok(())
+    }).await;
+    match result {
+        Ok(Ok(())) => true,
+        error => {
+            tracing::warn!(account, ?error, "Account redirect batch suppressed by submission guard");
+            false
+        }
+    }
 }
 
 async fn admit_messages(
@@ -128,29 +171,6 @@ async fn admit_messages(
         reserve_messages(&mut conn, account, &recipients, now, messages)
     })
     .await?
-}
-
-/// Account-authored automatic mail must not reopen a doorway. Suppression,
-/// including storage failure, never turns the original delivery into a bounce.
-pub(crate) async fn generated_allowed(db: &Db, account: i32, recipients: &[String]) -> bool {
-    generated_messages_allowed(db, account, recipients, 1).await
-}
-
-/// Reserve the entire fan-out atomically: each separately queued message costs
-/// one slot. Ordinary multi-recipient submissions and single replies cost one.
-pub(crate) async fn generated_messages_allowed(
-    db: &Db,
-    account: i32,
-    recipients: &[String],
-    messages: usize,
-) -> bool {
-    match admit_messages(db, account, recipients, messages).await {
-        Ok(()) => true,
-        Err(error) => {
-            tracing::warn!(account, %error, "Account-generated outbound mail suppressed by submission guard");
-            false
-        }
-    }
 }
 
 #[cfg(test)]

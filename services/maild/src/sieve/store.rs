@@ -269,32 +269,57 @@ pub async fn reply_due(
 
 pub const MAX_REPLY_STAMPS: usize = 10_000;
 
+/// Trusted internal callers may use this compatibility API. SMTP delivery must
+/// supply its envelope-bound proof through queue_automatic_reply.
 pub async fn queue_reply(
-    db: &Db,
-    account: i32,
-    sender: &str,
-    handle: &str,
-    days: u32,
-    hash: mds::BlobHash,
+    db: &Db, account: i32, sender: &str, handle: &str, days: u32, hash: mds::BlobHash,
 ) -> Result<bool> {
-    let recipient = sender.to_string();
+    queue_automatic_reply(db, AutomaticReply {
+        account, sender: sender.into(), handle: handle.into(), days, hash,
+        verified_sender: true, guarded_only_suppression: false,
+    }).await
+}
+
+pub(crate) struct AutomaticReply {
+    pub account: i32,
+    pub sender: String,
+    pub handle: String,
+    pub days: u32,
+    pub hash: mds::BlobHash,
+    pub verified_sender: bool,
+    pub guarded_only_suppression: bool,
+}
+
+/// Proof check, suppression stamp, quota and queue insert share one transaction.
+/// Refusal rolls everything back: forged/repeated input consumes zero quota.
+pub(crate) async fn queue_automatic_reply(db: &Db, reply: AutomaticReply) -> Result<bool> {
+    let AutomaticReply { account, sender, handle, days, hash, verified_sender, guarded_only_suppression } = reply;
+    let recipient = sender.clone();
     let sender = sender.to_ascii_lowercase();
     let handle = blake3::hash(handle.as_bytes()).to_hex().to_string();
     access(db, move |conn| {
-        let tx = conn.transaction()?;
-        tx.execute("DELETE FROM sieve_replies WHERE account_id=?1 AND sent_at<=unixepoch()-31*86400",[account])?;
-        let known: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM sieve_replies WHERE account_id=?1 AND sender=?2 AND handle=?3)",params![account,sender,handle],|r|r.get(0))?;
-        let count: i64 = tx.query_row("SELECT count(*) FROM sieve_replies WHERE account_id=?1",[account],|r|r.get(0))?;
-        if !known && count >= MAX_REPLY_STAMPS as i64 {
-            // Never evict a live suppression stamp: that would permit repeated
-            // replies inside the sender's interval. Suppress new pairs instead.
-            tx.commit()?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let guarded = crate::submission_guard::guarded_on(&tx, account)?;
+        if guarded && !verified_sender {
+            tracing::warn!(account, "Automatic reply suppressed: unverified envelope sender");
             return Ok(false);
         }
-        let due = tx.execute("INSERT INTO sieve_replies(account_id,sender,handle,sent_at) VALUES(?1,?2,?3,unixepoch()) ON CONFLICT(account_id,sender,handle) DO UPDATE SET sent_at=unixepoch() WHERE sent_at<=unixepoch()-?4",params![account,sender,handle,i64::from(days.clamp(1,31))*86400])? > 0;
-        let queued = if due { Some(crate::smtp::queue::enqueue_on(&tx,"",std::slice::from_ref(&recipient),hash)?) } else { None };
+        if guarded || !guarded_only_suppression {
+            tx.execute("DELETE FROM sieve_replies WHERE account_id=?1 AND sent_at<=unixepoch()-31*86400",[account])?;
+            let known: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM sieve_replies WHERE account_id=?1 AND sender=?2 AND handle=?3)",params![account,sender,handle],|r|r.get(0))?;
+            let count: i64 = tx.query_row("SELECT count(*) FROM sieve_replies WHERE account_id=?1",[account],|r|r.get(0))?;
+            if !known && count >= MAX_REPLY_STAMPS as i64 { return Ok(false); }
+            let due = tx.execute("INSERT INTO sieve_replies(account_id,sender,handle,sent_at) VALUES(?1,?2,?3,unixepoch()) ON CONFLICT(account_id,sender,handle) DO UPDATE SET sent_at=unixepoch() WHERE sent_at<=unixepoch()-?4",params![account,sender,handle,i64::from(days.clamp(1,31))*86400])? > 0;
+            if !due { return Ok(false); }
+        }
+        let now: i64 = tx.query_row("SELECT unixepoch()", [], |r| r.get(0))?;
+        if let Err(error) = crate::submission_guard::reserve_on(&tx, account, std::slice::from_ref(&recipient), now, 1) {
+            tracing::warn!(account, %error, "Automatic reply suppressed by submission guard");
+            return Ok(false);
+        }
+        let queue_id = crate::smtp::queue::enqueue_on(&tx, "", std::slice::from_ref(&recipient), hash)?;
         tx.commit()?;
-        if let Some(queue_id) = queued { tracing::info!(queue_id,account,"Sieve vacation reply queued"); }
-        Ok(due)
+        tracing::info!(queue_id, account, "Automatic reply queued");
+        Ok(true)
     }).await
 }
