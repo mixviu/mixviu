@@ -274,6 +274,8 @@ end
 
 -- Keep in step with config::app_id: identity aliases, never launch policy.
 fn canonical_app_id($id)
+  -- The reference gallery's mixviu.gallery.<mode> is a different application.
+  if starts_with($id, "mixviu.gallery.") and not contains(["desktop", "svg", "png"], substr($id, 15)) then return $id end
   if starts_with($id, "dev.mixos.") then return "dev.mix." .. substr($id, 10) end
   if starts_with($id, "mixviu.") then
     $rest = substr($id, 7)

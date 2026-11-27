@@ -269,16 +269,26 @@ try
   $root = realpath(dirname(realpath($0)) .. "/../../..")
   $legacy_ids = load_data(dirname(realpath($0)) .. "/fixtures/apps/legacy-ids.conf.mix")
   $data = require("../../../share/scenes/lib/data.mix")
+  $lab = require("../../../apps/volume-lab/lib/data.mix")
+  check(read_link($root .. "/apps/volume-lab/lib/data.mix") == "../../../share/scenes/lib/data.mix", "volume lab shares the scene data source")
+  -- apps_bundle.place uses copy: the installed specimen gets a regular file,
+  -- not a relative symlink into the source checkout.
+  copy($root .. "/apps/volume-lab/lib/data.mix", $tmp .. "/bundled-data.mix")
+  check(not stat($tmp .. "/bundled-data.mix", {follow_symlinks:false}).is_symlink, "bundle copy materialises shared helper")
+  $bundled = require($tmp .. "/bundled-data.mix")
   for $ids in $legacy_ids
     check($a.canonical_app_id($ids.old) == $ids.current, "legacy canonical key")
     check($data.canonical_app_id($ids.old) == $ids.current, "scene compatibility agrees with apps")
+    check($lab.canonical_app_id($ids.old) == $ids.current, "volume lab compatibility agrees with apps")
+    check($bundled.canonical_app_id($ids.old) == $ids.current, "bundled volume lab compatibility agrees with apps")
     check($a.find_app([{id:$ids.old}], $ids.current).id == $ids.old, "new window resolves old desktop entry")
     check($a.find_app([{id:$ids.current}], $ids.old).id == $ids.current, "old pin resolves new desktop entry")
     check($a.find_app([{id:$ids.old}, {id:$ids.current}], $ids.old).id == $ids.current, "canonical desktop wins")
-    check($data.pinned([{id:$ids.old}])[0].id == $ids.old, "launcher retains legacy-only entries")
+    $expected = starts_with($ids.old, "dev.mixos.") ? [{id:$ids.old}] : []
     for $entries in [[{id:$ids.old}, {id:$ids.current}], [{id:$ids.current}, {id:$ids.old}]]
-      $pins = $data.pinned($entries)
-      check(len($pins) == 1 and $pins[0].id == $ids.current, "launcher prefers canonical entry in either order")
+      check(deep_eq($data.pinned($entries), $expected), "launcher preserves main pin set")
+      check(deep_eq($lab.pinned($entries), $expected), "volume lab preserves main pin set")
+      check(deep_eq($bundled.pinned($entries), $expected), "bundled lab preserves main pin set")
     end
     -- Old icon only, then canonical only, then a collision. Fresh context for
     -- each fixture prevents a cached theme from hiding a lookup regression.
@@ -297,8 +307,23 @@ try
     $hit = $a.resolve_icon($ctx, $ids.old .. "-symbolic", 24, 1, "Compat")
     check($hit.hit.path == $tmp .. "/" .. $new_icon, "old request reads new icon")
   end
-  check($a.find_app([{id:"org.example.ced"}], "dev.mix.ced") == nil, "vendor IDs stay separate")
-  check(len($data.pinned([{id:"mixviu.terminal"}, {id:"org.example.ced"}])) == 0, "unrelated IDs are not pinned")
+  for $id in ["dev.mixos.ced-extra", "mixviu.terminal", "mixviu.term-mixer", "mixviu.gallery.native"]
+    fixture("negative/applications/" .. $id .. ".desktop", "[Desktop Entry]\nType=Application\nName=Negative\nExec=fixture-not-launched\nIcon=" .. $id .. "\n")
+    fixture("negative/icons/Compat/scalable/apps/" .. $id .. ".svg", "<svg/>")
+  end
+  fixture("negative/icons/Compat/index.theme", "[Icon Theme]\nDirectories=scalable/apps\n[scalable/apps]\nSize=24\nType=Scalable\n")
+  $negative = $a.scan_apps([$tmp .. "/negative/applications"], "", "MIXOS")
+  check(len($negative) == 4, "negative desktop fixtures actually scanned")
+  $ctx = {icon_dirs:[$tmp .. "/negative/icons"], pixmaps:$tmp .. "/absent", cache:{}}
+  for $id in ["dev.mix.ced", "dev.mix.term", "dev.mix.gallery.native"]
+    check($a.find_app($negative, $id) == nil, "similar desktop ID is not an alias: " .. $id)
+    check($a.resolve_icon($ctx, $id, 24, 1, "Compat").hit == nil, "similar icon name is not an alias: " .. $id)
+  end
+  for $id in ["mixviu.terminal", "mixviu.term-mixer", "mixviu.gallery.native", "mixviu.gallery.light"]
+    check($a.canonical_app_id($id) == $id and $data.canonical_app_id($id) == $id and $lab.canonical_app_id($id) == $id, "unrelated app keeps its identity")
+  end
+  check($a.find_app($negative, "mixviu.gallery.native").id == "mixviu.gallery.native", "reference gallery resolves only its own ID")
+  check(deep_eq($data.pinned([{id:"firefox"}, {id:"dev.mixos.prefs"}, {id:"mixviu.ced"}, {id:"dev.mix.prefs"}]), [{id:"firefox"}, {id:"dev.mixos.prefs"}]), "main launcher pins unchanged")
 
   -- #300 ships apps/<app>/<id>.desktop, already rendered for /opt/mix.
   -- TryExec is optional in the desktop-entry spec and absent in these entries;

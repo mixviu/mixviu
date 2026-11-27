@@ -4,5 +4,13 @@
   {old: "dev.mixos.term", current: "dev.mix.term"},
   {old: "mixviu.term", current: "dev.mix.term"},
   {old: "mixviu.term-mix", current: "dev.mix.term"},
-  {old: "dev.mixos.prefs", current: "dev.mix.prefs"}
+  {old: "dev.mixos.prefs", current: "dev.mix.prefs"},
+  {old: "dev.mixos.deck", current: "dev.mix.deck"},
+  {old: "mixviu.deck", current: "dev.mix.deck"},
+  {old: "dev.mixos.bustap", current: "dev.mix.bustap"},
+  {old: "mixviu.bustap", current: "dev.mix.bustap"},
+  {old: "dev.mixos.gallery", current: "dev.mix.gallery"},
+  {old: "mixviu.gallery", current: "dev.mix.gallery"},
+  {old: "mixviu.gallery-mix", current: "dev.mix.gallery"},
+  {old: "dev.mixos.email.compose-2", current: "dev.mix.email.compose-2"}
 ]

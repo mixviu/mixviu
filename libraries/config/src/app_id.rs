@@ -2,6 +2,13 @@
 //! Compatibility keys at lookup boundaries; live window IDs stay authored.
 
 pub fn canonical(id: &str) -> String {
+    // gallery-reference owns mixviu.gallery.<mode>; it is not the Mix gallery.
+    // Only desktop/icon filename extensions belong to the base gallery alias.
+    if let Some(tail) = id.strip_prefix("mixviu.gallery.")
+        && !matches!(tail, "desktop" | "svg" | "png")
+    {
+        return id.into();
+    }
     if let Some(rest) = id.strip_prefix("dev.mixos.") {
         return format!("dev.mix.{rest}");
     }
@@ -51,6 +58,13 @@ mod tests {
     use super::*;
     #[test]
     fn canonical_keys_preserve_secondary_windows_and_vendor_ids() {
+        let cases: Vec<serde_json::Value> = strict::from_str(include_str!("../../../engines/viud/tests/fixtures/apps/legacy-ids.conf.mix")).unwrap();
+        for case in cases {
+            let old = case["old"].as_str().unwrap();
+            let current = case["current"].as_str().unwrap();
+            assert_eq!(canonical(old), current);
+            assert!(candidates(current).contains(&old.to_owned()));
+        }
         for app in ["ced", "term", "deck", "bustap", "gallery"] {
             let new = format!("dev.mix.{app}");
             assert_eq!(canonical(&format!("dev.mixos.{app}")), new);
@@ -66,6 +80,9 @@ mod tests {
         for id in [
             "org.example.app",
             "mixviu.terminal",
+            "mixviu.term-mixer",
+            "mixviu.gallery.native",
+            "mixviu.gallery.light",
             "dev.mixos",
             "/icons/dev.mixos.ced.svg",
         ] {

@@ -119,6 +119,8 @@ $PINNED_APPS = ["firefox", "org.mozilla.firefox", "thunderbird", "org.mozilla.Th
 -- Same identity compatibility as apps.canonical_app_id / config::app_id.
 -- Kept pure here so scene data helpers need no installed apps service.
 fn canonical_app_id($id)
+  -- The reference gallery's mixviu.gallery.<mode> is a different application.
+  if starts_with($id, "mixviu.gallery.") and not contains(["desktop", "svg", "png"], substr($id, 15)) then return $id end
   if starts_with($id, "dev.mixos.") then return "dev.mix." .. substr($id, 10) end
   if starts_with($id, "mixviu.") then
     $rest = substr($id, 7)
@@ -135,22 +137,14 @@ fn canonical_app_id($id)
   return $id
 end
 
--- The launcher's default view: Mix apps plus Firefox and Thunderbird.
--- Keep the real entry ID for launch; canonical entries win duplicate aliases.
+-- Preserve main's pin set in PR A. PR B changes the authored identity policy.
 fn pinned($apps)
-  $order = []
-  $chosen = {}
+  $out = []
   for each $a in $apps
     $id = $a.id ?? ""
-    $key = canonical_app_id($id)
-    if (starts_with($id, "dev.mixos.") or starts_with($id, "dev.mix.") or
-      contains(["mixviu.ced", "mixviu.term", "mixviu.term-mix", "mixviu.deck", "mixviu.bustap", "mixviu.gallery", "mixviu.gallery-mix"], $id) or
-      contains($PINNED_APPS, $id)) then
-      if not has_key($chosen, $key) then push($order, $key) end
-      if not has_key($chosen, $key) or $id == $key then $chosen[$key] = $a end
-    end
+    if starts_with($id, "dev.mixos.") or contains($PINNED_APPS, $id) then push($out, $a) end
   end
-  return map($order, fn($key) = $chosen[$key])
+  return $out
 end
 
 fn category_label($cat)
