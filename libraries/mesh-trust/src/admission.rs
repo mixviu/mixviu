@@ -78,6 +78,8 @@ use crate::sig::{SigError, sign_ed25519, verify_ed25519};
 pub const ADMIT_DOMAIN_V1: &str = "mixos-d2-admit-v1";
 /// The credential `kind` that authorises D2 admission (§6.1).
 pub const D2_CRED_KIND: &str = "d2";
+/// Dedicated, independently rotated TLS transport credential.
+pub const BUS_TLS_CRED_KIND: &str = "bus-tls";
 /// The credential `kind` that carries the D0 WireGuard transport key (§6.1) —
 /// the X25519 public key `mixos-wgd` derives its intended kernel peer set
 /// from. Consumed by the WG control plane, never by D2 admission.
@@ -181,13 +183,22 @@ pub enum AdmissionError {
 /// missing `from_epoch`, with a malformed `until_epoch`, or a non-32-byte
 /// pubkey is **skipped** (never defaulted to "valid from genesis").
 pub fn select_d2_pubkeys(member: &Value, current_epoch: u64) -> Vec<Vec<u8>> {
+    select_signing_pubkeys(member, current_epoch, D2_CRED_KIND)
+}
+
+/// Current TLS keys, using exactly the D2 half-open, fail-closed policy.
+pub fn select_bus_tls_pubkeys(member: &Value, current_epoch: u64) -> Vec<Vec<u8>> {
+    select_signing_pubkeys(member, current_epoch, BUS_TLS_CRED_KIND)
+}
+
+fn select_signing_pubkeys(member: &Value, current_epoch: u64, kind: &str) -> Vec<Vec<u8>> {
     let Some(creds) = member.get("credentials").and_then(Value::as_array) else {
         return Vec::new();
     };
     creds
         .iter()
         .filter_map(|c| {
-            if c.get("kind").and_then(Value::as_str) != Some(D2_CRED_KIND) {
+            if c.get("kind").and_then(Value::as_str) != Some(kind) {
                 return None;
             }
             // from_epoch is REQUIRED — a missing/malformed one fails closed.

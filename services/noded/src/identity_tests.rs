@@ -97,7 +97,7 @@ async fn failed_reverse_proofs_never_write_application_frames_under_enforce() {
 async fn reverse_answers_are_one_shot_and_bound_to_current_admitted_peer() {
     use base64::Engine as _;
     let mut state = mesh_delivery_test_state().await;
-    state.d2_seed = Some([8; 32]);
+    state.d2_seed = Some(mesh::seed::D2Seed::new([8; 32]));
     let snapshot = state.authority.load_full();
     let crate::authority::Posture::Verified(a) = &snapshot.posture else {
         unreachable!()
@@ -139,7 +139,7 @@ async fn reverse_answers_are_one_shot_and_bound_to_current_admitted_peer() {
     }
     // The revoked-case candidate shares authority; restore a fresh state.
     let mut state = mesh_delivery_test_state().await;
-    state.d2_seed = Some([8; 32]);
+    state.d2_seed = Some(mesh::seed::D2Seed::new([8; 32]));
     // Sign the verifier-owned epoch, including either direction of skew.
     for epoch in [0, 1, 2] {
         let mut skewed = body.clone();
@@ -217,7 +217,7 @@ async fn mutual_proof_orders_listener_challenge_client_proof_then_reverse_answer
     let (state, _incoming, peer) = policy_mesh_state(listener.local_addr().unwrap()).await;
     let mut listener_state = state.clone();
     listener_state.node_name = "beta".into();
-    listener_state.d2_seed = Some([8; 32]);
+    listener_state.d2_seed = Some(mesh::seed::D2Seed::new([8; 32]));
     let mut posture = state.authority.load().posture.clone();
     if let crate::authority::Posture::Verified(a) = &mut posture {
         a.members_full.insert("alpha".into(),serde_json::json!({"name":"alpha","status":"active","bus":true,"credentials":[{
@@ -242,7 +242,7 @@ async fn mutual_proof_orders_listener_challenge_client_proof_then_reverse_answer
         MeshConfig {
             node_name: "alpha".into(),
             peers: vec![peer.clone()],
-            d2_seed: Some([7; 32]),
+            d2_seed: Some(mesh::seed::D2Seed::new([7; 32])),
         },
         incoming,
     );

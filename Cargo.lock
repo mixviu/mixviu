@@ -5759,15 +5759,22 @@ dependencies = [
  "base64 0.22.1",
  "bus",
  "config",
+ "ed25519-dalek",
  "futures-util",
+ "libc",
  "mesh-trust",
+ "rcgen 0.13.2",
+ "rustls",
  "serde",
  "serde_json",
+ "thiserror 2.0.21",
  "tokio",
  "tokio-tungstenite 0.26.2",
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "x509-parser",
+ "zeroize",
 ]
 
 [[package]]
@@ -6416,6 +6423,7 @@ dependencies = [
  "tracing",
  "tracing-log",
  "tracing-subscriber",
+ "zeroize",
 ]
 
 [[package]]

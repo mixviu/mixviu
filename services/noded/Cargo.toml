@@ -31,6 +31,7 @@ bus = { workspace = true, features = ["native"] }
 config.workspace = true
 props = { workspace = true, features = ["bus"] }
 mesh.workspace = true
+zeroize.workspace = true
 mesh-trust.workspace = true
 buildinfo.workspace = true
 anyhow.workspace = true

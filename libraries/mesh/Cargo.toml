@@ -30,6 +30,13 @@ tokio = { workspace = true, features = ["net", "io-util"] }
 tokio-tungstenite.workspace = true
 tracing.workspace = true
 uuid = { workspace = true, features = ["v4"] }
+rustls.workspace = true
+rcgen.workspace = true
+x509-parser.workspace = true
+zeroize.workspace = true
+ed25519-dalek.workspace = true
+libc.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
 tracing-subscriber.workspace = true

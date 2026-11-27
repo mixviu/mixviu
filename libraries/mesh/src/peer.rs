@@ -77,7 +77,7 @@ pub struct MeshConfig {
     /// `mix:etc/noded/d2.seed`. `None` ⇒ the node cannot prove itself
     /// (prover-incapable; the broker logs `unproven:no-proof`).
     #[serde(skip)]
-    pub d2_seed: Option<[u8; 32]>,
+    pub d2_seed: Option<crate::seed::D2Seed>,
 }
 
 impl MeshConfig {
@@ -137,7 +137,7 @@ impl MeshConfig {
 pub fn build_admit_response(
     challenge: &BusMessage,
     node_name: &str,
-    d2_seed: &Option<[u8; 32]>,
+    d2_seed: &Option<crate::seed::D2Seed>,
     expected_verifier: &str,
     expected_mesh: &str,
     local_epoch: u64,
@@ -172,7 +172,7 @@ pub fn build_admit_response(
         client_ephemeral: vec![0u8; 32],
         channel_binding_hash: vec![0u8; 32],
     };
-    let sig = sign_admission_transcript(seed, &transcript).ok()?;
+    let sig = sign_admission_transcript(seed.bytes(), &transcript).ok()?;
     let mut resp = BusMessage::new()
         .with_header("command", "noded.admit.response")
         .with_header("type", "response")
@@ -923,7 +923,7 @@ impl MeshPeers {
         outcome: watch::Sender<AttemptOutcome>,
     ) {
         let node_name = self.config.node_name.clone();
-        let d2_seed = self.config.d2_seed;
+        let d2_seed = self.config.d2_seed.clone();
         let state = self.state.clone();
         let pending = self.pending.clone();
         let incoming_tx = self.incoming_tx.clone();
@@ -989,7 +989,7 @@ async fn connect_and_publish(
     attempt_id: uuid::Uuid,
     mut attempt_cancel: watch::Receiver<bool>,
     node_name: String,
-    d2_seed: Option<[u8; 32]>,
+    d2_seed: Option<crate::seed::D2Seed>,
     state: Arc<RwLock<TransportState>>,
     pending: Arc<Mutex<HashMap<String, PendingCall>>>,
     incoming_tx: mpsc::UnboundedSender<MeshInbound>,
@@ -1534,8 +1534,15 @@ mod tests {
             })
             .to_string();
             assert!(
-                build_admit_response(&challenge, "local", &Some([9; 32]), peer, "example.test", 6)
-                    .is_some()
+                build_admit_response(
+                    &challenge,
+                    "local",
+                    &Some(crate::seed::D2Seed::new([9; 32])),
+                    peer,
+                    "example.test",
+                    6
+                )
+                .is_some()
             );
         }
         assert_eq!(super::peer_challenge_epoch("epoch-alpha"), Some(7));
@@ -1544,7 +1551,7 @@ mod tests {
             build_admit_response(
                 &challenge,
                 "local",
-                &Some([9; 32]),
+                &Some(crate::seed::D2Seed::new([9; 32])),
                 "epoch-alpha",
                 "example.test",
                 6
@@ -1639,14 +1646,39 @@ mod tests {
 
         // B dialled C (gamma), which relays A's (beta's) challenge. B must
         // not supply the signature C could forward to A to impersonate B.
-        assert!(build_admit_response(&ch, "delta", &Some([9; 32]), "gamma", "bus", 7).is_none());
         assert!(
-            build_admit_response(&ch, "delta", &Some([9; 32]), "beta", "other.example", 7)
-                .is_none()
+            build_admit_response(
+                &ch,
+                "delta",
+                &Some(crate::seed::D2Seed::new([9; 32])),
+                "gamma",
+                "bus",
+                7
+            )
+            .is_none()
+        );
+        assert!(
+            build_admit_response(
+                &ch,
+                "delta",
+                &Some(crate::seed::D2Seed::new([9; 32])),
+                "beta",
+                "other.example",
+                7
+            )
+            .is_none()
         );
         for epoch in [6, 8] {
             assert!(
-                build_admit_response(&ch, "delta", &Some([9; 32]), "beta", "bus", epoch).is_some()
+                build_admit_response(
+                    &ch,
+                    "delta",
+                    &Some(crate::seed::D2Seed::new([9; 32])),
+                    "beta",
+                    "bus",
+                    epoch
+                )
+                .is_some()
             );
         }
 
@@ -1654,8 +1686,15 @@ mod tests {
         assert!(build_admit_response(&ch, "delta", &None, "beta", "bus", 7).is_none());
 
         // With a seed → a well-shaped response.
-        let wire = build_admit_response(&ch, "delta", &Some([9u8; 32]), "beta", "bus", 7)
-            .expect("response");
+        let wire = build_admit_response(
+            &ch,
+            "delta",
+            &Some(crate::seed::D2Seed::new([9u8; 32])),
+            "beta",
+            "bus",
+            7,
+        )
+        .expect("response");
         let resp = bus::parse(&wire).expect("parse");
         assert_eq!(resp.command_name(), Some("noded.admit.response"));
         assert_eq!(
@@ -2380,7 +2419,7 @@ mod tests {
                 MeshConfig {
                     node_name: "alpha".into(),
                     peers: vec![beta.clone()],
-                    d2_seed: Some([9; 32]),
+                    d2_seed: Some(crate::seed::D2Seed::new([9; 32])),
                 },
                 tx,
             );
