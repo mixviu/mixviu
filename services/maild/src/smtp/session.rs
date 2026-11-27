@@ -4,6 +4,7 @@
 //! SMTP session state machine.
 //!
 //! Handles the SMTP conversation: EHLO → STARTTLS → AUTH → MAIL FROM → RCPT TO → DATA.
+use maild_auth::Verifier;
 
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
