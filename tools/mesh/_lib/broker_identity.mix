@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.0.1
+-- version: 0.0.2
 -- Pure separate-principal contract. No account, path or service is created.
 $targets = require("targets.mix")
 
@@ -56,6 +56,7 @@ fn node_configs($target,$broker,$client)
   $t = $targets.checked_target($target)
   if $t.identity_schema != 2 then fail("separate-principal target required") end
   if type($broker) != "map" or type($broker.noded) != "map" or type($client) != "map" then fail("broker and public client configurations required") end
+  if contains(keys($broker),"mesh_addr") and contains(keys($broker),"wg_ip") then fail("setting both mesh_addr and wg_ip refuses startup") end
   -- Public client config contains identity and endpoint only, never a private
   -- seed, authority store or an application runtime/state override.
   $expected = {node:$broker.node,mesh:$broker.mesh,noded:{port:$broker.noded.port,unix_socket:$t.broker_endpoint}}; $expected[if $client.mesh_addr != nil then "mesh_addr" else "wg_ip" end] = $broker.mesh_addr ?? $broker.wg_ip

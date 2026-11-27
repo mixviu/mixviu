@@ -1,10 +1,15 @@
 -- SPDX-License-Identifier: MIT OR Apache-2.0
--- version: 0.0.1
+-- version: 0.0.2
 -- Namespace-local primitives. dispatch is the only remote entry point.
 -- Requiring this module never performs I/O or runs a service command.
 
 fn refuse($message)
   raise("DESK_DISTRIBUTOR", $message)
+end
+
+fn config_address($config)
+  if contains(keys($config),"mesh_addr") and contains(keys($config),"wg_ip") then refuse("setting both mesh_addr and wg_ip refuses startup") end
+  return $config.mesh_addr ?? $config.wg_ip
 end
 
 fn plain($value)
@@ -161,7 +166,7 @@ fn namespace_context($request)
   $config_state = file_state($config_path)
   if not $config_state.present or $config_state.uid != 0 or $config_state.gid != $gid or $config_state.perm != 0o640 then refuse("node configuration ownership mismatch") end
   $config = data_parse(stable_text($config_path,$config_state))
-  if $config.node != $t.node or $config.mesh != $request.mesh or ($config.mesh_addr ?? $config.wg_ip) != $request.ip or $config.noded.port != $request.port or $config.noded.mesh_config != $t.etc .. "/noded/config.conf.mix" or $config.noded.unix_socket != $t.run .. "/noded/bus.sock" or $config.noded.admission != $request.admission then refuse("node config identity, endpoint or posture differs from authenticated plan") end
+  if $config.node != $t.node or $config.mesh != $request.mesh or config_address($config) != $request.ip or $config.noded.port != $request.port or $config.noded.mesh_config != $t.etc .. "/noded/config.conf.mix" or $config.noded.unix_socket != $t.run .. "/noded/bus.sock" or $config.noded.admission != $request.admission then refuse("node config identity, endpoint or posture differs from authenticated plan") end
   $paths = {genesis:$t.etc .. "/noded/genesis.pub",seed:$t.etc .. "/noded/d2.seed",seed_receipt:$t.etc .. "/noded/d2-receipt.json",roster:$t.etc .. "/noded/config.conf.mix",inventory:$t.var .. "/noded/inventory.signed"}
   $states = {}
   for $key in keys($paths)

@@ -1108,6 +1108,10 @@ async fn wait_for_attempt(
 trait PeerIo: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
 impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> PeerIo for T {}
 
+#[derive(Debug, thiserror::Error)]
+#[error("TLS session-cap")]
+struct TlsSessionCap;
+
 async fn dial(
     peer: &PeerConfig,
     tls: Option<Arc<TlsRuntime>>,
@@ -1139,7 +1143,7 @@ async fn dial(
         let binding = crate::tls::client_channel_binding(conn)?;
         let Some(session) = tls.sessions.acquire(&member.member) else {
             crate::tls::DIAL_REFUSALS.record(peer.noded_addr(), "session-cap");
-            anyhow::bail!("TLS session-cap");
+            return Err(TlsSessionCap.into());
         };
         let closed = session.closed();
         (
@@ -1201,7 +1205,7 @@ async fn connect_and_publish(
                 anyhow::bail!("Connection to {} timed out after {}ms", peer.name, CONNECT_TIMEOUT.as_millis());
             }
             Ok(Err(error)) => {
-                if peer.tls_port.is_some() && error.to_string() != "TLS session-cap" { crate::tls::DIAL_REFUSALS.record(target, "dial-or-pin"); }
+                if peer.tls_port.is_some() && !error.is::<TlsSessionCap>() { crate::tls::DIAL_REFUSALS.record(target, "dial-or-pin"); }
                 anyhow::bail!("Failed to connect to {}: {error}", peer.name)
             },
             Ok(Ok(connected)) => connected,
@@ -1683,6 +1687,12 @@ async fn fail_pending_generation(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn session_cap_kind_survives_error_context() {
+        let error = anyhow::Error::new(super::TlsSessionCap).context("dial failed");
+        assert!(error.is::<super::TlsSessionCap>());
+        assert!(!anyhow::anyhow!("TLS session-cap").is::<super::TlsSessionCap>());
+    }
     // Callsite interest is process-wide; a rebuild can still race another test.
     // Run captures alone, with a fresh cache and diagnostic counters.
     fn log_capture_subprocess(test: &str) -> bool {

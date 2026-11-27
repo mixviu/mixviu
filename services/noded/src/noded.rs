@@ -2123,12 +2123,40 @@ async fn reconcile_transport_authority(
     }
 }
 
+const RELOAD_TEARDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Observation only: expiry must never roll back the applied authority.
+async fn observe_reload_teardown(
+    closing: Vec<mpsc::Sender<String>>,
+    outbound: Vec<mesh::peer::TeardownWatch>,
+    deadline: tokio::time::Instant,
+) -> (usize, usize) {
+    let mut inbound_unsettled = 0;
+    let mut outbound_unsettled = 0;
+    for tx in closing {
+        if tokio::time::timeout_at(deadline, tx.closed()).await.is_err() {
+            inbound_unsettled += 1;
+        }
+    }
+    for transport in outbound {
+        if tokio::time::timeout_at(deadline, transport.wait_if_retired()).await.is_err() {
+            outbound_unsettled += 1;
+        }
+    }
+    if inbound_unsettled + outbound_unsettled > 0 {
+        tracing::warn!(inbound_unsettled, outbound_unsettled,
+            "Reload teardown observation timed out; authority remains applied");
+    }
+    (inbound_unsettled, outbound_unsettled)
+}
+
 /// Measure accepted reload application, excluding debounce and rejected loads.
 /// Keep this wrapper separate from the authority transaction owned by PR 4a.
 async fn apply_observed_inventory_reload(state: &AppState, new: crate::authority::Posture) {
     let verified = matches!(new, crate::authority::Posture::Verified(_));
     let previous = state.authority.load_full();
     let started = Instant::now();
+    let deadline = tokio::time::Instant::now() + RELOAD_TEARDOWN_TIMEOUT;
     let before = if state.tls.is_some() {
         state.live_sessions.read().await.clone()
     } else {
@@ -2144,12 +2172,7 @@ async fn apply_observed_inventory_reload(state: &AppState, new: crate::authority
             .map(|(_, s)| s.tx)
             .collect();
         drop(after);
-        for tx in closing {
-            tx.closed().await;
-        }
-        for transport in outbound {
-            transport.wait_if_retired().await;
-        }
+        observe_reload_teardown(closing, outbound, deadline).await;
         *state
             .reload_to_drop_ms
             .lock()
@@ -5795,6 +5818,21 @@ fn escape_json_string(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn reload_observation_bounds_receivers_that_never_drop() {
+        let (tx, rx) = tokio::sync::mpsc::channel::<String>(1);
+        let (settled_tx, settled_rx) = tokio::sync::mpsc::channel::<String>(1);
+        drop(settled_rx);
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_millis(20);
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            super::observe_reload_teardown(vec![tx.clone(), tx, settled_tx], vec![], deadline),
+        ).await.expect("teardown observation wedged");
+        assert_eq!(result, (2, 0));
+        drop(rx);
+        // A later observation can proceed after the first one expires.
+        assert_eq!(super::observe_reload_teardown(vec![], vec![], deadline).await, (0, 0));
+    }
     //! Broker regression tests, including bounded diagnostic emission.
     // A thread-local subscriber cannot isolate process-wide callsite interest.
     fn log_capture_subprocess(test: &str) -> bool {
