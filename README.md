@@ -99,7 +99,8 @@ cargo build --release --locked -p viud --bin viud
 ```
 
 For a server, `mix` and `mixd` are enough. The release set also includes
-`av`, `inputd`, `portald` and `mix-mcp`; see
+`av` (its AV1 encoder needs `nasm` to build), `inputd`, `portald` and
+`mix-mcp`; see
 [`tools/release-set.conf.mix`](tools/release-set.conf.mix).
 
 **2. Install the binaries and the Mix shell.**
@@ -114,7 +115,7 @@ mix --version
 
 ```bash
 /opt/mix/bin/mixd --personalities     # what this build carries
-cd /opt/mix/bin && sudo ln -sf mixd noded && sudo ln -sf mixd webd
+(cd /opt/mix/bin && sudo ln -sf mixd noded && sudo ln -sf mixd webd)
 ```
 
 **4. Add the apps and shared data** (Mix apps, the Viu Mix library, scenes,
