@@ -391,8 +391,8 @@ where
                     },
                     _ => super::inbound::IngressAuth::ExternalUnverified,
                 };
-                if let Some(account) = session.authenticated_account {
-                    if let Err(error) =
+                if let Some(account) = session.authenticated_account
+                    && let Err(error) =
                         crate::submission_guard::admit(&session.state.db, account, &session.rcpt_to)
                             .await
                     {
@@ -409,7 +409,6 @@ where
                         session.reset_transaction();
                         data_buf.clear();
                         continue;
-                    }
                 }
                 // : fire-and-forget for an ALL-token-shaped message closes the
                 // timing oracle. We write 250 IMMEDIATELY — no resolve/delivery

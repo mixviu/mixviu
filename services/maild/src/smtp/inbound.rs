@@ -1282,7 +1282,7 @@ pub(crate) async fn enforce_own_spf(
     let message = MessageParser::default().parse(data);
     let mut claims = vec![from.to_string()];
     if let Some(message) = &message {
-        if let Some(addresses) = message.from() {
+        for addresses in message.header_values("From").filter_map(|h| h.as_address()) {
             for addr in addresses.iter() {
                 if let Some(addr) = addr.address() {
                     claims.push(addr.to_string());
@@ -1294,9 +1294,12 @@ pub(crate) async fn enforce_own_spf(
         let Some((_, domain)) = claim.rsplit_once('@') else {
             continue;
         };
+        let Some(domain) = super::envelope::dns_domain(domain) else {
+            continue;
+        };
         let key = ::props::record::RecordKey::collection(
             crate::props::domains::namespace_name(),
-            domain.to_ascii_lowercase(),
+            domain,
         );
         let record = match domains.store().get(&key).await {
             Ok(record) => record,
@@ -1309,9 +1312,14 @@ pub(crate) async fn enforce_own_spf(
             .value
             .as_object()
             .ok_or_else(|| anyhow::anyhow!("invalid domain policy"))?;
+        let strict = match obj.get("spf_policy") {
+            Some(::props::value::PropValue::String(s)) if s == "strict" => true,
+            Some(::props::value::PropValue::String(s)) if s == "lenient" || s == "off" => false,
+            _ => anyhow::bail!("invalid domain SPF policy"),
+        };
         if view.enabled
             && view.role == "authoritative"
-            && matches!(obj.get("spf_policy"), Some(::props::value::PropValue::String(s)) if s == "strict")
+            && strict
         {
             return Err(crate::sieve::delivery::Rejected("ownDomainSpfFail".into()).into());
         }
