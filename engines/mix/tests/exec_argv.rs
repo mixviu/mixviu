@@ -5,6 +5,7 @@
 use std::io::{Read, Write};
 use std::os::fd::AsRawFd;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
+use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Output, Stdio};
 
 const MIX: &str = env!("CARGO_BIN_EXE_mix");
@@ -121,6 +122,17 @@ fn target_signal_and_path_env_options() {
     let stdout = text(&out);
     assert!(stdout.contains("SENTINEL=kept\n"), "{stdout}");
     assert!(!stdout.contains("MIX_STATS="));
+}
+
+#[test]
+fn executable_text_without_shebang_never_runs_a_shell() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("plain-text");
+    std::fs::write(&target, "/usr/bin/true\n").unwrap();
+    std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let out = run(&format!("try; exec_argv([{target:?}]); catch $e; print($e); end; print(\"CONTINUED\")"));
+    let stdout = text(&out);
+    assert!(stdout.contains("ENOEXEC") && stdout.contains("CONTINUED"), "{stdout}");
 }
 
 #[test]
