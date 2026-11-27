@@ -524,6 +524,29 @@ mod tests {
         }
     }
     #[test]
+    fn client_refuses_ambiguous_and_ineligible_server_keys() {
+        let a = credential(1);
+        let b = credential(2);
+        let base = BTreeMap::from([("alpha".into(), record(&a)), ("beta".into(), record(&b))]);
+        // The server trusts beta in every case, so the client verifier must
+        // refuse alpha rather than relying on a server-side client refusal.
+        for case in 0..3 {
+            let mut members = base.clone();
+            match case {
+                0 => { members.insert("gamma".into(), record(&a)); }
+                1 => { members.get_mut("alpha").unwrap()["status"] = json!("tombstoned"); }
+                2 => { members.get_mut("alpha").unwrap()["bus"] = json!(false); }
+                _ => unreachable!(),
+            }
+            let client_authority = live(members, 1);
+            let server_authority = live(base.clone(), 1);
+            assert!(handshake(
+                b.client_config(client_authority, "alpha".into()).unwrap(),
+                a.server_config(server_authority).unwrap(),
+            ).is_err(), "client case {case}");
+        }
+    }
+    #[test]
     fn refuses_tls12_no_certificate_and_chains() {
         let a = credential(1);
         let b = credential(2);
@@ -628,8 +651,8 @@ mod tests {
         file.set_len(32).unwrap();
         file.set_permissions(std::fs::Permissions::from_mode(0o640))
             .unwrap();
-        assert!(load_seed(&path).is_ok());
-        for mode in [0o644, 0o660] {
+        assert!(matches!(load_seed(&path), Err(SeedFileError::Insecure { .. })));
+        for mode in [0o604, 0o644, 0o660] {
             file.set_permissions(std::fs::Permissions::from_mode(mode))
                 .unwrap();
             assert!(matches!(

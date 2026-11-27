@@ -45,7 +45,6 @@ impl std::fmt::Debug for D2Seed {
 /// use mesh::seed::{BusTlsSeed, D2Seed};
 /// let tls: BusTlsSeed = D2Seed::new([7; 32]).into();
 /// ```
-#[derive(Clone, PartialEq, Eq)]
 pub struct BusTlsSeed(Zeroizing<[u8; 32]>);
 impl BusTlsSeed {
     pub(crate) fn new(bytes: [u8; 32]) -> Self {
@@ -124,7 +123,7 @@ pub fn open_seed(path: &Path) -> Result<SeedFile, SeedFileError> {
     let owner = metadata.uid();
     // SAFETY: geteuid has no pointer arguments or preconditions.
     let effective_uid = unsafe { libc::geteuid() };
-    let secure = mode & 0o037 == 0 && (owner == 0 || owner == effective_uid);
+    let secure = secure_mode(mode, owner, effective_uid);
     Ok(SeedFile {
         file,
         mode,
@@ -133,9 +132,29 @@ pub fn open_seed(path: &Path) -> Result<SeedFile, SeedFileError> {
     })
 }
 
+fn secure_mode(mode: u32, owner: u32, effective_uid: u32) -> bool {
+    if owner == effective_uid {
+        mode & 0o077 == 0
+    } else {
+        owner == 0 && mode & 0o037 == 0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn group_read_is_reserved_for_root_owned_seeds() {
+        assert!(secure_mode(0o600, 1000, 1000));
+        assert!(!secure_mode(0o640, 1000, 1000));
+        assert!(secure_mode(0o640, 0, 1000));
+        assert!(!secure_mode(0o640, 0, 0));
+        assert!(!secure_mode(0o600, 1001, 1000));
+        for mode in [0o620, 0o604, 0o644, 0o666] {
+            assert!(!secure_mode(mode, 0, 1000));
+            assert!(!secure_mode(mode, 1000, 1000));
+        }
+    }
     #[test]
     fn regular_seed_descriptor_is_blocking() {
         let path = std::env::temp_dir().join(format!("seed-flags-{}", uuid::Uuid::new_v4()));
