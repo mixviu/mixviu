@@ -268,15 +268,12 @@ fn stop_apps($request)
       if not $snapshot.ok or len($owned) == 0 then
         signal_app($p.handle, 15)
       else
+        $live[$p.handle].timers = concat($live[$p.handle].timers, [timer_once($timeout * 0.4, "term:" .. $p.handle)])
         for $w in $owned
           if $live[$p.handle] == nil or $live[$p.handle].stop_token != $p.token then break end
           send comp comp.window.close timeout=0.2 body=json_encode({id: $w.id, generation: $w.generation})
           -- A failed close retains the 40% TERM timer; it is not evidence
           -- of a windowless app. Re-check the live row before the next send.
-        end
-        if $live[$p.handle] != nil and $live[$p.handle].stop_token == $p.token then
-          $remaining = max(0.001, $live[$p.handle].deadline - $timeout * 0.6 - monotonic())
-          $live[$p.handle].timers = concat($live[$p.handle].timers, [timer_once($remaining, "term:" .. $p.handle)])
         end
       end
     end

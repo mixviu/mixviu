@@ -248,6 +248,10 @@ try
   $svc_pid = spawn([$mix, "--serve", $tmp .. "/citizen/apps.mix", "--name", "apps"],
     {detach: true, clear_env: true, env: $citizen_env, stdout: {file: $tmp .. "/svc.log"}, stderr: "stdout"})
   wait_ready()
+  -- All property mutations are local-only, including early icon/terminal
+  -- setup. Remote refusal fixtures below use a distinct WS-only client.
+  export MIX_NODED_URL="unix://" .. $bus.dir .. "/run/noded/bus.sock"
+  bus_reconnect()
   fixture("data/applications/hold.desktop", "[Desktop Entry]\nType=Application\nName=Hold\nExec=/usr/bin/sleep 30\n")
   fixture("data/applications/fork.desktop", "[Desktop Entry]\nType=Application\nName=Fork\nExec=" .. $mix .. " " .. $tmp .. "/fork.mix\n")
   fixture("fork.mix", "$p = spawn([\"/usr/bin/sleep\", \"30\"])\nwrite_file(env(\"HOME\") .. \"/grandchild\", to_string($p))\nsleep(30)\n")
