@@ -380,14 +380,14 @@ function endpoint_identity($endpoint)
       end
       $groups = $expanded
     end
-    if $groups == [0,0,0,0,0,0,0,0] or $groups[0] >= 65280 or ($groups[0] == 0 and $groups[1] == 0 and $groups[2] == 0 and $groups[3] == 0 and $groups[4] == 0 and $groups[5] == 65535) then return nil end
+    if deep_eq($groups,[0,0,0,0,0,0,0,0]) or $groups[0] >= 65280 or ($groups[0] == 0 and $groups[1] == 0 and $groups[2] == 0 and $groups[3] == 0 and $groups[4] == 0 and $groups[5] == 65535) then return nil end
     $ip = ["v6",$groups]
     $port = $parts[1]
   else
     $parts = split($address,":")
     if len($parts) != 2 or not endpoint_ipv4($parts[0]) then return nil end
     $ip = ["v4",map(split($parts[0],"."),fn($v)=to_number($v))]
-    if $ip[1] == [0,0,0,0] or ($ip[1][0] >= 224 and $ip[1][0] <= 239) or $ip[1] == [255,255,255,255] then return nil end
+    if deep_eq($ip[1],[0,0,0,0]) or ($ip[1][0] >= 224 and $ip[1][0] <= 239) or deep_eq($ip[1],[255,255,255,255]) then return nil end
     $port = $parts[1]
   end
   if not re_match($port,"^[0-9]+$") or not is_valid_noded_port(to_number($port)) then return nil end
@@ -414,7 +414,7 @@ function validate_member_endpoints($member)
     if $identity == nil then print("ERROR: " .. $who .. " invalid endpoint " .. $address); mesh_fatal() end
     if $endpoint.transport == "ws-wg" then
       $mesh_identity = endpoint_identity({addr:$member.mesh_ip .. ":1",transport:"tls"})
-      if $mesh_identity == nil or json_decode($identity)[0] != json_decode($mesh_identity)[0] then print("ERROR: " .. $who .. " ws-wg endpoint differs from mesh_ip: " .. $address); mesh_fatal() end
+      if $mesh_identity == nil or not deep_eq(json_decode($identity)[0],json_decode($mesh_identity)[0]) then print("ERROR: " .. $who .. " ws-wg endpoint differs from mesh_ip: " .. $address); mesh_fatal() end
     end
     if contains($seen,$identity) then print("ERROR: " .. $who .. " duplicate endpoint " .. $address); mesh_fatal() end
     push($seen,$identity)
