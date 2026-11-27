@@ -40,14 +40,23 @@ pub fn parse_endpoints(record: &serde_json::Value) -> Result<Option<Vec<Endpoint
     let mut seen = BTreeSet::new();
     for endpoint in &endpoints {
         let ip = endpoint.addr.ip();
-        if ip.is_unspecified() || ip.is_multicast()
+        if ip.is_unspecified()
+            || ip.is_multicast()
             || matches!(ip, IpAddr::V4(v4) if v4.is_broadcast())
-            || matches!(ip, IpAddr::V6(v6) if v6.to_ipv4_mapped().is_some()) {
+            || matches!(ip, IpAddr::V6(v6) if v6.to_ipv4_mapped().is_some())
+        {
             return Err(format!("invalid endpoint address {}", endpoint.addr));
         }
         if endpoint.transport == EndpointTransport::WsWg
-            && record["mesh_ip"].as_str().and_then(|text| text.parse::<IpAddr>().ok()) != Some(ip) {
-            return Err(format!("ws-wg endpoint {} differs from mesh_ip", endpoint.addr));
+            && record["mesh_ip"]
+                .as_str()
+                .and_then(|text| text.parse::<IpAddr>().ok())
+                != Some(ip)
+        {
+            return Err(format!(
+                "ws-wg endpoint {} differs from mesh_ip",
+                endpoint.addr
+            ));
         }
         if endpoint.addr.port() == 0 {
             return Err("endpoint port must be in 1..=65535".into());
@@ -65,8 +74,19 @@ use bus::wire::is_valid_label;
 #[test]
 fn endpoint_address_rules() {
     use serde_json::json;
-    for addr in ["0.0.0.0:42", "[::]:42", "224.0.0.1:42", "[ff02::1]:42", "255.255.255.255:42", "[::ffff:192.0.2.5]:42", "[::ffff:c000:205]:42"] {
-        assert!(parse_endpoints(&json!({"endpoints":[{"addr":addr,"transport":"tls"}]})).is_err(), "{addr}");
+    for addr in [
+        "0.0.0.0:42",
+        "[::]:42",
+        "224.0.0.1:42",
+        "[ff02::1]:42",
+        "255.255.255.255:42",
+        "[::ffff:192.0.2.5]:42",
+        "[::ffff:c000:205]:42",
+    ] {
+        assert!(
+            parse_endpoints(&json!({"endpoints":[{"addr":addr,"transport":"tls"}]})).is_err(),
+            "{addr}"
+        );
     }
     for addr in ["127.0.0.1:42", "[::1]:42"] {
         assert!(parse_endpoints(&json!({"endpoints":[{"addr":addr,"transport":"tls"}]})).is_ok());

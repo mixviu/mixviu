@@ -213,28 +213,31 @@ fn write_generated_seed(
         .write(true)
         .create_new(true)
         .mode(0o600)
-        .open(path).map_err(|error| std::io::Error::new(error.kind(), format!("{}: {error}", path.display())))?;
+        .open(path)
+        .map_err(|error| {
+            std::io::Error::new(error.kind(), format!("{}: {error}", path.display()))
+        })?;
     // Arm cleanup only after this call has exclusively created the file.
     let result = (|| -> Result<GeneratedBusTlsSeed, SeedFileError> {
-    if let Some(gid) = root_gid {
-        // SAFETY: file owns the descriptor; uid/gid are numeric lookup results.
-        if unsafe { libc::fchown(file.as_raw_fd(), 0, gid) } != 0 {
-            return Err(std::io::Error::last_os_error().into());
+        if let Some(gid) = root_gid {
+            // SAFETY: file owns the descriptor; uid/gid are numeric lookup results.
+            if unsafe { libc::fchown(file.as_raw_fd(), 0, gid) } != 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            file.set_permissions(std::fs::Permissions::from_mode(0o640))?;
+        } else {
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
         }
-        file.set_permissions(std::fs::Permissions::from_mode(0o640))?;
-    } else {
-        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
-    }
-    file.write_all(seed.bytes())?;
-    file.sync_all()?;
-    File::open(path.parent().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::InvalidInput, "seed has no parent")
-    })?)?
-    .sync_all()?;
-    Ok(GeneratedBusTlsSeed {
-        path: path.to_owned(),
-        public_key,
-    })
+        file.write_all(seed.bytes())?;
+        file.sync_all()?;
+        File::open(path.parent().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "seed has no parent")
+        })?)?
+        .sync_all()?;
+        Ok(GeneratedBusTlsSeed {
+            path: path.to_owned(),
+            public_key,
+        })
     })();
     if result.is_err() {
         let _ = std::fs::remove_file(path);
@@ -247,7 +250,9 @@ mod tests {
     use super::*;
     #[test]
     fn failed_ownership_setup_unlinks_created_seed() {
-        if unsafe { libc::geteuid() } == 0 { return; }
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
         let path = std::env::temp_dir().join(format!("seed-chown-{}", uuid::Uuid::new_v4()));
         assert!(write_generated_seed(&path, Some(u32::MAX - 1)).is_err());
         assert!(!path.exists());

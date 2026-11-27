@@ -42,24 +42,35 @@ pub fn validate_key_reload(
     validate_member_keys(candidate, candidate_epoch)?;
     let old = key_windows(current)?;
     let next = key_windows(candidate)?;
-    for retained in old.iter().filter(|key| matches!(key.kind.as_str(), "d2" | "bus-tls")) {
+    for retained in old
+        .iter()
+        .filter(|key| matches!(key.kind.as_str(), "d2" | "bus-tls"))
+    {
         let same = |key: &&KeyWindow| key.kind == retained.kind && key.key == retained.key;
         if !next.iter().any(|key| same(&key)) {
-            return Err(format!("member '{}' candidate drops retained {} key", retained.member, retained.kind));
+            return Err(format!(
+                "member '{}' candidate drops retained {} key",
+                retained.member, retained.kind
+            ));
         }
-        let closed = old.iter().filter(same).all(|key| key.tombstoned || key.until.is_some_and(|end| end <= current_epoch));
+        let closed = old
+            .iter()
+            .filter(same)
+            .all(|key| key.tombstoned || key.until.is_some_and(|end| end <= current_epoch));
         if closed {
             for key in next.iter().filter(same) {
                 if !key.tombstoned && !key.until.is_some_and(|end| end <= candidate_epoch) {
-                    return Err(format!("member '{}' candidate reopens closed {} key", key.member, key.kind));
+                    return Err(format!(
+                        "member '{}' candidate reopens closed {} key",
+                        key.member, key.kind
+                    ));
                 }
             }
         }
     }
-    for closed in old
-        .iter()
-        .filter(|key| key.kind == "wg" && (key.tombstoned || key.until.is_some_and(|end| end <= current_epoch)))
-    {
+    for closed in old.iter().filter(|key| {
+        key.kind == "wg" && (key.tombstoned || key.until.is_some_and(|end| end <= current_epoch))
+    }) {
         if next
             .iter()
             .any(|key| key.key == closed.key && key.current(candidate_epoch))
@@ -368,26 +379,65 @@ mod tests {
             let mut staged = live.clone();
             staged["bus"] = serde_json::json!(false);
             let mut relabel = live.clone();
-            relabel["credentials"][0]["kind"] = serde_json::json!(if kind == "d2" { "bus-tls" } else { "d2" });
+            relabel["credentials"][0]["kind"] =
+                serde_json::json!(if kind == "d2" { "bus-tls" } else { "d2" });
             let mut rotated = closed.clone();
             let mut fresh = live["credentials"][0].clone();
-            fresh["pubkey"] = serde_json::json!(base64::engine::general_purpose::STANDARD.encode([8; 32]));
+            fresh["pubkey"] =
+                serde_json::json!(base64::engine::general_purpose::STANDARD.encode([8; 32]));
             fresh["from_epoch"] = serde_json::json!(3);
-            rotated["credentials"].as_array_mut().unwrap().push(fresh.clone());
+            rotated["credentials"]
+                .as_array_mut()
+                .unwrap()
+                .push(fresh.clone());
             let mut overlap = live.clone();
             overlap["credentials"].as_array_mut().unwrap().push(fresh);
             for (label, old, next, ok) in [
-                ("drop record", live.clone(), serde_json::json!([dropped]), false),
-                ("drop tombstoned member", tombstone.clone(), serde_json::json!([]), false),
-                ("future staging", closed.clone(), serde_json::json!([future]), false),
-                ("bus:false staging", closed.clone(), serde_json::json!([staged]), false),
+                (
+                    "drop record",
+                    live.clone(),
+                    serde_json::json!([dropped]),
+                    false,
+                ),
+                (
+                    "drop tombstoned member",
+                    tombstone.clone(),
+                    serde_json::json!([]),
+                    false,
+                ),
+                (
+                    "future staging",
+                    closed.clone(),
+                    serde_json::json!([future]),
+                    false,
+                ),
+                (
+                    "bus:false staging",
+                    closed.clone(),
+                    serde_json::json!([staged]),
+                    false,
+                ),
                 ("relabel", live.clone(), serde_json::json!([relabel]), false),
-                ("un-tombstone", tombstone, serde_json::json!([live.clone()]), false),
+                (
+                    "un-tombstone",
+                    tombstone,
+                    serde_json::json!([live.clone()]),
+                    false,
+                ),
                 ("overlap", live.clone(), serde_json::json!([overlap]), true),
-                ("readmission", closed, serde_json::json!([rotated.clone()]), true),
+                (
+                    "readmission",
+                    closed,
+                    serde_json::json!([rotated.clone()]),
+                    true,
+                ),
                 ("rotation", live, serde_json::json!([rotated]), true),
             ] {
-                assert_eq!(validate_key_reload(&serde_json::json!([old]), 2, &next, 3).is_ok(), ok, "{kind}: {label}");
+                assert_eq!(
+                    validate_key_reload(&serde_json::json!([old]), 2, &next, 3).is_ok(),
+                    ok,
+                    "{kind}: {label}"
+                );
             }
         }
     }
@@ -396,7 +446,11 @@ mod tests {
     fn two_eligible_tls_owners_identify_neither() {
         let mut tls = member(&[[7; 32]]);
         tls["credentials"][0]["kind"] = serde_json::json!("bus-tls");
-        let authority = TlsAuthority::new(&BTreeMap::from([("alpha".into(), tls.clone()), ("beta".into(), tls)]), 1, 1);
+        let authority = TlsAuthority::new(
+            &BTreeMap::from([("alpha".into(), tls.clone()), ("beta".into(), tls)]),
+            1,
+            1,
+        );
         assert!(authority.member_for(&[7; 32]).is_none());
     }
 
