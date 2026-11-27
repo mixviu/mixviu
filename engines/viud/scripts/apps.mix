@@ -195,8 +195,8 @@ fn start_app($request)
   return {rc: 0, body: $body}
 end
 
-fn window_snapshot()
-  send comp comp.windows.list timeout=0.2 body="{}"
+fn window_snapshot($timeout = 0.2)
+  send comp comp.windows.list timeout=$timeout body="{}"
   return {ok: $rc == 0, windows: $rc == 0 ? $result.windows : []}
 end
 
@@ -235,7 +235,7 @@ fn stop_apps($request)
   $pending = []
   $force = ($request.mode ?? "graceful") == "force"
   $timeout = ($request.timeout_ms ?? 5000) / 1000
-  -- Commit state and arm timers before any comp send. Never write a copied
+  -- Commit state before any comp send. Never write a copied
   -- table or row back after a send: proc.exited may have deleted it.
   for $r in $selected
     push($stopping, {handle: $r.handle, pid: $r.pid})
@@ -253,16 +253,18 @@ fn stop_apps($request)
     if $force then
       signal_app($r.handle, 9)
     else
-      $live[$r.handle].timers = [timer_once($timeout * 0.4, "term:" .. $r.handle), timer_once($timeout, "kill:" .. $r.handle)]
       push($pending, {handle: $r.handle, token: $live[$r.handle].stop_token})
     end
   end
   if len($pending) > 0 then
-    $snapshot = window_snapshot()
+    -- Snapshot first: a small timeout must not allow TERM before close.
+    $snapshot = window_snapshot(min(0.2, $timeout * 0.4))
     $groups = window_groups($snapshot.windows)
     for $p in $pending
       if $live[$p.handle] == nil or $live[$p.handle].stop_token != $p.token then continue end
       $owned = $a.owned_windows($live[$p.handle], $snapshot.windows, $groups)
+      $live[$p.handle].deadline = monotonic() + $timeout
+      $live[$p.handle].timers = [timer_once($timeout, "kill:" .. $p.handle)]
       if not $snapshot.ok or len($owned) == 0 then
         signal_app($p.handle, 15)
       else
@@ -271,6 +273,10 @@ fn stop_apps($request)
           send comp comp.window.close timeout=0.2 body=json_encode({id: $w.id, generation: $w.generation})
           -- A failed close retains the 40% TERM timer; it is not evidence
           -- of a windowless app. Re-check the live row before the next send.
+        end
+        if $live[$p.handle] != nil and $live[$p.handle].stop_token == $p.token then
+          $remaining = max(0.001, $live[$p.handle].deadline - $timeout * 0.6 - monotonic())
+          $live[$p.handle].timers = concat($live[$p.handle].timers, [timer_once($remaining, "term:" .. $p.handle)])
         end
       end
     end
@@ -443,10 +449,11 @@ on "apps.props.set" desc "set a citizen property (icon_theme, terminal; count is
   $args = event_args()
   $path = get_or($args, "path", "")
   $value = get_or($args, "value", nil)
-  if $path == "apps.allow_argv" then
-    if not local_origin() then
-      reply(10, json_encode({error: "forbidden", error_code: "FORBIDDEN"}))
-    elif type($value) != "bool" then
+  if not local_origin() then
+    record_row("refused", {reason: "property_set_forbidden"})
+    reply(10, json_encode({error: "forbidden", error_code: "FORBIDDEN"}))
+  elif $path == "apps.allow_argv" then
+    if type($value) != "bool" then
       reply(10, json_encode({error: "invalid_request"}))
     else
       $old = $allow_argv
@@ -461,8 +468,14 @@ on "apps.props.set" desc "set a citizen property (icon_theme, terminal; count is
     publish(serve_name() .. ".changed", json_encode({reason: "icon_theme", value: $icon_theme}), {command: "apps.changed"})
     reply(0, json_encode({path: $path, value: $icon_theme}))
   elif $path == "apps.terminal" then
-    $terminal_cmd = trim($value)
-    reply(0, json_encode({path: $path, value: $terminal_cmd}))
+    $argv = $a.parse_exec($value)
+    if len($argv) == 0 or $argv[0] == "" or not starts_with($argv[0], "/") then
+      record_row("refused", {reason: "invalid_terminal"})
+      reply(10, json_encode({error: "invalid_request"}))
+    else
+      $terminal_cmd = trim($value)
+      reply(0, json_encode({path: $path, value: $terminal_cmd}))
+    end
   elif $path == "apps.count" then
     reply(10, json_encode({error: "read_only"}))
   else

@@ -33,7 +33,7 @@ fn start_valid($r)
     if has_key($r, "cwd") and type($r.cwd) != "string" then return false end
     if has_key($r, "name") and (type($r.name) != "string" or trim($r.name) == "" or re_match($r.name, "[\\x00-\\x1f\\x7f]")) then return false end
   end
-  if has_key($r, "uris") then
+  if has_key($r, "uris") and $r.uris != nil then
     if type($r.uris) != "list" then return false end
     for $v in $r.uris
       if type($v) != "string" then return false end

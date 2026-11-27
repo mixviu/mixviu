@@ -8,9 +8,11 @@ on fake.set
 end
 on fake.clear
   $window = nil
+  $options = {}
   reply(0, "{}")
 end
 on "comp.windows.list"
+  if $options.list_delay != nil then sleep($options.list_delay) end
   if $options.exit_on_list == true and $window != nil then
     $options.exit_on_list = false
     $_signal = kill($window.pid, 15)
@@ -23,6 +25,7 @@ on "comp.window.focus"
   reply(0, "{}")
 end
 on "comp.window.close"
+  if $options.trace_path != nil then append_file($options.trace_path, json_encode({pid: $window.pid, kind: "close"}) .. "\n") end
   if $window != nil and $options.ignore_close != true then kill($window.pid, 15) end
   if $options.close_delay != nil then sleep($options.close_delay) end
   reply(0, "{}")

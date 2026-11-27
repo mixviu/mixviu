@@ -270,6 +270,7 @@ try
   $launch = call("apps", "apps.launch", json_encode({id: "plain"}))
   check($launch.rc == 0 and type($launch.result.pid) == "number", "apps.launch failed")
   check(wait_file($tmp .. "/launched-recorder") == "plain-arg\n", "launched argv wrong")
+  check(call("apps", "apps.launch", json_encode({id: "plain", uris: nil})).rc == 0, "uris null compatibility")
 
   -- An X11 app inherits DISPLAY from comp's XWayland descriptor, read at
   -- launch time: a restarted XWayland on another number is seen at once.
@@ -462,10 +463,17 @@ try
   $r = call("apps", "apps.start", json_encode({argv: ["/usr/bin/env", "--ignore-signal=TERM", "/usr/bin/sleep", "30"], name: "stuck"}))
   check($r.rc == 0, "local argv refused")
   $h = $r.result.handle
+  $stuck_pid = $r.result.pid
   check(call("apps", "apps.stop", json_encode({handle: $h, timeout_ms: 300})).rc == 0, "stuck stop")
   check(call("apps", "apps.stop", json_encode({handle: $h, timeout_ms: 300})).rc == 0, "idempotent stop")
   $exit = await_exit($h)
   check($exit.signal == 9 and $exit.reason == "stop" and $exit.ran_ms >= 290, "timeout escalation")
+  $terms = 0
+  for $line in lines(trim(read_file($tmp .. "/signals.jsonl")))
+    $s = json_parse($line)
+    if $s.pid == $stuck_pid and $s.signal == 15 then $terms = $terms + 1 end
+  end
+  check($terms == 1, "windowless stop sent a second TERM")
   $r = call("apps", "apps.start", json_encode({argv: ["/usr/bin/env", "--ignore-signal=TERM", "/usr/bin/sleep", "30"], name: "escalate"}))
   $h = $r.result.handle
   check(call("apps", "apps.stop", json_encode({handle: $h, timeout_ms: 30000})).rc == 0, "long graceful stop")
@@ -489,6 +497,17 @@ try
   check(call("apps", "apps.stop", json_encode({handle: $h})).rc == 0, "fork stop")
   await_exit($h)
   check(not process_alive($grandchild), "grandchild survived group stop")
+  -- Managed ChildWatch kills the original group before reaping its leader.
+  -- A native fixture leader exits naturally while its same-group helper sleeps.
+  fixture("orphan.mix", "$p = spawn([\"/usr/bin/sleep\", \"30\"])\nwrite_file(env(\"HOME\") .. \"/orphan-helper\", to_string($p))\nsleep(0.05)\n")
+  $r = call("apps", "apps.start", json_encode({argv: [$mix, $tmp .. "/orphan.mix"], name: "leader-exit"}))
+  $helper = to_number(wait_file($tmp .. "/orphan-helper"))
+  $helper_stat = read_file("/proc/" .. $helper .. "/stat")
+  $fields = split(slice($helper_stat, last_index_of($helper_stat, ")") + 2), " ")
+  check(to_number($fields[2]) == $r.result.pid, "helper fixture escaped leader group")
+  check(await_exit($r.result.handle).reason == "exit", "leader natural exit missing")
+  sleep(0.02)
+  check(not process_alive($helper), "native reaper left same-group helper alive")
   -- Fake comp gives the handle a window; no real window or display needed.
   $comp_pid = spawn([$mix, "--serve", $root .. "/engines/viud/tests/fixtures/apps_comp.mix", "--name", "comp"], {env: $pb.client_env($bus), stdout: {file: $tmp .. "/comp.log"}, stderr: "stdout"})
   for $i = 1 to 100
@@ -547,11 +566,22 @@ try
   -- Window stays open: TERM must come at 40%, not immediately on close.
   $r = call("apps", "apps.start", json_encode({id: "hold"}))
   $h = $r.result.handle
-  call("comp", "fake.set", json_encode({pid: $r.result.pid, ignore_close: true}))
+  $windowed_pid = $r.result.pid
+  call("comp", "fake.set", json_encode({pid: $r.result.pid, ignore_close: true, list_delay: 0.08, trace_path: $tmp .. "/signals.jsonl"}))
   $term_at = monotonic()
-  call("apps", "apps.stop", json_encode({handle: $h, timeout_ms: 150}))
+  call("apps", "apps.stop", json_encode({handle: $h, timeout_ms: 300}))
   $exit = await_exit($h)
   check($exit.signal == 15 and monotonic() - $term_at >= 0.05, "windowed 40% TERM timer")
+  $closed = false
+  $terms = 0
+  for $line in lines(trim(read_file($tmp .. "/signals.jsonl")))
+    $s = json_parse($line)
+    if $s.pid == $windowed_pid then
+      if $s.kind == "close" then $closed = true end
+      if $s.signal == 15 then check($closed, "TERM preceded close at timeout300"); $terms = $terms + 1 end
+    end
+  end
+  check($terms == 1 and $closed, "windowed stop must close then TERM once")
   call("comp", "fake.clear", "{}")
   for $started in $starts
     check(not has_key($started, "argv") and not has_key($started, "uris") and $started.executable != nil and $started.argc != nil, "started topic leaks argument values")
@@ -579,7 +609,22 @@ try
   check($refused.rc == 10, "mesh history accepted")
   $refused = json_parse(run_argv_must([$mix, $tmp .. "/cli.mix", "apps", "apps.props.set", "{\"path\":\"apps.allow_argv\",\"value\":true}"], {clear_env: true, env: $remote}))
   check($refused.rc == 10, "mesh enabled argv gate")
-  $old = call("apps", "apps.start", json_encode({id: "hold"})).result.handle
+  check(call("apps", "apps.props.set", json_encode({path: "apps.allow_argv", value: false})).rc == 0, "local disable argv")
+  for $setting in [{path: "apps.terminal", value: "/usr/bin/false"}, {path: "apps.icon_theme", value: "example-theme"}, {path: "apps.count", value: "1"}, {path: "unknown", value: "example"}]
+    $refused = json_parse(run_argv_must([$mix, $tmp .. "/cli.mix", "apps", "apps.props.set", json_encode($setting)], {clear_env: true, env: $remote}))
+    check($refused.rc == 10 and contains(to_string($refused.result), "forbidden"), "mesh property set accepted")
+  end
+  for $terminal in ["\"\"", "relative-terminal -e"]
+    check(call("apps", "apps.props.set", json_encode({path: "apps.terminal", value: $terminal})).rc == 10, "invalid terminal accepted")
+  end
+  remove($tmp .. "/launched-recorder")
+  $r = call("apps", "apps.start", json_encode({id: "term"}))
+  check($r.rc == 0, "terminal entry after refused set")
+  check(wait_file($tmp .. "/launched-recorder") == "-e\n" .. $tmp .. "/bin/recorder\nterm-arg\n", "refused set changed terminal argv")
+  $audit = call("apps", "apps.history", "{}").result.rows
+  check(len(filter($audit, fn($row) = $row.kind == "refused" and $row.data.reason == "property_set_forbidden")) == 5, "refused property changes not audited")
+  $old_app = call("apps", "apps.start", json_encode({id: "hold"})).result
+  $old = $old_app.handle
   check(call("apps", "RELOAD", "{}").rc == 0, "reload refused")
   $until = monotonic() + 1
   while monotonic() < $until
@@ -587,6 +632,7 @@ try
     sleep(0.005)
   end
   check(call("apps", "apps.stop", json_encode({handle: $old})).rc == 14, "previous generation handle accepted")
+  check(not process_alive($old_app.pid), "RELOAD left managed child alive")
   check(call("apps", "apps.props.watch", "{\"path\":\"apps.allow_argv\"}").result.value == false, "argv gate survived reload")
 
   print("PASS apps Bus surface: list/get/launch, argv, DISPLAY, reload, manifest icon resolution, brand mark and explicit theme preference")
