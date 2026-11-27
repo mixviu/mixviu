@@ -15,7 +15,7 @@ fn policy_loop(h: &Harness) -> Loop {
         world::kind::build::base::spatial(
             world::world::manager::MAIN_WORLD,
             "main",
-            vec![],
+            vec![Box::new(world::window::system::base::WindowSystem)],
             &kernel,
         ),
         world::kind::build::base::overlay(world::world::manager::KERNEL, "kernel", vec![], &kernel),
@@ -37,6 +37,10 @@ fn policy_loop(h: &Harness) -> Loop {
         worlds,
     );
     let mut lp = Loop::new(inner, &dh, None, event_loop.handle());
+    lp.inner.worlds.get_mut(world::world::manager::MAIN_WORLD).storage_mut().insert(
+        &world::viewport::state::OUTPUT_VIEWS,
+        world::viewport::state::OutputViews::default(),
+    );
     lp.inner
         .host_space_mut()
         .state
