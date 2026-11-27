@@ -6077,6 +6077,7 @@ mod tests {
 
     #[test]
     fn d2_seed_file_policy_warns_once_and_never_follows_or_blocks() {
+        use base64::Engine as _;
         use std::os::unix::fs::{symlink, PermissionsExt};
         use std::io::Write;
         #[derive(Clone)]
