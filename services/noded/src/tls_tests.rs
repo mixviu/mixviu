@@ -83,6 +83,7 @@ async fn tls_brokers_prove_both_directions_and_revoke_either_exact_key_only() {
             assert_eq!(context.mesh_peer().unwrap(), (member.as_str(), d2_key));
         }
         assert_eq!(states[0].live_sessions.read().await.len(), 2);
+        let beta_context = states[0].mesh.peer_context("beta").await.unwrap();
         let mut next = states[0].authority.load().posture.clone();
         if let crate::authority::Posture::Verified(a) = &mut next {
             a.epoch += 1;
@@ -99,6 +100,8 @@ async fn tls_brokers_prove_both_directions_and_revoke_either_exact_key_only() {
         assert_eq!(live.len(), if revoked.is_some() { 1 } else { 2 });
         assert!(live.values().all(|s| matches!(s.transport, Some(TransportIdentity::MeshTls { .. }))));
         let snapshot = states[0].authority.load_full();
+        assert_eq!(mesh_trust::identity::link_refusal(&beta_context, &snapshot.keys, &snapshot.tls_keys),
+            revoked.map(|kind| if kind == "d2" { "d2-key-revoked" } else { "tls-key-revoked" }));
         for s in live.values() {
             if let Some(TransportIdentity::MeshTls { tls_key, .. }) = &s.transport {
                 let member = states[0].tls.as_ref().unwrap().authority.read().unwrap().member_for(tls_key).unwrap();
@@ -129,6 +132,41 @@ async fn tls_pin_failure_never_touches_the_legacy_port() {
     assert!(mesh::tls::DIAL_REFUSALS.total() > before);
     assert!(tokio::time::timeout(Duration::from_millis(100), legacy.accept()).await.is_err());
     for task in tasks { task.abort(); }
+}
+
+#[tokio::test]
+async fn tls_enabled_broker_still_accepts_a_legacy_websocket() {
+    let (states, _, tasks) = tls_brokers().await;
+    let tcp = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("ws://{}/ws", tcp.local_addr().unwrap());
+    let app = axum::Router::new().route("/ws", axum::routing::get(super::ws_handler)).with_state(states[0].clone());
+    let legacy = tokio::spawn(async move { axum::serve(tcp, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await.unwrap(); });
+    let (mut ws, _) = tokio_tungstenite::connect_async(url).await.unwrap();
+    ws.close(None).await.unwrap();
+    legacy.abort();
+    for task in tasks { task.abort(); }
+}
+
+#[test]
+fn tls_refusal_logs_once_per_peer_and_class_and_counts_every_attempt() {
+    if log_capture_subprocess("tls_refusal_logs_once_per_peer_and_class_and_counts_every_attempt") { return; }
+    #[derive(Clone)]
+    struct Capture(Arc<std::sync::Mutex<Vec<u8>>>);
+    impl std::io::Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> { self.0.lock().unwrap().extend_from_slice(bytes); Ok(bytes.len()) }
+        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+    }
+    let capture = Capture(Default::default());
+    let writer = capture.clone();
+    let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false).with_writer(move || writer.clone()).finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let refusals = mesh::tls::Refusals::default();
+    for (peer, class) in [("192.0.2.1:4200", "timeout"), ("192.0.2.1:4200", "protocol-or-key"), ("192.0.2.2:4200", "timeout")] {
+        for _ in 0..10 { refusals.record(peer.parse().unwrap(), class); }
+    }
+    assert_eq!(refusals.total(), 30);
+    let log = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
+    assert_eq!(log.lines().count(), 3, "{log}");
 }
 
 #[tokio::test]

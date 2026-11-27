@@ -1,5 +1,36 @@
 # noded
 
+## TLS broker links
+
+An absent `noded.listen` preserves the legacy listener. An explicit list is
+complete, including an empty list; Unix ingress is configured separately.
+Legacy listeners remain available under admission `enforce` during migration.
+
+```mix
+noded: {
+  listen: [{addr: "192.0.2.1:4200", tls: false}, {addr: "192.0.2.1:4201", tls: true}]
+  tls: {key: "mix:etc/noded/bus-tls.seed", handshake_timeout_s: 3, max_handshakes: 64, max_queue: 64}
+}
+```
+
+The TLS values shown are defaults. TLS requires an accepted verified inventory,
+a current own `bus-tls` key and a secure seed. The handshake deadline starts
+when a queued socket enters the active handshake set. Queued sockets hold no
+handshake slot; a full queue refuses new arrivals. Refusals warn once per peer
+socket address and class, then coalesce for 60 seconds; `noded.info` exposes
+`meta.tls_refusals`, including suppressed listener and dialler attempts.
+
+A mesh peer's optional `tls_port` selects `wss://` with a mandatory member pin.
+It is temporary until PR 4 adds inventory endpoints and DNS-SD. A failed TLS
+dial never falls back to the peer's legacy `noded_port`. A node with configured
+TLS peers also needs its own TLS credential, even without a TLS listener.
+
+Both D2 proof directions run inside TLS and bind to its RFC 9266 exporter.
+TLS admission always requires both credentials, including when legacy admission
+is off or observe. The D2 node must match the TLS member. An accepted reload
+checks both exact keys; revoking either closes only affected links and records
+which credential failed. Legacy links retain their D2-only check.
+
 Refusal diagnostics emit the first occurrence, then at most one line per 60
 seconds per peer and frame reason (or per peer for admission challenges).
 `count` is the interval count and `total` is the lifetime count, including
@@ -76,8 +107,8 @@ connection before registration, publication or application writes.
 Observe permits their ordinary traffic but supplies no
 authenticated mesh-service assertion; protected cross-node deliveries can
 therefore fail during a mixed-version upgrade. Keep enforcement disabled until
-both ends support mutual proof. D2 remains plaintext and origin-only; TLS and
-channel-bound authentication are the next PR.
+both ends support mutual proof. Legacy D2 links remain plaintext and origin-only;
+TLS links use the channel-bound authentication described above.
 The D2 signing seed is loaded once at startup for both directions. Restart the
 broker after changing its seed file, before the old credential window closes.
 

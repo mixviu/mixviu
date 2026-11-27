@@ -636,6 +636,8 @@ pub struct RunConfig {
     pub frame_policy: AdmissionMode,
 }
 
+type ListenerFuture = std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send>>;
+
 pub async fn run(config: RunConfig, ready_tx: oneshot::Sender<()>) -> Result<()> {
     serve(config, None, ready_tx).await
 }
@@ -1238,9 +1240,7 @@ async fn serve(
         seed_world_specs(&broker, dir).await;
     }
 
-    let mut servers: Vec<
-        std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send>>,
-    > = Vec::new();
+    let mut servers: Vec<ListenerFuture> = Vec::new();
     for (tcp, encrypted) in listeners {
         tracing::info!(node = %node, "Broker listening on {}://{}", if encrypted { "wss" } else { "ws" }, tcp.local_addr()?);
         if encrypted {
@@ -2504,8 +2504,15 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
             }
         }
         TransportIdentity::Mesh { admission, .. } => admission.identity.clone(),
+        TransportIdentity::MeshTls { member, d2_key, epoch, revision, .. } => {
+            bus::native_session::PeerIdentity::MeshAdmitted { node: member.clone(), key: *d2_key,
+                fingerprint: blake3::hash(d2_key).to_hex().to_string(), epoch: *epoch, revision: *revision }
+        }
         _ => bus::native_session::PeerIdentity::Unauthenticated,
     };
+    if matches!(transport, TransportIdentity::MeshTls { .. }) {
+        state.peer_context.transport = Some(transport.clone());
+    }
     if matches!(&transport, TransportIdentity::LocalUnix { .. }) {
         state.observe = state.observe.for_class(TrafficClass::NativeSession);
     }
