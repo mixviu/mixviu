@@ -1,6 +1,31 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use bus::native_session::TransportIdentity;
 
+#[tokio::test]
+async fn absent_listen_preserves_hostname_bind_and_explicit_list_is_complete() {
+    // Exercise the production binding path with an owned ephemeral port: no
+    // drop/rebind window and no numeric parse can substitute for DNS binding.
+    let mut listeners = super::bind_tcp_listeners("localhost:0", None, None).await.unwrap();
+    assert_eq!(listeners.len(), 1);
+    let (listener, encrypted) = listeners.pop().unwrap();
+    assert!(!encrypted);
+    let address = listener.local_addr().unwrap();
+    assert!(address.ip().is_loopback());
+    assert_ne!(address.port(), 0);
+    let client = tokio::net::TcpStream::connect(address).await.unwrap();
+    let (_, remote) = listener.accept().await.unwrap();
+    assert_eq!(remote, client.local_addr().unwrap());
+    let explicit = [
+        config::node::NodedListener { addr: "127.0.0.1:0".parse().unwrap(), tls: false },
+        config::node::NodedListener { addr: "127.0.0.1:0".parse().unwrap(), tls: true },
+    ];
+    let listeners = super::bind_tcp_listeners("invalid legacy address", Some(&explicit), None).await.unwrap();
+    assert_eq!(listeners.len(), 2);
+    assert!(!listeners[0].1);
+    assert!(listeners[1].1);
+    assert!(super::bind_tcp_listeners("invalid legacy address", Some(&[]), None).await.unwrap().is_empty());
+}
+
 fn tls_credential(seed: u8) -> mesh::tls::Credential {
     use std::os::unix::fs::PermissionsExt;
     let path = std::env::temp_dir().join(format!("tls-seed-{:032x}", rand::random::<u128>()));
@@ -245,6 +270,26 @@ async fn tls_pin_failure_never_touches_the_legacy_port() {
     for task in tasks {
         task.abort();
     }
+}
+
+#[tokio::test]
+async fn tls_socket_closes_for_a_valid_d2_proof_naming_another_member() {
+    let (states, peers, tasks) = tls_brokers().await;
+    let (incoming, _rx) = mpsc::unbounded_channel();
+    // TLS authenticates alpha, but this independently valid D2 prover is gamma.
+    let impostor = MeshPeers::new(MeshConfig {
+        node_name: "gamma".into(), peers: vec![peers[1].clone()],
+        d2_seed: Some(mesh::seed::D2Seed::new([13; 32])),
+    }, incoming);
+    impostor.set_tls(states[0].tls.clone().unwrap()).await;
+    super::reconcile_transport_authority(&impostor, &states[0].authority.load_full()).await;
+    let result = tokio::time::timeout(Duration::from_secs(3),
+        impostor.send(peers[1].clone(), BusMessage::empty())).await.unwrap();
+    assert!(result.is_err());
+    assert!(impostor.peer_context("beta").await.is_none());
+    assert!(states[1].live_sessions.read().await.is_empty());
+    assert!(!states[1].registry.read().await.contains_key("bridge-gamma"));
+    for task in tasks { task.abort(); }
 }
 
 #[tokio::test]
