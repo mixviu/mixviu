@@ -217,3 +217,179 @@ impl ClientCertVerifier for Verifier {
 pub fn channel_binding(conn: &rustls::Connection) -> Result<[u8; 32], Error> {
     conn.export_keying_material([0; 32], b"EXPORTER-Channel-Binding", Some(&[]))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+    use base64::Engine as _;
+    use serde_json::{Value, json};
+    use mesh_trust::inventory::*;
+
+    fn credential(n: u8) -> Credential { Credential::new(Seed::new([n; 32])).unwrap() }
+    fn record(c: &Credential) -> Value {
+        json!({"status":"active", "bus":true, "credentials":[{
+            "kind":"bus-tls", "pubkey":base64::engine::general_purpose::STANDARD.encode(public_key(&c.certificate).unwrap()),
+            "from_epoch":1, "until_epoch":null
+        }]})
+    }
+    // All handshake fixtures go through the real signed inventory verifier.
+    fn authority(members: BTreeMap<String, Value>, epoch: u64) -> Arc<TlsAuthority> {
+        let genesis = ed25519_dalek::SigningKey::from_bytes(&[99; 32]);
+        let b64 = base64::engine::general_purpose::STANDARD;
+        let public = b64.encode(genesis.verifying_key().to_bytes());
+        let payload: InventoryPayload = serde_json::from_value(json!({
+            "schema_version":1, "canonical_encoding":"mixos-inventory-json-v1",
+            "mesh":"example.test", "subnet":"192.0.2.0/24", "epoch":epoch,
+            "signed_at":"2026-11-27T00:00:00Z", "valid_until":"2026-12-04T00:00:00Z",
+            "hub":["alpha"], "verify_keys":[{"key_id":"genesis","pubkey":public,"key_type":"Ed25519","status":"active"}],
+            "members":members.iter().map(|(name, value)| {
+                let mut value = value.clone(); value["name"] = json!(name); value
+            }).collect::<Vec<_>>()
+        })).unwrap();
+        let mut payload = payload;
+        payload.canonical_encoding = CANONICAL_ENCODING_V1.into();
+        let inventory = SignedInventory {
+            signatures: vec![InvSignature { key_id:"genesis".into(), alg:"Ed25519".into(), sig:b64.encode(genesis.sign(&payload.canonical_bytes()).to_bytes()) }],
+            payload
+        };
+        let state = NodeTrustState {
+            genesis_key_id:"genesis".into(),
+            trusted_keys:vec![TrustedKey {key_id:"genesis".into(),pubkey:genesis.verifying_key().to_bytes().to_vec(),status:KeyStatus::Active}],
+            last_epoch:0, last_recovery_generation:0, last_canonical_hash:None
+        };
+        let accepted = inventory.verify(&state).unwrap();
+        Arc::new(TlsAuthority::new(&members, accepted.epoch, epoch + 10))
+    }
+    fn live(members: BTreeMap<String, Value>, epoch: u64) -> LiveAuthority {
+        Arc::new(RwLock::new(authority(members, epoch)))
+    }
+    fn handshake(client: Arc<rustls::ClientConfig>, server: Arc<rustls::ServerConfig>) -> Result<(rustls::Connection, rustls::Connection), Error> {
+        let mut client = rustls::Connection::Client(rustls::ClientConnection::new(client, ServerName::try_from("node.example.test").unwrap())?);
+        let mut server = rustls::Connection::Server(rustls::ServerConnection::new(server)?);
+        for _ in 0..20 {
+            for (sender, receiver) in [(&mut client, &mut server), (&mut server, &mut client)] {
+                let mut bytes = Vec::new();
+                while sender.wants_write() { sender.write_tls(&mut bytes).unwrap(); }
+                if !bytes.is_empty() {
+                    let mut cursor = std::io::Cursor::new(bytes);
+                    receiver.read_tls(&mut cursor).unwrap();
+                    receiver.process_new_packets()?;
+                }
+            }
+            if !client.is_handshaking() && !server.is_handshaking() { return Ok((client, server)); }
+        }
+        Err(refused("handshake stalled"))
+    }
+    #[test]
+    fn mutual_identity_exporters_and_live_revocation() {
+        let a = credential(1); let b = credential(2);
+        let members = BTreeMap::from([("alpha".into(),record(&a)),("beta".into(),record(&b))]);
+        let live = live(members.clone(), 1);
+        let cc = b.client_config(live.clone(), "alpha".into()).unwrap();
+        let sc = a.server_config(live.clone()).unwrap();
+        let (client, server) = handshake(cc.clone(), sc.clone()).unwrap();
+        for (conn, name) in [(&client,"alpha"), (&server,"beta")] {
+            let identity = verified_member(&live, conn.peer_certificates().unwrap(), Some(name)).unwrap();
+            assert_eq!(identity.member, name);
+            assert_eq!((identity.epoch,identity.revision),(1,11));
+        }
+        let binding = channel_binding(&client).unwrap();
+        assert_eq!(binding, channel_binding(&server).unwrap());
+        let (other, _) = handshake(cc.clone(), sc.clone()).unwrap();
+        assert_ne!(binding, channel_binding(&other).unwrap());
+        let mut retired = members;
+        retired.get_mut("beta").unwrap()["credentials"][0]["until_epoch"] = json!(2);
+        *live.write().unwrap() = authority(retired, 2);
+        assert!(handshake(cc, sc).is_err()); // Same configs and handle, newer cache.
+    }
+    #[test]
+    fn refuses_untrusted_wrong_member_ambiguous_ineligible_and_epoch_keys() {
+        let a = credential(1); let b = credential(2);
+        let base = BTreeMap::from([("alpha".into(),record(&a)),("beta".into(),record(&b))]);
+        for case in 0..7 {
+            let mut members = base.clone();
+            let expected = if case == 1 { "beta" } else { "alpha" };
+            match case {
+                0 => { members.remove("beta"); }
+                1 => {}
+                2 => { members.insert("gamma".into(), record(&b)); }
+                3 => { members.get_mut("beta").unwrap()["status"] = json!("tombstoned"); }
+                4 => { members.get_mut("beta").unwrap()["bus"] = json!(false); }
+                5 => { members.get_mut("beta").unwrap()["credentials"][0]["from_epoch"] = json!(2); }
+                6 => { members.get_mut("beta").unwrap()["credentials"][0]["until_epoch"] = json!(1); }
+                _ => unreachable!()
+            }
+            let live = live(members,1);
+            assert!(handshake(b.client_config(live.clone(),expected.into()).unwrap(), a.server_config(live).unwrap()).is_err(), "case {case}");
+        }
+    }
+    #[test]
+    fn refuses_tls12_no_certificate_and_chains() {
+        let a = credential(1); let b = credential(2);
+        let live = live(BTreeMap::from([("alpha".into(),record(&a)),("beta".into(),record(&b))]),1);
+        let tls12 = rustls::ClientConfig::builder_with_provider(provider())
+            .with_protocol_versions(&[&rustls::version::TLS12]).unwrap()
+            .dangerous().with_custom_certificate_verifier(Arc::new(Verifier {authority:live.clone(),expected:Some("alpha".into())}))
+            .with_client_cert_resolver(Arc::new(Resolver(b.certified.clone())));
+        assert!(handshake(Arc::new(tls12),a.server_config(live.clone()).unwrap()).is_err());
+        let no_cert = rustls::ClientConfig::builder_with_provider(provider())
+            .with_protocol_versions(&[&rustls::version::TLS13]).unwrap()
+            .dangerous().with_custom_certificate_verifier(Arc::new(Verifier {authority:live.clone(),expected:Some("alpha".into())}))
+            .with_no_client_auth();
+        assert!(handshake(Arc::new(no_cert),a.server_config(live.clone()).unwrap()).is_err());
+        let pin = Verifier {authority:live,expected:None};
+        assert!(pin.check(&a.certificate,std::slice::from_ref(&b.certificate)).is_err());
+    }
+    #[test]
+    fn rejects_non_ed25519_and_malformed_spki() {
+        let a = credential(1);
+        let pair = rcgen::KeyPair::generate().unwrap();
+        let ec = rcgen::CertificateParams::new(Vec::<String>::new()).unwrap().self_signed(&pair).unwrap();
+        assert!(public_key(ec.der()).is_err());
+        let mut trailing = a.certificate.as_ref().to_vec(); trailing.push(0);
+        assert!(public_key(&CertificateDer::from(trailing)).is_err());
+        // Mutations inside the parsed SPKI. Repair outer lengths with a
+        // fixture-only helper; production never walks DER by hand.
+        for replacement in [
+            vec![0x30,0x81,0x2a,0x30,5,6,3,0x2b,0x65,0x70,3,0x21,0],
+            vec![0x30,0x2c,0x30,7,6,3,0x2b,0x65,0x70,5,0,3,0x21,0],
+        ] {
+            let mut der = a.certificate.as_ref().to_vec();
+            let offset = der.windows(12).position(|w| w == [0x30,0x2a,0x30,5,6,3,0x2b,0x65,0x70,3,0x21,0]).unwrap();
+            let extra = replacement.len() - 12;
+            // rcgen emits long outer length and short TBS length for this fixture.
+            fn grow_length(bytes: &mut [u8], offset: usize, extra: usize) -> usize {
+                let n = bytes[offset + 1];
+                if n < 128 { bytes[offset + 1] += extra as u8; offset + 2 }
+                else {
+                    let count = (n & 127) as usize;
+                    let last = offset + 1 + count;
+                    bytes[last] = bytes[last].checked_add(extra as u8).unwrap();
+                    last + 1
+                }
+            }
+            let tbs = grow_length(&mut der, 0, extra);
+            grow_length(&mut der, tbs, extra);
+            der.splice(offset..offset+12, replacement);
+            assert!(public_key(&CertificateDer::from(der)).is_err());
+        }
+    }
+    #[test]
+    fn seed_loader_enforces_permissions_and_exact_size() {
+        use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+        use std::io::Write;
+        let path = std::env::temp_dir().join(format!("bus-tls-{}.seed",uuid::Uuid::new_v4()));
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(&path).unwrap();
+        for len in [31,32,33] {
+            file.set_len(0).unwrap();
+            use std::io::Seek;
+            file.rewind().unwrap();
+            file.write_all(&vec![7;len]).unwrap();
+            assert_eq!(load_seed(&path).is_ok(),len == 32);
+        }
+        file.set_permissions(std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(load_seed(&path).unwrap_err().kind(),std::io::ErrorKind::PermissionDenied);
+        std::fs::remove_file(path).unwrap();
+    }
+}
