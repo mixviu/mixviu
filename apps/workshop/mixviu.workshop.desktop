@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Workshop
+Comment=MixViu service and command browser
+Exec=/opt/mix/bin/viu run /opt/mix/share/mixviu/apps/workshop
+Icon=applications-development
+Terminal=false
+Categories=Development;

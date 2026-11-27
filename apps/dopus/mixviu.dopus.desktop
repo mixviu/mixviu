@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=DOpus
+Comment=MixViu file manager
+Exec=/opt/mix/bin/viu run /opt/mix/share/mixviu/apps/dopus
+Icon=system-file-manager
+Terminal=false
+Categories=System;FileManager;

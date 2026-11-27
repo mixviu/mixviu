@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Email
+Comment=MixViu email client
+Exec=/opt/mix/bin/viu run /opt/mix/share/mixviu/apps/email
+Icon=internet-mail
+Terminal=false
+Categories=Network;Email;
