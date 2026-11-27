@@ -316,19 +316,20 @@ async fn deliver_inner(
                 let reply_ms = ms.clone();
                 let hash = tokio::task::spawn_blocking(move || reply_ms.put_blob(&bytes)).await??;
                 store::queue_automatic_reply(
-                db,
-                store::AutomaticReply {
-                    account: delivery.account.id,
-                    sender: delivery.from.into(),
-                    handle: "guarded-reject".into(),
-                    days: 1,
-                    hash,
-                    verified_sender: reply_proof(&delivery),
-                    guarded_only_suppression: true,
-                },
-            )
+                    db,
+                    store::AutomaticReply {
+                        account: delivery.account.id,
+                        sender: delivery.from.into(),
+                        handle: "guarded-reject".into(),
+                        days: 1,
+                        hash,
+                        verified_sender: reply_proof(&delivery),
+                        guarded_only_suppression: true,
+                    },
+                )
                 .await
-            }.await;
+            }
+            .await;
             if let Err(error) = result {
                 tracing::warn!(account=delivery.account.id, %error, "Rejection reply failed; suppressing without bouncing original");
             }

@@ -34,15 +34,17 @@ failure or client resubmission does consume one; reservations are not refunded
 after crashes. Queue retries continue the admitted submission without another
 reservation. Entries expire exactly 3600 seconds after admission; a backwards
 clock retains future reservations. A forward wall-clock jump can expire them early.
-Unlimited accounts also reserve, preserving the window if a cap is enabled later.
+Unlimited submissions, replies and remote redirects also reserve, preserving
+their window if a cap is enabled later. Unguarded local redirects keep their
+previous behaviour and have no quota history before a guard is enabled.
 
 Recipient refusals return SMTP `550 5.7.1 recipientNotAllowed` or JMAP
 `notCreated` with type `forbiddenToSend`. Rate refusals return SMTP
 `451 4.7.0 sendRateExceeded` or JMAP type `tooManyRequests`.
 Storage failures refuse admission (JMAP `serverFail` for internal/storage errors).
 
-Account-authored vacation (Sieve and legacy), rejection DSNs and operator-enabled
-Sieve redirects use the same account recipient/rate admission. For guarded
+Account-authored vacation (Sieve and legacy), rejection DSNs and Sieve redirects
+use the same account recipient/rate admission. For guarded
 accounts this includes local targets, even when they belong to another domain on
 the same node. Denied automatic replies are dropped and logged. A denied redirect
 plan, local or remote, keeps the original in the recipient's normal default
