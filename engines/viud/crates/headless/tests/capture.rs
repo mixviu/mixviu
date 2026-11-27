@@ -243,7 +243,12 @@ fn scale_pump(pattern: &mut Pattern, duration: Duration) {
     }
 }
 
-fn scale_pump_rendered(bus: &Bus, process: &process::Process, pattern: &mut Pattern, duration: Duration) {
+fn scale_pump_rendered(
+    bus: &Bus,
+    process: &process::Process,
+    pattern: &mut Pattern,
+    duration: Duration,
+) {
     let until = Instant::now() + duration;
     while Instant::now() < until {
         pattern.pump();
@@ -271,7 +276,9 @@ fn fractional_wake_precedes_first_returned_presentation() {
 #[test]
 fn fractional_pan_off_and_grace_band_republish_real_scale() {
     use pattern::ScaleEvent;
-    if !process::record_available() { return; }
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("fractional-pan");
     let mut process = process::spawn_scale_probe("fractional-pan", &bus.url);
     let mut client = Pattern::scale_probe(connect(&mut process));
@@ -283,20 +290,48 @@ fn fractional_pan_off_and_grace_band_republish_real_scale() {
     let y = row["window_y"].as_f64().unwrap();
     let start = client.state.events.len();
     // Right edge of the slot lies more than 256 logical units off-pane.
-    fractional_camera(&bus, &process, &mut client, x + 200.0 + 256.0 + 256.0, y + 80.0, 1.0);
+    fractional_camera(
+        &bus,
+        &process,
+        &mut client,
+        x + 200.0 + 256.0 + 256.0,
+        y + 80.0,
+        1.0,
+    );
     scale_pump(&mut client, Duration::from_secs(2));
-    assert!(client.state.events[start..].iter().any(|(_, e)| *e == ScaleEvent::Preferred(120)), "{:?}", client.state.events);
+    assert!(
+        client.state.events[start..]
+            .iter()
+            .any(|(_, e)| *e == ScaleEvent::Preferred(120)),
+        "{:?}",
+        client.state.events
+    );
     let start = client.state.events.len();
     // Slot is still outside the pane, now inside its grace band.
-    fractional_camera(&bus, &process, &mut client, x + 200.0 + 256.0 + 100.0, y + 80.0, 1.0);
+    fractional_camera(
+        &bus,
+        &process,
+        &mut client,
+        x + 200.0 + 256.0 + 100.0,
+        y + 80.0,
+        1.0,
+    );
     scale_pump(&mut client, Duration::from_secs(2));
-    assert!(client.state.events[start..].iter().any(|(_, e)| *e == ScaleEvent::Preferred(300)), "{:?}", client.state.events);
+    assert!(
+        client.state.events[start..]
+            .iter()
+            .any(|(_, e)| *e == ScaleEvent::Preferred(300)),
+        "{:?}",
+        client.state.events
+    );
 }
 
 #[test]
 fn fractional_hidden_zoom_reaches_client_before_return() {
     use pattern::ScaleEvent;
-    if !process::record_available() { return; }
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("fractional-zoom");
     let mut process = process::spawn_scale_probe("fractional-zoom", &bus.url);
     let mut client = Pattern::scale_probe(connect(&mut process));
@@ -306,20 +341,57 @@ fn fractional_hidden_zoom_reaches_client_before_return() {
     scale_pump(&mut client, Duration::from_secs(2));
     bus.call("comp.workspace.switch", json!({"index":2}));
     let start = client.state.events.len();
-    fractional_camera(&bus, &process, &mut client, row["window_x"].as_f64().unwrap() + 100.0, row["window_y"].as_f64().unwrap() + 80.0, 2.0);
+    fractional_camera(
+        &bus,
+        &process,
+        &mut client,
+        row["window_x"].as_f64().unwrap() + 100.0,
+        row["window_y"].as_f64().unwrap() + 80.0,
+        2.0,
+    );
     scale_pump(&mut client, Duration::from_secs(2));
-    assert!(client.state.events[start..].iter().any(|(_, e)| *e == ScaleEvent::Preferred(540)), "{:?}", client.state.events);
-    assert!(client.state.events[start..].iter().any(|(_, e)| *e == ScaleEvent::Commit(900,720,540)), "{:?}", client.state.events);
+    assert!(
+        client.state.events[start..]
+            .iter()
+            .any(|(_, e)| *e == ScaleEvent::Preferred(540)),
+        "{:?}",
+        client.state.events
+    );
+    assert!(
+        client.state.events[start..]
+            .iter()
+            .any(|(_, e)| *e == ScaleEvent::Commit(900, 720, 540)),
+        "{:?}",
+        client.state.events
+    );
 }
 
-fn fractional_camera(bus: &Bus, process: &process::Process, client: &mut Pattern, x: f64, y: f64, zoom: f64) {
-    fs::write(process.root.join("record-input-next"), format!("fractional-camera:{x}:{y}:{zoom}")).unwrap();
-    fs::rename(process.root.join("record-input-next"), process.root.join("record-input")).unwrap();
+fn fractional_camera(
+    bus: &Bus,
+    process: &process::Process,
+    client: &mut Pattern,
+    x: f64,
+    y: f64,
+    zoom: f64,
+) {
+    fs::write(
+        process.root.join("record-input-next"),
+        format!("fractional-camera:{x}:{y}:{zoom}"),
+    )
+    .unwrap();
+    fs::rename(
+        process.root.join("record-input-next"),
+        process.root.join("record-input"),
+    )
+    .unwrap();
     // A real policy operation requests a composition; the fixture only changes
     // the camera the production scene and scale aggregation subsequently read.
     client.commit(true);
     // A hidden commit damages no output. Force a real output capture to render.
-    bus.call("comp.capture.frame", json!({"output":"headless-0", "path":process.root.join("camera.ppm"), "format":"ppm"}));
+    bus.call(
+        "comp.capture.frame",
+        json!({"output":"headless-0", "path":process.root.join("camera.ppm"), "format":"ppm"}),
+    );
 }
 
 fn fractional_return(minimized: bool, suspended: bool) {
