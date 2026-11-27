@@ -3,9 +3,9 @@
 pub mod lifecycle;
 pub mod mapping;
 #[cfg(test)]
-mod regression;
-#[cfg(test)]
 mod provider_warning_test;
+#[cfg(test)]
+mod regression;
 
 use crate::portal::{OBJECT_PATH, PortalError};
 use crate::screencast::{handle, request};
@@ -36,9 +36,15 @@ struct ProviderWarning(Option<std::time::Instant>);
 
 impl ProviderWarning {
     fn observe(&mut self, present: bool, session: &str, now: std::time::Instant) {
-        if !present && self.0.is_none_or(|last| now.duration_since(last) >= Duration::from_secs(60)) {
+        if !present
+            && self
+                .0
+                .is_none_or(|last| now.duration_since(last) >= Duration::from_secs(60))
+        {
             self.0 = Some(now);
-            tracing::warn!("FileChooser provider 'files' is not registered; start files@{session}.service");
+            tracing::warn!(
+                "FileChooser provider 'files' is not registered; start files@{session}.service"
+            );
         }
     }
 }
@@ -411,9 +417,15 @@ impl Bridge {
         // Check even with no pending requests: a missing provider otherwise
         // remains silent until an application asks for a file. Broker outages
         // are not evidence of a missing provider.
-        if let Ok(Ok(services)) = tokio::time::timeout(IO_TIMEOUT, self.client.list_services()).await {
+        if let Ok(Ok(services)) =
+            tokio::time::timeout(IO_TIMEOUT, self.client.list_services()).await
+        {
             let session = paths::env::raw(paths::env::MIX_RUN)
-                .and_then(|p| std::path::Path::new(&p).file_name().map(|s| s.to_string_lossy().into_owned()))
+                .and_then(|p| {
+                    std::path::Path::new(&p)
+                        .file_name()
+                        .map(|s| s.to_string_lossy().into_owned())
+                })
                 .unwrap_or_else(|| "<session>".into());
             self.provider_warning.lock().unwrap().observe(
                 services.iter().any(|name| name == "files"),

@@ -35,7 +35,12 @@ fn missing_provider_warns_at_startup_and_after_loss_with_a_rate_limit() {
         warning.observe(false, "4", now + Duration::from_secs(5));
         warning.observe(true, "4", now + Duration::from_secs(10));
         warning.observe(false, "4", now + Duration::from_secs(15));
-        assert_eq!(String::from_utf8_lossy(&log.0.lock().unwrap()).matches("WARN").count(), 1);
+        assert_eq!(
+            String::from_utf8_lossy(&log.0.lock().unwrap())
+                .matches("WARN")
+                .count(),
+            1
+        );
         warning.observe(false, "4", now + Duration::from_secs(60));
         let bytes = log.0.lock().unwrap();
         let text = String::from_utf8_lossy(&bytes);
