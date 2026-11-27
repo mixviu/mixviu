@@ -569,6 +569,10 @@ impl MeshPeers {
         self.state.write().await.tls = Some(tls);
     }
 
+    pub async fn peer_context(&self, peer: &str) -> Option<bus::native_session::PeerContext> {
+        self.state.read().await.connections.get(peer).map(|link| link.context.clone())
+    }
+
     pub fn node_name(&self) -> &str {
         &self.config.node_name
     }
@@ -1093,7 +1097,10 @@ async fn connect_and_publish(
                 );
                 anyhow::bail!("Connection to {} timed out after {}ms", peer.name, CONNECT_TIMEOUT.as_millis());
             }
-            Ok(Err(error)) => anyhow::bail!("Failed to connect to {}: {error}", peer.name),
+            Ok(Err(error)) => {
+                if peer.tls_port.is_some() { crate::tls::DIAL_REFUSALS.record(target, "dial-or-pin"); }
+                anyhow::bail!("Failed to connect to {}: {error}", peer.name)
+            },
             Ok(Ok(connected)) => connected,
         }
     };
@@ -1303,7 +1310,7 @@ async fn connect_and_publish(
             && let Some((node, key)) = context.mesh_peer()
         {
             anyhow::ensure!(
-                keys.contains(node, key),
+                mesh_trust::identity::link_refusal(&context, keys, &locked.tls_keys).is_none(),
                 "Peer key revoked before connection publication"
             );
         }

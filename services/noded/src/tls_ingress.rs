@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Bounded TLS handshake ingress. Queued sockets own no handshake permit.
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::connect_info::Connected;
 use axum::serve::{IncomingStream, Listener};
@@ -13,37 +12,27 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 use tokio_rustls::{TlsAcceptor, server::TlsStream};
+pub use mesh::tls::Refusals;
+
+pub(crate) fn prepare(
+    posture: &crate::authority::Posture, node: &str, settings: &config::node::NodedTls,
+) -> anyhow::Result<mesh::TlsRuntime> {
+    let crate::authority::Posture::Verified(a) = posture else {
+        anyhow::bail!("TLS requires a verified accepted inventory");
+    };
+    let keys = Arc::new(mesh_trust::identity::TlsAuthority::new(&a.members_full, a.epoch, a.recovery_generation));
+    let path = paths::resolve(&settings.key).map_err(anyhow::Error::msg)?;
+    let credential = Credential::new(mesh::tls::load_seed(&path)?)?;
+    let own_key = mesh::tls::public_key(&credential.certificate)?;
+    anyhow::ensure!(keys.member_for(&own_key).is_some_and(|m| m.member == node), "TLS requires a current own bus-tls key");
+    Ok(mesh::TlsRuntime { credential, authority: Arc::new(std::sync::RwLock::new(keys)) })
+}
 
 #[derive(Clone, Debug)]
 pub(crate) struct TlsPeer {
     pub address: SocketAddr,
     pub member: mesh_trust::identity::TlsMember,
     pub binding: [u8; 32],
-}
-
-#[derive(Default)]
-pub(crate) struct Refusals {
-    total: AtomicU64,
-    peers: Mutex<HashMap<(SocketAddr, &'static str), (Instant, u64, bool)>>,
-}
-impl Refusals {
-    pub fn total(&self) -> u64 {
-        self.total.load(Ordering::Relaxed)
-    }
-    fn record(&self, peer: SocketAddr, class: &'static str) {
-        let total = self.total.fetch_add(1, Ordering::Relaxed) + 1;
-        let now = Instant::now();
-        let mut peers = self.peers.lock().expect("TLS refusals poisoned");
-        let entry = peers.entry((peer, class)).or_insert((now, 0, false));
-        entry.1 += 1;
-        if !entry.2 || now.duration_since(entry.0) >= Duration::from_secs(60) {
-            tracing::warn!(event = "tls.refused", %peer, class, count = entry.1, total,
-                "TLS handshake refused");
-            entry.0 = now;
-            entry.1 = 0;
-            entry.2 = true;
-        }
-    }
 }
 
 type Accepted = (TlsStream<TcpStream>, TlsPeer);

@@ -994,14 +994,7 @@ async fn serve(
     let tls_configured = entries.iter().any(|entry| entry.tls)
         || mesh_config.peers.iter().any(|peer| peer.tls_port.is_some());
     let tls = if tls_configured {
-        let crate::authority::Posture::Verified(a) = &initial_posture else {
-            anyhow::bail!("TLS requires a verified accepted inventory");
-        };
-        let keys = Arc::new(mesh_trust::identity::TlsAuthority::new(&a.members_full, a.epoch, a.recovery_generation));
-        let credential = mesh::tls::Credential::new(mesh::tls::load_seed(&paths::resolve(&network.tls.key)?)?)?;
-        let own_key = mesh::tls::public_key(&credential.certificate)?;
-        anyhow::ensure!(keys.member_for(&own_key).is_some_and(|m| m.member == node), "TLS requires a current own bus-tls key");
-        Some(Arc::new(mesh::TlsRuntime { credential, authority: Arc::new(std::sync::RwLock::new(keys)) }))
+        Some(Arc::new(crate::tls_ingress::prepare(&initial_posture, &node, &network.tls)?))
     } else { None };
     let tls_refusals = Arc::new(crate::tls_ingress::Refusals::default());
     let mut bound = bound;
@@ -4804,7 +4797,7 @@ async fn handle_noded_command(
             meta.insert("pending_responses".into(), pending.into());
             meta.insert("pending_responder_closed".into(), responder_closed.into());
             meta.insert("refusal_totals".into(), refusal_totals());
-            meta.insert("tls_refusals".into(), serde_json::json!(state.tls_refusals.total()));
+            meta.insert("tls_refusals".into(), serde_json::json!(state.tls_refusals.total() + mesh::tls::DIAL_REFUSALS.total()));
             let info = bus::NodeInfo {
                 node: state.node_name.clone(),
                 // `bind` is `<host>:<port>`; the host is the WG IP. Parse
@@ -5727,6 +5720,7 @@ mod tests {
 
     include!("frame_policy_tests.rs");
     include!("identity_tests.rs");
+    include!("tls_tests.rs");
     use std::collections::HashMap;
     use std::net::{Ipv4Addr, TcpListener};
     use std::sync::Arc;

@@ -23,6 +23,7 @@ mod_module_files = "deny"
 [dependencies]
 bus = { workspace = true, features = ["native"] }
 config.workspace = true
+paths = { path = "../paths" }
 mesh.workspace = true
 tokio-rustls.workspace = true
 mesh-trust.workspace = true

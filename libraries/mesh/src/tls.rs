@@ -26,6 +26,29 @@ use zeroize::Zeroizing;
 /// Replace the immutable cache only after accepting a signed inventory.
 pub type LiveAuthority = Arc<RwLock<Arc<TlsAuthority>>>;
 
+#[derive(Default)]
+pub struct Refusals {
+    total: std::sync::atomic::AtomicU64,
+    peers: std::sync::Mutex<std::collections::HashMap<(std::net::SocketAddr, &'static str), (std::time::Instant, u64, bool)>>,
+}
+impl Refusals {
+    pub fn total(&self) -> u64 { self.total.load(std::sync::atomic::Ordering::Relaxed) }
+    pub fn record(&self, peer: std::net::SocketAddr, class: &'static str) {
+        let total = self.total.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let now = std::time::Instant::now();
+        let mut peers = self.peers.lock().expect("TLS refusals poisoned");
+        let entry = peers.entry((peer, class)).or_insert((now, 0, false));
+        entry.1 += 1;
+        if !entry.2 || now.duration_since(entry.0) >= std::time::Duration::from_secs(60) {
+            tracing::warn!(event = "tls.refused", %peer, class, count = entry.1, total, "TLS handshake refused");
+            entry.0 = now;
+            entry.1 = 0;
+            entry.2 = true;
+        }
+    }
+}
+pub static DIAL_REFUSALS: LazyLock<Refusals> = LazyLock::new(Default::default);
+
 /// Raw 32-byte TLS seed, normally mix:etc/noded/bus-tls.seed.
 /// Metadata is checked on the opened file, avoiding a stat/open race.
 pub fn load_seed(path: &std::path::Path) -> Result<BusTlsSeed, SeedFileError> {
