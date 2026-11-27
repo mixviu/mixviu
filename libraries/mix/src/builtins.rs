@@ -25963,8 +25963,8 @@ pub(crate) mod socket_sources {
     /// and Class S evaluation) also rechecks the interrupt flag every
     /// ACCEPT_SLICE, so an embedder without a Ctrl-C select still stops.
     #[cfg(unix)]
-    async fn wait_ready<T: std::os::fd::AsRawFd>(
-        ready: &tokio::io::unix::AsyncFd<T>,
+    async fn wait_ready(
+        ready: &SocketReadiness,
         deadline: Option<std::time::Instant>,
         interruptible: bool,
     ) -> Wait {
@@ -26572,8 +26572,8 @@ pub(crate) mod socket_sources {
     /// wait_ready for writability: the same deadline, slice and interrupt
     /// rules.
     #[cfg(unix)]
-    async fn wait_writable<T: std::os::fd::AsRawFd>(
-        ready: &tokio::io::unix::AsyncFd<T>,
+    async fn wait_writable(
+        ready: &SocketReadiness,
         deadline: Option<std::time::Instant>,
         interruptible: bool,
     ) -> Wait {
