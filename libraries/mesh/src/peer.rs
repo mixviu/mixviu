@@ -1534,8 +1534,15 @@ mod tests {
             })
             .to_string();
             assert!(
-                build_admit_response(&challenge, "local", &Some(crate::tls::Seed::new([9; 32])), peer, "example.test", 6)
-                    .is_some()
+                build_admit_response(
+                    &challenge,
+                    "local",
+                    &Some(crate::tls::Seed::new([9; 32])),
+                    peer,
+                    "example.test",
+                    6
+                )
+                .is_some()
             );
         }
         assert_eq!(super::peer_challenge_epoch("epoch-alpha"), Some(7));
@@ -1639,14 +1646,39 @@ mod tests {
 
         // B dialled C (gamma), which relays A's (beta's) challenge. B must
         // not supply the signature C could forward to A to impersonate B.
-        assert!(build_admit_response(&ch, "delta", &Some(crate::tls::Seed::new([9; 32])), "gamma", "bus", 7).is_none());
         assert!(
-            build_admit_response(&ch, "delta", &Some(crate::tls::Seed::new([9; 32])), "beta", "other.example", 7)
-                .is_none()
+            build_admit_response(
+                &ch,
+                "delta",
+                &Some(crate::tls::Seed::new([9; 32])),
+                "gamma",
+                "bus",
+                7
+            )
+            .is_none()
+        );
+        assert!(
+            build_admit_response(
+                &ch,
+                "delta",
+                &Some(crate::tls::Seed::new([9; 32])),
+                "beta",
+                "other.example",
+                7
+            )
+            .is_none()
         );
         for epoch in [6, 8] {
             assert!(
-                build_admit_response(&ch, "delta", &Some(crate::tls::Seed::new([9; 32])), "beta", "bus", epoch).is_some()
+                build_admit_response(
+                    &ch,
+                    "delta",
+                    &Some(crate::tls::Seed::new([9; 32])),
+                    "beta",
+                    "bus",
+                    epoch
+                )
+                .is_some()
             );
         }
 
@@ -1654,8 +1686,15 @@ mod tests {
         assert!(build_admit_response(&ch, "delta", &None, "beta", "bus", 7).is_none());
 
         // With a seed → a well-shaped response.
-        let wire = build_admit_response(&ch, "delta", &Some(crate::tls::Seed::new([9u8; 32])), "beta", "bus", 7)
-            .expect("response");
+        let wire = build_admit_response(
+            &ch,
+            "delta",
+            &Some(crate::tls::Seed::new([9u8; 32])),
+            "beta",
+            "bus",
+            7,
+        )
+        .expect("response");
         let resp = bus::parse(&wire).expect("parse");
         assert_eq!(resp.command_name(), Some("noded.admit.response"));
         assert_eq!(

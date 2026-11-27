@@ -32,14 +32,22 @@ impl TlsAuthority {
         for (name, member) in members {
             for key in crate::admission::select_bus_tls_pubkeys(member, epoch) {
                 let key: [u8; 32] = key.try_into().expect("selector checks length");
-                let owner = (member["status"] == "active" && member["bus"] == true)
-                    .then(|| name.clone());
-                keys.entry(key).and_modify(|old| {
-                    if old != &owner { *old = None; }
-                }).or_insert(owner);
+                let owner =
+                    (member["status"] == "active" && member["bus"] == true).then(|| name.clone());
+                keys.entry(key)
+                    .and_modify(|old| {
+                        if old != &owner {
+                            *old = None;
+                        }
+                    })
+                    .or_insert(owner);
             }
         }
-        Self { epoch, revision, keys }
+        Self {
+            epoch,
+            revision,
+            keys,
+        }
     }
 
     pub fn member_for(&self, key: &[u8; 32]) -> Option<TlsMember> {
@@ -188,7 +196,10 @@ mod tests {
             assert!(select_bus_tls_pubkeys(&bad, 1).is_empty());
         }
         let mut missing = tls.clone();
-        missing["credentials"][0].as_object_mut().unwrap().remove("from_epoch");
+        missing["credentials"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("from_epoch");
         assert!(select_bus_tls_pubkeys(&missing, 1).is_empty());
         let mut closed = tls.clone();
         closed["credentials"][0]["until_epoch"] = serde_json::json!(2);
@@ -197,7 +208,9 @@ mod tests {
         let mut no_bus = tls.clone();
         no_bus["bus"] = serde_json::json!(false);
         let ambiguous = index(BTreeMap::from([
-            ("alpha".into(),tls.clone()), ("beta".into(),no_bus), ("gamma".into(),tls)
+            ("alpha".into(), tls.clone()),
+            ("beta".into(), no_bus),
+            ("gamma".into(), tls),
         ]));
         assert!(ambiguous.member_for(&key).is_none());
     }

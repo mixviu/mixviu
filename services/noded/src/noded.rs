@@ -1388,11 +1388,12 @@ fn classify_seed_read(raw: std::io::Result<String>) -> SeedRead {
             .and_then(|b| {
                 let bytes = zeroize::Zeroizing::new(b);
                 let mut seed = mesh::tls::Seed::new([0; 32]);
-                if bytes.len() != 32 { return None; }
+                if bytes.len() != 32 {
+                    return None;
+                }
                 seed.copy_from_slice(&bytes);
                 Some(seed)
-            })
-        {
+            }) {
             Some(seed) => SeedRead::Loaded(seed),
             None => SeedRead::Malformed,
         },
