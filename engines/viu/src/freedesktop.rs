@@ -166,6 +166,12 @@ impl Lookup {
     /// `/` to `-` in their ID). An entry without `Icon=` but with an
     /// `AudioVideo` category gives `applications-multimedia`.
     pub fn application_icon(&self, id: &str) -> Option<String> {
+        config::app_id::candidates(id)
+            .iter()
+            .find_map(|id| self.application_icon_exact(id))
+    }
+
+    fn application_icon_exact(&self, id: &str) -> Option<String> {
         if id.is_empty() || id.contains(['/', '\\']) || id == "." || id == ".." {
             return None;
         }
@@ -203,6 +209,18 @@ impl Lookup {
     /// (optionally `file://`) is returned as is; a name with a path
     /// separator never leaves the icon directories.
     pub fn find(&self, name: &str, size: u32) -> Option<PathBuf> {
+        let candidates = config::app_id::candidates(normalise(name));
+        candidates
+            .iter()
+            .find_map(|name| self.find_exact(name, size))
+            .or_else(|| {
+                candidates
+                    .iter()
+                    .find_map(|name| self.find_alternate(name, size))
+            })
+    }
+
+    fn find_exact(&self, name: &str, size: u32) -> Option<PathBuf> {
         let name = normalise(name);
         let path = Path::new(name);
         if path.is_absolute() && is_image_file(path) {
@@ -219,6 +237,13 @@ impl Lookup {
                 return Some(path);
             }
         }
+        None
+    }
+
+    fn find_alternate(&self, name: &str, size: u32) -> Option<PathBuf> {
+        if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
+            return None;
+        }
         // Some themes install shell glyphs only as `*-symbolic`; others only
         // plain. Try the other spelling once, never bouncing back.
         let stem = name
@@ -226,10 +251,10 @@ impl Lookup {
             .or_else(|| name.strip_suffix(".png"))
             .unwrap_or(name);
         if let Some(plain) = stem.strip_suffix("-symbolic") {
-            if let Some(path) = self.themed(plain, size) {
+            if let Some(path) = self.find_exact(plain, size) {
                 return Some(path);
             }
-        } else if let Some(path) = self.find(&format!("{stem}-symbolic"), size) {
+        } else if let Some(path) = self.find_exact(&format!("{stem}-symbolic"), size) {
             return Some(path);
         }
         // Equivalent shell glyph names across the common themes.
@@ -853,8 +878,116 @@ mod tests {
         assert!(cache.contains_key(&("missing".into(), 24, 1, "Fixture".into(), None)));
     }
 
-    /// A fresh directory under the system temporary directory, removed on
-    /// drop.
+    #[test]
+    fn legacy_app_and_icon_references_resolve_both_ways_with_canonical_priority() {
+        let cases: Vec<serde_json::Value> = strict_fixture();
+        for case in cases {
+            let old = case["old"].as_str().unwrap();
+            let scratch = Scratch::new();
+            let new = case["current"].as_str().unwrap().to_owned();
+            let old_icon = format!("icons/hicolor/scalable/apps/{old}-symbolic.svg");
+            let new_icon = format!("icons/hicolor/scalable/apps/{new}-symbolic.svg");
+            scratch.write(&old_icon, "svg");
+            scratch.write(
+                &format!("applications/{old}.desktop"),
+                "[Desktop Entry]\nIcon=legacy-icon\n",
+            );
+            let lookup = scratch.lookup("hicolor");
+            assert_eq!(
+                lookup.find(&format!("{new}-symbolic"), 24),
+                Some(scratch.0.join(&old_icon))
+            );
+            assert_eq!(
+                lookup.application_icon(&new).as_deref(),
+                Some("legacy-icon")
+            );
+            scratch.write(&new_icon, "svg");
+            scratch.write(
+                &format!("applications/{new}.desktop"),
+                "[Desktop Entry]\nIcon=current-icon\n",
+            );
+            for reference in [old, new.as_str()] {
+                assert_eq!(
+                    lookup.find(&format!("{reference}-symbolic"), 24),
+                    Some(scratch.0.join(&new_icon))
+                );
+                assert_eq!(
+                    lookup.application_icon(reference).as_deref(),
+                    Some("current-icon")
+                );
+                assert_eq!(
+                    lookup
+                        .application_icon(&format!("{reference}.desktop"))
+                        .as_deref(),
+                    Some("current-icon")
+                );
+            }
+            std::fs::remove_file(scratch.0.join(old_icon)).unwrap();
+            std::fs::remove_file(scratch.0.join(format!("applications/{old}.desktop"))).unwrap();
+            assert_eq!(
+                lookup.find(&format!("{old}-symbolic"), 24),
+                Some(scratch.0.join(new_icon))
+            );
+            assert_eq!(
+                lookup.application_icon(old).as_deref(),
+                Some("current-icon")
+            );
+        }
+    }
+
+    fn strict_fixture() -> Vec<serde_json::Value> {
+        config::from_conf_mix_str(include_str!(
+            "../../viud/tests/fixtures/apps/legacy-ids.conf.mix"
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn exact_legacy_plain_icon_precedes_all_symbolic_alternates() {
+        let scratch = Scratch::new();
+        scratch.write("icons/hicolor/scalable/apps/dev.mixos.prefs.svg", "plain");
+        scratch.write(
+            "icons/hicolor/scalable/apps/dev.mixos.prefs-symbolic.svg",
+            "symbolic",
+        );
+        let lookup = scratch.lookup("hicolor");
+        for id in ["dev.mixos.prefs", "dev.mix.prefs"] {
+            assert_eq!(
+                lookup.find(id, 24),
+                Some(
+                    scratch
+                        .0
+                        .join("icons/hicolor/scalable/apps/dev.mixos.prefs.svg")
+                )
+            );
+        }
+    }
+
+    #[test]
+    fn similar_names_and_reference_gallery_are_not_identity_aliases() {
+        let scratch = Scratch::new();
+        for id in [
+            "dev.mixos.ced-extra",
+            "mixviu.terminal",
+            "mixviu.term-mixer",
+            "mixviu.gallery.native",
+        ] {
+            scratch.write(
+                &format!("applications/{id}.desktop"),
+                &format!("[Desktop Entry]\nIcon={id}\n"),
+            );
+            scratch.write(&format!("icons/hicolor/scalable/apps/{id}.svg"), "svg");
+        }
+        let lookup = scratch.lookup("hicolor");
+        for id in ["dev.mix.ced", "dev.mix.term", "dev.mix.gallery.native"] {
+            assert!(lookup.application_icon(id).is_none());
+            assert!(lookup.find(id, 24).is_none());
+        }
+        assert!(lookup.application_icon("mixviu.gallery.native").is_some());
+        assert!(lookup.find("mixviu.gallery.native", 24).is_some());
+    }
+
+    /// A fresh directory under the system temporary directory, removed on drop.
     struct Scratch(PathBuf);
 
     impl Scratch {

@@ -116,8 +116,28 @@ $PINNED_CATEGORY = "Pinned"
 $PINNED_APPS = ["firefox", "org.mozilla.firefox", "thunderbird", "org.mozilla.Thunderbird",
   "net.thunderbird.Thunderbird"]
 
--- The launcher's default view: every dev.mixos.* app, plus Firefox and
--- Thunderbird under their usual desktop IDs.
+-- Same identity compatibility as apps.canonical_app_id / config::app_id.
+-- Kept pure here so scene data helpers need no installed apps service.
+fn canonical_app_id($id)
+  -- The reference gallery's mixviu.gallery.<mode> is a different application.
+  if starts_with($id, "mixviu.gallery.") and not contains(["desktop", "svg", "png"], substr($id, 15)) then return $id end
+  if starts_with($id, "dev.mixos.") then return "dev.mix." .. substr($id, 10) end
+  if starts_with($id, "mixviu.") then
+    $rest = substr($id, 7)
+    for $app in ["term-mix", "gallery-mix", "ced", "term", "deck", "bustap", "gallery"]
+      if starts_with($rest, $app) then
+        $tail = substr($rest, len($app))
+        if $tail == "" or starts_with($tail, ".") or starts_with($tail, "-symbolic") then
+          $service = ends_with($app, "-mix") ? substr($app, 0, len($app)-4) : $app
+          return "dev.mix." .. $service .. $tail
+        end
+      end
+    end
+  end
+  return $id
+end
+
+-- Preserve main's pin set in PR A. PR B changes the authored identity policy.
 fn pinned($apps)
   $out = []
   for each $a in $apps
