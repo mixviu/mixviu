@@ -89,7 +89,7 @@ async fn one(
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
     })
-    .await??;
+    .await.context("waiting for the portal's native chooser request")??;
     tokio::time::timeout(WAIT, async {
         loop {
             if let Ok(tree) = drive(bus, &id, "files.ui.tree", json!({})).await
@@ -100,9 +100,9 @@ async fn one(
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     })
-    .await?;
+    .await.context("waiting for the chooser UI to become ready")?;
     if cancel {
-        let _ = drive(bus, &id, "files.ui.click", json!({"label":"Cancel"})).await;
+        drive(bus, &id, "files.ui.click", json!({"id":"footer.command.cancel"})).await?;
     } else if method == "OpenFile" {
         drive(bus, &id, "files.ui.click", json!({"label":"notes.txt"})).await?;
         let _ = drive(bus, &id, "files.ui.click", json!({"label":"Open"})).await;
@@ -124,7 +124,7 @@ async fn one(
         }
     }
     let message = tokio::time::timeout(WAIT, responses.next())
-        .await?
+        .await.context("waiting for the portal Response after chooser input")?
         .context("Response stream ended")??;
     let (code, results): (u32, HashMap<String, OwnedValue>) = message.body().deserialize()?;
     ensure!(
