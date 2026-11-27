@@ -108,7 +108,9 @@ pub enum ScaleEvent {
 impl State {
     fn log_scale(&mut self, event: ScaleEvent) {
         if self.scale_probe {
-            self.events.push((Instant::now(), event));
+            let at = Instant::now();
+            eprintln!("FRACTIONAL_EVENT at={at:?} event={event:?}");
+            self.events.push((at, event));
         }
     }
 }
