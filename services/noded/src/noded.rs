@@ -6349,6 +6349,10 @@ mod tests {
             .with_writer(move || writer.clone())
             .finish();
         let _guard = tracing::subscriber::set_default(subscriber);
+        // Another test thread may have cached these warn! callsites as
+        // never-interested; without a rebuild the capture can see nothing
+        // (merge-queue candidate 53d88ace, 2026-11-27).
+        tracing::callsite::rebuild_interest_cache();
         let directory = std::env::temp_dir().join(format!("d2-policy-{}", rand::random::<u64>()));
         std::fs::create_dir(&directory).unwrap();
         let target = directory.join("seed");
