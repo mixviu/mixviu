@@ -22,6 +22,9 @@ $noded = env("MIX_TEST_NODED_EXE") != "" ? env("MIX_TEST_NODED_EXE") : "/opt/mix
 $icons_install = $root .. "/share/icons/install.mix"
 $brand_install = $root .. "/share/brand/install.mix"
 $tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-apps-bus-test.XXXXXXXX"]))
+-- Native ingress requires traversable ancestors. Only this test-owned tree
+-- changes mode; the broker still checks ownership and caller credentials.
+chmod($tmp, 0o711)
 $tag = uuid()
 -- Pre-bound so the finally block can run even when a setup step fails
 -- before the broker or the citizen exists.
@@ -154,6 +157,7 @@ fn lifecycle_checks()
   check(call("apps", "apps.start", json_encode({argv: ["/usr/bin/sleep", "30"]})).rc == 10, "argv enabled by default")
   export MIX_NODED_URL="unix://" .. $bus.dir .. "/run/noded/bus.sock"
   bus_reconnect()
+  subscribe("apps.exited")
   $enable = call("apps", "apps.props.set", json_encode({path: "apps.allow_argv", value: true}))
   check($enable.rc == 0, "local argv enable: " .. json_encode($enable) .. " endpoint=" .. env("MIX_NODED_URL"))
   check(call("apps", "apps.start", json_encode({id: "plain", argv: ["/usr/bin/true"]})).rc == 10, "both selectors accepted")
