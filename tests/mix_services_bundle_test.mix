@@ -17,10 +17,15 @@ try
   if len($entries) != len($expected) then raise("BUNDLE", "expected exactly ten launcher entries") end
   $visible = filter($registry.scan_apps([$launchers], "", "MIXOS"), fn($e) = not $e.no_display)
   if len($visible) != len($expected) then raise("BUNDLE", "registry hid a bundled launcher") end
+  $launcher_data = require("../share/scenes/lib/data.mix")
+  $listed = map($visible, fn($e) = $registry.project_list($e))
+  if not deep_eq($launcher_data.pinned($listed), $listed) then
+    raise("BUNDLE", "default launcher view hid a bundled app")
+  end
   for $app in $expected
     $id = "mixviu." .. $app
     $sources = $app_files.tracked("apps/" .. $app .. "/mixviu.*.desktop")
-    if $sources != ["apps/" .. $app .. "/" .. $id .. ".desktop"] then
+    if not deep_eq($sources, ["apps/" .. $app .. "/" .. $id .. ".desktop"]) then
       raise("BUNDLE", "expected one tracked launcher source for " .. $app)
     end
     if len(filter($entries, fn($p) = basename($p) == $id .. ".desktop")) != 1 then
@@ -40,7 +45,7 @@ try
       if not contains(read_file($tmp .. "/apps/bin/term"), "\"/opt/mix/bin/viu\", \"run\", \"/opt/mix/share/mixviu/apps/term\"") then
         raise("BUNDLE", "Term wrapper does not name its bundled app")
       end
-    elif $registry.parse_exec($entry.exec) != ["/opt/mix/bin/viu", "run", "/opt/mix/share/mixviu/apps/" .. $app] then
+    elif not deep_eq($registry.parse_exec($entry.exec), ["/opt/mix/bin/viu", "run", "/opt/mix/share/mixviu/apps/" .. $app]) then
       raise("BUNDLE", "Exec does not name the bundled app: " .. $app)
     end
   end

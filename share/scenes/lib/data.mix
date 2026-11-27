@@ -116,13 +116,13 @@ $PINNED_CATEGORY = "Pinned"
 $PINNED_APPS = ["firefox", "org.mozilla.firefox", "thunderbird", "org.mozilla.Thunderbird",
   "net.thunderbird.Thunderbird"]
 
--- The launcher's default view: every dev.mixos.* app, plus Firefox and
+-- The launcher's default view: every mixviu.* and dev.mixos.* app, plus Firefox and
 -- Thunderbird under their usual desktop IDs.
 fn pinned($apps)
   $out = []
   for each $a in $apps
     $id = $a.id ?? ""
-    if starts_with($id, "dev.mixos.") or contains($PINNED_APPS, $id) then push($out, $a) end
+    if starts_with($id, "mixviu.") or starts_with($id, "dev.mixos.") or contains($PINNED_APPS, $id) then push($out, $a) end
   end
   return $out
 end
