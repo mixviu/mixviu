@@ -138,14 +138,14 @@ fn stage_test($mix)
       run_step([$mix, $case])
     end
   end
-  -- Bus script tests use the fresh shell and broker, never installed binaries.
-  for $exe in ["mix", "noded"]
-    if not is_file("target/debug/" .. $exe) then
-      print("::error::Bus script tests require tree-built target/debug/" .. $exe .. "; build mix and noded first")
+  -- Bus script tests use the selected shell and the tree-built broker.
+  for $exe in [$abs, "target/debug/noded"]
+    if not is_file($exe) then
+      print("::error::Bus script tests require " .. $exe .. "; build mix and noded first (or check --mix)")
       exit(1)
     end
   end
-  $bus_test_env = merge($test_env, {MIX_TEST_MIX_EXE: realpath("target/debug/mix"), MIX_TEST_NODED_EXE: realpath("target/debug/noded")})
+  $bus_test_env = merge($test_env, {MIX_TEST_MIX_EXE: $abs, MIX_TEST_NODED_EXE: realpath("target/debug/noded")})
   run_step([$mix, "engines/viud/tests/apps_bus_test.mix"], $bus_test_env)
   -- The daily pipeline: a fixture repository and fake gh, then the citizen
   -- on a private broker (noded is built by the workspace tests above).
