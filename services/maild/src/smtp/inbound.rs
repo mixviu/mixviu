@@ -1297,10 +1297,8 @@ pub(crate) async fn enforce_own_spf(
         let Some(domain) = super::envelope::dns_domain(domain) else {
             continue;
         };
-        let key = ::props::record::RecordKey::collection(
-            crate::props::domains::namespace_name(),
-            domain,
-        );
+        let key =
+            ::props::record::RecordKey::collection(crate::props::domains::namespace_name(), domain);
         let record = match domains.store().get(&key).await {
             Ok(record) => record,
             Err(::props::store::StoreError::NotFound) => continue,
@@ -1317,10 +1315,7 @@ pub(crate) async fn enforce_own_spf(
             Some(::props::value::PropValue::String(s)) if s == "lenient" || s == "off" => false,
             _ => anyhow::bail!("invalid domain SPF policy"),
         };
-        if view.enabled
-            && view.role == "authoritative"
-            && strict
-        {
+        if view.enabled && view.role == "authoritative" && strict {
             return Err(crate::sieve::delivery::Rejected("ownDomainSpfFail".into()).into());
         }
     }

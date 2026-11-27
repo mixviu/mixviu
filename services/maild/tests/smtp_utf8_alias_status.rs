@@ -84,8 +84,16 @@ async fn guard_props(
     rate: Option<i64>,
 ) -> Result<()> {
     let value = json!({"email":"alice@example.com","allowed_recipients":allowed,"send_rate":rate});
-    let version = built.accounts_runtime().store().get(&RecordKey::collection(
-        maild::props::accounts::namespace_name(), "alice@example.com")).await?.value.version;
+    let version = built
+        .accounts_runtime()
+        .store()
+        .get(&RecordKey::collection(
+            maild::props::accounts::namespace_name(),
+            "alice@example.com",
+        ))
+        .await?
+        .value
+        .version;
     built
         .accounts_runtime()
         .set(

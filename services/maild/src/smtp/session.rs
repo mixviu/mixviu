@@ -395,20 +395,20 @@ where
                     && let Err(error) =
                         crate::submission_guard::admit(&session.state.db, account, &session.rcpt_to)
                             .await
-                    {
-                        let reply = match error.downcast_ref::<crate::submission_guard::Refusal>() {
-                            Some(crate::submission_guard::Refusal::Recipient) => {
-                                "550 5.7.1 recipientNotAllowed"
-                            }
-                            Some(crate::submission_guard::Refusal::Rate) => {
-                                "451 4.7.0 sendRateExceeded"
-                            }
-                            None => "451 4.3.0 Submission guard unavailable",
-                        };
-                        write_line(writer, reply).await?;
-                        session.reset_transaction();
-                        data_buf.clear();
-                        continue;
+                {
+                    let reply = match error.downcast_ref::<crate::submission_guard::Refusal>() {
+                        Some(crate::submission_guard::Refusal::Recipient) => {
+                            "550 5.7.1 recipientNotAllowed"
+                        }
+                        Some(crate::submission_guard::Refusal::Rate) => {
+                            "451 4.7.0 sendRateExceeded"
+                        }
+                        None => "451 4.3.0 Submission guard unavailable",
+                    };
+                    write_line(writer, reply).await?;
+                    session.reset_transaction();
+                    data_buf.clear();
+                    continue;
                 }
                 // : fire-and-forget for an ALL-token-shaped message closes the
                 // timing oracle. We write 250 IMMEDIATELY — no resolve/delivery
