@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Purpose-separated, erasing seeds and the shared descriptor-based file policy.
 use std::fs::{File, OpenOptions};
+use std::io::Read;
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 use zeroize::Zeroizing;
@@ -25,10 +27,22 @@ impl std::fmt::Debug for D2Seed {
 }
 
 /// Independent TLS transport material; never construct this from a D2 seed.
+///
+/// Outside mesh, raw D2 bytes cannot be passed to the private constructor:
+/// ```compile_fail
+/// use mesh::seed::{BusTlsSeed, D2Seed};
+/// let d2 = D2Seed::new([7; 32]);
+/// let tls = BusTlsSeed::new(d2.as_ref().try_into().unwrap());
+/// ```
+/// Nor is a purpose-changing conversion provided:
+/// ```compile_fail
+/// use mesh::seed::{BusTlsSeed, D2Seed};
+/// let tls: BusTlsSeed = D2Seed::new([7; 32]).into();
+/// ```
 #[derive(Clone, PartialEq, Eq)]
 pub struct BusTlsSeed(Zeroizing<[u8; 32]>);
 impl BusTlsSeed {
-    pub fn new(bytes: [u8; 32]) -> Self {
+    pub(crate) fn new(bytes: [u8; 32]) -> Self {
         Self(Zeroizing::new(bytes))
     }
     pub(crate) fn bytes(&self) -> &[u8; 32] {
@@ -55,10 +69,28 @@ pub enum SeedFileError {
 
 /// fstat results belong to this opened descriptor, never to a prior path lookup.
 pub struct SeedFile {
-    pub file: File,
+    file: File,
     pub mode: u32,
     pub owner: u32,
     pub secure: bool,
+}
+
+impl SeedFile {
+    /// Read from the checked regular-file descriptor with O_NONBLOCK cleared.
+    pub fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+        self.file.read(bytes)
+    }
+
+    /// Read at most limit bytes into erasing storage. None means the opened
+    /// file exceeds the limit; never accept a valid prefix of an oversized file.
+    pub fn read_bounded(&mut self, limit: u64) -> std::io::Result<Option<Zeroizing<Vec<u8>>>> {
+        let mut bytes = Zeroizing::new(Vec::new());
+        (&mut self.file).take(limit).read_to_end(&mut bytes)?;
+        if self.file.metadata()?.len() > limit {
+            return Ok(None);
+        }
+        Ok(Some(bytes))
+    }
 }
 
 /// Open without following symlinks or blocking on FIFOs, then require a regular
@@ -72,6 +104,15 @@ pub fn open_seed(path: &Path) -> Result<SeedFile, SeedFileError> {
     let metadata = file.metadata()?;
     if !metadata.is_file() {
         return Err(SeedFileError::NotRegular);
+    }
+    // SAFETY: file owns a live descriptor; these commands take/return flags.
+    let flags = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETFL) };
+    if flags == -1 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    // SAFETY: the fd remains owned and flags came from F_GETFL above.
+    if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETFL, flags & !libc::O_NONBLOCK) } == -1 {
+        return Err(std::io::Error::last_os_error().into());
     }
     let mode = metadata.mode() & 0o7777;
     let owner = metadata.uid();
@@ -89,6 +130,17 @@ pub fn open_seed(path: &Path) -> Result<SeedFile, SeedFileError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn regular_seed_descriptor_is_blocking() {
+        let path = std::env::temp_dir().join(format!("seed-flags-{}", uuid::Uuid::new_v4()));
+        std::fs::write(&path, [7; 32]).unwrap();
+        let opened = open_seed(&path).unwrap();
+        // SAFETY: opened owns the live descriptor.
+        let flags = unsafe { libc::fcntl(opened.file.as_raw_fd(), libc::F_GETFL) };
+        assert_ne!(flags, -1);
+        assert_eq!(flags & libc::O_NONBLOCK, 0);
+        std::fs::remove_file(path).unwrap();
+    }
     #[test]
     fn purpose_seed_debug_is_redacted() {
         for debug in [

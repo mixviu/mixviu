@@ -29,19 +29,17 @@ pub type LiveAuthority = Arc<RwLock<Arc<TlsAuthority>>>;
 /// Raw 32-byte TLS seed, normally mix:etc/noded/bus-tls.seed.
 /// Metadata is checked on the opened file, avoiding a stat/open race.
 pub fn load_seed(path: &std::path::Path) -> Result<BusTlsSeed, SeedFileError> {
-    use std::io::Read;
-    let opened = crate::seed::open_seed(path)?;
+    let mut opened = crate::seed::open_seed(path)?;
     if !opened.secure {
         return Err(SeedFileError::Insecure {
             mode: opened.mode,
             owner: opened.owner,
         });
     }
-    let mut file = opened.file;
     let mut bytes = Zeroizing::new([0; 33]);
     let mut len = 0;
     while len < bytes.len() {
-        let n = file.read(&mut bytes[len..])?;
+        let n = opened.read(&mut bytes[len..])?;
         if n == 0 {
             break;
         }

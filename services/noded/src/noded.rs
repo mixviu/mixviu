@@ -1378,7 +1378,12 @@ enum SeedRead {
 
 impl std::fmt::Debug for SeedRead {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("<redacted>")
+        match self {
+            Self::Loaded(_) => f.write_str("Loaded(<redacted>)"),
+            Self::Absent => f.write_str("Absent"),
+            Self::Unreadable(kind) => f.debug_tuple("Unreadable").field(kind).finish(),
+            Self::Malformed => f.write_str("Malformed"),
+        }
     }
 }
 
@@ -1386,9 +1391,9 @@ impl std::fmt::Debug for SeedRead {
 /// to a [`SeedRead`]. `NotFound` → `Absent` (silent, normal pre-ceremony); any
 /// other IO error (notably `PermissionDenied`) → `Unreadable` (loud); a
 /// readable-but-non-base64-32 body → `Malformed` (loud).
-fn classify_seed_read(raw: std::io::Result<zeroize::Zeroizing<Vec<u8>>>) -> SeedRead {
+fn classify_seed_read(raw: std::io::Result<Option<zeroize::Zeroizing<Vec<u8>>>>) -> SeedRead {
     match raw {
-        Ok(source) => {
+        Ok(Some(source)) => {
             let Ok(text) = std::str::from_utf8(&source) else {
                 return SeedRead::Malformed;
             };
@@ -1406,14 +1411,14 @@ fn classify_seed_read(raw: std::io::Result<zeroize::Zeroizing<Vec<u8>>>) -> Seed
                 _ => SeedRead::Malformed,
             }
         }
+        Ok(None) => SeedRead::Malformed,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => SeedRead::Absent,
         Err(e) => SeedRead::Unreadable(e.kind().to_string()),
     }
 }
 
-fn read_d2_seed(path: &std::path::Path) -> std::io::Result<zeroize::Zeroizing<Vec<u8>>> {
-    use std::io::Read;
-    let opened = mesh::seed::open_seed(path).map_err(|error| match error {
+fn read_d2_seed(path: &std::path::Path) -> std::io::Result<Option<zeroize::Zeroizing<Vec<u8>>>> {
+    let mut opened = mesh::seed::open_seed(path).map_err(|error| match error {
         mesh::seed::SeedFileError::Io(error) => error,
         other => std::io::Error::other(other),
     })?;
@@ -1424,9 +1429,7 @@ fn read_d2_seed(path: &std::path::Path) -> std::io::Result<zeroize::Zeroizing<Ve
             "INSECURE d2 seed permissions or owner; expected root:noded 0640; loading during rollout"
         );
     }
-    let mut bytes = zeroize::Zeroizing::new(Vec::new());
-    opened.file.take(u64::MAX).read_to_end(&mut bytes)?;
-    Ok(bytes)
+    opened.read_bounded(128)
 }
 
 /// Read this node's `kind:"d2"` admission seed (SPEC 13 §9a, slice 2-c-1) —
@@ -6057,20 +6060,20 @@ mod tests {
         }
         // Readable + valid base64-32 → Loaded.
         assert_eq!(
-            classify_seed_read(Ok(zeroize::Zeroizing::new(
+            classify_seed_read(Ok(Some(zeroize::Zeroizing::new(
                 b64.encode([7u8; 32]).into_bytes()
-            ))),
+            )))),
             SeedRead::Loaded(mesh::seed::D2Seed::new([7u8; 32]))
         );
         // Readable but wrong length / not base64 → Malformed (LOUD).
         assert_eq!(
-            classify_seed_read(Ok(zeroize::Zeroizing::new(
+            classify_seed_read(Ok(Some(zeroize::Zeroizing::new(
                 b64.encode([7u8; 16]).into_bytes()
-            ))),
+            )))),
             SeedRead::Malformed
         );
         assert_eq!(
-            classify_seed_read(Ok(zeroize::Zeroizing::new(b"!!! not base64 !!!".to_vec()))),
+            classify_seed_read(Ok(Some(zeroize::Zeroizing::new(b"!!! not base64 !!!".to_vec())))),
             SeedRead::Malformed
         );
     }
@@ -6079,17 +6082,38 @@ mod tests {
     fn d2_seed_debug_and_malformed_buffers() {
         let read = super::SeedRead::Loaded(mesh::seed::D2Seed::new([173; 32]));
         let debug = format!("{read:?}");
-        assert_eq!(debug, "<redacted>");
+        assert_eq!(debug, "Loaded(<redacted>)");
         assert!(!debug.contains("173"));
+        assert_eq!(format!("{:?}", super::SeedRead::Absent), "Absent");
+        assert_eq!(format!("{:?}", super::SeedRead::Malformed), "Malformed");
+        assert_eq!(format!("{:?}", super::SeedRead::Unreadable("PermissionDenied".into())), "Unreadable(\"PermissionDenied\")");
         for source in [
             vec![0xff; 44],
             b"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA!".to_vec(),
         ] {
             assert_eq!(
-                super::classify_seed_read(Ok(zeroize::Zeroizing::new(source))),
+                super::classify_seed_read(Ok(Some(zeroize::Zeroizing::new(source)))),
                 super::SeedRead::Malformed
             );
         }
+    }
+
+    #[test]
+    fn d2_seed_oversize_file_is_malformed_not_a_valid_prefix() {
+        use base64::Engine as _;
+        use std::os::unix::fs::PermissionsExt;
+        let path = std::env::temp_dir().join(format!("d2-size-{}", rand::random::<u64>()));
+        let mut source = base64::engine::general_purpose::STANDARD.encode([173;32]).into_bytes();
+        source.resize(128, b' ');
+        std::fs::write(&path, &source).unwrap();
+        std::fs::set_permissions(&path,std::fs::Permissions::from_mode(0o640)).unwrap();
+        assert!(super::load_d2_seed(&path).is_some());
+        source.resize(4096, b' ');
+        std::fs::write(&path, &source).unwrap();
+        assert!(super::read_d2_seed(&path).unwrap().is_none());
+        assert_eq!(super::classify_seed_read(super::read_d2_seed(&path)), super::SeedRead::Malformed);
+        assert!(super::load_d2_seed(&path).is_none());
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
