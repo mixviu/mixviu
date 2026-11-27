@@ -2123,7 +2123,7 @@ async fn reconcile_transport_authority(
     }
 }
 
-const RELOAD_TEARDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+const RELOAD_TEARDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Observation only: expiry must never roll back the applied authority.
 async fn observe_reload_teardown(
