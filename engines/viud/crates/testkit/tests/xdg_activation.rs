@@ -17,7 +17,7 @@ fn policy_loop(h: &Harness) -> Loop {
             "main",
             vec![
                 Box::new(world::window::system::base::WindowSystem),
-Box::new(world::canvas::system::base::CanvasSystem),
+                Box::new(world::canvas::system::base::CanvasSystem),
                 Box::new(world::surface::system::base::SurfaceSystem),
             ],
             &kernel,

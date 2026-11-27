@@ -7490,7 +7490,6 @@ dependencies = [
  "decor",
  "dispatcher",
  "ledger",
- "logging",
  "model",
  "motion",
  "policy",

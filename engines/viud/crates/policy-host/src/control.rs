@@ -1817,7 +1817,9 @@ pub fn apply_client_requests(lp: &mut Loop) {
                         }
                         execute_with_origin(lp, decision.effects, ActivationOrigin::Token);
                     }
-                    Err(reason) => protocols::xdg::activation::request::refused(&format!("{reason:?}")),
+                    Err(reason) => {
+                        protocols::xdg::activation::request::refused(&format!("{reason:?}"))
+                    }
                 }
             }
             WindowRequest::Maximize(enabled) => {
