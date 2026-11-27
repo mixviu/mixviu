@@ -43,6 +43,9 @@ pub struct PeerConfig {
     /// Broker WebSocket port on that node (default 4200)
     #[serde(default = "default_noded_port")]
     pub noded_port: u16,
+    /// Temporary until inventory endpoints and DNS-SD land in PR 4.
+    #[serde(default)]
+    pub tls_port: Option<u16>,
 }
 
 fn default_noded_port() -> u16 {
@@ -52,14 +55,14 @@ fn default_noded_port() -> u16 {
 impl PeerConfig {
     /// Typed transport address for cache identity and IPv6-safe URL rendering.
     pub fn noded_addr(&self) -> SocketAddr {
-        SocketAddr::new(self.mesh_ip, self.noded_port)
+        SocketAddr::new(self.mesh_ip, self.tls_port.unwrap_or(self.noded_port))
     }
 
     /// WebSocket URL for this peer's broker.
     pub fn noded_url(&self) -> String {
         // Rendered via SocketAddr so an IPv6 address is bracketed
         // (`[::1]:4200`); direct interpolation would emit an invalid URL.
-        format!("ws://{}/ws", self.noded_addr())
+        format!("{}://{}/ws", if self.tls_port.is_some() { "wss" } else { "ws" }, self.noded_addr())
     }
 }
 
@@ -142,6 +145,18 @@ pub fn build_admit_response(
     expected_mesh: &str,
     local_epoch: u64,
 ) -> Option<String> {
+    build_bound_admit_response(challenge, node_name, d2_seed, expected_verifier, expected_mesh, local_epoch, &[0; 32])
+}
+
+pub fn build_bound_admit_response(
+    challenge: &BusMessage,
+    node_name: &str,
+    d2_seed: &Option<crate::seed::D2Seed>,
+    expected_verifier: &str,
+    expected_mesh: &str,
+    local_epoch: u64,
+    binding: &[u8; 32],
+) -> Option<String> {
     let seed = d2_seed.as_ref()?;
     let id = challenge.get("id")?.to_string();
     let body: serde_json::Value = serde_json::from_str(&challenge.body).ok()?;
@@ -170,7 +185,7 @@ pub fn build_admit_response(
         session_id: b64.decode(body.get("session_id")?.as_str()?).ok()?,
         server_nonce: b64.decode(body.get("server_nonce")?.as_str()?).ok()?,
         client_ephemeral: vec![0u8; 32],
-        channel_binding_hash: vec![0u8; 32],
+        channel_binding_hash: binding.to_vec(),
     };
     let sig = sign_admission_transcript(seed.bytes(), &transcript).ok()?;
     let mut resp = BusMessage::new()
@@ -184,7 +199,7 @@ pub fn build_admit_response(
         "signed_epoch": transcript.inventory_epoch,
         "signature": b64.encode(sig),
         "client_ephemeral": b64.encode([0u8; 32]),
-        "channel_binding_hash": b64.encode([0u8; 32]),
+        "channel_binding_hash": b64.encode(binding),
     })
     .to_string();
     resp.originate_mesh(node_name);
@@ -348,6 +363,7 @@ pub struct AuthorityRevision {
 pub enum ConnectionRetireReason {
     Removed,
     KeyRevoked,
+    TlsKeyRevoked,
     UnprovenLinkRetired,
     EndpointChanged { replacement: SocketAddr },
 }
@@ -357,6 +373,7 @@ impl ConnectionRetireReason {
         match self {
             Self::Removed => "removed",
             Self::KeyRevoked => "exact-key-revoked",
+            Self::TlsKeyRevoked => "tls-key-revoked",
             Self::UnprovenLinkRetired => "unproven-link-retired",
             Self::EndpointChanged { .. } => "endpoint-changed",
         }
@@ -473,6 +490,8 @@ struct ConnectAttempt {
 }
 
 struct TransportState {
+    tls: Option<Arc<TlsRuntime>>,
+    tls_keys: Arc<mesh_trust::identity::TlsAuthority>,
     frame_enforce: bool,
     keys: Option<(mesh_trust::identity::KeyAuthority, String)>,
     desired: HashMap<String, SocketAddr>,
@@ -486,9 +505,17 @@ impl TransportState {
         context.mesh_peer().is_some_and(|(node, key)| {
             self.keys
                 .as_ref()
-                .is_some_and(|(keys, _)| keys.contains(node, key))
+                .is_some_and(|(keys, _)| {
+                    let _ = (node, key);
+                    mesh_trust::identity::link_refusal(context, keys, &self.tls_keys).is_none()
+                })
         })
     }
+}
+
+pub struct TlsRuntime {
+    pub credential: crate::tls::Credential,
+    pub authority: crate::tls::LiveAuthority,
 }
 
 /// Manages connections to remote mesh peers.
@@ -519,6 +546,8 @@ impl MeshPeers {
         Self {
             config,
             state: Arc::new(RwLock::new(TransportState {
+                tls: None,
+                tls_keys: Default::default(),
                 frame_enforce: false,
                 keys: None,
                 desired,
@@ -536,6 +565,10 @@ impl MeshPeers {
         self.state.write().await.frame_enforce = enforce;
     }
 
+    pub async fn set_tls(&self, tls: Arc<TlsRuntime>) {
+        self.state.write().await.tls = Some(tls);
+    }
+
     pub fn node_name(&self) -> &str {
         &self.config.node_name
     }
@@ -550,7 +583,7 @@ impl MeshPeers {
         keys: mesh_trust::identity::KeyAuthority,
         mesh: String,
     ) -> ReconcileReport {
-        self.reconcile(desired, revision, Some((keys, mesh))).await
+        self.reconcile(desired, revision, Some((keys, mesh)), Default::default()).await
     }
 
     pub async fn reconcile_endpoints(
@@ -558,7 +591,15 @@ impl MeshPeers {
         desired: HashMap<String, SocketAddr>,
         revision: AuthorityRevision,
     ) -> ReconcileReport {
-        self.reconcile(desired, revision, None).await
+        self.reconcile(desired, revision, None, Default::default()).await
+    }
+
+    pub async fn reconcile_security(
+        &self, desired: HashMap<String, SocketAddr>, revision: AuthorityRevision,
+        keys: mesh_trust::identity::KeyAuthority, mesh: String,
+        tls_keys: Arc<mesh_trust::identity::TlsAuthority>,
+    ) -> ReconcileReport {
+        self.reconcile(desired, revision, Some((keys, mesh)), tls_keys).await
     }
 
     async fn reconcile(
@@ -566,6 +607,7 @@ impl MeshPeers {
         desired: HashMap<String, SocketAddr>,
         revision: AuthorityRevision,
         keys: Option<(mesh_trust::identity::KeyAuthority, String)>,
+        tls_keys: Arc<mesh_trust::identity::TlsAuthority>,
     ) -> ReconcileReport {
         let mut state = self.state.write().await;
         let mut report = ReconcileReport::default();
@@ -592,8 +634,12 @@ impl MeshPeers {
         if let Some((authority, _)) = &keys {
             for (name, connection) in &state.connections {
                 if let Some((node, key)) = connection.context.mesh_peer() {
-                    if !authority.contains(node, key) {
-                        reasons.insert(name.clone(), ConnectionRetireReason::KeyRevoked);
+                    let _ = (node, key);
+                    if let Some(credential) = mesh_trust::identity::link_refusal(&connection.context, authority, &tls_keys) {
+                        tracing::info!(peer = %name, credential, "outbound link credential revoked");
+                        reasons.insert(name.clone(), if credential == "tls-key-revoked" {
+                            ConnectionRetireReason::TlsKeyRevoked
+                        } else { ConnectionRetireReason::KeyRevoked });
                     }
                 } else if authority.epoch() > 0 {
                     reasons
@@ -608,6 +654,7 @@ impl MeshPeers {
             }
         }
         state.keys = keys;
+        state.tls_keys = tls_keys;
         report.added = desired
             .keys()
             .filter(|name| !state.desired.contains_key(*name))
@@ -983,6 +1030,30 @@ async fn wait_for_attempt(
     }
 }
 
+trait PeerIo: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+impl<T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send> PeerIo for T {}
+
+async fn dial(
+    peer: &PeerConfig, tls: Option<Arc<TlsRuntime>>,
+) -> Result<(tokio_tungstenite::WebSocketStream<Box<dyn PeerIo>>, Option<(mesh_trust::identity::TlsMember, [u8; 32])>)> {
+    let tcp = tokio::net::TcpStream::connect(peer.noded_addr()).await?;
+    tcp.set_nodelay(true)?;
+    let (io, identity): (Box<dyn PeerIo>, _) = if peer.tls_port.is_some() {
+        let tls = tls.ok_or_else(|| anyhow::anyhow!("TLS peer configured without TLS credential"))?;
+        let config = tls.credential.client_config(tls.authority.clone(), peer.name.clone())?;
+        let stream = tokio_rustls::TlsConnector::from(config).connect(
+            rustls::pki_types::ServerName::try_from("bus.example.invalid")?, tcp,
+        ).await?;
+        let conn = stream.get_ref().1;
+        let member = crate::tls::verified_member(&tls.authority,
+            conn.peer_certificates().unwrap_or(&[]), Some(&peer.name))?;
+        let binding = crate::tls::client_channel_binding(conn)?;
+        (Box::new(stream), Some((member, binding)))
+    } else { (Box::new(tcp), None) };
+    let (ws, _) = tokio_tungstenite::client_async_with_config(peer.noded_url(), io, None).await?;
+    Ok((ws, identity))
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn connect_and_publish(
     peer: PeerConfig,
@@ -1000,11 +1071,12 @@ async fn connect_and_publish(
 
     // Nagle off on this end too: TCP_NODELAY is per socket, so the remote
     // broker's accept hook cannot cover the side that dialled.
+    let tls = state.read().await.tls.clone();
     let connect = tokio::time::timeout(
         CONNECT_TIMEOUT,
-        tokio_tungstenite::connect_async_with_config(&url, None, true),
+        dial(&peer, tls),
     );
-    let (ws_stream, _) = tokio::select! {
+    let (ws_stream, tls_peer) = tokio::select! {
         biased;
         changed = attempt_cancel.changed() => {
             let _ = changed;
@@ -1060,13 +1132,14 @@ async fn connect_and_publish(
                 if bus_msg.command_name() == Some("noded.admit.challenge") {
                     let authority = state.read().await.keys.clone();
                     if let Some(resp_wire) = authority.as_ref().and_then(|(keys, mesh)| {
-                        build_admit_response(
+                        build_bound_admit_response(
                             &bus_msg,
                             &node_name,
                             &d2_seed,
                             &peer.name,
                             mesh,
                             keys.epoch(),
+                            tls_peer.as_ref().map(|(_, hash)| hash).unwrap_or(&[0; 32]),
                         )
                     }) {
                         // A send failure here means the connection died —
@@ -1110,6 +1183,7 @@ async fn connect_and_publish(
     }
 
     let mut context = bus::native_session::PeerContext {
+        transport: None,
         identity: Default::default(),
         address: Some(target),
     };
@@ -1143,10 +1217,11 @@ async fn connect_and_publish(
                 {
                     continue;
                 }
-                return keys.authenticate_response(
+                return keys.authenticate_bound_response(
                     &body,
                     &serde_json::from_str(&response.body).ok()?,
                     &peer.name,
+                    tls_peer.as_ref().map(|(_, hash)| hash),
                 );
             }
         };
@@ -1157,6 +1232,16 @@ async fn connect_and_publish(
                 if let Ok(Some(identity)) = result { context.identity = identity; }
             }
         }
+    }
+    if let Some((member, _)) = tls_peer {
+        let Some((node, d2_key)) = context.mesh_peer() else {
+            anyhow::bail!("TLS peer did not pass exporter-bound D2 proof");
+        };
+        anyhow::ensure!(node == member.member, "TLS/D2 member mismatch");
+        context.transport = Some(bus::native_session::TransportIdentity::MeshTls {
+            member: member.member, tls_key: member.key, d2_key: *d2_key,
+            epoch: member.epoch, revision: member.revision, source: target,
+        });
     }
     // Enforce gates egress before even registration is written. Off/observe
     // retain the bounded legacy fallback for old brokers without reverse proof.
@@ -1839,6 +1924,7 @@ mod tests {
 
     fn peer(name: &str, endpoint: SocketAddr) -> PeerConfig {
         PeerConfig {
+    tls_port: None,
             name: name.into(),
             mesh_ip: endpoint.ip(),
             noded_port: endpoint.port(),
@@ -2096,6 +2182,7 @@ mod tests {
     async fn cache_reuses_only_the_same_resolved_endpoint() {
         let mesh = test_mesh();
         let original = PeerConfig {
+    tls_port: None,
             name: "beta".into(),
             mesh_ip: "192.0.2.2".parse().unwrap(),
             noded_port: DEFAULT_NODED_PORT,
@@ -2115,12 +2202,14 @@ mod tests {
         assert!(Arc::ptr_eq(&reused, &connection));
 
         let changed_ip = PeerConfig {
+    tls_port: None,
             mesh_ip: "192.0.2.3".parse().unwrap(),
             ..original.clone()
         };
         assert!(mesh.cached_connection(&changed_ip).await.is_none());
 
         let changed_port = PeerConfig {
+    tls_port: None,
             noded_port: 4300,
             ..original.clone()
         };
@@ -2135,6 +2224,7 @@ mod tests {
     async fn disconnected_cache_entry_is_not_reused() {
         let mesh = test_mesh();
         let peer = PeerConfig {
+    tls_port: None,
             name: "beta".into(),
             mesh_ip: "192.0.2.2".parse().unwrap(),
             noded_port: DEFAULT_NODED_PORT,
@@ -2810,6 +2900,8 @@ mod tests {
         let old = test_connection(target);
         let replacement = test_connection(target);
         let state = RwLock::new(TransportState {
+            tls: None,
+            tls_keys: Default::default(),
             frame_enforce: false,
             keys: None,
             desired: HashMap::from([("beta".into(), target)]),

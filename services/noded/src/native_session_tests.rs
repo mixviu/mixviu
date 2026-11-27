@@ -54,6 +54,7 @@ impl Broker {
         let (probe_tx, probe_rx) = oneshot::channel();
         let task = tokio::spawn(run_on(
             RunConfig {
+    network: None,
                 session_probe: Some(probe_tx),
                 listen: listen.clone(),
                 node,

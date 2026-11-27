@@ -368,6 +368,14 @@ pub fn channel_binding(conn: &rustls::Connection) -> Result<[u8; 32], Error> {
     conn.export_keying_material([0; 32], b"EXPORTER-Channel-Binding", Some(&[]))
 }
 
+/// The same RFC 9266 helper for tokio-rustls's borrowed connection halves.
+pub fn server_channel_binding(conn: &rustls::ServerConnection) -> Result<[u8; 32], Error> {
+    conn.export_keying_material([0; 32], b"EXPORTER-Channel-Binding", Some(&[]))
+}
+pub fn client_channel_binding(conn: &rustls::ClientConnection) -> Result<[u8; 32], Error> {
+    conn.export_keying_material([0; 32], b"EXPORTER-Channel-Binding", Some(&[]))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

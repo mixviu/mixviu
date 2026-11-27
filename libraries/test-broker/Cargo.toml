@@ -24,6 +24,7 @@ mod_module_files = "deny"
 bus = { workspace = true, features = ["native"] }
 config.workspace = true
 mesh.workspace = true
+tokio-rustls.workspace = true
 mesh-trust.workspace = true
 props = { workspace = true, features = ["bus"] }
 buildinfo.workspace = true

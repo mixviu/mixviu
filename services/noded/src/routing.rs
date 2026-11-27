@@ -44,6 +44,7 @@ impl RouteTarget {
     fn signed(name: &str, mesh_ip: IpAddr, noded_port: u16) -> Self {
         Self {
             peer: PeerConfig {
+    tls_port: None,
                 name: name.to_string(),
                 mesh_ip,
                 noded_port,
@@ -192,6 +193,7 @@ pub(crate) fn local_eligibility(view: &[RoutingMember], canonical_node: &str) ->
 #[derive(Debug, Clone)]
 pub(crate) struct RoutingAuthority {
     pub(crate) keys: mesh_trust::identity::KeyAuthority,
+    pub(crate) tls_keys: std::sync::Arc<mesh_trust::identity::TlsAuthority>,
     pub(crate) posture: Posture,
     pub(crate) routes: RouterTable,
     self_eligibility: Option<LocalEligibility>,
@@ -205,7 +207,7 @@ impl RoutingAuthority {
         _listener_port: u16,
         etc_roster: &[PeerConfig],
     ) -> Self {
-        let (routes, self_eligibility) = match &posture {
+        let (mut routes, self_eligibility) = match &posture {
             Posture::Verified(accepted) => {
                 warn_port_divergence(&accepted.routing_view, etc_roster);
                 let eligibility = local_eligibility(&accepted.routing_view, canonical_node);
@@ -249,8 +251,21 @@ impl RoutingAuthority {
             ),
             Posture::Unverified { .. } => Default::default(),
         };
+        // Temporary endpoint overlay: the inventory still owns membership and
+        // addresses; only the local per-member TLS port comes from the roster.
+        for peer in routes.peers.values_mut() {
+            peer.peer.tls_port = etc_roster.iter().find(|p| p.name == peer.peer.name)
+                .and_then(|p| p.tls_port);
+        }
+        let tls_keys = std::sync::Arc::new(match &posture {
+            Posture::Verified(a) => mesh_trust::identity::TlsAuthority::new(
+                &a.members_full, a.epoch, a.recovery_generation,
+            ),
+            Posture::Unverified { .. } => Default::default(),
+        });
         Self {
             keys,
+            tls_keys,
             posture,
             routes,
             self_eligibility,
@@ -355,6 +370,7 @@ mod tests {
 
     fn etc_peer(name: &str, ip: &str, port: u16) -> PeerConfig {
         PeerConfig {
+    tls_port: None,
             name: name.into(),
             mesh_ip: ip.parse().unwrap(),
             noded_port: port,

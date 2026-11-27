@@ -21,6 +21,7 @@ mod logger;
 mod mon_props;
 mod monitor;
 mod native_ingress;
+mod tls_ingress;
 mod noded;
 mod observe;
 mod props;
@@ -169,9 +170,11 @@ async fn async_main() -> Result<()> {
     let wg_ip = node_cfg.wg_ip.clone();
     let unix_socket = Some(node_cfg.noded.broker_unix_endpoint());
     let pending_grants_per_parent = node_cfg.noded.pending_grants_per_parent;
+    let network = Some(node_cfg.noded.clone());
     let mut noded_handle = tokio::spawn(async move {
         noded::run(
             noded::RunConfig {
+    network,
                 #[cfg(test)]
                 session_probe: None,
                 listen,

@@ -8,6 +8,26 @@ use serde_json::Value;
 
 use crate::admission::{AdmissionTranscript, select_d2_pubkeys};
 
+/// Shared inbound/outbound revocation policy. Both caches must come from the
+/// same accepted inventory. Legacy transports retain the D2-only check.
+pub fn link_refusal(
+    context: &bus::native_session::PeerContext,
+    d2: &KeyAuthority,
+    tls: &TlsAuthority,
+) -> Option<&'static str> {
+    let Some((node, key)) = context.mesh_peer() else { return Some("unproven-link") };
+    if !d2.contains(node, key) { return Some("d2-key-revoked") }
+    if let Some(bus::native_session::TransportIdentity::MeshTls {
+        member, tls_key, d2_key, ..
+    }) = &context.transport {
+        if member != node || d2_key != key { return Some("credential-member-mismatch") }
+        if !tls.member_for(tls_key).is_some_and(|identity| identity.member == node) {
+            return Some("tls-key-revoked");
+        }
+    }
+    None
+}
+
 /// Identity authenticated by the TLS CertificateVerify proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TlsMember {
@@ -80,6 +100,16 @@ impl KeyAuthority {
         response: &Value,
         expected: &str,
     ) -> Option<PeerIdentity> {
+        self.authenticate_bound_response(challenge, response, expected, None)
+    }
+
+    pub fn authenticate_bound_response(
+        &self,
+        challenge: &Value,
+        response: &Value,
+        expected: &str,
+        binding: Option<&[u8; 32]>,
+    ) -> Option<PeerIdentity> {
         use base64::Engine as _;
         let b64 = base64::engine::general_purpose::STANDARD;
         if response["claimed_source_node"].as_str()? != expected {
@@ -93,13 +123,14 @@ impl KeyAuthority {
             session_id: b64.decode(challenge["session_id"].as_str()?).ok()?,
             server_nonce: b64.decode(challenge["server_nonce"].as_str()?).ok()?,
             client_ephemeral: vec![0; 32],
-            channel_binding_hash: vec![0; 32],
+            channel_binding_hash: binding.unwrap_or(&[0; 32]).to_vec(),
         };
         if b64.decode(response["client_ephemeral"].as_str()?).ok()? != [0; 32]
             || b64
                 .decode(response["channel_binding_hash"].as_str()?)
                 .ok()?
-                != [0; 32]
+                != binding.unwrap_or(&[0; 32])
+            || binding.is_some_and(|hash| *hash == [0; 32])
         {
             return None;
         }

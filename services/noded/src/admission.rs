@@ -191,6 +191,16 @@ pub fn reconstruct_proof(
     mesh_fqdn: &str,
     verifying_broker_node: &str,
 ) -> Result<ReconstructedProof, WireError> {
+    reconstruct_bound_proof(challenge, response_body, mesh_fqdn, verifying_broker_node, None)
+}
+
+pub fn reconstruct_bound_proof(
+    challenge: &OutstandingChallenge,
+    response_body: &Value,
+    mesh_fqdn: &str,
+    verifying_broker_node: &str,
+    binding: Option<&[u8; 32]>,
+) -> Result<ReconstructedProof, WireError> {
     let claimed = response_body
         .get("claimed_source_node")
         .and_then(Value::as_str)
@@ -202,7 +212,10 @@ pub fn reconstruct_proof(
     // transcript divergence.
     let client_ephemeral = decode_b64(response_body, "client_ephemeral")?;
     let channel_binding_hash = decode_b64(response_body, "channel_binding_hash")?;
-    if client_ephemeral != ORIGIN_ONLY_ZERO || channel_binding_hash != ORIGIN_ONLY_ZERO {
+    if client_ephemeral != ORIGIN_ONLY_ZERO
+        || channel_binding_hash != binding.unwrap_or(&[0; 32])
+        || binding.is_some_and(|hash| *hash == [0; 32])
+    {
         return Err(WireError::Malformed);
     }
 

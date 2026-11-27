@@ -27,6 +27,8 @@ use std::net::IpAddr;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeerContext {
     pub identity: PeerIdentity,
+    /// Present only after both TLS and exporter-bound D2 proofs complete.
+    pub transport: Option<TransportIdentity>,
     pub address: Option<std::net::SocketAddr>,
 }
 
@@ -51,6 +53,7 @@ impl Default for PeerContext {
     fn default() -> Self {
         Self {
             identity: PeerIdentity::Unauthenticated,
+            transport: None,
             address: None,
         }
     }
@@ -72,6 +75,14 @@ impl PeerContext {
 /// Kernel/mesh context, never deserialised from caller-supplied metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TransportIdentity {
+    MeshTls {
+        member: String,
+        tls_key: [u8; 32],
+        d2_key: [u8; 32],
+        epoch: u64,
+        revision: u64,
+        source: std::net::SocketAddr,
+    },
     /// SO_PEERCRED snapshot. PID is diagnostic only, including after setuid.
     LocalUnix {
         uid: u32,
