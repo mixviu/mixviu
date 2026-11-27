@@ -105,9 +105,7 @@ pub fn open_seed(path: &Path) -> Result<SeedFile, SeedFileError> {
     let file = OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
-        .open(path).map_err(|error| std::io::Error::new(error.kind(), format!("{}: {error}", path.display())))?;
-    // Arm cleanup only after this call has exclusively created the file.
-    let result = (|| -> Result<GeneratedBusTlsSeed, SeedFileError> {
+        .open(path)?;
     let metadata = file.metadata()?;
     if !metadata.is_file() {
         return Err(SeedFileError::NotRegular);
@@ -215,7 +213,9 @@ fn write_generated_seed(
         .write(true)
         .create_new(true)
         .mode(0o600)
-        .open(path)?;
+        .open(path).map_err(|error| std::io::Error::new(error.kind(), format!("{}: {error}", path.display())))?;
+    // Arm cleanup only after this call has exclusively created the file.
+    let result = (|| -> Result<GeneratedBusTlsSeed, SeedFileError> {
     if let Some(gid) = root_gid {
         // SAFETY: file owns the descriptor; uid/gid are numeric lookup results.
         if unsafe { libc::fchown(file.as_raw_fd(), 0, gid) } != 0 {
