@@ -506,7 +506,7 @@ fn resolve_handler($apps, $mime, $paths)
   for $value in concat($defaults, $associated)
     if not contains($associated, $value) then continue end
     $entry = find_app($apps, strip_suffix($value, ".desktop"))
-    if $entry != nil and len(expand_exec($entry.exec, $entry, nil)) > 0 then return $entry.id end
+    if $entry != nil and not $entry.terminal and uri_exec_valid($entry.exec) and len(expand_exec($entry.exec, $entry, nil)) > 0 then return $entry.id end
   end
   return nil
 end
@@ -601,13 +601,25 @@ fn uri_to_path($uri)
   return $uri
 end
 
+-- Match the actual field-code parser, including %% escapes. URI-bearing
+-- launches may not substitute content into a larger argument or argv[0].
+fn uri_exec_valid($exec)
+  $first = true
+  for $arg in parse_exec($exec)
+    $exp = expand_codes($arg, {icon: "", name: "", path: ""}, [], [])
+    if $exp.file_code and ($first or not contains(["%u", "%U", "%f", "%F"], $arg)) then return false end
+    $first = false
+  end
+  return not $first
+end
+
 fn expand_codes($arg, $entry, $uris, $paths)
   -- Expand the field codes in ONE argv element (already unquoted). Returns
   -- {argv: replacement elements, file_code: whether a %f/%F/%u/%U was seen}.
   -- An argument that is exactly one field code is replaced whole (and is
   -- dropped when its value is absent); embedded codes substitute in place.
-  -- The spec allows %f/%F/%u/%U only as a standalone argument, so embedded
-  -- forms substitute their joined value into this one element by design.
+  -- Legacy embedded expansion is retained for callers without URI input.
+  -- uri_exec_valid gates resolver and URI-bearing START before expansion.
   if $arg == "%f" then
     if len($paths) == 0 then return {argv: [], file_code: true} end
     return {argv: [$paths[0]], file_code: true}

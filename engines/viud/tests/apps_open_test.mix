@@ -64,6 +64,20 @@ try
   check(deep_eq($a.mimeapps_paths(), $expected), "complete XDG and desktop search order")
   check($a.uri_scheme("https://example.invalid/" .. repeat("x", 8192 - byte_length("https://example.invalid/"))) == "https", "8192-byte boundary")
   check($a.token_valid(repeat("x", 256)) and $a.token_valid(""), "token boundaries")
+  for $code in ["%u", "%U", "%f", "%F"]
+    check($a.uri_exec_valid("handler " .. $code), "standalone URI code accepted")
+    for $exec in ["sh -c \"true " .. $code .. "\"", "handler --uri=" .. $code, "handler " .. $code .. "%c", $code .. " handler", "handler %%" .. $code]
+      check(not $a.uri_exec_valid($exec), "embedded URI code refused")
+    end
+  end
+  check($a.uri_exec_valid("handler --literal=%%u %U") and $a.uri_exec_valid("handler"), "escaped percent and implicit URI append retained")
+  fixture("data/applications/embedded.desktop", "[Desktop Entry]\nType=Application\nName=Embedded\nExec=/usr/bin/sh -c \"true %u\"\nMimeType=x-scheme-handler/mailto;\n")
+  fixture("data/applications/terminal.desktop", "[Desktop Entry]\nType=Application\nName=Terminal\nExec=" .. $mix .. " " .. $tmp .. "/record.mix %U\nTerminal=true\nMimeType=x-scheme-handler/mailto;\n")
+  fixture("config/mimeapps.list", "[Default Applications]\nx-scheme-handler/mailto=embedded.desktop;\n")
+  $embedded = $a.parse_entry($tmp .. "/data/applications/embedded.desktop", "embedded", "", "MIXOS")
+  $terminal = $a.parse_entry($tmp .. "/data/applications/terminal.desktop", "terminal", "", "MIXOS")
+  check($a.resolve_handler([$embedded], "x-scheme-handler/mailto", [$tmp .. "/config/mimeapps.list"]) == nil, "embedded handler never advertised")
+  check($a.resolve_handler([$terminal], "x-scheme-handler/mailto", [$tmp .. "/config/mimeapps.list"]) == nil, "terminal handler never advertised")
   $bus = $pb.start({dir: $tmp .. "/bus", name: "open-" .. uuid(), noded: $noded})
   $conf = json_parse(read_file($bus.conf))
   $conf.noded.account = trim(run_argv_must(["id", "-un"]))
@@ -106,6 +120,25 @@ try
   check(len($opens) == 1 and $opens[0].data.scheme == "https" and $opens[0].data.id == "two" and $opens[0].data.handle == $opened.body.handle, "open history metadata")
   check(not contains(json_encode($rows), "example.invalid") and not contains(json_encode($rows), "uri"), "history contains no URI")
   check(not contains(read_file($tmp .. "/log"), $hostile), "citizen journal contains no URI")
+  -- The marker would be created by sh if an embedded substitution reached
+  -- spawn. Keep the marker entirely inside this test's owned temporary tree.
+  $attack = 'https://example.invalid/;touch${IFS}' .. $tmp .. '/injected;#'
+  check($a.uri_scheme($attack) == "https", "attack passes URI shape")
+  $before_rows = len(call("apps.history", {}).body.rows)
+  check(call("apps.start", {id: "embedded", uris: [$attack]}).rc == 10, "embedded START refused before spawn")
+  check(call("apps.launch", {id: "embedded", uris: [$attack]}).rc == 10, "embedded LAUNCH refused before spawn")
+  -- Use mailto policy for the same shell injection while resolving the
+  -- embedded/default entry: policy must not be the reason it is refused.
+  $attack = 'mailto:origin-test@example.invalid;touch${IFS}' .. $tmp .. '/injected;#'
+  check(call("apps.handler", {scheme: "mailto"}).rc == 14, "unsafe default not advertised over Bus")
+  check(call("apps.open", {uri: $attack}).rc == 14, "embedded OpenURI refused at resolution")
+  fixture("config/mimeapps.list", "[Default Applications]\nx-scheme-handler/mailto=terminal.desktop;\n")
+  check(call("apps.handler", {scheme: "mailto"}).rc == 14, "Terminal=true not advertised over Bus")
+  check(call("apps.open", {uri: $attack}).rc == 14, "terminal OpenURI refused before spawn")
+  $new_rows = slice(call("apps.history", {}).body.rows, $before_rows)
+  check(len($new_rows) >= 6 and all($new_rows, fn($r) = $r.kind == "refused" and $r.data.handle == nil), "unsafe handlers produce only refused history, no launched handles")
+  check(not is_file($tmp .. "/injected"), "embedded shell marker never created")
+  check(not contains(json_encode($new_rows), $attack) and not contains(read_file($tmp .. "/log"), $attack), "refused attack stays out of history and journal")
   -- A WS URL alone does not force mesh: native auto-discovery prefers the
   -- configured Unix socket. Use a separate client with no discoverable socket.
   fixture("remote/node.conf.mix", json_encode({node: "example-remote", noded: {unix_socket: $tmp .. "/remote/absent.sock"}}))

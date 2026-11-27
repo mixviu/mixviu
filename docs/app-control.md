@@ -29,6 +29,18 @@ then each XDG data directory's `applications/`. Defaults take precedence,
 then added associations, then entries declaring the MIME type, respecting
 higher-priority removals. Schemes use `x-scheme-handler/<lowercase-scheme>`.
 Desktop filenames map to registry ids without the `.desktop` suffix.
+Handlers with embedded `%u`, `%U`, `%f` or `%F` codes are excluded (rc 14
+when no eligible handler remains). Each code must occupy a whole parsed argv
+element after the executable; `%%` is a literal percent escape. URI-bearing
+START/LAUNCH also refuse embedded codes with rc 10 `invalid_request` before
+spawning, and record a `refused` row. URI shape validation alone does not
+prevent injection into a malformed handler's shell-script argument.
+
+`Terminal=true` entries are excluded from OpenURI resolution. The current
+term launcher forwards argv (`apps/term/term.mix`), but its startup policy
+(`apps/term/startup-policy.mix`, `decide`) rejects `--` and command arguments;
+it does not implement `term -- argv`. Until a verified terminal argv launch
+path exists, `apps.handler` cannot advertise those entries as supported.
 
 Open uses the existing managed START path and returns its reply plus
 `scheme`: rc 14 for no handler, rc 11 `spawn_failed`, or rc 10 `limit`
