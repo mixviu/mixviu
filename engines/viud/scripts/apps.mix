@@ -12,6 +12,14 @@
 -- apps.reload or when an inotify watch on the applications directories
 -- reports a change (an entry installed, replaced or removed). There is
 -- timers only schedule STOP escalation; no process polling.
+-- Lifecycle contract:
+-- Handles are opaque strings; callers must retain and match them exactly.
+-- Graceful timeout_ms counts from after window classification, up to 200 ms
+-- after the request. focus_or_stop stops every instance of the desktop id
+-- when one of its windows is focused.
+-- apps.terminal is a command whose executable must be an absolute path.
+-- Mesh apps.stop, apps.toggle and apps.running are open by design until
+-- Bus 2c. Mesh callers can flood refused-history rows: a known limit.
 $a = require("lib/apps.mix")
 
 $apps = $a.scan_apps($a.application_dirs(), $a.locale_id(), "MIXOS")
@@ -118,7 +126,7 @@ end
 
 -- Managed app state belongs to this evaluator generation.
 $live = {}
-$generation = substr(replace(uuid(), "-", ""), 0, 4)
+$generation = substr(replace(uuid(), "-", ""), 0, 12)
 $serial = 0
 $allow_argv = false
 $history = {seq: 0, path: "", day: "", bytes: 0, line: 0}
@@ -370,13 +378,15 @@ on proc.exited
 end
 on timer.tick
   if len(keys($event.headers ?? {})) != 0 then return end
-  $tag = $event.args.tag
-  $handle = after($tag, ":")
-  $r = $live[$handle]
-  if $r == nil or not contains($r.timers, $event.args.id) then return end
-  signal_app($handle, starts_with($tag, "term:") ? 15 : 9)
+  -- Find the owning timer without interpreting any part of its handle.
+  for $r in values($live)
+    if not contains($r.timers, $event.args.id) then continue end
+    if $event.args.tag == "term:" .. $r.handle then signal_app($r.handle, 15) end
+    if $event.args.tag == "kill:" .. $r.handle then signal_app($r.handle, 9) end
+    return
+  end
 end
-on apps.history desc "local operator history {since?,until?,limit?}"
+on apps.history desc "local operator history {since?,until?,limit?}: newest N rows in ascending order"
   $request = event_args()
   $limit = $request.limit ?? 500
   if not local_origin() then
@@ -386,9 +396,19 @@ on apps.history desc "local operator history {since?,until?,limit?}"
   else
     $rows = []
     for $file in sort(glob($history_dir .. "/*.jsonl"))
-      for $line in lines(read_file($file))
+      $lines = split(read_file($file), "\n")
+      for $i = 0 to len($lines) - 1
+        $line = $lines[$i]
         if trim($line) == "" then continue end
-        $row = json_parse($line)
+        try
+          $row = json_parse($line)
+        catch $err
+          if $i == len($lines) - 1 then
+            eprint("WARN apps.history: skipping torn trailing line in " .. $file)
+            continue
+          end
+          raise("APPS_HISTORY", "invalid JSONL record in " .. $file .. ": " .. $err)
+        end
         if $row.ts_utc >= ($request.since ?? "") and $row.ts_utc <= ($request.until ?? "9999") then
           push($rows, $row)
         end
@@ -397,7 +417,7 @@ on apps.history desc "local operator history {since?,until?,limit?}"
     -- Legacy segment names were not chronological. Sort content timestamps
     -- and numeric serials before applying the requested limit.
     $rows = sort_by($rows, fn($row) = $a.history_order($row))
-    reply(0, json_encode({rows: slice($rows, 0, $limit), truncated: len($rows) > $limit}))
+    reply(0, json_encode({rows: slice($rows, max(0, len($rows) - $limit)), truncated: len($rows) > $limit}))
   end
 end
 

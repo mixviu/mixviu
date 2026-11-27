@@ -602,6 +602,18 @@ try
   check(len(filter($history.result.rows, fn($row) = $row.kind == "allow_argv" and $row.data.old == false and $row.data.value == true)) == 1, "argv gate change not audited")
   $limited = call("apps", "apps.history", "{\"limit\":1}")
   check(len($limited.result.rows) == 1 and $limited.result.truncated == true, "history limit/truncated")
+  check(deep_eq($limited.result.rows, slice($history.result.rows, len($history.result.rows) - 1)), "history limit must return newest row")
+  $limited = call("apps", "apps.history", "{\"limit\":3}")
+  check(deep_eq($limited.result.rows, slice($history.result.rows, len($history.result.rows) - 3)), "newest history rows must remain ascending")
+  -- Simulate a crash leaving an incomplete final JSONL record. Keep a valid
+  -- row before it so skipping the whole segment cannot satisfy this check.
+  $torn = $citizen_env.MIX_VAR .. "/apps/history/torn.jsonl"
+  $recovered = merge($history.result.rows[0], {seq: "recovered-1", ts_utc: "2001-01-01T00:00:00Z"})
+  write_file($torn, json_encode($recovered) .. "\n{\"ts_utc\":")
+  $recovery = call("apps", "apps.history", "{\"until\":\"2002\"}")
+  check($recovery.rc == 0 and deep_eq($recovery.result.rows, [$recovered]), "torn trailing history line lost valid rows or failed call")
+  check(contains(read_file($tmp .. "/svc.log"), "WARN apps.history: skipping torn trailing line in " .. $torn), "torn trailing history line must WARN")
+  remove($torn)
   check(len(call("apps", "apps.history", "{\"until\":\"2000\"}").result.rows) == 0, "history until filter")
   check(len(call("apps", "apps.history", "{\"since\":\"9999\"}").result.rows) == 0, "history since filter")
   -- A separate client has no local endpoint candidate. The interpreter
@@ -628,6 +640,25 @@ try
   check(wait_file($tmp .. "/launched-recorder") == "-e\n" .. $tmp .. "/bin/recorder\nterm-arg\n", "refused set changed terminal argv")
   $audit = call("apps", "apps.history", "{}").result.rows
   check(len(filter($audit, fn($row) = $row.kind == "refused" and $row.data.reason == "property_set_forbidden")) == 5, "refused property changes not audited")
+  await_exit($r.result.handle)
+  -- Native sleep processes are cheaper than 120 interpreter fixtures and
+  -- stay alive until explicitly stopped. Exercise the real citizen limit.
+  $handles = []
+  for $i = 1 to 120
+    $admitted = call("apps", "apps.start", "{\"id\":\"hold\"}")
+    check($admitted.rc == 0, "limit refused before 120 live handles: " .. $i)
+    push($handles, $admitted.result.handle)
+  end
+  $full = call("apps", "apps.running", "{\"id\":\"hold\"}")
+  check($full.rc == 0 and len($full.result) == 120, "limit fixture must have 120 live handles")
+  check(deep_eq(sort(map($full.result, fn($row) = $row.handle)), sort($handles)), "running must retain exact opaque handles")
+  $refused = call("apps", "apps.start", "{\"id\":\"hold\"}")
+  check($refused.rc == 10 and $refused.result.error == "limit" and $refused.result.error_code == "RESOURCE_LIMIT", "121st START must return existing resource code")
+  $stopped = call("apps", "apps.stop", "{\"id\":\"hold\",\"mode\":\"force\"}")
+  check($stopped.rc == 0 and len($stopped.result.stopping) == 120, "stop all limit fixtures")
+  for $handle in $handles
+    check(await_exit($handle).reason == "force", "limit fixture survived stop")
+  end
   $old_app = call("apps", "apps.start", json_encode({id: "hold"})).result
   $old = $old_app.handle
   check(call("apps", "RELOAD", "{}").rc == 0, "reload refused")
