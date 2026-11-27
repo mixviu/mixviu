@@ -1098,18 +1098,23 @@ async fn outbound_failure_after_keep_does_not_request_duplicate_delivery() -> Re
     f.script(r#"require "vacation"; vacation "Away";"#).await?;
     assert!(f.deliver(MESSAGE, true, false).await?.is_some());
     assert_eq!(f.count("Inbox"), 2);
+    // Admission now commits before building/storing reply bytes. A later
+    // enqueue failure keeps the suppression stamp and slot (no refund).
     assert_eq!(
         f.db.conn
             .lock()
             .unwrap()
             .query_row("SELECT count(*) FROM sieve_replies", [], |r| r
                 .get::<_, i64>(0))?,
-        0
+        1
     );
     f.db.conn
         .lock()
         .unwrap()
         .execute_batch("DROP TRIGGER fail_sieve_queue;")?;
+    f.deliver(MESSAGE, true, false).await?;
+    assert!(maild::smtp::queue::list(&f.db.conn, 10).await?.is_empty());
+    f.db.conn.lock().unwrap().execute("UPDATE sieve_replies SET sent_at=unixepoch()-32*86400", [])?;
     f.deliver(MESSAGE, true, false).await?;
     assert_eq!(maild::smtp::queue::list(&f.db.conn, 10).await?.len(), 1);
     Ok(())

@@ -269,9 +269,8 @@ pub async fn reply_due(
 
 pub const MAX_REPLY_STAMPS: usize = 10_000;
 
-/// Compatibility API for an already-existing blob, not for generated replies.
+/// Deprecated compatibility API for an existing blob, not generated replies.
 /// Guarded accounts fail closed. New callers must reserve before building bytes.
-#[deprecated(note = "reserve_automatic_reply before generating/storing reply bytes")]
 pub async fn queue_reply(
     db: &Db,
     account: i32,
