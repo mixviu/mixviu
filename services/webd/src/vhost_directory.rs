@@ -337,8 +337,7 @@ pub fn from_namespace_rows(
                 &row.aliases,
                 row.redirect.as_deref(),
                 &row.headers,
-            )
-            {
+            ) {
                 tracing::error!(
                     target: "webd::vhost_directory",
                     fqdn = %row.fqdn, source = ?row.source, reason = %reason,

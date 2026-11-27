@@ -687,12 +687,9 @@ mod dev_session_gate_tests {
 /// the accepted stream via hyper. One instance per resolved listener,
 /// each holding its own scoped `app` clone.
 ///
-/// Replaces the old free-standing `serve_tls` / `serve_plain`
-/// primary-listener loop. `serve_connection_with_upgrades` (rather
-/// than the bare `serve_connection` the old `serve_tls` used) so a
-/// `wss://` WebSocket upgrade works over the TLS path too — the plain
-/// primary already had upgrades via `axum::serve`, and unifying both
-/// surfaces under one handler makes the behaviour consistent.
+/// HTTP/1 uses Hyper's protocol-specific server with upgrades, preserving
+/// WebSockets without auto-detecting h2. HTTP/2 requires the listener's
+/// startup opt-in and h2 ALPN; extended CONNECT is not enabled.
 struct WebdConnHandler {
     app: Router,
     http2: bool,
@@ -710,7 +707,8 @@ impl ConnHandler for WebdConnHandler {
         let mut builder =
             hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new());
         if self.http2 {
-            builder.http2()
+            builder
+                .http2()
                 .max_concurrent_streams(100)
                 .max_header_list_size(64 * 1024)
                 .max_pending_accept_reset_streams(100)
@@ -722,7 +720,9 @@ impl ConnHandler for WebdConnHandler {
             AcceptedStream::Tcp(s) => {
                 let io = hyper_util::rt::TokioIo::new(s);
                 let _ = hyper::server::conn::http1::Builder::new()
-                    .serve_connection(io, svc).with_upgrades().await;
+                    .serve_connection(io, svc)
+                    .with_upgrades()
+                    .await;
             }
             AcceptedStream::Tls(s) => {
                 // auto::serve_connection_with_upgrades ignores http1_only().
@@ -734,7 +734,9 @@ impl ConnHandler for WebdConnHandler {
                     let _ = builder.http2_only().serve_connection(io, svc).await;
                 } else {
                     let _ = hyper::server::conn::http1::Builder::new()
-                        .serve_connection(io, svc).with_upgrades().await;
+                        .serve_connection(io, svc)
+                        .with_upgrades()
+                        .await;
                 }
             }
             // `AcceptedStream` is `#[non_exhaustive]`; webd only ever
@@ -8422,7 +8424,10 @@ async fn async_main() -> Result<()> {
                 let handler = Arc::new(WebdConnHandler {
                     app: app_for_listener,
                     http2: node_cfg.as_ref().is_some_and(|c| {
-                        c.webd.listener.iter().any(|row| row.id == l.id && row.http2)
+                        c.webd
+                            .listener
+                            .iter()
+                            .any(|row| row.id == l.id && row.http2)
                     }),
                 });
                 // Decided after runtime-cert adoption: a runtime-only

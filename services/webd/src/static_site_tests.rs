@@ -5,8 +5,12 @@ async fn static_site_redirect_options_asterisk_uses_root() {
     let td = TempDir::new().unwrap();
     let node = static_site_node(&td, Some("https://example.com"));
     for app in [build_router(node.clone()), build_http_redirect_router(node)] {
-        let request = axum::http::Request::builder().method("OPTIONS").uri("*")
-            .header("host", "site-a.example").body(Body::empty()).unwrap();
+        let request = axum::http::Request::builder()
+            .method("OPTIONS")
+            .uri("*")
+            .header("host", "site-a.example")
+            .body(Body::empty())
+            .unwrap();
         let response = app.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::PERMANENT_REDIRECT);
         assert_eq!(response.headers()["location"], "https://example.com/");
@@ -17,15 +21,28 @@ async fn static_site_redirect_options_asterisk_uses_root() {
 fn static_site_vary_tokens_are_case_insensitive_and_unique() {
     let mut headers = HeaderMap::new();
     headers.append("vary", "Origin, Accept-Encoding".parse().unwrap());
-    let defaults = static_site::headers(&BTreeMap::from([
-        ("vary".into(), "ACCEPT-ENCODING, Accept-Language".into())
-    ])).unwrap();
+    let defaults = static_site::headers(&BTreeMap::from([(
+        "vary".into(),
+        "ACCEPT-ENCODING, Accept-Language".into(),
+    )]))
+    .unwrap();
     static_site::apply(&mut headers, &defaults);
     static_site::ensure_vary(&mut headers, "accept-encoding");
-    assert_eq!(headers.get_all("vary").iter()
-        .flat_map(|v| v.to_str().unwrap().split(','))
-        .filter(|v| v.trim().eq_ignore_ascii_case("accept-encoding")).count(), 1);
-    assert!(headers.get_all("vary").iter().any(|v| v == "Accept-Language"));
+    assert_eq!(
+        headers
+            .get_all("vary")
+            .iter()
+            .flat_map(|v| v.to_str().unwrap().split(','))
+            .filter(|v| v.trim().eq_ignore_ascii_case("accept-encoding"))
+            .count(),
+        1
+    );
+    assert!(
+        headers
+            .get_all("vary")
+            .iter()
+            .any(|v| v == "Accept-Language")
+    );
 }
 
 #[tokio::test]
@@ -274,9 +291,16 @@ async fn static_site_encoding_headers_ranges_and_revalidation() {
                 .map(|v| v.to_str().unwrap()),
             encoding
         );
-        assert_eq!(response.headers().get_all("vary").iter()
-            .flat_map(|v| v.to_str().unwrap().split(','))
-            .filter(|v| v.trim().eq_ignore_ascii_case("accept-encoding")).count(), 1);
+        assert_eq!(
+            response
+                .headers()
+                .get_all("vary")
+                .iter()
+                .flat_map(|v| v.to_str().unwrap().split(','))
+                .filter(|v| v.trim().eq_ignore_ascii_case("accept-encoding"))
+                .count(),
+            1
+        );
         assert_eq!(
             response.headers()["content-security-policy"],
             "default-src 'self'"
@@ -505,7 +529,15 @@ async fn static_site_tls_alpn_serves_h2_and_http1() {
         ])));
     let app = build_router(node);
     let task = tokio::spawn(async move {
-        for (index, protocol) in [&b"h2"[..], &b"http/1.1"[..], &b"http/1.1"[..], &b"http/1.1"[..]].into_iter().enumerate() {
+        for (index, protocol) in [
+            &b"h2"[..],
+            &b"http/1.1"[..],
+            &b"http/1.1"[..],
+            &b"http/1.1"[..],
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let (stream, peer_addr) = listener.accept().await.unwrap();
             let mut accepting_config = (*server_config).clone();
             if index == 3 {
@@ -519,19 +551,22 @@ async fn static_site_tls_alpn_serves_h2_and_http1() {
             let app = app.clone();
             let tls = tls.clone();
             tokio::spawn(async move {
-                WebdConnHandler { app, http2: index != 3 }
-                    .handle(
-                        AcceptedStream::Tls(Box::new(stream)),
-                        ConnCtx {
-                            listener_id: "test".into(),
-                            local_addr: addr,
-                            peer_addr,
-                            external: false,
-                            sni: Some("site-a.example".into()),
-                            tls: Some(tls),
-                        },
-                    )
-                    .await;
+                WebdConnHandler {
+                    app,
+                    http2: index != 3,
+                }
+                .handle(
+                    AcceptedStream::Tls(Box::new(stream)),
+                    ConnCtx {
+                        listener_id: "test".into(),
+                        local_addr: addr,
+                        peer_addr,
+                        external: false,
+                        sni: Some("site-a.example".into()),
+                        tls: Some(tls),
+                    },
+                )
+                .await;
             });
         }
     });
@@ -603,16 +638,28 @@ async fn static_site_tls_alpn_serves_h2_and_http1() {
     client_config.alpn_protocols = vec![b"http/1.1".to_vec()];
     let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
     let stream = tokio_rustls::TlsConnector::from(Arc::new(client_config.clone()))
-        .connect("site-a.example".try_into().unwrap(), stream).await.unwrap();
-    let (mut h1, connection) = hyper::client::conn::http1::handshake(hyper_util::rt::TokioIo::new(stream)).await.unwrap();
+        .connect("site-a.example".try_into().unwrap(), stream)
+        .await
+        .unwrap();
+    let (mut h1, connection) =
+        hyper::client::conn::http1::handshake(hyper_util::rt::TokioIo::new(stream))
+            .await
+            .unwrap();
     let h1_driver = tokio::spawn(connection);
-    let request = axum::http::Request::builder().method("POST").uri("/jmap")
-        .header("host", "site-a.example").header("x-forwarded-host", "forged.example")
+    let request = axum::http::Request::builder()
+        .method("POST")
+        .uri("/jmap")
+        .header("host", "site-a.example")
+        .header("x-forwarded-host", "forged.example")
         .header("forwarded", "host=forged.example")
-        .body(http_body_util::Empty::<axum::body::Bytes>::new()).unwrap();
+        .body(http_body_util::Empty::<axum::body::Bytes>::new())
+        .unwrap();
     let response = h1.send_request(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), format!("{mail_addr}|site-a.example"));
+    assert_eq!(
+        response.into_body().collect().await.unwrap().to_bytes(),
+        format!("{mail_addr}|site-a.example")
+    );
     drop(h1);
     h1_driver.abort();
     mail_task.abort();
@@ -648,12 +695,25 @@ async fn static_site_tls_alpn_serves_h2_and_http1() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
     let mut stream = tokio_rustls::TlsConnector::from(Arc::new(client_config))
-        .connect("site-a.example".try_into().unwrap(), stream).await.unwrap();
+        .connect("site-a.example".try_into().unwrap(), stream)
+        .await
+        .unwrap();
     assert_eq!(stream.get_ref().1.alpn_protocol(), Some(&b"http/1.1"[..]));
-    stream.write_all(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n").await.unwrap();
+    stream
+        .write_all(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+        .await
+        .unwrap();
     let mut refused = Vec::new();
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), stream.read_to_end(&mut refused)).await.unwrap();
-    assert!(refused.is_empty() || refused.starts_with(b"HTTP/1.1 400"), "{refused:?}");
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        stream.read_to_end(&mut refused),
+    )
+    .await
+    .unwrap();
+    assert!(
+        refused.is_empty() || refused.starts_with(b"HTTP/1.1 400"),
+        "{refused:?}"
+    );
     task.await.unwrap();
     drop(client);
     driver.abort();
