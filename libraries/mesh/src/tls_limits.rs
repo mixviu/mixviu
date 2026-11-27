@@ -84,7 +84,9 @@ pub struct Session {
     closed: tokio::sync::watch::Sender<bool>,
 }
 impl Session {
-    pub fn closed(&self) -> tokio::sync::watch::Receiver<bool> { self.closed.subscribe() }
+    pub fn closed(&self) -> tokio::sync::watch::Receiver<bool> {
+        self.closed.subscribe()
+    }
 }
 impl Drop for Session {
     fn drop(&mut self) {

@@ -609,11 +609,21 @@ impl MeshPeers {
     }
 
     pub async fn teardown_watches(&self) -> Vec<TeardownWatch> {
-        self.state.read().await.connections.values().filter_map(|connection| {
-            connection.transport_closed.as_ref().map(|closed| TeardownWatch {
-                connected: connection.connected.clone(), closed: closed.clone(),
+        self.state
+            .read()
+            .await
+            .connections
+            .values()
+            .filter_map(|connection| {
+                connection
+                    .transport_closed
+                    .as_ref()
+                    .map(|closed| TeardownWatch {
+                        connected: connection.connected.clone(),
+                        closed: closed.clone(),
+                    })
             })
-        }).collect()
+            .collect()
     }
 
     /// Atomically install the route authority's desired endpoint projection.
