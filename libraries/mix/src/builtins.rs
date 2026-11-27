@@ -4933,9 +4933,11 @@ pub mod owned_spawns {
     static OWNED: Mutex<Vec<(libc::pid_t, Option<u64>)>> = Mutex::new(Vec::new());
 
     pub(crate) fn holds_for(owner: u64) -> bool {
-        OWNED
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
+        let mut owned = OWNED.lock().unwrap_or_else(|e| e.into_inner());
+        // Retain a zombie leader while its group still has live members; its
+        // PID pins the group identity until the existing sole-reaper cleanup.
+        owned.retain(|(pid, _)| retain_entry(*pid));
+        owned
             .iter()
             .any(|(_, registered)| *registered == Some(owner))
     }
@@ -7000,6 +7002,15 @@ fn map_has(value: Option<&Value>, key: &str) -> bool {
     matches!(value, Some(Value::Map(map)) if map.contains_key(key))
 }
 
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn exec_argv(
+    _args: &[Value],
+    _flush: impl FnOnce() -> MixResult<()>,
+) -> MixResult<Option<Value>> {
+    Err(MixError::structured("EXEC_FAILED", "exec_argv: unsupported on this platform (requires Linux)"))
+}
+
+#[cfg(target_os = "linux")]
 pub(crate) fn exec_argv(
     args: &[Value],
     flush: impl FnOnce() -> MixResult<()>,
@@ -7010,6 +7021,11 @@ pub(crate) fn exec_argv(
     }
     let argv = parse_run_argv_argv(caller, &args[0])?;
     if let Some(Value::Map(map)) = args.get(1) {
+        if let Some(Value::Map(env)) = map.get("env")
+            && env.keys().any(|key| key.contains('\0'))
+        {
+            return Err(opt_invalid(caller, "env key contains a NUL byte"));
+        }
         for key in map.keys() {
             if !matches!(key.as_str(), "env" | "clear_env" | "cwd") {
                 return Err(opt_invalid(
@@ -7030,7 +7046,17 @@ pub(crate) fn exec_argv(
         command.env_remove(key);
     }
     flush()?;
-    crate::exec_replace::replace(&mut command, opts.cwd.as_deref()).map_err(|error| {
+    crate::exec_replace::replace(&mut command, opts.cwd.as_deref()).map_err(|failure| {
+        let mut message = format!("exec_argv: {}", exec_io_message(&failure.error));
+        for (phase, error) in failure.rollback {
+            message.push_str(&format!("; {phase} rollback failed: {}", exec_io_message(&error)));
+        }
+        MixError::structured("EXEC_FAILED", message)
+    })?;
+    unreachable!("successful exec never returns")
+}
+
+pub(crate) fn exec_io_message(error: &std::io::Error) -> String {
         let errno = error.raw_os_error();
         let name = match errno {
             Some(libc::ENOENT) => "ENOENT",
@@ -7045,20 +7071,21 @@ pub(crate) fn exec_argv(
             Some(libc::EMFILE) => "EMFILE",
             Some(libc::ENFILE) => "ENFILE",
             Some(libc::EPERM) => "EPERM",
+            Some(libc::EPIPE) => "EPIPE",
+            Some(libc::EBADF) => "EBADF",
             Some(libc::EIO) => "EIO",
             Some(libc::EINVAL) => "EINVAL",
+            #[cfg(target_os = "linux")]
             Some(libc::ELIBBAD) => "ELIBBAD",
             Some(libc::EAGAIN) => "EAGAIN",
             Some(libc::EFAULT) => "EFAULT",
             Some(libc::EISDIR) => "EISDIR",
             _ => "errno",
         };
-        MixError::structured(
-            "EXEC_FAILED",
-            format!("exec_argv: {name} {errno:?}: {error}"),
-        )
-    })?;
-    unreachable!("successful exec never returns")
+        match errno {
+            Some(number) => format!("{name} ({number}): {error}"),
+            None => error.to_string(),
+        }
 }
 
 fn parse_run_argv_opts(caller: &str, v: Option<&Value>) -> MixResult<RunArgvOpts> {

@@ -56,12 +56,18 @@ file may be run by `/bin/sh` through the platform's `execvp` fallback, so
 scripts should carry a shebang.
 An absolute executable path runs directly; a bare name is searched on PATH.
 A relative path containing a slash resolves against the requested cwd.
+Prefer an absolute executable path: a slow PATH entry can extend the interval
+between signal preparation and exec.
 
 Only `env`, `clear_env` and `cwd` options are accepted (the same validation
 and environment overlay/removal rules as `run_argv`; nil opts means defaults).
 `cwd` is applied before replacement, without changing the parent environment.
-Replacement is refused under `--serve`, inside a handler, or while the
-evaluator holds managed children. The capability is `process`.
+Replacement raises `EXEC_REFUSED` under `--serve`, inside a handler, or while
+the evaluator holds live managed children. Reaped children with unconsumed
+exit events do not block replacement. The capability is `process`.
+NUL bytes in argv, env keys/values or cwd are rejected at Mix level, naming
+the field, before cwd or signals change. This builtin requires Linux;
+other platforms raise `EXEC_FAILED` with an unsupported-platform message.
 
 Mix flushes stdout and stderr first. SIGPIPE becomes default, inherited
 ignored signals remain ignored, and caught handlers reset at exec according
@@ -72,7 +78,9 @@ close-on-exec deliberately pass through, including descriptors above stderr.
 Failure raises a catchable `EXEC_FAILED` error naming the errno. Failed exec
 leaves signal dispositions, the mask, cwd and environment as they were;
 the script can catch the error and continue. A bad cwd fails before signal
-state changes. A shell-mode `exec` keyword is separate future work.
+state changes. If rollback itself fails, the exec errno remains primary and
+the rollback errors are attached. A shell-mode `exec` keyword is separate
+future work.
 
 ### run_argv — structured argv execution (v0.29.0)
 

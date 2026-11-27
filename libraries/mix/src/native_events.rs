@@ -1380,7 +1380,11 @@ impl NativeEvents {
     }
 
     pub(crate) fn holds_managed_children(&self) -> bool {
-        !self.children.is_empty() || !self.processes.is_empty()
+        // Completion means the sole reaper has finished ownership cleanup.
+        // Keep records (and pidfds) until normal pruning/event delivery, but
+        // an undelivered exit is not a live child that replacement must own.
+        self.children.iter().any(|child| !child.finished())
+            || self.processes.values().any(|process| !process.finished())
     }
 
     pub fn signal_child(&self, pid: u32, signal: i32) -> Option<bool> {
@@ -2255,6 +2259,26 @@ mod tests {
 #[cfg(test)]
 mod process_tests {
     use super::*;
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn reaped_child_with_unconsumed_exit_does_not_refuse_exec() {
+        let mut events = NativeEvents::default();
+        let child = std::process::Command::new("/usr/bin/true").spawn().unwrap();
+        events.children.push(crate::child_events::ChildWatch::new(
+            child, "exec-probe".into(), events.queue.clone(),
+        ).unwrap());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let queued = !events.queue.pending.lock().unwrap().children.is_empty();
+            if events.children[0].finished() && queued { break; }
+            assert!(std::time::Instant::now() < deadline, "child never reaped/queued");
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        assert!(!events.holds_managed_children());
+        assert_eq!(events.children.len(), 1, "pidfd record retained");
+        assert_eq!(events.queue.pending.lock().unwrap().children.len(), 1, "exit unconsumed");
+    }
 
     #[cfg(target_os = "linux")]
     #[test]

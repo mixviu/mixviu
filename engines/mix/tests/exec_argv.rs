@@ -90,6 +90,11 @@ fn fixture() {
             let file = std::fs::File::open("/dev/null").unwrap();
             assert_eq!(libc::dup2(file.as_raw_fd(), 200), 200);
         }
+        if mode == "pending" {
+            // A pending default-fatal signal makes even a temporary unmask
+            // observable: entering block A kills us before any rollback.
+            assert_eq!(libc::kill(std::process::id() as i32, libc::SIGUSR1), 0);
+        }
     }
     let source = std::env::var("EXEC_SOURCE").unwrap();
     let dir = tempfile::tempdir().unwrap();
@@ -112,8 +117,32 @@ $db = sqlopen({db:?}, "rwc")
 sqlexec($db, "CREATE TABLE IF NOT EXISTS exec_probe (x INTEGER)")
 sqlexec($db, "INSERT INTO exec_probe VALUES (1)")
 $socket = tcp_listen("127.0.0.1", 0)
+$timer = timer_once(60, "exec-fd-probe")
+$child = spawn(["/usr/bin/true"], {{exit_event: true}})
+while process_alive($child)
+  sleep(0.001)
+end
+$pidfd = false
+$timerfd = false
+for $fd in glob("/proc/self/fd/*")
+  try
+    $link = read_link($fd)
+    if $link == "anon_inode:[pidfd]" then; $pidfd = true; end
+    if $link == "anon_inode:[timerfd]" then; $timerfd = true; end
+  catch $e
+  end
+end
+if not $pidfd or not $timerfd then; die("fd fixture missing pidfd/timerfd"); end
 print("BEFORE")
-exec_argv([{exe:?}, "--exact", "fixture", "--nocapture"], {{cwd: {cwd:?}, env: {{EXEC_FIXTURE: "target"}}}})
+$deadline = monotonic() + 5
+while true
+  try
+    exec_argv([{exe:?}, "--exact", "fixture", "--nocapture"], {{cwd: {cwd:?}, env: {{EXEC_FIXTURE: "target"}}}})
+  catch $e, $error
+    if $error.code != "EXEC_REFUSED" or monotonic() > $deadline then; die($e); end
+    sleep(0.001)
+  end
+end
 die("RETURNED")"#,
             lock = dir.path().join("lock"),
             db = dir.path().join("probe.db"),
@@ -367,7 +396,7 @@ end
 print("CWD_SAME=" .. (cwd() == $cwd))
 write_file({after:?}, read_file("/proc/self/status"))"#
     );
-    let out = fixture_command("signals")
+    let out = fixture_command("pending")
         .env("EXEC_SOURCE", source)
         .output()
         .unwrap();
@@ -380,6 +409,25 @@ write_file({after:?}, read_file("/proc/self/status"))"#
     let after = std::fs::read_to_string(after).unwrap();
     for field in ["SigIgn:", "SigBlk:", "SigCgt:"] {
         assert_eq!(sigfield(&before, field), sigfield(&after, field), "{field}");
+    }
+    let pending = sigfield(&before, "SigPnd:") | sigfield(&before, "ShdPnd:");
+    assert_ne!(pending & (1 << (libc::SIGUSR1 - 1)), 0, "ordering oracle was not armed");
+}
+
+#[test]
+fn nul_fields_are_rejected_before_cwd_and_signal_changes() {
+    for (call, field, code) in [
+        (r#"exec_argv(["/usr/bin/tr\u{0}ue"], {cwd: "/no/such/exec-nul-cwd"})"#, "argv[0]", "TYPE_MISMATCH"),
+        (r#"exec_argv(["/usr/bin/true", "arg\u{0}value"], {cwd: "/no/such/exec-nul-cwd"})"#, "argv[1]", "TYPE_MISMATCH"),
+        (r#"exec_argv(["/usr/bin/true"], {env: {"BAD\u{0}KEY": "value"}, cwd: "/no/such/exec-nul-cwd"})"#, "env key", "OPTION_INVALID"),
+        (r#"exec_argv(["/usr/bin/true"], {env: {KEY: "bad\u{0}value"}, cwd: "/no/such/exec-nul-cwd"})"#, "KEY", "OPTION_INVALID"),
+        (r#"exec_argv(["/usr/bin/true"], {cwd: "bad\u{0}cwd"})"#, "cwd", "OPTION_INVALID"),
+    ] {
+        let source = format!("$cwd = cwd()\ntry\n  {call}\ncatch $e, $error\n  print($error.code .. \":\" .. $e)\nend\nprint(\"CWD_SAME=\" .. (cwd() == $cwd))\n");
+        let out = fixture_command("pending").env("EXEC_SOURCE", source).output().unwrap();
+        let stdout = text(&out);
+        assert!(stdout.contains(code) && stdout.contains(field) && stdout.contains("NUL") && stdout.contains("CWD_SAME=true"), "{stdout}");
+        assert!(!stdout.contains("errno None") && !stdout.contains("Some(") && !stdout.contains("ENOENT"), "{stdout}");
     }
 }
 

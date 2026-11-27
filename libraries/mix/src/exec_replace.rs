@@ -101,7 +101,30 @@ impl Drop for Cwd {
     }
 }
 
-pub(crate) fn replace(command: &mut Command, cwd: Option<&str>) -> io::Result<()> {
+pub(crate) struct Failure {
+    pub error: io::Error,
+    pub rollback: Vec<(&'static str, io::Error)>,
+}
+
+impl From<io::Error> for Failure {
+    fn from(error: io::Error) -> Self {
+        Self { error, rollback: Vec::new() }
+    }
+}
+
+fn failed_exec(
+    error: io::Error,
+    signals: io::Result<()>,
+    cwd: io::Result<()>,
+) -> Failure {
+    let rollback = [("signal", signals), ("cwd", cwd)]
+        .into_iter()
+        .filter_map(|(phase, result)| result.err().map(|error| (phase, error)))
+        .collect();
+    Failure { error, rollback }
+}
+
+pub(crate) fn replace(command: &mut Command, cwd: Option<&str>) -> Result<(), Failure> {
     io::stdout().flush()?;
     io::stderr().flush()?;
     let mut saved = Cwd(None);
@@ -114,7 +137,36 @@ pub(crate) fn replace(command: &mut Command, cwd: Option<&str>) -> io::Result<()
     let signal_restore = signals.restore();
     drop(signals);
     let cwd_restore = saved.restore();
-    signal_restore?;
-    cwd_restore?;
-    Err(error)
+    Err(failed_exec(error, signal_restore, cwd_restore))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn io_error_messages_name_errno_without_option_wrappers() {
+        for (number, name) in [(libc::EPIPE, "EPIPE"), (libc::EBADF, "EBADF")] {
+            let message = crate::builtins::exec_io_message(&io::Error::from_raw_os_error(number));
+            assert!(message.starts_with(&format!("{name} ({number}):")), "{message}");
+            assert!(!message.contains("Some("));
+        }
+        let message = crate::builtins::exec_io_message(&io::Error::new(io::ErrorKind::InvalidInput, "validation failure"));
+        assert_eq!(message, "validation failure");
+    }
+
+    #[test]
+    fn rollback_errors_do_not_replace_the_exec_errno() {
+        let failure = failed_exec(
+            io::Error::from_raw_os_error(libc::ENOENT),
+            Err(io::Error::from_raw_os_error(libc::EBADF)),
+            Err(io::Error::from_raw_os_error(libc::EACCES)),
+        );
+        assert_eq!(failure.error.raw_os_error(), Some(libc::ENOENT));
+        assert_eq!(failure.rollback.len(), 2);
+        assert_eq!(failure.rollback[0].0, "signal");
+        assert_eq!(failure.rollback[0].1.raw_os_error(), Some(libc::EBADF));
+        assert_eq!(failure.rollback[1].0, "cwd");
+        assert_eq!(failure.rollback[1].1.raw_os_error(), Some(libc::EACCES));
+    }
 }
