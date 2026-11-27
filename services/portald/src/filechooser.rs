@@ -4,6 +4,8 @@ pub mod lifecycle;
 pub mod mapping;
 #[cfg(test)]
 mod regression;
+#[cfg(test)]
+mod provider_warning_test;
 
 use crate::portal::{OBJECT_PATH, PortalError};
 use crate::screencast::{handle, request};
@@ -28,6 +30,18 @@ const IO_TIMEOUT: Duration = Duration::from_secs(1);
 const CHOOSE_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL: Duration = Duration::from_secs(5);
 const CANCEL_ATTEMPTS: u8 = 3;
+
+#[derive(Default)]
+struct ProviderWarning(Option<std::time::Instant>);
+
+impl ProviderWarning {
+    fn observe(&mut self, present: bool, session: &str, now: std::time::Instant) {
+        if !present && self.0.is_none_or(|last| now.duration_since(last) >= Duration::from_secs(60)) {
+            self.0 = Some(now);
+            tracing::warn!("FileChooser provider 'files' is not registered; start files@{session}.service");
+        }
+    }
+}
 
 #[derive(Default)]
 struct Cancel {
@@ -59,6 +73,7 @@ pub struct Bridge {
     registry: Arc<Mutex<Registry>>,
     counter: Arc<AtomicU64>,
     cancels: Arc<std::sync::Mutex<HashMap<String, Cancel>>>,
+    provider_warning: Arc<std::sync::Mutex<ProviderWarning>>,
 }
 
 /// Splits the one native incoming lane without introducing another broker
@@ -112,6 +127,7 @@ impl Bridge {
             registry: Arc::default(),
             counter: handle::counter(),
             cancels: Arc::default(),
+            provider_warning: Arc::default(),
         }
     }
 
@@ -392,6 +408,19 @@ impl Bridge {
     }
 
     async fn poll(&self, connection: &Connection) {
+        // Check even with no pending requests: a missing provider otherwise
+        // remains silent until an application asks for a file. Broker outages
+        // are not evidence of a missing provider.
+        if let Ok(Ok(services)) = tokio::time::timeout(IO_TIMEOUT, self.client.list_services()).await {
+            let session = paths::env::raw(paths::env::MIX_RUN)
+                .and_then(|p| std::path::Path::new(&p).file_name().map(|s| s.to_string_lossy().into_owned()))
+                .unwrap_or_else(|| "<session>".into());
+            self.provider_warning.lock().unwrap().observe(
+                services.iter().any(|name| name == "files"),
+                &session,
+                std::time::Instant::now(),
+            );
+        }
         let pending: Vec<_> = self.cancels.lock().unwrap().keys().cloned().collect();
         for request in pending {
             let _ = self.retry_cancel(request);

@@ -40,6 +40,10 @@ try
   for $installer in $maps
     $rendered = $layout.plan($tmp .. "/full", $installer.roots)
     if len($rendered) < 40 then raise("BUNDLE", "full layout closure missing") end
+    $chooser = filter($rendered, fn($u) = ends_with($u.path, "/viud/units/files@.service"))
+    if len($chooser) != 1 or not contains($chooser[0].text, "ExecStart=" .. $installer.roots.prefix .. "/bin/dopus --choose-service --service files\n") then
+      raise("BUNDLE", "files chooser missing from installed layout")
+    end
     for $unit in $rendered
       if contains($unit.text, "@{") then raise("BUNDLE", "unresolved " .. $installer.name .. ": " .. $unit.path) end
       if ends_with($unit.path, "/host.tmpfiles.conf") then
