@@ -8,16 +8,24 @@ use std::path::Path;
 use zeroize::Zeroizing;
 
 /// D2 admission material. Deliberately not interchangeable with BusTlsSeed.
+/// Raw bytes stay inside mesh; noded uses mesh::build_admit_response, which
+/// signs only the validated D2 admission transcript.
+/// ```compile_fail
+/// let d2 = mesh::seed::D2Seed::new([7; 32]);
+/// let raw = d2.bytes();
+/// ```
+/// ```compile_fail
+/// let d2 = mesh::seed::D2Seed::new([7; 32]);
+/// let raw: &[u8] = d2.as_ref();
+/// ```
 #[derive(Clone, PartialEq, Eq)]
 pub struct D2Seed(Zeroizing<[u8; 32]>);
 impl D2Seed {
     pub fn new(bytes: [u8; 32]) -> Self {
         Self(Zeroizing::new(bytes))
     }
-}
-impl AsRef<[u8]> for D2Seed {
-    fn as_ref(&self) -> &[u8] {
-        self.0.as_ref()
+    pub(crate) fn bytes(&self) -> &[u8; 32] {
+        &self.0
     }
 }
 impl std::fmt::Debug for D2Seed {
@@ -28,11 +36,9 @@ impl std::fmt::Debug for D2Seed {
 
 /// Independent TLS transport material; never construct this from a D2 seed.
 ///
-/// Outside mesh, raw D2 bytes cannot be passed to the private constructor:
+/// Outside mesh, raw bytes cannot be passed to the private constructor:
 /// ```compile_fail
-/// use mesh::seed::{BusTlsSeed, D2Seed};
-/// let d2 = D2Seed::new([7; 32]);
-/// let tls = BusTlsSeed::new(d2.as_ref().try_into().unwrap());
+/// let tls = mesh::seed::BusTlsSeed::new([7; 32]);
 /// ```
 /// Nor is a purpose-changing conversion provided:
 /// ```compile_fail

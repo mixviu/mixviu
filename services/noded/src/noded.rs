@@ -6188,12 +6188,11 @@ mod tests {
         assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let _ = tx.send(super::load_d2_seed(&fifo));
+            let _ = tx.send(super::classify_seed_read(super::read_d2_seed(&fifo)));
         });
-        assert!(
-            rx.recv_timeout(std::time::Duration::from_secs(1))
-                .unwrap()
-                .is_none()
+        assert_eq!(
+            rx.recv_timeout(std::time::Duration::from_secs(1)).unwrap(),
+            super::SeedRead::Unreadable("seed is not a regular file".into())
         );
         std::fs::remove_dir_all(directory).unwrap();
     }

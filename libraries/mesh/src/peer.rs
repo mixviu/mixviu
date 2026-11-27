@@ -172,7 +172,7 @@ pub fn build_admit_response(
         client_ephemeral: vec![0u8; 32],
         channel_binding_hash: vec![0u8; 32],
     };
-    let sig = sign_admission_transcript(seed.as_ref(), &transcript).ok()?;
+    let sig = sign_admission_transcript(seed.bytes(), &transcript).ok()?;
     let mut resp = BusMessage::new()
         .with_header("command", "noded.admit.response")
         .with_header("type", "response")

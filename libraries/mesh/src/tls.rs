@@ -101,14 +101,20 @@ impl rustls::sign::SigningKey for TlsSigningKey {
 
 /// Owns public certificate and zeroizing private material. Private bytes are
 /// never passed into rcgen or the ring rustls key loader.
+/// D2 material cannot construct a TLS credential through the public API:
+/// ```compile_fail
+/// let d2 = mesh::seed::D2Seed::new([7; 32]);
+/// let tls = mesh::tls::Credential::new(d2);
+/// ```
 pub struct Credential {
     pub certificate: CertificateDer<'static>,
     certified: Arc<rustls::sign::CertifiedKey>,
-    _seed: BusTlsSeed,
 }
 impl Credential {
     pub fn new(seed: BusTlsSeed) -> anyhow::Result<Self> {
         let key = ed25519_dalek::SigningKey::from_bytes(seed.bytes());
+        // Erase the source immediately; only Dalek's zeroizing signing key lives on.
+        drop(seed);
         let public = key.verifying_key().to_bytes();
         let signing = Arc::new(Signing { key, public });
         let pair = rcgen::KeyPair::from_remote(Box::new(CertificateSigner(signing.clone())))?;
@@ -121,7 +127,6 @@ impl Credential {
         Ok(Self {
             certificate,
             certified,
-            _seed: seed,
         })
     }
     pub fn server_config(
