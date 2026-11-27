@@ -14,7 +14,10 @@ pub struct ActivationGrant {
 
 impl ActivationGrant {
     pub fn new(refusal: Option<&'static str>) -> Self {
-        Self { refusal, spent: AtomicBool::new(false) }
+        Self {
+            refusal,
+            spent: AtomicBool::new(false),
+        }
     }
 
     /// Consume the first presentation without untracking the correlation token.

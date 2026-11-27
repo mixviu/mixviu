@@ -20,13 +20,16 @@ use wayland_client::protocol::{
     wl_seat::WlSeat, wl_shm, wl_shm::WlShm, wl_shm_pool::WlShmPool, wl_surface::WlSurface,
 };
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, delegate_noop};
-use wayland_protocols::xdg::activation::v1::client::{xdg_activation_v1::XdgActivationV1,xdg_activation_token_v1::{self,XdgActivationTokenV1}};
 use wayland_protocols::ext::idle_notify::v1::client::{
     ext_idle_notification_v1::{self, ExtIdleNotificationV1},
     ext_idle_notifier_v1::ExtIdleNotifierV1,
 };
 use wayland_protocols::wp::idle_inhibit::zv1::client::{
     zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1, zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1,
+};
+use wayland_protocols::xdg::activation::v1::client::{
+    xdg_activation_token_v1::{self, XdgActivationTokenV1},
+    xdg_activation_v1::XdgActivationV1,
 };
 #[path = "tablet.rs"]
 pub mod tablet;
@@ -120,15 +123,19 @@ pub struct TestClient {
 
 impl TestClient {
     pub fn activation(&self) -> XdgActivationV1 {
-        let (name, _) = find_in(&self.state.globals,"xdg_activation_v1");
-        self.registry.bind(name,1,&self.qh,())
+        let (name, _) = find_in(&self.state.globals, "xdg_activation_v1");
+        self.registry.bind(name, 1, &self.qh, ())
     }
 
     pub fn activation_token(&self, serial: Option<u32>, surface: Option<&WlSurface>) {
         let manager = self.activation();
-        let token = manager.get_activation_token(&self.qh,());
-        if let Some(serial) = serial { token.set_serial(serial,self.seat(0)); }
-        if let Some(surface) = surface { token.set_surface(surface); }
+        let token = manager.get_activation_token(&self.qh, ());
+        if let Some(serial) = serial {
+            token.set_serial(serial, self.seat(0));
+        }
+        if let Some(surface) = surface {
+            token.set_surface(surface);
+        }
         token.commit();
         manager.destroy();
     }
@@ -762,7 +769,14 @@ impl Dispatch<WlKeyboard, ()> for ClientState {
 // No events at all.
 delegate_noop!(ClientState: XdgActivationV1);
 impl Dispatch<XdgActivationTokenV1, ()> for ClientState {
-    fn event(state: &mut Self, object: &XdgActivationTokenV1, event: xdg_activation_token_v1::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+    fn event(
+        state: &mut Self,
+        object: &XdgActivationTokenV1,
+        event: xdg_activation_token_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         if let xdg_activation_token_v1::Event::Done { token } = event {
             state.activation_tokens.push(token);
             object.destroy();

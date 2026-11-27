@@ -287,12 +287,19 @@ pub fn activation_grant(
     recent_serial: bool,
     owns_named_surface: bool,
 ) -> Option<&'static str> {
-    if !has_serial { Some("no_serial") }
-    else if !correct_seat { Some("wrong_seat") }
-    else if !creator_focused { Some("creator_not_focused") }
-    else if !recent_serial { Some("old_serial") }
-    else if !owns_named_surface { Some("foreign_surface") }
-    else { None }
+    if !has_serial {
+        Some("no_serial")
+    } else if !correct_seat {
+        Some("wrong_seat")
+    } else if !creator_focused {
+        Some("creator_not_focused")
+    } else if !recent_serial {
+        Some("old_serial")
+    } else if !owns_named_surface {
+        Some("foreign_surface")
+    } else {
+        None
+    }
 }
 
 /// A known token's activation. Refusals have no effects and never switch workspace.
@@ -317,20 +324,42 @@ pub fn activation<H: Clone + Eq + Hash>(
         .or(scene.exclusive_layer.then_some("exclusive_layer"))
         .or((!record.mapped()).then_some("unmapped"));
     if reason.is_some() || record.focused() {
-        return Ok(FocusDecision { effects: Vec::new(), reason });
+        return Ok(FocusDecision {
+            effects: Vec::new(),
+            reason,
+        });
     }
     let mut decision = if record.minimized() {
         FocusDecision {
-            effects: vec![Effect::MarkDirty { id: record.id(), cause: "xdg.activation" }, Effect::Restore(record.id())],
+            effects: vec![
+                Effect::MarkDirty {
+                    id: record.id(),
+                    cause: "xdg.activation",
+                },
+                Effect::Restore(record.id()),
+            ],
             reason: None,
         }
     } else {
-        focus(registry, workspace_state, default_output, scene, facts, id, generation, true)?
+        focus(
+            registry,
+            workspace_state,
+            default_output,
+            scene,
+            facts,
+            id,
+            generation,
+            true,
+        )?
     };
     for effect in &mut decision.effects {
-        if let Effect::MarkDirty { cause, .. } = effect { *cause = "xdg.activation"; }
+        if let Effect::MarkDirty { cause, .. } = effect {
+            *cause = "xdg.activation";
+        }
     }
-    if !decision.effects.is_empty() { decision.effects.push(Effect::RetargetPointer); }
+    if !decision.effects.is_empty() {
+        decision.effects.push(Effect::RetargetPointer);
+    }
     Ok(decision)
 }
 

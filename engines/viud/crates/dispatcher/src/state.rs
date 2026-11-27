@@ -1967,24 +1967,45 @@ mod handler_impls {
         }
     }
     impl XdgActivationHandler for Dispatch {
-        fn token_created(&mut self, _token: XdgActivationToken, data: XdgActivationTokenData) -> bool {
-            use smithay::reexports::wayland_server::Resource;
+        fn token_created(
+            &mut self,
+            _token: XdgActivationToken,
+            data: XdgActivationTokenData,
+        ) -> bool {
             use protocols::xdg::activation::request::ActivationGrant;
+            use smithay::reexports::wayland_server::Resource;
             let keyboard = self.seat.seat.get_keyboard();
-            let focus = keyboard.as_ref().and_then(|keyboard| keyboard.current_focus());
+            let focus = keyboard
+                .as_ref()
+                .and_then(|keyboard| keyboard.current_focus());
             let creator_owns = |surface: &WlSurface| {
-                data.client_id.as_ref().is_some_and(|creator| surface.client().is_some_and(|client| client.id() == *creator))
+                data.client_id.as_ref().is_some_and(|creator| {
+                    surface
+                        .client()
+                        .is_some_and(|client| client.id() == *creator)
+                })
             };
-            let refusal = policy::window::activation_grant(
+            let refusal = ::policy::window::activation_grant(
                 data.serial.is_some(),
-                data.serial.as_ref().is_some_and(|(_, seat)| smithay::input::Seat::<Dispatch>::from_resource(seat).as_ref() == Some(&self.seat.seat)),
+                data.serial.as_ref().is_some_and(|(_, seat)| {
+                    smithay::input::Seat::<Dispatch>::from_resource(seat).as_ref()
+                        == Some(&self.seat.seat)
+                }),
                 focus.as_ref().is_some_and(creator_owns),
-                data.serial.as_ref().is_some_and(|(serial, _)| keyboard.as_ref().and_then(|keyboard| keyboard.last_enter()).is_some_and(|enter| serial.is_no_older_than(&enter))),
+                data.serial.as_ref().is_some_and(|(serial, _)| {
+                    keyboard
+                        .as_ref()
+                        .and_then(|keyboard| keyboard.last_enter())
+                        .is_some_and(|enter| serial.is_no_older_than(&enter))
+                }),
                 data.surface.as_ref().is_none_or(creator_owns),
             );
-            data.user_data.insert_if_missing_threadsafe(|| ActivationGrant::new(refusal));
+            data.user_data
+                .insert_if_missing_threadsafe(|| ActivationGrant::new(refusal));
             // Launch correlation reads ActivationLog clones, never known_tokens.
-            self.xdg_activation.xdg_activation.retain_tokens(|_, data| data.timestamp.elapsed() <= std::time::Duration::from_secs(600));
+            self.xdg_activation.xdg_activation.retain_tokens(|_, data| {
+                data.timestamp.elapsed() <= std::time::Duration::from_secs(600)
+            });
             true
         }
         fn activation_state(&mut self) -> &mut XdgActivationState {
@@ -1996,8 +2017,14 @@ mod handler_impls {
             token_data: XdgActivationTokenData,
             surface: WlSurface,
         ) {
-            protocols::xdg::activation::request::request_activation(surface.clone(), token, token_data.clone());
-            let grant = token_data.user_data.get::<protocols::xdg::activation::request::ActivationGrant>();
+            protocols::xdg::activation::request::request_activation(
+                surface.clone(),
+                token,
+                token_data.clone(),
+            );
+            let grant = token_data
+                .user_data
+                .get::<protocols::xdg::activation::request::ActivationGrant>();
             self.push_surface_event(crate::wire::trait_::surface_event::SurfaceEvent::Request {
                 handle: crate::wire::trait_::surface_event::SurfaceHandle::wl(&surface),
                 request: crate::wire::trait_::surface_event::WindowRequest::TokenActivation {

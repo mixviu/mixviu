@@ -1523,10 +1523,13 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
 }
 
 fn execute_with_origin(lp: &mut Loop, effects: Vec<Effect>, origin: ActivationOrigin) {
-    let dirty: Vec<_> = effects.iter().filter_map(|effect| match effect {
-        Effect::MarkDirty { id, cause } => Some((*id, *cause)),
-        _ => None,
-    }).collect();
+    let dirty: Vec<_> = effects
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::MarkDirty { id, cause } => Some((*id, *cause)),
+            _ => None,
+        })
+        .collect();
     let _span = ledger::frame_trace::span("comp_workspace_effects", 0);
     crate::x11::sync_windows(
         lp,
@@ -1715,8 +1718,7 @@ fn raise_now(lp: &mut Loop, id: SurfaceId) {
 fn activate(lp: &mut Loop, id: SurfaceId, origin: ActivationOrigin) {
     raise_now(lp, id);
     if let Some(window) = window_of(lp, id) {
-        lp.inner
-            .request_activation(window, origin);
+        lp.inner.request_activation(window, origin);
     }
 }
 
@@ -1785,7 +1787,11 @@ pub fn apply_client_requests(lp: &mut Loop) {
             continue;
         };
         match request {
-            WindowRequest::TokenActivation { refusal, created, spent } => {
+            WindowRequest::TokenActivation {
+                refusal,
+                created,
+                spent,
+            } => {
                 let facts = window_facts(lp, id);
                 let scene = policy::window::SceneFacts {
                     session_lock: world::comp::session_lock::active(lp),
@@ -1794,8 +1800,16 @@ pub fn apply_client_requests(lp: &mut Loop) {
                 let comp = &mut lp.inner.comp;
                 let default_output = comp.default_output.clone();
                 match policy::window::activation(
-                    &comp.registry, &mut comp.workspaces, default_output.as_ref(),
-                    scene, &facts, window_id, generation, refusal, created.elapsed(), spent,
+                    &comp.registry,
+                    &mut comp.workspaces,
+                    default_output.as_ref(),
+                    scene,
+                    &facts,
+                    window_id,
+                    generation,
+                    refusal,
+                    created.elapsed(),
+                    spent,
                 ) {
                     Ok(decision) => {
                         if let Some(reason) = decision.reason {
