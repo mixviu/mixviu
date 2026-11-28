@@ -540,8 +540,9 @@ impl ServeRuntime for MixServeRuntime {
                         .map(|command| command.name)
                         .filter(|name| {
                             let valid = ::bus::validate_manifest_name(name, accepted);
-                            if let Err(error) = valid {
-                                if self.manifest_warning_is_new(name) {
+                            if let Err(error) = valid
+                                && self.manifest_warning_is_new(name)
+                            {
                                     if error == ::bus::ManifestNameError::Count {
                                         tracing::warn!(
                                             name,
@@ -550,7 +551,6 @@ impl ServeRuntime for MixServeRuntime {
                                     } else {
                                         tracing::warn!(name, "omitting invalid serve command name");
                                     }
-                                }
                             }
                             if valid.is_ok() {
                                 accepted += 1;
