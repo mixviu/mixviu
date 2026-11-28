@@ -63,6 +63,9 @@ pub(crate) struct ConnectionOptions {
 }
 
 impl Connection {
+    pub(crate) fn set_commands(&self, commands: Vec<crate::CommandDescriptor>) {
+        self.inner.set_commands(commands);
+    }
     pub async fn connect(name: &str, url: &str) -> Result<Self, ClientError> {
         Self::connect_with_options(name, url, &ConnectionOptions::default()).await
     }

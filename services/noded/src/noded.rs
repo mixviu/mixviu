@@ -6880,7 +6880,7 @@ mod tests {
         let broker = Arc::new(SubscriptionBroker::new());
         let started = Instant::now();
         AppState {
-            history_allowlist: commands::allowlist(None).unwrap(),
+            history_allowlist: super::commands::allowlist(None).unwrap(),
             tls: None,
             tls_peer: None,
             tls_refusals: Default::default(),

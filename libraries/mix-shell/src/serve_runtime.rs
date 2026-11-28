@@ -92,6 +92,7 @@ impl Default for ReloadIdentity {
 /// evaluator consults) and [`PropTree`] (the lifecycle property model
 /// `dispatch_props` reads), so one value answers all of L0+L1.
 pub struct MixServeRuntime {
+    bus: Option<std::sync::Arc<::bus::native_client::SupervisedClient>>,
     /// Bus service name — the `<svc>` prefix for `<svc>.props.*` and
     /// the `INFO.name`.
     service_name: String,
@@ -133,6 +134,10 @@ const HEALTH_DEGRADED: &str = "degraded";
 const PROPS_LEVEL: &str = "L1";
 
 impl MixServeRuntime {
+    pub fn with_bus(mut self, bus: std::sync::Arc<::bus::native_client::SupervisedClient>) -> Self {
+        self.bus = Some(bus);
+        self
+    }
     /// Build the runtime surface for a citizen registered as
     /// `service_name`. Captures the start instants now.
     pub fn new(service_name: impl Into<String>) -> Self {
@@ -143,6 +148,7 @@ impl MixServeRuntime {
             identity: std::rc::Rc::new(ReloadIdentity::new()),
             props_prefix,
             handler_faults: std::cell::Cell::new(0),
+            bus: None,
             last_fault: std::cell::RefCell::new(None),
             script_path: None,
         }
@@ -493,6 +499,15 @@ impl PropTree for MixServeRuntime {
 }
 
 impl ServeRuntime for MixServeRuntime {
+    fn publish_commands<'a>(&'a self, handlers: &'a [String]) -> mix::evaluator::BusFuture<'a, ()> {
+        Box::pin(async move {
+            if let Some(bus) = &self.bus {
+                let handlers = handlers.iter().map(|name| (name.as_str(), None)).collect::<Vec<_>>();
+                let descriptors = serde_json::from_str(&self.help_body(&handlers)).expect("HELP descriptors");
+                bus.set_commands(descriptors).await;
+            }
+        })
+    }
     fn record_handler_fault(&self, summary: &str) {
         self.handler_faults.set(self.handler_faults.get() + 1);
         // Bound the stored summary: the fault detail can carry request
