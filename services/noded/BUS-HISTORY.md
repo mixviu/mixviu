@@ -1,5 +1,58 @@
 # Bus history
 
+## Command manifests and authority
+
+`noded.commands.set` accepts a JSON array of names in the body, for example
+`["example.read", "example.write"]`, replacing the connection's registration's
+previous set. The register body is unchanged. Native clients send after a
+successful named register and when their command names change; anonymous clients
+never publish. `mix --serve` publishes declared handlers and runtime commands
+automatically, alongside its existing HELP implementation. Reconnect registers
+again and republishes. An old broker's unknown-verb rc 10 is logged once at debug
+per connection; registration and serving continue.
+
+Every refusal clears the previous manifest:
+
+| rc | Meaning |
+| --- | --- |
+| 0 | Accepted, including a set ignored for history |
+| 20 | Body is not a JSON array of strings |
+| 21 | More than 512 names (duplicates count) |
+| 22 | A name exceeds 64 bytes |
+| 23 | A name exceeds six dot-separated segments |
+| 24 | Empty segment or character outside `[A-Za-z0-9_]`, including `@` |
+| 25 | More than 16 sets per registration, including refused attempts |
+| 26 | No current registration owned by this connection |
+
+Registration ownership and the set budget are checked before decoding, then
+the remaining limits in table order. A fresh registration resets the budget.
+Deregister, connection loss and replacement of a registration remove its set.
+There is no manifest relay across bridges.
+
+The node-local `noded.history_allowlist` key in `node.conf.mix` is an array of
+service identities. Omission ships these defaults:
+
+```mix
+noded: {
+  history_allowlist: ["maild", "webd", "dnsd", "blobd", "toolsd", "filesd", "provisiond", "sshm", "mon"]
+}
+```
+
+An explicit array replaces the defaults; `[]` honours only broker-fixed
+identities. A malformed value refuses broker startup. Operators extend this list
+per node. Sets are honoured only from allowlisted or broker-fixed identities:
+`noded`, `log`, `log-observe-<pid>`, `t<uid>-…`, `c<uid>-…`, `anon-…`, and
+`bridge-<peer>` where the peer is in the current signed inventory. A valid set
+from another registered identity receives rc 0 but cannot vouch for names.
+The internal `vouched_command` query checks the union of honoured sets of
+currently registered services. Signed membership is checked at query time.
+
+These facilities supply the subsequent history projection; this change does
+not change history rows.
+
+A service, instance, peer or `bus-svc` name is infrastructure. Never derive
+one from an account, customer, mailbox or domain.
+
 The logger subscribes to `noded.observe` with body mode `none` and capacity
 1024 on its own connection. The separate `log.props.*` service connection,
 bounded observer queue and broker drop accounting are unchanged from the

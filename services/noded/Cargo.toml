@@ -61,6 +61,8 @@ tracing-subscriber.workspace = true
 buildinfo.workspace = true
 
 [dev-dependencies]
+mix.workspace = true
+mix-shell = { path = "../../libraries/mix-shell", features = ["serve"] }
 log = "0.4"
 tracing-log = "0.2"
 test-broker = { path = "../../libraries/test-broker" }
