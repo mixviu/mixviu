@@ -32,6 +32,54 @@ async fn wait_name(state: &AppState, name: &str, present: bool) {
 }
 
 #[tokio::test]
+async fn raw_clients_cannot_register_broker_fixed_or_uninventoried_names() {
+    let state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
+    let (url, task) = broker(state.clone()).await;
+    let mut accepted = Vec::new();
+    for identity in ["anon-x", "log-observe-123", "t0-x", "c0-x", "bridge-example"] {
+        let (mut sink, mut stream) = raw_connect(&url).await;
+        let request = BusMessage::new()
+            .with_header("command", "noded.register")
+            .with_header("from", identity)
+            .with_header("to", "noded")
+            .with_header("type", "request")
+            .with_header("id", "reserved-register");
+        let response = raw_call(&mut sink, &mut stream, request, "reserved-register").await;
+        if response.get("rc") == Some("0") {
+            let request = BusMessage::new()
+                .with_header("command", "noded.commands.set")
+                .with_header("to", "noded")
+                .with_header("type", "request")
+                .with_header("id", "reserved-set")
+                .with_body(r#"["example.vouch"]"#);
+            let response = raw_call(&mut sink, &mut stream, request, "reserved-set").await;
+            accepted.push((
+                identity,
+                response.get("rc").map(str::to_owned),
+                state.vouched_command("example.vouch").await,
+            ));
+            let request = BusMessage::new()
+                .with_header("command", "noded.deregister")
+                .with_header("to", "noded")
+                .with_header("type", "request")
+                .with_header("id", "reserved-deregister");
+            assert_eq!(
+                raw_call(&mut sink, &mut stream, request, "reserved-deregister")
+                    .await
+                    .get("rc"),
+                Some("0")
+            );
+        }
+        sink.close().await.unwrap();
+    }
+    task.abort();
+    assert!(
+        accepted.is_empty(),
+        "round-3 stop rule: raw registrations accepted (identity, set rc, honoured): {accepted:?}"
+    );
+}
+
+#[tokio::test]
 async fn broker_limits_clear_the_previous_set_and_registration_resets_budget() {
     let state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
     let (url, task) = broker(state.clone()).await;
