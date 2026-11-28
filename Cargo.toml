@@ -150,7 +150,7 @@ tokio-tungstenite = "=0.26.2"
 tracing = { version = "=0.1.44" }
 tracing-appender = "0.2"
 tracing-subscriber = { version = "=0.3.23", features = ["env-filter"] }
-uuid = { version = "=1.29.2", features = ["fast-rng", "serde", "v7"] }
+uuid = { version = "=1.29.3", features = ["fast-rng", "serde", "v7"] }
 # D-Bus for the session portal (services/portald). Pinned to the version the
 # lock already resolves; the tokio backend only, no async-io or blocking API.
 zbus = { version = "=5.19.0", default-features = false, features = ["tokio"] }
@@ -192,18 +192,18 @@ files = { path = "libraries/files" }
 # The compositor (engines/viud): smithay with the compositor's hooks and patches
 # (vendor/smithay/PATCHES.md), and wgpu on the GL backend only, sharing
 # smithay's EGL context.
-wgpu = { version = "=30.0.1", default-features = false, features = ["gles", "parking_lot", "std", "wgsl"] }
+wgpu = { version = "=30.0.2", default-features = false, features = ["gles", "parking_lot", "std", "wgsl"] }
 egui-wgpu = { version = "=0.37.0", default-features = false }
 bindgen = "=0.71.1"
 bitflags = "=2.13.2"
-cc = "=1.11.1"
+cc = "=1.11.3"
 crossbeam-channel = "=0.5.17"
 drm-ffi = "=0.9.1"
 gbm = "=0.18.0"
 glow = "=0.17.0"
 image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 pkg-config = "=0.3.34"
-pollster = "=1.0.1"
+pollster = "=1.0.3"
 xcursor = "=0.3.11"
 # Flexbox layout of Mix Scenes in viu.
 taffy = { version = "=0.14.0", default-features = false, features = ["std", "taffy_tree", "flexbox", "content_size"] }

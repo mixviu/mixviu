@@ -49,8 +49,8 @@ wayland-protocols-wlr = { workspace = true, features = ["client"] }
 # Enable the fixture in test builds (also when the workspace builds viud).
 headless = { path = ".", features = ["test-support"] }
 screencopy = { workspace = true, features = ["test-support"] }
-lz4_flex = { version = "=0.14.0", default-features = false, features = ["std", "safe-decode"] }
-crc32fast = "=1.5.4"
+lz4_flex = { version = "=0.14.2", default-features = false, features = ["std", "safe-decode"] }
+crc32fast = "=1.5.5"
 wayland-client = { version = "=0.31.15" }
 libc = { workspace = true }
 serde_json = { workspace = true }
