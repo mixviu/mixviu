@@ -91,7 +91,7 @@ fn event(
     args: Value,
 ) -> Completion {
     let sequence = runtime.event(name.into(), args).unwrap();
-    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let deadline = std::time::Instant::now() + Duration::from_secs(60);
     let mut answer = None;
     let mut model = None;
     let mut barrier = None;

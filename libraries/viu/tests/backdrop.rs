@@ -99,7 +99,7 @@ impl App {
             directory,
         };
         app.runtime.load(bundle.program).unwrap();
-        let end = Instant::now() + Duration::from_secs(10);
+        let end = Instant::now() + Duration::from_secs(60);
         while app.model.is_null() {
             app.pump();
             assert!(Instant::now() < end);
@@ -160,7 +160,7 @@ impl App {
         rx
     }
     fn wait(&mut self, mut rx: tokio::sync::oneshot::Receiver<(u8, Value)>) -> (u8, Value) {
-        let end = Instant::now() + Duration::from_secs(10);
+        let end = Instant::now() + Duration::from_secs(60);
         loop {
             self.pump();
             if let Ok(reply) = rx.try_recv() {
@@ -170,7 +170,7 @@ impl App {
         }
     }
     fn wait_model(&mut self, ready: impl Fn(&Value) -> bool) {
-        let end = Instant::now() + Duration::from_secs(10);
+        let end = Instant::now() + Duration::from_secs(60);
         while !ready(&self.model) {
             self.pump();
             assert!(Instant::now() < end, "model timed out: {}", self.model);
@@ -188,7 +188,7 @@ impl App {
         // Query/immediate refusal completions go through the same Calls owner
         // that Host uses. Its completion lane is driven here explicitly.
         let sequence = self.runtime.event(command.into(), args).unwrap();
-        let end = Instant::now() + Duration::from_secs(10);
+        let end = Instant::now() + Duration::from_secs(60);
         loop {
             for done in self.jobs.poll() {
                 self.runtime
@@ -380,7 +380,7 @@ fn views_follow_private_broker_inventory_and_refuse_without_changing_selection()
     // Discard arrival events before testing the real departure notification.
     while incoming.try_recv().is_ok() {}
     rt.block_on(train.client().deregister()).unwrap();
-    let end = Instant::now() + Duration::from_secs(10);
+    let end = Instant::now() + Duration::from_secs(60);
     loop {
         while let Ok((command, args)) = incoming.try_recv() {
             if command == "props.changed" {

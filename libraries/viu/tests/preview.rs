@@ -14,7 +14,7 @@ fn cache_preview_decodes_off_thread_and_retires_its_texture_when_removed() {
         "",
         json!({"phase":"ready","path":path}),
     );
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     loop {
         let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
             widgets.begin_frame();

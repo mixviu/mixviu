@@ -327,7 +327,9 @@ mod tests {
     }
 
     fn wait<T>(mut poll: impl FnMut() -> Option<T>) -> T {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        // Exercise take/collect through the caller's predicate; this is a hang
+        // watchdog, not a decode performance budget in the shared test pool.
+        let deadline = Instant::now() + Duration::from_secs(60);
         loop {
             if let Some(value) = poll() {
                 return value;

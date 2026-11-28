@@ -389,6 +389,8 @@ fn paint_shadow(
                 let task = move || {
                     if let Ok(input) = input_rx.recv() {
                         let image = raster_shadow(width, height, origin, &shadow, input);
+                        // Send without taking the shadow cache lock: completion
+                        // may be awaited while the test owns that lock.
                         let _ = tx.send(image);
                         ctx.request_repaint();
                     }
@@ -852,29 +854,82 @@ mod tests {
             .clone();
         reference.drop_without_applying_deltas();
         let texture = shadows(&ctx).lock().unwrap().entries[0].1.texture.id();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-        loop {
-            let out = ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
-            let image = out
-                .textures_delta
-                .set
-                .get(&texture)
-                .and_then(|d| d.last())
-                .map(|d| d.image.clone());
-            out.drop_without_applying_deltas();
-            if let Some(egui::ImageData::Color(actual)) = image {
-                let egui::ImageData::Color(expected) = &expected;
-                assert_eq!(actual.size, expected.size);
-                assert_eq!(actual.pixels, expected.pixels);
-                break;
-            }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "worker did not finish"
+        ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node))
+            .drop_without_applying_deltas();
+        {
+            let shared = shadows(&ctx);
+            let mut store = shared.lock().unwrap();
+            let pending = store.pending.as_mut().expect("shadow worker started");
+            // Wait for completion, allowing pool contention rather than timing
+            // frame polling. The worker sends without taking the cache lock.
+            // Keep a safety bound so a hung worker cannot wedge the test pool.
+            pending.ready = Some(
+                pending
+                    .image
+                    .recv_timeout(std::time::Duration::from_secs(60))
+                    .expect("shadow worker did not complete")
+                    .expect("shadow worker failed to raster"),
             );
-            std::thread::sleep(std::time::Duration::from_millis(1));
         }
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
+        let egui::ImageData::Color(actual) = &out
+            .textures_delta
+            .set
+            .get(&texture)
+            .expect("completed shadow texture delta")
+            .last()
+            .expect("completed shadow uploaded")
+            .image;
+        let egui::ImageData::Color(expected) = &expected;
+        assert_eq!(actual.size, expected.size);
+        assert_eq!(actual.pixels, expected.pixels);
+        out.drop_without_applying_deltas();
         assert_eq!(shadows(&ctx).lock().unwrap().rasters, 1);
+    }
+
+    #[test]
+    fn sibling_frame_promotes_a_real_worker_image_from_channel_to_ready() {
+        let ctx = egui::Context::default();
+        shadow_frame(&ctx, "root", "a", 1.).drop_without_applying_deltas();
+        shadow_frame(&ctx, "root", "b", 1.).drop_without_applying_deltas();
+        let shared = shadows(&ctx);
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let expected = {
+            let mut store = shared.lock().unwrap();
+            let pending = store.pending.as_mut().expect("real shadow worker started");
+            let image = pending
+                .image
+                .recv_timeout(std::time::Duration::from_secs(60))
+                .expect("real shadow worker completed")
+                .expect("real shadow worker rasterised");
+            // Existing PendingShadow test seam: queue the real worker's image
+            // deterministically without filling ready or racing frame polling.
+            pending.image = receiver;
+            assert!(pending.ready.is_none());
+            sender.send(Some(image.clone())).unwrap();
+            image
+        };
+        shadow_frame(&ctx, "sibling", "c", 1.).drop_without_applying_deltas();
+        let texture = {
+            let store = shared.lock().unwrap();
+            let pending = store.pending.as_ref().expect("sibling retains root result");
+            let ready = pending
+                .ready
+                .as_ref()
+                .expect("frame promoted channel result");
+            assert_eq!(ready.size, expected.size);
+            assert_eq!(ready.pixels, expected.pixels);
+            assert!(matches!(
+                pending.image.try_recv(),
+                Err(std::sync::mpsc::TryRecvError::Empty)
+            ));
+            pending.texture
+        };
+        let out = shadow_frame(&ctx, "root", "b", 1.);
+        assert!(out.textures_delta.set.contains_key(&texture));
+        out.drop_without_applying_deltas();
+        assert!(shared.lock().unwrap().pending.is_none());
+        drop(sender);
     }
 
     #[test]

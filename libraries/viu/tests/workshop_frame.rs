@@ -30,7 +30,7 @@ on viu.job.completed
 end
 "#.into(),
     }).unwrap();
-    let until = std::time::Instant::now() + Duration::from_secs(10);
+    let until = std::time::Instant::now() + Duration::from_secs(60);
     loop {
         for result in jobs.poll() {
             assert!(

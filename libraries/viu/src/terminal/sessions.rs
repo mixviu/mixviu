@@ -998,7 +998,7 @@ mod tests {
             sessions.call("close", handle, json!({})).unwrap();
         }
         let pid = created["pid"].as_i64().unwrap() as libc::pid_t;
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         while unsafe { libc::kill(pid, 0) } == 0 {
             assert!(
                 std::time::Instant::now() < deadline,

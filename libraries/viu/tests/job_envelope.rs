@@ -16,7 +16,7 @@ fn explicit_body_job_envelopes_keep_the_typed_payload_and_owner() {
         let mut spec = serde_json::json!({"id":"example","owner":4,"path":dir.path().join("worker.mix"),"source":"on job.run;reply(0,json_encode($event.args));end","command":"job.run","args":{"value":17}});
         spec[field] = serde_json::json!(seconds);
         runtime.load(viu::runtime::Program{path:dir.path().join("root.mix"),scene:"jobs".into(),citizen:"jobs".into(),source:format!("$spec=json_parse({});send \"viu-local\" \"jobs.start\" body=$spec;if $rc!=0 then raise(\"ADMISSION\",json_encode($reply)) end",serde_json::to_string(&spec.to_string()).unwrap())}).unwrap();
-        let until = Instant::now() + Duration::from_secs(5);
+        let until = Instant::now() + Duration::from_secs(60);
         let mut admitted = false;
         let mut completed = false;
         while Instant::now() < until && !(admitted && completed) {

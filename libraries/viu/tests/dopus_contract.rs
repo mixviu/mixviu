@@ -17,7 +17,7 @@ fn wait(
     sequence: u64,
 ) -> (viu::runtime::Completion, Vec<viu::jobs::ResultMessage>) {
     let mut jobs_done = Vec::new();
-    let end = Instant::now() + Duration::from_secs(8);
+    let end = Instant::now() + Duration::from_secs(60);
     loop {
         jobs_done.extend(jobs.poll());
         if let Some(completed) = runtime.try_completion() {
@@ -273,7 +273,7 @@ fn mix_controller_selects_and_copies_a_non_utf8_name_without_replacing_its_bytes
         )
         .unwrap();
     let (_, mut done) = wait(&runtime, &mut jobs, seq);
-    let until = Instant::now() + std::time::Duration::from_secs(5);
+    let until = Instant::now() + std::time::Duration::from_secs(60);
     while done.is_empty() {
         done.extend(jobs.poll());
         assert!(Instant::now() < until);

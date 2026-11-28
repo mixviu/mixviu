@@ -83,7 +83,7 @@ end
     let mut host = Harness::new(Bundle::load(dir.path(), &[]).unwrap());
     host.guard_workshop_publications();
     host.refuse_next_publication();
-    let end = Instant::now() + Duration::from_secs(5);
+    let end = Instant::now() + Duration::from_secs(60);
     while host.state()["model"]["label"] != "recovered" {
         host.pump();
         assert!(
@@ -290,7 +290,7 @@ if len($s.jobs)!=0 or len($s.admission_failures)!=0 then raise("TEST","failed ow
 for $i=0 to 9 $s=$c.follow_up($s) end
 print("PASS")
 "#.into() }).unwrap();
-    let end = Instant::now() + Duration::from_secs(10);
+    let end = Instant::now() + Duration::from_secs(60);
     loop {
         if let Some(done) = runtime.try_completion() {
             assert!(done.error.is_none(), "{:?}", done.error);
@@ -339,7 +339,7 @@ for $i=1 to 6 $s=$w.launch($s) end
 if $s.serial!=1 then raise("TEST","rotation starved the ready tail") end
 print("PASS")
 "#.into() }).unwrap();
-    let end = Instant::now() + Duration::from_secs(10);
+    let end = Instant::now() + Duration::from_secs(60);
     loop {
         if let Some(done) = runtime.try_completion() {
             assert!(done.error.is_none(), "{:?}", done.error);
@@ -371,7 +371,7 @@ fn discovery_expiry_flushes_pending_lists_without_describes() {
             citizen: "expiry".into(),
         })
         .unwrap();
-    let end = Instant::now() + Duration::from_secs(10);
+    let end = Instant::now() + Duration::from_secs(60);
     loop {
         if let Some(done) = runtime.try_completion() {
             assert!(done.error.is_none(), "{:?}", done.error);
@@ -414,7 +414,7 @@ on workshop.clicked $clicks=$clicks+1;reply(0,"{}") end
     bundle.manifest.bus_url = Some(url.into());
     bundle.launch = json!({"headless":true});
     let mut host = Harness::new(bundle);
-    let end = Instant::now() + Duration::from_secs(5);
+    let end = Instant::now() + Duration::from_secs(60);
     while !host.ready() {
         host.pump();
         assert!(Instant::now() < end);
@@ -446,7 +446,7 @@ fn request(
     })
 }
 fn pump_until(host: &mut Harness, ready: impl Fn(&Harness) -> bool) {
-    let end = Instant::now() + Duration::from_secs(5);
+    let end = Instant::now() + Duration::from_secs(60);
     while !ready(host) {
         host.pump();
         assert!(host.error().is_empty(), "{}", host.error());
@@ -508,7 +508,7 @@ fn ordering_keeps_drive_fences_and_only_read_queries_bypass_undrawn_work() {
     );
     // Draw enough to plan the click, then deliberately stop drawing during
     // its two-pass input: even ping must wait for that self-bounded fence.
-    let end = Instant::now() + Duration::from_secs(5);
+    let end = Instant::now() + Duration::from_secs(60);
     while !toolkit::drive::pending(&host.ctx) {
         host.draw();
         host.pump();
@@ -517,7 +517,7 @@ fn ordering_keeps_drive_fences_and_only_read_queries_bypass_undrawn_work() {
     let ping = request(&rt, &caller, "workshop.ping", json!({}));
     pump_until(&mut host, |h| h.held().contains(&"workshop.ping".into()));
     assert!(!ping.is_finished() && !mutation.is_finished() && !resize.is_finished());
-    let end = Instant::now() + Duration::from_secs(5);
+    let end = Instant::now() + Duration::from_secs(60);
     while !mutation.is_finished()
         || !state.is_finished()
         || !click.is_finished()
@@ -566,25 +566,39 @@ fn restoring_the_old_draw_barrier_times_out_ping() {
     let (_dir, mut host) = fixture(&broker.url);
     host.legacy_draw_barrier();
     let c = caller.clone();
+    let call_deadline = Duration::from_millis(200);
+    let timeout_margin = Duration::from_millis(1800);
     let ping = rt.spawn(async move {
-        c.call_with_headers_raw_within(
-            "workshop",
-            "workshop.ping",
-            &BTreeMap::new(),
-            "{}",
-            Duration::from_millis(200),
-        )
-        .await
+        let started = Instant::now();
+        let answer = c
+            .call_with_headers_raw_within(
+                "workshop",
+                "workshop.ping",
+                &BTreeMap::new(),
+                "{}",
+                call_deadline,
+            )
+            .await;
+        (answer, started.elapsed())
     });
-    let end = Instant::now() + Duration::from_secs(2);
+    let end = Instant::now() + Duration::from_secs(60);
     while !ping.is_finished() {
         host.pump();
         assert!(Instant::now() < end);
         std::thread::sleep(Duration::from_millis(2));
     }
+    let (answer, elapsed) = rt.block_on(ping).unwrap();
+    let bus::SupervisedError::Transport(error) =
+        answer.expect_err("old barrier must time out ping")
+    else {
+        panic!("old barrier must produce a transport timeout");
+    };
+    assert!(matches!(error, bus::ClientError::Timeout { .. }));
+    // Preserve the former two-second latency ceiling separately from the
+    // liveness watchdog; exclude time waiting for the owner to observe completion.
     assert!(
-        rt.block_on(ping).unwrap().is_err(),
-        "old barrier must break ping"
+        elapsed < call_deadline + timeout_margin,
+        "ping timeout latency {elapsed:?} exceeded call deadline plus margin"
     );
     rt.block_on(caller.close());
 }
@@ -612,7 +626,7 @@ fn call(
         )
         .await
     });
-    let end = Instant::now() + Duration::from_secs(2);
+    let end = Instant::now() + Duration::from_secs(60);
     while !task.is_finished() {
         host.pump();
         assert!(host.error().is_empty(), "{}", host.error());
@@ -724,7 +738,7 @@ end
         while !host.ready() {
             host.pump();
             assert!(
-                start.elapsed() < Duration::from_secs(5),
+                start.elapsed() < Duration::from_secs(60),
                 "startup: {}",
                 host.error()
             );
@@ -795,7 +809,9 @@ end
             eprintln!("WORKSHOP_DISCOVERY_PHASE {}", host.discovery_measurements());
             host.probe_discovery();
             let padding="{\"name\":\"example.command\",\"description\":\"Read state\",\"read_only\":true,\"args\":{}}\n".repeat(600);
-            let until = Instant::now() + Duration::from_secs(5);
+            // Fixture liveness, not throughput: seed rows before enabling the
+            // per-tick numeric and patch CPU bounds below.
+            let until = Instant::now() + Duration::from_secs(60);
             for offset in (0..48).step_by(8) {
                 let marker = format!("\"ts\": \"{}\"", offset + 7);
                 host.owner_event(
@@ -941,10 +957,12 @@ fn workshop_calls_from_port_appearance_at_200_peers() {
     // This independent client must run while construction/pumping blocks the
     // owner thread. Waiting for Harness::ready would conceal exactly that hold.
     let calls = rt.spawn(async move {
+        // Fixture liveness only. The performance sampling window starts at
+        // port appearance below and keeps its own call deadlines.
         let wait = Instant::now();
         loop {
             if sampler.list_services().await.unwrap().iter().any(|name| name == "workshop") { break; }
-            assert!(wait.elapsed() < Duration::from_secs(5), "Workshop port did not appear");
+            assert!(wait.elapsed() < Duration::from_secs(60), "Workshop port did not appear");
             tokio::time::sleep(Duration::from_millis(2)).await;
         }
         let port = Instant::now();
