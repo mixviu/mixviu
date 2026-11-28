@@ -702,6 +702,7 @@ impl Sessions {
             r.view.name.clone(),
             ServiceEntry {
                 origin: crate::noded::Origin::Session,
+commands: Default::default(),
                 protected_responses: c.protected.clone(),
                 traffic_class: TrafficClass::NativeSession,
                 tx: c.tx.clone(),
