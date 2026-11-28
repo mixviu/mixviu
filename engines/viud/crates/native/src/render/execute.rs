@@ -1783,6 +1783,7 @@ fn present(
     let resuming = !(*state.inner.kernel.get(&drivers::resume::base::VBLANK_SEEN));
     // Scope the drm_output borrow so the `Failed` arm can tear the pipe down.
     let (outcome, modeset) = {
+        let trail_row = crate::wire::handover::pipe("SubmitModeset", &ctx_ref.outputs[output_idx]);
         let Some(drm_output) = ctx_ref.outputs[output_idx].drm_output.as_mut() else {
             return false;
         };
@@ -1792,7 +1793,16 @@ fn present(
         drm_output.with_compositor(|c| c.set_tearing(tear));
         let modeset = drm_output.with_compositor(|c| c.surface().commit_pending());
         let trace = ledger::frame_trace::span("kms_queue_frame", trace_output);
-        let outcome = queue(drm_output, Some(feedback), resuming);
+        let outcome = if modeset {
+            crate::wire::handover::run(vec![trail_row], || {
+                match queue(drm_output, Some(feedback), resuming) {
+                    QueueOutcome::Failed => Err("queue_frame failed (detail in journal)".into()),
+                    other => Ok(other),
+                }
+            }).unwrap_or(QueueOutcome::Failed)
+        } else {
+            queue(drm_output, Some(feedback), resuming)
+        };
         drop(trace);
         (outcome, modeset)
     };

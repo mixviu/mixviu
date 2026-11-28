@@ -50,6 +50,6 @@ world = { workspace = true }
 x11-wm = { workspace = true }
 smithay = { workspace = true }
 uuid = { workspace = true }
-
-[dev-dependencies]
+serde_json.workspace = true
 libc.workspace = true
+

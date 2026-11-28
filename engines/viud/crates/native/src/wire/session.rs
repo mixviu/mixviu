@@ -18,6 +18,7 @@ use std::rc::Rc;
 use world::environment::interface::lifecycle;
 use world::state::Loop;
 use world::state::StatusSession;
+use super::handover;
 
 /// Wall-clock milliseconds for a session edge (`session.changed` `since_ms`).
 fn unix_ms() -> u64 {
@@ -42,6 +43,7 @@ pub fn register(
 
             match event {
                 smithay::backend::session::Event::PauseSession => {
+                    handover::pause(|| {
                     kms::seat::lifecycle::pause::release(state, recorder::interface::stop_and_discard, |state| {
                     if let Some(primary) = ctx_ref.outputs.first() {
                         headless::wire::follow_output(primary.output.clone());
@@ -81,8 +83,8 @@ pub fn register(
                     // resume path re-enables via `queue_frame`.
                     for p in ctx_ref.outputs.iter() {
                         if let Some(o) = p.drm_output.as_ref()
-                            && let Err(e) =
-                                kms::scanout::surface::output::clear(o)
+                            && let Err(e) = handover::run(vec![handover::pipe("CrtcClear", p)], ||
+                                kms::scanout::surface::output::clear(o))
                             {
                                 warn!(
                                     "pause: clearing connector={:?} crtc={:?} failed: {e} — its \
@@ -101,11 +103,13 @@ pub fn register(
                         || {
                             kms::scanout::surface::output::pause(
                                 &mut manager.borrow_mut(),
-                            )
+                            );
+                            handover::point("DisplayPaused");
                         },
                         || {
                             libinput.suspend();
                             ctx_ref.libinput_dispatch.set(true);
+                            handover::point("InputSuspended");
                         },
                     );
 
@@ -115,6 +119,7 @@ pub fn register(
                     if let Some(token) = state.inner.kernel.get_mut(&drivers::resume::base::RESUME_WATCHDOG_MUT).take() {
                         state.loop_handle.remove(token);
                     }
+                    });
                     });
                 }
                 smithay::backend::session::Event::ActivateSession => {
@@ -128,6 +133,7 @@ pub fn register(
 
 /// The first attachment and every libseat resume run this same transaction.
 pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderContext>>) {
+    handover::activated();
     crate::wire::input::resumed();
     let session_loop_handle = state.loop_handle.clone();
     let render_kick = |ctx, state: &mut Loop| {
@@ -183,6 +189,7 @@ pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderConte
         // so this borrows only `outputs`, leaving the other `ctx_ref`
         // fields the resume closures capture (libinput, …) borrowable.
         let pipes = &mut ctx_ref.outputs;
+        let reclaim_rows = pipes.iter().map(|p| handover::pipe("ReclaimModeset", p)).collect();
 
         kms::seat::lifecycle::resume::resume(kms::seat::lifecycle::resume::ResumeSteps {
             resume_input: || {
@@ -192,7 +199,7 @@ pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderConte
                     .map_err(|e| format!("libinput resume failed: {e:?}"))
             },
             activate_display: |force| {
-                kms::scanout::surface::output::activate(&mut manager.borrow_mut(), force)
+                handover::run(reclaim_rows, || kms::scanout::surface::output::activate(&mut manager.borrow_mut(), force))
             },
             // Reset EVERY live pipe's surface, not just the primary.
             // (Their in-flight bookkeeping is cleared below, once
@@ -211,8 +218,9 @@ pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderConte
                     // wrong (heavy red cast) until a mode change
                     // rebuilds the pipe.
                     p.props_applied = false;
+                    let reset_row = handover::pipe("SurfaceReset", p);
                     if let Some(o) = p.drm_output.as_mut()
-                        && let Err(e) = kms::scanout::surface::output::reset(o)
+                        && let Err(e) = handover::run(vec![reset_row], || kms::scanout::surface::output::reset(o))
                     {
                         result = Err(e);
                     }
@@ -278,6 +286,7 @@ pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderConte
         &session_loop_handle,
         |state: &mut Loop| *state.inner.kernel.get(&drivers::resume::base::VBLANK_SEEN),
         |state: &mut Loop| {
+            handover::first_vblank();
             *state
                 .inner
                 .kernel
