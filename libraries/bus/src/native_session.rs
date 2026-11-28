@@ -27,7 +27,8 @@ use std::net::IpAddr;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PeerContext {
     pub identity: PeerIdentity,
-    /// Present only after both TLS and exporter-bound D2 proofs complete.
+    /// Broker-owned transport snapshot. Presence alone proves no authentication:
+    /// LocalUnix/LegacyTcp are recorded too; Mesh/MeshTls carry mesh proofs.
     pub transport: Option<TransportIdentity>,
     pub address: Option<std::net::SocketAddr>,
 }

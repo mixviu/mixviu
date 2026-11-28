@@ -216,10 +216,6 @@ fn warn_drop(last_at_ms: &AtomicU64, dropped: &AtomicU64, mk: impl FnOnce(u64) -
 
 // ── State ──
 
-/// One registered service: its outbound delivery channel plus the build
-/// provenance + binding metadata it supplied at `noded.register`
-/// (SPEC 02 §4.1; `bus::service_info`).
-/// `info.name` mirrors the registry key.
 #[path = "task_identity.rs"]
 pub(crate) mod task_identity;
 
@@ -232,6 +228,10 @@ pub(crate) enum Origin {
     Bridge,
 }
 
+/// One registered service: its outbound delivery channel plus the build
+/// provenance + binding metadata it supplied at `noded.register`
+/// (SPEC 02 §4.1; `bus::service_info`).
+/// `info.name` mirrors the registry key.
 #[derive(Clone)]
 pub(crate) struct ServiceEntry {
     #[allow(dead_code)] // PR B consumes provenance; never infer it from a label.
@@ -252,6 +252,9 @@ impl ServiceEntry {
 }
 
 pub(crate) type Registry = Arc<RwLock<HashMap<String, ServiceEntry>>>;
+type FencedRegistryRead<'a> = (std::sync::RwLockReadGuard<'a, ()>, tokio::sync::RwLockReadGuard<'a, HashMap<String, ServiceEntry>>);
+type FencedRegistryWrite<'a> = (std::sync::RwLockReadGuard<'a, ()>, tokio::sync::RwLockWriteGuard<'a, HashMap<String, ServiceEntry>>);
+type FencedDeliveryRead<'a> = (std::sync::RwLockReadGuard<'a, ()>, tokio::sync::RwLockReadGuard<'a, HashMap<String, ServiceEntry>>, Option<tokio::sync::MutexGuard<'a, session::Sessions>>);
 type PendingResponses = Arc<PendingResponseTable>;
 type TapSubscribers = Arc<RwLock<Vec<mpsc::Sender<String>>>>;
 
@@ -485,6 +488,8 @@ impl PendingResponseTable {
 
 #[derive(Clone)]
 struct AppState {
+    #[cfg(test)]
+    assert_legacy_promotion: bool,
     task_identities: task_identity::TaskIdentities,
     tls: Option<Arc<mesh::TlsRuntime>>,
     tls_peer: Option<crate::tls_ingress::TlsPeer>,
@@ -1210,6 +1215,8 @@ async fn serve(
     let change_bus = crate::props::ChangeBus::new(broker.clone());
 
     let state = AppState {
+        #[cfg(test)]
+        assert_legacy_promotion: false,
         task_identities,
         tls,
         tls_peer: None,
@@ -3089,18 +3096,20 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     } else {
                         // The socket becomes a mesh transport only after its
                         // own D2 challenge has authenticated this identity.
+                        let bus::native_session::PeerIdentity::MeshAdmitted { node, .. } = identity else { break; };
                         state.peer_context.transport = Some(TransportIdentity::Mesh {
                             source_ip,
                             admission: bus::native_session::MeshAdmission {
                                 identity: identity.clone(),
-                                admitted_node: state
-                                    .peer_context
-                                    .mesh_peer()
-                                    .map(|(node, _)| node.to_owned()),
+                                admitted_node: Some(node.clone()),
                                 response_seen: true,
                                 last_detail: None,
                             },
                         });
+                        #[cfg(test)]
+                        if state.assert_legacy_promotion {
+                            assert_eq!(authenticated_registration_peer(&state, &state.peer_context), Some(node.clone()));
+                        }
                     }
                 } else {
                     state.peer_context.identity =
@@ -3493,11 +3502,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 if !refused {
                     let mesh_connection = bus_msg.get("broker_connection").map(str::to_owned);
                     let admitted_peer = {
-                        let registry = state.registry.read().await;
-                        let _fence = state
-                            .delivery_fence
-                            .read()
-                            .expect("delivery fence poisoned");
+                        let (_fence, registry) = fenced_registry_read(&state).await;
                         admitted_delivery_peer(&state, source_ip).filter(|peer| {
                             service_name
                                 .as_deref()
@@ -4159,6 +4164,49 @@ fn reserved_name_refusal(mut response: BusMessage) -> BusMessage {
     response
 }
 
+// All fence/registry pairs take the fence first. Try the async lock only
+// while fenced; release the fence before waiting, then recheck in order.
+async fn fenced_registry_read(state: &AppState) -> FencedRegistryRead<'_> {
+    loop {
+        {
+            let fence = state.delivery_fence.read().expect("delivery fence poisoned");
+            if let Ok(registry) = state.registry.try_read() {
+                return (fence, registry);
+            }
+        }
+        drop(state.registry.read().await);
+    }
+}
+
+async fn fenced_registry_write(state: &AppState) -> FencedRegistryWrite<'_> {
+    loop {
+        {
+            let fence = state.delivery_fence.read().expect("delivery fence poisoned");
+            if let Ok(registry) = state.registry.try_write() {
+                return (fence, registry);
+            }
+        }
+        drop(state.registry.write().await);
+    }
+}
+
+async fn fenced_delivery_read<'a>(state: &'a AppState, service: &str, protected: bool) -> FencedDeliveryRead<'a> {
+    loop {
+        {
+            let fence = state.delivery_fence.read().expect("delivery fence poisoned");
+            if let Ok(registry) = state.registry.try_read() {
+                let needs_sessions = state.principal.is_some() || protected || registry.get(service).is_some_and(|e| e.traffic_class.protected());
+                if !needs_sessions { return (fence, registry, None); }
+                if let Ok(sessions) = state.sessions.try_lock() {
+                    return (fence, registry, Some(sessions));
+                }
+            }
+        }
+        drop(state.registry.read().await);
+        drop(state.sessions.lock().await);
+    }
+}
+
 fn observe_rejected_local_route(
     state: &AppState,
     message: &mut BusMessage,
@@ -4364,7 +4412,7 @@ async fn route_local(
     let scoped_observe = state.observe.for_class(traffic_class);
     let observe = &scoped_observe;
     if admitted_peer.is_some()
-        && mesh_from.is_some_and(|name| reserved_task_name(name) || reserved_broker_name(name))
+        && mesh_from.is_some_and(is_reserved_service_name)
     {
         drop(reg);
         let mut reply = reserved_name_refusal(
@@ -4408,7 +4456,8 @@ async fn route_local(
                 state.principal.is_some(),
             )
             .await;
-        let reg = registry.read().await;
+        let (traffic_class, attempt) = {
+        let (_fence, reg, mut sessions) = fenced_delivery_read(state, service, traffic_class.protected()).await;
         // An entry may become protected on the same channel while pending
         // registration waits. Preserve old protection and include its new class.
         let traffic_class = traffic_class.merge(
@@ -4416,18 +4465,7 @@ async fn route_local(
                 .map(|e| e.traffic_class)
                 .unwrap_or_default(),
         );
-        let scoped_observe = state.observe.for_class(traffic_class);
-        let observe = &scoped_observe;
-        let mut sessions = if state.principal.is_some() || traffic_class.protected() {
-            Some(state.sessions.lock().await)
-        } else {
-            None
-        };
         let attempt = (|| {
-            let _fence = state
-                .delivery_fence
-                .read()
-                .expect("delivery fence poisoned");
             if !reg
                 .get(service)
                 .is_some_and(|entry| entry.same_channel(&target_tx))
@@ -4488,11 +4526,13 @@ async fn route_local(
             let delivery = target_tx.try_send(wire.clone());
             Ok((wire, delivery))
         })();
-        drop(sessions);
+        (traffic_class, attempt)
+        };
+        let scoped_observe = state.observe.for_class(traffic_class);
+        let observe = &scoped_observe;
         let (wire, delivery) = match attempt {
             Ok(delivery) => delivery,
             Err(error) => {
-                drop(reg);
                 let caller_id = match broker_id {
                     Some(ref bid) => pending_responses.take(bid).await.map(|p| p.caller_id),
                     None => None,
@@ -4540,7 +4580,6 @@ async fn route_local(
                 // `msg`'s `id` is now the broker-local rewrite. If
                 // registration didn't insert anything (id-less message)
                 // there's nothing to take and no reply id to attach.
-                drop(reg);
                 let caller_id = match broker_id {
                     Some(ref bid) => pending_responses.take(bid).await.map(|p| p.caller_id),
                     None => None,
@@ -4580,7 +4619,6 @@ async fn route_local(
                 // alone would silently strip the new owner — reopening the
                 // SPEC 12 §15.5 impersonation window the registration gate
                 // is meant to close.
-                drop(reg);
                 let mut reg_w = registry.write().await;
                 if reg_w
                     .get(service)
@@ -4902,7 +4940,13 @@ async fn handle_noded_command(
                 if let Some(fields) = provenance.as_object_mut() {
                     fields.remove("broker_task_token");
                 }
-                serde_json::from_value(provenance).unwrap_or_else(|_| {
+                serde_json::from_value(provenance).map(|provenance: bus::RegisterProvenance| {
+                    // Test-only trace after stripping and validating provenance;
+                    // production transport logging remains metadata-only.
+                    #[cfg(test)]
+                    tracing::trace!(registration_body = %serde_json::to_string(&provenance).expect("provenance serializes"), "sanitized registration body");
+                    provenance
+                }).unwrap_or_else(|_| {
                     // A new citizen sent a non-empty but malformed body —
                     // register anyway (name-only) but don't lose it silently.
                     tracing::warn!(
@@ -4948,11 +4992,7 @@ async fn handle_noded_command(
                 .as_ref()
                 .is_some_and(|old_name| old_name != &from);
             {
-                let mut reg = state.registry.write().await;
-                let _fence = state
-                    .delivery_fence
-                    .read()
-                    .expect("delivery fence poisoned");
+                let (_fence, mut reg) = fenced_registry_write(state).await;
                 if origin == Origin::Bridge
                     && authenticated_registration_peer(state, connection).is_none()
                 {
@@ -6997,6 +7037,7 @@ pub(crate) mod tests {
         let broker = Arc::new(SubscriptionBroker::new());
         let started = Instant::now();
         AppState {
+            assert_legacy_promotion: false,
             task_identities: Default::default(),
             tls: None,
             tls_peer: None,
@@ -9894,7 +9935,7 @@ pub(crate) mod tests {
                 },
             );
         }
-        for name in ["log", "log-observe-123", "mon", "anon-x", "bridge-example"] {
+        for name in ["log", "log-observe-123", "mon", "anon-x", "bridge-example", "t0-aaaaaaaaaaaaaaaaaaaaaa"] {
             let mut request = BusMessage::new()
                 .with_header("id", "request")
                 .with_header("command", "probe");

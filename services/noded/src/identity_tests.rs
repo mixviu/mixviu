@@ -1,6 +1,40 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 
 #[tokio::test]
+async fn fresh_legacy_d2_admission_promotes_the_authenticated_registration_peer() {
+    use base64::Engine as _;
+    let seed = mesh::seed::D2Seed::new([7; 32]);
+    let mut posture = reload_posture(1, vec![active_route("beta", "192.0.2.2".parse().unwrap(), DEFAULT_NODED_PORT)]);
+    if let crate::authority::Posture::Verified(a) = &mut posture {
+        a.members_full.insert("beta".into(), serde_json::json!({"name":"beta","status":"active","bus":true,"credentials":[{
+            "kind":"d2", "pubkey":base64::engine::general_purpose::STANDARD.encode(ed25519_dalek::SigningKey::from_bytes(&[7;32]).verifying_key().to_bytes()), "from_epoch":1, "until_epoch":null
+        }]}));
+    }
+    let mut state = reload_test_state(posture, vec![]).await;
+    assert!(state.peer_context.mesh_peer().is_none());
+    state.assert_legacy_promotion = true;
+    state.admission_mode = AdmissionMode::Observe;
+    let app = axum::Router::new().route("/ws", axum::routing::get(super::ws_handler)).with_state(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("ws://{}/ws", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await.unwrap();
+    });
+    let (mut sink, mut stream) = raw_connect(&url).await;
+    let frame = tokio::time::timeout(Duration::from_secs(3), stream.next()).await.unwrap().unwrap().unwrap();
+    let WsMessage::Text(wire) = frame else { panic!("challenge expected"); };
+    let challenge = bus_mod::parse(&wire).unwrap();
+    assert_eq!(challenge.command_name(), Some("noded.admit.challenge"));
+    let response = mesh::build_admit_response(&challenge, "beta", &Some(seed), "alpha", "bus", 1).unwrap();
+    sink.send(WsMessage::Text(response.into())).await.unwrap();
+    // The actual handle_socket promotion asserts authenticated_registration_peer
+    // is Some(beta) before this registration is dispatched on the same socket.
+    raw_register(&mut sink, &mut stream, "bridge-beta").await;
+    assert_eq!(state.registry.read().await["bridge-beta"].origin, super::Origin::Bridge);
+    server.abort();
+}
+
+#[tokio::test]
 async fn failed_reverse_proofs_never_write_application_frames_under_enforce() {
     for mode in [
         AdmissionMode::Off,
