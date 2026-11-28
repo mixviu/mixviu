@@ -5,14 +5,36 @@ use std::collections::HashSet;
 /// Static infrastructure verbs, independent of service manifests. PR A consumes this table.
 #[allow(dead_code)]
 pub(super) const BROKER_CONTROL_VERBS: &[&str] = &[
-    "noded.register", "noded.deregister", "noded.commands.set", "noded.ping",
-    "noded.list", "noded.info", "noded.peers", "noded.inventory",
-    "noded.observe.start", "noded.observe.stop", "noded.tap",
-    "topic.publish", "topic.subscribe", "topic.unsubscribe", "topic.subscriber_count",
-    "topic.list", "topic.clear", "ui.subscribe", "ui.unsubscribe",
-    "noded.props.subscribe_grant", "noded.props.get", "noded.props.list",
-    "noded.props.describe", "noded.props.watch", "props.watch", "spec.get", "spec.v2.get",
-    "log.props.get", "log.props.list", "log.props.describe",
+    "noded.register",
+    "noded.deregister",
+    "noded.commands.set",
+    "noded.ping",
+    "noded.list",
+    "noded.info",
+    "noded.peers",
+    "noded.inventory",
+    "noded.observe.start",
+    "noded.observe.stop",
+    "noded.tap",
+    "topic.publish",
+    "topic.subscribe",
+    "topic.unsubscribe",
+    "topic.subscriber_count",
+    "topic.list",
+    "topic.clear",
+    "ui.subscribe",
+    "ui.unsubscribe",
+    "noded.props.subscribe_grant",
+    "noded.props.get",
+    "noded.props.list",
+    "noded.props.describe",
+    "noded.props.watch",
+    "props.watch",
+    "spec.get",
+    "spec.v2.get",
+    "log.props.get",
+    "log.props.list",
+    "log.props.describe",
 ];
 
 pub(super) const DEFAULT_ALLOWLIST: &[&str] = &[
@@ -84,10 +106,21 @@ mod tests {
 
     #[test]
     fn positive_boundaries_and_allowlist_types() {
-        for names in [vec!["example.read".to_owned(); 512], vec!["x".repeat(64)], vec!["a.b.c.d.e.f".to_owned()]] {
-            assert_eq!(Manifest::default().replace(&serde_json::to_string(&names).unwrap()), "0");
+        for names in [
+            vec!["example.read".to_owned(); 512],
+            vec!["x".repeat(64)],
+            vec!["a.b.c.d.e.f".to_owned()],
+        ] {
+            assert_eq!(
+                Manifest::default().replace(&serde_json::to_string(&names).unwrap()),
+                "0"
+            );
         }
-        for value in [serde_json::json!("maild"), serde_json::json!(42), serde_json::json!(["maild", 42])] {
+        for value in [
+            serde_json::json!("maild"),
+            serde_json::json!(42),
+            serde_json::json!(["maild", 42]),
+        ] {
             let mut config = config::node::NodedConfig::default();
             config.extra.insert("history_allowlist".into(), value);
             assert!(allowlist(Some(&config)).is_err());

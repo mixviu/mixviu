@@ -623,9 +623,15 @@ impl ManifestPublisher {
                         .with_header("to", "noded")
                         .with_header("type", "request")
                         .with_body(&body);
-                    let Some(reply) =
-                        Self::exchange(&sink, &pending, request, format!("manifest-set-{serial}"), &reader_state, generation)
-                            .await
+                    let Some(reply) = Self::exchange(
+                        &sink,
+                        &pending,
+                        request,
+                        format!("manifest-set-{serial}"),
+                        &reader_state,
+                        generation,
+                    )
+                    .await
                     else {
                         break;
                     };
@@ -2581,6 +2587,24 @@ mod native_ingress_regression_tests {
 
     /// A client over a sink that accepts every write, so only the pending
     /// fence decides whether a call can register and wait.
+    #[tokio::test]
+    async fn identical_descriptors_republish_when_manifest_dirty() {
+        let mut client = drained_client();
+        let descriptors = vec![crate::CommandDescriptor::new("example.read", &[], "Example", true)];
+        *client.commands.write().unwrap() = Some(serde_json::to_string(&descriptors).unwrap());
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        client.manifest = Some(ManifestPublisher {
+            state: Arc::new(StdMutex::new(ManifestState {
+                dirty: true, names: vec!["example.read".into()], identity: Some("example".into()),
+                generation: 1, registration_body: String::new(),
+            })),
+            tx,
+            task: tokio::spawn(async {}).abort_handle(),
+        });
+        client.set_commands(descriptors);
+        assert_eq!(rx.try_recv().unwrap().2, r#"["example.read"]"#);
+    }
+
     fn drained_client() -> NodedClient {
         let sink: WsSink = Box::pin(futures_util::sink::drain::<Message>().sink_map_err(
             |never: std::convert::Infallible| -> tokio_tungstenite::tungstenite::Error {
