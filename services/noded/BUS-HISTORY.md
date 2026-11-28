@@ -1,5 +1,60 @@
 # Bus history
 
+## History projection
+
+Only broker-vouched names appear verbatim in history. Before a metadata row
+is built, a command is checked against the broker control verbs and the union
+of live, honoured local manifests. Other commands become `unknown`, including
+rejected verbs, event inner commands and response echoes. Mesh commands use
+the local set only; remote manifests are not relayed. Delivery uses the real
+names and is unchanged.
+
+Local sources are vouched independently of routing: `noded` is fixed, and
+other identities require a live registration with its broker-recorded origin.
+Unregistered local sources become `unknown-target` with reason
+`unregistered-source`. Sources and local destinations share the identity
+projection function that PR B will extend.
+
+Addresses are rebuilt through one component projection function. A registered
+local service is bare (`maild`), a remote service is `maild.example.bus`, and a
+broker is `example.bus`. Local qualified spellings collapse to the bare service.
+Only this node and nodes in the current signed inventory may appear. Mesh-in
+sources use the authenticated bridge's node, overriding the header. Remote
+services must be exact entries in this node's history allowlist; an unlisted
+remote service reads as `unknown-service.example.bus` until the operator
+allowlists it. Exact reserved session shapes from a peer are paired with the
+authenticated bridge node. Replies use the same address builder. PR B extends
+this projection point to replace unlisted registered identities with handles.
+
+Opaque sub-labels are always removed. For example, `user.maild.example.bus`
+becomes `maild.example.bus` with `to_sub_len: 4` and no classification solely
+for the removed sub-label. No raw sub-label or hash is retained.
+
+Malformed or cross-mesh addresses become `invalid-target`; unresolved local
+services or unknown nodes become `unknown-target`. Classified rows add
+`class: "unrecognised"`, `reason` and `name_len` (bytes of the replaced
+component, or the full malformed/refused address). Reasons are fixed:
+`unknown-verb`, `no-manifest`, `unlisted-service`, `remote-unvouched`,
+`malformed-target`, `refused-cross-mesh`, `no-such-service`, `no-such-node`,
+`oversize-name`, and `unregistered-source`. `name_len` saturates at 256 bytes;
+anything longer reports 256, rather than its exact caller-chosen length.
+The command-size check precedes both control-verb and manifest lookups.
+Address diagnostics take precedence over command
+diagnostics when both project; destination diagnostics take precedence over
+source diagnostics. Both strings are still replaced.
+
+Case variants and trailing dots are malformed in the routing grammar, so
+history records `invalid-target`/`malformed-target` for them; it does not
+lowercase or trim refused addresses. `correlation_id` and `peer` are
+connection-chosen and recorded verbatim by design.
+
+Projection never drops a row or changes its sequence, direction, outcome, rc,
+size, correlation ID or peer. The logger persists the projection fields without
+retaining raw names or hashes. Raw diagnosis uses a live `noded.observe` tap
+with its existing payload policy; it is not retained in history. The diagnostic
+Bus calls themselves land in history; generated `noded.observe.event` frames
+remain suppressed to prevent observation feedback.
+
 ## Command manifests and authority
 
 `noded.commands.set` accepts a JSON array of names in the body, for example
@@ -52,6 +107,9 @@ A malformed value or reserved identity refuses broker startup. The same broker
 reservation helpers reject session shapes, `bridge-*`, `anon-*`, `log`,
 `log-observe-*`, `noded` and `noded-*`; tokened `mon` remains allowed.
 Operators extend this list per node.
+The history allowlist is restart-only. The registry owns its single immutable
+copy, and both the cached-name index and projector read that copy; config
+changes require restarting noded. Signed inventory reload remains independent.
 Sets are honoured by exact allowlisted name only, never by pattern, prefix or
 registration origin. Anonymous callers, observers, sessions and bridges do not
 vouch for commands. `log` is not allowlisted: `log.props.get`, `log.props.list`
@@ -62,8 +120,9 @@ from another registered identity receives rc 0 but cannot vouch for names.
 The internal `vouched_command` query checks the union of honoured sets of
 currently registered services.
 
-These facilities supply the subsequent history projection; this change does
-not change history rows.
+The history projection consumes this query through a cached index of honoured
+names. Registry mutation publishes a fresh index before unlocking; closed
+channels stop vouching immediately, even before registry cleanup.
 
 A service, instance, peer or `bus-svc` name is infrastructure. Never derive
 one from an account, customer, mailbox or domain.

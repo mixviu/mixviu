@@ -58,8 +58,22 @@ pub(super) fn decode(body: &str) -> Result<Vec<String>, &'static str> {
 }
 
 /// Static infrastructure verbs, independent of service manifests. PR A consumes this table.
-#[allow(dead_code)]
 pub(super) const BROKER_CONTROL_VERBS: &[&str] = &[
+    "noded.identity.challenge",
+    "noded.identity.response",
+    "noded.admit.challenge",
+    "noded.admit.response",
+    "noded.session.hello",
+    "noded.session.allocate",
+    "noded.session.grant.create",
+    "noded.session.grant.fetch",
+    "noded.session.challenge",
+    "noded.session.prove",
+    "noded.session.renew",
+    "noded.session.revoke",
+    "noded.session.list",
+    "noded.session.self",
+    "noded.session.lease.check",
     "noded.register",
     "noded.deregister",
     "noded.commands.set",
@@ -163,6 +177,60 @@ pub(super) fn allowlist(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn control_verbs_cover_declared_noded_manifest_and_dispatch() {
+        let manifest: serde_json::Value = config::from_conf_mix_str(include_str!(
+            "../../../docs/docs/spec/bus/commands.conf.mix"
+        ))
+        .unwrap();
+        let mut declared = 0;
+        for descriptor in manifest["commands"].as_array().unwrap() {
+            if descriptor["owner"] == "noded" {
+                let name = descriptor["name"].as_str().unwrap();
+                assert!(
+                    BROKER_CONTROL_VERBS.contains(&name),
+                    "missing declared verb {name}"
+                );
+                declared += 1;
+            }
+        }
+        assert!(declared > 0);
+        // Pin literal control dispatch as well as the public descriptors.
+        // The broker does not register itself as a client manifest publisher.
+        let source = include_str!("noded.rs");
+        let handler = source
+            .split_once("async fn handle_noded_command(")
+            .unwrap()
+            .1
+            .split_once("\nfn ")
+            .unwrap()
+            .0;
+        let mut dispatched = 0;
+        for line in handler
+            .lines()
+            .filter(|line| line.starts_with("        \""))
+        {
+            if let Some(pattern) = line.trim().strip_suffix(" => {") {
+                for name in pattern
+                    .split(" | ")
+                    .filter_map(|s| s.strip_prefix('"').and_then(|s| s.strip_suffix('"')))
+                {
+                    assert!(
+                        BROKER_CONTROL_VERBS.contains(&name),
+                        "missing dispatch verb {name}"
+                    );
+                    dispatched += 1;
+                }
+            }
+        }
+        assert!(dispatched >= 20);
+        assert!(
+            BROKER_CONTROL_VERBS
+                .iter()
+                .all(|name| name.len() <= bus::MAX_MANIFEST_NAME_BYTES)
+        );
+    }
 
     #[test]
     fn positive_boundaries_and_allowlist_types() {

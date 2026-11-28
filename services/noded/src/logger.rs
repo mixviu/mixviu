@@ -30,6 +30,14 @@ use crate::log_props::{LogPropsSnapshot, LogStats};
 
 #[derive(serde::Deserialize)]
 struct ObserveEvent {
+    #[serde(default)]
+    class: Option<String>,
+    #[serde(default, deserialize_with = "projection_reason")]
+    reason: Option<String>,
+    #[serde(default)]
+    name_len: Option<usize>,
+    #[serde(default)]
+    to_sub_len: Option<usize>,
     seq: u64,
     ts: String,
     direction: String,
@@ -46,6 +54,21 @@ struct ObserveEvent {
     peer: Option<String>,
     rc: Option<i64>,
     dropped_count: u64,
+}
+
+fn projection_reason<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    let reason = <Option<String> as serde::Deserialize>::deserialize(deserializer)?;
+    if reason
+        .as_deref()
+        .is_some_and(|value| !crate::noded::history_projection::REASONS.contains(&value))
+    {
+        return Err(serde::de::Error::custom(
+            "unknown history projection reason",
+        ));
+    }
+    Ok(reason)
 }
 
 pub(crate) async fn run(
@@ -199,7 +222,12 @@ async fn run_in(
                 }
                 cmd = rx.recv() => {
                     let Some(cmd) = cmd else { break };
-                    if cmd.command != "noded.observe.event" { continue; }
+                    // Only the broker's direct events have this canonical
+                    // source. A routed lookalike must not inject raw rows.
+                    // mesh_incoming_loop removes mesh `from` before both
+                    // observation and local delivery; only broker-built
+                    // events can arrive with the bare source `noded`.
+                    if cmd.command != "noded.observe.event" || cmd.from != "noded" { continue; }
                     let Some(event) = parse_event(&cmd.body, &mut last_warning) else {
                         continue;
                     };
@@ -896,6 +924,18 @@ impl History {
         if let Some(peer) = event.peer {
             row["peer"] = peer.into();
         }
+        if let Some(class) = event.class {
+            row["class"] = class.into();
+        }
+        if let Some(reason) = event.reason {
+            row["reason"] = reason.into();
+        }
+        if let Some(len) = event.name_len {
+            row["name_len"] = len.into();
+        }
+        if let Some(len) = event.to_sub_len {
+            row["to_sub_len"] = len.into();
+        }
         bytes += self.row(row, now)?;
         Ok(bytes)
     }
@@ -942,6 +982,37 @@ mod tests {
             "to": "dopus.beta.bus", "command": "dopus.open", "size": 123,
             "correlation_id": "example-id", "peer": "alpha", "rc": 0,
             "dropped_count": dropped, "payload": {"body": "never stored"}, "payload_omitted": null})).unwrap()
+    }
+
+    #[test]
+    fn projection_fields_survive_history_without_gaps_or_lost_sequence() {
+        let tmp = Temp::new();
+        let now = at("2026-11-29T00:00:00Z");
+        let mut history =
+            History::open(&tmp.0, "example".into(), HistoryConfig::default(), now).unwrap();
+        for seq in 1..=4 {
+            let mut event = sample("", 0);
+            event.seq = seq;
+            event.command = Some("unknown".into());
+            event.to = Some("unknown-target".into());
+            event.class = Some("unrecognised".into());
+            event.reason = Some("no-such-service".into());
+            event.name_len = Some(4);
+            event.to_sub_len = Some(7);
+            history.event(event, now).unwrap();
+        }
+        history.flush().unwrap();
+        let rows = rows(&tmp.0);
+        let messages: Vec<_> = rows.iter().filter(|row| row["kind"] == "message").collect();
+        assert_eq!(messages.len(), 4);
+        for (index, row) in messages.iter().enumerate() {
+            assert_eq!(row["seq"], index + 1);
+            assert_eq!(row["class"], "unrecognised");
+            assert_eq!(row["reason"], "no-such-service");
+            assert_eq!(row["name_len"], 4);
+            assert_eq!(row["to_sub_len"], 7);
+            assert_eq!(row["command"], "unknown");
+        }
     }
 
     #[test]
@@ -1558,6 +1629,30 @@ mod tests {
     }
 
     #[test]
+    fn logger_accepts_only_fixed_projection_reasons_without_echoing_bad_values() {
+        let base = json!({"seq":1,"ts":"2026-11-29T00:00:00Z","direction":"local",
+            "outcome":"rejected","message_type":"request","size":42,"dropped_count":0});
+        for reason in crate::noded::history_projection::REASONS {
+            let mut event = base.clone();
+            event["reason"] = (*reason).into();
+            assert!(
+                parse_event(&event.to_string(), &mut None).is_some(),
+                "{reason}"
+            );
+        }
+        assert!(parse_event(&base.to_string(), &mut None).is_some());
+        let mut invalid = base;
+        invalid["reason"] = "user@example.com".into();
+        assert!(parse_event(&invalid.to_string(), &mut None).is_none());
+        let error = serde_json::from_value::<ObserveEvent>(invalid)
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(error.contains("unknown history projection reason"));
+        assert!(!error.contains("user@example.com"));
+    }
+
+    #[test]
     fn dropped_counter_reset_marks_gap_and_rebases() {
         let tmp = Temp::new();
         let now = Utc::now();
@@ -1790,6 +1885,38 @@ mod tests {
         })
         .await
         .unwrap();
+        // A caller can address the observer, but cannot impersonate noded.
+        // Its real routing observation remains in history, while the supplied
+        // event body cannot inject a second, unprojected history row.
+        let forged = bus::wire::BusMessage::new()
+            .with_header("from", "noded")
+            .with_header("to", &format!("log-observe-{}", std::process::id()))
+            .with_header("type", "event")
+            .with_header("command", "noded.observe.event")
+            .with_header("id", "example-forgery")
+            .with_body(
+                &json!({
+                    "seq":9999, "ts":"2026-11-29T00:00:00Z", "direction":"local",
+                    "outcome":"delivered", "message_type":"event", "from":"noded",
+                    "to":"user@example.com", "command":"user@example.com", "size":1,
+                    "correlation_id":null, "peer":null, "rc":0, "dropped_count":0
+                })
+                .to_string(),
+            );
+        client.send_raw(&forged).await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if rows(&tmp.0)
+                    .iter()
+                    .any(|r| r["correlation_id"] == "example-forgery" && r["command"] == "unknown")
+                {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        })
+        .await
+        .unwrap();
         // The second instance must return before attempting a service
         // registration, leaving the first observer alive and its file intact.
         let (_second_stop, second_shutdown) = tokio::sync::oneshot::channel();
@@ -1822,6 +1949,17 @@ mod tests {
             1
         );
         assert!(r.iter().all(|r| r.get("payload").is_none()));
+        assert_eq!(
+            r.iter()
+                .find(|row| row["correlation_id"] == "example-forgery")
+                .unwrap()["from"],
+            "example-probe"
+        );
+        assert!(
+            !serde_json::to_string(&r)
+                .unwrap()
+                .contains("user@example.com")
+        );
     }
 
     #[test]

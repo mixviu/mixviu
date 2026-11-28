@@ -48,6 +48,8 @@ mod frame_policy;
 
 #[path = "commands.rs"]
 mod commands;
+#[path = "history_projection.rs"]
+pub(crate) mod history_projection;
 
 type FrameRefusalLogs = HashMap<(String, &'static str), mesh::DiagnosticLog>;
 static FRAME_REFUSALS: std::sync::LazyLock<std::sync::Mutex<FrameRefusalLogs>> =
@@ -237,7 +239,6 @@ pub(crate) enum Origin {
 /// `info.name` mirrors the registry key.
 #[derive(Clone)]
 pub(crate) struct ServiceEntry {
-    #[allow(dead_code)] // PR B consumes provenance; never infer it from a label.
     pub(crate) origin: Origin,
     commands: commands::Manifest,
     protected_responses: Arc<AtomicBool>,
@@ -255,14 +256,14 @@ impl ServiceEntry {
     }
 }
 
-pub(crate) type Registry = Arc<RwLock<HashMap<String, ServiceEntry>>>;
+pub(crate) type Registry = Arc<history_projection::HistoryRegistry>;
 type FencedRegistryRead<'a> = (
     std::sync::RwLockReadGuard<'a, ()>,
     tokio::sync::RwLockReadGuard<'a, HashMap<String, ServiceEntry>>,
 );
 type FencedRegistryWrite<'a> = (
     std::sync::RwLockReadGuard<'a, ()>,
-    tokio::sync::RwLockWriteGuard<'a, HashMap<String, ServiceEntry>>,
+    history_projection::Write<'a>,
 );
 type FencedDeliveryRead<'a> = (
     std::sync::RwLockReadGuard<'a, ()>,
@@ -505,7 +506,6 @@ struct AppState {
     #[cfg(test)]
     assert_legacy_promotion: bool,
     task_identities: task_identity::TaskIdentities,
-    history_allowlist: std::collections::HashSet<String>,
     tls: Option<Arc<mesh::TlsRuntime>>,
     tls_peer: Option<crate::tls_ingress::TlsPeer>,
     tls_refusals: Arc<crate::tls_ingress::Refusals>,
@@ -587,18 +587,15 @@ struct PendingMeshObservation {
 }
 
 impl AppState {
+    #[cfg(test)]
     fn honours_manifest(&self, name: &str) -> bool {
-        self.history_allowlist.contains(name)
+        self.registry.allowlist.contains(name)
     }
 
     /// PR A's history projection query. Only live, honoured registrations vouch.
-    #[allow(dead_code)] // Consumed by the following history projection PR.
+    #[cfg(test)]
     pub(crate) async fn vouched_command(&self, name: &str) -> bool {
-        self.registry.read().await.iter().any(|(service, entry)| {
-            !entry.tx.is_closed()
-                && self.honours_manifest(service)
-                && entry.commands.names.contains(name)
-        })
+        self.registry.names.load().vouched_command(name)
     }
 }
 
@@ -834,7 +831,7 @@ async fn mesh_incoming_loop(
         let parsed = BusTarget::parse(&target);
         if matches!(parsed, Some(BusTarget::CrossMesh { .. })) {
             tracing::warn!(
-                target = %target,
+                name_len = target.len(),
                 "Mesh ingress refused: cross-mesh routing not implemented"
             );
             if observing {
@@ -874,7 +871,7 @@ async fn mesh_incoming_loop(
                 // identity for one yet (SPEC 10 territory).
                 if target.contains('.') || target.contains('@') {
                     tracing::warn!(
-                        target = %target,
+                        name_len = target.len(),
                         "Mesh ingress refused: malformed Bus target"
                     );
                     if observing {
@@ -954,7 +951,10 @@ async fn mesh_incoming_loop(
                 }
             }
         } else {
-            tracing::debug!(target = %service, "No local service for incoming mesh message");
+            tracing::debug!(
+                name_len = service.len(),
+                "No local service for incoming mesh message"
+            );
             ObserveOutcome::Rejected
         };
         if observing {
@@ -1200,7 +1200,10 @@ async fn serve(
         false,
     );
 
-    let registry: Registry = Arc::new(RwLock::new(HashMap::new()));
+    let registry: Registry = Arc::new(history_projection::HistoryRegistry::new(
+        HashMap::new(),
+        commands::allowlist(Some(&network))?,
+    ));
     let observe = ObserveManager::new();
     observe.spawn_drainer();
 
@@ -1249,7 +1252,6 @@ async fn serve(
         #[cfg(test)]
         assert_legacy_promotion: false,
         task_identities,
-        history_allowlist: commands::allowlist(Some(&network))?,
         tls,
         tls_peer: None,
         tls_refusals,
@@ -1292,6 +1294,11 @@ async fn serve(
         challenge_table: Arc::new(crate::admission::ChallengeTable::new()),
         live_sessions: Arc::new(RwLock::new(HashMap::new())),
     };
+    state.observe.set_projector(history_projection::Projector {
+        registry: state.registry.clone(),
+        authority: state.authority.clone(),
+        node: state.node_name.clone(),
+    });
     broker.set_native_sessions(state.sessions.clone());
     let _session_maintenance = session_timer.map(|timer| {
         session::spawn_maintenance(state.registry.clone(), state.sessions.clone(), timer)
@@ -3238,14 +3245,14 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 }
                 tracing::debug!(
                     id = %id,
-                    cmd = bus_msg.command_name().unwrap_or("?"),
-                    from = bus_msg.from_addr().unwrap_or("?"),
+                    command_len = bus_msg.command_name().map(str::len),
+                    from_len = bus_msg.from_addr().map(str::len),
                     "Dropping orphan response (no pending caller)"
                 );
             } else {
                 tracing::debug!(
-                    cmd = bus_msg.command_name().unwrap_or("?"),
-                    from = bus_msg.from_addr().unwrap_or("?"),
+                    command_len = bus_msg.command_name().map(str::len),
+                    from_len = bus_msg.from_addr().map(str::len),
                     "Dropping orphan response (no id)"
                 );
             }
@@ -6298,6 +6305,9 @@ pub(crate) mod tests {
     mod manifest_tests {
         include!("manifest_tests.rs");
     }
+    mod projection_tests {
+        include!("projection_tests.rs");
+    }
     use std::collections::HashMap;
     use std::net::{Ipv4Addr, TcpListener};
     use std::sync::Arc;
@@ -7124,7 +7134,6 @@ pub(crate) mod tests {
         AppState {
             assert_legacy_promotion: false,
             task_identities: Default::default(),
-            history_allowlist: super::commands::allowlist(None).unwrap(),
             tls: None,
             tls_peer: None,
             tls_refusals: Default::default(),
@@ -7137,7 +7146,10 @@ pub(crate) mod tests {
             broker_epoch: super::HexBytes([1; 16]),
             principal: None,
             native_session_endpoint: None,
-            registry: Arc::new(RwLock::new(HashMap::new())),
+            registry: Arc::new(super::history_projection::HistoryRegistry::new(
+                HashMap::new(),
+                super::commands::allowlist(None).unwrap(),
+            )),
             pending_responses: Arc::new(PendingResponseTable::new()),
             tap_subscribers: Arc::new(RwLock::new(Vec::new())),
             observe: ObserveManager::new(),
@@ -8125,12 +8137,17 @@ pub(crate) mod tests {
                 && correlation == Some("collision-1")
                 && body["outcome"] == "rejected"
                 && body["from"] == "alice";
-            failed_command_rejected |=
-                command_name == Some("noded.no_such_command") && body["outcome"] == "rejected";
-            orphan_rejected |= command_name == Some("citizen.orphan")
+            failed_command_rejected |= correlation == Some("unknown-command-1")
+                && command_name == Some("unknown")
+                && body["reason"] == "unknown-verb"
+                && body["name_len"] == "noded.no_such_command".len()
+                && body["outcome"] == "rejected";
+            orphan_rejected |= correlation == Some("orphan-1")
+                && command_name == Some("unknown")
                 && body["message_type"] == "response"
                 && body["outcome"] == "rejected";
-            admit_rejected |= command_name == Some("noded.admit.response")
+            admit_rejected |= correlation == Some("admit-orphan-1")
+                && command_name == Some("noded.admit.response")
                 && body["message_type"] == "response"
                 && body["outcome"] == "rejected";
             route_request_rejected |= correlation == Some("missing-route-1")
