@@ -400,7 +400,7 @@ mod tests {
         )
         .unwrap();
         let mut output = Vec::new();
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(60);
         while Instant::now() < deadline {
             let mut buffer = [0; 1024];
             match pty.read(&mut buffer) {

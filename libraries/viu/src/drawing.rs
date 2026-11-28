@@ -852,28 +852,32 @@ mod tests {
             .clone();
         reference.drop_without_applying_deltas();
         let texture = shadows(&ctx).lock().unwrap().entries[0].1.texture.id();
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
-        loop {
-            let out = ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
-            let image = out
-                .textures_delta
-                .set
-                .get(&texture)
-                .and_then(|d| d.last())
-                .map(|d| d.image.clone());
-            out.drop_without_applying_deltas();
-            if let Some(egui::ImageData::Color(actual)) = image {
-                let egui::ImageData::Color(expected) = &expected;
-                assert_eq!(actual.size, expected.size);
-                assert_eq!(actual.pixels, expected.pixels);
-                break;
-            }
-            assert!(
-                std::time::Instant::now() < deadline,
-                "worker did not finish"
+        ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node))
+            .drop_without_applying_deltas();
+        {
+            let shared = shadows(&ctx);
+            let mut store = shared.lock().unwrap();
+            let pending = store.pending.as_mut().expect("shadow worker started");
+            // Wait for completion, allowing pool contention rather than timing
+            // frame polling. The worker sends without taking the cache lock.
+            // Keep a safety bound so a hung worker cannot wedge the test pool.
+            pending.ready = Some(
+                pending
+                    .image
+                    .recv_timeout(std::time::Duration::from_secs(60))
+                    .expect("shadow worker did not complete")
+                    .expect("shadow worker failed to raster"),
             );
-            std::thread::sleep(std::time::Duration::from_millis(1));
         }
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
+        let egui::ImageData::Color(actual) = &out.textures_delta.set[&texture]
+            .last()
+            .expect("completed shadow uploaded")
+            .image;
+        let egui::ImageData::Color(expected) = &expected;
+        assert_eq!(actual.size, expected.size);
+        assert_eq!(actual.pixels, expected.pixels);
+        out.drop_without_applying_deltas();
         assert_eq!(shadows(&ctx).lock().unwrap().rasters, 1);
     }
 

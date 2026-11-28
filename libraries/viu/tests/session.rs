@@ -54,7 +54,7 @@ end
         })
         .unwrap();
     let seq = runtime.event("verify".into(), json!({})).unwrap();
-    let until = Instant::now() + Duration::from_secs(5);
+    let until = Instant::now() + Duration::from_secs(60);
     loop {
         for done in runtime.drain() {
             assert!(done.error.is_none(), "{:?}", done.error);

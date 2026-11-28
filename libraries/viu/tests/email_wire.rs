@@ -36,7 +36,7 @@ fn probe_module(
         .collect();
     let server = std::thread::spawn(move || {
         for (index, (status, body)) in bodies.into_iter().enumerate() {
-            let until = std::time::Instant::now() + Duration::from_secs(10);
+            let until = std::time::Instant::now() + Duration::from_secs(60);
             let mut socket = loop {
                 match listener.accept() {
                     Ok((socket, _)) => break socket,

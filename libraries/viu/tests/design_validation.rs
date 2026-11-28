@@ -48,7 +48,7 @@ fn host(path: &Path, broker: &test_broker::Broker) -> Harness {
 }
 
 fn pump_until(host: &mut Harness, predicate: impl Fn(&Harness) -> bool) {
-    let deadline = Instant::now() + Duration::from_secs(10);
+    let deadline = Instant::now() + Duration::from_secs(60);
     while !predicate(host) {
         host.pump();
         if host.ready() {

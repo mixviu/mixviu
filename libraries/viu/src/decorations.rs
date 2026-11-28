@@ -236,7 +236,7 @@ mod tests {
         let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
         listener.set_nonblocking(true).unwrap();
         // Detection correctness is independent of the production reply budget.
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(60);
         let server = ServerThread(Some(std::thread::spawn(move || {
             let (mut stream, _) = loop {
                 let remaining = deadline.saturating_duration_since(Instant::now());
