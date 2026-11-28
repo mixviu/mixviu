@@ -637,7 +637,9 @@ impl ManifestPublisher {
                     .await
                     else {
                         let mut state = reader_state.lock().expect("manifest lock poisoned");
-                        if state.generation == generation { state.dirty = true; }
+                        if state.generation == generation {
+                            state.dirty = true;
+                        }
                         break;
                     };
                     let rc = reply.get("rc").unwrap_or("invalid");
@@ -723,13 +725,10 @@ impl NodedClient {
             Some(serde_json::to_string(&command_names).expect("command descriptors serialize"));
         let mut commands = self.commands.write().expect("commands lock poisoned");
         if *commands == body
-            && !self
-                .manifest
-                .as_ref()
-                .is_some_and(|m| {
-                    let state = m.state.lock().expect("manifest lock poisoned");
-                    state.dirty || state.names != names
-                })
+            && !self.manifest.as_ref().is_some_and(|m| {
+                let state = m.state.lock().expect("manifest lock poisoned");
+                state.dirty || state.names != names
+            })
         {
             return;
         }
@@ -2623,10 +2622,22 @@ mod native_ingress_regression_tests {
         });
         client.set_commands(descriptors);
         assert_eq!(rx.try_recv().unwrap().2, r#"["example.read"]"#);
-        client.manifest.as_ref().unwrap().state.lock().unwrap().dirty = false;
+        client
+            .manifest
+            .as_ref()
+            .unwrap()
+            .state
+            .lock()
+            .unwrap()
+            .dirty = false;
         client.set_command_names(vec!["example.override".into()]);
         rx.try_recv().unwrap();
-        client.set_commands(vec![crate::CommandDescriptor::new("example.read", &[], "Example", true)]);
+        client.set_commands(vec![crate::CommandDescriptor::new(
+            "example.read",
+            &[],
+            "Example",
+            true,
+        )]);
         assert_eq!(rx.try_recv().unwrap().2, r#"["example.read"]"#);
     }
 
@@ -2636,16 +2647,51 @@ mod native_ingress_regression_tests {
         let sink: WsSink = Box::pin(futures_util::sink::unfold((), |(), _: Message| async {
             Err::<(), _>(tokio_tungstenite::tungstenite::Error::ConnectionClosed)
         }));
-        client.manifest = Some(ManifestPublisher::new(Arc::new(Mutex::new(sink)), &client.commands, client.pending.clone()));
-        client.manifest.as_ref().unwrap().registered(Some("example".into()));
+        client.manifest = Some(ManifestPublisher::new(
+            Arc::new(Mutex::new(sink)),
+            &client.commands,
+            client.pending.clone(),
+        ));
+        client
+            .manifest
+            .as_ref()
+            .unwrap()
+            .registered(Some("example".into()));
         tokio::time::timeout(Duration::from_secs(1), async {
-            while !client.manifest.as_ref().unwrap().state.lock().unwrap().dirty {
+            while !client
+                .manifest
+                .as_ref()
+                .unwrap()
+                .state
+                .lock()
+                .unwrap()
+                .dirty
+            {
                 tokio::task::yield_now().await;
             }
-        }).await.unwrap();
-        let before = client.manifest.as_ref().unwrap().state.lock().unwrap().generation;
+        })
+        .await
+        .unwrap();
+        let before = client
+            .manifest
+            .as_ref()
+            .unwrap()
+            .state
+            .lock()
+            .unwrap()
+            .generation;
         client.set_commands(vec![]);
-        assert!(client.manifest.as_ref().unwrap().state.lock().unwrap().generation > before);
+        assert!(
+            client
+                .manifest
+                .as_ref()
+                .unwrap()
+                .state
+                .lock()
+                .unwrap()
+                .generation
+                > before
+        );
     }
 
     fn drained_client() -> NodedClient {

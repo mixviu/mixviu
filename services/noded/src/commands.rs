@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 //! Broker-held manifests. Validation never retains a partially accepted set.
-use std::collections::HashSet;
 use serde::de::{DeserializeSeed, SeqAccess, Visitor};
+use std::collections::HashSet;
 
 // 512 strings: 64 ASCII bytes each, worst-case six-byte JSON Unicode escapes,
 // two quotes and one comma per string, plus the brackets (last comma omitted).
@@ -9,11 +9,15 @@ use serde::de::{DeserializeSeed, SeqAccess, Visitor};
 pub(super) const MAX_BODY_BYTES: usize = 512 * (64 * 6 + 3) + 1;
 
 pub(super) fn decode(body: &str) -> Result<Vec<String>, &'static str> {
-    if body.len() > MAX_BODY_BYTES { return Err("21"); }
+    if body.len() > MAX_BODY_BYTES {
+        return Err("21");
+    }
     struct Names;
     impl<'de> Visitor<'de> for Names {
         type Value = Vec<String>;
-        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { f.write_str("command name array") }
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("command name array")
+        }
         fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
             let mut names = Vec::new();
             while names.len() < 512 {
@@ -34,8 +38,13 @@ pub(super) fn decode(body: &str) -> Result<Vec<String>, &'static str> {
         }
     }
     let mut deserializer = serde_json::Deserializer::from_str(body);
-    let names = serde::Deserializer::deserialize_seq(&mut deserializer, Names)
-        .map_err(|e| if e.to_string().starts_with("manifest count limit") { "21" } else { "20" })?;
+    let names = serde::Deserializer::deserialize_seq(&mut deserializer, Names).map_err(|e| {
+        if e.to_string().starts_with("manifest count limit") {
+            "21"
+        } else {
+            "20"
+        }
+    })?;
     deserializer.end().map_err(|_| "20")?;
     Ok(names)
 }
@@ -95,7 +104,9 @@ pub(super) struct Manifest {
 
 impl Manifest {
     #[cfg(test)]
-    pub fn attempts(&self) -> u8 { self.sets }
+    pub fn attempts(&self) -> u8 {
+        self.sets
+    }
     #[cfg(test)]
     pub fn replace(&mut self, body: &str) -> &'static str {
         self.replace_decoded(decode(body))
@@ -143,7 +154,12 @@ pub(super) fn allowlist(
             .collect(),
         None => DEFAULT_ALLOWLIST.iter().map(|s| (*s).to_owned()).collect(),
     };
-    anyhow::ensure!(names.iter().all(|name| name == "mon" || !super::is_reserved_service_name(name)), "history_allowlist contains reserved identity");
+    anyhow::ensure!(
+        names
+            .iter()
+            .all(|name| name == "mon" || !super::is_reserved_service_name(name)),
+        "history_allowlist contains reserved identity"
+    );
     Ok(names)
 }
 

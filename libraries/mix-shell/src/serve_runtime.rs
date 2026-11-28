@@ -499,9 +499,14 @@ impl PropTree for MixServeRuntime {
 }
 
 fn valid_manifest_name(name: &str) -> bool {
-    name.len() <= 64 && name.split('.').count() <= 6
-        && name.split('.').all(|segment| !segment.is_empty()
-            && segment.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))
+    name.len() <= 64
+        && name.split('.').count() <= 6
+        && name.split('.').all(|segment| {
+            !segment.is_empty()
+                && segment
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        })
 }
 
 impl ServeRuntime for MixServeRuntime {
@@ -527,8 +532,12 @@ impl ServeRuntime for MixServeRuntime {
                         .map(|command| command.name)
                         .filter(|name| {
                             let valid = valid_manifest_name(name) && accepted < 512;
-                            if !valid { tracing::warn!(name, "omitting invalid serve command name"); }
-                            if valid { accepted += 1; }
+                            if !valid {
+                                tracing::warn!(name, "omitting invalid serve command name");
+                            }
+                            if valid {
+                                accepted += 1;
+                            }
                             valid
                         })
                         .collect(),
