@@ -833,7 +833,7 @@ async fn mesh_incoming_loop(
         let parsed = BusTarget::parse(&target);
         if matches!(parsed, Some(BusTarget::CrossMesh { .. })) {
             tracing::warn!(
-                target = %target,
+                name_len = target.len(),
                 "Mesh ingress refused: cross-mesh routing not implemented"
             );
             if observing {
@@ -873,7 +873,7 @@ async fn mesh_incoming_loop(
                 // identity for one yet (SPEC 10 territory).
                 if target.contains('.') || target.contains('@') {
                     tracing::warn!(
-                        target = %target,
+                        name_len = target.len(),
                         "Mesh ingress refused: malformed Bus target"
                     );
                     if observing {
@@ -953,7 +953,7 @@ async fn mesh_incoming_loop(
                 }
             }
         } else {
-            tracing::debug!(target = %service, "No local service for incoming mesh message");
+            tracing::debug!(name_len = service.len(), "No local service for incoming mesh message");
             ObserveOutcome::Rejected
         };
         if observing {
@@ -3241,13 +3241,13 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 }
                 tracing::debug!(
                     id = %id,
-                    cmd = bus_msg.command_name().unwrap_or("?"),
+                    command_len = bus_msg.command_name().map(str::len),
                     from = bus_msg.from_addr().unwrap_or("?"),
                     "Dropping orphan response (no pending caller)"
                 );
             } else {
                 tracing::debug!(
-                    cmd = bus_msg.command_name().unwrap_or("?"),
+                    command_len = bus_msg.command_name().map(str::len),
                     from = bus_msg.from_addr().unwrap_or("?"),
                     "Dropping orphan response (no id)"
                 );

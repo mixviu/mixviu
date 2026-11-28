@@ -111,9 +111,10 @@ impl Projector {
         // Canonical local source provenance is already enforced by routing.
         // D2 replaces it in this same projection function in PR B.
         result.from = observation.message.from_addr().map(str::to_owned);
-        if observation.direction == ObserveDirection::MeshIn {
+        if observation.direction == ObserveDirection::MeshIn || observation.message.get("type") == Some("response") {
             result.from = observation.message.from_addr().map(|raw| {
-                let (value, issue, _) = self.address(raw, observation.peer, &names);
+                let peer = if observation.direction == ObserveDirection::MeshIn { observation.peer } else { None };
+                let (value, issue, _) = self.address(raw, peer, &names);
                 if let Some((reason, len)) = issue { result.reason = Some(reason); result.name_len = Some(len); }
                 value
             });

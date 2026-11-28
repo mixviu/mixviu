@@ -1,5 +1,46 @@
 # Bus history
 
+## History projection
+
+Only broker-vouched names appear verbatim in history. Before a metadata row
+is built, a command is checked against the broker control verbs and the union
+of live, honoured local manifests. Other commands become `unknown`, including
+rejected verbs, event inner commands and response echoes. Mesh commands use
+the local set only; remote manifests are not relayed. Delivery uses the real
+names and is unchanged.
+
+Addresses are rebuilt through one component projection function. A registered
+local service is bare (`maild`), a remote service is `maild.example.bus`, and a
+broker is `example.bus`. Local qualified spellings collapse to the bare service.
+Only this node and nodes in the current signed inventory may appear. Mesh-in
+sources use the authenticated bridge's node, overriding the header. Remote
+services must be exact entries in this node's history allowlist; an unlisted
+remote service reads as `unknown-service.example.bus` until the operator
+allowlists it. Exact reserved session shapes from a peer are paired with the
+authenticated bridge node. Replies use the same address builder. PR B extends
+this projection point to replace unlisted registered identities with handles.
+
+Opaque sub-labels are always removed. For example, `user.maild.example.bus`
+becomes `maild.example.bus` with `to_sub_len: 4` and no classification solely
+for the removed sub-label. No raw sub-label or hash is retained.
+
+Malformed or cross-mesh addresses become `invalid-target`; unresolved local
+services or unknown nodes become `unknown-target`. Classified rows add
+`class: "unrecognised"`, `reason` and `name_len` (bytes of the replaced
+component, or the full malformed/refused address). Reasons are fixed:
+`unknown-verb`, `no-manifest`, `unlisted-service`, `remote-unvouched`,
+`malformed-target`, `refused-cross-mesh`, `no-such-service`, `no-such-node`,
+and `oversize-name`. Address diagnostics take precedence over command
+diagnostics when both project; destination diagnostics take precedence over
+source diagnostics. Both strings are still replaced.
+
+Projection never drops a row or changes its sequence, direction, outcome, rc,
+size, correlation ID or peer. The logger persists the projection fields without
+retaining raw names or hashes. Raw diagnosis uses a live `noded.observe` tap
+with its existing payload policy; it is not retained in history. The diagnostic
+Bus calls themselves are observable under the observer's existing recursion
+suppression rules.
+
 ## Command manifests and authority
 
 `noded.commands.set` accepts a JSON array of names in the body, for example

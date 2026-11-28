@@ -5,10 +5,14 @@ use crate::observe::{Direction, Observation, Outcome};
 
 async fn fixture() -> (AppState, mpsc::Receiver<String>) {
     let ip = "192.0.2.1".parse().unwrap();
-    let state = reload_test_state(reload_posture(1, vec![
+    let mut posture = reload_posture(1, vec![
         active_route("alpha", ip, DEFAULT_NODED_PORT),
         active_route("example", "192.0.2.2".parse().unwrap(), DEFAULT_NODED_PORT),
-    ]), vec![]).await;
+    ]);
+    if let crate::authority::Posture::Verified(a) = &mut posture {
+        a.members_full.insert("example".into(), serde_json::json!({"name":"example", "status":"active", "bus":true, "mesh_ip":"192.0.2.2"}));
+    }
+    let state = reload_test_state(posture, vec![]).await;
     let (tx, rx) = mpsc::channel(8);
     let mut manifest = super::super::commands::Manifest::default();
     assert_eq!(manifest.replace(r#"["example.read"]"#), "0");
