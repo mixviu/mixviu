@@ -22,15 +22,19 @@ Every refusal clears the previous manifest:
 | --- | --- |
 | 0 | Accepted, including a set ignored for history |
 | 20 | Body is not a JSON array of strings |
-| 21 | More than 512 names (duplicates count) |
+| 21 | More than 512 names (duplicates count), or body exceeds 198145 bytes |
 | 22 | A name exceeds 64 bytes |
 | 23 | A name exceeds six dot-separated segments |
 | 24 | Empty segment or character outside `[A-Za-z0-9_]`, including `@` |
 | 25 | More than 16 sets per registration, including refused attempts |
 | 26 | No current registration owned by this connection |
 
-Registration ownership and the set budget are checked before decoding, then
-the remaining limits in table order. A fresh registration resets the budget.
+Decoding happens outside the registry lock. The byte cap is
+`512 * (64 * 6 + 3) + 1 = 198145`: six-byte JSON escapes for each ASCII name
+byte, quotes, commas and brackets. Whitespace consumes the same wire budget.
+The decoder stops at element 513 without allocating that name. Return-code
+precedence remains ownership, set budget, then decoding and name limits.
+A fresh registration resets the budget.
 Deregister, connection loss and replacement of a registration remove its set.
 There is no manifest relay across bridges.
 
@@ -44,7 +48,10 @@ noded: {
 ```
 
 An explicit array replaces the defaults; `[]` honours no service manifests.
-A malformed value refuses broker startup. Operators extend this list per node.
+A malformed value or reserved identity refuses broker startup. The same broker
+reservation helpers reject session shapes, `bridge-*`, `anon-*`, `log`,
+`log-observe-*`, `noded` and `noded-*`; tokened `mon` remains allowed.
+Operators extend this list per node.
 Sets are honoured by exact allowlisted name only, never by pattern, prefix or
 registration origin. Anonymous callers, observers, sessions and bridges do not
 vouch for commands. `log` is not allowlisted: `log.props.get`, `log.props.list`
