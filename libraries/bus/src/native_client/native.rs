@@ -2762,6 +2762,12 @@ mod native_ingress_regression_tests {
         assert_eq!(rx.try_recv().unwrap().2, r#"["example.a","example.b"]"#);
         client.set_command_names(vec!["example.a".into(), "example.b".into()]);
         assert!(rx.try_recv().is_err());
+        client.set_commands(vec![
+            crate::CommandDescriptor::new("example.b", &[], "Example", true),
+            crate::CommandDescriptor::new("example.a", &[], "Example", true),
+            crate::CommandDescriptor::new("example.a", &[], "Example", true),
+        ]);
+        assert!(rx.try_recv().is_err());
         let client = Arc::new(client);
         let (done, wait) = std::sync::mpsc::channel();
         std::thread::scope(|scope| {
