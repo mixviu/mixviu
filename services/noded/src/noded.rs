@@ -1205,7 +1205,10 @@ async fn serve(
         false,
     );
 
-    let registry: Registry = Arc::new(history_projection::HistoryRegistry::new(HashMap::new(), commands::allowlist(Some(&network))?));
+    let registry: Registry = Arc::new(history_projection::HistoryRegistry::new(
+        HashMap::new(),
+        commands::allowlist(Some(&network))?,
+    ));
     let observe = ObserveManager::new();
     observe.spawn_drainer();
 

@@ -103,8 +103,9 @@ from another registered identity receives rc 0 but cannot vouch for names.
 The internal `vouched_command` query checks the union of honoured sets of
 currently registered services.
 
-These facilities supply the subsequent history projection; this change does
-not change history rows.
+The history projection consumes this query through a cached index of honoured
+names. Registry mutation publishes a fresh index before unlocking; closed
+channels stop vouching immediately, even before registry cleanup.
 
 A service, instance, peer or `bus-svc` name is infrastructure. Never derive
 one from an account, customer, mailbox or domain.

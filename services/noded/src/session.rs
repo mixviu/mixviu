@@ -1737,7 +1737,10 @@ pub(super) mod queue_tests {
         let (s, reg, p, id) = allocated_at(now);
         let close = s.connections[&p.connection_id].close.clone();
         let sessions = Arc::new(tokio::sync::Mutex::new(s));
-        let registry = Arc::new(super::super::history_projection::HistoryRegistry::new(reg, Default::default()));
+        let registry = Arc::new(super::super::history_projection::HistoryRegistry::new(
+            reg,
+            Default::default(),
+        ));
         let _scheduler = spawn_maintenance(
             registry.clone(),
             sessions.clone(),

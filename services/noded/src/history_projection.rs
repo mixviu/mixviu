@@ -36,7 +36,10 @@ pub(crate) struct HistoryRegistry {
     allowlist: std::collections::HashSet<String>,
 }
 impl HistoryRegistry {
-    pub fn new(registry: HashMap<String, ServiceEntry>, allowlist: std::collections::HashSet<String>) -> Self {
+    pub fn new(
+        registry: HashMap<String, ServiceEntry>,
+        allowlist: std::collections::HashSet<String>,
+    ) -> Self {
         let names = Self::snapshot(&registry, &allowlist);
         Self {
             registry: RwLock::new(registry),
@@ -44,7 +47,10 @@ impl HistoryRegistry {
             allowlist,
         }
     }
-    fn snapshot(registry: &HashMap<String, ServiceEntry>, allowlist: &std::collections::HashSet<String>) -> Names {
+    fn snapshot(
+        registry: &HashMap<String, ServiceEntry>,
+        allowlist: &std::collections::HashSet<String>,
+    ) -> Names {
         let mut names = Names::default();
         for (service, entry) in registry {
             if entry.tx.is_closed() {
@@ -54,7 +60,9 @@ impl HistoryRegistry {
                 service.clone(),
                 (entry.tx.clone(), !entry.commands.names.is_empty()),
             );
-            if !allowlist.contains(service) { continue; }
+            if !allowlist.contains(service) {
+                continue;
+            }
             for name in &entry.commands.names {
                 names
                     .commands
@@ -106,9 +114,10 @@ impl DerefMut for Write<'_> {
 }
 impl Drop for Write<'_> {
     fn drop(&mut self) {
-        self.owner
-            .names
-            .store(Arc::new(HistoryRegistry::snapshot(&self.guard, &self.owner.allowlist)));
+        self.owner.names.store(Arc::new(HistoryRegistry::snapshot(
+            &self.guard,
+            &self.owner.allowlist,
+        )));
     }
 }
 
