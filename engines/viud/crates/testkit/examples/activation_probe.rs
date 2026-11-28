@@ -28,7 +28,9 @@ fn sync(client: &mut TestClient) {
 }
 
 fn main() {
-    let mode = std::env::args().nth(1).expect("background|stale|foreign|unknown");
+    let mode = std::env::args()
+        .nth(1)
+        .expect("background|stale|foreign|unknown");
     assert!(["background", "stale", "foreign", "unknown"].contains(&mode.as_str()));
     let socket = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap())
         .join(std::env::var_os("WAYLAND_DISPLAY").unwrap());
