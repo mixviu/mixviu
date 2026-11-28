@@ -37952,45 +37952,46 @@ mod bytes_tests {
     #[test]
     fn udp_loopback_and_timeout() {
         let got = with_udp_test_port(|port| {
-        // Value is Rc-based (not Send), so the sender thread builds its own
-        // argument Values from Copy/'static inputs. It RETRIES for the whole
-        // window: under a parallel workspace test run the receiver may bind
-        // arbitrarily late, and a datagram sent before the bind is silently
-        // dropped — one timed send is a flake, a resend loop is not. The
-        // receiver reads exactly one datagram; extras evaporate with the
-        // socket.
-        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let stop_tx = stop.clone();
-        let sender = std::thread::spawn(move || {
-            let mut first: Option<usize> = None;
-            for _ in 0..100 {
-                if stop_tx.load(std::sync::atomic::Ordering::Relaxed) {
-                    break;
+            // Value is Rc-based (not Send), so the sender thread builds its own
+            // argument Values from Copy/'static inputs. It RETRIES for the whole
+            // window: under a parallel workspace test run the receiver may bind
+            // arbitrarily late, and a datagram sent before the bind is silently
+            // dropped — one timed send is a flake, a resend loop is not. The
+            // receiver reads exactly one datagram; extras evaporate with the
+            // socket.
+            let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let stop_tx = stop.clone();
+            let sender = std::thread::spawn(move || {
+                let mut first: Option<usize> = None;
+                for _ in 0..100 {
+                    if stop_tx.load(std::sync::atomic::Ordering::Relaxed) {
+                        break;
+                    }
+                    let sent = builtin_udp_send(vec![
+                        Value::String("127.0.0.1".into()),
+                        Value::Number(port as f64),
+                        Value::String("ping-π".into()),
+                    ]);
+                    match sent {
+                        Ok(Some(Value::Number(n))) => first.get_or_insert(n as usize),
+                        other => return Err(format!("{other:?}")),
+                    };
+                    std::thread::sleep(std::time::Duration::from_millis(50));
                 }
-                let sent = builtin_udp_send(vec![
-                    Value::String("127.0.0.1".into()),
-                    Value::Number(port as f64),
-                    Value::String("ping-π".into()),
-                ]);
-                match sent {
-                    Ok(Some(Value::Number(n))) => first.get_or_insert(n as usize),
-                    other => return Err(format!("{other:?}")),
-                };
-                std::thread::sleep(std::time::Duration::from_millis(50));
+                first.ok_or_else(|| "sender never ran".to_string())
+            });
+            let mut opts = indexmap::IndexMap::new();
+            opts.insert("timeout".to_string(), Value::Number(5.0));
+            opts.insert("host".to_string(), Value::String("127.0.0.1".into()));
+            let got = builtin_udp_recv(vec![Value::Number(port as f64), Value::map(opts)]);
+            stop.store(true, std::sync::atomic::Ordering::Relaxed);
+            let sent = sender.join().unwrap();
+            if got.is_ok() {
+                assert_eq!(sent.unwrap(), "ping-π".len());
             }
-            first.ok_or_else(|| "sender never ran".to_string())
-        });
-        let mut opts = indexmap::IndexMap::new();
-        opts.insert("timeout".to_string(), Value::Number(5.0));
-        opts.insert("host".to_string(), Value::String("127.0.0.1".into()));
-        let got = builtin_udp_recv(vec![Value::Number(port as f64), Value::map(opts)]);
-        stop.store(true, std::sync::atomic::Ordering::Relaxed);
-        let sent = sender.join().unwrap();
-        if got.is_ok() {
-            assert_eq!(sent.unwrap(), "ping-π".len());
-        }
-        got
-        }).unwrap();
+            got
+        })
+        .unwrap();
         let Value::Map(m) = &got else {
             panic!("{got:?}")
         };
