@@ -365,6 +365,7 @@ async fn unauthenticated_dialled_frame_cannot_supply_connection_stamp() {
     state.registry.write().await.insert(
         "recipient".into(),
         super::ServiceEntry {
+            origin: super::Origin::Client,
             tx: target,
             info: Default::default(),
             traffic_class: Default::default(),

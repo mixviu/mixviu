@@ -172,7 +172,9 @@ async fn async_main() -> Result<()> {
     let pending_grants_per_parent = node_cfg.noded.pending_grants_per_parent;
     let network = Some(node_cfg.noded.clone());
     let tasks = noded::task_identity::TaskIdentities {
-        logger: history_config.as_ref().map(|_| noded::task_identity::Token::new()),
+        logger: history_config
+            .as_ref()
+            .map(|_| noded::task_identity::Token::new()),
         monitor: (!no_monitor).then(noded::task_identity::Token::new),
     };
     let broker_tasks = tasks.clone();
@@ -213,7 +215,9 @@ async fn async_main() -> Result<()> {
     let monitor_handle = if !no_monitor {
         let mon_url = noded_url.clone();
         Some(tokio::spawn(async move {
-            if let Err(e) = monitor::run(&mon_url, tasks.monitor.expect("enabled monitor token")).await {
+            if let Err(e) =
+                monitor::run(&mon_url, tasks.monitor.expect("enabled monitor token")).await
+            {
                 tracing::error!("Monitor module failed: {e}");
             }
         }))
@@ -225,7 +229,15 @@ async fn async_main() -> Result<()> {
     let logger_handle = if let Some(history_config) = history_config {
         let log_url = noded_url.clone();
         Some(tokio::spawn(async move {
-            if let Err(e) = logger::run(&log_url, node, history_config, logger_shutdown, tasks.logger.expect("enabled logger token")).await {
+            if let Err(e) = logger::run(
+                &log_url,
+                node,
+                history_config,
+                logger_shutdown,
+                tasks.logger.expect("enabled logger token"),
+            )
+            .await
+            {
                 tracing::error!("Logger module failed: {e}");
             }
         }))

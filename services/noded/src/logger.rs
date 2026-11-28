@@ -126,8 +126,7 @@ async fn run_in(
     // bounded outbound channel means a saturated observation queue cannot
     // block log.props.* delivery on the service connection.
     let observer_name = format!("log-observe-{}", std::process::id());
-    let observer_client =
-        Arc::new(token.connect(&observer_name, noded_url).await?);
+    let observer_client = Arc::new(token.connect(&observer_name, noded_url).await?);
     observer_client
         .call(
             "noded",
@@ -1753,9 +1752,13 @@ mod tests {
     async fn native_observation_flushes_on_timer_and_shutdown() {
         let tmp = Temp::new();
         let token = crate::noded::task_identity::Token::new();
-        let url = crate::noded::tests::spawn_task_broker(crate::noded::task_identity::TaskIdentities {
-            logger: Some(token.clone()), monitor: None,
-        }).await.unwrap();
+        let url =
+            crate::noded::tests::spawn_task_broker(crate::noded::task_identity::TaskIdentities {
+                logger: Some(token.clone()),
+                monitor: None,
+            })
+            .await
+            .unwrap();
         let (stop, shutdown) = tokio::sync::oneshot::channel();
         let logger_url = url.clone();
         let logger_token = token.clone();
