@@ -207,7 +207,9 @@ async fn run_in(
                 }
                 cmd = rx.recv() => {
                     let Some(cmd) = cmd else { break };
-                    if cmd.command != "noded.observe.event" { continue; }
+                    // Only the broker's direct events have this canonical
+                    // source. A routed lookalike must not inject raw rows.
+                    if cmd.command != "noded.observe.event" || cmd.from != "noded" { continue; }
                     let Some(event) = parse_event(&cmd.body, &mut last_warning) else {
                         continue;
                     };
@@ -1841,6 +1843,28 @@ mod tests {
         })
         .await
         .unwrap();
+        // A caller can address the observer, but cannot impersonate noded.
+        // Its real routing observation remains in history, while the supplied
+        // event body cannot inject a second, unprojected history row.
+        let forged = bus::wire::BusMessage::new()
+            .with_header("from", "noded")
+            .with_header("to", &format!("log-observe-{}", std::process::id()))
+            .with_header("type", "event")
+            .with_header("command", "noded.observe.event")
+            .with_header("id", "example-forgery")
+            .with_body(&json!({
+                "seq":9999, "ts":"2026-11-29T00:00:00Z", "direction":"local",
+                "outcome":"delivered", "message_type":"event", "from":"noded",
+                "to":"user@example.com", "command":"user@example.com", "size":1,
+                "correlation_id":null, "peer":null, "rc":0, "dropped_count":0
+            }).to_string());
+        client.send_raw(&forged).await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            loop {
+                if rows(&tmp.0).iter().any(|r| r["correlation_id"] == "example-forgery" && r["command"] == "unknown") { break; }
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+        }).await.unwrap();
         // The second instance must return before attempting a service
         // registration, leaving the first observer alive and its file intact.
         let (_second_stop, second_shutdown) = tokio::sync::oneshot::channel();
@@ -1873,6 +1897,7 @@ mod tests {
             1
         );
         assert!(r.iter().all(|r| r.get("payload").is_none()));
+        assert!(!serde_json::to_string(&r).unwrap().contains("user@example.com"));
     }
 
     #[test]
