@@ -168,7 +168,9 @@ mod tests {
         use smithay::reexports::wayland_server::{
             Client, DataInit, Dispatch, Display, DisplayHandle,
         };
-        use smithay::wayland::fractional_scale::{FractionalScaleHandler, FractionalScaleManagerState};
+        use smithay::wayland::fractional_scale::{
+            FractionalScaleHandler, FractionalScaleManagerState,
+        };
         struct State;
         impl FractionalScaleHandler for State {}
         smithay::delegate_dispatch2!(State);
