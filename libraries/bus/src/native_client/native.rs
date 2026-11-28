@@ -2590,13 +2590,21 @@ mod native_ingress_regression_tests {
     #[tokio::test]
     async fn identical_descriptors_republish_when_manifest_dirty() {
         let mut client = drained_client();
-        let descriptors = vec![crate::CommandDescriptor::new("example.read", &[], "Example", true)];
+        let descriptors = vec![crate::CommandDescriptor::new(
+            "example.read",
+            &[],
+            "Example",
+            true,
+        )];
         *client.commands.write().unwrap() = Some(serde_json::to_string(&descriptors).unwrap());
         let (tx, mut rx) = mpsc::unbounded_channel();
         client.manifest = Some(ManifestPublisher {
             state: Arc::new(StdMutex::new(ManifestState {
-                dirty: true, names: vec!["example.read".into()], identity: Some("example".into()),
-                generation: 1, registration_body: String::new(),
+                dirty: true,
+                names: vec!["example.read".into()],
+                identity: Some("example".into()),
+                generation: 1,
+                registration_body: String::new(),
             })),
             tx,
             task: tokio::spawn(async {}).abort_handle(),
