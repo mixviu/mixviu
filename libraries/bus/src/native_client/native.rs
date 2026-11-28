@@ -312,6 +312,7 @@ impl Drop for PendingGuard {
 
 /// Bus WebSocket client for communicating with noded.
 pub struct NodedClient {
+    manifest_tx: Option<mpsc::UnboundedSender<String>>,
     service_name: Arc<RwLock<String>>,
     commands: Arc<RwLock<Option<String>>>,
     sink: Arc<Mutex<WsSink>>,
@@ -474,6 +475,34 @@ fn classify_registration_rejection(body: &str) -> RegistrationRejectionKind {
 }
 
 impl NodedClient {
+    fn manifest_writer(sink: Arc<Mutex<WsSink>>, name: Arc<RwLock<String>>) -> mpsc::UnboundedSender<String> {
+        let (tx, mut rx) = mpsc::unbounded_channel::<String>();
+        tokio::spawn(async move {
+            while let Some(body) = rx.recv().await {
+                let request = BusMessage::new()
+                    .with_header("command", "noded.commands.set")
+                    .with_header("to", "noded")
+                    .with_header("from", &name.read().expect("name lock poisoned"))
+                    .with_header("type", "request")
+                    .with_header("id", "commands-manifest")
+                    .with_body(&body);
+                if sink.lock().await.send(Message::Text(request.to_wire().into())).await.is_err() {
+                    break;
+                }
+            }
+        });
+        tx
+    }
+
+    fn publish_commands(&self) {
+        let body = self.commands.read().expect("commands lock poisoned").clone();
+        let names: Vec<String> = body.and_then(|body| serde_json::from_str::<Vec<crate::CommandDescriptor>>(&body).ok())
+            .unwrap_or_default().into_iter().map(|command| command.name).collect();
+        if let Some(tx) = &self.manifest_tx {
+            let _ = tx.send(serde_json::to_string(&names).expect("names serialize"));
+        }
+    }
+
     /// Opt into central HELP handling. Install before publishing the service
     /// where possible. HELP is consumed by the reader, never the application.
     pub fn with_commands(self, command_names: Vec<crate::CommandDescriptor>) -> Self {
@@ -483,8 +512,12 @@ impl NodedClient {
 
     /// Replace the manifest on a live client, including verified Unix clients.
     pub fn set_commands(&self, command_names: Vec<crate::CommandDescriptor>) {
-        *self.commands.write().expect("commands lock poisoned") =
-            Some(serde_json::to_string(&command_names).expect("command descriptors serialize"));
+        let body = Some(serde_json::to_string(&command_names).expect("command descriptors serialize"));
+        let mut commands = self.commands.write().expect("commands lock poisoned");
+        if *commands == body { return; }
+        *commands = body;
+        drop(commands);
+        self.publish_commands();
     }
 
     #[cfg(unix)]
@@ -541,6 +574,7 @@ impl NodedClient {
         ));
         let mut guard = AbortOnDrop::new(reader.abort_handle());
         let client = Self {
+            manifest_tx: Some(Self::manifest_writer(sink.clone(), service_name.clone())),
             service_name,
             commands: command_names,
             sink,
@@ -641,6 +675,7 @@ impl NodedClient {
         let mut reader_guard = AbortOnDrop::new(reader_handle.abort_handle());
 
         let client = Self {
+            manifest_tx: Some(Self::manifest_writer(sink.clone(), service_name.clone())),
             service_name,
             commands: command_names,
             sink,
@@ -696,6 +731,7 @@ impl NodedClient {
         ));
 
         Ok(Self {
+            manifest_tx: Some(Self::manifest_writer(sink.clone(), service_name.clone())),
             service_name,
             commands: command_names,
             sink,
@@ -1267,6 +1303,7 @@ impl NodedClient {
             .call_with_headers_raw("noded", "noded.register", &BTreeMap::new(), &request_body)
             .await?;
         if rc < crate::RC_ERROR {
+            self.publish_commands();
             return Ok(());
         }
         // Classify from the BOUNDED structured body only — never by matching
@@ -1395,6 +1432,7 @@ impl NodedClient {
         );
         #[cfg(not(unix))]
         let verified = false;
+        let mut manifest_unknown_logged = false;
         while let Some(result) = stream.next().await {
             let data = match result {
                 Ok(Message::Text(text)) => text.to_string(),
@@ -1445,6 +1483,13 @@ impl NodedClient {
             // origin of the indexd↔noded feedback loop fixed on 2026-05-04.
             let msg_type_is_response = msg.get("type").is_some_and(|t| t == "response");
             if msg_type_is_response {
+                if msg_id.as_deref() == Some("commands-manifest") {
+                    if msg.get("rc") == Some("10") && !manifest_unknown_logged {
+                        tracing::debug!("broker does not support noded.commands.set");
+                        manifest_unknown_logged = true;
+                    }
+                    continue;
+                }
                 if let Some(ref id) = msg_id {
                     // sync-mutex: `pending` deliberately uses
                     // `std::sync::Mutex` so [`PendingGuard::drop`] can
@@ -2244,6 +2289,7 @@ mod native_ingress_regression_tests {
                 },
             ));
             let client = NodedClient {
+                manifest_tx: None,
                 service_name: Arc::new(RwLock::new("close-test".to_string())),
                 commands: Arc::new(RwLock::new(None)),
                 sink: Arc::new(Mutex::new(sink)),
@@ -2282,6 +2328,7 @@ mod native_ingress_regression_tests {
             },
         ));
         NodedClient {
+            manifest_tx: None,
             service_name: Arc::new(RwLock::new("post-close-test".to_string())),
             commands: Arc::new(RwLock::new(None)),
             sink: Arc::new(Mutex::new(sink)),

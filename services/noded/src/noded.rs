@@ -46,6 +46,9 @@ use crate::protection::TrafficClass;
 #[path = "frame_policy.rs"]
 mod frame_policy;
 
+#[path = "commands.rs"]
+mod commands;
+
 type FrameRefusalLogs = HashMap<(String, &'static str), mesh::DiagnosticLog>;
 static FRAME_REFUSALS: std::sync::LazyLock<std::sync::Mutex<FrameRefusalLogs>> =
     std::sync::LazyLock::new(Default::default);
@@ -222,6 +225,7 @@ fn warn_drop(last_at_ms: &AtomicU64, dropped: &AtomicU64, mk: impl FnOnce(u64) -
 /// `info.name` mirrors the registry key.
 #[derive(Clone)]
 pub(crate) struct ServiceEntry {
+    commands: commands::Manifest,
     protected_responses: Arc<AtomicBool>,
     traffic_class: TrafficClass,
     tx: mpsc::Sender<String>,
@@ -471,6 +475,7 @@ impl PendingResponseTable {
 
 #[derive(Clone)]
 struct AppState {
+    history_allowlist: std::collections::HashSet<String>,
     tls: Option<Arc<mesh::TlsRuntime>>,
     tls_peer: Option<crate::tls_ingress::TlsPeer>,
     tls_refusals: Arc<crate::tls_ingress::Refusals>,
@@ -549,6 +554,31 @@ struct PendingMeshObservation {
     canonical_wire: String,
     correlation_id: Option<String>,
     peer: String,
+}
+
+impl AppState {
+    fn honours_manifest(&self, name: &str) -> bool {
+        if self.history_allowlist.contains(name) || matches!(name, "noded" | "log") {
+            return true;
+        }
+        if name.strip_prefix("log-observe-").is_some_and(|pid| {
+            !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit())
+        }) || reserved_session_name(name) || name.starts_with("anon-") {
+            return true;
+        }
+        name.strip_prefix("bridge-").is_some_and(|peer| {
+            matches!(&self.authority.load().posture,
+                crate::authority::Posture::Verified(a) if a.members_full.contains_key(peer))
+        })
+    }
+
+    /// PR A's history projection query. Only live, honoured registrations vouch.
+    #[allow(dead_code)] // Consumed by the following history projection PR.
+    async fn vouched_command(&self, name: &str) -> bool {
+        self.registry.read().await.iter().any(|(service, entry)| {
+            !entry.tx.is_closed() && self.honours_manifest(service) && entry.commands.names.contains(name)
+        })
+    }
 }
 
 /// SPEC 13 §9a (2-c-2c) — a live enforce-admitted inter-node session, tracked so
@@ -1185,6 +1215,7 @@ async fn serve(
     let change_bus = crate::props::ChangeBus::new(broker.clone());
 
     let state = AppState {
+        history_allowlist: commands::allowlist(Some(&network))?,
         tls,
         tls_peer: None,
         tls_refusals,
@@ -4861,6 +4892,7 @@ async fn handle_noded_command(
                 reg.insert(
                     from.clone(),
                     ServiceEntry {
+commands: Default::default(),
                         protected_responses: state.protected_responses.clone(),
                         traffic_class: if state.principal.is_some() {
                             TrafficClass::NativeSession
@@ -4885,6 +4917,19 @@ async fn handle_noded_command(
             let _ = tx.try_send(resp.to_wire());
 
             emit_props_change(state, &format!("register:{from}")).await;
+        }
+
+        "noded.commands.set" => {
+            let mut registry = state.registry.write().await;
+            let entry = service_name.as_deref().and_then(|name| registry.get_mut(name))
+                .filter(|entry| entry.same_channel(tx));
+            let rc = match entry {
+                Some(entry) => entry.commands.replace(&msg.body),
+                None => "26",
+            };
+            let mut response = respond(rc);
+            response.set("command", "noded.commands.set");
+            let _ = tx.try_send(response.to_wire());
         }
 
         "noded.deregister" => {
@@ -6835,6 +6880,7 @@ mod tests {
         let broker = Arc::new(SubscriptionBroker::new());
         let started = Instant::now();
         AppState {
+            history_allowlist: commands::allowlist(None).unwrap(),
             tls: None,
             tls_peer: None,
             tls_refusals: Default::default(),
@@ -7626,7 +7672,7 @@ mod tests {
         for (id, command, rc) in [
             ("unknown-1", "noded.no_such_command", "10"),
             ("ping-1", "noded.ping", "0"),
-            ("unknown-2", "noded.commands.set", "10"),
+            ("unknown-2", "noded.future_verb", "10"),
             ("ping-2", "noded.ping", "0"),
         ] {
             let request = BusMessage::new()
@@ -8439,6 +8485,7 @@ mod tests {
         state.registry.write().await.insert(
             "recipient".into(),
             super::ServiceEntry {
+commands: Default::default(),
                 tx: target,
                 traffic_class: super::TrafficClass::NativeSession,
                 protected_responses: Default::default(),
@@ -8545,6 +8592,7 @@ mod tests {
         state.registry.write().await.insert(
             "recipient".into(),
             super::ServiceEntry {
+commands: Default::default(),
                 protected_responses: Default::default(),
                 traffic_class: super::TrafficClass::NativeSession,
                 tx: target,
@@ -8824,6 +8872,7 @@ mod tests {
         state.registry.write().await.insert(
             "responder".into(),
             super::ServiceEntry {
+commands: Default::default(),
                 protected_responses: sticky.clone(),
                 traffic_class: super::TrafficClass::Legacy,
                 tx: target.clone(),
@@ -8932,6 +8981,7 @@ mod tests {
                 registry.insert(
                     "bridge-beta".into(),
                     super::ServiceEntry {
+commands: Default::default(),
                         protected_responses: Default::default(),
                         traffic_class: super::TrafficClass::Legacy,
                         tx: if case == "wrong-owner" {
@@ -8945,6 +8995,7 @@ mod tests {
                 registry.insert(
                     "desktop".into(),
                     super::ServiceEntry {
+commands: Default::default(),
                         protected_responses: Default::default(),
                         traffic_class: super::TrafficClass::Legacy,
                         tx: target,
@@ -9032,6 +9083,7 @@ mod tests {
                     registry.insert(
                         name.into(),
                         super::ServiceEntry {
+commands: Default::default(),
                             tx,
                             protected_responses: Default::default(),
                             traffic_class: super::TrafficClass::Legacy,
@@ -9081,6 +9133,7 @@ mod tests {
             registry.insert(
                 "bridge-beta".into(),
                 super::ServiceEntry {
+commands: Default::default(),
                     protected_responses: Default::default(),
                     traffic_class: super::TrafficClass::Legacy,
                     tx: caller.clone(),
@@ -9090,6 +9143,7 @@ mod tests {
             registry.insert(
                 "desktop".into(),
                 super::ServiceEntry {
+commands: Default::default(),
                     protected_responses: Default::default(),
                     traffic_class: super::TrafficClass::Legacy,
                     tx: target,
