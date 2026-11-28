@@ -66,7 +66,9 @@ mod tests {
                 self.0.lock().unwrap().extend_from_slice(bytes);
                 Ok(bytes.len())
             }
-            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
         }
         // This current-thread runtime keeps broker, client and transport tasks
         // under the same capturing subscriber, including log's trace records.
@@ -74,8 +76,12 @@ mod tests {
         log::set_max_level(log::LevelFilter::Trace);
         let output = Capture(Arc::new(Mutex::new(Vec::new())));
         let writer = output.clone();
-        let subscriber = tracing_subscriber::fmt().with_max_level(tracing::Level::TRACE)
-            .with_ansi(false).without_time().with_writer(move || writer.clone()).finish();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_ansi(false)
+            .without_time()
+            .with_writer(move || writer.clone())
+            .finish();
         let _guard = tracing::subscriber::set_default(subscriber);
         let logger = Token::new();
         let monitor = Token::new();
@@ -111,17 +117,28 @@ mod tests {
             .unwrap();
         assert!(logger.connect("log", &disabled).await.is_err());
         assert!(monitor.connect("mon", &disabled).await.is_err());
-        let client = bus::native_client::NodedClient::connect_anonymous(&url).await.unwrap();
+        let client = bus::native_client::NodedClient::connect_anonymous(&url)
+            .await
+            .unwrap();
         let previous = client.name();
         assert!(client.register_as_with_body("log", "{}").await.is_err());
         assert_eq!(client.name(), previous);
         client.close().await;
         tokio::task::yield_now().await;
         let logs = String::from_utf8(output.0.lock().unwrap().clone()).unwrap();
-        assert!(logs.contains("Service 'mon' registered"), "capture did not cover broker registration");
-        assert!(logs.contains("TRACE"), "trace transport logging was not captured");
+        assert!(
+            logs.contains("Service 'mon' registered"),
+            "capture did not cover broker registration"
+        );
+        assert!(
+            logs.contains("TRACE"),
+            "trace transport logging was not captured"
+        );
         for token in [&logger, &monitor, &wrong] {
-            assert!(!logs.contains(&token.encoded()), "capability reached a log record");
+            assert!(
+                !logs.contains(&token.encoded()),
+                "capability reached a log record"
+            );
         }
     }
 }

@@ -3093,7 +3093,10 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                             source_ip,
                             admission: bus::native_session::MeshAdmission {
                                 identity: identity.clone(),
-                                admitted_node: state.peer_context.mesh_peer().map(|(node, _)| node.to_owned()),
+                                admitted_node: state
+                                    .peer_context
+                                    .mesh_peer()
+                                    .map(|(node, _)| node.to_owned()),
                                 response_seen: true,
                                 last_detail: None,
                             },
@@ -4127,11 +4130,15 @@ fn admitted_delivery_peer(state: &AppState, _source_ip: std::net::IpAddr) -> Opt
         .then(|| node.to_owned())
 }
 
-fn authenticated_registration_peer(state: &AppState, connection: &bus::native_session::PeerContext) -> Option<String> {
+fn authenticated_registration_peer(
+    state: &AppState,
+    connection: &bus::native_session::PeerContext,
+) -> Option<String> {
     let (node, key) = connection.mesh_peer()?;
     let authenticated = match &connection.transport {
         Some(TransportIdentity::Mesh { admission, .. }) => {
-            admission.response_seen && admission.last_detail.is_none()
+            admission.response_seen
+                && admission.last_detail.is_none()
                 && admission.admitted_node.as_deref() == Some(node)
                 && admission.identity == connection.identity
         }
@@ -4139,8 +4146,10 @@ fn authenticated_registration_peer(state: &AppState, connection: &bus::native_se
         _ => false,
     };
     let authority = state.authority.load();
-    (authenticated && mesh_trust::identity::link_refusal(connection, &authority.keys, &authority.tls_keys).is_none())
-        .then(|| node.to_owned())
+    (authenticated
+        && mesh_trust::identity::link_refusal(connection, &authority.keys, &authority.tls_keys)
+            .is_none())
+    .then(|| node.to_owned())
 }
 
 fn reserved_name_refusal(mut response: BusMessage) -> BusMessage {
@@ -4358,9 +4367,11 @@ async fn route_local(
         && mesh_from.is_some_and(|name| reserved_task_name(name) || reserved_broker_name(name))
     {
         drop(reg);
-        let mut reply = reserved_name_refusal(BusMessage::new()
-            .with_header("type", "response")
-            .with_header("from", "noded"));
+        let mut reply = reserved_name_refusal(
+            BusMessage::new()
+                .with_header("type", "response")
+                .with_header("from", "noded"),
+        );
         if let Some(id) = msg.get("id") {
             reply.set("id", id);
         }
@@ -4938,8 +4949,13 @@ async fn handle_noded_command(
                 .is_some_and(|old_name| old_name != &from);
             {
                 let mut reg = state.registry.write().await;
-                let _fence = state.delivery_fence.read().expect("delivery fence poisoned");
-                if origin == Origin::Bridge && authenticated_registration_peer(state, connection).is_none() {
+                let _fence = state
+                    .delivery_fence
+                    .read()
+                    .expect("delivery fence poisoned");
+                if origin == Origin::Bridge
+                    && authenticated_registration_peer(state, connection).is_none()
+                {
                     let _ = tx.try_send(reserved_name_refusal(respond("10")).to_wire());
                     return;
                 }
@@ -8752,7 +8768,7 @@ pub(crate) mod tests {
             response_seen: true,
             last_detail: None,
         };
-        state.peer_context.transport = Some(TransportIdentity::Mesh {
+        state.peer_context.transport = Some(super::TransportIdentity::Mesh {
             source_ip: "192.0.2.2".parse().unwrap(),
             admission: bus::native_session::MeshAdmission {
                 identity: state.peer_context.identity.clone(),
@@ -9910,7 +9926,10 @@ pub(crate) mod tests {
         let (tx, mut rx) = mpsc::channel(8);
         let taps = Arc::new(RwLock::new(vec![tx]));
         for (body, valid) in [
-            (r#"{"broker_task_token":"private-capability","binary":"example","version":"1"}"#, true),
+            (
+                r#"{"broker_task_token":"private-capability","binary":"example","version":"1"}"#,
+                true,
+            ),
             (r#"{"binary":"example","version":"1"}"#, true),
             (r#"{"broker_task_token":"private-capability" broken"#, false),
         ] {
@@ -9940,16 +9959,27 @@ pub(crate) mod tests {
         let admitted = state.peer_context.clone();
         let mut cases = vec![(admitted.clone(), true)];
         for address in ["192.0.2.2", "192.0.2.99"] {
-            cases.push((PeerContext {
-                address: Some(format!("{address}:1234").parse().unwrap()),
-                transport: Some(TransportIdentity::LegacyTcp { source_ip: address.parse().unwrap() }),
-                ..Default::default()
-            }, false));
+            cases.push((
+                PeerContext {
+                    address: Some(format!("{address}:1234").parse().unwrap()),
+                    transport: Some(TransportIdentity::LegacyTcp {
+                        source_ip: address.parse().unwrap(),
+                    }),
+                    ..Default::default()
+                },
+                false,
+            ));
         }
         for transport in [
             None,
-            Some(TransportIdentity::LocalUnix { uid: 0, gid: 0, peer_pid: 1 }),
-            Some(TransportIdentity::LegacyTcp { source_ip: "192.0.2.2".parse().unwrap() }),
+            Some(TransportIdentity::LocalUnix {
+                uid: 0,
+                gid: 0,
+                peer_pid: 1,
+            }),
+            Some(TransportIdentity::LegacyTcp {
+                source_ip: "192.0.2.2".parse().unwrap(),
+            }),
         ] {
             let mut connection = admitted.clone();
             connection.transport = transport;
@@ -9963,18 +9993,40 @@ pub(crate) mod tests {
         for (connection, accepted) in cases {
             state.registry.write().await.clear();
             let (tx, mut rx) = mpsc::channel(8);
-            let request = BusMessage::new().with_header("command", "noded.register").with_header("from", "bridge-beta");
-            super::handle_noded_command(&request, &tx, &state, &mut None, "probe", &connection, &mut super::ObserveOutcome::BrokerHandled).await;
+            let request = BusMessage::new()
+                .with_header("command", "noded.register")
+                .with_header("from", "bridge-beta");
+            super::handle_noded_command(
+                &request,
+                &tx,
+                &state,
+                &mut None,
+                "probe",
+                &connection,
+                &mut super::ObserveOutcome::BrokerHandled,
+            )
+            .await;
             let response = bus_mod::parse(&rx.recv().await.unwrap()).unwrap();
             assert_eq!(response.get("rc"), Some(if accepted { "0" } else { "10" }));
             if accepted {
-                assert_eq!(state.registry.read().await["bridge-beta"].origin, super::Origin::Bridge);
+                assert_eq!(
+                    state.registry.read().await["bridge-beta"].origin,
+                    super::Origin::Bridge
+                );
             } else {
                 assert_eq!(response.body, r#"{"error":"reserved_name"}"#);
                 assert!(state.registry.read().await.is_empty());
             }
         }
-        state.authority.store(Arc::new(crate::routing::RoutingAuthority::new(reload_posture(2, vec![]), "alpha", "127.0.0.1", DEFAULT_NODED_PORT, &[])));
+        state
+            .authority
+            .store(Arc::new(crate::routing::RoutingAuthority::new(
+                reload_posture(2, vec![]),
+                "alpha",
+                "127.0.0.1",
+                DEFAULT_NODED_PORT,
+                &[],
+            )));
         assert!(super::authenticated_registration_peer(&state, &admitted).is_none());
     }
 

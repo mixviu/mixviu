@@ -995,7 +995,8 @@ impl NodedClient {
             msg = msg.with_header(k, v);
         }
         // Framing headers override caller entries.
-        msg = msg.with_header("command", command)
+        msg = msg
+            .with_header("command", command)
             .with_header("from", &self.name())
             .with_header("to", to)
             .with_header("type", "request")
@@ -1003,7 +1004,11 @@ impl NodedClient {
         self.request_message(msg, limit).await
     }
 
-    async fn request_message(&self, mut msg: BusMessage, limit: std::time::Duration) -> Result<(u8, String, Option<String>)> {
+    async fn request_message(
+        &self,
+        mut msg: BusMessage,
+        limit: std::time::Duration,
+    ) -> Result<(u8, String, Option<String>)> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed).to_string();
 
         let (tx, rx) = oneshot::channel();
@@ -1028,7 +1033,12 @@ impl NodedClient {
         let response = match tokio::time::timeout(limit, rx).await {
             Ok(Ok(resp)) => resp,
             Ok(Err(_)) => return Err(crate::ClientError::Closed.into()),
-            Err(_) => return Err(crate::ClientError::Timeout { to: msg.to_addr().unwrap_or("").to_owned() }.into()),
+            Err(_) => {
+                return Err(crate::ClientError::Timeout {
+                    to: msg.to_addr().unwrap_or("").to_owned(),
+                }
+                .into());
+            }
         };
         guard.disarm();
 
@@ -1276,10 +1286,14 @@ impl NodedClient {
         // so the structured rejection body survives for classification
         // (`call_typed` folds it into a message string). Success semantics
         // are unchanged: any `rc < 10` is a successful register.
-        let message = BusMessage::new().with_header("from", name)
-            .with_header("to", "noded").with_header("type", "request")
-            .with_header("command", "noded.register").with_body(request_body);
-        let (rc, reply_body, error_header) = self.request_message(message, RESPONSE_TIMEOUT).await?;
+        let message = BusMessage::new()
+            .with_header("from", name)
+            .with_header("to", "noded")
+            .with_header("type", "request")
+            .with_header("command", "noded.register")
+            .with_body(request_body);
+        let (rc, reply_body, error_header) =
+            self.request_message(message, RESPONSE_TIMEOUT).await?;
         if rc < crate::RC_ERROR {
             return Ok(());
         }

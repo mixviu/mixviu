@@ -1578,7 +1578,17 @@ pub(super) mod queue_tests {
     fn only_broker_issued_session_names_reach_the_registry() {
         let (mut sessions, mut registry, _, id) = allocated();
         let original = sessions.records[&id].view.name.clone();
-        for name in ["log", "log-observe-123", "mon", "anon-x", "bridge-beta", "noded", "noded-7", "t0-aaaaaaaaaaaaaaaaaaaaaa", "client-name"] {
+        for name in [
+            "log",
+            "log-observe-123",
+            "mon",
+            "anon-x",
+            "bridge-beta",
+            "noded",
+            "noded-7",
+            "t0-aaaaaaaaaaaaaaaaaaaaaa",
+            "client-name",
+        ] {
             sessions.records.get_mut(&id).unwrap().view.name = name.into();
             assert!(sessions.install(id, &mut registry).is_err(), "{name}");
             assert!(!registry.contains_key(name));
