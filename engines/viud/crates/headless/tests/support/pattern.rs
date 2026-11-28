@@ -41,6 +41,13 @@ use wayland_protocols::{
         wp_presentation::{self, WpPresentation},
         wp_presentation_feedback::{self, WpPresentationFeedback},
     },
+    wp::{
+        fractional_scale::v1::client::{
+            wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1,
+            wp_fractional_scale_v1::{self, WpFractionalScaleV1},
+        },
+        viewporter::client::{wp_viewport::WpViewport, wp_viewporter::WpViewporter},
+    },
     xdg::decoration::zv1::client::{
         zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
         zxdg_toplevel_decoration_v1::{self, ZxdgToplevelDecorationV1},
@@ -58,6 +65,13 @@ pub const COLOURS: [u32; 4] = [0xffd02030, 0xff20d040, 0xff3040d0, 0xffe0d020];
 
 #[derive(Default)]
 pub struct State {
+    pub scale_probe: bool,
+    commit_id: u64,
+    buffer_info: (i32, i32, u32),
+    pub scale120: u32,
+    pub events: Vec<(Instant, ScaleEvent)>,
+    scale_dirty: bool,
+    fractional_received: bool,
     globals: Vec<(u32, String, u32)>,
     configured: bool,
     pointers: Vec<WlPointer>,
@@ -82,7 +96,30 @@ pub struct State {
     layer_size: Option<(i32, i32)>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScaleEvent {
+    Preferred(u32),
+    BufferScale(i32),
+    Configure(i32, i32, Vec<u32>),
+    Ack(u32),
+    Callback,
+    Commit(i32, i32, u32),
+    Presented(u64, i32, i32, u32),
+}
+
+impl State {
+    fn log_scale(&mut self, event: ScaleEvent) {
+        if self.scale_probe {
+            let at = Instant::now();
+            eprintln!("FRACTIONAL_EVENT at={at:?} event={event:?}");
+            self.events.push((at, event));
+        }
+    }
+}
+
 pub struct Pattern {
+    viewport: Option<WpViewport>,
+    _fractional: Option<WpFractionalScaleV1>,
     conn: Connection,
     queue: EventQueue<State>,
     pub state: State,
@@ -343,13 +380,35 @@ impl Pattern {
         decorated: bool,
         size: (i32, i32),
     ) -> Self {
-        Self::from_connection_requests(conn, name, fullscreen, decorated, size, &[])
+        Self::from_connection_requests(conn, name, fullscreen, decorated, size, &[], false)
     }
 
     pub fn premap_fullscreen(stream: UnixStream, requests: &[bool]) -> Self {
         stream.set_nonblocking(true).unwrap();
         let conn = Connection::from_socket(stream).unwrap();
-        Self::from_connection_requests(conn, "headless-pattern", true, false, (1280, 720), requests)
+        Self::from_connection_requests(
+            conn,
+            "headless-pattern",
+            true,
+            false,
+            (1280, 720),
+            requests,
+            false,
+        )
+    }
+
+    /// Opt-in protocol oracle; existing clients keep their original behaviour.
+    pub fn scale_probe(stream: UnixStream) -> Self {
+        stream.set_nonblocking(true).unwrap();
+        Self::from_connection_requests(
+            Connection::from_socket(stream).unwrap(),
+            "headless-pattern",
+            false,
+            false,
+            (200, 160),
+            &[],
+            true,
+        )
     }
 
     fn from_connection_requests(
@@ -359,11 +418,14 @@ impl Pattern {
         decorated: bool,
         size: (i32, i32),
         requests: &[bool],
+        scale_probe: bool,
     ) -> Self {
         let mut queue = conn.new_event_queue::<State>();
         let qh = queue.handle();
         let registry = conn.display().get_registry(&qh, ());
         let mut state = State::default();
+        state.scale_probe = scale_probe;
+        state.scale120 = 120;
         queue.roundtrip(&mut state).unwrap();
         let find = |name: &str| {
             state
@@ -374,14 +436,28 @@ impl Pattern {
                 .unwrap()
         };
         let (n, _, v) = find("wl_compositor");
-        let compositor: WlCompositor = registry.bind(n, v.min(4), &qh, ());
+        let compositor: WlCompositor =
+            registry.bind(n, v.min(if scale_probe { 6 } else { 4 }), &qh, ());
         let (n, _, _) = find("wl_shm");
         let shm: WlShm = registry.bind(n, 1, &qh, ());
-        let (n, _, _) = find("xdg_wm_base");
-        let shell: XdgWmBase = registry.bind(n, 1, &qh, ());
+        let (n, _, v) = find("xdg_wm_base");
+        let shell: XdgWmBase = registry.bind(n, if scale_probe { v.min(6) } else { 1 }, &qh, ());
         let (n, _, _) = find("wp_presentation");
         let presentation: WpPresentation = registry.bind(n, 1, &qh, ());
         let surface = compositor.create_surface(&qh, ());
+        let (viewport, fractional) = if scale_probe {
+            let (n, _, _) = find("wp_viewporter");
+            let manager: WpViewporter = registry.bind(n, 1, &qh, ());
+            let viewport = manager.get_viewport(&surface, &qh, ());
+            let (n, _, _) = find("wp_fractional_scale_manager_v1");
+            let manager: WpFractionalScaleManagerV1 = registry.bind(n, 1, &qh, ());
+            (
+                Some(viewport),
+                Some(manager.get_fractional_scale(&surface, &qh, ())),
+            )
+        } else {
+            (None, None)
+        };
         let xdg = shell.get_xdg_surface(&surface, &qh, ());
         let top = xdg.get_toplevel(&qh, ());
         let decoration = decorated.then(|| {
@@ -429,6 +505,8 @@ impl Pattern {
             COLOURS[usize::from(x >= w / 2) + 2 * usize::from(y >= h / 2)]
         });
         let mut client = Self {
+            viewport,
+            _fractional: fractional,
             conn,
             queue,
             state,
@@ -463,17 +541,41 @@ impl Pattern {
             }
         }
         self.queue.dispatch_pending(&mut self.state).unwrap();
+        if self.state.scale_probe && self.state.scale_dirty {
+            self.commit(true);
+        }
     }
 
     pub fn commit(&mut self, damage: bool) {
-        if damage {
+        if self.state.scale_probe && damage {
+            let scale = self.state.scale120;
+            let (lw, lh) = self.state.size;
+            let w = ((lw as f64 * scale as f64 / 120.0).ceil() as i32).max(1);
+            let h = ((lh as f64 * scale as f64 / 120.0).ceil() as i32).max(1);
+            self.buffer = buffer(&self.shm, &self.queue.handle(), w, h, |x, y| {
+                COLOURS[usize::from(x >= w / 2) + 2 * usize::from(y >= h / 2)]
+            });
+            self.viewport.as_ref().unwrap().set_destination(lw, lh);
+            self.surface.set_buffer_scale(1);
+            self.surface.attach(Some(&self.buffer), 0, 0);
+            self.surface.damage_buffer(0, 0, w, h);
+            self.state.buffer_info = (w, h, scale);
+            self.state.log_scale(ScaleEvent::Commit(w, h, scale));
+            self.state.scale_dirty = false;
+        }
+        if damage && !self.state.scale_probe {
             self.surface.attach(Some(&self.buffer), 0, 0);
             self.surface
                 .damage_buffer(0, 0, self.state.size.0, self.state.size.1);
         }
         self.surface.frame(&self.queue.handle(), ());
-        self.presentation
-            .feedback(&self.surface, &self.queue.handle(), ());
+        self.state.commit_id += 1;
+        let (w, h, scale) = self.state.buffer_info;
+        self.presentation.feedback(
+            &self.surface,
+            &self.queue.handle(),
+            (self.state.commit_id, w, h, scale),
+        );
         self.surface.commit();
         self.conn.flush().unwrap();
     }
@@ -643,6 +745,7 @@ impl Dispatch<XdgSurface, ()> for State {
         if let xdg_surface::Event::Configure { serial } = event {
             mapping_trace!("PATTERN xdg_surface.configure serial={serial}");
             surface.ack_configure(serial);
+            state.log_scale(ScaleEvent::Ack(serial));
             mapping_trace!("PATTERN ack_configure serial={serial}");
             state.configured = true;
         }
@@ -657,7 +760,23 @@ impl Dispatch<XdgToplevel, ()> for State {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let xdg_toplevel::Event::Configure { width, height, .. } = event {
+        if let xdg_toplevel::Event::Configure {
+            width,
+            height,
+            states,
+        } = event
+        {
+            state.log_scale(ScaleEvent::Configure(
+                width,
+                height,
+                states
+                    .chunks_exact(4)
+                    .map(|b| u32::from_ne_bytes(b.try_into().unwrap()))
+                    .collect(),
+            ));
+            if state.scale_probe {
+                state.scale_dirty = true;
+            }
             mapping_trace!("PATTERN xdg_toplevel.configure size={width}x{height}");
             state.size = (width, height);
         }
@@ -673,6 +792,7 @@ impl Dispatch<WlCallback, ()> for State {
         _: &QueueHandle<Self>,
     ) {
         if let wl_callback::Event::Done { .. } = event {
+            state.log_scale(ScaleEvent::Callback);
             state.callbacks += 1;
         }
     }
@@ -713,12 +833,12 @@ impl Dispatch<WpPresentation, ()> for State {
         }
     }
 }
-impl Dispatch<WpPresentationFeedback, ()> for State {
+impl Dispatch<WpPresentationFeedback, (u64, i32, i32, u32)> for State {
     fn event(
         state: &mut Self,
         _: &WpPresentationFeedback,
         event: wp_presentation_feedback::Event,
-        _: &(),
+        buffer: &(u64, i32, i32, u32),
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
@@ -735,6 +855,9 @@ impl Dispatch<WpPresentationFeedback, ()> for State {
                     wayland_client::WEnum::Value(wp_presentation_feedback::Kind::empty())
                 );
                 state.presented += 1;
+                state.log_scale(ScaleEvent::Presented(
+                    buffer.0, buffer.1, buffer.2, buffer.3,
+                ));
                 state.times.push(
                     (((tv_sec_hi as u64) << 32) | tv_sec_lo as u64) * 1_000_000_000
                         + tv_nsec as u64,
@@ -787,7 +910,45 @@ impl Dispatch<wayland_protocols::ext::idle_notify::v1::client::ext_idle_notifica
 }
 delegate_noop!(State: ignore wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1);
 delegate_noop!(State: ignore wayland_protocols::wp::idle_inhibit::zv1::client::zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1);
-delegate_noop!(State: ignore WlSurface);
+impl Dispatch<WlSurface, ()> for State {
+    fn event(
+        state: &mut Self,
+        _: &WlSurface,
+        event: wayland_client::protocol::wl_surface::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wayland_client::protocol::wl_surface::Event::PreferredBufferScale { factor } = event
+        {
+            state.log_scale(ScaleEvent::BufferScale(factor));
+            if state.scale_probe && !state.fractional_received {
+                state.scale120 = factor as u32 * 120;
+                state.scale_dirty = true;
+            }
+        }
+    }
+}
+delegate_noop!(State: ignore WpViewporter);
+delegate_noop!(State: ignore WpViewport);
+delegate_noop!(State: ignore WpFractionalScaleManagerV1);
+impl Dispatch<WpFractionalScaleV1, ()> for State {
+    fn event(
+        state: &mut Self,
+        _: &WpFractionalScaleV1,
+        event: wp_fractional_scale_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let wp_fractional_scale_v1::Event::PreferredScale { scale } = event {
+            state.log_scale(ScaleEvent::Preferred(scale));
+            state.scale120 = scale;
+            state.fractional_received = true;
+            state.scale_dirty = true;
+        }
+    }
+}
 delegate_noop!(State: ignore WlShm);
 delegate_noop!(State: WlShmPool);
 impl Dispatch<WlBuffer, ()> for State {

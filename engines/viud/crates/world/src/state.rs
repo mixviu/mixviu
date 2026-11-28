@@ -600,6 +600,29 @@ impl Orchestrator {
         }
     }
 
+    /// Wake an arriving window before scheduling its reveal. Stamp the dwell
+    /// clock even when it was not suspended, so housekeeping cannot undo this.
+    pub fn wake_now(&mut self, window: &smithay::desktop::Window) {
+        use crate::window::interface::record::window::LoopWindow;
+        let Some(uuid) = window.uuid() else { return };
+        self.last_on_pane_awake
+            .insert(uuid, self.start_time.elapsed().as_secs_f32());
+        if self.suspended.remove(&uuid) {
+            shell::set_suspended(window, false);
+            shell::send_pending(window);
+        }
+        // send_frame walks the surface and popup trees and is a no-op for
+        // surfaces that do not await a callback. Zero throttle bypasses the
+        // hidden-window 1 Hz trickle, without holding presentation for a reply.
+        let output = self.current_output();
+        window.send_frame(
+            &output,
+            self.start_time.elapsed(),
+            Some(std::time::Duration::ZERO),
+            |_, _| Some(output.clone()),
+        );
+    }
+
     /// Publish `xdg_toplevel.suspended` across every world, from the per-pane `on_pane_awake`
     /// marker every monitor filled this frame.
     ///

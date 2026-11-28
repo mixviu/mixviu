@@ -110,13 +110,83 @@ fn update_fractional(state: &mut Loop) {
             }
         }
     }
+    // Policy visibility has no approach phase: switching workspaces or restoring
+    // a minimised window reveals its retained buffer immediately. Keep its pane
+    // scale in every mode, using geometry rather than the draw visibility sets.
+    // visual.visible=false (including collapsed groups) retains its old behaviour.
+    // space_state() resolves only worlds.spawn_target(); parked-world Spaces
+    // enter only the separate other_world_spaces() idle pass below.
+    for output in state.inner.space_state().state.outputs() {
+        let Some(mode) = output.current_mode() else {
+            continue;
+        };
+        let Some(vps) = state
+            .inner
+            .output_views()
+            .map
+            .get(&world::state::output_key(output))
+        else {
+            continue;
+        };
+        let scale = output.current_scale().fractional_scale();
+        let layout =
+            world::viewport::layout::compute(vps, smithay::utils::Rectangle::from_size(mode.size));
+        for region in layout.regions {
+            let Some(camera) = vps.camera_of(region.slot) else {
+                continue;
+            };
+            let camera = &camera.transform;
+            let ctx = world::camera::transform::translate::transform::Context::new_region(
+                (camera.position.x, camera.position.y),
+                camera.zoom,
+                (
+                    region.rect.loc.x as f64 / scale,
+                    region.rect.loc.y as f64 / scale,
+                ),
+                (region.rect.size.w as f64, region.rect.size.h as f64),
+                scale,
+            );
+            let want = protocols::fractional::debounce::published(&cfg, camera.zoom, scale);
+            for window in state.inner.space_state().state.elements() {
+                use dispatcher::wire::trait_::surface_event::SurfaceHandle;
+                let Some(handle) = SurfaceHandle::of_window(window) else {
+                    continue;
+                };
+                let comp = &state.inner.comp;
+                if !comp.hidden(&handle)
+                    || !comp
+                        .registry
+                        .id_for_handle(&handle)
+                        .is_some_and(|id| comp.visual(id).visible)
+                {
+                    continue;
+                }
+                let Some(loc) = state.inner.space_state().state.element_location(window) else {
+                    continue;
+                };
+                let size = world::camera::transform::translate::slot::expected_size(window)
+                    .unwrap_or_else(|| window.geometry().size);
+                if !slot_in_grace(loc, size, ctx, region.rect) {
+                    continue;
+                }
+                if let Some(surface) = window.wl_surface() {
+                    let surface = surface.into_owned();
+                    if best.get(&surface.id()).is_none_or(|entry| want > entry.0) {
+                        best.insert(surface.id(), (want, surface));
+                    }
+                }
+            }
+        }
+    }
     // Invisible-window strategy (`fractional_invisible` preference, live):
     // "off" — invisible windows keep receiving zoom-driven updates (the
     // historical behavior; backfilled below, since the render cull keeps them
-    // out of the on-pane sets). "optimized" — invisible windows get no
-    // publishes until visible again; parked worlds' windows get scale 1 so
+    // out of the on-pane sets). "optimized" — spatially off-pane and visual-hidden
+    // windows get no publishes until visible again; on-pane policy-hidden
+    // windows receive updates above. Parked worlds' windows get scale 1 so
     // their clients drop hi-res buffers. "full" — the hosted world's invisible
-    // windows get scale 1 too. Capture targets are drawn, so they count as
+    // spatially off-pane windows get scale 1 too. Policy-hidden on-pane windows
+    // are already in best above. Capture targets are drawn, so they count as
     // visible in every mode.
     let mode = state.inner.preference.fractional_invisible.clone();
     let full = mode == "full";
@@ -241,6 +311,52 @@ fn reassert_slots_after_scale(state: &mut Loop, emitted: &[WlSurface]) {
 /// before they scroll into view.
 const FRACTIONAL_GRACE_RANGE: f64 = 256.0;
 
+#[test]
+fn grace_band_is_screen_logical_at_non_unit_zoom() {
+    use world::camera::transform::translate::transform::Context;
+    // 512 logical wide, half-width 256; project the slot's right edge to
+    // -255 (inside) or -257 (outside), at both zoom 1 and zoom 2.
+    for zoom in [1.0, 2.0] {
+        let pane = smithay::utils::Rectangle::from_size((1280, 720).into());
+        for (right, expected) in [(-255.0, true), (-257.0, false)] {
+            let ctx = Context::new(
+                ((256.0 - right) / zoom + 200.0, 0.0),
+                zoom,
+                (1280.0, 720.0),
+                2.5,
+            );
+            assert_eq!(
+                slot_in_grace((0, 0).into(), (200, 160).into(), ctx, pane),
+                expected
+            );
+        }
+    }
+}
+
+fn slot_in_grace(
+    loc: Point<i32, Logical>,
+    size: Size<i32, Logical>,
+    ctx: world::camera::transform::translate::transform::Context,
+    pane: smithay::utils::Rectangle<i32, Physical>,
+) -> bool {
+    if size.w <= 0 || size.h <= 0 {
+        return false;
+    }
+    let project = |x: f64, y: f64| -> Point<i32, Physical> {
+        let t: world::camera::transform::translate::transform::Transform = ((x, y), ctx).into();
+        t.into()
+    };
+    let tl = project(loc.x as f64, loc.y as f64);
+    let br = project((loc.x + size.w) as f64, (loc.y + size.h) as f64);
+    // The band is in screen-logical pixels, independent of camera zoom.
+    // Transform already applies zoom to the slot before this intersection.
+    let pad = (FRACTIONAL_GRACE_RANGE * ctx.scale).round() as i32;
+    tl.x < pane.loc.x + pane.size.w + pad
+        && pane.loc.x - pad < br.x
+        && tl.y < pane.loc.y + pane.size.h + pad
+        && pane.loc.y - pad < br.y
+}
+
 /// The "full" strategy's grace band: uuids of group-visible windows whose slot
 /// rect, projected through the pane's camera (`render_target`), falls within
 /// `pane` inflated by [`FRACTIONAL_GRACE_RANGE`]. These get their real
@@ -253,7 +369,6 @@ fn grace_windows(
 ) -> Vec<uuid::Uuid> {
     use world::window::interface::draw::visible::DrawWindow;
     let ctx = state.viewport_context();
-    let pad = (FRACTIONAL_GRACE_RANGE * ctx.scale).round() as i32;
     let windows: Vec<(uuid::Uuid, Window)> = state
         .inner
         .space_state()
@@ -269,20 +384,7 @@ fn grace_windows(
         };
         let sz = world::camera::transform::translate::slot::expected_size(&w)
             .unwrap_or_else(|| w.geometry().size);
-        if sz.w <= 0 || sz.h <= 0 {
-            continue;
-        }
-        let project = |x: f64, y: f64| -> Point<i32, Physical> {
-            let t: world::camera::transform::translate::transform::Transform = ((x, y), ctx).into();
-            t.into()
-        };
-        let tl = project(loc.x as f64, loc.y as f64);
-        let br = project((loc.x + sz.w) as f64, (loc.y + sz.h) as f64);
-        if tl.x < pane.loc.x + pane.size.w + pad
-            && pane.loc.x - pad < br.x
-            && tl.y < pane.loc.y + pane.size.h + pad
-            && pane.loc.y - pad < br.y
-        {
+        if slot_in_grace(loc, sz, ctx, pane) {
             out.push(u);
         }
     }

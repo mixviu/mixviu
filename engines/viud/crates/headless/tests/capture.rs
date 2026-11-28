@@ -235,6 +235,366 @@ fn target(row: &Value) -> Value {
     json!({"id":row["id"],"generation":row["generation"]})
 }
 
+fn scale_pump(pattern: &mut Pattern, duration: Duration) {
+    let until = Instant::now() + duration;
+    while Instant::now() < until {
+        pattern.pump();
+        thread::sleep(Duration::from_millis(2));
+    }
+}
+
+fn scale_pump_rendered(
+    bus: &Bus,
+    process: &process::Process,
+    pattern: &mut Pattern,
+    duration: Duration,
+) {
+    let until = Instant::now() + duration;
+    while Instant::now() < until {
+        pattern.pump();
+        bus.call("comp.capture.frame", json!({"output":"headless-0", "path":process.root.join("scale-tick.ppm"), "format":"ppm"}));
+        pattern.pump();
+        thread::sleep(Duration::from_millis(100));
+    }
+}
+
+#[test]
+fn fractional_workspace_return_keeps_scale_and_first_buffer() {
+    fractional_return(false, false, false);
+}
+
+#[test]
+fn fractional_unminimize_keeps_scale_and_first_buffer() {
+    fractional_return(true, false, false);
+}
+
+#[test]
+fn fractional_wake_precedes_first_returned_presentation() {
+    fractional_return(false, true, false);
+}
+
+#[test]
+fn fractional_pan_off_and_grace_band_republish_real_scale() {
+    use pattern::ScaleEvent;
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("fractional-pan");
+    let mut process = process::spawn_scale_probe("fractional-pan", &bus.url);
+    let mut client = Pattern::scale_probe(connect(&mut process));
+    client.wait_callback(0);
+    bus.ready();
+    let row = bus.window(&mut client);
+    scale_pump(&mut client, Duration::from_secs(2));
+    let x = row["window_x"].as_f64().unwrap();
+    let y = row["window_y"].as_f64().unwrap();
+    let start = client.state.events.len();
+    // Right edge of the slot lies more than 256 logical units off-pane.
+    fractional_camera(
+        &bus,
+        &process,
+        &mut client,
+        x + 200.0 + 256.0 + 256.0,
+        y + 80.0,
+        1.0,
+    );
+    scale_pump(&mut client, Duration::from_secs(2));
+    assert!(
+        client.state.events[start..]
+            .iter()
+            .any(|(_, e)| *e == ScaleEvent::Preferred(120)),
+        "{:?}",
+        client.state.events
+    );
+    let start = client.state.events.len();
+    // Slot is still outside the pane, now inside its grace band.
+    fractional_camera(
+        &bus,
+        &process,
+        &mut client,
+        x + 200.0 + 256.0 + 100.0,
+        y + 80.0,
+        1.0,
+    );
+    scale_pump(&mut client, Duration::from_secs(2));
+    assert!(
+        client.state.events[start..]
+            .iter()
+            .any(|(_, e)| *e == ScaleEvent::Preferred(300)),
+        "{:?}",
+        client.state.events
+    );
+}
+
+#[test]
+fn fractional_hidden_zoom_reaches_client_before_return() {
+    use pattern::ScaleEvent;
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("fractional-zoom");
+    let mut process = process::spawn_scale_probe("fractional-zoom", &bus.url);
+    let mut client = Pattern::scale_probe(connect(&mut process));
+    client.wait_callback(0);
+    bus.ready();
+    let row = bus.window(&mut client);
+    scale_pump(&mut client, Duration::from_secs(2));
+    bus.call("comp.workspace.switch", json!({"index":2}));
+    let start = client.state.events.len();
+    fractional_camera(
+        &bus,
+        &process,
+        &mut client,
+        row["window_x"].as_f64().unwrap() + 100.0,
+        row["window_y"].as_f64().unwrap() + 80.0,
+        2.0,
+    );
+    scale_pump(&mut client, Duration::from_secs(2));
+    assert!(
+        client.state.events[start..]
+            .iter()
+            .any(|(_, e)| *e == ScaleEvent::Preferred(540)),
+        "{:?}",
+        client.state.events
+    );
+    assert!(
+        client.state.events[start..]
+            .iter()
+            .any(|(_, e)| *e == ScaleEvent::Commit(900, 720, 540)),
+        "{:?}",
+        client.state.events
+    );
+}
+
+fn fractional_camera(
+    bus: &Bus,
+    process: &process::Process,
+    client: &mut Pattern,
+    x: f64,
+    y: f64,
+    zoom: f64,
+) {
+    fs::write(
+        process.root.join("record-input-next"),
+        format!("fractional-camera:{x}:{y}:{zoom}"),
+    )
+    .unwrap();
+    fs::rename(
+        process.root.join("record-input-next"),
+        process.root.join("record-input"),
+    )
+    .unwrap();
+    // A real policy operation requests a composition; the fixture only changes
+    // the camera the production scene and scale aggregation subsequently read.
+    client.commit(true);
+    // A hidden commit damages no output. Force a real output capture to render.
+    bus.call(
+        "comp.capture.frame",
+        json!({"output":"headless-0", "path":process.root.join("camera.ppm"), "format":"ppm"}),
+    );
+}
+
+#[test]
+fn fractional_unminimize_wakes_before_reveal() {
+    fractional_return(true, true, false);
+}
+
+#[test]
+fn fractional_restore_wakes_before_reveal() {
+    fractional_return(true, true, true);
+}
+
+#[test]
+fn fractional_minimised_destination_stays_suspended() {
+    use pattern::ScaleEvent;
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("fractional-still-hidden");
+    let mut process = process::spawn_scale_probe("fractional-still-hidden", &bus.url);
+    let mut client = Pattern::scale_probe(connect(&mut process));
+    client.wait_callback(0);
+    bus.ready();
+    let row = bus.window(&mut client);
+    bus.call("comp.window.minimize", target(&row));
+    bus.call("comp.workspace.switch", json!({"index":2}));
+    scale_pump_rendered(&bus, &process, &mut client, Duration::from_secs(7));
+    // xdg-shell.xml xdg_toplevel.state: suspended=9, not zero-indexed.
+    assert!(
+        client
+            .state
+            .events
+            .iter()
+            .any(|(_, e)| matches!(e, ScaleEvent::Configure(_, _, s) if s.contains(&9)))
+    );
+    // Fence the 1 Hz trickle, then queue a fresh committed callback. A switch
+    // must not answer it early for a window that remains minimised.
+    let callbacks = client.state.callbacks;
+    client.commit(true); // Explicitly requests wl_surface.frame + commits it.
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while client.state.callbacks == callbacks {
+        scale_pump_rendered(&bus, &process, &mut client, Duration::from_millis(50));
+        assert!(Instant::now() < deadline);
+    }
+    client.commit(true);
+    client.pump();
+    let start = client.state.events.len();
+    bus.call("comp.workspace.switch", json!({"index":1}));
+    scale_pump(&mut client, Duration::from_millis(250));
+    assert!(!client.state.events[start..].iter().any(|(_, e)| match e {
+        ScaleEvent::Callback => true,
+        ScaleEvent::Configure(_, _, s) => !s.contains(&9),
+        _ => false,
+    }));
+    assert_eq!(bus.window(&mut client)["minimized"], true);
+}
+
+#[test]
+fn fractional_visual_hidden_keeps_full_idle_behaviour() {
+    use pattern::ScaleEvent;
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("fractional-visual-hidden");
+    let mut process = process::spawn_scale_probe("fractional-visual-hidden", &bus.url);
+    let mut client = Pattern::scale_probe(connect(&mut process));
+    client.wait_callback(0);
+    bus.ready();
+    let row = bus.window(&mut client);
+    scale_pump(&mut client, Duration::from_secs(2));
+    assert_eq!(client.state.scale120, 300);
+    bus.call(
+        "comp.window.place",
+        place_args(&row, json!({"visible":false})),
+    );
+    scale_pump_rendered(&bus, &process, &mut client, Duration::from_secs(2));
+    assert_eq!(client.state.scale120, 120, "{:?}", client.state.events);
+    let start = client.state.events.len();
+    bus.call("comp.workspace.switch", json!({"index":2}));
+    bus.call("comp.workspace.switch", json!({"index":1}));
+    scale_pump_rendered(&bus, &process, &mut client, Duration::from_secs(2));
+    assert!(
+        !client.state.events[start..]
+            .iter()
+            .any(|(_, e)| matches!(e, ScaleEvent::Preferred(300)))
+    );
+}
+
+#[test]
+fn fractional_parked_world_is_not_retained() {
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("fractional-parked");
+    let mut process = process::spawn_scale_probe("fractional-parked", &bus.url);
+    let mut client = Pattern::scale_probe(connect(&mut process));
+    client.wait_callback(0);
+    bus.ready();
+    bus.window(&mut client);
+    scale_pump(&mut client, Duration::from_secs(2));
+    bus.call("comp.workspace.switch", json!({"index":2}));
+    scale_pump_rendered(&bus, &process, &mut client, Duration::from_secs(2));
+    assert_eq!(client.state.scale120, 300);
+    fs::write(process.root.join("record-input"), "fractional-park").unwrap();
+    scale_pump_rendered(&bus, &process, &mut client, Duration::from_secs(2));
+    assert_eq!(client.state.scale120, 120, "{:?}", client.state.events);
+}
+
+fn fractional_return(minimized: bool, suspended: bool, activate: bool) {
+    use pattern::ScaleEvent;
+    if !process::record_available() {
+        return;
+    }
+    let bus = Bus::start("fractional-return");
+    let mut process = process::spawn_scale_probe("fractional-return", &bus.url);
+    let mut client = Pattern::scale_probe(connect(&mut process));
+    client.wait_callback(0);
+    bus.ready();
+    let row = bus.window(&mut client);
+    scale_pump(&mut client, Duration::from_secs(2));
+    assert_eq!(client.state.scale120, 300, "{:?}", client.state.events);
+    let start = client.state.events.len();
+    if minimized {
+        bus.call("comp.window.minimize", target(&row));
+    } else {
+        bus.call("comp.workspace.switch", json!({"index":2}));
+    }
+    // debounce_max is 750 ms. Also cover the five-second suspend dwell.
+    scale_pump_rendered(
+        &bus,
+        &process,
+        &mut client,
+        Duration::from_secs(if suspended { 7 } else { 2 }),
+    );
+    assert!(
+        !client.state.events[start..]
+            .iter()
+            .any(|(_, e)| matches!(e, ScaleEvent::Preferred(_) | ScaleEvent::BufferScale(_))),
+        "{:?}",
+        client.state.events
+    );
+    // wayland-protocols/stable/xdg-shell/xdg-shell.xml: xdg_toplevel.state
+    // starts at maximized=1; tiled_bottom=8, suspended=9 (since version 6).
+    if suspended {
+        assert!(
+            client.state.events[start..].iter().any(
+                |(_, e)| matches!(e, ScaleEvent::Configure(_, _, states) if states.contains(&9))
+            ),
+            "missing suspended configure: {:?}",
+            client.state.events
+        );
+    }
+    // Queue a callback while hidden; the arriving-window path must answer it
+    // before a presentation of the returned content, without waiting for trickle.
+    client.commit(true);
+    client.pump();
+    let returning = client.state.events.len();
+    if minimized {
+        let mut args = target(&row);
+        args["activate"] = json!(activate);
+        bus.call("comp.window.restore", args);
+    } else {
+        bus.call("comp.workspace.switch", json!({"index":1}));
+    }
+    scale_pump(&mut client, Duration::from_secs(2));
+    let events = &client.state.events[returning..];
+    assert!(
+        !events
+            .iter()
+            .any(|(_, e)| matches!(e, ScaleEvent::Preferred(_) | ScaleEvent::BufferScale(_))),
+        "{events:?}"
+    );
+    let first = events
+        .iter()
+        .position(|(_, e)| matches!(e, ScaleEvent::Presented(..)))
+        .expect("returned presentation");
+    // wayland-protocols/stable/xdg-shell/xdg-shell.xml: xdg_toplevel.state
+    // starts at maximized=1; tiled_bottom=8, suspended=9 (since version 6).
+    if suspended {
+        assert!(
+            events[..first].iter().any(
+                |(_, e)| matches!(e, ScaleEvent::Configure(_, _, states) if !states.contains(&9))
+            ),
+            "wake configure after reveal: {events:?}"
+        );
+        assert!(
+            events[..first]
+                .iter()
+                .any(|(_, e)| matches!(e, ScaleEvent::Callback)),
+            "callback after reveal: {events:?}"
+        );
+    }
+    let ScaleEvent::Presented(commit_id, w, h, scale) = events[first].1 else {
+        unreachable!()
+    };
+    assert!(commit_id > 0);
+    assert_eq!(
+        (w, h, scale),
+        (500, 400, 300),
+        "first presented commit: {events:?}"
+    );
+}
+
 #[test]
 fn record_cold_start_under_load_has_no_capture_drops() {
     if !process::record_available() {

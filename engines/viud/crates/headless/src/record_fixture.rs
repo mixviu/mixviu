@@ -12,6 +12,70 @@ pub fn before_frame(state: &mut Loop, output: &smithay::output::Output) {
     };
     let mode = std::fs::read_to_string(std::path::Path::new(&root).join("record-input"))
         .unwrap_or_default();
+    if mode == "fractional-park" {
+        if PREVIOUS.with_borrow(|last| *last == mode) {
+            return;
+        }
+        // Keep a real mapped window and output in a dormant world's Space,
+        // at the same on-pane slot, without changing the hosted world.
+        let window = state
+            .inner
+            .space_state()
+            .state
+            .elements()
+            .next()
+            .unwrap()
+            .clone();
+        let loc = state
+            .inner
+            .space_state()
+            .state
+            .element_location(&window)
+            .unwrap();
+        let id = world::world::manager::KERNEL;
+        let mut parked =
+            world::kind::build::base::spatial(id, "fractional-parked", vec![], &state.inner.kernel);
+        let space = &mut parked
+            .storage_mut()
+            .get_mut(&world::host::space::base::SPACE_MUT)
+            .inner
+            .state;
+        space.map_output(output, (0, 0));
+        state.inner.space_state_mut().state.unmap_elem(&window);
+        space.map_element(window.clone(), loc, false);
+        state.inner.worlds.add(parked);
+        assert!(
+            !state
+                .inner
+                .space_state()
+                .state
+                .elements()
+                .any(|w| w == &window)
+        );
+        assert!(
+            state
+                .inner
+                .other_world_spaces()
+                .iter()
+                .any(|s| s.state.elements().any(|w| w == &window))
+        );
+        PREVIOUS.with_borrow_mut(|last| *last = mode);
+        return;
+    }
+    // The production camera is pinned. Exercise fractional pan/zoom contracts
+    // through the existing opt-in fixture, after pinning and before composition.
+    if let Some(args) = mode.strip_prefix("fractional-camera:") {
+        let values: Vec<f64> = args
+            .split(':')
+            .map(|v| v.parse().expect("fixture camera number"))
+            .collect();
+        assert_eq!(values.len(), 3);
+        let camera = state.inner.camera_mut();
+        camera.transform.position.x = values[0];
+        camera.transform.position.y = values[1];
+        camera.transform.zoom = values[2];
+        return;
+    }
     if mode == "cold-readback" {
         screencopy::file::testing::penalize_first_readback();
         return;
