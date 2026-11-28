@@ -872,7 +872,9 @@ mod tests {
             );
         }
         let out = ctx.run_ui(egui::RawInput::default(), |ui| show(ui, "sting", &node));
-        let egui::ImageData::Color(actual) = &out.textures_delta.set
+        let egui::ImageData::Color(actual) = &out
+            .textures_delta
+            .set
             .get(&texture)
             .expect("completed shadow texture delta")
             .last()
@@ -911,7 +913,10 @@ mod tests {
         let texture = {
             let store = shared.lock().unwrap();
             let pending = store.pending.as_ref().expect("sibling retains root result");
-            let ready = pending.ready.as_ref().expect("frame promoted channel result");
+            let ready = pending
+                .ready
+                .as_ref()
+                .expect("frame promoted channel result");
             assert_eq!(ready.size, expected.size);
             assert_eq!(ready.pixels, expected.pixels);
             assert!(matches!(

@@ -570,14 +570,15 @@ fn restoring_the_old_draw_barrier_times_out_ping() {
     let timeout_margin = Duration::from_millis(1800);
     let ping = rt.spawn(async move {
         let started = Instant::now();
-        let answer = c.call_with_headers_raw_within(
-            "workshop",
-            "workshop.ping",
-            &BTreeMap::new(),
-            "{}",
-            call_deadline,
-        )
-        .await;
+        let answer = c
+            .call_with_headers_raw_within(
+                "workshop",
+                "workshop.ping",
+                &BTreeMap::new(),
+                "{}",
+                call_deadline,
+            )
+            .await;
         (answer, started.elapsed())
     });
     let end = Instant::now() + Duration::from_secs(60);
@@ -587,7 +588,9 @@ fn restoring_the_old_draw_barrier_times_out_ping() {
         std::thread::sleep(Duration::from_millis(2));
     }
     let (answer, elapsed) = rt.block_on(ping).unwrap();
-    let bus::SupervisedError::Transport(error) = answer.expect_err("old barrier must time out ping") else {
+    let bus::SupervisedError::Transport(error) =
+        answer.expect_err("old barrier must time out ping")
+    else {
         panic!("old barrier must produce a transport timeout");
     };
     assert!(matches!(error, bus::ClientError::Timeout { .. }));
