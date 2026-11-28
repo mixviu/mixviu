@@ -1796,6 +1796,7 @@ pub fn apply_client_requests(lp: &mut Loop) {
                 refusal,
                 created,
                 spent,
+                creator_focused,
             } => {
                 let facts = window_facts(lp, id);
                 let scene = policy::window::SceneFacts {
@@ -1815,6 +1816,7 @@ pub fn apply_client_requests(lp: &mut Loop) {
                     refusal,
                     created.elapsed(),
                     spent,
+                    creator_focused,
                 ) {
                     Ok(decision) => {
                         if let Some(reason) = decision.reason {

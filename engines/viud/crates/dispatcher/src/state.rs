@@ -1966,6 +1966,12 @@ mod handler_impls {
             rd::new_fractional_scale(scale, &surface);
         }
     }
+    fn creator_owns(data: &XdgActivationTokenData, surface: &WlSurface) -> bool {
+        data.client_id.as_ref().is_some_and(|creator| {
+            surface.client().is_some_and(|client| client.id() == *creator)
+        })
+    }
+
     impl XdgActivationHandler for Dispatch {
         fn token_created(
             &mut self,
@@ -1973,32 +1979,24 @@ mod handler_impls {
             data: XdgActivationTokenData,
         ) -> bool {
             use protocols::xdg::activation::request::ActivationGrant;
-            use smithay::reexports::wayland_server::Resource;
             let keyboard = self.seat.seat.get_keyboard();
             let focus = keyboard
                 .as_ref()
                 .and_then(|keyboard| keyboard.current_focus());
-            let creator_owns = |surface: &WlSurface| {
-                data.client_id.as_ref().is_some_and(|creator| {
-                    surface
-                        .client()
-                        .is_some_and(|client| client.id() == *creator)
-                })
-            };
             let refusal = ::policy::window::activation_grant(
                 data.serial.is_some(),
                 data.serial.as_ref().is_some_and(|(_, seat)| {
                     smithay::input::Seat::<Dispatch>::from_resource(seat).as_ref()
                         == Some(&self.seat.seat)
                 }),
-                focus.as_ref().is_some_and(creator_owns),
+                focus.as_ref().is_some_and(|surface| creator_owns(&data, surface)),
                 data.serial.as_ref().is_some_and(|(serial, _)| {
                     keyboard
                         .as_ref()
                         .and_then(|keyboard| keyboard.last_enter())
                         .is_some_and(|enter| serial.is_no_older_than(&enter))
                 }),
-                data.surface.as_ref().is_none_or(creator_owns),
+                data.surface.as_ref().is_none_or(|surface| creator_owns(&data, surface)),
             );
             data.user_data
                 .insert_if_missing_threadsafe(|| ActivationGrant::new(refusal));
@@ -2025,12 +2023,16 @@ mod handler_impls {
             let grant = token_data
                 .user_data
                 .get::<protocols::xdg::activation::request::ActivationGrant>();
+            let creator_focused = self.seat.seat.get_keyboard()
+                .and_then(|keyboard| keyboard.current_focus())
+                .as_ref().is_some_and(|surface| creator_owns(&token_data, surface));
             self.push_surface_event(crate::wire::trait_::surface_event::SurfaceEvent::Request {
                 handle: crate::wire::trait_::surface_event::SurfaceHandle::wl(&surface),
                 request: crate::wire::trait_::surface_event::WindowRequest::TokenActivation {
                     refusal: grant.map_or(Some("no_grant"), |grant| grant.refusal),
                     created: token_data.timestamp,
                     spent: grant.is_some_and(|grant| grant.spend()),
+                    creator_focused,
                 },
             });
         }

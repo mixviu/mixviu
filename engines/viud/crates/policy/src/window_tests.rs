@@ -31,11 +31,12 @@ fn activation_refusals_do_not_change_workspaces_or_emit_effects() {
     use std::time::Duration;
     let (mut registry, (id, generation), _) = two_windows();
     registry.set_workspace(SurfaceId(id), 3).unwrap();
-    for (grant, age, spent, scene, reason) in [
+    for (grant, age, spent, creator_focused, scene, reason) in [
         (
             Some("no_serial"),
             Duration::ZERO,
             false,
+            true,
             SceneFacts::default(),
             "no_serial",
         ),
@@ -43,14 +44,18 @@ fn activation_refusals_do_not_change_workspaces_or_emit_effects() {
             None,
             ACTIVATION_MAX_AGE + Duration::from_nanos(1),
             false,
+            true,
             SceneFacts::default(),
             "expired",
         ),
-        (None, Duration::ZERO, true, SceneFacts::default(), "spent"),
+        (None, Duration::ZERO, true, false, SceneFacts::default(), "spent"),
+        (None, Duration::ZERO, false, false, SceneFacts::default(), "creator_lost_focus"),
+        (None, ACTIVATION_MAX_AGE + Duration::from_nanos(1), false, false, SceneFacts::default(), "expired"),
         (
             None,
             Duration::ZERO,
             false,
+            true,
             SceneFacts {
                 session_lock: true,
                 exclusive_layer: false,
@@ -61,6 +66,7 @@ fn activation_refusals_do_not_change_workspaces_or_emit_effects() {
             None,
             Duration::ZERO,
             false,
+            true,
             SceneFacts {
                 session_lock: false,
                 exclusive_layer: true,
@@ -80,6 +86,7 @@ fn activation_refusals_do_not_change_workspaces_or_emit_effects() {
             grant,
             age,
             spent,
+            creator_focused,
         )
         .unwrap();
         assert_eq!(decision.reason, Some(reason));
@@ -106,6 +113,7 @@ fn activation_raises_switches_restores_and_has_noop_targets() {
             None,
             ACTIVATION_MAX_AGE,
             false,
+            true,
         )
         .unwrap()
     };
@@ -149,6 +157,7 @@ fn activation_raises_switches_restores_and_has_noop_targets() {
         None,
         Duration::ZERO,
         false,
+        true,
     )
     .unwrap();
     assert_eq!(decision.reason, Some("unmapped"));

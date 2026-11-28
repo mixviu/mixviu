@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 // Copyright 2026 Mark Constable <mc@mixos.dev>
-//! Live staging probe: `activation_probe background|stale|foreign|unknown`.
+//! Live staging probe: `activation_probe background|stale|foreign|unknown|handoff`.
 //! Mapping gives this fixture focus. The operator uses comp.window.focus to
 //! return focus to the witness during the announced five-second preparation.
 use std::{
@@ -30,8 +30,8 @@ fn sync(client: &mut TestClient) {
 fn main() {
     let mode = std::env::args()
         .nth(1)
-        .expect("background|stale|foreign|unknown");
-    assert!(["background", "stale", "foreign", "unknown"].contains(&mode.as_str()));
+        .expect("background|stale|foreign|unknown|handoff");
+    assert!(["background", "stale", "foreign", "unknown", "handoff"].contains(&mode.as_str()));
     let socket = std::path::PathBuf::from(std::env::var_os("XDG_RUNTIME_DIR").unwrap())
         .join(std::env::var_os("WAYLAND_DISPLAY").unwrap());
     let mut client = TestClient::new(UnixStream::connect(&socket).unwrap());
@@ -60,7 +60,7 @@ fn main() {
     // Keep A alive while background B presents A's token after witness focus returns.
     let mut issuer = None;
     let mut foreign_token = None;
-    if mode == "foreign" {
+    if mode == "foreign" || mode == "handoff" {
         let mut a = TestClient::new(UnixStream::connect(&socket).unwrap());
         sync(&mut a);
         a.bind_globals();
@@ -79,17 +79,19 @@ fn main() {
         a.activation_token(Some(serial_a), Some(&surface_a));
         sync(&mut a);
         foreign_token = a.state.activation_tokens.last().cloned();
-        println!("ISSUED mode=foreign; A minted while keyboard-focused");
+        println!("ISSUED mode={mode}; A minted while keyboard-focused");
         issuer = Some((a, surface_a, _xdg_a, top_a));
     }
-    println!("READY mode={mode}; return focus to witness now");
-    pump(
+    if mode != "handoff" {
+        println!("READY mode={mode}; return focus to witness now");
+        pump(
         &mut client,
         Duration::from_secs(if mode == "stale" { 31 } else { 5 }),
-    );
+        );
+    }
     let token = if mode == "unknown" {
         "foreign-compositor-token".to_owned()
-    } else if mode == "foreign" {
+    } else if mode == "foreign" || mode == "handoff" {
         foreign_token.expect("A must mint a real token")
     } else {
         if mode == "background" {

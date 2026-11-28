@@ -315,6 +315,7 @@ pub fn activation<H: Clone + Eq + Hash>(
     grant_refusal: Option<&'static str>,
     age: std::time::Duration,
     spent: bool,
+    creator_focused: bool,
 ) -> Result<FocusDecision, ControlReply> {
     // Normal window commands reject unmapped targets during resolution. A
     // known token for a current, unmapped surface instead records only.
@@ -331,6 +332,7 @@ pub fn activation<H: Clone + Eq + Hash>(
     let reason = grant_refusal
         .or((age > ACTIVATION_MAX_AGE).then_some("expired"))
         .or(spent.then_some("spent"))
+        .or((!creator_focused).then_some("creator_lost_focus"))
         .or(scene.session_lock.then_some("locked"))
         .or(scene.exclusive_layer.then_some("exclusive_layer"))
         .or((!record.mapped()).then_some("unmapped"));

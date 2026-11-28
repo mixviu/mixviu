@@ -81,6 +81,82 @@ fn focused(lp: &Loop) -> Option<WlSurface> {
 }
 
 #[test]
+fn presentation_requires_creator_client_focus_but_allows_return_and_second_surface() {
+    use dispatcher::wire::trait_::surface_event::SurfaceHandle;
+    for case in ["foreign", "return", "same-client"] {
+        let mut h = Harness::new();
+        h.wire.inner.comp.default_output = Some(policy::workspaces::DefaultOutput {
+            key: comp_model::snapshot::output_key(&h.wire.inner.output.name()),
+            name: h.wire.inner.output.name(),
+        });
+        let (a, _, _) = h.mapped_toplevel(64, 48);
+        let (a2, _, _) = h.mapped_toplevel(64, 48);
+        let mut extras = Vec::new();
+        for _ in 0..2 {
+            let client = h.add_client();
+            let surface = h.extra_clients[client].create_surface();
+            let (xdg, top) = h.extra_clients[client].toplevel(&surface);
+            h.extra_clients[client].commit(&surface);
+            h.roundtrip_client(client);
+            h.extra_clients[client].attach(&surface, 64, 48);
+            h.roundtrip_client(client);
+            h.tick_frame();
+            extras.push((client, surface, xdg, top));
+        }
+        let (b_client, b, _, _) = &extras[0];
+        let (w_client, w, _, _) = &extras[1];
+        let server = |handle| h.wire.inner.space.state.elements().find_map(|window| {
+            let surface = ident::surface(window)?;
+            (SurfaceHandle::wl(&surface) == handle).then_some(surface)
+        }).unwrap();
+        let server_a = server(h.handle_of(&a));
+        let server_a2 = server(h.handle_of(&a2));
+        let server_b = server(h.handle_of_client(*b_client, b));
+        let server_w = server(h.handle_of_client(*w_client, w));
+        let mut lp = policy_loop(&h);
+        h.focus_keyboard(&a);
+        let serial = h.wire.state.seat.seat.get_keyboard().unwrap().last_enter().unwrap();
+        h.client.activation_token(Some(serial.into()), Some(&a));
+        h.roundtrip();
+        let token = h.client.state.activation_tokens.last().unwrap().clone();
+        h.focus_keyboard_client(*w_client, w);
+        let expected = match case {
+            "return" => {
+                h.focus_keyboard(&a);
+                server_a.clone()
+            }
+            "same-client" => {
+                h.focus_keyboard(&a2);
+                server_a2
+            }
+            _ => server_w.clone(),
+        };
+        lp.state.seat.seat.get_keyboard().unwrap().set_focus(
+            &mut lp.state, Some(expected), smithay::utils::SERIAL_COUNTER.next_serial());
+        h.extra_clients[*b_client].activation().activate(token.clone(), b);
+        h.roundtrip_client(*b_client);
+        service(&mut h, &mut lp);
+        assert_eq!(focused(&lp), Some(if case == "foreign" { server_w } else { server_b.clone() }), "{case}");
+        let entries = protocols::xdg::activation::request::activations(&server_b);
+        assert!(entries.iter().any(|entry| entry.token.to_string() == token), "{case} recorded");
+        let grant = entries.iter().find(|entry| entry.token.to_string() == token).unwrap()
+            .token_data.user_data.get::<protocols::xdg::activation::request::ActivationGrant>().unwrap();
+        assert_eq!(grant.refusal, None, "{case} was granted at creation");
+        if case == "foreign" {
+            // A refused presentation still spends: returning focus cannot resurrect it.
+            h.focus_keyboard(&a);
+            lp.state.seat.seat.get_keyboard().unwrap().set_focus(
+                &mut lp.state, Some(server_a.clone()), smithay::utils::SERIAL_COUNTER.next_serial());
+            h.extra_clients[*b_client].activation().activate(token, b);
+            h.roundtrip_client(*b_client);
+            service(&mut h, &mut lp);
+            assert_eq!(focused(&lp), Some(server_a), "lost-focus refusal spends token");
+            assert_eq!(protocols::xdg::activation::request::activations(&server_b).len(), 1);
+        }
+    }
+}
+
+#[test]
 fn focused_creator_can_raise_another_client_but_background_unknown_and_reuse_cannot() {
     let mut h = Harness::new();
     h.wire.inner.comp.default_output = Some(policy::workspaces::DefaultOutput {

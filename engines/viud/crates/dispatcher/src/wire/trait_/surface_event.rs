@@ -154,6 +154,7 @@ pub enum WindowRequest {
         refusal: Option<&'static str>,
         created: std::time::Instant,
         spent: bool,
+        creator_focused: bool,
     },
     Maximize(bool),
     Minimize,
