@@ -48,6 +48,7 @@ mod frame_policy;
 
 #[path = "commands.rs"]
 mod commands;
+#[path = "history_projection.rs"]
 pub(crate) mod history_projection;
 
 type FrameRefusalLogs = HashMap<(String, &'static str), mesh::DiagnosticLog>;
@@ -588,11 +589,13 @@ struct PendingMeshObservation {
 }
 
 impl AppState {
+    #[cfg(test)]
     fn honours_manifest(&self, name: &str) -> bool {
         self.history_allowlist.contains(name)
     }
 
     /// PR A's history projection query. Only live, honoured registrations vouch.
+    #[cfg(test)]
     pub(crate) async fn vouched_command(&self, name: &str) -> bool {
         self.registry.names.load().vouched_command(name, &self.history_allowlist)
     }
@@ -1198,10 +1201,6 @@ async fn serve(
 
     let registry: Registry = Arc::new(history_projection::HistoryRegistry::new(HashMap::new()));
     let observe = ObserveManager::new();
-    observe.set_projector(history_projection::Projector {
-        registry: registry.clone(), authority: authority.clone(), node: node.clone(),
-        allowlist: commands::allowlist(Some(&network))?,
-    });
     observe.spawn_drainer();
 
     tokio::spawn(mesh_incoming_loop(
@@ -1292,6 +1291,10 @@ async fn serve(
         challenge_table: Arc::new(crate::admission::ChallengeTable::new()),
         live_sessions: Arc::new(RwLock::new(HashMap::new())),
     };
+    state.observe.set_projector(history_projection::Projector {
+        registry: state.registry.clone(), authority: state.authority.clone(), node: state.node_name.clone(),
+        allowlist: state.history_allowlist.clone(),
+    });
     broker.set_native_sessions(state.sessions.clone());
     let _session_maintenance = session_timer.map(|timer| {
         session::spawn_maintenance(state.registry.clone(), state.sessions.clone(), timer)
@@ -6298,6 +6301,9 @@ pub(crate) mod tests {
     mod manifest_tests {
         include!("manifest_tests.rs");
     }
+    mod projection_tests {
+        include!("projection_tests.rs");
+    }
     use std::collections::HashMap;
     use std::net::{Ipv4Addr, TcpListener};
     use std::sync::Arc;
@@ -8126,11 +8132,13 @@ pub(crate) mod tests {
                 && body["outcome"] == "rejected"
                 && body["from"] == "alice";
             failed_command_rejected |=
-                command_name == Some("noded.no_such_command") && body["outcome"] == "rejected";
-            orphan_rejected |= command_name == Some("citizen.orphan")
+                correlation == Some("unknown-command-1") && command_name == Some("unknown")
+                && body["reason"] == "unknown-verb" && body["name_len"] == "noded.no_such_command".len()
+                && body["outcome"] == "rejected";
+            orphan_rejected |= correlation == Some("orphan-1") && command_name == Some("unknown")
                 && body["message_type"] == "response"
                 && body["outcome"] == "rejected";
-            admit_rejected |= command_name == Some("noded.admit.response")
+            admit_rejected |= correlation == Some("admit-orphan-1") && command_name == Some("unknown")
                 && body["message_type"] == "response"
                 && body["outcome"] == "rejected";
             route_request_rejected |= correlation == Some("missing-route-1")

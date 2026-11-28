@@ -576,7 +576,7 @@ impl ObserveManager {
 
     /// One delivery pass. Returns whether any ring still holds events, which
     /// is what keeps the drainer's timer alive.
-    fn drain_once(&self) -> bool {
+    pub(crate) fn drain_once(&self) -> bool {
         struct DrainBatch {
             id: String,
             dropped_count: u64,
