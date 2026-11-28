@@ -56,6 +56,7 @@ pub(crate) struct ConnectionOptions {
     pub unix: Option<crate::native_client::UnixConnectOptions>,
     pub provenance: Option<crate::RegisterProvenance>,
     pub commands: Option<Vec<crate::CommandDescriptor>>,
+    pub command_names: Option<Vec<String>>,
     pub capacity: Option<usize>,
     /// Answer id-bearing requests the bounded lane drops with a correlated
     /// `BUSY` reply. Off by default: a dropped request is then silent.
@@ -63,8 +64,8 @@ pub(crate) struct ConnectionOptions {
 }
 
 impl Connection {
-    pub(crate) fn set_commands(&self, commands: Vec<crate::CommandDescriptor>) {
-        self.inner.set_commands(commands);
+    pub(crate) fn set_command_names(&self, names: Vec<String>) {
+        self.inner.set_command_names(names);
     }
     pub async fn connect(name: &str, url: &str) -> Result<Self, ClientError> {
         Self::connect_with_options(name, url, &ConnectionOptions::default()).await
@@ -98,6 +99,9 @@ impl Connection {
                     if let Some(commands) = &options.commands {
                         inner.set_commands(commands.clone());
                     }
+                    if let Some(names) = &options.command_names {
+                        inner.set_command_names(names.clone());
+                    }
                     return Ok(Self {
                         name: name.to_owned(),
                         inner,
@@ -108,6 +112,9 @@ impl Connection {
                 crate::native_client::UnixConnectOutcome::UnverifiedTcp { client, unix_error } => {
                     if let Some(commands) = &options.commands {
                         client.set_commands(commands.clone());
+                    }
+                    if let Some(names) = &options.command_names {
+                        client.set_command_names(names.clone());
                     }
                     tracing::warn!(service = name, error = %unix_error, "native endpoint missing; TCP recipient is unprotected");
                     let incoming = client
@@ -129,6 +136,7 @@ impl Connection {
             options.provenance.clone(),
             options.capacity,
             options.commands.clone(),
+            options.command_names.clone(),
             options.refuse_overflowed_requests,
         )
         .await
