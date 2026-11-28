@@ -8138,7 +8138,7 @@ pub(crate) mod tests {
             orphan_rejected |= correlation == Some("orphan-1") && command_name == Some("unknown")
                 && body["message_type"] == "response"
                 && body["outcome"] == "rejected";
-            admit_rejected |= correlation == Some("admit-orphan-1") && command_name == Some("unknown")
+            admit_rejected |= correlation == Some("admit-orphan-1") && command_name == Some("noded.admit.response")
                 && body["message_type"] == "response"
                 && body["outcome"] == "rejected";
             route_request_rejected |= correlation == Some("missing-route-1")

@@ -904,10 +904,18 @@ impl History {
         if let Some(peer) = event.peer {
             row["peer"] = peer.into();
         }
-        if let Some(class) = event.class { row["class"] = class.into(); }
-        if let Some(reason) = event.reason { row["reason"] = reason.into(); }
-        if let Some(len) = event.name_len { row["name_len"] = len.into(); }
-        if let Some(len) = event.to_sub_len { row["to_sub_len"] = len.into(); }
+        if let Some(class) = event.class {
+            row["class"] = class.into();
+        }
+        if let Some(reason) = event.reason {
+            row["reason"] = reason.into();
+        }
+        if let Some(len) = event.name_len {
+            row["name_len"] = len.into();
+        }
+        if let Some(len) = event.to_sub_len {
+            row["to_sub_len"] = len.into();
+        }
         bytes += self.row(row, now)?;
         Ok(bytes)
     }
@@ -954,6 +962,36 @@ mod tests {
             "to": "dopus.beta.bus", "command": "dopus.open", "size": 123,
             "correlation_id": "example-id", "peer": "alpha", "rc": 0,
             "dropped_count": dropped, "payload": {"body": "never stored"}, "payload_omitted": null})).unwrap()
+    }
+
+    #[test]
+    fn projection_fields_survive_history_without_gaps_or_lost_sequence() {
+        let tmp = Temp::new();
+        let now = at("2026-11-29T00:00:00Z");
+        let mut history = History::open(&tmp.0, "example".into(), HistoryConfig::default(), now).unwrap();
+        for seq in 1..=4 {
+            let mut event = sample("", 0);
+            event.seq = seq;
+            event.command = Some("unknown".into());
+            event.to = Some("unknown-target".into());
+            event.class = Some("unrecognised".into());
+            event.reason = Some("no-such-service".into());
+            event.name_len = Some(4);
+            event.to_sub_len = Some(7);
+            history.event(event, now).unwrap();
+        }
+        history.flush().unwrap();
+        let rows = rows(&tmp.0);
+        let messages: Vec<_> = rows.iter().filter(|row| row["kind"] == "message").collect();
+        assert_eq!(messages.len(), 4);
+        for (index, row) in messages.iter().enumerate() {
+            assert_eq!(row["seq"], index + 1);
+            assert_eq!(row["class"], "unrecognised");
+            assert_eq!(row["reason"], "no-such-service");
+            assert_eq!(row["name_len"], 4);
+            assert_eq!(row["to_sub_len"], 7);
+            assert_eq!(row["command"], "unknown");
+        }
     }
 
     #[test]

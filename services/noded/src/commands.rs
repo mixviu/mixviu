@@ -58,8 +58,22 @@ pub(super) fn decode(body: &str) -> Result<Vec<String>, &'static str> {
 }
 
 /// Static infrastructure verbs, independent of service manifests. PR A consumes this table.
-#[allow(dead_code)]
 pub(super) const BROKER_CONTROL_VERBS: &[&str] = &[
+    "noded.identity.challenge",
+    "noded.identity.response",
+    "noded.admit.challenge",
+    "noded.admit.response",
+    "noded.session.hello",
+    "noded.session.allocate",
+    "noded.session.grant.create",
+    "noded.session.grant.fetch",
+    "noded.session.challenge",
+    "noded.session.prove",
+    "noded.session.renew",
+    "noded.session.revoke",
+    "noded.session.list",
+    "noded.session.self",
+    "noded.session.lease.check",
     "noded.register",
     "noded.deregister",
     "noded.commands.set",

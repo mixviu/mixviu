@@ -816,7 +816,10 @@ fn metadata_event(observation: &Observation<'_>) -> EventBody {
     projected_metadata_event(observation, None)
 }
 
-fn projected_metadata_event(observation: &Observation<'_>, projected: Option<crate::noded::history_projection::Projected>) -> EventBody {
+fn projected_metadata_event(
+    observation: &Observation<'_>,
+    projected: Option<crate::noded::history_projection::Projected>,
+) -> EventBody {
     let bounded = |value: Option<&str>| {
         value.map(|s| {
             if observation.class.protected() {
@@ -832,12 +835,20 @@ fn projected_metadata_event(observation: &Observation<'_>, projected: Option<cra
     };
     let (from, to, command) = match projected.as_ref() {
         Some(p) => (p.from.clone(), p.to.clone(), p.command.clone()),
-        None => (bounded(observation.message.from_addr()), bounded(observation.message.to_addr().filter(|to| {
-            !observation.class.protected() || bus::wire::is_valid_label(to) || BusTarget::parse(to).is_some()
-        })), bounded(observation.message.command_name())),
+        None => (
+            bounded(observation.message.from_addr()),
+            bounded(observation.message.to_addr().filter(|to| {
+                !observation.class.protected()
+                    || bus::wire::is_valid_label(to)
+                    || BusTarget::parse(to).is_some()
+            })),
+            bounded(observation.message.command_name()),
+        ),
     };
     EventBody {
-        class: projected.as_ref().and_then(|p| p.reason.map(|_| "unrecognised")),
+        class: projected
+            .as_ref()
+            .and_then(|p| p.reason.map(|_| "unrecognised")),
         reason: projected.as_ref().and_then(|p| p.reason),
         name_len: projected.as_ref().and_then(|p| p.name_len),
         to_sub_len: projected.as_ref().and_then(|p| p.to_sub_len),
