@@ -595,7 +595,6 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                             drop(removed.drm_output.take());
                             Ok(())
                         });
-
                     } else {
                         i += 1;
                     }

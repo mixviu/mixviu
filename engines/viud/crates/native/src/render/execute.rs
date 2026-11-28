@@ -1783,9 +1783,12 @@ fn present(
     let resuming = !(*state.inner.kernel.get(&drivers::resume::base::VBLANK_SEEN));
     // Scope the drm_output borrow so the `Failed` arm can tear the pipe down.
     let (outcome, modeset) = {
-        let pending_modeset = ctx_ref.outputs[output_idx].drm_output.as_ref()
+        let pending_modeset = ctx_ref.outputs[output_idx]
+            .drm_output
+            .as_ref()
             .is_some_and(|o| o.with_compositor(|c| c.surface().commit_pending()));
-        let trail_row = pending_modeset.then(|| crate::wire::handover::pipe("SubmitModeset", &ctx_ref.outputs[output_idx]));
+        let trail_row = pending_modeset
+            .then(|| crate::wire::handover::pipe("SubmitModeset", &ctx_ref.outputs[output_idx]));
         let Some(drm_output) = ctx_ref.outputs[output_idx].drm_output.as_mut() else {
             return false;
         };

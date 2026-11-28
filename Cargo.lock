@@ -6284,6 +6284,7 @@ dependencies = [
  "scenegraph",
  "screencopy",
  "seat",
+ "serde_json",
  "slots",
  "smithay",
  "uuid",
