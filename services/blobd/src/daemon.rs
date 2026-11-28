@@ -73,11 +73,11 @@ async fn async_main() -> anyhow::Result<()> {
     });
 
     // `origin` is the node name from node.conf.mix — props-legible,
-    // never an IP. `wg_ip` (the same source noded uses) is what the
+    // never an IP. `mesh_addr` (the same source noded uses) is what the
     // lane's bind is proved against.
     let node = config::node::load_node_config();
-    let (origin, wg_ip) = match &node {
-        Ok(Some(node)) => (node.node.clone(), node.wg_ip.clone()),
+    let (origin, mesh_addr) = match &node {
+        Ok(Some(node)) => (node.node.clone(), node.mesh_addr.clone()),
         Ok(None) | Err(_) => {
             warn!("node.conf.mix not found; origin falls back to \"localhost\"");
             ("localhost".to_string(), String::new())
@@ -120,17 +120,17 @@ async fn async_main() -> anyhow::Result<()> {
     });
 
     // The byte lane. The bind proof runs before any socket is opened —
-    // fail closed: the bind IP must be this node's own wg_ip, never
+    // fail closed: the bind IP must be this node's own mesh_addr, never
     // unspecified, never loopback, never another interface (noded's
     // bind_is_wg, copied). The listener is bound before the citizen is
     // constructed, so lane.bind/lane.port props only exist once the
     // socket is actually listening.
     let lane = match cfg.lane_bind {
         Some(bind) => {
-            let listener = match crate::lane::WgProvenBind::bind(bind, &wg_ip).await {
+            let listener = match crate::lane::WgProvenBind::bind(bind, &mesh_addr).await {
                 Ok(listener) => listener,
                 Err(LaneBindError::NotWg) => {
-                    refusal::fatal(&refusal::not_wg(bind, &wg_ip));
+                    refusal::fatal(&refusal::not_wg(bind, &mesh_addr));
                 }
                 Err(LaneBindError::Io(e)) => {
                     refusal::fatal(&refusal::lane_bind_io(bind, &e));

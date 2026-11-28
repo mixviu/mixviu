@@ -183,7 +183,7 @@ fn mesh_unavailable(detail: &str) -> mix::error::MixError {
 /// If socket doesn't exist, or target contains dots / `.bus` addresses,
 /// route via the broker. Discovery uses `MIX_NODED_URL`, `MIX_BUS_SOCKET`,
 /// `noded.unix_socket` in node config, then the local runtime Unix socket.
-/// Node config's `wg_ip` and `noded.port` never select client transport.
+/// Node config's `mesh_addr` and `noded.port` never select client transport.
 /// An explicit TCP URL is legacy and grants no same-node trust — see
 /// `::bus::native_client::NodedClient::connect_anonymous_default()`.
 ///

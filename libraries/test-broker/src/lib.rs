@@ -234,7 +234,7 @@ impl Broker {
                         pending_grants_per_parent: grant_limit,
                         listen,
                         node: "test-node".into(),
-                        wg_ip: "127.0.0.1".into(),
+                        mesh_addr: "127.0.0.1".into(),
                         mesh_config_path: None,
                         spec_dir: None,
                         admission_mode: config::node::AdmissionMode::Off,

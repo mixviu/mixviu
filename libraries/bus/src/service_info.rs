@@ -256,7 +256,10 @@ impl RegisterProvenance {
 pub struct NodeInfo {
     /// Mesh node name (from `node.conf.mix`).
     pub node: String,
-    /// WireGuard IP (from `node.conf.mix`).
+    /// Routed mesh address (from `node.conf.mix`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mesh_addr: Option<String>,
+    /// One-release compatibility alias for mesh_addr.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wg_ip: Option<String>,
     /// Cross-mesh FQDN this node belongs to, if any.
@@ -348,6 +351,7 @@ mod tests {
     fn node_info_round_trips() {
         let n = NodeInfo {
             node: "alpha".into(),
+            mesh_addr: Some("192.0.2.5".into()),
             wg_ip: Some("192.0.2.5".into()),
             mesh: Some("example.org".into()),
             noded: Some(ServiceInfo::from_name("noded")),

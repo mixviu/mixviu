@@ -1,11 +1,9 @@
 //! Fatal startup refusals — the exact texts and the one way out.
 //!
 //! A refusal must reach the operator on both channels before the exit:
-//! stderr via `eprintln!` (a binary run by hand — or the live gate
-//! asserting the token — must see the reason without `journalctl`) and
-//! journald via `tracing::error!`. The texts are the gate's tokens
-//! ("is not this node's WG address" is matched verbatim): change
-//! nothing here without changing the gate.
+//! stderr via `eprintln!` (a binary run by hand must see the reason without
+//! `journalctl`) and journald via `tracing::error!`. Unit tests below pin
+//! the operator-facing texts; no repository gate matches them verbatim.
 
 use std::net::SocketAddr;
 use std::path::Path;
@@ -19,11 +17,15 @@ pub fn fatal(message: &str) -> ! {
     std::process::exit(2);
 }
 
-/// The WG bind proof failed: `bind` is not this node's WG address.
-pub fn not_wg(bind: SocketAddr, wg_ip: &str) -> String {
-    let shown = if wg_ip.is_empty() { "<absent>" } else { wg_ip };
+/// The WG bind proof failed: `bind` is not this node's routed mesh address.
+pub fn not_wg(bind: SocketAddr, mesh_addr: &str) -> String {
+    let shown = if mesh_addr.is_empty() {
+        "<absent>"
+    } else {
+        mesh_addr
+    };
     format!(
-        "lane_bind {bind} is not this node's WG address (wg_ip {shown:?}) — the lane serves only the mesh; refusing to start"
+        "lane_bind {bind} is not this node's routed mesh address (mesh_addr {shown:?}) — the lane serves only the mesh; refusing to start"
     )
 }
 
@@ -55,15 +57,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn not_wg_keeps_the_gate_token() {
+    fn not_wg_keeps_the_operator_text() {
         assert_eq!(
             not_wg("127.0.0.1:4210".parse().unwrap(), "10.7.0.9"),
-            "lane_bind 127.0.0.1:4210 is not this node's WG address (wg_ip \"10.7.0.9\") — the lane serves only the mesh; refusing to start"
+            "lane_bind 127.0.0.1:4210 is not this node's routed mesh address (mesh_addr \"10.7.0.9\") — the lane serves only the mesh; refusing to start"
         );
-        // An absent wg_ip shows as the quoted <absent> token, not "".
+        // An absent mesh_addr shows as the quoted <absent> token, not "".
         assert_eq!(
             not_wg("127.0.0.1:4210".parse().unwrap(), ""),
-            "lane_bind 127.0.0.1:4210 is not this node's WG address (wg_ip \"<absent>\") — the lane serves only the mesh; refusing to start"
+            "lane_bind 127.0.0.1:4210 is not this node's routed mesh address (mesh_addr \"<absent>\") — the lane serves only the mesh; refusing to start"
         );
     }
 

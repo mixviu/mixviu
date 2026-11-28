@@ -167,7 +167,7 @@ async fn async_main() -> Result<()> {
             .ok()
             .as_deref(),
     )?;
-    let wg_ip = node_cfg.wg_ip.clone();
+    let mesh_addr = node_cfg.mesh_addr.clone();
     let unix_socket = Some(node_cfg.noded.broker_unix_endpoint());
     let pending_grants_per_parent = node_cfg.noded.pending_grants_per_parent;
     let network = Some(node_cfg.noded.clone());
@@ -179,7 +179,7 @@ async fn async_main() -> Result<()> {
                 session_probe: None,
                 listen,
                 node: noded_node,
-                wg_ip,
+                mesh_addr,
                 mesh_config_path: mesh_config,
                 spec_dir,
                 admission_mode,
