@@ -5,6 +5,34 @@ The logger subscribes to `noded.observe` with body mode `none` and capacity
 bounded observer queue and broker drop accounting are unchanged from the
 2026-04-28 starvation design. There is no payload logging or redacted-body opt-in.
 
+## Reserved broker identities
+
+Ordinary registrations refuse `noded`, `noded-*`, `log`, `log-observe-*`,
+`anon-*`, `bridge-*` and `mon` with rc 10 (`reserved_name`). BROKER-017's
+session-name shape rule is unchanged; `t0-x` and `c0-x` remain client names.
+Only the in-process logger and monitor receive their separate per-boot,
+256-bit OS-random registration tokens. Comparison is constant time. Disabled
+tasks have no token. Tokens never enter provenance or logs. Tap output removes
+only the capability from valid JSON provenance and clears malformed bodies;
+observe continues to omit register payloads under its authentication policy.
+
+An admitted mesh link may register its own `bridge-<peer>` name. Forwarded
+reserved task service assertions are refused. Each ServiceEntry records its
+creation origin: `client`, `logger`, `monitor`, `session` or `bridge`. Names
+cannot confer origin; history projection does not consume origin yet.
+
+A service, instance, peer or `bus-svc` name is infrastructure. Never derive
+one from an account, customer, mailbox or domain. Examples use names such as
+`bridge-example`.
+
+The logger and monitor run functions are crate-private: only noded startup
+may hand them a capability. Repository-wide caller search found only noded
+startup uses. Embedded run/run_on brokers have no task tokens by default.
+NodedClient never reconnects internally; each new task connection must send
+the capability again. A body-less re-registration is refused (fail closed).
+
+## History storage
+
 History is operator-private. The active file is
 `default_log_dir("noded")/<node>/bus.jsonl` (normally
 `~/.local/log/mix/noded/<node>/bus.jsonl`) unless `LOGS_DIRECTORY` supplies
@@ -162,21 +190,3 @@ The zero suffix `-00000000` is rejected rather than aliasing the base archive.
 It also leaves old
 `bus.log` files. The shipped units enable history and retain `--no-monitor`;
 host rollout is a later gold operation.
-# Reserved broker identities
-
-Ordinary registrations refuse `noded`, `noded-*`, `log`, `log-observe-*`,
-`anon-*`, `bridge-*` and `mon` with rc 10 (`reserved_name`). BROKER-017's
-session-name shape rule is unchanged; `t0-x` and `c0-x` remain client names.
-Only the in-process logger and monitor receive their separate per-boot,
-256-bit OS-random registration tokens. Comparison is constant time. Disabled
-tasks have no token. Tokens never enter provenance or logs; tap and observe
-output omit registration bodies, including malformed bodies.
-
-An admitted mesh link may register its own `bridge-<peer>` name. Forwarded
-reserved task service assertions are refused. Each ServiceEntry records its
-creation origin: `client`, `logger`, `monitor`, `session` or `bridge`. Names
-cannot confer origin; history projection does not consume origin yet.
-
-A service, instance, peer or `bus-svc` name is infrastructure. Never derive
-one from an account, customer, mailbox or domain. Examples use names such as
-`bridge-example`.

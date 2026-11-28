@@ -32,8 +32,7 @@ impl Token {
         let Ok(bytes) = <[u8; 32]>::try_from(bytes) else {
             return false;
         };
-        // BLAKE3 Hash equality uses constant_time_eq for its fixed 32 bytes.
-        blake3::Hash::from_bytes(self.0) == blake3::Hash::from_bytes(bytes)
+        constant_time_eq::constant_time_eq_32(&self.0, &bytes)
     }
 
     pub(crate) async fn connect(
@@ -56,11 +55,31 @@ impl Token {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Arc, Mutex};
 
     #[tokio::test]
     async fn real_task_connections_require_the_matching_enabled_capability() {
+        #[derive(Clone)]
+        struct Capture(Arc<Mutex<Vec<u8>>>);
+        impl std::io::Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        // This current-thread runtime keeps broker, client and transport tasks
+        // under the same capturing subscriber, including log's trace records.
+        let _ = tracing_log::LogTracer::init();
+        log::set_max_level(log::LevelFilter::Trace);
+        let output = Capture(Arc::new(Mutex::new(Vec::new())));
+        let writer = output.clone();
+        let subscriber = tracing_subscriber::fmt().with_max_level(tracing::Level::TRACE)
+            .with_ansi(false).without_time().with_writer(move || writer.clone()).finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
         let logger = Token::new();
         let monitor = Token::new();
+        let wrong = Token::new();
         let url = crate::noded::tests::spawn_task_broker(TaskIdentities {
             logger: Some(logger.clone()),
             monitor: Some(monitor.clone()),
@@ -72,7 +91,7 @@ mod tests {
             ("log-observe-123", &logger),
             ("mon", &monitor),
         ] {
-            assert!(Token::new().connect(name, &url).await.is_err());
+            assert!(wrong.connect(name, &url).await.is_err());
             assert!(
                 bus::native_client::NodedClient::connect(name, &url)
                     .await
@@ -92,6 +111,18 @@ mod tests {
             .unwrap();
         assert!(logger.connect("log", &disabled).await.is_err());
         assert!(monitor.connect("mon", &disabled).await.is_err());
+        let client = bus::native_client::NodedClient::connect_anonymous(&url).await.unwrap();
+        let previous = client.name();
+        assert!(client.register_as_with_body("log", "{}").await.is_err());
+        assert_eq!(client.name(), previous);
+        client.close().await;
+        tokio::task::yield_now().await;
+        let logs = String::from_utf8(output.0.lock().unwrap().clone()).unwrap();
+        assert!(logs.contains("Service 'mon' registered"), "capture did not cover broker registration");
+        assert!(logs.contains("TRACE"), "trace transport logging was not captured");
+        for token in [&logger, &monitor, &wrong] {
+            assert!(!logs.contains(&token.encoded()), "capability reached a log record");
+        }
     }
 }
 

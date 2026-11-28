@@ -2672,9 +2672,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
         },
         _ => bus::native_session::PeerIdentity::Unauthenticated,
     };
-    if matches!(transport, TransportIdentity::MeshTls { .. }) {
-        state.peer_context.transport = Some(transport.clone());
-    }
+    state.peer_context.transport = Some(transport.clone());
     if matches!(&transport, TransportIdentity::LocalUnix { .. }) {
         state.observe = state.observe.for_class(TrafficClass::NativeSession);
     }
@@ -3088,10 +3086,23 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                             revision: peer.member.revision,
                             source: peer.address,
                         });
+                    } else {
+                        // The socket becomes a mesh transport only after its
+                        // own D2 challenge has authenticated this identity.
+                        state.peer_context.transport = Some(TransportIdentity::Mesh {
+                            source_ip,
+                            admission: bus::native_session::MeshAdmission {
+                                identity: identity.clone(),
+                                admitted_node: state.peer_context.mesh_peer().map(|(node, _)| node.to_owned()),
+                                response_seen: true,
+                                last_detail: None,
+                            },
+                        });
                     }
                 } else {
                     state.peer_context.identity =
                         bus::native_session::PeerIdentity::Unauthenticated;
+                    state.peer_context.transport = Some(transport.clone());
                 }
                 state.session_admission.apply(outcome);
                 writer_admitted.store(state.peer_context.mesh_peer().is_some(), Ordering::Release);
@@ -3515,7 +3526,7 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                         &state,
                         &mut service_name,
                         &anon_id,
-                        source_ip,
+                        &state.peer_context,
                         &mut command_outcome,
                     )
                     .await;
@@ -4116,6 +4127,29 @@ fn admitted_delivery_peer(state: &AppState, _source_ip: std::net::IpAddr) -> Opt
         .then(|| node.to_owned())
 }
 
+fn authenticated_registration_peer(state: &AppState, connection: &bus::native_session::PeerContext) -> Option<String> {
+    let (node, key) = connection.mesh_peer()?;
+    let authenticated = match &connection.transport {
+        Some(TransportIdentity::Mesh { admission, .. }) => {
+            admission.response_seen && admission.last_detail.is_none()
+                && admission.admitted_node.as_deref() == Some(node)
+                && admission.identity == connection.identity
+        }
+        Some(TransportIdentity::MeshTls { member, d2_key, .. }) => member == node && d2_key == key,
+        _ => false,
+    };
+    let authority = state.authority.load();
+    (authenticated && mesh_trust::identity::link_refusal(connection, &authority.keys, &authority.tls_keys).is_none())
+        .then(|| node.to_owned())
+}
+
+fn reserved_name_refusal(mut response: BusMessage) -> BusMessage {
+    response.set("rc", "10");
+    response.set("error", "reserved_name");
+    response.body = r#"{"error":"reserved_name"}"#.into();
+    response
+}
+
 fn observe_rejected_local_route(
     state: &AppState,
     message: &mut BusMessage,
@@ -4324,11 +4358,9 @@ async fn route_local(
         && mesh_from.is_some_and(|name| reserved_task_name(name) || reserved_broker_name(name))
     {
         drop(reg);
-        let mut reply = BusMessage::new()
+        let mut reply = reserved_name_refusal(BusMessage::new()
             .with_header("type", "response")
-            .with_header("from", "noded")
-            .with_header("rc", "10")
-            .with_header("error", "reserved_name");
+            .with_header("from", "noded"));
         if let Some(id) = msg.get("id") {
             reply.set("id", id);
         }
@@ -4632,7 +4664,14 @@ async fn broadcast_tap(
         .ok()
         .filter(|m| m.command_name() == Some("noded.register"))
         .map(|mut m| {
-            m.body.clear();
+            if let Ok(mut body) = serde_json::from_str::<serde_json::Value>(&m.body) {
+                if let Some(fields) = body.as_object_mut() {
+                    fields.remove("broker_task_token");
+                }
+                m.body = body.to_string();
+            } else {
+                m.body.clear();
+            }
             m.to_wire()
         });
     let raw = sanitized.as_deref().unwrap_or(raw);
@@ -4719,7 +4758,7 @@ async fn handle_noded_command(
     state: &AppState,
     service_name: &mut Option<String>,
     anon_id: &str,
-    source_ip: std::net::IpAddr,
+    connection: &bus::native_session::PeerContext,
     observed_outcome: &mut ObserveOutcome,
 ) {
     struct OutcomeGuard<'a> {
@@ -4827,20 +4866,17 @@ async fn handle_noded_command(
             {
                 Origin::Monitor
             } else if from.starts_with("bridge-")
-                && admitted_delivery_peer(state, source_ip)
+                && authenticated_registration_peer(state, connection)
                     .is_some_and(|peer| from == format!("bridge-{peer}"))
             {
                 Origin::Bridge
             } else {
                 Origin::Client
             };
-            if reserved_session_name(&from)
-                || reserved_broker_name(&from)
-                || (reserved_task_name(&from) && origin == Origin::Client)
+            if is_reserved_service_name(&from)
+                && !matches!(origin, Origin::Logger | Origin::Monitor | Origin::Bridge)
             {
-                let mut resp = respond("10");
-                resp.set("error", "reserved_name");
-                resp.body = r#"{"error":"reserved_name"}"#.into();
+                let resp = reserved_name_refusal(respond("10"));
                 let _ = tx.try_send(resp.to_wire());
                 return;
             }
@@ -4902,6 +4938,11 @@ async fn handle_noded_command(
                 .is_some_and(|old_name| old_name != &from);
             {
                 let mut reg = state.registry.write().await;
+                let _fence = state.delivery_fence.read().expect("delivery fence poisoned");
+                if origin == Origin::Bridge && authenticated_registration_peer(state, connection).is_none() {
+                    let _ = tx.try_send(reserved_name_refusal(respond("10")).to_wire());
+                    return;
+                }
                 // Reject if some OTHER connection holds the target name.
                 // The same-name-same-connection refresh case is a no-op
                 // (same_channel == true) and permitted; we fall through
@@ -5302,7 +5343,7 @@ async fn handle_noded_command(
                 let _ = tx.try_send(resp.to_wire());
                 return;
             }
-            tracing::info!(source_ip = %source_ip, "Tap subscriber added");
+            tracing::info!(peer = ?connection.address, "Tap subscriber added");
 
             let mut resp = respond("0");
             resp.set("command", "noded.tap");
@@ -5881,6 +5922,10 @@ fn reserved_task_name(name: &str) -> bool {
         || name.starts_with("bridge-")
 }
 
+pub(crate) fn is_reserved_service_name(name: &str) -> bool {
+    reserved_broker_name(name) || reserved_task_name(name) || reserved_session_name(name)
+}
+
 fn valid_service_name(name: &str) -> bool {
     (2..=31).contains(&name.len())
         && name
@@ -6017,7 +6062,7 @@ pub(crate) mod tests {
             &state,
             &mut None,
             "probe-test",
-            "192.0.2.1".parse().unwrap(),
+            &state.peer_context,
             &mut crate::observe::Outcome::BrokerHandled,
         )
         .await;
@@ -7005,7 +7050,7 @@ pub(crate) mod tests {
                 &state,
                 &mut service,
                 "anon",
-                ip,
+                &state.peer_context,
                 &mut outcome,
             )
             .await;
@@ -7599,7 +7644,6 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn tap_and_observe_accept_anonymous_mesh_connections() {
         let state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
-        let source = "192.0.2.99".parse().unwrap();
         for command in ["noded.tap", "noded.observe.start"] {
             let request = BusMessage::new()
                 .with_header("command", command)
@@ -7614,7 +7658,7 @@ pub(crate) mod tests {
                 &state,
                 &mut service,
                 "remote-probe",
-                source,
+                &state.peer_context,
                 &mut outcome,
             )
             .await;
@@ -8708,6 +8752,15 @@ pub(crate) mod tests {
             response_seen: true,
             last_detail: None,
         };
+        state.peer_context.transport = Some(TransportIdentity::Mesh {
+            source_ip: "192.0.2.2".parse().unwrap(),
+            admission: bus::native_session::MeshAdmission {
+                identity: state.peer_context.identity.clone(),
+                admitted_node: Some("beta".into()),
+                response_seen: true,
+                last_detail: None,
+            },
+        });
         state
     }
 
@@ -9750,7 +9803,7 @@ pub(crate) mod tests {
                 &state,
                 &mut None,
                 "probe-test",
-                "192.0.2.2".parse().unwrap(),
+                &state.peer_context,
                 &mut super::ObserveOutcome::BrokerHandled,
             )
             .await;
@@ -9792,7 +9845,7 @@ pub(crate) mod tests {
                 &state,
                 &mut None,
                 "probe-test",
-                "192.0.2.2".parse().unwrap(),
+                &state.peer_context,
                 &mut super::ObserveOutcome::BrokerHandled,
             )
             .await;
@@ -9856,9 +9909,10 @@ pub(crate) mod tests {
     async fn register_capabilities_never_reach_taps() {
         let (tx, mut rx) = mpsc::channel(8);
         let taps = Arc::new(RwLock::new(vec![tx]));
-        for body in [
-            r#"{"broker_task_token":"private-capability"}"#,
-            r#"{"broker_task_token":"private-capability" broken"#,
+        for (body, valid) in [
+            (r#"{"broker_task_token":"private-capability","binary":"example","version":"1"}"#, true),
+            (r#"{"binary":"example","version":"1"}"#, true),
+            (r#"{"broker_task_token":"private-capability" broken"#, false),
         ] {
             let request = BusMessage::new()
                 .with_header("command", "noded.register")
@@ -9867,8 +9921,61 @@ pub(crate) mod tests {
                 .await;
             let wire = rx.recv().await.unwrap();
             assert!(!wire.contains("private-capability"));
-            assert!(bus_mod::parse(&wire).unwrap().body.is_empty());
+            let body = bus_mod::parse(&wire).unwrap().body;
+            if valid {
+                let value: serde_json::Value = serde_json::from_str(&body).unwrap();
+                assert_eq!(value["binary"], "example");
+                assert_eq!(value["version"], "1");
+                assert!(value.get("broker_task_token").is_none());
+            } else {
+                assert!(body.is_empty());
+            }
         }
+    }
+
+    #[tokio::test]
+    async fn bridge_registration_requires_authenticated_current_mesh_transport() {
+        use bus::native_session::{PeerContext, TransportIdentity};
+        let state = mesh_delivery_test_state().await;
+        let admitted = state.peer_context.clone();
+        let mut cases = vec![(admitted.clone(), true)];
+        for address in ["192.0.2.2", "192.0.2.99"] {
+            cases.push((PeerContext {
+                address: Some(format!("{address}:1234").parse().unwrap()),
+                transport: Some(TransportIdentity::LegacyTcp { source_ip: address.parse().unwrap() }),
+                ..Default::default()
+            }, false));
+        }
+        for transport in [
+            None,
+            Some(TransportIdentity::LocalUnix { uid: 0, gid: 0, peer_pid: 1 }),
+            Some(TransportIdentity::LegacyTcp { source_ip: "192.0.2.2".parse().unwrap() }),
+        ] {
+            let mut connection = admitted.clone();
+            connection.transport = transport;
+            cases.push((connection, false));
+        }
+        let mut mismatch = admitted.clone();
+        if let Some(TransportIdentity::Mesh { admission, .. }) = &mut mismatch.transport {
+            admission.admitted_node = Some("gamma".into());
+        }
+        cases.push((mismatch, false));
+        for (connection, accepted) in cases {
+            state.registry.write().await.clear();
+            let (tx, mut rx) = mpsc::channel(8);
+            let request = BusMessage::new().with_header("command", "noded.register").with_header("from", "bridge-beta");
+            super::handle_noded_command(&request, &tx, &state, &mut None, "probe", &connection, &mut super::ObserveOutcome::BrokerHandled).await;
+            let response = bus_mod::parse(&rx.recv().await.unwrap()).unwrap();
+            assert_eq!(response.get("rc"), Some(if accepted { "0" } else { "10" }));
+            if accepted {
+                assert_eq!(state.registry.read().await["bridge-beta"].origin, super::Origin::Bridge);
+            } else {
+                assert_eq!(response.body, r#"{"error":"reserved_name"}"#);
+                assert!(state.registry.read().await.is_empty());
+            }
+        }
+        state.authority.store(Arc::new(crate::routing::RoutingAuthority::new(reload_posture(2, vec![]), "alpha", "127.0.0.1", DEFAULT_NODED_PORT, &[])));
+        assert!(super::authenticated_registration_peer(&state, &admitted).is_none());
     }
 
     /// Anonymous connections must NOT be able to set ANY `from`

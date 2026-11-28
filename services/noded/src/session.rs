@@ -685,8 +685,17 @@ impl Sessions {
         Err(error(ErrorCode::ResourceLimit, "name_collision"))
     }
 
-    fn install(&self, id: Id, reg: &mut HashMap<String, ServiceEntry>) {
+    fn install(&self, id: Id, reg: &mut HashMap<String, ServiceEntry>) -> Result<(), SessionError> {
         let r = &self.records[&id];
+        // Sessions alone own the session-shaped part of the reservation.
+        // Neither an arbitrary reserved label nor an unissued lookalike may
+        // reach the registry, even if a record is corrupted upstream.
+        if !crate::noded::is_reserved_service_name(&r.view.name)
+            || !crate::noded::reserved_session_name(&r.view.name)
+            || !self.issued.contains(&r.view.name)
+        {
+            return Err(SessionError::forbidden());
+        }
         let c = &self.connections[&r.connection.expect("attached")];
         reg.retain(|_, entry| !entry.same_channel(&c.tx));
         reg.insert(
@@ -699,6 +708,7 @@ impl Sessions {
                 info: bus::ServiceInfo::from_name(&r.view.name),
             },
         );
+        Ok(())
     }
 
     fn suspend(&mut self, id: Id, reg: &mut HashMap<String, ServiceEntry>, now: u64) {
@@ -1129,7 +1139,7 @@ impl Sessions {
                         deadline: now + LEASE_MS,
                     },
                 );
-                self.install(id, reg);
+                self.install(id, reg)?;
                 self.connections
                     .get_mut(&p.connection_id)
                     .expect("connection")
@@ -1546,7 +1556,7 @@ impl Sessions {
         r.view.record_assurance = RecordAssurance::SessionBound;
         r.view.binding_generation = proof.binding_generation;
         r.deadline = now + LEASE_MS;
-        self.install(proof.record_id, reg);
+        self.install(proof.record_id, reg)?;
         self.connections
             .get_mut(&p.connection_id)
             .expect("connection")
@@ -1564,6 +1574,27 @@ impl Sessions {
 #[cfg(test)]
 pub(super) mod queue_tests {
     use super::*;
+    #[test]
+    fn only_broker_issued_session_names_reach_the_registry() {
+        let (mut sessions, mut registry, _, id) = allocated();
+        let original = sessions.records[&id].view.name.clone();
+        for name in ["log", "log-observe-123", "mon", "anon-x", "bridge-beta", "noded", "noded-7", "t0-aaaaaaaaaaaaaaaaaaaaaa", "client-name"] {
+            sessions.records.get_mut(&id).unwrap().view.name = name.into();
+            assert!(sessions.install(id, &mut registry).is_err(), "{name}");
+            assert!(!registry.contains_key(name));
+            assert!(registry.contains_key(&original));
+        }
+        // The only variable inputs to the issuer are kernel UID and role;
+        // none can select a broker/task namespace, even at UID boundaries.
+        for uid in [0, 1, 35, 36, u32::MAX] {
+            for child in [false, true] {
+                let name = sessions.issue_name(uid, child, &registry).unwrap();
+                assert!(crate::noded::is_reserved_service_name(&name));
+                assert!(crate::noded::reserved_session_name(&name));
+                assert!(sessions.issued.contains(&name));
+            }
+        }
+    }
     fn allocated() -> (Sessions, HashMap<String, ServiceEntry>, BrokerPrincipal, Id) {
         allocated_at(1000)
     }

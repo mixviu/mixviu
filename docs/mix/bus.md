@@ -744,6 +744,18 @@ end
 
 ---
 
+## Broker naming reservations
+
+`noded`, `noded-*`, `log`, `log-observe-*`, `anon-*`, `bridge-*` and `mon`
+are reserved: ordinary registration returns rc 10 (`reserved_name`). The
+BROKER-017 session-name shape rule is unchanged. Only tokened in-process
+logger and monitor tasks may claim their own names; an admitted mesh peer
+may claim its own `bridge-<peer>` identity. `t0-x` and `c0-x` remain ordinary
+client names. A disabled task's name remains reserved.
+
+A service, instance, peer or `bus-svc` name is infrastructure. Never derive
+one from an account, customer, mailbox or domain.
+
 ## Serve mode — Mix as a daemon (citizen)
 
 `mix --serve <script.mix> [--name <service>]` runs a script as a **first-class,
@@ -891,14 +903,3 @@ Sharp edges:
 - The [mix repo](https://github.com/markc/mixos) — [AGENTS.md](https://github.com/markc/mixos/blob/main/AGENTS.md) is the agent orientation sheet; this manual is the language reference
 - ARexx background — [Wikipedia: ARexx](https://en.wikipedia.org/wiki/ARexx)
 - `mix help` · `mix what send` · `mix what emit` · `mix what address` (`on`/`reply` are handler forms `mix what` does not index)
-# Broker naming reservations
-
-`noded`, `noded-*`, `log`, `log-observe-*`, `anon-*`, `bridge-*` and `mon`
-are reserved: ordinary registration returns rc 10 (`reserved_name`). The
-BROKER-017 session-name shape rule is unchanged. Only tokened in-process
-logger and monitor tasks may claim their own names; an admitted mesh peer
-may claim its own `bridge-<peer>` identity. `t0-x` and `c0-x` remain ordinary
-client names. A disabled task's name remains reserved.
-
-A service, instance, peer or `bus-svc` name is infrastructure. Never derive
-one from an account, customer, mailbox or domain.
