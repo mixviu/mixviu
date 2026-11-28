@@ -103,6 +103,7 @@ base64 = "0.22"
 # `pure`: Rust SIMD only, no C or assembly (tools/foreign.conf.mix). Same
 # hashes; only the AVX-512 path is lost.
 blake3 = { version = "1", features = ["pure"] }
+constant_time_eq = "0.4.2"
 datetime = { path = "libraries/datetime" }
 time = { version = "0.3", features = ["formatting", "parsing", "large-dates", "local-offset", "macros"] }
 clap = { version = "4", features = ["derive"] }

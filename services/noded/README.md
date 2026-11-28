@@ -1,5 +1,17 @@
 # noded
 
+## Broker naming reservations
+
+Ordinary registrations cannot claim `noded`, `noded-*`, `log`,
+`log-observe-*`, `anon-*`, `bridge-*` or `mon` (rc 10, `reserved_name`).
+BROKER-017's session-name shape rule also applies. Only tokened in-process
+logger/monitor tasks may claim their names; only an admitted peer may claim
+its own `bridge-<peer>`. Disabled tasks leave their names unavailable.
+See [BUS-HISTORY.md](BUS-HISTORY.md) for identity origins and token handling.
+
+A service, instance, peer or `bus-svc` name is infrastructure. Never derive
+one from an account, customer, mailbox or domain.
+
 ## TLS broker links
 
 An absent `noded.listen` preserves the legacy listener. An explicit list is

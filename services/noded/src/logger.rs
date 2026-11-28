@@ -48,11 +48,12 @@ struct ObserveEvent {
     dropped_count: u64,
 }
 
-pub async fn run(
+pub(crate) async fn run(
     noded_url: &str,
     node: String,
     limits: HistoryConfig,
     shutdown: tokio::sync::oneshot::Receiver<()>,
+    token: crate::noded::task_identity::Token,
 ) -> Result<()> {
     anyhow::ensure!(
         !node.is_empty() && node != "." && node != ".." && !node.contains('/'),
@@ -65,7 +66,7 @@ pub async fn run(
             return Ok(());
         }
     };
-    run_in(noded_url, node, limits, shutdown, &dir).await
+    run_in(noded_url, node, limits, shutdown, &dir, token).await
 }
 
 fn history_root(directory: Option<std::ffi::OsString>) -> Result<std::path::PathBuf> {
@@ -96,6 +97,7 @@ async fn run_in(
     limits: HistoryConfig,
     mut shutdown: tokio::sync::oneshot::Receiver<()>,
     log_dir: &Path,
+    token: crate::noded::task_identity::Token,
 ) -> Result<()> {
     let started_instant = Instant::now();
     let started_at_iso = datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Secs, true);
@@ -117,15 +119,14 @@ async fn run_in(
     let stats = LogStats::new();
 
     // Connection 1 — registered service for log.props.* request/response.
-    let svc_client = Arc::new(bus::native_client::NodedClient::connect("log", noded_url).await?);
+    let svc_client = Arc::new(token.connect("log", noded_url).await?);
     tracing::info!("Logger props connection registered as 'log'");
 
     // Connection 2 — registered observer only. Isolating it onto its own
     // bounded outbound channel means a saturated observation queue cannot
     // block log.props.* delivery on the service connection.
     let observer_name = format!("log-observe-{}", std::process::id());
-    let observer_client =
-        Arc::new(bus::native_client::NodedClient::connect(&observer_name, noded_url).await?);
+    let observer_client = Arc::new(token.connect(&observer_name, noded_url).await?);
     observer_client
         .call(
             "noded",
@@ -1750,21 +1751,30 @@ mod tests {
     #[tokio::test]
     async fn native_observation_flushes_on_timer_and_shutdown() {
         let tmp = Temp::new();
-        let broker = test_broker::Broker::start();
+        let token = crate::noded::task_identity::Token::new();
+        let url =
+            crate::noded::tests::spawn_task_broker(crate::noded::task_identity::TaskIdentities {
+                logger: Some(token.clone()),
+                monitor: None,
+            })
+            .await
+            .unwrap();
         let (stop, shutdown) = tokio::sync::oneshot::channel();
-        let url = broker.url.clone();
+        let logger_url = url.clone();
+        let logger_token = token.clone();
         let dir = tmp.0.clone();
         let logger = tokio::spawn(async move {
             run_in(
-                &url,
+                &logger_url,
                 "beta".into(),
                 HistoryConfig::default(),
                 shutdown,
                 &dir,
+                logger_token,
             )
             .await
         });
-        let client = bus::native_client::NodedClient::connect("example-probe", &broker.url)
+        let client = bus::native_client::NodedClient::connect("example-probe", &url)
             .await
             .unwrap();
         tokio::time::timeout(std::time::Duration::from_secs(5), async {
@@ -1786,11 +1796,12 @@ mod tests {
         tokio::time::timeout(
             std::time::Duration::from_secs(1),
             run_in(
-                &broker.url,
+                &url,
                 "beta".into(),
                 HistoryConfig::default(),
                 second_shutdown,
                 &tmp.0,
+                token,
             ),
         )
         .await

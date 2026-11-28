@@ -15,7 +15,9 @@
 //! retains only the explicit-URL primitives `NodedClient::connect()`
 //! and `NodedClient::connect_anonymous()`.
 
-use std::collections::{BTreeMap, HashMap};
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, RwLock};
 
@@ -724,6 +726,16 @@ impl NodedClient {
         self.register().await
     }
 
+    /// Register with a private capability body supplied by an in-process broker task.
+    /// The body is used once and is never retained as service provenance.
+    /// NodedClient does not reconnect; a new task connection must supply the
+    /// capability again. A body-less re-registration fails closed at the broker.
+    pub async fn register_as_with_body(&self, name: &str, body: &str) -> Result<()> {
+        self.register_body(name, body).await?;
+        *self.service_name.write().unwrap() = name.to_string();
+        Ok(())
+    }
+
     /// Send a command to another service and wait for the response.
     pub async fn call(
         &self,
@@ -980,6 +992,25 @@ impl NodedClient {
         body: &str,
         limit: std::time::Duration,
     ) -> Result<(u8, String, Option<String>)> {
+        let mut msg = BusMessage::new();
+        for (k, v) in headers {
+            msg = msg.with_header(k, v);
+        }
+        // Framing headers override caller entries.
+        msg = msg
+            .with_header("command", command)
+            .with_header("from", &self.name())
+            .with_header("to", to)
+            .with_header("type", "request")
+            .with_body(body);
+        self.request_message(msg, limit).await
+    }
+
+    async fn request_message(
+        &self,
+        mut msg: BusMessage,
+        limit: std::time::Duration,
+    ) -> Result<(u8, String, Option<String>)> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed).to_string();
 
         let (tx, rx) = oneshot::channel();
@@ -998,28 +1029,18 @@ impl NodedClient {
         }
         let mut guard = PendingGuard::arm(self.pending.clone(), id.clone());
 
-        let mut msg = BusMessage::new();
-        for (k, v) in headers {
-            msg = msg.with_header(k, v);
-        }
-        // Apply framing headers LAST — overrides any caller entry that
-        // attempted to spoof routing/identity. See doc above.
-        msg = msg
-            .with_header("command", command)
-            .with_header("from", &self.name())
-            .with_header("to", to)
-            .with_header("type", "request")
-            .with_header("id", &id);
-        if !body.is_empty() {
-            msg.body = body.to_string();
-        }
-
+        msg.set("id", &id);
         self.send_raw(&msg).await?;
 
         let response = match tokio::time::timeout(limit, rx).await {
             Ok(Ok(resp)) => resp,
             Ok(Err(_)) => return Err(crate::ClientError::Closed.into()),
-            Err(_) => return Err(crate::ClientError::Timeout { to: to.to_owned() }.into()),
+            Err(_) => {
+                return Err(crate::ClientError::Timeout {
+                    to: msg.to_addr().unwrap_or("").to_owned(),
+                }
+                .into());
+            }
         };
         guard.disarm();
 
@@ -1259,13 +1280,22 @@ impl NodedClient {
             Some(p) => serde_json::to_string(p).unwrap_or_default(),
             None => String::new(),
         };
+        self.register_body(&self.name(), &request_body).await
+    }
+
+    async fn register_body(&self, name: &str, request_body: &str) -> Result<()> {
         // `call_with_headers_raw` returns the reply body even on `rc >= 10`,
         // so the structured rejection body survives for classification
         // (`call_typed` folds it into a message string). Success semantics
         // are unchanged: any `rc < 10` is a successful register.
-        let (rc, reply_body, error_header) = self
-            .call_with_headers_raw("noded", "noded.register", &BTreeMap::new(), &request_body)
-            .await?;
+        let message = BusMessage::new()
+            .with_header("from", name)
+            .with_header("to", "noded")
+            .with_header("type", "request")
+            .with_header("command", "noded.register")
+            .with_body(request_body);
+        let (rc, reply_body, error_header) =
+            self.request_message(message, RESPONSE_TIMEOUT).await?;
         if rc < crate::RC_ERROR {
             return Ok(());
         }
