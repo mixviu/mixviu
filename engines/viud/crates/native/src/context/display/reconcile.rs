@@ -515,7 +515,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
             // Destroy this output's `wl_output` global so re-adding the monitor doesn't
             // advertise a duplicate (the switch reused ONE Output; add_output makes a
             // fresh one each time, so its global must be torn down here).
-            if let Some(gid) = removed.global {
+            if let Some(gid) = removed.global.take() {
                 ctx.display_handle
                     .remove_global::<dispatcher::state::Dispatch>(gid);
             }
@@ -582,7 +582,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                         // Every world's Space, not just the hosted one
                         // (`unmap_output_everywhere`).
                         state.inner.unmap_output_everywhere(&removed.output);
-                        if let Some(gid) = removed.global {
+                        if let Some(gid) = removed.global.take() {
                             ctx.display_handle
                                 .remove_global::<dispatcher::state::Dispatch>(gid);
                         }

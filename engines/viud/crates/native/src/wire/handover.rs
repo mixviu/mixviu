@@ -187,7 +187,11 @@ pub fn pause<R>(work: impl FnOnce() -> R) -> R {
 /// All start rows are synced before the device-wide commit closure is called.
 pub fn run<T>(rows: Vec<Value>, work: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
     transaction(rows, work, |result| {
-        ("end", result.is_ok(), result.as_ref().err().cloned().unwrap_or_default())
+        (
+            "end",
+            result.is_ok(),
+            result.as_ref().err().cloned().unwrap_or_default(),
+        )
     })
 }
 
@@ -200,8 +204,16 @@ pub fn submit(
     use kms::scanout::flip::queue::QueueOutcome;
     transaction(rows, work, |outcome| match outcome {
         QueueOutcome::Queued => ("end", true, String::new()),
-        QueueOutcome::DeferredToWatchdog => ("deferred", false, "queue_frame deferred to resume watchdog (detail in journal)".into()),
-        QueueOutcome::Failed => ("end", false, "queue_frame failed (detail in journal)".into()),
+        QueueOutcome::DeferredToWatchdog => (
+            "deferred",
+            false,
+            "queue_frame deferred to resume watchdog (detail in journal)".into(),
+        ),
+        QueueOutcome::Failed => (
+            "end",
+            false,
+            "queue_frame failed (detail in journal)".into(),
+        ),
     })
 }
 

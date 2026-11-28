@@ -30,11 +30,15 @@ fn modeset_submission_distinguishes_queued_deferred_and_failed() {
 }
 
 fn rows_if_present(dir: &std::path::Path) -> usize {
-    if path(dir).exists() { rows(dir).len() } else { 0 }
+    if path(dir).exists() {
+        rows(dir).len()
+    } else {
+        0
+    }
 }
 
 fn fixture() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("handover-{}", uuid::Uuid::new_v4()));
+    let dir = std::env::temp_dir().join(format!("handover-{}", uuid::Uuid::now_v7()));
     std::fs::create_dir_all(&dir).unwrap();
     TRAIL.with_borrow_mut(|t| {
         *t = Some(Trail::new(

@@ -1788,10 +1788,12 @@ fn present(
         let modeset = ctx_ref.outputs[output_idx]
             .drm_output
             .as_ref()
-            .is_some_and(|o| o.with_compositor(|c| {
-                c.set_tearing(tear);
-                c.surface().commit_pending()
-            }));
+            .is_some_and(|o| {
+                o.with_compositor(|c| {
+                    c.set_tearing(tear);
+                    c.surface().commit_pending()
+                })
+            });
         let trail_row = modeset
             .then(|| crate::wire::handover::pipe("SubmitModeset", &ctx_ref.outputs[output_idx]));
         let Some(drm_output) = ctx_ref.outputs[output_idx].drm_output.as_mut() else {
