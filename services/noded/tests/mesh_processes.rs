@@ -133,7 +133,12 @@ async fn native_session_caller_crosses_an_admitted_bridge() {
     production_mesh(1, 1, "enforce", true).await;
 }
 
-async fn production_mesh(dialler_epoch: u64, listener_epoch: u64, frame_policy: &str, session_caller: bool) {
+async fn production_mesh(
+    dialler_epoch: u64,
+    listener_epoch: u64,
+    frame_policy: &str,
+    session_caller: bool,
+) {
     tokio::time::timeout(Duration::from_secs(30), async {
         let root = std::env::temp_dir().join(format!(
             "noded-mesh-{}-{:032x}", std::process::id(), rand::random::<u128>()
