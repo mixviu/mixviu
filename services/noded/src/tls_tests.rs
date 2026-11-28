@@ -204,7 +204,7 @@ async fn tls_info(state: &AppState) -> serde_json::Value {
         state,
         &mut None,
         "info-probe",
-        "192.0.2.1".parse().unwrap(),
+        &state.peer_context,
         &mut crate::observe::Outcome::BrokerHandled,
     )
     .await;
