@@ -4448,9 +4448,7 @@ async fn route_local(
     let observe = &scoped_observe;
     // Sessions are broker-issued client identities and retain mesh forwarding.
     // Only infrastructure identities are forbidden as forwarded callers.
-    if admitted_peer.is_some()
-        && mesh_from.is_some_and(is_reserved_infrastructure_name)
-    {
+    if admitted_peer.is_some() && mesh_from.is_some_and(is_reserved_infrastructure_name) {
         drop(reg);
         let mut reply = reserved_name_refusal(
             BusMessage::new()
@@ -10039,7 +10037,10 @@ pub(crate) mod tests {
 
     #[test]
     fn forwarded_session_shapes_are_not_infrastructure_names() {
-        for name in ["t1000-aaaaaaaaaaaaaaaaaaaaaa", "c1000-aaaaaaaaaaaaaaaaaaaaaa"] {
+        for name in [
+            "t1000-aaaaaaaaaaaaaaaaaaaaaa",
+            "c1000-aaaaaaaaaaaaaaaaaaaaaa",
+        ] {
             assert!(super::reserved_session_name(name), "{name}");
             assert!(super::is_reserved_service_name(name), "{name}");
             assert!(!super::is_reserved_infrastructure_name(name), "{name}");
