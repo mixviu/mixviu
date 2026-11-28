@@ -27,6 +27,10 @@ use wayland_protocols::ext::idle_notify::v1::client::{
 use wayland_protocols::wp::idle_inhibit::zv1::client::{
     zwp_idle_inhibit_manager_v1::ZwpIdleInhibitManagerV1, zwp_idle_inhibitor_v1::ZwpIdleInhibitorV1,
 };
+use wayland_protocols::xdg::activation::v1::client::{
+    xdg_activation_token_v1::{self, XdgActivationTokenV1},
+    xdg_activation_v1::XdgActivationV1,
+};
 #[path = "tablet.rs"]
 pub mod tablet;
 use wayland_protocols::xdg::shell::client::{
@@ -49,6 +53,8 @@ use wayland_protocols_wlr::screencopy::v1::client::{
 /// What the client's event handlers record.
 #[derive(Default)]
 pub struct ClientState {
+    pub keyboard_enter_serial: Option<u32>,
+    pub activation_tokens: Vec<String>,
     pub idle_events: Vec<bool>,
     pub tablet: tablet::State,
     /// `(name, interface, version)` of every advertised global.
@@ -117,6 +123,23 @@ pub struct TestClient {
 }
 
 impl TestClient {
+    pub fn activation(&self) -> XdgActivationV1 {
+        let (name, _) = find_in(&self.state.globals, "xdg_activation_v1");
+        self.registry.bind(name, 1, &self.qh, ())
+    }
+
+    pub fn activation_token(&self, serial: Option<u32>, surface: Option<&WlSurface>) {
+        let manager = self.activation();
+        let token = manager.get_activation_token(&self.qh, ());
+        if let Some(serial) = serial {
+            token.set_serial(serial, self.seat(0));
+        }
+        if let Some(surface) = surface {
+            token.set_surface(surface);
+        }
+        token.commit();
+        manager.destroy();
+    }
     pub fn inhibit(&self, surface: &WlSurface) -> ZwpIdleInhibitorV1 {
         let name = self
             .state
@@ -729,6 +752,9 @@ impl Dispatch<WlKeyboard, ()> for ClientState {
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
     ) {
+        if let wl_keyboard::Event::Enter { serial, .. } = &event {
+            state.keyboard_enter_serial = Some(*serial);
+        }
         if let wl_keyboard::Event::Key {
             key,
             state: pressed,
@@ -745,6 +771,22 @@ impl Dispatch<WlKeyboard, ()> for ClientState {
 }
 
 // No events at all.
+delegate_noop!(ClientState: XdgActivationV1);
+impl Dispatch<XdgActivationTokenV1, ()> for ClientState {
+    fn event(
+        state: &mut Self,
+        object: &XdgActivationTokenV1,
+        event: xdg_activation_token_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+        if let xdg_activation_token_v1::Event::Done { token } = event {
+            state.activation_tokens.push(token);
+            object.destroy();
+        }
+    }
+}
 delegate_noop!(ClientState: WlCompositor);
 delegate_noop!(ClientState: ignore ZwpIdleInhibitManagerV1);
 delegate_noop!(ClientState: ignore ZwpIdleInhibitorV1);

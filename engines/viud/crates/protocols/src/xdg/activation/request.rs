@@ -4,6 +4,32 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::wayland::compositor::with_states;
 use smithay::wayland::xdg_activation::{XdgActivationToken, XdgActivationTokenData};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Creation-time authority and one-shot consumption shared by token clones.
+pub struct ActivationGrant {
+    pub refusal: Option<&'static str>,
+    spent: AtomicBool,
+}
+
+impl ActivationGrant {
+    pub fn new(refusal: Option<&'static str>) -> Self {
+        Self {
+            refusal,
+            spent: AtomicBool::new(false),
+        }
+    }
+
+    /// Consume the first presentation without untracking the correlation token.
+    pub fn spend(&self) -> bool {
+        self.spent.swap(true, Ordering::Relaxed)
+    }
+}
+
+/// One diagnostic for a known request that the host cannot honour. Never log token strings.
+pub fn refused(reason: &str) {
+    logging::debug!("xdg.activation refused: {reason}");
+}
 
 /// One activation token a surface has been named by.
 #[derive(Clone)]
@@ -35,10 +61,9 @@ impl ActivationLog {
 /// A client asked for `surface` to be activated with `token`
 /// (`xdg_activation_v1.activate`).
 ///
-/// Recording is all this does. The compositor does not follow through with the focus change — the
-/// protocol explicitly allows that ("might decide not to follow through with the
-/// activation if it's considered unwanted") — but the token is how a launched window is
-/// correlated back to the placeholder that launched it, so it is kept either way.
+/// Record every known token before the dispatcher queues the host's focus policy.
+/// Refused, expired and spent tokens remain available for launch correlation.
+/// Smithay drops unknown strings before this handler; they cannot correlate a launch.
 pub fn request_activation(
     surface: WlSurface,
     token: XdgActivationToken,

@@ -40,6 +40,7 @@ wayland-protocols = { version = "=0.32.13", features = ["client", "unstable", "s
 wayland-protocols-wlr = { version = "=0.3.12", features = ["client"] }
 
 [dev-dependencies]
+frames.workspace = true
 motion.workspace = true
 comp-model.workspace = true
 design.workspace = true

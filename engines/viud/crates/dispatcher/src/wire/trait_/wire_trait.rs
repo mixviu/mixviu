@@ -14,6 +14,8 @@ use smithay::xwayland::X11Surface;
 /// source; extensible — more origins (xdg-activation, urgency, etc.) will be added.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivationOrigin {
+    /// A granted, fresh, one-shot xdg activation token.
+    Token,
     /// A dock/taskbar via `zwlr_foreign_toplevel_handle_v1.activate`.
     Foreign,
 }

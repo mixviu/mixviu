@@ -19,6 +19,7 @@ warnings = "allow"
 mod_module_files = "deny"
 
 [dependencies]
+policy.workspace = true
 comp-model.workspace = true
 model = { workspace = true }
 surfaces = { workspace = true }

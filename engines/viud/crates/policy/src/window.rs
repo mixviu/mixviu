@@ -276,6 +276,101 @@ pub struct FocusDecision {
     pub reason: Option<&'static str>,
 }
 
+/// The maximum age of an activation grant, inclusive. Callers supply age, not a clock.
+pub const ACTIVATION_MAX_AGE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Creation-time seat authority. Serials alone are guessable; focus ownership is essential.
+pub fn activation_grant(
+    has_serial: bool,
+    correct_seat: bool,
+    creator_focused: bool,
+    recent_serial: bool,
+    owns_named_surface: bool,
+) -> Option<&'static str> {
+    if !has_serial {
+        Some("no_serial")
+    } else if !correct_seat {
+        Some("wrong_seat")
+    } else if !creator_focused {
+        Some("creator_not_focused")
+    } else if !recent_serial {
+        Some("old_serial")
+    } else if !owns_named_surface {
+        Some("foreign_surface")
+    } else {
+        None
+    }
+}
+
+/// A known token's activation. Refusals have no effects and never switch workspace.
+#[allow(clippy::too_many_arguments)]
+pub fn activation<H: Clone + Eq + Hash>(
+    registry: &mut Registry<H>,
+    workspace_state: &mut WorkspaceState,
+    default_output: Option<&DefaultOutput>,
+    scene: SceneFacts,
+    facts: &WindowFacts,
+    id: u64,
+    generation: u64,
+    grant_refusal: Option<&'static str>,
+    age: std::time::Duration,
+    spent: bool,
+    creator_focused: bool,
+) -> Result<FocusDecision, ControlReply> {
+    // Normal window commands reject unmapped targets during resolution. A
+    // known token for a current, unmapped surface instead records only.
+    if registry
+        .get(SurfaceId(id))
+        .is_some_and(|record| record.generation() == generation && !record.mapped())
+    {
+        return Ok(FocusDecision {
+            effects: Vec::new(),
+            reason: Some("unmapped"),
+        });
+    }
+    let record = resolve(registry, id, generation)?;
+    let reason = grant_refusal
+        .or((age > ACTIVATION_MAX_AGE).then_some("expired"))
+        .or(spent.then_some("spent"))
+        .or((!creator_focused).then_some("creator_lost_focus"))
+        .or(scene.session_lock.then_some("locked"))
+        .or(scene.exclusive_layer.then_some("exclusive_layer"))
+        .or((!record.mapped()).then_some("unmapped"));
+    if reason.is_some() || record.focused() {
+        return Ok(FocusDecision {
+            effects: Vec::new(),
+            reason,
+        });
+    }
+    let mut decision = if record.minimized() {
+        let (_, effects) = set_minimized(registry, id, generation, false)?;
+        FocusDecision {
+            effects,
+            reason: None,
+        }
+    } else {
+        focus(
+            registry,
+            workspace_state,
+            default_output,
+            scene,
+            facts,
+            id,
+            generation,
+            true,
+        )?
+    };
+    for effect in &mut decision.effects {
+        if let Effect::MarkDirty { cause, .. } = effect {
+            *cause = "xdg.activation";
+        }
+    }
+    if !decision.effects.is_empty() {
+        decision.effects.push(Effect::RetargetPointer);
+    }
+    Ok(decision)
+}
+
 /// `comp.window.focus {id, generation, raise}`. Rule 6 (F1.2): a window on another workspace
 /// is brought on screen by switching to its workspace, never pulled
 /// across, and only when the workspace-independent rungs would let it take

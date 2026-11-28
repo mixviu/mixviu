@@ -2319,6 +2319,7 @@ version = "0.1.2"
 dependencies = [
  "comp-model",
  "model",
+ "policy",
  "protocols",
  "render-gles",
  "smithay",
@@ -10005,6 +10006,7 @@ dependencies = [
  "decor",
  "design",
  "dispatcher",
+ "frames",
  "image",
  "libc",
  "model",
