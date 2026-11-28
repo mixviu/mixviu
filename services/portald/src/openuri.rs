@@ -33,7 +33,11 @@ impl Bridge {
     async fn call(&self, command: &str, body: Json) -> Result<bool, PortalError> {
         match tokio::time::timeout(IO_TIMEOUT, self.client.call_typed("apps", command, body)).await
         {
-            Ok(Ok(PortReply::Ok { rc, .. } | PortReply::AppError { rc, .. })) if rc < 20 => {
+            // handler promises only success or not_found. In particular, the
+            // broker uses rc 10 for a missing/disconnected service too.
+            Ok(Ok(PortReply::Ok { rc, .. } | PortReply::AppError { rc, .. }))
+                if rc == 0 || (command == "apps.handler" && rc == 14) =>
+            {
                 Ok(rc == 0)
             }
             // Do not log the reply/body: it could contain the URI or token.
