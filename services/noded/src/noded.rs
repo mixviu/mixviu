@@ -4446,7 +4446,11 @@ async fn route_local(
     );
     let scoped_observe = state.observe.for_class(traffic_class);
     let observe = &scoped_observe;
-    if admitted_peer.is_some() && mesh_from.is_some_and(is_reserved_service_name) {
+    // Sessions are broker-issued client identities and retain mesh forwarding.
+    // Only infrastructure identities are forbidden as forwarded callers.
+    if admitted_peer.is_some()
+        && mesh_from.is_some_and(|name| reserved_broker_name(name) || reserved_task_name(name))
+    {
         drop(reg);
         let mut reply = reserved_name_refusal(
             BusMessage::new()
@@ -9972,12 +9976,13 @@ pub(crate) mod tests {
             );
         }
         for name in [
+            "noded",
+            "noded-example",
             "log",
             "log-observe-123",
             "mon",
             "anon-x",
             "bridge-example",
-            "t0-aaaaaaaaaaaaaaaaaaaaaa",
         ] {
             let mut request = BusMessage::new()
                 .with_header("id", "request")

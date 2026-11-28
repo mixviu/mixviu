@@ -115,20 +115,25 @@ async fn connect(
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn two_production_brokers_route_verified_native_clients() {
-    production_mesh(1, 1, "enforce").await;
+    production_mesh(1, 1, "enforce", false).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn admission_enforce_routes_to_newer_inventory_with_frame_observe() {
-    production_mesh(7, 8, "observe").await;
+    production_mesh(7, 8, "observe", false).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn admission_enforce_routes_to_older_inventory_with_frame_observe() {
-    production_mesh(7, 6, "observe").await;
+    production_mesh(7, 6, "observe", false).await;
 }
 
-async fn production_mesh(dialler_epoch: u64, listener_epoch: u64, frame_policy: &str) {
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn native_session_caller_crosses_an_admitted_bridge() {
+    production_mesh(1, 1, "enforce", true).await;
+}
+
+async fn production_mesh(dialler_epoch: u64, listener_epoch: u64, frame_policy: &str, session_caller: bool) {
     tokio::time::timeout(Duration::from_secs(30), async {
         let root = std::env::temp_dir().join(format!(
             "noded-mesh-{}-{:032x}", std::process::id(), rand::random::<u128>()
@@ -209,6 +214,15 @@ async fn production_mesh(dialler_epoch: u64, listener_epoch: u64, frame_policy: 
         let first = connect(&roots[0], "caller-one", &urls[0], &mut fixture.children[0]).await;
         let second = connect(&roots[0], "caller-two", &urls[0], &mut fixture.children[0]).await;
         let service = connect(&roots[1], "echo", &urls[1], &mut fixture.children[1]).await;
+        let session_name = if session_caller {
+            let key = SigningKey::from_bytes(&rand::random::<[u8; 32]>());
+            let record = first.session_allocate(&key, bus::native_session::Policy::DefaultOpen)
+                .await.unwrap().record;
+            assert!(record.name.starts_with(&format!("t{}-", record.owner_uid)));
+            Some(record.name)
+        } else {
+            None
+        };
         for client in [first.client(), second.client(), service.client()] {
             let inventory = client.call("noded", "noded.inventory", json!({})).await.unwrap();
             assert_eq!(inventory["posture"], "verified", "{inventory}");
@@ -222,6 +236,14 @@ async fn production_mesh(dialler_epoch: u64, listener_epoch: u64, frame_policy: 
                 let command = delivery.command();
                 assert_eq!(command.command, "echo.tag");
                 let value: Value = serde_json::from_str(&command.body).unwrap();
+                if value["tag"] == "one" && let Some(name) = &session_name {
+                    // These are produced by the real alpha sender and beta
+                    // receiver, not supplied by this fixture's request.
+                    assert_eq!(command.header("broker_service"), Some(name.as_str()));
+                    assert_eq!(command.header("broker_peer"), Some("alpha"));
+                    assert_eq!(command.header("broker_origin"), Some("mesh"));
+                    assert!(delivery.trusted_context().is_none(), "remote session is not a local principal");
+                }
                 service.client().respond(command, 0, &value.to_string()).await.unwrap();
             }
         };
@@ -268,7 +290,11 @@ async fn production_mesh(dialler_epoch: u64, listener_epoch: u64, frame_policy: 
         }
         assert!(first.client().call("echo.unknown.bus", "echo.tag", json!({})).await.is_err());
         assert_eq!(first.client().call("noded", "noded.ping", json!({})).await.unwrap()["pong"], true);
-        first.client().deregister().await.unwrap();
+        if session_caller {
+            first.client().close().await;
+        } else {
+            first.client().deregister().await.unwrap();
+        }
         second.client().deregister().await.unwrap();
         service.client().close().await;
     }).await.expect("native two-process mesh acceptance deadline");
