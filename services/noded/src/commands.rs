@@ -12,8 +12,11 @@ pub(super) fn decode(body: &str) -> Result<Vec<String>, &'static str> {
     if body.len() > MAX_BODY_BYTES {
         return Err("21");
     }
-    struct Names;
-    impl<'de> Visitor<'de> for Names {
+    #[derive(Clone, Copy)]
+    enum DecodeError { Malformed, Count }
+    let failure = std::cell::Cell::new(DecodeError::Malformed);
+    struct Names<'a>(&'a std::cell::Cell<DecodeError>);
+    impl<'de> Visitor<'de> for Names<'_> {
         type Value = Vec<String>;
         fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
             f.write_str("command name array")
@@ -26,24 +29,21 @@ pub(super) fn decode(body: &str) -> Result<Vec<String>, &'static str> {
                     None => return Ok(names),
                 }
             }
-            let _ = seq.next_element_seed(Overflow)?;
+            let _ = seq.next_element_seed(Overflow(self.0))?;
             Ok(names)
         }
     }
-    struct Overflow;
-    impl<'de> DeserializeSeed<'de> for Overflow {
+    struct Overflow<'a>(&'a std::cell::Cell<DecodeError>);
+    impl<'de> DeserializeSeed<'de> for Overflow<'_> {
         type Value = ();
         fn deserialize<D: serde::Deserializer<'de>>(self, _d: D) -> Result<(), D::Error> {
+            self.0.set(DecodeError::Count);
             Err(serde::de::Error::custom("manifest count limit"))
         }
     }
     let mut deserializer = serde_json::Deserializer::from_str(body);
-    let names = serde::Deserializer::deserialize_seq(&mut deserializer, Names).map_err(|e| {
-        if e.to_string().starts_with("manifest count limit") {
-            "21"
-        } else {
-            "20"
-        }
+    let names = serde::Deserializer::deserialize_seq(&mut deserializer, Names(&failure)).map_err(|_| {
+        match failure.get() { DecodeError::Count => "21", DecodeError::Malformed => "20" }
     })?;
     deserializer.end().map_err(|_| "20")?;
     Ok(names)
@@ -121,24 +121,8 @@ impl Manifest {
             Ok(names) => names,
             Err(rc) => return rc,
         };
-        if names.len() > 512 {
-            return "21";
-        }
-        if names.iter().any(|name| name.len() > 64) {
-            return "22";
-        }
-        if names.iter().any(|name| name.split('.').count() > 6) {
-            return "23";
-        }
-        if names.iter().any(|name| {
-            name.split('.').any(|segment| {
-                segment.is_empty()
-                    || !segment
-                        .bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b == b'_')
-            })
-        }) {
-            return "24";
+        if let Some(error) = names.iter().enumerate().filter_map(|(index, name)| bus::validate_manifest_name(name, index).err()).min() {
+            return error.rc();
         }
         self.names.extend(names);
         "0"

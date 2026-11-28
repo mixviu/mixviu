@@ -498,17 +498,6 @@ impl PropTree for MixServeRuntime {
     }
 }
 
-fn valid_manifest_name(name: &str) -> bool {
-    name.len() <= 64
-        && name.split('.').count() <= 6
-        && name.split('.').all(|segment| {
-            !segment.is_empty()
-                && segment
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'_')
-        })
-}
-
 impl ServeRuntime for MixServeRuntime {
     fn publish_commands<'a>(&'a self, handlers: &'a [String]) -> mix::evaluator::BusFuture<'a, ()> {
         Box::pin(async move {
@@ -526,19 +515,26 @@ impl ServeRuntime for MixServeRuntime {
                         }
                     };
                 let mut accepted = 0;
+                let mut warned = std::collections::HashSet::new();
                 bus.set_command_names(
                     descriptors
                         .into_iter()
                         .map(|command| command.name)
                         .filter(|name| {
-                            let valid = valid_manifest_name(name) && accepted < 512;
-                            if !valid {
-                                tracing::warn!(name, "omitting invalid serve command name");
+                            let valid = ::bus::validate_manifest_name(name, accepted);
+                            if let Err(error) = valid {
+                                if warned.insert(name.clone()) {
+                                    if error == ::bus::ManifestNameError::Count {
+                                        tracing::warn!(name, "omitting command name: over the 512-name limit");
+                                    } else {
+                                        tracing::warn!(name, "omitting invalid serve command name");
+                                    }
+                                }
                             }
-                            if valid {
+                            if valid.is_ok() {
                                 accepted += 1;
                             }
-                            valid
+                            valid.is_ok()
                         })
                         .collect(),
                 )
