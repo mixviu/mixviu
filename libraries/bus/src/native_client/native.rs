@@ -2703,49 +2703,141 @@ mod native_ingress_regression_tests {
         for rc in ["0", "10", "20", "21", "22", "23", "24", "26"] {
             let mut client = drained_client();
             let (sent, mut received) = mpsc::unbounded_channel();
-            struct ProbeSink { fail: bool, sent: mpsc::UnboundedSender<Message> }
+            struct ProbeSink {
+                fail: bool,
+                sent: mpsc::UnboundedSender<Message>,
+            }
             impl futures_util::Sink<Message> for ProbeSink {
                 type Error = tokio_tungstenite::tungstenite::Error;
-                fn poll_ready(self: std::pin::Pin<&mut Self>, _: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> { std::task::Poll::Ready(Ok(())) }
-                fn start_send(mut self: std::pin::Pin<&mut Self>, message: Message) -> Result<(), Self::Error> {
-                    if self.fail { self.fail = false; return Err(Self::Error::ConnectionClosed); }
-                    self.sent.send(message).unwrap(); Ok(())
+                fn poll_ready(
+                    self: std::pin::Pin<&mut Self>,
+                    _: &mut std::task::Context<'_>,
+                ) -> std::task::Poll<Result<(), Self::Error>> {
+                    std::task::Poll::Ready(Ok(()))
                 }
-                fn poll_flush(self: std::pin::Pin<&mut Self>, _: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> { std::task::Poll::Ready(Ok(())) }
-                fn poll_close(self: std::pin::Pin<&mut Self>, _: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> { std::task::Poll::Ready(Ok(())) }
+                fn start_send(
+                    mut self: std::pin::Pin<&mut Self>,
+                    message: Message,
+                ) -> Result<(), Self::Error> {
+                    if self.fail {
+                        self.fail = false;
+                        return Err(Self::Error::ConnectionClosed);
+                    }
+                    self.sent.send(message).unwrap();
+                    Ok(())
+                }
+                fn poll_flush(
+                    self: std::pin::Pin<&mut Self>,
+                    _: &mut std::task::Context<'_>,
+                ) -> std::task::Poll<Result<(), Self::Error>> {
+                    std::task::Poll::Ready(Ok(()))
+                }
+                fn poll_close(
+                    self: std::pin::Pin<&mut Self>,
+                    _: &mut std::task::Context<'_>,
+                ) -> std::task::Poll<Result<(), Self::Error>> {
+                    std::task::Poll::Ready(Ok(()))
+                }
             }
             let sink: WsSink = Box::pin(ProbeSink { fail: true, sent });
-            client.manifest = Some(ManifestPublisher::new(Arc::new(Mutex::new(sink)), &client.commands, client.pending.clone()));
-            let descriptors = vec![crate::CommandDescriptor::new("example.read", &[], "Example", true)];
+            client.manifest = Some(ManifestPublisher::new(
+                Arc::new(Mutex::new(sink)),
+                &client.commands,
+                client.pending.clone(),
+            ));
+            let descriptors = vec![crate::CommandDescriptor::new(
+                "example.read",
+                &[],
+                "Example",
+                true,
+            )];
             client.set_commands(descriptors.clone());
-            client.manifest.as_ref().unwrap().registered(Some("example".into()));
+            client
+                .manifest
+                .as_ref()
+                .unwrap()
+                .registered(Some("example".into()));
             tokio::time::timeout(Duration::from_secs(1), async {
-                while !client.manifest.as_ref().unwrap().state.lock().unwrap().dirty {
+                while !client
+                    .manifest
+                    .as_ref()
+                    .unwrap()
+                    .state
+                    .lock()
+                    .unwrap()
+                    .dirty
+                {
                     tokio::task::yield_now().await;
                 }
-            }).await.unwrap();
+            })
+            .await
+            .unwrap();
             client.set_commands(descriptors.clone());
             for command in ["noded.register", "noded.commands.set"] {
                 let message = received.recv().await.unwrap();
-                let Message::Text(wire) = message else { panic!("text request") };
+                let Message::Text(wire) = message else {
+                    panic!("text request")
+                };
                 let request = crate::parse(&wire).unwrap();
                 assert_eq!(request.command_name(), Some(command));
                 if command == "noded.commands.set" {
                     // Recovery registration also clears dirty. Re-arm here to
                     // independently prove the final-reply transition.
-                    client.manifest.as_ref().unwrap().state.lock().unwrap().dirty = true;
+                    client
+                        .manifest
+                        .as_ref()
+                        .unwrap()
+                        .state
+                        .lock()
+                        .unwrap()
+                        .dirty = true;
                 }
-                let response = BusMessage::new().with_header("rc", if command == "noded.register" { "0" } else { rc });
-                client.pending.lock().unwrap().remove(request.get("id").unwrap()).unwrap().send(response).unwrap();
+                let response = BusMessage::new()
+                    .with_header("rc", if command == "noded.register" { "0" } else { rc });
+                client
+                    .pending
+                    .lock()
+                    .unwrap()
+                    .remove(request.get("id").unwrap())
+                    .unwrap()
+                    .send(response)
+                    .unwrap();
             }
             tokio::time::timeout(Duration::from_secs(1), async {
-                while client.manifest.as_ref().unwrap().state.lock().unwrap().dirty {
+                while client
+                    .manifest
+                    .as_ref()
+                    .unwrap()
+                    .state
+                    .lock()
+                    .unwrap()
+                    .dirty
+                {
                     tokio::task::yield_now().await;
                 }
-            }).await.unwrap();
-            let generation = client.manifest.as_ref().unwrap().state.lock().unwrap().generation;
+            })
+            .await
+            .unwrap();
+            let generation = client
+                .manifest
+                .as_ref()
+                .unwrap()
+                .state
+                .lock()
+                .unwrap()
+                .generation;
             client.set_commands(descriptors);
-            assert_eq!(client.manifest.as_ref().unwrap().state.lock().unwrap().generation, generation);
+            assert_eq!(
+                client
+                    .manifest
+                    .as_ref()
+                    .unwrap()
+                    .state
+                    .lock()
+                    .unwrap()
+                    .generation,
+                generation
+            );
             assert!(received.try_recv().is_err());
         }
     }
@@ -2755,10 +2847,18 @@ mod native_ingress_regression_tests {
         let mut client = drained_client();
         let (tx, mut rx) = mpsc::unbounded_channel();
         client.manifest = Some(ManifestPublisher {
-            state: Arc::new(StdMutex::new(ManifestState { identity: Some("example".into()), ..Default::default() })),
-            tx, task: tokio::spawn(async {}).abort_handle(),
+            state: Arc::new(StdMutex::new(ManifestState {
+                identity: Some("example".into()),
+                ..Default::default()
+            })),
+            tx,
+            task: tokio::spawn(async {}).abort_handle(),
         });
-        client.set_command_names(vec!["example.b".into(), "example.a".into(), "example.a".into()]);
+        client.set_command_names(vec![
+            "example.b".into(),
+            "example.a".into(),
+            "example.a".into(),
+        ]);
         assert_eq!(rx.try_recv().unwrap().2, r#"["example.a","example.b"]"#);
         client.set_command_names(vec!["example.a".into(), "example.b".into()]);
         assert!(rx.try_recv().is_err());
@@ -2773,18 +2873,29 @@ mod native_ingress_regression_tests {
         std::thread::scope(|scope| {
             let first_client = client.clone();
             scope.spawn(move || {
-                first_client.set_commands(vec![crate::CommandDescriptor::new("example.first", &[], "First", true)]);
+                first_client.set_commands(vec![crate::CommandDescriptor::new(
+                    "example.first",
+                    &[],
+                    "First",
+                    true,
+                )]);
                 done.send(()).unwrap();
             });
             let client = &client;
             scope.spawn(move || {
                 wait.recv().unwrap();
-                client.set_commands(vec![crate::CommandDescriptor::new("example.last", &[], "Last", true)]);
+                client.set_commands(vec![crate::CommandDescriptor::new(
+                    "example.last",
+                    &[],
+                    "Last",
+                    true,
+                )]);
             });
         });
         let state = client.manifest.as_ref().unwrap().state.lock().unwrap();
         assert_eq!(state.names, ["example.last"]);
-        let descriptors: Vec<crate::CommandDescriptor> = serde_json::from_str(client.commands.read().unwrap().as_ref().unwrap()).unwrap();
+        let descriptors: Vec<crate::CommandDescriptor> =
+            serde_json::from_str(client.commands.read().unwrap().as_ref().unwrap()).unwrap();
         assert_eq!(descriptors[0].name, "example.last");
     }
 

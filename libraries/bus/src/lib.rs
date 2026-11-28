@@ -29,20 +29,38 @@ pub const MAX_MANIFEST_NAME_SEGMENTS: usize = 6;
 
 /// A rejected name or manifest position, in broker return-code precedence order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub enum ManifestNameError { Count, Bytes, Segments, Charset }
+pub enum ManifestNameError {
+    Count,
+    Bytes,
+    Segments,
+    Charset,
+}
 
 impl ManifestNameError {
     pub fn rc(self) -> &'static str {
-        match self { Self::Count => "21", Self::Bytes => "22", Self::Segments => "23", Self::Charset => "24" }
+        match self {
+            Self::Count => "21",
+            Self::Bytes => "22",
+            Self::Segments => "23",
+            Self::Charset => "24",
+        }
     }
 }
 
 /// Validate one command name at its zero-based position in the manifest.
 pub fn validate_manifest_name(name: &str, index: usize) -> Result<(), ManifestNameError> {
-    if index >= MAX_MANIFEST_NAMES { return Err(ManifestNameError::Count); }
-    if name.len() > MAX_MANIFEST_NAME_BYTES { return Err(ManifestNameError::Bytes); }
-    if name.split('.').count() > MAX_MANIFEST_NAME_SEGMENTS { return Err(ManifestNameError::Segments); }
-    if name.split('.').any(|part| part.is_empty() || !part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')) {
+    if index >= MAX_MANIFEST_NAMES {
+        return Err(ManifestNameError::Count);
+    }
+    if name.len() > MAX_MANIFEST_NAME_BYTES {
+        return Err(ManifestNameError::Bytes);
+    }
+    if name.split('.').count() > MAX_MANIFEST_NAME_SEGMENTS {
+        return Err(ManifestNameError::Segments);
+    }
+    if name.split('.').any(|part| {
+        part.is_empty() || !part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    }) {
         return Err(ManifestNameError::Charset);
     }
     Ok(())
@@ -62,7 +80,9 @@ mod manifest_name_tests {
             ("a.b.c.d.e.f.g".into(), 0, ManifestNameError::Segments),
             ("example@bad".into(), 0, ManifestNameError::Charset),
             ("a..b".into(), 0, ManifestNameError::Charset),
-        ] { assert_eq!(validate_manifest_name(&name, index), Err(error)); }
+        ] {
+            assert_eq!(validate_manifest_name(&name, index), Err(error));
+        }
     }
 }
 pub use service_info::{

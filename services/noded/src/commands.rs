@@ -6,14 +6,18 @@ use std::collections::HashSet;
 // 512 strings: 64 ASCII bytes each, worst-case six-byte JSON Unicode escapes,
 // two quotes and one comma per string, plus the brackets (last comma omitted).
 // Whitespace also consumes this wire budget.
-pub(super) const MAX_BODY_BYTES: usize = bus::MAX_MANIFEST_NAMES * (bus::MAX_MANIFEST_NAME_BYTES * 6 + 3) + 1;
+pub(super) const MAX_BODY_BYTES: usize =
+    bus::MAX_MANIFEST_NAMES * (bus::MAX_MANIFEST_NAME_BYTES * 6 + 3) + 1;
 
 pub(super) fn decode(body: &str) -> Result<Vec<String>, &'static str> {
     if body.len() > MAX_BODY_BYTES {
         return Err("21");
     }
     #[derive(Clone, Copy)]
-    enum DecodeError { Malformed, Count }
+    enum DecodeError {
+        Malformed,
+        Count,
+    }
     let failure = std::cell::Cell::new(DecodeError::Malformed);
     struct Names<'a>(&'a std::cell::Cell<DecodeError>);
     impl<'de> Visitor<'de> for Names<'_> {
@@ -42,9 +46,13 @@ pub(super) fn decode(body: &str) -> Result<Vec<String>, &'static str> {
         }
     }
     let mut deserializer = serde_json::Deserializer::from_str(body);
-    let names = serde::Deserializer::deserialize_seq(&mut deserializer, Names(&failure)).map_err(|_| {
-        match failure.get() { DecodeError::Count => "21", DecodeError::Malformed => "20" }
-    })?;
+    let names =
+        serde::Deserializer::deserialize_seq(&mut deserializer, Names(&failure)).map_err(|_| {
+            match failure.get() {
+                DecodeError::Count => "21",
+                DecodeError::Malformed => "20",
+            }
+        })?;
     deserializer.end().map_err(|_| "20")?;
     Ok(names)
 }
@@ -121,7 +129,12 @@ impl Manifest {
             Ok(names) => names,
             Err(rc) => return rc,
         };
-        if let Some(error) = names.iter().enumerate().filter_map(|(index, name)| bus::validate_manifest_name(name, index).err()).min() {
+        if let Some(error) = names
+            .iter()
+            .enumerate()
+            .filter_map(|(index, name)| bus::validate_manifest_name(name, index).err())
+            .min()
+        {
             return error.rc();
         }
         self.names.extend(names);
