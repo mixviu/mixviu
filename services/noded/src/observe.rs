@@ -835,6 +835,12 @@ fn metadata_event(observation: &Observation<'_>) -> EventBody {
 
 fn redacted_event(observation: &Observation<'_>) -> EventBody {
     let mut event = metadata_event(observation);
+    // Registration bodies can contain in-process task capabilities. Omit the
+    // whole body, including malformed JSON, before any payload projection.
+    if observation.message.command_name() == Some("noded.register") {
+        event.payload_omitted = Some("credential");
+        return event;
+    }
     if observation.class.protected() {
         return event;
     }
@@ -1137,6 +1143,18 @@ mod tests {
         assert_eq!(event.command.unwrap().len(), 126);
     }
     use super::*;
+
+    #[test]
+    fn registration_capability_is_omitted_even_from_malformed_payloads() {
+        for body in [r#"{"broker_task_token":"private-capability"}"#, r#"{"broker_task_token":"private-capability" broken"#] {
+            let request = BusMessage::new().with_header("command", "noded.register").with_body(body);
+            let event = redacted_event(&Observation::canonical(Direction::Local, Outcome::BrokerHandled, &request, None));
+            let output = serde_json::to_string(&event).unwrap();
+            assert!(!output.contains("private-capability"));
+            assert!(event.payload.is_none());
+            assert_eq!(event.payload_omitted, Some("credential"));
+        }
+    }
 
     fn message(command: &str) -> BusMessage {
         BusMessage::new()

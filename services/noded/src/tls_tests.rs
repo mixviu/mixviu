@@ -203,7 +203,7 @@ async fn tls_info(state: &AppState) -> serde_json::Value {
         &tx,
         state,
         &mut None,
-        "anon-info",
+        "info-probe",
         "192.0.2.1".parse().unwrap(),
         &mut crate::observe::Outcome::BrokerHandled,
     )

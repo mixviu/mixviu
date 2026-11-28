@@ -162,3 +162,21 @@ The zero suffix `-00000000` is rejected rather than aliasing the base archive.
 It also leaves old
 `bus.log` files. The shipped units enable history and retain `--no-monitor`;
 host rollout is a later gold operation.
+# Reserved broker identities
+
+Ordinary registrations refuse `noded`, `noded-*`, `log`, `log-observe-*`,
+`anon-*`, `bridge-*` and `mon` with rc 10 (`reserved_name`). BROKER-017's
+session-name shape rule is unchanged; `t0-x` and `c0-x` remain client names.
+Only the in-process logger and monitor receive their separate per-boot,
+256-bit OS-random registration tokens. Comparison is constant time. Disabled
+tasks have no token. Tokens never enter provenance or logs; tap and observe
+output omit registration bodies, including malformed bodies.
+
+An admitted mesh link may register its own `bridge-<peer>` name. Forwarded
+reserved task service assertions are refused. Each ServiceEntry records its
+creation origin: `client`, `logger`, `monitor`, `session` or `bridge`. Names
+cannot confer origin; history projection does not consume origin yet.
+
+A service, instance, peer or `bus-svc` name is infrastructure. Never derive
+one from an account, customer, mailbox or domain. Examples use names such as
+`bridge-example`.

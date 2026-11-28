@@ -127,11 +127,11 @@ fn gather_processes(limit: usize) -> Vec<ProcessInfo> {
     procs
 }
 
-pub async fn run(noded_url: &str) -> Result<()> {
+pub(crate) async fn run(noded_url: &str, token: crate::noded::task_identity::Token) -> Result<()> {
     let started_instant = Instant::now();
     let started_at_iso = datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Secs, true);
 
-    let client = bus::native_client::NodedClient::connect("mon", noded_url).await?;
+    let client = token.connect("mon", noded_url).await?;
     let client = Arc::new(client);
     tracing::info!("Monitor module registered on broker");
 

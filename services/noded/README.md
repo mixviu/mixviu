@@ -210,3 +210,14 @@ uninstalled.
 The fixture needs Linux subordinate UID/GID mappings and native `unshare`,
 `chroot`, `mount`, `ip`, `readelf`, `ldconfig` and `pidwait` facilities; unsupported
 namespace policy is a fixture environment failure, not a noded regression.
+# Broker naming reservations
+
+Ordinary registrations cannot claim `noded`, `noded-*`, `log`,
+`log-observe-*`, `anon-*`, `bridge-*` or `mon` (rc 10, `reserved_name`).
+BROKER-017's session-name shape rule also applies. Only tokened in-process
+logger/monitor tasks may claim their names; only an admitted peer may claim
+its own `bridge-<peer>`. Disabled tasks leave their names unavailable.
+See [BUS-HISTORY.md](BUS-HISTORY.md) for identity origins and token handling.
+
+A service, instance, peer or `bus-svc` name is infrastructure. Never derive
+one from an account, customer, mailbox or domain.

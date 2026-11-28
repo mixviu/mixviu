@@ -220,8 +220,16 @@ fn warn_drop(last_at_ms: &AtomicU64, dropped: &AtomicU64, mk: impl FnOnce(u64) -
 /// provenance + binding metadata it supplied at `noded.register`
 /// (SPEC 02 §4.1; `bus::service_info`).
 /// `info.name` mirrors the registry key.
+#[path = "task_identity.rs"]
+pub(crate) mod task_identity;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Origin { Client, Logger, Monitor, Session, Bridge }
+
 #[derive(Clone)]
 pub(crate) struct ServiceEntry {
+    #[allow(dead_code)] // PR B consumes provenance; never infer it from a label.
+    pub(crate) origin: Origin,
     protected_responses: Arc<AtomicBool>,
     traffic_class: TrafficClass,
     tx: mpsc::Sender<String>,
@@ -471,6 +479,7 @@ impl PendingResponseTable {
 
 #[derive(Clone)]
 struct AppState {
+    task_identities: task_identity::TaskIdentities,
     tls: Option<Arc<mesh::TlsRuntime>>,
     tls_peer: Option<crate::tls_ingress::TlsPeer>,
     tls_refusals: Arc<crate::tls_ingress::Refusals>,
@@ -640,8 +649,13 @@ pub struct RunConfig {
 type ListenerFuture =
     std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send>>;
 
+#[allow(dead_code)] // Public embedding path; main also supplies task identities.
 pub async fn run(config: RunConfig, ready_tx: oneshot::Sender<()>) -> Result<()> {
-    serve(config, None, ready_tx).await
+    run_with_tasks(config, ready_tx, Default::default()).await
+}
+
+pub(crate) async fn run_with_tasks(config: RunConfig, ready_tx: oneshot::Sender<()>, tasks: task_identity::TaskIdentities) -> Result<()> {
+    serve(config, None, ready_tx, tasks).await
 }
 
 /// [`run`] on a listener the caller already bound; `config.listen` must name
@@ -670,7 +684,7 @@ pub async fn run_on(
         "run_on: config.listen {} does not name the listener's address {bound}",
         config.listen
     );
-    serve(config, Some(listener), ready_tx).await
+    serve(config, Some(listener), ready_tx, Default::default()).await
 }
 
 async fn mesh_incoming_loop(
@@ -986,6 +1000,7 @@ async fn serve(
     config: RunConfig,
     bound: Option<tokio::net::TcpListener>,
     ready_tx: oneshot::Sender<()>,
+    task_identities: task_identity::TaskIdentities,
 ) -> Result<()> {
     let RunConfig {
         network,
@@ -1185,6 +1200,7 @@ async fn serve(
     let change_bus = crate::props::ChangeBus::new(broker.clone());
 
     let state = AppState {
+        task_identities,
         tls,
         tls_peer: None,
         tls_refusals,
@@ -4294,6 +4310,17 @@ async fn route_local(
     );
     let scoped_observe = state.observe.for_class(traffic_class);
     let observe = &scoped_observe;
+    if admitted_peer.is_some() && mesh_from.is_some_and(reserved_task_name) {
+        drop(reg);
+        let mut reply = BusMessage::new()
+            .with_header("type", "response")
+            .with_header("from", "noded")
+            .with_header("rc", "10")
+            .with_header("error", "reserved_name");
+        if let Some(id) = msg.get("id") { reply.set("id", id); }
+        deliver_observed_response(observe, caller_tx, &reply, ObserveDirection::Local, msg.get("id"));
+        return LocalRouteResult { traffic_class, target_tx: None, forwarded_wire: None, outcome: ObserveOutcome::Rejected };
+    }
     if let Some(target_tx) = reg.get(service).map(|e| e.tx.clone()) {
         // Pending registration may contend across a lease deadline. Hold no
         // registry/session guard until it completes, then revalidate the route.
@@ -4576,6 +4603,11 @@ async fn broadcast_tap(
     if taps.is_empty() {
         return;
     }
+    let sanitized = bus::parse(raw).ok().filter(|m| m.command_name() == Some("noded.register")).map(|mut m| {
+        m.body.clear();
+        m.to_wire()
+    });
+    let raw = sanitized.as_deref().unwrap_or(raw);
     let mut disconnected = false;
     for tap_tx in taps.iter() {
         if let Some(ex) = exclude
@@ -4748,7 +4780,21 @@ async fn handle_noded_command(
             // and registry mutation on every ingress, even without Unix.
             // The broker's own identity is reserved the same way: consumers
             // trust `from: noded` as the broker, so no client may hold it.
-            if reserved_session_name(&from) || reserved_broker_name(&from) {
+            let body: serde_json::Value = serde_json::from_str(&msg.body).unwrap_or_default();
+            let token = &body["broker_task_token"];
+            let origin = if (from == "log" || from.starts_with("log-observe-"))
+                && state.task_identities.logger.as_ref().is_some_and(|t| t.matches(token)) {
+                Origin::Logger
+            } else if from == "mon"
+                && state.task_identities.monitor.as_ref().is_some_and(|t| t.matches(token)) {
+                Origin::Monitor
+            } else if from.starts_with("bridge-")
+                && admitted_delivery_peer(state, source_ip)
+                    .is_some_and(|peer| from == format!("bridge-{peer}")) {
+                Origin::Bridge
+            } else { Origin::Client };
+            if reserved_session_name(&from) || reserved_broker_name(&from)
+                || (reserved_task_name(&from) && origin == Origin::Client) {
                 let mut resp = respond("10");
                 resp.set("error", "reserved_name");
                 resp.body = r#"{"error":"reserved_name"}"#.into();
@@ -4762,12 +4808,13 @@ async fn handle_noded_command(
             let prov: bus::RegisterProvenance = if msg.body.trim().is_empty() {
                 bus::RegisterProvenance::default()
             } else {
-                serde_json::from_str(&msg.body).unwrap_or_else(|e| {
+                let mut provenance = body;
+                if let Some(fields) = provenance.as_object_mut() { fields.remove("broker_task_token"); }
+                serde_json::from_value(provenance).unwrap_or_else(|_| {
                     // A new citizen sent a non-empty but malformed body —
                     // register anyway (name-only) but don't lose it silently.
                     tracing::warn!(
                         service = %from,
-                        error = %e,
                         "noded.register: malformed provenance body, registering without it"
                     );
                     bus::RegisterProvenance::default()
@@ -4861,6 +4908,7 @@ async fn handle_noded_command(
                 reg.insert(
                     from.clone(),
                     ServiceEntry {
+                        origin,
                         protected_responses: state.protected_responses.clone(),
                         traffic_class: if state.principal.is_some() {
                             TrafficClass::NativeSession
@@ -5780,6 +5828,11 @@ fn reserved_broker_name(name: &str) -> bool {
     name == "noded" || name.starts_with("noded-")
 }
 
+fn reserved_task_name(name: &str) -> bool {
+    name == "log" || name == "mon" || name.starts_with("log-observe-")
+        || name.starts_with("anon-") || name.starts_with("bridge-")
+}
+
 fn valid_service_name(name: &str) -> bool {
     (2..=31).contains(&name.len())
         && name
@@ -5840,7 +5893,7 @@ fn escape_json_string(s: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     //! Broker regression tests, including bounded diagnostic emission.
     #[tokio::test]
     async fn reload_observation_bounds_receivers_that_never_drop() {
@@ -5915,7 +5968,7 @@ mod tests {
             &tx,
             &state,
             &mut None,
-            "anon-test",
+            "probe-test",
             "192.0.2.1".parse().unwrap(),
             &mut crate::observe::Outcome::BrokerHandled,
         )
@@ -6835,6 +6888,7 @@ mod tests {
         let broker = Arc::new(SubscriptionBroker::new());
         let started = Instant::now();
         AppState {
+            task_identities: Default::default(),
             tls: None,
             tls_peer: None,
             tls_refusals: Default::default(),
@@ -7460,11 +7514,15 @@ mod tests {
 
     /// Spawn the broker on a free loopback port and return the ws URL.
     async fn spawn_broker() -> Option<String> {
+        spawn_task_broker(Default::default()).await
+    }
+
+    pub(crate) async fn spawn_task_broker(tasks: super::task_identity::TaskIdentities) -> Option<String> {
         let (listener, listen) = pick_listener()?;
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
         let listen_for_run = listen.clone();
         tokio::spawn(async move {
-            let _ = super::run_on(
+            let _ = super::serve(
                 super::RunConfig {
                     network: None,
                     session_probe: None,
@@ -7478,8 +7536,9 @@ mod tests {
                     admission_mode: config::node::AdmissionMode::Off,
                     frame_policy: config::node::AdmissionMode::Observe,
                 },
-                listener,
+                Some(listener),
                 ready_tx,
+                tasks,
             )
             .await;
         });
@@ -7504,7 +7563,7 @@ mod tests {
                 &tx,
                 &state,
                 &mut service,
-                "anon-remote",
+                "remote-probe",
                 source,
                 &mut outcome,
             )
@@ -8416,6 +8475,7 @@ mod tests {
         state.registry.write().await.insert(
             "recipient".into(),
             super::ServiceEntry {
+                    origin: super::Origin::Client,
                 tx: target,
                 traffic_class: super::TrafficClass::NativeSession,
                 protected_responses: Default::default(),
@@ -8522,6 +8582,7 @@ mod tests {
         state.registry.write().await.insert(
             "recipient".into(),
             super::ServiceEntry {
+                    origin: super::Origin::Client,
                 protected_responses: Default::default(),
                 traffic_class: super::TrafficClass::NativeSession,
                 tx: target,
@@ -8801,6 +8862,7 @@ mod tests {
         state.registry.write().await.insert(
             "responder".into(),
             super::ServiceEntry {
+                    origin: super::Origin::Client,
                 protected_responses: sticky.clone(),
                 traffic_class: super::TrafficClass::Legacy,
                 tx: target.clone(),
@@ -8909,6 +8971,7 @@ mod tests {
                 registry.insert(
                     "bridge-beta".into(),
                     super::ServiceEntry {
+                    origin: super::Origin::Client,
                         protected_responses: Default::default(),
                         traffic_class: super::TrafficClass::Legacy,
                         tx: if case == "wrong-owner" {
@@ -8922,6 +8985,7 @@ mod tests {
                 registry.insert(
                     "desktop".into(),
                     super::ServiceEntry {
+                    origin: super::Origin::Client,
                         protected_responses: Default::default(),
                         traffic_class: super::TrafficClass::Legacy,
                         tx: target,
@@ -9009,6 +9073,7 @@ mod tests {
                     registry.insert(
                         name.into(),
                         super::ServiceEntry {
+                    origin: super::Origin::Client,
                             tx,
                             protected_responses: Default::default(),
                             traffic_class: super::TrafficClass::Legacy,
@@ -9058,6 +9123,7 @@ mod tests {
             registry.insert(
                 "bridge-beta".into(),
                 super::ServiceEntry {
+                    origin: super::Origin::Client,
                     protected_responses: Default::default(),
                     traffic_class: super::TrafficClass::Legacy,
                     tx: caller.clone(),
@@ -9067,6 +9133,7 @@ mod tests {
             registry.insert(
                 "desktop".into(),
                 super::ServiceEntry {
+                    origin: super::Origin::Client,
                     protected_responses: Default::default(),
                     traffic_class: super::TrafficClass::Legacy,
                     tx: target,
@@ -9488,7 +9555,7 @@ mod tests {
             (&mut s_anon, &mut r_anon, "anon"),
             (&mut s_held, &mut r_held, "held"),
         ] {
-            for name in ["noded", "noded-7", "noded-anything"] {
+            for name in ["noded", "noded-7", "noded-anything", "log", "log-observe-123", "anon-x", "bridge-example", "mon"] {
                 let id = format!("reserved-{who}-{name}");
                 let request = BusMessage::new()
                     .with_header("command", "noded.register")
@@ -9508,6 +9575,8 @@ mod tests {
         let (mut s_near, mut r_near) = raw_connect(&url).await;
         raw_register(&mut s_near, &mut r_near, "noded2").await;
         raw_register(&mut s_near, &mut r_near, "my-noded").await;
+        raw_register(&mut s_near, &mut r_near, "t0-x").await;
+        raw_register(&mut s_near, &mut r_near, "c0-x").await;
 
         for (sink, expected, tag) in [
             (&mut s_anon, None, "anon"),
@@ -9555,6 +9624,88 @@ mod tests {
         }
         for name in ["noded2", "nodedx", "my-noded", "mix-noded-1", "node"] {
             assert!(!super::reserved_broker_name(name), "{name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn task_registration_origins_and_mesh_reservations() {
+        use super::{Origin, task_identity::{TaskIdentities, Token}};
+        #[derive(Clone)]
+        struct Capture(Arc<std::sync::Mutex<Vec<u8>>>);
+        impl std::io::Write for Capture {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes); Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+        }
+        let capture = Capture(Arc::new(std::sync::Mutex::new(Vec::new())));
+        let writer = capture.clone();
+        let subscriber = tracing_subscriber::fmt().with_max_level(tracing::Level::TRACE).with_writer(move || writer.clone()).finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+        let mut state = mesh_delivery_test_state().await;
+        let logger = Token::new();
+        let monitor = Token::new();
+        state.task_identities = TaskIdentities { logger: Some(logger.clone()), monitor: Some(monitor.clone()) };
+        for (name, token, expected) in [
+            ("log", Some(&logger), Some(Origin::Logger)),
+            ("log-observe-123", Some(&logger), Some(Origin::Logger)),
+            ("mon", Some(&monitor), Some(Origin::Monitor)),
+            ("log", Some(&monitor), None), ("mon", Some(&logger), None),
+            ("log", None, None), ("mon", None, None),
+            ("anon-x", Some(&logger), None), ("bridge-example", Some(&logger), None),
+            ("bridge-beta", None, Some(Origin::Bridge)),
+            ("t0-x", None, Some(Origin::Client)), ("c0-x", None, Some(Origin::Client)),
+        ] {
+            state.registry.write().await.clear();
+            let (tx, mut rx) = mpsc::channel(8);
+            let body = token.map(|t| t.registration_body()).unwrap_or_else(|| "{}".into());
+            let request = BusMessage::new().with_header("command", "noded.register").with_header("from", name).with_body(&body);
+            super::handle_noded_command(&request, &tx, &state, &mut None, "probe-test", "192.0.2.2".parse().unwrap(), &mut super::ObserveOutcome::BrokerHandled).await;
+            let response = bus_mod::parse(&rx.recv().await.unwrap()).unwrap();
+            assert_eq!(response.get("rc"), Some(if expected.is_some() { "0" } else { "10" }), "{name}");
+            assert_eq!(state.registry.read().await.get(name).map(|e| e.origin), expected);
+            let logs = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
+            if let Some(token) = token {
+                let secret: serde_json::Value = serde_json::from_str(&token.registration_body()).unwrap();
+                assert!(!logs.contains(secret["broker_task_token"].as_str().unwrap()));
+            }
+        }
+        state.task_identities = Default::default();
+        for name in ["log", "log-observe-123", "mon", "anon-x", "bridge-example"] {
+            let (tx, mut rx) = mpsc::channel(8);
+            let request = BusMessage::new().with_header("command", "noded.register").with_header("from", name).with_body(&logger.registration_body());
+            super::handle_noded_command(&request, &tx, &state, &mut None, "probe-test", "192.0.2.2".parse().unwrap(), &mut super::ObserveOutcome::BrokerHandled).await;
+            assert_eq!(bus_mod::parse(&rx.recv().await.unwrap()).unwrap().get("error"), Some("reserved_name"));
+        }
+    }
+
+    #[tokio::test]
+    async fn admitted_bridge_cannot_forward_reserved_service_identity() {
+        let state = mesh_delivery_test_state().await;
+        let (caller, mut replies) = mpsc::channel(8);
+        let (target, mut delivered) = mpsc::channel(8);
+        for (name, tx, origin) in [("bridge-beta", caller.clone(), super::Origin::Bridge), ("recipient", target, super::Origin::Client)] {
+            state.registry.write().await.insert(name.into(), super::ServiceEntry { origin, protected_responses: Default::default(), traffic_class: super::TrafficClass::Legacy, tx, info: Default::default() });
+        }
+        for name in ["log", "log-observe-123", "mon", "anon-x", "bridge-example"] {
+            let mut request = BusMessage::new().with_header("id", "request").with_header("command", "probe");
+            let result = super::route_local(&state, "recipient", &mut request, &caller, Some("bridge-beta"), "192.0.2.2".parse().unwrap(), Some(name), None, false).await;
+            assert_eq!(result.outcome, super::ObserveOutcome::Rejected);
+            assert_eq!(bus_mod::parse(&replies.recv().await.unwrap()).unwrap().get("error"), Some("reserved_name"));
+            assert!(delivered.try_recv().is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn register_capabilities_never_reach_taps() {
+        let (tx, mut rx) = mpsc::channel(8);
+        let taps = Arc::new(RwLock::new(vec![tx]));
+        for body in [r#"{"broker_task_token":"private-capability"}"#, r#"{"broker_task_token":"private-capability" broken"#] {
+            let request = BusMessage::new().with_header("command", "noded.register").with_body(body);
+            super::broadcast_tap(&taps, &request.to_wire(), None, super::TrafficClass::Legacy).await;
+            let wire = rx.recv().await.unwrap();
+            assert!(!wire.contains("private-capability"));
+            assert!(bus_mod::parse(&wire).unwrap().body.is_empty());
         }
     }
 

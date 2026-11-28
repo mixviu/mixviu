@@ -724,6 +724,13 @@ impl NodedClient {
         self.register().await
     }
 
+    /// Register with a private capability body supplied by an in-process broker task.
+    /// The body is used once and is never retained as service provenance.
+    pub async fn register_as_with_body(&self, name: &str, body: &str) -> Result<()> {
+        *self.service_name.write().unwrap() = name.to_string();
+        self.register_body(body).await
+    }
+
     /// Send a command to another service and wait for the response.
     pub async fn call(
         &self,
@@ -1259,12 +1266,16 @@ impl NodedClient {
             Some(p) => serde_json::to_string(p).unwrap_or_default(),
             None => String::new(),
         };
+        self.register_body(&request_body).await
+    }
+
+    async fn register_body(&self, request_body: &str) -> Result<()> {
         // `call_with_headers_raw` returns the reply body even on `rc >= 10`,
         // so the structured rejection body survives for classification
         // (`call_typed` folds it into a message string). Success semantics
         // are unchanged: any `rc < 10` is a successful register.
         let (rc, reply_body, error_header) = self
-            .call_with_headers_raw("noded", "noded.register", &BTreeMap::new(), &request_body)
+            .call_with_headers_raw("noded", "noded.register", &BTreeMap::new(), request_body)
             .await?;
         if rc < crate::RC_ERROR {
             return Ok(());
