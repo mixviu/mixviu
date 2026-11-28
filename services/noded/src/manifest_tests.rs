@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
 
-async fn broker(mut state: AppState) -> (String, tokio::task::JoinHandle<()>) {
-    // This fixture exercises local citizens, without mesh admission challenges.
-    state.admission_mode = config::node::AdmissionMode::Off;
+async fn broker(state: AppState) -> (String, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("ws://{}/ws", listener.local_addr().unwrap());
     let app = axum::Router::new()
@@ -200,7 +198,16 @@ async fn allowlisted_mix_citizen_publishes_handlers_without_changing_help() {
     let mut incoming = client.incoming().unwrap();
     let help_call = caller.call("maild", "HELP", serde_json::Value::Null);
     let receive = async {
-        let request = incoming.recv().await.unwrap();
+        // The signed-inventory fixture sends its bootstrap challenge before
+        // registration. As the serve driver does, ignore this non-app command.
+        let request = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                let request = incoming.recv().await.unwrap();
+                if request.command != "noded.admit.challenge" {
+                    break request;
+                }
+            }
+        }).await.unwrap();
         assert_eq!(request.command, "HELP");
         client.respond(&request, 0, "[]").await.unwrap();
     };
