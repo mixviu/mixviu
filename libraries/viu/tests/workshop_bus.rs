@@ -566,15 +566,19 @@ fn restoring_the_old_draw_barrier_times_out_ping() {
     let (_dir, mut host) = fixture(&broker.url);
     host.legacy_draw_barrier();
     let c = caller.clone();
+    let call_deadline = Duration::from_millis(200);
+    let timeout_margin = Duration::from_millis(1800);
     let ping = rt.spawn(async move {
-        c.call_with_headers_raw_within(
+        let started = Instant::now();
+        let answer = c.call_with_headers_raw_within(
             "workshop",
             "workshop.ping",
             &BTreeMap::new(),
             "{}",
-            Duration::from_millis(200),
+            call_deadline,
         )
-        .await
+        .await;
+        (answer, started.elapsed())
     });
     let end = Instant::now() + Duration::from_secs(60);
     while !ping.is_finished() {
@@ -582,9 +586,16 @@ fn restoring_the_old_draw_barrier_times_out_ping() {
         assert!(Instant::now() < end);
         std::thread::sleep(Duration::from_millis(2));
     }
+    let (answer, elapsed) = rt.block_on(ping).unwrap();
+    let bus::SupervisedError::Transport(error) = answer.expect_err("old barrier must time out ping") else {
+        panic!("old barrier must produce a transport timeout");
+    };
+    assert!(matches!(error, bus::ClientError::Timeout { .. }));
+    // Preserve the former two-second latency ceiling separately from the
+    // liveness watchdog; exclude time waiting for the owner to observe completion.
     assert!(
-        rt.block_on(ping).unwrap().is_err(),
-        "old barrier must break ping"
+        elapsed < call_deadline + timeout_margin,
+        "ping timeout latency {elapsed:?} exceeded call deadline plus margin"
     );
     rt.block_on(caller.close());
 }
@@ -795,6 +806,8 @@ end
             eprintln!("WORKSHOP_DISCOVERY_PHASE {}", host.discovery_measurements());
             host.probe_discovery();
             let padding="{\"name\":\"example.command\",\"description\":\"Read state\",\"read_only\":true,\"args\":{}}\n".repeat(600);
+            // Fixture liveness, not throughput: seed rows before enabling the
+            // per-tick numeric and patch CPU bounds below.
             let until = Instant::now() + Duration::from_secs(60);
             for offset in (0..48).step_by(8) {
                 let marker = format!("\"ts\": \"{}\"", offset + 7);
@@ -941,6 +954,8 @@ fn workshop_calls_from_port_appearance_at_200_peers() {
     // This independent client must run while construction/pumping blocks the
     // owner thread. Waiting for Harness::ready would conceal exactly that hold.
     let calls = rt.spawn(async move {
+        // Fixture liveness only. The performance sampling window starts at
+        // port appearance below and keeps its own call deadlines.
         let wait = Instant::now();
         loop {
             if sampler.list_services().await.unwrap().iter().any(|name| name == "workshop") { break; }
