@@ -2706,13 +2706,13 @@ mod native_ingress_regression_tests {
             struct ProbeSink { fail: bool, sent: mpsc::UnboundedSender<Message> }
             impl futures_util::Sink<Message> for ProbeSink {
                 type Error = tokio_tungstenite::tungstenite::Error;
-                fn poll_ready(self: std::pin::Pin<&mut Self>, _: &mut std::task::Context<\u0027_>) -> std::task::Poll<Result<(), Self::Error>> { std::task::Poll::Ready(Ok(())) }
+                fn poll_ready(self: std::pin::Pin<&mut Self>, _: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> { std::task::Poll::Ready(Ok(())) }
                 fn start_send(mut self: std::pin::Pin<&mut Self>, message: Message) -> Result<(), Self::Error> {
                     if self.fail { self.fail = false; return Err(Self::Error::ConnectionClosed); }
                     self.sent.send(message).unwrap(); Ok(())
                 }
-                fn poll_flush(self: std::pin::Pin<&mut Self>, _: &mut std::task::Context<\u0027_>) -> std::task::Poll<Result<(), Self::Error>> { std::task::Poll::Ready(Ok(())) }
-                fn poll_close(self: std::pin::Pin<&mut Self>, _: &mut std::task::Context<\u0027_>) -> std::task::Poll<Result<(), Self::Error>> { std::task::Poll::Ready(Ok(())) }
+                fn poll_flush(self: std::pin::Pin<&mut Self>, _: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> { std::task::Poll::Ready(Ok(())) }
+                fn poll_close(self: std::pin::Pin<&mut Self>, _: &mut std::task::Context<'_>) -> std::task::Poll<Result<(), Self::Error>> { std::task::Poll::Ready(Ok(())) }
             }
             let sink: WsSink = Box::pin(ProbeSink { fail: true, sent });
             client.manifest = Some(ManifestPublisher::new(Arc::new(Mutex::new(sink)), &client.commands, client.pending.clone()));
