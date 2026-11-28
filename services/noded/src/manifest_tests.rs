@@ -1,6 +1,58 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
 
+/// Run explicitly on buildd; reports rather than enforcing a machine speed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[ignore = "load measurement"]
+async fn history_vouched_load() {
+    let state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
+    let (url, task) = broker(state.clone()).await;
+    let client = bus::native_client::NodedClient::connect("maild", &url).await.unwrap();
+    client.set_commands(vec![bus::CommandDescriptor::new("example.read", &[], "Example", true)]);
+    wait_name(&state, "example.read", true).await;
+    let started = Instant::now();
+    let mut jobs = Vec::new();
+    for _ in 0..8 {
+        let state = state.clone();
+        jobs.push(tokio::spawn(async move {
+            let mut wait = Duration::ZERO;
+            let mut max_wait = Duration::ZERO;
+            for _ in 0..20_000 {
+                let start = Instant::now();
+                let guard = state.registry.read().await;
+                let elapsed = start.elapsed();
+                wait += elapsed;
+                max_wait = max_wait.max(elapsed);
+                drop(guard);
+                assert!(state.vouched_command("example.read").await);
+            }
+            (wait, max_wait)
+        }));
+    }
+    let writer = {
+        let state = state.clone();
+        tokio::spawn(async move {
+            for _ in 0..2000 {
+                let guard = state.registry.write().await;
+                drop(guard);
+                tokio::task::yield_now().await;
+            }
+        })
+    };
+    let mut wait = Duration::ZERO;
+    let mut max_wait = Duration::ZERO;
+    for job in jobs {
+        let (sum, max) = job.await.unwrap();
+        wait += sum;
+        max_wait = max_wait.max(max);
+    }
+    writer.await.unwrap();
+    println!("HISTORY_LOAD queries=160000 queries_per_second={:.0} registry_read_wait_mean_ns={} registry_read_wait_max_ns={}",
+        160000.0 / started.elapsed().as_secs_f64(), wait.as_nanos() / 160000, max_wait.as_nanos());
+    client.close().await;
+    task.abort();
+}
+
 async fn broker(state: AppState) -> (String, tokio::task::JoinHandle<()>) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("ws://{}/ws", listener.local_addr().unwrap());
