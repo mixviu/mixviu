@@ -407,7 +407,9 @@ fn fractional_restore_wakes_before_reveal() {
 #[test]
 fn fractional_minimised_destination_stays_suspended() {
     use pattern::ScaleEvent;
-    if !process::record_available() { return; }
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("fractional-still-hidden");
     let mut process = process::spawn_scale_probe("fractional-still-hidden", &bus.url);
     let mut client = Pattern::scale_probe(connect(&mut process));
@@ -418,7 +420,13 @@ fn fractional_minimised_destination_stays_suspended() {
     bus.call("comp.workspace.switch", json!({"index":2}));
     scale_pump_rendered(&bus, &process, &mut client, Duration::from_secs(7));
     // xdg-shell.xml xdg_toplevel.state: suspended=9, not zero-indexed.
-    assert!(client.state.events.iter().any(|(_, e)| matches!(e, ScaleEvent::Configure(_, _, s) if s.contains(&9))));
+    assert!(
+        client
+            .state
+            .events
+            .iter()
+            .any(|(_, e)| matches!(e, ScaleEvent::Configure(_, _, s) if s.contains(&9)))
+    );
     // Fence the 1 Hz trickle, then queue a fresh committed callback. A switch
     // must not answer it early for a window that remains minimised.
     let callbacks = client.state.callbacks;
@@ -433,14 +441,20 @@ fn fractional_minimised_destination_stays_suspended() {
     let start = client.state.events.len();
     bus.call("comp.workspace.switch", json!({"index":1}));
     scale_pump(&mut client, Duration::from_millis(250));
-    assert!(!client.state.events[start..].iter().any(|(_, e)| match e { ScaleEvent::Callback => true, ScaleEvent::Configure(_, _, s) => !s.contains(&9), _ => false }));
+    assert!(!client.state.events[start..].iter().any(|(_, e)| match e {
+        ScaleEvent::Callback => true,
+        ScaleEvent::Configure(_, _, s) => !s.contains(&9),
+        _ => false,
+    }));
     assert_eq!(bus.window(&mut client)["minimized"], true);
 }
 
 #[test]
 fn fractional_visual_hidden_keeps_full_idle_behaviour() {
     use pattern::ScaleEvent;
-    if !process::record_available() { return; }
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("fractional-visual-hidden");
     let mut process = process::spawn_scale_probe("fractional-visual-hidden", &bus.url);
     let mut client = Pattern::scale_probe(connect(&mut process));
@@ -449,19 +463,28 @@ fn fractional_visual_hidden_keeps_full_idle_behaviour() {
     let row = bus.window(&mut client);
     scale_pump(&mut client, Duration::from_secs(2));
     assert_eq!(client.state.scale120, 300);
-    bus.call("comp.window.place", place_args(&row, json!({"visible":false})));
+    bus.call(
+        "comp.window.place",
+        place_args(&row, json!({"visible":false})),
+    );
     scale_pump_rendered(&bus, &process, &mut client, Duration::from_secs(2));
     assert_eq!(client.state.scale120, 120, "{:?}", client.state.events);
     let start = client.state.events.len();
     bus.call("comp.workspace.switch", json!({"index":2}));
     bus.call("comp.workspace.switch", json!({"index":1}));
     scale_pump_rendered(&bus, &process, &mut client, Duration::from_secs(2));
-    assert!(!client.state.events[start..].iter().any(|(_, e)| matches!(e, ScaleEvent::Preferred(300))));
+    assert!(
+        !client.state.events[start..]
+            .iter()
+            .any(|(_, e)| matches!(e, ScaleEvent::Preferred(300)))
+    );
 }
 
 #[test]
 fn fractional_parked_world_is_not_retained() {
-    if !process::record_available() { return; }
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("fractional-parked");
     let mut process = process::spawn_scale_probe("fractional-parked", &bus.url);
     let mut client = Pattern::scale_probe(connect(&mut process));
@@ -561,9 +584,15 @@ fn fractional_return(minimized: bool, suspended: bool, activate: bool) {
             "callback after reveal: {events:?}"
         );
     }
-    let ScaleEvent::Presented(commit_id, w, h, scale) = events[first].1 else { unreachable!() };
+    let ScaleEvent::Presented(commit_id, w, h, scale) = events[first].1 else {
+        unreachable!()
+    };
     assert!(commit_id > 0);
-    assert_eq!((w, h, scale), (500, 400, 300), "first presented commit: {events:?}");
+    assert_eq!(
+        (w, h, scale),
+        (500, 400, 300),
+        "first presented commit: {events:?}"
+    );
 }
 
 #[test]

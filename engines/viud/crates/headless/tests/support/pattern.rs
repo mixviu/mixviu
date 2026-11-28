@@ -571,7 +571,11 @@ impl Pattern {
         self.surface.frame(&self.queue.handle(), ());
         self.state.commit_id += 1;
         let (w, h, scale) = self.state.buffer_info;
-        self.presentation.feedback(&self.surface, &self.queue.handle(), (self.state.commit_id, w, h, scale));
+        self.presentation.feedback(
+            &self.surface,
+            &self.queue.handle(),
+            (self.state.commit_id, w, h, scale),
+        );
         self.surface.commit();
         self.conn.flush().unwrap();
     }
@@ -851,7 +855,9 @@ impl Dispatch<WpPresentationFeedback, (u64, i32, i32, u32)> for State {
                     wayland_client::WEnum::Value(wp_presentation_feedback::Kind::empty())
                 );
                 state.presented += 1;
-                state.log_scale(ScaleEvent::Presented(buffer.0, buffer.1, buffer.2, buffer.3));
+                state.log_scale(ScaleEvent::Presented(
+                    buffer.0, buffer.1, buffer.2, buffer.3,
+                ));
                 state.times.push(
                     (((tv_sec_hi as u64) << 32) | tv_sec_lo as u64) * 1_000_000_000
                         + tv_nsec as u64,

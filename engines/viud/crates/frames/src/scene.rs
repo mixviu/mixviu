@@ -319,8 +319,16 @@ fn grace_band_is_screen_logical_at_non_unit_zoom() {
     for zoom in [1.0, 2.0] {
         let pane = smithay::utils::Rectangle::from_size((1280, 720).into());
         for (right, expected) in [(-255.0, true), (-257.0, false)] {
-            let ctx = Context::new(((256.0 - right) / zoom + 200.0, 0.0), zoom, (1280.0, 720.0), 2.5);
-            assert_eq!(slot_in_grace((0, 0).into(), (200, 160).into(), ctx, pane), expected);
+            let ctx = Context::new(
+                ((256.0 - right) / zoom + 200.0, 0.0),
+                zoom,
+                (1280.0, 720.0),
+                2.5,
+            );
+            assert_eq!(
+                slot_in_grace((0, 0).into(), (200, 160).into(), ctx, pane),
+                expected
+            );
         }
     }
 }
