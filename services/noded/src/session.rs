@@ -692,7 +692,7 @@ impl Sessions {
         reg.insert(
             r.view.name.clone(),
             ServiceEntry {
-commands: Default::default(),
+                commands: Default::default(),
                 protected_responses: c.protected.clone(),
                 traffic_class: TrafficClass::NativeSession,
                 tx: c.tx.clone(),

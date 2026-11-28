@@ -7032,7 +7032,13 @@ impl Evaluator {
     pub async fn run_event_pump(&mut self) -> MixResult<()> {
         let runtime = self.globals.borrow().serve_runtime.clone();
         if let Some(runtime) = runtime {
-            let handlers = self.globals.borrow().handlers.keys().cloned().collect::<Vec<_>>();
+            let handlers = self
+                .globals
+                .borrow()
+                .handlers
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>();
             runtime.publish_commands(&handlers).await;
         }
         let _native_consumer = self.globals.borrow().native_events.enter_pump()?;

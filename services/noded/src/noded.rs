@@ -561,9 +561,12 @@ impl AppState {
         if self.history_allowlist.contains(name) || matches!(name, "noded" | "log") {
             return true;
         }
-        if name.strip_prefix("log-observe-").is_some_and(|pid| {
-            !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit())
-        }) || reserved_session_name(name) || name.starts_with("anon-") {
+        if name
+            .strip_prefix("log-observe-")
+            .is_some_and(|pid| !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()))
+            || reserved_session_name(name)
+            || name.starts_with("anon-")
+        {
             return true;
         }
         name.strip_prefix("bridge-").is_some_and(|peer| {
@@ -576,7 +579,9 @@ impl AppState {
     #[allow(dead_code)] // Consumed by the following history projection PR.
     pub(crate) async fn vouched_command(&self, name: &str) -> bool {
         self.registry.read().await.iter().any(|(service, entry)| {
-            !entry.tx.is_closed() && self.honours_manifest(service) && entry.commands.names.contains(name)
+            !entry.tx.is_closed()
+                && self.honours_manifest(service)
+                && entry.commands.names.contains(name)
         })
     }
 }
@@ -4892,7 +4897,7 @@ async fn handle_noded_command(
                 reg.insert(
                     from.clone(),
                     ServiceEntry {
-commands: Default::default(),
+                        commands: Default::default(),
                         protected_responses: state.protected_responses.clone(),
                         traffic_class: if state.principal.is_some() {
                             TrafficClass::NativeSession
@@ -4921,7 +4926,9 @@ commands: Default::default(),
 
         "noded.commands.set" => {
             let mut registry = state.registry.write().await;
-            let entry = service_name.as_deref().and_then(|name| registry.get_mut(name))
+            let entry = service_name
+                .as_deref()
+                .and_then(|name| registry.get_mut(name))
                 .filter(|entry| entry.same_channel(tx));
             let rc = match entry {
                 Some(entry) => entry.commands.replace(&msg.body),
@@ -7684,7 +7691,12 @@ mod tests {
                 .with_header("to", "noded")
                 .with_header("type", "request")
                 .with_header("id", id);
-            assert_eq!(raw_call(&mut sink, &mut stream, request, id).await.get("rc"), Some(rc));
+            assert_eq!(
+                raw_call(&mut sink, &mut stream, request, id)
+                    .await
+                    .get("rc"),
+                Some(rc)
+            );
         }
     }
 
@@ -7704,14 +7716,30 @@ mod tests {
                 ("noded.register", "", "0"),
                 ("noded.commands.set", r#"["example.read"]"#, "0"),
             ] {
-                let request = BusMessage::new().with_header("command", command)
-                    .with_header("from", identity).with_body(body);
-                super::handle_noded_command(&request, &tx, &state, &mut service, "anon-example",
-                    "127.0.0.1".parse().unwrap(), &mut super::ObserveOutcome::BrokerHandled).await;
+                let request = BusMessage::new()
+                    .with_header("command", command)
+                    .with_header("from", identity)
+                    .with_body(body);
+                super::handle_noded_command(
+                    &request,
+                    &tx,
+                    &state,
+                    &mut service,
+                    "anon-example",
+                    "127.0.0.1".parse().unwrap(),
+                    &mut super::ObserveOutcome::BrokerHandled,
+                )
+                .await;
                 let response = bus::parse(&rx.recv().await.unwrap()).unwrap();
                 assert_eq!(response.get("rc"), Some(expected_rc));
-                let read = honoured && command == "noded.commands.set" && expected_rc == "0" && body.contains("example.read");
-                let write = honoured && command == "noded.commands.set" && expected_rc == "0" && body.contains("example.write");
+                let read = honoured
+                    && command == "noded.commands.set"
+                    && expected_rc == "0"
+                    && body.contains("example.read");
+                let write = honoured
+                    && command == "noded.commands.set"
+                    && expected_rc == "0"
+                    && body.contains("example.write");
                 assert_eq!(state.vouched_command("example.read").await, read);
                 assert_eq!(state.vouched_command("example.write").await, write);
             }
@@ -8521,7 +8549,7 @@ mod tests {
         state.registry.write().await.insert(
             "recipient".into(),
             super::ServiceEntry {
-commands: Default::default(),
+                commands: Default::default(),
                 tx: target,
                 traffic_class: super::TrafficClass::NativeSession,
                 protected_responses: Default::default(),
@@ -8628,7 +8656,7 @@ commands: Default::default(),
         state.registry.write().await.insert(
             "recipient".into(),
             super::ServiceEntry {
-commands: Default::default(),
+                commands: Default::default(),
                 protected_responses: Default::default(),
                 traffic_class: super::TrafficClass::NativeSession,
                 tx: target,
@@ -8908,7 +8936,7 @@ commands: Default::default(),
         state.registry.write().await.insert(
             "responder".into(),
             super::ServiceEntry {
-commands: Default::default(),
+                commands: Default::default(),
                 protected_responses: sticky.clone(),
                 traffic_class: super::TrafficClass::Legacy,
                 tx: target.clone(),
@@ -9017,7 +9045,7 @@ commands: Default::default(),
                 registry.insert(
                     "bridge-beta".into(),
                     super::ServiceEntry {
-commands: Default::default(),
+                        commands: Default::default(),
                         protected_responses: Default::default(),
                         traffic_class: super::TrafficClass::Legacy,
                         tx: if case == "wrong-owner" {
@@ -9031,7 +9059,7 @@ commands: Default::default(),
                 registry.insert(
                     "desktop".into(),
                     super::ServiceEntry {
-commands: Default::default(),
+                        commands: Default::default(),
                         protected_responses: Default::default(),
                         traffic_class: super::TrafficClass::Legacy,
                         tx: target,
@@ -9119,7 +9147,7 @@ commands: Default::default(),
                     registry.insert(
                         name.into(),
                         super::ServiceEntry {
-commands: Default::default(),
+                            commands: Default::default(),
                             tx,
                             protected_responses: Default::default(),
                             traffic_class: super::TrafficClass::Legacy,
@@ -9169,7 +9197,7 @@ commands: Default::default(),
             registry.insert(
                 "bridge-beta".into(),
                 super::ServiceEntry {
-commands: Default::default(),
+                    commands: Default::default(),
                     protected_responses: Default::default(),
                     traffic_class: super::TrafficClass::Legacy,
                     tx: caller.clone(),
@@ -9179,7 +9207,7 @@ commands: Default::default(),
             registry.insert(
                 "desktop".into(),
                 super::ServiceEntry {
-commands: Default::default(),
+                    commands: Default::default(),
                     protected_responses: Default::default(),
                     traffic_class: super::TrafficClass::Legacy,
                     tx: target,

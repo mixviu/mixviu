@@ -436,7 +436,9 @@ impl SupervisedClient {
             connection: connection_options,
         } = options;
         let established = connection.is_some();
-        let command_names = Arc::new(std::sync::Mutex::new(connection_options.command_names.clone()));
+        let command_names = Arc::new(std::sync::Mutex::new(
+            connection_options.command_names.clone(),
+        ));
         let (state_tx, _) = watch::channel(if established {
             ConnState::Connected
         } else {
@@ -1233,7 +1235,11 @@ async fn supervisor_run(ctx: &mut SupervisorCtx, mut current_rx: Option<Connecti
             }
 
             let mut reconnect_options = ctx.connection_options.clone();
-            reconnect_options.command_names = ctx.command_names.lock().expect("commands lock poisoned").clone();
+            reconnect_options.command_names = ctx
+                .command_names
+                .lock()
+                .expect("commands lock poisoned")
+                .clone();
             let connected = tokio::select! {
                 biased;
                 _ = ctx.out_tx.closed() => return,
@@ -1317,7 +1323,12 @@ async fn supervisor_run(ctx: &mut SupervisorCtx, mut current_rx: Option<Connecti
                     }
                     let connection = Arc::new(connection);
                     let mut live = ctx.inner.write().await;
-                    if let Some(names) = ctx.command_names.lock().expect("commands lock poisoned").clone() {
+                    if let Some(names) = ctx
+                        .command_names
+                        .lock()
+                        .expect("commands lock poisoned")
+                        .clone()
+                    {
                         connection.set_command_names(names);
                     }
                     let published = {
