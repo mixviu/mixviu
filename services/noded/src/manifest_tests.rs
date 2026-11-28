@@ -32,51 +32,129 @@ async fn wait_name(state: &AppState, name: &str, present: bool) {
 }
 
 #[tokio::test]
-async fn raw_clients_cannot_register_broker_fixed_or_uninventoried_names() {
-    let state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
+async fn reserved_names_follow_broker_024_and_exact_allowlist() {
+    let mut state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
+    let token = super::super::task_identity::Token::new();
+    state.task_identities.logger = Some(token.clone());
     let (url, task) = broker(state.clone()).await;
-    let mut accepted = Vec::new();
-    for identity in ["anon-x", "log-observe-123", "t0-x", "c0-x", "bridge-example"] {
+    for (identity, allowed, honoured) in [
+        ("anon-x", false, false), ("log-observe-123", false, false),
+        ("log", false, false), ("bridge-example", false, false),
+        ("t0-x", true, false), ("c0-x", true, false), ("maild", true, true),
+    ] {
         let (mut sink, mut stream) = raw_connect(&url).await;
-        let request = BusMessage::new()
-            .with_header("command", "noded.register")
-            .with_header("from", identity)
-            .with_header("to", "noded")
-            .with_header("type", "request")
-            .with_header("id", "reserved-register");
-        let response = raw_call(&mut sink, &mut stream, request, "reserved-register").await;
-        if response.get("rc") == Some("0") {
-            let request = BusMessage::new()
-                .with_header("command", "noded.commands.set")
-                .with_header("to", "noded")
-                .with_header("type", "request")
-                .with_header("id", "reserved-set")
-                .with_body(r#"["example.vouch"]"#);
-            let response = raw_call(&mut sink, &mut stream, request, "reserved-set").await;
-            accepted.push((
-                identity,
-                response.get("rc").map(str::to_owned),
-                state.vouched_command("example.vouch").await,
-            ));
-            let request = BusMessage::new()
-                .with_header("command", "noded.deregister")
-                .with_header("to", "noded")
-                .with_header("type", "request")
-                .with_header("id", "reserved-deregister");
-            assert_eq!(
-                raw_call(&mut sink, &mut stream, request, "reserved-deregister")
-                    .await
-                    .get("rc"),
-                Some("0")
-            );
+        let request = BusMessage::new().with_header("command", "noded.register")
+            .with_header("from", identity).with_header("to", "noded")
+            .with_header("type", "request").with_header("id", "register");
+        let reply = raw_call(&mut sink, &mut stream, request, "register").await;
+        assert_eq!(reply.get("rc"), Some(if allowed { "0" } else { "10" }), "{identity}");
+        if allowed {
+            let request = BusMessage::new().with_header("command", "noded.commands.set")
+                .with_header("to", "noded").with_header("type", "request")
+                .with_header("id", "set").with_body(r#"["example.vouch"]"#);
+            assert_eq!(raw_call(&mut sink, &mut stream, request, "set").await.get("rc"), Some("0"));
+            assert_eq!(state.vouched_command("example.vouch").await, honoured, "{identity}");
         }
         sink.close().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while state.registry.read().await.contains_key(identity) { tokio::task::yield_now().await; }
+        }).await.unwrap();
     }
+    let logger = token.connect("log", &url).await.unwrap();
+    assert_eq!(state.registry.read().await["log"].origin, super::super::Origin::Logger);
+    assert!(!state.honours_manifest("log"));
+    for verb in ["log.props.get", "log.props.list", "log.props.describe"] {
+        assert!(super::super::commands::BROKER_CONTROL_VERBS.contains(&verb));
+    }
+    logger.close().await;
     task.abort();
-    assert!(
-        accepted.is_empty(),
-        "round-3 stop rule: raw registrations accepted (identity, set rc, honoured): {accepted:?}"
-    );
+}
+
+#[tokio::test]
+async fn manifest_ownership_refuses_unregistered_and_stale_channels() {
+    let state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
+    let (url, task) = broker(state.clone()).await;
+    let (mut a, mut ar) = raw_connect(&url).await;
+    let request = || BusMessage::new().with_header("command", "noded.commands.set")
+        .with_header("to", "noded").with_header("id", "set").with_header("type", "request")
+        .with_body(r#"["example.current"]"#);
+    assert_eq!(raw_call(&mut a, &mut ar, request(), "set").await.get("rc"), Some("26"));
+    raw_register(&mut a, &mut ar, "maild").await;
+    // Simulate registry pruning before the stale socket's service_name cleanup.
+    // A live owner still rejects collisions; this does not bypass that policy.
+    state.registry.write().await.remove("maild");
+    let (mut b, mut br) = raw_connect(&url).await;
+    raw_register(&mut b, &mut br, "maild").await;
+    assert_eq!(raw_call(&mut b, &mut br, request(), "set").await.get("rc"), Some("0"));
+    let mut stale = request(); stale.body = r#"["example.stale"]"#.into();
+    assert_eq!(raw_call(&mut a, &mut ar, stale, "set").await.get("rc"), Some("26"));
+    assert!(state.vouched_command("example.current").await);
+    assert!(!state.vouched_command("example.stale").await);
+    a.close().await.unwrap(); b.close().await.unwrap(); task.abort();
+}
+
+#[tokio::test]
+async fn malformed_allowlists_refuse_startup() {
+    for value in [serde_json::json!("maild"), serde_json::json!(42), serde_json::json!(["maild", 42])] {
+        let (listener, listen) = pick_listener().unwrap();
+        let mut network = config::node::NodedConfig::default();
+        network.extra.insert("history_allowlist".into(), value);
+        let (ready, mut readiness) = tokio::sync::oneshot::channel();
+        let result = super::super::run_on(super::super::RunConfig {
+            network: Some(network), session_probe: None, unix_socket: None,
+            pending_grants_per_parent: 32, listen, node: "example".into(),
+            mesh_addr: "127.0.0.1".into(), mesh_config_path: None, spec_dir: None,
+            admission_mode: config::node::AdmissionMode::Off,
+            frame_policy: config::node::AdmissionMode::Off,
+        }, listener, ready).await;
+        assert!(result.is_err());
+        assert!(readiness.try_recv().is_err());
+    }
+}
+
+#[tokio::test]
+async fn manifest_refusals_warn_and_budget_recovers() {
+    if log_capture_subprocess("manifest_tests::manifest_refusals_warn_and_budget_recovers") { return; }
+    #[derive(Clone)]
+    struct Capture(Arc<std::sync::Mutex<Vec<u8>>>);
+    impl std::io::Write for Capture {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> { self.0.lock().unwrap().extend_from_slice(bytes); Ok(bytes.len()) }
+        fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+    }
+    let capture = Capture(Arc::new(std::sync::Mutex::new(Vec::new())));
+    let writer = capture.clone();
+    let subscriber = tracing_subscriber::fmt().without_time().with_ansi(false)
+        .with_max_level(tracing::Level::WARN).with_writer(move || writer.clone()).finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    let state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
+    let (url, task) = broker(state.clone()).await;
+    let client = bus::native_client::NodedClient::connect("maild", &url).await.unwrap()
+        .with_commands(vec![bus::CommandDescriptor::new("example.initial", &[], "Example", true)]);
+    wait_name(&state, "example.initial", true).await;
+    let incarnation = state.registry.read().await["maild"].info.meta["noded.registration_id"].clone();
+    for index in 0..17 {
+        let name = format!("example.cmd{index}");
+        client.set_commands(vec![bus::CommandDescriptor::new(&name, &[], "Example", true)]);
+        wait_name(&state, &name, true).await;
+    }
+    assert_ne!(state.registry.read().await["maild"].info.meta["noded.registration_id"], incarnation);
+    client.set_commands(vec![bus::CommandDescriptor::new("example@invalid", &[], "Example", true)]);
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if String::from_utf8_lossy(&capture.0.lock().unwrap()).contains("rc=\"24\"") { break; }
+            tokio::task::yield_now().await;
+        }
+    }).await.unwrap();
+    let incarnation = state.registry.read().await["maild"].info.meta["noded.registration_id"].clone();
+    client.call("noded", "noded.ping", serde_json::Value::Null).await.unwrap();
+    assert_eq!(state.registry.read().await["maild"].info.meta["noded.registration_id"], incarnation);
+    client.set_commands(vec![bus::CommandDescriptor::new("example.recovered", &[], "Example", true)]);
+    wait_name(&state, "example.recovered", true).await;
+    let logs = String::from_utf8(capture.0.lock().unwrap().clone()).unwrap();
+    assert!(logs.contains("rc=\"25\""), "{logs}");
+    assert_eq!(logs.matches("rc=\"24\"").count(), 1, "{logs}");
+    assert_eq!(logs.matches("rc=\"25\"").count(), 1, "{logs}");
+    client.close().await; task.abort();
 }
 
 #[tokio::test]

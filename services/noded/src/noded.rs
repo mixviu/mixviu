@@ -588,21 +588,7 @@ struct PendingMeshObservation {
 
 impl AppState {
     fn honours_manifest(&self, name: &str) -> bool {
-        if self.history_allowlist.contains(name) || matches!(name, "noded" | "log") {
-            return true;
-        }
-        if name
-            .strip_prefix("log-observe-")
-            .is_some_and(|pid| !pid.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()))
-            || reserved_session_name(name)
-            || name.starts_with("anon-")
-        {
-            return true;
-        }
-        name.strip_prefix("bridge-").is_some_and(|peer| {
-            matches!(&self.authority.load().posture,
-                crate::authority::Posture::Verified(a) if a.members_full.contains_key(peer))
-        })
+        self.history_allowlist.contains(name)
     }
 
     /// PR A's history projection query. Only live, honoured registrations vouch.
@@ -5125,7 +5111,6 @@ async fn handle_noded_command(
                     from.clone(),
                     ServiceEntry {
                         origin,
-commands: Default::default(),
                         commands: Default::default(),
                         protected_responses: state.protected_responses.clone(),
                         traffic_class: if state.principal.is_some() {
@@ -5160,6 +5145,7 @@ commands: Default::default(),
                 .and_then(|name| registry.get_mut(name))
                 .filter(|entry| entry.same_channel(tx));
             let rc = match entry {
+                // Decode under the write lock: the registration budget must precede body validation in rc order.
                 Some(entry) => entry.commands.replace(&msg.body),
                 None => "26",
             };
@@ -8803,7 +8789,6 @@ pub(crate) mod tests {
             "recipient".into(),
             super::ServiceEntry {
                 origin: super::Origin::Client,
-commands: Default::default(),
                 commands: Default::default(),
                 tx: target,
                 traffic_class: super::TrafficClass::NativeSession,
@@ -8912,7 +8897,6 @@ commands: Default::default(),
             "recipient".into(),
             super::ServiceEntry {
                 origin: super::Origin::Client,
-commands: Default::default(),
                 commands: Default::default(),
                 protected_responses: Default::default(),
                 traffic_class: super::TrafficClass::NativeSession,
@@ -9203,7 +9187,6 @@ commands: Default::default(),
             "responder".into(),
             super::ServiceEntry {
                 origin: super::Origin::Client,
-commands: Default::default(),
                 commands: Default::default(),
                 protected_responses: sticky.clone(),
                 traffic_class: super::TrafficClass::Legacy,
@@ -9314,7 +9297,6 @@ commands: Default::default(),
                     "bridge-beta".into(),
                     super::ServiceEntry {
                         origin: super::Origin::Client,
-commands: Default::default(),
                         commands: Default::default(),
                         protected_responses: Default::default(),
                         traffic_class: super::TrafficClass::Legacy,
@@ -9330,7 +9312,6 @@ commands: Default::default(),
                     "desktop".into(),
                     super::ServiceEntry {
                         origin: super::Origin::Client,
-commands: Default::default(),
                         commands: Default::default(),
                         protected_responses: Default::default(),
                         traffic_class: super::TrafficClass::Legacy,
@@ -9420,7 +9401,6 @@ commands: Default::default(),
                         name.into(),
                         super::ServiceEntry {
                             origin: super::Origin::Client,
-commands: Default::default(),
                             commands: Default::default(),
                             tx,
                             protected_responses: Default::default(),
@@ -9472,7 +9452,6 @@ commands: Default::default(),
                 "bridge-beta".into(),
                 super::ServiceEntry {
                     origin: super::Origin::Client,
-commands: Default::default(),
                     commands: Default::default(),
                     protected_responses: Default::default(),
                     traffic_class: super::TrafficClass::Legacy,
@@ -9484,7 +9463,6 @@ commands: Default::default(),
                 "desktop".into(),
                 super::ServiceEntry {
                     origin: super::Origin::Client,
-commands: Default::default(),
                     commands: Default::default(),
                     protected_responses: Default::default(),
                     traffic_class: super::TrafficClass::Legacy,
@@ -10120,6 +10098,7 @@ commands: Default::default(),
                 name.into(),
                 super::ServiceEntry {
                     origin,
+                    commands: Default::default(),
                     protected_responses: Default::default(),
                     traffic_class: super::TrafficClass::Legacy,
                     tx,

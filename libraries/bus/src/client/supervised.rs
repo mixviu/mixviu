@@ -436,6 +436,8 @@ impl SupervisedClient {
             connection: connection_options,
         } = options;
         let established = connection.is_some();
+        // Retained names must flow through options or set_command_names; launch
+        // is private and its pre-established Connection is built from these options.
         let command_names = Arc::new(std::sync::Mutex::new(
             connection_options.command_names.clone(),
         ));

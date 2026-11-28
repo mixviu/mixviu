@@ -478,6 +478,8 @@ fn classify_registration_rejection(body: &str) -> RegistrationRejectionKind {
 
 #[derive(Default)]
 struct ManifestState {
+    dirty: bool,
+    registration_body: String,
     names: Vec<String>,
     identity: Option<String>,
     generation: u64,
@@ -496,64 +498,83 @@ impl Drop for ManifestPublisher {
 }
 
 impl ManifestPublisher {
-    fn new(sink: Arc<Mutex<WsSink>>, descriptors: &RwLock<Option<String>>) -> Self {
-        let mut names: Vec<String> = descriptors
-            .read()
-            .expect("commands lock poisoned")
-            .as_deref()
+    async fn exchange(
+        sink: &Arc<Mutex<WsSink>>, pending: &Arc<StdMutex<PendingMap>>,
+        mut request: BusMessage, id: String,
+    ) -> Option<BusMessage> {
+        request.set("id", &id);
+        let (tx, rx) = oneshot::channel();
+        pending.lock().expect("pending mutex poisoned").insert(id.clone(), tx);
+        let _guard = PendingGuard::arm(pending.clone(), id);
+        sink.lock().await.send(Message::Text(request.to_wire().into())).await.ok()?;
+        tokio::time::timeout(RESPONSE_TIMEOUT, rx).await.ok()?.ok()
+    }
+
+    fn new(sink: Arc<Mutex<WsSink>>, descriptors: &RwLock<Option<String>>, pending: Arc<StdMutex<PendingMap>>) -> Self {
+        let mut names: Vec<String> = descriptors.read().expect("commands lock poisoned").as_deref()
             .and_then(|body| serde_json::from_str::<Vec<crate::CommandDescriptor>>(body).ok())
-            .unwrap_or_default()
-            .into_iter()
-            .map(|command| command.name)
-            .collect();
+            .unwrap_or_default().into_iter().map(|command| command.name).collect();
         names.sort();
         names.dedup();
-        let state = Arc::new(StdMutex::new(ManifestState {
-            names,
-            ..Default::default()
-        }));
+        let state = Arc::new(StdMutex::new(ManifestState { names, ..Default::default() }));
         let reader_state = state.clone();
         let (tx, mut rx) = mpsc::unbounded_channel::<(u64, String, String)>();
         let task = tokio::spawn(async move {
-            while let Some((generation, identity, body)) = rx.recv().await {
-                let mut sink = sink.lock().await;
-                {
-                    let state = reader_state.lock().expect("manifest lock poisoned");
-                    if state.generation != generation || state.identity.as_ref() != Some(&identity)
-                    {
-                        continue;
+            let mut warned = std::collections::HashSet::new();
+            let mut serial = 0u64;
+            while let Some((mut generation, identity, mut body)) = rx.recv().await {
+                // Drop stale updates before contending for the socket.
+                if reader_state.lock().expect("manifest lock poisoned").generation != generation { continue; }
+                for attempt in 0..2 {
+                    let recovery = {
+                        let state = reader_state.lock().expect("manifest lock poisoned");
+                        if state.generation != generation || state.identity.as_ref() != Some(&identity) { break; }
+                        state.dirty.then(|| state.registration_body.clone())
+                    };
+                    if let Some(registration_body) = recovery {
+                        serial += 1;
+                        let request = BusMessage::new().with_header("command", "noded.register")
+                            .with_header("from", &identity).with_header("to", "noded")
+                            .with_header("type", "request").with_body(&registration_body);
+                        let Some(reply) = Self::exchange(&sink, &pending, request, format!("manifest-register-{serial}")).await else { break; };
+                        if reply.get("rc").and_then(|rc| rc.parse::<u8>().ok()).is_none_or(|rc| rc >= crate::RC_ERROR) {
+                            tracing::warn!("manifest recovery registration refused");
+                            break;
+                        }
+                        let mut state = reader_state.lock().expect("manifest lock poisoned");
+                        if state.generation != generation { break; }
+                        state.generation += 1;
+                        generation = state.generation;
+                        state.dirty = false;
+                        body = serde_json::to_string(&state.names).expect("names serialize");
                     }
-                }
-                let request = BusMessage::new()
-                    .with_header("command", "noded.commands.set")
-                    .with_header("to", "noded")
-                    .with_header("from", &identity)
-                    .with_header("type", "request")
-                    .with_header("id", "commands-manifest")
-                    .with_body(&body);
-                if sink
-                    .send(Message::Text(request.to_wire().into()))
-                    .await
-                    .is_err()
-                {
-                    break;
+                    // Recheck after waiting for the sink in exchange's caller.
+                    if reader_state.lock().expect("manifest lock poisoned").generation != generation { break; }
+                    serial += 1;
+                    let request = BusMessage::new().with_header("command", "noded.commands.set")
+                        .with_header("from", &identity).with_header("to", "noded")
+                        .with_header("type", "request").with_body(&body);
+                    let Some(reply) = Self::exchange(&sink, &pending, request, format!("manifest-set-{serial}")).await else { break; };
+                    let rc = reply.get("rc").unwrap_or("invalid");
+                    if rc == "10" {
+                        if warned.insert(rc.to_owned()) { tracing::debug!("broker does not support noded.commands.set"); }
+                    } else if rc != "0" && warned.insert(rc.to_owned()) {
+                        tracing::warn!(rc, "broker refused command manifest");
+                    }
+                    if rc != "25" { break; }
+                    let mut state = reader_state.lock().expect("manifest lock poisoned");
+                    if state.generation != generation { break; }
+                    state.dirty = true;
+                    if attempt == 1 { break; } // A broken broker cannot cause a retry loop.
                 }
             }
         });
-        Self {
-            state,
-            tx,
-            task: task.abort_handle(),
-        }
+        Self { state, tx, task: task.abort_handle() }
     }
 
     fn enqueue(&self, state: &ManifestState) {
         if let Some(identity) = &state.identity {
-            let _ = self.tx.send((
-                state.generation,
-                identity.clone(),
-                serde_json::to_string(&state.names).expect("names serialize"),
-            ));
+            let _ = self.tx.send((state.generation, identity.clone(), serde_json::to_string(&state.names).expect("names serialize")));
         }
     }
 
@@ -561,14 +582,14 @@ impl ManifestPublisher {
         let mut state = self.state.lock().expect("manifest lock poisoned");
         state.generation += 1;
         state.identity = identity;
+        state.dirty = false;
         self.enqueue(&state);
     }
 
     fn set_names(&self, mut names: Vec<String>) {
-        names.sort();
-        names.dedup();
+        names.sort(); names.dedup();
         let mut state = self.state.lock().expect("manifest lock poisoned");
-        if state.names != names {
+        if state.names != names || state.dirty {
             state.names = names;
             self.enqueue(&state);
         }
@@ -595,7 +616,7 @@ impl NodedClient {
         let body =
             Some(serde_json::to_string(&command_names).expect("command descriptors serialize"));
         let mut commands = self.commands.write().expect("commands lock poisoned");
-        if *commands == body {
+        if *commands == body && !self.manifest.as_ref().is_some_and(|m| m.state.lock().expect("manifest lock poisoned").dirty) {
             return;
         }
         *commands = body;
@@ -663,7 +684,7 @@ impl NodedClient {
         ));
         let mut guard = AbortOnDrop::new(reader.abort_handle());
         let client = Self {
-            manifest: Some(ManifestPublisher::new(sink.clone(), &command_names)),
+            manifest: Some(ManifestPublisher::new(sink.clone(), &command_names, pending.clone())),
             service_name,
             commands: command_names,
             sink,
@@ -766,7 +787,7 @@ impl NodedClient {
         let mut reader_guard = AbortOnDrop::new(reader_handle.abort_handle());
 
         let client = Self {
-            manifest: Some(ManifestPublisher::new(sink.clone(), &command_names)),
+            manifest: Some(ManifestPublisher::new(sink.clone(), &command_names, pending.clone())),
             service_name,
             commands: command_names,
             sink,
@@ -825,7 +846,7 @@ impl NodedClient {
         ));
 
         Ok(Self {
-            manifest: Some(ManifestPublisher::new(sink.clone(), &command_names)),
+            manifest: Some(ManifestPublisher::new(sink.clone(), &command_names, pending.clone())),
             service_name,
             commands: command_names,
             sink,
@@ -1429,7 +1450,8 @@ impl NodedClient {
             self.request_message(message, RESPONSE_TIMEOUT).await?;
         if rc < crate::RC_ERROR {
             if let Some(manifest) = &self.manifest {
-                manifest.registered(Some(self.name()));
+                manifest.state.lock().expect("manifest lock poisoned").registration_body = request_body.to_owned();
+                manifest.registered(Some(name.to_owned()));
             }
             return Ok(());
         }
@@ -1566,7 +1588,6 @@ impl NodedClient {
         );
         #[cfg(not(unix))]
         let verified = false;
-        let mut manifest_unknown_logged = false;
         while let Some(result) = stream.next().await {
             let data = match result {
                 Ok(Message::Text(text)) => text.to_string(),
@@ -1617,13 +1638,6 @@ impl NodedClient {
             // origin of the indexd↔noded feedback loop fixed on 2026-05-04.
             let msg_type_is_response = msg.get("type").is_some_and(|t| t == "response");
             if msg_type_is_response {
-                if msg_id.as_deref() == Some("commands-manifest") {
-                    if msg.get("rc") == Some("10") && !manifest_unknown_logged {
-                        tracing::debug!("broker does not support noded.commands.set");
-                        manifest_unknown_logged = true;
-                    }
-                    continue;
-                }
                 if let Some(ref id) = msg_id {
                     // sync-mutex: `pending` deliberately uses
                     // `std::sync::Mutex` so [`PendingGuard::drop`] can
