@@ -441,6 +441,12 @@ fn a_mirror_serves_reads_and_refuses_writes_until_s7() {
 
 #[test]
 fn the_dry_run_writes_nothing_and_the_backdrop_imports_once() {
+    for _ in 0..32 {
+        check_backdrop_import();
+    }
+}
+
+fn check_backdrop_import() {
     let dir = tempfile::tempdir().unwrap();
     format4_profile(dir.path());
     let backdrop = dir.path().join("backdrop.mx");
@@ -477,6 +483,52 @@ fn the_dry_run_writes_nothing_and_the_backdrop_imports_once() {
     // A format-5 profile dry-runs as current.
     let current = settingsd::migration::dry_run(dir.path(), &binding(), None).unwrap();
     assert_eq!(current["status"], "current");
+}
+
+#[test]
+fn dropping_a_store_releases_the_writer_before_a_forked_child_exits() {
+    use std::os::fd::AsRawFd;
+
+    for _ in 0..16 {
+        let dir = tempfile::tempdir().unwrap();
+        let (store, _) = Store::create(dir.path(), binding(), Default::default()).unwrap();
+        assert!(Store::open(dir.path(), &binding()).is_err());
+        let (parent, child) = std::os::unix::net::UnixStream::pair().unwrap();
+        let child_fd = child.as_raw_fd();
+        // Model another test's Command::spawn paused between fork and exec.
+        // Only async-signal-safe libc calls are allowed in the child. poll's
+        // deadline also bounds the child if the parent panics.
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0, "fork: {}", std::io::Error::last_os_error());
+        if pid == 0 {
+            unsafe {
+                let mut fd = libc::pollfd {
+                    fd: child_fd,
+                    events: libc::POLLIN,
+                    revents: 0,
+                };
+                libc::poll(&mut fd, 1, 10_000);
+                libc::_exit(0);
+            }
+        }
+        drop(child);
+        drop(store);
+        let reopened = Store::open(dir.path(), &binding());
+        // Reap before asserting, including when the unfixed open fails.
+        std::io::Write::write_all(&mut &parent, &[1]).unwrap();
+        let mut status = 0;
+        loop {
+            let waited = unsafe { libc::waitpid(pid, &mut status, 0) };
+            if waited == pid {
+                break;
+            }
+            assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(libc::EINTR));
+        }
+        assert_eq!(status, 0);
+        let (store, _) = reopened.expect("drop must unlock even while a child holds the inherited fd");
+        assert!(Store::open(dir.path(), &binding()).is_err());
+        drop(store);
+    }
 }
 
 #[test]
