@@ -203,7 +203,10 @@ impl Projector {
         let names = self.registry.names.load();
         // Canonical local source provenance is already enforced by routing.
         let mut result = Projected {
-            from: observation.message.from_addr().map(|name| self.local_identity(name)),
+            from: observation
+                .message
+                .from_addr()
+                .map(|name| self.local_identity(name)),
             ..Default::default()
         };
         if observation.direction == ObserveDirection::MeshIn
@@ -215,11 +218,16 @@ impl Projector {
                 } else {
                     None
                 };
-                let (value, issue, _) = if observation.direction == ObserveDirection::MeshIn && peer.is_none() {
-                    ("unknown-target".into(), Some(("remote-unvouched", raw.len())), None)
-                } else {
-                    self.address(raw, peer, &names)
-                };
+                let (value, issue, _) =
+                    if observation.direction == ObserveDirection::MeshIn && peer.is_none() {
+                        (
+                            "unknown-target".into(),
+                            Some(("remote-unvouched", raw.len())),
+                            None,
+                        )
+                    } else {
+                        self.address(raw, peer, &names)
+                    };
                 if let Some((reason, len)) = issue {
                     result.reason = Some(reason);
                     result.name_len = Some(len);
@@ -228,9 +236,13 @@ impl Projector {
             });
         }
         if let Some(raw) = observation.message.to_addr() {
-            let peer = if observation.direction == ObserveDirection::MeshOut && observation.message.get("type") == Some("response") {
+            let peer = if observation.direction == ObserveDirection::MeshOut
+                && observation.message.get("type") == Some("response")
+            {
                 observation.peer
-            } else { None };
+            } else {
+                None
+            };
             let (value, issue, sub) = self.address(raw, peer, &names);
             result.to = Some(value);
             result.to_sub_len = sub;
