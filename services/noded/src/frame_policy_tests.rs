@@ -291,6 +291,7 @@ async fn serve_mesh_receiver_policy_delivers_observe_and_drops_enforce() {
                 "recipient".into(),
                 super::ServiceEntry {
                     origin: super::Origin::Client,
+                    commands: Default::default(),
                     tx: target,
                     info: Default::default(),
                     traffic_class: Default::default(),

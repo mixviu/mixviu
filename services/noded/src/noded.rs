@@ -46,6 +46,9 @@ use crate::protection::TrafficClass;
 #[path = "frame_policy.rs"]
 mod frame_policy;
 
+#[path = "commands.rs"]
+mod commands;
+
 type FrameRefusalLogs = HashMap<(String, &'static str), mesh::DiagnosticLog>;
 static FRAME_REFUSALS: std::sync::LazyLock<std::sync::Mutex<FrameRefusalLogs>> =
     std::sync::LazyLock::new(Default::default);
@@ -236,6 +239,7 @@ pub(crate) enum Origin {
 pub(crate) struct ServiceEntry {
     #[allow(dead_code)] // PR B consumes provenance; never infer it from a label.
     pub(crate) origin: Origin,
+    commands: commands::Manifest,
     protected_responses: Arc<AtomicBool>,
     traffic_class: TrafficClass,
     tx: mpsc::Sender<String>,
@@ -501,6 +505,7 @@ struct AppState {
     #[cfg(test)]
     assert_legacy_promotion: bool,
     task_identities: task_identity::TaskIdentities,
+    history_allowlist: std::collections::HashSet<String>,
     tls: Option<Arc<mesh::TlsRuntime>>,
     tls_peer: Option<crate::tls_ingress::TlsPeer>,
     tls_refusals: Arc<crate::tls_ingress::Refusals>,
@@ -579,6 +584,22 @@ struct PendingMeshObservation {
     canonical_wire: String,
     correlation_id: Option<String>,
     peer: String,
+}
+
+impl AppState {
+    fn honours_manifest(&self, name: &str) -> bool {
+        self.history_allowlist.contains(name)
+    }
+
+    /// PR A's history projection query. Only live, honoured registrations vouch.
+    #[allow(dead_code)] // Consumed by the following history projection PR.
+    pub(crate) async fn vouched_command(&self, name: &str) -> bool {
+        self.registry.read().await.iter().any(|(service, entry)| {
+            !entry.tx.is_closed()
+                && self.honours_manifest(service)
+                && entry.commands.names.contains(name)
+        })
+    }
 }
 
 /// SPEC 13 §9a (2-c-2c) — a live enforce-admitted inter-node session, tracked so
@@ -1228,6 +1249,7 @@ async fn serve(
         #[cfg(test)]
         assert_legacy_promotion: false,
         task_identities,
+        history_allowlist: commands::allowlist(Some(&network))?,
         tls,
         tls_peer: None,
         tls_refusals,
@@ -5089,6 +5111,7 @@ async fn handle_noded_command(
                     from.clone(),
                     ServiceEntry {
                         origin,
+                        commands: Default::default(),
                         protected_responses: state.protected_responses.clone(),
                         traffic_class: if state.principal.is_some() {
                             TrafficClass::NativeSession
@@ -5113,6 +5136,23 @@ async fn handle_noded_command(
             let _ = tx.try_send(resp.to_wire());
 
             emit_props_change(state, &format!("register:{from}")).await;
+        }
+
+        "noded.commands.set" => {
+            let decoded = commands::decode(&msg.body);
+            let mut registry = state.registry.write().await;
+            let entry = service_name
+                .as_deref()
+                .and_then(|name| registry.get_mut(name))
+                .filter(|entry| entry.same_channel(tx));
+            let rc = match entry {
+                // Decode outside the lock, but report ownership then budget then decode errors.
+                Some(entry) => entry.commands.replace_decoded(decoded),
+                None => "26",
+            };
+            let mut response = respond(rc);
+            response.set("command", "noded.commands.set");
+            let _ = tx.try_send(response.to_wire());
         }
 
         "noded.deregister" => {
@@ -6255,6 +6295,9 @@ pub(crate) mod tests {
     include!("frame_policy_tests.rs");
     include!("identity_tests.rs");
     include!("tls_tests.rs");
+    mod manifest_tests {
+        include!("manifest_tests.rs");
+    }
     use std::collections::HashMap;
     use std::net::{Ipv4Addr, TcpListener};
     use std::sync::Arc;
@@ -7081,6 +7124,7 @@ pub(crate) mod tests {
         AppState {
             assert_legacy_promotion: false,
             task_identities: Default::default(),
+            history_allowlist: super::commands::allowlist(None).unwrap(),
             tls: None,
             tls_peer: None,
             tls_refusals: Default::default(),
@@ -7866,6 +7910,83 @@ pub(crate) mod tests {
             .await
             .expect("observe stop");
         assert_eq!(stopped["stopped"], true);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn unknown_noded_verb_returns_rc_and_keeps_registered_connection() {
+        let Some(url) = spawn_broker().await else {
+            panic!("broker did not start");
+        };
+        let (mut sink, mut stream) = raw_connect(&url).await;
+        raw_register(&mut sink, &mut stream, "example").await;
+        for (id, command, rc) in [
+            ("unknown-1", "noded.no_such_command", "10"),
+            ("ping-1", "noded.ping", "0"),
+            ("unknown-2", "noded.future_verb", "10"),
+            ("ping-2", "noded.ping", "0"),
+        ] {
+            let request = BusMessage::new()
+                .with_header("command", command)
+                .with_header("from", "example")
+                .with_header("to", "noded")
+                .with_header("type", "request")
+                .with_header("id", id);
+            assert_eq!(
+                raw_call(&mut sink, &mut stream, request, id)
+                    .await
+                    .get("rc"),
+                Some(rc)
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn manifests_follow_honoured_registration_lifetime() {
+        let state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
+        for (identity, honoured) in [("maild", true), ("example", false)] {
+            let (tx, mut rx) = mpsc::channel(32);
+            let mut service = None;
+            for (command, body, expected_rc) in [
+                ("noded.register", "", "0"),
+                ("noded.commands.set", r#"["example.read"]"#, "0"),
+                ("noded.commands.set", r#"["example.write"]"#, "0"),
+                ("noded.commands.set", r#"["bad@name"]"#, "24"),
+                ("noded.commands.set", r#"["example.read"]"#, "0"),
+                ("noded.deregister", "", "0"),
+                ("noded.register", "", "0"),
+                ("noded.commands.set", r#"["example.read"]"#, "0"),
+            ] {
+                let request = BusMessage::new()
+                    .with_header("command", command)
+                    .with_header("from", identity)
+                    .with_body(body);
+                super::handle_noded_command(
+                    &request,
+                    &tx,
+                    &state,
+                    &mut service,
+                    "anon-example",
+                    &state.peer_context,
+                    &mut super::ObserveOutcome::BrokerHandled,
+                )
+                .await;
+                let response = bus::parse(&rx.recv().await.unwrap()).unwrap();
+                assert_eq!(response.get("rc"), Some(expected_rc));
+                let read = honoured
+                    && command == "noded.commands.set"
+                    && expected_rc == "0"
+                    && body.contains("example.read");
+                let write = honoured
+                    && command == "noded.commands.set"
+                    && expected_rc == "0"
+                    && body.contains("example.write");
+                assert_eq!(state.vouched_command("example.read").await, read);
+                assert_eq!(state.vouched_command("example.write").await, write);
+            }
+            drop(rx);
+            assert!(!state.vouched_command("example.read").await);
+            state.registry.write().await.remove(identity);
+        }
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -8669,6 +8790,7 @@ pub(crate) mod tests {
             "recipient".into(),
             super::ServiceEntry {
                 origin: super::Origin::Client,
+                commands: Default::default(),
                 tx: target,
                 traffic_class: super::TrafficClass::NativeSession,
                 protected_responses: Default::default(),
@@ -8776,6 +8898,7 @@ pub(crate) mod tests {
             "recipient".into(),
             super::ServiceEntry {
                 origin: super::Origin::Client,
+                commands: Default::default(),
                 protected_responses: Default::default(),
                 traffic_class: super::TrafficClass::NativeSession,
                 tx: target,
@@ -9065,6 +9188,7 @@ pub(crate) mod tests {
             "responder".into(),
             super::ServiceEntry {
                 origin: super::Origin::Client,
+                commands: Default::default(),
                 protected_responses: sticky.clone(),
                 traffic_class: super::TrafficClass::Legacy,
                 tx: target.clone(),
@@ -9174,6 +9298,7 @@ pub(crate) mod tests {
                     "bridge-beta".into(),
                     super::ServiceEntry {
                         origin: super::Origin::Client,
+                        commands: Default::default(),
                         protected_responses: Default::default(),
                         traffic_class: super::TrafficClass::Legacy,
                         tx: if case == "wrong-owner" {
@@ -9188,6 +9313,7 @@ pub(crate) mod tests {
                     "desktop".into(),
                     super::ServiceEntry {
                         origin: super::Origin::Client,
+                        commands: Default::default(),
                         protected_responses: Default::default(),
                         traffic_class: super::TrafficClass::Legacy,
                         tx: target,
@@ -9276,6 +9402,7 @@ pub(crate) mod tests {
                         name.into(),
                         super::ServiceEntry {
                             origin: super::Origin::Client,
+                            commands: Default::default(),
                             tx,
                             protected_responses: Default::default(),
                             traffic_class: super::TrafficClass::Legacy,
@@ -9326,6 +9453,7 @@ pub(crate) mod tests {
                 "bridge-beta".into(),
                 super::ServiceEntry {
                     origin: super::Origin::Client,
+                    commands: Default::default(),
                     protected_responses: Default::default(),
                     traffic_class: super::TrafficClass::Legacy,
                     tx: caller.clone(),
@@ -9336,6 +9464,7 @@ pub(crate) mod tests {
                 "desktop".into(),
                 super::ServiceEntry {
                     origin: super::Origin::Client,
+                    commands: Default::default(),
                     protected_responses: Default::default(),
                     traffic_class: super::TrafficClass::Legacy,
                     tx: target,
@@ -9970,6 +10099,7 @@ pub(crate) mod tests {
                 name.into(),
                 super::ServiceEntry {
                     origin,
+                    commands: Default::default(),
                     protected_responses: Default::default(),
                     traffic_class: super::TrafficClass::Legacy,
                     tx,

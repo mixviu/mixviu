@@ -299,6 +299,7 @@ impl SupervisedConnectOptions {
 /// calls through the state-gated methods; the supervisor task reconnects,
 /// re-registers and replays the [`SubscriptionRegistry`] underneath.
 pub struct SupervisedClient {
+    command_names: Arc<std::sync::Mutex<Option<Vec<String>>>>,
     deliveries_rx: std::sync::Mutex<Option<mpsc::UnboundedReceiver<SupervisedDelivery>>>,
     /// The live connection. Swapped by the supervisor on reconnect under a
     /// brief write lock; outbound calls clone the `Arc` under a read lock so
@@ -324,6 +325,15 @@ pub struct SupervisedClient {
 }
 
 impl SupervisedClient {
+    /// Publish command names alongside HELP, retaining them on reconnect.
+    pub async fn set_command_names(&self, names: Vec<String>) {
+        let live = self.inner.read().await;
+        let mut retained = self.command_names.lock().expect("commands lock poisoned");
+        *retained = Some(names.clone());
+        if let Some(connection) = live.as_ref() {
+            connection.set_command_names(names);
+        }
+    }
     /// Start building a supervised connection with explicit options.
     pub fn connect_options(service_name: &str, noded_url: &str) -> SupervisedConnectOptions {
         SupervisedConnectOptions {
@@ -427,6 +437,11 @@ impl SupervisedClient {
             connection: connection_options,
         } = options;
         let established = connection.is_some();
+        // Retained names must flow through options or set_command_names; launch
+        // is private and its pre-established Connection is built from these options.
+        let command_names = Arc::new(std::sync::Mutex::new(
+            connection_options.command_names.clone(),
+        ));
         let (state_tx, _) = watch::channel(if established {
             ConnState::Connected
         } else {
@@ -471,6 +486,7 @@ impl SupervisedClient {
         let subscription_transaction = Arc::new(TokioMutex::new(()));
 
         let supervisor = tokio::spawn(supervisor_loop(SupervisorCtx {
+            command_names: command_names.clone(),
             inner: inner.clone(),
             state_tx: state_tx.clone(),
             state_publish: state_publish.clone(),
@@ -488,6 +504,7 @@ impl SupervisedClient {
         }));
 
         SupervisedClient {
+            command_names,
             deliveries_rx: std::sync::Mutex::new(contextual.then_some(delivery_rx)),
             inner,
             state_tx,
@@ -981,6 +998,7 @@ enum ForwardOutcome {
 
 /// Everything the detached supervisor task owns.
 struct SupervisorCtx {
+    command_names: Arc<std::sync::Mutex<Option<Vec<String>>>>,
     inner: Arc<RwLock<Option<Arc<Connection>>>>,
     state_tx: watch::Sender<ConnState>,
     state_publish: Arc<std::sync::Mutex<()>>,
@@ -1219,12 +1237,18 @@ async fn supervisor_run(ctx: &mut SupervisorCtx, mut current_rx: Option<Connecti
                 return;
             }
 
+            let mut reconnect_options = ctx.connection_options.clone();
+            reconnect_options.command_names = ctx
+                .command_names
+                .lock()
+                .expect("commands lock poisoned")
+                .clone();
             let connected = tokio::select! {
                 biased;
                 _ = ctx.out_tx.closed() => return,
                 _ = ctx.shutdown_rx.changed() => return,
                 result = Connection::connect_with_options(
-                    &ctx.service_name, &ctx.noded_url, &ctx.connection_options,
+                    &ctx.service_name, &ctx.noded_url, &reconnect_options,
                 ) => result,
             };
             match connected {
@@ -1302,6 +1326,14 @@ async fn supervisor_run(ctx: &mut SupervisorCtx, mut current_rx: Option<Connecti
                     }
                     let connection = Arc::new(connection);
                     let mut live = ctx.inner.write().await;
+                    if let Some(names) = ctx
+                        .command_names
+                        .lock()
+                        .expect("commands lock poisoned")
+                        .clone()
+                    {
+                        connection.set_command_names(names);
+                    }
                     let published = {
                         // Close publishes its terminal state under this same
                         // fence before selecting a socket. It therefore sees

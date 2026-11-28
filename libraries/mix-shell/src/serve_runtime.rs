@@ -92,6 +92,7 @@ impl Default for ReloadIdentity {
 /// evaluator consults) and [`PropTree`] (the lifecycle property model
 /// `dispatch_props` reads), so one value answers all of L0+L1.
 pub struct MixServeRuntime {
+    bus: Option<std::sync::Arc<::bus::native_client::SupervisedClient>>,
     /// Bus service name — the `<svc>` prefix for `<svc>.props.*` and
     /// the `INFO.name`.
     service_name: String,
@@ -113,12 +114,22 @@ pub struct MixServeRuntime {
     /// runtimes, embedders without a script file — makes `RELOAD` answer
     /// rc:10.
     script_path: Option<std::path::PathBuf>,
+    manifest_warnings: std::cell::RefCell<(u64, std::collections::HashSet<String>)>,
 }
 
 /// Operating-mode value for `lifecycle.mode`. A Phase-1 serve citizen
 /// is always actively serving; the leaf exists so meta-subscribers can
 /// branch on it once Phase 2 adds drain/paused modes.
 const MODE_SERVING: &str = "serving";
+#[cfg(test)]
+#[test]
+fn manifest_warnings_are_once_per_name_per_generation() {
+    let runtime = MixServeRuntime::new("example");
+    assert!(runtime.manifest_warning_is_new("example.read"));
+    assert!(!runtime.manifest_warning_is_new("example.read"));
+    runtime.identity.committed_reload();
+    assert!(runtime.manifest_warning_is_new("example.read"));
+}
 /// Health classification for `lifecycle.health`. Phase 1 has no health
 /// degradation path (handler faults are isolated by WS6, not surfaced
 /// as daemon-wide health yet), so this is a constant `ok`.
@@ -133,6 +144,18 @@ const HEALTH_DEGRADED: &str = "degraded";
 const PROPS_LEVEL: &str = "L1";
 
 impl MixServeRuntime {
+    fn manifest_warning_is_new(&self, name: &str) -> bool {
+        let generation = self.identity.generation();
+        let mut warnings = self.manifest_warnings.borrow_mut();
+        if warnings.0 != generation {
+            *warnings = (generation, Default::default());
+        }
+        warnings.1.insert(name.to_owned())
+    }
+    pub fn with_bus(mut self, bus: std::sync::Arc<::bus::native_client::SupervisedClient>) -> Self {
+        self.bus = Some(bus);
+        self
+    }
     /// Build the runtime surface for a citizen registered as
     /// `service_name`. Captures the start instants now.
     pub fn new(service_name: impl Into<String>) -> Self {
@@ -143,8 +166,10 @@ impl MixServeRuntime {
             identity: std::rc::Rc::new(ReloadIdentity::new()),
             props_prefix,
             handler_faults: std::cell::Cell::new(0),
+            bus: None,
             last_fault: std::cell::RefCell::new(None),
             script_path: None,
+            manifest_warnings: Default::default(),
         }
     }
 
@@ -493,6 +518,51 @@ impl PropTree for MixServeRuntime {
 }
 
 impl ServeRuntime for MixServeRuntime {
+    fn publish_commands<'a>(&'a self, handlers: &'a [String]) -> mix::evaluator::BusFuture<'a, ()> {
+        Box::pin(async move {
+            if let Some(bus) = &self.bus {
+                let handlers = handlers
+                    .iter()
+                    .map(|name| (name.as_str(), None))
+                    .collect::<Vec<_>>();
+                let descriptors: Vec<::bus::CommandDescriptor> =
+                    match serde_json::from_str(&self.help_body(&handlers)) {
+                        Ok(descriptors) => descriptors,
+                        Err(error) => {
+                            tracing::warn!(%error, "cannot encode serve command manifest");
+                            return;
+                        }
+                    };
+                let mut accepted = 0;
+                bus.set_command_names(
+                    descriptors
+                        .into_iter()
+                        .map(|command| command.name)
+                        .filter(|name| {
+                            let valid = ::bus::validate_manifest_name(name, accepted);
+                            if let Err(error) = valid
+                                && self.manifest_warning_is_new(name)
+                            {
+                                if error == ::bus::ManifestNameError::Count {
+                                    tracing::warn!(
+                                        name,
+                                        "omitting command name: over the 512-name limit"
+                                    );
+                                } else {
+                                    tracing::warn!(name, "omitting invalid serve command name");
+                                }
+                            }
+                            if valid.is_ok() {
+                                accepted += 1;
+                            }
+                            valid.is_ok()
+                        })
+                        .collect(),
+                )
+                .await;
+            }
+        })
+    }
     fn record_handler_fault(&self, summary: &str) {
         self.handler_faults.set(self.handler_faults.get() + 1);
         // Bound the stored summary: the fault detail can carry request

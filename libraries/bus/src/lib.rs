@@ -21,6 +21,70 @@ pub mod native_session;
 mod protocol;
 pub mod service_info;
 pub use protocol::*;
+
+/// Manifest limits in broker return-code precedence order.
+pub const MAX_MANIFEST_NAMES: usize = 512;
+pub const MAX_MANIFEST_NAME_BYTES: usize = 64;
+pub const MAX_MANIFEST_NAME_SEGMENTS: usize = 6;
+
+/// A rejected name or manifest position, in broker return-code precedence order.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum ManifestNameError {
+    Count,
+    Bytes,
+    Segments,
+    Charset,
+}
+
+impl ManifestNameError {
+    pub fn rc(self) -> &'static str {
+        match self {
+            Self::Count => "21",
+            Self::Bytes => "22",
+            Self::Segments => "23",
+            Self::Charset => "24",
+        }
+    }
+}
+
+/// Validate one command name at its zero-based position in the manifest.
+pub fn validate_manifest_name(name: &str, index: usize) -> Result<(), ManifestNameError> {
+    if index >= MAX_MANIFEST_NAMES {
+        return Err(ManifestNameError::Count);
+    }
+    if name.len() > MAX_MANIFEST_NAME_BYTES {
+        return Err(ManifestNameError::Bytes);
+    }
+    if name.split('.').count() > MAX_MANIFEST_NAME_SEGMENTS {
+        return Err(ManifestNameError::Segments);
+    }
+    if name.split('.').any(|part| {
+        part.is_empty() || !part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    }) {
+        return Err(ManifestNameError::Charset);
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod manifest_name_tests {
+    use super::*;
+    #[test]
+    fn shared_limits_and_boundaries() {
+        for name in ["a".repeat(64), "a.b.c.d.e.f".into()] {
+            assert_eq!(validate_manifest_name(&name, 511), Ok(()));
+        }
+        for (name, index, error) in [
+            ("example.read".into(), 512, ManifestNameError::Count),
+            ("a".repeat(65), 0, ManifestNameError::Bytes),
+            ("a.b.c.d.e.f.g".into(), 0, ManifestNameError::Segments),
+            ("example@bad".into(), 0, ManifestNameError::Charset),
+            ("a..b".into(), 0, ManifestNameError::Charset),
+        ] {
+            assert_eq!(validate_manifest_name(&name, index), Err(error));
+        }
+    }
+}
 pub use service_info::{
     NodeInfo, REGISTRATION_REJECTION_NAME_TAKEN, REGISTRATION_REJECTION_SCHEMA, RegisterProvenance,
     SCHEMA_VERSION, ServiceInfo,

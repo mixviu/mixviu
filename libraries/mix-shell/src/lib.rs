@@ -49,6 +49,8 @@ mod script_meta;
 pub mod script_worker;
 #[cfg(feature = "serve")]
 mod serve_runtime;
+#[cfg(feature = "serve")]
+pub use serve_runtime::MixServeRuntime;
 mod session_execute;
 mod session_state;
 mod session_status;
@@ -1886,6 +1888,7 @@ fn run_serve(script_path: &str, service_name: &str, no_prelude: bool) -> i32 {
         mix::interrupt::init(interrupt_flag.clone());
         async fn build_serve_eval(
             bus_handler: &std::rc::Rc<bus::MixServeHandler>,
+            supervised: &std::sync::Arc<::bus::native_client::SupervisedClient>,
             identity: &std::rc::Rc<serve_runtime::ReloadIdentity>,
             service_name: &str,
             script_path: &str,
@@ -1905,7 +1908,7 @@ fn run_serve(script_path: &str, service_name: &str, no_prelude: bool) -> i32 {
                     service_name,
                     script_path,
                     identity.clone(),
-                ),
+                ).with_bus(supervised.clone()),
             ));
             repl::register_ai_extensions(&mut eval);
             if !no_prelude {
@@ -1939,6 +1942,7 @@ fn run_serve(script_path: &str, service_name: &str, no_prelude: bool) -> i32 {
         // teardown.
         let mut eval = match until_shutdown(build_serve_eval(
             &bus_handler,
+            &supervised,
             &identity,
             service_name,
             script_path,
@@ -2082,6 +2086,7 @@ fn run_serve(script_path: &str, service_name: &str, no_prelude: bool) -> i32 {
                 signal = &mut shutdown => break ServeOutcome::StartupSignal(signal),
                 new_eval = build_serve_eval(
                     &bus_handler,
+                    &supervised,
                     &identity,
                     service_name,
                     script_path,

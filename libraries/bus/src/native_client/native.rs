@@ -314,6 +314,7 @@ impl Drop for PendingGuard {
 
 /// Bus WebSocket client for communicating with noded.
 pub struct NodedClient {
+    manifest: Option<ManifestPublisher>,
     service_name: Arc<RwLock<String>>,
     commands: Arc<RwLock<Option<String>>>,
     sink: Arc<Mutex<WsSink>>,
@@ -475,7 +476,243 @@ fn classify_registration_rejection(body: &str) -> RegistrationRejectionKind {
     }
 }
 
+#[derive(Default)]
+struct ManifestState {
+    dirty: bool,
+    registration_body: String,
+    names: Vec<String>,
+    identity: Option<String>,
+    generation: u64,
+}
+
+struct ManifestPublisher {
+    state: Arc<StdMutex<ManifestState>>,
+    tx: mpsc::UnboundedSender<(u64, String, String)>,
+    task: tokio::task::AbortHandle,
+}
+
+impl Drop for ManifestPublisher {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+impl ManifestPublisher {
+    async fn exchange(
+        sink: &Arc<Mutex<WsSink>>,
+        pending: &Arc<StdMutex<PendingMap>>,
+        mut request: BusMessage,
+        id: String,
+        state: &Arc<StdMutex<ManifestState>>,
+        generation: u64,
+    ) -> Option<BusMessage> {
+        let mut sink = sink.lock().await;
+        // Also fence a deregister/re-register that happened while waiting.
+        if state.lock().expect("manifest lock poisoned").generation != generation {
+            return None;
+        }
+        request.set("id", &id);
+        let (tx, rx) = oneshot::channel();
+        pending
+            .lock()
+            .expect("pending mutex poisoned")
+            .insert(id.clone(), tx);
+        let _guard = PendingGuard::arm(pending.clone(), id);
+        sink.send(Message::Text(request.to_wire().into()))
+            .await
+            .ok()?;
+        drop(sink);
+        tokio::time::timeout(RESPONSE_TIMEOUT, rx).await.ok()?.ok()
+    }
+
+    fn new(
+        sink: Arc<Mutex<WsSink>>,
+        descriptors: &RwLock<Option<String>>,
+        pending: Arc<StdMutex<PendingMap>>,
+    ) -> Self {
+        let mut names: Vec<String> = descriptors
+            .read()
+            .expect("commands lock poisoned")
+            .as_deref()
+            .and_then(|body| serde_json::from_str::<Vec<crate::CommandDescriptor>>(body).ok())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|command| command.name)
+            .collect();
+        names.sort();
+        names.dedup();
+        let state = Arc::new(StdMutex::new(ManifestState {
+            names,
+            ..Default::default()
+        }));
+        let reader_state = state.clone();
+        let (tx, mut rx) = mpsc::unbounded_channel::<(u64, String, String)>();
+        let task = tokio::spawn(async move {
+            let mut warned = std::collections::HashSet::new();
+            let mut serial = 0u64;
+            while let Some((mut generation, identity, mut body)) = rx.recv().await {
+                // Drop stale updates before contending for the socket.
+                if reader_state
+                    .lock()
+                    .expect("manifest lock poisoned")
+                    .generation
+                    != generation
+                {
+                    continue;
+                }
+                for attempt in 0..2 {
+                    let recovery = {
+                        let state = reader_state.lock().expect("manifest lock poisoned");
+                        if state.generation != generation
+                            || state.identity.as_ref() != Some(&identity)
+                        {
+                            break;
+                        }
+                        state.dirty.then(|| state.registration_body.clone())
+                    };
+                    if let Some(registration_body) = recovery {
+                        serial += 1;
+                        let request = BusMessage::new()
+                            .with_header("command", "noded.register")
+                            .with_header("from", &identity)
+                            .with_header("to", "noded")
+                            .with_header("type", "request")
+                            .with_body(&registration_body);
+                        let Some(reply) = Self::exchange(
+                            &sink,
+                            &pending,
+                            request,
+                            format!("manifest-register-{serial}"),
+                            &reader_state,
+                            generation,
+                        )
+                        .await
+                        else {
+                            break;
+                        };
+                        if reply
+                            .get("rc")
+                            .and_then(|rc| rc.parse::<u8>().ok())
+                            .is_none_or(|rc| rc >= crate::RC_ERROR)
+                        {
+                            let rc = reply.get("rc").unwrap_or("invalid");
+                            if warned.insert(format!("register:{rc}")) {
+                                tracing::warn!(rc, "manifest recovery registration refused");
+                            }
+                            break;
+                        }
+                        let mut state = reader_state.lock().expect("manifest lock poisoned");
+                        if state.generation != generation {
+                            break;
+                        }
+                        state.generation += 1;
+                        generation = state.generation;
+                        state.dirty = false;
+                        body = serde_json::to_string(&state.names).expect("names serialize");
+                    }
+                    // Avoid contending for the sink for an already-stale set.
+                    if reader_state
+                        .lock()
+                        .expect("manifest lock poisoned")
+                        .generation
+                        != generation
+                    {
+                        break;
+                    }
+                    serial += 1;
+                    let request = BusMessage::new()
+                        .with_header("command", "noded.commands.set")
+                        .with_header("from", &identity)
+                        .with_header("to", "noded")
+                        .with_header("type", "request")
+                        .with_body(&body);
+                    let Some(reply) = Self::exchange(
+                        &sink,
+                        &pending,
+                        request,
+                        format!("manifest-set-{serial}"),
+                        &reader_state,
+                        generation,
+                    )
+                    .await
+                    else {
+                        let mut state = reader_state.lock().expect("manifest lock poisoned");
+                        if state.generation == generation {
+                            state.dirty = true;
+                        }
+                        break;
+                    };
+                    let rc = reply.get("rc").unwrap_or("invalid");
+                    if rc == "10" {
+                        if warned.insert(rc.to_owned()) {
+                            tracing::debug!("broker does not support noded.commands.set");
+                        }
+                    } else if rc != "0" && warned.insert(rc.to_owned()) {
+                        tracing::warn!(rc, "broker refused command manifest");
+                    }
+                    if rc != "25" {
+                        let mut state = reader_state.lock().expect("manifest lock poisoned");
+                        if state.generation == generation {
+                            state.dirty = false;
+                        }
+                        break;
+                    }
+                    let mut state = reader_state.lock().expect("manifest lock poisoned");
+                    if state.generation != generation {
+                        break;
+                    }
+                    state.dirty = true;
+                    if attempt == 1 {
+                        break;
+                    } // A broken broker cannot cause a retry loop.
+                }
+            }
+        });
+        Self {
+            state,
+            tx,
+            task: task.abort_handle(),
+        }
+    }
+
+    fn enqueue(&self, state: &ManifestState) {
+        if let Some(identity) = &state.identity {
+            let _ = self.tx.send((
+                state.generation,
+                identity.clone(),
+                serde_json::to_string(&state.names).expect("names serialize"),
+            ));
+        }
+    }
+
+    fn registered(&self, identity: Option<String>) {
+        let mut state = self.state.lock().expect("manifest lock poisoned");
+        state.generation += 1;
+        state.identity = identity;
+        state.dirty = false;
+        self.enqueue(&state);
+    }
+
+    fn set_names(&self, mut names: Vec<String>) {
+        names.sort();
+        names.dedup();
+        let mut state = self.state.lock().expect("manifest lock poisoned");
+        if state.names != names || state.dirty {
+            state.names = names;
+            state.generation += 1;
+            self.enqueue(&state);
+        }
+    }
+}
+
 impl NodedClient {
+    /// Publish names without installing or changing native HELP handling.
+    pub fn set_command_names(&self, names: Vec<String>) {
+        if let Some(manifest) = &self.manifest {
+            manifest.set_names(names);
+        }
+    }
+
     /// Opt into central HELP handling. Install before publishing the service
     /// where possible. HELP is consumed by the reader, never the application.
     pub fn with_commands(self, command_names: Vec<crate::CommandDescriptor>) -> Self {
@@ -485,8 +722,29 @@ impl NodedClient {
 
     /// Replace the manifest on a live client, including verified Unix clients.
     pub fn set_commands(&self, command_names: Vec<crate::CommandDescriptor>) {
-        *self.commands.write().expect("commands lock poisoned") =
+        let mut commands = self.commands.write().expect("commands lock poisoned");
+        let mut names: Vec<_> = command_names.iter().map(|c| c.name.clone()).collect();
+        names.sort();
+        names.dedup();
+        let body =
             Some(serde_json::to_string(&command_names).expect("command descriptors serialize"));
+        if *commands == body
+            && !self.manifest.as_ref().is_some_and(|m| {
+                let state = m.state.lock().expect("manifest lock poisoned");
+                state.dirty || state.names != names
+            })
+        {
+            return;
+        }
+        *commands = body;
+        // Serialize concurrent descriptor updates with publication of their names.
+        self.set_command_names(
+            command_names
+                .into_iter()
+                .map(|command| command.name)
+                .collect(),
+        );
+        drop(commands);
     }
 
     #[cfg(unix)]
@@ -543,6 +801,11 @@ impl NodedClient {
         ));
         let mut guard = AbortOnDrop::new(reader.abort_handle());
         let client = Self {
+            manifest: Some(ManifestPublisher::new(
+                sink.clone(),
+                &command_names,
+                pending.clone(),
+            )),
             service_name,
             commands: command_names,
             sink,
@@ -598,6 +861,7 @@ impl NodedClient {
             provenance,
             None,
             None,
+            None,
             false,
         )
         .await
@@ -611,6 +875,7 @@ impl NodedClient {
         provenance: Option<crate::RegisterProvenance>,
         bounded_capacity: Option<usize>,
         manifest: Option<Vec<crate::CommandDescriptor>>,
+        names: Option<Vec<String>>,
         refuse_rpc: bool,
     ) -> Result<Self> {
         let (sink, stream) = connect_socket(noded_url).await?;
@@ -643,6 +908,11 @@ impl NodedClient {
         let mut reader_guard = AbortOnDrop::new(reader_handle.abort_handle());
 
         let client = Self {
+            manifest: Some(ManifestPublisher::new(
+                sink.clone(),
+                &command_names,
+                pending.clone(),
+            )),
             service_name,
             commands: command_names,
             sink,
@@ -654,6 +924,9 @@ impl NodedClient {
             provenance,
         };
 
+        if let Some(names) = names {
+            client.set_command_names(names);
+        }
         // Register with the broker. On failure the detached reader
         // task already owns the socket, so a bare `?` early-return
         // would leak a live (broker-side) connection plus its reader
@@ -698,6 +971,11 @@ impl NodedClient {
         ));
 
         Ok(Self {
+            manifest: Some(ManifestPublisher::new(
+                sink.clone(),
+                &command_names,
+                pending.clone(),
+            )),
             service_name,
             commands: command_names,
             sink,
@@ -1273,6 +1551,9 @@ impl NodedClient {
     // ── Internal ──
 
     async fn register(&self) -> Result<()> {
+        if let Some(manifest) = &self.manifest {
+            manifest.registered(None);
+        }
         // Send build provenance in the register body when present, so it
         // surfaces in noded.list/noded.info; re-sent on every register so
         // a reconnect re-publishes it. Absent → empty body (old citizen).
@@ -1297,6 +1578,14 @@ impl NodedClient {
         let (rc, reply_body, error_header) =
             self.request_message(message, RESPONSE_TIMEOUT).await?;
         if rc < crate::RC_ERROR {
+            if let Some(manifest) = &self.manifest {
+                manifest
+                    .state
+                    .lock()
+                    .expect("manifest lock poisoned")
+                    .registration_body = request_body.to_owned();
+                manifest.registered(Some(name.to_owned()));
+            }
             return Ok(());
         }
         // Classify from the BOUNDED structured body only — never by matching
@@ -1323,6 +1612,9 @@ impl NodedClient {
     /// deregister-before-exit sequencing lives in the serve-mode
     /// shutdown path (SPEC 18 §3.5, WS5).
     pub async fn deregister(&self) -> Result<()> {
+        if let Some(manifest) = &self.manifest {
+            manifest.registered(None);
+        }
         self.call("noded", "noded.deregister", serde_json::Value::Null)
             .await?;
         self.service_name.write().unwrap().clear();
@@ -1349,6 +1641,10 @@ impl NodedClient {
     /// Idempotent and best-effort: every step tolerates an
     /// already-dead socket and a second call.
     pub async fn close(&self) {
+        if let Some(manifest) = &self.manifest {
+            manifest.registered(None);
+            manifest.task.abort();
+        }
         // Reflect the teardown in `is_connected()` before any await so
         // a concurrent observer never reads a closing connection as
         // live.
@@ -2274,6 +2570,7 @@ mod native_ingress_regression_tests {
                 },
             ));
             let client = NodedClient {
+                manifest: None,
                 service_name: Arc::new(RwLock::new("close-test".to_string())),
                 commands: Arc::new(RwLock::new(None)),
                 sink: Arc::new(Mutex::new(sink)),
@@ -2305,6 +2602,303 @@ mod native_ingress_regression_tests {
 
     /// A client over a sink that accepts every write, so only the pending
     /// fence decides whether a call can register and wait.
+    #[tokio::test]
+    async fn identical_descriptors_republish_when_manifest_dirty() {
+        let mut client = drained_client();
+        let descriptors = vec![crate::CommandDescriptor::new(
+            "example.read",
+            &[],
+            "Example",
+            true,
+        )];
+        *client.commands.write().unwrap() = Some(serde_json::to_string(&descriptors).unwrap());
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        client.manifest = Some(ManifestPublisher {
+            state: Arc::new(StdMutex::new(ManifestState {
+                dirty: true,
+                names: vec!["example.read".into()],
+                identity: Some("example".into()),
+                generation: 1,
+                registration_body: String::new(),
+            })),
+            tx,
+            task: tokio::spawn(async {}).abort_handle(),
+        });
+        client.set_commands(descriptors);
+        assert_eq!(rx.try_recv().unwrap().2, r#"["example.read"]"#);
+        client
+            .manifest
+            .as_ref()
+            .unwrap()
+            .state
+            .lock()
+            .unwrap()
+            .dirty = false;
+        client.set_command_names(vec!["example.override".into()]);
+        rx.try_recv().unwrap();
+        client.set_commands(vec![crate::CommandDescriptor::new(
+            "example.read",
+            &[],
+            "Example",
+            true,
+        )]);
+        assert_eq!(rx.try_recv().unwrap().2, r#"["example.read"]"#);
+    }
+
+    #[tokio::test]
+    async fn failed_send_marks_dirty_and_identical_names_retry() {
+        let mut client = drained_client();
+        let sink: WsSink = Box::pin(futures_util::sink::unfold((), |(), _: Message| async {
+            Err::<(), _>(tokio_tungstenite::tungstenite::Error::ConnectionClosed)
+        }));
+        client.manifest = Some(ManifestPublisher::new(
+            Arc::new(Mutex::new(sink)),
+            &client.commands,
+            client.pending.clone(),
+        ));
+        client
+            .manifest
+            .as_ref()
+            .unwrap()
+            .registered(Some("example".into()));
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !client
+                .manifest
+                .as_ref()
+                .unwrap()
+                .state
+                .lock()
+                .unwrap()
+                .dirty
+            {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let before = client
+            .manifest
+            .as_ref()
+            .unwrap()
+            .state
+            .lock()
+            .unwrap()
+            .generation;
+        client.set_commands(vec![]);
+        assert!(
+            client
+                .manifest
+                .as_ref()
+                .unwrap()
+                .state
+                .lock()
+                .unwrap()
+                .generation
+                > before
+        );
+    }
+
+    #[tokio::test]
+    async fn final_replies_clear_dirty_and_identical_calls_stop() {
+        for rc in ["0", "10", "20", "21", "22", "23", "24", "26"] {
+            let mut client = drained_client();
+            let (sent, mut received) = mpsc::unbounded_channel();
+            struct ProbeSink {
+                fail: bool,
+                sent: mpsc::UnboundedSender<Message>,
+            }
+            impl futures_util::Sink<Message> for ProbeSink {
+                type Error = tokio_tungstenite::tungstenite::Error;
+                fn poll_ready(
+                    self: std::pin::Pin<&mut Self>,
+                    _: &mut std::task::Context<'_>,
+                ) -> std::task::Poll<Result<(), Self::Error>> {
+                    std::task::Poll::Ready(Ok(()))
+                }
+                fn start_send(
+                    mut self: std::pin::Pin<&mut Self>,
+                    message: Message,
+                ) -> Result<(), Self::Error> {
+                    if self.fail {
+                        self.fail = false;
+                        return Err(Self::Error::ConnectionClosed);
+                    }
+                    self.sent.send(message).unwrap();
+                    Ok(())
+                }
+                fn poll_flush(
+                    self: std::pin::Pin<&mut Self>,
+                    _: &mut std::task::Context<'_>,
+                ) -> std::task::Poll<Result<(), Self::Error>> {
+                    std::task::Poll::Ready(Ok(()))
+                }
+                fn poll_close(
+                    self: std::pin::Pin<&mut Self>,
+                    _: &mut std::task::Context<'_>,
+                ) -> std::task::Poll<Result<(), Self::Error>> {
+                    std::task::Poll::Ready(Ok(()))
+                }
+            }
+            let sink: WsSink = Box::pin(ProbeSink { fail: true, sent });
+            client.manifest = Some(ManifestPublisher::new(
+                Arc::new(Mutex::new(sink)),
+                &client.commands,
+                client.pending.clone(),
+            ));
+            let descriptors = vec![crate::CommandDescriptor::new(
+                "example.read",
+                &[],
+                "Example",
+                true,
+            )];
+            client.set_commands(descriptors.clone());
+            client
+                .manifest
+                .as_ref()
+                .unwrap()
+                .registered(Some("example".into()));
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while !client
+                    .manifest
+                    .as_ref()
+                    .unwrap()
+                    .state
+                    .lock()
+                    .unwrap()
+                    .dirty
+                {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            client.set_commands(descriptors.clone());
+            for command in ["noded.register", "noded.commands.set"] {
+                let message = received.recv().await.unwrap();
+                let Message::Text(wire) = message else {
+                    panic!("text request")
+                };
+                let request = crate::parse(&wire).unwrap();
+                assert_eq!(request.command_name(), Some(command));
+                if command == "noded.commands.set" {
+                    // Recovery registration also clears dirty. Re-arm here to
+                    // independently prove the final-reply transition.
+                    client
+                        .manifest
+                        .as_ref()
+                        .unwrap()
+                        .state
+                        .lock()
+                        .unwrap()
+                        .dirty = true;
+                }
+                let response = BusMessage::new()
+                    .with_header("rc", if command == "noded.register" { "0" } else { rc });
+                client
+                    .pending
+                    .lock()
+                    .unwrap()
+                    .remove(request.get("id").unwrap())
+                    .unwrap()
+                    .send(response)
+                    .unwrap();
+            }
+            tokio::time::timeout(Duration::from_secs(1), async {
+                while client
+                    .manifest
+                    .as_ref()
+                    .unwrap()
+                    .state
+                    .lock()
+                    .unwrap()
+                    .dirty
+                {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .unwrap();
+            let generation = client
+                .manifest
+                .as_ref()
+                .unwrap()
+                .state
+                .lock()
+                .unwrap()
+                .generation;
+            client.set_commands(descriptors);
+            assert_eq!(
+                client
+                    .manifest
+                    .as_ref()
+                    .unwrap()
+                    .state
+                    .lock()
+                    .unwrap()
+                    .generation,
+                generation
+            );
+            assert!(received.try_recv().is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn names_normalise_and_threads_serialize_descriptors() {
+        let mut client = drained_client();
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        client.manifest = Some(ManifestPublisher {
+            state: Arc::new(StdMutex::new(ManifestState {
+                identity: Some("example".into()),
+                ..Default::default()
+            })),
+            tx,
+            task: tokio::spawn(async {}).abort_handle(),
+        });
+        client.set_command_names(vec![
+            "example.b".into(),
+            "example.a".into(),
+            "example.a".into(),
+        ]);
+        assert_eq!(rx.try_recv().unwrap().2, r#"["example.a","example.b"]"#);
+        client.set_command_names(vec!["example.a".into(), "example.b".into()]);
+        assert!(rx.try_recv().is_err());
+        client.set_commands(vec![
+            crate::CommandDescriptor::new("example.b", &[], "Example", true),
+            crate::CommandDescriptor::new("example.a", &[], "Example", true),
+            crate::CommandDescriptor::new("example.a", &[], "Example", true),
+        ]);
+        assert!(rx.try_recv().is_err());
+        let client = Arc::new(client);
+        let (done, wait) = std::sync::mpsc::channel();
+        std::thread::scope(|scope| {
+            let first_client = client.clone();
+            scope.spawn(move || {
+                first_client.set_commands(vec![crate::CommandDescriptor::new(
+                    "example.first",
+                    &[],
+                    "First",
+                    true,
+                )]);
+                done.send(()).unwrap();
+            });
+            let client = &client;
+            scope.spawn(move || {
+                wait.recv().unwrap();
+                client.set_commands(vec![crate::CommandDescriptor::new(
+                    "example.last",
+                    &[],
+                    "Last",
+                    true,
+                )]);
+            });
+        });
+        let state = client.manifest.as_ref().unwrap().state.lock().unwrap();
+        assert_eq!(state.names, ["example.last"]);
+        let descriptors: Vec<crate::CommandDescriptor> =
+            serde_json::from_str(client.commands.read().unwrap().as_ref().unwrap()).unwrap();
+        assert_eq!(descriptors[0].name, "example.last");
+    }
+
     fn drained_client() -> NodedClient {
         let sink: WsSink = Box::pin(futures_util::sink::drain::<Message>().sink_map_err(
             |never: std::convert::Infallible| -> tokio_tungstenite::tungstenite::Error {
@@ -2312,6 +2906,7 @@ mod native_ingress_regression_tests {
             },
         ));
         NodedClient {
+            manifest: None,
             service_name: Arc::new(RwLock::new("post-close-test".to_string())),
             commands: Arc::new(RwLock::new(None)),
             sink: Arc::new(Mutex::new(sink)),
