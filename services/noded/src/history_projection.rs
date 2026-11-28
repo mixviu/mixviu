@@ -5,9 +5,16 @@ use std::ops::{Deref, DerefMut};
 
 pub(crate) const NAME_LEN_CAP: usize = 256;
 pub(crate) const REASONS: &[&str] = &[
-    "unknown-verb", "no-manifest", "unlisted-service", "remote-unvouched",
-    "malformed-target", "refused-cross-mesh", "no-such-service", "no-such-node",
-    "oversize-name", "unregistered-source",
+    "unknown-verb",
+    "no-manifest",
+    "unlisted-service",
+    "remote-unvouched",
+    "malformed-target",
+    "refused-cross-mesh",
+    "no-such-service",
+    "no-such-node",
+    "oversize-name",
+    "unregistered-source",
 ];
 
 struct KnownService {
@@ -23,15 +30,10 @@ pub(super) struct Names {
 }
 
 impl Names {
-    pub fn vouched_command(
-        &self,
-        name: &str,
-    ) -> bool {
-        self.commands.get(name).is_some_and(|owners| {
-            owners
-                .iter()
-                .any(|(_, tx)| !tx.is_closed())
-        })
+    pub fn vouched_command(&self, name: &str) -> bool {
+        self.commands
+            .get(name)
+            .is_some_and(|owners| owners.iter().any(|(_, tx)| !tx.is_closed()))
     }
     fn registered(&self, name: &str) -> bool {
         self.services
@@ -71,7 +73,11 @@ impl HistoryRegistry {
             }
             names.services.insert(
                 service.clone(),
-                KnownService { tx: entry.tx.clone(), has_manifest: !entry.commands.names.is_empty(), origin: entry.origin },
+                KnownService {
+                    tx: entry.tx.clone(),
+                    has_manifest: !entry.commands.names.is_empty(),
+                    origin: entry.origin,
+                },
             );
             if !allowlist.contains(service) {
                 continue;
@@ -154,13 +160,19 @@ impl Projector {
     /// The one local identity projection point, shared by sources and targets.
     /// PR B adds provenance/allowlist handles here.
     fn local_identity(&self, name: &str, names: &Names) -> Option<String> {
-        if name == "noded" { return Some(name.to_owned()); }
+        if name == "noded" {
+            return Some(name.to_owned());
+        }
         let entry = names.services.get(name)?;
-        if entry.tx.is_closed() { return None; }
+        if entry.tx.is_closed() {
+            return None;
+        }
         // Provenance comes from the creating broker path, never a prefix.
         // PR B replaces only the Client arm with its handle policy.
         match entry.origin {
-            Origin::Logger | Origin::Monitor | Origin::Session | Origin::Bridge => Some(name.to_owned()),
+            Origin::Logger | Origin::Monitor | Origin::Session | Origin::Bridge => {
+                Some(name.to_owned())
+            }
             Origin::Client => Some(name.to_owned()),
         }
     }
@@ -238,7 +250,8 @@ impl Projector {
         // routing has canonicalised a refused message.
         if observation.direction != ObserveDirection::MeshIn
             && observation.message.get("type") != Some("response")
-            && let Some(raw) = observation.message.from_addr() {
+            && let Some(raw) = observation.message.from_addr()
+        {
             result.from = self.local_identity(raw, &names);
             if result.from.is_none() {
                 result.from = Some("unknown-target".into());
@@ -291,7 +304,7 @@ impl Projector {
         if let Some(command) = observation.message.command_name() {
             if command.len() <= bus::MAX_MANIFEST_NAME_BYTES
                 && (commands::BROKER_CONTROL_VERBS.contains(&command)
-                || names.vouched_command(command))
+                    || names.vouched_command(command))
             {
                 result.command = Some(command.into());
             } else {

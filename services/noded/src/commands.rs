@@ -180,12 +180,18 @@ mod tests {
 
     #[test]
     fn control_verbs_cover_declared_noded_manifest_and_dispatch() {
-        let manifest: serde_json::Value = config::from_conf_mix_str(include_str!("../../../docs/docs/spec/bus/commands.conf.mix")).unwrap();
+        let manifest: serde_json::Value = config::from_conf_mix_str(include_str!(
+            "../../../docs/docs/spec/bus/commands.conf.mix"
+        ))
+        .unwrap();
         let mut declared = 0;
         for descriptor in manifest["commands"].as_array().unwrap() {
             if descriptor["owner"] == "noded" {
                 let name = descriptor["name"].as_str().unwrap();
-                assert!(BROKER_CONTROL_VERBS.contains(&name), "missing declared verb {name}");
+                assert!(
+                    BROKER_CONTROL_VERBS.contains(&name),
+                    "missing declared verb {name}"
+                );
                 declared += 1;
             }
         }
@@ -193,18 +199,37 @@ mod tests {
         // Pin literal control dispatch as well as the public descriptors.
         // The broker does not register itself as a client manifest publisher.
         let source = include_str!("noded.rs");
-        let handler = source.split_once("async fn handle_noded_command(").unwrap().1.split_once("\nfn ").unwrap().0;
+        let handler = source
+            .split_once("async fn handle_noded_command(")
+            .unwrap()
+            .1
+            .split_once("\nfn ")
+            .unwrap()
+            .0;
         let mut dispatched = 0;
-        for line in handler.lines().filter(|line| line.starts_with("        \"")) {
+        for line in handler
+            .lines()
+            .filter(|line| line.starts_with("        \""))
+        {
             if let Some(pattern) = line.trim().strip_suffix(" => {") {
-                for name in pattern.split(" | ").filter_map(|s| s.strip_prefix('"').and_then(|s| s.strip_suffix('"'))) {
-                    assert!(BROKER_CONTROL_VERBS.contains(&name), "missing dispatch verb {name}");
+                for name in pattern
+                    .split(" | ")
+                    .filter_map(|s| s.strip_prefix('"').and_then(|s| s.strip_suffix('"')))
+                {
+                    assert!(
+                        BROKER_CONTROL_VERBS.contains(&name),
+                        "missing dispatch verb {name}"
+                    );
                     dispatched += 1;
                 }
             }
         }
         assert!(dispatched >= 20);
-        assert!(BROKER_CONTROL_VERBS.iter().all(|name| name.len() <= bus::MAX_MANIFEST_NAME_BYTES));
+        assert!(
+            BROKER_CONTROL_VERBS
+                .iter()
+                .all(|name| name.len() <= bus::MAX_MANIFEST_NAME_BYTES)
+        );
     }
 
     #[test]

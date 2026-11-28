@@ -56,10 +56,17 @@ struct ObserveEvent {
     dropped_count: u64,
 }
 
-fn projection_reason<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+fn projection_reason<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
     let reason = <Option<String> as serde::Deserialize>::deserialize(deserializer)?;
-    if reason.as_deref().is_some_and(|value| !crate::noded::history_projection::REASONS.contains(&value)) {
-        return Err(serde::de::Error::custom("unknown history projection reason"));
+    if reason
+        .as_deref()
+        .is_some_and(|value| !crate::noded::history_projection::REASONS.contains(&value))
+    {
+        return Err(serde::de::Error::custom(
+            "unknown history projection reason",
+        ));
     }
     Ok(reason)
 }
@@ -1628,13 +1635,19 @@ mod tests {
         for reason in crate::noded::history_projection::REASONS {
             let mut event = base.clone();
             event["reason"] = (*reason).into();
-            assert!(parse_event(&event.to_string(), &mut None).is_some(), "{reason}");
+            assert!(
+                parse_event(&event.to_string(), &mut None).is_some(),
+                "{reason}"
+            );
         }
         assert!(parse_event(&base.to_string(), &mut None).is_some());
         let mut invalid = base;
         invalid["reason"] = "user@example.com".into();
         assert!(parse_event(&invalid.to_string(), &mut None).is_none());
-        let error = serde_json::from_value::<ObserveEvent>(invalid).err().unwrap().to_string();
+        let error = serde_json::from_value::<ObserveEvent>(invalid)
+            .err()
+            .unwrap()
+            .to_string();
         assert!(error.contains("unknown history projection reason"));
         assert!(!error.contains("user@example.com"));
     }
@@ -1936,7 +1949,12 @@ mod tests {
             1
         );
         assert!(r.iter().all(|r| r.get("payload").is_none()));
-        assert_eq!(r.iter().find(|row| row["correlation_id"] == "example-forgery").unwrap()["from"], "example-probe");
+        assert_eq!(
+            r.iter()
+                .find(|row| row["correlation_id"] == "example-forgery")
+                .unwrap()["from"],
+            "example-probe"
+        );
         assert!(
             !serde_json::to_string(&r)
                 .unwrap()

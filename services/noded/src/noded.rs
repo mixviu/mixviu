@@ -595,10 +595,7 @@ impl AppState {
     /// PR A's history projection query. Only live, honoured registrations vouch.
     #[cfg(test)]
     pub(crate) async fn vouched_command(&self, name: &str) -> bool {
-        self.registry
-            .names
-            .load()
-            .vouched_command(name)
+        self.registry.names.load().vouched_command(name)
     }
 }
 

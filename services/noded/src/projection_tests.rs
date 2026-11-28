@@ -133,7 +133,13 @@ async fn canonical_targets_and_fixed_failure_reasons() {
         assert_eq!(p.reason, None);
         assert_eq!(p.to_sub_len, target.starts_with("user.").then_some(4));
     }
-    for target in ["noded", "alpha.bus", "noded.alpha", "noded.alpha.bus", "user.noded.alpha.bus"] {
+    for target in [
+        "noded",
+        "alpha.bus",
+        "noded.alpha",
+        "noded.alpha.bus",
+        "user.noded.alpha.bus",
+    ] {
         assert_eq!(
             projected(&state, target, "noded.ping").to.as_deref(),
             Some("alpha.bus")
@@ -141,7 +147,14 @@ async fn canonical_targets_and_fixed_failure_reasons() {
     }
     // These are refused spellings, not aliases: history must not silently
     // normalise a destination that the router itself rejects.
-    for target in ["MAILD", "Maild.alpha.bus", "maild.Alpha.bus", "maild.alpha.BUS", "maild.alpha.bus.", "maild.example.bus."] {
+    for target in [
+        "MAILD",
+        "Maild.alpha.bus",
+        "maild.Alpha.bus",
+        "maild.alpha.BUS",
+        "maild.alpha.bus.",
+        "maild.example.bus.",
+    ] {
         let p = projected(&state, target, "example.read");
         assert_eq!(p.to.as_deref(), Some("invalid-target"), "{target}");
         assert_eq!(p.reason, Some("malformed-target"), "{target}");
@@ -174,7 +187,12 @@ fn observed_row(state: &AppState, msg: &BusMessage) -> serde_json::Value {
     let (tx, mut rx) = mpsc::channel(8);
     state.observe.start(&tx, None, "{}").unwrap();
     rx.try_recv().unwrap();
-    state.observe.observe(Observation::canonical(Direction::Local, Outcome::Rejected, msg, Some("example-id")));
+    state.observe.observe(Observation::canonical(
+        Direction::Local,
+        Outcome::Rejected,
+        msg,
+        Some("example-id"),
+    ));
     state.observe.drain_once();
     let event = bus_mod::parse(&rx.try_recv().expect("row must not be dropped")).unwrap();
     assert!(rx.try_recv().is_err());
@@ -185,8 +203,15 @@ fn observed_row(state: &AppState, msg: &BusMessage) -> serde_json::Value {
 #[tokio::test]
 async fn local_sources_are_vouched_before_serialization_and_lengths_are_capped() {
     let (state, _rx) = fixture().await;
-    for raw in ["user@example.com".to_owned(), "user.chosen.alpha.bus".to_owned(), "user".repeat(1024)] {
-        let msg = BusMessage::new().with_header("from", &raw).with_header("to", "maild").with_header("command", "example.read");
+    for raw in [
+        "user@example.com".to_owned(),
+        "user.chosen.alpha.bus".to_owned(),
+        "user".repeat(1024),
+    ] {
+        let msg = BusMessage::new()
+            .with_header("from", &raw)
+            .with_header("to", "maild")
+            .with_header("command", "example.read");
         let row = observed_row(&state, &msg);
         assert_eq!(row["from"], "unknown-target");
         assert_eq!(row["reason"], "unregistered-source");
@@ -195,26 +220,49 @@ async fn local_sources_are_vouched_before_serialization_and_lengths_are_capped()
         assert!(!serde_json::to_string(&row).unwrap().contains(&raw));
     }
     for raw in ["noded", "maild"] {
-        let msg = BusMessage::new().with_header("from", raw).with_header("to", "maild").with_header("command", "example.read");
+        let msg = BusMessage::new()
+            .with_header("from", raw)
+            .with_header("to", "maild")
+            .with_header("command", "example.read");
         let row = observed_row(&state, &msg);
         assert_eq!(row["from"], raw);
         assert!(row.get("class").is_none());
     }
     // The registry stores the origin, so shape lookalikes cannot manufacture
     // broker-issued provenance. Every genuine live origin is recognised.
-    for origin in [super::super::Origin::Logger, super::super::Origin::Monitor, super::super::Origin::Session, super::super::Origin::Bridge] {
-        state.registry.write().await.get_mut("maild").unwrap().origin = origin;
-        let msg = BusMessage::new().with_header("from", "maild").with_header("command", "example.read");
+    for origin in [
+        super::super::Origin::Logger,
+        super::super::Origin::Monitor,
+        super::super::Origin::Session,
+        super::super::Origin::Bridge,
+    ] {
+        state
+            .registry
+            .write()
+            .await
+            .get_mut("maild")
+            .unwrap()
+            .origin = origin;
+        let msg = BusMessage::new()
+            .with_header("from", "maild")
+            .with_header("command", "example.read");
         assert_eq!(observed_row(&state, &msg)["from"], "maild");
     }
     for size in [257, 4096, 65536] {
         let command = "x".repeat(size);
-        let msg = BusMessage::new().with_header("to", "maild").with_header("command", &command);
+        let msg = BusMessage::new()
+            .with_header("to", "maild")
+            .with_header("command", &command);
         let row = observed_row(&state, &msg);
         assert_eq!(row["command"], "unknown");
         assert_eq!(row["reason"], "oversize-name");
         assert_eq!(row["name_len"], 256);
-        let row = observed_row(&state, &BusMessage::new().with_header("to", &command).with_header("command", "example.read"));
+        let row = observed_row(
+            &state,
+            &BusMessage::new()
+                .with_header("to", &command)
+                .with_header("command", "example.read"),
+        );
         assert_eq!(row["to"], "invalid-target");
         assert_eq!(row["name_len"], 256);
     }
@@ -223,7 +271,10 @@ async fn local_sources_are_vouched_before_serialization_and_lengths_are_capped()
 #[tokio::test]
 async fn bad_destination_then_source_then_command_diagnostic_precedence() {
     let (state, _rx) = fixture().await;
-    let msg = BusMessage::new().with_header("from", "user@example.com").with_header("to", "bad@example.test").with_header("command", "private.verb");
+    let msg = BusMessage::new()
+        .with_header("from", "user@example.com")
+        .with_header("to", "bad@example.test")
+        .with_header("command", "private.verb");
     let row = observed_row(&state, &msg);
     assert_eq!(row["from"], "unknown-target");
     assert_eq!(row["to"], "invalid-target");
@@ -231,7 +282,9 @@ async fn bad_destination_then_source_then_command_diagnostic_precedence() {
     assert_eq!(row["reason"], "malformed-target");
     assert_eq!(row["name_len"], "bad@example.test".len());
     let encoded = serde_json::to_string(&row).unwrap();
-    for raw in ["user@example.com", "bad@example.test", "private.verb"] { assert!(!encoded.contains(raw)); }
+    for raw in ["user@example.com", "bad@example.test", "private.verb"] {
+        assert!(!encoded.contains(raw));
+    }
     let mut msg = msg;
     msg.set("to", "maild");
     let row = observed_row(&state, &msg);
@@ -245,12 +298,26 @@ async fn explicit_deregister_removes_source_target_and_command_vouching() {
     let (state, _rx) = fixture().await;
     let tx = state.registry.read().await["maild"].tx.clone();
     let mut service = Some("maild".to_owned());
-    let request = BusMessage::new().with_header("command", "noded.deregister").with_header("to", "noded");
+    let request = BusMessage::new()
+        .with_header("command", "noded.deregister")
+        .with_header("to", "noded");
     assert!(state.vouched_command("example.read").await);
-    super::super::handle_noded_command(&request, &tx, &state, &mut service, "example-connection", &state.peer_context, &mut super::super::ObserveOutcome::BrokerHandled).await;
+    super::super::handle_noded_command(
+        &request,
+        &tx,
+        &state,
+        &mut service,
+        "example-connection",
+        &state.peer_context,
+        &mut super::super::ObserveOutcome::BrokerHandled,
+    )
+    .await;
     assert!(!state.vouched_command("example.read").await);
     assert!(!state.registry.read().await.contains_key("maild"));
-    let msg = BusMessage::new().with_header("from", "maild").with_header("to", "maild").with_header("command", "example.read");
+    let msg = BusMessage::new()
+        .with_header("from", "maild")
+        .with_header("to", "maild")
+        .with_header("command", "example.read");
     let row = observed_row(&state, &msg);
     assert_eq!(row["from"], "unknown-target");
     assert_eq!(row["to"], "unknown-target");
@@ -263,15 +330,36 @@ async fn observe_suppression_distinguishes_genuine_lookalike_and_control() {
     let (tx, mut rx) = mpsc::channel(8);
     state.observe.start(&tx, None, "{}").unwrap();
     rx.try_recv().unwrap();
-    let genuine = BusMessage::new().with_header("type", "event").with_header("from", "noded").with_header("command", "noded.observe.event");
-    state.observe.observe(Observation::canonical(Direction::Local, Outcome::Delivered, &genuine, None));
+    let genuine = BusMessage::new()
+        .with_header("type", "event")
+        .with_header("from", "noded")
+        .with_header("command", "noded.observe.event");
+    state.observe.observe(Observation::canonical(
+        Direction::Local,
+        Outcome::Delivered,
+        &genuine,
+        None,
+    ));
     state.observe.drain_once();
     assert!(rx.try_recv().is_err());
     let mut lookalike = genuine;
     lookalike.set("from", "user@example.com");
-    state.observe.observe(Observation::canonical(Direction::Local, Outcome::Rejected, &lookalike, None));
-    let control = BusMessage::new().with_header("from", "maild").with_header("to", "noded").with_header("command", "noded.observe.start");
-    state.observe.observe(Observation::canonical(Direction::Local, Outcome::BrokerHandled, &control, None));
+    state.observe.observe(Observation::canonical(
+        Direction::Local,
+        Outcome::Rejected,
+        &lookalike,
+        None,
+    ));
+    let control = BusMessage::new()
+        .with_header("from", "maild")
+        .with_header("to", "noded")
+        .with_header("command", "noded.observe.start");
+    state.observe.observe(Observation::canonical(
+        Direction::Local,
+        Outcome::BrokerHandled,
+        &control,
+        None,
+    ));
     state.observe.drain_once();
     let next = |rx: &mut mpsc::Receiver<String>| -> serde_json::Value {
         serde_json::from_str(&bus_mod::parse(&rx.try_recv().unwrap()).unwrap().body).unwrap()
