@@ -1205,7 +1205,7 @@ async fn serve(
         false,
     );
 
-    let registry: Registry = Arc::new(history_projection::HistoryRegistry::new(HashMap::new()));
+    let registry: Registry = Arc::new(history_projection::HistoryRegistry::new(HashMap::new(), commands::allowlist(Some(&network))?));
     let observe = ObserveManager::new();
     observe.spawn_drainer();
 
@@ -7153,6 +7153,7 @@ pub(crate) mod tests {
             native_session_endpoint: None,
             registry: Arc::new(super::history_projection::HistoryRegistry::new(
                 HashMap::new(),
+                super::commands::allowlist(None).unwrap(),
             )),
             pending_responses: Arc::new(PendingResponseTable::new()),
             tap_subscribers: Arc::new(RwLock::new(Vec::new())),

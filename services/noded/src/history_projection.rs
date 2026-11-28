@@ -33,16 +33,18 @@ impl Names {
 pub(crate) struct HistoryRegistry {
     registry: RwLock<HashMap<String, ServiceEntry>>,
     pub(super) names: ArcSwap<Names>,
+    allowlist: std::collections::HashSet<String>,
 }
 impl HistoryRegistry {
-    pub fn new(registry: HashMap<String, ServiceEntry>) -> Self {
-        let names = Self::snapshot(&registry);
+    pub fn new(registry: HashMap<String, ServiceEntry>, allowlist: std::collections::HashSet<String>) -> Self {
+        let names = Self::snapshot(&registry, &allowlist);
         Self {
             registry: RwLock::new(registry),
             names: ArcSwap::from_pointee(names),
+            allowlist,
         }
     }
-    fn snapshot(registry: &HashMap<String, ServiceEntry>) -> Names {
+    fn snapshot(registry: &HashMap<String, ServiceEntry>, allowlist: &std::collections::HashSet<String>) -> Names {
         let mut names = Names::default();
         for (service, entry) in registry {
             if entry.tx.is_closed() {
@@ -52,6 +54,7 @@ impl HistoryRegistry {
                 service.clone(),
                 (entry.tx.clone(), !entry.commands.names.is_empty()),
             );
+            if !allowlist.contains(service) { continue; }
             for name in &entry.commands.names {
                 names
                     .commands
@@ -105,7 +108,7 @@ impl Drop for Write<'_> {
     fn drop(&mut self) {
         self.owner
             .names
-            .store(Arc::new(HistoryRegistry::snapshot(&self.guard)));
+            .store(Arc::new(HistoryRegistry::snapshot(&self.guard, &self.owner.allowlist)));
     }
 }
 
