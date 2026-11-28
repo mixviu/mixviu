@@ -37928,25 +37928,45 @@ mod bytes_tests {
 
     // --- udp_send / udp_recv (v0.71.0) ---
 
+    // udp_recv exposes only text, so its production bind-error template is
+    // load-bearing here. udp_retry_predicate_matches_held_socket pins it.
+    fn udp_bind_is_retryable(error: &MixError, port: u16) -> bool {
+        let addr_in_use = std::io::Error::from_raw_os_error(libc::EADDRINUSE);
+        matches!(error, MixError::RuntimeError { msg, .. }
+            if msg == &format!("udp_recv: bind '127.0.0.1:{port}': {addr_in_use}"))
+    }
+
+    fn fresh_udp_test_port() -> u16 {
+        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        socket.local_addr().unwrap().port()
+    }
+
     fn with_udp_test_port<T>(mut receive: impl FnMut(u16) -> MixResult<T>) -> T {
         // udp_recv refuses port 0 and cannot take an existing socket. Retry
         // only a lost probe-to-bind race, never a receive or assertion failure.
-        let addr_in_use = std::io::Error::from_raw_os_error(libc::EADDRINUSE).to_string();
-        for attempt in 1..=5 {
-            let s = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-            let port = s.local_addr().unwrap().port();
-            drop(s);
+        for _attempt in 1..5 {
+            let port = fresh_udp_test_port();
             match receive(port) {
                 Ok(value) => return value,
-                Err(MixError::RuntimeError { msg, .. })
-                    if msg == format!("udp_recv: bind '127.0.0.1:{port}': {addr_in_use}") =>
-                {
-                    assert!(attempt < 5, "UDP bind race after {attempt} attempts: {msg}");
-                }
+                Err(error) if udp_bind_is_retryable(&error, port) => {}
                 Err(error) => panic!("{error}"),
             }
         }
-        unreachable!()
+        receive(fresh_udp_test_port())
+            .unwrap_or_else(|error| panic!("UDP receive failed after 5 attempts: {error}"))
+    }
+
+    #[test]
+    fn udp_retry_predicate_matches_held_socket() {
+        let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+        let port = socket.local_addr().unwrap().port();
+        let mut opts = indexmap::IndexMap::new();
+        opts.insert("timeout".to_string(), Value::Number(0.1));
+        opts.insert("host".to_string(), Value::String("127.0.0.1".into()));
+        let error = builtin_udp_recv(vec![Value::Number(port as f64), Value::map(opts)])
+            .unwrap_err();
+        assert!(udp_bind_is_retryable(&error, port), "{error}");
+        drop(socket);
     }
 
     #[test]
