@@ -3,7 +3,15 @@
 use std::collections::HashSet;
 
 pub(super) const DEFAULT_ALLOWLIST: &[&str] = &[
-    "maild", "webd", "dnsd", "blobd", "toolsd", "filesd", "provisiond", "sshm", "mon",
+    "maild",
+    "webd",
+    "dnsd",
+    "blobd",
+    "toolsd",
+    "filesd",
+    "provisiond",
+    "sshm",
+    "mon",
 ];
 
 #[derive(Clone, Default)]
@@ -31,9 +39,14 @@ impl Manifest {
         if names.iter().any(|name| name.split('.').count() > 6) {
             return "23";
         }
-        if names.iter().any(|name| name.split('.').any(|segment| {
-            segment.is_empty() || !segment.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
-        })) {
+        if names.iter().any(|name| {
+            name.split('.').any(|segment| {
+                segment.is_empty()
+                    || !segment
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            })
+        }) {
             return "24";
         }
         self.names.extend(names);
@@ -41,9 +54,13 @@ impl Manifest {
     }
 }
 
-pub(super) fn allowlist(config: Option<&config::node::NodedConfig>) -> anyhow::Result<HashSet<String>> {
+pub(super) fn allowlist(
+    config: Option<&config::node::NodedConfig>,
+) -> anyhow::Result<HashSet<String>> {
     match config.and_then(|c| c.extra.get("history_allowlist")) {
-        Some(value) => Ok(serde_json::from_value::<Vec<String>>(value.clone())?.into_iter().collect()),
+        Some(value) => Ok(serde_json::from_value::<Vec<String>>(value.clone())?
+            .into_iter()
+            .collect()),
         None => Ok(DEFAULT_ALLOWLIST.iter().map(|s| (*s).to_owned()).collect()),
     }
 }

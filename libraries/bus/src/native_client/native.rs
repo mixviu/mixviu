@@ -497,12 +497,21 @@ impl Drop for ManifestPublisher {
 
 impl ManifestPublisher {
     fn new(sink: Arc<Mutex<WsSink>>, descriptors: &RwLock<Option<String>>) -> Self {
-        let mut names: Vec<String> = descriptors.read().expect("commands lock poisoned").as_deref()
+        let mut names: Vec<String> = descriptors
+            .read()
+            .expect("commands lock poisoned")
+            .as_deref()
             .and_then(|body| serde_json::from_str::<Vec<crate::CommandDescriptor>>(body).ok())
-            .unwrap_or_default().into_iter().map(|command| command.name).collect();
+            .unwrap_or_default()
+            .into_iter()
+            .map(|command| command.name)
+            .collect();
         names.sort();
         names.dedup();
-        let state = Arc::new(StdMutex::new(ManifestState { names, ..Default::default() }));
+        let state = Arc::new(StdMutex::new(ManifestState {
+            names,
+            ..Default::default()
+        }));
         let reader_state = state.clone();
         let (tx, mut rx) = mpsc::unbounded_channel::<(u64, String, String)>();
         let task = tokio::spawn(async move {
@@ -510,7 +519,8 @@ impl ManifestPublisher {
                 let mut sink = sink.lock().await;
                 {
                     let state = reader_state.lock().expect("manifest lock poisoned");
-                    if state.generation != generation || state.identity.as_ref() != Some(&identity) {
+                    if state.generation != generation || state.identity.as_ref() != Some(&identity)
+                    {
                         continue;
                     }
                 }
@@ -521,17 +531,29 @@ impl ManifestPublisher {
                     .with_header("type", "request")
                     .with_header("id", "commands-manifest")
                     .with_body(&body);
-                if sink.send(Message::Text(request.to_wire().into())).await.is_err() {
+                if sink
+                    .send(Message::Text(request.to_wire().into()))
+                    .await
+                    .is_err()
+                {
                     break;
                 }
             }
         });
-        Self { state, tx, task: task.abort_handle() }
+        Self {
+            state,
+            tx,
+            task: task.abort_handle(),
+        }
     }
 
     fn enqueue(&self, state: &ManifestState) {
         if let Some(identity) = &state.identity {
-            let _ = self.tx.send((state.generation, identity.clone(), serde_json::to_string(&state.names).expect("names serialize")));
+            let _ = self.tx.send((
+                state.generation,
+                identity.clone(),
+                serde_json::to_string(&state.names).expect("names serialize"),
+            ));
         }
     }
 
@@ -570,12 +592,20 @@ impl NodedClient {
 
     /// Replace the manifest on a live client, including verified Unix clients.
     pub fn set_commands(&self, command_names: Vec<crate::CommandDescriptor>) {
-        let body = Some(serde_json::to_string(&command_names).expect("command descriptors serialize"));
+        let body =
+            Some(serde_json::to_string(&command_names).expect("command descriptors serialize"));
         let mut commands = self.commands.write().expect("commands lock poisoned");
-        if *commands == body { return; }
+        if *commands == body {
+            return;
+        }
         *commands = body;
         drop(commands);
-        self.set_command_names(command_names.into_iter().map(|command| command.name).collect());
+        self.set_command_names(
+            command_names
+                .into_iter()
+                .map(|command| command.name)
+                .collect(),
+        );
     }
 
     #[cfg(unix)]
@@ -1370,7 +1400,9 @@ impl NodedClient {
     // ── Internal ──
 
     async fn register(&self) -> Result<()> {
-        if let Some(manifest) = &self.manifest { manifest.registered(None); }
+        if let Some(manifest) = &self.manifest {
+            manifest.registered(None);
+        }
         // Send build provenance in the register body when present, so it
         // surfaces in noded.list/noded.info; re-sent on every register so
         // a reconnect re-publishes it. Absent → empty body (old citizen).
@@ -1424,7 +1456,9 @@ impl NodedClient {
     /// deregister-before-exit sequencing lives in the serve-mode
     /// shutdown path (SPEC 18 §3.5, WS5).
     pub async fn deregister(&self) -> Result<()> {
-        if let Some(manifest) = &self.manifest { manifest.registered(None); }
+        if let Some(manifest) = &self.manifest {
+            manifest.registered(None);
+        }
         self.call("noded", "noded.deregister", serde_json::Value::Null)
             .await?;
         self.service_name.write().unwrap().clear();

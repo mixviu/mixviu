@@ -502,9 +502,19 @@ impl ServeRuntime for MixServeRuntime {
     fn publish_commands<'a>(&'a self, handlers: &'a [String]) -> mix::evaluator::BusFuture<'a, ()> {
         Box::pin(async move {
             if let Some(bus) = &self.bus {
-                let handlers = handlers.iter().map(|name| (name.as_str(), None)).collect::<Vec<_>>();
-                let descriptors: Vec<::bus::CommandDescriptor> = serde_json::from_str(&self.help_body(&handlers)).expect("HELP descriptors");
-                bus.set_command_names(descriptors.into_iter().map(|command| command.name).collect()).await;
+                let handlers = handlers
+                    .iter()
+                    .map(|name| (name.as_str(), None))
+                    .collect::<Vec<_>>();
+                let descriptors: Vec<::bus::CommandDescriptor> =
+                    serde_json::from_str(&self.help_body(&handlers)).expect("HELP descriptors");
+                bus.set_command_names(
+                    descriptors
+                        .into_iter()
+                        .map(|command| command.name)
+                        .collect(),
+                )
+                .await;
             }
         })
     }
