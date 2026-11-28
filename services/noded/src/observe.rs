@@ -172,6 +172,14 @@ struct StartResponse<'a> {
 
 #[derive(Clone, Debug, Serialize)]
 struct EventBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    class: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    name_len: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    to_sub_len: Option<usize>,
     seq: u64,
     ts: String,
     direction: Direction,
@@ -264,6 +272,7 @@ impl ObserveError {
 
 #[derive(Clone)]
 pub(crate) struct ObserveManager {
+    projector: Arc<std::sync::OnceLock<crate::noded::history_projection::Projector>>,
     next_id: Arc<AtomicU64>,
     active_subscriptions: Arc<AtomicUsize>,
     inner: Arc<Mutex<Inner>>,
@@ -279,6 +288,7 @@ pub(crate) struct ObserveManager {
 impl ObserveManager {
     pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
+            projector: Default::default(),
             next_id: Arc::new(AtomicU64::new(1)),
             active_subscriptions: Arc::new(AtomicUsize::new(0)),
             inner: Arc::new(Mutex::new(Inner::default())),
@@ -287,6 +297,10 @@ impl ObserveManager {
             drain_passes: Arc::new(AtomicU64::new(0)),
             class: TrafficClass::Legacy,
         })
+    }
+
+    pub(crate) fn set_projector(&self, projector: crate::noded::history_projection::Projector) {
+        assert!(self.projector.set(projector).is_ok());
     }
 
     /// Shares subscriptions, quotas and queues; changes only the trusted
@@ -485,11 +499,22 @@ impl ObserveManager {
             return;
         }
 
-        let metadata = metadata_event(&observation);
+        let projected = self.projector.get().map(|p| p.project(&observation));
+        let metadata = projected_metadata_event(&observation, projected);
         let redacted = targets
             .iter()
             .any(|target| target.mode == BodyMode::Redacted)
-            .then(|| redacted_event(&observation));
+            .then(|| {
+                let mut event = redacted_event(&observation);
+                event.from = metadata.from.clone();
+                event.to = metadata.to.clone();
+                event.command = metadata.command.clone();
+                event.class = metadata.class;
+                event.reason = metadata.reason;
+                event.name_len = metadata.name_len;
+                event.to_sub_len = metadata.to_sub_len;
+                event
+            });
 
         // All JSON and Bus wire serialisation happens outside the observation
         // mutex. The queued template leaves only dropped_count interpolation
@@ -788,6 +813,10 @@ fn endpoint_matches(message: &BusMessage, service: &str) -> bool {
 }
 
 fn metadata_event(observation: &Observation<'_>) -> EventBody {
+    projected_metadata_event(observation, None)
+}
+
+fn projected_metadata_event(observation: &Observation<'_>, projected: Option<crate::noded::history_projection::Projected>) -> EventBody {
     let bounded = |value: Option<&str>| {
         value.map(|s| {
             if observation.class.protected() {
@@ -801,19 +830,25 @@ fn metadata_event(observation: &Observation<'_>) -> EventBody {
             }
         })
     };
+    let (from, to, command) = match projected.as_ref() {
+        Some(p) => (p.from.clone(), p.to.clone(), p.command.clone()),
+        None => (bounded(observation.message.from_addr()), bounded(observation.message.to_addr().filter(|to| {
+            !observation.class.protected() || bus::wire::is_valid_label(to) || BusTarget::parse(to).is_some()
+        })), bounded(observation.message.command_name())),
+    };
     EventBody {
+        class: projected.as_ref().and_then(|p| p.reason.map(|_| "unrecognised")),
+        reason: projected.as_ref().and_then(|p| p.reason),
+        name_len: projected.as_ref().and_then(|p| p.name_len),
+        to_sub_len: projected.as_ref().and_then(|p| p.to_sub_len),
         seq: 0,
         ts: datetime::Utc::now().to_rfc3339_opts(datetime::SecondsFormat::Millis, true),
         direction: observation.direction,
         outcome: observation.outcome,
         message_type: classify_message_type(observation.message),
-        from: bounded(observation.message.from_addr()),
-        to: bounded(observation.message.to_addr().filter(|to| {
-            !observation.class.protected()
-                || bus::wire::is_valid_label(to)
-                || bus::wire::BusTarget::parse(to).is_some()
-        })),
-        command: bounded(observation.message.command_name()),
+        from,
+        to,
+        command,
         size: observation
             .canonical_size
             .unwrap_or_else(|| observation.message.to_wire().len()),

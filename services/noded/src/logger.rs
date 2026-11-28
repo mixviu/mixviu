@@ -30,6 +30,14 @@ use crate::log_props::{LogPropsSnapshot, LogStats};
 
 #[derive(serde::Deserialize)]
 struct ObserveEvent {
+    #[serde(default)]
+    class: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
+    #[serde(default)]
+    name_len: Option<usize>,
+    #[serde(default)]
+    to_sub_len: Option<usize>,
     seq: u64,
     ts: String,
     direction: String,
@@ -896,6 +904,10 @@ impl History {
         if let Some(peer) = event.peer {
             row["peer"] = peer.into();
         }
+        if let Some(class) = event.class { row["class"] = class.into(); }
+        if let Some(reason) = event.reason { row["reason"] = reason.into(); }
+        if let Some(len) = event.name_len { row["name_len"] = len.into(); }
+        if let Some(len) = event.to_sub_len { row["to_sub_len"] = len.into(); }
         bytes += self.row(row, now)?;
         Ok(bytes)
     }

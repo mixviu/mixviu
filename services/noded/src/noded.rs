@@ -48,6 +48,7 @@ mod frame_policy;
 
 #[path = "commands.rs"]
 mod commands;
+pub(crate) mod history_projection;
 
 type FrameRefusalLogs = HashMap<(String, &'static str), mesh::DiagnosticLog>;
 static FRAME_REFUSALS: std::sync::LazyLock<std::sync::Mutex<FrameRefusalLogs>> =
@@ -255,14 +256,14 @@ impl ServiceEntry {
     }
 }
 
-pub(crate) type Registry = Arc<RwLock<HashMap<String, ServiceEntry>>>;
+pub(crate) type Registry = Arc<history_projection::HistoryRegistry>;
 type FencedRegistryRead<'a> = (
     std::sync::RwLockReadGuard<'a, ()>,
     tokio::sync::RwLockReadGuard<'a, HashMap<String, ServiceEntry>>,
 );
 type FencedRegistryWrite<'a> = (
     std::sync::RwLockReadGuard<'a, ()>,
-    tokio::sync::RwLockWriteGuard<'a, HashMap<String, ServiceEntry>>,
+    history_projection::Write<'a>,
 );
 type FencedDeliveryRead<'a> = (
     std::sync::RwLockReadGuard<'a, ()>,
@@ -592,13 +593,8 @@ impl AppState {
     }
 
     /// PR A's history projection query. Only live, honoured registrations vouch.
-    #[allow(dead_code)] // Consumed by the following history projection PR.
     pub(crate) async fn vouched_command(&self, name: &str) -> bool {
-        self.registry.read().await.iter().any(|(service, entry)| {
-            !entry.tx.is_closed()
-                && self.honours_manifest(service)
-                && entry.commands.names.contains(name)
-        })
+        self.registry.names.load().vouched_command(name, &self.history_allowlist)
     }
 }
 
@@ -1200,8 +1196,12 @@ async fn serve(
         false,
     );
 
-    let registry: Registry = Arc::new(RwLock::new(HashMap::new()));
+    let registry: Registry = Arc::new(history_projection::HistoryRegistry::new(HashMap::new()));
     let observe = ObserveManager::new();
+    observe.set_projector(history_projection::Projector {
+        registry: registry.clone(), authority: authority.clone(), node: node.clone(),
+        allowlist: commands::allowlist(Some(&network))?,
+    });
     observe.spawn_drainer();
 
     tokio::spawn(mesh_incoming_loop(
@@ -7137,7 +7137,7 @@ pub(crate) mod tests {
             broker_epoch: super::HexBytes([1; 16]),
             principal: None,
             native_session_endpoint: None,
-            registry: Arc::new(RwLock::new(HashMap::new())),
+            registry: Arc::new(super::history_projection::HistoryRegistry::new(HashMap::new())),
             pending_responses: Arc::new(PendingResponseTable::new()),
             tap_subscribers: Arc::new(RwLock::new(Vec::new())),
             observe: ObserveManager::new(),
