@@ -6,7 +6,7 @@ use std::collections::HashSet;
 // 512 strings: 64 ASCII bytes each, worst-case six-byte JSON Unicode escapes,
 // two quotes and one comma per string, plus the brackets (last comma omitted).
 // Whitespace also consumes this wire budget.
-pub(super) const MAX_BODY_BYTES: usize = 512 * (64 * 6 + 3) + 1;
+pub(super) const MAX_BODY_BYTES: usize = bus::MAX_MANIFEST_NAMES * (bus::MAX_MANIFEST_NAME_BYTES * 6 + 3) + 1;
 
 pub(super) fn decode(body: &str) -> Result<Vec<String>, &'static str> {
     if body.len() > MAX_BODY_BYTES {
@@ -23,7 +23,7 @@ pub(super) fn decode(body: &str) -> Result<Vec<String>, &'static str> {
         }
         fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
             let mut names = Vec::new();
-            while names.len() < 512 {
+            while names.len() < bus::MAX_MANIFEST_NAMES {
                 match seq.next_element::<String>()? {
                     Some(name) => names.push(name),
                     None => return Ok(names),

@@ -23,6 +23,11 @@ pub mod service_info;
 pub use protocol::*;
 
 /// Manifest limits in broker return-code precedence order.
+pub const MAX_MANIFEST_NAMES: usize = 512;
+pub const MAX_MANIFEST_NAME_BYTES: usize = 64;
+pub const MAX_MANIFEST_NAME_SEGMENTS: usize = 6;
+
+/// A rejected name or manifest position, in broker return-code precedence order.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub enum ManifestNameError { Count, Bytes, Segments, Charset }
 
@@ -34,9 +39,9 @@ impl ManifestNameError {
 
 /// Validate one command name at its zero-based position in the manifest.
 pub fn validate_manifest_name(name: &str, index: usize) -> Result<(), ManifestNameError> {
-    if index >= 512 { return Err(ManifestNameError::Count); }
-    if name.len() > 64 { return Err(ManifestNameError::Bytes); }
-    if name.split('.').count() > 6 { return Err(ManifestNameError::Segments); }
+    if index >= MAX_MANIFEST_NAMES { return Err(ManifestNameError::Count); }
+    if name.len() > MAX_MANIFEST_NAME_BYTES { return Err(ManifestNameError::Bytes); }
+    if name.split('.').count() > MAX_MANIFEST_NAME_SEGMENTS { return Err(ManifestNameError::Segments); }
     if name.split('.').any(|part| part.is_empty() || !part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')) {
         return Err(ManifestNameError::Charset);
     }
