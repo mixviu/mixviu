@@ -506,13 +506,14 @@ impl ServeRuntime for MixServeRuntime {
                     .iter()
                     .map(|name| (name.as_str(), None))
                     .collect::<Vec<_>>();
-                let descriptors: Vec<::bus::CommandDescriptor> = match serde_json::from_str(&self.help_body(&handlers)) {
-                    Ok(descriptors) => descriptors,
-                    Err(error) => {
-                        tracing::warn!(%error, "cannot encode serve command manifest");
-                        return;
-                    }
-                };
+                let descriptors: Vec<::bus::CommandDescriptor> =
+                    match serde_json::from_str(&self.help_body(&handlers)) {
+                        Ok(descriptors) => descriptors,
+                        Err(error) => {
+                            tracing::warn!(%error, "cannot encode serve command manifest");
+                            return;
+                        }
+                    };
                 bus.set_command_names(
                     descriptors
                         .into_iter()

@@ -8,6 +8,10 @@ pub(super) const BROKER_CONTROL_VERBS: &[&str] = &[
     "noded.register", "noded.deregister", "noded.commands.set", "noded.ping",
     "noded.list", "noded.info", "noded.peers", "noded.inventory",
     "noded.observe.start", "noded.observe.stop", "noded.tap",
+    "topic.publish", "topic.subscribe", "topic.unsubscribe", "topic.subscriber_count",
+    "topic.list", "topic.clear", "ui.subscribe", "ui.unsubscribe",
+    "noded.props.subscribe_grant", "noded.props.get", "noded.props.list",
+    "noded.props.describe", "noded.props.watch", "props.watch", "spec.get", "spec.v2.get",
     "log.props.get", "log.props.list", "log.props.describe",
 ];
 

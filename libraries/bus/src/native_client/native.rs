@@ -499,24 +499,52 @@ impl Drop for ManifestPublisher {
 
 impl ManifestPublisher {
     async fn exchange(
-        sink: &Arc<Mutex<WsSink>>, pending: &Arc<StdMutex<PendingMap>>,
-        mut request: BusMessage, id: String,
+        sink: &Arc<Mutex<WsSink>>,
+        pending: &Arc<StdMutex<PendingMap>>,
+        mut request: BusMessage,
+        id: String,
+        state: &Arc<StdMutex<ManifestState>>,
+        generation: u64,
     ) -> Option<BusMessage> {
+        let mut sink = sink.lock().await;
+        // Also fence a deregister/re-register that happened while waiting.
+        if state.lock().expect("manifest lock poisoned").generation != generation {
+            return None;
+        }
         request.set("id", &id);
         let (tx, rx) = oneshot::channel();
-        pending.lock().expect("pending mutex poisoned").insert(id.clone(), tx);
+        pending
+            .lock()
+            .expect("pending mutex poisoned")
+            .insert(id.clone(), tx);
         let _guard = PendingGuard::arm(pending.clone(), id);
-        sink.lock().await.send(Message::Text(request.to_wire().into())).await.ok()?;
+        sink.send(Message::Text(request.to_wire().into()))
+            .await
+            .ok()?;
+        drop(sink);
         tokio::time::timeout(RESPONSE_TIMEOUT, rx).await.ok()?.ok()
     }
 
-    fn new(sink: Arc<Mutex<WsSink>>, descriptors: &RwLock<Option<String>>, pending: Arc<StdMutex<PendingMap>>) -> Self {
-        let mut names: Vec<String> = descriptors.read().expect("commands lock poisoned").as_deref()
+    fn new(
+        sink: Arc<Mutex<WsSink>>,
+        descriptors: &RwLock<Option<String>>,
+        pending: Arc<StdMutex<PendingMap>>,
+    ) -> Self {
+        let mut names: Vec<String> = descriptors
+            .read()
+            .expect("commands lock poisoned")
+            .as_deref()
             .and_then(|body| serde_json::from_str::<Vec<crate::CommandDescriptor>>(body).ok())
-            .unwrap_or_default().into_iter().map(|command| command.name).collect();
+            .unwrap_or_default()
+            .into_iter()
+            .map(|command| command.name)
+            .collect();
         names.sort();
         names.dedup();
-        let state = Arc::new(StdMutex::new(ManifestState { names, ..Default::default() }));
+        let state = Arc::new(StdMutex::new(ManifestState {
+            names,
+            ..Default::default()
+        }));
         let reader_state = state.clone();
         let (tx, mut rx) = mpsc::unbounded_channel::<(u64, String, String)>();
         let task = tokio::spawn(async move {
@@ -524,57 +552,119 @@ impl ManifestPublisher {
             let mut serial = 0u64;
             while let Some((mut generation, identity, mut body)) = rx.recv().await {
                 // Drop stale updates before contending for the socket.
-                if reader_state.lock().expect("manifest lock poisoned").generation != generation { continue; }
+                if reader_state
+                    .lock()
+                    .expect("manifest lock poisoned")
+                    .generation
+                    != generation
+                {
+                    continue;
+                }
                 for attempt in 0..2 {
                     let recovery = {
                         let state = reader_state.lock().expect("manifest lock poisoned");
-                        if state.generation != generation || state.identity.as_ref() != Some(&identity) { break; }
+                        if state.generation != generation
+                            || state.identity.as_ref() != Some(&identity)
+                        {
+                            break;
+                        }
                         state.dirty.then(|| state.registration_body.clone())
                     };
                     if let Some(registration_body) = recovery {
                         serial += 1;
-                        let request = BusMessage::new().with_header("command", "noded.register")
-                            .with_header("from", &identity).with_header("to", "noded")
-                            .with_header("type", "request").with_body(&registration_body);
-                        let Some(reply) = Self::exchange(&sink, &pending, request, format!("manifest-register-{serial}")).await else { break; };
-                        if reply.get("rc").and_then(|rc| rc.parse::<u8>().ok()).is_none_or(|rc| rc >= crate::RC_ERROR) {
+                        let request = BusMessage::new()
+                            .with_header("command", "noded.register")
+                            .with_header("from", &identity)
+                            .with_header("to", "noded")
+                            .with_header("type", "request")
+                            .with_body(&registration_body);
+                        let Some(reply) = Self::exchange(
+                            &sink,
+                            &pending,
+                            request,
+                            format!("manifest-register-{serial}"),
+                            &reader_state,
+                            generation,
+                        )
+                        .await
+                        else {
+                            break;
+                        };
+                        if reply
+                            .get("rc")
+                            .and_then(|rc| rc.parse::<u8>().ok())
+                            .is_none_or(|rc| rc >= crate::RC_ERROR)
+                        {
                             tracing::warn!("manifest recovery registration refused");
                             break;
                         }
                         let mut state = reader_state.lock().expect("manifest lock poisoned");
-                        if state.generation != generation { break; }
+                        if state.generation != generation {
+                            break;
+                        }
                         state.generation += 1;
                         generation = state.generation;
                         state.dirty = false;
                         body = serde_json::to_string(&state.names).expect("names serialize");
                     }
-                    // Recheck after waiting for the sink in exchange's caller.
-                    if reader_state.lock().expect("manifest lock poisoned").generation != generation { break; }
+                    // Avoid contending for the sink for an already-stale set.
+                    if reader_state
+                        .lock()
+                        .expect("manifest lock poisoned")
+                        .generation
+                        != generation
+                    {
+                        break;
+                    }
                     serial += 1;
-                    let request = BusMessage::new().with_header("command", "noded.commands.set")
-                        .with_header("from", &identity).with_header("to", "noded")
-                        .with_header("type", "request").with_body(&body);
-                    let Some(reply) = Self::exchange(&sink, &pending, request, format!("manifest-set-{serial}")).await else { break; };
+                    let request = BusMessage::new()
+                        .with_header("command", "noded.commands.set")
+                        .with_header("from", &identity)
+                        .with_header("to", "noded")
+                        .with_header("type", "request")
+                        .with_body(&body);
+                    let Some(reply) =
+                        Self::exchange(&sink, &pending, request, format!("manifest-set-{serial}"), &reader_state, generation)
+                            .await
+                    else {
+                        break;
+                    };
                     let rc = reply.get("rc").unwrap_or("invalid");
                     if rc == "10" {
-                        if warned.insert(rc.to_owned()) { tracing::debug!("broker does not support noded.commands.set"); }
+                        if warned.insert(rc.to_owned()) {
+                            tracing::debug!("broker does not support noded.commands.set");
+                        }
                     } else if rc != "0" && warned.insert(rc.to_owned()) {
                         tracing::warn!(rc, "broker refused command manifest");
                     }
-                    if rc != "25" { break; }
+                    if rc != "25" {
+                        break;
+                    }
                     let mut state = reader_state.lock().expect("manifest lock poisoned");
-                    if state.generation != generation { break; }
+                    if state.generation != generation {
+                        break;
+                    }
                     state.dirty = true;
-                    if attempt == 1 { break; } // A broken broker cannot cause a retry loop.
+                    if attempt == 1 {
+                        break;
+                    } // A broken broker cannot cause a retry loop.
                 }
             }
         });
-        Self { state, tx, task: task.abort_handle() }
+        Self {
+            state,
+            tx,
+            task: task.abort_handle(),
+        }
     }
 
     fn enqueue(&self, state: &ManifestState) {
         if let Some(identity) = &state.identity {
-            let _ = self.tx.send((state.generation, identity.clone(), serde_json::to_string(&state.names).expect("names serialize")));
+            let _ = self.tx.send((
+                state.generation,
+                identity.clone(),
+                serde_json::to_string(&state.names).expect("names serialize"),
+            ));
         }
     }
 
@@ -587,7 +677,8 @@ impl ManifestPublisher {
     }
 
     fn set_names(&self, mut names: Vec<String>) {
-        names.sort(); names.dedup();
+        names.sort();
+        names.dedup();
         let mut state = self.state.lock().expect("manifest lock poisoned");
         if state.names != names || state.dirty {
             state.names = names;
@@ -616,7 +707,12 @@ impl NodedClient {
         let body =
             Some(serde_json::to_string(&command_names).expect("command descriptors serialize"));
         let mut commands = self.commands.write().expect("commands lock poisoned");
-        if *commands == body && !self.manifest.as_ref().is_some_and(|m| m.state.lock().expect("manifest lock poisoned").dirty) {
+        if *commands == body
+            && !self
+                .manifest
+                .as_ref()
+                .is_some_and(|m| m.state.lock().expect("manifest lock poisoned").dirty)
+        {
             return;
         }
         *commands = body;
@@ -684,7 +780,11 @@ impl NodedClient {
         ));
         let mut guard = AbortOnDrop::new(reader.abort_handle());
         let client = Self {
-            manifest: Some(ManifestPublisher::new(sink.clone(), &command_names, pending.clone())),
+            manifest: Some(ManifestPublisher::new(
+                sink.clone(),
+                &command_names,
+                pending.clone(),
+            )),
             service_name,
             commands: command_names,
             sink,
@@ -787,7 +887,11 @@ impl NodedClient {
         let mut reader_guard = AbortOnDrop::new(reader_handle.abort_handle());
 
         let client = Self {
-            manifest: Some(ManifestPublisher::new(sink.clone(), &command_names, pending.clone())),
+            manifest: Some(ManifestPublisher::new(
+                sink.clone(),
+                &command_names,
+                pending.clone(),
+            )),
             service_name,
             commands: command_names,
             sink,
@@ -846,7 +950,11 @@ impl NodedClient {
         ));
 
         Ok(Self {
-            manifest: Some(ManifestPublisher::new(sink.clone(), &command_names, pending.clone())),
+            manifest: Some(ManifestPublisher::new(
+                sink.clone(),
+                &command_names,
+                pending.clone(),
+            )),
             service_name,
             commands: command_names,
             sink,
@@ -1450,7 +1558,11 @@ impl NodedClient {
             self.request_message(message, RESPONSE_TIMEOUT).await?;
         if rc < crate::RC_ERROR {
             if let Some(manifest) = &self.manifest {
-                manifest.state.lock().expect("manifest lock poisoned").registration_body = request_body.to_owned();
+                manifest
+                    .state
+                    .lock()
+                    .expect("manifest lock poisoned")
+                    .registration_body = request_body.to_owned();
                 manifest.registered(Some(name.to_owned()));
             }
             return Ok(());

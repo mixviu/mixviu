@@ -8,7 +8,8 @@ async fn registration_rechecks_exact_key_after_rotation_before_dispatch() {
     let mut posture = state.authority.load().posture.clone();
     if let crate::authority::Posture::Verified(a) = &mut posture {
         a.epoch += 1;
-        a.members_full.get_mut("beta").unwrap()["credentials"][0]["until_epoch"] = serde_json::json!(a.epoch);
+        a.members_full.get_mut("beta").unwrap()["credentials"][0]["until_epoch"] =
+            serde_json::json!(a.epoch);
     }
     apply_inventory_reload(&state, posture).await;
     registration.admitted_node =
@@ -42,7 +43,15 @@ async fn inventory_rotation_during_inbound_proof_refuses_stale_handshake() {
     let challenge = BusMessage::new()
         .with_header("id", &issued.id)
         .with_body(&issued.body);
-    let wire = mesh::build_admit_response(&challenge, "beta", &Some(mesh::seed::D2Seed::new([7; 32])), &state.node_name, &a.mesh, a.epoch).unwrap();
+    let wire = mesh::build_admit_response(
+        &challenge,
+        "beta",
+        &Some(mesh::seed::D2Seed::new([7; 32])),
+        &state.node_name,
+        &a.mesh,
+        a.epoch,
+    )
+    .unwrap();
     let mut posture = authority.posture.clone();
     if let crate::authority::Posture::Verified(a) = &mut posture {
         a.epoch += 1;
@@ -123,7 +132,9 @@ async fn accepted_rotation_drops_exact_inbound_key_within_one_second() {
     if let crate::authority::Posture::Verified(a) = &mut posture {
         use base64::Engine as _;
         a.epoch += 1;
-        let credentials = a.members_full.get_mut("beta").unwrap()["credentials"].as_array_mut().unwrap();
+        let credentials = a.members_full.get_mut("beta").unwrap()["credentials"]
+            .as_array_mut()
+            .unwrap();
         credentials[0]["until_epoch"] = serde_json::json!(a.epoch);
         credentials.push(serde_json::json!({"kind":"d2", "pubkey":base64::engine::general_purpose::STANDARD.encode([4;32]),"from_epoch":a.epoch,"until_epoch":null}));
     }
@@ -197,7 +208,15 @@ async fn next_mesh_frame(
 async fn prove_policy_peer(socket: &mut tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>) {
     let challenge = next_mesh_frame(socket).await;
     assert_eq!(challenge.command_name(), Some("noded.identity.challenge"));
-    let wire = mesh::build_admit_response(&challenge, "beta", &Some(mesh::seed::D2Seed::new([8; 32])), "alpha", "bus", 1).unwrap();
+    let wire = mesh::build_admit_response(
+        &challenge,
+        "beta",
+        &Some(mesh::seed::D2Seed::new([8; 32])),
+        "alpha",
+        "bus",
+        1,
+    )
+    .unwrap();
     let mut response = bus_mod::parse(&wire).unwrap();
     response.set("command", "noded.identity.response");
     socket
@@ -210,7 +229,7 @@ async fn policy_mesh_state(
     endpoint: std::net::SocketAddr,
 ) -> (AppState, mpsc::UnboundedReceiver<MeshInbound>, PeerConfig) {
     let peer = PeerConfig {
-    tls_port: None,
+        tls_port: None,
         name: "beta".into(),
         mesh_ip: endpoint.ip(),
         noded_port: endpoint.port(),

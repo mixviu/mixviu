@@ -7965,7 +7965,7 @@ pub(crate) mod tests {
                     &state,
                     &mut service,
                     "anon-example",
-                    "127.0.0.1".parse().unwrap(),
+                    &state.peer_context,
                     &mut super::ObserveOutcome::BrokerHandled,
                 )
                 .await;

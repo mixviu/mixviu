@@ -4,7 +4,14 @@
 async fn fresh_legacy_d2_admission_promotes_the_authenticated_registration_peer() {
     use base64::Engine as _;
     let seed = mesh::seed::D2Seed::new([7; 32]);
-    let mut posture = reload_posture(1, vec![active_route("beta", "192.0.2.2".parse().unwrap(), DEFAULT_NODED_PORT)]);
+    let mut posture = reload_posture(
+        1,
+        vec![active_route(
+            "beta",
+            "192.0.2.2".parse().unwrap(),
+            DEFAULT_NODED_PORT,
+        )],
+    );
     if let crate::authority::Posture::Verified(a) = &mut posture {
         a.members_full.insert("beta".into(), serde_json::json!({"name":"beta","status":"active","bus":true,"credentials":[{
             "kind":"d2", "pubkey":base64::engine::general_purpose::STANDARD.encode(ed25519_dalek::SigningKey::from_bytes(&[7;32]).verifying_key().to_bytes()), "from_epoch":1, "until_epoch":null
@@ -14,23 +21,40 @@ async fn fresh_legacy_d2_admission_promotes_the_authenticated_registration_peer(
     assert!(state.peer_context.mesh_peer().is_none());
     state.assert_legacy_promotion = true;
     state.admission_mode = AdmissionMode::Observe;
-    let app = axum::Router::new().route("/ws", axum::routing::get(super::ws_handler)).with_state(state.clone());
+    let app = axum::Router::new()
+        .route("/ws", axum::routing::get(super::ws_handler))
+        .with_state(state.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("ws://{}/ws", listener.local_addr().unwrap());
     let server = tokio::spawn(async move {
-        axum::serve(listener, app.into_make_service_with_connect_info::<std::net::SocketAddr>()).await.unwrap();
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .unwrap();
     });
     let (mut sink, mut stream) = raw_connect(&url).await;
-    let frame = tokio::time::timeout(Duration::from_secs(3), stream.next()).await.unwrap().unwrap().unwrap();
-    let WsMessage::Text(wire) = frame else { panic!("challenge expected"); };
+    let frame = tokio::time::timeout(Duration::from_secs(3), stream.next())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let WsMessage::Text(wire) = frame else {
+        panic!("challenge expected");
+    };
     let challenge = bus_mod::parse(&wire).unwrap();
     assert_eq!(challenge.command_name(), Some("noded.admit.challenge"));
-    let response = mesh::build_admit_response(&challenge, "beta", &Some(seed), "alpha", "bus", 1).unwrap();
+    let response =
+        mesh::build_admit_response(&challenge, "beta", &Some(seed), "alpha", "bus", 1).unwrap();
     sink.send(WsMessage::Text(response.into())).await.unwrap();
     // The actual handle_socket promotion asserts authenticated_registration_peer
     // is Some(beta) before this registration is dispatched on the same socket.
     raw_register(&mut sink, &mut stream, "bridge-beta").await;
-    assert_eq!(state.registry.read().await["bridge-beta"].origin, super::Origin::Bridge);
+    assert_eq!(
+        state.registry.read().await["bridge-beta"].origin,
+        super::Origin::Bridge
+    );
     server.abort();
 }
 
@@ -142,20 +166,16 @@ async fn reverse_answers_are_one_shot_and_bound_to_current_admitted_peer() {
     let message = BusMessage::new()
         .with_header("id", "reverse")
         .with_body(&body.to_string());
-    for bad in [
-        "verifier",
-        "mesh",
-        "unproven",
-        "registered",
-        "revoked",
-    ] {
+    for bad in ["verifier", "mesh", "unproven", "registered", "revoked"] {
         let mut candidate = state.clone();
         let mut body = body.clone();
         match bad {
             "verifier" => body["verifying_broker_node"] = serde_json::json!("gamma"),
             "mesh" => body["mesh_fqdn"] = serde_json::json!("other.example"),
             "unproven" => candidate.peer_context.identity = Default::default(),
-            "revoked" => apply_inventory_reload(&candidate, revoked_delivery_posture(&candidate)).await,
+            "revoked" => {
+                apply_inventory_reload(&candidate, revoked_delivery_posture(&candidate)).await
+            }
             _ => {}
         }
         let mut answered = false;
@@ -178,7 +198,13 @@ async fn reverse_answers_are_one_shot_and_bound_to_current_admitted_peer() {
     for epoch in [0, 1, 2] {
         let mut skewed = body.clone();
         skewed["inventory_epoch"] = serde_json::json!(epoch);
-        let response = super::reverse_identity_answer(&state, &message.clone().with_body(&skewed.to_string()), false, &mut false).unwrap();
+        let response = super::reverse_identity_answer(
+            &state,
+            &message.clone().with_body(&skewed.to_string()),
+            false,
+            &mut false,
+        )
+        .unwrap();
         let response = bus_mod::parse(&response).unwrap();
         assert_eq!(response.command_name(), Some("noded.identity.response"));
         let proof: serde_json::Value = serde_json::from_str(&response.body).unwrap();
@@ -351,7 +377,7 @@ async fn mutual_proof_orders_listener_challenge_client_proof_then_reverse_answer
 async fn unverified_authority_skips_reverse_challenge() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let peer = PeerConfig {
-    tls_port: None,
+        tls_port: None,
         name: "beta".into(),
         mesh_ip: listener.local_addr().unwrap().ip(),
         noded_port: listener.local_addr().unwrap().port(),
@@ -400,7 +426,7 @@ async fn unauthenticated_dialled_frame_cannot_supply_connection_stamp() {
         "recipient".into(),
         super::ServiceEntry {
             origin: super::Origin::Client,
-                    commands: Default::default(),
+            commands: Default::default(),
             tx: target,
             info: Default::default(),
             traffic_class: Default::default(),

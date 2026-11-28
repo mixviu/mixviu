@@ -10,6 +10,11 @@ never publish. `mix --serve` publishes declared handlers and runtime commands
 automatically, alongside its existing HELP implementation. Reconnect registers
 again and republishes. An old broker's unknown-verb rc 10 is logged once at debug
 per connection; registration and serving continue.
+Other non-zero manifest return codes warn once per rc per connection. On rc 25,
+the publisher marks its set dirty, registers again with the original authenticated
+register body, then republishes current names. Refusals 20–24 and 26 are not
+retried. Recovery is bounded so a broker repeatedly returning 25 cannot cause
+an automatic registration loop; a later publication may attempt recovery again.
 
 Every refusal clears the previous manifest:
 
@@ -38,14 +43,17 @@ noded: {
 }
 ```
 
-An explicit array replaces the defaults; `[]` honours only broker-fixed
-identities. A malformed value refuses broker startup. Operators extend this list
-per node. Sets are honoured only from allowlisted or broker-fixed identities:
-`noded`, `log`, `log-observe-<pid>`, `t<uid>-…`, `c<uid>-…`, `anon-…`, and
-`bridge-<peer>` where the peer is in the current signed inventory. A valid set
+An explicit array replaces the defaults; `[]` honours no service manifests.
+A malformed value refuses broker startup. Operators extend this list per node.
+Sets are honoured by exact allowlisted name only, never by pattern, prefix or
+registration origin. Anonymous callers, observers, sessions and bridges do not
+vouch for commands. `log` is not allowlisted: `log.props.get`, `log.props.list`
+and `log.props.describe` are static broker control verbs. BROKER-024 reserves
+the logger, observer, anonymous, bridge and monitor namespaces; in-process task
+tokens and registration origin remain broker-controlled. A valid set
 from another registered identity receives rc 0 but cannot vouch for names.
 The internal `vouched_command` query checks the union of honoured sets of
-currently registered services. Signed membership is checked at query time.
+currently registered services.
 
 These facilities supply the subsequent history projection; this change does
 not change history rows.

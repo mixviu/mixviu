@@ -4,8 +4,10 @@
 JSON array, for example `["example.read", "example.write"]`; it replaces the
 sender's registered set. Native clients and `mix --serve` publish automatically
 after named registration and on changes, without altering HELP or the register
-body. Anonymous connections never publish. Only broker-fixed or node-allowlisted
-identities vouch for names. Limits are 512 names, 64 bytes per name, six
+body. Anonymous connections never publish. Only exact node-allowlisted identities
+vouch for names; no prefix or pattern grants authority. The logger's
+`log.props.get`, `log.props.list` and `log.props.describe` are broker control
+verbs, and `log` is not allowlisted. Limits are 512 names, 64 bytes per name, six
 dot-separated `[A-Za-z0-9_]` segments and 16 sets per registration. A refused
 set clears the previous set. See [the broker history contract](../../services/noded/BUS-HISTORY.md)
 for return codes and `noded.history_allowlist` configuration.
