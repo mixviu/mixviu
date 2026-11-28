@@ -350,6 +350,19 @@ pub struct Store {
     /// This open migrated an older record to format 5.
     pub migrated: bool,
 }
+
+impl Drop for Store {
+    fn drop(&mut self) {
+        // flock belongs to the open file description, which fork inherits.
+        // O_CLOEXEC only closes a child's copy at exec: closing ours alone
+        // can leave the writer held by an unrelated child paused before exec.
+        // Unlock synchronously while we still own the descriptor.
+        unsafe {
+            libc::flock(self._lock.as_raw_fd(), libc::LOCK_UN);
+        }
+    }
+}
+
 /// The profile directory, opened without following a link, which must be
 /// owned by this user and not writable by others.
 pub(crate) fn open_directory(root: &Path) -> anyhow::Result<File> {
