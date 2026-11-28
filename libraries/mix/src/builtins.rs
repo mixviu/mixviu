@@ -37963,8 +37963,8 @@ mod bytes_tests {
         let mut opts = indexmap::IndexMap::new();
         opts.insert("timeout".to_string(), Value::Number(0.1));
         opts.insert("host".to_string(), Value::String("127.0.0.1".into()));
-        let error = builtin_udp_recv(vec![Value::Number(port as f64), Value::map(opts)])
-            .unwrap_err();
+        let error =
+            builtin_udp_recv(vec![Value::Number(port as f64), Value::map(opts)]).unwrap_err();
         assert!(udp_bind_is_retryable(&error, port), "{error}");
         drop(socket);
     }
