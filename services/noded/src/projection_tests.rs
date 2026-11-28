@@ -78,7 +78,7 @@ async fn mesh_source_uses_bridge_node_and_exact_session_shape() {
 /// including rejected rows. No new property-testing dependency is needed.
 #[tokio::test]
 async fn generated_caller_names_never_enter_metadata_and_rows_keep_sequence() {
-    use rand::{Rng, SeedableRng};
+    use rand::{RngCore, SeedableRng};
     let (state, _rx) = fixture().await;
     let (tx, mut rx) = mpsc::channel(64);
     state.observe.start(&tx, None, r#"{"capacity":64}"#).unwrap();
@@ -86,7 +86,7 @@ async fn generated_caller_names_never_enter_metadata_and_rows_keep_sequence() {
     let mut rng = rand::rngs::StdRng::seed_from_u64(293);
     let mut seq = 0;
     for index in 0..512 {
-        let chosen = format!("private{}{}", index, rng.random::<u64>());
+        let chosen = format!("private{}{}", index, rng.next_u64());
         for target in [
             format!("{chosen}.maild.alpha.bus"), format!("{chosen}.maild.alpha"),
             format!("{chosen}.maild.example.bus"), format!("{chosen}.maild.example"),
