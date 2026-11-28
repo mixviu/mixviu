@@ -595,7 +595,10 @@ impl ManifestPublisher {
                             .and_then(|rc| rc.parse::<u8>().ok())
                             .is_none_or(|rc| rc >= crate::RC_ERROR)
                         {
-                            tracing::warn!("manifest recovery registration refused");
+                            let rc = reply.get("rc").unwrap_or("invalid");
+                            if warned.insert(format!("register:{rc}")) {
+                                tracing::warn!(rc, "manifest recovery registration refused");
+                            }
                             break;
                         }
                         let mut state = reader_state.lock().expect("manifest lock poisoned");
@@ -633,6 +636,8 @@ impl ManifestPublisher {
                     )
                     .await
                     else {
+                        let mut state = reader_state.lock().expect("manifest lock poisoned");
+                        if state.generation == generation { state.dirty = true; }
                         break;
                     };
                     let rc = reply.get("rc").unwrap_or("invalid");
@@ -688,6 +693,7 @@ impl ManifestPublisher {
         let mut state = self.state.lock().expect("manifest lock poisoned");
         if state.names != names || state.dirty {
             state.names = names;
+            state.generation += 1;
             self.enqueue(&state);
         }
     }
@@ -710,6 +716,9 @@ impl NodedClient {
 
     /// Replace the manifest on a live client, including verified Unix clients.
     pub fn set_commands(&self, command_names: Vec<crate::CommandDescriptor>) {
+        let mut names: Vec<_> = command_names.iter().map(|c| c.name.clone()).collect();
+        names.sort();
+        names.dedup();
         let body =
             Some(serde_json::to_string(&command_names).expect("command descriptors serialize"));
         let mut commands = self.commands.write().expect("commands lock poisoned");
@@ -717,7 +726,10 @@ impl NodedClient {
             && !self
                 .manifest
                 .as_ref()
-                .is_some_and(|m| m.state.lock().expect("manifest lock poisoned").dirty)
+                .is_some_and(|m| {
+                    let state = m.state.lock().expect("manifest lock poisoned");
+                    state.dirty || state.names != names
+                })
         {
             return;
         }
@@ -2611,6 +2623,29 @@ mod native_ingress_regression_tests {
         });
         client.set_commands(descriptors);
         assert_eq!(rx.try_recv().unwrap().2, r#"["example.read"]"#);
+        client.manifest.as_ref().unwrap().state.lock().unwrap().dirty = false;
+        client.set_command_names(vec!["example.override".into()]);
+        rx.try_recv().unwrap();
+        client.set_commands(vec![crate::CommandDescriptor::new("example.read", &[], "Example", true)]);
+        assert_eq!(rx.try_recv().unwrap().2, r#"["example.read"]"#);
+    }
+
+    #[tokio::test]
+    async fn failed_send_marks_dirty_and_identical_names_retry() {
+        let mut client = drained_client();
+        let sink: WsSink = Box::pin(futures_util::sink::unfold((), |(), _: Message| async {
+            Err::<(), _>(tokio_tungstenite::tungstenite::Error::ConnectionClosed)
+        }));
+        client.manifest = Some(ManifestPublisher::new(Arc::new(Mutex::new(sink)), &client.commands, client.pending.clone()));
+        client.manifest.as_ref().unwrap().registered(Some("example".into()));
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !client.manifest.as_ref().unwrap().state.lock().unwrap().dirty {
+                tokio::task::yield_now().await;
+            }
+        }).await.unwrap();
+        let before = client.manifest.as_ref().unwrap().state.lock().unwrap().generation;
+        client.set_commands(vec![]);
+        assert!(client.manifest.as_ref().unwrap().state.lock().unwrap().generation > before);
     }
 
     fn drained_client() -> NodedClient {

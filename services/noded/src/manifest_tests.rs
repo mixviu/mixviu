@@ -32,6 +32,67 @@ async fn wait_name(state: &AppState, name: &str, present: bool) {
 }
 
 #[tokio::test]
+async fn empty_allowlist_honours_nothing_and_bursts_coalesce() {
+    let mut state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
+    let mut config = config::node::NodedConfig::default();
+    config.extra.insert("history_allowlist".into(), serde_json::json!([]));
+    state.history_allowlist = super::super::commands::allowlist(Some(&config)).unwrap();
+    let (url, task) = broker(state.clone()).await;
+    let client = bus::native_client::NodedClient::connect("maild", &url).await.unwrap();
+    for i in 0..20 {
+        client.set_commands(vec![bus::CommandDescriptor::new(&format!("example.cmd{i}"), &[], "Example", true)]);
+    }
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if state.registry.read().await["maild"].commands.names.contains("example.cmd19") { break; }
+            tokio::task::yield_now().await;
+        }
+    }).await.unwrap();
+    assert!(state.registry.read().await["maild"].commands.attempts() <= 3);
+    assert!(!state.vouched_command("example.cmd19").await);
+    client.close().await;
+    task.abort();
+}
+
+#[tokio::test]
+async fn oversized_manifest_keeps_registry_responsive() {
+    let state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
+    let (url, task) = broker(state.clone()).await;
+    let (mut a, mut ar) = raw_connect(&url).await;
+    let (mut b, mut br) = raw_connect(&url).await;
+    raw_register(&mut a, &mut ar, "maild").await;
+    // Fits the byte cap, but must stop at element 513 instead of allocating
+    // all 40,000 strings. The other registration must not wait on JSON parsing.
+    let body = serde_json::to_string(&vec!["a"; 40_000]).unwrap();
+    assert!(body.len() < super::super::commands::MAX_BODY_BYTES);
+    let request = BusMessage::new().with_header("command", "noded.commands.set")
+        .with_header("to", "noded").with_header("id", "large").with_body(&body);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        let (reply, ()) = tokio::join!(raw_call(&mut a, &mut ar, request, "large"), raw_register(&mut b, &mut br, "webd"));
+        assert_eq!(reply.get("rc"), Some("21"));
+    }).await.unwrap();
+    assert!(state.registry.read().await.contains_key("webd"));
+    a.close().await.unwrap();
+    b.close().await.unwrap();
+    task.abort();
+}
+
+#[tokio::test]
+async fn default_allowlist_starts() {
+    let (listener, listen) = pick_listener().unwrap();
+    let (ready, readiness) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(super::super::run_on(super::super::RunConfig {
+        network: Some(config::node::NodedConfig::default()), session_probe: None,
+        unix_socket: None, pending_grants_per_parent: 32, listen,
+        node: "example".into(), mesh_addr: "127.0.0.1".into(), mesh_config_path: None,
+        spec_dir: None, admission_mode: config::node::AdmissionMode::Off,
+        frame_policy: config::node::AdmissionMode::Off,
+    }, listener, ready));
+    tokio::time::timeout(Duration::from_secs(3), readiness).await.unwrap().unwrap();
+    task.abort();
+}
+
+#[tokio::test]
 async fn reserved_names_follow_broker_024_and_exact_allowlist() {
     let mut state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
     let token = super::super::task_identity::Token::new();
@@ -146,6 +207,14 @@ async fn malformed_allowlists_refuse_startup() {
         serde_json::json!("maild"),
         serde_json::json!(42),
         serde_json::json!(["maild", 42]),
+        serde_json::json!(["t0-aaaaaaaaaaaaaaaaaaaaaa"]),
+        serde_json::json!(["c0-aaaaaaaaaaaaaaaaaaaaaa"]),
+        serde_json::json!(["bridge-example"]),
+        serde_json::json!(["anon-example"]),
+        serde_json::json!(["log"]),
+        serde_json::json!(["log-observe-123"]),
+        serde_json::json!(["noded"]),
+        serde_json::json!(["noded-example"]),
     ] {
         let (listener, listen) = pick_listener().unwrap();
         let mut network = config::node::NodedConfig::default();
@@ -412,12 +481,16 @@ async fn allowlisted_mix_citizen_publishes_handlers_without_changing_help() {
     evaluator.set_serve_runtime(runtime.clone());
     evaluator
         .execute_script_source(
-            "on example.read desc \"Example authored description\"\nend\nquit()\n",
+            "on example.read desc \"Example authored description\"\nend\non a.b.c.d.e.f.g\nend\nquit()\n",
         )
         .await
         .unwrap();
     evaluator.run_event_pump().await.unwrap();
     wait_name(&state, "example.read", true).await;
+    assert!(!state.vouched_command("a.b.c.d.e.f.g").await);
+    let incarnation = state.registry.read().await["maild"].info.meta["noded.registration_id"].clone();
+    for _ in 0..20 { runtime.publish_commands(&["example.read".into(), "a.b.c.d.e.f.g".into()]).await; }
+    assert_eq!(state.registry.read().await["maild"].info.meta["noded.registration_id"], incarnation);
     let help = runtime
         .handle_reserved(
             "HELP",

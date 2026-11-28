@@ -5139,14 +5139,15 @@ async fn handle_noded_command(
         }
 
         "noded.commands.set" => {
+            let decoded = commands::decode(&msg.body);
             let mut registry = state.registry.write().await;
             let entry = service_name
                 .as_deref()
                 .and_then(|name| registry.get_mut(name))
                 .filter(|entry| entry.same_channel(tx));
             let rc = match entry {
-                // Decode under the write lock: the registration budget must precede body validation in rc order.
-                Some(entry) => entry.commands.replace(&msg.body),
+                // Decode outside the lock, but report ownership then budget then decode errors.
+                Some(entry) => entry.commands.replace_decoded(decoded),
                 None => "26",
             };
             let mut response = respond(rc);

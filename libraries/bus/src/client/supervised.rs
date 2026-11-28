@@ -328,7 +328,8 @@ impl SupervisedClient {
     /// Publish command names alongside HELP, retaining them on reconnect.
     pub async fn set_command_names(&self, names: Vec<String>) {
         let live = self.inner.read().await;
-        *self.command_names.lock().expect("commands lock poisoned") = Some(names.clone());
+        let mut retained = self.command_names.lock().expect("commands lock poisoned");
+        *retained = Some(names.clone());
         if let Some(connection) = live.as_ref() {
             connection.set_command_names(names);
         }
