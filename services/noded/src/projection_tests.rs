@@ -295,20 +295,54 @@ async fn published_inner_command_is_projected_on_real_fanout() {
     use bus::native_session::{Assurance, BrokerPrincipal, HexBytes, PrincipalVersion};
     let (state, _service_rx) = fixture().await;
     let (observer, mut observed) = mpsc::channel(8);
-    state.observe.start(&observer, None, r#"{"filter":{"commands":["user.example"]}}"#).unwrap();
+    state
+        .observe
+        .start(
+            &observer,
+            None,
+            r#"{"filter":{"commands":["user.example"]}}"#,
+        )
+        .unwrap();
     observed.try_recv().unwrap();
     let broker = SubscriptionBroker::with_observe(state.observe.clone());
     let (subscriber, mut delivered) = mpsc::channel(8);
-    broker.subscribe_topic_verified("example.events", "maild", subscriber, None, true).await;
+    broker
+        .subscribe_topic_verified("example.events", "maild", subscriber, None, true)
+        .await;
     let (publisher, _publisher_rx) = mpsc::channel(8);
     let principal = BrokerPrincipal {
-        version: PrincipalVersion::V1, assurance: Assurance::LocalUnix,
-        owner_node: "alpha".into(), unix_uid: 1000, unix_gid: 1000, peer_pid: 10,
-        broker_epoch: HexBytes([1; 16]), connection_id: HexBytes([2; 16]), session: None,
+        version: PrincipalVersion::V1,
+        assurance: Assurance::LocalUnix,
+        owner_node: "alpha".into(),
+        unix_uid: 1000,
+        unix_gid: 1000,
+        peer_pid: 10,
+        broker_epoch: HexBytes([1; 16]),
+        connection_id: HexBytes([2; 16]),
+        session: None,
     };
-    let inner = BusMessage::new().with_header("type", "event").with_header("command", "user.example");
-    broker.publish_with_context("example.events", &inner.to_wire(), "maild", publisher, bus::native_session::BrokerOrigin::Local, false, Some(&principal), Some("example-connection")).await.unwrap();
-    assert_eq!(bus_mod::parse(&delivered.recv().await.unwrap()).unwrap().command_name(), Some("user.example"));
+    let inner = BusMessage::new()
+        .with_header("type", "event")
+        .with_header("command", "user.example");
+    broker
+        .publish_with_context(
+            "example.events",
+            &inner.to_wire(),
+            "maild",
+            publisher,
+            crate::subscription::BrokerOrigin::Local,
+            false,
+            Some(&principal),
+            Some("example-connection"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        bus_mod::parse(&delivered.recv().await.unwrap())
+            .unwrap()
+            .command_name(),
+        Some("user.example")
+    );
     state.observe.drain_once();
     let event = bus_mod::parse(&observed.try_recv().unwrap()).unwrap();
     let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();

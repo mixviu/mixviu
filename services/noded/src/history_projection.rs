@@ -127,6 +127,11 @@ pub(crate) struct Projected {
 }
 
 impl Projector {
+    /// The one local identity projection point, shared by sources and targets.
+    /// PR B adds provenance/allowlist handles here.
+    fn local_identity(&self, name: &str) -> String {
+        name.to_owned()
+    }
     /// Single component builder for destinations, replies and mesh sources.
     /// PR B replaces the local registered-name arm here with opaque handles.
     fn address(
@@ -185,7 +190,7 @@ impl Projector {
             return (format!("{node}.bus"), None, sub);
         }
         if names.registered(service) {
-            return (service.into(), None, sub);
+            return (self.local_identity(service), None, sub);
         }
         (
             "unknown-target".into(),
@@ -196,10 +201,11 @@ impl Projector {
 
     pub fn project(&self, observation: &Observation<'_>) -> Projected {
         let names = self.registry.names.load();
-        let mut result = Projected::default();
         // Canonical local source provenance is already enforced by routing.
-        // D2 replaces it in this same projection function in PR B.
-        result.from = observation.message.from_addr().map(str::to_owned);
+        let mut result = Projected {
+            from: observation.message.from_addr().map(|name| self.local_identity(name)),
+            ..Default::default()
+        };
         if observation.direction == ObserveDirection::MeshIn
             || observation.message.get("type") == Some("response")
         {
@@ -209,7 +215,11 @@ impl Projector {
                 } else {
                     None
                 };
-                let (value, issue, _) = self.address(raw, peer, &names);
+                let (value, issue, _) = if observation.direction == ObserveDirection::MeshIn && peer.is_none() {
+                    ("unknown-target".into(), Some(("remote-unvouched", raw.len())), None)
+                } else {
+                    self.address(raw, peer, &names)
+                };
                 if let Some((reason, len)) = issue {
                     result.reason = Some(reason);
                     result.name_len = Some(len);
@@ -218,7 +228,10 @@ impl Projector {
             });
         }
         if let Some(raw) = observation.message.to_addr() {
-            let (value, issue, sub) = self.address(raw, None, &names);
+            let peer = if observation.direction == ObserveDirection::MeshOut && observation.message.get("type") == Some("response") {
+                observation.peer
+            } else { None };
+            let (value, issue, sub) = self.address(raw, peer, &names);
             result.to = Some(value);
             result.to_sub_len = sub;
             if let Some((reason, len)) = issue {
