@@ -574,7 +574,7 @@ impl AppState {
 
     /// PR A's history projection query. Only live, honoured registrations vouch.
     #[allow(dead_code)] // Consumed by the following history projection PR.
-    async fn vouched_command(&self, name: &str) -> bool {
+    pub(crate) async fn vouched_command(&self, name: &str) -> bool {
         self.registry.read().await.iter().any(|(service, entry)| {
             !entry.tx.is_closed() && self.honours_manifest(service) && entry.commands.names.contains(name)
         })
@@ -6056,6 +6056,9 @@ mod tests {
     include!("frame_policy_tests.rs");
     include!("identity_tests.rs");
     include!("tls_tests.rs");
+    mod manifest_tests {
+        include!("manifest_tests.rs");
+    }
     use std::collections::HashMap;
     use std::net::{Ipv4Addr, TcpListener};
     use std::sync::Arc;

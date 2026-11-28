@@ -49,6 +49,8 @@ mod script_meta;
 pub mod script_worker;
 #[cfg(feature = "serve")]
 mod serve_runtime;
+#[cfg(feature = "serve")]
+pub use serve_runtime::MixServeRuntime;
 mod session_execute;
 mod session_state;
 mod session_status;
