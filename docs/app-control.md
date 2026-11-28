@@ -55,6 +55,11 @@ and a handler that evaluates its argument is not detected. The flag check
 is a malformed-entry tripwire, not a security boundary; the guarantee is
 the URI's placement in argv, nothing about what the handler does with it.
 
+Known misses: `bash -cx`, `bash -c --`, `perl -E`, `php -r`, `node -p`.
+Known false refusals: single-dash long options ending in c or e, such as
+`thunderbird -compose` and `firefox -private`. Remedy: use the `--` form,
+or reorder the Exec.
+
 `Terminal=true` entries are excluded from OpenURI resolution. The current
 term launcher forwards argv (`apps/term/term.mix`), but its startup policy
 (`apps/term/startup-policy.mix`, `decide`) rejects `--` and command arguments;

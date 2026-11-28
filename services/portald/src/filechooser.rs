@@ -157,6 +157,10 @@ impl<I: crate::service::CommandSource> crate::service::CommandSource for Source<
 }
 
 impl Bridge {
+    pub(crate) fn client(&self) -> Arc<SupervisedClient> {
+        self.client.clone()
+    }
+
     pub fn new(client: Arc<SupervisedClient>) -> Self {
         Self {
             client,

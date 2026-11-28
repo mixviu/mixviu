@@ -9,6 +9,7 @@ pub mod cache;
 pub mod env;
 pub mod filechooser;
 pub mod live;
+pub mod openuri;
 pub mod portal;
 pub mod screencast;
 pub mod service;
