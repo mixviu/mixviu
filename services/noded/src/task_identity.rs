@@ -124,9 +124,13 @@ mod tests {
         assert!(client.register_as_with_body("log", "{}").await.is_err());
         assert_eq!(client.name(), previous);
         let marker = format!("registration-marker-{:016x}", rand::random::<u64>());
-        let mut body: serde_json::Value = serde_json::from_str(&logger.registration_body()).unwrap();
+        let mut body: serde_json::Value =
+            serde_json::from_str(&logger.registration_body()).unwrap();
         body["binary"] = serde_json::json!(marker);
-        client.register_as_with_body("trace-probe", &body.to_string()).await.unwrap();
+        client
+            .register_as_with_body("trace-probe", &body.to_string())
+            .await
+            .unwrap();
         client.close().await;
         tokio::task::yield_now().await;
         let logs = String::from_utf8(output.0.lock().unwrap().clone()).unwrap();
@@ -138,7 +142,11 @@ mod tests {
             logs.contains("TRACE"),
             "trace transport logging was not captured"
         );
-        assert!(logs.lines().any(|line| line.contains("TRACE") && line.contains(&marker)), "registration body marker was not traced");
+        assert!(
+            logs.lines()
+                .any(|line| line.contains("TRACE") && line.contains(&marker)),
+            "registration body marker was not traced"
+        );
         for token in [&logger, &monitor, &wrong] {
             assert!(
                 !logs.contains(&token.encoded()),

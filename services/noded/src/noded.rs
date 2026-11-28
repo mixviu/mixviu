@@ -252,9 +252,19 @@ impl ServiceEntry {
 }
 
 pub(crate) type Registry = Arc<RwLock<HashMap<String, ServiceEntry>>>;
-type FencedRegistryRead<'a> = (std::sync::RwLockReadGuard<'a, ()>, tokio::sync::RwLockReadGuard<'a, HashMap<String, ServiceEntry>>);
-type FencedRegistryWrite<'a> = (std::sync::RwLockReadGuard<'a, ()>, tokio::sync::RwLockWriteGuard<'a, HashMap<String, ServiceEntry>>);
-type FencedDeliveryRead<'a> = (std::sync::RwLockReadGuard<'a, ()>, tokio::sync::RwLockReadGuard<'a, HashMap<String, ServiceEntry>>, Option<tokio::sync::MutexGuard<'a, session::Sessions>>);
+type FencedRegistryRead<'a> = (
+    std::sync::RwLockReadGuard<'a, ()>,
+    tokio::sync::RwLockReadGuard<'a, HashMap<String, ServiceEntry>>,
+);
+type FencedRegistryWrite<'a> = (
+    std::sync::RwLockReadGuard<'a, ()>,
+    tokio::sync::RwLockWriteGuard<'a, HashMap<String, ServiceEntry>>,
+);
+type FencedDeliveryRead<'a> = (
+    std::sync::RwLockReadGuard<'a, ()>,
+    tokio::sync::RwLockReadGuard<'a, HashMap<String, ServiceEntry>>,
+    Option<tokio::sync::MutexGuard<'a, session::Sessions>>,
+);
 type PendingResponses = Arc<PendingResponseTable>;
 type TapSubscribers = Arc<RwLock<Vec<mpsc::Sender<String>>>>;
 
@@ -3096,7 +3106,10 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                     } else {
                         // The socket becomes a mesh transport only after its
                         // own D2 challenge has authenticated this identity.
-                        let bus::native_session::PeerIdentity::MeshAdmitted { node, .. } = identity else { break; };
+                        let bus::native_session::PeerIdentity::MeshAdmitted { node, .. } = identity
+                        else {
+                            break;
+                        };
                         state.peer_context.transport = Some(TransportIdentity::Mesh {
                             source_ip,
                             admission: bus::native_session::MeshAdmission {
@@ -3108,7 +3121,10 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                         });
                         #[cfg(test)]
                         if state.assert_legacy_promotion {
-                            assert_eq!(authenticated_registration_peer(&state, &state.peer_context), Some(node.clone()));
+                            assert_eq!(
+                                authenticated_registration_peer(&state, &state.peer_context),
+                                Some(node.clone())
+                            );
                         }
                     }
                 } else {
@@ -4169,7 +4185,10 @@ fn reserved_name_refusal(mut response: BusMessage) -> BusMessage {
 async fn fenced_registry_read(state: &AppState) -> FencedRegistryRead<'_> {
     loop {
         {
-            let fence = state.delivery_fence.read().expect("delivery fence poisoned");
+            let fence = state
+                .delivery_fence
+                .read()
+                .expect("delivery fence poisoned");
             if let Ok(registry) = state.registry.try_read() {
                 return (fence, registry);
             }
@@ -4181,7 +4200,10 @@ async fn fenced_registry_read(state: &AppState) -> FencedRegistryRead<'_> {
 async fn fenced_registry_write(state: &AppState) -> FencedRegistryWrite<'_> {
     loop {
         {
-            let fence = state.delivery_fence.read().expect("delivery fence poisoned");
+            let fence = state
+                .delivery_fence
+                .read()
+                .expect("delivery fence poisoned");
             if let Ok(registry) = state.registry.try_write() {
                 return (fence, registry);
             }
@@ -4190,13 +4212,26 @@ async fn fenced_registry_write(state: &AppState) -> FencedRegistryWrite<'_> {
     }
 }
 
-async fn fenced_delivery_read<'a>(state: &'a AppState, service: &str, protected: bool) -> FencedDeliveryRead<'a> {
+async fn fenced_delivery_read<'a>(
+    state: &'a AppState,
+    service: &str,
+    protected: bool,
+) -> FencedDeliveryRead<'a> {
     loop {
         {
-            let fence = state.delivery_fence.read().expect("delivery fence poisoned");
+            let fence = state
+                .delivery_fence
+                .read()
+                .expect("delivery fence poisoned");
             if let Ok(registry) = state.registry.try_read() {
-                let needs_sessions = state.principal.is_some() || protected || registry.get(service).is_some_and(|e| e.traffic_class.protected());
-                if !needs_sessions { return (fence, registry, None); }
+                let needs_sessions = state.principal.is_some()
+                    || protected
+                    || registry
+                        .get(service)
+                        .is_some_and(|e| e.traffic_class.protected());
+                if !needs_sessions {
+                    return (fence, registry, None);
+                }
                 if let Ok(sessions) = state.sessions.try_lock() {
                     return (fence, registry, Some(sessions));
                 }
@@ -4411,9 +4446,7 @@ async fn route_local(
     );
     let scoped_observe = state.observe.for_class(traffic_class);
     let observe = &scoped_observe;
-    if admitted_peer.is_some()
-        && mesh_from.is_some_and(is_reserved_service_name)
-    {
+    if admitted_peer.is_some() && mesh_from.is_some_and(is_reserved_service_name) {
         drop(reg);
         let mut reply = reserved_name_refusal(
             BusMessage::new()
@@ -4457,76 +4490,79 @@ async fn route_local(
             )
             .await;
         let (traffic_class, attempt) = {
-        let (_fence, reg, mut sessions) = fenced_delivery_read(state, service, traffic_class.protected()).await;
-        // An entry may become protected on the same channel while pending
-        // registration waits. Preserve old protection and include its new class.
-        let traffic_class = traffic_class.merge(
-            reg.get(service)
-                .map(|e| e.traffic_class)
-                .unwrap_or_default(),
-        );
-        let attempt = (|| {
-            if !reg
-                .get(service)
-                .is_some_and(|entry| entry.same_channel(&target_tx))
-            {
-                return Err(bus::native_session::SessionError {
-                    error_code: bus::native_session::ErrorCode::Unavailable,
-                    message: "recipient changed before delivery".into(),
-                    details: Default::default(),
-                });
-            }
-            let owns_registration = caller_service
-                .and_then(|name| reg.get(name))
-                .is_some_and(|entry| entry.same_channel(caller_tx));
-            let admitted_peer = admitted_delivery_peer(state, source_ip).filter(|peer| {
-                owns_registration
-                    && (state.admission_mode != AdmissionMode::Enforce
-                        || caller_service == Some(format!("bridge-{peer}").as_str()))
-            });
-            if let Some(peer) = &admitted_peer {
-                msg.set(crate::subscription::BROKER_PEER_HEADER, peer);
-                if let Some(connection) = mesh_connection.filter(|id| valid_connection_stamp(id)) {
-                    msg.set("broker_connection", &format!("{peer}/{connection}"));
+            let (_fence, reg, mut sessions) =
+                fenced_delivery_read(state, service, traffic_class.protected()).await;
+            // An entry may become protected on the same channel while pending
+            // registration waits. Preserve old protection and include its new class.
+            let traffic_class = traffic_class.merge(
+                reg.get(service)
+                    .map(|e| e.traffic_class)
+                    .unwrap_or_default(),
+            );
+            let attempt = (|| {
+                if !reg
+                    .get(service)
+                    .is_some_and(|entry| entry.same_channel(&target_tx))
+                {
+                    return Err(bus::native_session::SessionError {
+                        error_code: bus::native_session::ErrorCode::Unavailable,
+                        message: "recipient changed before delivery".into(),
+                        details: Default::default(),
+                    });
                 }
-            }
-            if owns_registration
-                && let Some(origin_service) = mesh_from.filter(|name| valid_service_name(name))
-                && admitted_peer.is_some()
-            {
-                msg.set(crate::subscription::BROKER_SERVICE_HEADER, origin_service);
-            }
-            // Recompute immediately before serialisation/enqueue, after every
-            // awaited lock and the delivery fence. Revocation shares this lock.
-            if let Some(sessions) = sessions.as_mut() {
-                sessions.validate_route(service)?;
-            }
-            let fresh_principal = match (&state.principal, sessions.as_mut()) {
-                (Some(p), Some(sessions)) => sessions.delivery_now(p, &target_tx)?,
-                _ => None,
-            };
-            let principal = fresh_principal.as_ref().filter(|_| {
-                reg.get(service)
-                    .is_some_and(|e| e.traffic_class.protected())
-            });
-            stamp_principal(msg, principal).map_err(|_| bus::native_session::SessionError {
-                error_code: bus::native_session::ErrorCode::Unavailable,
-                message: "broker principal cannot be encoded".into(),
-                details: Default::default(),
-            })?;
-            let wire = msg.to_wire();
-            // Mark before enqueue: a fast recipient may respond immediately.
-            // Failed enqueue may conservatively protect this connection too.
-            if traffic_class.protected() {
-                reg.get(service)
-                    .expect("recipient remains locked")
-                    .protected_responses
-                    .store(true, Ordering::Release);
-            }
-            let delivery = target_tx.try_send(wire.clone());
-            Ok((wire, delivery))
-        })();
-        (traffic_class, attempt)
+                let owns_registration = caller_service
+                    .and_then(|name| reg.get(name))
+                    .is_some_and(|entry| entry.same_channel(caller_tx));
+                let admitted_peer = admitted_delivery_peer(state, source_ip).filter(|peer| {
+                    owns_registration
+                        && (state.admission_mode != AdmissionMode::Enforce
+                            || caller_service == Some(format!("bridge-{peer}").as_str()))
+                });
+                if let Some(peer) = &admitted_peer {
+                    msg.set(crate::subscription::BROKER_PEER_HEADER, peer);
+                    if let Some(connection) =
+                        mesh_connection.filter(|id| valid_connection_stamp(id))
+                    {
+                        msg.set("broker_connection", &format!("{peer}/{connection}"));
+                    }
+                }
+                if owns_registration
+                    && let Some(origin_service) = mesh_from.filter(|name| valid_service_name(name))
+                    && admitted_peer.is_some()
+                {
+                    msg.set(crate::subscription::BROKER_SERVICE_HEADER, origin_service);
+                }
+                // Recompute immediately before serialisation/enqueue, after every
+                // awaited lock and the delivery fence. Revocation shares this lock.
+                if let Some(sessions) = sessions.as_mut() {
+                    sessions.validate_route(service)?;
+                }
+                let fresh_principal = match (&state.principal, sessions.as_mut()) {
+                    (Some(p), Some(sessions)) => sessions.delivery_now(p, &target_tx)?,
+                    _ => None,
+                };
+                let principal = fresh_principal.as_ref().filter(|_| {
+                    reg.get(service)
+                        .is_some_and(|e| e.traffic_class.protected())
+                });
+                stamp_principal(msg, principal).map_err(|_| bus::native_session::SessionError {
+                    error_code: bus::native_session::ErrorCode::Unavailable,
+                    message: "broker principal cannot be encoded".into(),
+                    details: Default::default(),
+                })?;
+                let wire = msg.to_wire();
+                // Mark before enqueue: a fast recipient may respond immediately.
+                // Failed enqueue may conservatively protect this connection too.
+                if traffic_class.protected() {
+                    reg.get(service)
+                        .expect("recipient remains locked")
+                        .protected_responses
+                        .store(true, Ordering::Release);
+                }
+                let delivery = target_tx.try_send(wire.clone());
+                Ok((wire, delivery))
+            })();
+            (traffic_class, attempt)
         };
         let scoped_observe = state.observe.for_class(traffic_class);
         let observe = &scoped_observe;
@@ -9935,7 +9971,14 @@ pub(crate) mod tests {
                 },
             );
         }
-        for name in ["log", "log-observe-123", "mon", "anon-x", "bridge-example", "t0-aaaaaaaaaaaaaaaaaaaaaa"] {
+        for name in [
+            "log",
+            "log-observe-123",
+            "mon",
+            "anon-x",
+            "bridge-example",
+            "t0-aaaaaaaaaaaaaaaaaaaaaa",
+        ] {
             let mut request = BusMessage::new()
                 .with_header("id", "request")
                 .with_header("command", "probe");
