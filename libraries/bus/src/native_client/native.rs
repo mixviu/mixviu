@@ -599,13 +599,14 @@ impl NodedClient {
             return;
         }
         *commands = body;
-        drop(commands);
+        // Serialize concurrent descriptor updates with publication of their names.
         self.set_command_names(
             command_names
                 .into_iter()
                 .map(|command| command.name)
                 .collect(),
         );
+        drop(commands);
     }
 
     #[cfg(unix)]
