@@ -38,8 +38,8 @@ Projection never drops a row or changes its sequence, direction, outcome, rc,
 size, correlation ID or peer. The logger persists the projection fields without
 retaining raw names or hashes. Raw diagnosis uses a live `noded.observe` tap
 with its existing payload policy; it is not retained in history. The diagnostic
-Bus calls themselves are observable under the observer's existing recursion
-suppression rules.
+Bus calls themselves land in history; generated `noded.observe.event` frames
+remain suppressed to prevent observation feedback.
 
 ## Command manifests and authority
 

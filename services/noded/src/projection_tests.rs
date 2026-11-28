@@ -8,7 +8,10 @@ use crate::observe::{Direction, Observation, Outcome};
 async fn history_observe_load() {
     let (state, _service_rx) = fixture().await;
     let (tx, mut rx) = mpsc::channel(64);
-    state.observe.start(&tx, None, r#"{"capacity":4096}"#).unwrap();
+    state
+        .observe
+        .start(&tx, None, r#"{"capacity":4096}"#)
+        .unwrap();
     rx.try_recv().unwrap();
     let writer = {
         let state = state.clone();
@@ -19,20 +22,33 @@ async fn history_observe_load() {
             }
         })
     };
-    let msg = BusMessage::new().with_header("to", "maild.alpha.bus").with_header("command", "example.read");
+    let msg = BusMessage::new()
+        .with_header("to", "maild.alpha.bus")
+        .with_header("command", "example.read");
     let start = Instant::now();
     let mut received = 0;
     for i in 0..100_000 {
-        state.observe.observe(Observation::canonical(Direction::Local, Outcome::Delivered, &msg, None));
+        state.observe.observe(Observation::canonical(
+            Direction::Local,
+            Outcome::Delivered,
+            &msg,
+            None,
+        ));
         if i % 32 == 31 {
             state.observe.drain_once();
-            while rx.try_recv().is_ok() { received += 1; }
+            while rx.try_recv().is_ok() {
+                received += 1;
+            }
             tokio::task::yield_now().await;
         }
     }
     writer.await.unwrap();
     assert_eq!(received, 100_000);
-    println!("HISTORY_OBSERVE rows={} rows_per_second={:.0} registry_locks_per_row=0 registry_lock_wait_ns=0", received, received as f64 / start.elapsed().as_secs_f64());
+    println!(
+        "HISTORY_OBSERVE rows={} rows_per_second={:.0} registry_locks_per_row=0 registry_lock_wait_ns=0",
+        received,
+        received as f64 / start.elapsed().as_secs_f64()
+    );
 }
 
 async fn fixture() -> (AppState, mpsc::Receiver<String>) {
@@ -272,4 +288,33 @@ async fn response_echo_and_manifest_lifetime_fail_closed() {
             .as_deref(),
         Some("unknown")
     );
+}
+
+#[tokio::test]
+async fn published_inner_command_is_projected_on_real_fanout() {
+    use bus::native_session::{Assurance, BrokerPrincipal, HexBytes, PrincipalVersion};
+    let (state, _service_rx) = fixture().await;
+    let (observer, mut observed) = mpsc::channel(8);
+    state.observe.start(&observer, None, r#"{"filter":{"commands":["user.example"]}}"#).unwrap();
+    observed.try_recv().unwrap();
+    let broker = SubscriptionBroker::with_observe(state.observe.clone());
+    let (subscriber, mut delivered) = mpsc::channel(8);
+    broker.subscribe_topic_verified("example.events", "maild", subscriber, None, true).await;
+    let (publisher, _publisher_rx) = mpsc::channel(8);
+    let principal = BrokerPrincipal {
+        version: PrincipalVersion::V1, assurance: Assurance::LocalUnix,
+        owner_node: "alpha".into(), unix_uid: 1000, unix_gid: 1000, peer_pid: 10,
+        broker_epoch: HexBytes([1; 16]), connection_id: HexBytes([2; 16]), session: None,
+    };
+    let inner = BusMessage::new().with_header("type", "event").with_header("command", "user.example");
+    broker.publish_with_context("example.events", &inner.to_wire(), "maild", publisher, bus::native_session::BrokerOrigin::Local, false, Some(&principal), Some("example-connection")).await.unwrap();
+    assert_eq!(bus_mod::parse(&delivered.recv().await.unwrap()).unwrap().command_name(), Some("user.example"));
+    state.observe.drain_once();
+    let event = bus_mod::parse(&observed.try_recv().unwrap()).unwrap();
+    let body: serde_json::Value = serde_json::from_str(&event.body).unwrap();
+    assert_eq!(body["command"], "unknown");
+    assert_eq!(body["name_len"], "user.example".len());
+    assert_eq!(body["seq"], 1);
+    assert!(!event.body.contains("user.example"));
+    assert!(observed.try_recv().is_err());
 }

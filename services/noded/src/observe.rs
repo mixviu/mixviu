@@ -466,7 +466,10 @@ impl ObserveManager {
         if !self.is_active() {
             return;
         }
-        if is_observer_control_or_event(observation.message) {
+        if is_observer_control_or_event(observation.message)
+            && (self.projector.get().is_none()
+                || observation.message.command_name() == Some("noded.observe.event"))
+        {
             return;
         }
 

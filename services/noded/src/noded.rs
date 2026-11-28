@@ -597,7 +597,10 @@ impl AppState {
     /// PR A's history projection query. Only live, honoured registrations vouch.
     #[cfg(test)]
     pub(crate) async fn vouched_command(&self, name: &str) -> bool {
-        self.registry.names.load().vouched_command(name, &self.history_allowlist)
+        self.registry
+            .names
+            .load()
+            .vouched_command(name, &self.history_allowlist)
     }
 }
 
@@ -953,7 +956,10 @@ async fn mesh_incoming_loop(
                 }
             }
         } else {
-            tracing::debug!(name_len = service.len(), "No local service for incoming mesh message");
+            tracing::debug!(
+                name_len = service.len(),
+                "No local service for incoming mesh message"
+            );
             ObserveOutcome::Rejected
         };
         if observing {
@@ -1292,7 +1298,9 @@ async fn serve(
         live_sessions: Arc::new(RwLock::new(HashMap::new())),
     };
     state.observe.set_projector(history_projection::Projector {
-        registry: state.registry.clone(), authority: state.authority.clone(), node: state.node_name.clone(),
+        registry: state.registry.clone(),
+        authority: state.authority.clone(),
+        node: state.node_name.clone(),
         allowlist: state.history_allowlist.clone(),
     });
     broker.set_native_sessions(state.sessions.clone());
@@ -7143,7 +7151,9 @@ pub(crate) mod tests {
             broker_epoch: super::HexBytes([1; 16]),
             principal: None,
             native_session_endpoint: None,
-            registry: Arc::new(super::history_projection::HistoryRegistry::new(HashMap::new())),
+            registry: Arc::new(super::history_projection::HistoryRegistry::new(
+                HashMap::new(),
+            )),
             pending_responses: Arc::new(PendingResponseTable::new()),
             tap_subscribers: Arc::new(RwLock::new(Vec::new())),
             observe: ObserveManager::new(),
@@ -8131,14 +8141,17 @@ pub(crate) mod tests {
                 && correlation == Some("collision-1")
                 && body["outcome"] == "rejected"
                 && body["from"] == "alice";
-            failed_command_rejected |=
-                correlation == Some("unknown-command-1") && command_name == Some("unknown")
-                && body["reason"] == "unknown-verb" && body["name_len"] == "noded.no_such_command".len()
+            failed_command_rejected |= correlation == Some("unknown-command-1")
+                && command_name == Some("unknown")
+                && body["reason"] == "unknown-verb"
+                && body["name_len"] == "noded.no_such_command".len()
                 && body["outcome"] == "rejected";
-            orphan_rejected |= correlation == Some("orphan-1") && command_name == Some("unknown")
+            orphan_rejected |= correlation == Some("orphan-1")
+                && command_name == Some("unknown")
                 && body["message_type"] == "response"
                 && body["outcome"] == "rejected";
-            admit_rejected |= correlation == Some("admit-orphan-1") && command_name == Some("noded.admit.response")
+            admit_rejected |= correlation == Some("admit-orphan-1")
+                && command_name == Some("noded.admit.response")
                 && body["message_type"] == "response"
                 && body["outcome"] == "rejected";
             route_request_rejected |= correlation == Some("missing-route-1")

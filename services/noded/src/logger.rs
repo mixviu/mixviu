@@ -968,7 +968,8 @@ mod tests {
     fn projection_fields_survive_history_without_gaps_or_lost_sequence() {
         let tmp = Temp::new();
         let now = at("2026-11-29T00:00:00Z");
-        let mut history = History::open(&tmp.0, "example".into(), HistoryConfig::default(), now).unwrap();
+        let mut history =
+            History::open(&tmp.0, "example".into(), HistoryConfig::default(), now).unwrap();
         for seq in 1..=4 {
             let mut event = sample("", 0);
             event.seq = seq;
