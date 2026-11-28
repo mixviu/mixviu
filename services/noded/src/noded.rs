@@ -4655,15 +4655,16 @@ async fn route_local(
                 // alone would silently strip the new owner — reopening the
                 // SPEC 12 §15.5 impersonation window the registration gate
                 // is meant to close.
-                let mut reg_w = registry.write().await;
-                if reg_w
-                    .get(service)
-                    .map(|cur| cur.same_channel(&target_tx))
-                    .unwrap_or(false)
                 {
-                    reg_w.remove(service);
+                    let (_fence, mut reg_w) = fenced_registry_write(state).await;
+                    if reg_w
+                        .get(service)
+                        .map(|cur| cur.same_channel(&target_tx))
+                        .unwrap_or(false)
+                    {
+                        reg_w.remove(service);
+                    }
                 }
-                drop(reg_w);
                 let caller_id = match broker_id {
                     Some(ref bid) => pending_responses.take(bid).await.map(|p| p.caller_id),
                     None => None,
