@@ -1,0 +1,217 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- OpenURI policy and real private-Bus launch. Requires tree-built binaries.
+-- Not yet enrolled in tools/ci.mix; enrollment belongs to a tools-only PR.
+$a = require("../scripts/lib/apps.mix")
+$pb = require("../../../tests/lib/private_bus.mix")
+$mix = env("MIX_TEST_MIX_EXE")
+$noded = env("MIX_TEST_NODED_EXE")
+if $mix == "" or $noded == "" then raise("TEST", "set MIX_TEST_MIX_EXE and MIX_TEST_NODED_EXE to tree-built binaries") end
+$tmp = trim(run_argv_must(["mktemp", "-d", "/tmp/mix-apps-open.XXXXXXXX"]))
+$bus = nil
+$pid = nil
+$began = monotonic()
+fn check($ok, $why)
+  if not $ok then raise("APPS_OPEN", $why) end
+end
+fn fixture($path, $text)
+  mkdir(dirname($tmp .. "/" .. $path), {parents: true})
+  write_file($tmp .. "/" .. $path, $text)
+end
+fn call($verb, $body)
+  send apps $verb timeout=1 body=json_encode($body)
+  return {rc: $rc, body: $result}
+end
+try
+  chmod($tmp, 0o711)
+  fixture("record.mix", "print(json_encode(args()))\nwrite_file(env(\"HOME\") .. \"/seen.json\", json_encode({argv: args(), token: env(\"XDG_ACTIVATION_TOKEN\")}))\n")
+  for $id in ["one", "two", "three"]
+    fixture("data/applications/" .. $id .. ".desktop", "[Desktop Entry]\nType=Application\nName=" .. $id .. "\nExec=" .. $mix .. " " .. $tmp .. "/record.mix %U\nMimeType=x-scheme-handler/https;\n")
+  end
+  $entries = $a.scan_apps([$tmp .. "/data/applications"], "", "MIXOS")
+  check(deep_eq($entries[0].mime_types, ["x-scheme-handler/https"]), "MimeType retained")
+  $mime = "x-scheme-handler/https"
+  fixture("config/mixos-mimeapps.list", "[Default Applications]\n" .. $mime .. "=missing.desktop;two.desktop;\n")
+  fixture("config/mimeapps.list", "[Default Applications]\n" .. $mime .. "=one.desktop;\n")
+  fixture("system/mimeapps.list", "[Default Applications]\n" .. $mime .. "=three.desktop;\n")
+  $paths = [$tmp .. "/config/mixos-mimeapps.list", $tmp .. "/config/mimeapps.list", $tmp .. "/system/mimeapps.list"]
+  check($a.resolve_handler($entries, $mime, $paths) == "two", "desktop prefix before plain")
+  fixture("config/mixos-mimeapps.list", "[Removed Associations]\n" .. $mime .. "=two.desktop;one.desktop;\n")
+  check($a.resolve_handler($entries, $mime, $paths) == "one", "desktop-prefixed removals are ignored")
+  $unsupported = merge($entries[0], {id: "unsupported", mime_types: []})
+  fixture("config/mixos-mimeapps.list", "[Added Associations]\n" .. $mime .. "=unsupported.desktop;\n[Default Applications]\n" .. $mime .. "=unsupported.desktop;\n")
+  check($a.resolve_handler(concat([$unsupported], $entries), $mime, $paths) == "one", "desktop-prefixed additions are ignored")
+  fixture("config/mixos-mimeapps.list", "")
+  fixture("config/mimeapps.list", "[Default Applications]\n" .. $mime .. "=one.desktop;\n[Removed Associations]\n" .. $mime .. "=two.desktop;one.desktop;\n")
+  check($a.resolve_handler($entries, $mime, $paths) == "three", "higher removals mask lower defaults")
+  fixture("config/mimeapps.list", "[Removed Associations]\n" .. $mime .. "=one.desktop;\n")
+  fixture("system/mimeapps.list", "[Added Associations]\n" .. $mime .. "=one.desktop;three.desktop;\n")
+  check($a.resolve_handler($entries, $mime, $paths) == "three", "added associations minus removals")
+  fixture("system/mimeapps.list", "")
+  fixture("config/mimeapps.list", "[Removed Associations]\n" .. $mime .. "=one.desktop;two.desktop;\n")
+  check($a.resolve_handler($entries, $mime, $paths) == "three", "declared type fallback minus removals")
+  fixture("config/mimeapps.list", "")
+  fixture("config/mixos-mimeapps.list", "[Default Applications]\n" .. $mime .. "=two.desktop;\n")
+  check($a.resolve_handler($entries, $mime, $paths) == "two", "reread without cache")
+  fixture("config/mixos-mimeapps.list", "")
+  fixture("config/mimeapps.list", "[Default Applications]\n" .. $mime .. "=two.desktop;\n[Removed Associations]\n" .. $mime .. "=two.desktop;\n")
+  check($a.resolve_handler($entries, $mime, $paths) == "one", "config removal blacklists a default declared by a later data directory")
+  fixture("config/mimeapps.list", "[Default Applications]\n" .. $mime .. "=two.desktop;\n[Added Associations]\n" .. $mime .. "=two.desktop;\n[Removed Associations]\n" .. $mime .. "=two.desktop;\n")
+  check($a.resolve_handler($entries, $mime, $paths) == "two", "within one file Added beats Removed: the user's remedy")
+  fixture("config/mimeapps.list", "")
+  fixture("config/mixos-mimeapps.list", "[Default Applications]\n" .. $mime .. "=unsupported.desktop;two.desktop;\n")
+  check($a.resolve_handler(concat([$unsupported], $entries), $mime, $paths) == "two", "default must be associated with type")
+  fixture("data/applications/mimeapps.list", "")
+  fixture("share/applications/mimeapps.list", "[Removed Associations]\n" .. $mime .. "=two.desktop;\n")
+  check($a.resolve_handler($entries, $mime, concat($paths, [$tmp .. "/data/applications/mimeapps.list", $tmp .. "/share/applications/mimeapps.list"])) == "two", "lower data removal cannot mask user desktop entry")
+  export XDG_CONFIG_HOME=$tmp .. "/config"
+  export XDG_CONFIG_DIRS=$tmp .. "/system:" .. $tmp .. "/system2"
+  export XDG_DATA_HOME=$tmp .. "/data"
+  export XDG_DATA_DIRS=$tmp .. "/share"
+  export XDG_CURRENT_DESKTOP="MIXOS:Other"
+  $expected = []
+  for $dir in [$tmp .. "/config", $tmp .. "/system", $tmp .. "/system2", $tmp .. "/data/applications", $tmp .. "/share/applications"]
+    for $name in ["mixos-mimeapps.list", "other-mimeapps.list", "mimeapps.list"]
+      push($expected, $dir .. "/" .. $name)
+    end
+  end
+  check(deep_eq($a.mimeapps_paths(), $expected), "complete XDG and desktop search order")
+  export XDG_CONFIG_HOME="relative/config"
+  export XDG_CONFIG_DIRS="/abs/xdg:relative"
+  $fallback = []
+  for $dir in [env("HOME") .. "/.config", "/abs/xdg", $tmp .. "/data/applications", $tmp .. "/share/applications"]
+    for $name in ["mixos-mimeapps.list", "other-mimeapps.list", "mimeapps.list"]
+      push($fallback, $dir .. "/" .. $name)
+    end
+  end
+  check(deep_eq($a.mimeapps_paths(), $fallback), "non-absolute XDG config entries are ignored")
+  export XDG_CONFIG_HOME=$tmp .. "/config"
+  export XDG_CONFIG_DIRS=$tmp .. "/system:" .. $tmp .. "/system2"
+  check($a.uri_scheme("https://example.invalid/" .. repeat("x", 8192 - byte_length("https://example.invalid/"))) == "https", "8192-byte boundary")
+  check($a.token_valid(repeat("x", 256)) and $a.token_valid(""), "token boundaries")
+  for $code in ["%u", "%U"]
+    check($a.uri_exec_valid("handler " .. $code, nil, true), "standalone URI code accepted for OpenURI")
+  end
+  for $code in ["%f", "%F"]
+    check(not $a.uri_exec_valid("handler " .. $code, nil, true), "file-only code is not a scheme handler")
+    check($a.uri_exec_valid("handler " .. $code), "file code accepted for URI-bearing START")
+  end
+  for $code in ["%u", "%U", "%f", "%F"]
+    for $exec in ["sh -c \"true " .. $code .. "\"", "handler --uri=" .. $code, "handler " .. $code .. "%c", $code .. " handler"]
+      check(not $a.uri_exec_valid($exec) and not $a.uri_exec_valid($exec, nil, true), "embedded URI code refused on both paths")
+    end
+  end
+  check($a.uri_exec_valid("handler %%u %U", nil, true) and not $a.uri_exec_valid("handler %%u", nil, true), "escaped percent is literal, never a scheme handler")
+  check($a.uri_exec_valid("handler --literal=%%u %U", nil, true) and $a.uri_exec_valid("handler"), "escaped percent beside a standalone code; implicit append stays for START")
+  fixture("data/applications/embedded.desktop", "[Desktop Entry]\nType=Application\nName=Embedded\nExec=/usr/bin/sh -c \"true %u\"\nMimeType=x-scheme-handler/mailto;\n")
+  fixture("data/applications/terminal.desktop", "[Desktop Entry]\nType=Application\nName=Terminal\nExec=" .. $mix .. " " .. $tmp .. "/record.mix %U\nTerminal=true\nMimeType=x-scheme-handler/mailto;\n")
+  -- Ruling 1/2: every handler shape below must be refused over the Bus by
+  -- apps.handler and apps.open, before any spawn; the marker file its URI
+  -- would create through a shell must never appear.
+  $hostile_handlers = [
+    {id: "sh-c", exec: "/bin/sh -c %u"},
+    {id: "sh-bare", exec: "/bin/sh -c"},
+    {id: "env-sh-c", exec: "/usr/bin/env /bin/sh -c %u"},
+    {id: "xterm-e", exec: "/usr/bin/xterm -e %u"},
+    {id: "shift", exec: "%d %u /bin/true"},
+    {id: "empty-icon", exec: "%i %u"},
+    {id: "twice", exec: "/bin/true %u %u"},
+    {id: "embedded-url", exec: "/bin/true --url=%u"},
+    {id: "file-only", exec: "/bin/true %f"}
+  ]
+  for $h in $hostile_handlers
+    fixture("data/applications/" .. $h.id .. ".desktop", "[Desktop Entry]\nType=Application\nName=" .. $h.id .. "\nExec=" .. $h.exec .. "\nMimeType=x-scheme-handler/mailto;\n")
+  end
+  fixture("config/mimeapps.list", "[Default Applications]\nx-scheme-handler/mailto=embedded.desktop;\n")
+  $embedded = $a.parse_entry($tmp .. "/data/applications/embedded.desktop", "embedded", "", "MIXOS")
+  $terminal = $a.parse_entry($tmp .. "/data/applications/terminal.desktop", "terminal", "", "MIXOS")
+  check($a.resolve_handler([$embedded], "x-scheme-handler/mailto", [$tmp .. "/config/mimeapps.list"]) == nil, "embedded handler never advertised")
+  check($a.resolve_handler([$terminal], "x-scheme-handler/mailto", [$tmp .. "/config/mimeapps.list"]) == nil, "terminal handler never advertised")
+  $bus = $pb.start({dir: $tmp .. "/bus", name: "open-" .. uuid(), noded: $noded})
+  $conf = json_parse(read_file($bus.conf))
+  $conf.noded.account = trim(run_argv_must(["id", "-un"]))
+  write_file($bus.conf, json_encode($conf))
+  $ce = merge($pb.client_env($bus), {HOME: $tmp, PATH: "/usr/bin:/bin", MIX_STATS: "off", XDG_CONFIG_HOME: $tmp .. "/config", XDG_CONFIG_DIRS: $tmp .. "/system", XDG_CURRENT_DESKTOP: "MIXOS", XDG_DATA_HOME: $tmp .. "/data", XDG_DATA_DIRS: $tmp .. "/empty"})
+  $script = realpath(dirname($0) .. "/../scripts/apps.mix")
+  $pid = spawn([$mix, "--serve", $script, "--name", "apps"], {detach: true, clear_env: true, env: $ce, stdout: {file: $tmp .. "/log"}, stderr: "stdout"})
+  export MIX_NODED_URL="unix://" .. $bus.dir .. "/run/noded/bus.sock"
+  bus_reconnect()
+  for $i = 1 to 80
+    if call("apps.list", {}).rc == 0 then break end
+    sleep(0.005)
+  end
+  check(call("apps.handler", {scheme: "HTTPS"}).body.id == "two", "handler lookup")
+  check(call("apps.handler", {scheme: "mailto"}).rc == 14, "missing handler")
+  $hostile = "HTTPS://example.invalid/;$(touch%20/tmp/nope)?a='&b=`id`"
+  $opened = call("apps.open", {uri: $hostile, activation_token: "test-token"})
+  check($opened.rc == 0 and $opened.body.scheme == "https", "open success")
+  for $i = 1 to 100
+    if is_file($tmp .. "/seen.json") then break end
+    sleep(0.005)
+  end
+  $seen = json_parse(read_file($tmp .. "/seen.json"))
+  check(deep_eq($seen.argv, [$hostile]) and $seen.token == "test-token", "one literal argv and token env")
+  for $uri in [nil, 1, "", "file:///etc/passwd", "javascript:alert(1)", "foo:bar", "https://example.invalid/a b", "https://example.invalid/a\n", "https://example.invalid/\u{0}", "https://example.invalid/\u{7f}", "--profile", "https:///", "https:///foo", "https:example.invalid", "1foo:bar", "https://example.invalid/" .. repeat("x", 9000)]
+    check(call("apps.open", {uri: $uri}).rc == 10, "URI refusal")
+  end
+  for $token in [repeat("x", 257), "bad\n", "bad\u{7f}", "é", 1, nil]
+    check(call("apps.open", {uri: "https://example.invalid/", activation_token: $token}).rc == 10, "token refusal")
+  end
+  check(call("apps.props.set", {path: "apps.open_schemes", value: ["mailto"]}).rc == 0, "local policy mutation")
+  check(call("apps.open", {uri: "https://example.invalid/"}).rc == 10, "allowlist enforced")
+  check(call("apps.handler", {scheme: "https"}).rc == 14, "handler honours allowlist")
+  for $v in ["--x", "relative", "https:///", "https://example.invalid/a b", "/tmp/a\nb", "/tmp/a\u{7f}", "/" .. repeat("x", 8192)]
+    check(call("apps.start", {id: "two", uris: [$v]}).rc == 10, "start URI and path hardening")
+  end
+  check($a.start_valid({id: "two", uris: ["/tmp/a b", "file:///tmp/a", "mailto:a@example.invalid", "/" .. repeat("x", 8191)]}) and not $a.start_valid({id: "two", uris: ["/tmp/a\u{0}"]}), "start paths: spaces and 8192 bytes legal, control bytes refused")
+  $rows = call("apps.history", {}).body.rows
+  $opens = filter($rows, fn($r) = $r.kind == "open")
+  check(len($opens) == 1 and $opens[0].data.scheme == "https" and $opens[0].data.id == "two" and $opens[0].data.handle == $opened.body.handle, "open history metadata")
+  check(not contains(json_encode($rows), "example.invalid") and not contains(json_encode($rows), "uri"), "history contains no URI")
+  check(not contains(read_file($tmp .. "/log"), $hostile), "citizen journal contains no URI")
+  -- The marker would be created by sh if an embedded substitution reached
+  -- spawn. Keep the marker entirely inside this test's owned temporary tree.
+  $attack = 'https://example.invalid/;touch${IFS}' .. $tmp .. '/injected;#'
+  check($a.uri_scheme($attack) == "https", "attack passes URI shape")
+  $before_rows = len(call("apps.history", {}).body.rows)
+  check(call("apps.start", {id: "embedded", uris: [$attack]}).rc == 10, "embedded START refused before spawn")
+  check(call("apps.launch", {id: "embedded", uris: [$attack]}).rc == 10, "embedded LAUNCH refused before spawn")
+  -- Use mailto policy for the same shell injection while resolving the
+  -- embedded/default entry: policy must not be the reason it is refused.
+  $attack = 'mailto:origin-test@example.invalid;touch${IFS}' .. $tmp .. '/injected;#'
+  check(call("apps.handler", {scheme: "mailto"}).rc == 14, "unsafe default not advertised over Bus")
+  check(call("apps.open", {uri: $attack}).rc == 14, "embedded OpenURI refused at resolution")
+  fixture("config/mimeapps.list", "[Default Applications]\nx-scheme-handler/mailto=terminal.desktop;\n")
+  check(call("apps.handler", {scheme: "mailto"}).rc == 14, "Terminal=true not advertised over Bus")
+  check(call("apps.open", {uri: $attack}).rc == 14, "terminal OpenURI refused before spawn")
+  for $h in $hostile_handlers
+    fixture("config/mimeapps.list", "[Default Applications]\nx-scheme-handler/mailto=" .. $h.id .. ".desktop;\n")
+    check(call("apps.handler", {scheme: "mailto"}).rc == 14, "malformed handler not advertised: " .. $h.id)
+    check(call("apps.open", {uri: $attack}).rc == 14, "malformed handler refused before spawn: " .. $h.id)
+    check(not is_file($tmp .. "/injected"), "malformed handler marker never created: " .. $h.id)
+  end
+  $new_rows = slice(call("apps.history", {}).body.rows, $before_rows)
+  check(len($new_rows) >= 6 and all($new_rows, fn($r) = $r.kind == "refused" and $r.data.handle == nil), "unsafe handlers produce only refused history, no launched handles")
+  check(not is_file($tmp .. "/injected"), "embedded shell marker never created")
+  check(not contains(json_encode($new_rows), $attack) and not contains(read_file($tmp .. "/log"), $attack), "refused attack stays out of history and journal")
+  -- A WS URL alone does not force mesh: native auto-discovery prefers the
+  -- configured Unix socket. Use a separate client with no discoverable socket.
+  fixture("remote/node.conf.mix", json_encode({node: "example-remote", noded: {unix_socket: $tmp .. "/remote/absent.sock"}}))
+  fixture("remote.mix", '$out = []; for $r in json_parse($1); $v = $r.verb; send apps $v timeout=1 body=json_encode($r.body); push($out, {rc: $rc, body: $result}); end; print(json_encode($out))')
+  $remote = merge($pb.client_env($bus), {MIX_NODE_CONFIG: $tmp .. "/remote/node.conf.mix", MIX_RUN: $tmp .. "/remote/run", MIX_ETC: $tmp .. "/remote/etc", HOME: $tmp .. "/remote", PATH: "/usr/bin:/bin"})
+  -- mailto is still allowlisted: a local request would be not_found (14),
+  -- so forbidden here proves origin enforcement rather than scheme policy.
+  -- uris-bearing START/LAUNCH is local-only too; mesh start-by-id without
+  -- uris stays open until Bus 2c and is deliberately not probed here.
+  $requests = [{verb: "apps.open", body: {uri: "mailto:origin-test@example.invalid"}}, {verb: "apps.handler", body: {scheme: "https"}}, {verb: "apps.props.set", body: {path: "apps.open_schemes", value: ["https"]}}, {verb: "apps.start", body: {id: "one", uris: ["https://example.invalid/"]}}, {verb: "apps.launch", body: {id: "one", uris: ["mailto:origin-test@example.invalid"]}}]
+  $refusals = json_parse(run_argv_must([$mix, $tmp .. "/remote.mix", json_encode($requests)], {clear_env: true, env: $remote}))
+  for $r in $refusals
+    if type($r.body) == "string" then $r.body = json_parse($r.body) end
+    check($r.rc == 10 and $r.body.error == "forbidden", "mesh origin forbidden")
+  end
+  print("PASS apps OpenURI resolver, policy, argv, token, origin, hardening and history")
+finally
+  if $pid != nil and process_alive($pid) then kill($pid, 15) end
+  if $bus != nil then $pb.stop($bus) end
+  run_argv_must(["rm", "-rf", "--", $tmp])
+end
+check(monotonic() - $began <= 5, "standalone budget exceeded")

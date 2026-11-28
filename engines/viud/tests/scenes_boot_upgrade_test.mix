@@ -13,6 +13,8 @@ $children = {loader:nil, host:nil}
 $load_children = []
 $vars = {}
 $started = monotonic()
+$evidence = {last_call:nil}
+$failure = {active:false}
 
 fn check($ok, $message)
   if not $ok then raise("SCENES_BOOT_TEST", $message .. "; evidence: " .. $tmp) end
@@ -26,43 +28,74 @@ end
 fn stop($child)
   if $child == nil or not process_alive($child) then return end
   $_ = kill($child, 15)
-  for $i = 1 to 100
+  $deadline = monotonic() + 5
+  while monotonic() < $deadline
     if not process_alive($child) then return end
-    sleep(0.05)
+    sleep(min(0.05, max(0, $deadline - monotonic())))
   end
   $_ = kill($child, 9)
 end
 
+fn client($target, $command, $body, $timeout)
+  $r = run_argv([$mix, $tmp .. "/client.mix", $target, $command, json_encode($body)], {clear_env:true, env:$vars, timeout:$timeout})
+  $evidence.last_call = {target:$target, command:$command, timeout:$timeout, result:$r}
+  return $r
+end
+
+-- Assertion calls are strict. Only polling probes may discard a failed call.
 fn call($target, $command, $body = {})
-  $r = run_argv([$mix, $tmp .. "/client.mix", $target, $command, json_encode($body)], {clear_env:true, env:$vars, timeout:15})
+  $r = client($target, $command, $body, 15)
   check($r.ok, "client failed: " .. $r.stderr)
   return json_parse($r.stdout)
 end
 
+fn probe($target, $command, $deadline)
+  $remaining = $deadline - monotonic()
+  if $remaining < 0.25 then return nil end
+  try
+    $r = client($target, $command, {}, min(5, $remaining))
+    if $r.ok then return json_parse($r.stdout) end
+  catch $ignored
+    -- Launch/parse errors are also retryable; the wait owns its failure.
+  end
+  return nil
+end
+
 fn wait_service($target)
-  for $i = 1 to 200
-    if call($target, "INFO").rc == 0 then return end
-    sleep(0.1)
+  -- Local registration normally takes a fraction of a second; allow 15 s
+  -- under pool load, including every client process and its Bus request.
+  $began = monotonic()
+  $deadline = $began + 15
+  while $deadline - monotonic() >= 0.25
+    $r = probe($target, "INFO", $deadline)
+    if $r != nil and $r.rc == 0 then
+      print("READY " .. $target .. " seconds=" .. to_string(monotonic() - $began))
+      return
+    end
+    sleep(min(0.1, max(0, $deadline - monotonic())))
   end
   check(false, "service missing: " .. $target)
 end
 
-fn rows()
-  $r = call("scenes", "scenes.list")
-  check($r.rc == 0, "list refused")
+fn rows($deadline = nil)
+  $r = if $deadline == nil then call("scenes", "scenes.list") else probe("scenes", "scenes.list", $deadline) end
+  if $deadline == nil then check($r.rc == 0, "list refused") end
+  if $r == nil or $r.rc != 0 then return nil end
   $out = {}
   for $row in $r.value.scenes $out[$row.name] = $row end
   return $out
 end
 
 fn wait_failure($terminal)
-  $deadline = monotonic() + 200
-  while monotonic() < $deadline
-    $r = rows().alpha
-    if $r.stale and $r.upgrade.error_code == "SCENES_UPSTREAM" then
+  -- The configured seven-rung ladder takes 7 s; 15 s includes headroom.
+  $deadline = monotonic() + 15
+  while $deadline - monotonic() >= 0.25
+    $snapshot = rows($deadline)
+    $r = if $snapshot == nil then nil else $snapshot.alpha end
+    if $r != nil and $r.stale and $r.upgrade.error_code == "SCENES_UPSTREAM" then
       if not $terminal or $r.upgrade.retryable == false then return $r end
     end
-    sleep(0.1)
+    sleep(min(0.1, max(0, $deadline - monotonic())))
   end
   check(false, "missing availability flag")
 end
@@ -72,15 +105,56 @@ fn fixture_source($name, $text)
 end
 
 fn wait_file($path)
-  for $i = 1 to 400
+  $deadline = monotonic() + 5
+  while monotonic() < $deadline
     if is_file($path) then return end
-    sleep(0.01)
+    sleep(min(0.01, max(0, $deadline - monotonic())))
   end
   check(false, "missing ordered task marker: " .. $path)
 end
 
 fn retry_snapshot()
   return call("scenes", "fixture.retry").value
+end
+
+fn evidence_child($name, $child)
+  try
+    eprint("child " .. $name .. ": " .. json_encode({pid:$child, alive:$child != nil and process_alive($child)}))
+  catch $ignored
+  end
+end
+
+fn failure_evidence($message, $error)
+  try eprint("FAIL " .. $error.code .. ": " .. $message) catch $ignored end
+  try eprint("last call: " .. json_encode($evidence.last_call)) catch $ignored end
+  for $name in keys($children)
+    try evidence_child($name, $children[$name]) catch $ignored end
+  end
+  $i = 0
+  for $child in $load_children
+    try evidence_child("load-" .. to_string($i), $child) catch $ignored end
+    $i = $i + 1
+  end
+  try
+    if $bus != nil then evidence_child("noded", $bus.pid) end
+  catch $ignored
+  end
+  for $path in concat(glob($tmp .. "/*.log"), glob($tmp .. "/bus/*.log"))
+    for $part in [{tool:"head", lines:"40"}, {tool:"tail", lines:"80"}]
+      try
+        $r = run_argv([$part.tool, "-n", $part.lines, "--", $path], {timeout:1, max_output:16384})
+        eprint($path .. " (" .. $part.tool .. " " .. $part.lines .. ", capped at 16 KiB)\n" .. $r.stdout .. $r.stderr)
+      catch $ignored
+      end
+    end
+  end
+end
+
+fn cleanup()
+  for $child in $load_children stop($child) end
+  for $child in values($children) stop($child) end
+  if $bus != nil then $pb.stop($bus) end
+  if env("SCENES_BOOT_KEEP", "0") != "1" then remove_dir($tmp) else print("evidence: " .. $tmp) end
 end
 
 try
@@ -171,10 +245,11 @@ print("PASS legacy app-call and scene runtime absence on the real Bus")
   $children.host = start("fakeshell", $host_script)
   wait_service("fakeshell")
   $done = false
-  for $i = 1 to 400
-    $r = rows()
-    if not $r.alpha.stale and $r.beta.upgrade.error_code == "SCENES_EDITED" and $r.gamma.upgrade.retryable == false then $done = true; break end
-    sleep(0.1)
+  $deadline = monotonic() + 15
+  while $deadline - monotonic() >= 0.25
+    $r = rows($deadline)
+    if $r != nil and not $r.alpha.stale and $r.beta.upgrade.error_code == "SCENES_EDITED" and $r.gamma.upgrade.retryable == false then $done = true; break end
+    sleep(min(0.1, max(0, $deadline - monotonic())))
   end
   check($done, "late host refreshes unedited copy and retains terminal flags")
   check(contains(read_file($tmp .. "/scenes/alpha/scene.mix"), "new"), "new shipped bytes installed")
@@ -191,9 +266,11 @@ print("PASS legacy app-call and scene runtime absence on the real Bus")
   $children.host = start("fakeshell", $host_script)
   wait_service("fakeshell")
   $done = false
-  for $i = 1 to 400
-    if not rows().alpha.stale and contains(read_file($tmp .. "/scenes/alpha/scene.mix"), "reload-new") then $done = true; break end
-    sleep(0.1)
+  $deadline = monotonic() + 15
+  while $deadline - monotonic() >= 0.25
+    $r = rows($deadline)
+    if $r != nil and not $r.alpha.stale and contains(read_file($tmp .. "/scenes/alpha/scene.mix"), "reload-new") then $done = true; break end
+    sleep(min(0.1, max(0, $deadline - monotonic())))
   end
   check($done, "reload commit refreshes when host arrives")
   check(call("scenes", "scenes.upgrade.retry", {delay:0}).rc != 0, "wire cannot trigger local retry")
@@ -225,7 +302,9 @@ print("PASS legacy app-call and scene runtime absence on the real Bus")
   $gated = replace($gated, '  sleep($event.args.delay)', '
   $gate = $ROOT .. "/.task-" .. to_string($event.args.seq)
   write_file($gate .. ".waiting", "")
-  while not is_file($gate .. ".release") sleep(0.01) end
+  $deadline = monotonic() + 15
+  while not is_file($gate .. ".release") and monotonic() < $deadline sleep(0.01) end
+  if not is_file($gate .. ".release") then raise("FIXTURE_TIMEOUT", $gate) end
 ')
   $gated = replace($gated, "on scenes.upgrade.retry\n", 'on scenes.upgrade.retry
   write_file($ROOT .. "/.task-" .. to_string($event.args.seq) .. ".done", "")
@@ -310,11 +389,14 @@ end
   check(deep_eq(retry_snapshot(), $snap), "failed manual pass does not spend a rung")
   write_file($gate .. ".release", "")
   $done = false
-  for $i = 1 to 400
-    $view = call("scenes", "scenes.list").value
-    $r = rows().alpha
-    if ($view.diagnostic ?? {}).error_code == "SCENES_STATE_UNREADABLE" and $r.upgrade.error_code == "SCENES_UPSTREAM" and $r.upgrade.retryable == false then $done = true; break end
-    sleep(0.1)
+  $deadline = monotonic() + 15
+  while $deadline - monotonic() >= 0.25
+    $reply = probe("scenes", "scenes.list", $deadline)
+    $view = if $reply == nil then nil else $reply.value end
+    $snapshot = rows($deadline)
+    $r = if $snapshot == nil then nil else $snapshot.alpha end
+    if $view != nil and $r != nil and ($view.diagnostic ?? {}).error_code == "SCENES_STATE_UNREADABLE" and $r.upgrade.error_code == "SCENES_UPSTREAM" and $r.upgrade.retryable == false then $done = true; break end
+    sleep(min(0.1, max(0, $deadline - monotonic())))
   end
   check($done, "raised retry records diagnostic and stops retryable flags")
   for $name in keys($prior_rows)
@@ -333,11 +415,26 @@ end
   write_file($tmp .. "/scenes/state.conf.mix", $saved)
   print("PASS scenes boot/reload upgrade: late host, edited copy, validation refusal, bounded exhaustion; seconds=" .. to_string(monotonic() - $started) .. " load_workers=" .. to_string(len($load_children)) .. " load=" .. trim(read_file("/proc/loadavg")))
 catch $message, $error
-  for $path in glob($tmp .. "/*.log") eprint($path .. "\n" .. read_file($path)) end
-  raise($error.code, $message, $error.details)
+  $failure.active = true
+  -- Snapshot the original before diagnostics. The runtime supplies a record;
+  -- guard extraction too, so a malformed record cannot mask its message.
+  $code = "SCENES_BOOT_TEST"
+  $details = nil
+  try
+    if type($error) == "map" then
+      $code = $error.code ?? $code
+      $details = $error.details
+    end
+  catch $ignored
+  end
+  -- The outer guard also covers iteration/globbing and unexpected evidence
+  -- failures; the inner guards let the remaining evidence keep printing.
+  try failure_evidence($message, $error) catch $ignored end
+  raise($code, $message, $details)
 finally
-  for $child in $load_children stop($child) end
-  for $child in values($children) stop($child) end
-  if $bus != nil then $pb.stop($bus) end
-  if env("SCENES_BOOT_KEEP", "0") != "1" then remove_dir($tmp) else print("evidence: " .. $tmp) end
+  if $failure.active then
+    try cleanup() catch $ignored end
+  else
+    cleanup()
+  end
 end
