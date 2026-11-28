@@ -2771,9 +2771,9 @@ mod native_ingress_regression_tests {
         let client = Arc::new(client);
         let (done, wait) = std::sync::mpsc::channel();
         std::thread::scope(|scope| {
-            let client = client.clone();
+            let first_client = client.clone();
             scope.spawn(move || {
-                client.set_commands(vec![crate::CommandDescriptor::new("example.first", &[], "First", true)]);
+                first_client.set_commands(vec![crate::CommandDescriptor::new("example.first", &[], "First", true)]);
                 done.send(()).unwrap();
             });
             let client = &client;
