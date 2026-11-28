@@ -312,7 +312,7 @@ impl Drop for PendingGuard {
 
 /// Bus WebSocket client for communicating with noded.
 pub struct NodedClient {
-    manifest_tx: Option<mpsc::UnboundedSender<String>>,
+    manifest: Option<ManifestPublisher>,
     service_name: Arc<RwLock<String>>,
     commands: Arc<RwLock<Option<String>>>,
     sink: Arc<Mutex<WsSink>>,
@@ -474,32 +474,88 @@ fn classify_registration_rejection(body: &str) -> RegistrationRejectionKind {
     }
 }
 
-impl NodedClient {
-    fn manifest_writer(sink: Arc<Mutex<WsSink>>, name: Arc<RwLock<String>>) -> mpsc::UnboundedSender<String> {
-        let (tx, mut rx) = mpsc::unbounded_channel::<String>();
-        tokio::spawn(async move {
-            while let Some(body) = rx.recv().await {
+#[derive(Default)]
+struct ManifestState {
+    names: Vec<String>,
+    identity: Option<String>,
+    generation: u64,
+}
+
+struct ManifestPublisher {
+    state: Arc<StdMutex<ManifestState>>,
+    tx: mpsc::UnboundedSender<(u64, String, String)>,
+    task: tokio::task::AbortHandle,
+}
+
+impl Drop for ManifestPublisher {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+impl ManifestPublisher {
+    fn new(sink: Arc<Mutex<WsSink>>, descriptors: &RwLock<Option<String>>) -> Self {
+        let mut names: Vec<String> = descriptors.read().expect("commands lock poisoned").as_deref()
+            .and_then(|body| serde_json::from_str::<Vec<crate::CommandDescriptor>>(body).ok())
+            .unwrap_or_default().into_iter().map(|command| command.name).collect();
+        names.sort();
+        names.dedup();
+        let state = Arc::new(StdMutex::new(ManifestState { names, ..Default::default() }));
+        let reader_state = state.clone();
+        let (tx, mut rx) = mpsc::unbounded_channel::<(u64, String, String)>();
+        let task = tokio::spawn(async move {
+            while let Some((generation, identity, body)) = rx.recv().await {
+                let mut sink = sink.lock().await;
+                {
+                    let state = reader_state.lock().expect("manifest lock poisoned");
+                    if state.generation != generation || state.identity.as_ref() != Some(&identity) {
+                        continue;
+                    }
+                }
                 let request = BusMessage::new()
                     .with_header("command", "noded.commands.set")
                     .with_header("to", "noded")
-                    .with_header("from", &name.read().expect("name lock poisoned"))
+                    .with_header("from", &identity)
                     .with_header("type", "request")
                     .with_header("id", "commands-manifest")
                     .with_body(&body);
-                if sink.lock().await.send(Message::Text(request.to_wire().into())).await.is_err() {
+                if sink.send(Message::Text(request.to_wire().into())).await.is_err() {
                     break;
                 }
             }
         });
-        tx
+        Self { state, tx, task: task.abort_handle() }
     }
 
-    fn publish_commands(&self) {
-        let body = self.commands.read().expect("commands lock poisoned").clone();
-        let names: Vec<String> = body.and_then(|body| serde_json::from_str::<Vec<crate::CommandDescriptor>>(&body).ok())
-            .unwrap_or_default().into_iter().map(|command| command.name).collect();
-        if let Some(tx) = &self.manifest_tx {
-            let _ = tx.send(serde_json::to_string(&names).expect("names serialize"));
+    fn enqueue(&self, state: &ManifestState) {
+        if let Some(identity) = &state.identity {
+            let _ = self.tx.send((state.generation, identity.clone(), serde_json::to_string(&state.names).expect("names serialize")));
+        }
+    }
+
+    fn registered(&self, identity: Option<String>) {
+        let mut state = self.state.lock().expect("manifest lock poisoned");
+        state.generation += 1;
+        state.identity = identity;
+        self.enqueue(&state);
+    }
+
+    fn set_names(&self, mut names: Vec<String>) {
+        names.sort();
+        names.dedup();
+        let mut state = self.state.lock().expect("manifest lock poisoned");
+        if state.names != names {
+            state.names = names;
+            self.enqueue(&state);
+        }
+    }
+}
+
+impl NodedClient {
+    /// Publish names without installing or changing native HELP handling.
+    pub fn set_command_names(&self, names: Vec<String>) {
+        if let Some(manifest) = &self.manifest {
+            manifest.set_names(names);
         }
     }
 
@@ -517,7 +573,7 @@ impl NodedClient {
         if *commands == body { return; }
         *commands = body;
         drop(commands);
-        self.publish_commands();
+        self.set_command_names(command_names.into_iter().map(|command| command.name).collect());
     }
 
     #[cfg(unix)]
@@ -574,7 +630,7 @@ impl NodedClient {
         ));
         let mut guard = AbortOnDrop::new(reader.abort_handle());
         let client = Self {
-            manifest_tx: Some(Self::manifest_writer(sink.clone(), service_name.clone())),
+            manifest: Some(ManifestPublisher::new(sink.clone(), &command_names)),
             service_name,
             commands: command_names,
             sink,
@@ -630,6 +686,7 @@ impl NodedClient {
             provenance,
             None,
             None,
+            None,
             false,
         )
         .await
@@ -643,6 +700,7 @@ impl NodedClient {
         provenance: Option<crate::RegisterProvenance>,
         bounded_capacity: Option<usize>,
         manifest: Option<Vec<crate::CommandDescriptor>>,
+        names: Option<Vec<String>>,
         refuse_rpc: bool,
     ) -> Result<Self> {
         let (sink, stream) = connect_socket(noded_url).await?;
@@ -675,7 +733,7 @@ impl NodedClient {
         let mut reader_guard = AbortOnDrop::new(reader_handle.abort_handle());
 
         let client = Self {
-            manifest_tx: Some(Self::manifest_writer(sink.clone(), service_name.clone())),
+            manifest: Some(ManifestPublisher::new(sink.clone(), &command_names)),
             service_name,
             commands: command_names,
             sink,
@@ -687,6 +745,9 @@ impl NodedClient {
             provenance,
         };
 
+        if let Some(names) = names {
+            client.set_command_names(names);
+        }
         // Register with the broker. On failure the detached reader
         // task already owns the socket, so a bare `?` early-return
         // would leak a live (broker-side) connection plus its reader
@@ -731,7 +792,7 @@ impl NodedClient {
         ));
 
         Ok(Self {
-            manifest_tx: Some(Self::manifest_writer(sink.clone(), service_name.clone())),
+            manifest: Some(ManifestPublisher::new(sink.clone(), &command_names)),
             service_name,
             commands: command_names,
             sink,
@@ -1288,6 +1349,7 @@ impl NodedClient {
     // ── Internal ──
 
     async fn register(&self) -> Result<()> {
+        if let Some(manifest) = &self.manifest { manifest.registered(None); }
         // Send build provenance in the register body when present, so it
         // surfaces in noded.list/noded.info; re-sent on every register so
         // a reconnect re-publishes it. Absent → empty body (old citizen).
@@ -1303,7 +1365,9 @@ impl NodedClient {
             .call_with_headers_raw("noded", "noded.register", &BTreeMap::new(), &request_body)
             .await?;
         if rc < crate::RC_ERROR {
-            self.publish_commands();
+            if let Some(manifest) = &self.manifest {
+                manifest.registered(Some(self.name()));
+            }
             return Ok(());
         }
         // Classify from the BOUNDED structured body only — never by matching
@@ -1330,6 +1394,7 @@ impl NodedClient {
     /// deregister-before-exit sequencing lives in the serve-mode
     /// shutdown path (SPEC 18 §3.5, WS5).
     pub async fn deregister(&self) -> Result<()> {
+        if let Some(manifest) = &self.manifest { manifest.registered(None); }
         self.call("noded", "noded.deregister", serde_json::Value::Null)
             .await?;
         self.service_name.write().unwrap().clear();
@@ -1356,6 +1421,10 @@ impl NodedClient {
     /// Idempotent and best-effort: every step tolerates an
     /// already-dead socket and a second call.
     pub async fn close(&self) {
+        if let Some(manifest) = &self.manifest {
+            manifest.registered(None);
+            manifest.task.abort();
+        }
         // Reflect the teardown in `is_connected()` before any await so
         // a concurrent observer never reads a closing connection as
         // live.
@@ -2289,7 +2358,7 @@ mod native_ingress_regression_tests {
                 },
             ));
             let client = NodedClient {
-                manifest_tx: None,
+                manifest: None,
                 service_name: Arc::new(RwLock::new("close-test".to_string())),
                 commands: Arc::new(RwLock::new(None)),
                 sink: Arc::new(Mutex::new(sink)),
@@ -2328,7 +2397,7 @@ mod native_ingress_regression_tests {
             },
         ));
         NodedClient {
-            manifest_tx: None,
+            manifest: None,
             service_name: Arc::new(RwLock::new("post-close-test".to_string())),
             commands: Arc::new(RwLock::new(None)),
             sink: Arc::new(Mutex::new(sink)),

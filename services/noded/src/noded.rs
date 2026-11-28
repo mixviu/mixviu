@@ -7685,6 +7685,39 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn manifests_follow_honoured_registration_lifetime() {
+        let state = reload_test_state(reload_posture(1, vec![]), vec![]).await;
+        for (identity, honoured) in [("maild", true), ("example", false)] {
+            let (tx, mut rx) = mpsc::channel(32);
+            let mut service = None;
+            for (command, body, expected_rc) in [
+                ("noded.register", "", "0"),
+                ("noded.commands.set", r#"["example.read"]"#, "0"),
+                ("noded.commands.set", r#"["example.write"]"#, "0"),
+                ("noded.commands.set", r#"["bad@name"]"#, "24"),
+                ("noded.commands.set", r#"["example.read"]"#, "0"),
+                ("noded.deregister", "", "0"),
+                ("noded.register", "", "0"),
+                ("noded.commands.set", r#"["example.read"]"#, "0"),
+            ] {
+                let request = BusMessage::new().with_header("command", command)
+                    .with_header("from", identity).with_body(body);
+                super::handle_noded_command(&request, &tx, &state, &mut service, "anon-example",
+                    "127.0.0.1".parse().unwrap(), &mut super::ObserveOutcome::BrokerHandled).await;
+                let response = bus::parse(&rx.recv().await.unwrap()).unwrap();
+                assert_eq!(response.get("rc"), Some(expected_rc));
+                let read = honoured && command == "noded.commands.set" && expected_rc == "0" && body.contains("example.read");
+                let write = honoured && command == "noded.commands.set" && expected_rc == "0" && body.contains("example.write");
+                assert_eq!(state.vouched_command("example.read").await, read);
+                assert_eq!(state.vouched_command("example.write").await, write);
+            }
+            drop(rx);
+            assert!(!state.vouched_command("example.read").await);
+            state.registry.write().await.remove(identity);
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn observe_covers_rejected_broker_response_and_route_outcomes_truthfully() {
         let Some(url) = spawn_broker().await else {
