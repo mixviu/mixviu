@@ -1610,7 +1610,10 @@ pub(super) mod queue_tests {
         });
         s.dispatch(&p, &command, &mut reg, now).unwrap();
         let id = s.attached(p.connection_id).unwrap();
-        assert_eq!(reg[&s.records[&id].view.name].origin, crate::noded::Origin::Session);
+        assert_eq!(
+            reg[&s.records[&id].view.name].origin,
+            crate::noded::Origin::Session
+        );
         (s, reg, p, id)
     }
 

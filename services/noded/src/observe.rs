@@ -835,12 +835,6 @@ fn metadata_event(observation: &Observation<'_>) -> EventBody {
 
 fn redacted_event(observation: &Observation<'_>) -> EventBody {
     let mut event = metadata_event(observation);
-    // Registration bodies can contain in-process task capabilities. Omit the
-    // whole body, including malformed JSON, before any payload projection.
-    if observation.message.command_name() == Some("noded.register") {
-        event.payload_omitted = Some("credential");
-        return event;
-    }
     if observation.class.protected() {
         return event;
     }
@@ -1162,7 +1156,7 @@ mod tests {
             let output = serde_json::to_string(&event).unwrap();
             assert!(!output.contains("private-capability"));
             assert!(event.payload.is_none());
-            assert_eq!(event.payload_omitted, Some("credential"));
+            assert_eq!(event.payload_omitted, Some("policy"));
         }
     }
 

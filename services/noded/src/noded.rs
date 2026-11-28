@@ -9736,6 +9736,10 @@ pub(crate) mod tests {
             let body = token
                 .map(|t| t.registration_body())
                 .unwrap_or_else(|| "{}".into());
+            // A provenance type error must not quote the capability in logs.
+            let mut body: serde_json::Value = serde_json::from_str(&body).unwrap();
+            body["pid"] = body["broker_task_token"].clone();
+            let body = body.to_string();
             let request = BusMessage::new()
                 .with_header("command", "noded.register")
                 .with_header("from", name)
@@ -9768,7 +9772,15 @@ pub(crate) mod tests {
             }
         }
         state.task_identities = Default::default();
-        for name in ["log", "log-observe-123", "mon", "anon-x", "bridge-example", "noded", "noded-7"] {
+        for name in [
+            "log",
+            "log-observe-123",
+            "mon",
+            "anon-x",
+            "bridge-example",
+            "noded",
+            "noded-7",
+        ] {
             let (tx, mut rx) = mpsc::channel(8);
             let request = BusMessage::new()
                 .with_header("command", "noded.register")
