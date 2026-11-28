@@ -32,7 +32,7 @@ use crate::log_props::{LogPropsSnapshot, LogStats};
 struct ObserveEvent {
     #[serde(default)]
     class: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "projection_reason")]
     reason: Option<String>,
     #[serde(default)]
     name_len: Option<usize>,
@@ -54,6 +54,14 @@ struct ObserveEvent {
     peer: Option<String>,
     rc: Option<i64>,
     dropped_count: u64,
+}
+
+fn projection_reason<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+    let reason = <Option<String> as serde::Deserialize>::deserialize(deserializer)?;
+    if reason.as_deref().is_some_and(|value| !crate::noded::history_projection::REASONS.contains(&value)) {
+        return Err(serde::de::Error::custom("unknown history projection reason"));
+    }
+    Ok(reason)
 }
 
 pub(crate) async fn run(
@@ -209,6 +217,9 @@ async fn run_in(
                     let Some(cmd) = cmd else { break };
                     // Only the broker's direct events have this canonical
                     // source. A routed lookalike must not inject raw rows.
+                    // mesh_incoming_loop removes mesh `from` before both
+                    // observation and local delivery; only broker-built
+                    // events can arrive with the bare source `noded`.
                     if cmd.command != "noded.observe.event" || cmd.from != "noded" { continue; }
                     let Some(event) = parse_event(&cmd.body, &mut last_warning) else {
                         continue;
@@ -1611,6 +1622,24 @@ mod tests {
     }
 
     #[test]
+    fn logger_accepts_only_fixed_projection_reasons_without_echoing_bad_values() {
+        let base = json!({"seq":1,"ts":"2026-11-29T00:00:00Z","direction":"local",
+            "outcome":"rejected","message_type":"request","size":42,"dropped_count":0});
+        for reason in crate::noded::history_projection::REASONS {
+            let mut event = base.clone();
+            event["reason"] = (*reason).into();
+            assert!(parse_event(&event.to_string(), &mut None).is_some(), "{reason}");
+        }
+        assert!(parse_event(&base.to_string(), &mut None).is_some());
+        let mut invalid = base;
+        invalid["reason"] = "user@example.com".into();
+        assert!(parse_event(&invalid.to_string(), &mut None).is_none());
+        let error = serde_json::from_value::<ObserveEvent>(invalid).err().unwrap().to_string();
+        assert!(error.contains("unknown history projection reason"));
+        assert!(!error.contains("user@example.com"));
+    }
+
+    #[test]
     fn dropped_counter_reset_marks_gap_and_rebases() {
         let tmp = Temp::new();
         let now = Utc::now();
@@ -1907,6 +1936,7 @@ mod tests {
             1
         );
         assert!(r.iter().all(|r| r.get("payload").is_none()));
+        assert_eq!(r.iter().find(|row| row["correlation_id"] == "example-forgery").unwrap()["from"], "example-probe");
         assert!(
             !serde_json::to_string(&r)
                 .unwrap()

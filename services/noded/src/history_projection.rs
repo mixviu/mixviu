@@ -3,9 +3,22 @@
 use super::*;
 use std::ops::{Deref, DerefMut};
 
+pub(crate) const NAME_LEN_CAP: usize = 256;
+pub(crate) const REASONS: &[&str] = &[
+    "unknown-verb", "no-manifest", "unlisted-service", "remote-unvouched",
+    "malformed-target", "refused-cross-mesh", "no-such-service", "no-such-node",
+    "oversize-name", "unregistered-source",
+];
+
+struct KnownService {
+    tx: mpsc::Sender<String>,
+    has_manifest: bool,
+    origin: Origin,
+}
+
 #[derive(Default)]
 pub(super) struct Names {
-    services: HashMap<String, (mpsc::Sender<String>, bool)>,
+    services: HashMap<String, KnownService>,
     commands: HashMap<String, Vec<(String, mpsc::Sender<String>)>>,
 }
 
@@ -13,18 +26,17 @@ impl Names {
     pub fn vouched_command(
         &self,
         name: &str,
-        allowlist: &std::collections::HashSet<String>,
     ) -> bool {
         self.commands.get(name).is_some_and(|owners| {
             owners
                 .iter()
-                .any(|(service, tx)| allowlist.contains(service) && !tx.is_closed())
+                .any(|(_, tx)| !tx.is_closed())
         })
     }
     fn registered(&self, name: &str) -> bool {
         self.services
             .get(name)
-            .is_some_and(|(tx, _)| !tx.is_closed())
+            .is_some_and(|entry| !entry.tx.is_closed())
     }
 }
 
@@ -33,7 +45,8 @@ impl Names {
 pub(crate) struct HistoryRegistry {
     registry: RwLock<HashMap<String, ServiceEntry>>,
     pub(super) names: ArcSwap<Names>,
-    allowlist: std::collections::HashSet<String>,
+    // The single startup-only allowlist, shared through Registry's Arc.
+    pub(super) allowlist: std::collections::HashSet<String>,
 }
 impl HistoryRegistry {
     pub fn new(
@@ -58,7 +71,7 @@ impl HistoryRegistry {
             }
             names.services.insert(
                 service.clone(),
-                (entry.tx.clone(), !entry.commands.names.is_empty()),
+                KnownService { tx: entry.tx.clone(), has_manifest: !entry.commands.names.is_empty(), origin: entry.origin },
             );
             if !allowlist.contains(service) {
                 continue;
@@ -125,7 +138,6 @@ pub(crate) struct Projector {
     pub registry: Registry,
     pub authority: Arc<ArcSwap<crate::routing::RoutingAuthority>>,
     pub node: String,
-    pub allowlist: std::collections::HashSet<String>,
 }
 
 #[derive(Default)]
@@ -141,8 +153,16 @@ pub(crate) struct Projected {
 impl Projector {
     /// The one local identity projection point, shared by sources and targets.
     /// PR B adds provenance/allowlist handles here.
-    fn local_identity(&self, name: &str) -> String {
-        name.to_owned()
+    fn local_identity(&self, name: &str, names: &Names) -> Option<String> {
+        if name == "noded" { return Some(name.to_owned()); }
+        let entry = names.services.get(name)?;
+        if entry.tx.is_closed() { return None; }
+        // Provenance comes from the creating broker path, never a prefix.
+        // PR B replaces only the Client arm with its handle policy.
+        match entry.origin {
+            Origin::Logger | Origin::Monitor | Origin::Session | Origin::Bridge => Some(name.to_owned()),
+            Origin::Client => Some(name.to_owned()),
+        }
     }
     /// Single component builder for destinations, replies and mesh sources.
     /// PR B replaces the local registered-name arm here with opaque handles.
@@ -187,7 +207,7 @@ impl Projector {
             if service == "noded" {
                 return (format!("{node}.bus"), None, sub);
             }
-            if self.allowlist.contains(service)
+            if self.registry.allowlist.contains(service)
                 || (peer.is_some() && reserved_session_name(service))
             {
                 return (format!("{service}.{node}.bus"), None, sub);
@@ -201,8 +221,8 @@ impl Projector {
         if service == "noded" {
             return (format!("{node}.bus"), None, sub);
         }
-        if names.registered(service) {
-            return (self.local_identity(service), None, sub);
+        if let Some(identity) = self.local_identity(service, names) {
+            return (identity, None, sub);
         }
         (
             "unknown-target".into(),
@@ -213,14 +233,19 @@ impl Projector {
 
     pub fn project(&self, observation: &Observation<'_>) -> Projected {
         let names = self.registry.names.load();
-        // Canonical local source provenance is already enforced by routing.
-        let mut result = Projected {
-            from: observation
-                .message
-                .from_addr()
-                .map(|name| self.local_identity(name)),
-            ..Default::default()
-        };
+        let mut result = Projected::default();
+        // Reject unregistered source text even on observations made before
+        // routing has canonicalised a refused message.
+        if observation.direction != ObserveDirection::MeshIn
+            && observation.message.get("type") != Some("response")
+            && let Some(raw) = observation.message.from_addr() {
+            result.from = self.local_identity(raw, &names);
+            if result.from.is_none() {
+                result.from = Some("unknown-target".into());
+                result.reason = Some("unregistered-source");
+                result.name_len = Some(raw.len());
+            }
+        }
         if observation.direction == ObserveDirection::MeshIn
             || observation.message.get("type") == Some("response")
         {
@@ -264,8 +289,9 @@ impl Projector {
             }
         }
         if let Some(command) = observation.message.command_name() {
-            if commands::BROKER_CONTROL_VERBS.contains(&command)
-                || names.vouched_command(command, &self.allowlist)
+            if command.len() <= bus::MAX_MANIFEST_NAME_BYTES
+                && (commands::BROKER_CONTROL_VERBS.contains(&command)
+                || names.vouched_command(command))
             {
                 result.command = Some(command.into());
             } else {
@@ -290,9 +316,9 @@ impl Projector {
                         "unknown-verb"
                     } else if let Some(service) = service.as_deref().filter(|s| names.registered(s))
                     {
-                        if !self.allowlist.contains(service) {
+                        if !self.registry.allowlist.contains(service) {
                             "unlisted-service"
-                        } else if !names.services[service].1 {
+                        } else if !names.services[service].has_manifest {
                             "no-manifest"
                         } else {
                             "unknown-verb"
@@ -305,6 +331,7 @@ impl Projector {
                 }
             }
         }
+        result.name_len = result.name_len.map(|len| len.min(NAME_LEN_CAP));
         result
     }
 }

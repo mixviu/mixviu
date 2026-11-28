@@ -9,6 +9,12 @@ rejected verbs, event inner commands and response echoes. Mesh commands use
 the local set only; remote manifests are not relayed. Delivery uses the real
 names and is unchanged.
 
+Local sources are vouched independently of routing: `noded` is fixed, and
+other identities require a live registration with its broker-recorded origin.
+Unregistered local sources become `unknown-target` with reason
+`unregistered-source`. Sources and local destinations share the identity
+projection function that PR B will extend.
+
 Addresses are rebuilt through one component projection function. A registered
 local service is bare (`maild`), a remote service is `maild.example.bus`, and a
 broker is `example.bus`. Local qualified spellings collapse to the bare service.
@@ -30,9 +36,17 @@ services or unknown nodes become `unknown-target`. Classified rows add
 component, or the full malformed/refused address). Reasons are fixed:
 `unknown-verb`, `no-manifest`, `unlisted-service`, `remote-unvouched`,
 `malformed-target`, `refused-cross-mesh`, `no-such-service`, `no-such-node`,
-and `oversize-name`. Address diagnostics take precedence over command
+`oversize-name`, and `unregistered-source`. `name_len` saturates at 256 bytes;
+anything longer reports 256, rather than its exact caller-chosen length.
+The command-size check precedes both control-verb and manifest lookups.
+Address diagnostics take precedence over command
 diagnostics when both project; destination diagnostics take precedence over
 source diagnostics. Both strings are still replaced.
+
+Case variants and trailing dots are malformed in the routing grammar, so
+history records `invalid-target`/`malformed-target` for them; it does not
+lowercase or trim refused addresses. `correlation_id` and `peer` are
+connection-chosen and recorded verbatim by design.
 
 Projection never drops a row or changes its sequence, direction, outcome, rc,
 size, correlation ID or peer. The logger persists the projection fields without
@@ -93,6 +107,9 @@ A malformed value or reserved identity refuses broker startup. The same broker
 reservation helpers reject session shapes, `bridge-*`, `anon-*`, `log`,
 `log-observe-*`, `noded` and `noded-*`; tokened `mon` remains allowed.
 Operators extend this list per node.
+The history allowlist is restart-only. The registry owns its single immutable
+copy, and both the cached-name index and projector read that copy; config
+changes require restarting noded. Signed inventory reload remains independent.
 Sets are honoured by exact allowlisted name only, never by pattern, prefix or
 registration origin. Anonymous callers, observers, sessions and bridges do not
 vouch for commands. `log` is not allowlisted: `log.props.get`, `log.props.list`

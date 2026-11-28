@@ -239,7 +239,6 @@ pub(crate) enum Origin {
 /// `info.name` mirrors the registry key.
 #[derive(Clone)]
 pub(crate) struct ServiceEntry {
-    #[allow(dead_code)] // PR B consumes provenance; never infer it from a label.
     pub(crate) origin: Origin,
     commands: commands::Manifest,
     protected_responses: Arc<AtomicBool>,
@@ -507,7 +506,6 @@ struct AppState {
     #[cfg(test)]
     assert_legacy_promotion: bool,
     task_identities: task_identity::TaskIdentities,
-    history_allowlist: std::collections::HashSet<String>,
     tls: Option<Arc<mesh::TlsRuntime>>,
     tls_peer: Option<crate::tls_ingress::TlsPeer>,
     tls_refusals: Arc<crate::tls_ingress::Refusals>,
@@ -591,7 +589,7 @@ struct PendingMeshObservation {
 impl AppState {
     #[cfg(test)]
     fn honours_manifest(&self, name: &str) -> bool {
-        self.history_allowlist.contains(name)
+        self.registry.allowlist.contains(name)
     }
 
     /// PR A's history projection query. Only live, honoured registrations vouch.
@@ -600,7 +598,7 @@ impl AppState {
         self.registry
             .names
             .load()
-            .vouched_command(name, &self.history_allowlist)
+            .vouched_command(name)
     }
 }
 
@@ -1257,7 +1255,6 @@ async fn serve(
         #[cfg(test)]
         assert_legacy_promotion: false,
         task_identities,
-        history_allowlist: commands::allowlist(Some(&network))?,
         tls,
         tls_peer: None,
         tls_refusals,
@@ -1304,7 +1301,6 @@ async fn serve(
         registry: state.registry.clone(),
         authority: state.authority.clone(),
         node: state.node_name.clone(),
-        allowlist: state.history_allowlist.clone(),
     });
     broker.set_native_sessions(state.sessions.clone());
     let _session_maintenance = session_timer.map(|timer| {
@@ -3253,13 +3249,13 @@ async fn handle_socket(socket: WebSocket, mut state: AppState, transport: Transp
                 tracing::debug!(
                     id = %id,
                     command_len = bus_msg.command_name().map(str::len),
-                    from = bus_msg.from_addr().unwrap_or("?"),
+                    from_len = bus_msg.from_addr().map(str::len),
                     "Dropping orphan response (no pending caller)"
                 );
             } else {
                 tracing::debug!(
                     command_len = bus_msg.command_name().map(str::len),
-                    from = bus_msg.from_addr().unwrap_or("?"),
+                    from_len = bus_msg.from_addr().map(str::len),
                     "Dropping orphan response (no id)"
                 );
             }
@@ -7141,7 +7137,6 @@ pub(crate) mod tests {
         AppState {
             assert_legacy_promotion: false,
             task_identities: Default::default(),
-            history_allowlist: super::commands::allowlist(None).unwrap(),
             tls: None,
             tls_peer: None,
             tls_refusals: Default::default(),

@@ -101,7 +101,9 @@ async fn empty_allowlist_honours_nothing_and_bursts_coalesce() {
     config
         .extra
         .insert("history_allowlist".into(), serde_json::json!([]));
-    state.history_allowlist = super::super::commands::allowlist(Some(&config)).unwrap();
+    state.registry = Arc::new(super::super::history_projection::HistoryRegistry::new(
+        HashMap::new(), super::super::commands::allowlist(Some(&config)).unwrap(),
+    ));
     let (url, task) = broker(state.clone()).await;
     let client = bus::native_client::NodedClient::connect("maild", &url)
         .await
