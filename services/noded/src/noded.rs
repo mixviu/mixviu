@@ -4976,12 +4976,11 @@ async fn handle_noded_command(
                 if let Some(fields) = provenance.as_object_mut() {
                     fields.remove("broker_task_token");
                 }
-                serde_json::from_value(provenance).map(|provenance: bus::RegisterProvenance| {
+                serde_json::from_value(provenance).inspect(|_provenance: &bus::RegisterProvenance| {
                     // Test-only trace after stripping and validating provenance;
                     // production transport logging remains metadata-only.
                     #[cfg(test)]
-                    tracing::trace!(registration_body = %serde_json::to_string(&provenance).expect("provenance serializes"), "sanitized registration body");
-                    provenance
+                    tracing::trace!(registration_body = %serde_json::to_string(_provenance).expect("provenance serializes"), "sanitized registration body");
                 }).unwrap_or_else(|_| {
                     // A new citizen sent a non-empty but malformed body —
                     // register anyway (name-only) but don't lose it silently.
