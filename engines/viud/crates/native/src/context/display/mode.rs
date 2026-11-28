@@ -77,15 +77,22 @@ fn set_mode_now(
         .map_err(|e| format!("renderer: {e:?}"))?;
     let trail_row = crate::wire::handover::pipe("ModeChange", &ctx.outputs[idx]);
     let mut trail_row = trail_row;
-    trail_row["mode"] = serde_json::json!(format!("{}x{}@{}", mode.size().0, mode.size().1, mode.vrefresh()));
+    trail_row["mode"] = serde_json::json!(format!(
+        "{}x{}@{}",
+        mode.size().0,
+        mode.size().1,
+        mode.vrefresh()
+    ));
     let output = ctx.outputs[idx]
         .drm_output
         .as_mut()
         .ok_or_else(|| "output not live".to_string())?;
-    crate::wire::handover::run(vec![trail_row], || kms::scanout::surface::reconfigure::set_output_mode::<
-        _,
-        GlesElementWrapper<SceneElement<GlesRenderer>>,
-    >(output, mode, &mut renderer))?;
+    crate::wire::handover::run(vec![trail_row], || {
+        kms::scanout::surface::reconfigure::set_output_mode::<
+            _,
+            GlesElementWrapper<SceneElement<GlesRenderer>>,
+        >(output, mode, &mut renderer)
+    })?;
     drop(binding);
     let m = smithay::output::Mode::from(mode);
     ctx.outputs[idx].mode = m;

@@ -124,7 +124,10 @@ fn bring_up(
         .release(&world::state::output_key(&ctx.pipe().output));
     crate::render::execute::blank::retire(ctx.pipe_mut());
     let row = crate::wire::handover::pipe("OutputDrop", ctx.pipe());
-    let _ = crate::wire::handover::run(vec![row], || { ctx.pipe_mut().drm_output = None; Ok(()) });
+    let _ = crate::wire::handover::run(vec![row], || {
+        ctx.pipe_mut().drm_output = None;
+        Ok(())
+    });
     // Built against the `Output` this pipe will actually keep — `build` sizes the
     // primary plane from it to pass the atomic test.
     let output = match replace {
@@ -410,7 +413,10 @@ fn go_dark_primary(state: &mut Loop, ctx: &mut NativeRenderContext) {
         .redraw
         .release(&world::state::output_key(&ctx.pipe().output));
     let row = crate::wire::handover::pipe("OutputDrop", &ctx.outputs[0]);
-    let _ = crate::wire::handover::run(vec![row], || { ctx.outputs[0].drm_output = None; Ok(()) });
+    let _ = crate::wire::handover::run(vec![row], || {
+        ctx.outputs[0].drm_output = None;
+        Ok(())
+    });
     // Its colour state goes with the scanout: no client may keep being offered
     // a departed display's HDR volume (the pass is rebuilt on bring-up).
     ctx.outputs[0].hdr_pass = None;
@@ -497,8 +503,6 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
     while i < ctx.outputs.len() {
         if !drive_handles.contains(&ctx.outputs[i].connector) {
             let mut removed = ctx.outputs.remove(i);
-            let row = crate::wire::handover::pipe("OutputDrop", &removed);
-            let _ = crate::wire::handover::run(vec![row], || { drop(removed.drm_output.take()); Ok(()) });
             crate::render::execute::blank::retire(&mut removed);
             crate::render::execute::hdr::publish(&removed.output.name(), None);
             state
@@ -527,7 +531,12 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
             graphics::bridge::publish::retire::retire_output(&world::state::output_key(
                 &removed.output,
             ));
-            // `removed.drm_output` drops here → frees its CRTC.
+            let row = crate::wire::handover::pipe("OutputDrop", &removed);
+            let _ = crate::wire::handover::run(vec![row], || {
+                drop(removed.drm_output.take());
+                Ok(())
+            });
+            // `removed.drm_output` has freed its CRTC.
         } else {
             i += 1;
         }
@@ -562,8 +571,6 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                 while i < ctx.outputs.len() {
                     if ctx.outputs[i].connector == th && ctx.outputs[i].drm_output.is_some() {
                         let mut removed = ctx.outputs.remove(i);
-                        let row = crate::wire::handover::pipe("OutputDrop", &removed);
-                        let _ = crate::wire::handover::run(vec![row], || { drop(removed.drm_output.take()); Ok(()) });
                         crate::render::execute::hdr::publish(&removed.output.name(), None);
                         state
                             .state
@@ -583,6 +590,12 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                             "reconcile: evicted secondary {:?} so the primary can take it over",
                             removed.connector
                         );
+                        let row = crate::wire::handover::pipe("OutputDrop", &removed);
+                        let _ = crate::wire::handover::run(vec![row], || {
+                            drop(removed.drm_output.take());
+                            Ok(())
+                        });
+
                     } else {
                         i += 1;
                     }

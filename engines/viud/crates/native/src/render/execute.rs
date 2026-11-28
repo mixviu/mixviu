@@ -1783,7 +1783,9 @@ fn present(
     let resuming = !(*state.inner.kernel.get(&drivers::resume::base::VBLANK_SEEN));
     // Scope the drm_output borrow so the `Failed` arm can tear the pipe down.
     let (outcome, modeset) = {
-        let trail_row = crate::wire::handover::pipe("SubmitModeset", &ctx_ref.outputs[output_idx]);
+        let pending_modeset = ctx_ref.outputs[output_idx].drm_output.as_ref()
+            .is_some_and(|o| o.with_compositor(|c| c.surface().commit_pending()));
+        let trail_row = pending_modeset.then(|| crate::wire::handover::pipe("SubmitModeset", &ctx_ref.outputs[output_idx]));
         let Some(drm_output) = ctx_ref.outputs[output_idx].drm_output.as_mut() else {
             return false;
         };
@@ -1794,12 +1796,13 @@ fn present(
         let modeset = drm_output.with_compositor(|c| c.surface().commit_pending());
         let trace = ledger::frame_trace::span("kms_queue_frame", trace_output);
         let outcome = if modeset {
-            crate::wire::handover::run(vec![trail_row], || {
+            crate::wire::handover::run(trail_row.into_iter().collect(), || {
                 match queue(drm_output, Some(feedback), resuming) {
                     QueueOutcome::Failed => Err("queue_frame failed (detail in journal)".into()),
                     other => Ok(other),
                 }
-            }).unwrap_or(QueueOutcome::Failed)
+            })
+            .unwrap_or(QueueOutcome::Failed)
         } else {
             queue(drm_output, Some(feedback), resuming)
         };
@@ -1855,7 +1858,11 @@ fn present(
             // Fail-soft: this connector's flip failed → drop its scanout target so
             // the render loop skips it (it goes dark) while other outputs keep
             // running. Recovered on the next hotplug reconcile.
-            ctx_ref.outputs[output_idx].drm_output = None;
+            let row = crate::wire::handover::pipe("OutputDrop", &ctx_ref.outputs[output_idx]);
+            let _ = crate::wire::handover::run(vec![row], || {
+                ctx_ref.outputs[output_idx].drm_output = None;
+                Ok(())
+            });
             return false;
         }
     }

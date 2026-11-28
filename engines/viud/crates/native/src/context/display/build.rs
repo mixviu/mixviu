@@ -106,17 +106,32 @@ pub fn build(
         // sizes the primary plane from it, so it must match THIS candidate or the
         // plane won't fit the CRTC mode and the atomic test fails with EINVAL.
         output.change_current_state(Some(Mode::from(mode)), None, None, None);
-        match crate::wire::handover::run(vec![crate::wire::handover::row("InitializeOutput", Some(target.handle().into()), Some(pipe.into()), Some(format!("{}x{}@{}", mode.size().0, mode.size().1, mode.vrefresh())))], || kms::scanout::surface::output::initialize::<
-            _,
-            GlesElementWrapper<SceneElement<GlesRenderer>>,
-        >(
-            &mut mgr,
-            pipe,
-            mode,
-            &[target.handle()],
-            output,
-            &mut renderer,
-        )) {
+        match crate::wire::handover::run(
+            vec![crate::wire::handover::row(
+                "InitializeOutput",
+                Some(target.handle().into()),
+                Some(pipe.into()),
+                Some(format!(
+                    "{}x{}@{}",
+                    mode.size().0,
+                    mode.size().1,
+                    mode.vrefresh()
+                )),
+            )],
+            || {
+                kms::scanout::surface::output::initialize::<
+                    _,
+                    GlesElementWrapper<SceneElement<GlesRenderer>>,
+                >(
+                    &mut mgr,
+                    pipe,
+                    mode,
+                    &[target.handle()],
+                    output,
+                    &mut renderer,
+                )
+            },
+        ) {
             Ok(out) => {
                 slot = Some(out);
                 Ok(())

@@ -9,6 +9,7 @@
 //! VT-switch stuck-modifier problem the winit path fixed; the keys-up events
 //! are consumed by the other VT, so the compositor must forget them).
 
+use super::handover;
 use crate::context::render::NativeRenderContext;
 use smithay::backend::session::libseat::LibSeatSessionNotifier;
 use smithay::reexports::calloop::LoopHandle;
@@ -18,7 +19,6 @@ use std::rc::Rc;
 use world::environment::interface::lifecycle;
 use world::state::Loop;
 use world::state::StatusSession;
-use super::handover;
 
 /// Wall-clock milliseconds for a session edge (`session.changed` `since_ms`).
 fn unix_ms() -> u64 {
@@ -189,7 +189,10 @@ pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderConte
         // so this borrows only `outputs`, leaving the other `ctx_ref`
         // fields the resume closures capture (libinput, …) borrowable.
         let pipes = &mut ctx_ref.outputs;
-        let reclaim_rows = pipes.iter().map(|p| handover::pipe("ReclaimModeset", p)).collect();
+        let reclaim_rows = pipes
+            .iter()
+            .map(|p| handover::pipe("ReclaimModeset", p))
+            .collect();
 
         kms::seat::lifecycle::resume::resume(kms::seat::lifecycle::resume::ResumeSteps {
             resume_input: || {
@@ -199,7 +202,9 @@ pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderConte
                     .map_err(|e| format!("libinput resume failed: {e:?}"))
             },
             activate_display: |force| {
-                handover::run(reclaim_rows, || kms::scanout::surface::output::activate(&mut manager.borrow_mut(), force))
+                handover::run(reclaim_rows, || {
+                    kms::scanout::surface::output::activate(&mut manager.borrow_mut(), force)
+                })
             },
             // Reset EVERY live pipe's surface, not just the primary.
             // (Their in-flight bookkeeping is cleared below, once
@@ -220,7 +225,9 @@ pub fn activate(state: &mut Loop, session_context: &Rc<RefCell<NativeRenderConte
                     p.props_applied = false;
                     let reset_row = handover::pipe("SurfaceReset", p);
                     if let Some(o) = p.drm_output.as_mut()
-                        && let Err(e) = handover::run(vec![reset_row], || kms::scanout::surface::output::reset(o))
+                        && let Err(e) = handover::run(vec![reset_row], || {
+                            kms::scanout::surface::output::reset(o)
+                        })
                     {
                         result = Err(e);
                     }
