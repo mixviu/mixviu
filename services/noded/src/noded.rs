@@ -7617,6 +7617,29 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn unknown_noded_verb_returns_rc_and_keeps_registered_connection() {
+        let Some(url) = spawn_broker().await else {
+            panic!("broker did not start");
+        };
+        let (mut sink, mut stream) = raw_connect(&url).await;
+        raw_register(&mut sink, &mut stream, "example").await;
+        for (id, command, rc) in [
+            ("unknown-1", "noded.no_such_command", "10"),
+            ("ping-1", "noded.ping", "0"),
+            ("unknown-2", "noded.commands.set", "10"),
+            ("ping-2", "noded.ping", "0"),
+        ] {
+            let request = BusMessage::new()
+                .with_header("command", command)
+                .with_header("from", "example")
+                .with_header("to", "noded")
+                .with_header("type", "request")
+                .with_header("id", id);
+            assert_eq!(raw_call(&mut sink, &mut stream, request, id).await.get("rc"), Some(rc));
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn observe_covers_rejected_broker_response_and_route_outcomes_truthfully() {
         let Some(url) = spawn_broker().await else {
             return;
