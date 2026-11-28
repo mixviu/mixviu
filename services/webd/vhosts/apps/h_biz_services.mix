@@ -162,14 +162,15 @@ function svc_fields($s)
   $h = $h .. fm_hidden("id", fm_val($s, "id"))
   $h = $h .. fm_select("customer_id", "Customer", svc_customer_options(to_number(fm_val($s, "customer_id"))), { value: fm_val($s, "customer_id"), required: true, placeholder: "Select a customer" })
   $h = $h .. fm_text("label", "Label", { value: fm_val($s, "label"), required: true, help: "e.g. the hostname or plan nickname", help_tip: true })
-  $h = $h .. fm_select("kind", "Kind", [{ value: "ct", "label": "ct" }, { value: "vm", "label": "vm" }, { value: "byo", "label": "byo" }, { value: "legacy", "label": "legacy" }], { value: fm_val($s, "kind") })
+  $h = $h .. fm_select("kind", "Kind", [{ value: "ct", "label": "ct" }, { value: "vm", "label": "vm" }, { value: "byo", "label": "byo" }, { value: "legacy", "label": "legacy" }, { value: "subscription", "label": "subscription" }], { value: fm_val($s, "kind") })
   $h = $h .. fm_select("plan_id", "Plan", svc_plan_options(), { value: fm_val($s, "plan_id"), help: "catalogue plan, or custom", help_tip: true })
   $h = $h .. fm_text("units", "Units", { value: fm_val($s, "units"), inputmode: "numeric", help: "resource units; drives the catalogue price", help_tip: true })
   $pv = fm_val($s, "price_display")
   if $pv == "" then
     $pv = svc_cents_to_dollars($s["price_cents"])
   end
-  $h = $h .. fm_text("price", "Price (AUD/yr)", { value: $pv, prefix: "$", inputmode: "numeric", help: "blank + units = catalogue price", help_tip: true })
+  $h = $h .. fm_text("price", "Price (AUD/period)", { value: $pv, prefix: "$", inputmode: "numeric", help: "blank + units = catalogue price", help_tip: true })
+  $h = $h .. '<p>Period (months): ' .. esc("" .. ($s["period_months"] ?? 12)) .. '</p>'
   $h = $h .. fm_select("status", "Status", [{ value: "pending", "label": "pending" }, { value: "active", "label": "active" }, { value: "suspended", "label": "suspended" }, { value: "cancelled", "label": "cancelled" }], { value: fm_val($s, "status") })
   $h = $h .. fm_text("next_due", "Next due", { value: fm_val($s, "next_due"), placeholder: "YYYY-MM-DD", help: "anniversary the renewal tick bills from", help_tip: true })
   $h = $h .. fm_select("payment_pref", "Payment", [{ value: "stripe", "label": "stripe" }, { value: "paypal", "label": "paypal" }, { value: "bank", "label": "bank" }], { value: fm_val($s, "payment_pref") })
@@ -455,6 +456,7 @@ function svc_detail($s, $reveal_id)
   $rows = []
   push($rows, { "label": "Customer", html: $cust })
   push($rows, { "label": "Kind", value: "" .. $s["kind"] })
+  push($rows, { "label": "Period (months)", value: "" .. $s["period_months"] })
   $plan = "custom"
   if $s["plan_id"] != nil then
     $p = db_query("SELECT name FROM plans WHERE id = ?1", [$s["plan_id"]])
@@ -477,7 +479,7 @@ function svc_detail($s, $reveal_id)
     $addons = $addons .. " · ipv4"
   end
   push($rows, { "label": "Units", html: $units .. esc($addons) })
-  $price = fmt_aud($s["price_cents"]) .. "/yr"
+  $price = fmt_aud($s["price_cents"]) .. " / " .. $s["period_months"] .. " months"
   $cat = price_for_units($s["units"])
   if $cat != nil and $cat != to_number($s["price_cents"]) then
     $price = $price .. ' <span class="muted">(custom price — catalogue would be ' .. fmt_aud($cat) .. ')</span>'
@@ -571,7 +573,8 @@ function svc_list_config()
     dt_col("customer", "Customer", "customer_id", { sortable: true, render: $cust_cell, toggleable: true }),
     dt_col("kind", "Kind", "kind", { sortable: true, toggleable: true }),
     dt_col("units", "Units", "units", { sortable: true, align: "right", placeholder: "—", width: "5rem", toggleable: true }),
-    dt_col("price", "Price/yr", "price_cents", { sortable: true, align: "right", fmt: $aud, summarize: "sum", summary_fmt: $aud }),
+    dt_col("period_months", "Months", "period_months", { sortable: true }),
+    dt_col("price", "Price/period", "price_cents", { sortable: true, align: "right", fmt: $aud, summarize: "sum", summary_fmt: $aud }),
     dt_col("status", "Status", "status", { sortable: true, badge: $status_badge, toggleable: true }),
     dt_col("provision", "Provision", "id", { render: $prov_cell, toggleable: true }),
     dt_col("next_due", "Next due", "next_due", { sortable: true, render: $due_cell, toggleable: true }),
@@ -594,7 +597,8 @@ function svc_list_config()
         { value: "ct", "label": "ct", col: "kind", op: "=" },
         { value: "vm", "label": "vm", col: "kind", op: "=" },
         { value: "byo", "label": "byo", col: "kind", op: "=" },
-        { value: "legacy", "label": "legacy", col: "kind", op: "=" }
+        { value: "legacy", "label": "legacy", col: "kind", op: "=" },
+        { value: "subscription", "label": "subscription", col: "kind", op: "=" }
       ] }),
       dt_filter("pay", "Payment", { options: [
         { value: "stripe", "label": "Stripe", col: "payment_pref", op: "=" },
@@ -946,7 +950,7 @@ if $METHOD == "POST" then
     $err = "Label is required."
   end
   $kind = fm_val($f, "kind")
-  if not ($kind == "ct" or $kind == "vm" or $kind == "byo" or $kind == "legacy") then
+  if not ($kind == "ct" or $kind == "vm" or $kind == "byo" or $kind == "legacy" or $kind == "subscription") then
     $kind = "legacy"
   end
   $status = fm_val($f, "status")
@@ -961,6 +965,8 @@ if $METHOD == "POST" then
   if trim(fm_val($f, "plan_id")) != "" then
     $plan_id = to_number(fm_val($f, "plan_id"))
   end
+  $sub_plan = biz_subscription_plan($kind, $plan_id)
+  if not $sub_plan.ok then $err = $sub_plan.error end
   $units = nil
   $uraw = trim(fm_val($f, "units"))
   if $err == "" and $uraw != "" then
@@ -974,7 +980,9 @@ if $METHOD == "POST" then
   $draw = trim(fm_val($f, "price"))
   if $err == "" then
     if $draw == "" then
-      if $units != nil then
+      if $kind == "subscription" then
+        $cents = $sub_plan.price_cents
+      elif $units != nil then
         $cents = price_for_units($units)
       else
         $err = "Price is required (or set units for the catalogue price)."
@@ -1041,6 +1049,12 @@ if $METHOD == "POST" then
       db_exec("ROLLBACK")
       return redirect_flash("/biz/services", "No such customer", "danger")
     end
+    $sub_plan = biz_subscription_plan($kind, $plan_id)
+    if not $sub_plan.ok then
+      db_exec("ROLLBACK")
+      return redirect_flash("/biz/services", $sub_plan.error, "danger")
+    end
+    if $kind == "subscription" and $draw == "" then $cents = $sub_plan.price_cents end
     if $editid != "" then
       $sid = to_number($editid)
       if not biz_row_exists("services", $sid) then
@@ -1050,15 +1064,16 @@ if $METHOD == "POST" then
       -- node/vmid/ip/legacy_id are provisioning-owned — the editor never touches them.
       db_exec("UPDATE services SET customer_id = ?1, kind = ?2, label = ?3, plan_id = ?4, units = ?5,
                addon_bulk25 = ?6, addon_ipv4 = ?7, price_cents = ?8, status = ?9, next_due = ?10,
-               payment_pref = ?11, auto_charge = ?12, notes = ?13, updated = ?14 WHERE id = ?15",
+               payment_pref = ?11, auto_charge = ?12, notes = ?13, updated = ?14,
+               period_months = ?16, anchor_day = COALESCE(anchor_day, CAST(substr(?10,9,2) AS INTEGER)) WHERE id = ?15",
               [$custid, $kind, $label, $plan_id, $units, $b25, $ip4, $cents, $status, $duebind,
-               $pref, $auto, fm_val($f, "notes"), biz_now(), $sid])
+               $pref, $auto, fm_val($f, "notes"), biz_now(), $sid, $sub_plan.period_months])
     else
       db_exec("INSERT INTO services (customer_id, kind, label, plan_id, units, addon_bulk25, addon_ipv4,
-               price_cents, status, next_due, payment_pref, auto_charge, notes, created, updated)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)",
+               price_cents, status, next_due, payment_pref, auto_charge, notes, created, updated, period_months, anchor_day)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14, ?15, CAST(substr(?10,9,2) AS INTEGER))",
               [$custid, $kind, $label, $plan_id, $units, $b25, $ip4, $cents, $status, $duebind,
-               $pref, $auto, fm_val($f, "notes"), biz_now()])
+               $pref, $auto, fm_val($f, "notes"), biz_now(), $sub_plan.period_months])
       $nid = db_query("SELECT last_insert_rowid() AS id")
       $sid = to_number($nid[0]["id"])
     end
@@ -1114,7 +1129,7 @@ end
 -- of the filtered set; search/filters flow into the summary via dt_where).
 $cfg = svc_list_config()
 return dt_admin_list({ title: "Services", user: $user, spec: $cfg["spec"], opts: $cfg["opts"],
-  table: "services", select: "id, customer_id, kind, label, plan_id, units, price_cents, status, next_due, payment_pref, auto_charge",
+  table: "services", select: "id, customer_id, kind, label, plan_id, units, price_cents, period_months, status, next_due, payment_pref, auto_charge",
   summary: true })
 
 end

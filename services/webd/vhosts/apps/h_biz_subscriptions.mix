@@ -1,0 +1,88 @@
+-- SPDX-License-Identifier: MIT OR Apache-2.0
+-- Admin-only subscription plan and setting editor. Secrets are write-only.
+-- lint: ignore MIX-W2401
+include (mix_path("prefix") .. "/vhosts/shared/apps/biz.mix")
+include (mix_path("prefix") .. "/vhosts/shared/widgets/forms.mix")
+
+function biz_subscriptions_main()
+  cms_init()
+  biz_init()
+  $user = current_user($HEADERS)
+  $deny = require_role($user, "admin")
+  if $deny != nil then return $deny end
+  if $METHOD == "POST" then
+    $form = parse_form($BODY)
+    if $CSRF == "" or not constant_time_eq($CSRF, "" .. ($form["csrf"] ?? "")) then
+      return { status: 403, headers: {}, body: "invalid CSRF token" }
+    end
+    if $form["action"] == "reopen" then
+      $reopened = biz_reopen_subscription_invoice(to_number($form["invoice_id"]), $user.username)
+      if not $reopened.ok then return {status: 409, headers: {}, body: $reopened.error} end
+      return redirect("/biz/invoices?view=" .. to_number($form["invoice_id"]))
+    elif $form["action"] == "settings" then
+      $mode = "" .. $form["sub_mail_mode"]
+      $grace = to_number($form["sub_grace_days"])
+      $pending = to_number($form["sub_pending_days"])
+      if not contains(["off","test","live"], $mode) or $grace == nil or $pending == nil or $grace < 0 or $pending < 1 or floor($grace) != $grace or floor($pending) != $pending then
+        return { status: 400, headers: {}, body: "Invalid subscription settings" }
+      end
+      biz_setting_set("sub_mail_mode", $mode)
+      biz_setting_set("sub_grace_days", "" .. $grace)
+      biz_setting_set("sub_pending_days", "" .. $pending)
+      -- Stripe: the full descriptor (account prefix + suffix) is at most 22
+      -- characters and may not contain < > \ ' " *. Keep the suffix short.
+      $suffix = trim("" .. ($form["stripe_descriptor_suffix"] ?? ""))
+      if length($suffix) > 10 or contains($suffix, "<") or contains($suffix, ">") or contains($suffix, "\\") or contains($suffix, "'") or contains($suffix, "\"") or contains($suffix, "*") then
+        return { status: 400, headers: {}, body: "Statement descriptor suffix: at most 10 characters, none of < > \\ ' \" *" }
+      end
+      biz_setting_set("stripe_descriptor_suffix", $suffix)
+      $secret = trim("" .. ($form["sub_export_secret"] ?? ""))
+      if $secret != "" then biz_setting_set("sub_export_secret", $secret) end
+      biz_audit($user.username, "subscription_settings", "biz_settings", nil, "settings updated")
+    else
+      $id = to_number($form["id"])
+      $price = to_number($form["price_cents"])
+      $period = to_number($form["period_months"])
+      $code = trim("" .. ($form["code"] ?? ""))
+      $name = trim("" .. ($form["name"] ?? ""))
+      $product = trim("" .. ($form["product"] ?? ""))
+      $active = to_number($form["active"])
+      if $price == nil or $price <= 0 or floor($price) != $price or not contains([1,12], $period) or not contains([0,1], $active) or $code == "" or $name == "" or $product == "" or contains($product, "/") or contains(["confirm","entitlements"], $product) then
+        return { status: 400, headers: {}, body: "Invalid plan; use a positive price in cents and a 1 or 12 month period." }
+      end
+      try
+        if $id != nil and $id > 0 then
+          db_exec("UPDATE plans SET code=?2,name=?3,product=?4,price_cents=?5,period_months=?6,active=?7
+                   WHERE id=?1 AND kind='subscription'", [$id,$code,$name,$product,$price,$period,$active])
+        else
+          db_exec("INSERT INTO plans (code,name,product,price_cents,period_months,active,kind,units)
+                   VALUES (?1,?2,?3,?4,?5,?6,'subscription',0)", [$code,$name,$product,$price,$period,$active])
+        end
+      catch $e
+        return { status: 400, headers: {}, body: "Could not save plan; check the unique code." }
+      end
+      biz_audit($user.username, "subscription_plan_save", "plans", $id, $code)
+    end
+    return redirect("/biz/subscriptions")
+  end
+  if $METHOD != "GET" then return { status: 405, headers: {}, body: "GET or POST only" } end
+  $html = '<h1>Subscription plans</h1><p><a href="/biz/settings">Billing settings</a></p>'
+  $plans = db_query("SELECT * FROM plans WHERE kind='subscription' ORDER BY id")
+  push($plans, {id: 0, code: "", name: "", product: "", price_cents: 500, period_months: 1, active: 1})
+  for each $plan in $plans
+    $html = $html .. fm_open("/biz/subscriptions", {}) .. '<input type="hidden" name="csrf" value="' .. esc($CSRF) .. '"><input type="hidden" name="id" value="' .. $plan.id .. '">'
+    for each $key in ["code","name","product","price_cents","period_months","active"]
+      $html = $html .. fm_text($key, $key, { value: "" .. $plan[$key] })
+    end
+    $html = $html .. '<button type="submit">Save plan</button></form>'
+  end
+  $html = $html .. fm_open("/biz/subscriptions", {}) .. '<input type="hidden" name="csrf" value="' .. esc($CSRF) .. '"><input type="hidden" name="action" value="settings">'
+  for each $key in ["sub_mail_mode","sub_grace_days","sub_pending_days","stripe_descriptor_suffix"]
+    $html = $html .. fm_text($key, $key, { value: biz_setting($key) })
+  end
+  $html = $html .. fm_password("sub_export_secret", "Export secret (blank keeps current)", { value: "" })
+  $html = $html .. '<button type="submit">Save settings</button></form><h2>Late bank transfer</h2><p>Reopen an unpaid cancelled subscription invoice, then record the transfer on its invoice page. Credited or replaced invoices require manual reconciliation.</p>'
+  $html = $html .. fm_open("/biz/subscriptions", {}) .. '<input type="hidden" name="csrf" value="' .. esc($CSRF) .. '"><input type="hidden" name="action" value="reopen">'
+  $html = $html .. fm_text("invoice_id", "Cancelled invoice ID", {}) .. '<button type="submit">Reopen invoice</button></form>'
+  return doc(200, "Subscription plans", $user, $html)
+end

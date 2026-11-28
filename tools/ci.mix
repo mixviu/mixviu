@@ -378,6 +378,7 @@ end
 
 fn stage_mix_lint($mix)
   ensure_mix($mix)
+  run_step([$mix, "services/webd/vhosts/subscriptions_test.mix", $mix])
   run_step([$mix, "tools/ci/lint_context_test.mix", $mix])
   run_step([$mix, "tools/ci/quarantine_test.mix"])
   run_step([$mix, "tools/ci/quarantine_report_test.mix"])

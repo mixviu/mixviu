@@ -7,6 +7,8 @@
 -- "<h>.mix" (the route's handler_ref) which includes the shared "h_<h>.mix"
 -- (defining "<h>_main()"). Default capabilities ["db"]; jmap surfaces add "jmap".
 $ROUTES = [
+  { id: "subscribe", m: "ANY", p: "/subscribe/*", h: "sub", c: ["db", "jmap", "public_read"] },
+  { id: "biz_subscriptions", m: "ANY", p: "/biz/subscriptions", h: "biz_subscriptions", c: ["db"] },
   -- home is public_cache'd (webd 0.9.11): its anonymous render is a pure content
   -- read (same card-feed as /posts), so the email-to-post import was lifted off
   -- the render into /admin/posts (admin_posts KEEPS the `jmap` cap for it). The
