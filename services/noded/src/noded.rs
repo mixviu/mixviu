@@ -4449,7 +4449,7 @@ async fn route_local(
     // Sessions are broker-issued client identities and retain mesh forwarding.
     // Only infrastructure identities are forbidden as forwarded callers.
     if admitted_peer.is_some()
-        && mesh_from.is_some_and(|name| reserved_broker_name(name) || reserved_task_name(name))
+        && mesh_from.is_some_and(is_reserved_infrastructure_name)
     {
         drop(reg);
         let mut reply = reserved_name_refusal(
@@ -6020,6 +6020,10 @@ fn reserved_task_name(name: &str) -> bool {
 
 pub(crate) fn is_reserved_service_name(name: &str) -> bool {
     reserved_broker_name(name) || reserved_task_name(name) || reserved_session_name(name)
+}
+
+fn is_reserved_infrastructure_name(name: &str) -> bool {
+    reserved_broker_name(name) || reserved_task_name(name)
 }
 
 fn valid_service_name(name: &str) -> bool {
@@ -10007,6 +10011,38 @@ pub(crate) mod tests {
                 Some("reserved_name")
             );
             assert!(delivered.try_recv().is_err());
+        }
+        // A child session keeps its asserted service name across the admitted
+        // bridge, without becoming a local trusted principal.
+        let name = "c1000-aaaaaaaaaaaaaaaaaaaaaa";
+        let mut request = BusMessage::new().with_header("command", "probe");
+        let result = super::route_local(
+            &state,
+            "recipient",
+            &mut request,
+            &caller,
+            Some("bridge-beta"),
+            "192.0.2.2".parse().unwrap(),
+            Some(name),
+            None,
+            false,
+        )
+        .await;
+        assert_eq!(result.outcome, super::ObserveOutcome::Delivered);
+        let wire = delivered.recv().await.unwrap();
+        let message = bus_mod::parse(&wire).unwrap();
+        assert_eq!(message.get("broker_service"), Some(name));
+        assert_eq!(message.get("broker_peer"), Some("beta"));
+        assert_eq!(message.get("principal"), None);
+        assert!(replies.try_recv().is_err());
+    }
+
+    #[test]
+    fn forwarded_session_shapes_are_not_infrastructure_names() {
+        for name in ["t1000-aaaaaaaaaaaaaaaaaaaaaa", "c1000-aaaaaaaaaaaaaaaaaaaaaa"] {
+            assert!(super::reserved_session_name(name), "{name}");
+            assert!(super::is_reserved_service_name(name), "{name}");
+            assert!(!super::is_reserved_infrastructure_name(name), "{name}");
         }
     }
 

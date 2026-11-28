@@ -236,20 +236,25 @@ async fn production_mesh(
             assert!(peers["peers"].as_array().unwrap().iter().any(|peer| peer["name"] == "beta" || peer["name"] == "alpha"));
         }
         let responder = async {
+            let mut checked = false;
             for _ in 0..2 {
                 let delivery = service.recv_shared().await.unwrap();
                 let command = delivery.command();
                 assert_eq!(command.command, "echo.tag");
                 let value: Value = serde_json::from_str(&command.body).unwrap();
-                if value["tag"] == "one" && let Some(name) = &session_name {
+                if value["tag"] == "one" {
+                    checked = true;
                     // These are produced by the real alpha sender and beta
                     // receiver, not supplied by this fixture's request.
-                    assert_eq!(command.header("broker_service"), Some(name.as_str()));
+                    assert_eq!(command.header("broker_service"), Some(session_name.as_deref().unwrap_or("caller-one")));
                     assert_eq!(command.header("broker_peer"), Some("alpha"));
                     assert_eq!(command.header("broker_origin"), Some("mesh"));
                     assert!(delivery.trusted_context().is_none(), "remote session is not a local principal");
                 }
                 service.client().respond(command, 0, &value.to_string()).await.unwrap();
+            }
+            if session_caller {
+                assert!(checked, "session caller delivery assertions must run");
             }
         };
         // Both fresh connections use the same call counter. The mesh must
@@ -296,6 +301,7 @@ async fn production_mesh(
         assert!(first.client().call("echo.unknown.bus", "echo.tag", json!({})).await.is_err());
         assert_eq!(first.client().call("noded", "noded.ping", json!({})).await.unwrap()["pong"], true);
         if session_caller {
+            // Deregistration refuses an attached session; close disconnects its binding.
             first.client().close().await;
         } else {
             first.client().deregister().await.unwrap();
