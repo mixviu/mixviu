@@ -299,6 +299,7 @@ impl SupervisedConnectOptions {
 /// calls through the state-gated methods; the supervisor task reconnects,
 /// re-registers and replays the [`SubscriptionRegistry`] underneath.
 pub struct SupervisedClient {
+    commands: Arc<std::sync::Mutex<Option<Vec<crate::CommandDescriptor>>>>,
     deliveries_rx: std::sync::Mutex<Option<mpsc::UnboundedReceiver<SupervisedDelivery>>>,
     /// The live connection. Swapped by the supervisor on reconnect under a
     /// brief write lock; outbound calls clone the `Arc` under a read lock so
@@ -324,6 +325,14 @@ pub struct SupervisedClient {
 }
 
 impl SupervisedClient {
+    /// Replace HELP descriptors and the broker manifest, retaining them on reconnect.
+    pub async fn set_commands(&self, commands: Vec<crate::CommandDescriptor>) {
+        let live = self.inner.read().await;
+        *self.commands.lock().expect("commands lock poisoned") = Some(commands.clone());
+        if let Some(connection) = live.as_ref() {
+            connection.set_commands(commands);
+        }
+    }
     /// Start building a supervised connection with explicit options.
     pub fn connect_options(service_name: &str, noded_url: &str) -> SupervisedConnectOptions {
         SupervisedConnectOptions {
@@ -427,6 +436,7 @@ impl SupervisedClient {
             connection: connection_options,
         } = options;
         let established = connection.is_some();
+        let commands = Arc::new(std::sync::Mutex::new(connection_options.commands.clone()));
         let (state_tx, _) = watch::channel(if established {
             ConnState::Connected
         } else {
@@ -471,6 +481,7 @@ impl SupervisedClient {
         let subscription_transaction = Arc::new(TokioMutex::new(()));
 
         let supervisor = tokio::spawn(supervisor_loop(SupervisorCtx {
+            commands: commands.clone(),
             inner: inner.clone(),
             state_tx: state_tx.clone(),
             state_publish: state_publish.clone(),
@@ -488,6 +499,7 @@ impl SupervisedClient {
         }));
 
         SupervisedClient {
+            commands,
             deliveries_rx: std::sync::Mutex::new(contextual.then_some(delivery_rx)),
             inner,
             state_tx,
@@ -981,6 +993,7 @@ enum ForwardOutcome {
 
 /// Everything the detached supervisor task owns.
 struct SupervisorCtx {
+    commands: Arc<std::sync::Mutex<Option<Vec<crate::CommandDescriptor>>>>,
     inner: Arc<RwLock<Option<Arc<Connection>>>>,
     state_tx: watch::Sender<ConnState>,
     state_publish: Arc<std::sync::Mutex<()>>,
@@ -1302,6 +1315,9 @@ async fn supervisor_run(ctx: &mut SupervisorCtx, mut current_rx: Option<Connecti
                     }
                     let connection = Arc::new(connection);
                     let mut live = ctx.inner.write().await;
+                    if let Some(commands) = ctx.commands.lock().expect("commands lock poisoned").clone() {
+                        connection.set_commands(commands);
+                    }
                     let published = {
                         // Close publishes its terminal state under this same
                         // fence before selecting a socket. It therefore sees

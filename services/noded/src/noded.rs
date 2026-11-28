@@ -7126,7 +7126,7 @@ pub(crate) mod tests {
         AppState {
             assert_legacy_promotion: false,
             task_identities: Default::default(),
-            history_allowlist: commands::allowlist(None).unwrap(),
+            history_allowlist: super::commands::allowlist(None).unwrap(),
             tls: None,
             tls_peer: None,
             tls_refusals: Default::default(),

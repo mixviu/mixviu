@@ -2328,6 +2328,10 @@ pub trait BusHandler {
 /// keeping `mix` core feature-clean per the core/citizen
 /// split — the same shape as [`BusHandler`].
 pub trait ServeRuntime {
+    /// Publish the declared handler set when a serve generation enters its pump.
+    fn publish_commands<'a>(&'a self, _handlers: &'a [String]) -> BusFuture<'a, ()> {
+        Box::pin(async {})
+    }
     /// If `command` is a runtime-reserved command, service it and return
     /// the reply parts plus whether the runtime must now begin graceful
     /// shutdown. `None` ⇒ not a reserved command; the pump dispatches to
@@ -7026,6 +7030,11 @@ impl Evaluator {
     ///     dispatch (future: reachable once `off` lands; today the
     ///     registry is append-only, so this branch is future-proofing)
     pub async fn run_event_pump(&mut self) -> MixResult<()> {
+        let runtime = self.globals.borrow().serve_runtime.clone();
+        if let Some(runtime) = runtime {
+            let handlers = self.globals.borrow().handlers.keys().cloned().collect::<Vec<_>>();
+            runtime.publish_commands(&handlers).await;
+        }
         let _native_consumer = self.globals.borrow().native_events.enter_pump()?;
         // Plain scripts may have native sources on machines without a broker.
         // Once their Bus stream ends, stop polling it (None is immediately
