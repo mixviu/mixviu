@@ -84,7 +84,8 @@ async fn anonymous_commands_never_publish_and_named_commands_publish_once_per_ch
     client.set_commands(descriptors("example.read"));
     client.set_commands(descriptors("example.write"));
     // A synchronous burst coalesces to its newest names, including deduped calls.
-    for name in ["example.write"] {
+    {
+        let name = "example.write";
         let update = next(&mut seen).await;
         assert_eq!(update.command_name(), Some("noded.commands.set"));
         assert_eq!(
