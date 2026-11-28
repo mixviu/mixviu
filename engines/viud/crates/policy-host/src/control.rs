@@ -1529,6 +1529,13 @@ pub fn execute(lp: &mut Loop, effects: Vec<Effect>) {
             _ => continue,
         };
         if let Some(window) = window_of(lp, id) {
+            // Present also names minimised/visual-hidden destination windows.
+            // A quiet restore on another workspace is not an arrival either.
+            if lp.inner.comp.hidden_id(id)
+                || lp.inner.world_of_window(&window) != Some(lp.inner.worlds.spawn_target())
+            {
+                continue;
+            }
             lp.inner.wake_now(&window);
             waking = true;
         }

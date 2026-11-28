@@ -543,7 +543,6 @@ pub fn spawn_preferences(label: &str, bus: &str, preferences: serde_json::Value)
     spawn_preferences_size(label, bus, "1280x720", preferences)
 }
 
-#[allow(dead_code)]
 pub fn spawn_scale_probe(label: &str, bus: &str) -> Process {
     spawn_options(Options {
         label,

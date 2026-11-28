@@ -114,6 +114,8 @@ fn update_fractional(state: &mut Loop) {
     // a minimised window reveals its retained buffer immediately. Keep its pane
     // scale in every mode, using geometry rather than the draw visibility sets.
     // visual.visible=false (including collapsed groups) retains its old behaviour.
+    // space_state() resolves only worlds.spawn_target(); parked-world Spaces
+    // enter only the separate other_world_spaces() idle pass below.
     for output in state.inner.space_state().state.outputs() {
         let Some(mode) = output.current_mode() else {
             continue;
@@ -179,8 +181,9 @@ fn update_fractional(state: &mut Loop) {
     // Invisible-window strategy (`fractional_invisible` preference, live):
     // "off" — invisible windows keep receiving zoom-driven updates (the
     // historical behavior; backfilled below, since the render cull keeps them
-    // out of the on-pane sets). "optimized" — invisible windows get no
-    // publishes until visible again; parked worlds' windows get scale 1 so
+    // out of the on-pane sets). "optimized" — spatially off-pane and visual-hidden
+    // windows get no publishes until visible again; on-pane policy-hidden
+    // windows receive updates above. Parked worlds' windows get scale 1 so
     // their clients drop hi-res buffers. "full" — the hosted world's invisible
     // spatially off-pane windows get scale 1 too. Policy-hidden on-pane windows
     // are already in best above. Capture targets are drawn, so they count as
@@ -308,6 +311,20 @@ fn reassert_slots_after_scale(state: &mut Loop, emitted: &[WlSurface]) {
 /// before they scroll into view.
 const FRACTIONAL_GRACE_RANGE: f64 = 256.0;
 
+#[test]
+fn grace_band_is_screen_logical_at_non_unit_zoom() {
+    use world::camera::transform::translate::transform::Context;
+    // 512 logical wide, half-width 256; project the slot's right edge to
+    // -255 (inside) or -257 (outside), at both zoom 1 and zoom 2.
+    for zoom in [1.0, 2.0] {
+        let pane = smithay::utils::Rectangle::from_size((1280, 720).into());
+        for (right, expected) in [(-255.0, true), (-257.0, false)] {
+            let ctx = Context::new(((256.0 - right) / zoom + 200.0, 0.0), zoom, (1280.0, 720.0), 2.5);
+            assert_eq!(slot_in_grace((0, 0).into(), (200, 160).into(), ctx, pane), expected);
+        }
+    }
+}
+
 fn slot_in_grace(
     loc: Point<i32, Logical>,
     size: Size<i32, Logical>,
@@ -323,6 +340,8 @@ fn slot_in_grace(
     };
     let tl = project(loc.x as f64, loc.y as f64);
     let br = project((loc.x + size.w) as f64, (loc.y + size.h) as f64);
+    // The band is in screen-logical pixels, independent of camera zoom.
+    // Transform already applies zoom to the slot before this intersection.
     let pad = (FRACTIONAL_GRACE_RANGE * ctx.scale).round() as i32;
     tl.x < pane.loc.x + pane.size.w + pad
         && pane.loc.x - pad < br.x

@@ -66,6 +66,8 @@ pub const COLOURS: [u32; 4] = [0xffd02030, 0xff20d040, 0xff3040d0, 0xffe0d020];
 #[derive(Default)]
 pub struct State {
     pub scale_probe: bool,
+    commit_id: u64,
+    buffer_info: (i32, i32, u32),
     pub scale120: u32,
     pub events: Vec<(Instant, ScaleEvent)>,
     scale_dirty: bool,
@@ -102,7 +104,7 @@ pub enum ScaleEvent {
     Ack(u32),
     Callback,
     Commit(i32, i32, u32),
-    Presented,
+    Presented(u64, i32, i32, u32),
 }
 
 impl State {
@@ -557,6 +559,7 @@ impl Pattern {
             self.surface.set_buffer_scale(1);
             self.surface.attach(Some(&self.buffer), 0, 0);
             self.surface.damage_buffer(0, 0, w, h);
+            self.state.buffer_info = (w, h, scale);
             self.state.log_scale(ScaleEvent::Commit(w, h, scale));
             self.state.scale_dirty = false;
         }
@@ -566,8 +569,9 @@ impl Pattern {
                 .damage_buffer(0, 0, self.state.size.0, self.state.size.1);
         }
         self.surface.frame(&self.queue.handle(), ());
-        self.presentation
-            .feedback(&self.surface, &self.queue.handle(), ());
+        self.state.commit_id += 1;
+        let (w, h, scale) = self.state.buffer_info;
+        self.presentation.feedback(&self.surface, &self.queue.handle(), (self.state.commit_id, w, h, scale));
         self.surface.commit();
         self.conn.flush().unwrap();
     }
@@ -825,12 +829,12 @@ impl Dispatch<WpPresentation, ()> for State {
         }
     }
 }
-impl Dispatch<WpPresentationFeedback, ()> for State {
+impl Dispatch<WpPresentationFeedback, (u64, i32, i32, u32)> for State {
     fn event(
         state: &mut Self,
         _: &WpPresentationFeedback,
         event: wp_presentation_feedback::Event,
-        _: &(),
+        buffer: &(u64, i32, i32, u32),
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
@@ -847,7 +851,7 @@ impl Dispatch<WpPresentationFeedback, ()> for State {
                     wayland_client::WEnum::Value(wp_presentation_feedback::Kind::empty())
                 );
                 state.presented += 1;
-                state.log_scale(ScaleEvent::Presented);
+                state.log_scale(ScaleEvent::Presented(buffer.0, buffer.1, buffer.2, buffer.3));
                 state.times.push(
                     (((tv_sec_hi as u64) << 32) | tv_sec_lo as u64) * 1_000_000_000
                         + tv_nsec as u64,
