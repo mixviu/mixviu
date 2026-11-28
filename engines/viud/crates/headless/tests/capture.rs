@@ -3064,6 +3064,9 @@ fn idle_inhibitor_visibility_lifecycle_watch_and_bus_blank() {
 #[test]
 #[ignore = "needs a render node and built viud/noded/Mix"]
 fn review_z_overlap_and_workspace_move_deliver_to_top_window() {
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("z-overlap");
     let mut process = process::spawn(1, None, "z-overlap", Some(&bus.url));
     let mut a = Pattern::named(connect(&mut process), "z-a", false);
@@ -3202,6 +3205,9 @@ fn stationary_agent_buttons_refresh_hits_but_keep_grab_and_targeted_focus() {
 #[test]
 #[ignore = "needs a render node and built viud/noded/Mix"]
 fn review_popup_outside_parent_is_drawn_without_clip_in_both_capture_paths() {
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("popup-clip");
     let mut process = process::spawn(1, None, "popup-clip", Some(&bus.url));
     let mut p = Pattern::named(connect(&mut process), "popup-clip", false);
@@ -3249,6 +3255,9 @@ fn review_popup_outside_parent_is_drawn_without_clip_in_both_capture_paths() {
 #[test]
 #[ignore = "needs a render node and built viud/noded/Mix"]
 fn review_hidden_popup_keyboard_grab_receives_no_more_keys() {
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("hide-grab");
     let mut process = process::spawn(1, None, "hide-grab", Some(&bus.url));
     let mut p = Pattern::named(connect(&mut process), "hide-grab", false);
@@ -3299,6 +3308,9 @@ fn review_hidden_popup_keyboard_grab_receives_no_more_keys() {
 #[test]
 #[ignore = "needs a render node and built viud/noded/Mix"]
 fn review_hidden_remap_does_not_focus_and_show_with_geometry_is_atomic() {
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("hide-remap");
     let mut process = process::spawn(1, None, "hide-remap", Some(&bus.url));
     let mut p = Pattern::named(connect(&mut process), "hide-remap", false);
@@ -3366,6 +3378,9 @@ fn review_hidden_remap_does_not_focus_and_show_with_geometry_is_atomic() {
 #[test]
 #[ignore = "needs a render node and built viud/noded/Mix"]
 fn review_visual_only_place_is_refused_by_session_lock_dispatch() {
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("locked-place");
     let mut process = process::spawn(1, None, "locked-place", Some(&bus.url));
     let mut p = Pattern::new(connect(&mut process));
@@ -3384,6 +3399,9 @@ fn review_visual_only_place_is_refused_by_session_lock_dispatch() {
 #[test]
 #[ignore = "needs a render node and built viud/noded/Mix"]
 fn moved_window_clip_is_local_to_surface_origin() {
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("moved-clip");
     let mut process = process::spawn(1, None, "moved-clip", Some(&bus.url));
     let mut p = Pattern::named(connect(&mut process), "moved-clip", false);
@@ -3759,6 +3777,9 @@ fn bus_capture_completes_on_idle_output() {
 #[test]
 #[ignore = "needs a GPU render node and built viud and noded binaries"]
 fn placement_visuals_persist_capture_and_suppress_hidden_input() {
+    if !process::record_available() {
+        return;
+    }
     let bus = Bus::start("place-visuals");
     let mut process = process::spawn(1, None, "place-visuals", Some(&bus.url));
     let mut pattern = Pattern::new(connect(&mut process));

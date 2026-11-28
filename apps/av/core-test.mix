@@ -4,7 +4,9 @@ fn equal($a,$b) if not deep_eq($a,$b) then raise("TEST",json_encode({actual:$a,e
 $core=require("core.mix")
 $dir=trim(run_argv_must(["mktemp","-d","/tmp/av-test-XXXXXX"]))
 $here=dirname(script_path())
-$mix=which("mix")
+$mix=env("MIX_TEST_MIX_EXE", "")
+if $mix=="" then $mix=which("mix") end
+if $mix==nil or $mix=="" then raise("TEST","set MIX_TEST_MIX_EXE or provide mix on PATH") end
 $cfg=$core.defaults();$cfg.roots=[$dir]
 $cfg.av=[$mix,path_join($here,"stub.mix")]
 $cfg.runner=[$mix,path_join($here,"runner-stub.mix"),$dir]

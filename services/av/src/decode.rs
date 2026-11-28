@@ -783,6 +783,19 @@ mod tests {
         assert!(tested > 0 && tested <= MAX_PROBE_CANDIDATES);
     }
 
+    fn ffmpeg_available() -> bool {
+        if let Err(error) = Command::new("ffmpeg").arg("-version").output() {
+            assert_ne!(
+                std::env::var("MIX_TEST_REQUIRE_FFMPEG").as_deref(),
+                Ok("1"),
+                "ffmpeg oracle required by MIX_TEST_REQUIRE_FFMPEG=1: {error}"
+            );
+            eprintln!("ffmpeg oracle test skipped: {error}");
+            return false;
+        }
+        true
+    }
+
     fn ff(args: &[&str]) -> Vec<u8> {
         let o = Command::new("ffmpeg")
             .args(["-v", "error", "-nostdin"])
@@ -794,6 +807,9 @@ mod tests {
     }
     #[test]
     fn framemd5_dav1d_oracle_and_transactional_outputs() {
+        if !ffmpeg_available() {
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("changing.webm");
         ff(&[
@@ -907,6 +923,9 @@ mod tests {
 
     #[test]
     fn framemd5_odd_dimensions_dav1d_oracle() {
+        if !ffmpeg_available() {
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("odd.webm");
         ff(&[
@@ -967,6 +986,9 @@ mod tests {
 
     #[test]
     fn unsupported_pixel_formats_have_named_transactional_refusals() {
+        if !ffmpeg_available() {
+            return;
+        }
         for format in ["yuv420p10le", "yuv444p"] {
             let dir = tempfile::tempdir().unwrap();
             let input = dir.path().join("unsupported.webm");
@@ -1017,8 +1039,7 @@ mod tests {
     }
     #[test]
     fn opus_sample_count_and_pcm_oracle() {
-        if Command::new("ffmpeg").arg("-version").output().is_err() {
-            assert_ne!(std::env::var("MIX_TEST_REQUIRE_FFMPEG").as_deref(), Ok("1"));
+        if !ffmpeg_available() {
             return;
         }
         let dir = tempfile::tempdir().unwrap();
