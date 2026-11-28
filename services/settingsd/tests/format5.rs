@@ -522,10 +522,14 @@ fn dropping_a_store_releases_the_writer_before_a_forked_child_exits() {
             if waited == pid {
                 break;
             }
-            assert_eq!(std::io::Error::last_os_error().raw_os_error(), Some(libc::EINTR));
+            assert_eq!(
+                std::io::Error::last_os_error().raw_os_error(),
+                Some(libc::EINTR)
+            );
         }
         assert_eq!(status, 0);
-        let (store, _) = reopened.expect("drop must unlock even while a child holds the inherited fd");
+        let (store, _) =
+            reopened.expect("drop must unlock even while a child holds the inherited fd");
         assert!(Store::open(dir.path(), &binding()).is_err());
         drop(store);
     }
