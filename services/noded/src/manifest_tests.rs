@@ -207,7 +207,9 @@ async fn allowlisted_mix_citizen_publishes_handlers_without_changing_help() {
                     break request;
                 }
             }
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
         assert_eq!(request.command, "HELP");
         client.respond(&request, 0, "[]").await.unwrap();
     };
