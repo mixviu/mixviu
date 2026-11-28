@@ -37928,14 +37928,30 @@ mod bytes_tests {
 
     // --- udp_send / udp_recv (v0.71.0) ---
 
+    fn with_udp_test_port<T>(mut receive: impl FnMut(u16) -> MixResult<T>) -> T {
+        // udp_recv refuses port 0 and cannot take an existing socket. Retry
+        // only a lost probe-to-bind race, never a receive or assertion failure.
+        let addr_in_use = std::io::Error::from_raw_os_error(libc::EADDRINUSE).to_string();
+        for attempt in 1..=5 {
+            let s = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+            let port = s.local_addr().unwrap().port();
+            drop(s);
+            match receive(port) {
+                Ok(value) => return value,
+                Err(MixError::RuntimeError { msg, .. })
+                    if msg == format!("udp_recv: bind '127.0.0.1:{port}': {addr_in_use}") =>
+                {
+                    assert!(attempt < 5, "UDP bind race after {attempt} attempts: {msg}");
+                }
+                Err(error) => panic!("{error}"),
+            }
+        }
+        unreachable!()
+    }
+
     #[test]
     fn udp_loopback_and_timeout() {
-        // Find a free port, release it, and race to rebind — acceptable in
-        // a test; the datagram goes over loopback only.
-        let port = {
-            let s = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-            s.local_addr().unwrap().port()
-        };
+        let got = with_udp_test_port(|port| {
         // Value is Rc-based (not Send), so the sender thread builds its own
         // argument Values from Copy/'static inputs. It RETRIES for the whole
         // window: under a parallel workspace test run the receiver may bind
@@ -37967,12 +37983,14 @@ mod bytes_tests {
         let mut opts = indexmap::IndexMap::new();
         opts.insert("timeout".to_string(), Value::Number(5.0));
         opts.insert("host".to_string(), Value::String("127.0.0.1".into()));
-        let got = builtin_udp_recv(vec![Value::Number(port as f64), Value::map(opts)])
-            .unwrap()
-            .unwrap();
+        let got = builtin_udp_recv(vec![Value::Number(port as f64), Value::map(opts)]);
         stop.store(true, std::sync::atomic::Ordering::Relaxed);
-        let sent = sender.join().unwrap().unwrap();
-        assert_eq!(sent, "ping-π".len());
+        let sent = sender.join().unwrap();
+        if got.is_ok() {
+            assert_eq!(sent.unwrap(), "ping-π".len());
+        }
+        got
+        }).unwrap();
         let Value::Map(m) = &got else {
             panic!("{got:?}")
         };
@@ -37984,15 +38002,13 @@ mod bytes_tests {
         }
 
         // Timeout returns nil, not an error.
-        let port2 = {
-            let s = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
-            s.local_addr().unwrap().port()
-        };
-        let mut opts = indexmap::IndexMap::new();
-        opts.insert("timeout".to_string(), Value::Number(0.1));
-        opts.insert("host".to_string(), Value::String("127.0.0.1".into()));
         assert_eq!(
-            builtin_udp_recv(vec![Value::Number(port2 as f64), Value::map(opts)]).unwrap(),
+            with_udp_test_port(|port| {
+                let mut opts = indexmap::IndexMap::new();
+                opts.insert("timeout".to_string(), Value::Number(0.1));
+                opts.insert("host".to_string(), Value::String("127.0.0.1".into()));
+                builtin_udp_recv(vec![Value::Number(port as f64), Value::map(opts)])
+            }),
             Some(Value::Nil)
         );
     }
