@@ -118,6 +118,8 @@ pub fn buffer(id: &Id) -> Option<Buffer> {
     CAPTURED.with(|captured| captured.borrow().get(id).cloned())
 }
 
+// Id hashes immutable identity fields and addresses; Wayland's atomic liveness is ignored by Hash/Eq.
+#[allow(clippy::mutable_key_type)]
 pub fn prune(armed: &HashSet<Id>, exiting: &HashSet<Id>) {
     ARMED.with(|sources| sources.borrow_mut().retain(|id| armed.contains(id)));
     CAPTURED.with(|captured| captured.borrow_mut().retain(|id, _| exiting.contains(id)));
