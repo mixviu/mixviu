@@ -543,14 +543,14 @@ impl ServeRuntime for MixServeRuntime {
                             if let Err(error) = valid
                                 && self.manifest_warning_is_new(name)
                             {
-                                    if error == ::bus::ManifestNameError::Count {
-                                        tracing::warn!(
-                                            name,
-                                            "omitting command name: over the 512-name limit"
-                                        );
-                                    } else {
-                                        tracing::warn!(name, "omitting invalid serve command name");
-                                    }
+                                if error == ::bus::ManifestNameError::Count {
+                                    tracing::warn!(
+                                        name,
+                                        "omitting command name: over the 512-name limit"
+                                    );
+                                } else {
+                                    tracing::warn!(name, "omitting invalid serve command name");
+                                }
                             }
                             if valid.is_ok() {
                                 accepted += 1;
