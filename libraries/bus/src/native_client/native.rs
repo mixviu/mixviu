@@ -15,7 +15,9 @@
 //! retains only the explicit-URL primitives `NodedClient::connect()`
 //! and `NodedClient::connect_anonymous()`.
 
-use std::collections::{BTreeMap, HashMap};
+#[cfg(test)]
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex as StdMutex, RwLock};
 
