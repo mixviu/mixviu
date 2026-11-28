@@ -4320,7 +4320,9 @@ async fn route_local(
     );
     let scoped_observe = state.observe.for_class(traffic_class);
     let observe = &scoped_observe;
-    if admitted_peer.is_some() && mesh_from.is_some_and(reserved_task_name) {
+    if admitted_peer.is_some()
+        && mesh_from.is_some_and(|name| reserved_task_name(name) || reserved_broker_name(name))
+    {
         drop(reg);
         let mut reply = BusMessage::new()
             .with_header("type", "response")
@@ -9766,7 +9768,7 @@ pub(crate) mod tests {
             }
         }
         state.task_identities = Default::default();
-        for name in ["log", "log-observe-123", "mon", "anon-x", "bridge-example"] {
+        for name in ["log", "log-observe-123", "mon", "anon-x", "bridge-example", "noded", "noded-7"] {
             let (tx, mut rx) = mpsc::channel(8);
             let request = BusMessage::new()
                 .with_header("command", "noded.register")
