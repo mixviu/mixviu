@@ -167,6 +167,11 @@ pub async fn serve(
     );
     let builder = zbus::connection::Builder::address(config.address.as_str())?
         .serve_at(portal::OBJECT_PATH, Portal::new(values.clone()))?;
+    let builder = if let Some((bridge, _)) = &config.filechooser {
+        builder.serve_at(portal::OBJECT_PATH, crate::openuri::OpenUri::new(bridge.client()))?
+    } else {
+        builder
+    };
     #[cfg(feature = "screencast")]
     let builder = if let Some(screencast) = config.screencast {
         consent::install(Consent::new(screencast.consent));

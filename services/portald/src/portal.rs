@@ -20,6 +20,7 @@ pub enum PortalError {
     #[zbus(error)]
     ZBus(zbus::Error),
     NotFound(String),
+    Failed(String),
     InvalidArgument(String),
 }
 

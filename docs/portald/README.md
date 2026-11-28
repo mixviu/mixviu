@@ -109,6 +109,28 @@ portald owns the portal frontend name itself. It is not an
 `org.freedesktop.impl.portal.*` backend for a second xdg-desktop-portal
 frontend, and it does not provide sandbox document export or access grants.
 
+## Opening URIs
+
+`org.freedesktop.portal.OpenURI` version 5 shares portald's existing native
+Bus client. `SchemeSupported` forwards the unparsed scheme to `apps.handler`:
+rc 0 means true, application refusal means false, and an unavailable Bus or
+apps provider returns `org.freedesktop.portal.Error.Failed`.
+
+`OpenURI` exports a Request, honouring `handle_token`, and forwards the URI
+unparsed to `apps.open` with the supplied `activation_token`. URI strings over
+8192 bytes fail without forwarding. Response 0 means apps returned rc 0
+(spawned), and Response 2 means refusal or failure, including apps being down.
+Only apps validates URI content, tokens and handler policy; see
+[application control](../app-control.md). `ask`, `writable` and `parent_window`
+are ignored. Replies precede destination-addressed Response signals.
+
+`OpenFile` and `OpenDirectory` are stage 2: each logs a WARN and returns a
+Request with Response 2. There is no fd resolution or launch in portald.
+
+`tests/openuri.rs` uses a private D-Bus and real noded with fake apps to check
+version, supported/refused schemes, provider and Bus loss, successful/refused
+opens, byte limits, exact URI/token forwarding, handle tokens and both stubs.
+
 ## Screen sharing
 
 Interface `org.freedesktop.portal.ScreenCast`, version 5, on the same object.
