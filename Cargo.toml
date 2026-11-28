@@ -206,7 +206,7 @@ pkg-config = "=0.3.34"
 pollster = "=1.0.1"
 xcursor = "=0.3.11"
 # Flexbox layout of Mix Scenes in viu.
-taffy = { version = "=0.14.0", default-features = false, features = ["std", "taffy_tree", "flexbox", "content_size"] }
+taffy = { version = "=0.15.1", default-features = false, features = ["std", "taffy_tree", "flexbox", "content_size"] }
 # Scene icons: SVG rasterised at draw size (the version egui_extras already uses).
 resvg = { version = "=0.45.1", default-features = false, features = ["raster-images"] }
 # Window-title shaping in decor (embedded faces only, so no fontconfig).
