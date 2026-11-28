@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0
 use super::*;
 
-async fn broker(state: AppState) -> (String, tokio::task::JoinHandle<()>) {
+async fn broker(mut state: AppState) -> (String, tokio::task::JoinHandle<()>) {
+    // This fixture exercises local citizens, without mesh admission challenges.
+    state.admission_mode = config::node::AdmissionMode::Off;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("ws://{}/ws", listener.local_addr().unwrap());
     let app = axum::Router::new()
