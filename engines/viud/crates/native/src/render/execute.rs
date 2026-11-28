@@ -1783,11 +1783,16 @@ fn present(
     let resuming = !(*state.inner.kernel.get(&drivers::resume::base::VBLANK_SEEN));
     // Scope the drm_output borrow so the `Failed` arm can tear the pipe down.
     let (outcome, modeset) = {
-        let pending_modeset = ctx_ref.outputs[output_idx]
+        // Select tearing before inspecting pending state: that selection can
+        // itself make a modeset necessary.
+        let modeset = ctx_ref.outputs[output_idx]
             .drm_output
             .as_ref()
-            .is_some_and(|o| o.with_compositor(|c| c.surface().commit_pending()));
-        let trail_row = pending_modeset
+            .is_some_and(|o| o.with_compositor(|c| {
+                c.set_tearing(tear);
+                c.surface().commit_pending()
+            }));
+        let trail_row = modeset
             .then(|| crate::wire::handover::pipe("SubmitModeset", &ctx_ref.outputs[output_idx]));
         let Some(drm_output) = ctx_ref.outputs[output_idx].drm_output.as_mut() else {
             return false;
@@ -1795,17 +1800,11 @@ fn present(
         // Arm the flip mode for THIS commit. `queue_frame` submits synchronously
         // (the per-pipe `in_flight` guard keeps `pending_frame` empty), so the
         // set-then-queue ordering is race-free.
-        drm_output.with_compositor(|c| c.set_tearing(tear));
-        let modeset = drm_output.with_compositor(|c| c.surface().commit_pending());
         let trace = ledger::frame_trace::span("kms_queue_frame", trace_output);
         let outcome = if modeset {
-            crate::wire::handover::run(trail_row.into_iter().collect(), || {
-                match queue(drm_output, Some(feedback), resuming) {
-                    QueueOutcome::Failed => Err("queue_frame failed (detail in journal)".into()),
-                    other => Ok(other),
-                }
+            crate::wire::handover::submit(trail_row.into_iter().collect(), || {
+                queue(drm_output, Some(feedback), resuming)
             })
-            .unwrap_or(QueueOutcome::Failed)
         } else {
             queue(drm_output, Some(feedback), resuming)
         };

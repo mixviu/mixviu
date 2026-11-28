@@ -33,6 +33,11 @@ steady page flips. `ModeChange` covers provisional changes and reverts.
 `DpmsReclaimModeset` cover panel power recovery. `Blank`/`Unblank` record
 logical requests; `BlankTest`/`BlankCommit` record individual atomic work,
 including cleanup and restoration.
+`ConnectorPropsTest`/`ConnectorPropsCommit` cover connector colour-property
+transactions using `ALLOW_MODESET`. A `SubmitModeset` result uses `end` with
+`ok: true` only after successful submission; watchdog-deferred attempts use
+`phase: deferred`, `ok: false`, and an explanation. Failed attempts use `end`
+with `ok: false`. A successful submission still awaits the real vblank.
 
 After a crash, preserve both files before restarting repeatedly. Read `.1`
 then `.jsonl`; group by socket and PID, and compare `boot_ns` within the same

@@ -2,6 +2,37 @@
 // Copyright 2026 Mark Constable <mc@mixos.dev>
 use super::*;
 
+#[test]
+fn modeset_submission_distinguishes_queued_deferred_and_failed() {
+    use kms::scanout::flip::queue::QueueOutcome;
+    let dir = fixture();
+    for (outcome, phase, ok) in [
+        (QueueOutcome::Queued, "end", true),
+        (QueueOutcome::DeferredToWatchdog, "deferred", false),
+        (QueueOutcome::Failed, "end", false),
+    ] {
+        let before = rows_if_present(&dir);
+        let returned = submit(vec![row("SubmitModeset", None, Some(34), None)], || {
+            let r = rows(&dir);
+            assert_eq!(r.len(), before + 1);
+            assert_eq!(r.last().unwrap()["phase"], "start");
+            outcome
+        });
+        assert_eq!(returned, outcome);
+        let r = rows(&dir);
+        let end = r.last().unwrap();
+        assert_eq!(end["phase"], phase);
+        assert_eq!(end["ok"], ok);
+        assert_eq!(end["error"].as_str().unwrap().is_empty(), ok);
+        assert!(end["elapsed_ms"].is_number());
+    }
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+fn rows_if_present(dir: &std::path::Path) -> usize {
+    if path(dir).exists() { rows(dir).len() } else { 0 }
+}
+
 fn fixture() -> PathBuf {
     let dir = std::env::temp_dir().join(format!("handover-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();

@@ -186,6 +186,30 @@ pub fn pause<R>(work: impl FnOnce() -> R) -> R {
 }
 /// All start rows are synced before the device-wide commit closure is called.
 pub fn run<T>(rows: Vec<Value>, work: impl FnOnce() -> Result<T, String>) -> Result<T, String> {
+    transaction(rows, work, |result| {
+        ("end", result.is_ok(), result.as_ref().err().cloned().unwrap_or_default())
+    })
+}
+
+/// Preserve the queue policy outcome while distinguishing a deferred attempt
+/// from a successful submission. A queued modeset still awaits its vblank.
+pub fn submit(
+    rows: Vec<Value>,
+    work: impl FnOnce() -> kms::scanout::flip::queue::QueueOutcome,
+) -> kms::scanout::flip::queue::QueueOutcome {
+    use kms::scanout::flip::queue::QueueOutcome;
+    transaction(rows, work, |outcome| match outcome {
+        QueueOutcome::Queued => ("end", true, String::new()),
+        QueueOutcome::DeferredToWatchdog => ("deferred", false, "queue_frame deferred to resume watchdog (detail in journal)".into()),
+        QueueOutcome::Failed => ("end", false, "queue_frame failed (detail in journal)".into()),
+    })
+}
+
+fn transaction<T>(
+    rows: Vec<Value>,
+    work: impl FnOnce() -> T,
+    classify: impl FnOnce(&T) -> (&'static str, bool, String),
+) -> T {
     let start = Instant::now();
     for row in &rows {
         let mut row = row.clone();
@@ -193,14 +217,15 @@ pub fn run<T>(rows: Vec<Value>, work: impl FnOnce() -> Result<T, String>) -> Res
         emit(row);
     }
     let result = work();
+    let (phase, ok, error) = classify(&result);
     for mut row in rows {
         let (ts, boot) = timestamp();
         row["ts"] = json!(ts);
         row["ts_utc"] = row["ts"].clone();
         row["boot_ns"] = json!(boot);
-        row["phase"] = json!("end");
-        row["ok"] = json!(result.is_ok());
-        row["error"] = json!(result.as_ref().err().cloned().unwrap_or_default());
+        row["phase"] = json!(phase);
+        row["ok"] = json!(ok);
+        row["error"] = json!(error);
         row["elapsed_ms"] = json!(start.elapsed().as_secs_f64() * 1000.0);
         emit(row);
     }
