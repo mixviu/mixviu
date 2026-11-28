@@ -488,9 +488,20 @@ pub fn apply_connector_props(
         req
     };
     let test = |with_luts: bool| {
-        drm.atomic_commit(
-            AtomicCommitFlags::TEST_ONLY | AtomicCommitFlags::ALLOW_MODESET,
-            build(with_luts),
+        crate::wire::handover::run(
+            vec![crate::wire::handover::row(
+                "ConnectorPropsTest",
+                Some(conn.into()),
+                Some(crtc.into()),
+                None,
+            )],
+            || {
+                drm.atomic_commit(
+                    AtomicCommitFlags::TEST_ONLY | AtomicCommitFlags::ALLOW_MODESET,
+                    build(with_luts),
+                )
+                .map_err(|e| e.to_string())
+            },
         )
     };
 
@@ -516,7 +527,18 @@ pub fn apply_connector_props(
             outcome.colorspace, outcome.metadata, outcome.max_bpc, outcome.crtc_color
         ));
     }
-    if let Err(e) = drm.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, build(with_luts)) {
+    if let Err(e) = crate::wire::handover::run(
+        vec![crate::wire::handover::row(
+            "ConnectorPropsCommit",
+            Some(conn.into()),
+            Some(crtc.into()),
+            None,
+        )],
+        || {
+            drm.atomic_commit(AtomicCommitFlags::ALLOW_MODESET, build(with_luts))
+                .map_err(|e| e.to_string())
+        },
+    ) {
         if let Some(b) = blob_raw {
             let _ = drm.destroy_property_blob(b);
         }

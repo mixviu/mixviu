@@ -155,16 +155,31 @@ fn assemble_gles(
     let chain = display.mode_chain.clone();
     let mut slot: Option<NativeDrmOutput> = None;
     let chosen = kms::scanout::commit::test::try_chain(chain, |mode| {
-        match kms::scanout::surface::output::initialize::<
-            _,
-            GlesElementWrapper<SceneElement<GlesRenderer>>,
-        >(
-            &mut drm_output_manager,
-            display.pipe,
-            mode,
-            &[display.connector.handle()],
-            &display.output,
-            &mut renderer,
+        match crate::wire::handover::run(
+            vec![crate::wire::handover::row(
+                "InitializeOutput",
+                Some(display.connector.handle().into()),
+                Some(display.pipe.into()),
+                Some(format!(
+                    "{}x{}@{}",
+                    mode.size().0,
+                    mode.size().1,
+                    mode.vrefresh()
+                )),
+            )],
+            || {
+                kms::scanout::surface::output::initialize::<
+                    _,
+                    GlesElementWrapper<SceneElement<GlesRenderer>>,
+                >(
+                    &mut drm_output_manager,
+                    display.pipe,
+                    mode,
+                    &[display.connector.handle()],
+                    &display.output,
+                    &mut renderer,
+                )
+            },
         ) {
             Ok(out) => {
                 slot = Some(out);

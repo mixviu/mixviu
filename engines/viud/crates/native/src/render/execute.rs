@@ -1783,16 +1783,33 @@ fn present(
     let resuming = !(*state.inner.kernel.get(&drivers::resume::base::VBLANK_SEEN));
     // Scope the drm_output borrow so the `Failed` arm can tear the pipe down.
     let (outcome, modeset) = {
+        // Select tearing before inspecting pending state: that selection can
+        // itself make a modeset necessary.
+        let modeset = ctx_ref.outputs[output_idx]
+            .drm_output
+            .as_ref()
+            .is_some_and(|o| {
+                o.with_compositor(|c| {
+                    c.set_tearing(tear);
+                    c.surface().commit_pending()
+                })
+            });
+        let trail_row = modeset
+            .then(|| crate::wire::handover::pipe("SubmitModeset", &ctx_ref.outputs[output_idx]));
         let Some(drm_output) = ctx_ref.outputs[output_idx].drm_output.as_mut() else {
             return false;
         };
         // Arm the flip mode for THIS commit. `queue_frame` submits synchronously
         // (the per-pipe `in_flight` guard keeps `pending_frame` empty), so the
         // set-then-queue ordering is race-free.
-        drm_output.with_compositor(|c| c.set_tearing(tear));
-        let modeset = drm_output.with_compositor(|c| c.surface().commit_pending());
         let trace = ledger::frame_trace::span("kms_queue_frame", trace_output);
-        let outcome = queue(drm_output, Some(feedback), resuming);
+        let outcome = if modeset {
+            crate::wire::handover::submit(trail_row.into_iter().collect(), || {
+                queue(drm_output, Some(feedback), resuming)
+            })
+        } else {
+            queue(drm_output, Some(feedback), resuming)
+        };
         drop(trace);
         (outcome, modeset)
     };
@@ -1845,7 +1862,11 @@ fn present(
             // Fail-soft: this connector's flip failed → drop its scanout target so
             // the render loop skips it (it goes dark) while other outputs keep
             // running. Recovered on the next hotplug reconcile.
-            ctx_ref.outputs[output_idx].drm_output = None;
+            let row = crate::wire::handover::pipe("OutputDrop", &ctx_ref.outputs[output_idx]);
+            let _ = crate::wire::handover::run(vec![row], || {
+                ctx_ref.outputs[output_idx].drm_output = None;
+                Ok(())
+            });
             return false;
         }
     }

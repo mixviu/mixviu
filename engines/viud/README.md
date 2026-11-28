@@ -1,5 +1,51 @@
 # viud
 
+## Durable handover diagnostics
+
+Each native instance appends `handover-<socket>.jsonl` under
+`slots::persist::path::base::state_dir()`: currently `$XDG_STATE_HOME/mix/viud`,
+or `/home/user/.local/state/mix/viud` with the default environment. The socket
+separates instances sharing a home. No configuration is required. Rows use
+`write_all` and `sync_data`; rotation at 1 MiB keeps one `.jsonl.1` file.
+An I/O failure warns once and disables the trail for that instance.
+
+Rows contain `ts` (UTC RFC 3339 milliseconds), `boot_ns` (CLOCK_BOOTTIME),
+`pid`, `socket`, `seq`, `event`, `phase`, nullable `connector`, `crtc`, `mode`
+(`WxH@Hz`), and `ok`, `error`, `elapsed_ms` on end rows. History envelope
+fields are included (`ts_utc`, `source`, `kind`, `class`, `ref`, `data`);
+`node` is null until a history reader supplies node provenance. Sequence
+numbers restart per process. Recorded rows are private operator data.
+
+`PauseSession` marks receipt; `CrtcClear` records each disabling attempt,
+including revoked-master errors. `DisplayPaused` and `InputSuspended` mark
+completion. All pause rows stay in memory until the display/input pause
+transaction returns, so trail I/O cannot delay CRTC release. A reset during
+that transaction can therefore leave no pause rows.
+
+`ActivateSession` covers initial attachment and resume. `ReclaimModeset`
+starts for every connector are durable before the device-wide activation;
+their ends share that manager call's result. `SurfaceReset` records each
+surface reset. `FirstVblank` marks watchdog retirement and includes
+`since_activate_ms`. `InitializeOutput` records startup and runtime mode
+fallback attempts; `SubmitModeset` covers real modeset submissions outside
+steady page flips. `ModeChange` covers provisional changes and reverts.
+`OutputDrop` records output removal. `DpmsOn`, `DpmsOff` and
+`DpmsReclaimModeset` cover panel power recovery. `Blank`/`Unblank` record
+logical requests; `BlankTest`/`BlankCommit` record individual atomic work,
+including cleanup and restoration.
+`ConnectorPropsTest`/`ConnectorPropsCommit` cover connector colour-property
+transactions using `ALLOW_MODESET`. A `SubmitModeset` result uses `end` with
+`ok: true` only after successful submission; watchdog-deferred attempts use
+`phase: deferred`, `ok: false`, and an explanation. Failed attempts use `end`
+with `ok: false`. A successful submission still awaits the real vblank.
+
+After a crash, preserve both files before restarting repeatedly. Read `.1`
+then `.jsonl`; group by socket and PID, and compare `boot_ns` within the same
+host boot (retain the host boot identity alongside the files). A final start
+without an end bounds the unfinished operation; it does not prove its cause.
+Pause rows are retrospective, with their original timestamps. Existing
+journal messages remain useful for error detail. This adds no history verb.
+
 The MixViu Wayland compositor: the gold MixOS compositor (compd) without the in-process
 egui widget toolkit. Furniture and applications run out of process in `viu`.
 `cargo tree --locked -p viud -e normal` must show no `egui`, `egui-wgpu`,

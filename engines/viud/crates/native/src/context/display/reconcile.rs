@@ -123,7 +123,11 @@ fn bring_up(
         .redraw
         .release(&world::state::output_key(&ctx.pipe().output));
     crate::render::execute::blank::retire(ctx.pipe_mut());
-    ctx.pipe_mut().drm_output = None;
+    let row = crate::wire::handover::pipe("OutputDrop", ctx.pipe());
+    let _ = crate::wire::handover::run(vec![row], || {
+        ctx.pipe_mut().drm_output = None;
+        Ok(())
+    });
     // Built against the `Output` this pipe will actually keep — `build` sizes the
     // primary plane from it to pass the atomic test.
     let output = match replace {
@@ -408,7 +412,11 @@ fn go_dark_primary(state: &mut Loop, ctx: &mut NativeRenderContext) {
         .state
         .redraw
         .release(&world::state::output_key(&ctx.pipe().output));
-    ctx.outputs[0].drm_output = None;
+    let row = crate::wire::handover::pipe("OutputDrop", &ctx.outputs[0]);
+    let _ = crate::wire::handover::run(vec![row], || {
+        ctx.outputs[0].drm_output = None;
+        Ok(())
+    });
     // Its colour state goes with the scanout: no client may keep being offered
     // a departed display's HDR volume (the pass is rebuilt on bring-up).
     ctx.outputs[0].hdr_pass = None;
@@ -507,7 +515,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
             // Destroy this output's `wl_output` global so re-adding the monitor doesn't
             // advertise a duplicate (the switch reused ONE Output; add_output makes a
             // fresh one each time, so its global must be torn down here).
-            if let Some(gid) = removed.global {
+            if let Some(gid) = removed.global.take() {
                 ctx.display_handle
                     .remove_global::<dispatcher::state::Dispatch>(gid);
             }
@@ -523,7 +531,12 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
             graphics::bridge::publish::retire::retire_output(&world::state::output_key(
                 &removed.output,
             ));
-            // `removed.drm_output` drops here → frees its CRTC.
+            let row = crate::wire::handover::pipe("OutputDrop", &removed);
+            let _ = crate::wire::handover::run(vec![row], || {
+                drop(removed.drm_output.take());
+                Ok(())
+            });
+            // `removed.drm_output` has freed its CRTC.
         } else {
             i += 1;
         }
@@ -557,7 +570,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                 let mut i = 1;
                 while i < ctx.outputs.len() {
                     if ctx.outputs[i].connector == th && ctx.outputs[i].drm_output.is_some() {
-                        let removed = ctx.outputs.remove(i);
+                        let mut removed = ctx.outputs.remove(i);
                         crate::render::execute::hdr::publish(&removed.output.name(), None);
                         state
                             .state
@@ -569,7 +582,7 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                         // Every world's Space, not just the hosted one
                         // (`unmap_output_everywhere`).
                         state.inner.unmap_output_everywhere(&removed.output);
-                        if let Some(gid) = removed.global {
+                        if let Some(gid) = removed.global.take() {
                             ctx.display_handle
                                 .remove_global::<dispatcher::state::Dispatch>(gid);
                         }
@@ -577,6 +590,11 @@ pub fn reconcile(state: &mut Loop, ctx_rc: &Ctx) -> Option<OutputChange> {
                             "reconcile: evicted secondary {:?} so the primary can take it over",
                             removed.connector
                         );
+                        let row = crate::wire::handover::pipe("OutputDrop", &removed);
+                        let _ = crate::wire::handover::run(vec![row], || {
+                            drop(removed.drm_output.take());
+                            Ok(())
+                        });
                     } else {
                         i += 1;
                     }

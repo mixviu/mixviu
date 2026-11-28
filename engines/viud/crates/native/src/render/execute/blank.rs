@@ -60,23 +60,33 @@ impl Surface for DrmSurface<'_> {
             .map_err(|e| format!("blank blob: {e}"))
     }
     fn commit(&self, props: &[(u32, u64)], test: bool) -> Result<(), String> {
-        let mut req = AtomicModeReq::new();
-        for (handle, value) in props {
-            req.add_property(
-                self.crtc,
-                drm_handle(*handle),
-                property::Value::Blob(*value),
-            );
-        }
-        let flags = AtomicCommitFlags::ALLOW_MODESET
-            | if test {
-                AtomicCommitFlags::TEST_ONLY
-            } else {
-                AtomicCommitFlags::empty()
-            };
-        self.drm
-            .atomic_commit(flags, req)
-            .map_err(|e| format!("blank {}commit: {e}", if test { "TEST_ONLY " } else { "" }))
+        crate::wire::handover::run(
+            vec![crate::wire::handover::row(
+                if test { "BlankTest" } else { "BlankCommit" },
+                None,
+                Some(self.crtc.into()),
+                None,
+            )],
+            || {
+                let mut req = AtomicModeReq::new();
+                for (handle, value) in props {
+                    req.add_property(
+                        self.crtc,
+                        drm_handle(*handle),
+                        property::Value::Blob(*value),
+                    );
+                }
+                let flags = AtomicCommitFlags::ALLOW_MODESET
+                    | if test {
+                        AtomicCommitFlags::TEST_ONLY
+                    } else {
+                        AtomicCommitFlags::empty()
+                    };
+                self.drm.atomic_commit(flags, req).map_err(|e| {
+                    format!("blank {}commit: {e}", if test { "TEST_ONLY " } else { "" })
+                })
+            },
+        )
     }
     fn destroy(&self, blob: u64) {
         let _ = self.drm.destroy_property_blob(blob);
@@ -184,20 +194,33 @@ trait AtomicDevice {
 
 impl AtomicDevice for DrmDeviceFd {
     fn commit(&self, changes: &[Change], test: bool) -> Result<(), String> {
-        let mut req = AtomicModeReq::new();
-        for change in changes {
-            for (h, blob) in &change.props {
-                req.add_property(change.crtc, drm_handle(*h), property::Value::Blob(*blob));
+        let rows = changes
+            .iter()
+            .map(|c| {
+                crate::wire::handover::row(
+                    if test { "BlankTest" } else { "BlankCommit" },
+                    None,
+                    Some(c.crtc.into()),
+                    None,
+                )
+            })
+            .collect();
+        crate::wire::handover::run(rows, || {
+            let mut req = AtomicModeReq::new();
+            for change in changes {
+                for (h, blob) in &change.props {
+                    req.add_property(change.crtc, drm_handle(*h), property::Value::Blob(*blob));
+                }
             }
-        }
-        let flags = AtomicCommitFlags::ALLOW_MODESET
-            | if test {
-                AtomicCommitFlags::TEST_ONLY
-            } else {
-                AtomicCommitFlags::empty()
-            };
-        self.atomic_commit(flags, req)
-            .map_err(|e| format!("blank {}commit: {e}", if test { "TEST_ONLY " } else { "" }))
+            let flags = AtomicCommitFlags::ALLOW_MODESET
+                | if test {
+                    AtomicCommitFlags::TEST_ONLY
+                } else {
+                    AtomicCommitFlags::empty()
+                };
+            self.atomic_commit(flags, req)
+                .map_err(|e| format!("blank {}commit: {e}", if test { "TEST_ONLY " } else { "" }))
+        })
     }
 }
 
@@ -300,6 +323,14 @@ pub fn supported(ctx: &NativeRenderContext) -> bool {
 }
 
 pub fn apply(ctx: &mut NativeRenderContext, on: bool) -> Result<(), String> {
+    let rows = ctx
+        .outputs
+        .iter()
+        .map(|p| crate::wire::handover::pipe(if on { "Blank" } else { "Unblank" }, p))
+        .collect();
+    crate::wire::handover::run(rows, || apply_inner(ctx, on))
+}
+fn apply_inner(ctx: &mut NativeRenderContext, on: bool) -> Result<(), String> {
     // Prepare every blob first, then one device-wide TEST/real transaction.
     // No output can be left half transitioned if another CRTC refuses.
     let mut changes = Vec::new();

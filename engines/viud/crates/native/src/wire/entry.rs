@@ -51,6 +51,7 @@ pub fn wire(
     ),
 ) -> NativeHandles {
     info!("Backend initialization - Native");
+    super::handover::init(&_wayland_socket_name.to_string_lossy());
 
     // ---- Display + renderer assembly (ex new()); panics internally on
     //      failure — a compositor without a display/renderer cannot run.
